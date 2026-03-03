@@ -1,10 +1,6 @@
 # Wrist Assistant for Home Assistant
 
-**Coming soon:** The Wrist Assistant app is not released yet.
-
-Official Home Assistant integration for the [Wrist Assistant](https://apps.apple.com/us/search?term=Wrist%20Assistant) Apple Watch app (coming soon).
-
-The iOS app is currently going through Apple App Store review and release processes.
+Official Home Assistant integration for the [Wrist Assistant](https://apps.apple.com/us/search?term=Wrist%20Assistant) Apple Watch app.
 
 Wrist Assistant gives you automatic, real-time two-way sync between Apple Watch and Home Assistant, with a setup experience that is fast, reliable, and hands-off.
 
@@ -18,7 +14,7 @@ Wrist Assistant gives you automatic, real-time two-way sync between Apple Watch 
 
 ## Install
 
-### iOS app onboarding (recommended, coming soon)
+### iOS app onboarding (recommended)
 
 1. Install the Wrist Assistant iOS app.
 2. Go through the onboarding steps.
@@ -203,7 +199,7 @@ service: wrist_assistant.force_resync
 
 ## Screenshots and GIFs
 
-Visual setup guide coming soon (integration card, pairing flow, and watch sync in action).
+Screenshots and visual guides will be added here.
 
 ## License
 
