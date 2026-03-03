@@ -87,6 +87,10 @@ _SLIM_ATTRIBUTES: dict[str, set[str]] = {
         "friendly_name", "device_class", "current_position", "current_tilt_position",
         "supported_features", "icon", "entity_picture",
     },
+    "valve": {
+        "friendly_name", "device_class", "current_position", "current_tilt_position",
+        "supported_features", "icon", "entity_picture",
+    },
     "climate": {
         "friendly_name", "hvac_modes", "hvac_action", "current_temperature",
         "temperature", "target_temp_high", "target_temp_low", "fan_mode", "fan_modes",
@@ -172,6 +176,45 @@ _SLIM_ATTRIBUTES: dict[str, set[str]] = {
     },
     "input_button": {
         "friendly_name", "icon", "entity_picture",
+    },
+    "update": {
+        "friendly_name", "installed_version", "latest_version", "skipped_version",
+        "in_progress", "release_summary", "release_url", "title",
+        "supported_features", "icon", "entity_picture",
+    },
+    "device_tracker": {
+        "friendly_name", "source_type", "latitude", "longitude",
+        "gps_accuracy", "location_accuracy", "location_name",
+        "icon", "entity_picture",
+    },
+    "water_heater": {
+        "friendly_name", "current_operation", "operation_list",
+        "temperature", "current_temperature", "min_temp", "max_temp",
+        "is_away_mode_on", "away_mode", "supported_features",
+        "icon", "entity_picture",
+    },
+    "humidifier": {
+        "friendly_name", "target_humidity", "humidity", "current_humidity",
+        "min_humidity", "max_humidity", "target_humidity_step",
+        "available_modes", "mode", "action", "supported_features",
+        "icon", "entity_picture",
+    },
+    "calendar": {
+        "friendly_name", "message", "description", "location",
+        "start_time", "end_time", "all_day",
+        "icon", "entity_picture",
+    },
+    "image": {
+        "friendly_name", "entity_picture", "icon",
+    },
+    "weather": {
+        "friendly_name", "temperature", "humidity", "pressure",
+        "wind_speed", "wind_bearing", "forecast",
+        "icon", "entity_picture",
+    },
+    "zone": {
+        "friendly_name", "latitude", "longitude", "radius",
+        "passive", "persons", "icon", "entity_picture",
     },
 }
 
