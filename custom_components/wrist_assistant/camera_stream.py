@@ -220,11 +220,12 @@ class CameraStreamView(HomeAssistantView):
 
     async def get(self, request: Request, entity_id: str) -> StreamResponse:
         """Handle MJPEG stream request."""
-        from .const import DATA_CAMERA_STREAM_COORDINATOR, DOMAIN
+        from .const import DOMAIN, WristAssistantData
 
-        coordinator = self._hass.data.get(DOMAIN, {}).get(DATA_CAMERA_STREAM_COORDINATOR)
-        if coordinator is None:
+        domain_data: WristAssistantData | None = self._hass.data.get(DOMAIN)
+        if domain_data is None:
             return Response(text="Integration not loaded", status=503)
+        coordinator = domain_data.camera_stream_coordinator
 
         # Validate entity
         state = self._hass.states.get(entity_id)
@@ -346,11 +347,12 @@ class CameraViewportView(HomeAssistantView):
 
     async def post(self, request: Request) -> Response:
         """Update stream params (viewport and/or width) for an active session."""
-        from .const import DATA_CAMERA_STREAM_COORDINATOR, DOMAIN
+        from .const import DOMAIN, WristAssistantData
 
-        coordinator = self._hass.data.get(DOMAIN, {}).get(DATA_CAMERA_STREAM_COORDINATOR)
-        if coordinator is None:
+        domain_data: WristAssistantData | None = self._hass.data.get(DOMAIN)
+        if domain_data is None:
             return self.json_message("Integration not loaded", status_code=503)
+        coordinator = domain_data.camera_stream_coordinator
 
         try:
             payload = await request.json()

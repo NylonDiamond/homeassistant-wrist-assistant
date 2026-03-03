@@ -1024,13 +1024,13 @@ class WatchUpdatesView(HomeAssistantView):
 
     async def post(self, request: Request) -> Response:
         """Handle delta update poll request."""
-        from .const import DATA_COORDINATOR, DATA_NOTIFICATION_TOKEN_STORE, DOMAIN
+        from .const import DOMAIN, WristAssistantData
 
-        domain_data = self._hass.data.get(DOMAIN, {})
-        coordinator = domain_data.get(DATA_COORDINATOR)
-        if coordinator is None:
+        domain_data: WristAssistantData | None = self._hass.data.get(DOMAIN)
+        if domain_data is None:
             return self.json_message("Integration not loaded", status_code=503)
-        notification_store = domain_data.get(DATA_NOTIFICATION_TOKEN_STORE)
+        coordinator = domain_data.coordinator
+        notification_store = domain_data.notification_store
 
         try:
             payload = await request.json()
@@ -1146,11 +1146,12 @@ class WatchSummaryView(HomeAssistantView):
 
     async def post(self, request: Request) -> Response:
         """Return an info summary without touching delta sessions."""
-        from .const import DATA_COORDINATOR, DOMAIN
+        from .const import DOMAIN, WristAssistantData
 
-        coordinator = self._hass.data.get(DOMAIN, {}).get(DATA_COORDINATOR)
-        if coordinator is None:
+        domain_data: WristAssistantData | None = self._hass.data.get(DOMAIN)
+        if domain_data is None:
             return self.json_message("Integration not loaded", status_code=503)
+        coordinator = domain_data.coordinator
 
         try:
             payload = await request.json()
@@ -1213,11 +1214,12 @@ class PairingRedeemView(HomeAssistantView):
 
     async def post(self, request: Request) -> Response:
         """Redeem one-time pairing code."""
-        from .const import DATA_PAIRING_COORDINATOR, DOMAIN
+        from .const import DOMAIN, WristAssistantData
 
-        pairing = self._hass.data.get(DOMAIN, {}).get(DATA_PAIRING_COORDINATOR)
-        if pairing is None:
+        domain_data: WristAssistantData | None = self._hass.data.get(DOMAIN)
+        if domain_data is None:
             return self.json_message("Integration not loaded", status_code=503)
+        pairing = domain_data.pairing_coordinator
 
         try:
             payload = await request.json()
