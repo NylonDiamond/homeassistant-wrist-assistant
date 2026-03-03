@@ -41,17 +41,10 @@ from .camera_stream import (
     CameraViewportView,
 )
 from .const import (
-    DATA_APNS_CONFIG_STORE,
-    DATA_APNS_CLIENT,
-    DATA_CAMERA_STREAM_COORDINATOR,
-    DATA_COORDINATOR,
-    DATA_NOTIFICATION_TOKEN_STORE,
-    DATA_PAIRING_COORDINATOR,
     DOMAIN,
     PLATFORMS,
-    SERVICE_CREATE_PAIRING_CODE,
-    SERVICE_FORCE_RESYNC,
-    SERVICE_SEND_NOTIFICATION,
+    WristAssistantConfigEntry,
+    WristAssistantData,
 )
 from .notifications import (
     NotificationRegisterView,
@@ -59,6 +52,9 @@ from .notifications import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+SERVICE_FORCE_RESYNC = "force_resync"
+SERVICE_CREATE_PAIRING_CODE = "create_pairing_code"
+SERVICE_SEND_NOTIFICATION = "send_notification"
 _BUNDLED_APNS_KEY_ID = "XZ9WA28KN3"
 _BUNDLED_APNS_TEAM_ID = "8265CSQJ66"
 _BUNDLED_APNS_TOPIC = "com.nylondiamond.wristassistant.watchkitapp"
@@ -120,7 +116,7 @@ _SEND_NOTIFICATION_SCHEMA = vol.Schema(
 )
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntry) -> bool:
     """Set up Wrist Assistant from a config entry."""
     _cleanup_orphaned_entities(hass, entry)
     _disable_noisy_entities(hass, entry)
@@ -140,12 +136,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator.register_capability("camera_devices")
     coordinator.register_capability("push_notifications")
 
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][DATA_COORDINATOR] = coordinator
-    hass.data[DOMAIN][DATA_PAIRING_COORDINATOR] = pairing_coordinator
-    hass.data[DOMAIN][DATA_CAMERA_STREAM_COORDINATOR] = camera_stream_coordinator
-    hass.data[DOMAIN][DATA_NOTIFICATION_TOKEN_STORE] = notification_store
-    hass.data[DOMAIN][DATA_APNS_CONFIG_STORE] = apns_config_store
+    runtime_data = WristAssistantData(
+        coordinator=coordinator,
+        pairing_coordinator=pairing_coordinator,
+        camera_stream_coordinator=camera_stream_coordinator,
+        notification_store=notification_store,
+        apns_config_store=apns_config_store,
+    )
+    entry.runtime_data = runtime_data
+    hass.data[DOMAIN] = runtime_data
     hass.http.register_view(WatchUpdatesView(hass))
     hass.http.register_view(WatchSummaryView(hass))
     hass.http.register_view(PairingRedeemView(hass))
@@ -158,10 +157,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def _reload_apns_client() -> None:
         apns_client = await _create_apns_client(hass, apns_config_store)
         if apns_client is None:
-            hass.data[DOMAIN].pop(DATA_APNS_CLIENT, None)
+            runtime_data.apns_client = None
             _LOGGER.warning("APNs client unavailable")
             return
-        hass.data[DOMAIN][DATA_APNS_CLIENT] = apns_client
+        runtime_data.apns_client = apns_client
         _LOGGER.info("APNs client ready")
 
     hass.http.register_view(APNsConfigView(apns_config_store, _reload_apns_client))
@@ -237,15 +236,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         supports_response=SupportsResponse.OPTIONAL,
     )
 
-    async def _handle_send_notification(call: ServiceCall) -> None:
-        client = hass.data[DOMAIN].get(DATA_APNS_CLIENT)
+    async def _handle_send_notification(call: ServiceCall) -> ServiceResponse:
+        data = hass.data[DOMAIN]
+        client = data.apns_client
         if client is None:
             raise HomeAssistantError(
                 "APNs client failed to initialize. Check Home Assistant logs for details."
             )
 
-        store = hass.data[DOMAIN][DATA_NOTIFICATION_TOKEN_STORE]
-        target = call.data.get("target")
+        store = data.notification_store
+        target_raw = call.data.get("target")
+
+        # Resolve device_id → watch_id (fallback to raw value for backwards compat)
+        target: str | None = None
+        if target_raw:
+            dev_reg = dr.async_get(hass)
+            device = dev_reg.async_get(target_raw)
+            if device:
+                for ident_domain, identifier in device.identifiers:
+                    if ident_domain == DOMAIN:
+                        target = identifier.replace("watch_", "")
+                        break
+            if target is None:
+                target = target_raw
+
         message = call.data["message"]
         title = call.data.get("title")
         actions = call.data.get("actions")
@@ -262,10 +276,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # Resolve targets (need full entries for environment)
         if target:
-            entry = store.get_entry(target)
-            if entry is None:
+            token_entry = store.get_entry(target)
+            if token_entry is None:
                 raise HomeAssistantError(f"No registered push token for watch '{target}'")
-            targets = {target: entry}
+            targets = {target: token_entry}
         else:
             all_tokens = store.all_tokens
             if not all_tokens:
@@ -273,24 +287,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             targets = all_tokens
 
         # Send to each target
-        failures = []
-        for watch_id, token_entry in targets.items():
+        sent = 0
+        failure_map: dict[str, str] = {}
+        for watch_id, tok_entry in targets.items():
             success, reason, used_env = await client.send_push(
-                device_token=token_entry.device_token,
+                device_token=tok_entry.device_token,
                 title=title,
                 body=message,
                 category=category,
                 data=extra_data,
                 sound=sound,
                 push_type=push_type,
-                environment=token_entry.environment,
+                environment=tok_entry.environment,
             )
             if success:
-                if used_env != token_entry.environment:
+                sent += 1
+                if used_env != tok_entry.environment:
                     store.register(
                         watch_id,
-                        token_entry.device_token,
-                        platform=token_entry.platform,
+                        tok_entry.device_token,
+                        platform=tok_entry.platform,
                         environment=used_env,
                     )
             else:
@@ -301,43 +317,38 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         reason,
                     )
                     store.remove(watch_id)
-                failures.append((watch_id, reason))
+                failure_map[watch_id] = reason or "unknown"
 
-        if failures and len(failures) == len(targets):
-            reasons = ", ".join(f"{wid}: {r}" for wid, r in failures)
+        if failure_map and sent == 0:
+            reasons = ", ".join(f"{wid}: {r}" for wid, r in failure_map.items())
             raise HomeAssistantError(f"All push notifications failed: {reasons}")
 
-        if failures:
-            reasons = ", ".join(f"{wid}: {r}" for wid, r in failures)
+        if failure_map:
+            reasons = ", ".join(f"{wid}: {r}" for wid, r in failure_map.items())
             _LOGGER.warning("Some push notifications failed: %s", reasons)
+
+        return {"sent": sent, "failed": len(failure_map), "failures": failure_map}
 
     hass.services.async_register(
         DOMAIN,
         SERVICE_SEND_NOTIFICATION,
         _handle_send_notification,
         schema=_SEND_NOTIFICATION_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
     )
 
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: WristAssistantConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        data = hass.data.get(DOMAIN)
-        if data and DATA_COORDINATOR in data:
-            data[DATA_COORDINATOR].async_shutdown()
-            data.pop(DATA_COORDINATOR, None)
-        if data and DATA_PAIRING_COORDINATOR in data:
-            data[DATA_PAIRING_COORDINATOR].async_shutdown()
-            data.pop(DATA_PAIRING_COORDINATOR, None)
-        if data and DATA_CAMERA_STREAM_COORDINATOR in data:
-            data[DATA_CAMERA_STREAM_COORDINATOR].shutdown()
-            data.pop(DATA_CAMERA_STREAM_COORDINATOR, None)
-        data.pop(DATA_NOTIFICATION_TOKEN_STORE, None)
-        data.pop(DATA_APNS_CONFIG_STORE, None)
-        data.pop(DATA_APNS_CLIENT, None)
+        data: WristAssistantData | None = hass.data.pop(DOMAIN, None)
+        if data is not None:
+            data.coordinator.async_shutdown()
+            data.pairing_coordinator.async_shutdown()
+            data.camera_stream_coordinator.shutdown()
         persistent_notification.async_dismiss(
             hass, _PAIRING_NOTIFICATION_ID_TEMPLATE % entry.entry_id
         )

@@ -62,10 +62,12 @@ send_notification:
     target:
       name: Target
       description: >-
-        Watch ID to send to. Omit to send to all registered watches.
-      example: "my-watch-id"
+        Watch to send to. Omit to send to all registered watches.
       selector:
-        text:
+        device:
+          filter:
+            - integration: wrist_assistant
+              model: Apple Watch
     actions:
       name: Actions
       description: >-
@@ -95,7 +97,72 @@ send_notification:
         Sound to play. Use "default" for the default sound, or omit for silent.
       example: "default"
       selector:
-        text:
+        select:
+          mode: dropdown
+          custom_value: true
+          options:
+            - label: "Default sound"
+              value: "default"
+            - label: "Silent"
+              value: ""
+            - label: "Access Allowed"
+              value: "Access-Allowed.caf"
+            - label: "Arabian Harp"
+              value: "Arabian-Harp.caf"
+            - label: "ATM Keypress"
+              value: "ATM-Keypress.caf"
+            - label: "Bell"
+              value: "Bell.caf"
+            - label: "Bubble Pop"
+              value: "Bubble-Pop.caf"
+            - label: "Clear Announce"
+              value: "Clear-Announce.caf"
+            - label: "Confirmation"
+              value: "Confirmation.caf"
+            - label: "Correct Answer"
+              value: "Correct-Answer.caf"
+            - label: "Correct Answer Reward"
+              value: "Correct-Answer-Reward.caf"
+            - label: "Digital Quick"
+              value: "Digital-Quick.caf"
+            - label: "Doorbell Single"
+              value: "Doorbell-Single.caf"
+            - label: "Doorbell Tone"
+              value: "Doorbell-Tone.caf"
+            - label: "Dry Pop"
+              value: "Dry-Pop.caf"
+            - label: "Elevator Tone"
+              value: "Elevator-Tone.caf"
+            - label: "Gaming Lock"
+              value: "Gaming-Lock.caf"
+            - label: "Guitar Alert"
+              value: "Guitar-Alert.caf"
+            - label: "Happy Bells"
+              value: "Happy-Bells.caf"
+            - label: "Interface Back"
+              value: "Interface-Back.caf"
+            - label: "Interface Remove"
+              value: "Interface-Remove.caf"
+            - label: "Interface Start"
+              value: "Interface-Start.caf"
+            - label: "Light Button"
+              value: "Light-Button.caf"
+            - label: "Long Pop"
+              value: "Long-Pop.caf"
+            - label: "Magic Marimba"
+              value: "Magic-Marimba.caf"
+            - label: "Magic Ring"
+              value: "Magic-Ring.caf"
+            - label: "Option Select"
+              value: "Option-Select.caf"
+            - label: "Positive"
+              value: "Positive.caf"
+            - label: "Sci-Fi Click"
+              value: "Sci-Fi-Click.caf"
+            - label: "Tile Reveal"
+              value: "Tile-Reveal.caf"
+            - label: "Wrong Answer"
+              value: "Wrong-Answer.caf"
     push_type:
       name: Push type
       description: >-
@@ -130,8 +197,13 @@ send_notification:
         "critical" overrides mute (requires entitlement).
       selector:
         select:
+          mode: dropdown
           options:
-            - "passive"
-            - "active"
-            - "time-sensitive"
-            - "critical"
+            - label: "Passive (silent delivery)"
+              value: "passive"
+            - label: "Active (default)"
+              value: "active"
+            - label: "Time Sensitive (breaks Focus)"
+              value: "time-sensitive"
+            - label: "Critical (overrides mute)"
+              value: "critical"

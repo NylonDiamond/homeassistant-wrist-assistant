@@ -4,25 +4,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .api import MAX_EVENTS_BUFFER
-from .const import (
-    DATA_APNS_CONFIG_STORE,
-    DATA_APNS_CLIENT,
-    DATA_COORDINATOR,
-    DATA_NOTIFICATION_TOKEN_STORE,
-    DOMAIN,
-)
+from .const import WristAssistantConfigEntry
 
 
 async def async_get_config_entry_diagnostics(
-    hass: HomeAssistant, entry: ConfigEntry
+    hass: HomeAssistant, entry: WristAssistantConfigEntry
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
-    data = hass.data[DOMAIN]
-    coordinator = data[DATA_COORDINATOR]
+    data = entry.runtime_data
+    coordinator = data.coordinator
 
     sessions = {}
     for watch_id, session in coordinator._sessions.items():
@@ -34,15 +27,14 @@ async def async_get_config_entry_diagnostics(
             "last_seen": session.last_seen.isoformat(),
         }
 
-    notification_store = data.get(DATA_NOTIFICATION_TOKEN_STORE)
+    notification_store = data.notification_store
     notification_tokens = {}
-    if notification_store:
-        for watch_id, token_entry in notification_store.all_tokens.items():
-            notification_tokens[watch_id] = {
-                "token_prefix": token_entry.device_token[:8] + "…",
-                "platform": token_entry.platform,
-                "environment": token_entry.environment,
-            }
+    for watch_id, token_entry in notification_store.all_tokens.items():
+        notification_tokens[watch_id] = {
+            "token_prefix": token_entry.device_token[:8] + "…",
+            "platform": token_entry.platform,
+            "environment": token_entry.environment,
+        }
 
     return {
         "coordinator": {
@@ -59,10 +51,7 @@ async def async_get_config_entry_diagnostics(
         "notifications": {
             "token_count": len(notification_tokens),
             "tokens": notification_tokens,
-            "apns_configured": DATA_APNS_CLIENT in data,
-            "apns_config_managed": bool(
-                data.get(DATA_APNS_CONFIG_STORE)
-                and data[DATA_APNS_CONFIG_STORE].is_configured
-            ),
+            "apns_configured": data.apns_client is not None,
+            "apns_config_managed": data.apns_config_store.is_configured,
         },
     }

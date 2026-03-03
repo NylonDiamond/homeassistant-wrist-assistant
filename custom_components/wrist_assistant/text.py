@@ -11,16 +11,16 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import DeltaCoordinator
-from .const import DATA_COORDINATOR, DOMAIN
+from .const import DOMAIN, WristAssistantConfigEntry
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: WristAssistantConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Wrist Assistant text entities."""
-    coordinator: DeltaCoordinator = hass.data[DOMAIN][DATA_COORDINATOR]
+    coordinator: DeltaCoordinator = entry.runtime_data.coordinator
 
     known_watches: set[str] = set()
 

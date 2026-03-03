@@ -122,11 +122,12 @@ class NotificationRegisterView(HomeAssistantView):
 
     async def post(self, request: Request) -> Response:
         """Register a device token."""
-        from .const import DATA_NOTIFICATION_TOKEN_STORE, DOMAIN
+        from .const import DOMAIN, WristAssistantData
 
-        store = self._hass.data.get(DOMAIN, {}).get(DATA_NOTIFICATION_TOKEN_STORE)
-        if store is None:
+        domain_data: WristAssistantData | None = self._hass.data.get(DOMAIN)
+        if domain_data is None:
             return self.json_message("Integration not loaded", status_code=503)
+        store = domain_data.notification_store
 
         try:
             payload = await request.json()
