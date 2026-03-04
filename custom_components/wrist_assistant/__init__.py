@@ -83,15 +83,20 @@ _CREATE_PAIRING_SCHEMA = vol.Schema(
 )
 _ACTION_SCHEMA = vol.Schema(
     {
-        vol.Required("title"): cv.string,
+        vol.Optional("title"): cv.string,
+        vol.Optional("label"): cv.string,
         vol.Optional("domain"): cv.string,
         vol.Optional("service"): cv.string,
         vol.Optional("service_data"): dict,
         vol.Optional("entity_id"): cv.string,
+        vol.Optional("state"): cv.string,
+        vol.Optional("friendly_name"): cv.string,
+        vol.Optional("attributes"): dict,
+        vol.Optional("icon"): cv.string,
+        # Legacy keys (ignored by entity buttons, kept for schema compat)
         vol.Optional("destructive", default=False): cv.boolean,
         vol.Optional("repeatable", default=False): cv.boolean,
         vol.Optional("confirm", default=False): cv.boolean,
-        vol.Optional("icon"): cv.string,
         vol.Optional("subtitle"): cv.string,
         vol.Optional("live_subtitle", default=False): cv.boolean,
     }
@@ -236,6 +241,44 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         supports_response=SupportsResponse.OPTIONAL,
     )
 
+    def _enrich_actions(actions: list[dict]) -> list[dict]:
+        """Enrich action dicts with entity state for entity-driven watch buttons.
+
+        The watch parses actions as entity actions (requiring entity_id + state).
+        This looks up the current entity state and domain-relevant attributes
+        from Home Assistant and adds them to each action dict.
+        """
+        _DOMAIN_ATTRS: dict[str, list[str]] = {
+            "light": ["brightness"],
+            "cover": ["current_position"],
+            "fan": ["percentage"],
+            "climate": ["temperature", "min_temp", "max_temp", "temperature_unit"],
+        }
+        enriched = []
+        for action in actions:
+            a = dict(action)
+            entity_id = a.get("entity_id")
+            if entity_id:
+                state_obj = hass.states.get(entity_id)
+                if state_obj:
+                    a.setdefault("state", state_obj.state)
+                    a.setdefault(
+                        "friendly_name",
+                        state_obj.attributes.get("friendly_name", entity_id),
+                    )
+                    domain = entity_id.split(".")[0]
+                    attrs: dict = {}
+                    for key in _DOMAIN_ATTRS.get(domain, []):
+                        if key in state_obj.attributes:
+                            attrs[key] = state_obj.attributes[key]
+                    if attrs:
+                        a.setdefault("attributes", attrs)
+            # Map legacy "title" → "label" for watch parser
+            if "title" in a and "label" not in a:
+                a["label"] = a["title"]
+            enriched.append(a)
+        return enriched
+
     async def _handle_send_notification(call: ServiceCall) -> ServiceResponse:
         data = hass.data[DOMAIN]
         client = data.apns_client
@@ -266,7 +309,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         category = "WA_ACTIONS" if actions else None
         extra_data = dict(call.data.get("data") or {})
         if actions:
-            extra_data["actions"] = actions
+            extra_data["actions"] = _enrich_actions(actions)
         for key in ("tag", "group", "priority"):
             if (val := call.data.get(key)) is not None:
                 extra_data[key] = val

@@ -65,7 +65,7 @@ data:
   target: "my-watch-id"
 ```
 
-**Actionable notification (button executes a service):**
+**Actionable notification (entity-driven buttons):**
 
 ```yaml
 service: wrist_assistant.send_notification
@@ -73,10 +73,8 @@ data:
   title: "Living Room"
   message: "Lights are still on"
   actions:
-    - title: "Turn Off"
-      domain: "light"
-      service: "turn_off"
-      entity_id: "light.living_room"
+    - entity_id: "light.living_room"
+      icon: "lightbulb.fill"
 ```
 
 **Grouped notifications (same thread in notification center):**
@@ -99,10 +97,8 @@ data:
   message: "Garage door open for 10 minutes"
   tag: "garage_status"
   actions:
-    - title: "Close"
-      domain: "cover"
-      service: "close_cover"
-      entity_id: "cover.garage_door"
+    - entity_id: "cover.garage_door"
+      icon: "door.garage.open"
 ```
 
 **Time-sensitive alert (breaks through Focus/DND):**
@@ -115,11 +111,8 @@ data:
   priority: "time-sensitive"
   sound: "default"
   actions:
-    - title: "Disarm"
-      domain: "alarm_control_panel"
-      service: "alarm_disarm"
-      entity_id: "alarm_control_panel.home"
-      confirm: true
+    - entity_id: "alarm_control_panel.home"
+      icon: "shield.fill"
 ```
 
 **Silent background update:**
@@ -136,8 +129,8 @@ data:
 | `message` | Yes | Notification body text |
 | `title` | No | Notification title |
 | `target` | No | Watch ID — omit to send to all watches |
-| `actions` | No | 1-4 button actions. Each action supports `title`, `domain`, `service`, optional `entity_id`, `service_data`, `confirm`, `repeatable`, `destructive`, `icon`, and subtitle fields |
-| `data` | No | Extra payload (e.g. `entity_id`, `domain`, `service`, `actions`) |
+| `actions` | No | 1-4 entity action buttons. Each requires `entity_id` — the watch determines the service call from the entity's domain. Optional: `label` (custom button text), `icon` (SF Symbol) |
+| `data` | No | Extra payload (e.g. `auto_dismiss`) |
 | `sound` | No | `"default"` for system sound, omit for silent |
 | `push_type` | No | `"alert"` (default) or `"background"` for silent updates |
 | `tag` | No | Collapse ID — new notification with same tag replaces the previous one |

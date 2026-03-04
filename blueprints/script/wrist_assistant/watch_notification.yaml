@@ -51,17 +51,18 @@ blueprint:
         action_1_icon:
           name: Icon (SF Symbol)
           description: >
-            SF Symbol name shown in the button. Pick a preset or type
-            any SF Symbol name. To browse available icons, open the
-            Wrist Assistant iOS app and go to Settings > Icon Search.
-          default: ""
+            SF Symbol name shown on the button. Pick a preset below or
+            type any SF Symbol name (e.g. "lightswitch.on.fill"). To
+            browse all available icons, open the Wrist Assistant iOS app
+            → Settings → Icon Search. Select "No icon" to clear.
+          default: "none"
           selector:
             select:
               mode: dropdown
               custom_value: true
               options:
-                - label: "(none)"
-                  value: ""
+                - label: "No icon"
+                  value: "none"
                 - label: "Lock (lock.fill)"
                   value: "lock.fill"
                 - label: "Unlock (lock.open.fill)"
@@ -205,16 +206,17 @@ blueprint:
         action_2_icon:
           name: Icon (SF Symbol)
           description: >
-            SF Symbol name shown in the button. Browse icons in
-            the Wrist Assistant iOS app under Settings > Icon Search.
-          default: ""
+            SF Symbol name shown on the button. Pick a preset or type
+            any name. Browse all icons in the iOS app → Settings →
+            Icon Search. Select "No icon" to clear.
+          default: "none"
           selector:
             select:
               mode: dropdown
               custom_value: true
               options:
-                - label: "(none)"
-                  value: ""
+                - label: "No icon"
+                  value: "none"
                 - label: "Lock (lock.fill)"
                   value: "lock.fill"
                 - label: "Unlock (lock.open.fill)"
@@ -347,16 +349,17 @@ blueprint:
         action_3_icon:
           name: Icon (SF Symbol)
           description: >
-            SF Symbol name shown in the button. Browse icons in
-            the Wrist Assistant iOS app under Settings > Icon Search.
-          default: ""
+            SF Symbol name shown on the button. Pick a preset or type
+            any name. Browse all icons in the iOS app → Settings →
+            Icon Search. Select "No icon" to clear.
+          default: "none"
           selector:
             select:
               mode: dropdown
               custom_value: true
               options:
-                - label: "(none)"
-                  value: ""
+                - label: "No icon"
+                  value: "none"
                 - label: "Lock (lock.fill)"
                   value: "lock.fill"
                 - label: "Unlock (lock.open.fill)"
@@ -489,16 +492,17 @@ blueprint:
         action_4_icon:
           name: Icon (SF Symbol)
           description: >
-            SF Symbol name shown in the button. Browse icons in
-            the Wrist Assistant iOS app under Settings > Icon Search.
-          default: ""
+            SF Symbol name shown on the button. Pick a preset or type
+            any name. Browse all icons in the iOS app → Settings →
+            Icon Search. Select "No icon" to clear.
+          default: "none"
           selector:
             select:
               mode: dropdown
               custom_value: true
               options:
-                - label: "(none)"
-                  value: ""
+                - label: "No icon"
+                  value: "none"
                 - label: "Lock (lock.fill)"
                   value: "lock.fill"
                 - label: "Unlock (lock.open.fill)"
@@ -838,24 +842,10 @@ sequence:
                 {%- set eid = step.target.entity_id[0] -%}
               {%- endif -%}
             {%- endif -%}
-            {%- set a = namespace(items=[("title", btn_title), ("domain", domain), ("service", svc)]) -%}
+            {%- set a = namespace(items=[]) -%}
             {%- if eid %}{%- set a.items = a.items + [("entity_id", eid)] -%}{%- endif -%}
-            {%- if svc_data %}{%- set a.items = a.items + [("service_data", svc_data)] -%}{%- endif -%}
-            {%- if btn_icon %}{%- set a.items = a.items + [("icon", btn_icon)] -%}{%- endif -%}
-            {%- if btn_repeatable %}{%- set a.items = a.items + [("repeatable", true)] -%}{%- endif -%}
-            {%- if btn_confirm %}{%- set a.items = a.items + [("confirm", true)] -%}{%- endif -%}
-            {%- if show_sub -%}
-              {%- set sub_text = sub_tpl | string | trim -%}
-              {%- if not sub_text and eid -%}
-                {%- set sub_text = states(eid) | default('', true) | title -%}
-              {%- endif -%}
-              {%- if sub_text and sub_text not in ['Unavailable', 'Unknown'] -%}
-                {%- set a.items = a.items + [("subtitle", sub_text)] -%}
-              {%- endif -%}
-              {%- if live_sub and eid -%}
-                {%- set a.items = a.items + [("live_subtitle", true)] -%}
-              {%- endif -%}
-            {%- endif -%}
+            {%- if btn_title %}{%- set a.items = a.items + [("label", btn_title)] -%}{%- endif -%}
+            {%- if btn_icon and btn_icon != 'none' %}{%- set a.items = a.items + [("icon", btn_icon)] -%}{%- endif -%}
             {%- set actions.list = actions.list + [dict(a.items)] -%}
           {%- endif -%}
         {%- endif -%}
