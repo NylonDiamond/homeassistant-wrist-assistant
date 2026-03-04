@@ -5,13 +5,18 @@ blueprint:
     min_version: "2024.6.0"
   source_url: "https://github.com/NylonDiamond/homeassistant-wrist-assistant/blob/main/blueprints/script/wrist_assistant/watch_notification.yaml"
   description: >
-    Send actionable push notifications to your Apple Watch.
+    Send push notifications to your Apple Watch with smart entity
+    buttons. Pick up to 4 entities — each becomes a button that
+    knows how to control itself:
 
-    Define up to 4 action buttons using Home Assistant's native service
-    picker. Choose any service, target entity, and service data.
+    - Lights, switches, fans, covers: tap to toggle
 
-    Leave action slots empty to skip them. A notification with no actions
-    shows as info-only (title + message, no buttons).
+    - Locks, alarms: hold to confirm
+
+    - Lights, covers, fans, climate: double-tap for presets
+
+    Leave button slots empty to skip them. A notification with no
+    buttons shows as info-only (title + message).
   domain: script
   input:
     title:
@@ -26,29 +31,28 @@ blueprint:
       selector:
         text:
           multiline: true
-    section_action_1:
-      name: Action 1
+    section_button_1:
+      name: Button 1
       icon: mdi:gesture-tap-button
       collapsed: false
       input:
-        action_1_title:
-          name: Button Label
+        button_1_entity:
+          name: Entity
           description: >
-            Text shown on the button. Leave blank to auto-generate
-            from the service name (e.g. "Turn On"). Leave empty with
-            an icon set to show icon-only.
+            Pick the entity this button controls. The watch shows its
+            name and current state automatically.
+          default: ""
+          selector:
+            entity:
+        button_1_label:
+          name: Label
+          description: >
+            Custom text for the button. Leave blank to use the
+            entity's name.
           default: ""
           selector:
             text:
-        action_1:
-          name: Action
-          description: >
-            Service to call when the button is tapped. Use the picker
-            to choose any service, target entity, and service data.
-          default: []
-          selector:
-            action:
-        action_1_icon:
+        button_1_icon:
           name: Icon (SF Symbol)
           description: >
             SF Symbol name shown on the button. Pick a preset below or
@@ -143,67 +147,29 @@ blueprint:
                   value: "blinds.horizontal.closed"
                 - label: "Window (window.vertical.open)"
                   value: "window.vertical.open"
-        action_1_repeatable:
-          name: Repeatable
-          description: >
-            Button resets after success so it can be tapped again.
-            Useful for toggles (e.g. light on/off).
-          default: false
-          selector:
-            boolean:
-        action_1_confirm:
-          name: Require Confirmation
-          description: >
-            Requires a second tap to execute. First tap shows
-            "Confirm?" — helps prevent accidental taps on
-            sensitive actions like unlock or disarm.
-          default: false
-          selector:
-            boolean:
-        action_1_show_subtitle:
-          name: Show Subtitle
-          description: >
-            Show entity state below the buttons (e.g. "Locked",
-            "Open"). Auto-detected from this action's target entity.
-            First action with subtitle enabled is used.
-          default: true
-          selector:
-            boolean:
-        action_1_subtitle_template:
-          name: Custom Subtitle
-          description: >
-            Override auto-detected state with custom text or Jinja.
-            Example: {{ states('sensor.temperature') }}°F
-          default: ""
-          selector:
-            template:
-        action_1_live_subtitle:
-          name: Live Subtitle
-          description: >
-            Re-fetch entity state after button tap to update the subtitle
-            in real time. Adds a small network call per tap.
-          default: false
-          selector:
-            boolean:
 
-    section_action_2:
-      name: Action 2
+    section_button_2:
+      name: Button 2
       icon: mdi:gesture-tap-button
       collapsed: true
       input:
-        action_2_title:
-          name: Button Label
-          description: Text shown on the button.
+        button_2_entity:
+          name: Entity
+          description: >
+            Pick the entity this button controls. The watch shows its
+            name and current state automatically.
+          default: ""
+          selector:
+            entity:
+        button_2_label:
+          name: Label
+          description: >
+            Custom text for the button. Leave blank to use the
+            entity's name.
           default: ""
           selector:
             text:
-        action_2:
-          name: Action
-          description: Service to call when the button is tapped.
-          default: []
-          selector:
-            action:
-        action_2_icon:
+        button_2_icon:
           name: Icon (SF Symbol)
           description: >
             SF Symbol name shown on the button. Pick a preset or type
@@ -297,56 +263,29 @@ blueprint:
                   value: "blinds.horizontal.closed"
                 - label: "Window (window.vertical.open)"
                   value: "window.vertical.open"
-        action_2_repeatable:
-          name: Repeatable
-          description: Button resets after success for repeated taps.
-          default: false
-          selector:
-            boolean:
-        action_2_confirm:
-          name: Require Confirmation
-          description: Requires a second tap to execute.
-          default: false
-          selector:
-            boolean:
-        action_2_show_subtitle:
-          name: Show Subtitle
-          description: Show entity state below the buttons.
-          default: true
-          selector:
-            boolean:
-        action_2_subtitle_template:
-          name: Custom Subtitle
-          description: Override auto-detected state with custom text or Jinja.
-          default: ""
-          selector:
-            template:
-        action_2_live_subtitle:
-          name: Live Subtitle
-          description: >
-            Re-fetch entity state after button tap to update the subtitle.
-          default: false
-          selector:
-            boolean:
 
-    section_action_3:
-      name: Action 3
+    section_button_3:
+      name: Button 3
       icon: mdi:gesture-tap-button
       collapsed: true
       input:
-        action_3_title:
-          name: Button Label
-          description: Text shown on the button.
+        button_3_entity:
+          name: Entity
+          description: >
+            Pick the entity this button controls. The watch shows its
+            name and current state automatically.
+          default: ""
+          selector:
+            entity:
+        button_3_label:
+          name: Label
+          description: >
+            Custom text for the button. Leave blank to use the
+            entity's name.
           default: ""
           selector:
             text:
-        action_3:
-          name: Action
-          description: Service to call when the button is tapped.
-          default: []
-          selector:
-            action:
-        action_3_icon:
+        button_3_icon:
           name: Icon (SF Symbol)
           description: >
             SF Symbol name shown on the button. Pick a preset or type
@@ -440,56 +379,29 @@ blueprint:
                   value: "blinds.horizontal.closed"
                 - label: "Window (window.vertical.open)"
                   value: "window.vertical.open"
-        action_3_repeatable:
-          name: Repeatable
-          description: Button resets after success for repeated taps.
-          default: false
-          selector:
-            boolean:
-        action_3_confirm:
-          name: Require Confirmation
-          description: Requires a second tap to execute.
-          default: false
-          selector:
-            boolean:
-        action_3_show_subtitle:
-          name: Show Subtitle
-          description: Show entity state below the buttons.
-          default: true
-          selector:
-            boolean:
-        action_3_subtitle_template:
-          name: Custom Subtitle
-          description: Override auto-detected state with custom text or Jinja.
-          default: ""
-          selector:
-            template:
-        action_3_live_subtitle:
-          name: Live Subtitle
-          description: >
-            Re-fetch entity state after button tap to update the subtitle.
-          default: false
-          selector:
-            boolean:
 
-    section_action_4:
-      name: Action 4
+    section_button_4:
+      name: Button 4
       icon: mdi:gesture-tap-button
       collapsed: true
       input:
-        action_4_title:
-          name: Button Label
-          description: Text shown on the button.
+        button_4_entity:
+          name: Entity
+          description: >
+            Pick the entity this button controls. The watch shows its
+            name and current state automatically.
+          default: ""
+          selector:
+            entity:
+        button_4_label:
+          name: Label
+          description: >
+            Custom text for the button. Leave blank to use the
+            entity's name.
           default: ""
           selector:
             text:
-        action_4:
-          name: Action
-          description: Service to call when the button is tapped.
-          default: []
-          selector:
-            action:
-        action_4_icon:
+        button_4_icon:
           name: Icon (SF Symbol)
           description: >
             SF Symbol name shown on the button. Pick a preset or type
@@ -583,37 +495,6 @@ blueprint:
                   value: "blinds.horizontal.closed"
                 - label: "Window (window.vertical.open)"
                   value: "window.vertical.open"
-        action_4_repeatable:
-          name: Repeatable
-          description: Button resets after success for repeated taps.
-          default: false
-          selector:
-            boolean:
-        action_4_confirm:
-          name: Require Confirmation
-          description: Requires a second tap to execute.
-          default: false
-          selector:
-            boolean:
-        action_4_show_subtitle:
-          name: Show Subtitle
-          description: Show entity state below the buttons.
-          default: true
-          selector:
-            boolean:
-        action_4_subtitle_template:
-          name: Custom Subtitle
-          description: Override auto-detected state with custom text or Jinja.
-          default: ""
-          selector:
-            template:
-        action_4_live_subtitle:
-          name: Live Subtitle
-          description: >
-            Re-fetch entity state after button tap to update the subtitle.
-          default: false
-          selector:
-            boolean:
 
     section_behavior:
       name: Button Behavior
@@ -766,38 +647,18 @@ sequence:
   - variables:
       bp_message: !input message
       bp_title: !input title
-      bp_a1_title: !input action_1_title
-      bp_a1: !input action_1
-      bp_a1_icon: !input action_1_icon
-      bp_a1_repeatable: !input action_1_repeatable
-      bp_a1_confirm: !input action_1_confirm
-      bp_a1_show_sub: !input action_1_show_subtitle
-      bp_a1_sub_tpl: !input action_1_subtitle_template
-      bp_a1_live_sub: !input action_1_live_subtitle
-      bp_a2_title: !input action_2_title
-      bp_a2: !input action_2
-      bp_a2_icon: !input action_2_icon
-      bp_a2_repeatable: !input action_2_repeatable
-      bp_a2_confirm: !input action_2_confirm
-      bp_a2_show_sub: !input action_2_show_subtitle
-      bp_a2_sub_tpl: !input action_2_subtitle_template
-      bp_a2_live_sub: !input action_2_live_subtitle
-      bp_a3_title: !input action_3_title
-      bp_a3: !input action_3
-      bp_a3_icon: !input action_3_icon
-      bp_a3_repeatable: !input action_3_repeatable
-      bp_a3_confirm: !input action_3_confirm
-      bp_a3_show_sub: !input action_3_show_subtitle
-      bp_a3_sub_tpl: !input action_3_subtitle_template
-      bp_a3_live_sub: !input action_3_live_subtitle
-      bp_a4_title: !input action_4_title
-      bp_a4: !input action_4
-      bp_a4_icon: !input action_4_icon
-      bp_a4_repeatable: !input action_4_repeatable
-      bp_a4_confirm: !input action_4_confirm
-      bp_a4_show_sub: !input action_4_show_subtitle
-      bp_a4_sub_tpl: !input action_4_subtitle_template
-      bp_a4_live_sub: !input action_4_live_subtitle
+      bp_b1_entity: !input button_1_entity
+      bp_b1_label: !input button_1_label
+      bp_b1_icon: !input button_1_icon
+      bp_b2_entity: !input button_2_entity
+      bp_b2_label: !input button_2_label
+      bp_b2_icon: !input button_2_icon
+      bp_b3_entity: !input button_3_entity
+      bp_b3_label: !input button_3_label
+      bp_b3_icon: !input button_3_icon
+      bp_b4_entity: !input button_4_entity
+      bp_b4_label: !input button_4_label
+      bp_b4_icon: !input button_4_icon
       bp_auto_dismiss: !input auto_dismiss
       bp_priority: !input priority
       bp_sound: !input sound
@@ -819,35 +680,17 @@ sequence:
       {%- if bp_auto_dismiss %}{%- set extra.items = extra.items + [("auto_dismiss", true)] -%}{%- endif -%}
       {%- set actions = namespace(list=[]) -%}
       {%- set slots = [
-        (bp_a1_title, bp_a1, bp_a1_icon, bp_a1_repeatable, bp_a1_confirm, bp_a1_show_sub, bp_a1_sub_tpl, bp_a1_live_sub),
-        (bp_a2_title, bp_a2, bp_a2_icon, bp_a2_repeatable, bp_a2_confirm, bp_a2_show_sub, bp_a2_sub_tpl, bp_a2_live_sub),
-        (bp_a3_title, bp_a3, bp_a3_icon, bp_a3_repeatable, bp_a3_confirm, bp_a3_show_sub, bp_a3_sub_tpl, bp_a3_live_sub),
-        (bp_a4_title, bp_a4, bp_a4_icon, bp_a4_repeatable, bp_a4_confirm, bp_a4_show_sub, bp_a4_sub_tpl, bp_a4_live_sub),
+        (bp_b1_entity, bp_b1_label, bp_b1_icon),
+        (bp_b2_entity, bp_b2_label, bp_b2_icon),
+        (bp_b3_entity, bp_b3_label, bp_b3_icon),
+        (bp_b4_entity, bp_b4_label, bp_b4_icon),
       ] -%}
-      {%- for btn_label, steps, btn_icon, btn_repeatable, btn_confirm, show_sub, sub_tpl, live_sub in slots -%}
-        {%- if steps is sequence and steps | length > 0 -%}
-          {%- set step = steps[0] -%}
-          {%- set full_svc = step.action | default(step.service | default('')) -%}
-          {%- if full_svc -%}
-            {%- set domain = full_svc.split('.')[0] -%}
-            {%- set svc = full_svc.split('.')[1] | default(full_svc) -%}
-            {%- set auto_title = svc | replace('_', ' ') | title -%}
-            {%- set btn_title = btn_label if btn_label else auto_title -%}
-            {%- set svc_data = step.data | default({}) -%}
-            {%- set eid = '' -%}
-            {%- if step.target is defined and step.target.entity_id is defined -%}
-              {%- if step.target.entity_id is string -%}
-                {%- set eid = step.target.entity_id -%}
-              {%- elif step.target.entity_id is sequence and step.target.entity_id | length > 0 -%}
-                {%- set eid = step.target.entity_id[0] -%}
-              {%- endif -%}
-            {%- endif -%}
-            {%- set a = namespace(items=[]) -%}
-            {%- if eid %}{%- set a.items = a.items + [("entity_id", eid)] -%}{%- endif -%}
-            {%- if btn_title %}{%- set a.items = a.items + [("label", btn_title)] -%}{%- endif -%}
-            {%- if btn_icon and btn_icon != 'none' %}{%- set a.items = a.items + [("icon", btn_icon)] -%}{%- endif -%}
-            {%- set actions.list = actions.list + [dict(a.items)] -%}
-          {%- endif -%}
+      {%- for eid, btn_label, btn_icon in slots -%}
+        {%- if eid -%}
+          {%- set a = namespace(items=[("entity_id", eid)]) -%}
+          {%- if btn_label %}{%- set a.items = a.items + [("label", btn_label)] -%}{%- endif -%}
+          {%- if btn_icon and btn_icon != 'none' %}{%- set a.items = a.items + [("icon", btn_icon)] -%}{%- endif -%}
+          {%- set actions.list = actions.list + [dict(a.items)] -%}
         {%- endif -%}
       {%- endfor -%}
       {%- if actions.list %}{%- set d.items = d.items + [("actions", actions.list)] -%}{%- endif -%}
