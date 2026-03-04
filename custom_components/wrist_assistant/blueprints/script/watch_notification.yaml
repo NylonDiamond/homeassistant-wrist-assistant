@@ -52,8 +52,8 @@ blueprint:
           name: Icon (SF Symbol)
           description: >
             SF Symbol name shown in the button. Pick a preset or type
-            any SF Symbol name. Browse all symbols at
-            developer.apple.com/sf-symbols/
+            any SF Symbol name. To browse available icons, open the
+            Wrist Assistant iOS app and go to Settings > Icon Search.
           default: ""
           selector:
             select:
@@ -204,7 +204,9 @@ blueprint:
             action:
         action_2_icon:
           name: Icon (SF Symbol)
-          description: SF Symbol name shown in the button.
+          description: >
+            SF Symbol name shown in the button. Browse icons in
+            the Wrist Assistant iOS app under Settings > Icon Search.
           default: ""
           selector:
             select:
@@ -344,7 +346,9 @@ blueprint:
             action:
         action_3_icon:
           name: Icon (SF Symbol)
-          description: SF Symbol name shown in the button.
+          description: >
+            SF Symbol name shown in the button. Browse icons in
+            the Wrist Assistant iOS app under Settings > Icon Search.
           default: ""
           selector:
             select:
@@ -484,7 +488,9 @@ blueprint:
             action:
         action_4_icon:
           name: Icon (SF Symbol)
-          description: SF Symbol name shown in the button.
+          description: >
+            SF Symbol name shown in the button. Browse icons in
+            the Wrist Assistant iOS app under Settings > Icon Search.
           default: ""
           selector:
             select:
