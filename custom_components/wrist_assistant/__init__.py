@@ -46,6 +46,7 @@ from .const import (
     WristAssistantConfigEntry,
     WristAssistantData,
 )
+from .audio_upload import AudioUploadView
 from .notifications import (
     NotificationRegisterView,
     NotificationTokenStore,
@@ -158,6 +159,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     hass.http.register_view(CameraBatchView(hass))
     hass.http.register_view(CameraDevicesView(hass))
     hass.http.register_view(NotificationRegisterView(hass))
+    hass.http.register_view(AudioUploadView(hass))
 
     async def _reload_apns_client() -> None:
         apns_client = await _create_apns_client(hass, apns_config_store)
