@@ -24,12 +24,17 @@ blueprint:
     and make sure notifications are turned on. If you denied the
     permission prompt on first launch, notifications will not arrive
     until you enable them here.
+
+
+    **Tip:** Customize how notifications look and behave in the
+    Wrist Assistant iOS app under Settings → Notification Style.
   domain: script
   input:
     target:
       name: Target Watch
       description: >
-        Watch to send to. Leave empty to send to all registered watches.
+        *(Optional)* Watch to send to. Leave empty to send to
+        **all** registered watches.
       default: ""
       selector:
         device:
@@ -38,7 +43,7 @@ blueprint:
               model: Apple Watch
     title:
       name: Title
-      description: Optional title displayed above the message.
+      description: "*(Optional)* Displayed above the message."
       default: ""
       selector:
         text:
@@ -56,15 +61,15 @@ blueprint:
         button_1_entity:
           name: Entity
           description: >
-            Pick the entity this button controls. The watch shows its
-            name and current state automatically.
+            *(Optional)* Entity this button controls. The watch shows
+            its name and current state automatically.
           default: ""
           selector:
             entity:
         button_1_label:
           name: Label
           description: >
-            Custom text for the button. Leave blank to use the
+            *(Optional)* Custom button text. Defaults to the
             entity's name.
           default: ""
           selector:
@@ -78,15 +83,15 @@ blueprint:
         button_2_entity:
           name: Entity
           description: >
-            Pick the entity this button controls. The watch shows its
-            name and current state automatically.
+            *(Optional)* Entity this button controls. The watch shows
+            its name and current state automatically.
           default: ""
           selector:
             entity:
         button_2_label:
           name: Label
           description: >
-            Custom text for the button. Leave blank to use the
+            *(Optional)* Custom button text. Defaults to the
             entity's name.
           default: ""
           selector:
@@ -100,15 +105,15 @@ blueprint:
         button_3_entity:
           name: Entity
           description: >
-            Pick the entity this button controls. The watch shows its
-            name and current state automatically.
+            *(Optional)* Entity this button controls. The watch shows
+            its name and current state automatically.
           default: ""
           selector:
             entity:
         button_3_label:
           name: Label
           description: >
-            Custom text for the button. Leave blank to use the
+            *(Optional)* Custom button text. Defaults to the
             entity's name.
           default: ""
           selector:
@@ -122,15 +127,15 @@ blueprint:
         button_4_entity:
           name: Entity
           description: >
-            Pick the entity this button controls. The watch shows its
-            name and current state automatically.
+            *(Optional)* Entity this button controls. The watch shows
+            its name and current state automatically.
           default: ""
           selector:
             entity:
         button_4_label:
           name: Label
           description: >
-            Custom text for the button. Leave blank to use the
+            *(Optional)* Custom button text. Defaults to the
             entity's name.
           default: ""
           selector:
@@ -144,9 +149,8 @@ blueprint:
         auto_dismiss:
           name: Auto-Dismiss
           description: >
-            Dismiss the notification automatically after any button tap
-            succeeds. When off (default), the notification stays visible
-            with a checkmark on the tapped button.
+            Automatically dismiss the notification after a successful
+            button tap. Off by default — the notification stays visible.
           default: false
           selector:
             boolean:
@@ -172,10 +176,9 @@ blueprint:
         sound:
           name: Sound
           description: >
-            Pick a preset or type a custom sound file name. Preview
-            and browse all available sounds in the Wrist Assistant
-            iOS app under Settings → Notification Style →
-            Notification Sound.
+            Pick a preset or type a custom file name. Browse and
+            preview all sounds in the iOS app under
+            Settings → Notification Style → Notification Sound.
           default: "default"
           selector:
             select:
@@ -455,20 +458,19 @@ blueprint:
         tag:
           name: Tag
           description: >
-            Collapse key — a new notification with the same tag replaces the
-            previous one instead of stacking. For example, set tag to
-            "front_door" on a door-open alert so repeated opens show only
-            the latest notification rather than piling up.
+            *(Optional)* Collapse key — a new notification with the same
+            tag **replaces** the previous one instead of stacking. E.g.
+            set to `front_door` on a door-open alert so repeated opens
+            show only the latest notification.
           default: ""
           selector:
             text:
         group:
           name: Group
           description: >
-            Groups related notifications together in the watch notification
-            center. For example, two scripts both using group "motion" will
-            bundle into a single expandable stack instead of appearing as
-            separate entries.
+            *(Optional)* Bundle related notifications in the watch
+            notification center. E.g. two scripts using group `motion`
+            stack into a single expandable group.
           default: ""
           selector:
             text:
