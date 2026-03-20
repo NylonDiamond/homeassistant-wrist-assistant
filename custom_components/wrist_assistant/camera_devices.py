@@ -154,14 +154,19 @@ def build_camera_device_groups(hass: HomeAssistant) -> list[dict[str, Any]]:
         ):
             camera_entries.append(entry)
 
-    # Group by device_id
-    device_groups: dict[str | None, list[er.RegistryEntry]] = {}
+    # Group by device_id when available; otherwise keep orphaned camera entities
+    # isolated so unrelated cameras are not merged into one pseudo-device.
+    device_groups: dict[str, list[er.RegistryEntry]] = {}
+    group_device_ids: dict[str, str | None] = {}
     for entry in camera_entries:
-        device_groups.setdefault(entry.device_id, []).append(entry)
+        group_key = entry.device_id or f"entity::{entry.entity_id}"
+        device_groups.setdefault(group_key, []).append(entry)
+        group_device_ids[group_key] = entry.device_id
 
     devices: list[dict[str, Any]] = []
 
-    for device_id, entries in device_groups.items():
+    for group_key, entries in device_groups.items():
+        device_id = group_device_ids[group_key]
         # Get device info
         device_name = None
         manufacturer = None

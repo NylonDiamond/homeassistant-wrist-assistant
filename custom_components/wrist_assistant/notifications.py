@@ -16,6 +16,13 @@ from .const import NOTIFICATION_TOKEN_STORAGE_KEY, NOTIFICATION_TOKEN_STORAGE_VE
 _LOGGER = logging.getLogger(__name__)
 
 
+def _normalize_environment(environment: object) -> str:
+    """Normalize APNs environment values stored by the integration."""
+    if environment == "development":
+        return "development"
+    return "production"
+
+
 @dataclass(slots=True)
 class TokenEntry:
     """Stored device token for a watch."""
@@ -47,7 +54,7 @@ class NotificationTokenStore:
                 self._tokens[watch_id] = TokenEntry(
                     device_token=entry["device_token"],
                     platform=entry.get("platform", "watchos"),
-                    environment=entry.get("environment", "production"),
+                    environment=_normalize_environment(entry.get("environment")),
                 )
         _LOGGER.debug("Loaded %d notification tokens from storage", len(self._tokens))
 
@@ -76,17 +83,20 @@ class NotificationTokenStore:
         if (
             existing
             and existing.device_token == device_token
-            and existing.environment == environment
+            and existing.environment == _normalize_environment(environment)
         ):
             return
+        normalized_environment = _normalize_environment(environment)
         self._tokens[watch_id] = TokenEntry(
-            device_token=device_token, platform=platform, environment=environment
+            device_token=device_token,
+            platform=platform,
+            environment=normalized_environment,
         )
         _LOGGER.info(
             "Registered push token for watch_id=%s (platform=%s, environment=%s)",
             watch_id,
             platform,
-            environment,
+            normalized_environment,
         )
         self._store.async_delay_save(self._serialize, 5)
 

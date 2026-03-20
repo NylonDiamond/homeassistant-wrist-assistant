@@ -208,6 +208,86 @@ def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
 
+def _parse_bounded_float(
+    value: object,
+    *,
+    field: str,
+    default: float,
+    lo: float,
+    hi: float,
+) -> float:
+    """Parse a numeric field and clamp it into range."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        raise ValueError(f"{field} must be numeric")
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as err:
+        raise ValueError(f"{field} must be numeric") from err
+    return _clamp(parsed, lo, hi)
+
+
+def _parse_optional_bounded_float(
+    value: object,
+    *,
+    field: str,
+    lo: float,
+    hi: float,
+) -> float | None:
+    """Parse an optional numeric field and clamp it into range."""
+    if value is None:
+        return None
+    return _parse_bounded_float(value, field=field, default=lo, lo=lo, hi=hi)
+
+
+def _parse_bounded_int(
+    value: object,
+    *,
+    field: str,
+    default: int,
+    lo: int,
+    hi: int,
+) -> int:
+    """Parse an integer-ish field and clamp it into range."""
+    return int(
+        _parse_bounded_float(value, field=field, default=float(default), lo=lo, hi=hi)
+    )
+
+
+def _parse_optional_bounded_int(
+    value: object,
+    *,
+    field: str,
+    lo: int,
+    hi: int,
+) -> int | None:
+    """Parse an optional integer-ish field and clamp it into range."""
+    if value is None:
+        return None
+    return int(_parse_bounded_float(value, field=field, default=float(lo), lo=lo, hi=hi))
+
+
+def _parse_viewport(
+    source: object,
+    *,
+    default_x: float = 0.0,
+    default_y: float = 0.0,
+    default_w: float = 1.0,
+    default_h: float = 1.0,
+) -> ViewportState:
+    """Parse viewport coordinates from a mapping-like object."""
+    get_value = getattr(source, "get", None)
+    if not callable(get_value):
+        raise ValueError("Viewport source must be a mapping")
+    return ViewportState(
+        x=_parse_bounded_float(get_value("x"), field="x", default=default_x, lo=0.0, hi=1.0),
+        y=_parse_bounded_float(get_value("y"), field="y", default=default_y, lo=0.0, hi=1.0),
+        w=_parse_bounded_float(get_value("w"), field="w", default=default_w, lo=0.01, hi=1.0),
+        h=_parse_bounded_float(get_value("h"), field="h", default=default_h, lo=0.01, hi=1.0),
+    )
+
+
 class CameraStreamView(HomeAssistantView):
     """GET endpoint that serves an MJPEG stream with server-side processing."""
 
@@ -234,18 +314,39 @@ class CameraStreamView(HomeAssistantView):
 
         # Parse query params
         query = request.query
-        width = int(_clamp(float(query.get("width", DEFAULT_WIDTH)), MIN_WIDTH, MAX_WIDTH))
-        quality = int(_clamp(float(query.get("quality", DEFAULT_QUALITY)), MIN_QUALITY, MAX_QUALITY))
-        fps = _clamp(float(query.get("fps", DEFAULT_FPS)), MIN_FPS, MAX_FPS)
         watch_id = query.get("watch_id", "unknown")
+        try:
+            width = _parse_bounded_int(
+                query.get("width"),
+                field="width",
+                default=DEFAULT_WIDTH,
+                lo=MIN_WIDTH,
+                hi=MAX_WIDTH,
+            )
+            quality = _parse_bounded_int(
+                query.get("quality"),
+                field="quality",
+                default=DEFAULT_QUALITY,
+                lo=MIN_QUALITY,
+                hi=MAX_QUALITY,
+            )
+            fps = _parse_bounded_float(
+                query.get("fps"),
+                field="fps",
+                default=DEFAULT_FPS,
+                lo=MIN_FPS,
+                hi=MAX_FPS,
+            )
+        except ValueError as err:
+            return Response(text=str(err), status=400)
 
         # Parse optional initial viewport
         viewport = ViewportState()
         if "x" in query:
-            viewport.x = _clamp(float(query.get("x", 0)), 0, 1)
-            viewport.y = _clamp(float(query.get("y", 0)), 0, 1)
-            viewport.w = _clamp(float(query.get("w", 1)), 0.01, 1)
-            viewport.h = _clamp(float(query.get("h", 1)), 0.01, 1)
+            try:
+                viewport = _parse_viewport(query)
+            except ValueError as err:
+                return Response(text=str(err), status=400)
 
         session = coordinator.get_or_create_session(
             watch_id, entity_id, width, quality, fps, viewport
@@ -370,17 +471,33 @@ class CameraViewportView(HomeAssistantView):
         # Optional viewport
         viewport = None
         if any(k in payload for k in ("x", "y", "w", "h")):
-            viewport = ViewportState(
-                x=_clamp(float(payload.get("x", 0)), 0, 1),
-                y=_clamp(float(payload.get("y", 0)), 0, 1),
-                w=_clamp(float(payload.get("w", 1)), 0.01, 1),
-                h=_clamp(float(payload.get("h", 1)), 0.01, 1),
-            )
+            try:
+                viewport = _parse_viewport(payload)
+            except ValueError as err:
+                return self.json_message(str(err), status_code=400)
 
         # Optional width
-        width = None
-        if "width" in payload:
-            width = int(float(payload["width"]))
+        try:
+            width = _parse_optional_bounded_int(
+                payload.get("width"),
+                field="width",
+                lo=MIN_WIDTH,
+                hi=MAX_WIDTH,
+            )
+            quality = _parse_optional_bounded_int(
+                payload.get("quality"),
+                field="quality",
+                lo=MIN_QUALITY,
+                hi=MAX_QUALITY,
+            )
+            fps = _parse_optional_bounded_float(
+                payload.get("fps"),
+                field="fps",
+                lo=MIN_FPS,
+                hi=MAX_FPS,
+            )
+        except ValueError as err:
+            return self.json_message(str(err), status_code=400)
 
         # Optional quality_level — resolves to source_entity_id via device groups
         source_entity_id = _UNSET
@@ -415,16 +532,6 @@ class CameraViewportView(HomeAssistantView):
                 return self.json_message(
                     "source_entity_id must start with camera.", status_code=400
                 )
-
-        # Optional quality
-        quality = None
-        if "quality" in payload:
-            quality = int(float(payload["quality"]))
-
-        # Optional fps
-        fps = None
-        if "fps" in payload:
-            fps = float(payload["fps"])
 
         if coordinator.update_session(
             watch_id,
@@ -479,8 +586,23 @@ class CameraBatchView(HomeAssistantView):
             entity_id = spec.get("entity_id")
             if not isinstance(entity_id, str) or not entity_id.startswith("camera."):
                 return None
-            width = int(_clamp(float(spec.get("width", DEFAULT_WIDTH)), MIN_WIDTH, MAX_WIDTH))
-            quality = int(_clamp(float(spec.get("quality", DEFAULT_QUALITY)), MIN_QUALITY, MAX_QUALITY))
+            try:
+                width = _parse_bounded_int(
+                    spec.get("width"),
+                    field="width",
+                    default=DEFAULT_WIDTH,
+                    lo=MIN_WIDTH,
+                    hi=MAX_WIDTH,
+                )
+                quality = _parse_bounded_int(
+                    spec.get("quality"),
+                    field="quality",
+                    default=DEFAULT_QUALITY,
+                    lo=MIN_QUALITY,
+                    hi=MAX_QUALITY,
+                )
+            except ValueError:
+                return {"entity_id": entity_id, "data": None, "size": 0}
 
             try:
                 image: CameraImage = await async_get_image(self._hass, entity_id, timeout=5)

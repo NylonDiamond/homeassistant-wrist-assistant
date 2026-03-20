@@ -335,10 +335,13 @@ class DeltaCoordinator:
         # When since is nil, the client is requesting a full state snapshot.
         # Fetch current state directly from HA's state machine (in-memory, instant).
         if since is None or since == "":
+            # Capture the cursor before building the snapshot so in-flight
+            # state changes are re-delivered as deltas instead of being skipped.
+            snapshot_cursor = self._cursor
             snapshot_events = self._snapshot_current_state(session.entities, slim=slim)
             return 200, self._response_payload(
                 events=snapshot_events,
-                next_cursor=str(self._cursor),
+                next_cursor=str(snapshot_cursor),
                 need_entities=False,
                 resync_required=False,
                 battery_threshold=battery_threshold,
@@ -960,7 +963,12 @@ class PairingCoordinator:
             "local_url": session.local_url,
             "remote_url": session.remote_url,
         }
+        was_active = self._active_code == code
         self._sessions.pop(code, None)
+        if was_active:
+            self._active_code = None
+            self._active_payload = None
+            self._fire_active_callbacks()
         return token_payload
 
     @property
