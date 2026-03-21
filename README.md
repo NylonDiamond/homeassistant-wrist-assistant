@@ -48,7 +48,10 @@ Wrist Assistant connects your Apple Watch to Home Assistant with fast setup, rea
 
 ### `wrist_assistant.send_notification`
 
-A notification blueprint is included under `Scripts`. It lets you choose a watch, title, message, up to 4 entity buttons, custom labels, sound, priority, and auto-dismiss behavior.
+The easiest option is the bundled script blueprint called `Watch Notification`.
+In Home Assistant, go to `Settings` -> `Automations & Scenes` -> `Blueprints` -> `Scripts`, then create a script from `Watch Notification`.
+
+The blueprint is easier to set up in the UI and lets you choose a watch, title, message, up to 4 entity buttons, custom labels, sound, priority, and auto-dismiss behavior.
 
 If you want to call the service directly, use `wrist_assistant.send_notification` to send a message to one or all paired watches using Apple notifications.
 
