@@ -15,19 +15,14 @@ from homeassistant.core import (
     ServiceCall,
     ServiceResponse,
     SupportsResponse,
-    callback,
 )
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers import network
 
 from .api import (
-    PAIRING_CLIENT_ID,
     DeltaCoordinator,
-    PairingCoordinator,
-    PairingRedeemView,
     WatchSummaryView,
     WatchUpdatesView,
 )
@@ -54,31 +49,25 @@ from .notifications import (
 
 _LOGGER = logging.getLogger(__name__)
 SERVICE_FORCE_RESYNC = "force_resync"
-SERVICE_CREATE_PAIRING_CODE = "create_pairing_code"
 SERVICE_SEND_NOTIFICATION = "send_notification"
 
 # Unique ID suffixes from removed entity classes (cleanup on upgrade)
-_ORPHANED_SUFFIXES = ("_entity_list", "_refresh_pairing_qr", "_pairing_qr", "_connection_qr")
+_ORPHANED_SUFFIXES = (
+    "_entity_list",
+    "_refresh_pairing_qr",
+    "_pairing_qr",
+    "_connection_qr",
+    "_pairing_expires_at",
+)
 # Entities to auto-disable on upgrade (disabled-by-default only affects new installs)
 _DISABLE_ON_UPGRADE_SUFFIXES = (
     "_events_processed",
     "_buffer_usage",
     "_events_per_minute",
-    "_pairing_expires_at",
     "_poll_interval",
     "_connected_since",
 )
 _PAIRING_NOTIFICATION_ID_TEMPLATE = "wrist_assistant_pairing_%s"
-_CREATE_PAIRING_SCHEMA = vol.Schema(
-    {
-        vol.Optional("local_url"): cv.string,
-        vol.Optional("remote_url"): cv.string,
-        vol.Optional("lifespan_days", default=3650): vol.All(
-            vol.Coerce(int),
-            vol.Range(min=1, max=36500),
-        ),
-    }
-)
 _ACTION_SCHEMA = vol.Schema(
     {
         vol.Optional("title"): cv.string,
@@ -125,7 +114,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     _disable_noisy_entities(hass, entry)
 
     coordinator = DeltaCoordinator(hass)
-    pairing_coordinator = PairingCoordinator(hass)
     camera_stream_coordinator = CameraStreamCoordinator()
     notification_store = NotificationTokenStore(hass)
     apns_config_store = APNsConfigStore(hass)
@@ -141,7 +129,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
 
     runtime_data = WristAssistantData(
         coordinator=coordinator,
-        pairing_coordinator=pairing_coordinator,
         camera_stream_coordinator=camera_stream_coordinator,
         notification_store=notification_store,
         apns_config_store=apns_config_store,
@@ -150,7 +137,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     hass.data[DOMAIN] = runtime_data
     hass.http.register_view(WatchUpdatesView(hass))
     hass.http.register_view(WatchSummaryView(hass))
-    hass.http.register_view(PairingRedeemView(hass))
     hass.http.register_view(CameraStreamView(hass))
     hass.http.register_view(CameraViewportView(hass))
     hass.http.register_view(CameraBatchView(hass))
@@ -171,14 +157,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # APNs client – read credentials in executor to avoid blocking the event loop.
     await _reload_apns_client()
 
-    # Revoke orphaned pairing refresh tokens from previous runs that were
-    # never redeemed (e.g., HA crashed or was killed before shutdown cleanup).
-    await _cleanup_orphaned_pairing_tokens(hass, pairing_coordinator)
-
-    @callback
     def _handle_stop(_event) -> None:
         coordinator.async_shutdown()
-        pairing_coordinator.async_shutdown()
         camera_stream_coordinator.shutdown()
 
     entry.async_on_unload(
@@ -190,7 +170,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     await _install_bundled_blueprints(hass)
 
     if not entry.data.get("initial_setup_done"):
-        _show_pairing_notification(hass, entry, pairing_coordinator)
+        _show_pairing_notification(hass, entry)
         hass.config_entries.async_update_entry(
             entry, data={**entry.data, "initial_setup_done": True}
         )
@@ -199,45 +179,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         coordinator.async_force_resync()
 
     hass.services.async_register(DOMAIN, SERVICE_FORCE_RESYNC, _handle_force_resync)
-
-    async def _handle_create_pairing_code(call: ServiceCall) -> ServiceResponse:
-        user = await _resolve_pairing_user(hass, call.context.user_id)
-        if user is None:
-            raise HomeAssistantError("Unable to resolve an active Home Assistant user for pairing.")
-
-        requested_local_url = _sanitize_base_url(call.data.get("local_url"))
-        local_url = requested_local_url or _sanitize_base_url(
-            hass.config.internal_url
-        ) or _discover_base_url(hass, prefer_external=False)
-        requested_remote_url = _sanitize_base_url(call.data.get("remote_url"))
-        remote_url = requested_remote_url or _sanitize_base_url(
-            hass.config.external_url
-        ) or _discover_base_url(hass, prefer_external=True)
-        lifespan_days = int(call.data.get("lifespan_days", 3650))
-        home_assistant_url = remote_url or local_url
-        if not home_assistant_url:
-            home_assistant_url = _discover_base_url(hass, prefer_external=True)
-        if not home_assistant_url:
-            raise HomeAssistantError(
-                "Set local_url/remote_url in the service call or configure internal/external URL in Home Assistant."
-            )
-
-        payload = await pairing_coordinator.async_refresh_active_pairing(
-            user,
-            home_assistant_url=home_assistant_url,
-            local_url=local_url,
-            remote_url=remote_url,
-            lifespan_days=lifespan_days,
-        )
-        return payload
-
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_CREATE_PAIRING_CODE,
-        _handle_create_pairing_code,
-        schema=_CREATE_PAIRING_SCHEMA,
-        supports_response=SupportsResponse.OPTIONAL,
-    )
 
     def _enrich_actions(actions: list[dict]) -> list[dict]:
         """Enrich action dicts with entity state for entity-driven watch buttons.
@@ -389,12 +330,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: WristAssistantConfigEnt
         data: WristAssistantData | None = hass.data.pop(DOMAIN, None)
         if data is not None:
             data.coordinator.async_shutdown()
-            data.pairing_coordinator.async_shutdown()
             data.camera_stream_coordinator.shutdown()
         persistent_notification.async_dismiss(
             hass, _PAIRING_NOTIFICATION_ID_TEMPLATE % entry.entry_id
         )
-        hass.services.async_remove(DOMAIN, SERVICE_CREATE_PAIRING_CODE)
         hass.services.async_remove(DOMAIN, SERVICE_FORCE_RESYNC)
         hass.services.async_remove(DOMAIN, SERVICE_SEND_NOTIFICATION)
     return unload_ok
@@ -464,96 +403,6 @@ def _disable_noisy_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
         _LOGGER.info("Disabled %d noisy entities on upgrade: %s", len(disabled), disabled)
 
 
-def _sanitize_base_url(value: str | None) -> str:
-    """Normalize Home Assistant base URLs."""
-    if value is None:
-        return ""
-    trimmed = value.strip()
-    if not trimmed:
-        return ""
-
-    if "://" not in trimmed:
-        # Default to http:// for local-looking hostnames to avoid silently
-        # upgrading plain-HTTP HA instances to unreachable HTTPS URLs.
-        trimmed = f"http://{trimmed}"
-
-    try:
-        parsed = cv.url(trimmed)
-    except vol.Invalid:
-        return ""
-    if not parsed.startswith(("http://", "https://")):
-        return ""
-
-    return parsed.rstrip("/")
-
-
-def _discover_base_url(hass: HomeAssistant, *, prefer_external: bool) -> str:
-    """Best-effort discover a reachable Home Assistant base URL."""
-    try:
-        discovered = network.get_url(
-            hass,
-            prefer_external=prefer_external,
-            allow_ip=True,
-            require_ssl=False,
-        )
-    except HomeAssistantError:
-        return ""
-    return _sanitize_base_url(discovered)
-
-
-async def _resolve_pairing_user(hass: HomeAssistant, user_id: str | None):
-    """Resolve user for pairing token creation."""
-    if user_id:
-        user = await hass.auth.async_get_user(user_id)
-        if user is not None and user.is_active:
-            return user
-
-    for user in await hass.auth.async_get_users():
-        if user.is_owner and user.is_active:
-            return user
-    _LOGGER.warning(
-        "No active owner user found for Wrist Assistant pairing; "
-        "pairing will not be available until an owner user exists"
-    )
-    return None
-
-
-async def _cleanup_orphaned_pairing_tokens(
-    hass: HomeAssistant, pairing: PairingCoordinator
-) -> None:
-    """Revoke leftover pairing refresh tokens from previous runs.
-
-    When HA crashes or is killed, shutdown cleanup never runs, leaving
-    orphaned long-lived tokens in the auth system. Identify them by
-    client_id and client_name prefix, then revoke any that are not
-    tracked by the current PairingCoordinator.
-
-    Only revoke tokens that were never redeemed (last_used_at is None).
-    Redeemed tokens have been issued to a watch app and must be kept.
-    """
-    active_token_ids = pairing.tracked_refresh_token_ids
-    revoked = 0
-    for user in await hass.auth.async_get_users():
-        for token in list(user.refresh_tokens.values()):
-            if (
-                token.client_id == PAIRING_CLIENT_ID
-                and token.client_name
-                and (
-                    token.client_name.startswith("Wrist Assistant QR Pairing")
-                    or token.client_name.startswith("Wrist Assistant Pairing")
-                )
-                and token.id not in active_token_ids
-                and token.last_used_at is None
-            ):
-                hass.auth.async_remove_refresh_token(token)
-                revoked += 1
-    if revoked:
-        _LOGGER.info(
-            "Revoked %d orphaned Wrist Assistant pairing token(s) from previous runs",
-            revoked,
-        )
-
-
 async def _install_bundled_blueprints(hass: HomeAssistant) -> None:
     """Copy bundled blueprint files into the HA blueprints directory.
 
@@ -584,10 +433,8 @@ async def _install_bundled_blueprints(hass: HomeAssistant) -> None:
         _LOGGER.warning("Failed to install bundled blueprints", exc_info=True)
 
 
-def _show_pairing_notification(
-    hass: HomeAssistant, entry: ConfigEntry, pairing: PairingCoordinator
-) -> None:
-    """Show persistent pairing notification."""
+def _show_pairing_notification(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Show first-run setup notification."""
     message = (
         "Open the Wrist Assistant app to finish connecting your watch.\n\n"
         "Choose **OAuth** in the app to sign in to Home Assistant. "
@@ -596,6 +443,6 @@ def _show_pairing_notification(
     persistent_notification.async_create(
         hass,
         message=message,
-        title="Wrist Assistant pairing ready",
+        title="Wrist Assistant setup ready",
         notification_id=_PAIRING_NOTIFICATION_ID_TEMPLATE % entry.entry_id,
     )

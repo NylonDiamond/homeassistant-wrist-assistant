@@ -9,17 +9,13 @@ from datetime import datetime, timedelta
 import gzip
 import json as _json
 import logging
-import secrets
 from typing import Any
-from urllib.parse import urlencode
 
 from aiohttp.web import Request, Response
 
-from homeassistant.auth import models as auth_models
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.core import Event, HomeAssistant, State, callback
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
 
@@ -29,10 +25,6 @@ MAX_TIMEOUT_SECONDS = 55
 MAX_EVENTS_BUFFER = 5000
 MAX_EVENTS_PER_RESPONSE = 250
 SESSION_TTL = timedelta(minutes=5)
-PAIRING_CODE_TTL = timedelta(minutes=10)
-PAIRING_CLIENT_ID = "https://home-assistant.io/iOS/dev-auth"
-PAIRING_CLIENT_NAME = "Wrist Assistant Pairing"
-PAIRING_DEFAULT_LIFESPAN_DAYS = 3650
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,19 +49,6 @@ class DeltaEvent:
     cursor: int
     entity_id: str
     payload: dict[str, Any]
-
-
-@dataclass(slots=True)
-class PairingSession:
-    """Single-use pairing payload."""
-
-    code: str
-    refresh_token_id: str
-    home_assistant_url: str
-    local_url: str
-    remote_url: str
-    expires_at: datetime
-    lifespan_days: int
 
 
 _SLIM_ATTRIBUTES: dict[str, set[str]] = {
@@ -813,213 +792,6 @@ class DeltaCoordinator:
         return str(value)
 
 
-class PairingCoordinator:
-    """Issues and redeems short-lived one-time pairing codes."""
-
-    def __init__(self, hass: HomeAssistant) -> None:
-        self.hass = hass
-        self._sessions: dict[str, PairingSession] = {}
-        self._active_code: str | None = None
-        self._active_payload: dict[str, Any] | None = None
-        self._active_callbacks: list[callback] = []
-
-    @callback
-    def async_add_active_listener(self, cb: callback) -> callback:
-        """Register callback for active pairing updates."""
-        self._active_callbacks.append(cb)
-
-        @callback
-        def _unsub() -> None:
-            self._active_callbacks.remove(cb)
-
-        return _unsub
-
-    @property
-    def active_payload(self) -> dict[str, Any] | None:
-        """Return currently active pairing payload."""
-        if self._active_code is None:
-            return None
-        if self._active_code not in self._sessions:
-            return None
-        return self._active_payload
-
-    async def async_create_pairing_code(
-        self,
-        user: auth_models.User,
-        *,
-        home_assistant_url: str,
-        local_url: str,
-        remote_url: str,
-        lifespan_days: int = PAIRING_DEFAULT_LIFESPAN_DAYS,
-    ) -> dict[str, Any]:
-        """Create a one-time code and return a pairing payload."""
-        self._prune_expired()
-
-        code = secrets.token_urlsafe(24)
-        client_name = f"{PAIRING_CLIENT_NAME} {code[:8]}"
-        refresh_token = await self.hass.auth.async_create_refresh_token(
-            user=user,
-            client_id=PAIRING_CLIENT_ID,
-            client_name=client_name,
-            token_type=auth_models.TOKEN_TYPE_LONG_LIVED_ACCESS_TOKEN,
-            access_token_expiration=timedelta(days=lifespan_days),
-        )
-        expires_at = dt_util.utcnow() + PAIRING_CODE_TTL
-
-        self._sessions[code] = PairingSession(
-            code=code,
-            refresh_token_id=refresh_token.id,
-            home_assistant_url=home_assistant_url,
-            local_url=local_url,
-            remote_url=remote_url,
-            expires_at=expires_at,
-            lifespan_days=lifespan_days,
-        )
-
-        params: dict[str, str] = {
-            "code": code,
-            "base_url": home_assistant_url,
-        }
-        if local_url:
-            params["local_url"] = local_url
-        if remote_url:
-            params["remote_url"] = remote_url
-        uri_query = urlencode(params)
-        return {
-            "pairing_code": code,
-            "pairing_uri": f"wristassistant://pair?{uri_query}",
-            "expires_at": expires_at.isoformat(),
-            "lifespan_days": lifespan_days,
-            "home_assistant_url": home_assistant_url,
-            "local_url": local_url,
-            "remote_url": remote_url,
-        }
-
-    async def async_refresh_active_pairing(
-        self,
-        user: auth_models.User,
-        *,
-        home_assistant_url: str,
-        local_url: str,
-        remote_url: str,
-        lifespan_days: int = PAIRING_DEFAULT_LIFESPAN_DAYS,
-    ) -> dict[str, Any]:
-        """Replace active pairing code with a new one."""
-        previous_active_code = self._active_code
-
-        payload = await self.async_create_pairing_code(
-            user,
-            home_assistant_url=home_assistant_url,
-            local_url=local_url,
-            remote_url=remote_url,
-            lifespan_days=lifespan_days,
-        )
-        self._active_code = payload["pairing_code"]
-        self._active_payload = payload
-
-        if previous_active_code and previous_active_code != self._active_code:
-            self._revoke_code(previous_active_code)
-
-        self._fire_active_callbacks()
-        return payload
-
-    def async_redeem_pairing_code(
-        self, code: str, remote_ip: str | None, device_name: str | None = None
-    ) -> dict[str, Any] | None:
-        """Redeem a one-time pairing code and return OAuth credentials."""
-        self._prune_expired()
-
-        session = self._sessions.get(code)
-        if session is None:
-            return None
-
-        refresh_token = self.hass.auth.async_get_refresh_token(session.refresh_token_id)
-        if refresh_token is None:
-            self._sessions.pop(code, None)
-            return None
-
-        if device_name:
-            refresh_token.client_name = f"Wrist Assistant ({device_name})"
-
-        # Avoid proxy/X-Forwarded-For parsing issues; Home Assistant core's own
-        # long-lived token command also omits remote_ip here.
-        access_token = self.hass.auth.async_create_access_token(refresh_token)
-
-        expires_in: int | None = None
-        expiration = refresh_token.access_token_expiration
-        if isinstance(expiration, timedelta):
-            expires_in = int(expiration.total_seconds())
-        elif isinstance(expiration, (int, float)):
-            expires_in = int(expiration)
-        if not expires_in or expires_in <= 0:
-            expires_in = int(max(1, session.lifespan_days) * 86400)
-
-        token_payload = {
-            "access_token": access_token,
-            "token_type": "Bearer",
-            "auth_mode": "manual_token",
-            "expires_in": expires_in,
-            "home_assistant_url": session.home_assistant_url,
-            "local_url": session.local_url,
-            "remote_url": session.remote_url,
-        }
-        was_active = self._active_code == code
-        self._sessions.pop(code, None)
-        if was_active:
-            self._active_code = None
-            self._active_payload = None
-            self._fire_active_callbacks()
-        return token_payload
-
-    @property
-    def tracked_refresh_token_ids(self) -> set[str]:
-        """Return refresh token IDs currently tracked by active sessions."""
-        return {s.refresh_token_id for s in self._sessions.values()}
-
-    @callback
-    def async_shutdown(self) -> None:
-        """Revoke all unused pending pairing tokens."""
-        for code in list(self._sessions):
-            self._revoke_code(code)
-        self._sessions.clear()
-        self._active_code = None
-        self._active_payload = None
-        self._fire_active_callbacks()
-
-    @callback
-    def _prune_expired(self) -> None:
-        """Revoke and remove expired unredeemed pairing sessions."""
-        now = dt_util.utcnow()
-        expired_codes = [
-            code for code, session in self._sessions.items() if session.expires_at <= now
-        ]
-        for code in expired_codes:
-            self._revoke_code(code)
-
-        if self._active_code and self._active_code not in self._sessions:
-            self._active_code = None
-            self._active_payload = None
-            self._fire_active_callbacks()
-
-    @callback
-    def _revoke_code(self, code: str) -> None:
-        """Revoke and remove a pairing session by code."""
-        session = self._sessions.pop(code, None)
-        if session is None:
-            return
-        refresh_token = self.hass.auth.async_get_refresh_token(session.refresh_token_id)
-        if refresh_token is not None:
-            self.hass.auth.async_remove_refresh_token(refresh_token)
-        if self._active_code == code:
-            self._active_code = None
-            self._active_payload = None
-
-    @callback
-    def _fire_active_callbacks(self) -> None:
-        """Notify listeners about active pairing changes."""
-        for cb in self._active_callbacks:
-            cb()
-
 class WatchUpdatesView(HomeAssistantView):
     """Authenticated long-poll endpoint for watch delta updates."""
 
@@ -1209,65 +981,3 @@ class WatchSummaryView(HomeAssistantView):
             )
         return Response(body=json_bytes, status=200, content_type="application/json")
 
-
-class PairingRedeemView(HomeAssistantView):
-    """Unauthenticated endpoint that exchanges pairing code for OAuth credentials."""
-
-    url = "/api/wrist_assistant/pairing/redeem"
-    name = "api:wrist_assistant_pairing_redeem"
-    requires_auth = False
-
-    def __init__(self, hass: HomeAssistant) -> None:
-        self._hass = hass
-
-    async def post(self, request: Request) -> Response:
-        """Redeem one-time pairing code."""
-        from .const import DOMAIN, WristAssistantData
-
-        domain_data: WristAssistantData | None = self._hass.data.get(DOMAIN)
-        if domain_data is None:
-            return self.json_message("Integration not loaded", status_code=503)
-        pairing = domain_data.pairing_coordinator
-
-        try:
-            payload = await request.json()
-        except (ValueError, UnicodeDecodeError):
-            return self.json_message("Invalid JSON body", status_code=400)
-
-        if not isinstance(payload, dict):
-            return self.json_message("Expected JSON object body", status_code=400)
-
-        pairing_code = payload.get("pairing_code")
-        if not isinstance(pairing_code, str) or not pairing_code:
-            return self.json_message("pairing_code is required", status_code=400)
-        device_name = payload.get("device_name")
-        if device_name is not None and not isinstance(device_name, str):
-            device_name = None
-        code_hint = pairing_code[:8]
-        _LOGGER.info(
-            "Pairing redeem request code=%s device=%s remote=%s",
-            code_hint,
-            device_name or "(not provided)",
-            request.remote,
-        )
-
-        try:
-            token_payload = pairing.async_redeem_pairing_code(
-                pairing_code,
-                remote_ip=request.remote,
-                device_name=device_name,
-            )
-        except HomeAssistantError as err:
-            _LOGGER.warning("Pairing code redemption rejected code=%s: %s", code_hint, err)
-            return self.json_message(str(err), status_code=400)
-        except Exception:  # noqa: BLE001
-            _LOGGER.exception(
-                "Unexpected error redeeming Wrist Assistant pairing code code=%s",
-                code_hint,
-            )
-            return self.json_message("Internal pairing redemption error", status_code=500)
-        if token_payload is None:
-            _LOGGER.warning("Pairing code invalid/expired code=%s", code_hint)
-            return self.json_message("Invalid or expired pairing code", status_code=400)
-        _LOGGER.info("Pairing redeem success code=%s", code_hint)
-        return self.json(token_payload, status_code=200)

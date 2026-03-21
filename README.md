@@ -44,11 +44,13 @@ Wrist Assistant connects your Apple Watch to Home Assistant with fast setup, rea
 - Camera previews and live camera views built for the watch
 - Apple Watch notifications sent from Home Assistant
 
-## Main service
+## Watch notifications
 
 ### `wrist_assistant.send_notification`
 
-Send a message to one or all paired watches using Apple notifications.
+A notification blueprint is included under `Scripts`. It lets you choose a watch, title, message, up to 4 entity buttons, custom labels, sound, priority, and auto-dismiss behavior.
+
+If you want to call the service directly, use `wrist_assistant.send_notification` to send a message to one or all paired watches using Apple notifications.
 
 ```yaml
 service: wrist_assistant.send_notification

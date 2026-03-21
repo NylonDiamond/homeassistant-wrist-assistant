@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import timedelta
 
 from homeassistant.components.sensor import (
-    SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
 )
@@ -15,9 +14,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.util import dt as dt_util
 
-from .api import DeltaCoordinator, PairingCoordinator, MAX_EVENTS_BUFFER
+from .api import DeltaCoordinator, MAX_EVENTS_BUFFER
 from .const import DOMAIN, WristAssistantConfigEntry
 
 SCAN_INTERVAL = timedelta(seconds=30)
@@ -30,7 +28,6 @@ async def async_setup_entry(
 ) -> None:
     """Set up Wrist Assistant sensors."""
     coordinator: DeltaCoordinator = entry.runtime_data.coordinator
-    pairing: PairingCoordinator = entry.runtime_data.pairing_coordinator
 
     global_sensors: list[SensorEntity] = [
         ActiveWatchesSensor(coordinator, entry),
@@ -38,7 +35,6 @@ async def async_setup_entry(
         EventsProcessedSensor(coordinator, entry),
         EventBufferUsageSensor(coordinator, entry),
         EventsPerMinuteSensor(coordinator, entry),
-        PairingExpirySensor(pairing, entry),
     ]
     async_add_entities(global_sensors)
 
@@ -205,52 +201,6 @@ class EventsPerMinuteSensor(_WristAssistantSensorBase):
     @property
     def native_value(self) -> float:
         return self._coordinator.events_per_minute
-
-
-class PairingExpirySensor(SensorEntity):
-    """Timestamp for currently active pairing code expiration."""
-
-    _attr_has_entity_name = True
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_name = "Pairing expires at"
-    _attr_device_class = SensorDeviceClass.TIMESTAMP
-    _attr_icon = "mdi:timer-outline"
-    _attr_entity_registry_enabled_default = False
-
-    def __init__(self, pairing: PairingCoordinator, entry: ConfigEntry) -> None:
-        self._pairing = pairing
-        self._entry = entry
-        self._attr_unique_id = f"wrist_assistant_{entry.entry_id}_pairing_expires_at"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="Wrist Assistant",
-            manufacturer="Wrist Assistant",
-            model="Delta Coordinator",
-            entry_type=DeviceEntryType.SERVICE,
-        )
-
-    async def async_added_to_hass(self) -> None:
-        self.async_on_remove(
-            self._pairing.async_add_active_listener(self._handle_update)
-        )
-
-    @callback
-    def _handle_update(self) -> None:
-        self.async_write_ha_state()
-
-    @property
-    def available(self) -> bool:
-        return self._pairing.active_payload is not None
-
-    @property
-    def native_value(self):
-        payload = self._pairing.active_payload
-        if payload is None:
-            return None
-        expires_at = payload.get("expires_at")
-        if not isinstance(expires_at, str):
-            return None
-        return dt_util.parse_datetime(expires_at)
 
 
 # --- Per-watch sensors ---
