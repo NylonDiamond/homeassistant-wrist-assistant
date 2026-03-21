@@ -93,6 +93,7 @@ data:
 
 ## Need help?
 
+- Wrist Assistant docs: <https://www.wrist-assistant.com>
 - Open an issue: <https://github.com/NylonDiamond/homeassistant-wrist-assistant/issues>
 
 ## License
