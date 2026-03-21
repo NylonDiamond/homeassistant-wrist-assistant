@@ -31,7 +31,7 @@ from .api import (
     WatchSummaryView,
     WatchUpdatesView,
 )
-from .apns_config import APNsConfig, APNsConfigStore, APNsConfigView
+from .apns_config import APNsConfigStore
 from .apns_client import APNsClient
 from .camera_devices import CameraDevicesView
 from .camera_stream import (
@@ -56,9 +56,6 @@ _LOGGER = logging.getLogger(__name__)
 SERVICE_FORCE_RESYNC = "force_resync"
 SERVICE_CREATE_PAIRING_CODE = "create_pairing_code"
 SERVICE_SEND_NOTIFICATION = "send_notification"
-_BUNDLED_APNS_KEY_ID = "XZ9WA28KN3"
-_BUNDLED_APNS_TEAM_ID = "8265CSQJ66"
-_BUNDLED_APNS_TOPIC = "com.nylondiamond.wristassistant.watchkitapp"
 
 # Unique ID suffixes from removed entity classes (cleanup on upgrade)
 _ORPHANED_SUFFIXES = ("_entity_list", "_refresh_pairing_qr", "_pairing_qr", "_connection_qr")
@@ -170,7 +167,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         runtime_data.apns_client = apns_client
         _LOGGER.info("APNs client ready")
 
-    hass.http.register_view(APNsConfigView(apns_config_store, _reload_apns_client))
 
     # APNs client – read credentials in executor to avoid blocking the event loop.
     await _reload_apns_client()
@@ -336,6 +332,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         failure_map: dict[str, str] = {}
         for watch_id, tok_entry in targets.items():
             success, reason, used_env = await client.send_push(
+                watch_id=watch_id,
                 device_token=tok_entry.device_token,
                 title=title,
                 body=message,
@@ -413,58 +410,29 @@ async def async_remove_config_entry_device(
 async def _bootstrap_apns_config_if_needed(
     hass: HomeAssistant, store: APNsConfigStore
 ) -> None:
-    """Seed APNs config from bundled credentials for zero-touch setup."""
-    if store.is_configured:
-        return
-
-    from .apns_client import _BUNDLED_KEY_PATH  # noqa: WPS433
-
-    def _read_bundled_key() -> str:
-        if not _BUNDLED_KEY_PATH.exists():
-            return ""
-        return _BUNDLED_KEY_PATH.read_text()
-
-    key_content = await hass.async_add_executor_job(_read_bundled_key)
-    if not key_content.strip():
-        return
-
-    await store.async_save(
-        APNsConfig(
-            key_id=_BUNDLED_APNS_KEY_ID,
-            team_id=_BUNDLED_APNS_TEAM_ID,
-            topic=_BUNDLED_APNS_TOPIC,
-            private_key=key_content,
-        )
-    )
-    _LOGGER.info("Bootstrapped APNs credentials into managed storage")
+    """No-op for the hosted push relay transport."""
+    return
 
 
 async def _create_apns_client(
     hass: HomeAssistant, store: APNsConfigStore
 ) -> APNsClient | None:
-    """Create APNs client from managed credential storage."""
-    import ssl
+    """Create push relay client for hosted APNs delivery."""
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-    await _bootstrap_apns_config_if_needed(hass, store)
-    config = store.config
-    if config is None:
-        _LOGGER.warning("No APNs credentials configured")
+    domain_data = hass.data.get(DOMAIN)
+    if domain_data is None:
+        _LOGGER.warning("Push relay unavailable because runtime data is missing")
         return None
 
-    def _blocking_init() -> ssl.SSLContext:
-        return ssl.create_default_context()
-
     try:
-        ssl_context = await hass.async_add_executor_job(_blocking_init)
         return APNsClient(
-            config.private_key,
-            key_id=config.key_id,
-            team_id=config.team_id,
-            topic=config.topic,
-            ssl_context=ssl_context,
+            relay_base_url="https://wrist-assistant-push-relay.wrist-assistant.workers.dev",
+            notification_store=domain_data.notification_store,
+            http_session=async_get_clientsession(hass),
         )
     except Exception:
-        _LOGGER.exception("Failed to create APNs client")
+        _LOGGER.exception("Failed to create push relay client")
         return None
 
 

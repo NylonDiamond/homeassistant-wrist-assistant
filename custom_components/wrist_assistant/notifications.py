@@ -30,6 +30,7 @@ class TokenEntry:
     device_token: str
     platform: str
     environment: str  # "development" or "production"
+    relay_token: str | None = None
 
 
 class NotificationTokenStore:
@@ -55,6 +56,7 @@ class NotificationTokenStore:
                     device_token=entry["device_token"],
                     platform=entry.get("platform", "watchos"),
                     environment=_normalize_environment(entry.get("environment")),
+                    relay_token=entry.get("relay_token"),
                 )
         _LOGGER.debug("Loaded %d notification tokens from storage", len(self._tokens))
 
@@ -66,6 +68,7 @@ class NotificationTokenStore:
                     "device_token": entry.device_token,
                     "platform": entry.platform,
                     "environment": entry.environment,
+                    "relay_token": entry.relay_token,
                 }
                 for watch_id, entry in self._tokens.items()
             }
@@ -77,20 +80,26 @@ class NotificationTokenStore:
         device_token: str,
         platform: str = "watchos",
         environment: str = "production",
+        relay_token: str | None = None,
     ) -> None:
         """Store or update a device token for a watch."""
+        normalized_environment = _normalize_environment(environment)
         existing = self._tokens.get(watch_id)
         if (
             existing
             and existing.device_token == device_token
-            and existing.environment == _normalize_environment(environment)
+            and existing.environment == normalized_environment
+            and (
+                relay_token is None
+                or existing.relay_token == relay_token
+            )
         ):
             return
-        normalized_environment = _normalize_environment(environment)
         self._tokens[watch_id] = TokenEntry(
             device_token=device_token,
             platform=platform,
             environment=normalized_environment,
+            relay_token=relay_token if relay_token is not None else existing.relay_token if existing else None,
         )
         _LOGGER.info(
             "Registered push token for watch_id=%s (platform=%s, environment=%s)",

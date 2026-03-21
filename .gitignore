@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 CLAUDE.md
+cloudflare/push-relay/node_modules/
+cloudflare/push-relay/.wrangler/
+cloudflare/push-relay/.dev.vars

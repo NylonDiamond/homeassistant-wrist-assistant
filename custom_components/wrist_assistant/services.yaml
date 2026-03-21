@@ -43,7 +43,7 @@ create_pairing_code:
 send_notification:
   name: Send notification
   description: >-
-    Send a push notification to one or all paired Apple Watches via APNs.
+    Send a push notification to one or all paired Apple Watches via the Wrist Assistant push relay.
     Watches register their push tokens automatically during pairing.
   fields:
     message:

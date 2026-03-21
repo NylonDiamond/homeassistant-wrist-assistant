@@ -43,8 +43,8 @@ Wrist Assistant gives you automatic, real-time two-way sync between Apple Watch 
 
 ### `wrist_assistant.send_notification`
 
-Send push notifications directly to paired Apple Watches via APNs. Watches register their push tokens automatically during pairing — no extra setup needed.
-APNs credentials are managed automatically and persisted by the integration (no manual APNs setup required).
+Send push notifications directly to paired Apple Watches via the hosted Wrist Assistant push relay. Watches register their push tokens automatically during pairing — no extra user setup is required.
+The public HACS integration does not store your APNs private key locally. The relay deployment lives under [`cloudflare/push-relay`](./cloudflare/push-relay).
 
 **Basic notification:**
 
