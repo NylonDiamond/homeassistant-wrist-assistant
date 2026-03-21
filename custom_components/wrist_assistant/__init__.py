@@ -427,7 +427,7 @@ async def _create_apns_client(
 
     try:
         return APNsClient(
-            relay_base_url="https://wrist-assistant-push-relay.wrist-assistant.workers.dev",
+            relay_base_url="https://push.wrist-assistant.com",
             notification_store=domain_data.notification_store,
             http_session=async_get_clientsession(hass),
         )

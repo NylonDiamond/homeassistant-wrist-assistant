@@ -29,6 +29,10 @@ wrangler secret put RELAY_SIGNING_SECRET
 - `POST /v1/register`
 - `POST /v1/push/send`
 
+Production hostname:
+
+- `https://push.wrist-assistant.com`
+
 `/v1/register` returns a signed relay token scoped to the submitted
 `device_token` and `environment`.
 
