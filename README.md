@@ -2,178 +2,63 @@
 
 Official Home Assistant integration for the [Wrist Assistant](https://apps.apple.com/us/search?term=Wrist%20Assistant) Apple Watch app.
 
-Wrist Assistant gives you automatic, real-time two-way sync between Apple Watch and Home Assistant, with a setup experience that is fast, reliable, and hands-off.
+Wrist Assistant lets you connect your Apple Watch to Home Assistant so you can pair your watch, keep it in sync, and send notifications.
 
-## Why install this
+## What it does
 
-- Fast watch updates for a snappy feel
-- Automatic watch pairing
-- Real-time two-way sync between your watch and Home Assistant
-- Multi-watch support for shared homes
-- Reliable background sync with minimal effort
+- Pairs your watch with Home Assistant
+- Keeps your watch and Home Assistant in sync
+- Supports more than one watch in the same home
+- Sends notifications to your watch
 
 ## Install
 
-### iOS app onboarding (recommended)
+### Recommended
 
-1. Install the Wrist Assistant iOS app.
-2. Go through the onboarding steps.
-3. The app installs and sets up the Home Assistant integration automatically for you.
+1. Install the Wrist Assistant iPhone app.
+2. Follow the onboarding steps in the app.
 
-### HACS (available now)
+### HACS
 
-1. Open HACS -> Integrations.
-2. Search for `Wrist Assistant`.
-3. Install and restart Home Assistant.
-4. Go to Settings -> Devices & Services -> Add Integration -> `Wrist Assistant`.
+1. Open HACS.
+2. Go to `Integrations`.
+3. Search for `Wrist Assistant`.
+4. Install it and restart Home Assistant.
+5. Go to `Settings` -> `Devices & Services`.
+6. Add the `Wrist Assistant` integration.
 
 ### Manual
 
-1. Copy `custom_components/wrist_assistant` into `<config>/custom_components/`.
+1. Copy `custom_components/wrist_assistant` into your Home Assistant `custom_components` folder.
 2. Restart Home Assistant.
-3. Go to Settings -> Devices & Services -> Add Integration -> `Wrist Assistant`.
+3. Add the `Wrist Assistant` integration from `Settings` -> `Devices & Services`.
 
-## What you get in Home Assistant
-
-- Automatic watch pairing during onboarding
-- Real-time two-way sync for fast state and control updates
-- Smooth multi-watch support for shared homes
-
-## Services
+## Main services
 
 ### `wrist_assistant.send_notification`
 
-Send push notifications directly to paired Apple Watches via the hosted Wrist Assistant push relay. Watches register their push tokens automatically during pairing — no extra user setup is required.
-The public HACS integration does not store your APNs private key locally. The relay deployment lives under [`cloudflare/push-relay`](./cloudflare/push-relay).
-
-**Basic notification:**
+Send a notification to one or all paired watches.
 
 ```yaml
 service: wrist_assistant.send_notification
 data:
   title: "Door Alert"
   message: "Front door was opened"
-  sound: "default"
 ```
 
-**Target a specific watch:**
-
-```yaml
-service: wrist_assistant.send_notification
-data:
-  message: "Garage door left open"
-  target: "my-watch-id"
-```
-
-**Actionable notification (entity-driven buttons):**
-
-```yaml
-service: wrist_assistant.send_notification
-data:
-  title: "Living Room"
-  message: "Lights are still on"
-  actions:
-    - entity_id: "light.living_room"
-      icon: "lightbulb.fill"
-```
-
-**Grouped notifications (same thread in notification center):**
-
-```yaml
-service: wrist_assistant.send_notification
-data:
-  title: "Security"
-  message: "Motion detected in backyard"
-  group: "security"
-  sound: "default"
-```
-
-**Replacing notifications (same tag overwrites previous):**
+You can also target a specific watch:
 
 ```yaml
 service: wrist_assistant.send_notification
 data:
   title: "Garage"
-  message: "Garage door open for 10 minutes"
-  tag: "garage_status"
-  actions:
-    - entity_id: "cover.garage_door"
-      icon: "door.garage.open"
-```
-
-**Time-sensitive alert (breaks through Focus/DND):**
-
-```yaml
-service: wrist_assistant.send_notification
-data:
-  title: "Alarm"
-  message: "Motion detected while armed away"
-  priority: "time-sensitive"
-  sound: "default"
-  actions:
-    - entity_id: "alarm_control_panel.home"
-      icon: "shield.fill"
-```
-
-**Silent background update:**
-
-```yaml
-service: wrist_assistant.send_notification
-data:
-  message: "sync"
-  push_type: "background"
-```
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `message` | Yes | Notification body text |
-| `title` | No | Notification title |
-| `target` | No | Watch ID — omit to send to all watches |
-| `actions` | No | 1-4 entity action buttons. Each requires `entity_id` — the watch determines the service call from the entity's domain. Optional: `label` (custom button text), `icon` (SF Symbol) |
-| `data` | No | Extra payload (e.g. `auto_dismiss`) |
-| `sound` | No | `"default"` for system sound, omit for silent |
-| `push_type` | No | `"alert"` (default) or `"background"` for silent updates |
-| `tag` | No | Collapse ID — new notification with same tag replaces the previous one |
-| `group` | No | Thread ID — groups related notifications together in notification center |
-| `priority` | No | `"passive"`, `"active"` (default), `"time-sensitive"` (breaks DND), or `"critical"` |
-
-## Events
-
-### `wrist_assistant_action_completed`
-
-Fired on the Home Assistant event bus when a notification action is executed on the watch. Use this in automations to confirm actions succeeded or handle failures.
-
-| Field | Description |
-|-------|-------------|
-| `action` | The action title from the tapped watch button |
-| `action_index` | Zero-based index of the tapped action |
-| `domain` | Home Assistant service domain executed |
-| `service` | Home Assistant service executed |
-| `entity_id` | Resolved target entity ID (empty when not provided) |
-| `success` | `true` if the action succeeded, `false` on failure |
-| `error` | Error message on failure, absent on success |
-| `source` | Always `"watch_notification"` |
-
-**Example automation — confirm toggle worked:**
-
-```yaml
-automation:
-  - alias: "Log notification actions"
-    trigger:
-      - platform: event
-        event_type: wrist_assistant_action_completed
-    action:
-      - service: logbook.log
-        data:
-          name: "Watch Action"
-          message: >
-            {{ trigger.event.data.action }} on {{ trigger.event.data.entity_id }}
-            — {{ 'OK' if trigger.event.data.success else trigger.event.data.error }}
+  message: "Garage door is open"
+  target: "my-watch-id"
 ```
 
 ### `wrist_assistant.create_pairing_code`
 
-Generate a one-time pairing code for the Wrist Assistant app. Returns a `pairing_uri` and `pairing_code`.
+Create a pairing code if you want to connect the app manually.
 
 ```yaml
 service: wrist_assistant.create_pairing_code
@@ -184,15 +69,15 @@ data:
 
 ### `wrist_assistant.force_resync`
 
-Force all connected watches to perform a full state refresh on their next poll.
+Ask connected watches to refresh their data.
 
 ```yaml
 service: wrist_assistant.force_resync
 ```
 
-## Screenshots and GIFs
+## Need help?
 
-Screenshots and visual guides will be added here.
+- Open an issue: <https://github.com/NylonDiamond/homeassistant-wrist-assistant/issues>
 
 ## License
 
