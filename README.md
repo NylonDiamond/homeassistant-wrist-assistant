@@ -58,20 +58,20 @@ If you want to call the service directly, use `wrist_assistant.send_notification
 ```yaml
 service: wrist_assistant.send_notification
 data:
-  target: "my-watch-id"
+  target: "" # leave empty to send to all watches
   title: "Front Door Alert"
   message: "Motion detected at the front door."
   sound: "Doorbell-Single.caf"
   push_type: "alert"
-  tag: "front_door_motion"
-  group: "security"
+  tag: ""
+  group: ""
   priority: "time-sensitive"
 
   data:
     subtitle: "Security"
     entity_state: "Motion detected"
     show_state: true
-    auto_dismiss: true
+    auto_dismiss: false
 
   actions:
     - entity_id: "light.porch"
