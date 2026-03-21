@@ -589,12 +589,9 @@ def _show_pairing_notification(
 ) -> None:
     """Show persistent pairing notification."""
     message = (
-        "### Long-Lived Access Token (recommended)\n\n"
-        "Call the `wrist_assistant.create_pairing_code` service to generate "
-        "a pairing code, then enter the values in the Wrist Assistant app.\n\n"
-        "### OAuth\n\n"
-        "Choose **OAuth** in the app — no code needed. "
-        "The app will open your Home Assistant login page directly."
+        "Open the Wrist Assistant app to finish connecting your watch.\n\n"
+        "Choose **OAuth** in the app to sign in to Home Assistant. "
+        "No pairing code is needed."
     )
     persistent_notification.async_create(
         hass,

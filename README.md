@@ -56,25 +56,6 @@ data:
   target: "my-watch-id"
 ```
 
-### `wrist_assistant.create_pairing_code`
-
-Create a pairing code if you want to connect the app manually.
-
-```yaml
-service: wrist_assistant.create_pairing_code
-data:
-  local_url: "http://homeassistant.local:8123"
-  remote_url: "https://ha.example.com"
-```
-
-### `wrist_assistant.force_resync`
-
-Ask connected watches to refresh their data.
-
-```yaml
-service: wrist_assistant.force_resync
-```
-
 ## Need help?
 
 - Open an issue: <https://github.com/NylonDiamond/homeassistant-wrist-assistant/issues>
