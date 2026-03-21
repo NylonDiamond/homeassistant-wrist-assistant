@@ -9,7 +9,7 @@ Wrist Assistant connects your Apple Watch to Home Assistant with fast setup, rea
 - Pairs your watch with Home Assistant
 - Keeps your watch and Home Assistant in real-time sync
 - Uses efficient updates so the watch stays fast and responsive
-- Supports 46 Home Assistant entity domains in the app
+- Supports 54+ Home Assistant entity types in the app
 - Shows watch-optimized camera previews and live views
 - Supports more than one watch in the same home
 - Sends notifications to your watch through Apple notifications
