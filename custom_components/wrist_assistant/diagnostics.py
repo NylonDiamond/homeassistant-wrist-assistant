@@ -52,6 +52,5 @@ async def async_get_config_entry_diagnostics(
             "token_count": len(notification_tokens),
             "tokens": notification_tokens,
             "apns_configured": data.apns_client is not None,
-            "apns_config_managed": data.apns_config_store.is_configured,
         },
     }

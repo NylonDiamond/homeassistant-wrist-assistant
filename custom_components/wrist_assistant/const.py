@@ -10,7 +10,6 @@ if TYPE_CHECKING:
 
     from .api import DeltaCoordinator
     from .apns_client import APNsClient
-    from .apns_config import APNsConfigStore
     from .camera_stream import CameraStreamCoordinator
     from .notifications import NotificationTokenStore
 
@@ -22,7 +21,6 @@ class WristAssistantData:
     coordinator: DeltaCoordinator
     camera_stream_coordinator: CameraStreamCoordinator
     notification_store: NotificationTokenStore
-    apns_config_store: APNsConfigStore
     apns_client: APNsClient | None = field(default=None)
 
 
@@ -32,5 +30,3 @@ DOMAIN = "wrist_assistant"
 PLATFORMS = ["sensor", "binary_sensor", "text"]
 NOTIFICATION_TOKEN_STORAGE_KEY = "wrist_assistant.notification_tokens"
 NOTIFICATION_TOKEN_STORAGE_VERSION = 1
-APNS_CONFIG_STORAGE_KEY = "wrist_assistant.apns_config"
-APNS_CONFIG_STORAGE_VERSION = 1

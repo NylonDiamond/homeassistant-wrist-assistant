@@ -26,7 +26,6 @@ from .api import (
     WatchSummaryView,
     WatchUpdatesView,
 )
-from .apns_config import APNsConfigStore
 from .apns_client import APNsClient
 from .camera_devices import CameraDevicesView
 from .camera_stream import (
@@ -116,9 +115,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     coordinator = DeltaCoordinator(hass)
     camera_stream_coordinator = CameraStreamCoordinator()
     notification_store = NotificationTokenStore(hass)
-    apns_config_store = APNsConfigStore(hass)
     await notification_store.async_load()
-    await apns_config_store.async_load()
 
     # Register server capabilities
     coordinator.register_capability("gzip")
@@ -131,7 +128,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         coordinator=coordinator,
         camera_stream_coordinator=camera_stream_coordinator,
         notification_store=notification_store,
-        apns_config_store=apns_config_store,
     )
     entry.runtime_data = runtime_data
     hass.data[DOMAIN] = runtime_data
@@ -144,18 +140,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     hass.http.register_view(NotificationRegisterView(hass))
     hass.http.register_view(AudioUploadView(hass))
 
-    async def _reload_apns_client() -> None:
-        apns_client = await _create_apns_client(hass, apns_config_store)
-        if apns_client is None:
-            runtime_data.apns_client = None
-            _LOGGER.warning("APNs client unavailable")
-            return
+    apns_client = await _create_apns_client(hass)
+    if apns_client is None:
+        runtime_data.apns_client = None
+        _LOGGER.warning("APNs client unavailable")
+    else:
         runtime_data.apns_client = apns_client
         _LOGGER.info("APNs client ready")
-
-
-    # APNs client – read credentials in executor to avoid blocking the event loop.
-    await _reload_apns_client()
 
     def _handle_stop(_event) -> None:
         coordinator.async_shutdown()
@@ -346,16 +337,7 @@ async def async_remove_config_entry_device(
     return True
 
 
-async def _bootstrap_apns_config_if_needed(
-    hass: HomeAssistant, store: APNsConfigStore
-) -> None:
-    """No-op for the hosted push relay transport."""
-    return
-
-
-async def _create_apns_client(
-    hass: HomeAssistant, store: APNsConfigStore
-) -> APNsClient | None:
+async def _create_apns_client(hass: HomeAssistant) -> APNsClient | None:
     """Create push relay client for hosted APNs delivery."""
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
