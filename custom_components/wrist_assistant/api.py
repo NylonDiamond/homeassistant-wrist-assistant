@@ -51,6 +51,16 @@ class DeltaEvent:
     payload: dict[str, Any]
 
 
+@dataclass(slots=True)
+class _MediaBufferState:
+    """Per-entity buffering detection for media players after track changes."""
+
+    anchor_pos_updated_at: str | None  # media_position_updated_at when title changed
+    last_pos_updated_at: str | None  # most recently seen value
+    distinct_updates: int = 0  # count of distinct media_position_updated_at values
+    started_at: float = 0.0  # monotonic time of title change
+
+
 _SLIM_ATTRIBUTES: dict[str, set[str]] = {
     "light": {
         "friendly_name", "brightness", "color_temp", "color_temp_kelvin",
@@ -93,6 +103,7 @@ _SLIM_ATTRIBUTES: dict[str, set[str]] = {
         "sound_mode", "sound_mode_list", "shuffle", "repeat",
         "supported_features", "entity_picture",
         "icon", "device_class",
+        "_wa_media_buffering",
     },
     "camera": {
         "friendly_name", "entity_picture", "frontend_stream_type", "icon",
@@ -211,6 +222,7 @@ class DeltaCoordinator:
         self._event_times: deque[float] = deque(maxlen=MAX_EVENTS_BUFFER)
         self._session_callbacks: list[callback] = []
         self._capabilities: set[str] = {"smart_camera_stream"}
+        self._media_buffer_states: dict[str, _MediaBufferState] = {}
         self._unsub_state_changed = hass.bus.async_listen(
             EVENT_STATE_CHANGED, self._handle_state_changed
         )
@@ -444,6 +456,71 @@ class DeltaCoordinator:
             raise
 
     @callback
+    def _annotate_media_buffering(
+        self,
+        entity_id: str,
+        old_state: State | None,
+        new_state: State,
+        payload: dict[str, Any],
+    ) -> None:
+        """Detect media player buffering after track changes and inject hint."""
+        if not entity_id.startswith("media_player."):
+            return
+
+        new_attrs = new_state.attributes
+        new_title = new_attrs.get("media_title")
+        new_pos = new_attrs.get("media_position")
+        new_pos_updated = new_attrs.get("media_position_updated_at")
+        now = self.hass.loop.time()
+
+        # Detect title change → start tracking
+        old_title = old_state.attributes.get("media_title") if old_state else None
+        if (
+            old_title is not None
+            and new_title is not None
+            and old_title != new_title
+            and new_state.state == "playing"
+            and (new_pos is None or new_pos == 0)
+        ):
+            pos_updated_str = str(new_pos_updated) if new_pos_updated else None
+            self._media_buffer_states[entity_id] = _MediaBufferState(
+                anchor_pos_updated_at=pos_updated_str,
+                last_pos_updated_at=pos_updated_str,
+                distinct_updates=0,
+                started_at=now,
+            )
+
+        buf = self._media_buffer_states.get(entity_id)
+        if buf is None:
+            return
+
+        # Check for resolution conditions
+        resolved = False
+        pos_updated_str = str(new_pos_updated) if new_pos_updated else None
+
+        if new_state.state != "playing":
+            resolved = True
+        elif new_pos is not None and new_pos > 0:
+            resolved = True
+        elif now - buf.started_at > 15:
+            resolved = True  # Safety timeout
+        else:
+            # Count distinct media_position_updated_at values
+            if pos_updated_str and pos_updated_str != buf.last_pos_updated_at:
+                buf.distinct_updates += 1
+                buf.last_pos_updated_at = pos_updated_str
+            if buf.distinct_updates >= 2:
+                resolved = True
+
+        if resolved:
+            self._media_buffer_states.pop(entity_id, None)
+        else:
+            # Inject buffering hint into payload attributes
+            ns = payload.get("new_state")
+            if ns and "attributes" in ns:
+                ns["attributes"]["_wa_media_buffering"] = True
+
+    @callback
     def _handle_state_changed(self, event: Event) -> None:
         """Track every state change in a bounded in-memory ring buffer."""
         new_state: State | None = event.data.get("new_state")
@@ -458,6 +535,10 @@ class DeltaCoordinator:
             "context_id": new_state.context.id if new_state.context is not None else None,
             "last_updated": new_state.last_updated.isoformat(),
         }
+
+        old_state: State | None = event.data.get("old_state")
+        self._annotate_media_buffering(new_state.entity_id, old_state, new_state, payload)
+
         self._events.append(
             DeltaEvent(
                 cursor=self._cursor,
@@ -479,17 +560,21 @@ class DeltaCoordinator:
             state = self.hass.states.get(entity_id)
             if state is None:
                 continue
-            snapshot.append(
-                {
-                    "entity_id": state.entity_id,
-                    "state": state.state,
-                    "new_state": to_payload(state),
-                    "context_id": (
-                        state.context.id if state.context is not None else None
-                    ),
-                    "last_updated": state.last_updated.isoformat(),
-                }
-            )
+            entry = {
+                "entity_id": state.entity_id,
+                "state": state.state,
+                "new_state": to_payload(state),
+                "context_id": (
+                    state.context.id if state.context is not None else None
+                ),
+                "last_updated": state.last_updated.isoformat(),
+            }
+            # Annotate active buffering state for media players in snapshots
+            if entity_id in self._media_buffer_states:
+                ns = entry.get("new_state")
+                if ns and "attributes" in ns:
+                    ns["attributes"]["_wa_media_buffering"] = True
+            snapshot.append(entry)
         return snapshot
 
     def _collect_events(
