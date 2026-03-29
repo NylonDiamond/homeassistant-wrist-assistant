@@ -16,6 +16,7 @@ from aiohttp.web import Request, Response
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.core import Event, HomeAssistant, State, callback
+from homeassistant.helpers.template import Template
 from homeassistant.util import dt as dt_util
 
 
@@ -37,6 +38,8 @@ class WatchSession:
     config_hash: str = ""
     entities: set[str] = field(default_factory=set)
     entities_synced: bool = False
+    templates: dict[str, str] = field(default_factory=dict)
+    template_values: dict[str, str] = field(default_factory=dict)
     last_seen: datetime = field(default_factory=dt_util.utcnow)
     first_seen: datetime = field(default_factory=dt_util.utcnow)
     last_poll_interval: timedelta | None = None
@@ -221,7 +224,7 @@ class DeltaCoordinator:
         self._generation_event: asyncio.Event = asyncio.Event()
         self._event_times: deque[float] = deque(maxlen=MAX_EVENTS_BUFFER)
         self._session_callbacks: list[callback] = []
-        self._capabilities: set[str] = {"smart_camera_stream"}
+        self._capabilities: set[str] = {"smart_camera_stream", "template_subscriptions"}
         self._media_buffer_states: dict[str, _MediaBufferState] = {}
         self._unsub_state_changed = hass.bus.async_listen(
             EVENT_STATE_CHANGED, self._handle_state_changed
@@ -286,6 +289,7 @@ class DeltaCoordinator:
         summary_entities: dict[str, list[str]] | None = None,
         slim: bool = False,
         include_summary: bool = False,
+        templates: dict[str, str] | None = None,
     ) -> tuple[int, dict[str, Any] | None]:
         """Handle a single long-poll request."""
         self._prune_sessions()
@@ -310,6 +314,11 @@ class DeltaCoordinator:
             session.entities.clear()
             session.entities_synced = False
 
+        # Store template subscriptions (sent alongside entities)
+        if templates is not None:
+            session.templates = {k: v for k, v in templates.items() if isinstance(k, str) and isinstance(v, str)}
+            session.template_values.clear()
+
         self._fire_session_callbacks()
 
         if not session.entities_synced:
@@ -330,6 +339,7 @@ class DeltaCoordinator:
             # state changes are re-delivered as deltas instead of being skipped.
             snapshot_cursor = self._cursor
             snapshot_events = self._snapshot_current_state(session.entities, slim=slim)
+            snapshot_events.extend(self._snapshot_templates(session))
             return 200, self._response_payload(
                 events=snapshot_events,
                 next_cursor=str(snapshot_cursor),
@@ -371,6 +381,10 @@ class DeltaCoordinator:
             limit=MAX_EVENTS_PER_RESPONSE,
             slim=slim,
         )
+        # Evaluate subscribed templates and include any changed values
+        template_events = self._evaluate_templates(session)
+        if template_events:
+            events.extend(template_events)
         if events:
             return 200, self._response_payload(
                 events=events,
@@ -412,6 +426,9 @@ class DeltaCoordinator:
                         limit=MAX_EVENTS_PER_RESPONSE,
                         slim=slim,
                     )
+                    template_events = self._evaluate_templates(session)
+                    if template_events:
+                        events.extend(template_events)
                     if events:
                         return 200, self._response_payload(
                             events=events,
@@ -439,6 +456,9 @@ class DeltaCoordinator:
                     limit=MAX_EVENTS_PER_RESPONSE,
                     slim=slim,
                 )
+                template_events = self._evaluate_templates(session)
+                if template_events:
+                    events.extend(template_events)
                 if events:
                     return 200, self._response_payload(
                         events=events,
@@ -646,6 +666,85 @@ class DeltaCoordinator:
             for wid, s in self._sessions.items()
             if not wid.startswith("__") or not wid.endswith("__")
         }
+
+    def _evaluate_templates(
+        self, session: WatchSession
+    ) -> list[dict[str, Any]]:
+        """Render subscribed templates and return events for changed values.
+
+        Compares each rendered result against the session's cached value.
+        Returns synthetic delta-style events only for templates whose
+        output actually changed.
+        """
+        if not session.templates:
+            return []
+
+        changed: list[dict[str, Any]] = []
+        now_iso = dt_util.utcnow().isoformat()
+
+        for tile_id, template_str in session.templates.items():
+            try:
+                tpl = Template(template_str, self.hass)
+                tpl.hass = self.hass
+                rendered = tpl.async_render()
+                value = str(rendered).strip()
+            except Exception:
+                value = ""
+
+            previous = session.template_values.get(tile_id)
+            if value != previous:
+                session.template_values[tile_id] = value
+                entity_id = f"template.{tile_id}"
+                changed.append({
+                    "entity_id": entity_id,
+                    "state": value,
+                    "new_state": {
+                        "entity_id": entity_id,
+                        "state": value,
+                        "attributes": {"friendly_name": "Template"},
+                        "last_updated": now_iso,
+                    },
+                    "context_id": None,
+                    "last_updated": now_iso,
+                })
+
+        return changed
+
+    def _snapshot_templates(
+        self, session: WatchSession
+    ) -> list[dict[str, Any]]:
+        """Render all subscribed templates for a full snapshot response."""
+        if not session.templates:
+            return []
+
+        results: list[dict[str, Any]] = []
+        now_iso = dt_util.utcnow().isoformat()
+
+        for tile_id, template_str in session.templates.items():
+            try:
+                tpl = Template(template_str, self.hass)
+                tpl.hass = self.hass
+                rendered = tpl.async_render()
+                value = str(rendered).strip()
+            except Exception:
+                value = ""
+
+            session.template_values[tile_id] = value
+            entity_id = f"template.{tile_id}"
+            results.append({
+                "entity_id": entity_id,
+                "state": value,
+                "new_state": {
+                    "entity_id": entity_id,
+                    "state": value,
+                    "attributes": {"friendly_name": "Template"},
+                    "last_updated": now_iso,
+                },
+                "context_id": None,
+                "last_updated": now_iso,
+            })
+
+        return results
 
     def _prune_sessions(self) -> None:
         """Drop idle watch sessions."""
@@ -957,6 +1056,15 @@ class WatchUpdatesView(HomeAssistantView):
                 if isinstance(domain, str) and isinstance(ids, list):
                     summary_entities[domain] = [eid for eid in ids if isinstance(eid, str) and eid]
 
+        # Optional: template subscriptions (tile_id → Jinja2 string)
+        raw_templates = payload.get("templates")
+        templates: dict[str, str] | None = None
+        if isinstance(raw_templates, dict):
+            templates = {
+                k: v for k, v in raw_templates.items()
+                if isinstance(k, str) and isinstance(v, str) and k and v
+            }
+
         # Piggyback device token registration on authenticated poll
         device_token = payload.get("device_token")
         if (
@@ -982,6 +1090,7 @@ class WatchUpdatesView(HomeAssistantView):
             summary_entities=summary_entities,
             slim=slim,
             include_summary=include_summary or force_delta or summary_entities is not None,
+            templates=templates,
         )
 
         if status == 204:
