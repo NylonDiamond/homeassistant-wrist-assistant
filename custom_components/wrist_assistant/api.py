@@ -97,7 +97,7 @@ _SLIM_ATTRIBUTES: dict[str, set[str]] = {
     },
     "media_player": {
         "friendly_name", "media_title", "media_artist", "media_album_name",
-        "media_content_type", "media_duration", "media_position",
+        "media_content_type", "media_content_id", "media_duration", "media_position",
         "media_position_updated_at", "app_name", "group_members",
         "volume_level", "is_volume_muted", "source", "source_list",
         "sound_mode", "sound_mode_list", "shuffle", "repeat",
@@ -462,10 +462,14 @@ class DeltaCoordinator:
         old_state: State | None,
         new_state: State,
         payload: dict[str, Any],
-    ) -> None:
-        """Detect media player buffering after track changes and inject hint."""
+    ) -> bool:
+        """Detect media player buffering after track changes and inject hint.
+
+        Returns True if this event should be suppressed (intermediate buffering
+        update with no meaningful state change).
+        """
         if not entity_id.startswith("media_player."):
-            return
+            return False
 
         new_attrs = new_state.attributes
         new_title = new_attrs.get("media_title")
@@ -475,13 +479,14 @@ class DeltaCoordinator:
 
         # Detect title change → start tracking
         old_title = old_state.attributes.get("media_title") if old_state else None
-        if (
+        is_title_change = (
             old_title is not None
             and new_title is not None
             and old_title != new_title
             and new_state.state == "playing"
             and (new_pos is None or new_pos == 0)
-        ):
+        )
+        if is_title_change:
             pos_updated_str = str(new_pos_updated) if new_pos_updated else None
             self._media_buffer_states[entity_id] = _MediaBufferState(
                 anchor_pos_updated_at=pos_updated_str,
@@ -492,7 +497,7 @@ class DeltaCoordinator:
 
         buf = self._media_buffer_states.get(entity_id)
         if buf is None:
-            return
+            return False
 
         # Check for resolution conditions
         resolved = False
@@ -514,11 +519,14 @@ class DeltaCoordinator:
 
         if resolved:
             self._media_buffer_states.pop(entity_id, None)
+            return False
         else:
             # Inject buffering hint into payload attributes
             ns = payload.get("new_state")
             if ns and "attributes" in ns:
                 ns["attributes"]["_wa_media_buffering"] = True
+            # Suppress intermediate events (not the initial title change)
+            return not is_title_change
 
     @callback
     def _handle_state_changed(self, event: Event) -> None:
@@ -537,7 +545,9 @@ class DeltaCoordinator:
         }
 
         old_state: State | None = event.data.get("old_state")
-        self._annotate_media_buffering(new_state.entity_id, old_state, new_state, payload)
+        suppress = self._annotate_media_buffering(new_state.entity_id, old_state, new_state, payload)
+        if suppress:
+            return  # Skip intermediate buffering event
 
         self._events.append(
             DeltaEvent(
