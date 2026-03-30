@@ -1098,11 +1098,11 @@ class WatchUpdatesView(HomeAssistantView):
         if body is None:
             return Response(status=status)
 
-        json_bytes = _json.dumps(body, separators=(",", ":")).encode("utf-8")
+        json_bytes = _json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
-        # Gzip compress if the client supports it
+        # Gzip compress if the client supports it (skip for tiny payloads)
         accept_encoding = request.headers.get("Accept-Encoding", "")
-        if "gzip" in accept_encoding:
+        if "gzip" in accept_encoding and len(json_bytes) > 256:
             compressed = gzip.compress(json_bytes, compresslevel=6)
             return Response(
                 body=compressed,
@@ -1173,9 +1173,9 @@ class WatchSummaryView(HomeAssistantView):
             "capabilities": sorted(coordinator._capabilities),
         }
 
-        json_bytes = _json.dumps(body, separators=(",", ":")).encode("utf-8")
+        json_bytes = _json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         accept_encoding = request.headers.get("Accept-Encoding", "")
-        if "gzip" in accept_encoding:
+        if "gzip" in accept_encoding and len(json_bytes) > 256:
             compressed = gzip.compress(json_bytes, compresslevel=6)
             return Response(
                 body=compressed,
