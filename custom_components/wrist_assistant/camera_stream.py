@@ -196,7 +196,7 @@ def _process_frame(
     if cur_w > width:
         ratio = width / cur_w
         new_h = max(1, int(cur_h * ratio))
-        img = img.resize((width, new_h), Image.BILINEAR)
+        img = img.resize((width, new_h), Image.Resampling.BILINEAR)
 
     # Recompress as JPEG
     buf = BytesIO()
@@ -364,6 +364,8 @@ class CameraStreamView(HomeAssistantView):
         await response.prepare(request)
 
         consecutive_source_errors = 0
+        last_frame_hash: int | None = None
+        loop = asyncio.get_running_loop()
 
         try:
             while True:
@@ -373,6 +375,7 @@ class CameraStreamView(HomeAssistantView):
                 current_quality = session.quality
                 fetch_entity = session.source_entity_id or entity_id
                 frame_interval = 1.0 / session.fps
+                next_frame_at = loop.time() + frame_interval
 
                 try:
                     # Get frame from HA camera platform
@@ -380,8 +383,15 @@ class CameraStreamView(HomeAssistantView):
                         self._hass, fetch_entity, timeout=5
                     )
                     if image is None or image.content is None:
-                        await asyncio.sleep(frame_interval)
+                        await asyncio.sleep(max(0, next_frame_at - loop.time()))
                         continue
+
+                    # Skip duplicate frames from the source camera
+                    frame_hash = hash(image.content)
+                    if frame_hash == last_frame_hash:
+                        await asyncio.sleep(max(0, next_frame_at - loop.time()))
+                        continue
+                    last_frame_hash = frame_hash
 
                     # Process frame in executor (PIL is sync/CPU-bound)
                     processed, src_w, src_h = await self._hass.async_add_executor_job(
@@ -426,7 +436,7 @@ class CameraStreamView(HomeAssistantView):
                     session.source_entity_id = None
                     consecutive_source_errors = 0
 
-                await asyncio.sleep(frame_interval)
+                await asyncio.sleep(max(0, next_frame_at - loop.time()))
         except asyncio.CancelledError:
             pass
         finally:
