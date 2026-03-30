@@ -723,6 +723,21 @@ class DeltaCoordinator:
         )
         return value, deps
 
+    @staticmethod
+    def _template_event(tile_id: str, value: str, now_iso: str) -> dict[str, Any]:
+        """Build a delta event dict for a template value.
+
+        If the rendered value contains newlines, each line is sent as an
+        equal entry in the ``lines`` attribute for uniform rendering.
+        """
+        lines = [l for l in value.split("\n") if l] if value else []
+        entity_id = f"template.{tile_id}"
+        return {
+            "entity_id": entity_id,
+            "lines": lines,
+            "last_updated": now_iso,
+        }
+
     def _evaluate_templates(
         self, session: WatchSession, changed_ids: set[str] | None = None,
     ) -> list[dict[str, Any]]:
@@ -755,23 +770,12 @@ class DeltaCoordinator:
                 session.template_deps[tile_id] = deps
             except Exception:
                 value = ""
+                session.template_deps[tile_id] = _TemplateDeps(frozenset(), frozenset(), False)
 
             previous = session.template_values.get(tile_id)
             if value != previous:
                 session.template_values[tile_id] = value
-                entity_id = f"template.{tile_id}"
-                changed.append({
-                    "entity_id": entity_id,
-                    "state": value,
-                    "new_state": {
-                        "entity_id": entity_id,
-                        "state": value,
-                        "attributes": {"friendly_name": "Template"},
-                        "last_updated": now_iso,
-                    },
-                    "context_id": None,
-                    "last_updated": now_iso,
-                })
+                changed.append(self._template_event(tile_id, value, now_iso))
 
         return changed
 
@@ -791,21 +795,10 @@ class DeltaCoordinator:
                 session.template_deps[tile_id] = deps
             except Exception:
                 value = ""
+                session.template_deps[tile_id] = _TemplateDeps(frozenset(), frozenset(), False)
 
             session.template_values[tile_id] = value
-            entity_id = f"template.{tile_id}"
-            results.append({
-                "entity_id": entity_id,
-                "state": value,
-                "new_state": {
-                    "entity_id": entity_id,
-                    "state": value,
-                    "attributes": {"friendly_name": "Template"},
-                    "last_updated": now_iso,
-                },
-                "context_id": None,
-                "last_updated": now_iso,
-            })
+            results.append(self._template_event(tile_id, value, now_iso))
 
         return results
 
