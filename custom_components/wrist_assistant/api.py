@@ -225,6 +225,7 @@ class DeltaCoordinator:
         self._event_times: deque[float] = deque(maxlen=MAX_EVENTS_BUFFER)
         self._session_callbacks: list[callback] = []
         self._capabilities: set[str] = {"smart_camera_stream", "template_subscriptions"}
+        self._sorted_capabilities: list[str] = sorted(self._capabilities)
         self._media_buffer_states: dict[str, _MediaBufferState] = {}
         self._unsub_state_changed = hass.bus.async_listen(
             EVENT_STATE_CHANGED, self._handle_state_changed
@@ -233,6 +234,7 @@ class DeltaCoordinator:
     def register_capability(self, cap: str) -> None:
         """Register a server capability advertised to clients."""
         self._capabilities.add(cap)
+        self._sorted_capabilities = sorted(self._capabilities)
 
     @callback
     def async_add_session_listener(self, cb: callback) -> callback:
@@ -775,7 +777,7 @@ class DeltaCoordinator:
             "next_cursor": next_cursor,
             "need_entities": need_entities,
             "resync_required": resync_required,
-            "capabilities": sorted(self._capabilities),
+            "capabilities": self._sorted_capabilities,
         }
         if include_summary or include_details:
             payload["info_summary"] = self._compute_info_summary(
@@ -935,7 +937,7 @@ class DeltaCoordinator:
         if allowed is not None:
             attrs = {k: v for k, v in state.attributes.items() if k in allowed}
         else:
-            attrs = dict(state.attributes)
+            attrs = state.attributes
         return {
             "entity_id": state.entity_id,
             "state": state.state,
@@ -1170,7 +1172,7 @@ class WatchSummaryView(HomeAssistantView):
                 battery_threshold=battery_threshold,
                 summary_entities=summary_entities,
             ),
-            "capabilities": sorted(coordinator._capabilities),
+            "capabilities": coordinator._sorted_capabilities,
         }
 
         json_bytes = _json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
