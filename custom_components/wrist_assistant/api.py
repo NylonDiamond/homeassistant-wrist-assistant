@@ -664,7 +664,7 @@ class DeltaCoordinator:
         return {
             wid: s
             for wid, s in self._sessions.items()
-            if not wid.startswith("__") or not wid.endswith("__")
+            if not (wid.startswith("__") and wid.endswith("__"))
         }
 
     def _evaluate_templates(
