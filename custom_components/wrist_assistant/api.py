@@ -31,6 +31,15 @@ _LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
+class _TemplateDeps:
+    """Tracked dependencies for a rendered template."""
+
+    entities: frozenset[str]  # specific entity_ids
+    domains: frozenset[str]  # domain-level deps (e.g. "light")
+    all_states: bool  # True if template uses bare `states`
+
+
+@dataclass(slots=True)
 class WatchSession:
     """Per-watch subscription data."""
 
@@ -40,6 +49,7 @@ class WatchSession:
     entities_synced: bool = False
     templates: dict[str, str] = field(default_factory=dict)
     template_values: dict[str, str] = field(default_factory=dict)
+    template_deps: dict[str, _TemplateDeps] = field(default_factory=dict)
     last_seen: datetime = field(default_factory=dt_util.utcnow)
     first_seen: datetime = field(default_factory=dt_util.utcnow)
     last_poll_interval: timedelta | None = None
@@ -320,6 +330,7 @@ class DeltaCoordinator:
         if templates is not None:
             session.templates = {k: v for k, v in templates.items() if isinstance(k, str) and isinstance(v, str)}
             session.template_values.clear()
+            session.template_deps.clear()
 
         self._fire_session_callbacks()
 
@@ -377,6 +388,7 @@ class DeltaCoordinator:
                 include_summary=include_summary,
             )
 
+        changed_ids = self._changed_entity_ids(since_cursor)
         events, next_cursor = self._collect_events(
             since_cursor=since_cursor,
             entities=session.entities,
@@ -384,7 +396,7 @@ class DeltaCoordinator:
             slim=slim,
         )
         # Evaluate subscribed templates and include any changed values
-        template_events = self._evaluate_templates(session)
+        template_events = self._evaluate_templates(session, changed_ids=changed_ids)
         if template_events:
             events.extend(template_events)
         if events:
@@ -422,13 +434,14 @@ class DeltaCoordinator:
 
                 if self._generation != observed_generation:
                     observed_generation = self._generation
+                    changed_ids = self._changed_entity_ids(since_cursor)
                     events, next_cursor = self._collect_events(
                         since_cursor=since_cursor,
                         entities=session.entities,
                         limit=MAX_EVENTS_PER_RESPONSE,
                         slim=slim,
                     )
-                    template_events = self._evaluate_templates(session)
+                    template_events = self._evaluate_templates(session, changed_ids=changed_ids)
                     if template_events:
                         events.extend(template_events)
                     if events:
@@ -452,13 +465,14 @@ class DeltaCoordinator:
                 self._generation_event.clear()
                 observed_generation = self._generation
 
+                changed_ids = self._changed_entity_ids(since_cursor)
                 events, next_cursor = self._collect_events(
                     since_cursor=since_cursor,
                     entities=session.entities,
                     limit=MAX_EVENTS_PER_RESPONSE,
                     slim=slim,
                 )
-                template_events = self._evaluate_templates(session)
+                template_events = self._evaluate_templates(session, changed_ids=changed_ids)
                 if template_events:
                     events.extend(template_events)
                 if events:
@@ -669,14 +683,54 @@ class DeltaCoordinator:
             if not (wid.startswith("__") and wid.endswith("__"))
         }
 
+    def _changed_entity_ids(self, since_cursor: int) -> set[str]:
+        """Collect all entity_ids that changed after the given cursor."""
+        changed: set[str] = set()
+        for event in self._events:
+            if event.cursor <= since_cursor:
+                continue
+            changed.add(event.entity_id)
+        return changed
+
+    @staticmethod
+    def _template_needs_render(
+        deps: _TemplateDeps, changed_ids: set[str], changed_domains: set[str] | None = None,
+    ) -> bool:
+        """Check if a template's dependencies overlap with changed entities."""
+        if deps.all_states:
+            return True
+        if deps.entities & changed_ids:
+            return True
+        if deps.domains:
+            if changed_domains is None:
+                changed_domains = {eid.split(".", 1)[0] for eid in changed_ids}
+            if deps.domains & changed_domains:
+                return True
+        return False
+
+    def _render_template_tracked(
+        self, template_str: str,
+    ) -> tuple[str, _TemplateDeps]:
+        """Render a template and return (value, dependencies)."""
+        tpl = Template(template_str, self.hass)
+        tpl.hass = self.hass
+        info = tpl.async_render_to_info()
+        value = str(info.result).strip() if info.result is not None else ""
+        deps = _TemplateDeps(
+            entities=info.entities or frozenset(),
+            domains=info.domains or frozenset(),
+            all_states=info.all_states,
+        )
+        return value, deps
+
     def _evaluate_templates(
-        self, session: WatchSession
+        self, session: WatchSession, changed_ids: set[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Render subscribed templates and return events for changed values.
 
-        Compares each rendered result against the session's cached value.
-        Returns synthetic delta-style events only for templates whose
-        output actually changed.
+        When *changed_ids* is provided, only templates whose tracked
+        dependencies overlap with the changed entities are re-rendered.
+        Templates without cached deps (first render) are always rendered.
         """
         if not session.templates:
             return []
@@ -684,12 +738,21 @@ class DeltaCoordinator:
         changed: list[dict[str, Any]] = []
         now_iso = dt_util.utcnow().isoformat()
 
+        # Pre-compute changed domains once for all templates
+        changed_domains: set[str] | None = None
+        if changed_ids:
+            changed_domains = {eid.split(".", 1)[0] for eid in changed_ids}
+
         for tile_id, template_str in session.templates.items():
+            # Skip render if deps are cached and no relevant entity changed
+            cached_deps = session.template_deps.get(tile_id)
+            if cached_deps is not None and changed_ids is not None:
+                if not self._template_needs_render(cached_deps, changed_ids, changed_domains):
+                    continue
+
             try:
-                tpl = Template(template_str, self.hass)
-                tpl.hass = self.hass
-                rendered = tpl.async_render()
-                value = str(rendered).strip()
+                value, deps = self._render_template_tracked(template_str)
+                session.template_deps[tile_id] = deps
             except Exception:
                 value = ""
 
@@ -724,10 +787,8 @@ class DeltaCoordinator:
 
         for tile_id, template_str in session.templates.items():
             try:
-                tpl = Template(template_str, self.hass)
-                tpl.hass = self.hass
-                rendered = tpl.async_render()
-                value = str(rendered).strip()
+                value, deps = self._render_template_tracked(template_str)
+                session.template_deps[tile_id] = deps
             except Exception:
                 value = ""
 
