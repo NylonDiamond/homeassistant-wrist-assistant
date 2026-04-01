@@ -660,6 +660,17 @@ class CameraBatchView(HomeAssistantView):
             except ValueError:
                 return {"entity_id": entity_id, "data": None, "size": 0}
 
+            # Optional viewport crop (normalized 0.0-1.0)
+            viewport = ViewportState()
+            if "viewport" in spec and isinstance(spec["viewport"], dict):
+                vp = spec["viewport"]
+                viewport = ViewportState(
+                    x=max(0.0, min(1.0, float(vp.get("x", 0.0)))),
+                    y=max(0.0, min(1.0, float(vp.get("y", 0.0)))),
+                    w=max(0.01, min(1.0, float(vp.get("w", 1.0)))),
+                    h=max(0.01, min(1.0, float(vp.get("h", 1.0)))),
+                )
+
             try:
                 image: CameraImage = await async_get_image(self._hass, entity_id, timeout=5)
                 if image is None or image.content is None:
@@ -668,7 +679,7 @@ class CameraBatchView(HomeAssistantView):
                 processed, _, _ = await self._hass.async_add_executor_job(
                     _process_frame,
                     image.content,
-                    ViewportState(),  # Full frame
+                    viewport,
                     width,
                     quality,
                 )
