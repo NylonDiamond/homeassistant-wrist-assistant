@@ -118,7 +118,7 @@ _SLIM_ATTRIBUTES: dict[str, set[str]] = {
         "sound_mode", "sound_mode_list", "shuffle", "repeat",
         "supported_features", "entity_picture",
         "icon", "device_class",
-        "_wa_media_buffering",
+        "_wa_media_buffering", "mass_player_type",
     },
     "camera": {
         "friendly_name", "entity_picture", "frontend_stream_type", "icon",
