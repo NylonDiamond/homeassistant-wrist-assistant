@@ -28,6 +28,7 @@ MAX_EVENTS_PER_RESPONSE = 250
 SESSION_TTL = timedelta(minutes=5)
 
 _LOGGER = logging.getLogger(__name__)
+_ATTR_DIFF_SENTINEL = object()
 
 
 @dataclass(slots=True)
@@ -53,6 +54,7 @@ class WatchSession:
     last_seen: datetime = field(default_factory=dt_util.utcnow)
     first_seen: datetime = field(default_factory=dt_util.utcnow)
     last_poll_interval: timedelta | None = None
+    last_sent_attrs: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -231,10 +233,13 @@ class DeltaCoordinator:
         self._events: deque[DeltaEvent] = deque(maxlen=MAX_EVENTS_BUFFER)
         self._cursor = 0
         self._generation = 0
-        self._generation_event: asyncio.Event = asyncio.Event()
+        self._waiters: dict[str, asyncio.Event] = {}  # watch_id → per-waiter event
+        self._entity_to_watchers: dict[str, set[str]] = {}  # entity_id → {watch_ids}
+        self._domain_watchers: set[str] = set()  # watch_ids with domain-level template deps
+        self._wake_all_watchers: set[str] = set()  # watch_ids with all_states template deps
         self._event_times: deque[float] = deque(maxlen=MAX_EVENTS_BUFFER)
         self._session_callbacks: list[callback] = []
-        self._capabilities: set[str] = {"smart_camera_stream", "template_subscriptions"}
+        self._capabilities: set[str] = {"smart_camera_stream", "template_subscriptions", "compact_events", "attribute_diffs"}
         self._sorted_capabilities: list[str] = sorted(self._capabilities)
         self._media_buffer_states: dict[str, _MediaBufferState] = {}
         self._unsub_state_changed = hass.bus.async_listen(
@@ -264,6 +269,81 @@ class DeltaCoordinator:
             cb()
 
     @callback
+    def _rebuild_watcher_index(self, watch_id: str) -> None:
+        """Rebuild the entity→watcher reverse index for a session.
+
+        Call after session entity set or template deps change.
+        """
+        # Remove old entries for this watcher
+        self._remove_watcher_index(watch_id)
+
+        session = self._sessions.get(watch_id)
+        if session is None:
+            return
+
+        # Index direct entity subscriptions
+        for entity_id in session.entities:
+            self._entity_to_watchers.setdefault(entity_id, set()).add(watch_id)
+
+        # Index template entity deps
+        has_domain_deps = False
+        has_all_states = False
+        for deps in session.template_deps.values():
+            for entity_id in deps.entities:
+                self._entity_to_watchers.setdefault(entity_id, set()).add(watch_id)
+            if deps.domains:
+                has_domain_deps = True
+            if deps.all_states:
+                has_all_states = True
+
+        if has_domain_deps:
+            self._domain_watchers.add(watch_id)
+        if has_all_states:
+            self._wake_all_watchers.add(watch_id)
+
+    @callback
+    def _remove_watcher_index(self, watch_id: str) -> None:
+        """Remove a watcher from all reverse indexes."""
+        empty_keys = []
+        for entity_id, watchers in self._entity_to_watchers.items():
+            watchers.discard(watch_id)
+            if not watchers:
+                empty_keys.append(entity_id)
+        for key in empty_keys:
+            del self._entity_to_watchers[key]
+        self._domain_watchers.discard(watch_id)
+        self._wake_all_watchers.discard(watch_id)
+
+    @callback
+    def _wake_watchers_for_entity(self, entity_id: str) -> None:
+        """Wake only the long-poll waiters that care about this entity."""
+        domain = entity_id.split(".", 1)[0] if "." in entity_id else ""
+        to_wake: set[str] = set()
+
+        # Direct entity subscribers
+        watchers = self._entity_to_watchers.get(entity_id)
+        if watchers:
+            to_wake.update(watchers)
+
+        # Sessions with domain-level template deps (check each)
+        for wid in self._domain_watchers:
+            session = self._sessions.get(wid)
+            if session is None:
+                continue
+            for deps in session.template_deps.values():
+                if domain in deps.domains:
+                    to_wake.add(wid)
+                    break
+
+        # Sessions with all_states template deps
+        to_wake.update(self._wake_all_watchers)
+
+        for wid in to_wake:
+            waiter = self._waiters.get(wid)
+            if waiter is not None:
+                waiter.set()
+
+    @callback
     def async_shutdown(self) -> None:
         """Clean up listeners."""
         if self._unsub_state_changed is not None:
@@ -287,6 +367,9 @@ class DeltaCoordinator:
     def async_force_resync(self) -> None:
         """Clear all sessions, forcing watches to do a full state refresh."""
         self._sessions.clear()
+        self._entity_to_watchers.clear()
+        self._domain_watchers.clear()
+        self._wake_all_watchers.clear()
         self._fire_session_callbacks()
 
     async def handle_poll(
@@ -300,6 +383,8 @@ class DeltaCoordinator:
         battery_threshold: int = 20,
         summary_entities: dict[str, list[str]] | None = None,
         slim: bool = False,
+        compact: bool = False,
+        attribute_diffs: bool = False,
         include_summary: bool = False,
         templates: dict[str, str] | None = None,
     ) -> tuple[int, dict[str, Any] | None]:
@@ -320,11 +405,13 @@ class DeltaCoordinator:
             session.entities = {entity_id for entity_id in entities if isinstance(entity_id, str)}
             session.config_hash = config_hash
             session.entities_synced = True
+            session.last_sent_attrs.clear()
         elif session.config_hash != config_hash:
             # Watch config changed, ask client to send the latest entity list.
             session.config_hash = config_hash
             session.entities.clear()
             session.entities_synced = False
+            session.last_sent_attrs.clear()
 
         # Store template subscriptions (sent alongside entities)
         if templates is not None:
@@ -351,7 +438,10 @@ class DeltaCoordinator:
             # Capture the cursor before building the snapshot so in-flight
             # state changes are re-delivered as deltas instead of being skipped.
             snapshot_cursor = self._cursor
-            snapshot_events = self._snapshot_current_state(session.entities, slim=slim)
+            snapshot_events = self._snapshot_current_state(
+                session.entities, slim=slim, compact=compact,
+                session=session if attribute_diffs else None, attribute_diffs=attribute_diffs,
+            )
             snapshot_events.extend(self._snapshot_templates(session))
             return 200, self._response_payload(
                 events=snapshot_events,
@@ -394,6 +484,9 @@ class DeltaCoordinator:
             entities=session.entities,
             limit=MAX_EVENTS_PER_RESPONSE,
             slim=slim,
+            compact=compact,
+            session=session if attribute_diffs else None,
+            attribute_diffs=attribute_diffs,
         )
         # Evaluate subscribed templates and include any changed values
         template_events = self._evaluate_templates(session, changed_ids=changed_ids)
@@ -426,6 +519,12 @@ class DeltaCoordinator:
 
         deadline = self.hass.loop.time() + timeout
         observed_generation = self._generation
+
+        # Register per-waiter event and build watcher index
+        waiter_event = asyncio.Event()
+        self._waiters[watch_id] = waiter_event
+        self._rebuild_watcher_index(watch_id)
+
         try:
             while True:
                 remaining = deadline - self.hass.loop.time()
@@ -440,6 +539,9 @@ class DeltaCoordinator:
                         entities=session.entities,
                         limit=MAX_EVENTS_PER_RESPONSE,
                         slim=slim,
+                        compact=compact,
+                        session=session if attribute_diffs else None,
+                        attribute_diffs=attribute_diffs,
                     )
                     template_events = self._evaluate_templates(session, changed_ids=changed_ids)
                     if template_events:
@@ -458,11 +560,11 @@ class DeltaCoordinator:
                     continue
 
                 try:
-                    await asyncio.wait_for(self._generation_event.wait(), timeout=remaining)
+                    await asyncio.wait_for(waiter_event.wait(), timeout=remaining)
                 except TimeoutError:
                     return 204, None
 
-                self._generation_event.clear()
+                waiter_event.clear()
                 observed_generation = self._generation
 
                 changed_ids = self._changed_entity_ids(since_cursor)
@@ -471,6 +573,9 @@ class DeltaCoordinator:
                     entities=session.entities,
                     limit=MAX_EVENTS_PER_RESPONSE,
                     slim=slim,
+                    compact=compact,
+                    session=session if attribute_diffs else None,
+                    attribute_diffs=attribute_diffs,
                 )
                 template_events = self._evaluate_templates(session, changed_ids=changed_ids)
                 if template_events:
@@ -488,8 +593,11 @@ class DeltaCoordinator:
                 since_cursor = next_cursor
         except asyncio.CancelledError:
             self._sessions.pop(watch_id, None)
+            self._remove_watcher_index(watch_id)
             self._fire_session_callbacks()
             raise
+        finally:
+            self._waiters.pop(watch_id, None)
 
     @callback
     def _annotate_media_buffering(
@@ -594,50 +702,140 @@ class DeltaCoordinator:
         )
         self._event_times.append(self.hass.loop.time())
         self._generation += 1
-        self._generation_event.set()
+        self._wake_watchers_for_entity(new_state.entity_id)
+
+    @staticmethod
+    def _diff_attributes(
+        full_attrs: dict[str, Any],
+        previous: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Compute attribute diff between full_attrs and previously sent attrs.
+
+        Returns a dict with only changed/new keys. If any keys were removed,
+        includes "_removed": [list of removed keys].
+        """
+        if previous is None:
+            return full_attrs
+        diff: dict[str, Any] = {}
+        for k, v in full_attrs.items():
+            prev_v = previous.get(k, _ATTR_DIFF_SENTINEL)
+            if prev_v is _ATTR_DIFF_SENTINEL or prev_v != v:
+                diff[k] = v
+        removed = [k for k in previous if k not in full_attrs]
+        if removed:
+            diff["_removed"] = removed
+        return diff
+
+    @staticmethod
+    def _compact_event(event: dict[str, Any]) -> dict[str, Any]:
+        """Flatten a nested event payload into compact format.
+
+        Lifts attributes from new_state to top level and drops the
+        redundant new_state wrapper.
+        """
+        ns = event.get("new_state")
+        if ns is None:
+            return event
+        return {
+            "entity_id": event["entity_id"],
+            "state": event.get("state", ns.get("state")),
+            "attributes": ns.get("attributes", {}),
+            "context_id": event.get("context_id"),
+            "last_updated": event.get("last_updated", ns.get("last_updated")),
+        }
 
     def _snapshot_current_state(
-        self, entities: set[str], *, slim: bool = False
+        self, entities: set[str], *,
+        slim: bool = False, compact: bool = False,
+        session: "WatchSession | None" = None, attribute_diffs: bool = False,
     ) -> list[dict[str, Any]]:
-        """Build a full state snapshot from HA's state machine for the given entities."""
+        """Build a full state snapshot from HA's state machine for the given entities.
+
+        When attribute_diffs is True, populates session.last_sent_attrs so
+        subsequent delta events can compute diffs against this baseline.
+        """
         to_payload = self._slim_state_to_payload if slim else self._state_to_payload
         snapshot: list[dict[str, Any]] = []
         for entity_id in entities:
             state = self.hass.states.get(entity_id)
             if state is None:
                 continue
-            entry = {
-                "entity_id": state.entity_id,
-                "state": state.state,
-                "new_state": to_payload(state),
-                "context_id": (
-                    state.context.id if state.context is not None else None
-                ),
-                "last_updated": state.last_updated.isoformat(),
-            }
-            # Annotate active buffering state for media players in snapshots
-            if entity_id in self._media_buffer_states:
-                ns = entry.get("new_state")
-                if ns and "attributes" in ns:
-                    ns["attributes"]["_wa_media_buffering"] = True
+            if compact:
+                attrs = to_payload(state).get("attributes", {})
+                # Annotate active buffering state for media players
+                if entity_id in self._media_buffer_states:
+                    attrs = {**attrs, "_wa_media_buffering": True}
+                entry = {
+                    "entity_id": state.entity_id,
+                    "state": state.state,
+                    "attributes": attrs,
+                    "context_id": (
+                        state.context.id if state.context is not None else None
+                    ),
+                    "last_updated": state.last_updated.isoformat(),
+                }
+            else:
+                entry = {
+                    "entity_id": state.entity_id,
+                    "state": state.state,
+                    "new_state": to_payload(state),
+                    "context_id": (
+                        state.context.id if state.context is not None else None
+                    ),
+                    "last_updated": state.last_updated.isoformat(),
+                }
+                # Annotate active buffering state for media players in snapshots
+                if entity_id in self._media_buffer_states:
+                    ns = entry.get("new_state")
+                    if ns and "attributes" in ns:
+                        ns["attributes"]["_wa_media_buffering"] = True
+            # Record baseline for attribute diffs on subsequent deltas
+            if attribute_diffs and session is not None:
+                if compact:
+                    session.last_sent_attrs[entity_id] = dict(attrs)
+                else:
+                    ns_payload = entry.get("new_state", {})
+                    session.last_sent_attrs[entity_id] = dict(ns_payload.get("attributes", {}))
             snapshot.append(entry)
         return snapshot
 
+    def _bisect_cursor(self, since_cursor: int) -> int:
+        """Return the deque index of the first event with cursor > since_cursor.
+
+        Cursors are monotonically increasing, so the index is computed
+        arithmetically in O(1) from the oldest event's cursor.
+        Returns len(deque) if all events are at or before since_cursor.
+        """
+        events = self._events
+        if not events:
+            return 0
+        base_cursor = events[0].cursor
+        # index of the event with cursor == since_cursor + 1
+        idx = since_cursor - base_cursor + 1
+        return max(0, min(idx, len(events)))
+
     def _collect_events(
-        self, since_cursor: int, entities: set[str], limit: int, *, slim: bool = False
+        self, since_cursor: int, entities: set[str], limit: int,
+        *, slim: bool = False, compact: bool = False,
+        session: "WatchSession | None" = None, attribute_diffs: bool = False,
     ) -> tuple[list[dict[str, Any]], int]:
         """Collect filtered events after the provided cursor."""
         matched: list[dict[str, Any]] = []
         last_sent_cursor = since_cursor
-        for event in self._events:
-            if event.cursor <= since_cursor:
-                continue
+        start = self._bisect_cursor(since_cursor)
+        for i in range(start, len(self._events)):
+            event = self._events[i]
             if event.entity_id not in entities:
                 continue
 
             payload = event.payload
             if slim:
                 payload = self._slim_event_payload(payload)
+            if compact:
+                payload = self._compact_event(payload)
+            # Apply attribute-level diff if enabled
+            if attribute_diffs and session is not None:
+                payload = self._apply_attribute_diff(payload, session, compact)
             matched.append(payload)
             last_sent_cursor = event.cursor
             if len(matched) >= limit:
@@ -646,6 +844,37 @@ class DeltaCoordinator:
         if matched:
             return matched, last_sent_cursor
         return [], since_cursor
+
+    def _apply_attribute_diff(
+        self,
+        payload: dict[str, Any],
+        session: "WatchSession",
+        compact: bool,
+    ) -> dict[str, Any]:
+        """Replace full attributes with a diff against last-sent values.
+
+        Updates session.last_sent_attrs with the full attributes for next diff.
+        """
+        entity_id = payload.get("entity_id", "")
+        if compact:
+            full_attrs = payload.get("attributes", {})
+        else:
+            ns = payload.get("new_state")
+            if not isinstance(ns, dict):
+                return payload
+            full_attrs = ns.get("attributes", {})
+
+        previous = session.last_sent_attrs.get(entity_id)
+        diffed = self._diff_attributes(full_attrs, previous)
+        session.last_sent_attrs[entity_id] = dict(full_attrs)
+
+        if compact:
+            return {**payload, "attributes": diffed}
+        else:
+            return {
+                **payload,
+                "new_state": {**payload["new_state"], "attributes": diffed},
+            }
 
     def _is_stale_cursor(self, since_cursor: int) -> bool:
         """Return True if requested cursor is out of range.
@@ -686,10 +915,9 @@ class DeltaCoordinator:
     def _changed_entity_ids(self, since_cursor: int) -> set[str]:
         """Collect all entity_ids that changed after the given cursor."""
         changed: set[str] = set()
-        for event in self._events:
-            if event.cursor <= since_cursor:
-                continue
-            changed.add(event.entity_id)
+        start = self._bisect_cursor(since_cursor)
+        for i in range(start, len(self._events)):
+            changed.add(self._events[i].entity_id)
         return changed
 
     @staticmethod
@@ -712,9 +940,18 @@ class DeltaCoordinator:
         self, template_str: str,
     ) -> tuple[str, _TemplateDeps]:
         """Render a template and return (value, dependencies)."""
+        import time as _time
+
         tpl = Template(template_str, self.hass)
         tpl.hass = self.hass
+        t0 = _time.monotonic()
         info = tpl.async_render_to_info()
+        elapsed_ms = (_time.monotonic() - t0) * 1000
+        if elapsed_ms > 50:
+            _LOGGER.warning(
+                "Slow template render (%.0fms): %.120s",
+                elapsed_ms, template_str,
+            )
         value = str(info.result).strip() if info.result is not None else ""
         deps = _TemplateDeps(
             entities=info.entities or frozenset(),
@@ -812,6 +1049,8 @@ class DeltaCoordinator:
         ]
         for watch_id in expired:
             self._sessions.pop(watch_id, None)
+            self._waiters.pop(watch_id, None)
+            self._remove_watcher_index(watch_id)
         if expired:
             self._fire_session_callbacks()
 
@@ -1098,6 +1337,8 @@ class WatchUpdatesView(HomeAssistantView):
 
         force_delta = payload.get("force_delta", False) is True
         slim = payload.get("slim", False) is True
+        compact = payload.get("compact", False) is True
+        attribute_diffs = payload.get("attribute_diffs", False) is True
         include_summary = payload.get("include_summary", False) is True
         raw_threshold = payload.get("battery_threshold", 20)
         battery_threshold = max(5, min(95, int(raw_threshold) if isinstance(raw_threshold, (int, float)) else 20))
@@ -1145,6 +1386,8 @@ class WatchUpdatesView(HomeAssistantView):
             battery_threshold=battery_threshold,
             summary_entities=summary_entities,
             slim=slim,
+            compact=compact,
+            attribute_diffs=attribute_diffs,
             include_summary=include_summary or force_delta or summary_entities is not None,
             templates=templates,
         )
@@ -1159,7 +1402,7 @@ class WatchUpdatesView(HomeAssistantView):
         # Gzip compress if the client supports it (skip for tiny payloads)
         accept_encoding = request.headers.get("Accept-Encoding", "")
         if "gzip" in accept_encoding and len(json_bytes) > 256:
-            compressed = gzip.compress(json_bytes, compresslevel=6)
+            compressed = gzip.compress(json_bytes, compresslevel=1)
             return Response(
                 body=compressed,
                 status=status,
@@ -1232,7 +1475,7 @@ class WatchSummaryView(HomeAssistantView):
         json_bytes = _json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         accept_encoding = request.headers.get("Accept-Encoding", "")
         if "gzip" in accept_encoding and len(json_bytes) > 256:
-            compressed = gzip.compress(json_bytes, compresslevel=6)
+            compressed = gzip.compress(json_bytes, compresslevel=1)
             return Response(
                 body=compressed,
                 status=200,

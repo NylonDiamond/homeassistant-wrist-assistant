@@ -204,6 +204,19 @@ def _process_frame(
     return buf.getvalue(), source_w, source_h
 
 
+def _frame_fingerprint(data: bytes) -> int:
+    """Fast fingerprint for frame dedup using sampled bytes + length.
+
+    For frames larger than 2KB, samples the first and last 1KB plus
+    the total length. Camera JPEGs that differ in content will differ
+    in both header metadata and trailing entropy-coded data.
+    """
+    n = len(data)
+    if n <= 2048:
+        return hash(data)
+    return hash((data[:1024], data[-1024:], n))
+
+
 def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
@@ -367,6 +380,13 @@ class CameraStreamView(HomeAssistantView):
         last_frame_hash: int | None = None
         loop = asyncio.get_running_loop()
 
+        # Adaptive frame rate state
+        base_fps = session.fps
+        effective_fps = base_fps
+        consecutive_slow = 0
+        consecutive_fast = 0
+        skip_next = False
+
         try:
             while True:
                 # Read current params from session (may be updated by POST endpoint)
@@ -374,8 +394,22 @@ class CameraStreamView(HomeAssistantView):
                 current_width = session.width
                 current_quality = session.quality
                 fetch_entity = session.source_entity_id or entity_id
-                frame_interval = 1.0 / session.fps
+
+                # Track base FPS changes from viewport POST updates
+                if session.fps != base_fps:
+                    base_fps = session.fps
+                    effective_fps = base_fps
+                    consecutive_slow = 0
+                    consecutive_fast = 0
+
+                frame_interval = 1.0 / effective_fps
                 next_frame_at = loop.time() + frame_interval
+
+                # Skip this frame if flagged by backpressure detection
+                if skip_next:
+                    skip_next = False
+                    await asyncio.sleep(max(0, next_frame_at - loop.time()))
+                    continue
 
                 try:
                     # Get frame from HA camera platform
@@ -387,7 +421,7 @@ class CameraStreamView(HomeAssistantView):
                         continue
 
                     # Skip duplicate frames from the source camera
-                    frame_hash = hash(image.content)
+                    frame_hash = _frame_fingerprint(image.content)
                     if frame_hash == last_frame_hash:
                         await asyncio.sleep(max(0, next_frame_at - loop.time()))
                         continue
@@ -407,14 +441,42 @@ class CameraStreamView(HomeAssistantView):
                         session.source_width = src_w
                         session.source_height = src_h
 
-                    # Write MJPEG frame
+                    # Write MJPEG frame with backpressure detection
+                    write_start = loop.time()
                     await response.write(
                         b"--frame\r\n"
                         b"Content-Type: image/jpeg\r\n"
                         b"Content-Length: " + str(len(processed)).encode() + b"\r\n"
                         b"\r\n" + processed + b"\r\n"
                     )
+                    write_duration = loop.time() - write_start
                     consecutive_source_errors = 0
+
+                    # Adaptive FPS: detect slow writes (client can't keep up)
+                    if write_duration > frame_interval * 0.5:
+                        consecutive_fast = 0
+                        consecutive_slow += 1
+                        # Skip next frame immediately on slow write
+                        skip_next = True
+                        # After sustained slowness, halve effective FPS
+                        if consecutive_slow >= 3 and effective_fps > MIN_FPS:
+                            effective_fps = max(MIN_FPS, effective_fps / 2)
+                            consecutive_slow = 0
+                            _LOGGER.debug(
+                                "Adaptive FPS: reduced to %.1f for %s (watch: %s)",
+                                effective_fps, entity_id, watch_id,
+                            )
+                    else:
+                        consecutive_slow = 0
+                        consecutive_fast += 1
+                        # Recover toward base FPS after sustained fast writes
+                        if consecutive_fast >= 5 and effective_fps < base_fps:
+                            effective_fps = min(base_fps, effective_fps * 2)
+                            consecutive_fast = 0
+                            _LOGGER.debug(
+                                "Adaptive FPS: recovered to %.1f for %s (watch: %s)",
+                                effective_fps, entity_id, watch_id,
+                            )
 
                 except (ConnectionResetError, ConnectionAbortedError):
                     break
@@ -640,7 +702,7 @@ class CameraBatchView(HomeAssistantView):
 
         accept_encoding = request.headers.get("Accept-Encoding", "")
         if "gzip" in accept_encoding and len(json_bytes) > 256:
-            compressed = gzip.compress(json_bytes, compresslevel=6)
+            compressed = gzip.compress(json_bytes, compresslevel=1)
             return Response(
                 body=compressed,
                 status=200,
