@@ -588,22 +588,6 @@ class CameraViewportView(HomeAssistantView):
                 return self.json_message(
                     "quality_level must be 'sd' or 'hd'", status_code=400
                 )
-        elif "source_entity_id" in payload:
-            # Legacy: direct source_entity_id override (backwards compat)
-            sid = payload["source_entity_id"]
-            if sid is None:
-                source_entity_id = None  # clear back to original
-            elif isinstance(sid, str) and sid.startswith("camera."):
-                state = self._hass.states.get(sid)
-                if state is None:
-                    return self.json_message(
-                        f"Entity {sid} not found", status_code=404
-                    )
-                source_entity_id = sid
-            else:
-                return self.json_message(
-                    "source_entity_id must start with camera.", status_code=400
-                )
 
         if coordinator.update_session(
             watch_id,

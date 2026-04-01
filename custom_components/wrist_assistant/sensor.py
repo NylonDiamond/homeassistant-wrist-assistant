@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -19,7 +18,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .api import DeltaCoordinator, MAX_EVENTS_BUFFER
 from .const import DOMAIN, WristAssistantConfigEntry
 
-SCAN_INTERVAL = timedelta(seconds=30)
 
 
 async def async_setup_entry(

@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import os
 import time
-import asyncio
 from pathlib import Path
 
 from aiohttp.web import Request, Response

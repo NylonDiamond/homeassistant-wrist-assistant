@@ -79,12 +79,6 @@ _ACTION_SCHEMA = vol.Schema(
         vol.Optional("friendly_name"): cv.string,
         vol.Optional("attributes"): dict,
         vol.Optional("icon"): cv.string,
-        # Legacy keys (ignored by entity buttons, kept for schema compat)
-        vol.Optional("destructive", default=False): cv.boolean,
-        vol.Optional("repeatable", default=False): cv.boolean,
-        vol.Optional("confirm", default=False): cv.boolean,
-        vol.Optional("subtitle"): cv.string,
-        vol.Optional("live_subtitle", default=False): cv.boolean,
     }
 )
 _SEND_NOTIFICATION_SCHEMA = vol.Schema(
@@ -203,9 +197,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
                             attrs[key] = state_obj.attributes[key]
                     if attrs:
                         a.setdefault("attributes", attrs)
-            # Map legacy "title" → "label" for watch parser
-            if "title" in a and "label" not in a:
-                a["label"] = a["title"]
             enriched.append(a)
         return enriched
 
