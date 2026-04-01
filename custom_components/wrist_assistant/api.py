@@ -675,6 +675,8 @@ class DeltaCoordinator:
     @callback
     def _handle_state_changed(self, event: Event) -> None:
         """Track every state change in a bounded in-memory ring buffer."""
+        if not self._sessions:
+            return  # No watches connected — skip payload construction
         new_state: State | None = event.data.get("new_state")
         if new_state is None:
             return
