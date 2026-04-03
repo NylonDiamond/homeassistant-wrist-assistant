@@ -198,6 +198,10 @@ def _process_frame(
         new_h = max(1, int(cur_h * ratio))
         img = img.resize((width, new_h), Image.Resampling.BILINEAR)
 
+    # Ensure RGB mode for JPEG compatibility
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+
     # Recompress as JPEG
     buf = BytesIO()
     img.save(buf, format="JPEG", quality=quality, optimize=True)

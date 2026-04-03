@@ -20,7 +20,7 @@ class WristAssistantConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             return self.async_create_entry(
                 title="Wrist Assistant",
-                data={"initial_setup_done": True},
+                data={},
             )
 
         return self.async_show_form(step_id="user")

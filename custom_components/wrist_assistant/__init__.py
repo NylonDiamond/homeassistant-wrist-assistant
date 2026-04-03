@@ -125,14 +125,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     )
     entry.runtime_data = runtime_data
     hass.data[DOMAIN] = runtime_data
-    hass.http.register_view(WatchUpdatesView(hass))
-    hass.http.register_view(WatchSummaryView(hass))
-    hass.http.register_view(CameraStreamView(hass))
-    hass.http.register_view(CameraViewportView(hass))
-    hass.http.register_view(CameraBatchView(hass))
-    hass.http.register_view(CameraDevicesView(hass))
-    hass.http.register_view(NotificationRegisterView(hass))
-    hass.http.register_view(AudioUploadView(hass))
+
+    if not hass.data.get(f"{DOMAIN}_views_registered"):
+        hass.http.register_view(WatchUpdatesView(hass))
+        hass.http.register_view(WatchSummaryView(hass))
+        hass.http.register_view(CameraStreamView(hass))
+        hass.http.register_view(CameraViewportView(hass))
+        hass.http.register_view(CameraBatchView(hass))
+        hass.http.register_view(CameraDevicesView(hass))
+        hass.http.register_view(NotificationRegisterView(hass))
+        hass.http.register_view(AudioUploadView(hass))
+        hass.data[f"{DOMAIN}_views_registered"] = True
 
     apns_client = await _create_apns_client(hass)
     if apns_client is None:
@@ -164,6 +167,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         coordinator.async_force_resync()
 
     hass.services.async_register(DOMAIN, SERVICE_FORCE_RESYNC, _handle_force_resync)
+    entry.async_on_unload(
+        lambda: hass.services.async_remove(DOMAIN, SERVICE_FORCE_RESYNC)
+    )
 
     def _enrich_actions(actions: list[dict]) -> list[dict]:
         """Enrich action dicts with entity state for entity-driven watch buttons.
@@ -301,6 +307,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         schema=_SEND_NOTIFICATION_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
+    entry.async_on_unload(
+        lambda: hass.services.async_remove(DOMAIN, SERVICE_SEND_NOTIFICATION)
+    )
 
     return True
 
@@ -316,8 +325,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: WristAssistantConfigEnt
         persistent_notification.async_dismiss(
             hass, _PAIRING_NOTIFICATION_ID_TEMPLATE % entry.entry_id
         )
-        hass.services.async_remove(DOMAIN, SERVICE_FORCE_RESYNC)
-        hass.services.async_remove(DOMAIN, SERVICE_SEND_NOTIFICATION)
     return unload_ok
 
 
@@ -408,11 +415,7 @@ async def _install_bundled_blueprints(hass: HomeAssistant) -> None:
 
 def _show_pairing_notification(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Show first-run setup notification."""
-    message = (
-        "Open the Wrist Assistant app to finish connecting your watch.\n\n"
-        "Choose **OAuth** in the app to sign in to Home Assistant. "
-        "No pairing code is needed."
-    )
+    message = "Open the Wrist Assistant app to finish connecting your watch."
     persistent_notification.async_create(
         hass,
         message=message,

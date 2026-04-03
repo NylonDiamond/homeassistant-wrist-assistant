@@ -375,5 +375,5 @@ class WatchConnectedSinceSensor(_WatchSensorBase):
     def native_value(self) -> str | None:
         session = self._coordinator._sessions.get(self._watch_id)
         if session is None:
-            return "N/A"
+            return None
         return session.first_seen.isoformat()
