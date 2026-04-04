@@ -98,7 +98,9 @@ _SLIM_ATTRIBUTES: dict[str, set[str]] = {
     "climate": {
         "friendly_name", "hvac_modes", "hvac_action", "current_temperature",
         "temperature", "target_temp_high", "target_temp_low", "fan_mode", "fan_modes",
-        "preset_mode", "preset_modes", "humidity", "current_humidity", "target_temp_step",
+        "preset_mode", "preset_modes", "humidity", "target_humidity",
+        "current_humidity", "min_humidity", "max_humidity", "target_temp_step",
+        "swing_mode", "swing_modes", "aux_heat",
         "supported_features",
         "min_temp", "max_temp", "icon", "entity_picture",
     },
@@ -108,7 +110,7 @@ _SLIM_ATTRIBUTES: dict[str, set[str]] = {
         "icon", "entity_picture",
     },
     "lock": {
-        "friendly_name", "icon", "entity_picture",
+        "friendly_name", "code_format", "icon", "entity_picture",
     },
     "media_player": {
         "friendly_name", "media_title", "media_artist", "media_album_name",
@@ -132,7 +134,8 @@ _SLIM_ATTRIBUTES: dict[str, set[str]] = {
     },
     "person": {
         "friendly_name", "entity_picture", "gps_accuracy", "latitude", "longitude",
-        "source", "icon",
+        "source", "source_type", "location_accuracy", "location_name",
+        "icon",
     },
     "alarm_control_panel": {
         "friendly_name", "code_arm_required", "code_format", "changed_by",
@@ -141,7 +144,8 @@ _SLIM_ATTRIBUTES: dict[str, set[str]] = {
     },
     "vacuum": {
         "friendly_name", "battery_level", "fan_speed", "fan_speed_list",
-        "status", "icon", "entity_picture",
+        "rooms", "room_list", "cleaning_modes", "cleaning_mode_list",
+        "supported_features", "status", "icon", "entity_picture",
     },
     "input_boolean": {
         "friendly_name", "icon", "entity_picture",
@@ -195,7 +199,7 @@ _SLIM_ATTRIBUTES: dict[str, set[str]] = {
     "water_heater": {
         "friendly_name", "current_operation", "operation_list",
         "temperature", "current_temperature", "min_temp", "max_temp",
-        "is_away_mode_on", "away_mode", "supported_features",
+        "target_temp_step", "is_away_mode_on", "away_mode", "supported_features",
         "icon", "entity_picture",
     },
     "humidifier": {
@@ -213,13 +217,51 @@ _SLIM_ATTRIBUTES: dict[str, set[str]] = {
         "friendly_name", "entity_picture", "icon",
     },
     "weather": {
-        "friendly_name", "temperature", "humidity", "pressure",
-        "wind_speed", "wind_bearing", "forecast",
-        "icon", "entity_picture",
+        "friendly_name", "temperature", "apparent_temperature", "dew_point",
+        "humidity", "pressure", "wind_speed", "wind_bearing", "wind_gust_speed",
+        "visibility", "cloud_coverage", "uv_index",
+        "temperature_unit", "pressure_unit", "wind_speed_unit",
+        "visibility_unit", "precipitation_unit",
+        "forecast", "icon", "entity_picture",
     },
     "zone": {
         "friendly_name", "latitude", "longitude", "radius",
         "passive", "persons", "icon", "entity_picture",
+    },
+    "lawn_mower": {
+        "friendly_name", "icon", "entity_picture",
+    },
+    "siren": {
+        "friendly_name", "supported_features", "available_tones",
+        "icon", "entity_picture",
+    },
+    "event": {
+        "friendly_name", "icon", "entity_picture",
+    },
+    "todo": {
+        "friendly_name", "icon", "entity_picture",
+    },
+    "input_text": {
+        "friendly_name", "icon", "entity_picture",
+    },
+    "input_datetime": {
+        "friendly_name", "has_date", "has_time",
+        "icon", "entity_picture",
+    },
+    "date": {
+        "friendly_name", "icon", "entity_picture",
+    },
+    "time": {
+        "friendly_name", "icon", "entity_picture",
+    },
+    "datetime": {
+        "friendly_name", "icon", "entity_picture",
+    },
+    "assist_satellite": {
+        "friendly_name", "assist_pipeline", "pipeline",
+        "vad_sensitivity", "use_wake_word",
+        "wake_word_engine", "wake_word_id",
+        "icon", "entity_picture",
     },
 }
 
