@@ -37,13 +37,6 @@ Wrist Assistant connects your Apple Watch to Home Assistant with fast setup, rea
 2. Restart Home Assistant.
 3. Add the `Wrist Assistant` integration from `Settings` -> `Devices & Services`.
 
-## Main features
-
-- Real-time sync between Home Assistant and your Apple Watch
-- Fast watch updates designed to stay lightweight and efficient
-- Camera previews and live camera views built for the watch
-- Apple Watch notifications sent from Home Assistant
-
 ## Watch notifications
 
 ### `wrist_assistant.send_notification`

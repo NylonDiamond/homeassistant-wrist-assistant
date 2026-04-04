@@ -2,6 +2,5 @@ __pycache__/
 *.pyc
 CLAUDE.md
 .claude/
-cloudflare/push-relay/node_modules/
-cloudflare/push-relay/.wrangler/
-cloudflare/push-relay/.dev.vars
+futureIdeas/
+RELEASE_NOTES_TEMPLATE.md
