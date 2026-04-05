@@ -1,0 +1,528 @@
+blueprint:
+  name: "Watch Notification"
+  author: "Wrist Assistant"
+  homeassistant:
+    min_version: "2024.8.0"
+  source_url: "https://github.com/NylonDiamond/homeassistant-wrist-assistant/blob/main/blueprints/script/wrist_assistant/watch_notification.yaml"
+  description: >
+    Send push notifications to your Apple Watch with smart entity
+    buttons. Pick up to 4 entities — each becomes a button that
+    knows how to control itself:
+
+    - Lights, switches, fans, covers: tap to toggle
+
+    - Locks, alarms: hold to confirm
+
+    - Lights, covers, fans, climate: double-tap for presets
+
+    Leave button slots empty to skip them. A notification with no
+    buttons shows as info-only (title + message).
+
+
+    **Important:** Notifications must be enabled on your Apple Watch.
+    On your watch, go to Settings → Notifications → Wrist Assistant
+    and make sure notifications are turned on. If you denied the
+    permission prompt on first launch, notifications will not arrive
+    until you enable them here.
+
+
+    **Tip:** Customize how notifications look and behave in the
+    Wrist Assistant iOS app under Settings → Notification Style.
+  domain: script
+  input:
+    target:
+      name: Target Watch
+      description: >
+        *(Optional)* Watch to send to. Leave empty to send to
+        **all** registered watches.
+      default: ""
+      selector:
+        device:
+          filter:
+            - integration: wrist_assistant
+              model: Apple Watch
+    title:
+      name: Title
+      description: "*(Optional)* Displayed above the message."
+      default: ""
+      selector:
+        text:
+    message:
+      name: Message
+      description: Notification body text.
+      selector:
+        text:
+          multiline: true
+    section_button_1:
+      name: "☝️ Button 1"
+      icon: mdi:gesture-tap-button
+      collapsed: true
+      input:
+        button_1_entity:
+          name: Entity
+          description: >
+            *(Optional)* Entity this button controls. The watch shows
+            its name and current state automatically.
+          default: ""
+          selector:
+            entity:
+        button_1_label:
+          name: Label
+          description: >
+            *(Optional)* Custom button text. Defaults to the
+            entity's name.
+          default: ""
+          selector:
+            text:
+
+    section_button_2:
+      name: "☝️ Button 2"
+      icon: mdi:gesture-tap-button
+      collapsed: true
+      input:
+        button_2_entity:
+          name: Entity
+          description: >
+            *(Optional)* Entity this button controls. The watch shows
+            its name and current state automatically.
+          default: ""
+          selector:
+            entity:
+        button_2_label:
+          name: Label
+          description: >
+            *(Optional)* Custom button text. Defaults to the
+            entity's name.
+          default: ""
+          selector:
+            text:
+
+    section_button_3:
+      name: "☝️ Button 3"
+      icon: mdi:gesture-tap-button
+      collapsed: true
+      input:
+        button_3_entity:
+          name: Entity
+          description: >
+            *(Optional)* Entity this button controls. The watch shows
+            its name and current state automatically.
+          default: ""
+          selector:
+            entity:
+        button_3_label:
+          name: Label
+          description: >
+            *(Optional)* Custom button text. Defaults to the
+            entity's name.
+          default: ""
+          selector:
+            text:
+
+    section_button_4:
+      name: "☝️ Button 4"
+      icon: mdi:gesture-tap-button
+      collapsed: true
+      input:
+        button_4_entity:
+          name: Entity
+          description: >
+            *(Optional)* Entity this button controls. The watch shows
+            its name and current state automatically.
+          default: ""
+          selector:
+            entity:
+        button_4_label:
+          name: Label
+          description: >
+            *(Optional)* Custom button text. Defaults to the
+            entity's name.
+          default: ""
+          selector:
+            text:
+
+    section_settings:
+      name: "⚙️ Settings"
+      icon: mdi:cog
+      collapsed: true
+      input:
+        auto_dismiss:
+          name: Auto-Dismiss
+          description: >
+            Automatically dismiss the notification after a successful
+            button tap. Off by default — the notification stays visible.
+          default: false
+          selector:
+            boolean:
+        priority:
+          name: Priority
+          description: >
+            Interruption level. Passive delivers silently, Active is the
+            default, Time Sensitive breaks through Focus/DND, Critical
+            overrides mute.
+          default: "active"
+          selector:
+            select:
+              mode: dropdown
+              options:
+                - label: "Passive (silent delivery)"
+                  value: "passive"
+                - label: "Active (default)"
+                  value: "active"
+                - label: "Time Sensitive (breaks Focus)"
+                  value: "time-sensitive"
+                - label: "Critical (overrides mute)"
+                  value: "critical"
+        sound:
+          name: Sound
+          description: >
+            Pick a preset or type a custom file name. Browse and
+            preview all sounds in the iOS app under
+            Settings → Notification Style → Notification Sound.
+          default: "default"
+          selector:
+            select:
+              mode: dropdown
+              custom_value: true
+              options:
+                - label: "Default sound"
+                  value: "default"
+                - label: "Silent"
+                  value: ""
+                # — Longer / Melodic —
+                - label: "Access Allowed"
+                  value: "Access-Allowed.caf"
+                - label: "Arabian Harp"
+                  value: "Arabian-Harp.caf"
+                - label: "ATM Keypress"
+                  value: "ATM-Keypress.caf"
+                - label: "Bell"
+                  value: "Bell.caf"
+                - label: "Bubble Pop"
+                  value: "Bubble-Pop.caf"
+                - label: "Clear Announce"
+                  value: "Clear-Announce.caf"
+                - label: "Confirmation"
+                  value: "Confirmation.caf"
+                - label: "Correct Answer"
+                  value: "Correct-Answer.caf"
+                - label: "Correct Answer Reward"
+                  value: "Correct-Answer-Reward.caf"
+                - label: "Digital Quick"
+                  value: "Digital-Quick.caf"
+                - label: "Doorbell Single"
+                  value: "Doorbell-Single.caf"
+                - label: "Doorbell Tone"
+                  value: "Doorbell-Tone.caf"
+                - label: "Dry Pop"
+                  value: "Dry-Pop.caf"
+                - label: "Elevator Tone"
+                  value: "Elevator-Tone.caf"
+                - label: "Gaming Lock"
+                  value: "Gaming-Lock.caf"
+                - label: "Guitar Alert"
+                  value: "Guitar-Alert.caf"
+                - label: "Happy Bells"
+                  value: "Happy-Bells.caf"
+                - label: "Interface Back"
+                  value: "Interface-Back.caf"
+                - label: "Interface Remove"
+                  value: "Interface-Remove.caf"
+                - label: "Interface Start"
+                  value: "Interface-Start.caf"
+                - label: "Light Button"
+                  value: "Light-Button.caf"
+                - label: "Long Pop"
+                  value: "Long-Pop.caf"
+                - label: "Magic Marimba"
+                  value: "Magic-Marimba.caf"
+                - label: "Magic Ring"
+                  value: "Magic-Ring.caf"
+                - label: "Option Select"
+                  value: "Option-Select.caf"
+                - label: "Positive"
+                  value: "Positive.caf"
+                - label: "Sci-Fi Click"
+                  value: "Sci-Fi-Click.caf"
+                - label: "Tile Reveal"
+                  value: "Tile-Reveal.caf"
+                - label: "Wrong Answer"
+                  value: "Wrong-Answer.caf"
+                # — Clicks & Taps —
+                - label: "Click 1"
+                  value: "click_001.caf"
+                - label: "Click 2"
+                  value: "click_002.caf"
+                - label: "Click 3"
+                  value: "click_003.caf"
+                - label: "Click 4"
+                  value: "click_004.caf"
+                - label: "Click 5"
+                  value: "click_005.caf"
+                - label: "Tick 1"
+                  value: "tick_001.caf"
+                - label: "Tick 2"
+                  value: "tick_002.caf"
+                - label: "Tick 4"
+                  value: "tick_004.caf"
+                - label: "Tap Toggle 1"
+                  value: "toggle_001.caf"
+                - label: "Tap Toggle 2"
+                  value: "toggle_002.caf"
+                - label: "Tap Toggle 3"
+                  value: "toggle_003.caf"
+                - label: "Tap Toggle 4"
+                  value: "toggle_004.caf"
+                # — Switches & Selects —
+                - label: "Switch 1"
+                  value: "switch_001.caf"
+                - label: "Switch 2"
+                  value: "switch_002.caf"
+                - label: "Switch 3"
+                  value: "switch_003.caf"
+                - label: "Switch 4"
+                  value: "switch_004.caf"
+                - label: "Switch 5"
+                  value: "switch_005.caf"
+                - label: "Switch 6"
+                  value: "switch_006.caf"
+                - label: "Switch 7"
+                  value: "switch_007.caf"
+                - label: "Select 1"
+                  value: "select_001.caf"
+                - label: "Select 2"
+                  value: "select_002.caf"
+                - label: "Select 3"
+                  value: "select_003.caf"
+                - label: "Select 4"
+                  value: "select_004.caf"
+                - label: "Select 5"
+                  value: "select_005.caf"
+                - label: "Select 6"
+                  value: "select_006.caf"
+                - label: "Select 7"
+                  value: "select_007.caf"
+                - label: "Select 8"
+                  value: "select_008.caf"
+                # — Open & Close —
+                - label: "Open 1"
+                  value: "open_001.caf"
+                - label: "Open 2"
+                  value: "open_002.caf"
+                - label: "Open 3"
+                  value: "open_003.caf"
+                - label: "Open 4"
+                  value: "open_004.caf"
+                - label: "Close 1"
+                  value: "close_001.caf"
+                - label: "Close 2"
+                  value: "close_002.caf"
+                - label: "Close 3"
+                  value: "close_003.caf"
+                - label: "Close 4"
+                  value: "close_004.caf"
+                # — Navigation —
+                - label: "Back 1"
+                  value: "back_001.caf"
+                - label: "Back 2"
+                  value: "back_002.caf"
+                - label: "Back 3"
+                  value: "back_003.caf"
+                - label: "Back 4"
+                  value: "back_004.caf"
+                - label: "Scroll 1"
+                  value: "scroll_001.caf"
+                - label: "Scroll 2"
+                  value: "scroll_002.caf"
+                - label: "Scroll 3"
+                  value: "scroll_003.caf"
+                - label: "Scroll 4"
+                  value: "scroll_004.caf"
+                - label: "Scroll 5"
+                  value: "scroll_005.caf"
+                # — Maximize & Minimize —
+                - label: "Maximize 1"
+                  value: "maximize_001.caf"
+                - label: "Maximize 2"
+                  value: "maximize_002.caf"
+                - label: "Maximize 3"
+                  value: "maximize_003.caf"
+                - label: "Maximize 4"
+                  value: "maximize_004.caf"
+                - label: "Maximize 5"
+                  value: "maximize_005.caf"
+                - label: "Maximize 6"
+                  value: "maximize_006.caf"
+                - label: "Maximize 7"
+                  value: "maximize_007.caf"
+                - label: "Maximize 8"
+                  value: "maximize_008.caf"
+                - label: "Maximize 9"
+                  value: "maximize_009.caf"
+                - label: "Minimize 1"
+                  value: "minimize_001.caf"
+                - label: "Minimize 2"
+                  value: "minimize_002.caf"
+                - label: "Minimize 3"
+                  value: "minimize_003.caf"
+                - label: "Minimize 4"
+                  value: "minimize_004.caf"
+                - label: "Minimize 5"
+                  value: "minimize_005.caf"
+                - label: "Minimize 6"
+                  value: "minimize_006.caf"
+                - label: "Minimize 7"
+                  value: "minimize_007.caf"
+                - label: "Minimize 8"
+                  value: "minimize_008.caf"
+                - label: "Minimize 9"
+                  value: "minimize_009.caf"
+                # — Feedback —
+                - label: "Confirmation 1"
+                  value: "confirmation_001.caf"
+                - label: "Confirmation 2"
+                  value: "confirmation_002.caf"
+                - label: "Confirmation 3"
+                  value: "confirmation_003.caf"
+                - label: "Confirmation 4"
+                  value: "confirmation_004.caf"
+                - label: "Error 1"
+                  value: "error_001.caf"
+                - label: "Error 2"
+                  value: "error_002.caf"
+                - label: "Error 3"
+                  value: "error_003.caf"
+                - label: "Error 4"
+                  value: "error_004.caf"
+                - label: "Error 5"
+                  value: "error_005.caf"
+                - label: "Error 6"
+                  value: "error_006.caf"
+                - label: "Error 7"
+                  value: "error_007.caf"
+                - label: "Error 8"
+                  value: "error_008.caf"
+                - label: "Question 1"
+                  value: "question_001.caf"
+                - label: "Question 2"
+                  value: "question_002.caf"
+                - label: "Question 3"
+                  value: "question_003.caf"
+                - label: "Question 4"
+                  value: "question_004.caf"
+                # — Drops, Plucks & Glass —
+                - label: "Drop 1"
+                  value: "drop_001.caf"
+                - label: "Drop 2"
+                  value: "drop_002.caf"
+                - label: "Drop 3"
+                  value: "drop_003.caf"
+                - label: "Drop 4"
+                  value: "drop_004.caf"
+                - label: "Pluck 1"
+                  value: "pluck_001.caf"
+                - label: "Pluck 2"
+                  value: "pluck_002.caf"
+                - label: "Bong"
+                  value: "bong_001.caf"
+                - label: "Glass 1"
+                  value: "glass_001.caf"
+                - label: "Glass 2"
+                  value: "glass_002.caf"
+                - label: "Glass 3"
+                  value: "glass_003.caf"
+                - label: "Glass 4"
+                  value: "glass_004.caf"
+                - label: "Glass 5"
+                  value: "glass_005.caf"
+                - label: "Glass 6"
+                  value: "glass_006.caf"
+                - label: "Glitch 1"
+                  value: "glitch_001.caf"
+                - label: "Glitch 2"
+                  value: "glitch_002.caf"
+                - label: "Glitch 3"
+                  value: "glitch_003.caf"
+                - label: "Glitch 4"
+                  value: "glitch_004.caf"
+                - label: "Scratch 1"
+                  value: "scratch_001.caf"
+                - label: "Scratch 2"
+                  value: "scratch_002.caf"
+                - label: "Scratch 3"
+                  value: "scratch_003.caf"
+                - label: "Scratch 4"
+                  value: "scratch_004.caf"
+                - label: "Scratch 5"
+                  value: "scratch_005.caf"
+        tag:
+          name: Tag
+          description: >
+            *(Optional)* Collapse key — a new notification with the same
+            tag **replaces** the previous one instead of stacking. E.g.
+            set to `front_door` on a door-open alert so repeated opens
+            show only the latest notification.
+          default: ""
+          selector:
+            text:
+        group:
+          name: Group
+          description: >
+            *(Optional)* Bundle related notifications in the watch
+            notification center. E.g. two scripts using group `motion`
+            stack into a single expandable group.
+          default: ""
+          selector:
+            text:
+
+mode: parallel
+max: 10
+
+sequence:
+  - variables:
+      bp_message: !input message
+      bp_title: !input title
+      bp_b1_entity: !input button_1_entity
+      bp_b1_label: !input button_1_label
+      bp_b2_entity: !input button_2_entity
+      bp_b2_label: !input button_2_label
+      bp_b3_entity: !input button_3_entity
+      bp_b3_label: !input button_3_label
+      bp_b4_entity: !input button_4_entity
+      bp_b4_label: !input button_4_label
+      bp_auto_dismiss: !input auto_dismiss
+      bp_priority: !input priority
+      bp_sound: !input sound
+      bp_target_device: !input target
+      bp_tag: !input tag
+      bp_group: !input group
+  - action: wrist_assistant.send_notification
+    data: >
+      {%- set d = namespace(items=[("message", bp_message), ("priority", bp_priority)]) -%}
+      {%- if bp_title %}{%- set d.items = d.items + [("title", bp_title)] -%}{%- endif -%}
+      {%- if bp_sound %}{%- set d.items = d.items + [("sound", bp_sound)] -%}{%- endif -%}
+      {%- if bp_target_device -%}
+        {%- set ids = device_attr(bp_target_device, 'identifiers') | list -%}
+        {%- if ids %}{%- set d.items = d.items + [("target", ids[0][1] | replace('watch_', ''))] -%}{%- endif -%}
+      {%- endif -%}
+      {%- if bp_tag %}{%- set d.items = d.items + [("tag", bp_tag)] -%}{%- endif -%}
+      {%- if bp_group %}{%- set d.items = d.items + [("group", bp_group)] -%}{%- endif -%}
+      {%- set extra = namespace(items=[]) -%}
+      {%- if bp_auto_dismiss %}{%- set extra.items = extra.items + [("auto_dismiss", true)] -%}{%- endif -%}
+      {%- set actions = namespace(list=[]) -%}
+      {%- set slots = [
+        (bp_b1_entity, bp_b1_label),
+        (bp_b2_entity, bp_b2_label),
+        (bp_b3_entity, bp_b3_label),
+        (bp_b4_entity, bp_b4_label),
+      ] -%}
+      {%- for eid, btn_label in slots -%}
+        {%- if eid -%}
+          {%- set a = namespace(items=[("entity_id", eid)]) -%}
+          {%- if btn_label %}{%- set a.items = a.items + [("label", btn_label)] -%}{%- endif -%}
+          {%- set actions.list = actions.list + [dict(a.items)] -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {%- if actions.list %}{%- set d.items = d.items + [("actions", actions.list)] -%}{%- endif -%}
+      {%- if extra.items %}{%- set d.items = d.items + [("data", dict(extra.items))] -%}{%- endif -%}
+      {{ dict(d.items) }}

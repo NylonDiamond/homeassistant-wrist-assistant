@@ -1,0 +1,173 @@
+force_resync:
+  name: Force resync
+  description: >-
+    Clear all watch sessions, forcing every connected watch to perform
+    a full state refresh on its next poll.
+  fields: {}
+
+send_notification:
+  name: Send notification
+  description: >-
+    Send a push notification to one or all paired Apple Watches via the Wrist Assistant push relay.
+    Watches register their push tokens automatically during pairing.
+  fields:
+    message:
+      name: Message
+      description: Notification body text.
+      required: true
+      example: "Front door was opened"
+      selector:
+        text:
+    title:
+      name: Title
+      description: Optional notification title.
+      example: "Door Alert"
+      selector:
+        text:
+    target:
+      name: Target
+      description: >-
+        Watch to send to. Omit to send to all registered watches.
+      selector:
+        device:
+          filter:
+            - integration: wrist_assistant
+              model: Apple Watch
+    actions:
+      name: Actions
+      description: >-
+        List of entity action buttons (1-4) shown on the notification.
+        Each action targets an entity_id — the watch determines the
+        appropriate service call based on the entity's domain and state.
+        The server enriches each action with the entity's current state
+        and attributes before sending. Optional keys: label (custom
+        button text, defaults to friendly_name), icon (SF Symbol name).
+        Example: [{entity_id: "lock.front_door", icon: "lock.fill"},
+        {entity_id: "light.porch", label: "Porch", icon: "lightbulb.fill"}]
+      selector:
+        object:
+    data:
+      name: Data
+      description: >-
+        Additional data payload. Notification-level keys: auto_dismiss
+        (dismiss after button tap), subtitle (custom text below message),
+        entity_state (entity state text below message), show_state (false
+        to hide entity_state). All keys are passed to the watch app.
+      selector:
+        object:
+    sound:
+      name: Sound
+      description: >-
+        Sound to play. Use "default" for the default sound, or omit for silent.
+      example: "default"
+      selector:
+        select:
+          mode: dropdown
+          custom_value: true
+          options:
+            - label: "Default sound"
+              value: "default"
+            - label: "Silent"
+              value: ""
+            - label: "Access Allowed"
+              value: "Access-Allowed.caf"
+            - label: "Arabian Harp"
+              value: "Arabian-Harp.caf"
+            - label: "ATM Keypress"
+              value: "ATM-Keypress.caf"
+            - label: "Bell"
+              value: "Bell.caf"
+            - label: "Bubble Pop"
+              value: "Bubble-Pop.caf"
+            - label: "Clear Announce"
+              value: "Clear-Announce.caf"
+            - label: "Confirmation"
+              value: "Confirmation.caf"
+            - label: "Correct Answer"
+              value: "Correct-Answer.caf"
+            - label: "Correct Answer Reward"
+              value: "Correct-Answer-Reward.caf"
+            - label: "Digital Quick"
+              value: "Digital-Quick.caf"
+            - label: "Doorbell Single"
+              value: "Doorbell-Single.caf"
+            - label: "Doorbell Tone"
+              value: "Doorbell-Tone.caf"
+            - label: "Dry Pop"
+              value: "Dry-Pop.caf"
+            - label: "Elevator Tone"
+              value: "Elevator-Tone.caf"
+            - label: "Gaming Lock"
+              value: "Gaming-Lock.caf"
+            - label: "Guitar Alert"
+              value: "Guitar-Alert.caf"
+            - label: "Happy Bells"
+              value: "Happy-Bells.caf"
+            - label: "Interface Back"
+              value: "Interface-Back.caf"
+            - label: "Interface Remove"
+              value: "Interface-Remove.caf"
+            - label: "Interface Start"
+              value: "Interface-Start.caf"
+            - label: "Light Button"
+              value: "Light-Button.caf"
+            - label: "Long Pop"
+              value: "Long-Pop.caf"
+            - label: "Magic Marimba"
+              value: "Magic-Marimba.caf"
+            - label: "Magic Ring"
+              value: "Magic-Ring.caf"
+            - label: "Option Select"
+              value: "Option-Select.caf"
+            - label: "Positive"
+              value: "Positive.caf"
+            - label: "Sci-Fi Click"
+              value: "Sci-Fi-Click.caf"
+            - label: "Tile Reveal"
+              value: "Tile-Reveal.caf"
+            - label: "Wrong Answer"
+              value: "Wrong-Answer.caf"
+    push_type:
+      name: Push type
+      description: >-
+        APNs push type. "alert" (default) for visible notifications,
+        "background" for silent background updates.
+      selector:
+        select:
+          options:
+            - "alert"
+            - "background"
+    tag:
+      name: Tag
+      description: >-
+        Collapse identifier. Sending a new notification with the same tag
+        replaces the previous one instead of stacking.
+      example: "front_door_alert"
+      selector:
+        text:
+    group:
+      name: Group
+      description: >-
+        Thread identifier for grouping related notifications together
+        in the watch notification center.
+      example: "security"
+      selector:
+        text:
+    priority:
+      name: Priority
+      description: >-
+        Interruption level. "passive" delivers silently, "active" (default)
+        is standard, "time-sensitive" breaks through Focus/DND,
+        "critical" overrides mute (requires entitlement).
+      selector:
+        select:
+          mode: dropdown
+          options:
+            - label: "Passive (silent delivery)"
+              value: "passive"
+            - label: "Active (default)"
+              value: "active"
+            - label: "Time Sensitive (breaks Focus)"
+              value: "time-sensitive"
+            - label: "Critical (overrides mute)"
+              value: "critical"

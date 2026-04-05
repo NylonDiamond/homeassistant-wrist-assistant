@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+CLAUDE.md
+.claude/
+futureIdeas/
+RELEASE_NOTES_TEMPLATE.md

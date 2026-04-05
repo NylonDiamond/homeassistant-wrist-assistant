@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Wrist Assistant",
+        "description": "This enables Wrist Assistant sync with Home Assistant. Finish setup in the Wrist Assistant app."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Wrist Assistant is already configured."
+    }
+  }
+}
