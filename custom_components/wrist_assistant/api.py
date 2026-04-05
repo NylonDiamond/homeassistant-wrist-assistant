@@ -7,9 +7,10 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import gzip
-import json as _json
 import logging
 from typing import Any
+
+import orjson
 
 from aiohttp.web import Request, Response
 
@@ -417,7 +418,7 @@ class DeltaCoordinator:
     async def handle_poll(
         self,
         watch_id: str,
-        since: str | None,
+        since: str | int | None,
         config_hash: str,
         entities: list[str] | None,
         timeout: int,
@@ -466,7 +467,7 @@ class DeltaCoordinator:
         if not session.entities_synced:
             return 200, self._response_payload(
                 events=[],
-                next_cursor=str(self._cursor),
+                next_cursor=self._cursor,
                 need_entities=True,
                 resync_required=False,
                 battery_threshold=battery_threshold,
@@ -487,7 +488,7 @@ class DeltaCoordinator:
             snapshot_events.extend(self._snapshot_templates(session))
             return 200, self._response_payload(
                 events=snapshot_events,
-                next_cursor=str(snapshot_cursor),
+                next_cursor=snapshot_cursor,
                 need_entities=False,
                 resync_required=False,
                 battery_threshold=battery_threshold,
@@ -501,7 +502,7 @@ class DeltaCoordinator:
         if invalid_since:
             return 410, self._response_payload(
                 events=[],
-                next_cursor=str(self._cursor),
+                next_cursor=self._cursor,
                 need_entities=False,
                 resync_required=True,
                 battery_threshold=battery_threshold,
@@ -512,7 +513,7 @@ class DeltaCoordinator:
         if self._is_stale_cursor(since_cursor):
             return 410, self._response_payload(
                 events=[],
-                next_cursor=str(self._cursor),
+                next_cursor=self._cursor,
                 need_entities=False,
                 resync_required=True,
                 battery_threshold=battery_threshold,
@@ -537,7 +538,7 @@ class DeltaCoordinator:
         if events:
             return 200, self._response_payload(
                 events=events,
-                next_cursor=str(next_cursor),
+                next_cursor=next_cursor,
                 need_entities=False,
                 resync_required=False,
                 include_details=force_delta,
@@ -550,7 +551,7 @@ class DeltaCoordinator:
         if force_delta:
             return 200, self._response_payload(
                 events=[],
-                next_cursor=str(next_cursor),
+                next_cursor=next_cursor,
                 need_entities=False,
                 resync_required=False,
                 include_details=True,
@@ -591,7 +592,7 @@ class DeltaCoordinator:
                     if events:
                         return 200, self._response_payload(
                             events=events,
-                            next_cursor=str(next_cursor),
+                            next_cursor=next_cursor,
                             need_entities=False,
                             resync_required=False,
                             battery_threshold=battery_threshold,
@@ -625,7 +626,7 @@ class DeltaCoordinator:
                 if events:
                     return 200, self._response_payload(
                         events=events,
-                        next_cursor=str(next_cursor),
+                        next_cursor=next_cursor,
                         need_entities=False,
                         resync_required=False,
                         battery_threshold=battery_threshold,
@@ -729,7 +730,7 @@ class DeltaCoordinator:
             "state": new_state.state,
             "new_state": self._state_to_payload(new_state),
             "context_id": new_state.context.id if new_state.context is not None else None,
-            "last_updated": new_state.last_updated.isoformat(),
+            "last_updated": new_state.last_updated.timestamp(),
         }
 
         old_state: State | None = event.data.get("old_state")
@@ -816,7 +817,7 @@ class DeltaCoordinator:
                     "context_id": (
                         state.context.id if state.context is not None else None
                     ),
-                    "last_updated": state.last_updated.isoformat(),
+                    "last_updated": state.last_updated.timestamp(),
                 }
             else:
                 entry = {
@@ -826,7 +827,7 @@ class DeltaCoordinator:
                     "context_id": (
                         state.context.id if state.context is not None else None
                     ),
-                    "last_updated": state.last_updated.isoformat(),
+                    "last_updated": state.last_updated.timestamp(),
                 }
                 # Annotate active buffering state for media players in snapshots
                 if entity_id in self._media_buffer_states:
@@ -937,10 +938,12 @@ class DeltaCoordinator:
         return since_cursor < (oldest_cursor - 1)
 
     @staticmethod
-    def _parse_since(since: str | None, default_cursor: int) -> tuple[int, bool]:
+    def _parse_since(since: str | int | None, default_cursor: int) -> tuple[int, bool]:
         """Parse the client cursor."""
         if since is None or since == "":
             return default_cursor, False
+        if isinstance(since, int):
+            return max(since, 0), False
         try:
             cursor = int(since)
         except ValueError:
@@ -1005,7 +1008,7 @@ class DeltaCoordinator:
         return value, deps
 
     @staticmethod
-    def _template_event(tile_id: str, value: str, now_iso: str) -> dict[str, Any]:
+    def _template_event(tile_id: str, value: str, now_ts: float) -> dict[str, Any]:
         """Build a delta event dict for a template value.
 
         If the rendered value contains newlines, each line is sent as an
@@ -1016,7 +1019,7 @@ class DeltaCoordinator:
         return {
             "entity_id": entity_id,
             "lines": lines,
-            "last_updated": now_iso,
+            "last_updated": now_ts,
         }
 
     def _evaluate_templates(
@@ -1032,7 +1035,7 @@ class DeltaCoordinator:
             return []
 
         changed: list[dict[str, Any]] = []
-        now_iso = dt_util.utcnow().isoformat()
+        now_ts = dt_util.utcnow().timestamp()
 
         # Pre-compute changed domains once for all templates
         changed_domains: set[str] | None = None
@@ -1056,7 +1059,7 @@ class DeltaCoordinator:
             previous = session.template_values.get(tile_id)
             if value != previous:
                 session.template_values[tile_id] = value
-                changed.append(self._template_event(tile_id, value, now_iso))
+                changed.append(self._template_event(tile_id, value, now_ts))
 
         return changed
 
@@ -1068,7 +1071,7 @@ class DeltaCoordinator:
             return []
 
         results: list[dict[str, Any]] = []
-        now_iso = dt_util.utcnow().isoformat()
+        now_ts = dt_util.utcnow().timestamp()
 
         for tile_id, template_str in session.templates.items():
             try:
@@ -1079,7 +1082,7 @@ class DeltaCoordinator:
                 session.template_deps[tile_id] = _TemplateDeps(frozenset(), frozenset(), False)
 
             session.template_values[tile_id] = value
-            results.append(self._template_event(tile_id, value, now_iso))
+            results.append(self._template_event(tile_id, value, now_ts))
 
         return results
 
@@ -1101,7 +1104,7 @@ class DeltaCoordinator:
     def _response_payload(
         self,
         events: list[dict[str, Any]],
-        next_cursor: str,
+        next_cursor: int,
         need_entities: bool,
         resync_required: bool,
         include_details: bool = False,
@@ -1264,7 +1267,7 @@ class DeltaCoordinator:
             "entity_id": state.entity_id,
             "state": state.state,
             "attributes": self._json_safe(state.attributes),
-            "last_updated": state.last_updated.isoformat(),
+            "last_updated": state.last_updated.timestamp(),
         }
 
     def _slim_state_to_payload(self, state: State) -> dict[str, Any]:
@@ -1279,7 +1282,7 @@ class DeltaCoordinator:
             "entity_id": state.entity_id,
             "state": state.state,
             "attributes": self._json_safe(attrs),
-            "last_updated": state.last_updated.isoformat(),
+            "last_updated": state.last_updated.timestamp(),
         }
 
     def _slim_event_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -1313,7 +1316,7 @@ class DeltaCoordinator:
             return [self._json_safe(item) for item in value]
 
         if isinstance(value, datetime):
-            return value.isoformat()
+            return value.timestamp()
 
         if isinstance(value, timedelta):
             return value.total_seconds()
@@ -1363,8 +1366,8 @@ class WatchUpdatesView(HomeAssistantView):
             return self.json_message("watch_id is required", status_code=400)
         if not isinstance(config_hash, str) or not config_hash:
             return self.json_message("config_hash is required", status_code=400)
-        if since is not None and not isinstance(since, str):
-            return self.json_message("since must be a string cursor", status_code=400)
+        if since is not None and not isinstance(since, (str, int)):
+            return self.json_message("since must be a cursor", status_code=400)
         if entities is not None and not isinstance(entities, list):
             return self.json_message("entities must be an array of entity IDs", status_code=400)
 
@@ -1441,7 +1444,7 @@ class WatchUpdatesView(HomeAssistantView):
         if body is None:
             return Response(status=status)
 
-        json_bytes = _json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        json_bytes = orjson.dumps(body)
 
         # Gzip compress if the client supports it (skip for tiny payloads)
         accept_encoding = request.headers.get("Accept-Encoding", "")
@@ -1516,7 +1519,7 @@ class WatchSummaryView(HomeAssistantView):
             "capabilities": coordinator._sorted_capabilities,
         }
 
-        json_bytes = _json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        json_bytes = orjson.dumps(body)
         accept_encoding = request.headers.get("Accept-Encoding", "")
         if "gzip" in accept_encoding and len(json_bytes) > 256:
             compressed = gzip.compress(json_bytes, compresslevel=1)
