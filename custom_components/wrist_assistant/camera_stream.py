@@ -615,6 +615,11 @@ class CameraViewportView(HomeAssistantView):
 
 MAX_BATCH_CAMERAS = 8
 
+# Single-snapshot endpoint limits (complication-optimized)
+SNAPSHOT_MAX_WIDTH = 400
+SNAPSHOT_MAX_BYTES = 102400  # 100KB
+SNAPSHOT_DEFAULT_QUALITY = 85
+
 
 class CameraBatchView(HomeAssistantView):
     """POST endpoint that fetches multiple camera snapshots in parallel."""
@@ -710,3 +715,105 @@ class CameraBatchView(HomeAssistantView):
             )
 
         return Response(body=json_bytes, status=200, content_type="application/json")
+
+
+def _process_snapshot(
+    frame_bytes: bytes,
+    width: int,
+    quality: int,
+    max_bytes: int,
+) -> bytes | None:
+    """Resize a camera frame and enforce a byte-size cap (runs in executor).
+
+    Re-encodes at progressively lower quality if the result exceeds max_bytes.
+    Returns processed JPEG bytes, or None if it cannot fit within the budget.
+    """
+    img = Image.open(BytesIO(frame_bytes))
+
+    # Resize to target width maintaining aspect ratio
+    cur_w, cur_h = img.size
+    if cur_w > width:
+        ratio = width / cur_w
+        new_h = max(1, int(cur_h * ratio))
+        img = img.resize((width, new_h), Image.Resampling.BILINEAR)
+
+    # Ensure RGB mode for JPEG compatibility
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+
+    # Encode at requested quality, then step down if over budget
+    for q in (quality, 60, 40, 20):
+        buf = BytesIO()
+        img.save(buf, format="JPEG", quality=q, optimize=True)
+        data = buf.getvalue()
+        if len(data) <= max_bytes:
+            return data
+
+    return None
+
+
+class CameraSnapshotView(HomeAssistantView):
+    """GET endpoint that returns a single resized camera snapshot as raw JPEG."""
+
+    url = "/api/wrist_assistant/camera/snapshot"
+    name = "api:wrist_assistant_camera_snapshot"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+
+    async def get(self, request: Request) -> Response:
+        """Return a single camera snapshot, resized and byte-capped."""
+        query = request.query
+
+        entity_id = query.get("entity_id")
+        if not entity_id or not entity_id.startswith("camera."):
+            return Response(text="entity_id is required and must be a camera entity", status=400)
+
+        state = self._hass.states.get(entity_id)
+        if state is None:
+            return Response(text="Camera entity not found", status=404)
+
+        try:
+            width = _parse_bounded_int(
+                query.get("width"),
+                field="width",
+                default=SNAPSHOT_MAX_WIDTH,
+                lo=MIN_WIDTH,
+                hi=SNAPSHOT_MAX_WIDTH,
+            )
+            quality = _parse_bounded_int(
+                query.get("quality"),
+                field="quality",
+                default=SNAPSHOT_DEFAULT_QUALITY,
+                lo=MIN_QUALITY,
+                hi=MAX_QUALITY,
+            )
+        except ValueError as err:
+            return Response(text=str(err), status=400)
+
+        try:
+            image: CameraImage = await async_get_image(self._hass, entity_id, timeout=5)
+        except HomeAssistantError:
+            return Response(text="Camera unavailable", status=503)
+
+        if image is None or image.content is None:
+            return Response(text="No image available", status=503)
+
+        processed = await self._hass.async_add_executor_job(
+            _process_snapshot,
+            image.content,
+            width,
+            quality,
+            SNAPSHOT_MAX_BYTES,
+        )
+
+        if processed is None:
+            return Response(text="Image exceeds size budget", status=503)
+
+        return Response(
+            body=processed,
+            status=200,
+            content_type="image/jpeg",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        )

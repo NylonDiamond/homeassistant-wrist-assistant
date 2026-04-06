@@ -30,6 +30,7 @@ from .apns_client import APNsClient
 from .camera_devices import CameraDevicesView
 from .camera_stream import (
     CameraBatchView,
+    CameraSnapshotView,
     CameraStreamCoordinator,
     CameraStreamView,
     CameraViewportView,
@@ -132,6 +133,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         hass.http.register_view(CameraStreamView(hass))
         hass.http.register_view(CameraViewportView(hass))
         hass.http.register_view(CameraBatchView(hass))
+        hass.http.register_view(CameraSnapshotView(hass))
         hass.http.register_view(CameraDevicesView(hass))
         hass.http.register_view(NotificationRegisterView(hass))
         hass.http.register_view(AudioUploadView(hass))
