@@ -720,18 +720,33 @@ class CameraBatchView(HomeAssistantView):
 
 def _process_snapshot(
     frame_bytes: bytes,
+    viewport: ViewportState,
     width: int,
     max_height: int,
     quality: int,
     max_bytes: int,
 ) -> bytes | None:
-    """Resize a camera frame to fit a bounding box and enforce a byte-size cap.
+    """Crop, resize to bounding box, and enforce a byte-size cap.
 
-    Resizes to fit within width x max_height (maintaining aspect ratio), then
-    re-encodes at progressively lower quality if the result exceeds max_bytes.
+    Crops from full resolution first (preserving detail), then resizes to fit
+    within width x max_height (maintaining aspect ratio), then re-encodes at
+    progressively lower quality if the result exceeds max_bytes.
     Returns processed JPEG bytes, or None if it cannot fit within the budget.
     """
     img = Image.open(BytesIO(frame_bytes))
+
+    # Crop from full resolution if viewport is not full-frame
+    if not (viewport.x <= 0.001 and viewport.y <= 0.001 and viewport.w >= 0.999 and viewport.h >= 0.999):
+        img_w, img_h = img.size
+        left = int(viewport.x * img_w)
+        top = int(viewport.y * img_h)
+        right = int((viewport.x + viewport.w) * img_w)
+        bottom = int((viewport.y + viewport.h) * img_h)
+        left = max(0, min(left, img_w - 1))
+        top = max(0, min(top, img_h - 1))
+        right = max(left + 1, min(right, img_w))
+        bottom = max(top + 1, min(bottom, img_h))
+        img = img.crop((left, top, right, bottom))
 
     # Resize to fit within bounding box maintaining aspect ratio
     cur_w, cur_h = img.size
@@ -803,6 +818,14 @@ class CameraSnapshotView(HomeAssistantView):
         except ValueError as err:
             return Response(text=str(err), status=400)
 
+        # Optional viewport crop (normalized 0.0-1.0)
+        viewport = ViewportState()
+        if "x" in query:
+            try:
+                viewport = _parse_viewport(query)
+            except ValueError as err:
+                return Response(text=str(err), status=400)
+
         try:
             image: CameraImage = await async_get_image(self._hass, entity_id, timeout=5)
         except HomeAssistantError:
@@ -814,6 +837,7 @@ class CameraSnapshotView(HomeAssistantView):
         processed = await self._hass.async_add_executor_job(
             _process_snapshot,
             image.content,
+            viewport,
             width,
             max_height,
             quality,
