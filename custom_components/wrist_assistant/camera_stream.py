@@ -617,6 +617,7 @@ MAX_BATCH_CAMERAS = 8
 
 # Single-snapshot endpoint limits (complication-optimized)
 SNAPSHOT_MAX_WIDTH = 400
+SNAPSHOT_MAX_HEIGHT = 300
 SNAPSHOT_MAX_BYTES = 102400  # 100KB
 SNAPSHOT_DEFAULT_QUALITY = 85
 
@@ -720,22 +721,25 @@ class CameraBatchView(HomeAssistantView):
 def _process_snapshot(
     frame_bytes: bytes,
     width: int,
+    max_height: int,
     quality: int,
     max_bytes: int,
 ) -> bytes | None:
-    """Resize a camera frame and enforce a byte-size cap (runs in executor).
+    """Resize a camera frame to fit a bounding box and enforce a byte-size cap.
 
-    Re-encodes at progressively lower quality if the result exceeds max_bytes.
+    Resizes to fit within width x max_height (maintaining aspect ratio), then
+    re-encodes at progressively lower quality if the result exceeds max_bytes.
     Returns processed JPEG bytes, or None if it cannot fit within the budget.
     """
     img = Image.open(BytesIO(frame_bytes))
 
-    # Resize to target width maintaining aspect ratio
+    # Resize to fit within bounding box maintaining aspect ratio
     cur_w, cur_h = img.size
-    if cur_w > width:
-        ratio = width / cur_w
-        new_h = max(1, int(cur_h * ratio))
-        img = img.resize((width, new_h), Image.Resampling.BILINEAR)
+    scale = min(width / cur_w, max_height / cur_h)
+    if scale < 1.0:
+        new_w = max(1, int(cur_w * scale))
+        new_h = max(1, int(cur_h * scale))
+        img = img.resize((new_w, new_h), Image.Resampling.BILINEAR)
 
     # Ensure RGB mode for JPEG compatibility
     if img.mode not in ("RGB", "L"):
@@ -782,6 +786,13 @@ class CameraSnapshotView(HomeAssistantView):
                 lo=MIN_WIDTH,
                 hi=SNAPSHOT_MAX_WIDTH,
             )
+            max_height = _parse_bounded_int(
+                query.get("max_height"),
+                field="max_height",
+                default=SNAPSHOT_MAX_HEIGHT,
+                lo=MIN_WIDTH,
+                hi=SNAPSHOT_MAX_HEIGHT,
+            )
             quality = _parse_bounded_int(
                 query.get("quality"),
                 field="quality",
@@ -804,6 +815,7 @@ class CameraSnapshotView(HomeAssistantView):
             _process_snapshot,
             image.content,
             width,
+            max_height,
             quality,
             SNAPSHOT_MAX_BYTES,
         )
