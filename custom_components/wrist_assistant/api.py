@@ -112,6 +112,8 @@ _SLIM_ATTRIBUTES: dict[str, set[str]] = {
         "supported_features", "entity_picture",
         "icon", "device_class",
         "mass_player_type",
+        "mass_player_id", "active_queue", "queue_index", "items_in_queue",
+        "stream_title",
     },
     "camera": {
         "friendly_name", "entity_picture", "frontend_stream_type", "icon",
@@ -1434,3 +1436,39 @@ class WatchSummaryView(HomeAssistantView):
             )
         return Response(body=json_bytes, status=200, content_type="application/json")
 
+
+class MusicAssistantPlayersView(HomeAssistantView):
+    """Return Music Assistant player info not available as HA entity attributes."""
+
+    url = "/api/wrist_assistant/mass/players"
+    name = "api:wrist_assistant_mass_players"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+
+    async def get(self, request: Request) -> Response:
+        mass_client = self._get_mass_client()
+        if mass_client is None:
+            return self.json({"available": False, "players": []})
+
+        players = []
+        for player in mass_client.players:
+            players.append({
+                "player_id": player.player_id,
+                "provider": player.provider,
+                "can_group_with": sorted(player.can_group_with),
+                "type": player.type.value if hasattr(player.type, "value") else str(player.type),
+            })
+        return self.json({"available": True, "players": players})
+
+    def _get_mass_client(self):
+        """Find the Music Assistant client from its config entry, if available."""
+        for entry in self._hass.config_entries.async_entries("mass"):
+            rd = getattr(entry, "runtime_data", None)
+            if rd is None:
+                continue
+            client = getattr(rd, "mass", None)
+            if client is not None:
+                return client
+        return None
