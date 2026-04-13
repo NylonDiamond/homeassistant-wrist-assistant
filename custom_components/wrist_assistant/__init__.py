@@ -24,6 +24,7 @@ from homeassistant.helpers import entity_registry as er
 from .api import (
     DeltaCoordinator,
     MusicAssistantPlayersView,
+    MusicAssistantQueueView,
     WatchSummaryView,
     WatchUpdatesView,
 )
@@ -139,6 +140,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         hass.http.register_view(NotificationRegisterView(hass))
         hass.http.register_view(AudioUploadView(hass))
         hass.http.register_view(MusicAssistantPlayersView(hass))
+        hass.http.register_view(MusicAssistantQueueView(hass))
         hass.data[f"{DOMAIN}_views_registered"] = True
 
     apns_client = await _create_apns_client(hass)

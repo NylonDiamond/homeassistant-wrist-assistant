@@ -1448,7 +1448,7 @@ class MusicAssistantPlayersView(HomeAssistantView):
         self._hass = hass
 
     async def get(self, request: Request) -> Response:
-        mass_client = self._get_mass_client()
+        mass_client = _get_mass_client(self._hass)
         if mass_client is None:
             return self.json({"available": False, "players": []})
 
@@ -1462,13 +1462,92 @@ class MusicAssistantPlayersView(HomeAssistantView):
             })
         return self.json({"available": True, "players": players})
 
-    def _get_mass_client(self):
-        """Find the Music Assistant client from its config entry, if available."""
-        for entry in self._hass.config_entries.async_entries("mass"):
-            rd = getattr(entry, "runtime_data", None)
-            if rd is None:
-                continue
-            client = getattr(rd, "mass", None)
-            if client is not None:
-                return client
-        return None
+
+def _get_mass_client(hass: HomeAssistant):
+    """Find the Music Assistant client from its config entry, if available."""
+    for entry in hass.config_entries.async_entries("mass"):
+        rd = getattr(entry, "runtime_data", None)
+        if rd is None:
+            continue
+        client = getattr(rd, "mass", None)
+        if client is not None:
+            return client
+    return None
+
+
+class MusicAssistantQueueView(HomeAssistantView):
+    """Return queue items from Music Assistant's in-memory queue storage."""
+
+    url = "/api/wrist_assistant/mass/queue"
+    name = "api:wrist_assistant_mass_queue"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+
+    async def get(self, request: Request) -> Response:
+        queue_id = request.query.get("queue_id")
+        if not queue_id:
+            return self.json({"available": False, "error": "queue_id required"})
+
+        mass_client = _get_mass_client(self._hass)
+        if mass_client is None:
+            return self.json({"available": False, "items": []})
+
+        limit = int(request.query.get("limit", "50"))
+        offset = int(request.query.get("offset", "0"))
+
+        try:
+            queue = mass_client.player_queues.get(queue_id)
+            current_index = queue.current_index if queue else None
+            raw_items = mass_client.player_queues.items(queue_id, limit=limit, offset=offset)
+        except Exception:
+            return self.json({"available": True, "current_index": None, "items": []})
+
+        items = []
+        for item in raw_items:
+            artist = None
+            album = None
+            image_url = None
+            if hasattr(item, "media_item") and item.media_item:
+                mi = item.media_item
+                if hasattr(mi, "artists") and mi.artists:
+                    artist = mi.artists[0].name if hasattr(mi.artists[0], "name") else str(mi.artists[0])
+                if hasattr(mi, "album") and mi.album:
+                    album = mi.album.name if hasattr(mi.album, "name") else str(mi.album)
+            if hasattr(item, "image") and item.image:
+                image_url = item.image.path if hasattr(item.image, "path") else str(item.image)
+            items.append({
+                "queue_item_id": item.queue_item_id,
+                "name": item.name,
+                "duration": item.duration,
+                "index": item.index if hasattr(item, "index") else None,
+                "artist": artist,
+                "album": album,
+                "image_url": image_url,
+            })
+
+        return self.json({
+            "available": True,
+            "current_index": current_index,
+            "items": items,
+        })
+
+    async def post(self, request: Request) -> Response:
+        """Play a specific queue item by index or queue_item_id."""
+        mass_client = _get_mass_client(self._hass)
+        if mass_client is None:
+            return self.json({"error": "Music Assistant not available"}, status_code=503)
+
+        body = await request.json()
+        queue_id = body.get("queue_id")
+        index = body.get("index")  # int or queue_item_id string
+
+        if not queue_id or index is None:
+            return self.json({"error": "queue_id and index required"}, status_code=400)
+
+        try:
+            await mass_client.player_queues.play_index(queue_id, index)
+            return self.json({"ok": True})
+        except Exception as err:
+            return self.json({"error": str(err)}, status_code=500)
