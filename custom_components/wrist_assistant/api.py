@@ -1512,7 +1512,7 @@ class MusicAssistantQueueView(HomeAssistantView):
             return self.json({"available": True, "current_index": None, "items": []})
 
         items = []
-        for item in raw_items:
+        for idx, item in enumerate(raw_items, start=offset):
             artist = None
             album = None
             image_url = None
@@ -1528,7 +1528,7 @@ class MusicAssistantQueueView(HomeAssistantView):
                 "queue_item_id": item.queue_item_id,
                 "name": item.name,
                 "duration": item.duration,
-                "index": item.index if hasattr(item, "index") else None,
+                "index": idx,
                 "artist": artist,
                 "album": album,
                 "image_url": image_url,
@@ -1548,13 +1548,14 @@ class MusicAssistantQueueView(HomeAssistantView):
 
         body = await request.json()
         queue_id = body.get("queue_id")
-        index = body.get("index")  # int or queue_item_id string
+        # Prefer queue_item_id (string) over index (int) — play_index accepts both
+        item_id = body.get("queue_item_id") or body.get("index")
 
-        if not queue_id or index is None:
-            return self.json({"error": "queue_id and index required"}, status_code=400)
+        if not queue_id or item_id is None:
+            return self.json({"error": "queue_id and (queue_item_id or index) required"}, status_code=400)
 
         try:
-            await mass_client.player_queues.play_index(queue_id, index)
+            await mass_client.player_queues.play_index(queue_id, item_id)
             return self.json({"ok": True})
         except Exception as err:
             return self.json({"error": str(err)}, status_code=500)
