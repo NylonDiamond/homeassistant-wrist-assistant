@@ -1454,12 +1454,18 @@ class MusicAssistantPlayersView(HomeAssistantView):
 
         players = []
         for player in mass_client.players:
-            players.append({
+            info = {
                 "player_id": player.player_id,
                 "provider": player.provider,
                 "can_group_with": sorted(player.can_group_with),
                 "type": player.type.value if hasattr(player.type, "value") else str(player.type),
-            })
+            }
+            # Include display name so the watch app can match native HA entities
+            if hasattr(player, "display_name") and player.display_name:
+                info["display_name"] = player.display_name
+            elif hasattr(player, "name") and player.name:
+                info["display_name"] = player.name
+            players.append(info)
         return self.json({"available": True, "players": players})
 
 
