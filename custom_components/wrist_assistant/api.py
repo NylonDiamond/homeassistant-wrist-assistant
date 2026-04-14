@@ -1465,13 +1465,18 @@ class MusicAssistantPlayersView(HomeAssistantView):
 
 def _get_mass_client(hass: HomeAssistant):
     """Find the Music Assistant client from its config entry, if available."""
-    for entry in hass.config_entries.async_entries("mass"):
-        rd = getattr(entry, "runtime_data", None)
-        if rd is None:
-            continue
-        client = getattr(rd, "mass", None)
-        if client is not None:
-            return client
+    for domain in ("mass", "music_assistant"):
+        for entry in hass.config_entries.async_entries(domain):
+            rd = getattr(entry, "runtime_data", None)
+            if rd is None:
+                continue
+            # Try both attribute paths: rd.mass (older) and rd directly (newer)
+            client = getattr(rd, "mass", None)
+            if client is not None:
+                return client
+            # Newer versions may store client differently
+            if hasattr(rd, "client"):
+                return rd.client
     return None
 
 
@@ -1500,7 +1505,9 @@ class MusicAssistantQueueView(HomeAssistantView):
         try:
             queue = mass_client.player_queues.get(queue_id)
             current_index = queue.current_index if queue else None
-            raw_items = mass_client.player_queues.items(queue_id, limit=limit, offset=offset)
+            raw_items = await mass_client.player_queues.get_queue_items(
+                queue_id, limit=limit, offset=offset
+            )
         except Exception:
             return self.json({"available": True, "current_index": None, "items": []})
 
