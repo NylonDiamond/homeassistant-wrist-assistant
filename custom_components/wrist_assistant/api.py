@@ -1565,3 +1565,90 @@ class MusicAssistantQueueView(HomeAssistantView):
             return self.json({"ok": True})
         except Exception as err:
             return self.json({"error": str(err)}, status_code=500)
+
+
+_REMOTE_HOLD_TIMEOUT = 10.0  # Safety timeout in seconds
+_logger = logging.getLogger(__name__)
+
+
+class RemoteCommandView(HomeAssistantView):
+    """Fire-and-forget remote command endpoint.
+
+    Accepts a command and returns 200 immediately, executing the
+    remote.send_command service call in the background.  Also handles
+    hold_start / hold_stop actions for server-side repeat loops.
+    """
+
+    url = "/api/watch/remote_command"
+    name = "api:wrist_assistant_remote_command"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+        self._active_holds: dict[str, asyncio.Task] = {}
+
+    async def post(self, request: Request) -> Response:
+        body = await request.json()
+        entity_id = body.get("entity_id")
+        command = body.get("command")
+        action = body.get("action", "send")  # "send", "hold_start", "hold_stop"
+
+        if not entity_id:
+            return self.json({"error": "entity_id required"}, status_code=400)
+
+        if action == "hold_stop":
+            task = self._active_holds.pop(entity_id, None)
+            if task is not None:
+                task.cancel()
+            return self.json({"ok": True})
+
+        if not command:
+            return self.json({"error": "command required"}, status_code=400)
+
+        hold_secs = body.get("hold_secs")
+
+        if action == "hold_start":
+            # Cancel any existing hold for this entity
+            existing = self._active_holds.pop(entity_id, None)
+            if existing is not None:
+                existing.cancel()
+            self._active_holds[entity_id] = self._hass.async_create_task(
+                self._hold_loop(entity_id, command, hold_secs or 0.2)
+            )
+            return self.json({"ok": True})
+
+        # Default: fire-and-forget single command
+        service_data: dict[str, Any] = {
+            "entity_id": entity_id,
+            "command": command,
+        }
+        if hold_secs is not None:
+            service_data["hold_secs"] = hold_secs
+        self._hass.async_create_task(
+            self._hass.services.async_call("remote", "send_command", service_data)
+        )
+        return self.json({"ok": True})
+
+    async def _hold_loop(self, entity_id: str, command: str, hold_secs: float) -> None:
+        """Repeat a remote command until cancelled or timeout."""
+        try:
+            elapsed = 0.0
+            while elapsed < _REMOTE_HOLD_TIMEOUT:
+                await self._hass.services.async_call(
+                    "remote",
+                    "send_command",
+                    {"entity_id": entity_id, "command": command, "hold_secs": hold_secs},
+                )
+                await asyncio.sleep(hold_secs)
+                elapsed += hold_secs
+            _logger.debug("Remote hold timed out for %s", entity_id)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self._active_holds.pop(entity_id, None)
+
+    def shutdown(self) -> None:
+        """Cancel all active holds."""
+        for task in self._active_holds.values():
+            task.cancel()
+        self._active_holds.clear()
