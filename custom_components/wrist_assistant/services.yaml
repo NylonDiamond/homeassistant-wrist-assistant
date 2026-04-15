@@ -1,3 +1,50 @@
+remote_hold_start:
+  name: Remote hold start
+  description: >-
+    Begin repeating a remote command on the server side. The integration
+    will continuously send the command at the specified interval until
+    remote_hold_stop is called or the safety timeout (10 s) expires.
+  fields:
+    entity_id:
+      name: Entity ID
+      description: The remote entity to send the command to.
+      required: true
+      example: "remote.apple_tv"
+      selector:
+        entity:
+          domain: remote
+    command:
+      name: Command
+      description: The remote command to repeat (e.g. up, down, left, right).
+      required: true
+      example: "up"
+      selector:
+        text:
+    hold_secs:
+      name: Hold interval
+      description: Seconds between each repeated command (default 0.2).
+      example: 0.2
+      selector:
+        number:
+          min: 0.05
+          max: 2.0
+          step: 0.05
+          mode: box
+
+remote_hold_stop:
+  name: Remote hold stop
+  description: >-
+    Stop a remote hold previously started with remote_hold_start.
+  fields:
+    entity_id:
+      name: Entity ID
+      description: The remote entity to stop holding.
+      required: true
+      example: "remote.apple_tv"
+      selector:
+        entity:
+          domain: remote
+
 force_resync:
   name: Force resync
   description: >-

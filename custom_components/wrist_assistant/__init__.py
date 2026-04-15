@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -52,6 +53,25 @@ from .notifications import (
 _LOGGER = logging.getLogger(__name__)
 SERVICE_FORCE_RESYNC = "force_resync"
 SERVICE_SEND_NOTIFICATION = "send_notification"
+SERVICE_REMOTE_HOLD_START = "remote_hold_start"
+SERVICE_REMOTE_HOLD_STOP = "remote_hold_stop"
+
+_REMOTE_HOLD_TIMEOUT = 10.0  # Safety timeout in seconds
+
+_REMOTE_HOLD_START_SCHEMA = vol.Schema(
+    {
+        vol.Required("entity_id"): cv.entity_id,
+        vol.Required("command"): cv.string,
+        vol.Optional("hold_secs", default=0.2): vol.All(
+            vol.Coerce(float), vol.Range(min=0.05, max=2.0)
+        ),
+    }
+)
+_REMOTE_HOLD_STOP_SCHEMA = vol.Schema(
+    {
+        vol.Required("entity_id"): cv.entity_id,
+    }
+)
 
 # Unique ID suffixes from removed entity classes (cleanup on upgrade)
 _ORPHANED_SUFFIXES = (
@@ -176,6 +196,71 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     entry.async_on_unload(
         lambda: hass.services.async_remove(DOMAIN, SERVICE_FORCE_RESYNC)
     )
+
+    # Remote hold: server-side repeat loop for smooth D-pad navigation
+    active_holds: dict[str, asyncio.Task] = {}
+
+    async def _hold_loop(entity_id: str, command: str, hold_secs: float) -> None:
+        """Repeat a remote command until cancelled or timeout."""
+        try:
+            elapsed = 0.0
+            while elapsed < _REMOTE_HOLD_TIMEOUT:
+                await hass.services.async_call(
+                    "remote",
+                    "send_command",
+                    {"entity_id": entity_id, "command": command, "hold_secs": hold_secs},
+                )
+                await asyncio.sleep(hold_secs)
+                elapsed += hold_secs
+            _LOGGER.debug("Remote hold timed out for %s", entity_id)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            active_holds.pop(entity_id, None)
+
+    async def _handle_remote_hold_start(call: ServiceCall) -> None:
+        entity_id = call.data["entity_id"]
+        command = call.data["command"]
+        hold_secs = call.data["hold_secs"]
+        # Cancel any existing hold for this entity
+        existing = active_holds.pop(entity_id, None)
+        if existing is not None:
+            existing.cancel()
+        active_holds[entity_id] = hass.async_create_task(
+            _hold_loop(entity_id, command, hold_secs)
+        )
+
+    async def _handle_remote_hold_stop(call: ServiceCall) -> None:
+        entity_id = call.data["entity_id"]
+        task = active_holds.pop(entity_id, None)
+        if task is not None:
+            task.cancel()
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_REMOTE_HOLD_START,
+        _handle_remote_hold_start,
+        schema=_REMOTE_HOLD_START_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_REMOTE_HOLD_STOP,
+        _handle_remote_hold_stop,
+        schema=_REMOTE_HOLD_STOP_SCHEMA,
+    )
+    entry.async_on_unload(
+        lambda: hass.services.async_remove(DOMAIN, SERVICE_REMOTE_HOLD_START)
+    )
+    entry.async_on_unload(
+        lambda: hass.services.async_remove(DOMAIN, SERVICE_REMOTE_HOLD_STOP)
+    )
+
+    def _cancel_all_holds() -> None:
+        for task in active_holds.values():
+            task.cancel()
+        active_holds.clear()
+
+    entry.async_on_unload(_cancel_all_holds)
 
     def _enrich_actions(actions: list[dict]) -> list[dict]:
         """Enrich action dicts with entity state for entity-driven watch buttons.
