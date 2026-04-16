@@ -421,6 +421,7 @@ class DeltaCoordinator:
         attribute_diffs: bool = False,
         include_summary: bool = False,
         templates: dict[str, str] | None = None,
+        custom_entity_ids: list[str] | None = None,
     ) -> tuple[int, dict[str, Any] | None]:
         """Handle a single long-poll request."""
         self._prune_sessions()
@@ -464,6 +465,7 @@ class DeltaCoordinator:
                 battery_threshold=battery_threshold,
                 summary_entities=summary_entities,
                 include_summary=include_summary,
+                custom_entity_ids=custom_entity_ids,
             )
 
         # When since is nil, the client is requesting a full state snapshot.
@@ -485,6 +487,7 @@ class DeltaCoordinator:
                 battery_threshold=battery_threshold,
                 summary_entities=summary_entities,
                 include_summary=include_summary,
+                custom_entity_ids=custom_entity_ids,
             )
 
         since_cursor, invalid_since = self._parse_since(
@@ -499,6 +502,7 @@ class DeltaCoordinator:
                 battery_threshold=battery_threshold,
                 summary_entities=summary_entities,
                 include_summary=include_summary,
+                custom_entity_ids=custom_entity_ids,
             )
 
         if self._is_stale_cursor(since_cursor):
@@ -510,6 +514,7 @@ class DeltaCoordinator:
                 battery_threshold=battery_threshold,
                 summary_entities=summary_entities,
                 include_summary=include_summary,
+                custom_entity_ids=custom_entity_ids,
             )
 
         changed_ids = self._changed_entity_ids(since_cursor)
@@ -536,6 +541,7 @@ class DeltaCoordinator:
                 battery_threshold=battery_threshold,
                 summary_entities=summary_entities,
                 include_summary=include_summary,
+                custom_entity_ids=custom_entity_ids,
             )
 
         # Force delta: skip long-poll wait, return immediately with detailed info_summary
@@ -549,6 +555,7 @@ class DeltaCoordinator:
                 battery_threshold=battery_threshold,
                 summary_entities=summary_entities,
                 include_summary=include_summary,
+                custom_entity_ids=custom_entity_ids,
             )
 
         deadline = self.hass.loop.time() + timeout
@@ -1016,6 +1023,7 @@ class DeltaCoordinator:
         include_summary: bool = False,
         battery_threshold: int = 20,
         summary_entities: dict[str, list[str]] | None = None,
+        custom_entity_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "events": events,
@@ -1029,10 +1037,11 @@ class DeltaCoordinator:
                 include_details=include_details,
                 battery_threshold=battery_threshold,
                 summary_entities=summary_entities,
+                custom_entity_ids=custom_entity_ids,
             )
         return payload
 
-    def _compute_info_summary(self, *, include_details: bool = False, battery_threshold: int = 20, summary_entities: dict[str, list[str]] | None = None) -> dict[str, Any]:
+    def _compute_info_summary(self, *, include_details: bool = False, battery_threshold: int = 20, summary_entities: dict[str, list[str]] | None = None, custom_entity_ids: list[str] | None = None) -> dict[str, Any]:
         """Compute domain summaries from HA state machine (in-memory, instant).
 
         When summary_entities is provided, filter each domain to only the requested
@@ -1163,6 +1172,27 @@ class DeltaCoordinator:
                 for s, lvl in battery_levels
             ]
         summary["battery"] = battery_data
+
+        # Custom entities: arbitrary entity IDs from any domain (e.g. status page rows)
+        if custom_entity_ids:
+            custom = []
+            for eid in custom_entity_ids:
+                state = self.hass.states.get(eid)
+                if state is None:
+                    continue
+                entry: dict[str, Any] = {
+                    "entity_id": state.entity_id,
+                    "state": state.state,
+                    "name": state.attributes.get("friendly_name", state.entity_id),
+                }
+                unit = state.attributes.get("unit_of_measurement")
+                if unit:
+                    entry["unit"] = unit
+                dc = state.attributes.get("device_class")
+                if dc:
+                    entry["device_class"] = dc
+                custom.append(entry)
+            summary["custom_entities"] = custom
 
         return summary
 
@@ -1305,6 +1335,12 @@ class WatchUpdatesView(HomeAssistantView):
                 if isinstance(domain, str) and isinstance(ids, list):
                     summary_entities[domain] = [eid for eid in ids if isinstance(eid, str) and eid]
 
+        # Optional: arbitrary entity IDs for custom peek content (e.g. status page rows)
+        raw_custom = payload.get("custom_entity_ids")
+        custom_entity_ids: list[str] | None = None
+        if isinstance(raw_custom, list):
+            custom_entity_ids = [eid for eid in raw_custom if isinstance(eid, str) and eid]
+
         # Optional: template subscriptions (tile_id → Jinja2 string)
         raw_templates = payload.get("templates")
         templates: dict[str, str] | None = None
@@ -1340,8 +1376,9 @@ class WatchUpdatesView(HomeAssistantView):
             slim=slim,
             compact=compact,
             attribute_diffs=attribute_diffs,
-            include_summary=include_summary or force_delta or summary_entities is not None,
+            include_summary=include_summary or force_delta or summary_entities is not None or custom_entity_ids is not None,
             templates=templates,
+            custom_entity_ids=custom_entity_ids,
         )
 
         if status == 204:
@@ -1415,11 +1452,17 @@ class WatchSummaryView(HomeAssistantView):
                         eid for eid in ids if isinstance(eid, str) and eid
                     ]
 
+        raw_custom = payload.get("custom_entity_ids")
+        custom_entity_ids: list[str] | None = None
+        if isinstance(raw_custom, list):
+            custom_entity_ids = [eid for eid in raw_custom if isinstance(eid, str) and eid]
+
         body = {
             "info_summary": coordinator._compute_info_summary(
                 include_details=include_details,
                 battery_threshold=battery_threshold,
                 summary_entities=summary_entities,
+                custom_entity_ids=custom_entity_ids,
             ),
             "capabilities": coordinator._sorted_capabilities,
         }
