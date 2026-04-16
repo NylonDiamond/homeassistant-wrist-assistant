@@ -26,6 +26,7 @@ from .api import (
     MusicAssistantPlayersView,
     MusicAssistantQueueView,
     RemoteCommandView,
+    WatchStatesBatchView,
     WatchSummaryView,
     WatchUpdatesView,
 )
@@ -133,6 +134,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     if not hass.data.get(f"{DOMAIN}_views_registered"):
         hass.http.register_view(WatchUpdatesView(hass))
         hass.http.register_view(WatchSummaryView(hass))
+        hass.http.register_view(WatchStatesBatchView(hass))
         hass.http.register_view(CameraStreamView(hass))
         hass.http.register_view(CameraViewportView(hass))
         hass.http.register_view(CameraBatchView(hass))

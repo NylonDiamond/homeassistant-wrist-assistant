@@ -1530,6 +1530,90 @@ class WatchSummaryView(HomeAssistantView):
         return Response(body=json_bytes, status=200, content_type="application/json")
 
 
+class WatchStatesBatchView(HomeAssistantView):
+    """Return full HA state objects for the entities a status page references.
+
+    Used by the watch's full-screen status page sheet and the StatusPage Siri
+    intent. Replaces calls to /api/states (which returns every entity in HA)
+    plus N parallel /api/states/<id> calls for specific entities.
+    """
+
+    url = "/api/wrist_assistant/states_batch"
+    name = "api:wrist_assistant_states_batch"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+
+    async def post(self, request: Request) -> Response:
+        try:
+            payload = await request.json()
+        except (ValueError, UnicodeDecodeError):
+            payload = {}
+
+        if not isinstance(payload, dict):
+            return self.json_message("Expected JSON object body", status_code=400)
+
+        raw_custom = payload.get("custom_entity_ids")
+        custom_entity_ids: list[str] = []
+        if isinstance(raw_custom, list):
+            custom_entity_ids = [eid for eid in raw_custom if isinstance(eid, str) and eid]
+
+        raw_fetch_domains = payload.get("fetch_domains")
+        fetch_domains: dict[str, list[str] | None] = {}
+        if isinstance(raw_fetch_domains, dict):
+            for domain, dc_list in raw_fetch_domains.items():
+                if isinstance(domain, str):
+                    if isinstance(dc_list, list):
+                        fetch_domains[domain] = [
+                            dc for dc in dc_list if isinstance(dc, str) and dc
+                        ]
+                    else:
+                        fetch_domains[domain] = None
+
+        seen_ids: set[str] = set()
+        states_out: list[dict[str, Any]] = []
+
+        def append_state(state: State | None) -> None:
+            if state is None or state.entity_id in seen_ids:
+                return
+            seen_ids.add(state.entity_id)
+            states_out.append({
+                "entity_id": state.entity_id,
+                "state": state.state,
+                "attributes": dict(state.attributes),
+                "last_updated": state.last_updated.isoformat() if state.last_updated else None,
+            })
+
+        for eid in custom_entity_ids:
+            append_state(self._hass.states.get(eid))
+
+        for domain, dc_filter in fetch_domains.items():
+            domain_prefix = f"{domain}."
+            dc_set = set(dc_filter) if dc_filter else None
+            for state in self._hass.states.async_all(domain):
+                if not state.entity_id.startswith(domain_prefix):
+                    continue
+                if dc_set is not None:
+                    if state.attributes.get("device_class") not in dc_set:
+                        continue
+                append_state(state)
+
+        body = {"states": states_out}
+        json_bytes = orjson.dumps(body, default=str)
+
+        accept_encoding = request.headers.get("Accept-Encoding", "")
+        if "gzip" in accept_encoding and len(json_bytes) > 256:
+            compressed = gzip.compress(json_bytes, compresslevel=1)
+            return Response(
+                body=compressed,
+                status=200,
+                content_type="application/json",
+                headers={"Content-Encoding": "gzip"},
+            )
+        return Response(body=json_bytes, status=200, content_type="application/json")
+
+
 class MusicAssistantPlayersView(HomeAssistantView):
     """Return Music Assistant player info not available as HA entity attributes."""
 
