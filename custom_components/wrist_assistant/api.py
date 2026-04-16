@@ -1041,12 +1041,15 @@ class DeltaCoordinator:
             )
         return payload
 
-    def _compute_info_summary(self, *, include_details: bool = False, battery_threshold: int = 20, summary_entities: dict[str, list[str]] | None = None, custom_entity_ids: list[str] | None = None) -> dict[str, Any]:
+    def _compute_info_summary(self, *, include_details: bool = False, battery_threshold: int = 20, summary_entities: dict[str, list[str]] | None = None, custom_entity_ids: list[str] | None = None, fetch_domains: dict[str, list[str] | None] | None = None) -> dict[str, Any]:
         """Compute domain summaries from HA state machine (in-memory, instant).
 
         When summary_entities is provided, filter each domain to only the requested
         entity IDs and recompute counts from the filtered set. Entity details are
         always included for filtered domains (the caller asked for specific entities).
+
+        When fetch_domains is provided, return all entities for each requested domain
+        (optionally filtered by device_class list) in a ``domain_entities`` dict.
         """
         summary: dict[str, Any] = {}
         light_filter = (summary_entities or {}).get("light")
@@ -1197,6 +1200,35 @@ class DeltaCoordinator:
                         entry["brightness"] = brightness
                 custom.append(entry)
             summary["custom_entities"] = custom
+
+        # Domain entities: return all entities for requested domains, optionally
+        # filtered by device_class.  Used by status page peek on the watch.
+        if fetch_domains:
+            domain_entities: dict[str, list[dict[str, Any]]] = {}
+            for domain, dc_filter in fetch_domains.items():
+                states = [
+                    s for s in self.hass.states.async_all(domain)
+                    if s.entity_id.startswith(f"{domain}.")
+                ]
+                if dc_filter:
+                    dc_set = set(dc_filter)
+                    states = [s for s in states if s.attributes.get("device_class") in dc_set]
+                entities: list[dict[str, Any]] = []
+                for s in states:
+                    entry: dict[str, Any] = {
+                        "entity_id": s.entity_id,
+                        "state": s.state,
+                        "name": s.attributes.get("friendly_name", s.entity_id),
+                    }
+                    dc = s.attributes.get("device_class")
+                    if dc:
+                        entry["device_class"] = dc
+                    unit = s.attributes.get("unit_of_measurement")
+                    if unit:
+                        entry["unit"] = unit
+                    entities.append(entry)
+                domain_entities[domain] = entities
+            summary["domain_entities"] = domain_entities
 
         return summary
 
@@ -1461,12 +1493,26 @@ class WatchSummaryView(HomeAssistantView):
         if isinstance(raw_custom, list):
             custom_entity_ids = [eid for eid in raw_custom if isinstance(eid, str) and eid]
 
+        raw_fetch_domains = payload.get("fetch_domains")
+        fetch_domains: dict[str, list[str] | None] | None = None
+        if isinstance(raw_fetch_domains, dict):
+            fetch_domains = {}
+            for domain, dc_list in raw_fetch_domains.items():
+                if isinstance(domain, str):
+                    if isinstance(dc_list, list):
+                        fetch_domains[domain] = [
+                            dc for dc in dc_list if isinstance(dc, str) and dc
+                        ]
+                    else:
+                        fetch_domains[domain] = None
+
         body = {
             "info_summary": coordinator._compute_info_summary(
                 include_details=include_details,
                 battery_threshold=battery_threshold,
                 summary_entities=summary_entities,
                 custom_entity_ids=custom_entity_ids,
+                fetch_domains=fetch_domains,
             ),
             "capabilities": coordinator._sorted_capabilities,
         }
