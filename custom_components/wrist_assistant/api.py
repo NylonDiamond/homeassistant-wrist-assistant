@@ -1191,6 +1191,10 @@ class DeltaCoordinator:
                 dc = state.attributes.get("device_class")
                 if dc:
                     entry["device_class"] = dc
+                if eid.startswith("light."):
+                    brightness = state.attributes.get("brightness")
+                    if brightness is not None:
+                        entry["brightness"] = brightness
                 custom.append(entry)
             summary["custom_entities"] = custom
 
