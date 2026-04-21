@@ -19,7 +19,6 @@ from homeassistant.core import (
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers import entity_registry as er
 
 from .api import (
     DeltaCoordinator,
@@ -55,22 +54,6 @@ _LOGGER = logging.getLogger(__name__)
 SERVICE_FORCE_RESYNC = "force_resync"
 SERVICE_SEND_NOTIFICATION = "send_notification"
 
-# Unique ID suffixes from removed entity classes (cleanup on upgrade)
-_ORPHANED_SUFFIXES = (
-    "_entity_list",
-    "_refresh_pairing_qr",
-    "_pairing_qr",
-    "_connection_qr",
-    "_pairing_expires_at",
-)
-# Entities to auto-disable on upgrade (disabled-by-default only affects new installs)
-_DISABLE_ON_UPGRADE_SUFFIXES = (
-    "_events_processed",
-    "_buffer_usage",
-    "_events_per_minute",
-    "_poll_interval",
-    "_connected_since",
-)
 _PAIRING_NOTIFICATION_ID_TEMPLATE = "wrist_assistant_pairing_%s"
 _ACTION_SCHEMA = vol.Schema(
     {
@@ -108,9 +91,6 @@ _SEND_NOTIFICATION_SCHEMA = vol.Schema(
 
 async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntry) -> bool:
     """Set up Wrist Assistant from a config entry."""
-    _cleanup_orphaned_entities(hass, entry)
-    _disable_noisy_entities(hass, entry)
-
     coordinator = DeltaCoordinator(hass)
     camera_stream_coordinator = CameraStreamCoordinator()
     notification_store = NotificationTokenStore(hass)
@@ -227,18 +207,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         store = data.notification_store
         target_raw = call.data.get("target")
 
-        # Resolve device_id → watch_id (fallback to raw value for backwards compat)
+        # Resolve device_id → watch_id
         target: str | None = None
         if target_raw:
             dev_reg = dr.async_get(hass)
             device = dev_reg.async_get(target_raw)
-            if device:
-                for ident_domain, identifier in device.identifiers:
-                    if ident_domain == DOMAIN:
-                        target = identifier.replace("watch_", "")
-                        break
+            if device is None:
+                raise HomeAssistantError(f"Unknown device_id: {target_raw}")
+            for ident_domain, identifier in device.identifiers:
+                if ident_domain == DOMAIN:
+                    target = identifier.replace("watch_", "")
+                    break
             if target is None:
-                target = target_raw
+                raise HomeAssistantError(
+                    f"Device '{target_raw}' is not a Wrist Assistant watch"
+                )
 
         message = call.data["message"]
         title = call.data.get("title")
@@ -363,34 +346,6 @@ async def _create_apns_client(hass: HomeAssistant) -> APNsClient | None:
     except Exception:
         _LOGGER.exception("Failed to create push relay client")
         return None
-
-
-def _cleanup_orphaned_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Remove entities from previous versions that no longer exist in code."""
-    ent_reg = er.async_get(hass)
-    removed = []
-    for entity_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
-        if any(entity_entry.unique_id.endswith(suffix) for suffix in _ORPHANED_SUFFIXES):
-            ent_reg.async_remove(entity_entry.entity_id)
-            removed.append(entity_entry.entity_id)
-    if removed:
-        _LOGGER.info("Cleaned up %d orphaned entities: %s", len(removed), removed)
-
-
-def _disable_noisy_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """One-time disable of noisy diagnostic entities on upgrade."""
-    ent_reg = er.async_get(hass)
-    disabled = []
-    for entity_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
-        if entity_entry.disabled:
-            continue
-        if any(entity_entry.unique_id.endswith(s) for s in _DISABLE_ON_UPGRADE_SUFFIXES):
-            ent_reg.async_update_entity(
-                entity_entry.entity_id, disabled_by=er.RegistryEntryDisabler.INTEGRATION
-            )
-            disabled.append(entity_entry.entity_id)
-    if disabled:
-        _LOGGER.info("Disabled %d noisy entities on upgrade: %s", len(disabled), disabled)
 
 
 async def _install_bundled_blueprints(hass: HomeAssistant) -> None:
