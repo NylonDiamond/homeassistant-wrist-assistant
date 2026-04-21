@@ -9,11 +9,14 @@ blueprint:
     buttons. Pick up to 4 entities — each becomes a button that
     knows how to control itself:
 
-    - Lights, switches, fans, covers: tap to toggle
+    - Tap to toggle most entities (scenes, scripts, and buttons fire once)
 
-    - Locks, alarms: hold to confirm
+    - Hold to confirm: locks and alarms
 
-    - Lights, covers, fans, climate: double-tap for presets
+    - Double-tap for presets: lights (brightness, color temp), covers &
+    valves (position, stop), fans (speed), climates (temp, HVAC mode),
+    media players (transport, volume), alarms (home/night/away/disarm),
+    vacuums (start/pause/dock/find)
 
     Leave button slots empty to skip them. A notification with no
     buttons shows as info-only (title + message).
