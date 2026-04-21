@@ -504,10 +504,7 @@ sequence:
       {%- set d = namespace(items=[("message", bp_message), ("priority", bp_priority)]) -%}
       {%- if bp_title %}{%- set d.items = d.items + [("title", bp_title)] -%}{%- endif -%}
       {%- if bp_sound %}{%- set d.items = d.items + [("sound", bp_sound)] -%}{%- endif -%}
-      {%- if bp_target_device -%}
-        {%- set ids = device_attr(bp_target_device, 'identifiers') | list -%}
-        {%- if ids %}{%- set d.items = d.items + [("target", ids[0][1] | replace('watch_', ''))] -%}{%- endif -%}
-      {%- endif -%}
+      {%- if bp_target_device %}{%- set d.items = d.items + [("target", bp_target_device)] -%}{%- endif -%}
       {%- if bp_tag %}{%- set d.items = d.items + [("tag", bp_tag)] -%}{%- endif -%}
       {%- if bp_group %}{%- set d.items = d.items + [("group", bp_group)] -%}{%- endif -%}
       {%- set extra = namespace(items=[]) -%}

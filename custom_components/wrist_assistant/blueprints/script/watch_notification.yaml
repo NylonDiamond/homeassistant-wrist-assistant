@@ -9,11 +9,14 @@ blueprint:
     buttons. Pick up to 4 entities — each becomes a button that
     knows how to control itself:
 
-    - Lights, switches, fans, covers: tap to toggle
+    - Tap to toggle most entities (scenes, scripts, and buttons fire once)
 
-    - Locks, alarms: hold to confirm
+    - Hold to confirm: locks and alarms
 
-    - Lights, covers, fans, climate: double-tap for presets
+    - Double-tap for presets: lights (brightness, color temp), covers &
+    valves (position, stop), fans (speed), climates (temp, HVAC mode),
+    media players (transport, volume), alarms (home/night/away/disarm),
+    vacuums (start/pause/dock/find)
 
     Leave button slots empty to skip them. A notification with no
     buttons shows as info-only (title + message).
@@ -501,10 +504,7 @@ sequence:
       {%- set d = namespace(items=[("message", bp_message), ("priority", bp_priority)]) -%}
       {%- if bp_title %}{%- set d.items = d.items + [("title", bp_title)] -%}{%- endif -%}
       {%- if bp_sound %}{%- set d.items = d.items + [("sound", bp_sound)] -%}{%- endif -%}
-      {%- if bp_target_device -%}
-        {%- set ids = device_attr(bp_target_device, 'identifiers') | list -%}
-        {%- if ids %}{%- set d.items = d.items + [("target", ids[0][1] | replace('watch_', ''))] -%}{%- endif -%}
-      {%- endif -%}
+      {%- if bp_target_device %}{%- set d.items = d.items + [("target", bp_target_device)] -%}{%- endif -%}
       {%- if bp_tag %}{%- set d.items = d.items + [("tag", bp_tag)] -%}{%- endif -%}
       {%- if bp_group %}{%- set d.items = d.items + [("group", bp_group)] -%}{%- endif -%}
       {%- set extra = namespace(items=[]) -%}
