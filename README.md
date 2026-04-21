@@ -7,12 +7,15 @@ Wrist Assistant connects your Apple Watch to Home Assistant with fast setup, rea
 ## What it does
 
 - Pairs your watch with Home Assistant
-- Keeps your watch and Home Assistant in real-time sync
-- Uses efficient updates so the watch stays fast and responsive
-- Supports 45+ Home Assistant entity types in the app
-- Shows watch-optimized camera previews and live views
+- Keeps your watch and Home Assistant in real-time sync with a delta protocol so the watch stays fast and responsive on cellular, Wi-Fi, or iPhone-relay
+- Supports 50+ Home Assistant entity types in the app, including lights, switches, locks, covers, valves, climate, fans, scenes, scripts, media players, vacuums, lawn mowers, water heaters, humidifiers, cameras, alarm panels, remotes, timers, sirens, updates, weather, calendars, todo lists, sensors, binary sensors, buttons, numbers, selects, input helpers, counters, device trackers, zones, events, images, automations, and persons
+- Shows watch-optimized camera previews, live streams, and batched multi-camera views
+- Native Apple push notifications with up to 4 inline entity action buttons (lights, covers, fans, climate, locks, scenes, scripts, and more)
+- Home Assistant Remote entity control with native watch button and crown mapping
+- Music Assistant integration: player, queue, and provider-aware metadata
+- Status pages optimized for Siri, Shortcuts, watch tiles, and Quick Actions
+- Ships a bundled `Watch Notification` script blueprint for no-YAML notification automations
 - Supports more than one watch in the same home
-- Sends notifications to your watch through Apple notifications
 
 ## Install
 
@@ -48,10 +51,12 @@ The blueprint is easier to set up in the UI and lets you choose a watch, title, 
 
 If you want to call the service directly, use `wrist_assistant.send_notification` to send a message to one or all paired watches using Apple notifications.
 
+`target` accepts a watch `device_id` (copy it from the device page under `Settings` -> `Devices & Services` -> `Wrist Assistant`). Omit `target` to broadcast to every paired watch.
+
 ```yaml
 service: wrist_assistant.send_notification
 data:
-  target: "" # leave empty to send to all watches
+  target: "" # leave empty to send to all watches, or paste a watch device_id
   title: "Front Door Alert"
   message: "Motion detected at the front door."
   sound: "Doorbell-Single.caf"
