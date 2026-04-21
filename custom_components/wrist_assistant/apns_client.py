@@ -14,6 +14,7 @@ _DEAD_TOKEN_REASONS = frozenset({
     "BadDeviceToken",
     "Unregistered",
     "DeviceTokenNotForTopic",
+    "device_token_mismatch",
 })
 
 
