@@ -29,6 +29,11 @@ blueprint:
     until you enable them here.
 
 
+    If you see `No registered push token`, open Wrist Assistant on
+    the watch and let it sync once. If needed, pull to refresh or
+    force-close and reopen the watch app, then try again.
+
+
     **Tip:** Customize how notifications look and behave in the
     Wrist Assistant iOS app under Settings → Notification Style.
   domain: script

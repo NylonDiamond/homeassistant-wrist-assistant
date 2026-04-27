@@ -53,6 +53,15 @@ If you want to call the service directly, use `wrist_assistant.send_notification
 
 `target` accepts a watch `device_id` (copy it from the device page under `Settings` -> `Devices & Services` -> `Wrist Assistant`). Omit `target` to broadcast to every paired watch.
 
+If you see `No registered push token for watch ...`, the watch app has not re-registered for notifications yet. Open Wrist Assistant on the Apple Watch and let it fully sync once, then try the notification again.
+
+If it still fails:
+
+1. On the watch, verify `Settings` -> `Notifications` -> `Wrist Assistant` is enabled.
+2. Reopen Wrist Assistant on the watch and pull to refresh if needed.
+3. Retry the notification after the watch reconnects.
+4. If it still will not register, re-pair the watch or reinstall the watch app.
+
 ```yaml
 service: wrist_assistant.send_notification
 data:
