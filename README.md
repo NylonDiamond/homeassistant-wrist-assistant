@@ -1,6 +1,6 @@
 # Wrist Assistant for Home Assistant
 
-Official Home Assistant integration for the [Wrist Assistant](https://apps.apple.com/us/search?term=Wrist%20Assistant) Apple Watch app.
+Official Home Assistant integration for the [Wrist Assistant](https://apps.apple.com/us/app/wrist-assistant/id6759152098) Apple Watch app.
 
 Wrist Assistant connects your Apple Watch to Home Assistant with fast setup, real-time sync, native watch notifications, and tons of other features.
 
@@ -91,7 +91,8 @@ data:
 
 ## Need help?
 
-- Wrist Assistant docs: <https://www.wrist-assistant.com>
+- Wrist Assistant site: <https://wrist-assistant.com/>
+- Wrist Assistant docs: <https://docs.wrist-assistant.com/>
 - Open an issue: <https://github.com/NylonDiamond/homeassistant-wrist-assistant/issues>
 
 ## License
