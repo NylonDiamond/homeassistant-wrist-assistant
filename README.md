@@ -4,6 +4,15 @@ Official Home Assistant integration for the [Wrist Assistant](https://apps.apple
 
 Wrist Assistant connects your Apple Watch to Home Assistant with fast setup, real-time sync, native watch notifications, and tons of other features.
 
+<p align="center">
+  <a href="https://apps.apple.com/us/app/wrist-assistant/id6759152098">
+    <img src="images/01-overview.png" alt="Your Home on Your Wrist" width="22%">
+    <img src="images/02-entities.png" alt="50+ Entities" width="22%">
+    <img src="images/03-customization.png" alt="Endless Customization" width="22%">
+    <img src="images/04-features.png" alt="Features" width="22%">
+  </a>
+</p>
+
 ## What it does
 
 - Pairs your watch with Home Assistant
