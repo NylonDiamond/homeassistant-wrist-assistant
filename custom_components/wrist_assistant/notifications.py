@@ -1,14 +1,16 @@
-"""Push notification token registration for Wrist Assistant."""
+"""Push notification token storage for Wrist Assistant.
+
+The legacy bearer-authed `NotificationRegisterView` was removed when the
+watch transport went pure-v2; the watch now registers its push token via
+`op=notifications_register` on `/v2/action`. The token store and APNs
+helpers below are still the single source of truth for the runtime.
+"""
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
 
-from aiohttp.web import Request, Response
-
-from homeassistant.components.http import HomeAssistantView
-from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .const import NOTIFICATION_TOKEN_STORAGE_KEY, NOTIFICATION_TOKEN_STORAGE_VERSION
@@ -127,46 +129,3 @@ class NotificationTokenStore:
         """Remove a watch's token."""
         if self._tokens.pop(watch_id, None) is not None:
             self._store.async_delay_save(self._serialize, 5)
-
-
-class NotificationRegisterView(HomeAssistantView):
-    """POST endpoint to explicitly register a push notification token."""
-
-    url = "/api/wrist_assistant/notifications/register"
-    name = "api:wrist_assistant_notification_register"
-    requires_auth = True
-
-    def __init__(self, hass: HomeAssistant) -> None:
-        self._hass = hass
-
-    async def post(self, request: Request) -> Response:
-        """Register a device token."""
-        from .const import DOMAIN, WristAssistantData
-
-        domain_data: WristAssistantData | None = self._hass.data.get(DOMAIN)
-        if domain_data is None:
-            return self.json_message("Integration not loaded", status_code=503)
-        store = domain_data.notification_store
-
-        try:
-            payload = await request.json()
-        except (ValueError, UnicodeDecodeError):
-            return self.json_message("Invalid JSON body", status_code=400)
-
-        if not isinstance(payload, dict):
-            return self.json_message("Expected JSON object", status_code=400)
-
-        watch_id = payload.get("watch_id")
-        device_token = payload.get("device_token")
-        platform = payload.get("platform", "watchos")
-        environment = payload.get("environment", "production")
-
-        if not isinstance(watch_id, str) or not watch_id:
-            return self.json_message("watch_id is required", status_code=400)
-        if not isinstance(device_token, str) or not device_token:
-            return self.json_message("device_token is required", status_code=400)
-
-        store.register(
-            watch_id, device_token, platform=platform, environment=environment
-        )
-        return self.json({"status": "ok"})

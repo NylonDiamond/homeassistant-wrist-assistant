@@ -1,4 +1,10 @@
-"""Camera device grouping — one entry per physical camera with stream role classification."""
+"""Camera device grouping — one entry per physical camera with stream role classification.
+
+Used by the watch app via `op=camera_devices` on `/v2/action`. The legacy
+bearer-authed `CameraDevicesView` was removed when the watch transport
+went pure-v2; the underlying `build_camera_device_groups` helper is
+unchanged.
+"""
 
 from __future__ import annotations
 
@@ -6,9 +12,6 @@ import logging
 import re
 from typing import Any
 
-from aiohttp.web import Request, Response
-
-from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -227,18 +230,3 @@ def build_camera_device_groups(hass: HomeAssistant) -> list[dict[str, Any]]:
     # Sort by name
     devices.sort(key=lambda d: (d["name"] or "").lower())
     return devices
-
-
-class CameraDevicesView(HomeAssistantView):
-    """GET endpoint returning camera devices grouped by physical device."""
-
-    url = "/api/wrist_assistant/camera/devices"
-    name = "api:wrist_assistant_camera_devices"
-    requires_auth = True
-
-    def __init__(self, hass: HomeAssistant) -> None:
-        self._hass = hass
-
-    async def get(self, request: Request) -> Response:
-        devices = build_camera_device_groups(self._hass)
-        return self.json({"devices": devices})

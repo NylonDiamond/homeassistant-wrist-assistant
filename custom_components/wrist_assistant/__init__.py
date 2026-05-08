@@ -20,35 +20,27 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 
-from .api import (
-    DeltaCoordinator,
-    MusicAssistantPlayersView,
-    MusicAssistantQueueView,
-    RemoteCommandView,
-    WatchStatesBatchView,
-    WatchSummaryView,
-    WatchUpdatesView,
-)
+from .api import DeltaCoordinator
 from .apns_client import APNsClient
-from .camera_devices import CameraDevicesView
-from .camera_stream import (
-    CameraBatchView,
-    CameraSnapshotView,
-    CameraStreamCoordinator,
-    CameraStreamView,
-    CameraViewportView,
-)
+from .camera_stream import CameraStreamCoordinator
 from .const import (
     DOMAIN,
     PLATFORMS,
+    WA_HMAC_NONCE_TTL_SECONDS,
     WristAssistantConfigEntry,
     WristAssistantData,
 )
-from .audio_upload import AudioUploadView
-from .notifications import (
-    NotificationRegisterView,
-    NotificationTokenStore,
+from .notifications import NotificationTokenStore
+from .wa_stream_tokens import StreamTokenStore
+from .wa_v2_views import (
+    WAActionView,
+    WADeltaView,
+    WARegisterSecretView,
+    WAStreamView,
+    WAVersionView,
 )
+from .widget_hmac import WANonceCache
+from .widget_secret_store import WidgetSecretStore
 
 _LOGGER = logging.getLogger(__name__)
 SERVICE_FORCE_RESYNC = "force_resync"
@@ -95,6 +87,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     camera_stream_coordinator = CameraStreamCoordinator()
     notification_store = NotificationTokenStore(hass)
     await notification_store.async_load()
+    widget_secret_store = WidgetSecretStore(hass)
+    await widget_secret_store.async_load()
+    stream_token_store = StreamTokenStore()
 
     # Register server capabilities
     coordinator.register_capability("gzip")
@@ -102,29 +97,38 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     coordinator.register_capability("camera_batch")
     coordinator.register_capability("camera_devices")
     coordinator.register_capability("push_notifications")
+    # Watch transport over HMAC. The watch app uses this to confirm v2 ops
+    # (full vocabulary on /v2/action, long-poll on /v2/delta, camera streams
+    # via /v2/stream/<token> handshake) are available before sending
+    # bearer-free requests.
+    coordinator.register_capability("watch_hmac_v2")
 
     runtime_data = WristAssistantData(
         coordinator=coordinator,
         camera_stream_coordinator=camera_stream_coordinator,
         notification_store=notification_store,
+        widget_secret_store=widget_secret_store,
+        stream_token_store=stream_token_store,
     )
     entry.runtime_data = runtime_data
     hass.data[DOMAIN] = runtime_data
 
     if not hass.data.get(f"{DOMAIN}_views_registered"):
-        hass.http.register_view(WatchUpdatesView(hass))
-        hass.http.register_view(WatchSummaryView(hass))
-        hass.http.register_view(WatchStatesBatchView(hass))
-        hass.http.register_view(CameraStreamView(hass))
-        hass.http.register_view(CameraViewportView(hass))
-        hass.http.register_view(CameraBatchView(hass))
-        hass.http.register_view(CameraSnapshotView(hass))
-        hass.http.register_view(CameraDevicesView(hass))
-        hass.http.register_view(NotificationRegisterView(hass))
-        hass.http.register_view(AudioUploadView(hass))
-        hass.http.register_view(MusicAssistantPlayersView(hass))
-        hass.http.register_view(MusicAssistantQueueView(hass))
-        hass.http.register_view(RemoteCommandView(hass))
+        # All watch traffic goes through /v2/* HMAC. WARegisterSecretView is
+        # the one bearer-authed exception — iOS posts to it once to provision
+        # the per-watch secret, and the secret never leaves iOS keychain after
+        # that. WAVersionView is unauthenticated metadata for the iOS banner.
+        nonce_cache = WANonceCache(ttl_seconds=WA_HMAC_NONCE_TTL_SECONDS)
+        hass.data[f"{DOMAIN}_nonce_cache"] = nonce_cache
+        hass.http.register_view(WARegisterSecretView(hass))
+        hass.http.register_view(WAVersionView(hass))
+        hass.http.register_view(WAActionView(hass, nonce_cache))
+        hass.http.register_view(WADeltaView(hass, nonce_cache))
+        # Stream view auths via single-use token instead of HMAC headers —
+        # the token is minted by op=stream_open and bound to (watch_id,
+        # entity_id) for ~30 s, which is the lifetime an attacker has to
+        # brute-force a 192-bit secret.
+        hass.http.register_view(WAStreamView(hass))
         hass.data[f"{DOMAIN}_views_registered"] = True
 
     apns_client = await _create_apns_client(hass)
@@ -138,6 +142,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     def _handle_stop(_event) -> None:
         coordinator.async_shutdown()
         camera_stream_coordinator.shutdown()
+        stream_token_store.shutdown()
 
     entry.async_on_unload(
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _handle_stop)
@@ -315,6 +320,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: WristAssistantConfigEnt
         if data is not None:
             data.coordinator.async_shutdown()
             data.camera_stream_coordinator.shutdown()
+            data.stream_token_store.shutdown()
         persistent_notification.async_dismiss(
             hass, _PAIRING_NOTIFICATION_ID_TEMPLATE % entry.entry_id
         )
