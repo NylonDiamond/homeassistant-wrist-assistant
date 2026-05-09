@@ -133,8 +133,16 @@ class _OpContext:
         *,
         status: int = 200,
     ) -> Response:
-        """Serialize JSON, sign it, return with X-WA-Ts/X-WA-Sig headers."""
-        json_bytes = orjson.dumps(body, default=str)
+        """Serialize JSON, sign it, return with X-WA-Ts/X-WA-Sig headers.
+
+        `OPT_NON_STR_KEYS` lets us round-trip HA state attributes that contain
+        nested dicts with non-string keys (e.g. a `number` entity's
+        `reserved_values: {0: "..."}`). Without it, `orjson.dumps` raises
+        `TypeError: Dict key must be str` and the op handler 500s.
+        """
+        json_bytes = orjson.dumps(
+            body, default=str, option=orjson.OPT_NON_STR_KEYS
+        )
         return self.signed_bytes(
             json_bytes, status=status, content_type="application/json"
         )
@@ -434,7 +442,10 @@ class WADeltaView(HomeAssistantView):
                 headers={"X-WA-Ts": str(ts), "X-WA-Sig": sig},
             )
 
-        json_bytes = orjson.dumps(body_dict)
+        # `OPT_NON_STR_KEYS` covers state attributes whose nested dicts use
+        # non-string keys (e.g. a `number` entity's `reserved_values:
+        # {0: "..."}`); see `_OpContext.signed_json`.
+        json_bytes = orjson.dumps(body_dict, option=orjson.OPT_NON_STR_KEYS)
 
         # Gzip when the client supports it and the body is large enough to
         # benefit. Sign post-gzip so the wire bytes are what the watch verifies.
