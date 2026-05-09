@@ -447,8 +447,25 @@ class WADeltaView(HomeAssistantView):
         # {0: "..."}`); see `_OpContext.signed_json`.
         json_bytes = orjson.dumps(body_dict, option=orjson.OPT_NON_STR_KEYS)
 
+        # Sign the JSON bytes (pre-gzip). watchOS URLSession transparently
+        # decompresses gzip-encoded responses even when the request set
+        # `Accept-Encoding: gzip` explicitly, so the watch always sees the
+        # JSON bytes — signing the wire (gzipped) bytes would fail to verify.
+        ts = int(time.time())
+        sig = sign_response(
+            secret_entry.secret_bytes,
+            validated.op,
+            watch_id,
+            ts,
+            json_bytes,
+            version=validated.version,
+            algo=validated.algo,
+        )
+
         # Gzip when the client supports it and the body is large enough to
-        # benefit. Sign post-gzip so the wire bytes are what the watch verifies.
+        # benefit. The wire body is gzip(json_bytes); signing happened above
+        # against json_bytes so transport-layer compression is invisible to
+        # the verifier.
         accept_encoding = request.headers.get("Accept-Encoding", "")
         if "gzip" in accept_encoding and len(json_bytes) > 256:
             wire_body = gzip.compress(json_bytes, compresslevel=1)
@@ -457,16 +474,6 @@ class WADeltaView(HomeAssistantView):
             wire_body = json_bytes
             content_encoding = None
 
-        ts = int(time.time())
-        sig = sign_response(
-            secret_entry.secret_bytes,
-            validated.op,
-            watch_id,
-            ts,
-            wire_body,
-            version=validated.version,
-            algo=validated.algo,
-        )
         headers = {"X-WA-Ts": str(ts), "X-WA-Sig": sig}
         if content_encoding:
             headers["Content-Encoding"] = content_encoding
