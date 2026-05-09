@@ -111,7 +111,7 @@ data:
 
 - Wrist Assistant site: <https://wrist-assistant.com/>
 - Wrist Assistant docs: <https://docs.wrist-assistant.com/>
-- Community Discord: <https://discord.gg/fTfVcWawQ>
+- Community Discord: <https://discord.gg/6zmNK2jA5P>
 - Open an issue: <https://github.com/NylonDiamond/homeassistant-wrist-assistant/issues>
 
 ## License
