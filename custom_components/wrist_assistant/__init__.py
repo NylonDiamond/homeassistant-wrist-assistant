@@ -31,6 +31,23 @@ from .const import (
     WristAssistantData,
 )
 from .notifications import NotificationTokenStore
+from .v1_api_views import (
+    MusicAssistantPlayersView,
+    MusicAssistantQueueView,
+    RemoteCommandView,
+    WatchStatesBatchView,
+    WatchSummaryView,
+    WatchUpdatesView,
+)
+from .v1_audio_upload_views import AudioUploadView
+from .v1_camera_devices_views import CameraDevicesView
+from .v1_camera_stream_views import (
+    CameraBatchView,
+    CameraSnapshotView,
+    CameraStreamView,
+    CameraViewportView,
+)
+from .v1_notifications_views import NotificationRegisterView
 from .wa_stream_tokens import StreamTokenStore
 from .wa_v2_views import (
     WAActionView,
@@ -114,10 +131,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     hass.data[DOMAIN] = runtime_data
 
     if not hass.data.get(f"{DOMAIN}_views_registered"):
-        # All watch traffic goes through /v2/* HMAC. WARegisterSecretView is
-        # the one bearer-authed exception — iOS posts to it once to provision
-        # the per-watch secret, and the secret never leaves iOS keychain after
-        # that. WAVersionView is unauthenticated metadata for the iOS banner.
+        # v2 transport: /v2/* HMAC for all watch traffic. WARegisterSecretView
+        # is the one bearer-authed exception — iOS posts to it once to
+        # provision the per-watch secret, and the secret never leaves iOS
+        # keychain after that. WAVersionView is unauthenticated metadata for
+        # the iOS banner.
         nonce_cache = WANonceCache(ttl_seconds=WA_HMAC_NONCE_TTL_SECONDS)
         hass.data[f"{DOMAIN}_nonce_cache"] = nonce_cache
         hass.http.register_view(WARegisterSecretView(hass))
@@ -129,6 +147,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         # entity_id) for ~30 s, which is the lifetime an attacker has to
         # brute-force a 192-bit secret.
         hass.http.register_view(WAStreamView(hass))
+
+        # Legacy v1 transport: bearer-authed endpoints for app builds prior to
+        # the v2 cutover. Kept alive so HACS can ship without breaking users
+        # whose iOS/watch app hasn't updated yet. Delete this block (and the
+        # five v1_*.py files) in the release that retires v1.
+        hass.http.register_view(WatchUpdatesView(hass))
+        hass.http.register_view(WatchSummaryView(hass))
+        hass.http.register_view(WatchStatesBatchView(hass))
+        hass.http.register_view(CameraStreamView(hass))
+        hass.http.register_view(CameraViewportView(hass))
+        hass.http.register_view(CameraBatchView(hass))
+        hass.http.register_view(CameraSnapshotView(hass))
+        hass.http.register_view(CameraDevicesView(hass))
+        hass.http.register_view(NotificationRegisterView(hass))
+        hass.http.register_view(AudioUploadView(hass))
+        hass.http.register_view(MusicAssistantPlayersView(hass))
+        hass.http.register_view(MusicAssistantQueueView(hass))
+        hass.http.register_view(RemoteCommandView(hass))
+
         hass.data[f"{DOMAIN}_views_registered"] = True
 
     apns_client = await _create_apns_client(hass)
