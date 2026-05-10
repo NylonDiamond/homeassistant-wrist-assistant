@@ -49,6 +49,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -139,12 +140,41 @@ class _OpContext:
         nested dicts with non-string keys (e.g. a `number` entity's
         `reserved_values: {0: "..."}`). Without it, `orjson.dumps` raises
         `TypeError: Dict key must be str` and the op handler 500s.
+
+        Response is gzipped when the client supports it and the body is large
+        enough to benefit. Signing happens against the un-gzipped JSON bytes
+        because watchOS URLSession decompresses transparently before the watch
+        verifies; signing the wire bytes would never verify.
         """
         json_bytes = orjson.dumps(
             body, default=str, option=orjson.OPT_NON_STR_KEYS
         )
-        return self.signed_bytes(
-            json_bytes, status=status, content_type="application/json"
+        accept_encoding = self.request.headers.get("Accept-Encoding", "")
+        gzip_ok = "gzip" in accept_encoding and len(json_bytes) > 256
+
+        ts = int(time.time())
+        sig = sign_response(
+            self.secret_bytes,
+            self.op,
+            self.watch_id,
+            ts,
+            json_bytes,
+            version=self.version,
+            algo=self.algo,
+        )
+
+        headers = {"X-WA-Ts": str(ts), "X-WA-Sig": sig}
+        if gzip_ok:
+            wire_body = gzip.compress(json_bytes, compresslevel=1)
+            headers["Content-Encoding"] = "gzip"
+        else:
+            wire_body = json_bytes
+
+        return Response(
+            body=wire_body,
+            status=status,
+            content_type="application/json",
+            headers=headers,
         )
 
     def signed_bytes(
@@ -574,6 +604,102 @@ async def _op_state(ctx: _OpContext) -> Response:
             else None,
         }
     )
+
+
+# Cap entries server-side so a flappy sensor over a wide window can't blow
+# past the watch's budget. ~500 points renders cleanly in Charts and gzips
+# down to a couple KB.
+MAX_HISTORY_ENTRIES = 500
+
+
+async def _op_history(ctx: _OpContext) -> Response:
+    """Single-entity state-change history for the watch's chart view.
+
+    Payload shape:
+        {
+          "entity_id": "<entity_id>",
+          "start_ms": <epoch ms>,
+          "end_ms":   <epoch ms>?,   # defaults to now
+        }
+
+    Response shape (compact, designed for cheap decode on watch):
+        {
+          "entity_id": "<entity_id>",
+          "entries": [
+            {"s": "<state>", "t": <epoch_ms>},
+            ...
+          ]
+        }
+
+    Backed by recorder's in-process `state_changes_during_period` — no
+    WebSocket round-trip, no HTTP hop inside HA. `significant_changes_only`
+    drops sub-resolution noise; `minimal_response` strips attributes (the
+    chart only needs state + timestamp).
+    """
+    entity_id = ctx.payload.get("entity_id")
+    if not isinstance(entity_id, str) or not entity_id:
+        return Response(status=400, text="entity_id required")
+
+    start_raw = ctx.payload.get("start_ms")
+    if not isinstance(start_raw, (int, float)):
+        return Response(status=400, text="start_ms required")
+    try:
+        start = datetime.fromtimestamp(start_raw / 1000.0, tz=timezone.utc)
+    except (ValueError, OSError, OverflowError):
+        return Response(status=400, text="start_ms invalid")
+
+    end: datetime | None = None
+    end_raw = ctx.payload.get("end_ms")
+    if isinstance(end_raw, (int, float)):
+        try:
+            end = datetime.fromtimestamp(end_raw / 1000.0, tz=timezone.utc)
+        except (ValueError, OSError, OverflowError):
+            return Response(status=400, text="end_ms invalid")
+
+    try:
+        from homeassistant.components.recorder import get_instance
+        from homeassistant.components.recorder.history import (
+            state_changes_during_period,
+        )
+    except ImportError:
+        return ctx.signed_json(
+            {"ok": False, "error": "recorder unavailable"}, status=503
+        )
+
+    recorder = get_instance(ctx.hass)
+    try:
+        states_by_entity = await recorder.async_add_executor_job(
+            state_changes_during_period,
+            ctx.hass,
+            start,
+            end,
+            entity_id,
+            False,  # include_start_time_state
+            True,   # significant_changes_only
+            True,   # minimal_response
+        )
+    except HomeAssistantError as err:
+        _LOGGER.warning("op=history failed for %s: %s", entity_id, err)
+        return ctx.signed_json({"ok": False, "error": str(err)}, status=502)
+
+    raw = states_by_entity.get(entity_id, []) or []
+    # Most recent N — chart only needs the tail of the window.
+    if len(raw) > MAX_HISTORY_ENTRIES:
+        raw = raw[-MAX_HISTORY_ENTRIES:]
+
+    entries = []
+    for s in raw:
+        last_changed = getattr(s, "last_changed", None)
+        if last_changed is None:
+            continue
+        entries.append(
+            {
+                "s": s.state,
+                "t": int(last_changed.timestamp() * 1000),
+            }
+        )
+
+    return ctx.signed_json({"entity_id": entity_id, "entries": entries})
 
 
 async def _op_states_batch(ctx: _OpContext) -> Response:
@@ -1633,6 +1759,7 @@ class WAVersionView(HomeAssistantView):
 _OP_HANDLERS: dict[str, Any] = {
     "service": _op_service,
     "state": _op_state,
+    "history": _op_history,
     "states_batch": _op_states_batch,
     "info": _op_info,
     "snapshot": _op_snapshot,
