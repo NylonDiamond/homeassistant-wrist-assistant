@@ -7,7 +7,6 @@ from pathlib import Path
 
 import voluptuous as vol
 
-from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import (
@@ -63,7 +62,6 @@ _LOGGER = logging.getLogger(__name__)
 SERVICE_FORCE_RESYNC = "force_resync"
 SERVICE_SEND_NOTIFICATION = "send_notification"
 
-_PAIRING_NOTIFICATION_ID_TEMPLATE = "wrist_assistant_pairing_%s"
 _ACTION_SCHEMA = vol.Schema(
     {
         vol.Optional("title"): cv.string,
@@ -188,12 +186,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     await _install_bundled_blueprints(hass)
-
-    if not entry.data.get("initial_setup_done"):
-        _show_pairing_notification(hass, entry)
-        hass.config_entries.async_update_entry(
-            entry, data={**entry.data, "initial_setup_done": True}
-        )
 
     async def _handle_force_resync(call: ServiceCall) -> None:
         coordinator.async_force_resync()
@@ -358,9 +350,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: WristAssistantConfigEnt
             data.coordinator.async_shutdown()
             data.camera_stream_coordinator.shutdown()
             data.stream_token_store.shutdown()
-        persistent_notification.async_dismiss(
-            hass, _PAIRING_NOTIFICATION_ID_TEMPLATE % entry.entry_id
-        )
     return unload_ok
 
 
@@ -421,12 +410,3 @@ async def _install_bundled_blueprints(hass: HomeAssistant) -> None:
         _LOGGER.warning("Failed to install bundled blueprints", exc_info=True)
 
 
-def _show_pairing_notification(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Show first-run setup notification."""
-    message = "Open the Wrist Assistant app to finish connecting your watch."
-    persistent_notification.async_create(
-        hass,
-        message=message,
-        title="Wrist Assistant setup ready",
-        notification_id=_PAIRING_NOTIFICATION_ID_TEMPLATE % entry.entry_id,
-    )
