@@ -56,13 +56,6 @@ WA_PROTOCOL_VERSION = 2
 # so old clients keep working through the rollout, then drop it.
 WA_ACCEPTED_PROTOCOL_VERSIONS = frozenset({2})
 
-# Mirror of manifest.json's "version" field. Bump together with that file —
-# WAVersionView surfaces this so the iOS app can decide whether to show its
-# "update HACS" banner. Kept here (not derived from manifest.json at runtime)
-# because reading the manifest from inside the integration is awkward across
-# HA versions and this string only changes on release.
-INTEGRATION_VERSION = "2.0.0"
-
 # Symmetric counterpart to WA_PROTOCOL_VERSION: the oldest app-side wire
 # protocol this integration is willing to talk to. WAVersionView surfaces it
 # so the iOS app can decide whether to show its "update Wrist Assistant"

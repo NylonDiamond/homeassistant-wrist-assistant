@@ -54,6 +54,7 @@ from typing import Any
 
 import orjson
 from aiohttp.web import Request, Response, StreamResponse
+from homeassistant import loader
 from homeassistant.components.camera import async_get_image
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant, ServiceResponse
@@ -86,7 +87,6 @@ from .camera_stream import (
 from .const import (
     APP_UPDATE_MESSAGE,
     DOMAIN,
-    INTEGRATION_VERSION,
     MIN_SUPPORTED_APP_PROTOCOL_VERSION,
     WA_PROTOCOL_VERSION,
     WA_STREAM_TOKEN_TTL_SECONDS,
@@ -1606,9 +1606,15 @@ class WAVersionView(HomeAssistantView):
         self._hass = hass
 
     async def get(self, request: Request) -> Response:
+        # Pull the version off the loaded integration object instead of a
+        # hand-synced const. Keeps the user-facing version string in lockstep
+        # with manifest.json — the iOS "Update integration" banner copy quotes
+        # this verbatim ("you're on v{X}"), so drift used to surface as the
+        # banner naming a different release than HACS reports installed.
+        integration = await loader.async_get_integration(self._hass, DOMAIN)
         return self.json(
             {
-                "integration_version": INTEGRATION_VERSION,
+                "integration_version": str(integration.version),
                 "wa_protocol_version": WA_PROTOCOL_VERSION,
                 "min_supported_app_protocol_version": MIN_SUPPORTED_APP_PROTOCOL_VERSION,
                 "app_update_message": APP_UPDATE_MESSAGE,
