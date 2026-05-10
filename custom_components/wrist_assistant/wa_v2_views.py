@@ -50,6 +50,7 @@ import os
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -668,15 +669,21 @@ async def _op_history(ctx: _OpContext) -> Response:
 
     recorder = get_instance(ctx.hass)
     try:
+        # Keyword args via `partial` — `state_changes_during_period`'s
+        # positional signature changed across recorder versions, so binding
+        # by name keeps us safe. Defaults give us oldest-first ordering,
+        # no row limit (we cap below), and the start-of-window anchor state
+        # so the chart has a leftmost data point. `no_attributes=True` is
+        # the only override — we never use attributes here.
         states_by_entity = await recorder.async_add_executor_job(
-            state_changes_during_period,
-            ctx.hass,
-            start,
-            end,
-            entity_id,
-            False,  # include_start_time_state
-            True,   # significant_changes_only
-            True,   # minimal_response
+            partial(
+                state_changes_during_period,
+                ctx.hass,
+                start,
+                end,
+                entity_id,
+                no_attributes=True,
+            )
         )
     except HomeAssistantError as err:
         _LOGGER.warning("op=history failed for %s: %s", entity_id, err)
