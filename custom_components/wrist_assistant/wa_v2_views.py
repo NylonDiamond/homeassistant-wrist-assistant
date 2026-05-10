@@ -1611,10 +1611,17 @@ class WAVersionView(HomeAssistantView):
         # with manifest.json — the iOS "Update integration" banner copy quotes
         # this verbatim ("you're on v{X}"), so drift used to surface as the
         # banner naming a different release than HACS reports installed.
-        integration = await loader.async_get_integration(self._hass, DOMAIN)
+        # The endpoint is unauthenticated and polled by iOS on launch; if the
+        # loader can't resolve us (rapid reload, test fixture without a
+        # populated component cache), fall back rather than 500ing the banner.
+        try:
+            integration = await loader.async_get_integration(self._hass, DOMAIN)
+            integration_version = str(integration.version)
+        except Exception:  # noqa: BLE001
+            integration_version = "unknown"
         return self.json(
             {
-                "integration_version": str(integration.version),
+                "integration_version": integration_version,
                 "wa_protocol_version": WA_PROTOCOL_VERSION,
                 "min_supported_app_protocol_version": MIN_SUPPORTED_APP_PROTOCOL_VERSION,
                 "app_update_message": APP_UPDATE_MESSAGE,
