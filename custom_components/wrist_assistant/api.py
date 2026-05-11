@@ -20,6 +20,8 @@ from homeassistant.core import Event, HomeAssistant, State, callback
 from homeassistant.helpers.template import Template
 from homeassistant.util import dt as dt_util
 
+from .logbook_events import log_first_sync, log_session_dropped
+
 
 DEFAULT_TIMEOUT_SECONDS = 45
 MIN_TIMEOUT_SECONDS = 5
@@ -430,6 +432,7 @@ class DeltaCoordinator:
         if is_new_session:
             session = WatchSession(watch_id=watch_id)
             self._sessions[watch_id] = session
+            log_first_sync(self.hass, watch_id=watch_id)
 
         now = dt_util.utcnow()
         if not is_new_session:
@@ -633,9 +636,13 @@ class DeltaCoordinator:
                     )
                 since_cursor = next_cursor
         except asyncio.CancelledError:
-            self._sessions.pop(watch_id, None)
+            dropped = self._sessions.pop(watch_id, None)
             self._remove_watcher_index(watch_id)
             self._fire_session_callbacks()
+            if dropped is not None:
+                log_session_dropped(
+                    self.hass, watch_id=watch_id, reason="client_disconnect"
+                )
             raise
         finally:
             self._waiters.pop(watch_id, None)
@@ -1011,6 +1018,8 @@ class DeltaCoordinator:
             self._waiters.pop(watch_id, None)
             self._remove_watcher_index(watch_id)
         if expired:
+            for watch_id in expired:
+                log_session_dropped(self.hass, watch_id=watch_id, reason="idle_ttl")
             self._fire_session_callbacks()
 
     def _response_payload(

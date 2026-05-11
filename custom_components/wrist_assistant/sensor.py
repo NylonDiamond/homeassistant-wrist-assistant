@@ -17,6 +17,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import DeltaCoordinator, MAX_EVENTS_BUFFER
 from .const import DOMAIN, WristAssistantConfigEntry
+from .widget_secret_store import (
+    DEVICE_KIND_IPHONE,
+    DEVICE_KIND_WATCH,
+    WidgetSecretStore,
+)
 
 
 
@@ -27,6 +32,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up Wrist Assistant sensors."""
     coordinator: DeltaCoordinator = entry.runtime_data.coordinator
+    secret_store: WidgetSecretStore = entry.runtime_data.widget_secret_store
 
     global_sensors: list[SensorEntity] = [
         ActiveWatchesSensor(coordinator, entry),
@@ -37,6 +43,9 @@ async def async_setup_entry(
     ]
     async_add_entities(global_sensors)
 
+    # Track watch_ids we've already created watch-session sensors for. Driven
+    # off the live coordinator so the sensors only exist once the watch has
+    # made at least one signed call.
     known_watches: set[str] = set()
 
     @callback
@@ -64,6 +73,55 @@ async def async_setup_entry(
     entry.async_on_unload(
         coordinator.async_add_session_listener(_check_new_watches)
     )
+
+    # Provisioned-but-maybe-not-yet-polled devices. Driven off widget_secret_store
+    # so an iPhone or freshly-paired watch shows up the moment iOS calls
+    # /v2/register_secret, even before the watch's first /v2/delta hit.
+    # iPhones live exclusively here (they never poll), so this is the *only*
+    # surface that makes them visible in HA.
+    known_secrets: set[str] = set()
+
+    @callback
+    def _check_new_secrets() -> None:
+        ent_reg = er.async_get(hass)
+        new_entities: list[SensorEntity] = []
+        entries = secret_store.all_entries
+        for watch_id, secret_entry in entries.items():
+            if watch_id in known_secrets:
+                kind_sentinel = (
+                    f"wrist_assistant_{watch_id}_app_version"
+                )
+                if (
+                    ent_reg.async_get_entity_id("sensor", DOMAIN, kind_sentinel)
+                    is not None
+                ):
+                    continue
+                known_secrets.discard(watch_id)
+            known_secrets.add(watch_id)
+            if secret_entry.device_kind == DEVICE_KIND_IPHONE:
+                new_entities.extend([
+                    IPhoneAppVersionSensor(secret_store, entry, watch_id),
+                    IPhoneAppBuildSensor(secret_store, entry, watch_id),
+                    IPhoneLastProvisionSensor(secret_store, entry, watch_id),
+                ])
+            else:
+                # Watch app/build versions live on the same secret entry as the
+                # iPhone's — register_secret carries them at pair time. Older
+                # builds without these fields render "unknown" until the next
+                # provision call from an updated app.
+                new_entities.extend([
+                    WatchAppVersionSensor(secret_store, entry, watch_id),
+                    WatchAppBuildSensor(secret_store, entry, watch_id),
+                ])
+        # Drop tracking for entries that vanished (user unpaired).
+        for stale in list(known_secrets):
+            if stale not in entries:
+                known_secrets.discard(stale)
+        if new_entities:
+            async_add_entities(new_entities)
+
+    _check_new_secrets()
+    entry.async_on_unload(secret_store.async_add_listener(_check_new_secrets))
 
 
 # --- Global sensors ---
@@ -377,3 +435,154 @@ class WatchConnectedSinceSensor(_WatchSensorBase):
         if session is None:
             return None
         return session.first_seen.isoformat()
+
+
+# --- Secret-store-driven sensors (iPhone-as-device + Watch app version) ---
+#
+# These sensors read from `widget_secret_store` rather than the live
+# coordinator. They appear the moment `register_secret` lands, even before
+# the watch's first /v2/delta poll. For the iPhone they're the only sensors
+# at all — the iPhone never polls.
+
+
+class _SecretStoreSensorBase(SensorEntity):
+    """Base for sensors driven by the widget secret store."""
+
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        secret_store: WidgetSecretStore,
+        entry: ConfigEntry,
+        watch_id: str,
+        *,
+        kind: str,
+    ) -> None:
+        self._secret_store = secret_store
+        self._entry = entry
+        self._watch_id = watch_id
+        short_id = watch_id[:8]
+        if kind == DEVICE_KIND_IPHONE:
+            device_name = f"iPhone {short_id}"
+            model = "iPhone"
+        else:
+            device_name = f"Watch {short_id}"
+            model = "Apple Watch"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"watch_{watch_id}")},
+            name=device_name,
+            manufacturer="Wrist Assistant",
+            model=model,
+            via_device=(DOMAIN, entry.entry_id),
+        )
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(
+            self._secret_store.async_add_listener(self._handle_update)
+        )
+
+    @callback
+    def _handle_update(self) -> None:
+        self.async_write_ha_state()
+
+    @property
+    def available(self) -> bool:
+        return self._secret_store.get(self._watch_id) is not None
+
+
+class IPhoneAppVersionSensor(_SecretStoreSensorBase):
+    """Marketing version of the iOS app on the paired iPhone."""
+
+    _attr_name = "App version"
+    _attr_icon = "mdi:cellphone-cog"
+
+    def __init__(
+        self, secret_store: WidgetSecretStore, entry: ConfigEntry, watch_id: str
+    ) -> None:
+        super().__init__(secret_store, entry, watch_id, kind=DEVICE_KIND_IPHONE)
+        self._attr_unique_id = f"wrist_assistant_{watch_id}_app_version"
+
+    @property
+    def native_value(self) -> str | None:
+        secret = self._secret_store.get(self._watch_id)
+        return secret.app_version if secret is not None else None
+
+
+class IPhoneAppBuildSensor(_SecretStoreSensorBase):
+    """Build number of the iOS app on the paired iPhone."""
+
+    _attr_name = "App build"
+    _attr_icon = "mdi:cellphone-cog"
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(
+        self, secret_store: WidgetSecretStore, entry: ConfigEntry, watch_id: str
+    ) -> None:
+        super().__init__(secret_store, entry, watch_id, kind=DEVICE_KIND_IPHONE)
+        self._attr_unique_id = f"wrist_assistant_{watch_id}_app_build"
+
+    @property
+    def native_value(self) -> str | None:
+        secret = self._secret_store.get(self._watch_id)
+        return secret.app_build if secret is not None else None
+
+
+class IPhoneLastProvisionSensor(_SecretStoreSensorBase):
+    """Timestamp of the most recent register_secret call from this iPhone."""
+
+    _attr_name = "Last provision"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_icon = "mdi:cellphone-key"
+
+    def __init__(
+        self, secret_store: WidgetSecretStore, entry: ConfigEntry, watch_id: str
+    ) -> None:
+        super().__init__(secret_store, entry, watch_id, kind=DEVICE_KIND_IPHONE)
+        self._attr_unique_id = f"wrist_assistant_{watch_id}_last_provision"
+
+    @property
+    def native_value(self):
+        secret = self._secret_store.get(self._watch_id)
+        return secret.last_provision if secret is not None else None
+
+
+class WatchAppVersionSensor(_SecretStoreSensorBase):
+    """Marketing version of the watchOS app on the paired watch.
+
+    Read from the secret store rather than per-request headers — the watch's
+    self-provision call carries the version, so the value is fresh after every
+    app launch without a wire-protocol change."""
+
+    _attr_name = "App version"
+    _attr_icon = "mdi:watch-export"
+
+    def __init__(
+        self, secret_store: WidgetSecretStore, entry: ConfigEntry, watch_id: str
+    ) -> None:
+        super().__init__(secret_store, entry, watch_id, kind=DEVICE_KIND_WATCH)
+        self._attr_unique_id = f"wrist_assistant_{watch_id}_app_version"
+
+    @property
+    def native_value(self) -> str | None:
+        secret = self._secret_store.get(self._watch_id)
+        return secret.app_version if secret is not None else None
+
+
+class WatchAppBuildSensor(_SecretStoreSensorBase):
+    """Build number of the watchOS app on the paired watch."""
+
+    _attr_name = "App build"
+    _attr_icon = "mdi:watch-export"
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(
+        self, secret_store: WidgetSecretStore, entry: ConfigEntry, watch_id: str
+    ) -> None:
+        super().__init__(secret_store, entry, watch_id, kind=DEVICE_KIND_WATCH)
+        self._attr_unique_id = f"wrist_assistant_{watch_id}_app_build"
+
+    @property
+    def native_value(self) -> str | None:
+        secret = self._secret_store.get(self._watch_id)
+        return secret.app_build if secret is not None else None

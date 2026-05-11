@@ -94,6 +94,7 @@ from .const import (
     WA_STREAM_TOKEN_TTL_SECONDS,
     WristAssistantData,
 )
+from .logbook_events import log_hmac_failure, log_secret_registered
 from .widget_hmac import (
     DEFAULT_HMAC_ALGO,
     SUPPORTED_HMAC_ALGOS,
@@ -245,6 +246,14 @@ class WAActionView(HomeAssistantView):
             )
         except WAHMACError as err:
             _LOGGER.debug("WA HMAC rejected (v2/action): %s", err.reason)
+            attempted_watch = request.headers.get("X-WA-Watch", "")
+            log_hmac_failure(
+                self._hass,
+                watch_id=attempted_watch,
+                reason=err.reason,
+                is_known_watch=domain_data.widget_secret_store.get(attempted_watch)
+                is not None,
+            )
             return Response(status=401, text="Unauthorized")
 
         secret_entry = domain_data.widget_secret_store.get(validated.watch_id)
@@ -335,6 +344,14 @@ class WADeltaView(HomeAssistantView):
             )
         except WAHMACError as err:
             _LOGGER.debug("WA HMAC rejected (v2/delta): %s", err.reason)
+            attempted_watch = request.headers.get("X-WA-Watch", "")
+            log_hmac_failure(
+                self._hass,
+                watch_id=attempted_watch,
+                reason=err.reason,
+                is_known_watch=domain_data.widget_secret_store.get(attempted_watch)
+                is not None,
+            )
             return Response(status=401, text="Unauthorized")
 
         secret_entry = domain_data.widget_secret_store.get(validated.watch_id)
@@ -1680,6 +1697,21 @@ class WARegisterSecretView(HomeAssistantView):
         # so they keep working unchanged. Future builds opt into a new algo
         # by sending it here.
         algo = payload.get("algo", DEFAULT_HMAC_ALGO)
+        # Diagnostic-only metadata for the per-device sensors. Older app builds
+        # omit these — store None and the sensors render "unknown" until the
+        # next provision call from an updated app.
+        raw_app_version = payload.get("app_version")
+        raw_app_build = payload.get("app_build")
+        app_version = (
+            raw_app_version
+            if isinstance(raw_app_version, str) and raw_app_version
+            else None
+        )
+        app_build = (
+            raw_app_build
+            if isinstance(raw_app_build, str) and raw_app_build
+            else None
+        )
 
         if not isinstance(watch_id, str) or not watch_id:
             return self.json_message("watch_id required", status_code=400)
@@ -1705,12 +1737,21 @@ class WARegisterSecretView(HomeAssistantView):
                 status_code=400,
             )
 
-        domain_data.widget_secret_store.register(
+        is_new = domain_data.widget_secret_store.register(
             watch_id=watch_id,
             secret_b64=secret_b64,
             label=label if isinstance(label, str) else None,
             algo=algo,
+            app_version=app_version,
+            app_build=app_build,
         )
+        if is_new:
+            log_secret_registered(
+                self._hass,
+                watch_id=watch_id,
+                label=label if isinstance(label, str) else None,
+                app_version=app_version,
+            )
         return self.json(
             {
                 "ok": True,

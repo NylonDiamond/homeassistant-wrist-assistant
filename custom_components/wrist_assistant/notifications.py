@@ -9,6 +9,7 @@ helpers below are still the single source of truth for the runtime.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from homeassistant.helpers.storage import Store
@@ -45,6 +46,10 @@ class NotificationTokenStore:
             NOTIFICATION_TOKEN_STORAGE_VERSION,
             NOTIFICATION_TOKEN_STORAGE_KEY,
         )
+        # Listeners fire after every register/remove. Mirrors the pattern in
+        # `WidgetSecretStore` so the iPhone "Push token registered" binary
+        # sensor can flip on/off reactively without polling.
+        self._listeners: list[Callable[[], None]] = []
 
     async def async_load(self) -> None:
         """Load persisted tokens from disk."""
@@ -110,6 +115,7 @@ class NotificationTokenStore:
             normalized_environment,
         )
         self._store.async_delay_save(self._serialize, 5)
+        self._notify_listeners()
 
     def get_token(self, watch_id: str) -> str | None:
         """Return the device token for a watch, or None."""
@@ -129,3 +135,23 @@ class NotificationTokenStore:
         """Remove a watch's token."""
         if self._tokens.pop(watch_id, None) is not None:
             self._store.async_delay_save(self._serialize, 5)
+            self._notify_listeners()
+
+    def async_add_listener(self, listener: Callable[[], None]) -> Callable[[], None]:
+        """Subscribe to register/remove events. Returns an unsubscribe callback."""
+        self._listeners.append(listener)
+
+        def _unsub() -> None:
+            try:
+                self._listeners.remove(listener)
+            except ValueError:
+                pass
+
+        return _unsub
+
+    def _notify_listeners(self) -> None:
+        for listener in list(self._listeners):
+            try:
+                listener()
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Notification token store listener raised")
