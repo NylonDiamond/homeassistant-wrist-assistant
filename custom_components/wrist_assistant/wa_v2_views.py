@@ -1567,6 +1567,19 @@ async def _op_stream_close(ctx: _OpContext) -> Response:
     return ctx.signed_json({"ok": True, "released": released})
 
 
+async def _op_verify_identity(ctx: _OpContext) -> Response:
+    """Mutual-HMAC identity probe used by the iOS app before sending a bearer.
+
+    The iOS app calls this against the local URL it's about to send a bearer
+    to. Because the request must HMAC-verify against a key registered with
+    this HA instance, AND the response is signed with the same key, a wrong
+    server at the same private IP (e.g. on a coffee-shop LAN with subnet
+    collision) cannot produce a valid response. The signature is the identity
+    proof — the body carries no other secret.
+    """
+    return ctx.signed_json({"ok": True, "ts": int(time.time())})
+
+
 # ── /v2/stream/{token} view ──────────────────────────────────────────────
 
 
@@ -1786,4 +1799,5 @@ _OP_HANDLERS: dict[str, Any] = {
     "stream_open": _op_stream_open,
     "stream_update": _op_stream_update,
     "stream_close": _op_stream_close,
+    "verify_identity": _op_verify_identity,
 }
