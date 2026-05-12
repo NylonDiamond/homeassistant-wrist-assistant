@@ -1716,6 +1716,7 @@ class WARegisterSecretView(HomeAssistantView):
         raw_app_version = payload.get("app_version")
         raw_app_build = payload.get("app_build")
         raw_owner_iphone_id = payload.get("owner_iphone_id")
+        raw_device_name = payload.get("device_name")
         app_version = (
             raw_app_version
             if isinstance(raw_app_version, str) and raw_app_version
@@ -1733,6 +1734,16 @@ class WARegisterSecretView(HomeAssistantView):
         owner_iphone_id = (
             raw_owner_iphone_id
             if isinstance(raw_owner_iphone_id, str) and raw_owner_iphone_id
+            else None
+        )
+        # User-visible device name (WKInterfaceDevice.name on watchOS,
+        # UIDevice.name on iOS with the user-assigned-device-name entitlement).
+        # Older builds omit it — DeviceInfo falls back to `Watch <short_id>` /
+        # `iPhone <short_id>`. Strip whitespace so "  " doesn't shadow the
+        # fallback with an empty-looking name.
+        device_name = (
+            raw_device_name.strip()
+            if isinstance(raw_device_name, str) and raw_device_name.strip()
             else None
         )
 
@@ -1768,6 +1779,7 @@ class WARegisterSecretView(HomeAssistantView):
             app_version=app_version,
             app_build=app_build,
             owner_iphone_id=owner_iphone_id,
+            device_name=device_name,
         )
         if register_result == "new":
             log_secret_registered(

@@ -21,6 +21,7 @@ from .widget_secret_store import (
     DEVICE_KIND_IPHONE,
     DEVICE_KIND_WATCH,
     WidgetSecretStore,
+    build_device_info,
 )
 
 
@@ -288,12 +289,10 @@ class _WatchSensorBase(SensorEntity):
         self._coordinator = coordinator
         self._entry = entry
         self._watch_id = watch_id
-        short_id = watch_id[:8]
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"watch_{watch_id}")},
-            name=f"Watch {short_id}",
-            manufacturer="Wrist Assistant",
-            model="Apple Watch",
+        self._attr_device_info = build_device_info(
+            entry.runtime_data.widget_secret_store,
+            watch_id,
+            kind=DEVICE_KIND_WATCH,
             via_device=via_device,
         )
 
@@ -489,19 +488,8 @@ class _SecretStoreSensorBase(SensorEntity):
         self._secret_store = secret_store
         self._entry = entry
         self._watch_id = watch_id
-        short_id = watch_id[:8]
-        if kind == DEVICE_KIND_IPHONE:
-            device_name = f"iPhone {short_id}"
-            model = "iPhone"
-        else:
-            device_name = f"Watch {short_id}"
-            model = "Apple Watch"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"watch_{watch_id}")},
-            name=device_name,
-            manufacturer="Wrist Assistant",
-            model=model,
-            via_device=via_device,
+        self._attr_device_info = build_device_info(
+            secret_store, watch_id, kind=kind, via_device=via_device
         )
 
     async def async_added_to_hass(self) -> None:

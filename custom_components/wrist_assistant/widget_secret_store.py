@@ -76,6 +76,14 @@ class WidgetSecretEntry:
     and for watches paired by an iOS build that predates this field — those
     watches root under the global Wrist Assistant service device instead."""
 
+    device_name: str | None = None
+    """User-visible device name reported by the app (WKInterfaceDevice.name on
+    watchOS, UIDevice.name on iOS with the user-assigned-device-name
+    entitlement). Used to set DeviceInfo.name so the user sees "Jesse's Apple
+    Watch" instead of "Watch DD2509D8". None for entries written by builds
+    that predate this field — DeviceInfo falls back to `Watch <short_id>` /
+    `iPhone <short_id>`."""
+
     secret_bytes: bytes | None = field(init=False, repr=False, default=None)
     """Decoded HMAC key bytes, cached on construction to avoid base64-decoding
     on every signed request and every signed response. None if `secret_b64`
@@ -135,6 +143,7 @@ class WidgetSecretStore:
                     app_build=entry.get("app_build"),
                     last_provision=last_provision,
                     owner_iphone_id=entry.get("owner_iphone_id"),
+                    device_name=entry.get("device_name"),
                 )
         _LOGGER.debug("Loaded %d widget secrets from storage", len(self._secrets))
 
@@ -153,6 +162,7 @@ class WidgetSecretStore:
                         else None
                     ),
                     "owner_iphone_id": entry.owner_iphone_id,
+                    "device_name": entry.device_name,
                 }
                 for watch_id, entry in self._secrets.items()
             }
@@ -168,6 +178,7 @@ class WidgetSecretStore:
         app_version: str | None = None,
         app_build: str | None = None,
         owner_iphone_id: str | None = None,
+        device_name: str | None = None,
     ) -> Literal["new", "rekey", "idempotent"]:
         """Register or replace a secret for a watch.
 
@@ -189,6 +200,7 @@ class WidgetSecretStore:
             and existing.app_version == app_version
             and existing.app_build == app_build
             and existing.owner_iphone_id == owner_iphone_id
+            and existing.device_name == device_name
         ):
             # Idempotent re-provision: secret material + identity unchanged.
             # Still refresh `last_provision` so the iPhone "Last provision"
@@ -206,6 +218,7 @@ class WidgetSecretStore:
             app_build=app_build,
             last_provision=now,
             owner_iphone_id=owner_iphone_id,
+            device_name=device_name,
         )
         _LOGGER.info(
             "Registered widget secret for watch_id=%s algo=%s app_version=%s owner_iphone_id=%s",
@@ -268,3 +281,49 @@ class WidgetSecretStore:
                 listener()
             except Exception:  # noqa: BLE001
                 _LOGGER.exception("Widget secret store listener raised")
+
+
+def build_device_info(
+    secret_store: "WidgetSecretStore",
+    watch_id: str,
+    *,
+    kind: str,
+    via_device: tuple[str, str],
+):
+    """Construct a DeviceInfo for a paired watch / iPhone.
+
+    Prefers the user-visible `device_name` reported by the app (e.g. "Jesse's
+    Apple Watch") and falls back to the anonymous `Watch <short_id>` /
+    `iPhone <short_id>` form for entries that predate the field. Called from
+    every entity class so they all agree on what the device is named — the
+    HA device registry merges DeviceInfo across entities with matching
+    `identifiers`, and inconsistent names across siblings cause flicker as the
+    last-registered entity wins.
+
+    Lives in this module rather than each platform file so adding a new sensor
+    can't accidentally drift to a different naming scheme.
+    """
+    # Local import dodges a top-level dependency on homeassistant.helpers from
+    # this otherwise-pure storage module. Tests import WidgetSecretEntry without
+    # a Home Assistant runtime; keeping the import inside the function lets
+    # them keep doing that.
+    from homeassistant.helpers.device_registry import DeviceInfo
+
+    from .const import DOMAIN
+
+    short_id = watch_id[:8]
+    entry = secret_store.get(watch_id)
+    if kind == DEVICE_KIND_IPHONE:
+        default_name = f"iPhone {short_id}"
+        model = "iPhone"
+    else:
+        default_name = f"Watch {short_id}"
+        model = "Apple Watch"
+    name = entry.device_name if entry is not None and entry.device_name else default_name
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"watch_{watch_id}")},
+        name=name,
+        manufacturer="Wrist Assistant",
+        model=model,
+        via_device=via_device,
+    )

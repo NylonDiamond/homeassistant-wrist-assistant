@@ -9,14 +9,18 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import DeltaCoordinator
 from .const import DOMAIN, WristAssistantConfigEntry
 from .notifications import NotificationTokenStore
-from .widget_secret_store import DEVICE_KIND_IPHONE, WidgetSecretStore
+from .widget_secret_store import (
+    DEVICE_KIND_IPHONE,
+    DEVICE_KIND_WATCH,
+    WidgetSecretStore,
+    build_device_info,
+)
 
 
 async def async_setup_entry(
@@ -119,13 +123,11 @@ class WatchSyncStatusSensor(BinarySensorEntity):
     ) -> None:
         self._coordinator = coordinator
         self._watch_id = watch_id
-        short_id = watch_id[:8]
         self._attr_unique_id = f"wrist_assistant_{watch_id}_sync_status"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"watch_{watch_id}")},
-            name=f"Watch {short_id}",
-            manufacturer="Wrist Assistant",
-            model="Apple Watch",
+        self._attr_device_info = build_device_info(
+            entry.runtime_data.widget_secret_store,
+            watch_id,
+            kind=DEVICE_KIND_WATCH,
             via_device=via_device,
         )
 
@@ -184,13 +186,11 @@ class WatchPushTokenRegisteredSensor(BinarySensorEntity):
         self._secret_store = secret_store
         self._notification_store = notification_store
         self._watch_id = watch_id
-        short_id = watch_id[:8]
         self._attr_unique_id = f"wrist_assistant_{watch_id}_push_registered"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"watch_{watch_id}")},
-            name=f"Watch {short_id}",
-            manufacturer="Wrist Assistant",
-            model="Apple Watch",
+        self._attr_device_info = build_device_info(
+            secret_store,
+            watch_id,
+            kind=DEVICE_KIND_WATCH,
             via_device=via_device,
         )
 
