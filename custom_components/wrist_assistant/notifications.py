@@ -9,7 +9,9 @@ helpers below are still the single source of truth for the runtime.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Literal
 
 from homeassistant.helpers.storage import Store
 
@@ -45,6 +47,7 @@ class NotificationTokenStore:
             NOTIFICATION_TOKEN_STORAGE_VERSION,
             NOTIFICATION_TOKEN_STORAGE_KEY,
         )
+        self._listeners: list[Callable[[], None]] = []
 
     async def async_load(self) -> None:
         """Load persisted tokens from disk."""
@@ -83,8 +86,15 @@ class NotificationTokenStore:
         platform: str = "watchos",
         environment: str = "production",
         relay_token: str | None = None,
-    ) -> None:
-        """Store or update a device token for a watch."""
+    ) -> Literal["new", "updated", "idempotent"]:
+        """Store or update a device token for a watch.
+
+        Returns:
+            "new"        — first push token we've ever seen for this watch_id.
+            "updated"    — replaces a different token or environment (APNs
+                           re-issue, environment flip, etc.).
+            "idempotent" — same token + environment as before; no state change.
+        """
         normalized_environment = _normalize_environment(environment)
         existing = self._tokens.get(watch_id)
         if (
@@ -96,7 +106,7 @@ class NotificationTokenStore:
                 or existing.relay_token == relay_token
             )
         ):
-            return
+            return "idempotent"
         self._tokens[watch_id] = TokenEntry(
             device_token=device_token,
             platform=platform,
@@ -110,6 +120,8 @@ class NotificationTokenStore:
             normalized_environment,
         )
         self._store.async_delay_save(self._serialize, 5)
+        self._notify_listeners()
+        return "new" if existing is None else "updated"
 
     def get_token(self, watch_id: str) -> str | None:
         """Return the device token for a watch, or None."""
@@ -129,3 +141,23 @@ class NotificationTokenStore:
         """Remove a watch's token."""
         if self._tokens.pop(watch_id, None) is not None:
             self._store.async_delay_save(self._serialize, 5)
+            self._notify_listeners()
+
+    def async_add_listener(self, listener: Callable[[], None]) -> Callable[[], None]:
+        """Subscribe to register/remove events. Returns an unsubscribe callback."""
+        self._listeners.append(listener)
+
+        def _unsub() -> None:
+            try:
+                self._listeners.remove(listener)
+            except ValueError:
+                pass
+
+        return _unsub
+
+    def _notify_listeners(self) -> None:
+        for listener in list(self._listeners):
+            try:
+                listener()
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Notification token store listener raised")

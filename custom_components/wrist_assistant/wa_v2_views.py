@@ -94,7 +94,12 @@ from .const import (
     WA_STREAM_TOKEN_TTL_SECONDS,
     WristAssistantData,
 )
-from .logbook_events import log_hmac_failure, log_secret_registered
+from .logbook_events import (
+    log_hmac_failure,
+    log_push_token_registered,
+    log_secret_registered,
+    log_secret_reprovisioned,
+)
 from .widget_hmac import (
     DEFAULT_HMAC_ALGO,
     SUPPORTED_HMAC_ALGOS,
@@ -445,9 +450,13 @@ class WADeltaView(HomeAssistantView):
             apns_env = payload.get("apns_environment", "production")
             if apns_env not in ("development", "production"):
                 apns_env = "production"
-            notification_store.register(
+            token_result = notification_store.register(
                 watch_id, device_token, platform="watchos", environment=apns_env
             )
+            if token_result == "new":
+                log_push_token_registered(self._hass, watch_id=watch_id, is_new=True)
+            elif token_result == "updated":
+                log_push_token_registered(self._hass, watch_id=watch_id, is_new=False)
 
         coordinator = domain_data.coordinator
         status, body_dict = await coordinator.handle_poll(
@@ -1251,12 +1260,16 @@ async def _op_notifications_register(ctx: _OpContext) -> Response:
         environment = "production"
 
     # The HMAC-validated watch_id is the source of truth.
-    store.register(
+    token_result = store.register(
         ctx.watch_id,
         device_token,
         platform=platform if isinstance(platform, str) else "watchos",
         environment=environment,
     )
+    if token_result == "new":
+        log_push_token_registered(ctx.hass, watch_id=ctx.watch_id, is_new=True)
+    elif token_result == "updated":
+        log_push_token_registered(ctx.hass, watch_id=ctx.watch_id, is_new=False)
     return ctx.signed_json({"ok": True})
 
 
@@ -1747,7 +1760,7 @@ class WARegisterSecretView(HomeAssistantView):
                 status_code=400,
             )
 
-        is_new = domain_data.widget_secret_store.register(
+        register_result = domain_data.widget_secret_store.register(
             watch_id=watch_id,
             secret_b64=secret_b64,
             label=label if isinstance(label, str) else None,
@@ -1756,8 +1769,15 @@ class WARegisterSecretView(HomeAssistantView):
             app_build=app_build,
             owner_iphone_id=owner_iphone_id,
         )
-        if is_new:
+        if register_result == "new":
             log_secret_registered(
+                self._hass,
+                watch_id=watch_id,
+                label=label if isinstance(label, str) else None,
+                app_version=app_version,
+            )
+        elif register_result == "rekey":
+            log_secret_reprovisioned(
                 self._hass,
                 watch_id=watch_id,
                 label=label if isinstance(label, str) else None,

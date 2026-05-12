@@ -16,6 +16,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Literal
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
@@ -167,15 +168,17 @@ class WidgetSecretStore:
         app_version: str | None = None,
         app_build: str | None = None,
         owner_iphone_id: str | None = None,
-    ) -> bool:
+    ) -> Literal["new", "rekey", "idempotent"]:
         """Register or replace a secret for a watch.
 
-        Returns True if this is a brand-new watch_id (caller can fire a
-        first-pair logbook entry), False if it's an update to an existing
-        registration (including a no-op re-provision).
+        Returns:
+            "new"        — first time we've seen this watch_id (first pair).
+            "rekey"      — existing watch_id, but secret material or identity
+                           changed (user reset the keychain and re-paired the
+                           same device).
+            "idempotent" — everything identical, just refreshing last_provision.
         """
         existing = self._secrets.get(watch_id)
-        is_new = existing is None
         now = dt_util.utcnow()
 
         if (
@@ -193,7 +196,7 @@ class WidgetSecretStore:
             existing.last_provision = now
             self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
             self._notify_listeners()
-            return False
+            return "idempotent"
 
         self._secrets[watch_id] = WidgetSecretEntry(
             secret_b64=secret_b64,
@@ -213,7 +216,7 @@ class WidgetSecretStore:
         )
         self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
         self._notify_listeners()
-        return is_new
+        return "new" if existing is None else "rekey"
 
     def get(self, watch_id: str) -> WidgetSecretEntry | None:
         return self._secrets.get(watch_id)

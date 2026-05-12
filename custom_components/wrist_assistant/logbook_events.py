@@ -82,6 +82,54 @@ def log_secret_registered(
     )
 
 
+def log_secret_reprovisioned(
+    hass: HomeAssistant,
+    *,
+    watch_id: str,
+    label: str | None,
+    app_version: str | None,
+) -> None:
+    """Fire when a known watch_id re-provisions with new secret material — the
+    "I reset my keychain and re-paired the same watch" case. Distinct from
+    `log_secret_registered` (first-pair) so the user can tell first-pair apart
+    from a key roll in the Logbook history."""
+    kind = (
+        DEVICE_KIND_IPHONE
+        if label == LABEL_IPHONE_SELF_PROVISION
+        else "watch"
+    )
+    name = _device_name(hass, watch_id, kind=kind)
+    suffix = f" (app {app_version})" if app_version else ""
+    logbook.async_log_entry(
+        hass,
+        name,
+        f"re-paired with Home Assistant{suffix}",
+        DOMAIN,
+        _entity_id_for(watch_id, kind=kind),
+    )
+
+
+def log_push_token_registered(
+    hass: HomeAssistant,
+    *,
+    watch_id: str,
+    is_new: bool,
+) -> None:
+    """Fire when a watch registers (or rotates) its APNs push token with HA.
+    `is_new=True` means this is the first token we've ever stored for this
+    watch_id; False means we replaced an older token (APNs re-issue, build
+    flip between dev and prod, etc.)."""
+    name = _device_name(hass, watch_id, kind="watch")
+    verb = "registered a push token" if is_new else "rotated its push token"
+    logbook.async_log_entry(
+        hass,
+        name,
+        verb,
+        DOMAIN,
+        _entity_id_for(watch_id, kind="watch"),
+    )
+
+
 def log_first_sync(hass: HomeAssistant, *, watch_id: str) -> None:
     """Fire when a watch_id appears in DeltaCoordinator for the first time —
     i.e. its first authenticated /v2/delta call after pairing. Distinct from
