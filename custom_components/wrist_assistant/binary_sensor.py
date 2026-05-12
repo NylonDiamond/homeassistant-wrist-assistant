@@ -53,7 +53,9 @@ async def async_setup_entry(
                 known_watches.discard(watch_id)
             known_watches.add(watch_id)
             new_entities.append(
-                WatchSyncStatusSensor(coordinator, entry, watch_id, _watch_via_device(watch_id))
+                WatchSyncStatusSensor(
+                    coordinator, entry, watch_id, _watch_via_device(watch_id), hass=hass
+                )
             )
         if new_entities:
             async_add_entities(new_entities)
@@ -93,6 +95,7 @@ async def async_setup_entry(
                     entry,
                     watch_id,
                     _watch_via_device(watch_id),
+                    hass=hass,
                 )
             )
         for stale in list(known_watch_pushes):
@@ -120,6 +123,8 @@ class WatchSyncStatusSensor(BinarySensorEntity):
         entry: ConfigEntry,
         watch_id: str,
         via_device: tuple[str, str],
+        *,
+        hass: HomeAssistant | None = None,
     ) -> None:
         self._coordinator = coordinator
         self._watch_id = watch_id
@@ -129,6 +134,7 @@ class WatchSyncStatusSensor(BinarySensorEntity):
             watch_id,
             kind=DEVICE_KIND_WATCH,
             via_device=via_device,
+            hass=hass,
         )
 
     async def async_added_to_hass(self) -> None:
@@ -182,6 +188,8 @@ class WatchPushTokenRegisteredSensor(BinarySensorEntity):
         entry: ConfigEntry,
         watch_id: str,
         via_device: tuple[str, str],
+        *,
+        hass: HomeAssistant | None = None,
     ) -> None:
         self._secret_store = secret_store
         self._notification_store = notification_store
@@ -192,6 +200,7 @@ class WatchPushTokenRegisteredSensor(BinarySensorEntity):
             watch_id,
             kind=DEVICE_KIND_WATCH,
             via_device=via_device,
+            hass=hass,
         )
 
     async def async_added_to_hass(self) -> None:

@@ -57,6 +57,7 @@ async def async_setup_entry(
                     watch_id,
                     kind=DEVICE_KIND_WATCH,
                     via_device=_watch_via_device(watch_id),
+                    hass=hass,
                 )
             )
         if new_entities:
@@ -93,6 +94,7 @@ async def async_setup_entry(
                     watch_id,
                     kind=DEVICE_KIND_IPHONE,
                     via_device=(DOMAIN, entry.entry_id),
+                    hass=hass,
                 )
             )
         for stale in list(known_iphones):
@@ -123,6 +125,7 @@ class DeviceNameText(TextEntity):
         *,
         kind: str,
         via_device: tuple[str, str],
+        hass: HomeAssistant | None = None,
     ) -> None:
         self._secret_store = secret_store
         self._watch_id = watch_id
@@ -131,7 +134,7 @@ class DeviceNameText(TextEntity):
         self._default_prefix = "iPhone" if kind == DEVICE_KIND_IPHONE else "Watch"
         self._attr_unique_id = f"wrist_assistant_{watch_id}_name"
         self._attr_device_info = build_device_info(
-            secret_store, watch_id, kind=kind, via_device=via_device
+            secret_store, watch_id, kind=kind, via_device=via_device, hass=hass
         )
 
     @property

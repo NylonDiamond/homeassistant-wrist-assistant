@@ -289,6 +289,7 @@ def build_device_info(
     *,
     kind: str,
     via_device: tuple[str, str],
+    hass: HomeAssistant | None = None,
 ):
     """Construct a DeviceInfo for a paired watch / iPhone.
 
@@ -300,6 +301,15 @@ def build_device_info(
     `identifiers`, and inconsistent names across siblings cause flicker as the
     last-registered entity wins.
 
+    When the user has manually renamed the device in HA's UI (which sets
+    `name_by_user` on the device registry entry), we omit `name` entirely
+    rather than passing the app-reported value. HA's UI already prefers
+    `name_by_user` over `name`, but skipping the update also keeps the
+    underlying `name` field stable — anything reading the raw record sees
+    the user's intent untouched. Requires `hass` to perform the lookup;
+    callers that pass `hass=None` (e.g. during pre-setup wiring) get the
+    legacy unconditional-write behavior, which is safe for first-create.
+
     Lives in this module rather than each platform file so adding a new sensor
     can't accidentally drift to a different naming scheme.
     """
@@ -307,7 +317,7 @@ def build_device_info(
     # this otherwise-pure storage module. Tests import WidgetSecretEntry without
     # a Home Assistant runtime; keeping the import inside the function lets
     # them keep doing that.
-    from homeassistant.helpers.device_registry import DeviceInfo
+    from homeassistant.helpers.device_registry import DeviceInfo, async_get as async_get_device_registry
 
     from .const import DOMAIN
 
@@ -319,11 +329,25 @@ def build_device_info(
     else:
         default_name = f"Watch {short_id}"
         model = "Apple Watch"
-    name = entry.device_name if entry is not None and entry.device_name else default_name
-    return DeviceInfo(
+    name: str | None = (
+        entry.device_name if entry is not None and entry.device_name else default_name
+    )
+
+    # Respect manual renames: if the device already exists in HA's registry
+    # with `name_by_user` set, don't push a new `name` value. HA leaves the
+    # stored `name` alone when DeviceInfo omits the field.
+    if hass is not None:
+        dev_reg = async_get_device_registry(hass)
+        existing = dev_reg.async_get_device(identifiers={(DOMAIN, f"watch_{watch_id}")})
+        if existing is not None and existing.name_by_user:
+            name = None
+
+    info = DeviceInfo(
         identifiers={(DOMAIN, f"watch_{watch_id}")},
-        name=name,
         manufacturer="Wrist Assistant",
         model=model,
         via_device=via_device,
     )
+    if name is not None:
+        info["name"] = name
+    return info

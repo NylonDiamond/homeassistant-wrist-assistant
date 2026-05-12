@@ -69,10 +69,10 @@ async def async_setup_entry(
             known_watches.add(watch_id)
             via = _watch_via_device(watch_id)
             new_entities.extend([
-                WatchLastActivitySensor(coordinator, entry, watch_id, via),
-                WatchSubscribedEntitiesSensor(coordinator, entry, watch_id, via),
-                WatchPollIntervalSensor(coordinator, entry, watch_id, via),
-                WatchConnectedSinceSensor(coordinator, entry, watch_id, via),
+                WatchLastActivitySensor(coordinator, entry, watch_id, via, hass=hass),
+                WatchSubscribedEntitiesSensor(coordinator, entry, watch_id, via, hass=hass),
+                WatchPollIntervalSensor(coordinator, entry, watch_id, via, hass=hass),
+                WatchConnectedSinceSensor(coordinator, entry, watch_id, via, hass=hass),
             ])
         if new_entities:
             async_add_entities(new_entities)
@@ -111,8 +111,8 @@ async def async_setup_entry(
                 # parents in the device tree, not children of another iPhone.
                 iphone_via = (DOMAIN, entry.entry_id)
                 new_entities.extend([
-                    IPhoneAppVersionSensor(secret_store, entry, watch_id, iphone_via),
-                    IPhoneLastProvisionSensor(secret_store, entry, watch_id, iphone_via),
+                    IPhoneAppVersionSensor(secret_store, entry, watch_id, iphone_via, hass=hass),
+                    IPhoneLastProvisionSensor(secret_store, entry, watch_id, iphone_via, hass=hass),
                 ])
             else:
                 # Watch app version lives on the same secret entry as the
@@ -121,7 +121,7 @@ async def async_setup_entry(
                 # provision call from an updated app.
                 watch_via = _watch_via_device(watch_id)
                 new_entities.append(
-                    WatchAppVersionSensor(secret_store, entry, watch_id, watch_via)
+                    WatchAppVersionSensor(secret_store, entry, watch_id, watch_via, hass=hass)
                 )
         # Drop tracking for entries that vanished (user unpaired).
         for stale in list(known_secrets):
@@ -285,6 +285,8 @@ class _WatchSensorBase(SensorEntity):
         entry: ConfigEntry,
         watch_id: str,
         via_device: tuple[str, str],
+        *,
+        hass: HomeAssistant | None = None,
     ) -> None:
         self._coordinator = coordinator
         self._entry = entry
@@ -294,6 +296,7 @@ class _WatchSensorBase(SensorEntity):
             watch_id,
             kind=DEVICE_KIND_WATCH,
             via_device=via_device,
+            hass=hass,
         )
 
     async def async_added_to_hass(self) -> None:
@@ -325,8 +328,10 @@ class WatchLastActivitySensor(_WatchSensorBase):
         entry: ConfigEntry,
         watch_id: str,
         via_device: tuple[str, str],
+        *,
+        hass: HomeAssistant | None = None,
     ) -> None:
-        super().__init__(coordinator, entry, watch_id, via_device)
+        super().__init__(coordinator, entry, watch_id, via_device, hass=hass)
         self._attr_unique_id = f"wrist_assistant_{watch_id}_last_activity"
         self._cached_last_seen = None
 
@@ -363,8 +368,10 @@ class WatchSubscribedEntitiesSensor(_WatchSensorBase):
         entry: ConfigEntry,
         watch_id: str,
         via_device: tuple[str, str],
+        *,
+        hass: HomeAssistant | None = None,
     ) -> None:
-        super().__init__(coordinator, entry, watch_id, via_device)
+        super().__init__(coordinator, entry, watch_id, via_device, hass=hass)
         self._attr_unique_id = f"wrist_assistant_{watch_id}_subscribed_entities"
         self._cached_count: int = 0
         self._cached_entities: dict[str, str] = {}
@@ -421,8 +428,10 @@ class WatchPollIntervalSensor(_WatchSensorBase):
         entry: ConfigEntry,
         watch_id: str,
         via_device: tuple[str, str],
+        *,
+        hass: HomeAssistant | None = None,
     ) -> None:
-        super().__init__(coordinator, entry, watch_id, via_device)
+        super().__init__(coordinator, entry, watch_id, via_device, hass=hass)
         self._attr_unique_id = f"wrist_assistant_{watch_id}_poll_interval"
 
     @property
@@ -446,8 +455,10 @@ class WatchConnectedSinceSensor(_WatchSensorBase):
         entry: ConfigEntry,
         watch_id: str,
         via_device: tuple[str, str],
+        *,
+        hass: HomeAssistant | None = None,
     ) -> None:
-        super().__init__(coordinator, entry, watch_id, via_device)
+        super().__init__(coordinator, entry, watch_id, via_device, hass=hass)
         self._attr_unique_id = f"wrist_assistant_{watch_id}_connected_since"
 
     @property
@@ -484,12 +495,13 @@ class _SecretStoreSensorBase(SensorEntity):
         via_device: tuple[str, str],
         *,
         kind: str,
+        hass: HomeAssistant | None = None,
     ) -> None:
         self._secret_store = secret_store
         self._entry = entry
         self._watch_id = watch_id
         self._attr_device_info = build_device_info(
-            secret_store, watch_id, kind=kind, via_device=via_device
+            secret_store, watch_id, kind=kind, via_device=via_device, hass=hass
         )
 
     async def async_added_to_hass(self) -> None:
@@ -518,8 +530,12 @@ class IPhoneAppVersionSensor(_SecretStoreSensorBase):
         entry: ConfigEntry,
         watch_id: str,
         via_device: tuple[str, str],
+        *,
+        hass: HomeAssistant | None = None,
     ) -> None:
-        super().__init__(secret_store, entry, watch_id, via_device, kind=DEVICE_KIND_IPHONE)
+        super().__init__(
+            secret_store, entry, watch_id, via_device, kind=DEVICE_KIND_IPHONE, hass=hass
+        )
         self._attr_unique_id = f"wrist_assistant_{watch_id}_app_version"
 
     @property
@@ -541,8 +557,12 @@ class IPhoneLastProvisionSensor(_SecretStoreSensorBase):
         entry: ConfigEntry,
         watch_id: str,
         via_device: tuple[str, str],
+        *,
+        hass: HomeAssistant | None = None,
     ) -> None:
-        super().__init__(secret_store, entry, watch_id, via_device, kind=DEVICE_KIND_IPHONE)
+        super().__init__(
+            secret_store, entry, watch_id, via_device, kind=DEVICE_KIND_IPHONE, hass=hass
+        )
         self._attr_unique_id = f"wrist_assistant_{watch_id}_last_provision"
 
     @property
@@ -567,8 +587,12 @@ class WatchAppVersionSensor(_SecretStoreSensorBase):
         entry: ConfigEntry,
         watch_id: str,
         via_device: tuple[str, str],
+        *,
+        hass: HomeAssistant | None = None,
     ) -> None:
-        super().__init__(secret_store, entry, watch_id, via_device, kind=DEVICE_KIND_WATCH)
+        super().__init__(
+            secret_store, entry, watch_id, via_device, kind=DEVICE_KIND_WATCH, hass=hass
+        )
         self._attr_unique_id = f"wrist_assistant_{watch_id}_app_version"
 
     @property
