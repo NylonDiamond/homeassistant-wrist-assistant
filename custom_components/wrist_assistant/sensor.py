@@ -111,19 +111,17 @@ async def async_setup_entry(
                 iphone_via = (DOMAIN, entry.entry_id)
                 new_entities.extend([
                     IPhoneAppVersionSensor(secret_store, entry, watch_id, iphone_via),
-                    IPhoneAppBuildSensor(secret_store, entry, watch_id, iphone_via),
                     IPhoneLastProvisionSensor(secret_store, entry, watch_id, iphone_via),
                 ])
             else:
-                # Watch app/build versions live on the same secret entry as the
-                # iPhone's — register_secret carries them at pair time. Older
-                # builds without these fields render "unknown" until the next
+                # Watch app version lives on the same secret entry as the
+                # iPhone's — register_secret carries it at pair time. Older
+                # builds without this field render "unknown" until the next
                 # provision call from an updated app.
                 watch_via = _watch_via_device(watch_id)
-                new_entities.extend([
-                    WatchAppVersionSensor(secret_store, entry, watch_id, watch_via),
-                    WatchAppBuildSensor(secret_store, entry, watch_id, watch_via),
-                ])
+                new_entities.append(
+                    WatchAppVersionSensor(secret_store, entry, watch_id, watch_via)
+                )
         # Drop tracking for entries that vanished (user unpaired).
         for stale in list(known_secrets):
             if stale not in entries:
@@ -542,29 +540,6 @@ class IPhoneAppVersionSensor(_SecretStoreSensorBase):
         return secret.app_version if secret is not None else None
 
 
-class IPhoneAppBuildSensor(_SecretStoreSensorBase):
-    """Build number of the iOS app on the paired iPhone."""
-
-    _attr_name = "App build"
-    _attr_icon = "mdi:cellphone-cog"
-    _attr_entity_registry_enabled_default = False
-
-    def __init__(
-        self,
-        secret_store: WidgetSecretStore,
-        entry: ConfigEntry,
-        watch_id: str,
-        via_device: tuple[str, str],
-    ) -> None:
-        super().__init__(secret_store, entry, watch_id, via_device, kind=DEVICE_KIND_IPHONE)
-        self._attr_unique_id = f"wrist_assistant_{watch_id}_app_build"
-
-    @property
-    def native_value(self) -> str | None:
-        secret = self._secret_store.get(self._watch_id)
-        return secret.app_build if secret is not None else None
-
-
 class IPhoneLastProvisionSensor(_SecretStoreSensorBase):
     """Timestamp of the most recent register_secret call from this iPhone."""
 
@@ -614,24 +589,3 @@ class WatchAppVersionSensor(_SecretStoreSensorBase):
         return secret.app_version if secret is not None else None
 
 
-class WatchAppBuildSensor(_SecretStoreSensorBase):
-    """Build number of the watchOS app on the paired watch."""
-
-    _attr_name = "App build"
-    _attr_icon = "mdi:watch-export"
-    _attr_entity_registry_enabled_default = False
-
-    def __init__(
-        self,
-        secret_store: WidgetSecretStore,
-        entry: ConfigEntry,
-        watch_id: str,
-        via_device: tuple[str, str],
-    ) -> None:
-        super().__init__(secret_store, entry, watch_id, via_device, kind=DEVICE_KIND_WATCH)
-        self._attr_unique_id = f"wrist_assistant_{watch_id}_app_build"
-
-    @property
-    def native_value(self) -> str | None:
-        secret = self._secret_store.get(self._watch_id)
-        return secret.app_build if secret is not None else None
