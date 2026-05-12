@@ -18,14 +18,19 @@ from homeassistant.core import (
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.storage import Store
 
 from .api import DeltaCoordinator
 from .apns_client import APNsClient
 from .camera_stream import CameraStreamCoordinator
 from .const import (
     DOMAIN,
+    NOTIFICATION_TOKEN_STORAGE_KEY,
+    NOTIFICATION_TOKEN_STORAGE_VERSION,
     PLATFORMS,
     WA_HMAC_NONCE_TTL_SECONDS,
+    WIDGET_SECRET_STORAGE_KEY,
+    WIDGET_SECRET_STORAGE_VERSION,
     WristAssistantConfigEntry,
     WristAssistantData,
 )
@@ -358,6 +363,23 @@ async def async_remove_config_entry_device(
 ) -> bool:
     """Allow removal of a device from the UI."""
     return True
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Wipe persisted device pairings when the integration is removed.
+
+    Without this, deleting and re-adding the integration leaves the widget
+    secret + notification token stores on disk, and on next load every old
+    pairing re-creates its device entry — including ones for phones the user
+    has long since uninstalled. The iOS app's foreground identity check
+    surfaces a re-pair banner and rotates the secret in place, so a still-
+    paired phone recovers without user-visible sign-in.
+    """
+    for key, version in (
+        (WIDGET_SECRET_STORAGE_KEY, WIDGET_SECRET_STORAGE_VERSION),
+        (NOTIFICATION_TOKEN_STORAGE_KEY, NOTIFICATION_TOKEN_STORAGE_VERSION),
+    ):
+        await Store(hass, version, key).async_remove()
 
 
 async def _create_apns_client(hass: HomeAssistant) -> APNsClient | None:
