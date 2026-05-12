@@ -61,6 +61,7 @@ from homeassistant.components.camera import async_get_image
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant, ServiceResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceNotFound
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.template import Template, TemplateError
 
 from .audio_upload import CLEANUP_AGE_SECONDS, MAX_UPLOAD_SIZE
@@ -1795,6 +1796,19 @@ class WARegisterSecretView(HomeAssistantView):
                 label=label if isinstance(label, str) else None,
                 app_version=app_version,
             )
+        # Propagate the freshly-reported `device_name` to HA's device registry
+        # immediately so the user sees their watch renamed from "Watch
+        # DD2509D8" → "Jesse's Apple Watch" without waiting for the next HA
+        # restart to re-run entity __init__. Only updates the integration's
+        # default name (the `name` field); any user override set via the HA UI
+        # (`name_by_user`) wins on display and is left untouched.
+        if device_name is not None:
+            device_registry = dr.async_get(self._hass)
+            device = device_registry.async_get_device(
+                identifiers={(DOMAIN, f"watch_{watch_id}")}
+            )
+            if device is not None and device.name != device_name:
+                device_registry.async_update_device(device.id, name=device_name)
         return self.json(
             {
                 "ok": True,
