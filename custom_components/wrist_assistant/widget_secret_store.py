@@ -68,6 +68,13 @@ class WidgetSecretEntry:
     entry. Updated on every call even when the secret material is unchanged so
     the iPhone device's "Last provision" sensor reflects the latest ping."""
 
+    owner_iphone_id: str | None = None
+    """For watch entries, the iphoneId of the iPhone that paired this watch.
+    Surfaces in HA's device registry as a `via_device` link so tapping the
+    iPhone shows its watches as children. None for iPhone entries themselves
+    and for watches paired by an iOS build that predates this field — those
+    watches root under the global Wrist Assistant service device instead."""
+
     secret_bytes: bytes | None = field(init=False, repr=False, default=None)
     """Decoded HMAC key bytes, cached on construction to avoid base64-decoding
     on every signed request and every signed response. None if `secret_b64`
@@ -126,6 +133,7 @@ class WidgetSecretStore:
                     app_version=entry.get("app_version"),
                     app_build=entry.get("app_build"),
                     last_provision=last_provision,
+                    owner_iphone_id=entry.get("owner_iphone_id"),
                 )
         _LOGGER.debug("Loaded %d widget secrets from storage", len(self._secrets))
 
@@ -143,6 +151,7 @@ class WidgetSecretStore:
                         if entry.last_provision is not None
                         else None
                     ),
+                    "owner_iphone_id": entry.owner_iphone_id,
                 }
                 for watch_id, entry in self._secrets.items()
             }
@@ -157,6 +166,7 @@ class WidgetSecretStore:
         algo: str = "hmac-sha256",
         app_version: str | None = None,
         app_build: str | None = None,
+        owner_iphone_id: str | None = None,
     ) -> bool:
         """Register or replace a secret for a watch.
 
@@ -175,6 +185,7 @@ class WidgetSecretStore:
             and existing.algo == algo
             and existing.app_version == app_version
             and existing.app_build == app_build
+            and existing.owner_iphone_id == owner_iphone_id
         ):
             # Idempotent re-provision: secret material + identity unchanged.
             # Still refresh `last_provision` so the iPhone "Last provision"
@@ -191,12 +202,14 @@ class WidgetSecretStore:
             app_version=app_version,
             app_build=app_build,
             last_provision=now,
+            owner_iphone_id=owner_iphone_id,
         )
         _LOGGER.info(
-            "Registered widget secret for watch_id=%s algo=%s app_version=%s",
+            "Registered widget secret for watch_id=%s algo=%s app_version=%s owner_iphone_id=%s",
             watch_id,
             algo,
             app_version,
+            owner_iphone_id,
         )
         self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
         self._notify_listeners()
@@ -204,6 +217,19 @@ class WidgetSecretStore:
 
     def get(self, watch_id: str) -> WidgetSecretEntry | None:
         return self._secrets.get(watch_id)
+
+    def resolve_watch_owner_id(self, watch_id: str) -> str | None:
+        """For a watch entry, return the iphoneId we should hang it off in HA's
+        device registry. Returns None when the watch has no recorded owner OR
+        when the recorded owner has no entry of its own — pointing at a ghost
+        iPhone would just orphan the watch in the UI."""
+        entry = self._secrets.get(watch_id)
+        if entry is None or not entry.owner_iphone_id:
+            return None
+        owner_entry = self._secrets.get(entry.owner_iphone_id)
+        if owner_entry is None:
+            return None
+        return entry.owner_iphone_id
 
     def remove(self, watch_id: str) -> None:
         if self._secrets.pop(watch_id, None) is not None:

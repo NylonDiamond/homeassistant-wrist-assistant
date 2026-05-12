@@ -1702,6 +1702,7 @@ class WARegisterSecretView(HomeAssistantView):
         # next provision call from an updated app.
         raw_app_version = payload.get("app_version")
         raw_app_build = payload.get("app_build")
+        raw_owner_iphone_id = payload.get("owner_iphone_id")
         app_version = (
             raw_app_version
             if isinstance(raw_app_version, str) and raw_app_version
@@ -1710,6 +1711,15 @@ class WARegisterSecretView(HomeAssistantView):
         app_build = (
             raw_app_build
             if isinstance(raw_app_build, str) and raw_app_build
+            else None
+        )
+        # `owner_iphone_id` links a watch entry to its paired iPhone entry so
+        # HA's device tree shows the watches under their iPhone. Watches paired
+        # by an older iOS build omit it — those watches root under the global
+        # service device instead. iPhones never set this field on themselves.
+        owner_iphone_id = (
+            raw_owner_iphone_id
+            if isinstance(raw_owner_iphone_id, str) and raw_owner_iphone_id
             else None
         )
 
@@ -1744,6 +1754,7 @@ class WARegisterSecretView(HomeAssistantView):
             algo=algo,
             app_version=app_version,
             app_build=app_build,
+            owner_iphone_id=owner_iphone_id,
         )
         if is_new:
             log_secret_registered(

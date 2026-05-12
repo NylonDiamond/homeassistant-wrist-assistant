@@ -29,6 +29,12 @@ async def async_setup_entry(
     secret_store: WidgetSecretStore = entry.runtime_data.widget_secret_store
     notification_store: NotificationTokenStore = entry.runtime_data.notification_store
 
+    def _watch_via_device(watch_id: str) -> tuple[str, str]:
+        owner = secret_store.resolve_watch_owner_id(watch_id)
+        if owner:
+            return (DOMAIN, f"watch_{owner}")
+        return (DOMAIN, entry.entry_id)
+
     known_watches: set[str] = set()
 
     @callback
@@ -43,7 +49,7 @@ async def async_setup_entry(
                 known_watches.discard(watch_id)
             known_watches.add(watch_id)
             new_entities.append(
-                WatchSyncStatusSensor(coordinator, entry, watch_id)
+                WatchSyncStatusSensor(coordinator, entry, watch_id, _watch_via_device(watch_id))
             )
         if new_entities:
             async_add_entities(new_entities)
@@ -104,6 +110,7 @@ class WatchSyncStatusSensor(BinarySensorEntity):
         coordinator: DeltaCoordinator,
         entry: ConfigEntry,
         watch_id: str,
+        via_device: tuple[str, str],
     ) -> None:
         self._coordinator = coordinator
         self._watch_id = watch_id
@@ -114,7 +121,7 @@ class WatchSyncStatusSensor(BinarySensorEntity):
             name=f"Watch {short_id}",
             manufacturer="Wrist Assistant",
             model="Apple Watch",
-            via_device=(DOMAIN, entry.entry_id),
+            via_device=via_device,
         )
 
     async def async_added_to_hass(self) -> None:

@@ -34,6 +34,12 @@ async def async_setup_entry(
     coordinator: DeltaCoordinator = entry.runtime_data.coordinator
     secret_store: WidgetSecretStore = entry.runtime_data.widget_secret_store
 
+    def _watch_via_device(watch_id: str) -> tuple[str, str]:
+        owner = secret_store.resolve_watch_owner_id(watch_id)
+        if owner:
+            return (DOMAIN, f"watch_{owner}")
+        return (DOMAIN, entry.entry_id)
+
     global_sensors: list[SensorEntity] = [
         ActiveWatchesSensor(coordinator, entry),
         MonitoredEntitiesSensor(coordinator, entry),
@@ -60,11 +66,12 @@ async def async_setup_entry(
                     continue
                 known_watches.discard(watch_id)
             known_watches.add(watch_id)
+            via = _watch_via_device(watch_id)
             new_entities.extend([
-                WatchLastActivitySensor(coordinator, entry, watch_id),
-                WatchSubscribedEntitiesSensor(coordinator, entry, watch_id),
-                WatchPollIntervalSensor(coordinator, entry, watch_id),
-                WatchConnectedSinceSensor(coordinator, entry, watch_id),
+                WatchLastActivitySensor(coordinator, entry, watch_id, via),
+                WatchSubscribedEntitiesSensor(coordinator, entry, watch_id, via),
+                WatchPollIntervalSensor(coordinator, entry, watch_id, via),
+                WatchConnectedSinceSensor(coordinator, entry, watch_id, via),
             ])
         if new_entities:
             async_add_entities(new_entities)
@@ -99,19 +106,23 @@ async def async_setup_entry(
                 known_secrets.discard(watch_id)
             known_secrets.add(watch_id)
             if secret_entry.device_kind == DEVICE_KIND_IPHONE:
+                # iPhones root directly under the service device — they're the
+                # parents in the device tree, not children of another iPhone.
+                iphone_via = (DOMAIN, entry.entry_id)
                 new_entities.extend([
-                    IPhoneAppVersionSensor(secret_store, entry, watch_id),
-                    IPhoneAppBuildSensor(secret_store, entry, watch_id),
-                    IPhoneLastProvisionSensor(secret_store, entry, watch_id),
+                    IPhoneAppVersionSensor(secret_store, entry, watch_id, iphone_via),
+                    IPhoneAppBuildSensor(secret_store, entry, watch_id, iphone_via),
+                    IPhoneLastProvisionSensor(secret_store, entry, watch_id, iphone_via),
                 ])
             else:
                 # Watch app/build versions live on the same secret entry as the
                 # iPhone's — register_secret carries them at pair time. Older
                 # builds without these fields render "unknown" until the next
                 # provision call from an updated app.
+                watch_via = _watch_via_device(watch_id)
                 new_entities.extend([
-                    WatchAppVersionSensor(secret_store, entry, watch_id),
-                    WatchAppBuildSensor(secret_store, entry, watch_id),
+                    WatchAppVersionSensor(secret_store, entry, watch_id, watch_via),
+                    WatchAppBuildSensor(secret_store, entry, watch_id, watch_via),
                 ])
         # Drop tracking for entries that vanished (user unpaired).
         for stale in list(known_secrets):
@@ -274,6 +285,7 @@ class _WatchSensorBase(SensorEntity):
         coordinator: DeltaCoordinator,
         entry: ConfigEntry,
         watch_id: str,
+        via_device: tuple[str, str],
     ) -> None:
         self._coordinator = coordinator
         self._entry = entry
@@ -284,7 +296,7 @@ class _WatchSensorBase(SensorEntity):
             name=f"Watch {short_id}",
             manufacturer="Wrist Assistant",
             model="Apple Watch",
-            via_device=(DOMAIN, entry.entry_id),
+            via_device=via_device,
         )
 
     async def async_added_to_hass(self) -> None:
@@ -311,9 +323,13 @@ class WatchLastActivitySensor(_WatchSensorBase):
     _attr_icon = "mdi:clock-outline"
 
     def __init__(
-        self, coordinator: DeltaCoordinator, entry: ConfigEntry, watch_id: str
+        self,
+        coordinator: DeltaCoordinator,
+        entry: ConfigEntry,
+        watch_id: str,
+        via_device: tuple[str, str],
     ) -> None:
-        super().__init__(coordinator, entry, watch_id)
+        super().__init__(coordinator, entry, watch_id, via_device)
         self._attr_unique_id = f"wrist_assistant_{watch_id}_last_activity"
         self._cached_last_seen = None
 
@@ -345,9 +361,13 @@ class WatchSubscribedEntitiesSensor(_WatchSensorBase):
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(
-        self, coordinator: DeltaCoordinator, entry: ConfigEntry, watch_id: str
+        self,
+        coordinator: DeltaCoordinator,
+        entry: ConfigEntry,
+        watch_id: str,
+        via_device: tuple[str, str],
     ) -> None:
-        super().__init__(coordinator, entry, watch_id)
+        super().__init__(coordinator, entry, watch_id, via_device)
         self._attr_unique_id = f"wrist_assistant_{watch_id}_subscribed_entities"
         self._cached_count: int = 0
         self._cached_entities: dict[str, str] = {}
@@ -399,9 +419,13 @@ class WatchPollIntervalSensor(_WatchSensorBase):
     _attr_entity_registry_enabled_default = False
 
     def __init__(
-        self, coordinator: DeltaCoordinator, entry: ConfigEntry, watch_id: str
+        self,
+        coordinator: DeltaCoordinator,
+        entry: ConfigEntry,
+        watch_id: str,
+        via_device: tuple[str, str],
     ) -> None:
-        super().__init__(coordinator, entry, watch_id)
+        super().__init__(coordinator, entry, watch_id, via_device)
         self._attr_unique_id = f"wrist_assistant_{watch_id}_poll_interval"
 
     @property
@@ -420,9 +444,13 @@ class WatchConnectedSinceSensor(_WatchSensorBase):
     _attr_entity_registry_enabled_default = False
 
     def __init__(
-        self, coordinator: DeltaCoordinator, entry: ConfigEntry, watch_id: str
+        self,
+        coordinator: DeltaCoordinator,
+        entry: ConfigEntry,
+        watch_id: str,
+        via_device: tuple[str, str],
     ) -> None:
-        super().__init__(coordinator, entry, watch_id)
+        super().__init__(coordinator, entry, watch_id, via_device)
         self._attr_unique_id = f"wrist_assistant_{watch_id}_connected_since"
 
     @property
@@ -456,6 +484,7 @@ class _SecretStoreSensorBase(SensorEntity):
         secret_store: WidgetSecretStore,
         entry: ConfigEntry,
         watch_id: str,
+        via_device: tuple[str, str],
         *,
         kind: str,
     ) -> None:
@@ -474,7 +503,7 @@ class _SecretStoreSensorBase(SensorEntity):
             name=device_name,
             manufacturer="Wrist Assistant",
             model=model,
-            via_device=(DOMAIN, entry.entry_id),
+            via_device=via_device,
         )
 
     async def async_added_to_hass(self) -> None:
@@ -498,9 +527,13 @@ class IPhoneAppVersionSensor(_SecretStoreSensorBase):
     _attr_icon = "mdi:cellphone-cog"
 
     def __init__(
-        self, secret_store: WidgetSecretStore, entry: ConfigEntry, watch_id: str
+        self,
+        secret_store: WidgetSecretStore,
+        entry: ConfigEntry,
+        watch_id: str,
+        via_device: tuple[str, str],
     ) -> None:
-        super().__init__(secret_store, entry, watch_id, kind=DEVICE_KIND_IPHONE)
+        super().__init__(secret_store, entry, watch_id, via_device, kind=DEVICE_KIND_IPHONE)
         self._attr_unique_id = f"wrist_assistant_{watch_id}_app_version"
 
     @property
@@ -517,9 +550,13 @@ class IPhoneAppBuildSensor(_SecretStoreSensorBase):
     _attr_entity_registry_enabled_default = False
 
     def __init__(
-        self, secret_store: WidgetSecretStore, entry: ConfigEntry, watch_id: str
+        self,
+        secret_store: WidgetSecretStore,
+        entry: ConfigEntry,
+        watch_id: str,
+        via_device: tuple[str, str],
     ) -> None:
-        super().__init__(secret_store, entry, watch_id, kind=DEVICE_KIND_IPHONE)
+        super().__init__(secret_store, entry, watch_id, via_device, kind=DEVICE_KIND_IPHONE)
         self._attr_unique_id = f"wrist_assistant_{watch_id}_app_build"
 
     @property
@@ -536,9 +573,13 @@ class IPhoneLastProvisionSensor(_SecretStoreSensorBase):
     _attr_icon = "mdi:cellphone-key"
 
     def __init__(
-        self, secret_store: WidgetSecretStore, entry: ConfigEntry, watch_id: str
+        self,
+        secret_store: WidgetSecretStore,
+        entry: ConfigEntry,
+        watch_id: str,
+        via_device: tuple[str, str],
     ) -> None:
-        super().__init__(secret_store, entry, watch_id, kind=DEVICE_KIND_IPHONE)
+        super().__init__(secret_store, entry, watch_id, via_device, kind=DEVICE_KIND_IPHONE)
         self._attr_unique_id = f"wrist_assistant_{watch_id}_last_provision"
 
     @property
@@ -558,9 +599,13 @@ class WatchAppVersionSensor(_SecretStoreSensorBase):
     _attr_icon = "mdi:watch-export"
 
     def __init__(
-        self, secret_store: WidgetSecretStore, entry: ConfigEntry, watch_id: str
+        self,
+        secret_store: WidgetSecretStore,
+        entry: ConfigEntry,
+        watch_id: str,
+        via_device: tuple[str, str],
     ) -> None:
-        super().__init__(secret_store, entry, watch_id, kind=DEVICE_KIND_WATCH)
+        super().__init__(secret_store, entry, watch_id, via_device, kind=DEVICE_KIND_WATCH)
         self._attr_unique_id = f"wrist_assistant_{watch_id}_app_version"
 
     @property
@@ -577,9 +622,13 @@ class WatchAppBuildSensor(_SecretStoreSensorBase):
     _attr_entity_registry_enabled_default = False
 
     def __init__(
-        self, secret_store: WidgetSecretStore, entry: ConfigEntry, watch_id: str
+        self,
+        secret_store: WidgetSecretStore,
+        entry: ConfigEntry,
+        watch_id: str,
+        via_device: tuple[str, str],
     ) -> None:
-        super().__init__(secret_store, entry, watch_id, kind=DEVICE_KIND_WATCH)
+        super().__init__(secret_store, entry, watch_id, via_device, kind=DEVICE_KIND_WATCH)
         self._attr_unique_id = f"wrist_assistant_{watch_id}_app_build"
 
     @property
