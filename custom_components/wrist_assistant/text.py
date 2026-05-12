@@ -139,12 +139,23 @@ class DeviceNameText(TextEntity):
 
     @property
     def native_value(self) -> str:
+        # Show whatever name HA's UI currently displays: the user's manual
+        # rename wins, then the device-registry name we wrote from DeviceInfo
+        # (typically the marketing model name the app reported, e.g.
+        # "iPhone 15 Pro"), then the secret-store entry as a pre-registry
+        # race fallback, and finally the anonymous "iPhone <short_id>" form
+        # for entries that predate device_name reporting entirely.
         dev_reg = dr.async_get(self.hass)
         device = dev_reg.async_get_device(
             identifiers={(DOMAIN, f"watch_{self._watch_id}")}
         )
         if device and device.name_by_user:
             return device.name_by_user
+        if device and device.name:
+            return device.name
+        entry = self._secret_store.get(self._watch_id)
+        if entry is not None and entry.device_name:
+            return entry.device_name
         return f"{self._default_prefix} {self._short_id}"
 
     async def async_set_value(self, value: str) -> None:
