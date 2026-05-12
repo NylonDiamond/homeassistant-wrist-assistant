@@ -1,7 +1,7 @@
 {
   "domain": "wrist_assistant",
   "name": "Wrist Assistant",
-  "after_dependencies": ["recorder"],
+  "after_dependencies": ["recorder", "logbook"],
   "codeowners": ["@NylonDiamond"],
   "config_flow": true,
   "dependencies": ["http", "camera"],
