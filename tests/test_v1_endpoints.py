@@ -66,7 +66,7 @@ def test_v1_long_poll_returns_payload_or_204(
     r = session.post(
         f"{base_url}/api/watch/updates",
         json={
-            "watch_id": "pytest-bridge-test",
+            "watch_id": "__pytest_bridge__",
             "config_hash": "x",
             "timeout": 5,
         },

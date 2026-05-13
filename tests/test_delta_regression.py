@@ -24,6 +24,16 @@ import uuid
 import requests
 
 
+# Watch IDs wrapped in double underscores are filtered out of
+# coordinator.real_sessions (api.py:872-879), which is the loop the
+# sensor/binary_sensor/text platforms iterate to create per-watch device
+# entries. Using a `__pytest__` prefix means our test sessions never
+# register a device in HA's device registry — no cleanup needed even
+# across many runs. The DeltaCoordinator itself still tracks the
+# session normally; only the visible device side-effect is suppressed.
+_TEST_WATCH_ID = "__pytest_wa_regression__"
+
+
 # ---------------------------------------------------------------------------
 # Bug #2: template result is a method, not a value
 # ---------------------------------------------------------------------------
@@ -36,12 +46,11 @@ def test_template_subscription_renders_to_value_not_bound_method(
     `lines` came back as the bound-method repr; the fix calls info.result().
     """
     tile_id = f"pytest_template_{uuid.uuid4().hex[:8]}"
-    watch_id = f"pytest-template-{uuid.uuid4().hex[:8]}"
 
     r = session.post(
         f"{base_url}/api/watch/updates",
         json={
-            "watch_id": watch_id,
+            "watch_id": _TEST_WATCH_ID,
             "config_hash": "x",
             "timeout": 1,
             "entities": [],
@@ -111,7 +120,6 @@ def test_state_change_during_client_disconnect_is_buffered(
     non-empty regardless of this watch's disconnect, and the bug is masked.
     """
     test_entity = f"wrist_assistant.test_pytest_{uuid.uuid4().hex[:8]}"
-    watch_id = f"pytest-disconnect-{uuid.uuid4().hex[:8]}"
 
     # Seed initial state so the entity exists for the subscription
     _set_state(base_url, token, test_entity, "off")
@@ -121,7 +129,7 @@ def test_state_change_during_client_disconnect_is_buffered(
         r1 = session.post(
             f"{base_url}/api/watch/updates",
             json={
-                "watch_id": watch_id,
+                "watch_id": _TEST_WATCH_ID,
                 "config_hash": "x",
                 "timeout": 1,
                 "entities": [test_entity],
@@ -140,7 +148,7 @@ def test_state_change_during_client_disconnect_is_buffered(
             session.post(
                 f"{base_url}/api/watch/updates",
                 json={
-                    "watch_id": watch_id,
+                    "watch_id": _TEST_WATCH_ID,
                     "config_hash": "x",
                     "timeout": 30,
                     "entities": [test_entity],
@@ -163,7 +171,7 @@ def test_state_change_during_client_disconnect_is_buffered(
         r3 = session.post(
             f"{base_url}/api/watch/updates",
             json={
-                "watch_id": watch_id,
+                "watch_id": _TEST_WATCH_ID,
                 "config_hash": "x",
                 "timeout": 5,
                 "entities": [test_entity],
