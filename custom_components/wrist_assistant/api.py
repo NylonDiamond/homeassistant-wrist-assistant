@@ -635,16 +635,16 @@ class DeltaCoordinator:
                         include_summary=include_summary,
                     )
                 since_cursor = next_cursor
-        except asyncio.CancelledError:
-            dropped = self._sessions.pop(watch_id, None)
-            self._remove_watcher_index(watch_id)
-            self._fire_session_callbacks()
-            if dropped is not None:
-                log_session_dropped(
-                    self.hass, watch_id=watch_id, reason="client_disconnect"
-                )
-            raise
         finally:
+            # Keep the session in self._sessions across a client cancel so
+            # state_changed events fired during a brief background→foreground
+            # cycle still land in the ring buffer for this watch to pick up
+            # on reconnect. Otherwise the early-return in
+            # _handle_state_changed (`if not self._sessions: return`) drops
+            # every event between disconnect and reconnect — and the watch
+            # comes back with next_cursor == since and stale tiles.
+            # SESSION_TTL (5 min) handles truly abandoned sessions via
+            # _prune_sessions on the next poll from any watch.
             self._waiters.pop(watch_id, None)
 
     @callback
@@ -918,7 +918,12 @@ class DeltaCoordinator:
                 "Slow template render (%.0fms): %.120s",
                 elapsed_ms, template_str,
             )
-        value = str(info.result).strip() if info.result is not None else ""
+        # info.result is a method on RenderInfo, not the rendered value —
+        # calling str() on it gave back the bound-method repr instead of
+        # the actual template output. Invoke it; _evaluate_templates wraps
+        # this in try/except so a render error becomes "".
+        rendered = info.result()
+        value = str(rendered).strip() if rendered is not None else ""
         deps = _TemplateDeps(
             entities=info.entities or frozenset(),
             domains=info.domains or frozenset(),
