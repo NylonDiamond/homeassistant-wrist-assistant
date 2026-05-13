@@ -361,7 +361,34 @@ async def async_unload_entry(hass: HomeAssistant, entry: WristAssistantConfigEnt
 async def async_remove_config_entry_device(
     hass: HomeAssistant, entry: ConfigEntry, device_entry: dr.DeviceEntry
 ) -> bool:
-    """Allow removal of a device from the UI."""
+    """Allow removal of a watch/iPhone device from the UI and tear down its state.
+
+    Returning True alone makes HA drop the device from the registry, but the
+    integration's secret_store and notification_store would still hold the
+    pairing entry on disk. On next restart sensor.py's _check_new_secrets
+    loop iterates `all_entries` and re-creates the device — so the deletion
+    silently reverts after a reload. Strip the corresponding entries here so
+    UI removals actually stick (and so leftover dev/test pairings can be
+    cleaned up without editing storage files by hand).
+    """
+    domain_data: WristAssistantData | None = hass.data.get(DOMAIN)
+    if domain_data is None:
+        return True
+
+    # Watch and iPhone devices use the (DOMAIN, "watch_<watch_id>") identifier
+    # — see widget_secret_store._make_device_info. The service ("Delta
+    # Coordinator") device uses (DOMAIN, entry.entry_id) instead; we leave
+    # those untouched. Multiple identifiers are theoretically possible, so
+    # iterate rather than assume one.
+    for domain_str, ident in device_entry.identifiers:
+        if domain_str != DOMAIN:
+            continue
+        if not ident.startswith("watch_"):
+            continue
+        watch_id = ident[len("watch_"):]
+        domain_data.widget_secret_store.remove(watch_id)
+        domain_data.notification_store.remove(watch_id)
+
     return True
 
 
