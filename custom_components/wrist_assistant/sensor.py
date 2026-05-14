@@ -46,7 +46,7 @@ async def async_setup_entry(
 
     global_sensors: list[SensorEntity] = [
         ConnectedWatchesSensor(coordinator, entry),
-        WatchCountSensor(secret_store, coordinator, entry),
+        WatchCountSensor(coordinator, entry),
         MonitoredEntitiesSensor(coordinator, entry),
         EventsProcessedSensor(coordinator, entry),
         EventBufferUsageSensor(coordinator, entry),
@@ -194,38 +194,51 @@ class ConnectedWatchesSensor(_WristAssistantSensorBase):
 
 
 class WatchCountSensor(_WristAssistantSensorBase):
-    """Total paired watches, including those not currently connected."""
+    """Total paired watches (v1 + v2), connected or not.
+
+    Counted via the HA device registry rather than the widget secret store:
+    v1 watches use bearer auth and never call register_secret, so they have
+    no entry in widget_secret_store. The device registry, on the other hand,
+    sees every watch the moment it polls (regardless of protocol), so it's
+    the only source that covers both transports uniformly."""
 
     _attr_name = "Watch count"
     _attr_icon = "mdi:watch-variant"
     _attr_native_unit_of_measurement = "watches"
     _attr_state_class = SensorStateClass.MEASUREMENT
 
-    def __init__(
-        self,
-        secret_store: WidgetSecretStore,
-        coordinator: DeltaCoordinator,
-        entry: ConfigEntry,
-    ) -> None:
+    # Distinguishes watch devices from iPhones in this config entry. Both kinds
+    # share the `(DOMAIN, watch_<id>)` identifier prefix (legacy naming), so
+    # the model field — set by build_device_info — is the reliable selector.
+    _WATCH_MODEL = "Apple Watch"
+
+    def __init__(self, coordinator: DeltaCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
-        self._secret_store = secret_store
         self._attr_unique_id = f"wrist_assistant_{entry.entry_id}_watch_count"
 
     async def async_added_to_hass(self) -> None:
-        # Pair/unpair events flow through the secret store, not the session
-        # coordinator, so subscribe directly — otherwise the count would only
-        # refresh when a watch happens to poll.
-        await super().async_added_to_hass()
+        # Bypass the base class's coordinator-session subscription: the
+        # registry event already fires on device create/update/remove, which
+        # is the complete set of edges that move this count.
         self.async_on_remove(
-            self._secret_store.async_add_listener(self._handle_update)
+            self.hass.bus.async_listen(
+                dr.EVENT_DEVICE_REGISTRY_UPDATED, self._handle_registry_event
+            )
         )
+
+    @callback
+    def _handle_registry_event(self, _event) -> None:
+        self.async_write_ha_state()
 
     @property
     def native_value(self) -> int:
+        dev_reg = dr.async_get(self.hass)
         return sum(
             1
-            for entry in self._secret_store.all_entries.values()
-            if entry.device_kind == DEVICE_KIND_WATCH
+            for device in dr.async_entries_for_config_entry(
+                dev_reg, self._entry.entry_id
+            )
+            if device.model == self._WATCH_MODEL
         )
 
 
