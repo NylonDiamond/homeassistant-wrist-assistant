@@ -45,7 +45,8 @@ async def async_setup_entry(
         return (DOMAIN, entry.entry_id)
 
     global_sensors: list[SensorEntity] = [
-        ActiveWatchesSensor(coordinator, entry),
+        ConnectedWatchesSensor(coordinator, entry),
+        WatchCountSensor(secret_store, coordinator, entry),
         MonitoredEntitiesSensor(coordinator, entry),
         EventsProcessedSensor(coordinator, entry),
         EventBufferUsageSensor(coordinator, entry),
@@ -172,21 +173,60 @@ class _WristAssistantSensorBase(SensorEntity):
         self.async_write_ha_state()
 
 
-class ActiveWatchesSensor(_WristAssistantSensorBase):
-    """Number of connected watch sessions."""
+class ConnectedWatchesSensor(_WristAssistantSensorBase):
+    """Number of watches with a live polling session right now."""
 
-    _attr_name = "Active watches"
+    _attr_name = "Connected watches"
     _attr_icon = "mdi:watch"
     _attr_native_unit_of_measurement = "watches"
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(self, coordinator: DeltaCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
+        # unique_id keeps the historical "active_watches" slug so existing
+        # entity_ids, dashboards, and automations continue to resolve after
+        # the friendly-name rename.
         self._attr_unique_id = f"wrist_assistant_{entry.entry_id}_active_watches"
 
     @property
     def native_value(self) -> int:
         return len(self._coordinator.real_sessions)
+
+
+class WatchCountSensor(_WristAssistantSensorBase):
+    """Total paired watches, including those not currently connected."""
+
+    _attr_name = "Watch count"
+    _attr_icon = "mdi:watch-variant"
+    _attr_native_unit_of_measurement = "watches"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self,
+        secret_store: WidgetSecretStore,
+        coordinator: DeltaCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        super().__init__(coordinator, entry)
+        self._secret_store = secret_store
+        self._attr_unique_id = f"wrist_assistant_{entry.entry_id}_watch_count"
+
+    async def async_added_to_hass(self) -> None:
+        # Pair/unpair events flow through the secret store, not the session
+        # coordinator, so subscribe directly — otherwise the count would only
+        # refresh when a watch happens to poll.
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            self._secret_store.async_add_listener(self._handle_update)
+        )
+
+    @property
+    def native_value(self) -> int:
+        return sum(
+            1
+            for entry in self._secret_store.all_entries.values()
+            if entry.device_kind == DEVICE_KIND_WATCH
+        )
 
 
 class MonitoredEntitiesSensor(_WristAssistantSensorBase):

@@ -192,9 +192,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
 
     # Periodically drop idle watch sessions. _prune_sessions also runs on the
     # inbound delta path, but when every watch goes quiet simultaneously
-    # nothing triggers it — and the "Active watches" count stays stuck on its
-    # last value (e.g. shows "1" long after the last poll). 60s tick gives a
-    # worst-case stale window of SESSION_TTL + 60s before the count drops.
+    # nothing triggers it — and the "Connected watches" count stays stuck on
+    # its last value (e.g. shows "1" long after the last poll). 60s tick gives
+    # a worst-case stale window of SESSION_TTL + 60s before the count drops.
     entry.async_on_unload(
         async_track_time_interval(
             hass,
