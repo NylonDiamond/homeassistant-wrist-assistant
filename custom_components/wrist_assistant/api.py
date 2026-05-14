@@ -400,6 +400,19 @@ class DeltaCoordinator:
         return float(count)
 
     @callback
+    def async_prune_idle_sessions(self) -> None:
+        """Drop sessions whose last_seen is older than SESSION_TTL.
+
+        Public wrapper around `_prune_sessions` for callers outside this
+        module — specifically the periodic timer in __init__.py. Pruning
+        otherwise only runs on the inbound delta path (handle_long_poll),
+        which means when every watch goes idle simultaneously the count of
+        active sessions stays "stuck" at its last value until something polls
+        again. A periodic tick fixes that.
+        """
+        self._prune_sessions()
+
+    @callback
     def async_force_resync(self) -> None:
         """Clear all sessions, forcing watches to do a full state refresh."""
         self._sessions.clear()

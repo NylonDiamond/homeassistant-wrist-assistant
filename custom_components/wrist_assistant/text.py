@@ -29,9 +29,11 @@ async def async_setup_entry(
     secret_store: WidgetSecretStore = entry.runtime_data.widget_secret_store
 
     def _watch_via_device(watch_id: str) -> tuple[str, str]:
-        owner = secret_store.resolve_watch_owner_id(watch_id)
-        if owner:
-            return (DOMAIN, f"watch_{owner}")
+        # Watches root directly under the service device so they're visible in
+        # the integration's "Connected devices" overview alongside iPhones —
+        # HA's overview only shows top-level devices, and nesting watches under
+        # their owning iPhone (via `owner_iphone_id`) hides them from that
+        # list. The owner_iphone_id field is still persisted for diagnostics.
         return (DOMAIN, entry.entry_id)
 
     # Watches: driven by the live poll coordinator — only watches that have

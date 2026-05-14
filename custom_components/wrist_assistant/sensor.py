@@ -36,9 +36,12 @@ async def async_setup_entry(
     secret_store: WidgetSecretStore = entry.runtime_data.widget_secret_store
 
     def _watch_via_device(watch_id: str) -> tuple[str, str]:
-        owner = secret_store.resolve_watch_owner_id(watch_id)
-        if owner:
-            return (DOMAIN, f"watch_{owner}")
+        # Watches root directly under the service device so they appear
+        # alongside iPhones in the integration's "Connected devices" overview.
+        # HA only surfaces top-level devices there — when via_device pointed
+        # at the owning iPhone (`owner_iphone_id`), the watch was nested under
+        # its parent and hidden from the panel. The owner_iphone_id field is
+        # still persisted on WidgetSecretEntry for diagnostics.
         return (DOMAIN, entry.entry_id)
 
     global_sensors: list[SensorEntity] = [
@@ -120,9 +123,10 @@ async def async_setup_entry(
                 # builds without this field render "unknown" until the next
                 # provision call from an updated app.
                 watch_via = _watch_via_device(watch_id)
-                new_entities.append(
-                    WatchAppVersionSensor(secret_store, entry, watch_id, watch_via, hass=hass)
-                )
+                new_entities.extend([
+                    WatchAppVersionSensor(secret_store, entry, watch_id, watch_via, hass=hass),
+                    WatchLastProvisionSensor(secret_store, entry, watch_id, watch_via, hass=hass),
+                ])
         # Drop tracking for entries that vanished (user unpaired).
         for stale in list(known_secrets):
             if stale not in entries:
@@ -599,5 +603,43 @@ class WatchAppVersionSensor(_SecretStoreSensorBase):
     def native_value(self) -> str | None:
         secret = self._secret_store.get(self._watch_id)
         return secret.app_version if secret is not None else None
+
+
+class WatchLastProvisionSensor(_SecretStoreSensorBase):
+    """Timestamp of the most recent register_secret call from this watch.
+
+    Surfaces the stale-keychain case: the watch device row still exists in HA
+    (its old secret is on disk) but the watch's local keychain has been wiped,
+    so the iOS app shows the "missing integration key" banner. While that's
+    happening, every other sensor on this device still reads normally — only
+    `last_provision` ages while the user keeps using the watch. A timestamp far
+    in the past on a watch that's otherwise active is the visible smoking gun.
+
+    v1-only watches never reach this code path: v1 uses bearer auth and never
+    calls register_secret, so they have no entry in widget_secret_store and the
+    spawn loop skips them entirely."""
+
+    _attr_name = "Last provision"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_icon = "mdi:watch-import"
+
+    def __init__(
+        self,
+        secret_store: WidgetSecretStore,
+        entry: ConfigEntry,
+        watch_id: str,
+        via_device: tuple[str, str],
+        *,
+        hass: HomeAssistant | None = None,
+    ) -> None:
+        super().__init__(
+            secret_store, entry, watch_id, via_device, kind=DEVICE_KIND_WATCH, hass=hass
+        )
+        self._attr_unique_id = f"wrist_assistant_{watch_id}_last_provision"
+
+    @property
+    def native_value(self):
+        secret = self._secret_store.get(self._watch_id)
+        return secret.last_provision if secret is not None else None
 
 

@@ -34,9 +34,8 @@ async def async_setup_entry(
     notification_store: NotificationTokenStore = entry.runtime_data.notification_store
 
     def _watch_via_device(watch_id: str) -> tuple[str, str]:
-        owner = secret_store.resolve_watch_owner_id(watch_id)
-        if owner:
-            return (DOMAIN, f"watch_{owner}")
+        # Always root watches under the service device. See sensor.py for the
+        # rationale (HA's overview only shows top-level devices).
         return (DOMAIN, entry.entry_id)
 
     known_watches: set[str] = set()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from pathlib import Path
 
 import voluptuous as vol
@@ -18,6 +19,7 @@ from homeassistant.core import (
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
 
 from .api import DeltaCoordinator
@@ -186,6 +188,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
 
     entry.async_on_unload(
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _handle_stop)
+    )
+
+    # Periodically drop idle watch sessions. _prune_sessions also runs on the
+    # inbound delta path, but when every watch goes quiet simultaneously
+    # nothing triggers it — and the "Active watches" count stays stuck on its
+    # last value (e.g. shows "1" long after the last poll). 60s tick gives a
+    # worst-case stale window of SESSION_TTL + 60s before the count drops.
+    entry.async_on_unload(
+        async_track_time_interval(
+            hass,
+            lambda _now: coordinator.async_prune_idle_sessions(),
+            timedelta(seconds=60),
+        )
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
