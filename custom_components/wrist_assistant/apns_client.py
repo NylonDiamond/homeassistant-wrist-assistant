@@ -140,6 +140,7 @@ class APNsClient:
             "watch_id": watch_id,
             "device_token": device_token,
             "environment": environment,
+            "platform": existing.platform,
         }
         result = await self._post_json("/v1/register", payload)
         if result is None:
