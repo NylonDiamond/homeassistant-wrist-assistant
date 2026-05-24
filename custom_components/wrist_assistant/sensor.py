@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 
 from homeassistant.components.sensor import (
+    RestoreSensor,
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
@@ -68,15 +70,17 @@ async def async_setup_entry(
         for watch_id in coordinator.real_sessions:
             if watch_id in known_watches:
                 # Verify entities still exist in registry (user may have deleted device)
-                sentinel = f"wrist_assistant_{watch_id}_last_activity"
+                sentinel = f"wrist_assistant_{watch_id}_poll_interval"
                 if ent_reg.async_get_entity_id("sensor", DOMAIN, sentinel) is not None:
                     continue
                 known_watches.discard(watch_id)
             known_watches.add(watch_id)
             via = _watch_via_device(watch_id)
+            # Poll interval and connected-since are intrinsically about the
+            # *current* live session, so they stay coordinator-driven. Last
+            # activity and subscribed entities persist across restarts/idle and
+            # are created off the secret store below instead.
             new_entities.extend([
-                WatchLastActivitySensor(coordinator, entry, watch_id, via, hass=hass),
-                WatchSubscribedEntitiesSensor(coordinator, entry, watch_id, via, hass=hass),
                 WatchPollIntervalSensor(coordinator, entry, watch_id, via, hass=hass),
                 WatchConnectedSinceSensor(coordinator, entry, watch_id, via, hass=hass),
             ])
@@ -131,6 +135,16 @@ async def async_setup_entry(
                     WatchLastProvisionSensor(secret_store, entry, watch_id, watch_via, hass=hass),
                     WatchDeliveryModeSensor(
                         secret_store, notification_store, entry, watch_id, watch_via, hass=hass
+                    ),
+                    # Persistent (RestoreSensor) — created here off the secret
+                    # store so they exist for any provisioned watch, not only one
+                    # with a live polling session, and survive restarts. They
+                    # read the live coordinator session when present.
+                    WatchLastActivitySensor(
+                        coordinator, secret_store, entry, watch_id, watch_via, hass=hass
+                    ),
+                    WatchSubscribedEntitiesSensor(
+                        coordinator, secret_store, entry, watch_id, watch_via, hass=hass
                     ),
                 ])
         # Drop tracking for entries that vanished (user unpaired).
@@ -377,9 +391,17 @@ class _WatchSensorBase(SensorEntity):
         return self._watch_id in self._coordinator._sessions
 
 
-class WatchLastActivitySensor(_WatchSensorBase):
-    """Timestamp of last poll from this watch."""
+class WatchLastActivitySensor(RestoreSensor):
+    """Timestamp of last poll from this watch — persists across restart/idle.
 
+    Created off the secret store so it exists for any provisioned watch, not
+    only one with a live polling session. Reads the live coordinator session
+    when present; otherwise falls back to the value restored at startup, so the
+    row shows the last-known time instead of going Unavailable once the watch is
+    idle past the session TTL or HA was restarted."""
+
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_name = "Last activity"
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_icon = "mdi:clock-outline"
@@ -387,38 +409,57 @@ class WatchLastActivitySensor(_WatchSensorBase):
     def __init__(
         self,
         coordinator: DeltaCoordinator,
+        secret_store: WidgetSecretStore,
         entry: ConfigEntry,
         watch_id: str,
         via_device: tuple[str, str],
         *,
         hass: HomeAssistant | None = None,
     ) -> None:
-        super().__init__(coordinator, entry, watch_id, via_device, hass=hass)
+        self._coordinator = coordinator
+        self._secret_store = secret_store
+        self._watch_id = watch_id
+        self._restored: datetime | None = None
         self._attr_unique_id = f"wrist_assistant_{watch_id}_last_activity"
-        self._cached_last_seen = None
+        self._attr_device_info = build_device_info(
+            secret_store, watch_id, kind=DEVICE_KIND_WATCH, via_device=via_device, hass=hass
+        )
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_sensor_data()
+        if last is not None and isinstance(last.native_value, datetime):
+            self._restored = last.native_value
+        self.async_on_remove(
+            self._coordinator.async_add_session_listener(self._handle_update)
+        )
+
+    @callback
+    def _handle_update(self) -> None:
+        self.async_write_ha_state()
 
     @property
     def available(self) -> bool:
         return True
 
-    @callback
-    def _handle_update(self) -> None:
-        session = self._coordinator._sessions.get(self._watch_id)
-        if session is not None:
-            self._cached_last_seen = session.last_seen
-        self.async_write_ha_state()
-
     @property
-    def native_value(self):
+    def native_value(self) -> datetime | None:
         session = self._coordinator._sessions.get(self._watch_id)
         if session is not None:
             return session.last_seen
-        return self._cached_last_seen
+        return self._restored
 
 
-class WatchSubscribedEntitiesSensor(_WatchSensorBase):
-    """Number of entities this watch monitors, with entity list in attributes."""
+class WatchSubscribedEntitiesSensor(RestoreSensor):
+    """Entities this watch monitors (count + list) — persists across restart/idle.
 
+    Like Last activity, created off the secret store and restored at startup so
+    the last-known subscription set survives an idle watch or an HA restart
+    rather than going Unavailable. The live coordinator session takes over the
+    moment the watch polls again."""
+
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_name = "Subscribed entities"
     _attr_icon = "mdi:format-list-bulleted"
     _attr_native_unit_of_measurement = "entities"
@@ -427,50 +468,64 @@ class WatchSubscribedEntitiesSensor(_WatchSensorBase):
     def __init__(
         self,
         coordinator: DeltaCoordinator,
+        secret_store: WidgetSecretStore,
         entry: ConfigEntry,
         watch_id: str,
         via_device: tuple[str, str],
         *,
         hass: HomeAssistant | None = None,
     ) -> None:
-        super().__init__(coordinator, entry, watch_id, via_device, hass=hass)
+        self._coordinator = coordinator
+        self._secret_store = secret_store
+        self._watch_id = watch_id
+        self._restored_count: int = 0
+        self._restored_entities: dict[str, str] = {}
         self._attr_unique_id = f"wrist_assistant_{watch_id}_subscribed_entities"
-        self._cached_count: int = 0
-        self._cached_entities: dict[str, str] = {}
+        self._attr_device_info = build_device_info(
+            secret_store, watch_id, kind=DEVICE_KIND_WATCH, via_device=via_device, hass=hass
+        )
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        data = await self.async_get_last_sensor_data()
+        if data is not None and isinstance(data.native_value, (int, float)):
+            self._restored_count = int(data.native_value)
+        # The entity list lives in attributes, which RestoreSensor doesn't carry
+        # — pull it from the last full state.
+        state = await self.async_get_last_state()
+        if state is not None and isinstance(state.attributes.get("entities"), dict):
+            self._restored_entities = state.attributes["entities"]
+        self.async_on_remove(
+            self._coordinator.async_add_session_listener(self._handle_update)
+        )
+
+    @callback
+    def _handle_update(self) -> None:
+        self.async_write_ha_state()
 
     @property
     def available(self) -> bool:
         return True
 
-    @callback
-    def _handle_update(self) -> None:
+    def _live_entities(self) -> dict[str, str] | None:
         session = self._coordinator._sessions.get(self._watch_id)
-        if session is not None:
-            self._cached_count = len(session.entities)
-            entities: dict[str, str] = {}
-            for eid in sorted(session.entities):
-                state = self.hass.states.get(eid)
-                entities[eid] = state.name if state else eid
-            self._cached_entities = entities
-        self.async_write_ha_state()
+        if session is None:
+            return None
+        entities: dict[str, str] = {}
+        for eid in sorted(session.entities):
+            state = self.hass.states.get(eid)
+            entities[eid] = state.name if state else eid
+        return entities
 
     @property
     def native_value(self) -> int:
-        session = self._coordinator._sessions.get(self._watch_id)
-        if session is not None:
-            return len(session.entities)
-        return self._cached_count
+        live = self._live_entities()
+        return len(live) if live is not None else self._restored_count
 
     @property
     def extra_state_attributes(self) -> dict:
-        session = self._coordinator._sessions.get(self._watch_id)
-        if session is not None:
-            entities: dict[str, str] = {}
-            for eid in sorted(session.entities):
-                state = self.hass.states.get(eid)
-                entities[eid] = state.name if state else eid
-            return {"entities": entities}
-        return {"entities": self._cached_entities}
+        live = self._live_entities()
+        return {"entities": live if live is not None else self._restored_entities}
 
 
 class WatchPollIntervalSensor(_WatchSensorBase):

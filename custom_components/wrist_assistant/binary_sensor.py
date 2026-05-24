@@ -64,58 +64,60 @@ async def async_setup_entry(
         coordinator.async_add_session_listener(_check_new_watches)
     )
 
-    # Watch push-token presence. Lives in the secret store loop because the
-    # watch device entity is created the moment its secret registers — well
-    # before the first /v2/delta poll — and a watch can call
-    # `op=notifications_register` without ever polling.
-    known_watch_pushes: set[str] = set()
+    # Push-token presence, one sensor per device. Lives in the secret store
+    # loop because the device entity is created the moment its secret registers
+    # — well before the first /v2/delta poll — and a watch can call
+    # `op=notifications_register` without ever polling. The watch's own
+    # (watchos) token sits on the watch device; the iPhone's mirror (ios) token
+    # sits on the iPhone device (where it belongs), even though the token is
+    # stored under the companion watch's id for routing.
+    known_pushes: set[str] = set()
 
     @callback
-    def _check_new_watch_pushes() -> None:
+    def _check_new_pushes() -> None:
         ent_reg = er.async_get(hass)
         new_entities: list[BinarySensorEntity] = []
         entries = secret_store.all_entries
-        for watch_id, secret_entry in entries.items():
-            if secret_entry.device_kind == DEVICE_KIND_IPHONE:
-                continue
-            if watch_id in known_watch_pushes:
-                sentinel = f"wrist_assistant_{watch_id}_push_registered"
+        for device_id, secret_entry in entries.items():
+            if device_id in known_pushes:
+                sentinel = f"wrist_assistant_{device_id}_push_registered"
                 if (
                     ent_reg.async_get_entity_id("binary_sensor", DOMAIN, sentinel)
                     is not None
                 ):
                     continue
-                known_watch_pushes.discard(watch_id)
-            known_watch_pushes.add(watch_id)
-            via = _watch_via_device(watch_id)
-            new_entities.append(
-                WatchPushTokenRegisteredSensor(
-                    secret_store,
-                    notification_store,
-                    entry,
-                    watch_id,
-                    via,
-                    hass=hass,
+                known_pushes.discard(device_id)
+            known_pushes.add(device_id)
+            if secret_entry.device_kind == DEVICE_KIND_IPHONE:
+                new_entities.append(
+                    IPhonePushTokenRegisteredSensor(
+                        secret_store,
+                        notification_store,
+                        entry,
+                        device_id,
+                        (DOMAIN, entry.entry_id),
+                        hass=hass,
+                    )
                 )
-            )
-            new_entities.append(
-                MirrorPushTokenRegisteredSensor(
-                    secret_store,
-                    notification_store,
-                    entry,
-                    watch_id,
-                    via,
-                    hass=hass,
+            else:
+                new_entities.append(
+                    WatchPushTokenRegisteredSensor(
+                        secret_store,
+                        notification_store,
+                        entry,
+                        device_id,
+                        _watch_via_device(device_id),
+                        hass=hass,
+                    )
                 )
-            )
-        for stale in list(known_watch_pushes):
+        for stale in list(known_pushes):
             if stale not in entries:
-                known_watch_pushes.discard(stale)
+                known_pushes.discard(stale)
         if new_entities:
             async_add_entities(new_entities)
 
-    _check_new_watch_pushes()
-    entry.async_on_unload(secret_store.async_add_listener(_check_new_watch_pushes))
+    _check_new_pushes()
+    entry.async_on_unload(secret_store.async_add_listener(_check_new_pushes))
 
 
 class WatchSyncStatusSensor(BinarySensorEntity):
@@ -249,40 +251,44 @@ class WatchPushTokenRegisteredSensor(BinarySensorEntity):
         }
 
 
-class MirrorPushTokenRegisteredSensor(BinarySensorEntity):
-    """Whether HA holds the companion iPhone's APNs token for this watch.
+class IPhonePushTokenRegisteredSensor(BinarySensorEntity):
+    """Whether HA holds this iPhone's APNs token for mirror delivery.
 
-    This is the gate for **Fast** delivery: HA pushes to the iPhone, which
-    mirrors the alert to the wrist in ~1s. With this off, Fast silently falls
-    back to the ~15s watch-direct path, so a user who picked Fast but sees this
-    off is not actually getting fast notifications. Registered by the iPhone app
-    via `op=notifications_register` with `platform=ios` + `companion_watch_id`,
-    so the token co-locates on this watch's entry."""
+    Lives on the **iPhone** device — it's the iPhone's own push token. This is
+    the gate for **Fast** delivery: HA pushes to the iPhone, which mirrors the
+    alert to the wrist in ~1s. With this off, Fast silently falls back to the
+    ~15s watch-direct path, so a user who picked Fast but sees this off is not
+    actually getting fast notifications.
+
+    The token is stored in the notification store under the *companion watch's*
+    id (so `send_notification`, which targets a watch, can route to it), not the
+    iPhone's. We bridge that here via `owner_iphone_id`: the sensor is on for
+    this iPhone iff any watch it paired holds an `ios` token."""
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_name = "iPhone push token registered"
+    _attr_name = "Push token registered"
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
-    _attr_icon = "mdi:iphone"
+    _attr_icon = "mdi:cellphone-message"
 
     def __init__(
         self,
         secret_store: WidgetSecretStore,
         notification_store: NotificationTokenStore,
         entry: ConfigEntry,
-        watch_id: str,
+        iphone_id: str,
         via_device: tuple[str, str],
         *,
         hass: HomeAssistant | None = None,
     ) -> None:
         self._secret_store = secret_store
         self._notification_store = notification_store
-        self._watch_id = watch_id
-        self._attr_unique_id = f"wrist_assistant_{watch_id}_mirror_push_registered"
+        self._iphone_id = iphone_id
+        self._attr_unique_id = f"wrist_assistant_{iphone_id}_push_registered"
         self._attr_device_info = build_device_info(
             secret_store,
-            watch_id,
-            kind=DEVICE_KIND_WATCH,
+            iphone_id,
+            kind=DEVICE_KIND_IPHONE,
             via_device=via_device,
             hass=hass,
         )
@@ -301,11 +307,18 @@ class MirrorPushTokenRegisteredSensor(BinarySensorEntity):
 
     @property
     def available(self) -> bool:
-        return self._secret_store.get(self._watch_id) is not None
+        return self._secret_store.get(self._iphone_id) is not None
 
     @property
     def is_on(self) -> bool:
-        return (
-            self._notification_store.get_entry(self._watch_id, platform="ios")
-            is not None
-        )
+        # The ios token lives under the companion watch's entry. Report on if any
+        # watch this iPhone paired holds one.
+        for watch_id, secret_entry in self._secret_store.all_entries.items():
+            if (
+                secret_entry.device_kind == DEVICE_KIND_WATCH
+                and secret_entry.owner_iphone_id == self._iphone_id
+                and self._notification_store.get_entry(watch_id, platform="ios")
+                is not None
+            ):
+                return True
+        return False
