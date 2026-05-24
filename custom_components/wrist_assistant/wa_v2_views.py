@@ -1291,7 +1291,47 @@ async def _op_notifications_register(ctx: _OpContext) -> Response:
         log_push_token_registered(ctx.hass, watch_id=target_watch_id, is_new=True)
     elif token_result == "updated":
         log_push_token_registered(ctx.hass, watch_id=target_watch_id, is_new=False)
-    return ctx.signed_json({"ok": True})
+    # Echo the platforms now on the entry so the caller can self-confirm the
+    # token actually landed — the iPhone app uses this to verify the mirror
+    # (ios) path is wired before showing its Notifications row green.
+    return ctx.signed_json(
+        {"ok": True, "platforms": sorted(store.get_entries(target_watch_id))}
+    )
+
+
+async def _op_notifications_status(ctx: _OpContext) -> Response:
+    """Report which push platforms are registered for a watch.
+
+    Lets the iPhone app verify the mirror (``ios``) token actually landed in HA
+    before claiming notifications are fully set up — selecting "Fast" is moot if
+    HA has no iOS token to mirror through and would fall back to the slow
+    watch-direct path. Resolves the target watch the same way
+    ``notifications_register`` does: an iPhone caller signs with its own identity
+    but reads the paired watch's entry via ``companion_watch_id``. Returns only
+    platform *names* (never tokens), and all identities here are the user's own
+    devices, so this is strictly less sensitive than the existing register write.
+    """
+    store = ctx.domain_data.notification_store
+    if store is None:
+        return ctx.signed_json(
+            {"ok": False, "error": "notifications unavailable"}, status=503
+        )
+
+    target_watch_id = ctx.watch_id
+    companion = ctx.payload.get("companion_watch_id")
+    if isinstance(companion, str) and companion:
+        target_watch_id = companion
+
+    entries = store.get_entries(target_watch_id)
+    return ctx.signed_json(
+        {
+            "ok": True,
+            "platforms": sorted(entries),
+            "delivery_mode": store.get_watch_metadata(
+                target_watch_id, "delivery_mode", "mirror"
+            ),
+        }
+    )
 
 
 async def _op_audio_upload(ctx: _OpContext) -> Response:
@@ -1910,6 +1950,7 @@ _OP_HANDLERS: dict[str, Any] = {
     "remote_command": _op_remote_command,
     "fire_event": _op_fire_event,
     "notifications_register": _op_notifications_register,
+    "notifications_status": _op_notifications_status,
     "audio_upload": _op_audio_upload,
     "camera_batch": _op_camera_batch,
     "camera_devices": _op_camera_devices,
