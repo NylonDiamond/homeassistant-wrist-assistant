@@ -187,6 +187,12 @@ blueprint:
             Pick a preset or type a custom file name. Browse and
             preview all sounds in the iOS app under
             Settings → Notification Style → Notification Sound.
+
+
+            Custom sounds only play in Reliable delivery mode. In Fast
+            mode, watchOS ignores the sound and plays its default alert.
+            Set the mode in the iOS app under
+            Settings → Notification Style → Delivery.
           default: "default"
           selector:
             select:
