@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from homeassistant.components.binary_sensor import (
-    BinarySensorDeviceClass,
-    BinarySensorEntity,
-)
+from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
@@ -129,8 +126,10 @@ class WatchPushTokenRegisteredSensor(BinarySensorEntity):
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_name = "Push token registered"
-    _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
+    # No CONNECTIVITY device class: it renders on/off as "Connected/Disconnected",
+    # which reads oddly for a "is a token registered" fact. The translation_key
+    # maps the state to a plain "Yes/No" (and supplies the name). See strings.json.
+    _attr_translation_key = "push_token_registered"
     _attr_icon = "mdi:bell-ring-outline"
 
     def __init__(
@@ -204,8 +203,9 @@ class IPhonePushTokenRegisteredSensor(BinarySensorEntity):
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_name = "Push token registered"
-    _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
+    # See WatchPushTokenRegisteredSensor: plain "Yes/No" via translation_key
+    # rather than the CONNECTIVITY "Connected/Disconnected" pair.
+    _attr_translation_key = "push_token_registered"
     _attr_icon = "mdi:cellphone-message"
 
     def __init__(

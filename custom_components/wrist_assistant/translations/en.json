@@ -9,5 +9,16 @@
     "abort": {
       "single_instance_allowed": "Wrist Assistant is already configured."
     }
+  },
+  "entity": {
+    "binary_sensor": {
+      "push_token_registered": {
+        "name": "Push token registered",
+        "state": {
+          "off": "No",
+          "on": "Yes"
+        }
+      }
+    }
   }
 }
