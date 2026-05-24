@@ -474,13 +474,8 @@ async def _create_apns_client(hass: HomeAssistant) -> APNsClient | None:
         return None
 
     try:
-        # TEMP-STAGING-OVERRIDE (fast-notifications-spike): route through the
-        # staging relay during mirror-path validation so prod is untouched
-        # (no secret change, no redeploy, no prod traffic). Staging runs the
-        # same worker code and already has APNS_TOPIC_IOS set. REVERT this line
-        # to "https://push.wrist-assistant.com" before merge.
         return APNsClient(
-            relay_base_url="https://wrist-assistant-push-relay-staging.wrist-assistant.workers.dev",
+            relay_base_url="https://push.wrist-assistant.com",
             notification_store=domain_data.notification_store,
             http_session=async_get_clientsession(hass),
         )
