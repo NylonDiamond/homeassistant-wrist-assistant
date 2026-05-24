@@ -44,12 +44,16 @@ class APNsClient:
         sound: str | None = None,
         push_type: str = "alert",
         environment: str = "production",
+        platform: str = "watchos",
     ) -> tuple[bool, str | None, str]:
         """Send a push notification through the hosted relay.
 
+        ``platform`` selects which token entry (watchos / ios) on the watch_id
+        the relay_token cache is read from and written back to.
+
         Returns (success, reason, used_environment).
         """
-        entry = self._notification_store.get_entry(watch_id)
+        entry = self._notification_store.get_entry(watch_id, platform)
         if entry is None:
             return (False, "missing_token_registration", environment)
 
@@ -140,6 +144,7 @@ class APNsClient:
             "watch_id": watch_id,
             "device_token": device_token,
             "environment": environment,
+            "platform": existing.platform,
         }
         result = await self._post_json("/v1/register", payload)
         if result is None:

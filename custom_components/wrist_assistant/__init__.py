@@ -36,7 +36,7 @@ from .const import (
     WristAssistantConfigEntry,
     WristAssistantData,
 )
-from .notifications import NotificationTokenStore
+from .notifications import NotificationTokenStore, TokenEntry
 from .v1_api_views import (
     MusicAssistantPlayersView,
     MusicAssistantQueueView,
@@ -101,6 +101,55 @@ _SEND_NOTIFICATION_SCHEMA = vol.Schema(
         ),
     }
 )
+
+
+def _strip_none(value):
+    """Recursively drop None values from the custom push payload.
+
+    A JSON ``null`` anywhere in the notification's custom data breaks the
+    iPhone→watch mirror path — iOS can't represent null when forwarding the
+    notification's userInfo to the wrist, so it drops the entire custom blob
+    (including ``actions``) and the watch renders no buttons. Direct-to-watch
+    delivery tolerates null, so the symptom only showed in Fast/mirror mode.
+    Stripping null here is the belt-and-suspenders guard regardless of source
+    (enriched attributes, or user-supplied ``data``).
+    """
+    if isinstance(value, dict):
+        return {k: _strip_none(v) for k, v in value.items() if v is not None}
+    if isinstance(value, list):
+        return [_strip_none(v) for v in value if v is not None]
+    return value
+
+
+def _choose_token(
+    entries: dict[str, TokenEntry], delivery_mode: str = "mirror"
+) -> TokenEntry | None:
+    """Pick which token to push to for a watch, honoring the per-watch mode.
+
+    ``mirror`` (default): prefer the companion iPhone token — iOS mirrors the
+    alert to the wrist in ~1s with our full UI + haptic, avoiding the ~15s
+    watch-direct coordination tax when the phone is present. The cost is that
+    an away-from-phone watch gets nothing (no phone to mirror from).
+
+    ``direct``: prefer the watch's own token — reliable even when the phone is
+    absent (~1s), at the cost of the ~15s coordination delay whenever the phone
+    *is* present. The opt-in choice for users who are often away from their
+    phone. See the per-user "Delivery" setting in the app.
+
+    Either way we fall back to the other platform's token if the preferred one
+    isn't registered, so a watch-only or iPhone-only registration still works.
+    """
+    if delivery_mode == "direct":
+        return (
+            entries.get("watchos")
+            or entries.get("ios")
+            or next(iter(entries.values()), None)
+        )
+    return (
+        entries.get("ios")
+        or entries.get("watchos")
+        or next(iter(entries.values()), None)
+    )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntry) -> bool:
@@ -243,8 +292,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
                     domain = entity_id.split(".")[0]
                     attrs: dict = {}
                     for key in _DOMAIN_ATTRS.get(domain, []):
-                        if key in state_obj.attributes:
-                            attrs[key] = state_obj.attributes[key]
+                        # HA keeps attribute keys present-but-None when a light
+                        # is off (brightness=None, etc.). A JSON null in the
+                        # custom payload breaks the iPhone→watch notification
+                        # mirror path: iOS can't represent null when forwarding
+                        # the notification's userInfo to the wrist, so it drops
+                        # the whole `actions` blob and the watch shows no
+                        # buttons. (Direct-to-watch delivery tolerates it, which
+                        # is why only Fast/mirror mode lost buttons when off.)
+                        # Only copy real values.
+                        val = state_obj.attributes.get(key)
+                        if val is not None:
+                            attrs[key] = val
                     if attrs:
                         a.setdefault("attributes", attrs)
             enriched.append(a)
@@ -287,26 +346,50 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         for key in ("tag", "group", "priority"):
             if (val := call.data.get(key)) is not None:
                 extra_data[key] = val
-        extra_data = extra_data or None
+        # Default interruption-level to "active": alerts + haptic when the user
+        # is available, but respects Focus / Do Not Disturb / sleep. Automations
+        # opt into "time-sensitive" / "critical" per-notification for urgent
+        # alerts. Setting it explicitly here keeps the policy in HACS rather than
+        # depending on the relay's default.
+        extra_data.setdefault("priority", "active")
+        # Strip any None values so a JSON null can't break the mirror path
+        # (see _strip_none). Covers enriched attributes + user-supplied data.
+        extra_data = _strip_none(extra_data)
         sound = call.data.get("sound")
         push_type = call.data.get("push_type", "alert")
 
-        # Resolve targets (need full entries for environment)
+        # Resolve targets to their full per-platform entry maps.
         if target:
-            token_entry = store.get_entry(target)
-            if token_entry is None:
+            entries = store.get_entries(target)
+            if not entries:
                 raise HomeAssistantError(f"No registered push token for watch '{target}'")
-            targets = {target: token_entry}
+            targets = {target: entries}
         else:
-            all_tokens = store.all_tokens
-            if not all_tokens:
+            targets = store.all_entries
+            if not targets:
                 raise HomeAssistantError("No watches have registered for push notifications")
-            targets = all_tokens
 
-        # Send to each target
+        # Send to each target, routing per the watch's "delivery_mode" setting.
+        # "mirror" (default): push to the companion iPhone token (iOS mirrors to
+        # the wrist in ~1s; nothing when the phone is away). "direct": push to
+        # the watch token (reliable when away; ~15s when the phone is present).
+        # Never both — that double-buzzes.
         sent = 0
         failure_map: dict[str, str] = {}
-        for watch_id, tok_entry in targets.items():
+        for watch_id, entries in targets.items():
+            delivery_mode = store.get_watch_metadata(
+                watch_id, "delivery_mode", "mirror"
+            )
+            tok_entry = _choose_token(entries, delivery_mode)
+            _LOGGER.debug(
+                "send_notification routing watch_id=%s platforms=%s mode=%s -> chosen=%s",
+                watch_id,
+                sorted(entries.keys()),
+                delivery_mode,
+                tok_entry.platform if tok_entry else None,
+            )
+            if tok_entry is None:
+                continue
             success, reason, used_env = await client.send_push(
                 watch_id=watch_id,
                 device_token=tok_entry.device_token,
@@ -317,6 +400,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
                 sound=sound,
                 push_type=push_type,
                 environment=tok_entry.environment,
+                platform=tok_entry.platform,
             )
             if success:
                 sent += 1
@@ -330,11 +414,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
             else:
                 if APNsClient.is_dead_token(reason):
                     _LOGGER.warning(
-                        "Removing dead token for watch_id=%s (reason=%s)",
+                        "Removing dead %s token for watch_id=%s (reason=%s)",
+                        tok_entry.platform,
                         watch_id,
                         reason,
                     )
-                    store.remove(watch_id)
+                    store.remove(watch_id, platform=tok_entry.platform)
                 failure_map[watch_id] = reason or "unknown"
 
         if failure_map and sent == 0:
