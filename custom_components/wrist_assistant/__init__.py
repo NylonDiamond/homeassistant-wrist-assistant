@@ -308,7 +308,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         for key in ("tag", "group", "priority"):
             if (val := call.data.get(key)) is not None:
                 extra_data[key] = val
-        extra_data = extra_data or None
+        # Default interruption-level to "active": alerts + haptic when the user
+        # is available, but respects Focus / Do Not Disturb / sleep. Automations
+        # opt into "time-sensitive" / "critical" per-notification for urgent
+        # alerts. Setting it explicitly here keeps the policy in HACS rather than
+        # depending on the relay's default.
+        extra_data.setdefault("priority", "active")
         sound = call.data.get("sound")
         push_type = call.data.get("push_type", "alert")
 
@@ -332,7 +337,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         failure_map: dict[str, str] = {}
         for watch_id, entries in targets.items():
             tok_entry = _choose_token(entries)
-            _LOGGER.info(
+            _LOGGER.debug(
                 "send_notification routing watch_id=%s platforms=%s -> chosen=%s",
                 watch_id,
                 sorted(entries.keys()),
