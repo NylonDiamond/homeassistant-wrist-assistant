@@ -335,6 +335,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         failure_map: dict[str, str] = {}
         for watch_id, entries in targets.items():
             tok_entry = _choose_token(store, watch_id, entries)
+            _LOGGER.info(
+                "send_notification routing watch_id=%s presence=%s platforms=%s -> chosen=%s",
+                watch_id,
+                store.get_presence(watch_id),
+                sorted(entries.keys()),
+                tok_entry.platform if tok_entry else None,
+            )
             if tok_entry is None:
                 continue
             success, reason, used_env = await client.send_push(
