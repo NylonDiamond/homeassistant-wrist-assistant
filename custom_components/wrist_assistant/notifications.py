@@ -51,6 +51,9 @@ class NotificationTokenStore:
     def __init__(self, hass: HomeAssistant) -> None:
         # watch_id -> platform -> TokenEntry
         self._tokens: dict[str, dict[str, TokenEntry]] = {}
+        # watch_id -> arbitrary per-watch metadata, e.g. {"delivery_mode": "mirror"}.
+        # Kept separate from _tokens so it can never leak into routing iteration.
+        self._watch_meta: dict[str, dict] = {}
         self._store: Store = Store(
             hass,
             NOTIFICATION_TOKEN_STORAGE_VERSION,
@@ -88,6 +91,13 @@ class NotificationTokenStore:
                             by_platform[parsed.platform] = parsed
                 if by_platform:
                     self._tokens[watch_id] = by_platform
+        meta = data.get("watch_metadata", {})
+        if isinstance(meta, dict):
+            self._watch_meta = {
+                watch_id: dict(m)
+                for watch_id, m in meta.items()
+                if isinstance(m, dict)
+            }
         _LOGGER.debug(
             "Loaded notification tokens for %d watches from storage",
             len(self._tokens),
@@ -121,7 +131,10 @@ class NotificationTokenStore:
                     for platform, entry in by_platform.items()
                 }
                 for watch_id, by_platform in self._tokens.items()
-            }
+            },
+            "watch_metadata": {
+                watch_id: dict(m) for watch_id, m in self._watch_meta.items()
+            },
         }
 
     def register(
@@ -198,6 +211,18 @@ class NotificationTokenStore:
         """Return all platform entries for a watch (empty if none)."""
         return dict(self._tokens.get(watch_id, {}))
 
+    def get_watch_metadata(self, watch_id: str, key: str, default=None):
+        """Return a per-watch metadata value (e.g. ``delivery_mode``), or default."""
+        return self._watch_meta.get(watch_id, {}).get(key, default)
+
+    def set_watch_metadata(self, watch_id: str, key: str, value) -> None:
+        """Set a per-watch metadata value, persisting only on change."""
+        meta = self._watch_meta.setdefault(watch_id, {})
+        if meta.get(key) == value:
+            return
+        meta[key] = value
+        self._store.async_delay_save(self._serialize, 5)
+
     @property
     def all_tokens(self) -> dict[str, TokenEntry]:
         """Return one representative entry per watch_id (watchos preferred).
@@ -227,6 +252,8 @@ class NotificationTokenStore:
         changed = False
         if platform is None:
             if self._tokens.pop(watch_id, None) is not None:
+                changed = True
+            if self._watch_meta.pop(watch_id, None) is not None:
                 changed = True
         else:
             by_platform = self._tokens.get(watch_id)

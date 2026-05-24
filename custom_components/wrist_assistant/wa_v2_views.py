@@ -459,6 +459,16 @@ class WADeltaView(HomeAssistantView):
             elif token_result == "updated":
                 log_push_token_registered(self._hass, watch_id=watch_id, is_new=False)
 
+        # The watch reports its per-user notification delivery mode here so
+        # send_notification can route mirror (iPhone) vs direct (watch). Stored
+        # per watch_id; unknown/absent values leave the default ("mirror").
+        if notification_store is not None:
+            delivery_mode = payload.get("delivery_mode")
+            if isinstance(delivery_mode, str) and delivery_mode in ("mirror", "direct"):
+                notification_store.set_watch_metadata(
+                    watch_id, "delivery_mode", delivery_mode
+                )
+
         coordinator = domain_data.coordinator
         status, body_dict = await coordinator.handle_poll(
             watch_id=watch_id,

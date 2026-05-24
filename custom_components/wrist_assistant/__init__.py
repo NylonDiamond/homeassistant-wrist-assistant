@@ -103,20 +103,30 @@ _SEND_NOTIFICATION_SCHEMA = vol.Schema(
 )
 
 
-def _choose_token(entries: dict[str, TokenEntry]) -> TokenEntry | None:
-    """Pick which token to push to for a watch.
+def _choose_token(
+    entries: dict[str, TokenEntry], delivery_mode: str = "mirror"
+) -> TokenEntry | None:
+    """Pick which token to push to for a watch, honoring the per-watch mode.
 
-    Prefer the companion iPhone token: iOS mirrors the alert to the wrist in
-    ~1s with our full UI + haptic, avoiding the ~15s watch-direct coordination
-    tax that applies whenever the phone is present. Fall back to the
-    watch-direct token only when no iPhone token is registered.
+    ``mirror`` (default): prefer the companion iPhone token — iOS mirrors the
+    alert to the wrist in ~1s with our full UI + haptic, avoiding the ~15s
+    watch-direct coordination tax when the phone is present. The cost is that
+    an away-from-phone watch gets nothing (no phone to mirror from).
 
-    NOTE: there is no phone-presence gate — when an iPhone token exists we
-    always mirror. If the phone is genuinely absent the alert waits for the
-    phone rather than going watch-direct. (A reachability signal previously
-    gated this but `WCSession.isReachable` proved unreliable with the phone
-    locked / watch app backgrounded, so it was removed.)
+    ``direct``: prefer the watch's own token — reliable even when the phone is
+    absent (~1s), at the cost of the ~15s coordination delay whenever the phone
+    *is* present. The opt-in choice for users who are often away from their
+    phone. See the per-user "Delivery" setting in the app.
+
+    Either way we fall back to the other platform's token if the preferred one
+    isn't registered, so a watch-only or iPhone-only registration still works.
     """
+    if delivery_mode == "direct":
+        return (
+            entries.get("watchos")
+            or entries.get("ios")
+            or next(iter(entries.values()), None)
+        )
     return (
         entries.get("ios")
         or entries.get("watchos")
@@ -328,19 +338,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
             if not targets:
                 raise HomeAssistantError("No watches have registered for push notifications")
 
-        # Send to each target, routing by phone-reachability. When the watch
-        # reports its phone reachable and we hold the companion iPhone token,
-        # push to that (iOS mirrors it to the wrist in ~1s with our full UI +
-        # haptic). Otherwise push to the watch-direct token (also ~1s when the
-        # phone is genuinely absent). Never both — that double-buzzes.
+        # Send to each target, routing per the watch's "delivery_mode" setting.
+        # "mirror" (default): push to the companion iPhone token (iOS mirrors to
+        # the wrist in ~1s; nothing when the phone is away). "direct": push to
+        # the watch token (reliable when away; ~15s when the phone is present).
+        # Never both — that double-buzzes.
         sent = 0
         failure_map: dict[str, str] = {}
         for watch_id, entries in targets.items():
-            tok_entry = _choose_token(entries)
+            delivery_mode = store.get_watch_metadata(
+                watch_id, "delivery_mode", "mirror"
+            )
+            tok_entry = _choose_token(entries, delivery_mode)
             _LOGGER.debug(
-                "send_notification routing watch_id=%s platforms=%s -> chosen=%s",
+                "send_notification routing watch_id=%s platforms=%s mode=%s -> chosen=%s",
                 watch_id,
                 sorted(entries.keys()),
+                delivery_mode,
                 tok_entry.platform if tok_entry else None,
             )
             if tok_entry is None:
