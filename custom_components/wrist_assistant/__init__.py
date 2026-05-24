@@ -103,28 +103,25 @@ _SEND_NOTIFICATION_SCHEMA = vol.Schema(
 )
 
 
-def _choose_token(
-    store: NotificationTokenStore,
-    watch_id: str,
-    entries: dict[str, TokenEntry],
-) -> TokenEntry | None:
-    """Pick which token to push to for a watch, by phone-reachability.
+def _choose_token(entries: dict[str, TokenEntry]) -> TokenEntry | None:
+    """Pick which token to push to for a watch.
 
-    - Phone reachable + companion iPhone token present → the iOS token, so iOS
-      mirrors the alert to the wrist in ~1s (avoids the ~15s watch-direct tax).
-    - Otherwise → the watch-direct token (also ~1s when the phone is absent).
-    - Unknown reachability (no poll yet, fresh restart) is treated as "absent",
-      biasing toward the always-deliverable watch-direct token.
+    Prefer the companion iPhone token: iOS mirrors the alert to the wrist in
+    ~1s with our full UI + haptic, avoiding the ~15s watch-direct coordination
+    tax that applies whenever the phone is present. Fall back to the
+    watch-direct token only when no iPhone token is registered.
 
-    Falls back to whatever single token exists if the preferred one is missing.
+    NOTE: there is no phone-presence gate — when an iPhone token exists we
+    always mirror. If the phone is genuinely absent the alert waits for the
+    phone rather than going watch-direct. (A reachability signal previously
+    gated this but `WCSession.isReachable` proved unreliable with the phone
+    locked / watch app backgrounded, so it was removed.)
     """
-    ios = entries.get("ios")
-    watchos = entries.get("watchos")
-    if store.get_presence(watch_id) and ios is not None:
-        return ios
-    if watchos is not None:
-        return watchos
-    return ios or next(iter(entries.values()), None)
+    return (
+        entries.get("ios")
+        or entries.get("watchos")
+        or next(iter(entries.values()), None)
+    )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntry) -> bool:
@@ -334,11 +331,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         sent = 0
         failure_map: dict[str, str] = {}
         for watch_id, entries in targets.items():
-            tok_entry = _choose_token(store, watch_id, entries)
+            tok_entry = _choose_token(entries)
             _LOGGER.info(
-                "send_notification routing watch_id=%s presence=%s platforms=%s -> chosen=%s",
+                "send_notification routing watch_id=%s platforms=%s -> chosen=%s",
                 watch_id,
-                store.get_presence(watch_id),
                 sorted(entries.keys()),
                 tok_entry.platform if tok_entry else None,
             )

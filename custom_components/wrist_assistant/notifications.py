@@ -51,11 +51,6 @@ class NotificationTokenStore:
     def __init__(self, hass: HomeAssistant) -> None:
         # watch_id -> platform -> TokenEntry
         self._tokens: dict[str, dict[str, TokenEntry]] = {}
-        # watch_id -> last-reported phone-reachability. In-memory only and
-        # absent until the watch's first delta poll reports it; missing/None is
-        # treated as "phone absent" by routing (bias toward delivery via the
-        # always-works watch-direct token).
-        self._presence: dict[str, bool] = {}
         self._store: Store = Store(
             hass,
             NOTIFICATION_TOKEN_STORAGE_VERSION,
@@ -222,14 +217,6 @@ class NotificationTokenStore:
         """Return every watch_id's full platform map. Used by routing."""
         return {wid: dict(by) for wid, by in self._tokens.items()}
 
-    def set_presence(self, watch_id: str, reachable: bool) -> None:
-        """Record whether the watch currently reports its phone reachable."""
-        self._presence[watch_id] = bool(reachable)
-
-    def get_presence(self, watch_id: str) -> bool | None:
-        """Last-reported phone reachability for a watch (None = unknown)."""
-        return self._presence.get(watch_id)
-
     def remove(self, watch_id: str, platform: str | None = None) -> None:
         """Remove a watch's token(s).
 
@@ -241,14 +228,12 @@ class NotificationTokenStore:
         if platform is None:
             if self._tokens.pop(watch_id, None) is not None:
                 changed = True
-            self._presence.pop(watch_id, None)
         else:
             by_platform = self._tokens.get(watch_id)
             if by_platform and by_platform.pop(platform, None) is not None:
                 changed = True
                 if not by_platform:
                     self._tokens.pop(watch_id, None)
-                    self._presence.pop(watch_id, None)
         if changed:
             self._store.async_delay_save(self._serialize, 5)
             self._notify_listeners()
