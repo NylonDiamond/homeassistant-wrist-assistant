@@ -199,6 +199,13 @@ class ConnectedWatchesSensor(_WristAssistantSensorBase):
     _attr_icon = "mdi:watch"
     _attr_native_unit_of_measurement = "watches"
     _attr_state_class = SensorStateClass.MEASUREMENT
+    # Disabled by default: a "session" only exists while a watch is actively
+    # long-polling (app foreground), pruned after SESSION_TTL (5 min). For the
+    # typical single-watch user this reads 0 almost always and looks broken.
+    # Per-watch last-activity sensors are the honest connectivity signal; this
+    # aggregate is kept only for multi-watch debugging. Note: this default only
+    # applies to newly-registered entities — existing users keep it enabled.
+    _attr_entity_registry_enabled_default = False
 
     def __init__(self, coordinator: DeltaCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
