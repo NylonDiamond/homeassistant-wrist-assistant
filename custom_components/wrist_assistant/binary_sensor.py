@@ -12,7 +12,6 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .api import DeltaCoordinator
 from .const import DOMAIN, WristAssistantConfigEntry
 from .notifications import NotificationTokenStore
 from .widget_secret_store import (
@@ -29,7 +28,6 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Wrist Assistant binary sensors."""
-    coordinator: DeltaCoordinator = entry.runtime_data.coordinator
     secret_store: WidgetSecretStore = entry.runtime_data.widget_secret_store
     notification_store: NotificationTokenStore = entry.runtime_data.notification_store
 
@@ -38,31 +36,13 @@ async def async_setup_entry(
         # rationale (HA's overview only shows top-level devices).
         return (DOMAIN, entry.entry_id)
 
-    known_watches: set[str] = set()
-
-    @callback
-    def _check_new_watches() -> None:
-        ent_reg = er.async_get(hass)
-        new_entities: list[BinarySensorEntity] = []
-        for watch_id in coordinator.real_sessions:
-            if watch_id in known_watches:
-                sentinel = f"wrist_assistant_{watch_id}_sync_status"
-                if ent_reg.async_get_entity_id("binary_sensor", DOMAIN, sentinel) is not None:
-                    continue
-                known_watches.discard(watch_id)
-            known_watches.add(watch_id)
-            new_entities.append(
-                WatchSyncStatusSensor(
-                    coordinator, entry, watch_id, _watch_via_device(watch_id), hass=hass
-                )
-            )
-        if new_entities:
-            async_add_entities(new_entities)
-
-    _check_new_watches()
-    entry.async_on_unload(
-        coordinator.async_add_session_listener(_check_new_watches)
-    )
+    # Removed: the per-watch "Sync status" sensor. It conflated "entity list
+    # synced" with connectivity (CONNECTIVITY device class → Connected/
+    # Disconnected) and lingered "Connected" for the 5-min session TTL after the
+    # watch app closed. The Last activity (timestamp) and Subscribed entities
+    # sensors now cover the same ground more accurately. Sweep the stale registry
+    # entries so they don't linger as unavailable for users on upgrade.
+    _remove_stale_entities(hass, entry, suffix="_sync_status")
 
     # Push-token presence, one sensor per device. Lives in the secret store
     # loop because the device entity is created the moment its secret registers
@@ -120,63 +100,20 @@ async def async_setup_entry(
     entry.async_on_unload(secret_store.async_add_listener(_check_new_pushes))
 
 
-class WatchSyncStatusSensor(BinarySensorEntity):
-    """Binary sensor showing whether a watch has synced its entity list."""
+@callback
+def _remove_stale_entities(
+    hass: HomeAssistant, entry: ConfigEntry, *, suffix: str
+) -> None:
+    """Remove entity-registry entries whose unique_id ends with `suffix`.
 
-    _attr_has_entity_name = True
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_name = "Sync status"
-    _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
-    _attr_icon = "mdi:sync"
-
-    def __init__(
-        self,
-        coordinator: DeltaCoordinator,
-        entry: ConfigEntry,
-        watch_id: str,
-        via_device: tuple[str, str],
-        *,
-        hass: HomeAssistant | None = None,
-    ) -> None:
-        self._coordinator = coordinator
-        self._watch_id = watch_id
-        self._attr_unique_id = f"wrist_assistant_{watch_id}_sync_status"
-        self._attr_device_info = build_device_info(
-            entry.runtime_data.widget_secret_store,
-            watch_id,
-            kind=DEVICE_KIND_WATCH,
-            via_device=via_device,
-            hass=hass,
-        )
-
-    async def async_added_to_hass(self) -> None:
-        self.async_on_remove(
-            self._coordinator.async_add_session_listener(
-                self._handle_update
-            )
-        )
-
-    @callback
-    def _handle_update(self) -> None:
-        self.async_write_ha_state()
-
-    @property
-    def available(self) -> bool:
-        return True
-
-    @property
-    def is_on(self) -> bool:
-        session = self._coordinator._sessions.get(self._watch_id)
-        if session is None:
-            return False
-        return session.entities_synced
-
-    @property
-    def extra_state_attributes(self) -> dict:
-        session = self._coordinator._sessions.get(self._watch_id)
-        if session is None:
-            return {"config_hash": None}
-        return {"config_hash": session.config_hash}
+    For entities the integration no longer creates: without this they linger as
+    unavailable ("no longer provided by the integration") on upgrade until the
+    user deletes them by hand. Idempotent — a no-op once the entries are gone.
+    """
+    ent_reg = er.async_get(hass)
+    for reg_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+        if reg_entry.unique_id.endswith(suffix):
+            ent_reg.async_remove(reg_entry.entity_id)
 
 
 class WatchPushTokenRegisteredSensor(BinarySensorEntity):

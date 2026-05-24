@@ -419,7 +419,10 @@ class WatchLastActivitySensor(RestoreSensor):
         self._coordinator = coordinator
         self._secret_store = secret_store
         self._watch_id = watch_id
-        self._restored: datetime | None = None
+        # Running last-known value. Seeded from restore at startup, refreshed on
+        # every live poll, and held when the session prunes (5-min TTL) so the
+        # row doesn't collapse to "Unknown" the moment the watch goes idle.
+        self._last_value: datetime | None = None
         self._attr_unique_id = f"wrist_assistant_{watch_id}_last_activity"
         self._attr_device_info = build_device_info(
             secret_store, watch_id, kind=DEVICE_KIND_WATCH, via_device=via_device, hass=hass
@@ -429,13 +432,16 @@ class WatchLastActivitySensor(RestoreSensor):
         await super().async_added_to_hass()
         last = await self.async_get_last_sensor_data()
         if last is not None and isinstance(last.native_value, datetime):
-            self._restored = last.native_value
+            self._last_value = last.native_value
         self.async_on_remove(
             self._coordinator.async_add_session_listener(self._handle_update)
         )
 
     @callback
     def _handle_update(self) -> None:
+        session = self._coordinator._sessions.get(self._watch_id)
+        if session is not None:
+            self._last_value = session.last_seen
         self.async_write_ha_state()
 
     @property
@@ -447,7 +453,7 @@ class WatchLastActivitySensor(RestoreSensor):
         session = self._coordinator._sessions.get(self._watch_id)
         if session is not None:
             return session.last_seen
-        return self._restored
+        return self._last_value
 
 
 class WatchSubscribedEntitiesSensor(RestoreSensor):
@@ -478,8 +484,11 @@ class WatchSubscribedEntitiesSensor(RestoreSensor):
         self._coordinator = coordinator
         self._secret_store = secret_store
         self._watch_id = watch_id
-        self._restored_count: int = 0
-        self._restored_entities: dict[str, str] = {}
+        # Running last-known subscription set. Seeded from restore, refreshed on
+        # every live poll, held when the session prunes so the row doesn't drop
+        # to "0 entities" the moment the watch goes idle.
+        self._last_count: int = 0
+        self._last_entities: dict[str, str] = {}
         self._attr_unique_id = f"wrist_assistant_{watch_id}_subscribed_entities"
         self._attr_device_info = build_device_info(
             secret_store, watch_id, kind=DEVICE_KIND_WATCH, via_device=via_device, hass=hass
@@ -489,18 +498,22 @@ class WatchSubscribedEntitiesSensor(RestoreSensor):
         await super().async_added_to_hass()
         data = await self.async_get_last_sensor_data()
         if data is not None and isinstance(data.native_value, (int, float)):
-            self._restored_count = int(data.native_value)
+            self._last_count = int(data.native_value)
         # The entity list lives in attributes, which RestoreSensor doesn't carry
         # — pull it from the last full state.
         state = await self.async_get_last_state()
         if state is not None and isinstance(state.attributes.get("entities"), dict):
-            self._restored_entities = state.attributes["entities"]
+            self._last_entities = state.attributes["entities"]
         self.async_on_remove(
             self._coordinator.async_add_session_listener(self._handle_update)
         )
 
     @callback
     def _handle_update(self) -> None:
+        live = self._live_entities()
+        if live is not None:
+            self._last_entities = live
+            self._last_count = len(live)
         self.async_write_ha_state()
 
     @property
@@ -520,12 +533,12 @@ class WatchSubscribedEntitiesSensor(RestoreSensor):
     @property
     def native_value(self) -> int:
         live = self._live_entities()
-        return len(live) if live is not None else self._restored_count
+        return len(live) if live is not None else self._last_count
 
     @property
     def extra_state_attributes(self) -> dict:
         live = self._live_entities()
-        return {"entities": live if live is not None else self._restored_entities}
+        return {"entities": live if live is not None else self._last_entities}
 
 
 class WatchPollIntervalSensor(_WatchSensorBase):
@@ -766,10 +779,10 @@ class WatchDeliveryModeSensor(_SecretStoreSensorBase):
     watch metadata (``mirror``/``direct``); defaults to Fast when unset, matching
     the app default."""
 
-    _attr_name = "Notification delivery mode"
+    _attr_name = "Notification mode"
     _attr_icon = "mdi:bell-cog"
     _attr_device_class = SensorDeviceClass.ENUM
-    _attr_options = ["Fast iPhone mirroring", "Slow direct watch"]
+    _attr_options = ["Fast", "Reliable"]
 
     def __init__(
         self,
@@ -800,6 +813,6 @@ class WatchDeliveryModeSensor(_SecretStoreSensorBase):
         mode = self._notification_store.get_watch_metadata(
             self._watch_id, "delivery_mode", "mirror"
         )
-        return "Slow direct watch" if mode == "direct" else "Fast iPhone mirroring"
+        return "Reliable" if mode == "direct" else "Fast"
 
 
