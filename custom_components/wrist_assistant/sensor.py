@@ -51,6 +51,7 @@ async def async_setup_entry(
     global_sensors: list[SensorEntity] = [
         ConnectedWatchesSensor(coordinator, entry),
         WatchCountSensor(coordinator, entry),
+        PhoneCountSensor(coordinator, entry),
         MonitoredEntitiesSensor(coordinator, entry),
         EventsProcessedSensor(coordinator, entry),
         EventBufferUsageSensor(coordinator, entry),
@@ -265,6 +266,54 @@ class WatchCountSensor(_WristAssistantSensorBase):
                 dev_reg, self._entry.entry_id
             )
             if device.model == self._WATCH_MODEL
+        )
+
+
+class PhoneCountSensor(_WristAssistantSensorBase):
+    """Total paired iPhones in this config entry, connected or not.
+
+    Symmetric companion to WatchCountSensor. A single HA instance shared by a
+    household has one iPhone per family member (each provisioning its own
+    watches via owner_iphone_id), so this is not always 1. Counted from the
+    device registry — the same uniform source WatchCountSensor uses — keyed on
+    the model field that build_device_info stamps on each device."""
+
+    _attr_name = "Phone count"
+    _attr_icon = "mdi:cellphone"
+    _attr_native_unit_of_measurement = "phones"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    # Mirrors WatchCountSensor._WATCH_MODEL: the model field set by
+    # build_device_info is the reliable selector, since iPhones and watches
+    # share the legacy `(DOMAIN, watch_<id>)` identifier prefix.
+    _IPHONE_MODEL = "iPhone"
+
+    def __init__(self, coordinator: DeltaCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"wrist_assistant_{entry.entry_id}_phone_count"
+
+    async def async_added_to_hass(self) -> None:
+        # Same rationale as WatchCountSensor: the registry event covers the
+        # complete set of create/update/remove edges that move this count.
+        self.async_on_remove(
+            self.hass.bus.async_listen(
+                dr.EVENT_DEVICE_REGISTRY_UPDATED, self._handle_registry_event
+            )
+        )
+
+    @callback
+    def _handle_registry_event(self, _event) -> None:
+        self.async_write_ha_state()
+
+    @property
+    def native_value(self) -> int:
+        dev_reg = dr.async_get(self.hass)
+        return sum(
+            1
+            for device in dr.async_entries_for_config_entry(
+                dev_reg, self._entry.entry_id
+            )
+            if device.model == self._IPHONE_MODEL
         )
 
 
