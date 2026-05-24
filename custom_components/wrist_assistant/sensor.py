@@ -198,7 +198,8 @@ class ConnectedWatchesSensor(_WristAssistantSensorBase):
 
     _attr_name = "Connected watches"
     _attr_icon = "mdi:watch"
-    _attr_native_unit_of_measurement = "watches"
+    # No unit: the label already says "watches", so a "N watches" value reads
+    # redundantly (and "1 watches" is ungrammatical). Show the bare count.
     _attr_state_class = SensorStateClass.MEASUREMENT
     # Disabled by default: a "session" only exists while a watch is actively
     # long-polling (app foreground), pruned after SESSION_TTL (5 min). For the
@@ -232,7 +233,8 @@ class WatchCountSensor(_WristAssistantSensorBase):
 
     _attr_name = "Watch count"
     _attr_icon = "mdi:watch-variant"
-    _attr_native_unit_of_measurement = "watches"
+    # No unit — see ConnectedWatchesSensor. Bare count reads better than
+    # "1 watches".
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     # Distinguishes watch devices from iPhones in this config entry. Both kinds
@@ -281,7 +283,8 @@ class PhoneCountSensor(_WristAssistantSensorBase):
 
     _attr_name = "Phone count"
     _attr_icon = "mdi:cellphone"
-    _attr_native_unit_of_measurement = "phones"
+    # No unit — see ConnectedWatchesSensor. Bare count reads better than
+    # "1 phones".
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     # Mirrors WatchCountSensor._WATCH_MODEL: the model field set by
@@ -332,7 +335,7 @@ class MonitoredEntitiesSensor(_WristAssistantSensorBase, RestoreSensor):
 
     _attr_name = "Monitored entities"
     _attr_icon = "mdi:eye"
-    _attr_native_unit_of_measurement = "entities"
+    # No unit — see ConnectedWatchesSensor. The label already names "entities".
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(self, coordinator: DeltaCoordinator, entry: ConfigEntry) -> None:
@@ -583,7 +586,7 @@ class WatchSubscribedEntitiesSensor(RestoreSensor):
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_name = "Subscribed entities"
     _attr_icon = "mdi:format-list-bulleted"
-    _attr_native_unit_of_measurement = "entities"
+    # No unit — see ConnectedWatchesSensor. The label already names "entities".
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(
