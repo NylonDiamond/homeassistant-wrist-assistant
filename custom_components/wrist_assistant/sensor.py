@@ -17,6 +17,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import DeltaCoordinator, MAX_EVENTS_BUFFER
 from .const import DOMAIN, WristAssistantConfigEntry
+from .notifications import NotificationTokenStore
 from .widget_secret_store import (
     DEVICE_KIND_IPHONE,
     DEVICE_KIND_WATCH,
@@ -34,6 +35,7 @@ async def async_setup_entry(
     """Set up Wrist Assistant sensors."""
     coordinator: DeltaCoordinator = entry.runtime_data.coordinator
     secret_store: WidgetSecretStore = entry.runtime_data.widget_secret_store
+    notification_store: NotificationTokenStore = entry.runtime_data.notification_store
 
     def _watch_via_device(watch_id: str) -> tuple[str, str]:
         # Watches root directly under the service device so they appear
@@ -127,6 +129,9 @@ async def async_setup_entry(
                 new_entities.extend([
                     WatchAppVersionSensor(secret_store, entry, watch_id, watch_via, hass=hass),
                     WatchLastProvisionSensor(secret_store, entry, watch_id, watch_via, hass=hass),
+                    WatchDeliveryModeSensor(
+                        secret_store, notification_store, entry, watch_id, watch_via, hass=hass
+                    ),
                 ])
         # Drop tracking for entries that vanished (user unpaired).
         for stale in list(known_secrets):
@@ -694,5 +699,52 @@ class WatchLastProvisionSensor(_SecretStoreSensorBase):
     def native_value(self):
         secret = self._secret_store.get(self._watch_id)
         return secret.last_provision if secret is not None else None
+
+
+class WatchDeliveryModeSensor(_SecretStoreSensorBase):
+    """Which notification delivery mode this watch is set to.
+
+    "Fast" routes pushes through the companion iPhone, which mirrors the alert
+    to the wrist in ~1s; "Reliable" pushes the watch directly — it works without
+    the iPhone nearby but is ~15s slower when the iPhone *is* present. Mirrors
+    the per-user Delivery setting in the app, stored as the ``delivery_mode``
+    watch metadata (``mirror``/``direct``); defaults to Fast when unset, matching
+    the app default."""
+
+    _attr_name = "Notification delivery mode"
+    _attr_icon = "mdi:bell-cog"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["Fast iPhone mirroring", "Slow direct watch"]
+
+    def __init__(
+        self,
+        secret_store: WidgetSecretStore,
+        notification_store: NotificationTokenStore,
+        entry: ConfigEntry,
+        watch_id: str,
+        via_device: tuple[str, str],
+        *,
+        hass: HomeAssistant | None = None,
+    ) -> None:
+        super().__init__(
+            secret_store, entry, watch_id, via_device, kind=DEVICE_KIND_WATCH, hass=hass
+        )
+        self._notification_store = notification_store
+        self._attr_unique_id = f"wrist_assistant_{watch_id}_delivery_mode"
+
+    async def async_added_to_hass(self) -> None:
+        # Keep the secret-store subscription (drives availability) and also react
+        # to delivery_mode changes the app pushes via set_watch_metadata.
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            self._notification_store.async_add_listener(self._handle_update)
+        )
+
+    @property
+    def native_value(self) -> str:
+        mode = self._notification_store.get_watch_metadata(
+            self._watch_id, "delivery_mode", "mirror"
+        )
+        return "Slow direct watch" if mode == "direct" else "Fast iPhone mirroring"
 
 

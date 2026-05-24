@@ -87,13 +87,24 @@ async def async_setup_entry(
                     continue
                 known_watch_pushes.discard(watch_id)
             known_watch_pushes.add(watch_id)
+            via = _watch_via_device(watch_id)
             new_entities.append(
                 WatchPushTokenRegisteredSensor(
                     secret_store,
                     notification_store,
                     entry,
                     watch_id,
-                    _watch_via_device(watch_id),
+                    via,
+                    hass=hass,
+                )
+            )
+            new_entities.append(
+                MirrorPushTokenRegisteredSensor(
+                    secret_store,
+                    notification_store,
+                    entry,
+                    watch_id,
+                    via,
                     hass=hass,
                 )
             )
@@ -167,12 +178,15 @@ class WatchSyncStatusSensor(BinarySensorEntity):
 
 
 class WatchPushTokenRegisteredSensor(BinarySensorEntity):
-    """Whether the paired watch has registered an APNs token with HA.
+    """Whether the paired watch has registered its own APNs token with HA.
 
-    "On" doesn't prove pushes will actually deliver end-to-end — that depends
-    on APNs reachability and the certificate — but it confirms the watch has
-    been through at least one /v2/action notifications_register call, which is
-    the first thing that has to work for HA-originated notifications."""
+    Scoped to the ``watchos`` (watch-direct) token specifically — the path used
+    by Reliable delivery. "On" doesn't prove pushes deliver end-to-end (that
+    depends on APNs reachability and the certificate), but it confirms the watch
+    has been through at least one /v2/action notifications_register call. The
+    companion iPhone's mirror token is reported separately by
+    ``MirrorPushTokenRegisteredSensor``; the ``platforms`` attribute lists
+    everything registered for this watch entry."""
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -220,4 +234,78 @@ class WatchPushTokenRegisteredSensor(BinarySensorEntity):
 
     @property
     def is_on(self) -> bool:
-        return self._notification_store.get_entry(self._watch_id) is not None
+        return (
+            self._notification_store.get_entry(self._watch_id, platform="watchos")
+            is not None
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            "platforms": sorted(self._notification_store.get_entries(self._watch_id)),
+            "delivery_mode": self._notification_store.get_watch_metadata(
+                self._watch_id, "delivery_mode", "mirror"
+            ),
+        }
+
+
+class MirrorPushTokenRegisteredSensor(BinarySensorEntity):
+    """Whether HA holds the companion iPhone's APNs token for this watch.
+
+    This is the gate for **Fast** delivery: HA pushes to the iPhone, which
+    mirrors the alert to the wrist in ~1s. With this off, Fast silently falls
+    back to the ~15s watch-direct path, so a user who picked Fast but sees this
+    off is not actually getting fast notifications. Registered by the iPhone app
+    via `op=notifications_register` with `platform=ios` + `companion_watch_id`,
+    so the token co-locates on this watch's entry."""
+
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_name = "iPhone push token registered"
+    _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
+    _attr_icon = "mdi:iphone"
+
+    def __init__(
+        self,
+        secret_store: WidgetSecretStore,
+        notification_store: NotificationTokenStore,
+        entry: ConfigEntry,
+        watch_id: str,
+        via_device: tuple[str, str],
+        *,
+        hass: HomeAssistant | None = None,
+    ) -> None:
+        self._secret_store = secret_store
+        self._notification_store = notification_store
+        self._watch_id = watch_id
+        self._attr_unique_id = f"wrist_assistant_{watch_id}_mirror_push_registered"
+        self._attr_device_info = build_device_info(
+            secret_store,
+            watch_id,
+            kind=DEVICE_KIND_WATCH,
+            via_device=via_device,
+            hass=hass,
+        )
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(
+            self._secret_store.async_add_listener(self._handle_update)
+        )
+        self.async_on_remove(
+            self._notification_store.async_add_listener(self._handle_update)
+        )
+
+    @callback
+    def _handle_update(self) -> None:
+        self.async_write_ha_state()
+
+    @property
+    def available(self) -> bool:
+        return self._secret_store.get(self._watch_id) is not None
+
+    @property
+    def is_on(self) -> bool:
+        return (
+            self._notification_store.get_entry(self._watch_id, platform="ios")
+            is not None
+        )

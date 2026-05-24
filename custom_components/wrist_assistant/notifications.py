@@ -222,6 +222,9 @@ class NotificationTokenStore:
             return
         meta[key] = value
         self._store.async_delay_save(self._serialize, 5)
+        # Notify so diagnostic entities (e.g. the Delivery mode sensor) reflect
+        # a mode change as soon as the app pushes it, not on the next restart.
+        self._notify_listeners()
 
     @property
     def all_tokens(self) -> dict[str, TokenEntry]:
