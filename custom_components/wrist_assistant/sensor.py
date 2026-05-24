@@ -317,8 +317,17 @@ class PhoneCountSensor(_WristAssistantSensorBase):
         )
 
 
-class MonitoredEntitiesSensor(_WristAssistantSensorBase):
-    """Total entity subscriptions across all watches."""
+class MonitoredEntitiesSensor(_WristAssistantSensorBase, RestoreSensor):
+    """Total entity subscriptions across all watches — persists across idle/restart.
+
+    Sums the last-known subscription count per watch rather than reading
+    `real_sessions` directly. A session only exists while a watch is actively
+    long-polling and is pruned after SESSION_TTL (5 min), so the old live-only
+    read collapsed to 0 whenever every watch went idle or HA restarted — even
+    though the subscriptions are still in force. This mirrors the per-watch
+    'Subscribed entities' sensor: live polls refresh each watch's count, idle
+    watches hold their last-known value, and the breakdown is restored at
+    startup. Removed watches are pruned on device-registry events."""
 
     _attr_name = "Monitored entities"
     _attr_icon = "mdi:eye"
@@ -328,24 +337,73 @@ class MonitoredEntitiesSensor(_WristAssistantSensorBase):
     def __init__(self, coordinator: DeltaCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
         self._attr_unique_id = f"wrist_assistant_{entry.entry_id}_monitored_entities"
+        # watch_id -> last-known subscribed entity count. Seeded from restore,
+        # refreshed per live poll, held for idle watches, pruned on removal.
+        self._counts: dict[str, int] = {}
+
+    async def async_added_to_hass(self) -> None:
+        # Drive RestoreEntity setup directly rather than via the base class so
+        # async_get_last_state() is available below.
+        await RestoreSensor.async_added_to_hass(self)
+        state = await self.async_get_last_state()
+        if state is not None:
+            # The per-watch breakdown is restored from attributes (keyed by
+            # watch_id, which is stable across renames). RestoreSensor's typed
+            # native value would only give us the scalar total.
+            stored = state.attributes.get("per_watch_counts")
+            if isinstance(stored, dict):
+                self._counts = {
+                    str(wid): int(count)
+                    for wid, count in stored.items()
+                    if isinstance(count, (int, float))
+                }
+        # Live polls move the count.
+        self.async_on_remove(
+            self._coordinator.async_add_session_listener(self._handle_update)
+        )
+        # Device removal should drop that watch's contribution.
+        self.async_on_remove(
+            self.hass.bus.async_listen(
+                dr.EVENT_DEVICE_REGISTRY_UPDATED, self._handle_registry_event
+            )
+        )
+
+    @callback
+    def _handle_update(self) -> None:
+        for wid, session in self._coordinator.real_sessions.items():
+            self._counts[wid] = len(session.entities)
+        self.async_write_ha_state()
+
+    @callback
+    def _handle_registry_event(self, _event) -> None:
+        dev_reg = dr.async_get(self.hass)
+        kept = {
+            wid: count
+            for wid, count in self._counts.items()
+            if dev_reg.async_get_device(identifiers={(DOMAIN, f"watch_{wid}")})
+            is not None
+        }
+        if len(kept) != len(self._counts):
+            self._counts = kept
+            self.async_write_ha_state()
 
     @property
     def native_value(self) -> int:
-        return sum(
-            len(s.entities) for s in self._coordinator.real_sessions.values()
-        )
+        return sum(self._counts.values())
 
     @property
     def extra_state_attributes(self) -> dict:
         dev_reg = dr.async_get(self.hass)
         per_watch: dict[str, int] = {}
-        for wid, session in self._coordinator.real_sessions.items():
+        for wid, count in self._counts.items():
             device = dev_reg.async_get_device(
                 identifiers={(DOMAIN, f"watch_{wid}")}
             )
             name = device.name if device else f"Watch {wid[:8]}"
-            per_watch[name] = len(session.entities)
-        return {"per_watch": per_watch}
+            per_watch[name] = count
+        # `per_watch_counts` (keyed by watch_id) is the restore source; per_watch
+        # is the human-readable view.
+        return {"per_watch": per_watch, "per_watch_counts": dict(self._counts)}
 
 
 class EventsProcessedSensor(_WristAssistantSensorBase):
