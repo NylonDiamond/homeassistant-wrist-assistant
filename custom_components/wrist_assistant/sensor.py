@@ -204,8 +204,9 @@ class ConnectedWatchesSensor(_WristAssistantSensorBase):
     # long-polling (app foreground), pruned after SESSION_TTL (5 min). For the
     # typical single-watch user this reads 0 almost always and looks broken.
     # Per-watch last-activity sensors are the honest connectivity signal; this
-    # aggregate is kept only for multi-watch debugging. Note: this default only
-    # applies to newly-registered entities — existing users keep it enabled.
+    # aggregate is kept only for multi-watch debugging. This default covers
+    # fresh installs; existing users are flipped off once by the
+    # _disable_connected_watches_once migration in __init__.py.
     _attr_entity_registry_enabled_default = False
 
     def __init__(self, coordinator: DeltaCoordinator, entry: ConfigEntry) -> None:

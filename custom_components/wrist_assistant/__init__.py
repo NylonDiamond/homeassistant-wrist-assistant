@@ -19,6 +19,7 @@ from homeassistant.core import (
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
 
@@ -152,6 +153,46 @@ def _choose_token(
     )
 
 
+# entry.data flag marking that the one-time "Connected watches" disable has
+# run for this entry. See _disable_connected_watches_once.
+_CONNECTED_WATCHES_DISABLED_FLAG = "connected_watches_default_disabled"
+
+
+async def _disable_connected_watches_once(
+    hass: HomeAssistant, entry: WristAssistantConfigEntry
+) -> None:
+    """One-time: disable the 'Connected watches' sensor for existing entries.
+
+    `_attr_entity_registry_enabled_default = False` only takes effect when an
+    entity is first registered, so users who installed before that default was
+    set keep the entity enabled on upgrade. This flips it off once for them.
+
+    Guarded by a flag in entry.data so it runs a single time: a user who
+    deliberately re-enables the sensor afterward won't have it disabled again
+    on the next restart. We only touch entities that are currently enabled
+    (disabled_by is None), so a user who already hid it by hand is untouched
+    either way."""
+    if entry.data.get(_CONNECTED_WATCHES_DISABLED_FLAG):
+        return
+
+    ent_reg = er.async_get(hass)
+    unique_id = f"wrist_assistant_{entry.entry_id}_active_watches"
+    entity_id = ent_reg.async_get_entity_id("sensor", DOMAIN, unique_id)
+    if entity_id is not None:
+        reg_entry = ent_reg.async_get(entity_id)
+        if reg_entry is not None and reg_entry.disabled_by is None:
+            ent_reg.async_update_entity(
+                entity_id, disabled_by=er.RegistryEntryDisabler.INTEGRATION
+            )
+            _LOGGER.debug("Disabled legacy-enabled 'Connected watches' sensor")
+
+    # Mark done regardless of whether the entity existed — a fresh install
+    # already gets it disabled by default, so we never need to run again.
+    hass.config_entries.async_update_entry(
+        entry, data={**entry.data, _CONNECTED_WATCHES_DISABLED_FLAG: True}
+    )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntry) -> bool:
     """Set up Wrist Assistant from a config entry."""
     coordinator = DeltaCoordinator(hass)
@@ -253,6 +294,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    await _disable_connected_watches_once(hass, entry)
 
     await _install_bundled_blueprints(hass)
 
