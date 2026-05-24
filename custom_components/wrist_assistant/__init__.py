@@ -103,6 +103,24 @@ _SEND_NOTIFICATION_SCHEMA = vol.Schema(
 )
 
 
+def _strip_none(value):
+    """Recursively drop None values from the custom push payload.
+
+    A JSON ``null`` anywhere in the notification's custom data breaks the
+    iPhone→watch mirror path — iOS can't represent null when forwarding the
+    notification's userInfo to the wrist, so it drops the entire custom blob
+    (including ``actions``) and the watch renders no buttons. Direct-to-watch
+    delivery tolerates null, so the symptom only showed in Fast/mirror mode.
+    Stripping null here is the belt-and-suspenders guard regardless of source
+    (enriched attributes, or user-supplied ``data``).
+    """
+    if isinstance(value, dict):
+        return {k: _strip_none(v) for k, v in value.items() if v is not None}
+    if isinstance(value, list):
+        return [_strip_none(v) for v in value if v is not None]
+    return value
+
+
 def _choose_token(
     entries: dict[str, TokenEntry], delivery_mode: str = "mirror"
 ) -> TokenEntry | None:
@@ -274,8 +292,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
                     domain = entity_id.split(".")[0]
                     attrs: dict = {}
                     for key in _DOMAIN_ATTRS.get(domain, []):
-                        if key in state_obj.attributes:
-                            attrs[key] = state_obj.attributes[key]
+                        # HA keeps attribute keys present-but-None when a light
+                        # is off (brightness=None, etc.). A JSON null in the
+                        # custom payload breaks the iPhone→watch notification
+                        # mirror path: iOS can't represent null when forwarding
+                        # the notification's userInfo to the wrist, so it drops
+                        # the whole `actions` blob and the watch shows no
+                        # buttons. (Direct-to-watch delivery tolerates it, which
+                        # is why only Fast/mirror mode lost buttons when off.)
+                        # Only copy real values.
+                        val = state_obj.attributes.get(key)
+                        if val is not None:
+                            attrs[key] = val
                     if attrs:
                         a.setdefault("attributes", attrs)
             enriched.append(a)
@@ -324,6 +352,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         # alerts. Setting it explicitly here keeps the policy in HACS rather than
         # depending on the relay's default.
         extra_data.setdefault("priority", "active")
+        # Strip any None values so a JSON null can't break the mirror path
+        # (see _strip_none). Covers enriched attributes + user-supplied data.
+        extra_data = _strip_none(extra_data)
         sound = call.data.get("sound")
         push_type = call.data.get("push_type", "alert")
 
