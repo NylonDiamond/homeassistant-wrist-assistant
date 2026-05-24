@@ -459,6 +459,13 @@ class WADeltaView(HomeAssistantView):
             elif token_result == "updated":
                 log_push_token_registered(self._hass, watch_id=watch_id, is_new=False)
 
+        # Phone-reachability piggybacks on long-poll too. It drives mirror-vs-
+        # watch-direct routing in send_notification: reachable → push the iPhone
+        # token (iOS mirrors to the wrist fast); unreachable → watch-direct.
+        phone_reachable = payload.get("phone_reachable")
+        if notification_store is not None and isinstance(phone_reachable, bool):
+            notification_store.set_presence(watch_id, phone_reachable)
+
         coordinator = domain_data.coordinator
         status, body_dict = await coordinator.handle_poll(
             watch_id=watch_id,
@@ -1259,18 +1266,28 @@ async def _op_notifications_register(ctx: _OpContext) -> Response:
         return Response(status=400, text="device_token required")
     if environment not in ("development", "production"):
         environment = "production"
+    platform = platform if isinstance(platform, str) and platform else "watchos"
 
-    # The HMAC-validated watch_id is the source of truth.
+    # By default the HMAC-validated identity is the storage key. The companion
+    # iPhone signs with its own identity but its token must live on the paired
+    # watch's entry (so send_notification, which targets a watch, can mirror via
+    # it). When an authenticated caller declares a companion watch_id for an iOS
+    # token, store it there — all identities here are the user's own devices.
+    target_watch_id = ctx.watch_id
+    companion = ctx.payload.get("companion_watch_id")
+    if platform == "ios" and isinstance(companion, str) and companion:
+        target_watch_id = companion
+
     token_result = store.register(
-        ctx.watch_id,
+        target_watch_id,
         device_token,
-        platform=platform if isinstance(platform, str) else "watchos",
+        platform=platform,
         environment=environment,
     )
     if token_result == "new":
-        log_push_token_registered(ctx.hass, watch_id=ctx.watch_id, is_new=True)
+        log_push_token_registered(ctx.hass, watch_id=target_watch_id, is_new=True)
     elif token_result == "updated":
-        log_push_token_registered(ctx.hass, watch_id=ctx.watch_id, is_new=False)
+        log_push_token_registered(ctx.hass, watch_id=target_watch_id, is_new=False)
     return ctx.signed_json({"ok": True})
 
 

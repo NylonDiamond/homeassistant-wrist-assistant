@@ -36,7 +36,7 @@ from .const import (
     WristAssistantConfigEntry,
     WristAssistantData,
 )
-from .notifications import NotificationTokenStore
+from .notifications import NotificationTokenStore, TokenEntry
 from .v1_api_views import (
     MusicAssistantPlayersView,
     MusicAssistantQueueView,
@@ -101,6 +101,30 @@ _SEND_NOTIFICATION_SCHEMA = vol.Schema(
         ),
     }
 )
+
+
+def _choose_token(
+    store: NotificationTokenStore,
+    watch_id: str,
+    entries: dict[str, TokenEntry],
+) -> TokenEntry | None:
+    """Pick which token to push to for a watch, by phone-reachability.
+
+    - Phone reachable + companion iPhone token present → the iOS token, so iOS
+      mirrors the alert to the wrist in ~1s (avoids the ~15s watch-direct tax).
+    - Otherwise → the watch-direct token (also ~1s when the phone is absent).
+    - Unknown reachability (no poll yet, fresh restart) is treated as "absent",
+      biasing toward the always-deliverable watch-direct token.
+
+    Falls back to whatever single token exists if the preferred one is missing.
+    """
+    ios = entries.get("ios")
+    watchos = entries.get("watchos")
+    if store.get_presence(watch_id) and ios is not None:
+        return ios
+    if watchos is not None:
+        return watchos
+    return ios or next(iter(entries.values()), None)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntry) -> bool:
@@ -291,22 +315,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         sound = call.data.get("sound")
         push_type = call.data.get("push_type", "alert")
 
-        # Resolve targets (need full entries for environment)
+        # Resolve targets to their full per-platform entry maps.
         if target:
-            token_entry = store.get_entry(target)
-            if token_entry is None:
+            entries = store.get_entries(target)
+            if not entries:
                 raise HomeAssistantError(f"No registered push token for watch '{target}'")
-            targets = {target: token_entry}
+            targets = {target: entries}
         else:
-            all_tokens = store.all_tokens
-            if not all_tokens:
+            targets = store.all_entries
+            if not targets:
                 raise HomeAssistantError("No watches have registered for push notifications")
-            targets = all_tokens
 
-        # Send to each target
+        # Send to each target, routing by phone-reachability. When the watch
+        # reports its phone reachable and we hold the companion iPhone token,
+        # push to that (iOS mirrors it to the wrist in ~1s with our full UI +
+        # haptic). Otherwise push to the watch-direct token (also ~1s when the
+        # phone is genuinely absent). Never both — that double-buzzes.
         sent = 0
         failure_map: dict[str, str] = {}
-        for watch_id, tok_entry in targets.items():
+        for watch_id, entries in targets.items():
+            tok_entry = _choose_token(store, watch_id, entries)
+            if tok_entry is None:
+                continue
             success, reason, used_env = await client.send_push(
                 watch_id=watch_id,
                 device_token=tok_entry.device_token,
@@ -317,6 +347,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
                 sound=sound,
                 push_type=push_type,
                 environment=tok_entry.environment,
+                platform=tok_entry.platform,
             )
             if success:
                 sent += 1
@@ -330,11 +361,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
             else:
                 if APNsClient.is_dead_token(reason):
                     _LOGGER.warning(
-                        "Removing dead token for watch_id=%s (reason=%s)",
+                        "Removing dead %s token for watch_id=%s (reason=%s)",
+                        tok_entry.platform,
                         watch_id,
                         reason,
                     )
-                    store.remove(watch_id)
+                    store.remove(watch_id, platform=tok_entry.platform)
                 failure_map[watch_id] = reason or "unknown"
 
         if failure_map and sent == 0:
@@ -434,8 +466,13 @@ async def _create_apns_client(hass: HomeAssistant) -> APNsClient | None:
         return None
 
     try:
+        # TEMP-STAGING-OVERRIDE (fast-notifications-spike): route through the
+        # staging relay during mirror-path validation so prod is untouched
+        # (no secret change, no redeploy, no prod traffic). Staging runs the
+        # same worker code and already has APNS_TOPIC_IOS set. REVERT this line
+        # to "https://push.wrist-assistant.com" before merge.
         return APNsClient(
-            relay_base_url="https://push.wrist-assistant.com",
+            relay_base_url="https://wrist-assistant-push-relay-staging.wrist-assistant.workers.dev",
             notification_store=domain_data.notification_store,
             http_session=async_get_clientsession(hass),
         )
