@@ -433,6 +433,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
             )
             if tok_entry is None:
                 continue
+            # A mirrored (iOS) push with no sound delivers to the wrist silently
+            # AND without a haptic — the user never perceives it (confirmed on
+            # device; the haptic is gated on a sound being present). So when the
+            # chosen token is the companion iPhone, force at least the default
+            # alert sound. A genuinely-silent notification only makes sense on a
+            # watch-direct push (which haptics natively regardless), so leave
+            # that path's sound — possibly an intentional "" / None — untouched.
+            target_sound = sound
+            if tok_entry.platform == "ios" and not target_sound:
+                target_sound = "default"
             success, reason, used_env = await client.send_push(
                 watch_id=watch_id,
                 device_token=tok_entry.device_token,
@@ -440,7 +450,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
                 body=message,
                 category=category,
                 data=extra_data,
-                sound=sound,
+                sound=target_sound,
                 push_type=push_type,
                 environment=tok_entry.environment,
                 platform=tok_entry.platform,

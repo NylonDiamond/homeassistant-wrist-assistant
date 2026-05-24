@@ -189,9 +189,11 @@ blueprint:
             Settings → Notification Style → Notification Sound.
 
 
-            Custom sounds only play in Reliable delivery mode. In Fast
-            mode, watchOS ignores the sound and plays its default alert.
-            Set the mode in the iOS app under
+            Custom sounds — and Silent — only apply in Reliable delivery
+            mode. In Fast mode, watchOS ignores the chosen sound and always
+            plays its default alert (a silent mirrored notification reaches
+            the wrist with no haptic, so it would be missed entirely). Set
+            the mode in the iOS app under
             Settings → Notification Style → Delivery.
           default: "default"
           selector:
