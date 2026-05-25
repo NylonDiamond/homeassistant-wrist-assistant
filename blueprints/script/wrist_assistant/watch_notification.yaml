@@ -164,6 +164,11 @@ blueprint:
         your watch, reinstall it, then tap Allow when it asks.
 
 
+        In **Fast** mode (the default), alerts are mirrored from your
+        iPhone, so the Wrist Assistant iOS app must also have notifications
+        allowed — check iPhone Settings → Notifications → Wrist Assistant.
+
+
         If you see `No registered push token`, open Wrist Assistant on
         the watch and let it sync once. If needed, pull to refresh or
         force-close and reopen the watch app, then try again.
@@ -173,7 +178,9 @@ blueprint:
         your iPhone nearby — when you're away from your phone, your watch
         gets nothing. For alerts that reach your wrist on their own, switch
         to **Reliable** in the iOS app under Settings → Notification Style →
-        Delivery (it's ~15s slower when your phone is present).
+        Delivery. Reliable arrives in about a second when your iPhone isn't
+        connected, but can take up to ~15s when it is — an Apple delivery
+        quirk outside the app's control.
 
 
         **Tip:** Customize how notifications look and behave in the Wrist
