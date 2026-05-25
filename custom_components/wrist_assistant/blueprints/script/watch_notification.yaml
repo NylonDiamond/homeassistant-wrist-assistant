@@ -18,6 +18,9 @@ blueprint:
     media players (transport, volume), alarms (home/night/away/disarm),
     vacuums (start/pause/dock/find)
 
+    - Tap the snapshot to refresh it on iPhone, or load the live camera
+    stream on the watch
+
     Leave button slots empty to skip them. A notification with no
     buttons shows as info-only (title, message, and any snapshot).
 
