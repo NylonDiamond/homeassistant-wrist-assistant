@@ -78,6 +78,13 @@ blueprint:
             is sent, then shown in the expanded notification and on the watch.
             Requires remote Home Assistant access (Nabu Casa or an external
             URL) to load when you're away from home.
+
+
+            **Tip:** If your camera offers a dedicated snapshot entity (e.g.
+            Reolink's "Snapshots" variants — you may need to enable it under
+            Settings → Entities), prefer it over a live-stream entity for a
+            faster, lower-latency grab. The image is downscaled, so the
+            higher-resolution ("Clear") variant is fine.
           default: ""
           selector:
             entity:
