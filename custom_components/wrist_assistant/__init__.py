@@ -26,6 +26,7 @@ from homeassistant.helpers.storage import Store
 
 from .api import DeltaCoordinator
 from .apns_client import APNsClient
+from .camera_devices import resolve_stream_sibling
 from .camera_stream import CameraStreamCoordinator, capture_notification_snapshot
 from .const import (
     DOMAIN,
@@ -40,6 +41,7 @@ from .const import (
 )
 from .notification_snapshot import NotificationSnapshotStore
 from .snapshot_crop_store import SnapshotCropStore
+from .snapshot_stream_store import SnapshotStreamStore
 from .notifications import NotificationTokenStore, TokenEntry
 from .v1_api_views import (
     MusicAssistantPlayersView,
@@ -192,6 +194,22 @@ async def _build_snapshot_url(
     return f"{base}/api/wrist_assistant/notification/snapshot/{token}"
 
 
+def _resolve_stream_entity(
+    hass: HomeAssistant, runtime_data: WristAssistantData, entity_id: object
+) -> str | None:
+    """Live-streamable entity to open when a notification snapshot is tapped.
+
+    Honors the user's explicit per-camera override (set via the iOS app) first,
+    then falls back to auto-resolution by device grouping. None for non-cameras.
+    """
+    if not isinstance(entity_id, str) or not entity_id.startswith("camera."):
+        return None
+    override = runtime_data.snapshot_stream_store.get(entity_id)
+    if override:
+        return override
+    return resolve_stream_sibling(hass, entity_id)
+
+
 # entry.data flag marking that the one-time "Connected watches" disable has
 # run for this entry. See _disable_connected_watches_once.
 _CONNECTED_WATCHES_DISABLED_FLAG = "connected_watches_default_disabled"
@@ -244,6 +262,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     notification_snapshot_store = NotificationSnapshotStore()
     snapshot_crop_store = SnapshotCropStore(hass)
     await snapshot_crop_store.async_load()
+    snapshot_stream_store = SnapshotStreamStore(hass)
+    await snapshot_stream_store.async_load()
 
     # Register server capabilities
     coordinator.register_capability("gzip")
@@ -265,6 +285,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         stream_token_store=stream_token_store,
         notification_snapshot_store=notification_snapshot_store,
         snapshot_crop_store=snapshot_crop_store,
+        snapshot_stream_store=snapshot_stream_store,
     )
     entry.runtime_data = runtime_data
     hass.data[DOMAIN] = runtime_data
@@ -450,6 +471,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
                 # place instead — see WANotificationSnapshotLiveView.)
                 if isinstance(image_source, str) and image_source.startswith("camera."):
                     extra_data.setdefault("camera_entity_id", image_source)
+                    # The snapshot variant can't stream — hand the watch the
+                    # device's live-streamable sibling so the tapped-open view
+                    # plays live instead of freezing on the still.
+                    stream_entity = _resolve_stream_entity(hass, data, image_source)
+                    if stream_entity:
+                        extra_data.setdefault("camera_stream_entity_id", stream_entity)
 
         # The content extension / watch long look only render our custom UI when
         # the push category is WA_ACTIONS — so a snapshot-only doorbell push

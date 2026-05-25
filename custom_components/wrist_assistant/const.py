@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from .notification_snapshot import NotificationSnapshotStore
     from .notifications import NotificationTokenStore
     from .snapshot_crop_store import SnapshotCropStore
+    from .snapshot_stream_store import SnapshotStreamStore
     from .wa_stream_tokens import StreamTokenStore
     from .widget_secret_store import WidgetSecretStore
 
@@ -29,6 +30,7 @@ class WristAssistantData:
     stream_token_store: StreamTokenStore
     notification_snapshot_store: NotificationSnapshotStore
     snapshot_crop_store: SnapshotCropStore
+    snapshot_stream_store: SnapshotStreamStore
     apns_client: APNsClient | None = field(default=None)
 
 
@@ -43,6 +45,10 @@ WIDGET_SECRET_STORAGE_VERSION = 1
 # Per-camera notification snapshot framing (entity_id → normalized crop region).
 SNAPSHOT_CROP_STORAGE_KEY = "wrist_assistant.snapshot_crops"
 SNAPSHOT_CROP_STORAGE_VERSION = 1
+# Per-camera live-stream override (snapshot entity_id → chosen stream entity_id),
+# used when a notification snapshot is tapped open on the watch.
+SNAPSHOT_STREAM_STORAGE_KEY = "wrist_assistant.snapshot_streams"
+SNAPSHOT_STREAM_STORAGE_VERSION = 1
 
 # Wire-format version of the Wrist Assistant HMAC protocol. The watch app sends
 # `X-WA-Version: <int>` on every signed request; the server rejects versions

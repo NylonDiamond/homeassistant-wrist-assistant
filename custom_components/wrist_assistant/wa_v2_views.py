@@ -65,7 +65,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.template import Template, TemplateError
 
 from .audio_upload import CLEANUP_AGE_SECONDS, MAX_UPLOAD_SIZE
-from .camera_devices import build_camera_device_groups
+from .camera_devices import build_camera_device_groups, resolve_stream_sibling
 from .camera_stream import (
     DEFAULT_FPS,
     DEFAULT_QUALITY,
@@ -1023,6 +1023,47 @@ async def _op_snapshot_crops_status(ctx: _OpContext) -> Response:
     store = ctx.domain_data.snapshot_crop_store
     framed = [eid for eid in ids if store.get(eid) is not None]
     return ctx.signed_json({"framed": framed})
+
+
+async def _op_set_stream_entity(ctx: _OpContext) -> Response:
+    """Save (or clear) the live-stream override for a camera's entities.
+
+    Body: {"entity_ids": ["camera.x", ...] | "entity_id": "camera.x",
+           "stream_entity": "camera.y" | null}.
+    A null/empty `stream_entity` clears the override (revert to auto-resolution).
+    Written to every supplied entity_id so whichever variant a notification uses
+    resolves to the same chosen stream.
+    """
+    entity_ids = _camera_ids_from_payload(ctx.payload)
+    if not entity_ids:
+        return Response(status=400, text="entity_id(s) required and must be cameras")
+
+    raw = ctx.payload.get("stream_entity")
+    stream_entity = raw if isinstance(raw, str) and raw.startswith("camera.") else None
+    store = ctx.domain_data.snapshot_stream_store
+    for entity_id in entity_ids:
+        if stream_entity:
+            store.set(entity_id, stream_entity)
+        else:
+            store.delete(entity_id)
+    return ctx.signed_json({"ok": True, "count": len(entity_ids)})
+
+
+async def _op_get_stream_entity(ctx: _OpContext) -> Response:
+    """Return the live-stream entity a camera opens to, plus the auto-detected one.
+
+    Body: {"entity_id": "camera.x"}.
+    Response: {"override": "camera.y"|null, "auto": "camera.z"|null} — `override`
+    is the user's saved choice (null = using auto); `auto` is what the device
+    grouping resolves, so the iOS picker can label "Auto (detected)".
+    """
+    entity_id = ctx.payload.get("entity_id")
+    if not isinstance(entity_id, str) or not entity_id.startswith("camera."):
+        return Response(status=400, text="entity_id required and must be a camera")
+
+    override = ctx.domain_data.snapshot_stream_store.get(entity_id)
+    auto = resolve_stream_sibling(ctx.hass, entity_id)
+    return ctx.signed_json({"override": override, "auto": auto})
 
 
 async def _op_template(ctx: _OpContext) -> Response:
@@ -2115,6 +2156,8 @@ _OP_HANDLERS: dict[str, Any] = {
     "set_snapshot_crop": _op_set_snapshot_crop,
     "get_snapshot_crop": _op_get_snapshot_crop,
     "snapshot_crops_status": _op_snapshot_crops_status,
+    "set_stream_entity": _op_set_stream_entity,
+    "get_stream_entity": _op_get_stream_entity,
     "template": _op_template,
     "services_list": _op_services_list,
     "config_entries_list": _op_config_entries_list,

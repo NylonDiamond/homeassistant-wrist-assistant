@@ -132,6 +132,29 @@ def _classify_entity_role(
     return None, 0
 
 
+def resolve_stream_sibling(hass: HomeAssistant, entity_id: str) -> str | None:
+    """Auto-resolve a camera's live-streamable sibling via device grouping.
+
+    A notification's `image:` is often a snapshot-only variant with no live
+    stream; this finds the same device's stream entity so a tapped-open view on
+    the watch plays live. Prefers the SD stream (lighter for the watch, which
+    can toggle HD in-view), then HD, else the entity itself. None for non-cameras
+    or when grouping fails. The user can override this — see SnapshotStreamStore.
+    """
+    if not isinstance(entity_id, str) or not entity_id.startswith("camera."):
+        return None
+    try:
+        groups = build_camera_device_groups(hass)
+    except Exception:  # noqa: BLE001 — never block a notification on grouping
+        _LOGGER.debug("Camera grouping failed for %s", entity_id, exc_info=True)
+        return None
+    for group in groups:
+        if entity_id in group.get("all_entity_ids", []):
+            roles = group.get("entities", {})
+            return roles.get("sd_stream") or roles.get("hd_stream") or entity_id
+    return None
+
+
 def build_camera_device_groups(hass: HomeAssistant) -> list[dict[str, Any]]:
     """Build grouped camera device list from entity and device registries.
 
