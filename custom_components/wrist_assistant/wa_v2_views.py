@@ -953,6 +953,41 @@ async def _op_snapshot(ctx: _OpContext) -> Response:
     )
 
 
+async def _op_set_snapshot_crop(ctx: _OpContext) -> Response:
+    """Save the user's per-camera notification framing.
+
+    Body: {"entity_id": "camera.x", "viewport": {x, y, w|width, h|height}}.
+    A full-frame viewport clears any saved crop (reset to full frame). The crop
+    is keyed by entity_id and shared across all the user's devices.
+    """
+    entity_id = ctx.payload.get("entity_id")
+    if not isinstance(entity_id, str) or not entity_id.startswith("camera."):
+        return Response(status=400, text="entity_id required and must be a camera")
+
+    viewport = _parse_stream_viewport(ctx.payload.get("viewport"))
+    ctx.domain_data.snapshot_crop_store.set(entity_id, viewport)
+    return ctx.signed_json({"ok": True})
+
+
+async def _op_get_snapshot_crop(ctx: _OpContext) -> Response:
+    """Return the saved framing for a camera, or null when full-frame.
+
+    Body: {"entity_id": "camera.x"}.
+    Response: {"viewport": {x, y, w, h}} or {"viewport": null}.
+    """
+    entity_id = ctx.payload.get("entity_id")
+    if not isinstance(entity_id, str) or not entity_id.startswith("camera."):
+        return Response(status=400, text="entity_id required and must be a camera")
+
+    crop = ctx.domain_data.snapshot_crop_store.get(entity_id)
+    viewport = (
+        {"x": crop.x, "y": crop.y, "w": crop.w, "h": crop.h}
+        if crop is not None
+        else None
+    )
+    return ctx.signed_json({"viewport": viewport})
+
+
 async def _op_template(ctx: _OpContext) -> Response:
     """Render a Jinja template. Body: {template, variables?}."""
     template_str = ctx.payload.get("template")
@@ -1979,6 +2014,8 @@ _OP_HANDLERS: dict[str, Any] = {
     "states_batch": _op_states_batch,
     "info": _op_info,
     "snapshot": _op_snapshot,
+    "set_snapshot_crop": _op_set_snapshot_crop,
+    "get_snapshot_crop": _op_get_snapshot_crop,
     "template": _op_template,
     "services_list": _op_services_list,
     "config_entries_list": _op_config_entries_list,

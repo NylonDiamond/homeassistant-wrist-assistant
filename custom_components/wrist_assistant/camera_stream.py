@@ -547,9 +547,13 @@ NOTIF_SNAPSHOT_CAPTURE_TIMEOUT = 5  # seconds to grab a frame from the camera
 
 
 async def capture_notification_snapshot(
-    hass: HomeAssistant, entity_id: str
+    hass: HomeAssistant, entity_id: str, viewport: ViewportState | None = None
 ) -> bytes | None:
-    """Grab a full-frame JPEG from a camera entity for a notification.
+    """Grab a JPEG from a camera entity for a notification.
+
+    `viewport` is the user's saved per-camera framing (normalized crop); when
+    None the full frame is captured. `_process_snapshot` crops to it before
+    resizing, so passing a tighter region zooms the notification snapshot.
 
     Returns processed JPEG bytes (resized + byte-capped) or None if the camera
     is unavailable, returns no image, or the frame can't be squeezed under the
@@ -574,7 +578,7 @@ async def capture_notification_snapshot(
     return await hass.async_add_executor_job(
         _process_snapshot,
         image.content,
-        ViewportState(),  # full frame, no crop
+        viewport or ViewportState(),  # saved framing, or full frame
         NOTIF_SNAPSHOT_MAX_WIDTH,
         NOTIF_SNAPSHOT_MAX_HEIGHT,
         NOTIF_SNAPSHOT_QUALITY,

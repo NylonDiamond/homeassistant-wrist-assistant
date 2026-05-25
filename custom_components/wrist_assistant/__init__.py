@@ -39,6 +39,7 @@ from .const import (
     WristAssistantData,
 )
 from .notification_snapshot import NotificationSnapshotStore
+from .snapshot_crop_store import SnapshotCropStore
 from .notifications import NotificationTokenStore, TokenEntry
 from .v1_api_views import (
     MusicAssistantPlayersView,
@@ -172,7 +173,10 @@ async def _build_snapshot_url(
     """
     if not isinstance(image_source, str) or not image_source:
         return None
-    jpeg = await capture_notification_snapshot(hass, image_source)
+    # Apply the user's saved per-camera framing (set via the iOS app). None when
+    # this camera was never framed → full-frame capture.
+    crop = runtime_data.snapshot_crop_store.get(image_source)
+    jpeg = await capture_notification_snapshot(hass, image_source, viewport=crop)
     if not jpeg:
         return None
     token = runtime_data.notification_snapshot_store.put(jpeg)
@@ -237,6 +241,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     await widget_secret_store.async_load()
     stream_token_store = StreamTokenStore()
     notification_snapshot_store = NotificationSnapshotStore()
+    snapshot_crop_store = SnapshotCropStore(hass)
+    await snapshot_crop_store.async_load()
 
     # Register server capabilities
     coordinator.register_capability("gzip")
@@ -257,6 +263,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         widget_secret_store=widget_secret_store,
         stream_token_store=stream_token_store,
         notification_snapshot_store=notification_snapshot_store,
+        snapshot_crop_store=snapshot_crop_store,
     )
     entry.runtime_data = runtime_data
     hass.data[DOMAIN] = runtime_data
