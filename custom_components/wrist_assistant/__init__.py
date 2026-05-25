@@ -92,6 +92,7 @@ _SEND_NOTIFICATION_SCHEMA = vol.Schema(
         vol.Required("message"): cv.string,
         vol.Optional("title"): cv.string,
         vol.Optional("target"): cv.string,
+        vol.Optional("image"): cv.string,
         vol.Optional("actions"): vol.All(
             cv.ensure_list, [_ACTION_SCHEMA], vol.Length(min=1, max=4)
         ),
@@ -426,11 +427,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         if actions:
             extra_data["actions"] = _enrich_actions(actions)
 
-        # Camera snapshot: when the caller passes `data: { image: "camera.x" }`,
-        # capture the frame now (freezing the moment the event fired) and embed
-        # a token-authed URL the app fetches. A pre-built `data.snapshot_url` is
-        # honored as-is. `image` is popped so it never leaks into userInfo.
-        image_source = extra_data.pop("image", None)
+        # Camera snapshot: when the caller passes `image: "camera.x"`, capture
+        # the frame now (freezing the moment the event fired) and embed a
+        # token-authed URL the app fetches. A pre-built `data.snapshot_url` is
+        # honored as-is and takes precedence.
+        image_source = call.data.get("image")
         if image_source is not None and not extra_data.get("snapshot_url"):
             snapshot_url = await _build_snapshot_url(hass, data, image_source)
             if snapshot_url:
