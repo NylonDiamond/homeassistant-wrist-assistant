@@ -21,11 +21,12 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.network import NoURLAvailableError, get_url
 from homeassistant.helpers.storage import Store
 
 from .api import DeltaCoordinator
 from .apns_client import APNsClient
-from .camera_stream import CameraStreamCoordinator
+from .camera_stream import CameraStreamCoordinator, capture_notification_snapshot
 from .const import (
     DOMAIN,
     NOTIFICATION_TOKEN_STORAGE_KEY,
@@ -37,6 +38,7 @@ from .const import (
     WristAssistantConfigEntry,
     WristAssistantData,
 )
+from .notification_snapshot import NotificationSnapshotStore
 from .notifications import NotificationTokenStore, TokenEntry
 from .v1_api_views import (
     MusicAssistantPlayersView,
@@ -59,6 +61,7 @@ from .wa_stream_tokens import StreamTokenStore
 from .wa_v2_views import (
     WAActionView,
     WADeltaView,
+    WANotificationSnapshotView,
     WARegisterSecretView,
     WAStreamView,
     WAVersionView,
@@ -153,6 +156,36 @@ def _choose_token(
     )
 
 
+async def _build_snapshot_url(
+    hass: HomeAssistant,
+    runtime_data: WristAssistantData,
+    image_source: object,
+) -> str | None:
+    """Capture a camera snapshot and return a token-authed absolute URL.
+
+    Returns None (and logs) on any failure — a missing image must never block
+    the notification itself. Uses the external HA URL when configured so the
+    device can fetch it away from home; users without remote access get an
+    internal URL that only resolves on the LAN (documented PR1 limitation,
+    lifted by the relay-hosted variant in a later PR).
+    """
+    if not isinstance(image_source, str) or not image_source:
+        return None
+    jpeg = await capture_notification_snapshot(hass, image_source)
+    if not jpeg:
+        return None
+    token = runtime_data.notification_snapshot_store.put(jpeg)
+    try:
+        base = get_url(hass, prefer_external=True)
+    except NoURLAvailableError:
+        _LOGGER.warning(
+            "No reachable Home Assistant URL; notification snapshot for %s omitted",
+            image_source,
+        )
+        return None
+    return f"{base}/api/wrist_assistant/notification/snapshot/{token}"
+
+
 # entry.data flag marking that the one-time "Connected watches" disable has
 # run for this entry. See _disable_connected_watches_once.
 _CONNECTED_WATCHES_DISABLED_FLAG = "connected_watches_default_disabled"
@@ -202,6 +235,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     widget_secret_store = WidgetSecretStore(hass)
     await widget_secret_store.async_load()
     stream_token_store = StreamTokenStore()
+    notification_snapshot_store = NotificationSnapshotStore()
 
     # Register server capabilities
     coordinator.register_capability("gzip")
@@ -221,6 +255,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         notification_store=notification_store,
         widget_secret_store=widget_secret_store,
         stream_token_store=stream_token_store,
+        notification_snapshot_store=notification_snapshot_store,
     )
     entry.runtime_data = runtime_data
     hass.data[DOMAIN] = runtime_data
@@ -242,6 +277,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         # entity_id) for ~30 s, which is the lifetime an attacker has to
         # brute-force a 192-bit secret.
         hass.http.register_view(WAStreamView(hass))
+        # Snapshot view auths via a multi-use TTL token (minted by
+        # send_notification when a push carries a camera image) rather than HMAC
+        # — the iOS content extension and watch long look fetch it with a plain
+        # GET. See WANotificationSnapshotView / notification_snapshot.py.
+        hass.http.register_view(WANotificationSnapshotView(hass))
 
         # Legacy v1 transport: bearer-authed endpoints for app builds prior to
         # the v2 cutover. Kept alive so HACS can ship without breaking users
@@ -382,10 +422,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         message = call.data["message"]
         title = call.data.get("title")
         actions = call.data.get("actions")
-        category = "WA_ACTIONS" if actions else None
         extra_data = dict(call.data.get("data") or {})
         if actions:
             extra_data["actions"] = _enrich_actions(actions)
+
+        # Camera snapshot: when the caller passes `data: { image: "camera.x" }`,
+        # capture the frame now (freezing the moment the event fired) and embed
+        # a token-authed URL the app fetches. A pre-built `data.snapshot_url` is
+        # honored as-is. `image` is popped so it never leaks into userInfo.
+        image_source = extra_data.pop("image", None)
+        if image_source is not None and not extra_data.get("snapshot_url"):
+            snapshot_url = await _build_snapshot_url(hass, data, image_source)
+            if snapshot_url:
+                extra_data["snapshot_url"] = snapshot_url
+
+        # The content extension / watch long look only render our custom UI when
+        # the push category is WA_ACTIONS — so a snapshot-only doorbell push
+        # (no action rows) must still carry it, else it degrades to a plain
+        # system notification with no image.
+        category = "WA_ACTIONS" if (actions or extra_data.get("snapshot_url")) else None
         for key in ("tag", "group", "priority"):
             if (val := call.data.get(key)) is not None:
                 extra_data[key] = val

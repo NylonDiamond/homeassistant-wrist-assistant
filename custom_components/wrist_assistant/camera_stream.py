@@ -535,3 +535,50 @@ def _process_snapshot(
     return None
 
 
+# Notification snapshot limits — larger than the complication snapshot above
+# because the expanded notification and iOS banner thumbnail render bigger than
+# a watch complication. Still byte-capped so a high-res camera can't bloat the
+# token cache or the on-device decode.
+NOTIF_SNAPSHOT_MAX_WIDTH = 1024
+NOTIF_SNAPSHOT_MAX_HEIGHT = 1024
+NOTIF_SNAPSHOT_MAX_BYTES = 256000  # 250 KB
+NOTIF_SNAPSHOT_QUALITY = 80
+NOTIF_SNAPSHOT_CAPTURE_TIMEOUT = 5  # seconds to grab a frame from the camera
+
+
+async def capture_notification_snapshot(
+    hass: HomeAssistant, entity_id: str
+) -> bytes | None:
+    """Grab a full-frame JPEG from a camera entity for a notification.
+
+    Returns processed JPEG bytes (resized + byte-capped) or None if the camera
+    is unavailable, returns no image, or the frame can't be squeezed under the
+    byte budget. Never raises for an offline/misbehaving camera — callers fall
+    back to a text-only notification.
+    """
+    if not entity_id.startswith("camera."):
+        _LOGGER.warning(
+            "Notification snapshot requested for non-camera entity %s", entity_id
+        )
+        return None
+    try:
+        image: CameraImage = await async_get_image(
+            hass, entity_id, timeout=NOTIF_SNAPSHOT_CAPTURE_TIMEOUT
+        )
+    except Exception as err:  # noqa: BLE001 — never let a bad camera kill the push
+        _LOGGER.warning("Snapshot capture failed for %s: %s", entity_id, err)
+        return None
+    if not image or not image.content:
+        return None
+    # PIL work is CPU-bound — keep it off the event loop.
+    return await hass.async_add_executor_job(
+        _process_snapshot,
+        image.content,
+        ViewportState(),  # full frame, no crop
+        NOTIF_SNAPSHOT_MAX_WIDTH,
+        NOTIF_SNAPSHOT_MAX_HEIGHT,
+        NOTIF_SNAPSHOT_QUALITY,
+        NOTIF_SNAPSHOT_MAX_BYTES,
+    )
+
+

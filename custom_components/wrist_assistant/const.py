@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from .api import DeltaCoordinator
     from .apns_client import APNsClient
     from .camera_stream import CameraStreamCoordinator
+    from .notification_snapshot import NotificationSnapshotStore
     from .notifications import NotificationTokenStore
     from .wa_stream_tokens import StreamTokenStore
     from .widget_secret_store import WidgetSecretStore
@@ -25,6 +26,7 @@ class WristAssistantData:
     notification_store: NotificationTokenStore
     widget_secret_store: WidgetSecretStore
     stream_token_store: StreamTokenStore
+    notification_snapshot_store: NotificationSnapshotStore
     apns_client: APNsClient | None = field(default=None)
 
 

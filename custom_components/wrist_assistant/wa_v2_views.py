@@ -1735,6 +1735,44 @@ class WAStreamView(HomeAssistantView):
         )
 
 
+# ── /notification/snapshot view ──────────────────────────────────────────
+
+
+class WANotificationSnapshotView(HomeAssistantView):
+    """Serve a camera snapshot captured for a notification, authed by token.
+
+    The token is minted by `send_notification` when a push carries an `image`
+    camera entity; it's embedded in the push as `snapshot_url`. Auth is the
+    token lookup (multi-use within a short TTL) rather than HMAC/bearer, so the
+    iOS content extension and the watch long look can fetch the image with a
+    plain GET — neither can carry the watch's HMAC headers. A leaked URL exposes
+    one frame for the TTL window only.
+    """
+
+    url = "/api/wrist_assistant/notification/snapshot/{token}"
+    name = "api:wrist_assistant_notification_snapshot"
+    requires_auth = False
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+
+    async def get(self, request: Request, token: str) -> Response:
+        domain_data: WristAssistantData | None = self._hass.data.get(DOMAIN)
+        if domain_data is None:
+            return Response(text="Integration not loaded", status=503)
+
+        entry = domain_data.notification_snapshot_store.get(token)
+        if entry is None:
+            # Missing / expired are indistinguishable to the caller by design.
+            return Response(text="Not Found", status=404)
+
+        return Response(
+            body=entry.data,
+            content_type=entry.content_type,
+            headers={"Cache-Control": "private, max-age=600"},
+        )
+
+
 # ── /v2/register_secret view ─────────────────────────────────────────────
 
 

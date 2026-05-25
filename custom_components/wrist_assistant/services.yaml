@@ -46,6 +46,18 @@ send_notification:
         {entity_id: "light.porch", label: "Porch", icon: "lightbulb.fill"}]
       selector:
         object:
+    image:
+      name: Image (camera snapshot)
+      description: >-
+        Camera entity to snapshot and show in the notification (e.g. a doorbell
+        feed). The frame is captured when the notification is sent and shown in
+        the expanded notification and on the watch. Requires remote Home
+        Assistant access (Nabu Casa or an external URL) to load away from home.
+      example: "camera.front_door"
+      selector:
+        entity:
+          filter:
+            - domain: camera
     data:
       name: Data
       description: >-
