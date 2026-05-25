@@ -61,7 +61,10 @@ blueprint:
         text:
     message:
       name: Message
-      description: Notification body text.
+      description: >-
+        *(Optional)* Notification body text. Leave empty if you set a
+        title and/or a camera snapshot.
+      default: ""
       selector:
         text:
           multiline: true
@@ -544,7 +547,8 @@ sequence:
       bp_group: !input group
   - action: wrist_assistant.send_notification
     data: >
-      {%- set d = namespace(items=[("message", bp_message), ("priority", bp_priority)]) -%}
+      {%- set d = namespace(items=[("priority", bp_priority)]) -%}
+      {%- if bp_message %}{%- set d.items = d.items + [("message", bp_message)] -%}{%- endif -%}
       {%- if bp_title %}{%- set d.items = d.items + [("title", bp_title)] -%}{%- endif -%}
       {%- if bp_image %}{%- set d.items = d.items + [("image", bp_image)] -%}{%- endif -%}
       {%- if bp_sound %}{%- set d.items = d.items + [("sound", bp_sound)] -%}{%- endif -%}

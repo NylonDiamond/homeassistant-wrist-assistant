@@ -62,6 +62,7 @@ from .wa_stream_tokens import StreamTokenStore
 from .wa_v2_views import (
     WAActionView,
     WADeltaView,
+    WANotificationSnapshotLiveView,
     WANotificationSnapshotView,
     WARegisterSecretView,
     WAStreamView,
@@ -90,7 +91,7 @@ _ACTION_SCHEMA = vol.Schema(
 )
 _SEND_NOTIFICATION_SCHEMA = vol.Schema(
     {
-        vol.Required("message"): cv.string,
+        vol.Optional("message"): cv.string,
         vol.Optional("title"): cv.string,
         vol.Optional("target"): cv.string,
         vol.Optional("image"): cv.string,
@@ -179,7 +180,7 @@ async def _build_snapshot_url(
     jpeg = await capture_notification_snapshot(hass, image_source, viewport=crop)
     if not jpeg:
         return None
-    token = runtime_data.notification_snapshot_store.put(jpeg)
+    token = runtime_data.notification_snapshot_store.put(jpeg, entity_id=image_source)
     try:
         base = get_url(hass, prefer_external=True)
     except NoURLAvailableError:
@@ -290,6 +291,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         # — the iOS content extension and watch long look fetch it with a plain
         # GET. See WANotificationSnapshotView / notification_snapshot.py.
         hass.http.register_view(WANotificationSnapshotView(hass))
+        hass.http.register_view(WANotificationSnapshotLiveView(hass))
 
         # Legacy v1 transport: bearer-authed endpoints for app builds prior to
         # the v2 cutover. Kept alive so HACS can ship without breaking users
@@ -427,7 +429,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
                     f"Device '{target_raw}' is not a Wrist Assistant watch"
                 )
 
-        message = call.data["message"]
+        message = call.data.get("message")
         title = call.data.get("title")
         actions = call.data.get("actions")
         extra_data = dict(call.data.get("data") or {})
@@ -443,6 +445,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
             snapshot_url = await _build_snapshot_url(hass, data, image_source)
             if snapshot_url:
                 extra_data["snapshot_url"] = snapshot_url
+                # Carry the source camera so the watch can open its live stream
+                # when the snapshot is tapped. (iOS taps refresh the still in
+                # place instead — see WANotificationSnapshotLiveView.)
+                if isinstance(image_source, str) and image_source.startswith("camera."):
+                    extra_data.setdefault("camera_entity_id", image_source)
 
         # The content extension / watch long look only render our custom UI when
         # the push category is WA_ACTIONS — so a snapshot-only doorbell push

@@ -36,6 +36,10 @@ class SnapshotEntry:
     data: bytes
     content_type: str
     expires_at: float
+    # Source camera, so the `/live` endpoint can re-capture a fresh frame for
+    # the same token. None for tokens minted from a pre-built image (no camera
+    # to re-capture from) — those fall back to the cached bytes.
+    entity_id: str | None = None
 
 
 class NotificationSnapshotStore:
@@ -56,6 +60,7 @@ class NotificationSnapshotStore:
         *,
         content_type: str = "image/jpeg",
         ttl_seconds: float = DEFAULT_SNAPSHOT_TTL_SECONDS,
+        entity_id: str | None = None,
         now: float | None = None,
     ) -> str:
         """Store snapshot bytes; return a 48-hex-char (192-bit) opaque token."""
@@ -66,6 +71,7 @@ class NotificationSnapshotStore:
             data=data,
             content_type=content_type,
             expires_at=current + ttl_seconds,
+            entity_id=entity_id,
         )
         # Cap-eviction safety net: drop oldest-inserted until under the ceiling.
         while len(self._entries) > self._MAX_ENTRIES:

@@ -13,8 +13,9 @@ send_notification:
   fields:
     message:
       name: Message
-      description: Notification body text.
-      required: true
+      description: >-
+        Notification body text. Optional — you can omit it if you set a
+        title and/or a camera snapshot.
       example: "Front door was opened"
       selector:
         text:

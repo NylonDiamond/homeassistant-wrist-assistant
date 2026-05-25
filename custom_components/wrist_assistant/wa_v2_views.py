@@ -85,6 +85,7 @@ from .camera_stream import (
     _process_frame,
     _process_snapshot,
     _UNSET,
+    capture_notification_snapshot,
     run_mjpeg_stream,
 )
 from .const import (
@@ -1841,6 +1842,67 @@ class WANotificationSnapshotView(HomeAssistantView):
             body=entry.data,
             content_type=entry.content_type,
             headers={"Cache-Control": "private, max-age=600"},
+        )
+
+
+class WANotificationSnapshotLiveView(HomeAssistantView):
+    """Re-capture a *fresh* frame for an existing snapshot token.
+
+    The base snapshot URL serves the frame frozen at send time; this sibling
+    re-captures live from the same camera on every GET, applying the camera's
+    saved framing crop. Lets the iOS notification's image be tapped to refresh.
+
+    Auth is the same multi-use token lookup as `WANotificationSnapshotView`
+    (the content extension can't carry HMAC/bearer). The token already scopes
+    which camera may be captured, so a leaked URL can only re-snap that one
+    camera for the TTL window. Responses are `no-store` so each tap re-fetches.
+    """
+
+    url = "/api/wrist_assistant/notification/snapshot/{token}/live"
+    name = "api:wrist_assistant_notification_snapshot_live"
+    requires_auth = False
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+
+    async def get(self, request: Request, token: str) -> Response:
+        domain_data: WristAssistantData | None = self._hass.data.get(DOMAIN)
+        if domain_data is None:
+            return Response(text="Integration not loaded", status=503)
+
+        entry = domain_data.notification_snapshot_store.get(token)
+        if entry is None:
+            return Response(text="Not Found", status=404)
+
+        # No source camera (pre-built image token) → nothing to re-capture;
+        # hand back the cached frame so the tap is at worst a no-op.
+        if not entry.entity_id:
+            return Response(
+                body=entry.data,
+                content_type=entry.content_type,
+                headers={"Cache-Control": "no-store"},
+            )
+
+        crop = domain_data.snapshot_crop_store.get(entry.entity_id)
+        try:
+            jpeg = await capture_notification_snapshot(
+                self._hass, entry.entity_id, viewport=crop
+            )
+        except Exception:  # noqa: BLE001 — never 500 a notification refresh
+            jpeg = None
+
+        # Capture failed (camera unavailable, away from home) → cached frame.
+        if not jpeg:
+            return Response(
+                body=entry.data,
+                content_type=entry.content_type,
+                headers={"Cache-Control": "no-store"},
+            )
+
+        return Response(
+            body=jpeg,
+            content_type="image/jpeg",
+            headers={"Cache-Control": "no-store"},
         )
 
 
