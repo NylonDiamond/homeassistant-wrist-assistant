@@ -6,8 +6,8 @@ blueprint:
   source_url: "https://github.com/NylonDiamond/homeassistant-wrist-assistant/blob/main/blueprints/script/wrist_assistant/watch_notification.yaml"
   description: >
     Send push notifications to your Apple Watch with smart entity
-    buttons. Pick up to 4 entities — each becomes a button that
-    knows how to control itself:
+    buttons — and a camera snapshot if you want. Each entity becomes a
+    button that knows how to control itself:
 
     - Tap to toggle most entities (scenes, scripts, and buttons fire once)
 
