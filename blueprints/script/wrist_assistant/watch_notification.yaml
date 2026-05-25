@@ -19,7 +19,11 @@ blueprint:
     vacuums (start/pause/dock/find)
 
     Leave button slots empty to skip them. A notification with no
-    buttons shows as info-only (title + message).
+    buttons shows as info-only (title, message, and any snapshot).
+
+
+    Optionally attach a camera snapshot — e.g. a doorbell feed —
+    shown in the expanded notification and on the watch.
 
 
     **Important:** Notifications must be enabled on your Apple Watch.
@@ -61,19 +65,24 @@ blueprint:
       selector:
         text:
           multiline: true
-    image:
-      name: Camera Snapshot
-      description: >
-        *(Optional)* Camera to snapshot and show in the notification —
-        e.g. a doorbell feed. The frame is captured when the notification
-        is sent, then shown in the expanded notification and on the watch.
-        Requires remote Home Assistant access (Nabu Casa or an external
-        URL) to load when you're away from home.
-      default: ""
-      selector:
-        entity:
-          filter:
-            - domain: camera
+    section_camera:
+      name: "📷 Camera Snapshot"
+      icon: mdi:camera
+      collapsed: true
+      input:
+        image:
+          name: Camera
+          description: >
+            *(Optional)* Camera to snapshot and show in the notification —
+            e.g. a doorbell feed. The frame is captured when the notification
+            is sent, then shown in the expanded notification and on the watch.
+            Requires remote Home Assistant access (Nabu Casa or an external
+            URL) to load when you're away from home.
+          default: ""
+          selector:
+            entity:
+              filter:
+                - domain: camera
     section_button_1:
       name: "☝️ Button 1"
       icon: mdi:gesture-tap-button
