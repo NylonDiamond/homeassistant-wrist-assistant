@@ -22,6 +22,10 @@ blueprint:
     buttons shows as info-only (title, message, and any snapshot).
 
 
+    On the watch, notifications expand automatically to show the snapshot
+    and buttons. On iPhone, **long press** the notification to expand it.
+
+
     Setup help and troubleshooting are under **⚙️ Settings** below.
   domain: script
   input:
@@ -63,7 +67,7 @@ blueprint:
             URL) to load when you're away from home.
 
 
-            **Tip:** If your camera offers a dedicated snapshot entity (e.g.
+            **Tip:** If your camera offers a **dedicated snapshot** entity (e.g.
             Reolink's "Snapshots" variants — you may need to enable it under
             Settings → Entities), prefer it over a live-stream entity for a
             faster, lower-latency grab. The image is downscaled, so the
