@@ -22,24 +22,7 @@ blueprint:
     buttons shows as info-only (title, message, and any snapshot).
 
 
-    Optionally attach a camera snapshot — e.g. a doorbell feed —
-    shown in the expanded notification and on the watch.
-
-
-    **Important:** Notifications must be enabled on your Apple Watch.
-    On your watch, go to Settings → Notifications → Wrist Assistant
-    and make sure notifications are turned on. If you denied the
-    permission prompt on first launch, notifications will not arrive
-    until you enable them here.
-
-
-    If you see `No registered push token`, open Wrist Assistant on
-    the watch and let it sync once. If needed, pull to refresh or
-    force-close and reopen the watch app, then try again.
-
-
-    **Tip:** Customize how notifications look and behave in the
-    Wrist Assistant iOS app under Settings → Notification Style.
+    Setup help and troubleshooting are under **⚙️ Settings** below.
   domain: script
   input:
     target:
@@ -61,16 +44,13 @@ blueprint:
         text:
     message:
       name: Message
-      description: >-
-        *(Optional)* Notification body text. Leave empty if you set a
-        title and/or a camera snapshot.
+      description: "*(Optional)* Notification body text."
       default: ""
       selector:
         text:
           multiline: true
     section_camera:
       name: "📷 Camera Snapshot"
-      icon: mdi:camera
       collapsed: true
       input:
         image:
@@ -95,7 +75,6 @@ blueprint:
                 - domain: camera
     section_button_1:
       name: "☝️ Button 1"
-      icon: mdi:gesture-tap-button
       collapsed: true
       input:
         button_1_entity:
@@ -114,10 +93,8 @@ blueprint:
           default: ""
           selector:
             text:
-
     section_button_2:
       name: "☝️ Button 2"
-      icon: mdi:gesture-tap-button
       collapsed: true
       input:
         button_2_entity:
@@ -136,10 +113,8 @@ blueprint:
           default: ""
           selector:
             text:
-
     section_button_3:
       name: "☝️ Button 3"
-      icon: mdi:gesture-tap-button
       collapsed: true
       input:
         button_3_entity:
@@ -158,10 +133,8 @@ blueprint:
           default: ""
           selector:
             text:
-
     section_button_4:
       name: "☝️ Button 4"
-      icon: mdi:gesture-tap-button
       collapsed: true
       input:
         button_4_entity:
@@ -180,11 +153,24 @@ blueprint:
           default: ""
           selector:
             text:
-
     section_settings:
       name: "⚙️ Settings"
-      icon: mdi:cog
       collapsed: true
+      description: >
+        **Not getting notifications?** The first time you open Wrist
+        Assistant on your watch it asks for notification permission — tap
+        Allow. If you declined it, watchOS won't ask again and there's no
+        Settings toggle to turn it back on: delete Wrist Assistant from
+        your watch, reinstall it, then tap Allow when it asks.
+
+
+        If you see `No registered push token`, open Wrist Assistant on
+        the watch and let it sync once. If needed, pull to refresh or
+        force-close and reopen the watch app, then try again.
+
+
+        **Tip:** Customize how notifications look and behave in the Wrist
+        Assistant iOS app under Settings → Notification Style.
       input:
         auto_dismiss:
           name: Auto-Dismiss
