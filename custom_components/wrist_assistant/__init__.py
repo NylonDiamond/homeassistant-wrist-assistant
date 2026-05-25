@@ -497,6 +497,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         extra_data = _strip_none(extra_data)
         sound = call.data.get("sound")
         push_type = call.data.get("push_type", "alert")
+        _LOGGER.debug(
+            "send_notification payload target=%s title=%r message=%r category=%s "
+            "snapshot=%s actions=%d push_type=%s sound=%r",
+            target or "<all>",
+            title,
+            message,
+            category,
+            "yes" if extra_data.get("snapshot_url") else "no",
+            len(actions) if actions else 0,
+            push_type,
+            sound,
+        )
 
         # Resolve targets to their full per-platform entry maps.
         if target:
@@ -554,6 +566,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
             )
             if success:
                 sent += 1
+                _LOGGER.debug(
+                    "send_notification delivered watch_id=%s platform=%s env=%s",
+                    watch_id,
+                    tok_entry.platform,
+                    used_env,
+                )
                 if used_env != tok_entry.environment:
                     store.register(
                         watch_id,
