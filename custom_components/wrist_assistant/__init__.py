@@ -643,6 +643,12 @@ async def _install_bundled_blueprints(hass: HomeAssistant) -> None:
 
     Runs the file copy in the executor to avoid blocking the event loop.
     Overwrites existing files so updates ship with new integration versions.
+
+    After writing, resets the script domain's blueprint cache so the new file
+    takes effect on this restart. Without it, a script that already uses the
+    blueprint caches the old version earlier in startup (before this config
+    entry sets up and overwrites the file), so the update wouldn't surface
+    until a *second* restart.
     """
     src_dir = Path(__file__).parent / "blueprints" / "script"
     dest_dir = Path(hass.config.path("blueprints")) / "script" / DOMAIN
@@ -664,6 +670,17 @@ async def _install_bundled_blueprints(hass: HomeAssistant) -> None:
         installed = await hass.async_add_executor_job(_copy)
         if installed:
             _LOGGER.debug("Installed bundled blueprints: %s", installed)
+            # Drop the script domain's cached blueprints so the freshly written
+            # file is re-read this session rather than on the next restart.
+            # Mirrors what the script reload service does internally.
+            try:
+                from homeassistant.components.script import (
+                    async_get_blueprints as _script_blueprints,
+                )
+
+                await _script_blueprints(hass).async_reset_cache()
+            except Exception:  # noqa: BLE001 — cache reset is best-effort
+                _LOGGER.debug("Could not reset script blueprint cache", exc_info=True)
     except Exception:
         _LOGGER.warning("Failed to install bundled blueprints", exc_info=True)
 
