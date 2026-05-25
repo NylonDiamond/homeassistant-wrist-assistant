@@ -20,6 +20,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.network import NoURLAvailableError, get_url
 from homeassistant.helpers.storage import Store
@@ -250,6 +251,100 @@ async def _disable_connected_watches_once(
     )
 
 
+# entry.data flag marking that the one-time statistics-unit cleanup has run.
+_STATS_UNITS_DROPPED_FLAG = "stats_units_dropped"
+
+# Unique-id suffixes of the MEASUREMENT sensors whose redundant unit
+# ("watches"/"phones"/"entities") was dropped. Their long-term statistics
+# metadata still carries the old unit, so the recorder raises a `units_changed`
+# repair per sensor on upgrade. See _clear_stale_statistic_units_once.
+_DROPPED_UNIT_SUFFIXES = (
+    "_active_watches",
+    "_watch_count",
+    "_phone_count",
+    "_monitored_entities",
+    "_subscribed_entities",
+)
+
+
+async def _clear_stale_statistic_units_once(
+    hass: HomeAssistant, entry: WristAssistantConfigEntry
+) -> None:
+    """One-time: realign statistics metadata after dropping redundant units.
+
+    These count sensors carry `state_class = MEASUREMENT`, so the recorder
+    minted long-term statistics tagged with their original unit. A later change
+    dropped those units as redundant (the label already says "watches"), but the
+    stored statistics metadata still holds the old unit — so on upgrade the
+    recorder raises one `units_changed` repair per sensor ("the unit … changed
+    to '' which can't be converted to … 'entities'").
+
+    We rewrite each sensor's statistics metadata unit to None — exactly what the
+    repair's recommended "update the historic values without converting" button
+    does — so the recorder's hourly statistics validation stops re-reporting the
+    mismatch. That validation only runs at xx:50, though, so to also clear any
+    *already-raised* repair on this first restart we delete the issue outright;
+    rewriting the metadata is what keeps it from coming back at the next pass.
+    Done automatically here so existing users never see the repair. Guarded by an
+    entry.data flag; fresh installs never had a unit, so this is a no-op for
+    them."""
+    if entry.data.get(_STATS_UNITS_DROPPED_FLAG):
+        return
+    # The metadata lives in the recorder DB; nothing to update without it. Skip
+    # without setting the flag so we retry on the next start once it's loaded.
+    if "recorder" not in hass.config.components:
+        return
+
+    # statistic_id == entity_id for sensor statistics. Resolve the affected
+    # entities from the registry (per-watch ids vary, so match by suffix).
+    ent_reg = er.async_get(hass)
+    statistic_ids = [
+        reg_entry.entity_id
+        for reg_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id)
+        if reg_entry.domain == "sensor"
+        and reg_entry.unique_id.endswith(_DROPPED_UNIT_SUFFIXES)
+    ]
+
+    if statistic_ids:
+        try:
+            # Imported lazily: only needed on this one-time path, and keeps the
+            # module importable if the recorder API ever shifts.
+            from homeassistant.components.recorder.statistics import (
+                async_update_statistics_metadata,
+            )
+
+            for statistic_id in statistic_ids:
+                async_update_statistics_metadata(
+                    hass, statistic_id, new_unit_of_measurement=None
+                )
+                # Clear any repair already raised for this sensor. The issue is
+                # owned by the `sensor` recorder platform (not our DOMAIN), keyed
+                # `units_changed_<statistic_id>`. Deleting a non-existent issue
+                # is a no-op, so this is safe whether or not the repair showed.
+                ir.async_delete_issue(
+                    hass, "sensor", f"units_changed_{statistic_id}"
+                )
+        except Exception:  # noqa: BLE001 — cosmetic cleanup must never fail setup
+            # The recorder API is stable, but should it ever change, a failed
+            # statistics tidy-up should degrade to "user dismisses the repair by
+            # hand", never to "the integration won't start".
+            _LOGGER.warning(
+                "Could not realign statistics units; the 'units changed' repair "
+                "may need to be dismissed manually",
+                exc_info=True,
+            )
+        else:
+            _LOGGER.debug(
+                "Realigned statistics metadata (dropped unit) for %d sensor(s): %s",
+                len(statistic_ids),
+                ", ".join(statistic_ids),
+            )
+
+    hass.config_entries.async_update_entry(
+        entry, data={**entry.data, _STATS_UNITS_DROPPED_FLAG: True}
+    )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntry) -> bool:
     """Set up Wrist Assistant from a config entry."""
     coordinator = DeltaCoordinator(hass)
@@ -367,6 +462,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     await _disable_connected_watches_once(hass, entry)
+    await _clear_stale_statistic_units_once(hass, entry)
 
     await _install_bundled_blueprints(hass)
 
