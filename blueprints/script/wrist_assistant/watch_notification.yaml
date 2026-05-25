@@ -169,6 +169,13 @@ blueprint:
         force-close and reopen the watch app, then try again.
 
 
+        **Tip:** Notifications default to **Fast** delivery, which needs
+        your iPhone nearby — when you're away from your phone, your watch
+        gets nothing. For alerts that reach your wrist on their own, switch
+        to **Reliable** in the iOS app under Settings → Notification Style →
+        Delivery (it's ~15s slower when your phone is present).
+
+
         **Tip:** Customize how notifications look and behave in the Wrist
         Assistant iOS app under Settings → Notification Style.
       input:
