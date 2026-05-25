@@ -953,20 +953,42 @@ async def _op_snapshot(ctx: _OpContext) -> Response:
     )
 
 
-async def _op_set_snapshot_crop(ctx: _OpContext) -> Response:
-    """Save the user's per-camera notification framing.
+def _camera_ids_from_payload(payload: dict[str, Any]) -> list[str]:
+    """Collect camera entity_ids from `entity_ids` (list) or `entity_id` (single).
 
-    Body: {"entity_id": "camera.x", "viewport": {x, y, w|width, h|height}}.
-    A full-frame viewport clears any saved crop (reset to full frame). The crop
-    is keyed by entity_id and shared across all the user's devices.
+    The iOS picker frames one physical camera but stores the crop against *all*
+    of that device's camera entities (Clear/Fluent/Snapshots variants share a
+    lens, and the notification may use a different variant than the one shown in
+    the picker), so set/status accept a list.
     """
-    entity_id = ctx.payload.get("entity_id")
-    if not isinstance(entity_id, str) or not entity_id.startswith("camera."):
-        return Response(status=400, text="entity_id required and must be a camera")
+    raw = payload.get("entity_ids")
+    if isinstance(raw, list):
+        ids = [e for e in raw if isinstance(e, str) and e.startswith("camera.")]
+    else:
+        single = payload.get("entity_id")
+        ids = [single] if isinstance(single, str) and single.startswith("camera.") else []
+    # De-dupe while preserving order.
+    return list(dict.fromkeys(ids))
+
+
+async def _op_set_snapshot_crop(ctx: _OpContext) -> Response:
+    """Save the user's notification framing for a camera's entities.
+
+    Body: {"entity_ids": ["camera.x", ...] | "entity_id": "camera.x",
+           "viewport": {x, y, w|width, h|height}}.
+    A full-frame viewport clears any saved crop (reset to full frame). The crop
+    is written to every supplied entity_id so any variant the notification uses
+    gets the same framing.
+    """
+    entity_ids = _camera_ids_from_payload(ctx.payload)
+    if not entity_ids:
+        return Response(status=400, text="entity_id(s) required and must be cameras")
 
     viewport = _parse_stream_viewport(ctx.payload.get("viewport"))
-    ctx.domain_data.snapshot_crop_store.set(entity_id, viewport)
-    return ctx.signed_json({"ok": True})
+    store = ctx.domain_data.snapshot_crop_store
+    for entity_id in entity_ids:
+        store.set(entity_id, viewport)
+    return ctx.signed_json({"ok": True, "count": len(entity_ids)})
 
 
 async def _op_get_snapshot_crop(ctx: _OpContext) -> Response:
@@ -986,6 +1008,20 @@ async def _op_get_snapshot_crop(ctx: _OpContext) -> Response:
         else None
     )
     return ctx.signed_json({"viewport": viewport})
+
+
+async def _op_snapshot_crops_status(ctx: _OpContext) -> Response:
+    """Report which of the supplied cameras have a saved framing.
+
+    Body: {"entity_ids": ["camera.x", ...]}.
+    Response: {"framed": ["camera.x", ...]} — the subset with a non-full-frame
+    crop. Lets the iOS list show a marker without one request per camera.
+    """
+    raw = ctx.payload.get("entity_ids")
+    ids = [e for e in raw if isinstance(e, str)] if isinstance(raw, list) else []
+    store = ctx.domain_data.snapshot_crop_store
+    framed = [eid for eid in ids if store.get(eid) is not None]
+    return ctx.signed_json({"framed": framed})
 
 
 async def _op_template(ctx: _OpContext) -> Response:
@@ -2016,6 +2052,7 @@ _OP_HANDLERS: dict[str, Any] = {
     "snapshot": _op_snapshot,
     "set_snapshot_crop": _op_set_snapshot_crop,
     "get_snapshot_crop": _op_get_snapshot_crop,
+    "snapshot_crops_status": _op_snapshot_crops_status,
     "template": _op_template,
     "services_list": _op_services_list,
     "config_entries_list": _op_config_entries_list,
