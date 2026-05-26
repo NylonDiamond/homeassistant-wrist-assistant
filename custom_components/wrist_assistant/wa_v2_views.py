@@ -77,6 +77,9 @@ from .camera_stream import (
     MIN_FPS,
     MIN_QUALITY,
     MIN_WIDTH,
+    NOTIF_SNAPSHOT_MAX_BYTES,
+    NOTIF_SNAPSHOT_MAX_HEIGHT,
+    NOTIF_SNAPSHOT_MAX_WIDTH,
     SNAPSHOT_DEFAULT_QUALITY,
     SNAPSHOT_MAX_BYTES,
     SNAPSHOT_MAX_HEIGHT,
@@ -893,15 +896,17 @@ async def _op_snapshot(ctx: _OpContext) -> Response:
             v = default
         return max(lo, min(hi, v))
 
-    width = _bound(
-        ctx.payload.get("width"), SNAPSHOT_MAX_WIDTH, MIN_WIDTH, SNAPSHOT_MAX_WIDTH
-    )
-    max_height = _bound(
-        ctx.payload.get("max_height"),
-        SNAPSHOT_MAX_HEIGHT,
-        MIN_WIDTH,
-        SNAPSHOT_MAX_HEIGHT,
-    )
+    # `hd` opts into the larger notification-snapshot budget (1024px / 250KB)
+    # instead of the complication-optimized 400px tier. Used by the framing
+    # editor's preview, where a crisp full-frame still matters and the payload
+    # is fetched once. Absent/false keeps the small, complication-sized tier.
+    hd = bool(ctx.payload.get("hd"))
+    max_w = NOTIF_SNAPSHOT_MAX_WIDTH if hd else SNAPSHOT_MAX_WIDTH
+    max_h = NOTIF_SNAPSHOT_MAX_HEIGHT if hd else SNAPSHOT_MAX_HEIGHT
+    max_bytes = NOTIF_SNAPSHOT_MAX_BYTES if hd else SNAPSHOT_MAX_BYTES
+
+    width = _bound(ctx.payload.get("width"), max_w, MIN_WIDTH, max_w)
+    max_height = _bound(ctx.payload.get("max_height"), max_h, MIN_WIDTH, max_h)
     quality = _bound(
         ctx.payload.get("quality"),
         SNAPSHOT_DEFAULT_QUALITY,
@@ -940,7 +945,7 @@ async def _op_snapshot(ctx: _OpContext) -> Response:
         width,
         max_height,
         quality,
-        SNAPSHOT_MAX_BYTES,
+        max_bytes,
     )
     if processed is None:
         return Response(status=503, text="Image exceeds size budget")
