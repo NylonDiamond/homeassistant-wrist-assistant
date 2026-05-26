@@ -1447,6 +1447,69 @@ async def _op_notifications_status(ctx: _OpContext) -> Response:
     )
 
 
+async def _op_send_test_notification(ctx: _OpContext) -> Response:
+    """Send a *real* camera notification back to the requesting device.
+
+    Powers the "Send Test" button in the iOS snapshot-framing editor: the app
+    saves the crop (via ``set_snapshot_crop``) and then calls this, which fires
+    an actual push through the same pipeline a doorbell event would use — real
+    snapshot capture (applying the just-saved crop), real token-authed
+    ``snapshot_url``, real relay delivery — so what arrives is exactly what a
+    live notification would look like.
+
+    Body: {"camera": "camera.x", "title"?, "message"?, "companion_watch_id"?}.
+    Targeting mirrors ``notifications_register``/``notifications_status``: an
+    iPhone caller signs with its own identity, but its mirror (``ios``) token
+    lives on the paired watch's entry, declared via ``companion_watch_id``.
+    Mirror delivery lands on the iPhone and watchOS mirrors it to the wrist when
+    the phone is locked. Returns {"ok": bool, ...}; ``ok:false`` with
+    ``reason:"no_push_token"`` when the device hasn't registered for push.
+    """
+    store = ctx.domain_data.notification_store
+    if store is None:
+        return ctx.signed_json(
+            {"ok": False, "error": "notifications unavailable"}, status=503
+        )
+
+    camera = ctx.payload.get("camera")
+    if not isinstance(camera, str) or not camera.startswith("camera."):
+        return Response(status=400, text="camera entity required")
+
+    target_watch_id = ctx.watch_id
+    companion = ctx.payload.get("companion_watch_id")
+    if isinstance(companion, str) and companion:
+        target_watch_id = companion
+
+    if not store.get_entries(target_watch_id):
+        return ctx.signed_json({"ok": False, "reason": "no_push_token"})
+
+    title = ctx.payload.get("title")
+    if not isinstance(title, str) or not title:
+        title = "Test notification"
+    message = ctx.payload.get("message")
+    if not isinstance(message, str) or not message:
+        message = "Camera snapshot framing test"
+
+    # Lazy import: _deliver_push lives in the package __init__, importing it at
+    # module load would be circular (this module is imported during setup).
+    from . import _deliver_push
+
+    try:
+        result = await _deliver_push(
+            ctx.hass,
+            ctx.domain_data,
+            title=title,
+            message=message,
+            image_source=camera,
+            target_watch_ids=[target_watch_id],
+        )
+    except HomeAssistantError as err:
+        return ctx.signed_json({"ok": False, "reason": str(err)})
+
+    sent = result.get("sent", 0)
+    return ctx.signed_json({"ok": sent > 0, "sent": sent})
+
+
 async def _op_audio_upload(ctx: _OpContext) -> Response:
     """Receive an audio clip for broadcast.
 
@@ -2168,6 +2231,7 @@ _OP_HANDLERS: dict[str, Any] = {
     "fire_event": _op_fire_event,
     "notifications_register": _op_notifications_register,
     "notifications_status": _op_notifications_status,
+    "send_test_notification": _op_send_test_notification,
     "audio_upload": _op_audio_upload,
     "camera_batch": _op_camera_batch,
     "camera_devices": _op_camera_devices,

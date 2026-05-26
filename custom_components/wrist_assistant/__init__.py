@@ -211,6 +211,165 @@ def _resolve_stream_entity(
     return resolve_stream_sibling(hass, entity_id)
 
 
+async def _deliver_push(
+    hass: HomeAssistant,
+    data: WristAssistantData,
+    *,
+    title: str | None,
+    message: str | None,
+    image_source: object = None,
+    enriched_actions: list | None = None,
+    extra_data: dict | None = None,
+    sound: str | None = None,
+    push_type: str = "alert",
+    target_watch_ids: list[str] | None = None,
+) -> dict:
+    """Build the notification payload and deliver it via the relay.
+
+    Shared by the ``send_notification`` service and the v2
+    ``send_test_notification`` op. Captures the camera snapshot (applying the
+    user's saved crop), sets the WA_ACTIONS category whenever there's custom
+    content to render, resolves the targets to their per-platform token maps,
+    and pushes to each honoring its delivery mode.
+
+    ``enriched_actions`` must already be enriched (callers that accept raw
+    action dicts run them through ``_enrich_actions`` first). ``target_watch_ids``
+    selects which watches to push to; ``None`` broadcasts to every registered
+    watch. Returns ``{"sent", "failed", "failures"}``; raises HomeAssistantError
+    when the APNs client is unavailable, no target is registered, or every push
+    fails — matching the prior service behavior.
+    """
+    client = data.apns_client
+    if client is None:
+        raise HomeAssistantError(
+            "APNs client failed to initialize. Check Home Assistant logs for details."
+        )
+    store = data.notification_store
+
+    extra_data = dict(extra_data or {})
+    if enriched_actions:
+        extra_data["actions"] = enriched_actions
+
+    # Camera snapshot: when an `image: "camera.x"` source is passed, capture the
+    # frame now (freezing the moment the event fired) and embed a token-authed
+    # URL the app fetches. A pre-built `snapshot_url` is honored as-is.
+    if image_source is not None and not extra_data.get("snapshot_url"):
+        snapshot_url = await _build_snapshot_url(hass, data, image_source)
+        if snapshot_url:
+            extra_data["snapshot_url"] = snapshot_url
+            # Carry the source camera so the watch can open its live stream when
+            # the snapshot is tapped. (iOS taps refresh the still in place.)
+            if isinstance(image_source, str) and image_source.startswith("camera."):
+                extra_data.setdefault("camera_entity_id", image_source)
+                # The snapshot variant can't stream — hand the watch the device's
+                # live-streamable sibling so the tapped-open view plays live.
+                stream_entity = _resolve_stream_entity(hass, data, image_source)
+                if stream_entity:
+                    extra_data.setdefault("camera_stream_entity_id", stream_entity)
+
+    # The content extension / watch long look only render our custom UI when the
+    # push category is WA_ACTIONS — so a snapshot-only push (no action rows) must
+    # still carry it, else it degrades to a plain system notification with no image.
+    category = (
+        "WA_ACTIONS" if (enriched_actions or extra_data.get("snapshot_url")) else None
+    )
+    # Default interruption-level to "active": alerts + haptic when the user is
+    # available, but respects Focus / Do Not Disturb / sleep.
+    extra_data.setdefault("priority", "active")
+    # Strip any None values so a JSON null can't break the mirror path.
+    extra_data = _strip_none(extra_data)
+
+    # Resolve targets to their full per-platform entry maps.
+    if target_watch_ids is not None:
+        targets: dict[str, dict] = {}
+        for watch_id in target_watch_ids:
+            entries = store.get_entries(watch_id)
+            if entries:
+                targets[watch_id] = entries
+        if not targets:
+            raise HomeAssistantError(
+                "No registered push token for the requested target"
+            )
+    else:
+        targets = store.all_entries
+        if not targets:
+            raise HomeAssistantError(
+                "No watches have registered for push notifications"
+            )
+
+    # Send to each target, routing per the watch's "delivery_mode" setting.
+    # "mirror" (default): push to the companion iPhone token (iOS mirrors to the
+    # wrist in ~1s; nothing when the phone is away). "direct": push to the watch
+    # token (reliable when away; ~15s when the phone is present). Never both.
+    sent = 0
+    failure_map: dict[str, str] = {}
+    for watch_id, entries in targets.items():
+        delivery_mode = store.get_watch_metadata(watch_id, "delivery_mode", "mirror")
+        tok_entry = _choose_token(entries, delivery_mode)
+        _LOGGER.debug(
+            "deliver_push routing watch_id=%s platforms=%s mode=%s -> chosen=%s",
+            watch_id,
+            sorted(entries.keys()),
+            delivery_mode,
+            tok_entry.platform if tok_entry else None,
+        )
+        if tok_entry is None:
+            continue
+        # A mirrored (iOS) push with no sound delivers to the wrist silently AND
+        # without a haptic — the user never perceives it. Force at least the
+        # default alert sound when the chosen token is the companion iPhone.
+        target_sound = sound
+        if tok_entry.platform == "ios" and not target_sound:
+            target_sound = "default"
+        success, reason, used_env = await client.send_push(
+            watch_id=watch_id,
+            device_token=tok_entry.device_token,
+            title=title,
+            body=message,
+            category=category,
+            data=extra_data,
+            sound=target_sound,
+            push_type=push_type,
+            environment=tok_entry.environment,
+            platform=tok_entry.platform,
+        )
+        if success:
+            sent += 1
+            _LOGGER.debug(
+                "deliver_push delivered watch_id=%s platform=%s env=%s",
+                watch_id,
+                tok_entry.platform,
+                used_env,
+            )
+            if used_env != tok_entry.environment:
+                store.register(
+                    watch_id,
+                    tok_entry.device_token,
+                    platform=tok_entry.platform,
+                    environment=used_env,
+                )
+        else:
+            if APNsClient.is_dead_token(reason):
+                _LOGGER.warning(
+                    "Removing dead %s token for watch_id=%s (reason=%s)",
+                    tok_entry.platform,
+                    watch_id,
+                    reason,
+                )
+                store.remove(watch_id, platform=tok_entry.platform)
+            failure_map[watch_id] = reason or "unknown"
+
+    if failure_map and sent == 0:
+        reasons = ", ".join(f"{wid}: {r}" for wid, r in failure_map.items())
+        raise HomeAssistantError(f"All push notifications failed: {reasons}")
+
+    if failure_map:
+        reasons = ", ".join(f"{wid}: {r}" for wid, r in failure_map.items())
+        _LOGGER.warning("Some push notifications failed: %s", reasons)
+
+    return {"sent": sent, "failed": len(failure_map), "failures": failure_map}
+
+
 # entry.data flag marking that the one-time "Connected watches" disable has
 # run for this entry. See _disable_connected_watches_once.
 _CONNECTED_WATCHES_DISABLED_FLAG = "connected_watches_default_disabled"
@@ -521,13 +680,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
 
     async def _handle_send_notification(call: ServiceCall) -> ServiceResponse:
         data = hass.data[DOMAIN]
-        client = data.apns_client
-        if client is None:
-            raise HomeAssistantError(
-                "APNs client failed to initialize. Check Home Assistant logs for details."
-            )
-
-        store = data.notification_store
         target_raw = call.data.get("target")
 
         # Resolve device_id → watch_id
@@ -546,155 +698,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
                     f"Device '{target_raw}' is not a Wrist Assistant watch"
                 )
 
-        message = call.data.get("message")
-        title = call.data.get("title")
         actions = call.data.get("actions")
         extra_data = dict(call.data.get("data") or {})
-        if actions:
-            extra_data["actions"] = _enrich_actions(actions)
-
-        # Camera snapshot: when the caller passes `image: "camera.x"`, capture
-        # the frame now (freezing the moment the event fired) and embed a
-        # token-authed URL the app fetches. A pre-built `data.snapshot_url` is
-        # honored as-is and takes precedence.
-        image_source = call.data.get("image")
-        if image_source is not None and not extra_data.get("snapshot_url"):
-            snapshot_url = await _build_snapshot_url(hass, data, image_source)
-            if snapshot_url:
-                extra_data["snapshot_url"] = snapshot_url
-                # Carry the source camera so the watch can open its live stream
-                # when the snapshot is tapped. (iOS taps refresh the still in
-                # place instead — see WANotificationSnapshotLiveView.)
-                if isinstance(image_source, str) and image_source.startswith("camera."):
-                    extra_data.setdefault("camera_entity_id", image_source)
-                    # The snapshot variant can't stream — hand the watch the
-                    # device's live-streamable sibling so the tapped-open view
-                    # plays live instead of freezing on the still.
-                    stream_entity = _resolve_stream_entity(hass, data, image_source)
-                    if stream_entity:
-                        extra_data.setdefault("camera_stream_entity_id", stream_entity)
-
-        # The content extension / watch long look only render our custom UI when
-        # the push category is WA_ACTIONS — so a snapshot-only doorbell push
-        # (no action rows) must still carry it, else it degrades to a plain
-        # system notification with no image.
-        category = "WA_ACTIONS" if (actions or extra_data.get("snapshot_url")) else None
         for key in ("tag", "group", "priority"):
             if (val := call.data.get(key)) is not None:
                 extra_data[key] = val
-        # Default interruption-level to "active": alerts + haptic when the user
-        # is available, but respects Focus / Do Not Disturb / sleep. Automations
-        # opt into "time-sensitive" / "critical" per-notification for urgent
-        # alerts. Setting it explicitly here keeps the policy in HACS rather than
-        # depending on the relay's default.
-        extra_data.setdefault("priority", "active")
-        # Strip any None values so a JSON null can't break the mirror path
-        # (see _strip_none). Covers enriched attributes + user-supplied data.
-        extra_data = _strip_none(extra_data)
-        sound = call.data.get("sound")
-        push_type = call.data.get("push_type", "alert")
-        _LOGGER.debug(
-            "send_notification payload target=%s title=%r message=%r category=%s "
-            "snapshot=%s actions=%d push_type=%s sound=%r",
-            target or "<all>",
-            title,
-            message,
-            category,
-            "yes" if extra_data.get("snapshot_url") else "no",
-            len(actions) if actions else 0,
-            push_type,
-            sound,
+
+        return await _deliver_push(
+            hass,
+            data,
+            title=call.data.get("title"),
+            message=call.data.get("message"),
+            image_source=call.data.get("image"),
+            enriched_actions=_enrich_actions(actions) if actions else None,
+            extra_data=extra_data,
+            sound=call.data.get("sound"),
+            push_type=call.data.get("push_type", "alert"),
+            target_watch_ids=[target] if target else None,
         )
-
-        # Resolve targets to their full per-platform entry maps.
-        if target:
-            entries = store.get_entries(target)
-            if not entries:
-                raise HomeAssistantError(f"No registered push token for watch '{target}'")
-            targets = {target: entries}
-        else:
-            targets = store.all_entries
-            if not targets:
-                raise HomeAssistantError("No watches have registered for push notifications")
-
-        # Send to each target, routing per the watch's "delivery_mode" setting.
-        # "mirror" (default): push to the companion iPhone token (iOS mirrors to
-        # the wrist in ~1s; nothing when the phone is away). "direct": push to
-        # the watch token (reliable when away; ~15s when the phone is present).
-        # Never both — that double-buzzes.
-        sent = 0
-        failure_map: dict[str, str] = {}
-        for watch_id, entries in targets.items():
-            delivery_mode = store.get_watch_metadata(
-                watch_id, "delivery_mode", "mirror"
-            )
-            tok_entry = _choose_token(entries, delivery_mode)
-            _LOGGER.debug(
-                "send_notification routing watch_id=%s platforms=%s mode=%s -> chosen=%s",
-                watch_id,
-                sorted(entries.keys()),
-                delivery_mode,
-                tok_entry.platform if tok_entry else None,
-            )
-            if tok_entry is None:
-                continue
-            # A mirrored (iOS) push with no sound delivers to the wrist silently
-            # AND without a haptic — the user never perceives it (confirmed on
-            # device; the haptic is gated on a sound being present). So when the
-            # chosen token is the companion iPhone, force at least the default
-            # alert sound. A genuinely-silent notification only makes sense on a
-            # watch-direct push (which haptics natively regardless), so leave
-            # that path's sound — possibly an intentional "" / None — untouched.
-            target_sound = sound
-            if tok_entry.platform == "ios" and not target_sound:
-                target_sound = "default"
-            success, reason, used_env = await client.send_push(
-                watch_id=watch_id,
-                device_token=tok_entry.device_token,
-                title=title,
-                body=message,
-                category=category,
-                data=extra_data,
-                sound=target_sound,
-                push_type=push_type,
-                environment=tok_entry.environment,
-                platform=tok_entry.platform,
-            )
-            if success:
-                sent += 1
-                _LOGGER.debug(
-                    "send_notification delivered watch_id=%s platform=%s env=%s",
-                    watch_id,
-                    tok_entry.platform,
-                    used_env,
-                )
-                if used_env != tok_entry.environment:
-                    store.register(
-                        watch_id,
-                        tok_entry.device_token,
-                        platform=tok_entry.platform,
-                        environment=used_env,
-                    )
-            else:
-                if APNsClient.is_dead_token(reason):
-                    _LOGGER.warning(
-                        "Removing dead %s token for watch_id=%s (reason=%s)",
-                        tok_entry.platform,
-                        watch_id,
-                        reason,
-                    )
-                    store.remove(watch_id, platform=tok_entry.platform)
-                failure_map[watch_id] = reason or "unknown"
-
-        if failure_map and sent == 0:
-            reasons = ", ".join(f"{wid}: {r}" for wid, r in failure_map.items())
-            raise HomeAssistantError(f"All push notifications failed: {reasons}")
-
-        if failure_map:
-            reasons = ", ".join(f"{wid}: {r}" for wid, r in failure_map.items())
-            _LOGGER.warning("Some push notifications failed: %s", reasons)
-
-        return {"sent": sent, "failed": len(failure_map), "failures": failure_map}
 
     hass.services.async_register(
         DOMAIN,
