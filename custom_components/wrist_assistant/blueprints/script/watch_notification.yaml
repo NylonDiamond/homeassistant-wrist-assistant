@@ -66,8 +66,12 @@ blueprint:
             *(Optional)* Camera to snapshot and show in the notification —
             e.g. a doorbell feed. The frame is captured when the notification
             is sent, then shown in the expanded notification and on the watch.
-            Requires remote Home Assistant access (Nabu Casa or an external
-            URL) to load when you're away from home.
+
+
+            **Requires the Wrist Assistant iOS app v2.1.0 or newer** — older
+            versions won't display the snapshot. Also requires remote Home
+            Assistant access (Nabu Casa or an external URL) to load when
+            you're away from home.
 
 
             **Tip:** If your camera offers a **dedicated snapshot** entity (e.g.
