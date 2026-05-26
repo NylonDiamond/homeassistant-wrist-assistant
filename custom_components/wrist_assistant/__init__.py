@@ -15,6 +15,7 @@ from homeassistant.core import (
     ServiceCall,
     ServiceResponse,
     SupportsResponse,
+    callback,
 )
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
@@ -596,6 +597,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         runtime_data.apns_client = apns_client
         _LOGGER.info("APNs client ready")
 
+    @callback
     def _handle_stop(_event) -> None:
         coordinator.async_shutdown()
         camera_stream_coordinator.shutdown()
@@ -610,10 +612,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # nothing triggers it — and the "Connected watches" count stays stuck on
     # its last value (e.g. shows "1" long after the last poll). 60s tick gives
     # a worst-case stale window of SESSION_TTL + 60s before the count drops.
+    @callback
+    def _prune_idle_sessions(_now) -> None:
+        # Must be a @callback (not a bare lambda): async_track_time_interval
+        # infers the job type from the outermost callable, and an undecorated
+        # function is treated as HassJobType.Executor — i.e. run in a worker
+        # thread. _prune_sessions fires logbook events via hass.bus.async_fire,
+        # which is loop-only, so running it off-loop trips HA's thread-safety
+        # guard. Decorating keeps the whole prune path on the event loop.
+        coordinator.async_prune_idle_sessions()
+
     entry.async_on_unload(
         async_track_time_interval(
             hass,
-            lambda _now: coordinator.async_prune_idle_sessions(),
+            _prune_idle_sessions,
             timedelta(seconds=60),
         )
     )
