@@ -45,24 +45,35 @@ def session(token: str) -> requests.Session:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _verify_ha_reachable(base_url: str, token: str) -> None:
+def _verify_ha_reachable() -> None:
     """Fail fast with a clear message if HA isn't reachable or the token is wrong.
 
     This runs once per test session before any test, so a misconfigured HA_URL
     or expired token surfaces as a single explanatory error instead of N
     cryptic per-test failures.
+
+    Reads the env directly rather than depending on the base_url/token fixtures
+    so it can no-op when HA isn't configured — pure-unit tests (e.g.
+    test_camera_stream.py) must run in CI without HA_URL/HA_TOKEN set. The HTTP
+    tests still skip individually via their base_url/token fixtures when the env
+    is absent, so this only short-circuits the reachability probe, not them.
     """
+    url = os.environ.get("HA_URL")
+    tok = os.environ.get("HA_TOKEN")
+    if not url or not tok:
+        return
+    base = url.rstrip("/")
     try:
         r = requests.get(
-            f"{base_url}/api/",
-            headers={"Authorization": f"Bearer {token}"},
+            f"{base}/api/",
+            headers={"Authorization": f"Bearer {tok}"},
             timeout=10,
         )
     except requests.RequestException as err:
-        pytest.exit(f"Cannot reach HA at {base_url}/api/: {err}", returncode=2)
+        pytest.exit(f"Cannot reach HA at {base}/api/: {err}", returncode=2)
     if r.status_code != 200:
         pytest.exit(
-            f"HA at {base_url}/api/ returned HTTP {r.status_code} "
+            f"HA at {base}/api/ returned HTTP {r.status_code} "
             "(check HA_URL, HA_TOKEN, and that HA is running)",
             returncode=2,
         )

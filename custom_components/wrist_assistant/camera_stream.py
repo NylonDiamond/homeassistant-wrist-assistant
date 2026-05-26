@@ -14,7 +14,13 @@ from dataclasses import dataclass, field
 from io import BytesIO
 import logging
 from aiohttp.web import Request, Response, StreamResponse
-from PIL import Image
+
+# NOTE: Pillow (PIL) is imported lazily inside _process_frame / _process_snapshot
+# rather than at module load. Both run in the executor, and this module is
+# imported from the package __init__ during HA startup — a top-level
+# `from PIL import Image` would make a missing/old Pillow fail the *entire*
+# integration (push, delta API, everything) at import time, not just camera
+# snapshots. Deferring it confines a Pillow problem to the camera-image path.
 
 from homeassistant.components.camera import Image as CameraImage, async_get_image
 from homeassistant.core import HomeAssistant
@@ -177,6 +183,8 @@ def _process_frame(
 
     Returns (processed_bytes, source_width, source_height).
     """
+    from PIL import Image  # lazy: see module-top note
+
     img = Image.open(BytesIO(frame_bytes))
     source_w, source_h = img.size
 
@@ -497,6 +505,8 @@ def _process_snapshot(
     progressively lower quality if the result exceeds max_bytes.
     Returns processed JPEG bytes, or None if it cannot fit within the budget.
     """
+    from PIL import Image  # lazy: see module-top note
+
     img = Image.open(BytesIO(frame_bytes))
 
     # Crop from full resolution if viewport is not full-frame
@@ -574,15 +584,22 @@ async def capture_notification_snapshot(
         return None
     if not image or not image.content:
         return None
-    # PIL work is CPU-bound — keep it off the event loop.
-    return await hass.async_add_executor_job(
-        _process_snapshot,
-        image.content,
-        viewport or ViewportState(),  # saved framing, or full frame
-        NOTIF_SNAPSHOT_MAX_WIDTH,
-        NOTIF_SNAPSHOT_MAX_HEIGHT,
-        NOTIF_SNAPSHOT_QUALITY,
-        NOTIF_SNAPSHOT_MAX_BYTES,
-    )
+    # PIL work is CPU-bound — keep it off the event loop. Guard the executor
+    # call too: _process_snapshot lazily imports Pillow, so a missing/old
+    # Pillow surfaces here as an ImportError. Per this function's contract it
+    # must degrade to None (text-only notification), never raise into the push.
+    try:
+        return await hass.async_add_executor_job(
+            _process_snapshot,
+            image.content,
+            viewport or ViewportState(),  # saved framing, or full frame
+            NOTIF_SNAPSHOT_MAX_WIDTH,
+            NOTIF_SNAPSHOT_MAX_HEIGHT,
+            NOTIF_SNAPSHOT_QUALITY,
+            NOTIF_SNAPSHOT_MAX_BYTES,
+        )
+    except Exception as err:  # noqa: BLE001 — never let image processing kill the push
+        _LOGGER.warning("Snapshot processing failed for %s: %s", entity_id, err)
+        return None
 
 
