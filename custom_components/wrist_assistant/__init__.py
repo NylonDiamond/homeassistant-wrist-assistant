@@ -163,18 +163,40 @@ def _choose_token(
     )
 
 
+def _jpeg_aspect(data: bytes) -> float | None:
+    """Width/height ratio of a JPEG, read from its header (no full pixel
+    decode). Sent to the client so it can reserve the correct space for the
+    notification image — the spinner then occupies the image's eventual
+    footprint and nothing shifts when the image loads. Best-effort: None when
+    the dimensions can't be determined."""
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        with Image.open(BytesIO(data)) as img:
+            w, h = img.size
+        if w > 0 and h > 0:
+            return round(w / h, 4)
+    except Exception:  # noqa: BLE001 — aspect is advisory; never block the push
+        return None
+    return None
+
+
 async def _build_snapshot_url(
     hass: HomeAssistant,
     runtime_data: WristAssistantData,
     image_source: object,
-) -> str | None:
-    """Capture a camera snapshot and return a token-authed absolute URL.
+) -> tuple[str, float | None] | None:
+    """Capture a camera snapshot and return (token-authed absolute URL, aspect).
 
-    Returns None (and logs) on any failure — a missing image must never block
-    the notification itself. Uses the external HA URL when configured so the
-    device can fetch it away from home; users without remote access get an
-    internal URL that only resolves on the LAN (documented PR1 limitation,
-    lifted by the relay-hosted variant in a later PR).
+    `aspect` is the snapshot's width/height so the client can reserve space and
+    avoid a layout shift; None when it can't be computed. Returns None (and logs)
+    on any failure — a missing image must never block the notification itself.
+    Uses the external HA URL when configured so the device can fetch it away from
+    home; users without remote access get an internal URL that only resolves on
+    the LAN (documented PR1 limitation, lifted by the relay-hosted variant in a
+    later PR).
     """
     if not isinstance(image_source, str) or not image_source:
         return None
@@ -185,6 +207,7 @@ async def _build_snapshot_url(
     if not jpeg:
         return None
     token = runtime_data.notification_snapshot_store.put(jpeg, entity_id=image_source)
+    aspect = await hass.async_add_executor_job(_jpeg_aspect, jpeg)
     try:
         base = get_url(hass, prefer_external=True)
     except NoURLAvailableError:
@@ -193,7 +216,7 @@ async def _build_snapshot_url(
             image_source,
         )
         return None
-    return f"{base}/api/wrist_assistant/notification/snapshot/{token}"
+    return f"{base}/api/wrist_assistant/notification/snapshot/{token}", aspect
 
 
 def _resolve_stream_entity(
@@ -255,9 +278,14 @@ async def _deliver_push(
     # frame now (freezing the moment the event fired) and embed a token-authed
     # URL the app fetches. A pre-built `snapshot_url` is honored as-is.
     if image_source is not None and not extra_data.get("snapshot_url"):
-        snapshot_url = await _build_snapshot_url(hass, data, image_source)
-        if snapshot_url:
+        built = await _build_snapshot_url(hass, data, image_source)
+        if built:
+            snapshot_url, snapshot_aspect = built
             extra_data["snapshot_url"] = snapshot_url
+            # Aspect lets the client reserve the image's footprint up front so the
+            # spinner doesn't resize when the image arrives.
+            if snapshot_aspect:
+                extra_data["snapshot_aspect"] = snapshot_aspect
         # Carry the source camera whenever the image is a camera — set regardless
         # of whether the send-time snapshot URL was built. The client uses it to
         # (a) open the live stream on a snapshot tap, and (b) fetch the image on
