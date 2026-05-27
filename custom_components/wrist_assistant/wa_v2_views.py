@@ -1476,9 +1476,16 @@ async def _op_send_test_notification(ctx: _OpContext) -> Response:
             {"ok": False, "error": "notifications unavailable"}, status=503
         )
 
+    # Camera is OPTIONAL. When present, the test push includes a real snapshot
+    # (the iOS snapshot-framing editor's "Send Test"). When absent, it's a
+    # plain test push — used by the app's advanced setup check to verify the
+    # end-to-end notification pipeline without needing a camera entity.
     camera = ctx.payload.get("camera")
-    if not isinstance(camera, str) or not camera.startswith("camera."):
-        return Response(status=400, text="camera entity required")
+    if camera is not None and (
+        not isinstance(camera, str) or not camera.startswith("camera.")
+    ):
+        return Response(status=400, text="camera must be a camera.* entity id")
+    image_source = camera if isinstance(camera, str) and camera.startswith("camera.") else None
 
     target_watch_id = ctx.watch_id
     companion = ctx.payload.get("companion_watch_id")
@@ -1493,7 +1500,7 @@ async def _op_send_test_notification(ctx: _OpContext) -> Response:
         title = "Test notification"
     message = ctx.payload.get("message")
     if not isinstance(message, str) or not message:
-        message = "Camera snapshot framing test"
+        message = "Your Wrist Assistant setup is working." if image_source is None else "Camera snapshot framing test"
 
     # Lazy import: _deliver_push lives in the package __init__, importing it at
     # module load would be circular (this module is imported during setup).
@@ -1505,7 +1512,7 @@ async def _op_send_test_notification(ctx: _OpContext) -> Response:
             ctx.domain_data,
             title=title,
             message=message,
-            image_source=camera,
+            image_source=image_source,
             target_watch_ids=[target_watch_id],
         )
     except HomeAssistantError as err:
