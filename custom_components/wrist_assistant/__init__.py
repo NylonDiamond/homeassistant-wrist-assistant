@@ -258,21 +258,30 @@ async def _deliver_push(
         snapshot_url = await _build_snapshot_url(hass, data, image_source)
         if snapshot_url:
             extra_data["snapshot_url"] = snapshot_url
-            # Carry the source camera so the watch can open its live stream when
-            # the snapshot is tapped. (iOS taps refresh the still in place.)
-            if isinstance(image_source, str) and image_source.startswith("camera."):
-                extra_data.setdefault("camera_entity_id", image_source)
-                # The snapshot variant can't stream — hand the watch the device's
-                # live-streamable sibling so the tapped-open view plays live.
-                stream_entity = _resolve_stream_entity(hass, data, image_source)
-                if stream_entity:
-                    extra_data.setdefault("camera_stream_entity_id", stream_entity)
+        # Carry the source camera whenever the image is a camera — set regardless
+        # of whether the send-time snapshot URL was built. The client uses it to
+        # (a) open the live stream on a snapshot tap, and (b) fetch the image on
+        # demand when capture failed here (no snapshot_url) or the embedded URL
+        # isn't reachable from where the device is — so the notification still
+        # shows an image instead of buttons-only.
+        if isinstance(image_source, str) and image_source.startswith("camera."):
+            extra_data.setdefault("camera_entity_id", image_source)
+            # The snapshot variant can't stream — hand the watch the device's
+            # live-streamable sibling so the tapped-open view plays live.
+            stream_entity = _resolve_stream_entity(hass, data, image_source)
+            if stream_entity:
+                extra_data.setdefault("camera_stream_entity_id", stream_entity)
 
     # The content extension / watch long look only render our custom UI when the
     # push category is WA_ACTIONS — so a snapshot-only push (no action rows) must
     # still carry it, else it degrades to a plain system notification with no image.
+    # A camera push whose send-time capture failed (no snapshot_url) still needs
+    # WA_ACTIONS so the client renders and can fetch the image on demand from
+    # `camera_entity_id` — otherwise it would silently degrade to buttons-only.
     category = (
-        "WA_ACTIONS" if (enriched_actions or extra_data.get("snapshot_url")) else None
+        "WA_ACTIONS"
+        if (enriched_actions or extra_data.get("snapshot_url") or extra_data.get("camera_entity_id"))
+        else None
     )
     # Default interruption-level to "active": alerts + haptic when the user is
     # available, but respects Focus / Do Not Disturb / sleep.
