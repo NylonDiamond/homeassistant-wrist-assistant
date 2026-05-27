@@ -1502,6 +1502,20 @@ async def _op_send_test_notification(ctx: _OpContext) -> Response:
     if not isinstance(message, str) or not message:
         message = "Your Wrist Assistant setup is working." if image_source is None else "Camera snapshot framing test"
 
+    # Optional sample action buttons. The advanced setup check sends a few
+    # self-contained demo entities (entity_id + state + friendly_name +
+    # attributes already supplied by the app) so the test push arrives with the
+    # full interactive WA_ACTIONS UI — buttons and all — exactly like a real
+    # notification. These IDs are fakes that won't exist in this HA, so we pass
+    # them straight through without state enrichment (the watch/extension renders
+    # from the supplied fields). Cap at 4 (matches the watch/extension row limit).
+    actions_raw = ctx.payload.get("actions")
+    enriched_actions = None
+    if isinstance(actions_raw, list):
+        action_dicts = [a for a in actions_raw if isinstance(a, dict)][:4]
+        if action_dicts:
+            enriched_actions = action_dicts
+
     # Lazy import: _deliver_push lives in the package __init__, importing it at
     # module load would be circular (this module is imported during setup).
     from . import _deliver_push
@@ -1513,6 +1527,7 @@ async def _op_send_test_notification(ctx: _OpContext) -> Response:
             title=title,
             message=message,
             image_source=image_source,
+            enriched_actions=enriched_actions,
             target_watch_ids=[target_watch_id],
         )
     except HomeAssistantError as err:
