@@ -80,6 +80,7 @@ from .camera_stream import (
     NOTIF_SNAPSHOT_MAX_BYTES,
     NOTIF_SNAPSHOT_MAX_HEIGHT,
     NOTIF_SNAPSHOT_MAX_WIDTH,
+    NOTIF_SNAPSHOT_QUALITY,
     SNAPSHOT_DEFAULT_QUALITY,
     SNAPSHOT_MAX_BYTES,
     SNAPSHOT_MAX_HEIGHT,
@@ -978,13 +979,20 @@ def _camera_ids_from_payload(payload: dict[str, Any]) -> list[str]:
 
 
 async def _op_set_snapshot_crop(ctx: _OpContext) -> Response:
-    """Save the user's notification framing for a camera's entities.
+    """Save the user's notification framing (and optional sizing) for a camera.
 
     Body: {"entity_ids": ["camera.x", ...] | "entity_id": "camera.x",
-           "viewport": {x, y, w|width, h|height}}.
+           "viewport": {x, y, w|width, h|height},
+           "width": <int, optional>, "quality": <int, optional>}.
     A full-frame viewport clears any saved crop (reset to full frame). The crop
-    is written to every supplied entity_id so any variant the notification uses
-    gets the same framing.
+    and sizing are written to every supplied entity_id so any variant the
+    notification uses gets the same treatment.
+
+    Sizing (the iOS quality dropdown) is independent of the crop:
+      * both ``width`` and ``quality`` absent → existing sizing left untouched;
+      * both explicitly null → sizing override cleared (back to default);
+      * either present → stored (the missing half defaults to today's value).
+    Values are clamped server-side; a value equal to the default clears it.
     """
     entity_ids = _camera_ids_from_payload(ctx.payload)
     if not entity_ids:
@@ -992,28 +1000,51 @@ async def _op_set_snapshot_crop(ctx: _OpContext) -> Response:
 
     viewport = _parse_stream_viewport(ctx.payload.get("viewport"))
     store = ctx.domain_data.snapshot_crop_store
+    aspect_cache = ctx.domain_data.snapshot_aspect_cache
+
+    w_val = ctx.payload.get("width")
+    q_val = ctx.payload.get("quality")
+    has_sizing = "width" in ctx.payload or "quality" in ctx.payload
+    clear_sizing = has_sizing and w_val is None and q_val is None
+    set_width = int(w_val) if isinstance(w_val, (int, float)) else NOTIF_SNAPSHOT_MAX_WIDTH
+    set_quality = int(q_val) if isinstance(q_val, (int, float)) else NOTIF_SNAPSHOT_QUALITY
+
     for entity_id in entity_ids:
         store.set(entity_id, viewport)
+        # Re-framing changes the snapshot's aspect — drop the cached value so the
+        # next push recomputes it instead of reserving the old footprint.
+        aspect_cache.pop(entity_id, None)
+        if clear_sizing:
+            store.clear_sizing(entity_id)
+        elif has_sizing:
+            store.set_sizing(entity_id, set_width, set_quality)
     return ctx.signed_json({"ok": True, "count": len(entity_ids)})
 
 
 async def _op_get_snapshot_crop(ctx: _OpContext) -> Response:
-    """Return the saved framing for a camera, or null when full-frame.
+    """Return the saved framing (and sizing) for a camera.
 
     Body: {"entity_id": "camera.x"}.
-    Response: {"viewport": {x, y, w, h}} or {"viewport": null}.
+    Response: {"viewport": {x, y, w, h} | null, "width": int, "quality": int}.
+    `width`/`quality` are present only when the camera has a non-default sizing
+    override, so the framing page can restore the quality dropdown.
     """
     entity_id = ctx.payload.get("entity_id")
     if not isinstance(entity_id, str) or not entity_id.startswith("camera."):
         return Response(status=400, text="entity_id required and must be a camera")
 
-    crop = ctx.domain_data.snapshot_crop_store.get(entity_id)
+    store = ctx.domain_data.snapshot_crop_store
+    crop = store.get(entity_id)
     viewport = (
         {"x": crop.x, "y": crop.y, "w": crop.w, "h": crop.h}
         if crop is not None
         else None
     )
-    return ctx.signed_json({"viewport": viewport})
+    resp: dict[str, object] = {"viewport": viewport}
+    sizing = store.get_sizing(entity_id)
+    if sizing is not None:
+        resp["width"], resp["quality"] = sizing
+    return ctx.signed_json(resp)
 
 
 async def _op_snapshot_crops_status(ctx: _OpContext) -> Response:
@@ -1940,6 +1971,12 @@ class WAStreamView(HomeAssistantView):
 
 # ── /notification/snapshot view ──────────────────────────────────────────
 
+# How long a snapshot GET waits for an in-flight background capture before
+# 404ing. Slightly above NOTIF_SNAPSHOT_CAPTURE_TIMEOUT (5 s) so a slow-but-
+# responsive camera still resolves on the first fetch; well within iOS's
+# notification-service-extension execution budget (~30 s).
+SNAPSHOT_FETCH_WAIT_SECONDS = 6.0
+
 
 class WANotificationSnapshotView(HomeAssistantView):
     """Serve a camera snapshot captured for a notification, authed by token.
@@ -1964,9 +2001,15 @@ class WANotificationSnapshotView(HomeAssistantView):
         if domain_data is None:
             return Response(text="Integration not loaded", status=503)
 
-        entry = domain_data.notification_snapshot_store.get(token)
-        if entry is None:
-            # Missing / expired are indistinguishable to the caller by design.
+        # If the push beat the camera, wait briefly for the in-flight capture to
+        # land instead of 404ing. Bounded so a dead/slow camera can't pin the
+        # connection; on timeout the client falls back to camera_entity_id.
+        entry = await domain_data.notification_snapshot_store.get_wait(
+            token, timeout=SNAPSHOT_FETCH_WAIT_SECONDS
+        )
+        if entry is None or entry.data is None:
+            # Missing / expired / failed / still-pending are indistinguishable
+            # to the caller by design.
             return Response(text="Not Found", status=404)
 
         return Response(
@@ -2008,6 +2051,8 @@ class WANotificationSnapshotLiveView(HomeAssistantView):
         # No source camera (pre-built image token) → nothing to re-capture;
         # hand back the cached frame so the tap is at worst a no-op.
         if not entry.entity_id:
+            if entry.data is None:
+                return Response(text="Not Found", status=404)
             return Response(
                 body=entry.data,
                 content_type=entry.content_type,
@@ -2022,8 +2067,12 @@ class WANotificationSnapshotLiveView(HomeAssistantView):
         except Exception:  # noqa: BLE001 — never 500 a notification refresh
             jpeg = None
 
-        # Capture failed (camera unavailable, away from home) → cached frame.
+        # Capture failed (camera unavailable, away from home) → cached frame, if
+        # we have one (None while the original send-time capture is still in
+        # flight); otherwise 404 and let the client fall back.
         if not jpeg:
+            if entry.data is None:
+                return Response(text="Not Found", status=404)
             return Response(
                 body=entry.data,
                 content_type=entry.content_type,

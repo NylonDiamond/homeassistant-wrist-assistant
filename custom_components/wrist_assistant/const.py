@@ -31,6 +31,12 @@ class WristAssistantData:
     notification_snapshot_store: NotificationSnapshotStore
     snapshot_crop_store: SnapshotCropStore
     snapshot_stream_store: SnapshotStreamStore
+    # entity_id → last-computed notification snapshot aspect (width/height). Lets
+    # a push carry the image's shape so the client reserves its footprint and
+    # nothing shifts when the background-captured image lands. In-memory: the
+    # first push per camera after a restart sends without it (one brief reflow),
+    # then it's learned from that capture. Cleared when the camera is re-framed.
+    snapshot_aspect_cache: dict[str, float] = field(default_factory=dict)
     apns_client: APNsClient | None = field(default=None)
 
 

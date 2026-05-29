@@ -555,15 +555,51 @@ NOTIF_SNAPSHOT_MAX_BYTES = 256000  # 250 KB
 NOTIF_SNAPSHOT_QUALITY = 80
 NOTIF_SNAPSHOT_CAPTURE_TIMEOUT = 5  # seconds to grab a frame from the camera
 
+# Per-camera notification snapshot sizing is user-tunable from the iOS framing
+# page (a quality dropdown that maps to a width + JPEG quality). Both are
+# optional overrides; absent → the defaults above (today's behavior). Bounds so
+# a hand-edited store or a buggy client can't request something absurd.
+NOTIF_SNAPSHOT_MIN_WIDTH = 256
+NOTIF_SNAPSHOT_MIN_QUALITY = 40
+NOTIF_SNAPSHOT_MAX_QUALITY = 90
+
+
+def clamp_notif_sizing(width: int, quality: int) -> tuple[int, int]:
+    """Clamp a per-camera (width, quality) override into the supported range."""
+    width = max(NOTIF_SNAPSHOT_MIN_WIDTH, min(int(width), NOTIF_SNAPSHOT_MAX_WIDTH))
+    quality = max(
+        NOTIF_SNAPSHOT_MIN_QUALITY, min(int(quality), NOTIF_SNAPSHOT_MAX_QUALITY)
+    )
+    return width, quality
+
+
+def notif_snapshot_max_bytes(width: int) -> int:
+    """Byte cap for a notification snapshot, scaled with its width so the chosen
+    quality is usually honored (the cap rarely forces a quality step-down).
+    Linear in width: 1024px → 256 KB (the default), 512px → 128 KB, floored at
+    60 KB so even a tiny image has room to look acceptable."""
+    return max(60_000, round(width / NOTIF_SNAPSHOT_MAX_WIDTH * NOTIF_SNAPSHOT_MAX_BYTES))
+
 
 async def capture_notification_snapshot(
-    hass: HomeAssistant, entity_id: str, viewport: ViewportState | None = None
+    hass: HomeAssistant,
+    entity_id: str,
+    viewport: ViewportState | None = None,
+    *,
+    width: int | None = None,
+    quality: int | None = None,
 ) -> bytes | None:
     """Grab a JPEG from a camera entity for a notification.
 
     `viewport` is the user's saved per-camera framing (normalized crop); when
     None the full frame is captured. `_process_snapshot` crops to it before
     resizing, so passing a tighter region zooms the notification snapshot.
+
+    `width` / `quality` are the user's per-camera sizing override (set from the
+    iOS framing page's quality dropdown); None on either falls back to the
+    integration default (NOTIF_SNAPSHOT_MAX_WIDTH / NOTIF_SNAPSHOT_QUALITY). The
+    byte cap scales with the chosen width. A smaller/lower-quality snapshot
+    encodes, transfers, and decodes faster — i.e. paints on the wrist sooner.
 
     Returns processed JPEG bytes (resized + byte-capped) or None if the camera
     is unavailable, returns no image, or the frame can't be squeezed under the
@@ -575,6 +611,11 @@ async def capture_notification_snapshot(
             "Notification snapshot requested for non-camera entity %s", entity_id
         )
         return None
+    max_width, jpeg_quality = clamp_notif_sizing(
+        NOTIF_SNAPSHOT_MAX_WIDTH if width is None else width,
+        NOTIF_SNAPSHOT_QUALITY if quality is None else quality,
+    )
+    max_bytes = notif_snapshot_max_bytes(max_width)
     try:
         image: CameraImage = await async_get_image(
             hass, entity_id, timeout=NOTIF_SNAPSHOT_CAPTURE_TIMEOUT
@@ -593,10 +634,10 @@ async def capture_notification_snapshot(
             _process_snapshot,
             image.content,
             viewport or ViewportState(),  # saved framing, or full frame
-            NOTIF_SNAPSHOT_MAX_WIDTH,
-            NOTIF_SNAPSHOT_MAX_HEIGHT,
-            NOTIF_SNAPSHOT_QUALITY,
-            NOTIF_SNAPSHOT_MAX_BYTES,
+            max_width,
+            max_width,  # square bounding box (matches the default 1024×1024)
+            jpeg_quality,
+            max_bytes,
         )
     except Exception as err:  # noqa: BLE001 — never let image processing kill the push
         _LOGGER.warning("Snapshot processing failed for %s: %s", entity_id, err)

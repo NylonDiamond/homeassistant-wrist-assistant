@@ -221,3 +221,72 @@ def test_capture_degrades_to_none_without_pillow() -> None:
             cs.capture_notification_snapshot(_FakeHass(), "camera.front_door")
         )
         assert result is None
+
+
+# ── Per-camera notification snapshot sizing (the iOS quality dropdown) ─────
+
+
+def test_clamp_notif_sizing_bounds() -> None:
+    with _fresh_camera_stream("cs_clamp") as cs:
+        # In-range values pass through untouched.
+        assert cs.clamp_notif_sizing(720, 75) == (720, 75)
+        # Over the ceiling → clamped to the max.
+        assert cs.clamp_notif_sizing(9000, 500) == (
+            cs.NOTIF_SNAPSHOT_MAX_WIDTH,
+            cs.NOTIF_SNAPSHOT_MAX_QUALITY,
+        )
+        # Under the floor → clamped to the min.
+        assert cs.clamp_notif_sizing(1, 1) == (
+            cs.NOTIF_SNAPSHOT_MIN_WIDTH,
+            cs.NOTIF_SNAPSHOT_MIN_QUALITY,
+        )
+
+
+def test_notif_snapshot_max_bytes_scales_with_width() -> None:
+    with _fresh_camera_stream("cs_bytes") as cs:
+        # Full width → today's default cap.
+        assert cs.notif_snapshot_max_bytes(cs.NOTIF_SNAPSHOT_MAX_WIDTH) == (
+            cs.NOTIF_SNAPSHOT_MAX_BYTES
+        )
+        # Half the width → roughly half the cap (linear).
+        assert cs.notif_snapshot_max_bytes(512) == round(
+            512 / cs.NOTIF_SNAPSHOT_MAX_WIDTH * cs.NOTIF_SNAPSHOT_MAX_BYTES
+        )
+        # Tiny width → floored so a small image still has room to look OK.
+        assert cs.notif_snapshot_max_bytes(64) == 60_000
+
+
+def test_capture_honors_sizing_override() -> None:
+    """A width/quality override produces a genuinely smaller, fewer-byte JPEG
+    than the default — the whole point: faster encode/transfer/decode."""
+    pytest.importorskip("PIL")
+    with _fresh_camera_stream("cs_capture_sizing") as cs:
+        raw = _test_jpeg(1600, 1200)
+
+        class _FakeImage:
+            content = raw
+
+        async def _fake_get_image(hass, entity_id, timeout=5):  # noqa: ANN001
+            return _FakeImage()
+
+        cs.async_get_image = _fake_get_image
+
+        class _FakeHass:
+            async def async_add_executor_job(self, fn, *args):  # noqa: ANN001
+                return fn(*args)  # run inline
+
+        small = asyncio.run(
+            cs.capture_notification_snapshot(
+                _FakeHass(), "camera.front", width=480, quality=55
+            )
+        )
+        big = asyncio.run(
+            cs.capture_notification_snapshot(_FakeHass(), "camera.front")  # default
+        )
+        assert small is not None and big is not None
+        (small_dims, small_bytes) = _jpeg_dims(small)
+        (big_dims, big_bytes) = _jpeg_dims(big)
+        assert max(small_dims) <= 480  # width override applied
+        assert max(big_dims) <= cs.NOTIF_SNAPSHOT_MAX_WIDTH
+        assert max(small_dims) < max(big_dims)  # genuinely smaller
+        assert small_bytes < big_bytes  # fewer bytes on the wire

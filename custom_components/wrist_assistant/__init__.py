@@ -183,40 +183,78 @@ def _jpeg_aspect(data: bytes) -> float | None:
     return None
 
 
-async def _build_snapshot_url(
+def _mint_snapshot_url(
     hass: HomeAssistant,
     runtime_data: WristAssistantData,
     image_source: object,
-) -> tuple[str, float | None] | None:
-    """Capture a camera snapshot and return (token-authed absolute URL, aspect).
+) -> tuple[str, str, float | None] | None:
+    """Reserve a snapshot token + token-authed URL *without* capturing yet.
 
-    `aspect` is the snapshot's width/height so the client can reserve space and
-    avoid a layout shift; None when it can't be computed. Returns None (and logs)
-    on any failure — a missing image must never block the notification itself.
-    Uses the external HA URL when configured so the device can fetch it away from
-    home; users without remote access get an internal URL that only resolves on
-    the LAN (documented PR1 limitation, lifted by the relay-hosted variant in a
-    later PR).
+    Returns ``(absolute_url, token, cached_aspect)`` or None. The bytes are
+    filled in by ``_capture_snapshot_into`` running in the background, so the
+    capture never blocks the alert; ``WANotificationSnapshotView`` waits briefly
+    for the in-flight capture when the device fetches the URL. ``cached_aspect``
+    is this camera's last-known snapshot width/height (None the first time we see
+    it) so the client can reserve the image's footprint up front. Returns None
+    (and logs) when no reachable HA URL exists — a missing image must never block
+    the notification. Uses the external HA URL when configured so the device can
+    fetch it away from home; users without remote access get an internal URL that
+    only resolves on the LAN.
     """
     if not isinstance(image_source, str) or not image_source:
         return None
-    # Apply the user's saved per-camera framing (set via the iOS app). None when
-    # this camera was never framed → full-frame capture.
-    crop = runtime_data.snapshot_crop_store.get(image_source)
-    jpeg = await capture_notification_snapshot(hass, image_source, viewport=crop)
-    if not jpeg:
-        return None
-    token = runtime_data.notification_snapshot_store.put(jpeg, entity_id=image_source)
-    aspect = await hass.async_add_executor_job(_jpeg_aspect, jpeg)
+    store = runtime_data.notification_snapshot_store
+    token = store.reserve(entity_id=image_source)
     try:
         base = get_url(hass, prefer_external=True)
     except NoURLAvailableError:
+        store.fail(token)  # release the reservation; nothing will fetch it
         _LOGGER.warning(
             "No reachable Home Assistant URL; notification snapshot for %s omitted",
             image_source,
         )
         return None
-    return f"{base}/api/wrist_assistant/notification/snapshot/{token}", aspect
+    cached_aspect = runtime_data.snapshot_aspect_cache.get(image_source)
+    url = f"{base}/api/wrist_assistant/notification/snapshot/{token}"
+    return url, token, cached_aspect
+
+
+async def _capture_snapshot_into(
+    hass: HomeAssistant,
+    runtime_data: WristAssistantData,
+    image_source: str,
+    token: str,
+) -> None:
+    """Background: capture the camera frame and hand it to the reserved token.
+
+    Runs concurrently with the rest of the push so a slow camera delays only the
+    image, never the alert (the moment is still frozen at capture time). On
+    success, remembers the snapshot's aspect for this camera so subsequent pushes
+    can carry it up front. Never raises — a failed capture marks the token failed
+    so a waiting GET 404s and the client fetches the image on demand via
+    camera_entity_id.
+    """
+    store = runtime_data.notification_snapshot_store
+    # Apply the user's saved per-camera framing (set via the iOS app). None when
+    # this camera was never framed → full-frame capture.
+    crop = runtime_data.snapshot_crop_store.get(image_source)
+    # Per-camera sizing override (iOS quality dropdown). None → default sizing.
+    sizing = runtime_data.snapshot_crop_store.get_sizing(image_source)
+    width, quality = sizing if sizing else (None, None)
+    try:
+        jpeg = await capture_notification_snapshot(
+            hass, image_source, viewport=crop, width=width, quality=quality
+        )
+    except Exception as err:  # noqa: BLE001 — never let a bad camera kill the task
+        _LOGGER.warning("Snapshot capture failed for %s: %s", image_source, err)
+        jpeg = None
+    if not jpeg:
+        store.fail(token)
+        return
+    store.fulfill(token, jpeg)
+    aspect = await hass.async_add_executor_job(_jpeg_aspect, jpeg)
+    if aspect:
+        runtime_data.snapshot_aspect_cache[image_source] = aspect
 
 
 def _resolve_stream_entity(
@@ -274,24 +312,28 @@ async def _deliver_push(
     if enriched_actions:
         extra_data["actions"] = enriched_actions
 
-    # Camera snapshot: when an `image: "camera.x"` source is passed, capture the
-    # frame now (freezing the moment the event fired) and embed a token-authed
-    # URL the app fetches. A pre-built `snapshot_url` is honored as-is.
+    # Camera snapshot: when an `image: "camera.x"` source is passed, reserve the
+    # token + URL now (instant) and embed it, then capture the frame in the
+    # background so a slow camera delays only the image, not the alert. The
+    # device fetches the URL on arrival; WANotificationSnapshotView waits briefly
+    # for the in-flight capture. A pre-built `snapshot_url` is honored as-is.
+    snapshot_token: str | None = None
     if image_source is not None and not extra_data.get("snapshot_url"):
-        built = await _build_snapshot_url(hass, data, image_source)
-        if built:
-            snapshot_url, snapshot_aspect = built
+        minted = _mint_snapshot_url(hass, data, image_source)
+        if minted:
+            snapshot_url, snapshot_token, snapshot_aspect = minted
             extra_data["snapshot_url"] = snapshot_url
-            # Aspect lets the client reserve the image's footprint up front so the
-            # spinner doesn't resize when the image arrives.
+            # Aspect (cached from this camera's last snapshot) lets the client
+            # reserve the image's footprint up front so nothing resizes when the
+            # image arrives. Absent on the first push per camera; learned then.
             if snapshot_aspect:
                 extra_data["snapshot_aspect"] = snapshot_aspect
         # Carry the source camera whenever the image is a camera — set regardless
-        # of whether the send-time snapshot URL was built. The client uses it to
+        # of whether the snapshot URL was minted. The client uses it to
         # (a) open the live stream on a snapshot tap, and (b) fetch the image on
-        # demand when capture failed here (no snapshot_url) or the embedded URL
-        # isn't reachable from where the device is — so the notification still
-        # shows an image instead of buttons-only.
+        # demand when the embedded URL 404s (capture still in flight and slow, or
+        # the URL isn't reachable from where the device is) — so the notification
+        # still shows an image instead of buttons-only.
         if isinstance(image_source, str) and image_source.startswith("camera."):
             extra_data.setdefault("camera_entity_id", image_source)
             # The snapshot variant can't stream — hand the watch the device's
@@ -299,6 +341,16 @@ async def _deliver_push(
             stream_entity = _resolve_stream_entity(hass, data, image_source)
             if stream_entity:
                 extra_data.setdefault("camera_stream_entity_id", stream_entity)
+
+    # Start the capture now so it overlaps payload build + the APNs/relay send;
+    # by the time the device GETs the URL the bytes are often already there.
+    # image_source is a str whenever snapshot_token is set (only that branch
+    # mints one).
+    if snapshot_token is not None and isinstance(image_source, str):
+        hass.async_create_task(
+            _capture_snapshot_into(hass, data, image_source, snapshot_token),
+            name=f"wa_snapshot_capture_{snapshot_token[:8]}",
+        )
 
     # The content extension / watch long look only render our custom UI when the
     # push category is WA_ACTIONS — so a snapshot-only push (no action rows) must
