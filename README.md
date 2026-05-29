@@ -77,6 +77,12 @@ data:
   target: "" # leave empty to send to all watches, or paste a watch device_id
   title: "Front Door Alert"
   message: "Motion detected at the front door."
+
+  # Optional camera snapshot shown in the notification
+  image: "camera.front_door"
+  snapshot_width: 720 # optional, 256-1024 (default 1024); smaller loads faster
+  snapshot_quality: 75 # optional, 40-90 (default 80)
+
   sound: "Doorbell-Single.caf"
   push_type: "alert"
   tag: ""

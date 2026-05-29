@@ -59,6 +59,34 @@ send_notification:
         entity:
           filter:
             - domain: camera
+    snapshot_width:
+      name: Snapshot max width
+      description: >-
+        Max width (px) of the camera snapshot; the image is scaled to fit,
+        preserving aspect. Smaller renders faster on the watch and over
+        cellular. Only applies when "image" is set. Clamped to 256-1024; omit
+        for the default (1024).
+      example: 720
+      selector:
+        number:
+          min: 256
+          max: 1024
+          step: 16
+          unit_of_measurement: px
+          mode: slider
+    snapshot_quality:
+      name: Snapshot JPEG quality
+      description: >-
+        JPEG quality of the camera snapshot (higher is sharper but larger).
+        Only applies when "image" is set. Clamped to 40-90; omit for the
+        default (80).
+      example: 75
+      selector:
+        number:
+          min: 40
+          max: 90
+          step: 5
+          mode: slider
     data:
       name: Data
       description: >-
