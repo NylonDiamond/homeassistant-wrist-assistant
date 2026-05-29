@@ -77,8 +77,13 @@ blueprint:
             **Tip:** If your camera offers a **dedicated snapshot** entity (e.g.
             Reolink's "Snapshots" variants — you may need to enable it under
             Settings → Entities), prefer it over a live-stream entity for a
-            faster, lower-latency grab. The image is downscaled, so the
-            higher-resolution ("Clear") variant is fine.
+            faster, lower-latency grab. And where a camera exposes both a
+            **"Fluent"** (lower-resolution sub-stream) and a **"Clear"**
+            (full-resolution) variant, pick **Fluent** — the snapshot is
+            downscaled for the notification anyway, so it looks nearly identical
+            at that size while producing a much smaller image that renders
+            fastest, especially over cellular. (A **"Snapshots Fluent"** entity
+            is the best of both: a quick grab and a small, fast image.)
           default: ""
           selector:
             entity:
