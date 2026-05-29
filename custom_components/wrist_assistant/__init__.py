@@ -105,6 +105,11 @@ _SEND_NOTIFICATION_SCHEMA = vol.Schema(
         vol.Optional("data"): dict,
         vol.Optional("sound"): cv.string,
         vol.Optional("push_type", default="alert"): vol.In(["alert", "background"]),
+        # Optional per-notification snapshot sizing (the blueprint's quality
+        # dropdown maps a tier to these). Omitted → default 1024px / q80. Clamped
+        # downstream in capture_notification_snapshot.
+        vol.Optional("snapshot_width"): vol.Coerce(int),
+        vol.Optional("snapshot_quality"): vol.Coerce(int),
         vol.Optional("tag"): cv.string,
         vol.Optional("group"): cv.string,
         vol.Optional("priority"): vol.In(
@@ -224,23 +229,24 @@ async def _capture_snapshot_into(
     runtime_data: WristAssistantData,
     image_source: str,
     token: str,
+    *,
+    width: int | None = None,
+    quality: int | None = None,
 ) -> None:
     """Background: capture the camera frame and hand it to the reserved token.
 
     Runs concurrently with the rest of the push so a slow camera delays only the
     image, never the alert (the moment is still frozen at capture time). On
     success, remembers the snapshot's aspect for this camera so subsequent pushes
-    can carry it up front. Never raises — a failed capture marks the token failed
-    so a waiting GET 404s and the client fetches the image on demand via
-    camera_entity_id.
+    can carry it up front. ``width``/``quality`` are the optional per-notification
+    sizing (the blueprint's quality dropdown); None → integration default. Never
+    raises — a failed capture marks the token failed so a waiting GET 404s and
+    the client fetches the image on demand via camera_entity_id.
     """
     store = runtime_data.notification_snapshot_store
     # Apply the user's saved per-camera framing (set via the iOS app). None when
     # this camera was never framed → full-frame capture.
     crop = runtime_data.snapshot_crop_store.get(image_source)
-    # Per-camera sizing override (iOS quality dropdown). None → default sizing.
-    sizing = runtime_data.snapshot_crop_store.get_sizing(image_source)
-    width, quality = sizing if sizing else (None, None)
     try:
         jpeg = await capture_notification_snapshot(
             hass, image_source, viewport=crop, width=width, quality=quality
@@ -285,6 +291,8 @@ async def _deliver_push(
     sound: str | None = None,
     push_type: str = "alert",
     target_watch_ids: list[str] | None = None,
+    snapshot_width: int | None = None,
+    snapshot_quality: int | None = None,
 ) -> dict:
     """Build the notification payload and deliver it via the relay.
 
@@ -348,7 +356,14 @@ async def _deliver_push(
     # mints one).
     if snapshot_token is not None and isinstance(image_source, str):
         hass.async_create_task(
-            _capture_snapshot_into(hass, data, image_source, snapshot_token),
+            _capture_snapshot_into(
+                hass,
+                data,
+                image_source,
+                snapshot_token,
+                width=snapshot_width,
+                quality=snapshot_quality,
+            ),
             name=f"wa_snapshot_capture_{snapshot_token[:8]}",
         )
 
@@ -816,6 +831,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
             sound=call.data.get("sound"),
             push_type=call.data.get("push_type", "alert"),
             target_watch_ids=[target] if target else None,
+            snapshot_width=call.data.get("snapshot_width"),
+            snapshot_quality=call.data.get("snapshot_quality"),
         )
 
     hass.services.async_register(

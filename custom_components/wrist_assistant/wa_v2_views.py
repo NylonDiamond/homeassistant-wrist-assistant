@@ -80,7 +80,6 @@ from .camera_stream import (
     NOTIF_SNAPSHOT_MAX_BYTES,
     NOTIF_SNAPSHOT_MAX_HEIGHT,
     NOTIF_SNAPSHOT_MAX_WIDTH,
-    NOTIF_SNAPSHOT_QUALITY,
     SNAPSHOT_DEFAULT_QUALITY,
     SNAPSHOT_MAX_BYTES,
     SNAPSHOT_MAX_HEIGHT,
@@ -979,20 +978,13 @@ def _camera_ids_from_payload(payload: dict[str, Any]) -> list[str]:
 
 
 async def _op_set_snapshot_crop(ctx: _OpContext) -> Response:
-    """Save the user's notification framing (and optional sizing) for a camera.
+    """Save the user's notification framing for a camera's entities.
 
     Body: {"entity_ids": ["camera.x", ...] | "entity_id": "camera.x",
-           "viewport": {x, y, w|width, h|height},
-           "width": <int, optional>, "quality": <int, optional>}.
+           "viewport": {x, y, w|width, h|height}}.
     A full-frame viewport clears any saved crop (reset to full frame). The crop
-    and sizing are written to every supplied entity_id so any variant the
-    notification uses gets the same treatment.
-
-    Sizing (the iOS quality dropdown) is independent of the crop:
-      * both ``width`` and ``quality`` absent → existing sizing left untouched;
-      * both explicitly null → sizing override cleared (back to default);
-      * either present → stored (the missing half defaults to today's value).
-    Values are clamped server-side; a value equal to the default clears it.
+    is written to every supplied entity_id so any variant the notification uses
+    gets the same framing.
     """
     entity_ids = _camera_ids_from_payload(ctx.payload)
     if not entity_ids:
@@ -1001,50 +993,31 @@ async def _op_set_snapshot_crop(ctx: _OpContext) -> Response:
     viewport = _parse_stream_viewport(ctx.payload.get("viewport"))
     store = ctx.domain_data.snapshot_crop_store
     aspect_cache = ctx.domain_data.snapshot_aspect_cache
-
-    w_val = ctx.payload.get("width")
-    q_val = ctx.payload.get("quality")
-    has_sizing = "width" in ctx.payload or "quality" in ctx.payload
-    clear_sizing = has_sizing and w_val is None and q_val is None
-    set_width = int(w_val) if isinstance(w_val, (int, float)) else NOTIF_SNAPSHOT_MAX_WIDTH
-    set_quality = int(q_val) if isinstance(q_val, (int, float)) else NOTIF_SNAPSHOT_QUALITY
-
     for entity_id in entity_ids:
         store.set(entity_id, viewport)
         # Re-framing changes the snapshot's aspect — drop the cached value so the
         # next push recomputes it instead of reserving the old footprint.
         aspect_cache.pop(entity_id, None)
-        if clear_sizing:
-            store.clear_sizing(entity_id)
-        elif has_sizing:
-            store.set_sizing(entity_id, set_width, set_quality)
     return ctx.signed_json({"ok": True, "count": len(entity_ids)})
 
 
 async def _op_get_snapshot_crop(ctx: _OpContext) -> Response:
-    """Return the saved framing (and sizing) for a camera.
+    """Return the saved framing for a camera, or null when full-frame.
 
     Body: {"entity_id": "camera.x"}.
-    Response: {"viewport": {x, y, w, h} | null, "width": int, "quality": int}.
-    `width`/`quality` are present only when the camera has a non-default sizing
-    override, so the framing page can restore the quality dropdown.
+    Response: {"viewport": {x, y, w, h}} or {"viewport": null}.
     """
     entity_id = ctx.payload.get("entity_id")
     if not isinstance(entity_id, str) or not entity_id.startswith("camera."):
         return Response(status=400, text="entity_id required and must be a camera")
 
-    store = ctx.domain_data.snapshot_crop_store
-    crop = store.get(entity_id)
+    crop = ctx.domain_data.snapshot_crop_store.get(entity_id)
     viewport = (
         {"x": crop.x, "y": crop.y, "w": crop.w, "h": crop.h}
         if crop is not None
         else None
     )
-    resp: dict[str, object] = {"viewport": viewport}
-    sizing = store.get_sizing(entity_id)
-    if sizing is not None:
-        resp["width"], resp["quality"] = sizing
-    return ctx.signed_json(resp)
+    return ctx.signed_json({"viewport": viewport})
 
 
 async def _op_snapshot_crops_status(ctx: _OpContext) -> Response:

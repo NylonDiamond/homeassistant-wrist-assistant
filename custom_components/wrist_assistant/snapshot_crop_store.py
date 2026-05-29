@@ -20,12 +20,7 @@ import logging
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
-from .camera_stream import (
-    NOTIF_SNAPSHOT_MAX_WIDTH,
-    NOTIF_SNAPSHOT_QUALITY,
-    ViewportState,
-    clamp_notif_sizing,
-)
+from .camera_stream import ViewportState
 from .const import SNAPSHOT_CROP_STORAGE_KEY, SNAPSHOT_CROP_STORAGE_VERSION
 
 _LOGGER = logging.getLogger(__name__)
@@ -53,9 +48,6 @@ class SnapshotCropStore:
 
     def __init__(self, hass: HomeAssistant) -> None:
         self._crops: dict[str, ViewportState] = {}
-        # entity_id → (width, quality) override, independent of the crop. Only
-        # holds cameras the user tuned away from the default sizing.
-        self._sizing: dict[str, tuple[int, int]] = {}
         self._store: Store = Store(
             hass,
             SNAPSHOT_CROP_STORAGE_VERSION,
@@ -68,48 +60,28 @@ class SnapshotCropStore:
         if not data or not isinstance(data, dict):
             return
         crops = data.get("crops", {})
-        if isinstance(crops, dict):
-            for entity_id, raw in crops.items():
-                if not isinstance(raw, dict):
-                    continue
-                try:
-                    self._crops[entity_id] = ViewportState(
-                        x=_clamp01(float(raw.get("x", 0.0))),
-                        y=_clamp01(float(raw.get("y", 0.0))),
-                        w=_clamp01(float(raw.get("w", 1.0)), minimum=0.01),
-                        h=_clamp01(float(raw.get("h", 1.0)), minimum=0.01),
-                    )
-                except (TypeError, ValueError):
-                    continue
-        # Optional sizing section — absent in stores written before the quality
-        # dropdown shipped, so its lack must load cleanly to today's default.
-        sizing = data.get("sizing", {})
-        if isinstance(sizing, dict):
-            for entity_id, raw in sizing.items():
-                if not isinstance(raw, dict):
-                    continue
-                try:
-                    self._sizing[entity_id] = clamp_notif_sizing(
-                        int(raw["width"]), int(raw["quality"])
-                    )
-                except (KeyError, TypeError, ValueError):
-                    continue
-        _LOGGER.debug(
-            "Loaded %d snapshot crops, %d sizing overrides from storage",
-            len(self._crops),
-            len(self._sizing),
-        )
+        if not isinstance(crops, dict):
+            return
+        for entity_id, raw in crops.items():
+            if not isinstance(raw, dict):
+                continue
+            try:
+                self._crops[entity_id] = ViewportState(
+                    x=_clamp01(float(raw.get("x", 0.0))),
+                    y=_clamp01(float(raw.get("y", 0.0))),
+                    w=_clamp01(float(raw.get("w", 1.0)), minimum=0.01),
+                    h=_clamp01(float(raw.get("h", 1.0)), minimum=0.01),
+                )
+            except (TypeError, ValueError):
+                continue
+        _LOGGER.debug("Loaded %d snapshot crops from storage", len(self._crops))
 
     def _serialize(self) -> dict:
         return {
             "crops": {
                 entity_id: {"x": vp.x, "y": vp.y, "w": vp.w, "h": vp.h}
                 for entity_id, vp in self._crops.items()
-            },
-            "sizing": {
-                entity_id: {"width": w, "quality": q}
-                for entity_id, (w, q) in self._sizing.items()
-            },
+            }
         }
 
     def get(self, entity_id: str) -> ViewportState | None:
@@ -132,27 +104,4 @@ class SnapshotCropStore:
 
     def delete(self, entity_id: str) -> None:
         if self._crops.pop(entity_id, None) is not None:
-            self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
-
-    def get_sizing(self, entity_id: str) -> tuple[int, int] | None:
-        """Return the saved (width, quality) override for a camera, or None when
-        it uses the integration default sizing."""
-        return self._sizing.get(entity_id)
-
-    def set_sizing(self, entity_id: str, width: int, quality: int) -> None:
-        """Save a per-camera snapshot sizing override (clamped). A value equal to
-        the integration default clears the override, so the map only holds
-        cameras the user actually tuned — mirroring how a full-frame crop is
-        dropped in set()."""
-        width, quality = clamp_notif_sizing(width, quality)
-        if (width, quality) == (NOTIF_SNAPSHOT_MAX_WIDTH, NOTIF_SNAPSHOT_QUALITY):
-            self.clear_sizing(entity_id)
-            return
-        if self._sizing.get(entity_id) == (width, quality):
-            return  # unchanged — skip the debounced save
-        self._sizing[entity_id] = (width, quality)
-        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
-
-    def clear_sizing(self, entity_id: str) -> None:
-        if self._sizing.pop(entity_id, None) is not None:
             self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)

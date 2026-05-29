@@ -89,6 +89,24 @@ blueprint:
             entity:
               filter:
                 - domain: camera
+        snapshot_quality:
+          name: Snapshot quality
+          description: >
+            How sharp vs. small the camera snapshot is. **Sharpest** sends the
+            full-size image; **Balanced** and **Fast** send a smaller image that
+            loads quicker on the watch and over cellular — handy for a detailed
+            camera or a weak connection. Only applies when a Camera is set above.
+          default: sharpest
+          selector:
+            select:
+              mode: dropdown
+              options:
+                - label: "Sharpest (default)"
+                  value: sharpest
+                - label: "Balanced — smaller, faster"
+                  value: balanced
+                - label: "Fast — smallest, fastest"
+                  value: fast
     section_button_1:
       name: "☝️ Button 1"
       collapsed: true
@@ -557,6 +575,7 @@ sequence:
       bp_target_device: !input target
       bp_tag: !input tag
       bp_group: !input group
+      bp_snapshot_quality: !input snapshot_quality
   - action: wrist_assistant.send_notification
     data: >
       {%- set d = namespace(items=[("priority", bp_priority)]) -%}
@@ -567,6 +586,8 @@ sequence:
       {%- if bp_target_device %}{%- set d.items = d.items + [("target", bp_target_device)] -%}{%- endif -%}
       {%- if bp_tag %}{%- set d.items = d.items + [("tag", bp_tag)] -%}{%- endif -%}
       {%- if bp_group %}{%- set d.items = d.items + [("group", bp_group)] -%}{%- endif -%}
+      {%- if bp_image and bp_snapshot_quality == "balanced" %}{%- set d.items = d.items + [("snapshot_width", 720), ("snapshot_quality", 75)] -%}{%- endif -%}
+      {%- if bp_image and bp_snapshot_quality == "fast" %}{%- set d.items = d.items + [("snapshot_width", 480), ("snapshot_quality", 55)] -%}{%- endif -%}
       {%- set extra = namespace(items=[]) -%}
       {%- if bp_auto_dismiss %}{%- set extra.items = extra.items + [("auto_dismiss", true)] -%}{%- endif -%}
       {%- set actions = namespace(list=[]) -%}
