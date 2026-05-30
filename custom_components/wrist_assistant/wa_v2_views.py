@@ -89,6 +89,7 @@ from .camera_stream import (
     _process_snapshot,
     _UNSET,
     capture_notification_snapshot,
+    jpeg_aspect,
     run_mjpeg_stream,
 )
 from .const import (
@@ -950,6 +951,20 @@ async def _op_snapshot(ctx: _OpContext) -> Response:
     if processed is None:
         return Response(status=503, text="Image exceeds size budget")
 
+    # Warm the persisted aspect from this fetch so the *first* notification for
+    # this camera can reserve the image's footprint (no black bars) — the iOS
+    # framing page fetches a snapshot per camera on entry, which is usually long
+    # before any push fires. Only when this fetch's viewport equals the saved
+    # crop: the framing list always sends the saved crop (so its shape matches
+    # the notification's), but the framing *editor* previews arbitrary in-progress
+    # crops — caching those would reserve the wrong shape. Square bounding box on
+    # both paths means the aspect here equals the notification's regardless of the
+    # 220px-vs-1024px size difference. Per-entity only (variants differ in aspect).
+    if ctx.domain_data.snapshot_crop_store.matches_saved(entity_id, viewport):
+        aspect = await ctx.hass.async_add_executor_job(jpeg_aspect, processed)
+        if aspect:
+            ctx.domain_data.snapshot_aspect_store.set(entity_id, aspect)
+
     return ctx.signed_bytes(
         processed,
         content_type="image/jpeg",
@@ -992,12 +1007,12 @@ async def _op_set_snapshot_crop(ctx: _OpContext) -> Response:
 
     viewport = _parse_stream_viewport(ctx.payload.get("viewport"))
     store = ctx.domain_data.snapshot_crop_store
-    aspect_cache = ctx.domain_data.snapshot_aspect_cache
+    aspect_store = ctx.domain_data.snapshot_aspect_store
     for entity_id in entity_ids:
         store.set(entity_id, viewport)
-        # Re-framing changes the snapshot's aspect — drop the cached value so the
+        # Re-framing changes the snapshot's aspect — drop the stored value so the
         # next push recomputes it instead of reserving the old footprint.
-        aspect_cache.pop(entity_id, None)
+        aspect_store.delete(entity_id)
     return ctx.signed_json({"ok": True, "count": len(entity_ids)})
 
 

@@ -644,3 +644,59 @@ async def capture_notification_snapshot(
         return None
 
 
+# Full-frame epsilon: a viewport this close to (0,0,1,1) is treated as "no crop".
+# Mirrors the threshold _process_snapshot uses when deciding whether to crop.
+_FULL_FRAME_EPS = 0.001
+
+
+def is_full_frame_viewport(viewport: ViewportState) -> bool:
+    """True when a crop region is effectively the whole frame (a no-op crop)."""
+    return (
+        viewport.x <= _FULL_FRAME_EPS
+        and viewport.y <= _FULL_FRAME_EPS
+        and viewport.w >= 1.0 - _FULL_FRAME_EPS
+        and viewport.h >= 1.0 - _FULL_FRAME_EPS
+    )
+
+
+def viewport_matches(request: ViewportState, saved: ViewportState | None) -> bool:
+    """Whether ``request`` is the camera's *saved* framing.
+
+    ``saved`` is None when the camera has no stored crop — i.e. full-frame — so a
+    request matches only if it too is full-frame. Otherwise all four edges must
+    agree within the full-frame epsilon. Used to decide whether a one-off
+    snapshot fetch (the iOS framing page) rendered the *same* frame the
+    notification path will send, and only then is its aspect safe to cache.
+    """
+    if saved is None:
+        return is_full_frame_viewport(request)
+    return (
+        abs(request.x - saved.x) <= _FULL_FRAME_EPS
+        and abs(request.y - saved.y) <= _FULL_FRAME_EPS
+        and abs(request.w - saved.w) <= _FULL_FRAME_EPS
+        and abs(request.h - saved.h) <= _FULL_FRAME_EPS
+    )
+
+
+def jpeg_aspect(data: bytes) -> float | None:
+    """Width/height of a JPEG, read from its header (no full pixel decode).
+
+    Sent to the client as ``snapshot_aspect`` so it can reserve the notification
+    image's footprint before the bytes arrive — no layout shift, no letterbox
+    bars while it loads. Best-effort: None when the dimensions can't be read or
+    are degenerate. Callers offload this to an executor (Pillow is lazy-imported,
+    same as the rest of this module, so a missing Pillow degrades to None here
+    instead of raising into the push).
+    """
+    try:
+        from PIL import Image  # lazy: see module-top note
+
+        with Image.open(BytesIO(data)) as img:
+            w, h = img.size
+        if w > 0 and h > 0:
+            return round(w / h, 4)
+    except Exception:  # noqa: BLE001 — aspect is advisory; never block the push
+        return None
+    return None
+
+

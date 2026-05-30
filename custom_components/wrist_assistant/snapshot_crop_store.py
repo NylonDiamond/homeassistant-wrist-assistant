@@ -20,7 +20,7 @@ import logging
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
-from .camera_stream import ViewportState
+from .camera_stream import ViewportState, viewport_matches
 from .const import SNAPSHOT_CROP_STORAGE_KEY, SNAPSHOT_CROP_STORAGE_VERSION
 
 _LOGGER = logging.getLogger(__name__)
@@ -87,6 +87,12 @@ class SnapshotCropStore:
     def get(self, entity_id: str) -> ViewportState | None:
         """Return the saved crop for a camera, or None if it's full-frame."""
         return self._crops.get(entity_id)
+
+    def matches_saved(self, entity_id: str, viewport: ViewportState) -> bool:
+        """Whether ``viewport`` equals this camera's saved framing (no-crop = the
+        full frame). True means a snapshot rendered with ``viewport`` has the same
+        shape the notification path will send, so its aspect is safe to cache."""
+        return viewport_matches(viewport, self._crops.get(entity_id))
 
     def set(self, entity_id: str, viewport: ViewportState) -> None:
         """Save a crop for a camera. A full-frame viewport clears any saved crop

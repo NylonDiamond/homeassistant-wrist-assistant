@@ -29,7 +29,11 @@ from homeassistant.helpers.storage import Store
 from .api import DeltaCoordinator
 from .apns_client import APNsClient
 from .camera_devices import resolve_stream_sibling
-from .camera_stream import CameraStreamCoordinator, capture_notification_snapshot
+from .camera_stream import (
+    CameraStreamCoordinator,
+    capture_notification_snapshot,
+    jpeg_aspect,
+)
 from .const import (
     DOMAIN,
     NOTIFICATION_TOKEN_STORAGE_KEY,
@@ -42,6 +46,7 @@ from .const import (
     WristAssistantData,
 )
 from .notification_snapshot import NotificationSnapshotStore
+from .snapshot_aspect_store import SnapshotAspectStore
 from .snapshot_crop_store import SnapshotCropStore
 from .snapshot_stream_store import SnapshotStreamStore
 from .notifications import NotificationTokenStore, TokenEntry
@@ -168,26 +173,6 @@ def _choose_token(
     )
 
 
-def _jpeg_aspect(data: bytes) -> float | None:
-    """Width/height ratio of a JPEG, read from its header (no full pixel
-    decode). Sent to the client so it can reserve the correct space for the
-    notification image — the spinner then occupies the image's eventual
-    footprint and nothing shifts when the image loads. Best-effort: None when
-    the dimensions can't be determined."""
-    try:
-        from io import BytesIO
-
-        from PIL import Image
-
-        with Image.open(BytesIO(data)) as img:
-            w, h = img.size
-        if w > 0 and h > 0:
-            return round(w / h, 4)
-    except Exception:  # noqa: BLE001 — aspect is advisory; never block the push
-        return None
-    return None
-
-
 def _mint_snapshot_url(
     hass: HomeAssistant,
     runtime_data: WristAssistantData,
@@ -219,7 +204,7 @@ def _mint_snapshot_url(
             image_source,
         )
         return None
-    cached_aspect = runtime_data.snapshot_aspect_cache.get(image_source)
+    cached_aspect = runtime_data.snapshot_aspect_store.get(image_source)
     url = f"{base}/api/wrist_assistant/notification/snapshot/{token}"
     return url, token, cached_aspect
 
@@ -258,9 +243,9 @@ async def _capture_snapshot_into(
         store.fail(token)
         return
     store.fulfill(token, jpeg)
-    aspect = await hass.async_add_executor_job(_jpeg_aspect, jpeg)
+    aspect = await hass.async_add_executor_job(jpeg_aspect, jpeg)
     if aspect:
-        runtime_data.snapshot_aspect_cache[image_source] = aspect
+        runtime_data.snapshot_aspect_store.set(image_source, aspect)
 
 
 def _resolve_stream_entity(
@@ -623,6 +608,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     await snapshot_crop_store.async_load()
     snapshot_stream_store = SnapshotStreamStore(hass)
     await snapshot_stream_store.async_load()
+    snapshot_aspect_store = SnapshotAspectStore(hass)
+    await snapshot_aspect_store.async_load()
 
     # Register server capabilities
     coordinator.register_capability("gzip")
@@ -645,6 +632,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         notification_snapshot_store=notification_snapshot_store,
         snapshot_crop_store=snapshot_crop_store,
         snapshot_stream_store=snapshot_stream_store,
+        snapshot_aspect_store=snapshot_aspect_store,
     )
     entry.runtime_data = runtime_data
     hass.data[DOMAIN] = runtime_data

@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from .camera_stream import CameraStreamCoordinator
     from .notification_snapshot import NotificationSnapshotStore
     from .notifications import NotificationTokenStore
+    from .snapshot_aspect_store import SnapshotAspectStore
     from .snapshot_crop_store import SnapshotCropStore
     from .snapshot_stream_store import SnapshotStreamStore
     from .wa_stream_tokens import StreamTokenStore
@@ -33,10 +34,11 @@ class WristAssistantData:
     snapshot_stream_store: SnapshotStreamStore
     # entity_id → last-computed notification snapshot aspect (width/height). Lets
     # a push carry the image's shape so the client reserves its footprint and
-    # nothing shifts when the background-captured image lands. In-memory: the
-    # first push per camera after a restart sends without it (one brief reflow),
-    # then it's learned from that capture. Cleared when the camera is re-framed.
-    snapshot_aspect_cache: dict[str, float] = field(default_factory=dict)
+    # nothing shifts when the background-captured image lands. Persisted to disk
+    # (see SnapshotAspectStore) so it survives restarts — a camera's aspect is
+    # learned once, then carried on every push. Cleared when the camera is
+    # re-framed; recomputed on the next capture.
+    snapshot_aspect_store: SnapshotAspectStore
     apns_client: APNsClient | None = field(default=None)
 
 
@@ -55,6 +57,11 @@ SNAPSHOT_CROP_STORAGE_VERSION = 1
 # used when a notification snapshot is tapped open on the watch.
 SNAPSHOT_STREAM_STORAGE_KEY = "wrist_assistant.snapshot_streams"
 SNAPSHOT_STREAM_STORAGE_VERSION = 1
+# Per-camera notification snapshot aspect (entity_id → width/height). Learned
+# from captured frames and persisted so a push can reserve the image's footprint
+# even on the first push after a restart.
+SNAPSHOT_ASPECT_STORAGE_KEY = "wrist_assistant.snapshot_aspects"
+SNAPSHOT_ASPECT_STORAGE_VERSION = 1
 
 # Wire-format version of the Wrist Assistant HMAC protocol. The watch app sends
 # `X-WA-Version: <int>` on every signed request; the server rejects versions

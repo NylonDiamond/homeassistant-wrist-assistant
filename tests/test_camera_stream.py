@@ -290,3 +290,62 @@ def test_capture_honors_sizing_override() -> None:
         assert max(big_dims) <= cs.NOTIF_SNAPSHOT_MAX_WIDTH
         assert max(small_dims) < max(big_dims)  # genuinely smaller
         assert small_bytes < big_bytes  # fewer bytes on the wire
+
+
+# ── jpeg_aspect: width/height read from the header (drives snapshot_aspect) ──
+
+
+def test_jpeg_aspect_reads_dimensions() -> None:
+    pytest.importorskip("PIL")
+    with _fresh_camera_stream("cs_aspect") as cs:
+        assert cs.jpeg_aspect(_test_jpeg(1600, 900)) == 1.7778  # 16:9
+        assert cs.jpeg_aspect(_test_jpeg(1600, 1200)) == 1.3333  # 4:3
+        assert cs.jpeg_aspect(_test_jpeg(900, 1600)) == 0.5625  # portrait
+        assert cs.jpeg_aspect(_test_jpeg(1000, 1000)) == 1.0  # square
+
+
+def test_jpeg_aspect_bad_bytes_returns_none() -> None:
+    pytest.importorskip("PIL")
+    with _fresh_camera_stream("cs_aspect_bad") as cs:
+        assert cs.jpeg_aspect(b"not a jpeg") is None
+        assert cs.jpeg_aspect(b"") is None
+
+
+def test_jpeg_aspect_without_pillow_returns_none() -> None:
+    """A missing Pillow must degrade to None, never raise into the push."""
+    with _fresh_camera_stream("cs_aspect_nopil", block_pillow=True) as cs:
+        assert cs.jpeg_aspect(_PNG_OR_JPEG_BYTES) is None
+
+
+# A few bytes that look like a JPEG SOI; only used by the no-Pillow test, where
+# Pillow is blocked before any decode is attempted.
+_PNG_OR_JPEG_BYTES = b"\xff\xd8\xff\xe0"
+
+
+# ── viewport_matches / is_full_frame_viewport: gate for warming the aspect ──
+
+
+def test_is_full_frame_viewport() -> None:
+    with _fresh_camera_stream("cs_fullframe") as cs:
+        assert cs.is_full_frame_viewport(cs.ViewportState())  # default = (0,0,1,1)
+        assert cs.is_full_frame_viewport(cs.ViewportState(0.0005, 0.0005, 0.9995, 0.9995))
+        assert not cs.is_full_frame_viewport(cs.ViewportState(0.1, 0.1, 0.8, 0.8))
+
+
+def test_viewport_matches_none_saved_is_full_frame() -> None:
+    with _fresh_camera_stream("cs_vpm_none") as cs:
+        # No saved crop ⇒ full frame: only a full-frame request matches.
+        assert cs.viewport_matches(cs.ViewportState(), None)
+        assert not cs.viewport_matches(cs.ViewportState(0.1, 0.1, 0.5, 0.5), None)
+
+
+def test_viewport_matches_compares_saved_crop() -> None:
+    with _fresh_camera_stream("cs_vpm_crop") as cs:
+        saved = cs.ViewportState(0.2, 0.1, 0.6, 0.7)
+        assert cs.viewport_matches(cs.ViewportState(0.2, 0.1, 0.6, 0.7), saved)
+        # Within epsilon still matches (float round-trip through the client).
+        assert cs.viewport_matches(cs.ViewportState(0.2003, 0.1, 0.6, 0.6997), saved)
+        # A different (e.g. in-progress editor) crop does not.
+        assert not cs.viewport_matches(cs.ViewportState(0.3, 0.1, 0.6, 0.7), saved)
+        # A full-frame request against a saved crop does not.
+        assert not cs.viewport_matches(cs.ViewportState(), saved)
