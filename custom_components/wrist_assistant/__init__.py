@@ -352,15 +352,30 @@ async def _deliver_push(
             name=f"wa_snapshot_capture_{snapshot_token[:8]}",
         )
 
-    # The content extension / watch long look only render our custom UI when the
-    # push category is WA_ACTIONS — so a snapshot-only push (no action rows) must
-    # still carry it, else it degrades to a plain system notification with no image.
-    # A camera push whose send-time capture failed (no snapshot_url) still needs
-    # WA_ACTIONS so the client renders and can fetch the image on demand from
-    # `camera_entity_id` — otherwise it would silently degrade to buttons-only.
+    # Every *visible* push carries the WA_ACTIONS category. Three reasons it must:
+    #   • a snapshot-only push (no action rows) — else it degrades to a plain
+    #     system notification with no image;
+    #   • a camera push whose send-time capture failed (no snapshot_url) — so the
+    #     client renders and can fetch the image on demand from `camera_entity_id`,
+    #     rather than silently degrading to buttons-only;
+    #   • a plain title+message push (no actions, no camera) — because the iPhone
+    #     app suppresses any non-WA_ACTIONS notification while it is foreground
+    #     (see `willPresent` in WristAssistantApp.swift), so a category-less plain
+    #     alert never surfaces there at all. Carrying WA_ACTIONS routes it through
+    #     the shared NotificationContentView, which renders title/message cleanly
+    #     with no rows and no image — verified safe on both the iPhone content
+    #     extension and the watch Long Look.
+    # Only the silent `background` (content-available) push stays uncategorized —
+    # it has no visible UI to render. The action/snapshot/camera checks are kept
+    # so this stays purely additive: anything categorized before still is.
     category = (
         "WA_ACTIONS"
-        if (enriched_actions or extra_data.get("snapshot_url") or extra_data.get("camera_entity_id"))
+        if (
+            push_type == "alert"
+            or enriched_actions
+            or extra_data.get("snapshot_url")
+            or extra_data.get("camera_entity_id")
+        )
         else None
     )
     # Default interruption-level to "active": alerts + haptic when the user is
