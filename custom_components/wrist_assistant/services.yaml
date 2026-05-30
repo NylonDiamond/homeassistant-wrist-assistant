@@ -198,8 +198,8 @@ send_notification:
       name: Priority
       description: >-
         Interruption level. "passive" delivers silently, "active" (default)
-        is standard, "time-sensitive" breaks through Focus/DND,
-        "critical" overrides mute (requires entitlement).
+        is standard, "time-sensitive" breaks through Focus/DND and is best
+        for urgent alerts like doorbells or cameras.
       selector:
         select:
           mode: dropdown
@@ -210,5 +210,3 @@ send_notification:
               value: "active"
             - label: "Time Sensitive (breaks Focus)"
               value: "time-sensitive"
-            - label: "Critical (overrides mute)"
-              value: "critical"

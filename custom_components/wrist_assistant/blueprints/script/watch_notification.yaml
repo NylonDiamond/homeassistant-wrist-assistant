@@ -227,9 +227,19 @@ blueprint:
         priority:
           name: Priority
           description: >
-            Interruption level. Passive delivers silently, Active is the
-            default, Time Sensitive breaks through Focus/DND, Critical
-            overrides mute.
+            How insistently the alert reaches you — most can stay on **Active**.
+
+
+            **Passive** — silent, no haptic or screen wake.
+
+
+            **Active** (default) — sound and haptic when you're free, but silent
+            during Focus, Do Not Disturb, and Sleep.
+
+
+            **Time Sensitive** — breaks through Focus/DND/Sleep and skips the
+            low-power batch window, so it's faster and harder to miss. Use it for
+            doorbells, cameras, or leak/smoke alerts.
           default: "active"
           selector:
             select:
@@ -241,8 +251,6 @@ blueprint:
                   value: "active"
                 - label: "Time Sensitive (breaks Focus)"
                   value: "time-sensitive"
-                - label: "Critical (overrides mute)"
-                  value: "critical"
         sound:
           name: Sound
           description: >
