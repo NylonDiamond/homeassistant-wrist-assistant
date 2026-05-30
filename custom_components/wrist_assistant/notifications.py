@@ -167,11 +167,23 @@ class NotificationTokenStore:
             )
         ):
             return "idempotent"
+        # A relay_token is only valid for the device_token it was bound to at
+        # the relay. When the incoming device_token differs from what we hold
+        # (e.g. APNs re-issued it after a reinstall/update), the cached
+        # relay_token is stale — drop it so the next send re-registers and
+        # rebinds at the relay. Keeping it would send (new device_token, old
+        # relay_token), which the relay rejects as device_token_mismatch.
+        if relay_token is not None:
+            resolved_relay_token = relay_token
+        elif existing is not None and existing.device_token == device_token:
+            resolved_relay_token = existing.relay_token
+        else:
+            resolved_relay_token = None
         by_platform[platform] = TokenEntry(
             device_token=device_token,
             platform=platform,
             environment=normalized_environment,
-            relay_token=relay_token if relay_token is not None else existing.relay_token if existing else None,
+            relay_token=resolved_relay_token,
         )
         _LOGGER.info(
             "Registered push token for watch_id=%s (platform=%s, environment=%s)",

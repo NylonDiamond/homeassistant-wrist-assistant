@@ -98,7 +98,14 @@ class APNsClient:
             return (True, None, used_environment)
 
         reason = result.get("reason") or result.get("error")
-        if reason == "invalid_relay_token":
+        # Both signals mean the cached relay_token no longer maps to this
+        # device_token at the relay: invalid_relay_token (the relay forgot the
+        # binding) and device_token_mismatch (the binding points at a
+        # since-replaced device_token, e.g. after an app reinstall). Either is
+        # recoverable — re-register to rebind, then retry the send once before
+        # giving up. device_token_mismatch stays in _DEAD_TOKEN_REASONS as the
+        # fallback purge if this retry still can't rebind it.
+        if reason in ("invalid_relay_token", "device_token_mismatch"):
             relay_token = await self._register_device(
                 watch_id=watch_id,
                 device_token=device_token,
