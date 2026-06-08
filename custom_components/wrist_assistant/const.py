@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from .snapshot_aspect_store import SnapshotAspectStore
     from .snapshot_crop_store import SnapshotCropStore
     from .snapshot_stream_store import SnapshotStreamStore
-    from .wa_stream_tokens import StreamTokenStore
+    from .wa_stream_tokens import BatchSnapshotTokenStore, StreamTokenStore
     from .widget_secret_store import WidgetSecretStore
 
 
@@ -29,6 +29,7 @@ class WristAssistantData:
     notification_store: NotificationTokenStore
     widget_secret_store: WidgetSecretStore
     stream_token_store: StreamTokenStore
+    batch_snapshot_token_store: BatchSnapshotTokenStore
     notification_snapshot_store: NotificationSnapshotStore
     snapshot_crop_store: SnapshotCropStore
     snapshot_stream_store: SnapshotStreamStore

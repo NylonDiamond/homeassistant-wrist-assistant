@@ -67,9 +67,10 @@ from .v1_camera_stream_views import (
     CameraViewportView,
 )
 from .v1_notifications_views import NotificationRegisterView
-from .wa_stream_tokens import StreamTokenStore
+from .wa_stream_tokens import BatchSnapshotTokenStore, StreamTokenStore
 from .wa_v2_views import (
     WAActionView,
+    WABatchSnapshotView,
     WADeltaView,
     WANotificationSnapshotLiveView,
     WANotificationSnapshotView,
@@ -618,6 +619,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     widget_secret_store = WidgetSecretStore(hass)
     await widget_secret_store.async_load()
     stream_token_store = StreamTokenStore()
+    batch_snapshot_token_store = BatchSnapshotTokenStore()
     notification_snapshot_store = NotificationSnapshotStore()
     snapshot_crop_store = SnapshotCropStore(hass)
     await snapshot_crop_store.async_load()
@@ -630,6 +632,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     coordinator.register_capability("gzip")
     coordinator.register_capability("slim_payloads")
     coordinator.register_capability("camera_batch")
+    # Progressive batch snapshot stream: one connection serves N cameras, each
+    # JPEG flushed as it's ready (op=snapshots_open → /v2/snapshots/<token>).
+    coordinator.register_capability("batch_camera_snapshots")
     coordinator.register_capability("camera_devices")
     coordinator.register_capability("push_notifications")
     # Watch transport over HMAC. The watch app uses this to confirm v2 ops
@@ -644,6 +649,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         notification_store=notification_store,
         widget_secret_store=widget_secret_store,
         stream_token_store=stream_token_store,
+        batch_snapshot_token_store=batch_snapshot_token_store,
         notification_snapshot_store=notification_snapshot_store,
         snapshot_crop_store=snapshot_crop_store,
         snapshot_stream_store=snapshot_stream_store,
@@ -669,6 +675,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         # entity_id) for ~30 s, which is the lifetime an attacker has to
         # brute-force a 192-bit secret.
         hass.http.register_view(WAStreamView(hass))
+        # Batch snapshot stream: auths via single-use token (minted by
+        # op=snapshots_open), same model as WAStreamView — one connection
+        # progressively delivers every camera on a page.
+        hass.http.register_view(WABatchSnapshotView(hass))
         # Snapshot view auths via a multi-use TTL token (minted by
         # send_notification when a push carries a camera image) rather than HMAC
         # — the iOS content extension and watch long look fetch it with a plain
@@ -709,6 +719,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         coordinator.async_shutdown()
         camera_stream_coordinator.shutdown()
         stream_token_store.shutdown()
+        batch_snapshot_token_store.shutdown()
 
     entry.async_on_unload(
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _handle_stop)
@@ -861,6 +872,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: WristAssistantConfigEnt
             data.coordinator.async_shutdown()
             data.camera_stream_coordinator.shutdown()
             data.stream_token_store.shutdown()
+            data.batch_snapshot_token_store.shutdown()
     return unload_ok
 
 

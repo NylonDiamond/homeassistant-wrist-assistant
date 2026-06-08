@@ -71,6 +71,7 @@ from .camera_stream import (
     DEFAULT_QUALITY,
     DEFAULT_WIDTH,
     MAX_BATCH_CAMERAS,
+    MAX_BATCH_SNAPSHOT_CAMERAS,
     MAX_FPS,
     MAX_QUALITY,
     MAX_WIDTH,
@@ -90,6 +91,7 @@ from .camera_stream import (
     _UNSET,
     capture_notification_snapshot,
     jpeg_aspect,
+    run_batch_snapshot_stream,
     run_mjpeg_stream,
 )
 from .const import (
@@ -1782,6 +1784,62 @@ async def _op_stream_open(ctx: _OpContext) -> Response:
     )
 
 
+async def _op_snapshots_open(ctx: _OpContext) -> Response:
+    """Mint a single-use token for a progressive batch-snapshot stream.
+
+    Body:
+        { "cameras": [ {"entity_id": "camera.x", "width": 220}, ... ],
+          "quality": 75 }
+
+    Returns a relative URL the watch fetches immediately; the multipart stream
+    flushes each camera's JPEG as it's ready. See run_batch_snapshot_stream.
+    """
+    raw = ctx.payload.get("cameras")
+    if not isinstance(raw, list) or not raw:
+        return Response(status=400, text="cameras array required")
+
+    quality = _bound_int(
+        ctx.payload.get("quality"), SNAPSHOT_DEFAULT_QUALITY, MIN_QUALITY, MAX_QUALITY
+    )
+
+    cameras: list[tuple[str, int]] = []
+    seen: set[str] = set()
+    for spec in raw[:MAX_BATCH_SNAPSHOT_CAMERAS]:
+        if not isinstance(spec, dict):
+            continue
+        entity_id = spec.get("entity_id")
+        if (
+            not isinstance(entity_id, str)
+            or not entity_id.startswith("camera.")
+            or entity_id in seen
+            or ctx.hass.states.get(entity_id) is None
+        ):
+            continue
+        width = _bound_int(spec.get("width"), DEFAULT_WIDTH, MIN_WIDTH, MAX_WIDTH)
+        cameras.append((entity_id, width))
+        seen.add(entity_id)
+
+    if not cameras:
+        return Response(status=400, text="no valid camera entities")
+
+    token, expires_at = ctx.domain_data.batch_snapshot_token_store.mint(
+        watch_id=ctx.watch_id,
+        cameras=cameras,
+        quality=quality,
+        ttl_seconds=WA_STREAM_TOKEN_TTL_SECONDS,
+    )
+
+    return ctx.signed_json(
+        {
+            "ok": True,
+            "token": token,
+            "stream_url": f"/api/wrist_assistant/v2/snapshots/{token}",
+            "expires_at": int(expires_at),
+            "count": len(cameras),
+        }
+    )
+
+
 async def _op_stream_update(ctx: _OpContext) -> Response:
     """Change params on an active stream session.
 
@@ -1954,6 +2012,42 @@ class WAStreamView(HomeAssistantView):
             coordinator,
             entry.watch_id,
             entry.entity_id,
+        )
+
+
+class WABatchSnapshotView(HomeAssistantView):
+    """Progressive multipart snapshot stream authed by a single-use token.
+
+    The token is minted by `op=snapshots_open` on /v2/action and bound to the
+    requested cameras at mint time. Same auth model as WAStreamView (token, not
+    HMAC headers — a chunked multipart response can't carry per-part request
+    signatures): single-use, ~30 s TTL, indistinguishable 404 on any rejection.
+    The frame loop is `run_batch_snapshot_stream` in camera_stream.py.
+    """
+
+    url = "/api/wrist_assistant/v2/snapshots/{token}"
+    name = "api:wrist_assistant_v2_snapshots"
+    requires_auth = False
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+
+    async def get(self, request: Request, token: str) -> StreamResponse:
+        domain_data: WristAssistantData | None = self._hass.data.get(DOMAIN)
+        if domain_data is None:
+            return Response(text="Integration not loaded", status=503)
+
+        entry = domain_data.batch_snapshot_token_store.claim(token)
+        if entry is None:
+            # Indistinguishable from expired/consumed, matching WAStreamView.
+            _LOGGER.debug("Rejected /v2/snapshots token (missing/expired/consumed)")
+            return Response(text="Not Found", status=404)
+
+        return await run_batch_snapshot_stream(
+            self._hass,
+            request,
+            entry.cameras,
+            entry.quality,
         )
 
 
@@ -2298,6 +2392,7 @@ _OP_HANDLERS: dict[str, Any] = {
     "send_test_notification": _op_send_test_notification,
     "audio_upload": _op_audio_upload,
     "camera_batch": _op_camera_batch,
+    "snapshots_open": _op_snapshots_open,
     "camera_devices": _op_camera_devices,
     "entity_image": _op_entity_image,
     "stream_open": _op_stream_open,

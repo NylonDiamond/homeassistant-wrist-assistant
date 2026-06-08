@@ -349,3 +349,96 @@ def test_viewport_matches_compares_saved_crop() -> None:
         assert not cs.viewport_matches(cs.ViewportState(0.3, 0.1, 0.6, 0.7), saved)
         # A full-frame request against a saved crop does not.
         assert not cs.viewport_matches(cs.ViewportState(), saved)
+
+
+# ── batch snapshot stream ─────────────────────────────────────────────────
+
+
+class _RecordingStreamResponse:
+    """Minimal StreamResponse stand-in that records every written chunk."""
+
+    def __init__(self, status: int = 200, headers: dict | None = None) -> None:
+        self.status = status
+        self.headers = headers or {}
+        self.chunks: list[bytes] = []
+        self.prepared = False
+
+    async def prepare(self, request: object) -> None:
+        self.prepared = True
+
+    async def write(self, data: bytes) -> None:
+        assert self.prepared, "write before prepare"  # TTFB guard
+        self.chunks.append(bytes(data))
+
+    @property
+    def body(self) -> bytes:
+        return b"".join(self.chunks)
+
+
+class _FakeHass:
+    """Runs executor jobs inline so _process_snapshot produces real JPEG bytes."""
+
+    async def async_add_executor_job(self, func, *args):  # noqa: ANN001
+        return func(*args)
+
+
+def test_run_batch_snapshot_stream_emits_progressive_parts() -> None:
+    with _fresh_camera_stream("cs_batch") as cs:
+        cs.StreamResponse = _RecordingStreamResponse
+        cs.BATCH_GRAB_RETRY_DELAY = 0.0  # no sleep between the one retry
+        jpeg = _test_jpeg(640, 480)
+
+        good = {"camera.front", "camera.side"}
+
+        async def _fake_get_image(hass, entity_id, timeout=5):  # noqa: ANN001
+            if entity_id in good:
+                return types.SimpleNamespace(content=jpeg)
+            raise cs.HomeAssistantError("camera unavailable")
+
+        cs.async_get_image = _fake_get_image
+
+        cameras = [
+            ("camera.front", 220),
+            ("camera.side", 220),
+            ("camera.broken", 220),  # always fails → error part
+        ]
+        resp = asyncio.run(
+            cs.run_batch_snapshot_stream(_FakeHass(), object(), cameras, 80)
+        )
+
+        assert resp.prepared
+        body = resp.body
+
+        # One opening boundary per camera + a closing boundary.
+        assert body.count(b"--wasnap\r\n") == len(cameras)
+        assert body.endswith(b"--wasnap--\r\n")
+
+        # Every camera is addressed by entity_id (routing is by header).
+        for entity_id, _ in cameras:
+            assert f"X-Entity-Id: {entity_id}".encode() in body
+
+        # The two good cameras carry ok JPEG parts; the broken one is an error.
+        assert body.count(b"X-WA-Status: ok\r\n") == 2
+        assert body.count(b"X-WA-Status: error\r\n") == 1
+        assert b"\xff\xd8" in body  # a real JPEG SOI landed in the stream
+
+
+def test_run_batch_snapshot_stream_all_failures_still_closes() -> None:
+    with _fresh_camera_stream("cs_batch_fail") as cs:
+        cs.StreamResponse = _RecordingStreamResponse
+        cs.BATCH_GRAB_RETRY_DELAY = 0.0
+
+        async def _always_fail(hass, entity_id, timeout=5):  # noqa: ANN001
+            return None  # no image available
+
+        cs.async_get_image = _always_fail
+
+        cameras = [("camera.a", 200), ("camera.b", 200)]
+        resp = asyncio.run(
+            cs.run_batch_snapshot_stream(_FakeHass(), object(), cameras, 80)
+        )
+
+        body = resp.body
+        assert body.count(b"X-WA-Status: error\r\n") == 2
+        assert body.count(b"X-WA-Status: ok\r\n") == 0
+        assert body.endswith(b"--wasnap--\r\n")

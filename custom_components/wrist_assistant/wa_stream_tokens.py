@@ -139,3 +139,82 @@ class StreamTokenStore:
 
     def shutdown(self) -> None:
         self._entries.clear()
+
+
+@dataclass
+class BatchSnapshotTokenEntry:
+    """A pending batch-snapshot stream bound to a single token.
+
+    `cameras` is a list of (entity_id, width) pairs fixed at mint time, so a
+    leaked token can't be repointed at other cameras mid-stream.
+    """
+
+    watch_id: str
+    cameras: list[tuple[str, int]]
+    quality: int
+    expires_at: float
+    consumed: bool = False
+
+
+class BatchSnapshotTokenStore:
+    """Bounded TTL store of single-use batch-snapshot tokens.
+
+    Same single-use / short-TTL / bounded-size semantics as StreamTokenStore
+    (see that class for the rationale) — duplicated rather than shared so the
+    live-stream entry shape stays simple and untouched. The only difference is
+    the entry carries a *list* of cameras instead of one entity_id.
+    """
+
+    _MAX_ENTRIES = 256
+
+    def __init__(self) -> None:
+        self._entries: OrderedDict[str, BatchSnapshotTokenEntry] = OrderedDict()
+
+    def mint(
+        self,
+        *,
+        watch_id: str,
+        cameras: list[tuple[str, int]],
+        quality: int,
+        ttl_seconds: float,
+        now: float | None = None,
+    ) -> tuple[str, float]:
+        """Create a single-use token. Returns (token, expires_at)."""
+        current = time.time() if now is None else now
+        self._evict_expired(current)
+        token = secrets.token_hex(24)
+        expires_at = current + ttl_seconds
+        self._entries[token] = BatchSnapshotTokenEntry(
+            watch_id=watch_id,
+            cameras=cameras,
+            quality=quality,
+            expires_at=expires_at,
+        )
+        if len(self._entries) > self._MAX_ENTRIES:
+            self._entries.popitem(last=False)
+        return token, expires_at
+
+    def claim(
+        self, token: str, *, now: float | None = None
+    ) -> BatchSnapshotTokenEntry | None:
+        """Consume a token. Returns the entry, or None if missing/expired/consumed."""
+        current = time.time() if now is None else now
+        self._evict_expired(current)
+        entry = self._entries.get(token)
+        if entry is None or entry.consumed:
+            return None
+        if entry.expires_at <= current:
+            self._entries.pop(token, None)
+            return None
+        entry.consumed = True
+        return entry
+
+    def _evict_expired(self, now: float) -> None:
+        while self._entries:
+            token = next(iter(self._entries))
+            if self._entries[token].expires_at > now:
+                return
+            self._entries.popitem(last=False)
+
+    def shutdown(self) -> None:
+        self._entries.clear()

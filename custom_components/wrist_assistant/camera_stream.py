@@ -545,6 +545,134 @@ def _process_snapshot(
     return None
 
 
+# ── batch snapshot stream ────────────────────────────────────────────────
+# One-shot progressive multipart endpoint: many cameras over one connection,
+# each JPEG flushed as it's ready. Replaces N per-camera `op=snapshot` round
+# trips (which stampede an NVR-backed source and starve the trailing cameras).
+BATCH_SNAPSHOT_BOUNDARY = "wasnap"
+# Cameras grabbed at once. The fan-out bound lives HERE (the integration knows
+# the source's real ceiling) instead of on the watch, which couldn't.
+BATCH_SNAPSHOT_CONCURRENCY = 3
+# Whole-request deadline; any camera still pending at this point gets an error
+# part so the stream always terminates and the watch stops spinning.
+BATCH_SNAPSHOT_DEADLINE = 20.0
+BATCH_GRAB_RETRIES = 1
+BATCH_GRAB_RETRY_DELAY = 0.3
+# A page realistically tops out well under this; guards a pathological request.
+MAX_BATCH_SNAPSHOT_CAMERAS = 16
+
+
+async def run_batch_snapshot_stream(
+    hass: HomeAssistant,
+    request: Request,
+    cameras: list[tuple[str, int]],
+    quality: int,
+) -> StreamResponse:
+    """Stream resized JPEG snapshots for many cameras over one connection.
+
+    Each camera is grabbed concurrently (bounded by BATCH_SNAPSHOT_CONCURRENCY)
+    and written to the multipart response *as it completes* — fast cameras paint
+    first, a slow one never blocks the others. A grab that fails after one retry
+    emits an error part so the client marks that one tile failed without waiting.
+
+    Each part carries `X-Entity-Id` and `X-WA-Status: ok|error` headers; the
+    client routes frames by entity, not position (completion order != request
+    order).
+    """
+    response = StreamResponse(
+        status=200,
+        headers={
+            "Content-Type": (
+                f"multipart/x-mixed-replace; boundary={BATCH_SNAPSHOT_BOUNDARY}"
+            ),
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+        },
+    )
+    # prepare() before any grab so TTFB is the first camera, not all of them.
+    await response.prepare(request)
+
+    sem = asyncio.Semaphore(BATCH_SNAPSHOT_CONCURRENCY)
+    boundary = BATCH_SNAPSHOT_BOUNDARY.encode()
+
+    async def _grab(entity_id: str, width: int) -> tuple[str, bytes | None]:
+        async with sem:
+            for attempt in range(BATCH_GRAB_RETRIES + 1):
+                try:
+                    image = await async_get_image(hass, entity_id, timeout=5)
+                    if image is not None and image.content is not None:
+                        data = await hass.async_add_executor_job(
+                            _process_snapshot,
+                            image.content,
+                            ViewportState(),
+                            width,
+                            width,  # square bounding box; tile crops to fit
+                            quality,
+                            SNAPSHOT_MAX_BYTES,
+                        )
+                        if data is not None:
+                            return entity_id, data
+                except HomeAssistantError:
+                    pass
+                except Exception:  # noqa: BLE001
+                    _LOGGER.debug(
+                        "Batch snapshot grab failed for %s", entity_id, exc_info=True
+                    )
+                if attempt < BATCH_GRAB_RETRIES:
+                    await asyncio.sleep(BATCH_GRAB_RETRY_DELAY)
+            return entity_id, None
+
+    async def _write_part(entity_id: str, data: bytes | None) -> None:
+        eid = entity_id.encode()
+        if data is None:
+            await response.write(
+                b"--" + boundary + b"\r\n"
+                b"X-Entity-Id: " + eid + b"\r\n"
+                b"X-WA-Status: error\r\n"
+                b"Content-Type: text/plain\r\n"
+                b"Content-Length: 0\r\n\r\n"
+            )
+        else:
+            await response.write(
+                b"--" + boundary + b"\r\n"
+                b"X-Entity-Id: " + eid + b"\r\n"
+                b"X-WA-Status: ok\r\n"
+                b"Content-Type: image/jpeg\r\n"
+                b"Content-Length: " + str(len(data)).encode() + b"\r\n\r\n"
+                + data + b"\r\n"
+            )
+
+    pending = {entity_id for entity_id, _ in cameras}
+    tasks = [asyncio.create_task(_grab(eid, w)) for eid, w in cameras]
+    try:
+        # Writes happen ONLY in this single consumer loop → serialized on the one
+        # response; grabs run concurrently under the semaphore.
+        for fut in asyncio.as_completed(tasks, timeout=BATCH_SNAPSHOT_DEADLINE):
+            entity_id, data = await fut
+            pending.discard(entity_id)
+            await _write_part(entity_id, data)
+    except asyncio.TimeoutError:
+        # Deadline hit: stop waiting on stragglers, emit error parts for them.
+        for entity_id in list(pending):
+            try:
+                await _write_part(entity_id, None)
+            except (ConnectionResetError, RuntimeError):
+                break
+    except (ConnectionResetError, RuntimeError):
+        # Client disconnected mid-stream — nothing more to send.
+        pass
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        try:
+            await response.write(b"--" + boundary + b"--\r\n")
+        except (ConnectionResetError, RuntimeError):
+            pass
+    return response
+
+
 # Notification snapshot limits — larger than the complication snapshot above
 # because the expanded notification and iOS banner thumbnail render bigger than
 # a watch complication. Still byte-capped so a high-res camera can't bloat the
