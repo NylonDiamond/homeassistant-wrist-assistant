@@ -442,3 +442,65 @@ def test_run_batch_snapshot_stream_all_failures_still_closes() -> None:
         assert body.count(b"X-WA-Status: error\r\n") == 2
         assert body.count(b"X-WA-Status: ok\r\n") == 0
         assert body.endswith(b"--wasnap--\r\n")
+
+
+def test_run_batch_snapshot_stream_caps_concurrency() -> None:
+    """A positive concurrency throttles in-flight grabs (NVR protection)."""
+    with _fresh_camera_stream("cs_batch_conc") as cs:
+        cs.StreamResponse = _RecordingStreamResponse
+        cs.BATCH_GRAB_RETRY_DELAY = 0.0
+        jpeg = _test_jpeg(320, 240)
+
+        inflight = 0
+        max_inflight = 0
+
+        async def _slow_get_image(hass, entity_id, timeout=5):  # noqa: ANN001
+            nonlocal inflight, max_inflight
+            inflight += 1
+            max_inflight = max(max_inflight, inflight)
+            await asyncio.sleep(0.02)  # hold the slot so any overlap is observable
+            inflight -= 1
+            return types.SimpleNamespace(content=jpeg)
+
+        cs.async_get_image = _slow_get_image
+
+        cameras = [(f"camera.c{i}", 200) for i in range(6)]
+        resp = asyncio.run(
+            cs.run_batch_snapshot_stream(
+                _FakeHass(), object(), cameras, 80, concurrency=2
+            )
+        )
+
+        assert max_inflight <= 2  # never more than the cap in flight at once
+        assert resp.body.count(b"X-WA-Status: ok\r\n") == 6  # all still delivered
+
+
+def test_run_batch_snapshot_stream_unlimited_concurrency() -> None:
+    """concurrency=0 (the default) means no throttle — every camera at once."""
+    with _fresh_camera_stream("cs_batch_unlim") as cs:
+        cs.StreamResponse = _RecordingStreamResponse
+        cs.BATCH_GRAB_RETRY_DELAY = 0.0
+        jpeg = _test_jpeg(320, 240)
+
+        inflight = 0
+        max_inflight = 0
+
+        async def _slow_get_image(hass, entity_id, timeout=5):  # noqa: ANN001
+            nonlocal inflight, max_inflight
+            inflight += 1
+            max_inflight = max(max_inflight, inflight)
+            await asyncio.sleep(0.02)
+            inflight -= 1
+            return types.SimpleNamespace(content=jpeg)
+
+        cs.async_get_image = _slow_get_image
+
+        cameras = [(f"camera.c{i}", 200) for i in range(6)]
+        resp = asyncio.run(
+            cs.run_batch_snapshot_stream(
+                _FakeHass(), object(), cameras, 80, concurrency=0
+            )
+        )
+
+        assert max_inflight == 6  # all grabbed in parallel, no cap
+        assert resp.body.count(b"X-WA-Status: ok\r\n") == 6

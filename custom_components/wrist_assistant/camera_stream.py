@@ -10,6 +10,7 @@ went pure-v2.
 from __future__ import annotations
 
 import asyncio
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from io import BytesIO
 import logging
@@ -550,16 +551,33 @@ def _process_snapshot(
 # each JPEG flushed as it's ready. Replaces N per-camera `op=snapshot` round
 # trips (which stampede an NVR-backed source and starve the trailing cameras).
 BATCH_SNAPSHOT_BOUNDARY = "wasnap"
-# Cameras grabbed at once. The fan-out bound lives HERE (the integration knows
-# the source's real ceiling) instead of on the watch, which couldn't.
-BATCH_SNAPSHOT_CONCURRENCY = 3
+# Default cameras grabbed at once. 0 = unlimited (every camera fetched in
+# parallel) — fastest, and fine for a direct camera or a beefy NVR. Users whose
+# NVR drops frames / 503s under load lower this from the iOS Camera Settings;
+# the chosen value is persisted server-side (BatchSnapshotSettingsStore) and
+# read per stream, so the throttle applies no matter which device (watch or
+# phone) opens the stream. The fan-out bound lives HERE — the integration knows
+# the source's real ceiling — not on the client, which couldn't.
+DEFAULT_BATCH_SNAPSHOT_CONCURRENCY = 0  # 0 = unlimited
+# Hard ceiling on a user-set value, so a fat-fingered API call can't request an
+# absurd fan-out.
+MAX_BATCH_SNAPSHOT_CONCURRENCY = 64
 # Whole-request deadline; any camera still pending at this point gets an error
-# part so the stream always terminates and the watch stops spinning.
-BATCH_SNAPSHOT_DEADLINE = 20.0
+# part so the stream always terminates and the watch stops spinning. Sized to
+# let a slow many-camera batch (e.g. a 16-camera NVR throttled to a low
+# concurrency) finish painting rather than erroring stragglers — fast cameras
+# already flush-as-ready, so a longer cap only extends how long slow tiles get.
+BATCH_SNAPSHOT_DEADLINE = 45.0
 BATCH_GRAB_RETRIES = 1
-BATCH_GRAB_RETRY_DELAY = 0.3
-# A page realistically tops out well under this; guards a pathological request.
-MAX_BATCH_SNAPSHOT_CAMERAS = 16
+# Pause before the single retry. Sized to give a choking NVR real recovery time
+# (a 0.3s blink just re-hits the same overloaded source) rather than to retry
+# fast. Held inside the concurrency slot, so it delays only this camera's slot,
+# never adds a concurrent request — and the per-camera worst case (5s + 1s + 5s
+# = 11s) still sits well under BATCH_SNAPSHOT_DEADLINE.
+BATCH_GRAB_RETRY_DELAY = 1.0
+# Safety cap on a single request's camera count (one page can legitimately hold
+# many camera tiles); anything past this is truncated.
+MAX_BATCH_SNAPSHOT_CAMERAS = 50
 
 
 async def run_batch_snapshot_stream(
@@ -567,13 +585,15 @@ async def run_batch_snapshot_stream(
     request: Request,
     cameras: list[tuple[str, int]],
     quality: int,
+    concurrency: int = DEFAULT_BATCH_SNAPSHOT_CONCURRENCY,
 ) -> StreamResponse:
     """Stream resized JPEG snapshots for many cameras over one connection.
 
-    Each camera is grabbed concurrently (bounded by BATCH_SNAPSHOT_CONCURRENCY)
-    and written to the multipart response *as it completes* — fast cameras paint
-    first, a slow one never blocks the others. A grab that fails after one retry
-    emits an error part so the client marks that one tile failed without waiting.
+    Each camera is grabbed concurrently (bounded by `concurrency`; 0 = unlimited,
+    the default) and written to the multipart response *as it completes* — fast
+    cameras paint first, a slow one never blocks the others. A grab that fails
+    after one retry emits an error part so the client marks that one tile failed
+    without waiting.
 
     Each part carries `X-Entity-Id` and `X-WA-Status: ok|error` headers; the
     client routes frames by entity, not position (completion order != request
@@ -592,11 +612,17 @@ async def run_batch_snapshot_stream(
     # prepare() before any grab so TTFB is the first camera, not all of them.
     await response.prepare(request)
 
-    sem = asyncio.Semaphore(BATCH_SNAPSHOT_CONCURRENCY)
+    # concurrency <= 0 → no throttle: every camera grabbed at once (a single
+    # shared nullcontext is safe to reuse across the concurrent tasks). A
+    # positive value caps in-flight grabs via one shared semaphore to protect a
+    # fragile source (NVR) from a snapshot stampede.
+    limiter = (
+        asyncio.Semaphore(concurrency) if concurrency > 0 else nullcontext()
+    )
     boundary = BATCH_SNAPSHOT_BOUNDARY.encode()
 
     async def _grab(entity_id: str, width: int) -> tuple[str, bytes | None]:
-        async with sem:
+        async with limiter:
             for attempt in range(BATCH_GRAB_RETRIES + 1):
                 try:
                     image = await async_get_image(hass, entity_id, timeout=5)

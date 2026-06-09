@@ -28,6 +28,7 @@ from homeassistant.helpers.storage import Store
 
 from .api import DeltaCoordinator
 from .apns_client import APNsClient
+from .batch_snapshot_settings_store import BatchSnapshotSettingsStore
 from .camera_devices import resolve_stream_sibling
 from .camera_stream import (
     CameraStreamCoordinator,
@@ -627,6 +628,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     await snapshot_stream_store.async_load()
     snapshot_aspect_store = SnapshotAspectStore(hass)
     await snapshot_aspect_store.async_load()
+    batch_snapshot_settings_store = BatchSnapshotSettingsStore(hass)
+    await batch_snapshot_settings_store.async_load()
 
     # Register server capabilities
     coordinator.register_capability("gzip")
@@ -654,6 +657,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         snapshot_crop_store=snapshot_crop_store,
         snapshot_stream_store=snapshot_stream_store,
         snapshot_aspect_store=snapshot_aspect_store,
+        batch_snapshot_settings_store=batch_snapshot_settings_store,
     )
     entry.runtime_data = runtime_data
     hass.data[DOMAIN] = runtime_data

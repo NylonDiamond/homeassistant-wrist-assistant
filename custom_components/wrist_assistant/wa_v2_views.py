@@ -1051,6 +1051,29 @@ async def _op_snapshot_crops_status(ctx: _OpContext) -> Response:
     return ctx.signed_json({"framed": framed})
 
 
+async def _op_get_snapshot_concurrency(ctx: _OpContext) -> Response:
+    """Return the installation's batch-snapshot parallel-grab concurrency.
+
+    Response: {"concurrency": int} where 0 = unlimited. Lets the iOS Camera
+    Settings show the current throttle.
+    """
+    store = ctx.domain_data.batch_snapshot_settings_store
+    return ctx.signed_json({"concurrency": store.concurrency})
+
+
+async def _op_set_snapshot_concurrency(ctx: _OpContext) -> Response:
+    """Set how many cameras the batch-snapshot stream grabs in parallel.
+
+    Body: {"concurrency": int} where 0 = unlimited (clamped to a sane ceiling).
+    Installation-wide — a property of the camera source/NVR — so it applies to
+    every paired device's batch streams, not just this one. Returns the stored
+    (clamped) value so the client reflects exactly what took effect.
+    """
+    store = ctx.domain_data.batch_snapshot_settings_store
+    value = store.set_concurrency(ctx.payload.get("concurrency"))
+    return ctx.signed_json({"ok": True, "concurrency": value})
+
+
 async def _op_set_stream_entity(ctx: _OpContext) -> Response:
     """Save (or clear) the live-stream override for a camera's entities.
 
@@ -2048,6 +2071,9 @@ class WABatchSnapshotView(HomeAssistantView):
             request,
             entry.cameras,
             entry.quality,
+            # Read the throttle at stream time (not mint time) so a concurrency
+            # change from the iOS Camera Settings takes effect on the next batch.
+            concurrency=domain_data.batch_snapshot_settings_store.concurrency,
         )
 
 
@@ -2377,6 +2403,8 @@ _OP_HANDLERS: dict[str, Any] = {
     "set_snapshot_crop": _op_set_snapshot_crop,
     "get_snapshot_crop": _op_get_snapshot_crop,
     "snapshot_crops_status": _op_snapshot_crops_status,
+    "get_snapshot_concurrency": _op_get_snapshot_concurrency,
+    "set_snapshot_concurrency": _op_set_snapshot_concurrency,
     "set_stream_entity": _op_set_stream_entity,
     "get_stream_entity": _op_get_stream_entity,
     "template": _op_template,

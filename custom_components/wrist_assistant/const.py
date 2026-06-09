@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
     from .api import DeltaCoordinator
     from .apns_client import APNsClient
+    from .batch_snapshot_settings_store import BatchSnapshotSettingsStore
     from .camera_stream import CameraStreamCoordinator
     from .notification_snapshot import NotificationSnapshotStore
     from .notifications import NotificationTokenStore
@@ -40,6 +41,11 @@ class WristAssistantData:
     # learned once, then carried on every push. Cleared when the camera is
     # re-framed; recomputed on the next capture.
     snapshot_aspect_store: SnapshotAspectStore
+    # Installation-wide batch-snapshot tuning (currently just the parallel-grab
+    # concurrency; 0 = unlimited). A property of the camera source/NVR, shared
+    # across every paired device — set from the iOS Camera Settings, read per
+    # batch stream. Persisted so it survives restarts.
+    batch_snapshot_settings_store: BatchSnapshotSettingsStore
     apns_client: APNsClient | None = field(default=None)
 
 
@@ -58,6 +64,9 @@ SNAPSHOT_CROP_STORAGE_VERSION = 1
 # used when a notification snapshot is tapped open on the watch.
 SNAPSHOT_STREAM_STORAGE_KEY = "wrist_assistant.snapshot_streams"
 SNAPSHOT_STREAM_STORAGE_VERSION = 1
+# Installation-wide batch-snapshot tuning (parallel-grab concurrency; 0=unlimited).
+BATCH_SNAPSHOT_SETTINGS_STORAGE_KEY = "wrist_assistant.batch_snapshot_settings"
+BATCH_SNAPSHOT_SETTINGS_STORAGE_VERSION = 1
 # Per-camera notification snapshot aspect (entity_id → width/height). Learned
 # from captured frames and persisted so a push can reserve the image's footprint
 # even on the first push after a restart.
