@@ -108,6 +108,11 @@ from .logbook_events import (
     log_secret_registered,
     log_secret_reprovisioned,
 )
+from .webhook_relay import (
+    WEBHOOK_ID_METADATA_KEY,
+    async_provision_webhook,
+    async_sync_webhook_devices,
+)
 from .widget_hmac import (
     DEFAULT_HMAC_ALGO,
     SUPPORTED_HMAC_ALGOS,
@@ -1453,6 +1458,17 @@ async def _op_notifications_register(ctx: _OpContext) -> Response:
         log_push_token_registered(ctx.hass, watch_id=target_watch_id, is_new=True)
     elif token_result == "updated":
         log_push_token_registered(ctx.hass, watch_id=target_watch_id, is_new=False)
+    # A changed device token stales the webhook's device mapping at the relay
+    # (it would keep pushing to the pre-reinstall token). Re-bind in the
+    # background; no-op when the watch has no provisioned webhook, and
+    # "idempotent" registrations skip the round-trip entirely.
+    if token_result in ("new", "updated") and store.get_watch_metadata(
+        target_watch_id, WEBHOOK_ID_METADATA_KEY
+    ):
+        ctx.hass.async_create_task(
+            async_sync_webhook_devices(ctx.domain_data, target_watch_id),
+            name=f"wrist_assistant_webhook_device_sync_{target_watch_id}",
+        )
     # Echo the platforms now on the entry so the caller can self-confirm the
     # token actually landed — the iPhone app uses this to verify the mirror
     # (ios) path is wired before showing its Notifications row green.
@@ -1494,6 +1510,43 @@ async def _op_notifications_status(ctx: _OpContext) -> Response:
             ),
         }
     )
+
+
+async def _op_webhook_provision(ctx: _OpContext) -> Response:
+    """Provision a Wrist Webhooks endpoint at the hosted push relay.
+
+    The relay only accepts provisioning from something that can present
+    relay_token + device_token pairs — proof of control over the devices the
+    webhook will push to — and this integration is the only party holding
+    those. The app cannot (and should not) provision directly.
+
+    Targeting mirrors ``notifications_register``: an iPhone caller signs with
+    its own identity and declares the paired watch via ``companion_watch_id``,
+    because the device tokens live on the watch's entry. All identities here
+    are the user's own devices.
+
+    Response (success): ``{"ok": true, "webhook_id", "publish_token",
+    "read_token", "publish_url"}``. The two tokens are returned exactly once
+    and the app must store them in the Keychain — HA persists only the
+    webhook_id (needed to re-bind device tokens after a reinstall) and never
+    logs the tokens. The response rides the HMAC-signed channel like every
+    other v2 secret exchange (device tokens, identity verification); transport
+    privacy is TLS's job, same as those.
+
+    Re-provisioning replaces the stored webhook_id; the previous webhook is
+    orphaned at the relay (the app's recovery path for a lost publish token is
+    ``rotate`` against the relay directly, not re-provisioning).
+    """
+    target_watch_id = ctx.watch_id
+    companion = ctx.payload.get("companion_watch_id")
+    if isinstance(companion, str) and companion:
+        target_watch_id = companion
+
+    result = await async_provision_webhook(ctx.domain_data, target_watch_id)
+    if result.get("ok") is not True:
+        status = result.pop("status", 502)
+        return ctx.signed_json(result, status=status)
+    return ctx.signed_json(result)
 
 
 async def _op_send_test_notification(ctx: _OpContext) -> Response:
@@ -2417,6 +2470,7 @@ _OP_HANDLERS: dict[str, Any] = {
     "fire_event": _op_fire_event,
     "notifications_register": _op_notifications_register,
     "notifications_status": _op_notifications_status,
+    "webhook_provision": _op_webhook_provision,
     "send_test_notification": _op_send_test_notification,
     "audio_upload": _op_audio_upload,
     "camera_batch": _op_camera_batch,
