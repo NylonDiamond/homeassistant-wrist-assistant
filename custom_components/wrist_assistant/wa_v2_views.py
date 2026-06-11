@@ -1974,6 +1974,75 @@ async def _op_verify_identity(ctx: _OpContext) -> Response:
     return ctx.signed_json({"ok": True, "ts": int(time.time())})
 
 
+async def _op_update_metadata(ctx: _OpContext) -> Response:
+    """HMAC-signed metadata refresh for an already-registered watch.
+
+    Body: `{app_version?, app_build?, owner_iphone_id?, device_name?}` — all
+    optional strings; omitted/empty fields are left unchanged.
+
+    This exists so a registered watch never needs the HA bearer token to keep
+    its diagnostic sensors current. The bearer-authed `register_secret` path
+    used to double as the metadata-update channel, which meant a watch holding
+    a stale bearer (e.g. the non-active watch after a sign-out/in on the
+    iPhone) fired a doomed authenticated request on every cold start — each
+    one writing a "Login attempt failed" warning + persistent notification in
+    HA and counting toward `ip_ban`'s threshold. HMAC failures stay inside
+    this integration, so this path can never pollute HA's auth log.
+
+    Identity comes from the validated HMAC (`ctx.watch_id`), so a watch can
+    only update its own entry, and only metadata — never secret material.
+    Watches newer than this integration get 400 "Unknown op" from the
+    dispatch table and fall back to the bearer path themselves; watches too
+    old to know this op simply keep using the bearer path.
+    """
+
+    def _clean(key: str) -> str | None:
+        value = ctx.payload.get(key)
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped:
+                return stripped
+        return None
+
+    device_name = _clean("device_name")
+    ok = ctx.domain_data.widget_secret_store.update_metadata(
+        ctx.watch_id,
+        app_version=_clean("app_version"),
+        app_build=_clean("app_build"),
+        owner_iphone_id=_clean("owner_iphone_id"),
+        device_name=device_name,
+    )
+    if not ok:
+        # Entry vanished between HMAC validation and dispatch (concurrent
+        # removal). Signed 410 tells the watch its registration is gone.
+        return ctx.signed_json({"ok": False, "error": "not registered"}, status=410)
+
+    # Same registry propagation as the register_secret view: surface a renamed
+    # watch immediately instead of waiting for the next HA restart. Manual
+    # renames (`name_by_user`) always win on display and are left untouched.
+    if device_name is not None:
+        device_registry = dr.async_get(ctx.hass)
+        device = device_registry.async_get_device(
+            identifiers={(DOMAIN, f"watch_{ctx.watch_id}")}
+        )
+        if device is not None and device.name != device_name:
+            device_registry.async_update_device(device.id, name=device_name)
+
+    # Echo the stored entry so the caller (and the live test suite) can
+    # confirm what actually persisted — it's the watch's own data, signed
+    # back to the watch that owns it.
+    entry = ctx.domain_data.widget_secret_store.get(ctx.watch_id)
+    return ctx.signed_json(
+        {
+            "ok": True,
+            "app_version": entry.app_version if entry else None,
+            "app_build": entry.app_build if entry else None,
+            "owner_iphone_id": entry.owner_iphone_id if entry else None,
+            "device_name": entry.device_name if entry else None,
+        }
+    )
+
+
 # ── /v2/stream/{token} view ──────────────────────────────────────────────
 
 
@@ -2427,4 +2496,5 @@ _OP_HANDLERS: dict[str, Any] = {
     "stream_update": _op_stream_update,
     "stream_close": _op_stream_close,
     "verify_identity": _op_verify_identity,
+    "update_metadata": _op_update_metadata,
 }

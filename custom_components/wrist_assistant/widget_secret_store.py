@@ -231,6 +231,61 @@ class WidgetSecretStore:
         self._notify_listeners()
         return "new" if existing is None else "rekey"
 
+    def update_metadata(
+        self,
+        watch_id: str,
+        *,
+        app_version: str | None = None,
+        app_build: str | None = None,
+        owner_iphone_id: str | None = None,
+        device_name: str | None = None,
+    ) -> bool:
+        """Update diagnostic metadata on an existing entry without touching the
+        secret material, algo, or label.
+
+        Backs `op=update_metadata` on /v2/action — the HMAC-signed path an
+        already-registered watch uses to report app updates / iPhone identity
+        rotation. The bearer-authed `register()` remains the only way to write
+        secret material; this method deliberately cannot rekey.
+
+        None means "leave unchanged" (caller omitted the field), unlike
+        `register()` which replaces the whole entry. Returns False when the
+        watch_id has no entry — can only happen on a race with removal, since
+        the op's HMAC validation already proved the entry existed.
+        """
+        entry = self._secrets.get(watch_id)
+        if entry is None:
+            return False
+
+        changed = False
+        if app_version is not None and entry.app_version != app_version:
+            entry.app_version = app_version
+            changed = True
+        if app_build is not None and entry.app_build != app_build:
+            entry.app_build = app_build
+            changed = True
+        if owner_iphone_id is not None and entry.owner_iphone_id != owner_iphone_id:
+            entry.owner_iphone_id = owner_iphone_id
+            changed = True
+        if device_name is not None and entry.device_name != device_name:
+            entry.device_name = device_name
+            changed = True
+
+        # Refresh the provision timestamp either way — like `register()`'s
+        # idempotent branch, a metadata ping is still a "this watch is alive
+        # and configured" signal for the Last provision sensor.
+        entry.last_provision = dt_util.utcnow()
+        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+        if changed:
+            _LOGGER.info(
+                "Updated metadata for watch_id=%s app_version=%s owner_iphone_id=%s",
+                watch_id,
+                app_version,
+                owner_iphone_id,
+            )
+            self._notify_listeners()
+        return True
+
     def get(self, watch_id: str) -> WidgetSecretEntry | None:
         return self._secrets.get(watch_id)
 
