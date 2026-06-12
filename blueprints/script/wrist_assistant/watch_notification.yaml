@@ -18,8 +18,10 @@ blueprint:
     media players (transport, volume), alarms (home/night/away/disarm),
     vacuums (start/pause/dock/find)
 
-    - Tap the snapshot to refresh it on iPhone, or load the live camera
-    stream on the watch
+    - Camera snapshots go live: on iPhone, expanding the notification
+    plays the live stream right inside it (optional — a toggle in the
+    Camera section keeps the snapshot instead); on the watch, tap the
+    snapshot to open the live stream in the watch app
 
     Leave button slots empty to skip them. A notification with no
     buttons shows as info-only (title, message, and any snapshot).
@@ -65,7 +67,8 @@ blueprint:
           description: >
             *(Optional)* Camera to snapshot and show in the notification —
             e.g. a doorbell feed. The frame is captured when the notification
-            is sent, then shown in the expanded notification and on the watch.
+            is sent and shown on the watch; on iPhone, the expanded
+            notification swaps the snapshot for a live stream of the camera.
 
 
             **Requires the Wrist Assistant iOS app v2.1.0 or newer** — older
@@ -107,6 +110,21 @@ blueprint:
                   value: balanced
                 - label: "Fast — smallest, fastest"
                   value: fast
+        live_stream:
+          name: Live stream on iPhone
+          description: >
+            When on (the default), expanding the notification on iPhone swaps
+            the snapshot for a live view of the camera. Turn off to keep the
+            event-time snapshot instead — useful when the captured moment is
+            what you want to see (e.g. who rang the doorbell), or for
+            battery/cloud cameras, since the live view re-polls the camera
+            for as long as the notification stays expanded. The watch is
+            unaffected either way: tapping the snapshot there always opens
+            the live stream in the watch app. Only applies when a Camera is
+            set above.
+          default: true
+          selector:
+            boolean:
     section_button_1:
       name: "☝️ Button 1"
       collapsed: true
@@ -584,6 +602,7 @@ sequence:
       bp_tag: !input tag
       bp_group: !input group
       bp_snapshot_quality: !input snapshot_quality
+      bp_live_stream: !input live_stream
   - action: wrist_assistant.send_notification
     data: >
       {%- set d = namespace(items=[("priority", bp_priority)]) -%}
@@ -598,6 +617,7 @@ sequence:
       {%- if bp_image and bp_snapshot_quality == "fast" %}{%- set d.items = d.items + [("snapshot_width", 480), ("snapshot_quality", 55)] -%}{%- endif -%}
       {%- set extra = namespace(items=[]) -%}
       {%- if bp_auto_dismiss %}{%- set extra.items = extra.items + [("auto_dismiss", true)] -%}{%- endif -%}
+      {%- if bp_image and not bp_live_stream %}{%- set extra.items = extra.items + [("live_stream", false)] -%}{%- endif -%}
       {%- set actions = namespace(list=[]) -%}
       {%- set slots = [
         (bp_b1_entity, bp_b1_label),
