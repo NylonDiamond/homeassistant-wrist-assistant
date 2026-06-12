@@ -75,9 +75,10 @@ blueprint:
 
 
             **Requires the Wrist Assistant iOS app v2.1.0 or newer** — older
-            versions won't display the snapshot. Also requires remote Home
-            Assistant access (Nabu Casa or an external URL) to load when
-            you're away from home.
+            versions won't display the snapshot; the live stream on iPhone
+            needs **v2.3.0 or newer** (older versions keep the snapshot).
+            Also requires remote Home Assistant access (Nabu Casa or an
+            external URL) to load when you're away from home.
 
 
             **Tip:** If your camera has a dedicated **snapshot** entity (e.g.
@@ -116,7 +117,8 @@ blueprint:
           name: Live stream on iPhone
           description: >
             When on (the default), expanding the notification on iPhone
-            replaces the snapshot with a live view of the camera. Turn off
+            replaces the snapshot with a live view of the camera (requires
+            the iOS app v2.3.0 or newer). Turn off
             to keep the snapshot from the moment the event happened — handy
             when that frame is the whole point (who rang the doorbell), or
             for battery and cloud cameras, which the live view keeps polling
