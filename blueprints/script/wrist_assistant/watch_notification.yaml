@@ -28,7 +28,9 @@ blueprint:
 
 
     On the watch, notifications expand automatically to show the snapshot
-    and buttons. On iPhone, **long press** the notification to expand it.
+    and buttons. On iPhone, **long press** the notification — or **slide it
+    down** when it banners in — to expand it in place. Tapping works too,
+    but it also opens the app.
 
 
     Setup help and troubleshooting are under **⚙️ Settings** below.
