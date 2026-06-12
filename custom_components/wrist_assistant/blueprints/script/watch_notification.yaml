@@ -18,10 +18,10 @@ blueprint:
     media players (transport, volume), alarms (home/night/away/disarm),
     vacuums (start/pause/dock/find)
 
-    - Camera snapshots go live: on iPhone, expanding the notification
-    plays the live stream right inside it (optional — a toggle in the
-    Camera section keeps the snapshot instead); on the watch, tap the
-    snapshot to open the live stream in the watch app
+    - Camera snapshots go live: expanding the notification on iPhone
+    plays the live stream right inside it (a toggle in the Camera
+    section turns this off); on the watch, tap the snapshot to open
+    the live stream in the watch app
 
     Leave button slots empty to skip them. A notification with no
     buttons shows as info-only (title, message, and any snapshot).
@@ -59,16 +59,17 @@ blueprint:
         text:
           multiline: true
     section_camera:
-      name: "📷 Camera Snapshot"
+      name: "📷 Camera Snapshot & Live Stream"
       collapsed: true
       input:
         image:
           name: Camera
           description: >
-            *(Optional)* Camera to snapshot and show in the notification —
-            e.g. a doorbell feed. The frame is captured when the notification
-            is sent and shown on the watch; on iPhone, the expanded
-            notification swaps the snapshot for a live stream of the camera.
+            *(Optional)* Camera to show in the notification — e.g. a doorbell
+            feed. A snapshot is captured the moment the notification is sent.
+            The watch shows that snapshot (tap it to open the live stream in
+            the watch app); on iPhone, expanding the notification plays a live
+            stream in its place (see the Live stream toggle below).
 
 
             **Requires the Wrist Assistant iOS app v2.1.0 or newer** — older
@@ -77,16 +78,15 @@ blueprint:
             you're away from home.
 
 
-            **Tip:** If your camera offers a **dedicated snapshot** entity (e.g.
+            **Tip:** If your camera has a dedicated **snapshot** entity (e.g.
             Reolink's "Snapshots" variants — you may need to enable it under
-            Settings → Entities), prefer it over a live-stream entity for a
-            faster, lower-latency grab. And where a camera exposes both a
-            **"Fluent"** (lower-resolution sub-stream) and a **"Clear"**
-            (full-resolution) variant, pick **Fluent** — the snapshot is
-            downscaled for the notification anyway, so it looks nearly identical
-            at that size while producing a much smaller image that renders
-            fastest, especially over cellular. (A **"Snapshots Fluent"** entity
-            is the best of both: a quick grab and a small, fast image.)
+            Settings → Entities), pick it: it grabs frames faster. And if the
+            camera also has a low-resolution **"Fluent"** variant, prefer it
+            over "Clear" — the image is downscaled for the notification anyway,
+            and the smaller file loads much faster, especially over cellular.
+            (A **"Snapshots Fluent"** entity is the best of both.) Either way
+            the live stream still works — it automatically uses the camera's
+            streamable feed.
           default: ""
           selector:
             entity:
@@ -113,15 +113,14 @@ blueprint:
         live_stream:
           name: Live stream on iPhone
           description: >
-            When on (the default), expanding the notification on iPhone swaps
-            the snapshot for a live view of the camera. Turn off to keep the
-            event-time snapshot instead — useful when the captured moment is
-            what you want to see (e.g. who rang the doorbell), or for
-            battery/cloud cameras, since the live view re-polls the camera
-            for as long as the notification stays expanded. The watch is
-            unaffected either way: tapping the snapshot there always opens
-            the live stream in the watch app. Only applies when a Camera is
-            set above.
+            When on (the default), expanding the notification on iPhone
+            replaces the snapshot with a live view of the camera. Turn off
+            to keep the snapshot from the moment the event happened — handy
+            when that frame is the whole point (who rang the doorbell), or
+            for battery and cloud cameras, which the live view keeps polling
+            while the notification is open. The watch is not affected:
+            tapping the snapshot there always opens the live stream. Only
+            applies when a Camera is set above.
           default: true
           selector:
             boolean:
