@@ -998,20 +998,33 @@ async def _op_set_snapshot_crop(ctx: _OpContext) -> Response:
     """Save the user's notification framing for a camera's entities.
 
     Body: {"entity_ids": ["camera.x", ...] | "entity_id": "camera.x",
-           "viewport": {x, y, w|width, h|height}}.
+           "viewport": {x, y, w|width, h|height},
+           "open_zoomed": true | false (optional)}.
     A full-frame viewport clears any saved crop (reset to full frame). The crop
     is written to every supplied entity_id so any variant the notification uses
     gets the same framing.
+
+    `open_zoomed` (optional) sets whether the watch opens this camera's in-app
+    live view pre-zoomed to the saved crop. Omitted by older app builds, so it
+    leaves the existing flag untouched; the store ignores a True flag when the
+    viewport is full-frame (nothing to zoom into).
     """
     entity_ids = _camera_ids_from_payload(ctx.payload)
     if not entity_ids:
         return Response(status=400, text="entity_id(s) required and must be cameras")
 
     viewport = _parse_stream_viewport(ctx.payload.get("viewport"))
+    raw_open_zoomed = ctx.payload.get("open_zoomed")
+    open_zoomed = bool(raw_open_zoomed) if isinstance(raw_open_zoomed, bool) else None
     store = ctx.domain_data.snapshot_crop_store
     aspect_store = ctx.domain_data.snapshot_aspect_store
     for entity_id in entity_ids:
         store.set(entity_id, viewport)
+        # Only touch the open-zoomed flag when the client explicitly sent one
+        # (older apps don't). set() ran first, so the crop exists for the
+        # store's "True only with a crop" guard.
+        if open_zoomed is not None:
+            store.set_open_zoomed(entity_id, open_zoomed)
         # Re-framing changes the snapshot's aspect — drop the stored value so the
         # next push recomputes it instead of reserving the old footprint.
         aspect_store.delete(entity_id)
@@ -1022,19 +1035,22 @@ async def _op_get_snapshot_crop(ctx: _OpContext) -> Response:
     """Return the saved framing for a camera, or null when full-frame.
 
     Body: {"entity_id": "camera.x"}.
-    Response: {"viewport": {x, y, w, h}} or {"viewport": null}.
+    Response: {"viewport": {x, y, w, h} | null, "open_zoomed": bool}.
     """
     entity_id = ctx.payload.get("entity_id")
     if not isinstance(entity_id, str) or not entity_id.startswith("camera."):
         return Response(status=400, text="entity_id required and must be a camera")
 
-    crop = ctx.domain_data.snapshot_crop_store.get(entity_id)
+    store = ctx.domain_data.snapshot_crop_store
+    crop = store.get(entity_id)
     viewport = (
         {"x": crop.x, "y": crop.y, "w": crop.w, "h": crop.h}
         if crop is not None
         else None
     )
-    return ctx.signed_json({"viewport": viewport})
+    return ctx.signed_json(
+        {"viewport": viewport, "open_zoomed": store.get_open_zoomed(entity_id)}
+    )
 
 
 async def _op_snapshot_crops_status(ctx: _OpContext) -> Response:
@@ -1770,11 +1786,13 @@ async def _op_stream_open(ctx: _OpContext) -> Response:
         }
 
     `apply_saved_crop` (used by the notification live stream) falls back to the
-    camera's saved Snapshot Framing crop when no explicit `viewport` is given,
+    camera's saved Camera Framing crop when no explicit `viewport` is given,
     so the live view matches the framed snapshot.
 
     Response carries a relative URL the watch should fetch immediately; the
-    URL is good for one connection and expires ~30 s after issue.
+    URL is good for one connection and expires ~30 s after issue. It also
+    includes the camera's `saved_crop` (or null) and `open_zoomed` flag so the
+    in-app full-screen view can start pre-zoomed to the framed region.
     """
     entity_id = ctx.payload.get("entity_id")
     if not isinstance(entity_id, str) or not entity_id.startswith("camera."):
@@ -1791,15 +1809,18 @@ async def _op_stream_open(ctx: _OpContext) -> Response:
     fps = _bound_float(ctx.payload.get("fps"), DEFAULT_FPS, MIN_FPS, MAX_FPS)
     raw_viewport = ctx.payload.get("viewport")
     viewport = _parse_stream_viewport(raw_viewport)
-    # Honor the user's saved per-camera framing (iOS app → Snapshot Framing) for
+    crop_store = ctx.domain_data.snapshot_crop_store
+    stored_crop = crop_store.get(entity_id)
+    # Honor the user's saved per-camera framing (iOS app → Camera Framing) for
     # streams that opt in. The notification live stream sets apply_saved_crop so
     # it matches the framed snapshot; the in-app full-screen view sends neither a
-    # viewport nor the flag, so it stays full-frame. Only falls back when the
-    # client gave no explicit viewport. Mirrors capture_notification_snapshot.
+    # viewport nor the flag, so it stays full-frame (it seeds a *client-side*
+    # zoom from `saved_crop` below instead, which stays zoomable). Only falls
+    # back when the client gave no explicit viewport. Mirrors
+    # capture_notification_snapshot.
     if not isinstance(raw_viewport, dict) and ctx.payload.get("apply_saved_crop"):
-        saved_crop = ctx.domain_data.snapshot_crop_store.get(entity_id)
-        if saved_crop is not None:
-            viewport = saved_crop
+        if stored_crop is not None:
+            viewport = stored_crop
 
     token, expires_at = ctx.domain_data.stream_token_store.mint(
         watch_id=ctx.watch_id,
@@ -1811,6 +1832,16 @@ async def _op_stream_open(ctx: _OpContext) -> Response:
         ttl_seconds=WA_STREAM_TOKEN_TTL_SECONDS,
     )
 
+    # Surface the saved crop + open-zoomed flag so the in-app full-screen view
+    # can start pre-zoomed to the framed region without a second round-trip. The
+    # stream itself stays full-frame (no viewport sent), so the Crown can zoom
+    # back out. Older watch apps ignore these extra fields.
+    saved_crop = (
+        {"x": stored_crop.x, "y": stored_crop.y, "w": stored_crop.w, "h": stored_crop.h}
+        if stored_crop is not None
+        else None
+    )
+
     return ctx.signed_json(
         {
             "ok": True,
@@ -1818,6 +1849,8 @@ async def _op_stream_open(ctx: _OpContext) -> Response:
             "stream_url": f"/api/wrist_assistant/v2/stream/{token}",
             "expires_at": int(expires_at),
             "fps": fps,
+            "saved_crop": saved_crop,
+            "open_zoomed": crop_store.get_open_zoomed(entity_id),
         }
     )
 

@@ -44,10 +44,18 @@ def _is_full_frame(viewport: ViewportState) -> bool:
 
 
 class SnapshotCropStore:
-    """Persistent map of camera entity_id → ViewportState (normalized crop)."""
+    """Persistent map of camera entity_id → ViewportState (normalized crop).
+
+    Also tracks an optional per-camera ``open_zoomed`` flag: when set, the watch
+    opens that camera's in-app full-screen *live* view pre-zoomed to the saved
+    crop region (the Digital Crown still zooms freely from there). It lives here,
+    alongside the crop, because it's only meaningful when a crop exists and is
+    saved/cleared in lock-step with it.
+    """
 
     def __init__(self, hass: HomeAssistant) -> None:
         self._crops: dict[str, ViewportState] = {}
+        self._open_zoomed: dict[str, bool] = {}
         self._store: Store = Store(
             hass,
             SNAPSHOT_CROP_STORAGE_VERSION,
@@ -74,19 +82,48 @@ class SnapshotCropStore:
                 )
             except (TypeError, ValueError):
                 continue
-        _LOGGER.debug("Loaded %d snapshot crops from storage", len(self._crops))
+        # Additive key — absent on pre-feature stores, so old data loads as
+        # "no camera opens zoomed". Only honor flags for cameras that still have
+        # a crop (a dangling flag is meaningless).
+        open_zoomed = data.get("open_zoomed", {})
+        if isinstance(open_zoomed, dict):
+            for entity_id, value in open_zoomed.items():
+                if value and entity_id in self._crops:
+                    self._open_zoomed[entity_id] = True
+        _LOGGER.debug(
+            "Loaded %d snapshot crops (%d open-zoomed) from storage",
+            len(self._crops),
+            len(self._open_zoomed),
+        )
 
     def _serialize(self) -> dict:
         return {
             "crops": {
                 entity_id: {"x": vp.x, "y": vp.y, "w": vp.w, "h": vp.h}
                 for entity_id, vp in self._crops.items()
-            }
+            },
+            "open_zoomed": {entity_id: True for entity_id in self._open_zoomed},
         }
 
     def get(self, entity_id: str) -> ViewportState | None:
         """Return the saved crop for a camera, or None if it's full-frame."""
         return self._crops.get(entity_id)
+
+    def get_open_zoomed(self, entity_id: str) -> bool:
+        """Whether the in-app live view should open pre-zoomed to this crop."""
+        return self._open_zoomed.get(entity_id, False)
+
+    def set_open_zoomed(self, entity_id: str, value: bool) -> None:
+        """Set/clear the open-zoomed flag. A True flag only persists while the
+        camera actually has a crop — there's nothing to zoom to otherwise."""
+        if value and entity_id in self._crops:
+            if self._open_zoomed.get(entity_id):
+                return
+            self._open_zoomed[entity_id] = True
+        else:
+            if self._open_zoomed.pop(entity_id, None) is None:
+                return
+        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
 
     def matches_saved(self, entity_id: str, viewport: ViewportState) -> bool:
         """Whether ``viewport`` equals this camera's saved framing (no-crop = the
@@ -109,5 +146,8 @@ class SnapshotCropStore:
         self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
 
     def delete(self, entity_id: str) -> None:
-        if self._crops.pop(entity_id, None) is not None:
+        removed_crop = self._crops.pop(entity_id, None) is not None
+        # A full-frame camera has nothing to open zoomed into — clear the flag too.
+        removed_flag = self._open_zoomed.pop(entity_id, None) is not None
+        if removed_crop or removed_flag:
             self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
