@@ -1765,8 +1765,13 @@ async def _op_stream_open(ctx: _OpContext) -> Response:
         {
           "entity_id": "camera.front",
           "width": 400, "quality": 75, "fps": 2.0,
-          "viewport": {"x": ..., "y": ..., "w"|"width": ..., "h"|"height": ...}
+          "viewport": {"x": ..., "y": ..., "w"|"width": ..., "h"|"height": ...},
+          "apply_saved_crop": true
         }
+
+    `apply_saved_crop` (used by the notification live stream) falls back to the
+    camera's saved Snapshot Framing crop when no explicit `viewport` is given,
+    so the live view matches the framed snapshot.
 
     Response carries a relative URL the watch should fetch immediately; the
     URL is good for one connection and expires ~30 s after issue.
@@ -1784,7 +1789,17 @@ async def _op_stream_open(ctx: _OpContext) -> Response:
         ctx.payload.get("quality"), DEFAULT_QUALITY, MIN_QUALITY, MAX_QUALITY
     )
     fps = _bound_float(ctx.payload.get("fps"), DEFAULT_FPS, MIN_FPS, MAX_FPS)
-    viewport = _parse_stream_viewport(ctx.payload.get("viewport"))
+    raw_viewport = ctx.payload.get("viewport")
+    viewport = _parse_stream_viewport(raw_viewport)
+    # Honor the user's saved per-camera framing (iOS app → Snapshot Framing) for
+    # streams that opt in. The notification live stream sets apply_saved_crop so
+    # it matches the framed snapshot; the in-app full-screen view sends neither a
+    # viewport nor the flag, so it stays full-frame. Only falls back when the
+    # client gave no explicit viewport. Mirrors capture_notification_snapshot.
+    if not isinstance(raw_viewport, dict) and ctx.payload.get("apply_saved_crop"):
+        saved_crop = ctx.domain_data.snapshot_crop_store.get(entity_id)
+        if saved_crop is not None:
+            viewport = saved_crop
 
     token, expires_at = ctx.domain_data.stream_token_store.mint(
         watch_id=ctx.watch_id,
