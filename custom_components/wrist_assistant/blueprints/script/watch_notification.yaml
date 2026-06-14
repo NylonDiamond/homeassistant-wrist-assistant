@@ -122,9 +122,23 @@ blueprint:
             to keep the snapshot from the moment the event happened — handy
             when that frame is the whole point (who rang the doorbell), or
             for battery and cloud cameras, which the live view keeps polling
-            while the notification is open. The watch is not affected:
-            tapping the snapshot there always opens the live stream. Only
-            applies when a Camera is set above.
+            while the notification is open. The watch has its own
+            "Live stream on watch" toggle below. Only applies when a Camera
+            is set above.
+          default: true
+          selector:
+            boolean:
+        live_stream_watch:
+          name: Live stream on watch
+          description: >
+            When on (the default), the watch notification replaces the
+            snapshot with a live view of the camera while the notification is
+            showing (requires a recent Wrist Assistant watch app update).
+            Tapping the image still opens the full-screen live stream in the
+            app. Turn off to keep the snapshot from the moment the event
+            happened — handy when that frame is the whole point, or for
+            battery and cloud cameras, which the live view keeps polling.
+            Only applies when a Camera is set above.
           default: true
           selector:
             boolean:
@@ -606,6 +620,7 @@ sequence:
       bp_group: !input group
       bp_snapshot_quality: !input snapshot_quality
       bp_live_stream: !input live_stream
+      bp_live_stream_watch: !input live_stream_watch
   - action: wrist_assistant.send_notification
     data: >
       {%- set d = namespace(items=[("priority", bp_priority)]) -%}
@@ -621,6 +636,7 @@ sequence:
       {%- set extra = namespace(items=[]) -%}
       {%- if bp_auto_dismiss %}{%- set extra.items = extra.items + [("auto_dismiss", true)] -%}{%- endif -%}
       {%- if bp_image and not bp_live_stream %}{%- set extra.items = extra.items + [("live_stream", false)] -%}{%- endif -%}
+      {%- if bp_image and not bp_live_stream_watch %}{%- set extra.items = extra.items + [("live_stream_watch", false)] -%}{%- endif -%}
       {%- set actions = namespace(list=[]) -%}
       {%- set slots = [
         (bp_b1_entity, bp_b1_label),
