@@ -351,6 +351,43 @@ def test_viewport_matches_compares_saved_crop() -> None:
         assert not cs.viewport_matches(cs.ViewportState(), saved)
 
 
+# ── session reuse: a new connection's token viewport must win ─────────────
+
+
+def test_get_or_create_session_updates_viewport_on_reuse() -> None:
+    """A reused session must adopt the new connection's token viewport.
+
+    Repro for the notification→tap→full-screen bug: the cropped notification
+    live stream leaves a session keyed by (watch_id, entity_id); tapping it
+    opens the in-app full-screen view, which mints a *full-frame* token for the
+    same camera. The session is keyed by (watch_id, entity_id), so the second
+    connection reuses the first's session object — and before the fix it kept
+    the stale crop, leaving the live stream server-cropped so the Crown could
+    never zoom back out.
+    """
+    with _fresh_camera_stream("cs_session_reuse") as cs:
+        coord = cs.CameraStreamCoordinator()
+        crop = cs.ViewportState(0.25, 0.25, 0.5, 0.5)
+
+        # 1) Notification stream opens cropped.
+        s1 = coord.get_or_create_session("watch1", "camera.front", viewport=crop)
+        assert s1.viewport == crop
+
+        # 2) Full-screen reuses the same key with a full-frame token.
+        s2 = coord.get_or_create_session(
+            "watch1", "camera.front", viewport=cs.ViewportState()
+        )
+        assert s2 is s1  # same session object, keyed by (watch_id, entity_id)
+        assert cs.is_full_frame_viewport(s2.viewport)
+
+        # 3) A mid-stream width-only retune (viewport=None) must NOT reset it —
+        #    live zoom-resolution updates keep the active viewport.
+        coord.update_session("watch1", "camera.front", width=480)
+        assert cs.is_full_frame_viewport(
+            coord._sessions[("watch1", "camera.front")].viewport
+        )
+
+
 # ── batch snapshot stream ─────────────────────────────────────────────────
 
 
