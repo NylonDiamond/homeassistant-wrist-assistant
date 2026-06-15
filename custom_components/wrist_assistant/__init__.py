@@ -241,6 +241,15 @@ async def _capture_snapshot_into(
     except Exception as err:  # noqa: BLE001 — never let a bad camera kill the task
         _LOGGER.warning("Snapshot capture failed for %s: %s", image_source, err)
         jpeg = None
+    # TEMP DEBUG (wrong-camera diagnosis): which entity we actually grabbed and
+    # how many bytes. Correlate token with the "WA camera push" line above.
+    # Remove after diagnosis.
+    _LOGGER.info(
+        "WA snapshot capture: entity=%s token=%s bytes=%s",
+        image_source,
+        token[:8],
+        len(jpeg) if jpeg else 0,
+    )
     if not jpeg:
         store.fail(token)
         return
@@ -336,6 +345,15 @@ async def _deliver_push(
             stream_entity = _resolve_stream_entity(hass, data, image_source)
             if stream_entity:
                 extra_data.setdefault("camera_stream_entity_id", stream_entity)
+            # TEMP DEBUG (wrong-camera diagnosis): what HA handed us vs. what we
+            # resolved. If image_source is the OLD camera on a failing run, the
+            # stale value came from HA upstream, not WA. Remove after diagnosis.
+            _LOGGER.info(
+                "WA camera push: image_source=%s camera_entity_id=%s stream_entity=%s",
+                image_source,
+                extra_data.get("camera_entity_id"),
+                extra_data.get("camera_stream_entity_id"),
+            )
 
     # Start the capture now so it overlaps payload build + the APNs/relay send;
     # by the time the device GETs the URL the bytes are often already there.
