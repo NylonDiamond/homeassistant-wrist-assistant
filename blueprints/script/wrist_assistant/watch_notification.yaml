@@ -18,15 +18,19 @@ blueprint:
     media players (transport, volume), alarms (home/night/away/disarm),
     vacuums (start/pause/dock/find)
 
-    - Tap the snapshot to refresh it on iPhone, or load the live camera
-    stream on the watch
+    - Camera snapshots go live: expanding the notification on iPhone
+    plays the live stream right inside it (a toggle in the Camera
+    section turns this off); on the watch, tap the snapshot to open
+    the live stream in the watch app
 
     Leave button slots empty to skip them. A notification with no
     buttons shows as info-only (title, message, and any snapshot).
 
 
     On the watch, notifications expand automatically to show the snapshot
-    and buttons. On iPhone, **long press** the notification to expand it.
+    and buttons. On iPhone, **long press** the notification — or **slide it
+    down** when it banners in — to expand it in place. Tapping works too,
+    but it also opens the app.
 
 
     Setup help and troubleshooting are under **⚙️ Settings** below.
@@ -57,33 +61,35 @@ blueprint:
         text:
           multiline: true
     section_camera:
-      name: "📷 Camera Snapshot"
+      name: "📷 Camera Snapshot & Live Stream"
       collapsed: true
       input:
         image:
           name: Camera
           description: >
-            *(Optional)* Camera to snapshot and show in the notification —
-            e.g. a doorbell feed. The frame is captured when the notification
-            is sent, then shown in the expanded notification and on the watch.
+            *(Optional)* Camera to show in the notification — e.g. a doorbell
+            feed. A snapshot is captured the moment the notification is sent.
+            The watch shows that snapshot (tap it to open the live stream in
+            the watch app); on iPhone, expanding the notification plays a live
+            stream in its place (see the Live stream toggle below).
 
 
             **Requires the Wrist Assistant iOS app v2.1.0 or newer** — older
-            versions won't display the snapshot. Also requires remote Home
-            Assistant access (Nabu Casa or an external URL) to load when
-            you're away from home.
+            versions won't display the snapshot; the live stream on iPhone
+            needs **v2.3.0 or newer** (older versions keep the snapshot).
+            Also requires remote Home Assistant access (Nabu Casa or an
+            external URL) to load when you're away from home.
 
 
-            **Tip:** If your camera offers a **dedicated snapshot** entity (e.g.
+            **Tip:** If your camera has a dedicated **snapshot** entity (e.g.
             Reolink's "Snapshots" variants — you may need to enable it under
-            Settings → Entities), prefer it over a live-stream entity for a
-            faster, lower-latency grab. And where a camera exposes both a
-            **"Fluent"** (lower-resolution sub-stream) and a **"Clear"**
-            (full-resolution) variant, pick **Fluent** — the snapshot is
-            downscaled for the notification anyway, so it looks nearly identical
-            at that size while producing a much smaller image that renders
-            fastest, especially over cellular. (A **"Snapshots Fluent"** entity
-            is the best of both: a quick grab and a small, fast image.)
+            Settings → Entities), pick it: it grabs frames faster. And if the
+            camera also has a low-resolution **"Fluent"** variant, prefer it
+            over "Clear" — the image is downscaled for the notification anyway,
+            and the smaller file loads much faster, especially over cellular.
+            (A **"Snapshots Fluent"** entity is the best of both.) Either way
+            the live stream still works — it automatically uses the camera's
+            streamable feed.
           default: ""
           selector:
             entity:
@@ -107,6 +113,35 @@ blueprint:
                   value: balanced
                 - label: "Fast — smallest, fastest"
                   value: fast
+        live_stream:
+          name: Live stream on iPhone
+          description: >
+            When on (the default), expanding the notification on iPhone
+            replaces the snapshot with a live view of the camera (requires
+            the iOS app v2.3.0 or newer). Turn off
+            to keep the snapshot from the moment the event happened — handy
+            when that frame is the whole point (who rang the doorbell), or
+            for battery and cloud cameras, which the live view keeps polling
+            while the notification is open. The watch has its own
+            "Live stream on watch" toggle below. Only applies when a Camera
+            is set above.
+          default: true
+          selector:
+            boolean:
+        live_stream_watch:
+          name: Live stream on watch
+          description: >
+            When on (the default), the watch notification replaces the
+            snapshot with a live view of the camera while the notification is
+            showing (requires a recent Wrist Assistant watch app update).
+            Tapping the image still opens the full-screen live stream in the
+            app. Turn off to keep the snapshot from the moment the event
+            happened — handy when that frame is the whole point, or for
+            battery and cloud cameras, which the live view keeps polling.
+            Only applies when a Camera is set above.
+          default: true
+          selector:
+            boolean:
     section_button_1:
       name: "☝️ Button 1"
       collapsed: true
@@ -584,6 +619,8 @@ sequence:
       bp_tag: !input tag
       bp_group: !input group
       bp_snapshot_quality: !input snapshot_quality
+      bp_live_stream: !input live_stream
+      bp_live_stream_watch: !input live_stream_watch
   - action: wrist_assistant.send_notification
     data: >
       {%- set d = namespace(items=[("priority", bp_priority)]) -%}
@@ -598,6 +635,8 @@ sequence:
       {%- if bp_image and bp_snapshot_quality == "fast" %}{%- set d.items = d.items + [("snapshot_width", 480), ("snapshot_quality", 55)] -%}{%- endif -%}
       {%- set extra = namespace(items=[]) -%}
       {%- if bp_auto_dismiss %}{%- set extra.items = extra.items + [("auto_dismiss", true)] -%}{%- endif -%}
+      {%- if bp_image and not bp_live_stream %}{%- set extra.items = extra.items + [("live_stream", false)] -%}{%- endif -%}
+      {%- if bp_image and not bp_live_stream_watch %}{%- set extra.items = extra.items + [("live_stream_watch", false)] -%}{%- endif -%}
       {%- set actions = namespace(list=[]) -%}
       {%- set slots = [
         (bp_b1_entity, bp_b1_label),

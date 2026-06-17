@@ -99,6 +99,16 @@ class CameraStreamCoordinator:
             session.width = width
             session.quality = quality
             session.fps = fps
+            # A new connection's token carries the authoritative viewport for
+            # this (watch_id, entity_id). Without this, a stale session left by
+            # a *prior* stream for the same camera keeps its crop — e.g. the
+            # cropped notification live stream the user just tapped — so the
+            # full-screen view, which mints a full-frame token, would stay
+            # server-cropped and the Crown could never zoom back out. The
+            # mid-stream width-only path (update_session) still passes
+            # viewport=None, so live zoom-resolution retunes don't reset it.
+            if viewport is not None:
+                session.viewport = viewport
         return session
 
     def update_session(

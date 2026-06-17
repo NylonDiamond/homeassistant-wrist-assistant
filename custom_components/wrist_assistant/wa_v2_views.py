@@ -1003,20 +1003,33 @@ async def _op_set_snapshot_crop(ctx: _OpContext) -> Response:
     """Save the user's notification framing for a camera's entities.
 
     Body: {"entity_ids": ["camera.x", ...] | "entity_id": "camera.x",
-           "viewport": {x, y, w|width, h|height}}.
+           "viewport": {x, y, w|width, h|height},
+           "open_zoomed": true | false (optional)}.
     A full-frame viewport clears any saved crop (reset to full frame). The crop
     is written to every supplied entity_id so any variant the notification uses
     gets the same framing.
+
+    `open_zoomed` (optional) sets whether the watch opens this camera's in-app
+    live view pre-zoomed to the saved crop. Omitted by older app builds, so it
+    leaves the existing flag untouched; the store ignores a True flag when the
+    viewport is full-frame (nothing to zoom into).
     """
     entity_ids = _camera_ids_from_payload(ctx.payload)
     if not entity_ids:
         return Response(status=400, text="entity_id(s) required and must be cameras")
 
     viewport = _parse_stream_viewport(ctx.payload.get("viewport"))
+    raw_open_zoomed = ctx.payload.get("open_zoomed")
+    open_zoomed = bool(raw_open_zoomed) if isinstance(raw_open_zoomed, bool) else None
     store = ctx.domain_data.snapshot_crop_store
     aspect_store = ctx.domain_data.snapshot_aspect_store
     for entity_id in entity_ids:
         store.set(entity_id, viewport)
+        # Only touch the open-zoomed flag when the client explicitly sent one
+        # (older apps don't). set() ran first, so the crop exists for the
+        # store's "True only with a crop" guard.
+        if open_zoomed is not None:
+            store.set_open_zoomed(entity_id, open_zoomed)
         # Re-framing changes the snapshot's aspect — drop the stored value so the
         # next push recomputes it instead of reserving the old footprint.
         aspect_store.delete(entity_id)
@@ -1027,19 +1040,22 @@ async def _op_get_snapshot_crop(ctx: _OpContext) -> Response:
     """Return the saved framing for a camera, or null when full-frame.
 
     Body: {"entity_id": "camera.x"}.
-    Response: {"viewport": {x, y, w, h}} or {"viewport": null}.
+    Response: {"viewport": {x, y, w, h} | null, "open_zoomed": bool}.
     """
     entity_id = ctx.payload.get("entity_id")
     if not isinstance(entity_id, str) or not entity_id.startswith("camera."):
         return Response(status=400, text="entity_id required and must be a camera")
 
-    crop = ctx.domain_data.snapshot_crop_store.get(entity_id)
+    store = ctx.domain_data.snapshot_crop_store
+    crop = store.get(entity_id)
     viewport = (
         {"x": crop.x, "y": crop.y, "w": crop.w, "h": crop.h}
         if crop is not None
         else None
     )
-    return ctx.signed_json({"viewport": viewport})
+    return ctx.signed_json(
+        {"viewport": viewport, "open_zoomed": store.get_open_zoomed(entity_id)}
+    )
 
 
 async def _op_snapshot_crops_status(ctx: _OpContext) -> Response:
@@ -1818,11 +1834,18 @@ async def _op_stream_open(ctx: _OpContext) -> Response:
         {
           "entity_id": "camera.front",
           "width": 400, "quality": 75, "fps": 2.0,
-          "viewport": {"x": ..., "y": ..., "w"|"width": ..., "h"|"height": ...}
+          "viewport": {"x": ..., "y": ..., "w"|"width": ..., "h"|"height": ...},
+          "apply_saved_crop": true
         }
 
+    `apply_saved_crop` (used by the notification live stream) falls back to the
+    camera's saved Camera Framing crop when no explicit `viewport` is given,
+    so the live view matches the framed snapshot.
+
     Response carries a relative URL the watch should fetch immediately; the
-    URL is good for one connection and expires ~30 s after issue.
+    URL is good for one connection and expires ~30 s after issue. It also
+    includes the camera's `saved_crop` (or null) and `open_zoomed` flag so the
+    in-app full-screen view can start pre-zoomed to the framed region.
     """
     entity_id = ctx.payload.get("entity_id")
     if not isinstance(entity_id, str) or not entity_id.startswith("camera."):
@@ -1837,7 +1860,20 @@ async def _op_stream_open(ctx: _OpContext) -> Response:
         ctx.payload.get("quality"), DEFAULT_QUALITY, MIN_QUALITY, MAX_QUALITY
     )
     fps = _bound_float(ctx.payload.get("fps"), DEFAULT_FPS, MIN_FPS, MAX_FPS)
-    viewport = _parse_stream_viewport(ctx.payload.get("viewport"))
+    raw_viewport = ctx.payload.get("viewport")
+    viewport = _parse_stream_viewport(raw_viewport)
+    crop_store = ctx.domain_data.snapshot_crop_store
+    stored_crop = crop_store.get(entity_id)
+    # Honor the user's saved per-camera framing (iOS app → Camera Framing) for
+    # streams that opt in. The notification live stream sets apply_saved_crop so
+    # it matches the framed snapshot; the in-app full-screen view sends neither a
+    # viewport nor the flag, so it stays full-frame (it seeds a *client-side*
+    # zoom from `saved_crop` below instead, which stays zoomable). Only falls
+    # back when the client gave no explicit viewport. Mirrors
+    # capture_notification_snapshot.
+    if not isinstance(raw_viewport, dict) and ctx.payload.get("apply_saved_crop"):
+        if stored_crop is not None:
+            viewport = stored_crop
 
     token, expires_at = ctx.domain_data.stream_token_store.mint(
         watch_id=ctx.watch_id,
@@ -1849,6 +1885,16 @@ async def _op_stream_open(ctx: _OpContext) -> Response:
         ttl_seconds=WA_STREAM_TOKEN_TTL_SECONDS,
     )
 
+    # Surface the saved crop + open-zoomed flag so the in-app full-screen view
+    # can start pre-zoomed to the framed region without a second round-trip. The
+    # stream itself stays full-frame (no viewport sent), so the Crown can zoom
+    # back out. Older watch apps ignore these extra fields.
+    saved_crop = (
+        {"x": stored_crop.x, "y": stored_crop.y, "w": stored_crop.w, "h": stored_crop.h}
+        if stored_crop is not None
+        else None
+    )
+
     return ctx.signed_json(
         {
             "ok": True,
@@ -1856,6 +1902,8 @@ async def _op_stream_open(ctx: _OpContext) -> Response:
             "stream_url": f"/api/wrist_assistant/v2/stream/{token}",
             "expires_at": int(expires_at),
             "fps": fps,
+            "saved_crop": saved_crop,
+            "open_zoomed": crop_store.get_open_zoomed(entity_id),
         }
     )
 
@@ -2025,6 +2073,75 @@ async def _op_verify_identity(ctx: _OpContext) -> Response:
     proof — the body carries no other secret.
     """
     return ctx.signed_json({"ok": True, "ts": int(time.time())})
+
+
+async def _op_update_metadata(ctx: _OpContext) -> Response:
+    """HMAC-signed metadata refresh for an already-registered watch.
+
+    Body: `{app_version?, app_build?, owner_iphone_id?, device_name?}` — all
+    optional strings; omitted/empty fields are left unchanged.
+
+    This exists so a registered watch never needs the HA bearer token to keep
+    its diagnostic sensors current. The bearer-authed `register_secret` path
+    used to double as the metadata-update channel, which meant a watch holding
+    a stale bearer (e.g. the non-active watch after a sign-out/in on the
+    iPhone) fired a doomed authenticated request on every cold start — each
+    one writing a "Login attempt failed" warning + persistent notification in
+    HA and counting toward `ip_ban`'s threshold. HMAC failures stay inside
+    this integration, so this path can never pollute HA's auth log.
+
+    Identity comes from the validated HMAC (`ctx.watch_id`), so a watch can
+    only update its own entry, and only metadata — never secret material.
+    Watches newer than this integration get 400 "Unknown op" from the
+    dispatch table and fall back to the bearer path themselves; watches too
+    old to know this op simply keep using the bearer path.
+    """
+
+    def _clean(key: str) -> str | None:
+        value = ctx.payload.get(key)
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped:
+                return stripped
+        return None
+
+    device_name = _clean("device_name")
+    ok = ctx.domain_data.widget_secret_store.update_metadata(
+        ctx.watch_id,
+        app_version=_clean("app_version"),
+        app_build=_clean("app_build"),
+        owner_iphone_id=_clean("owner_iphone_id"),
+        device_name=device_name,
+    )
+    if not ok:
+        # Entry vanished between HMAC validation and dispatch (concurrent
+        # removal). Signed 410 tells the watch its registration is gone.
+        return ctx.signed_json({"ok": False, "error": "not registered"}, status=410)
+
+    # Same registry propagation as the register_secret view: surface a renamed
+    # watch immediately instead of waiting for the next HA restart. Manual
+    # renames (`name_by_user`) always win on display and are left untouched.
+    if device_name is not None:
+        device_registry = dr.async_get(ctx.hass)
+        device = device_registry.async_get_device(
+            identifiers={(DOMAIN, f"watch_{ctx.watch_id}")}
+        )
+        if device is not None and device.name != device_name:
+            device_registry.async_update_device(device.id, name=device_name)
+
+    # Echo the stored entry so the caller (and the live test suite) can
+    # confirm what actually persisted — it's the watch's own data, signed
+    # back to the watch that owns it.
+    entry = ctx.domain_data.widget_secret_store.get(ctx.watch_id)
+    return ctx.signed_json(
+        {
+            "ok": True,
+            "app_version": entry.app_version if entry else None,
+            "app_build": entry.app_build if entry else None,
+            "owner_iphone_id": entry.owner_iphone_id if entry else None,
+            "device_name": entry.device_name if entry else None,
+        }
+    )
 
 
 # ── /v2/stream/{token} view ──────────────────────────────────────────────
@@ -2481,4 +2598,5 @@ _OP_HANDLERS: dict[str, Any] = {
     "stream_update": _op_stream_update,
     "stream_close": _op_stream_close,
     "verify_identity": _op_verify_identity,
+    "update_metadata": _op_update_metadata,
 }
