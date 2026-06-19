@@ -21,6 +21,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import instance_id as ha_instance_id
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.network import NoURLAvailableError, get_url
@@ -266,6 +267,29 @@ def _resolve_stream_entity(
     return resolve_stream_sibling(hass, entity_id)
 
 
+# This HA install's stable instance UUID, cached for the process. Stamped onto
+# every push so a multi-instance app can map the alert back to the originating
+# instance (HAInstance.id is app-local, so the app keys off this server-side id).
+_HA_INSTANCE_UUID: str | None = None
+
+
+async def _get_ha_instance_uuid(hass: HomeAssistant) -> str | None:
+    """Return this HA install's stable instance UUID (process-cached).
+
+    ``instance_id.async_get`` reads from a Store on first call; we memoize the
+    string so the hot push path doesn't touch it again. Defensive: any failure
+    just skips the stamp (it's purely additive — older apps ignore it).
+    """
+    global _HA_INSTANCE_UUID
+    if _HA_INSTANCE_UUID is None:
+        try:
+            _HA_INSTANCE_UUID = await ha_instance_id.async_get(hass)
+        except Exception:  # noqa: BLE001 - never let the UUID lookup break a push
+            _LOGGER.debug("wa: instance UUID unavailable; skipping instanceId stamp")
+            return None
+    return _HA_INSTANCE_UUID
+
+
 async def _deliver_push(
     hass: HomeAssistant,
     data: WristAssistantData,
@@ -380,6 +404,16 @@ async def _deliver_push(
         )
         else None
     )
+    # Stamp the originating HA instance's stable UUID so a multi-instance app can
+    # map the alert back to the right instance — and the watch can auto-switch to
+    # it on tap. Additive + global: HAInstance.id is app-local (per install), so
+    # the app keys off this server-stamped UUID. setdefault so an explicit caller
+    # override wins; older apps simply ignore the field. Survives _strip_none (a
+    # non-empty string). Covers the test-notification path too — it routes through
+    # _deliver_push.
+    ha_uuid = await _get_ha_instance_uuid(hass)
+    if ha_uuid:
+        extra_data.setdefault("instanceId", ha_uuid)
     # Default interruption-level to "active": alerts + haptic when the user is
     # available, but respects Focus / Do Not Disturb / sleep.
     extra_data.setdefault("priority", "active")

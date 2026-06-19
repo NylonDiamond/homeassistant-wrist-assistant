@@ -62,6 +62,7 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant, ServiceResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceNotFound
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import instance_id as ha_instance_id
 from homeassistant.helpers.template import Template, TemplateError
 
 from .audio_upload import CLEANUP_AGE_SECONDS, MAX_UPLOAD_SIZE
@@ -2499,14 +2500,25 @@ class WAVersionView(HomeAssistantView):
             integration_version = str(integration.version)
         except Exception:  # noqa: BLE001
             integration_version = "unknown"
-        return self.json(
-            {
-                "integration_version": integration_version,
-                "wa_protocol_version": WA_PROTOCOL_VERSION,
-                "min_supported_app_protocol_version": MIN_SUPPORTED_APP_PROTOCOL_VERSION,
-                "app_update_message": APP_UPDATE_MESSAGE,
-            }
-        )
+        # This HA install's stable instance UUID — the matching key a
+        # multi-instance app uses to bind a push (stamped with the same id on the
+        # `data` dict) back to the right local instance. Same source on both
+        # sides, so it's the robust anchor even if the WS-config `instance_id`
+        # ever diverges. Additive + unauthenticated; absent → app falls back to
+        # the WS-config value.
+        try:
+            instance_uuid = await ha_instance_id.async_get(self._hass)
+        except Exception:  # noqa: BLE001
+            instance_uuid = None
+        payload = {
+            "integration_version": integration_version,
+            "wa_protocol_version": WA_PROTOCOL_VERSION,
+            "min_supported_app_protocol_version": MIN_SUPPORTED_APP_PROTOCOL_VERSION,
+            "app_update_message": APP_UPDATE_MESSAGE,
+        }
+        if instance_uuid:
+            payload["instance_id"] = instance_uuid
+        return self.json(payload)
 
 
 # Op dispatch table. Adding a new op = add a key here.
