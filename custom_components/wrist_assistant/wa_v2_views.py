@@ -1513,6 +1513,31 @@ async def _op_notifications_status(ctx: _OpContext) -> Response:
     )
 
 
+async def _op_watch_secret_status(ctx: _OpContext) -> Response:
+    """Report whether a watch's HMAC key is registered in this instance's HACS.
+
+    Fills the iPhone app's "Watch Integration Key" row when it's re-skinned to
+    view a *secondary* instance. The watch's per-instance HMAC secret lives only
+    on the watch and here in HACS — the iPhone never stores a secondary's watch
+    secret (relay provisioning mirrors it to the iPhone only for the primary),
+    so the iPhone can't answer locally and asks us instead.
+
+    Targeting mirrors ``notifications_status``: an iPhone caller signs with its
+    own per-instance identity and names the paired watch via ``companion_watch_id``.
+    Returns only a boolean — never the secret — and the queried watch is the
+    user's own device, so this is strictly less sensitive than the register write.
+    """
+    store = ctx.domain_data.widget_secret_store
+
+    target_watch_id = ctx.watch_id
+    companion = ctx.payload.get("companion_watch_id")
+    if isinstance(companion, str) and companion:
+        target_watch_id = companion
+
+    registered = store.get(target_watch_id) is not None
+    return ctx.signed_json({"ok": True, "registered": registered})
+
+
 async def _op_send_test_notification(ctx: _OpContext) -> Response:
     """Send a *real* camera notification back to the requesting device.
 
@@ -2546,6 +2571,7 @@ _OP_HANDLERS: dict[str, Any] = {
     "fire_event": _op_fire_event,
     "notifications_register": _op_notifications_register,
     "notifications_status": _op_notifications_status,
+    "watch_secret_status": _op_watch_secret_status,
     "send_test_notification": _op_send_test_notification,
     "audio_upload": _op_audio_upload,
     "camera_batch": _op_camera_batch,
