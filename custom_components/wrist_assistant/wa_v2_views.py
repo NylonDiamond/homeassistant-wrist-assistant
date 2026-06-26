@@ -62,6 +62,7 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant, ServiceResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceNotFound
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import instance_id as ha_instance_id
 from homeassistant.helpers.template import Template, TemplateError
 
 from .audio_upload import CLEANUP_AGE_SECONDS, MAX_UPLOAD_SIZE
@@ -1565,6 +1566,31 @@ async def _op_webhook_provision(ctx: _OpContext) -> Response:
     return ctx.signed_json(result)
 
 
+async def _op_watch_secret_status(ctx: _OpContext) -> Response:
+    """Report whether a watch's HMAC key is registered in this instance's HACS.
+
+    Fills the iPhone app's "Watch Integration Key" row when it's re-skinned to
+    view a *secondary* instance. The watch's per-instance HMAC secret lives only
+    on the watch and here in HACS — the iPhone never stores a secondary's watch
+    secret (relay provisioning mirrors it to the iPhone only for the primary),
+    so the iPhone can't answer locally and asks us instead.
+
+    Targeting mirrors ``notifications_status``: an iPhone caller signs with its
+    own per-instance identity and names the paired watch via ``companion_watch_id``.
+    Returns only a boolean — never the secret — and the queried watch is the
+    user's own device, so this is strictly less sensitive than the register write.
+    """
+    store = ctx.domain_data.widget_secret_store
+
+    target_watch_id = ctx.watch_id
+    companion = ctx.payload.get("companion_watch_id")
+    if isinstance(companion, str) and companion:
+        target_watch_id = companion
+
+    registered = store.get(target_watch_id) is not None
+    return ctx.signed_json({"ok": True, "registered": registered})
+
+
 async def _op_send_test_notification(ctx: _OpContext) -> Response:
     """Send a *real* camera notification back to the requesting device.
 
@@ -2552,14 +2578,25 @@ class WAVersionView(HomeAssistantView):
             integration_version = str(integration.version)
         except Exception:  # noqa: BLE001
             integration_version = "unknown"
-        return self.json(
-            {
-                "integration_version": integration_version,
-                "wa_protocol_version": WA_PROTOCOL_VERSION,
-                "min_supported_app_protocol_version": MIN_SUPPORTED_APP_PROTOCOL_VERSION,
-                "app_update_message": APP_UPDATE_MESSAGE,
-            }
-        )
+        # This HA install's stable instance UUID — the matching key a
+        # multi-instance app uses to bind a push (stamped with the same id on the
+        # `data` dict) back to the right local instance. Same source on both
+        # sides, so it's the robust anchor even if the WS-config `instance_id`
+        # ever diverges. Additive + unauthenticated; absent → app falls back to
+        # the WS-config value.
+        try:
+            instance_uuid = await ha_instance_id.async_get(self._hass)
+        except Exception:  # noqa: BLE001
+            instance_uuid = None
+        payload = {
+            "integration_version": integration_version,
+            "wa_protocol_version": WA_PROTOCOL_VERSION,
+            "min_supported_app_protocol_version": MIN_SUPPORTED_APP_PROTOCOL_VERSION,
+            "app_update_message": APP_UPDATE_MESSAGE,
+        }
+        if instance_uuid:
+            payload["instance_id"] = instance_uuid
+        return self.json(payload)
 
 
 # Op dispatch table. Adding a new op = add a key here.
@@ -2588,6 +2625,7 @@ _OP_HANDLERS: dict[str, Any] = {
     "notifications_register": _op_notifications_register,
     "notifications_status": _op_notifications_status,
     "webhook_provision": _op_webhook_provision,
+    "watch_secret_status": _op_watch_secret_status,
     "send_test_notification": _op_send_test_notification,
     "audio_upload": _op_audio_upload,
     "camera_batch": _op_camera_batch,
