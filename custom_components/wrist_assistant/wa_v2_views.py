@@ -1437,6 +1437,46 @@ async def _remote_command_hold_loop(
         holds.pop(entity_id, None)
 
 
+def _resolve_companion_target(
+    ctx: _OpContext,
+) -> tuple[str | None, Response | None]:
+    """Resolve the watch_id an op should act on, honoring an optional
+    ``companion_watch_id`` while enforcing that the caller owns it.
+
+    An iPhone signs with its own identity (``ctx.watch_id``) but acts on its
+    paired watch's entry via ``companion_watch_id`` — the push token / webhook
+    live there. Without an ownership check, any authenticated device on a shared
+    HA instance (multi-user, or a household with several paired watches) could
+    name *another* user's watch and read or mutate its entry.
+
+    Ownership is the watch entry's recorded ``owner_iphone_id`` (set at pairing
+    via register_secret / update_metadata). When a companion is named we require
+    that owner to equal the caller. Entries with no recorded owner — paired
+    before owner tracking, or watch-direct registrations — are allowed through
+    for backward compatibility; a properly paired watch is always protected.
+
+    Returns ``(target_watch_id, None)`` on success, or ``(None, response)`` with
+    a 403 when the caller names a companion it does not own.
+    """
+    companion = ctx.payload.get("companion_watch_id")
+    if not (isinstance(companion, str) and companion):
+        return ctx.watch_id, None
+    if companion == ctx.watch_id:
+        return companion, None
+    store = ctx.domain_data.widget_secret_store
+    entry = store.get(companion) if store is not None else None
+    owner = entry.owner_iphone_id if entry is not None else None
+    if owner is not None and owner != ctx.watch_id:
+        _LOGGER.warning(
+            "Rejected cross-watch op=%s: caller %s is not owner of companion %s",
+            ctx.op,
+            ctx.watch_id,
+            companion,
+        )
+        return None, Response(status=403, text="not authorized for companion watch")
+    return companion, None
+
+
 async def _op_notifications_register(ctx: _OpContext) -> Response:
     """Register a push device token for this watch."""
     store = ctx.domain_data.notification_store
@@ -1458,12 +1498,15 @@ async def _op_notifications_register(ctx: _OpContext) -> Response:
     # By default the HMAC-validated identity is the storage key. The companion
     # iPhone signs with its own identity but its token must live on the paired
     # watch's entry (so send_notification, which targets a watch, can mirror via
-    # it). When an authenticated caller declares a companion watch_id for an iOS
-    # token, store it there — all identities here are the user's own devices.
+    # it). A companion redirect is only honored for an iOS token whose target
+    # watch the caller actually owns (owner_iphone_id == caller); otherwise any
+    # authenticated device on a shared HA instance could plant its token on
+    # another user's watch. See _resolve_companion_target.
     target_watch_id = ctx.watch_id
-    companion = ctx.payload.get("companion_watch_id")
-    if platform == "ios" and isinstance(companion, str) and companion:
-        target_watch_id = companion
+    if platform == "ios":
+        target_watch_id, denied = _resolve_companion_target(ctx)
+        if denied is not None:
+            return denied
 
     token_result = store.register(
         target_watch_id,
@@ -1512,10 +1555,9 @@ async def _op_notifications_status(ctx: _OpContext) -> Response:
             {"ok": False, "error": "notifications unavailable"}, status=503
         )
 
-    target_watch_id = ctx.watch_id
-    companion = ctx.payload.get("companion_watch_id")
-    if isinstance(companion, str) and companion:
-        target_watch_id = companion
+    target_watch_id, denied = _resolve_companion_target(ctx)
+    if denied is not None:
+        return denied
 
     entries = store.get_entries(target_watch_id)
     return ctx.signed_json(
@@ -1554,10 +1596,9 @@ async def _op_webhook_provision(ctx: _OpContext) -> Response:
     orphaned at the relay (the app's recovery path for a lost publish token is
     ``rotate`` against the relay directly, not re-provisioning).
     """
-    target_watch_id = ctx.watch_id
-    companion = ctx.payload.get("companion_watch_id")
-    if isinstance(companion, str) and companion:
-        target_watch_id = companion
+    target_watch_id, denied = _resolve_companion_target(ctx)
+    if denied is not None:
+        return denied
 
     result = await async_provision_webhook(ctx.domain_data, target_watch_id)
     if result.get("ok") is not True:
@@ -1582,10 +1623,9 @@ async def _op_watch_secret_status(ctx: _OpContext) -> Response:
     """
     store = ctx.domain_data.widget_secret_store
 
-    target_watch_id = ctx.watch_id
-    companion = ctx.payload.get("companion_watch_id")
-    if isinstance(companion, str) and companion:
-        target_watch_id = companion
+    target_watch_id, denied = _resolve_companion_target(ctx)
+    if denied is not None:
+        return denied
 
     registered = store.get(target_watch_id) is not None
     return ctx.signed_json({"ok": True, "registered": registered})
@@ -1626,10 +1666,9 @@ async def _op_send_test_notification(ctx: _OpContext) -> Response:
         return Response(status=400, text="camera must be a camera.* entity id")
     image_source = camera if isinstance(camera, str) and camera.startswith("camera.") else None
 
-    target_watch_id = ctx.watch_id
-    companion = ctx.payload.get("companion_watch_id")
-    if isinstance(companion, str) and companion:
-        target_watch_id = companion
+    target_watch_id, denied = _resolve_companion_target(ctx)
+    if denied is not None:
+        return denied
 
     if not store.get_entries(target_watch_id):
         return ctx.signed_json({"ok": False, "reason": "no_push_token"})
