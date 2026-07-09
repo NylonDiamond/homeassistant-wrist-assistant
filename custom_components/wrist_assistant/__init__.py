@@ -353,10 +353,7 @@ async def _deliver_push(
         # (a) open the live stream on a snapshot tap, and (b) fetch the image on
         # demand when the embedded URL 404s (capture still in flight and slow, or
         # the URL isn't reachable from where the device is) — so the notification
-        # still shows an image instead of buttons-only. `image.*` sources are
-        # intentionally excluded: they don't stream, and the on-demand fallback
-        # op is camera-only, so an image entity shows the embedded still with no
-        # live affordance, which is the desired behavior.
+        # still shows an image instead of buttons-only.
         if isinstance(image_source, str) and image_source.startswith("camera."):
             extra_data.setdefault("camera_entity_id", image_source)
             # The snapshot variant can't stream — hand the watch the device's
@@ -364,6 +361,13 @@ async def _deliver_push(
             stream_entity = _resolve_stream_entity(hass, data, image_source)
             if stream_entity:
                 extra_data.setdefault("camera_stream_entity_id", stream_entity)
+        elif isinstance(image_source, str) and image_source.startswith("image."):
+            # An `image.*` source (e.g. a 3D-printer snapshot) can't stream, but
+            # the watch can deep-link a snapshot tap to that entity's on-device
+            # image view (where it can be zoomed and refreshed). Carry the entity
+            # id for that tap target; the id is instance-scoped by the push's
+            # stamped instanceId, so the view fetches from the origin instance.
+            extra_data.setdefault("image_entity_id", image_source)
 
     # Start the capture now so it overlaps payload build + the APNs/relay send;
     # by the time the device GETs the URL the bytes are often already there.
