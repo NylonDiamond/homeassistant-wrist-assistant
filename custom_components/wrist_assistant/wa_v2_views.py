@@ -1860,6 +1860,71 @@ async def _op_entity_image(ctx: _OpContext) -> Response:
     )
 
 
+async def _op_person_picture(ctx: _OpContext) -> Response:
+    """Return the profile-picture bytes for a `person.*` entity.
+
+    The watch renders a person's HA `entity_picture` as its tile icon. That
+    attribute is a path on this HA instance (e.g. `/api/image/serve/<id>/512x512`
+    for a UI-uploaded photo, or a `/local/...` static file). We fetch it
+    server-side over the instance's own URL and sign the bytes, so the watch
+    never needs a bearer token — the same trust model as `entity_image`.
+
+    Only relative paths are fetched. An absolute `http(s)://` entity_picture
+    (a gravatar or other external avatar) is refused rather than proxied, so
+    this op can't be turned into an open relay against arbitrary hosts.
+    Body: {"entity_id": "person.X"}
+    """
+    entity_id = ctx.payload.get("entity_id")
+    if not isinstance(entity_id, str) or not entity_id:
+        return Response(status=400, text="entity_id required")
+
+    if not entity_id.startswith("person."):
+        return Response(status=400, text="entity_id must be person.*")
+
+    state = ctx.hass.states.get(entity_id)
+    if state is None:
+        return Response(status=404, text="Unknown entity")
+
+    picture = state.attributes.get("entity_picture")
+    if not isinstance(picture, str) or not picture:
+        return Response(status=404, text="No entity_picture")
+
+    # Only fetch paths on this instance. Reject absolute/external URLs and any
+    # non-path value (e.g. a `data:` URI) — see the anti-amplification note above.
+    if "://" in picture or not picture.startswith("/"):
+        return Response(status=422, text="External entity_picture not fetched")
+
+    import aiohttp
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+    from homeassistant.helpers.network import NoURLAvailableError, get_url
+
+    try:
+        base = get_url(ctx.hass, prefer_external=False)
+    except NoURLAvailableError:
+        return Response(status=503, text="No reachable HA URL")
+
+    session = async_get_clientsession(ctx.hass)
+    try:
+        async with session.get(
+            base + picture, timeout=aiohttp.ClientTimeout(total=10)
+        ) as resp:
+            if resp.status != 200:
+                _LOGGER.debug(
+                    "person_picture: %s -> HTTP %s", entity_id, resp.status
+                )
+                return Response(status=503, text="Picture unavailable")
+            data = await resp.read()
+            content_type = resp.headers.get("Content-Type", "image/jpeg")
+    except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+        _LOGGER.debug("person_picture: %s fetch failed: %s", entity_id, err)
+        return Response(status=503, text="Picture fetch failed")
+
+    if not data:
+        return Response(status=503, text="Empty picture")
+
+    return ctx.signed_bytes(data, content_type=content_type or "image/jpeg")
+
+
 async def _op_camera_devices(ctx: _OpContext) -> Response:
     """Camera devices grouped by physical device."""
     devices = build_camera_device_groups(ctx.hass)
@@ -2682,6 +2747,7 @@ _OP_HANDLERS: dict[str, Any] = {
     "snapshots_open": _op_snapshots_open,
     "camera_devices": _op_camera_devices,
     "entity_image": _op_entity_image,
+    "person_picture": _op_person_picture,
     "stream_open": _op_stream_open,
     "stream_update": _op_stream_update,
     "stream_close": _op_stream_close,
