@@ -55,6 +55,7 @@ from pathlib import Path
 from typing import Any
 
 import orjson
+import voluptuous as vol
 from aiohttp.web import Request, Response, StreamResponse
 from homeassistant import loader
 from homeassistant.components.camera import async_get_image
@@ -624,6 +625,16 @@ async def _op_service(ctx: _OpContext) -> Response:
     except ServiceNotFound as err:
         return ctx.signed_json(
             {"ok": False, "error": f"Service not found: {err}"}, status=404
+        )
+    except vol.Invalid as err:
+        # Bad service_data (e.g. an unexpected key from an older watch app
+        # version). Voluptuous validation errors aren't HomeAssistantError, so
+        # without this they bubble up as an unhandled 500. Return a clean 400.
+        _LOGGER.warning(
+            "Invalid data for service %s.%s: %s", domain, service, err
+        )
+        return ctx.signed_json(
+            {"ok": False, "error": f"Invalid service data: {err}"}, status=400
         )
     except HomeAssistantError as err:
         _LOGGER.warning(
