@@ -331,11 +331,12 @@ async def _deliver_push(
     if enriched_actions:
         extra_data["actions"] = enriched_actions
 
-    # Camera snapshot: when an `image: "camera.x"` source is passed, reserve the
-    # token + URL now (instant) and embed it, then capture the frame in the
-    # background so a slow camera delays only the image, not the alert. The
-    # device fetches the URL on arrival; WANotificationSnapshotView waits briefly
-    # for the in-flight capture. A pre-built `snapshot_url` is honored as-is.
+    # Snapshot: when an `image:` source is passed (a `camera.*` OR an `image.*`
+    # entity, e.g. a 3D-printer job snapshot), reserve the token + URL now
+    # (instant) and embed it, then capture the frame in the background so a slow
+    # source delays only the image, not the alert. The device fetches the URL on
+    # arrival; WANotificationSnapshotView waits briefly for the in-flight
+    # capture. A pre-built `snapshot_url` is honored as-is.
     snapshot_token: str | None = None
     if image_source is not None and not extra_data.get("snapshot_url"):
         minted = _mint_snapshot_url(hass, data, image_source)
@@ -352,7 +353,10 @@ async def _deliver_push(
         # (a) open the live stream on a snapshot tap, and (b) fetch the image on
         # demand when the embedded URL 404s (capture still in flight and slow, or
         # the URL isn't reachable from where the device is) — so the notification
-        # still shows an image instead of buttons-only.
+        # still shows an image instead of buttons-only. `image.*` sources are
+        # intentionally excluded: they don't stream, and the on-demand fallback
+        # op is camera-only, so an image entity shows the embedded still with no
+        # live affordance, which is the desired behavior.
         if isinstance(image_source, str) and image_source.startswith("camera."):
             extra_data.setdefault("camera_entity_id", image_source)
             # The snapshot variant can't stream — hand the watch the device's

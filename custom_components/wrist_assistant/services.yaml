@@ -48,17 +48,21 @@ send_notification:
       selector:
         object:
     image:
-      name: Image (camera snapshot)
+      name: Image (camera or image entity)
       description: >-
-        Camera entity to snapshot and show in the notification (e.g. a doorbell
-        feed). The frame is captured when the notification is sent and shown in
-        the expanded notification and on the watch. Requires remote Home
-        Assistant access (Nabu Casa or an external URL) to load away from home.
+        Camera or image entity to snapshot and show in the notification (e.g. a
+        doorbell feed, or a 3D-printer job snapshot). The frame is captured when
+        the notification is sent and shown in the expanded notification and on
+        the watch. Requires remote Home Assistant access (Nabu Casa or an
+        external URL) to load away from home. Live stream applies to cameras
+        only; an image entity shows the captured still.
       example: "camera.front_door"
       selector:
         entity:
           filter:
-            - domain: camera
+            - domain:
+                - camera
+                - image
     snapshot_width:
       name: Snapshot max width
       description: >-

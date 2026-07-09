@@ -292,6 +292,102 @@ def test_capture_honors_sizing_override() -> None:
         assert small_bytes < big_bytes  # fewer bytes on the wire
 
 
+# ── image.* sources (e.g. a 3D-printer snapshot): feature #22 ─────────────────
+
+
+def _test_png(width: int = 800, height: int = 600) -> bytes:
+    from PIL import Image
+
+    buf = BytesIO()
+    # RGBA on purpose: an image entity may serve a PNG with alpha; _process_snapshot
+    # must flatten it to RGB before the JPEG re-encode.
+    Image.new("RGBA", (width, height), (200, 60, 10, 255)).save(buf, "PNG")
+    return buf.getvalue()
+
+
+def test_capture_from_image_entity() -> None:
+    """An `image.*` source (e.g. a Bambu 3D-printer job snapshot) is captured via
+    the image domain's `async_get_image` and flows through the same resize/JPEG
+    pipeline as a camera, including PNG-with-alpha input. Fixes feature #22."""
+    pytest.importorskip("PIL")
+    with _fresh_camera_stream("cs_capture_image") as cs:
+        raw = _test_png(800, 600)
+
+        class _FakeImage:
+            content = raw
+            content_type = "image/png"
+
+        async def _fake_img_get(hass, entity_id, timeout=10):  # noqa: ANN001
+            return _FakeImage()
+
+        # Under the HA stubs the image component isn't stubbed, so the module
+        # loads _image_get_image as None; patch in the fake, the same way the
+        # camera tests patch async_get_image.
+        cs._image_get_image = _fake_img_get
+
+        class _FakeHass:
+            async def async_add_executor_job(self, fn, *args):  # noqa: ANN001
+                return fn(*args)  # run inline
+
+        result = asyncio.run(
+            cs.capture_notification_snapshot(_FakeHass(), "image.bambu_snapshot")
+        )
+        assert result is not None
+        dims, _ = _jpeg_dims(result)
+        assert max(dims) <= cs.NOTIF_SNAPSHOT_MAX_WIDTH
+        assert result[:2] == b"\xff\xd8"  # re-encoded to JPEG (SOI marker)
+
+
+def test_capture_image_entity_degrades_when_helper_missing() -> None:
+    """On an HA core too old to expose the image helper (_image_get_image is
+    None), an image source degrades to None (text-only), never raises."""
+    with _fresh_camera_stream("cs_image_no_helper") as cs:
+        cs._image_get_image = None  # simulate an older core
+
+        class _FakeHass:
+            async def async_add_executor_job(self, fn, *args):  # noqa: ANN001
+                return fn(*args)
+
+        result = asyncio.run(
+            cs.capture_notification_snapshot(_FakeHass(), "image.bambu_snapshot")
+        )
+        assert result is None
+
+
+def test_capture_image_entity_fetch_error_returns_none() -> None:
+    """A failing image fetch (unavailable entity, timeout) returns None, not a
+    crash into the push pipeline."""
+    with _fresh_camera_stream("cs_image_fetch_err") as cs:
+
+        async def _boom(hass, entity_id, timeout=10):  # noqa: ANN001
+            raise RuntimeError("image unavailable")
+
+        cs._image_get_image = _boom
+
+        class _FakeHass:
+            async def async_add_executor_job(self, fn, *args):  # noqa: ANN001
+                return fn(*args)
+
+        result = asyncio.run(
+            cs.capture_notification_snapshot(_FakeHass(), "image.gone")
+        )
+        assert result is None
+
+
+def test_capture_rejects_unsupported_domain() -> None:
+    """A non-camera, non-image entity is refused up front (returns None)."""
+    with _fresh_camera_stream("cs_capture_reject") as cs:
+
+        class _FakeHass:
+            async def async_add_executor_job(self, fn, *args):  # noqa: ANN001
+                return fn(*args)
+
+        result = asyncio.run(
+            cs.capture_notification_snapshot(_FakeHass(), "sensor.temperature")
+        )
+        assert result is None
+
+
 # ── jpeg_aspect: width/height read from the header (drives snapshot_aspect) ──
 
 

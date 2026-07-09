@@ -27,6 +27,18 @@ from homeassistant.components.camera import Image as CameraImage, async_get_imag
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
+# The image domain exposes `async_get_image` with the same Image(content,
+# content_type) shape as camera; used here to snapshot any `image.*` entity
+# (e.g. a 3D-printer job image), not just cameras. It's the same helper the
+# watch's image controls use (`_op_entity_image` in wa_v2_views). Guarded
+# because HA cores older than when it landed lack it; None there means an
+# image-entity snapshot degrades to a text-only notification. Kept at module
+# top (not lazy) so it's patchable in tests, alongside the camera import above.
+try:
+    from homeassistant.components.image import async_get_image as _image_get_image
+except ImportError:  # pragma: no cover - only on older cores lacking the helper
+    _image_get_image = None
+
 _LOGGER = logging.getLogger(__name__)
 
 # Limits
@@ -745,6 +757,47 @@ def notif_snapshot_max_bytes(width: int) -> int:
     return max(60_000, round(width / NOTIF_SNAPSHOT_MAX_WIDTH * NOTIF_SNAPSHOT_MAX_BYTES))
 
 
+async def _grab_source_bytes(
+    hass: HomeAssistant, entity_id: str, timeout: int
+) -> bytes | None:
+    """Fetch the raw source image bytes for a notification snapshot.
+
+    Dispatches on the entity's domain: `camera.*` uses the camera platform's
+    `async_get_image`; `image.*` (e.g. a 3D-printer job snapshot) uses the image
+    domain's equivalent. Both return an `Image(content, content_type)`; `image.*`
+    bytes may be PNG, which `_process_snapshot` re-encodes to JPEG like any other
+    frame. Any other domain (or a core too old to expose the image helper) is
+    unsupported.
+
+    Never raises: an offline/misbehaving source or an unsupported domain both
+    return None so the caller falls back to a text-only notification.
+    """
+    if entity_id.startswith("camera."):
+        fetch = async_get_image
+    elif entity_id.startswith("image."):
+        if _image_get_image is None:
+            _LOGGER.warning(
+                "image domain helper unavailable (older HA core?); snapshot for "
+                "%s omitted",
+                entity_id,
+            )
+            return None
+        fetch = _image_get_image
+    else:
+        _LOGGER.warning(
+            "Notification snapshot requested for unsupported entity %s", entity_id
+        )
+        return None
+    try:
+        image: CameraImage = await fetch(hass, entity_id, timeout=timeout)
+    except Exception as err:  # noqa: BLE001 - never let a bad source kill the push
+        _LOGGER.warning("Snapshot capture failed for %s: %s", entity_id, err)
+        return None
+    if not image or not image.content:
+        return None
+    return image.content
+
+
 async def capture_notification_snapshot(
     hass: HomeAssistant,
     entity_id: str,
@@ -753,41 +806,36 @@ async def capture_notification_snapshot(
     width: int | None = None,
     quality: int | None = None,
 ) -> bytes | None:
-    """Grab a JPEG from a camera entity for a notification.
+    """Grab a JPEG from a camera or image entity for a notification.
 
-    `viewport` is the user's saved per-camera framing (normalized crop); when
+    Accepts both `camera.*` and `image.*` sources (e.g. a 3D-printer job
+    snapshot); see `_grab_source_bytes` for the per-domain fetch. The rest of the
+    pipeline is source-agnostic.
+
+    `viewport` is the user's saved per-entity framing (normalized crop); when
     None the full frame is captured. `_process_snapshot` crops to it before
     resizing, so passing a tighter region zooms the notification snapshot.
 
-    `width` / `quality` are the user's per-camera sizing override (set from the
+    `width` / `quality` are the user's per-entity sizing override (set from the
     iOS framing page's quality dropdown); None on either falls back to the
     integration default (NOTIF_SNAPSHOT_MAX_WIDTH / NOTIF_SNAPSHOT_QUALITY). The
     byte cap scales with the chosen width. A smaller/lower-quality snapshot
     encodes, transfers, and decodes faster — i.e. paints on the wrist sooner.
 
-    Returns processed JPEG bytes (resized + byte-capped) or None if the camera
+    Returns processed JPEG bytes (resized + byte-capped) or None if the source
     is unavailable, returns no image, or the frame can't be squeezed under the
-    byte budget. Never raises for an offline/misbehaving camera — callers fall
+    byte budget. Never raises for an offline/misbehaving source; callers fall
     back to a text-only notification.
     """
-    if not entity_id.startswith("camera."):
-        _LOGGER.warning(
-            "Notification snapshot requested for non-camera entity %s", entity_id
-        )
-        return None
     max_width, jpeg_quality = clamp_notif_sizing(
         NOTIF_SNAPSHOT_MAX_WIDTH if width is None else width,
         NOTIF_SNAPSHOT_QUALITY if quality is None else quality,
     )
     max_bytes = notif_snapshot_max_bytes(max_width)
-    try:
-        image: CameraImage = await async_get_image(
-            hass, entity_id, timeout=NOTIF_SNAPSHOT_CAPTURE_TIMEOUT
-        )
-    except Exception as err:  # noqa: BLE001 — never let a bad camera kill the push
-        _LOGGER.warning("Snapshot capture failed for %s: %s", entity_id, err)
-        return None
-    if not image or not image.content:
+    content = await _grab_source_bytes(
+        hass, entity_id, NOTIF_SNAPSHOT_CAPTURE_TIMEOUT
+    )
+    if not content:
         return None
     # PIL work is CPU-bound — keep it off the event loop. Guard the executor
     # call too: _process_snapshot lazily imports Pillow, so a missing/old
@@ -796,7 +844,7 @@ async def capture_notification_snapshot(
     try:
         return await hass.async_add_executor_job(
             _process_snapshot,
-            image.content,
+            content,
             viewport or ViewportState(),  # saved framing, or full frame
             max_width,
             max_width,  # square bounding box (matches the default 1024×1024)

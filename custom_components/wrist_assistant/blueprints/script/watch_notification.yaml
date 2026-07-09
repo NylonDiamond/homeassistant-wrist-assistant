@@ -6,8 +6,9 @@ blueprint:
   source_url: "https://github.com/NylonDiamond/homeassistant-wrist-assistant/blob/main/blueprints/script/wrist_assistant/watch_notification.yaml"
   description: >
     Send push notifications to your Apple Watch with smart entity
-    buttons — and a camera snapshot if you want. Each entity becomes a
-    button that knows how to control itself:
+    buttons, plus a snapshot from a camera or image entity if you want
+    (e.g. a doorbell feed or a 3D-printer job snapshot). Each entity
+    becomes a button that knows how to control itself:
 
     - Tap to toggle most entities (scenes, scripts, and buttons fire once)
 
@@ -61,17 +62,20 @@ blueprint:
         text:
           multiline: true
     section_camera:
-      name: "📷 Camera Snapshot & Live Stream"
+      name: "📷 Snapshot & Live Stream"
       collapsed: true
       input:
         image:
-          name: Camera
+          name: Camera or image entity
           description: >
-            *(Optional)* Camera to show in the notification — e.g. a doorbell
-            feed. A snapshot is captured the moment the notification is sent.
-            The watch shows that snapshot (tap it to open the live stream in
-            the watch app); on iPhone, expanding the notification plays a live
-            stream in its place (see the Live stream toggle below).
+            *(Optional)* Camera or image entity to show in the notification,
+            e.g. a doorbell feed or a 3D-printer job snapshot (`image.*`
+            entities work too). A snapshot is captured the moment the
+            notification is sent. The watch shows that snapshot; for a camera,
+            tapping it opens the live stream in the watch app and expanding the
+            notification on iPhone plays a live stream in its place (see the
+            Live stream toggle below). An image entity shows the captured
+            still (it has no live stream).
 
 
             **Requires the Wrist Assistant iOS app v2.1.0 or newer** — older
@@ -81,10 +85,10 @@ blueprint:
             external URL) to load when you're away from home.
 
 
-            **Tip:** If your camera has a dedicated **snapshot** entity (e.g.
-            Reolink's "Snapshots" variants — you may need to enable it under
-            Settings → Entities), pick it: it grabs frames faster. And if the
-            camera also has a low-resolution **"Fluent"** variant, prefer it
+            **Camera tip:** If your camera has a dedicated **snapshot** entity
+            (e.g. Reolink's "Snapshots" variants, which you may need to enable
+            under Settings → Entities), pick it: it grabs frames faster. And if
+            the camera also has a low-resolution **"Fluent"** variant, prefer it
             over "Clear" — the image is downscaled for the notification anyway,
             and the smaller file loads much faster, especially over cellular.
             (A **"Snapshots Fluent"** entity is the best of both.) Either way
@@ -94,14 +98,17 @@ blueprint:
           selector:
             entity:
               filter:
-                - domain: camera
+                - domain:
+                    - camera
+                    - image
         snapshot_quality:
           name: Snapshot quality
           description: >
-            How sharp vs. small the camera snapshot is. **Sharpest** sends the
+            How sharp vs. small the snapshot is. **Sharpest** sends the
             full-size image; **Balanced** and **Fast** send a smaller image that
             loads quicker on the watch and over cellular — handy for a detailed
-            camera or a weak connection. Only applies when a Camera is set above.
+            camera or a weak connection. Only applies when a camera or image
+            entity is set above.
           default: sharpest
           selector:
             select:
@@ -123,8 +130,8 @@ blueprint:
             when that frame is the whole point (who rang the doorbell), or
             for battery and cloud cameras, which the live view keeps polling
             while the notification is open. The watch has its own
-            "Live stream on watch" toggle below. Only applies when a Camera
-            is set above.
+            "Live stream on watch" toggle below. Only applies when a camera
+            is set above (image entities have no live stream).
           default: true
           selector:
             boolean:
@@ -138,7 +145,8 @@ blueprint:
             app. Turn off to keep the snapshot from the moment the event
             happened — handy when that frame is the whole point, or for
             battery and cloud cameras, which the live view keeps polling.
-            Only applies when a Camera is set above.
+            Only applies when a camera is set above (image entities have
+            no live stream).
           default: true
           selector:
             boolean:
