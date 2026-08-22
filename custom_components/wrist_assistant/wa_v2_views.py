@@ -127,10 +127,6 @@ from .widget_hmac import (
 _LOGGER = logging.getLogger(__name__)
 
 
-# ── shared dispatch context ───────────────────────────────────────────────
-
-
-@dataclass
 def _prebind_relay_token(
     hass: HomeAssistant, domain_data: WristAssistantData, watch_id: str, platform: str
 ) -> None:
@@ -157,6 +153,10 @@ def _prebind_relay_token(
     )
 
 
+# ── shared dispatch context ───────────────────────────────────────────────
+
+
+@dataclass
 class _OpContext:
     """Per-request state passed to op handlers.
 
