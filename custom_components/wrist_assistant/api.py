@@ -831,17 +831,27 @@ class DeltaCoordinator:
     def _bisect_cursor(self, since_cursor: int) -> int:
         """Return the deque index of the first event with cursor > since_cursor.
 
-        Cursors are monotonically increasing, so the index is computed
-        arithmetically in O(1) from the oldest event's cursor.
+        Cursors are monotonically increasing but NOT contiguous with the ring
+        buffer: a state change that arrives while no watch session exists
+        consumes a cursor value without appending an event (see
+        _handle_state_changed). Deriving the index arithmetically from the
+        oldest event's cursor therefore overshoots by the number of dropped
+        changes and silently yields an empty slice — every later poll then
+        answers "nothing changed" and the watch keeps stale tiles forever.
+        Binary search is correct whether or not cursors are contiguous.
+
         Returns len(deque) if all events are at or before since_cursor.
         """
         events = self._events
-        if not events:
-            return 0
-        base_cursor = events[0].cursor
-        # index of the event with cursor == since_cursor + 1
-        idx = since_cursor - base_cursor + 1
-        return max(0, min(idx, len(events)))
+        lo = 0
+        hi = len(events)
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if events[mid].cursor > since_cursor:
+                hi = mid
+            else:
+                lo = mid + 1
+        return lo
 
     def _collect_events(
         self, since_cursor: int, entities: set[str], limit: int,

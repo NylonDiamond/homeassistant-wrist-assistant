@@ -290,3 +290,55 @@ def test_session_listener_exception_does_not_break_poll(coordinator) -> None:
         assert calls == ["good"]
 
     asyncio.run(run())
+
+
+def test_events_still_delivered_after_an_idle_gap(coordinator) -> None:
+    """A gap must not break the ring buffer's index lookup.
+
+    Regression: `_bisect_cursor` derived the deque index arithmetically from
+    the oldest event's cursor, which is only valid while every cursor value
+    has an event behind it. The idle gap consumes cursor values without
+    appending, so once the buffer held events from BOTH sides of a gap the
+    computed index overshot, `_collect_events` scanned an empty slice, and
+    every poll answered 200 with no events and next_cursor == since. The
+    watch showed stale tiles indefinitely and only recovered on a restart.
+    """
+    module, hass, coord = coordinator
+    ent = "wrist_assistant.t6"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        c0 = body["next_cursor"]
+
+        # A real event lands in the buffer BEFORE the gap, so the deque's
+        # oldest cursor stays behind the gap for the rest of the test.
+        _change(hass, coord, ent, "on")
+        assert len(coord._events) == 1
+
+        # Session goes idle: a burst of changes is dropped, each consuming a
+        # cursor value. This is what desynchronises index from cursor.
+        coord._sessions["w1"].last_seen -= module.SESSION_TTL + timedelta(seconds=1)
+        coord._prune_sessions()
+        assert not coord._sessions
+        for _ in range(50):
+            _change(hass, coord, "wrist_assistant.noise", "x")
+        assert len(coord._events) == 1  # nothing buffered during the gap
+
+        # Watch resumes: told to resync, then takes a snapshot.
+        status, body = await _poll(coord, since=c0, entities=[ent], force_delta=True)
+        assert status == 410, body
+        status, body = await _poll(coord, since=None, entities=[ent])
+        c1 = body["next_cursor"]
+
+        # A change after the gap must be delivered on the next poll.
+        _change(hass, coord, ent, "off")
+        status, body = await _poll(coord, since=c1, entities=[ent], force_delta=True)
+        assert status == 200, body
+        assert [e["entity_id"] for e in body["events"]] == [ent], (
+            "post-gap event was not delivered: the buffer index lookup is "
+            f"desynchronised by the gap. body={body!r}"
+        )
+        assert body["next_cursor"] > c1
+
+    asyncio.run(run())
