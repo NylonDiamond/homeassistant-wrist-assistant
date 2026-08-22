@@ -441,7 +441,11 @@ class WADeltaView(HomeAssistantView):
 
         if not isinstance(timeout, int):
             return Response(status=400, text="timeout must be an integer")
-        timeout = max(MIN_TIMEOUT_SECONDS, min(timeout, MAX_TIMEOUT_SECONDS))
+        # 0 is a probe ("answer now", see DeltaCoordinator.handle_poll) and
+        # passes through untouched; anything else is clamped to the long-poll
+        # window as before.
+        if timeout != 0:
+            timeout = max(MIN_TIMEOUT_SECONDS, min(timeout, MAX_TIMEOUT_SECONDS))
 
         force_delta = payload.get("force_delta", False) is True
         slim = payload.get("slim", False) is True

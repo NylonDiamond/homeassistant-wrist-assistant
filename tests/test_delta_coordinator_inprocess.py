@@ -342,3 +342,51 @@ def test_events_still_delivered_after_an_idle_gap(coordinator) -> None:
         assert body["next_cursor"] > c1
 
     asyncio.run(run())
+
+
+def test_probe_answers_at_once_and_leaves_held_poll_alone(coordinator) -> None:
+    """timeout=0 is a probe: empty 204 now, events if any, and the long poll
+    the same watch is holding is neither woken nor superseded by it."""
+    module, hass, coord = coordinator
+    ent = "wrist_assistant.t7"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        c0 = body["next_cursor"]
+        assert "instant_poll" in body["capabilities"]
+
+        # Quiet house: the probe must come straight back with no body.
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=c0, entities=[ent], timeout=0), timeout=1
+        )
+        assert status == 204 and body is None
+
+        # Park a long poll, then probe past it. The long poll must still be
+        # the registered waiter afterwards, and must still get its event.
+        held = asyncio.create_task(_poll(coord, since=c0, entities=[ent], timeout=10))
+        await asyncio.sleep(0.05)
+        held_waiter = coord._waiters.get("w1")
+        assert held_waiter is not None
+
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=c0, entities=[ent], timeout=0), timeout=1
+        )
+        assert status == 204 and body is None
+        assert coord._waiters.get("w1") is held_waiter, "probe displaced the held poll"
+        assert not held.done(), "probe woke the held poll"
+
+        _change(hass, coord, ent, "on")
+        status_h, body_h = await asyncio.wait_for(held, timeout=2)
+        assert status_h == 200, body_h
+        assert [e["entity_id"] for e in body_h["events"]] == [ent]
+
+        # A probe with something past its cursor carries it, like any poll.
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=c0, entities=[ent], timeout=0), timeout=1
+        )
+        assert status == 200, body
+        assert [e["entity_id"] for e in body["events"]] == [ent]
+        assert body["next_cursor"] > c0
+
+    asyncio.run(run())

@@ -281,7 +281,7 @@ class DeltaCoordinator:
         self._wake_all_watchers: set[str] = set()  # watch_ids with all_states template deps
         self._event_times: deque[float] = deque(maxlen=MAX_EVENTS_BUFFER)
         self._session_callbacks: list[callback] = []
-        self._capabilities: set[str] = {"smart_camera_stream", "template_subscriptions", "compact_events", "attribute_diffs"}
+        self._capabilities: set[str] = {"smart_camera_stream", "template_subscriptions", "compact_events", "attribute_diffs", "instant_poll"}
         self._sorted_capabilities: list[str] = sorted(self._capabilities)
         self._unsub_state_changed = hass.bus.async_listen(
             EVENT_STATE_CHANGED, self._handle_state_changed
@@ -596,6 +596,16 @@ class DeltaCoordinator:
                 include_summary=include_summary,
                 custom_entity_ids=custom_entity_ids,
             )
+
+        # Probe: timeout 0 means "answer now". Nothing past the cursor, so the
+        # answer is an empty 204: no body, no summary work. Returned before the
+        # waiter below is registered so a probe never wakes or supersedes a
+        # long poll the same watch is holding. The watch sends one of these as
+        # its first poll after a short background pause, purely to learn that
+        # the server is reachable and the screen is current. Advertised as the
+        # "instant_poll" capability; older clients never send timeout 0.
+        if timeout <= 0:
+            return 204, None
 
         deadline = self.hass.loop.time() + timeout
         observed_generation = self._generation
