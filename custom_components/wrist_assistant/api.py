@@ -270,6 +270,11 @@ class DeltaCoordinator:
         self._events: deque[DeltaEvent] = deque(maxlen=MAX_EVENTS_BUFFER)
         self._cursor = 0
         self._generation = 0
+        # Cursor value at the most recent state change that was NOT buffered
+        # because no watch was connected. A watch resuming with a cursor at or
+        # below this point missed at least one change, so it must resync even
+        # though the ring buffer itself has no gap. None = nothing dropped yet.
+        self._gap_cursor: int | None = None
         self._waiters: dict[str, asyncio.Event] = {}  # watch_id → per-waiter event
         self._entity_to_watchers: dict[str, set[str]] = {}  # entity_id → {watch_ids}
         self._domain_watchers: set[str] = set()  # watch_ids with domain-level template deps
@@ -300,9 +305,17 @@ class DeltaCoordinator:
 
     @callback
     def _fire_session_callbacks(self) -> None:
-        """Notify all session listeners."""
-        for cb in self._session_callbacks:
-            cb()
+        """Notify all session listeners.
+
+        Iterates a copy so a listener may unsubscribe itself mid-dispatch, and
+        isolates each listener so one raising entity cannot turn every poll
+        into a 500 for every watch.
+        """
+        for cb in list(self._session_callbacks):
+            try:
+                cb()
+            except Exception:  # noqa: BLE001 — one bad listener must not break sync
+                _LOGGER.exception("Session listener %s raised", cb)
 
     @callback
     def _rebuild_watcher_index(self, watch_id: str) -> None:
@@ -380,11 +393,20 @@ class DeltaCoordinator:
                 waiter.set()
 
     @callback
+    def _wake_all_waiters(self) -> None:
+        """Release every parked long-poll so it exits (ownership check fails)."""
+        waiters = list(self._waiters.values())
+        self._waiters.clear()
+        for waiter in waiters:
+            waiter.set()
+
+    @callback
     def async_shutdown(self) -> None:
         """Clean up listeners."""
         if self._unsub_state_changed is not None:
             self._unsub_state_changed()
             self._unsub_state_changed = None
+        self._wake_all_waiters()
 
     @property
     def events_per_minute(self) -> float:
@@ -419,6 +441,7 @@ class DeltaCoordinator:
         self._entity_to_watchers.clear()
         self._domain_watchers.clear()
         self._wake_all_watchers.clear()
+        self._wake_all_waiters()
         self._fire_session_callbacks()
 
     async def handle_poll(
@@ -577,8 +600,16 @@ class DeltaCoordinator:
         deadline = self.hass.loop.time() + timeout
         observed_generation = self._generation
 
-        # Register per-waiter event and build watcher index
+        # Register per-waiter event and build watcher index. A newer poll for
+        # the same watch supersedes any older one still parked (half-open
+        # connection after a network handoff, proxied remote access): wake the
+        # old waiter so it exits instead of holding a slot, and let THIS poll
+        # own the entry. Ownership is re-checked after every wake and in the
+        # finally block below, so the old poll's cleanup can never evict us.
         waiter_event = asyncio.Event()
+        previous_waiter = self._waiters.get(watch_id)
+        if previous_waiter is not None:
+            previous_waiter.set()
         self._waiters[watch_id] = waiter_event
         self._rebuild_watcher_index(watch_id)
 
@@ -612,6 +643,7 @@ class DeltaCoordinator:
                             battery_threshold=battery_threshold,
                             summary_entities=summary_entities,
                             include_summary=include_summary,
+                            custom_entity_ids=custom_entity_ids,
                         )
                     since_cursor = next_cursor
                     continue
@@ -622,6 +654,10 @@ class DeltaCoordinator:
                     return 204, None
 
                 waiter_event.clear()
+                # Superseded by a newer poll (or shutdown/force_resync)? Let
+                # the newer poll deliver; this one just ends quietly.
+                if self._waiters.get(watch_id) is not waiter_event:
+                    return 204, None
                 observed_generation = self._generation
 
                 changed_ids = self._changed_entity_ids(since_cursor)
@@ -646,6 +682,7 @@ class DeltaCoordinator:
                         battery_threshold=battery_threshold,
                         summary_entities=summary_entities,
                         include_summary=include_summary,
+                        custom_entity_ids=custom_entity_ids,
                     )
                 since_cursor = next_cursor
         finally:
@@ -658,13 +695,28 @@ class DeltaCoordinator:
             # comes back with next_cursor == since and stale tiles.
             # SESSION_TTL (5 min) handles truly abandoned sessions via
             # _prune_sessions on the next poll from any watch.
-            self._waiters.pop(watch_id, None)
+            #
+            # Only remove OUR waiter. If a newer poll for this watch already
+            # replaced it, popping unconditionally would blind that live poll:
+            # _wake_watchers_for_entity would find no waiter and the new poll
+            # would sleep until MAX_TIMEOUT_SECONDS with stale tiles.
+            if self._waiters.get(watch_id) is waiter_event:
+                del self._waiters[watch_id]
 
     @callback
     def _handle_state_changed(self, event: Event) -> None:
         """Track every state change in a bounded in-memory ring buffer."""
         if not self._sessions:
-            return  # No watches connected — skip payload construction
+            # No watches connected — skip payload construction, but still
+            # consume a cursor value for the dropped change and remember it.
+            # A watch that later resumes with a cursor BELOW this point missed
+            # the change and is told to resync (see _is_stale_cursor). Bumping
+            # the cursor is what keeps that check from looping: a snapshot
+            # taken after the gap hands out a cursor >= _gap_cursor, which is
+            # distinguishable from the pre-gap cursor a stale watch holds.
+            self._cursor += 1
+            self._gap_cursor = self._cursor
+            return
         new_state: State | None = event.data.get("new_state")
         if new_state is None:
             return
@@ -856,13 +908,20 @@ class DeltaCoordinator:
     def _is_stale_cursor(self, since_cursor: int) -> bool:
         """Return True if requested cursor is out of range.
 
-        Covers two cases:
+        Covers three cases:
         - Cursor is older than the oldest retained event (buffer overflow).
         - Cursor is ahead of the current server cursor (HA restarted and
           the coordinator's cursor reset to 0 while the watch kept its old
           cursor from a previous instance).
+        - Cursor is before the last change that was dropped because no watch
+          was connected (idle gap). The dropped change consumed cursor value
+          _gap_cursor without an event in the buffer, so a watch holding an
+          older cursor missed it. A cursor equal to _gap_cursor came from a
+          snapshot taken after the gap and is fine.
         """
         if since_cursor > self._cursor:
+            return True
+        if self._gap_cursor is not None and since_cursor < self._gap_cursor:
             return True
         if not self._events:
             return False
@@ -1033,7 +1092,9 @@ class DeltaCoordinator:
         ]
         for watch_id in expired:
             self._sessions.pop(watch_id, None)
-            self._waiters.pop(watch_id, None)
+            waiter = self._waiters.pop(watch_id, None)
+            if waiter is not None:
+                waiter.set()  # parked poll re-checks ownership and exits
             self._remove_watcher_index(watch_id)
         if expired:
             for watch_id in expired:

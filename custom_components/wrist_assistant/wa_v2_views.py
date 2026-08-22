@@ -131,6 +131,32 @@ _LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
+def _prebind_relay_token(
+    hass: HomeAssistant, domain_data: WristAssistantData, watch_id: str, platform: str
+) -> None:
+    """Mint the relay_token for a just-registered device in the background.
+
+    Without this the FIRST push after registration pays an extra relay round
+    trip (``/v1/register``) before ``/v1/push/send``, because ``send_push`` only
+    binds lazily. Doing it now, off the request path, means the first alert
+    goes out in one RTT. Best effort: a relay outage here is logged by the
+    client and ``send_push`` simply falls back to binding lazily.
+    """
+    client = domain_data.apns_client
+    if client is None:
+        return
+
+    async def _run() -> None:
+        try:
+            await client.ensure_relay_token(watch_id, platform)
+        except Exception:  # noqa: BLE001 — background best-effort
+            _LOGGER.debug("relay token prebind failed for %s/%s", watch_id, platform)
+
+    hass.async_create_task(
+        _run(), name=f"wrist_assistant_relay_prebind_{watch_id}_{platform}"
+    )
+
+
 class _OpContext:
     """Per-request state passed to op handlers.
 
@@ -472,6 +498,8 @@ class WADeltaView(HomeAssistantView):
                 log_push_token_registered(self._hass, watch_id=watch_id, is_new=True)
             elif token_result == "updated":
                 log_push_token_registered(self._hass, watch_id=watch_id, is_new=False)
+            if token_result in ("new", "updated"):
+                _prebind_relay_token(self._hass, domain_data, watch_id, "watchos")
 
         # The watch reports its per-user notification delivery mode here so
         # send_notification can route mirror (iPhone) vs direct (watch). Stored
@@ -1529,6 +1557,8 @@ async def _op_notifications_register(ctx: _OpContext) -> Response:
         log_push_token_registered(ctx.hass, watch_id=target_watch_id, is_new=True)
     elif token_result == "updated":
         log_push_token_registered(ctx.hass, watch_id=target_watch_id, is_new=False)
+    if token_result in ("new", "updated"):
+        _prebind_relay_token(ctx.hass, ctx.domain_data, target_watch_id, platform)
     # A changed device token stales the webhook's device mapping at the relay
     # (it would keep pushing to the pre-reinstall token). Re-bind in the
     # background; no-op when the watch has no provisioned webhook, and
