@@ -238,7 +238,8 @@ function symbolTile(host: EditorHost, name: string, selected: boolean, pick: (n:
  * name, never the Home Assistant asset name. */
 function symbolField(host: EditorHost, symbol: string, set: (v: string) => void, key: string): TemplateResult {
   const browser = host.symbols;
-  const open = browser.openFor === key;
+  const open = browser.isOpen(key);
+  const query = browser.query(key);
   const listed = host.icons.names();
   const pack = listed ?? [];
   const known = new Set(pack);
@@ -251,26 +252,27 @@ function symbolField(host: EditorHost, symbol: string, set: (v: string) => void,
 
   let browsePane: TemplateResult | typeof nothing = nothing;
   if (open) {
-    const pool = symbolPool(browser.category, browser.query, pack, known);
-    const matches = searchSymbols(pool.names, browser.query);
+    const category = browser.category(key);
+    const pool = symbolPool(category, query, pack, known);
+    const matches = searchSymbols(pool.names, query);
     const shown = pool.fromPack ? matches.slice(0, SYMBOL_GRID_LIMIT) : matches;
     const recent = known.size === 0 ? browser.recent : browser.recent.filter((s) => known.has(s));
     browsePane = html`<div class="sym-browse">
       <div class="sym-controls">
-        <input type="search" placeholder="Search symbols" .value=${browser.query} @input=${onInput((v) => browser.setQuery(v))} />
-        <select @change=${onInput((v) => browser.setCategory(v))}>
+        <input type="search" placeholder="Search symbols" .value=${query} @input=${onInput((v) => browser.setQuery(key, v))} />
+        <select @change=${onInput((v) => browser.setCategory(key, v))}>
           ${symbolChoices(known).map(
-            (c) => html`<option value=${c.value} ?selected=${c.value === browser.category}>${c.label}</option>`
+            (c) => html`<option value=${c.value} ?selected=${c.value === category}>${c.label}</option>`
           )}
         </select>
       </div>
       ${recent.length === 0 ? nothing : html`<div class="hint">Recent</div>
-        <div class="sym-grid">${recent.map((n) => symbolTile(host, n, n === current, pick))}</div>`}
+        <div class="sym-grid one-row">${recent.map((n) => symbolTile(host, n, n === current, pick))}</div>`}
       <div class="sym-grid">${shown.map((n) => symbolTile(host, n, n === current, pick))}</div>
       ${matches.length === 0
         ? html`<div class="hint">Nothing matches that search. Any name can still be typed above.</div>`
         : html`<div class="hint">
-            ${symbolCount(shown.length, matches.length, browser.query.trim() !== "", reachableCount(pack))}
+            ${symbolCount(shown.length, matches.length, query.trim() !== "", reachableCount(pack))}
           </div>`}
       ${!host.icons.available()
         ? html`<div class="hint warn">No icon pack is installed, so the list shows names without pictures. Install the Cupertino Icons frontend to see them.</div>`

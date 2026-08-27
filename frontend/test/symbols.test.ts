@@ -105,22 +105,39 @@ describe("SymbolBrowser", () => {
     return { browser, changed: () => changes };
   };
 
-  it("opens for one editor at a time and closes on a second press", () => {
+  it("shows every grid until one is folded away", () => {
     const { browser, changed } = make();
+    expect(browser.isOpen("a")).toBe(true);
     browser.toggle("a");
-    expect(browser.openFor).toBe("a");
-    browser.toggle("b");
-    expect(browser.openFor).toBe("b");
-    browser.toggle("b");
-    expect(browser.openFor).toBeUndefined();
-    expect(changed()).toBe(3);
+    expect(browser.isOpen("a")).toBe(false);
+    browser.toggle("a");
+    expect(browser.isOpen("a")).toBe(true);
+    expect(changed()).toBe(2);
   });
 
-  it("clears the search when it opens", () => {
+  it("folds one grid away without touching the others", () => {
     const { browser } = make();
-    browser.setQuery("bolt");
     browser.toggle("a");
-    expect(browser.query).toBe("");
+    expect(browser.isOpen("b")).toBe(true);
+  });
+
+  it("keeps each field's search to itself", () => {
+    const { browser } = make();
+    browser.setQuery("a", "bolt");
+    browser.setCategory("a", "Home");
+    expect(browser.query("b")).toBe("");
+    expect(browser.category("b")).toBe("");
+    expect(browser.query("a")).toBe("bolt");
+    expect(browser.category("a")).toBe("Home");
+  });
+
+  it("keeps the search when the category changes, and the other way round", () => {
+    const { browser } = make();
+    browser.setQuery("a", "bolt");
+    browser.setCategory("a", "Power");
+    expect(browser.query("a")).toBe("bolt");
+    browser.setQuery("a", "house");
+    expect(browser.category("a")).toBe("Power");
   });
 
   it("keeps recents most recent first, without duplicates", () => {

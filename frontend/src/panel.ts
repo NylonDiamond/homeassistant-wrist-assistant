@@ -260,6 +260,11 @@ export class WristAssistantPanel extends LitElement {
     .sym-controls { display: flex; gap: 6px; margin-bottom: 6px; }
     .sym-controls input[type=search] { flex: 1; min-width: 0; }
     .sym-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 4px; max-height: 240px; overflow-y: auto; padding: 2px; }
+    /* Recents are a shortcut back to a handful of names, not a second
+       catalogue, so they stay one strip that scrolls sideways instead of
+       growing tall enough to push the real grid off screen. */
+    .sym-grid.one-row { display: flex; flex-wrap: nowrap; max-height: none; overflow-x: auto; overflow-y: hidden; }
+    .sym-grid.one-row button.sym { flex: 0 0 64px; }
     button.sym { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 5px 2px; background: none; cursor: pointer; color: var(--primary-text-color); border: 1px solid transparent; border-radius: 6px; overflow: hidden; }
     button.sym:hover { border-color: var(--divider-color); background: var(--secondary-background-color); }
     button.sym.on { border-color: var(--primary-color); }

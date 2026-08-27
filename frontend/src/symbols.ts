@@ -234,12 +234,24 @@ export function searchSymbols(names: readonly string[], query: string): string[]
 }
 
 /** Holds the picker's transient state so the editor functions can stay pure. */
+/** What one symbol field is browsing: a search, and a category name or "" for
+ * the whole starting catalogue. */
+interface BrowseState {
+  query: string;
+  category: string;
+}
+
 export class SymbolBrowser {
-  /** Which value editor has the browser open. Only one at a time. */
-  openFor?: string;
-  query = "";
-  /** A category name, or "" for the whole starting catalogue. */
-  category = "";
+  /**
+   * Every symbol field shows its grid, so the state worth keeping is which ones
+   * the user has folded away. Pictures are the whole point of the picker and a
+   * name field alone gives no clue what it will draw, so the grid is not
+   * something to go looking for behind a button.
+   */
+  private collapsed = new Set<string>();
+  /** Per field, because several grids are on screen at once and a search typed
+   * into one must not disturb the others. */
+  private browsing = new Map<string, BrowseState>();
   recent: string[] = [];
 
   private static readonly STORAGE_KEY = "wrist-assistant.recent-symbols";
@@ -249,19 +261,31 @@ export class SymbolBrowser {
     this.recent = SymbolBrowser.loadRecent();
   }
 
+  isOpen(key: string): boolean {
+    return !this.collapsed.has(key);
+  }
+
   toggle(key: string) {
-    this.openFor = this.openFor === key ? undefined : key;
-    this.query = "";
+    if (this.collapsed.has(key)) this.collapsed.delete(key);
+    else this.collapsed.add(key);
     this.onChange();
   }
 
-  setQuery(query: string) {
-    this.query = query;
+  query(key: string): string {
+    return this.browsing.get(key)?.query ?? "";
+  }
+
+  category(key: string): string {
+    return this.browsing.get(key)?.category ?? "";
+  }
+
+  setQuery(key: string, query: string) {
+    this.browsing.set(key, { category: this.category(key), query });
     this.onChange();
   }
 
-  setCategory(category: string) {
-    this.category = category;
+  setCategory(key: string, category: string) {
+    this.browsing.set(key, { query: this.query(key), category });
     this.onChange();
   }
 
