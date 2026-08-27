@@ -26,9 +26,15 @@ export interface HassLike {
 export interface OwnerSummary {
   owner_watch_id: string;
   device_name: string | null;
+  /** Name of the iPhone this watch is paired to. Both real watches report
+      themselves as "Apple Watch", so this is what tells them apart. */
+  paired_iphone_name: string | null;
   app_version: string | null;
   complication_count: number;
   token: number;
+  /** No device is registered under this id any more, but it still owns
+      records: a reinstall gave the watch a new id. Offer the Move action. */
+  is_orphan: boolean;
 }
 
 export interface ComplicationRecord {
@@ -105,6 +111,18 @@ export async function deleteRecord(
     // Not `id`: that key is the WebSocket message id and the schema rejects it.
     complication_id: id,
     base_revision: baseRevision,
+  });
+}
+
+/** Hand every live record of one watch to another watch. Admin only. */
+export async function moveOwner(hass: HassLike, source: string, target: string) {
+  return hass.connection.sendMessagePromise<{
+    records: ComplicationRecord[];
+    token: number;
+  }>({
+    type: `${D}/move_owner`,
+    source_owner_watch_id: source,
+    target_owner_watch_id: target,
   });
 }
 

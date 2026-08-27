@@ -6,7 +6,7 @@ revision survives a restart, that two open panels cannot silently overwrite
 each other, and that a watch holding a stale replica can never resurrect a
 complication somebody deleted.
 
-Everything here runs under one throwaway owner id, so the real collection is
+Everything here runs under throwaway owner ids, so the real collection is
 never written to. Each test also reuses the same complication id on every run,
 derived from the test's own name, because deleting writes a tombstone instead
 of erasing the row: fresh ids every run would grow the stored file forever,
@@ -43,6 +43,10 @@ import requests
 from websockets.sync.client import connect
 
 OWNER = "wa-test-owner"
+# The Move action needs two owners at once. Both are throwaway ids that no
+# device signs with, which is exactly the orphan case Move exists for.
+MOVE_SOURCE = "wa-test-move-source"
+MOVE_TARGET = "wa-test-move-target"
 
 # Stable per-test complication ids. Any fixed namespace works; this one is
 # arbitrary and only has to stay the same between runs.
@@ -131,40 +135,57 @@ class Panel:
 
     # ── the complication commands ──────────────────────────────────────────
 
-    def save(self, doc: dict[str, Any], base: Any = ...) -> dict[str, Any]:
+    def save(
+        self, doc: dict[str, Any], base: Any = ..., owner: str = OWNER
+    ) -> dict[str, Any]:
         msg: dict[str, Any] = {
             "type": "wrist_assistant/complications/save",
-            "owner_watch_id": OWNER,
+            "owner_watch_id": owner,
             "document": doc,
         }
         if base is not ...:
             msg["base_revision"] = base
         return self.command(**msg)
 
-    def delete(self, cid: str, base: Any = ...) -> dict[str, Any]:
+    def delete(
+        self, cid: str, base: Any = ..., owner: str = OWNER
+    ) -> dict[str, Any]:
         msg: dict[str, Any] = {
             "type": "wrist_assistant/complications/delete",
-            "owner_watch_id": OWNER,
+            "owner_watch_id": owner,
             "complication_id": cid,
         }
         if base is not ...:
             msg["base_revision"] = base
         return self.command(**msg)
 
-    def get(self, cid: str) -> dict[str, Any]:
+    def get(self, cid: str, owner: str = OWNER) -> dict[str, Any]:
         return self.command(
             type="wrist_assistant/complications/get",
-            owner_watch_id=OWNER,
+            owner_watch_id=owner,
             complication_id=cid,
         )
 
-    def listing(self, include_deleted: bool = False) -> dict[str, Any]:
+    def listing(
+        self, include_deleted: bool = False, owner: str = OWNER
+    ) -> dict[str, Any]:
         reply = self.command(
             type="wrist_assistant/complications/list",
-            owner_watch_id=OWNER,
+            owner_watch_id=owner,
             include_deleted=include_deleted,
         )
         return reply["result"]
+
+    def move(self, source: str, target: str) -> dict[str, Any]:
+        return self.command(
+            type="wrist_assistant/complications/move_owner",
+            source_owner_watch_id=source,
+            target_owner_watch_id=target,
+        )
+
+    def owners(self) -> list[dict[str, Any]]:
+        reply = self.command(type="wrist_assistant/complications/owners")
+        return reply["result"]["owners"]
 
     def subscribe(self, owner: str = OWNER) -> dict[str, Any]:
         return self.command(
@@ -226,6 +247,36 @@ def fresh(panel: Panel, request: pytest.FixtureRequest):
     current = panel.get(cid)
     if accepted(current) and not record(current)["deleted"]:
         panel.delete(cid, base=record(current)["revision"])
+
+
+def seed(panel: Panel, owner: str, cid: str, name: str, slot: int = 0) -> dict[str, Any]:
+    """One live record under `owner`, whatever a previous run left behind."""
+    existing = panel.get(cid, owner=owner)
+    base = record(existing)["revision"] if accepted(existing) else ...
+    reply = panel.save(document(cid, name, slot), base=base, owner=owner)
+    assert accepted(reply), reply
+    return record(reply)
+
+
+def empty_out(panel: Panel, owner: str) -> None:
+    """Tombstone everything live under a throwaway owner.
+
+    An owner with no live records drops out of the owners list, so this is
+    what keeps the test ids from showing up in the panel's watch picker on a
+    box that also serves a real watch.
+    """
+    for rec in panel.listing(owner=owner)["records"]:
+        panel.delete(rec["id"], base=rec["revision"], owner=owner)
+
+
+@pytest.fixture
+def move_pair(panel: Panel):
+    """An empty source and an empty target, emptied again afterwards."""
+    empty_out(panel, MOVE_SOURCE)
+    empty_out(panel, MOVE_TARGET)
+    yield MOVE_SOURCE, MOVE_TARGET
+    empty_out(panel, MOVE_SOURCE)
+    empty_out(panel, MOVE_TARGET)
 
 
 # ── revisions ──────────────────────────────────────────────────────────────
@@ -377,6 +428,60 @@ def test_the_stale_panel_loses_and_can_recover(base_url, token, panel, fresh):
         assert accepted(retry), retry
     finally:
         other.close()
+
+
+# ── moving an orphaned watch's records ─────────────────────────────────────
+
+
+def test_a_move_rekeys_the_records_and_tombstones_the_old_owner(
+    panel: Panel, move_pair, request: pytest.FixtureRequest
+):
+    """The reinstall recovery path, end to end.
+
+    A watch that is deleted and reinstalled can come back under a new id,
+    leaving its complications under one nothing signs with. Move hands them
+    over; the old owner keeps tombstones so a replica still holding it sees
+    the records go rather than keeping its copies forever.
+    """
+    source, target = move_pair
+    cid = str(uuid.uuid5(_NS, request.node.name)).upper()
+    seed(panel, source, cid, "written before the reinstall")
+
+    reply = panel.move(source, target)
+    assert accepted(reply), reply
+    moved = reply["result"]["records"]
+    assert [r["ownerWatchId"] for r in moved] == [target]
+    assert moved[0]["id"] == cid
+    assert moved[0]["deleted"] is False
+    assert moved[0]["document"]["name"] == "written before the reinstall"
+    assert reply["result"]["token"] >= moved[0]["token"]
+
+    assert [r["id"] for r in panel.listing(owner=target)["records"]] == [cid]
+    assert panel.listing(owner=source)["records"] == []
+    assert record(panel.get(cid, owner=source))["deleted"] is True
+    # An owner with nothing live stops being offered as a watch.
+    assert not any(o["owner_watch_id"] == source for o in panel.owners())
+
+
+def test_a_move_onto_a_slot_the_target_already_uses_is_refused(
+    panel: Panel, move_pair, request: pytest.FixtureRequest
+):
+    """A refusal moves nothing at all, and says which slot is in the way."""
+    source, target = move_pair
+    mine = str(uuid.uuid5(_NS, request.node.name)).upper()
+    theirs = str(uuid.uuid5(_NS, request.node.name + "/target")).upper()
+    seed(panel, source, mine, "wants slot 1", slot=0)
+    seed(panel, target, theirs, "already in slot 1", slot=0)
+
+    reply = panel.move(source, target)
+    # Unlike a save conflict, this is a plain websocket error: there is no one
+    # record for the panel to draw a conflict screen from.
+    assert reply.get("success") is False, reply
+    assert reply["error"]["code"] == "invalid"
+    assert "slot 1" in reply["error"]["message"]
+
+    assert [r["id"] for r in panel.listing(owner=source)["records"]] == [mine]
+    assert [r["id"] for r in panel.listing(owner=target)["records"]] == [theirs]
 
 
 # ── across a restart ───────────────────────────────────────────────────────

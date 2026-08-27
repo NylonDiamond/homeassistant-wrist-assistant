@@ -13,6 +13,7 @@ import {
   deleteRecord,
   fetchList,
   fetchOwners,
+  moveOwner,
   renderTemplates,
   saveRecord,
   subscribeChanges,
@@ -97,6 +98,9 @@ export class WristAssistantPanel extends LitElement {
   @state() private conflict?: Conflict;
   @state() private remoteRevision?: number;
   @state() private confirmDelete = false;
+  @state() private moveTarget?: string;
+  @state() private moving = false;
+  @state() private moveError?: string;
   @state() private version = 0; // bumped on every draft mutation
 
   private compiled?: Compiled;
@@ -357,6 +361,8 @@ export class WristAssistantPanel extends LitElement {
     }
     this.ownerId = ownerId;
     this.selectedId = undefined;
+    this.moveTarget = undefined;
+    this.moveError = undefined;
     this.clearDraft();
     await this.unsubscribe?.();
     this.unsubscribe = await subscribeChanges(this.hass, ownerId, () => void this.loadRecords());
@@ -453,11 +459,29 @@ export class WristAssistantPanel extends LitElement {
     this.scheduleTemplates(0);
   }
 
-  /** First slot no stored record uses. */
+  /** First slot no stored record uses, or -1 when this watch has all eight. */
   private freeSlot(): number {
     const used = new Set(this.records.map((r) => Number(r.document?.slotIndex ?? -1)));
     for (let i = 0; i < 8; i++) if (!used.has(i)) return i;
-    return 0;
+    return -1;
+  }
+
+  /** Slot → name of the other record holding it, for the General tab picker. */
+  private slotHolders(): Map<number, string> {
+    const held = new Map<number, string>();
+    for (const r of this.records) {
+      if (r.deleted || r.id === this.selectedId) continue;
+      const slot = Number(r.document?.slotIndex ?? -1);
+      if (slot < 0 || slot > 7 || held.has(slot)) continue;
+      held.set(slot, String(r.document?.name || "Untitled"));
+    }
+    return held;
+  }
+
+  /** The store refuses a document whose slot is outside 0..7. */
+  private get slotChosen(): boolean {
+    const slot = this.draft?.config.slotIndex ?? -1;
+    return slot >= 0 && slot <= 7;
   }
 
 
@@ -508,6 +532,7 @@ export class WristAssistantPanel extends LitElement {
       icons: this.icons,
       symbols: this.symbols,
       update: (m, c) => this.mutate(m, c),
+      slotHolders: this.slotHolders(),
       endGesture: () => this.draft?.endGesture(),
       resolve: (v: Value) => resolver.resolve(v),
       evaluateTest: (t) => resolver.evaluateTest(t),
@@ -529,14 +554,23 @@ export class WristAssistantPanel extends LitElement {
   private async save(asNew = false) {
     if (!this.draft || !this.ownerId || !this.canEdit || this.saving) return;
     if (!asNew && !this.draft.dirty) return;
+    if (!asNew && !this.slotChosen) {
+      this.saveError = "Pick a watch slot on the General tab first.";
+      return;
+    }
     this.saving = true;
     this.saveError = undefined;
     try {
       let draft = this.draft;
       if (asNew) {
+        const slot = this.freeSlot();
+        if (slot < 0) {
+          this.saveError = "Every slot on this watch is taken, so there is nowhere to put a copy. Delete one first.";
+          return;
+        }
         const cfg = structuredClone(draft.config);
         cfg.id = newId();
-        cfg.slotIndex = this.freeSlot();
+        cfg.slotIndex = slot;
         draft = new Draft(cfg, null);
       }
       const doc = draft.encoded();
@@ -607,6 +641,31 @@ export class WristAssistantPanel extends LitElement {
       this.clearDraft();
       this.selectedId = undefined;
       void this.loadRecords();
+    }
+  }
+
+  // ── move (reinstall recovery) ─────────────────────────────────────────
+
+  private get selectedOwner(): OwnerSummary | undefined {
+    return this.owners.find((o) => o.owner_watch_id === this.ownerId);
+  }
+
+  /** Hand every complication of an unregistered watch to a registered one. */
+  private async moveAll() {
+    const source = this.ownerId;
+    const target = this.moveTarget;
+    if (!source || !target || this.moving) return;
+    this.moving = true;
+    this.moveError = undefined;
+    try {
+      await moveOwner(this.hass, source, target);
+      this.moveTarget = undefined;
+      await this.loadOwners();
+      await this.selectOwner(target);
+    } catch (err) {
+      this.moveError = errText(err);
+    } finally {
+      this.moving = false;
     }
   }
 
@@ -720,12 +779,12 @@ export class WristAssistantPanel extends LitElement {
         <div class="toolbar">
           <button @click=${() => this.undo()} ?disabled=${!d?.canUndo} title="Undo (⌘Z)">Undo</button>
           <button @click=${() => this.redo()} ?disabled=${!d?.canRedo} title="Redo (⇧⌘Z)">Redo</button>
-          <button class="primary" @click=${() => void this.save()} ?disabled=${!this.canEdit || !dirty || this.saving} title="Save (⌘S)">${this.saving ? "Saving…" : d?.baseRevision === null ? "Save new" : "Save"}</button>
+          <button class="primary" @click=${() => void this.save()} ?disabled=${!this.canEdit || !dirty || this.saving || !this.slotChosen} title="Save (⌘S)">${this.saving ? "Saving…" : d?.baseRevision === null ? "Save new" : "Save"}</button>
         </div>
         <label>Watch
           <select @change=${(e: Event) => void this.selectOwner((e.target as HTMLSelectElement).value)}>
             ${this.owners.map((o) => html`<option value=${o.owner_watch_id} ?selected=${o.owner_watch_id === this.ownerId}>
-              ${o.device_name ?? o.owner_watch_id} (${o.complication_count})</option>`)}
+              ${ownerLabel(o)} (${o.complication_count})</option>`)}
           </select>
         </label>
       </header>
@@ -739,6 +798,8 @@ export class WristAssistantPanel extends LitElement {
 
   private renderBanners() {
     const out: TemplateResult[] = [];
+    const orphan = this.renderOrphanBanner();
+    if (orphan) out.push(orphan);
     if (this.readOnlyReason) out.push(html`<div class="banner warn"><b>Read only.</b> ${this.readOnlyReason}</div>`);
     else if (this.draft && !this.hass.user?.is_admin) out.push(html`<div class="banner warn"><b>Read only.</b> Only a Home Assistant administrator can save complications.</div>`);
     if (this.conflict) {
@@ -759,6 +820,29 @@ export class WristAssistantPanel extends LitElement {
     }
     if (this.saveError) out.push(html`<div class="banner err"><b>Could not save.</b> ${this.saveError}</div>`);
     return out;
+  }
+
+  /** Offer the Move action on a watch id no device answers for any more. */
+  private renderOrphanBanner(): TemplateResult | undefined {
+    const owner = this.selectedOwner;
+    if (!owner?.is_orphan) return undefined;
+    const targets = this.owners.filter((o) => !o.is_orphan);
+    return html`<div class="banner warn">
+      <b>This watch is no longer registered.</b> Reinstalling the watch app gives the watch a new id, and these
+      ${owner.complication_count} complication${owner.complication_count === 1 ? "" : "s"} stayed behind under the old one.
+      ${!this.hass.user?.is_admin
+        ? html`<div class="hint">Only a Home Assistant administrator can move them.</div>`
+        : targets.length === 0
+          ? html`<div class="hint">No registered watch to move them to. Open Wrist Assistant on the watch first.</div>`
+          : html`<div class="acts">
+              <select @change=${(e: Event) => { this.moveTarget = (e.target as HTMLSelectElement).value || undefined; }}>
+                <option value="" ?selected=${!this.moveTarget}>Move all to…</option>
+                ${targets.map((t) => html`<option value=${t.owner_watch_id} ?selected=${t.owner_watch_id === this.moveTarget}>${ownerLabel(t)}</option>`)}
+              </select>
+              <button class="small" ?disabled=${!this.moveTarget || this.moving} @click=${() => void this.moveAll()}>${this.moving ? "Moving…" : "Move"}</button>
+            </div>`}
+      ${this.moveError ? html`<div class="err">${this.moveError}</div>` : nothing}
+    </div>`;
   }
 
   private renderList() {
@@ -1016,6 +1100,13 @@ export class WristAssistantPanel extends LitElement {
 
 function errText(err: unknown): string {
   return String((err as { message?: string })?.message ?? err);
+}
+
+/** Watch name plus the iPhone it is paired to, which is what tells two
+    watches apart when both report themselves as "Apple Watch". */
+function ownerLabel(o: OwnerSummary): string {
+  const name = o.device_name ?? o.owner_watch_id;
+  return o.paired_iphone_name ? `${name} (${o.paired_iphone_name})` : name;
 }
 
 function layerTitle(el: CElement): string {

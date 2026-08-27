@@ -25,6 +25,7 @@ and refuses anything it cannot vouch for; it never rewrites the document.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import uuid
@@ -167,6 +168,19 @@ ChangeListener = Callable[[ComplicationChange], None]
 
 def _now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _slot_of(record: ComplicationRecord) -> int:
+    """The watch slot a record occupies, or -1 when it holds none.
+
+    ``validate_document`` guarantees 0..7 on the way in, but a row loaded from
+    disk is not revalidated, so anything unexpected reads as "no slot" rather
+    than raising in the middle of a move.
+    """
+    slot = (record.document or {}).get("slotIndex")
+    if isinstance(slot, bool) or not isinstance(slot, int):
+        return -1
+    return slot
 
 
 def _validate_uuid(value: Any, what: str) -> str:
@@ -530,3 +544,101 @@ class ComplicationStore:
             )
             committed.append(self._commit(record))
         return committed
+
+    def move_owner(
+        self,
+        source_owner: str,
+        target_owner: str,
+        *,
+        updated_by: str,
+    ) -> list[ComplicationRecord]:
+        """Re-key every live record of one watch onto another watch.
+
+        This is the reinstall recovery path. A watch's id lives in its App
+        Group rather than its keychain, so deleting and reinstalling the app
+        can hand it a new one, leaving its complications under an id nothing
+        signs with any more.
+
+        Each live source record is committed under ``target_owner`` as a fresh
+        revision and the source row is then tombstoned, so a replica still
+        holding the old owner learns the records are gone instead of keeping
+        them forever. The revision under the target starts at 1, or continues
+        from a record the target already has under that id (a tombstone
+        counts, exactly as ``restore`` treats one).
+
+        Everything is checked before anything is written, so a refused move
+        leaves both owners exactly as they were. It is refused when the source
+        and the target are the same watch, when the source has nothing live to
+        move, when the target would end up over
+        ``COMPLICATION_MAX_PER_OWNER``, or when a moved record would land on a
+        slot one of the target's own records already holds.
+        """
+        if not isinstance(source_owner, str) or not source_owner:
+            raise ComplicationValidationError("source_owner_watch_id is required")
+        if not isinstance(target_owner, str) or not target_owner:
+            raise ComplicationValidationError("target_owner_watch_id is required")
+        if source_owner == target_owner:
+            raise ComplicationValidationError(
+                "the source and the target are the same watch"
+            )
+
+        moving = self.list(source_owner)
+        if not moving:
+            raise ComplicationNotFoundError(f"{source_owner} has nothing to move")
+
+        target_by_id = self._records.get(target_owner, {})
+        moving_ids = {record.id for record in moving}
+        # A target record the move overwrites is not in the way of itself, so
+        # it counts towards neither the cap nor the slot check.
+        kept = [
+            record
+            for record in target_by_id.values()
+            if not record.deleted and record.id not in moving_ids
+        ]
+        total = len(kept) + len(moving)
+        if total > COMPLICATION_MAX_PER_OWNER:
+            raise ComplicationValidationError(
+                f"the move would leave the target with {total} complications; "
+                f"the limit is {COMPLICATION_MAX_PER_OWNER}"
+            )
+
+        taken = {s for record in kept if (s := _slot_of(record)) >= 0}
+        clashes = sorted({s for record in moving if (s := _slot_of(record)) in taken})
+        if clashes:
+            # Slots are numbered from 1 for a human, as they are in the panel
+            # and on the watch face.
+            raise ComplicationValidationError(
+                "the target already uses slot "
+                + ", ".join(str(slot + 1) for slot in clashes)
+            )
+
+        moved: list[ComplicationRecord] = []
+        for source_record in moving:
+            existing = target_by_id.get(source_record.id)
+            moved.append(
+                self._commit(
+                    ComplicationRecord(
+                        id=source_record.id,
+                        owner_watch_id=target_owner,
+                        revision=existing.revision + 1 if existing is not None else 1,
+                        token=0,
+                        updated_at="",
+                        updated_by=updated_by,
+                        # The two rows must not share one mutable document.
+                        document=copy.deepcopy(source_record.document),
+                        deleted=False,
+                    )
+                )
+            )
+            source_record.revision += 1
+            source_record.updated_by = updated_by
+            source_record.deleted = True
+            source_record.document = None
+            self._commit(source_record)
+        _LOGGER.info(
+            "Moved %d complication(s) from %s to %s",
+            len(moved),
+            source_owner,
+            target_owner,
+        )
+        return moved

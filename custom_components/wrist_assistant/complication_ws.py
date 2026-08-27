@@ -14,6 +14,8 @@ Commands:
     wrist_assistant/complications/save        {owner_watch_id, document, base_revision?}
     wrist_assistant/complications/delete      {owner_watch_id, id, base_revision?}
     wrist_assistant/complications/subscribe   {owner_watch_id?}
+    wrist_assistant/complications/move_owner  {source_owner_watch_id,
+                                               target_owner_watch_id}
     wrist_assistant/complications/render_values {templates: {key: jinja}}
 
 ``save`` is all-or-nothing: the browser submits the whole document plus the
@@ -56,6 +58,7 @@ _CMD_GET = f"{DOMAIN}/complications/get"
 _CMD_SAVE = f"{DOMAIN}/complications/save"
 _CMD_DELETE = f"{DOMAIN}/complications/delete"
 _CMD_SUBSCRIBE = f"{DOMAIN}/complications/subscribe"
+_CMD_MOVE_OWNER = f"{DOMAIN}/complications/move_owner"
 _CMD_RENDER = f"{DOMAIN}/complications/render_values"
 _CMD_FORGET = f"{DOMAIN}/devices/forget"
 
@@ -95,6 +98,7 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_save)
     websocket_api.async_register_command(hass, ws_delete)
     websocket_api.async_register_command(hass, ws_subscribe)
+    websocket_api.async_register_command(hass, ws_move_owner)
     websocket_api.async_register_command(hass, ws_render_values)
     websocket_api.async_register_command(hass, ws_forget_device)
 
@@ -109,29 +113,60 @@ def ws_owners(
     Owners come from the widget secret store (a watch self-provisions under
     its own id), not from the complication store, so a watch with nothing
     saved yet still shows up as a target for the first complication.
+
+    Names come from HA's device registry first and the secret store second.
+    The store holds what the watch reported at provision time, which on
+    current watchOS is the plain model name rather than anything per-device,
+    so two watches in one household can arrive with the same one. The
+    registry holds whatever the user renamed the device to, and
+    ``paired_iphone_name`` tells apart the two that are still called the
+    same thing.
     """
     domain_data = hass.data.get(DOMAIN)
     if domain_data is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
     store: ComplicationStore = domain_data.complication_store
+    secret_store = domain_data.widget_secret_store
+    device_registry = dr.async_get(hass)
+
+    def registry_name(device_id: str) -> str | None:
+        """What HA calls this device, honouring a manual rename."""
+        device = device_registry.async_get_device(
+            identifiers={(DOMAIN, f"watch_{device_id}")}
+        )
+        if device is None:
+            return None
+        return device.name_by_user or device.name
+
     owners: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for device_id, entry in domain_data.widget_secret_store.all_entries.items():
+    for device_id, entry in secret_store.all_entries.items():
         if entry.device_kind != DEVICE_KIND_WATCH:
             continue
         seen.add(device_id)
+        paired_id = entry.owner_iphone_id
+        paired_name: str | None = None
+        if paired_id:
+            paired_entry = secret_store.get(paired_id)
+            paired_name = registry_name(paired_id) or (
+                paired_entry.device_name if paired_entry is not None else None
+            )
         owners.append(
             {
                 "owner_watch_id": device_id,
-                "device_name": entry.device_name,
+                "device_name": registry_name(device_id) or entry.device_name,
+                "paired_iphone_name": paired_name,
                 "app_version": entry.app_version,
                 "complication_count": len(store.list(device_id)),
                 "token": store.owner_token(device_id),
+                "is_orphan": False,
             }
         )
     # An owner whose watch entry was removed still has records; list it so
-    # the data is reachable rather than orphaned.
+    # the data is reachable rather than orphaned. `is_orphan` is what the
+    # panel offers the Move action on, so it says so rather than making the
+    # browser infer it from a missing name.
     for owner in store.owners():
         if owner in seen or store.is_empty(owner):
             continue
@@ -139,9 +174,11 @@ def ws_owners(
             {
                 "owner_watch_id": owner,
                 "device_name": None,
+                "paired_iphone_name": None,
                 "app_version": None,
                 "complication_count": len(store.list(owner)),
                 "token": store.owner_token(owner),
+                "is_orphan": True,
             }
         )
     owners.sort(key=lambda o: (o["device_name"] or "", o["owner_watch_id"]))
@@ -387,6 +424,54 @@ def ws_subscribe(
 
     connection.subscriptions[msg["id"]] = store.async_add_listener(_on_change)
     connection.send_result(msg["id"], {"token": store.token})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_MOVE_OWNER,
+        vol.Required("source_owner_watch_id"): str,
+        vol.Required("target_owner_watch_id"): str,
+    }
+)
+@callback
+def ws_move_owner(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Hand one watch's complications to another watch.
+
+    Reinstalling the watch app can change the id the watch signs with, which
+    leaves its complications under an owner no device answers for. ``owners``
+    lists such an owner as an orphan; this is the only way to get its records
+    back onto a watch, because Restore cannot help once the reinstall has
+    wiped the watch's own copies.
+
+    The target does not have to be a registered watch. The panel only offers
+    registered ones, but refusing an unregistered id here would make the
+    command useless in exactly the situation it exists for: a watch that has
+    not re-provisioned yet.
+    """
+    store = _store(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    user = connection.user
+    updated_by = f"ha-panel:{user.name or user.id}" if user else "ha-panel"
+    target = msg["target_owner_watch_id"]
+    try:
+        records = store.move_owner(
+            msg["source_owner_watch_id"], target, updated_by=updated_by
+        )
+    except ComplicationStoreError as err:
+        _send_store_error(connection, msg["id"], err)
+        return
+    connection.send_result(
+        msg["id"],
+        {
+            "records": [record.as_dict() for record in records],
+            "token": store.owner_token(target),
+        },
+    )
 
 
 @websocket_api.websocket_command(

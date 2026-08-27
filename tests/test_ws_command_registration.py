@@ -23,8 +23,8 @@ _MODULE = (
     / "complication_ws.py"
 )
 
-# Commands that mutate device pairing state, so must stay admin-only.
-_ADMIN_ONLY = {"ws_forget_device"}
+# Commands that mutate which device owns what, so must stay admin-only.
+_ADMIN_ONLY = {"ws_forget_device", "ws_move_owner"}
 
 
 def _tree() -> ast.Module:

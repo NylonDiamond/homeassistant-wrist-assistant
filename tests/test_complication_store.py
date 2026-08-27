@@ -450,3 +450,141 @@ def test_restore_over_tombstones_bumps_revision(mod):
     [rec] = store.restore(OWNER, [doc], updated_by="ios")
     assert rec.revision == 3
     assert rec.deleted is False
+
+
+# ── move_owner (the reinstall recovery path) ───────────────────────────────
+
+
+def test_move_owner_rekeys_live_records_and_tombstones_the_source(mod):
+    store = _new(mod)
+    a, b = _doc(slotIndex=0, name="Garage"), _doc(slotIndex=1, name="Lights")
+    store.save(OWNER, a, base_revision=None, updated_by="t")
+    store.save(OWNER, b, base_revision=None, updated_by="t")
+
+    moved = store.move_owner(OWNER, OTHER, updated_by="panel")
+
+    assert [r.owner_watch_id for r in moved] == [OTHER, OTHER]
+    assert {r.id for r in moved} == {a["id"], b["id"]}
+    assert [r.revision for r in moved] == [1, 1]
+    assert [r.updated_by for r in moved] == ["panel", "panel"]
+    assert [r.document["name"] for r in store.list(OTHER)] == ["Garage", "Lights"]
+    # The source keeps a tombstone per record so a replica still holding the
+    # old owner sees them go rather than keeping its copies.
+    assert store.list(OWNER) == []
+    assert store.is_empty(OWNER)
+    tombs = store.list(OWNER, include_deleted=True)
+    assert [(r.deleted, r.revision, r.document) for r in tombs] == [
+        (True, 2, None),
+        (True, 2, None),
+    ]
+    # Every commit took a token, target copy and source tombstone alike.
+    assert store.token == 6
+
+
+def test_move_owner_copies_the_document_rather_than_sharing_it(mod):
+    store = _new(mod)
+    doc = _doc(elements=[{"kind": "text"}])
+    store.save(OWNER, doc, base_revision=None, updated_by="t")
+    [moved] = store.move_owner(OWNER, OTHER, updated_by="panel")
+    moved.document["name"] = "renamed after the move"
+    assert store.get(OWNER, doc["id"]).document is None
+    assert store.get(OTHER, doc["id"]).document["name"] == "renamed after the move"
+
+
+def test_move_owner_continues_the_revision_the_target_already_has(mod):
+    store = _new(mod)
+    doc = _doc(name="from the old watch")
+    store.save(OWNER, doc, base_revision=None, updated_by="t")
+    # The target holds the same id already, at revision 2.
+    store.save(OTHER, doc, base_revision=None, updated_by="t")
+    store.save(OTHER, dict(doc, name="the target's own"), base_revision=1, updated_by="t")
+
+    [moved] = store.move_owner(OWNER, OTHER, updated_by="panel")
+
+    assert moved.revision == 3
+    assert moved.document["name"] == "from the old watch"
+
+
+def test_move_owner_continues_over_a_tombstone_at_the_target(mod):
+    store = _new(mod)
+    doc = _doc()
+    store.save(OWNER, doc, base_revision=None, updated_by="t")
+    store.save(OTHER, doc, base_revision=None, updated_by="t")
+    store.delete(OTHER, doc["id"], base_revision=1, updated_by="t")
+
+    [moved] = store.move_owner(OWNER, OTHER, updated_by="panel")
+
+    assert moved.revision == 3
+    assert moved.deleted is False
+
+
+def test_move_owner_refuses_a_slot_the_target_already_uses(mod):
+    store = _new(mod)
+    store.save(OWNER, _doc(slotIndex=2), base_revision=None, updated_by="t")
+    store.save(OTHER, _doc(slotIndex=2), base_revision=None, updated_by="t")
+    with pytest.raises(mod.ComplicationValidationError) as exc:
+        store.move_owner(OWNER, OTHER, updated_by="panel")
+    # Slots read from 1 for a human, so slotIndex 2 is "slot 3".
+    assert "slot 3" in str(exc.value)
+    assert store.token == 2
+    assert len(store.list(OWNER)) == 1
+    assert len(store.list(OTHER)) == 1
+
+
+def test_move_owner_ignores_a_slot_held_by_the_record_it_overwrites(mod):
+    """The target's copy of a moving id is replaced, so it is not in the way."""
+    store = _new(mod)
+    doc = _doc(slotIndex=3)
+    store.save(OWNER, doc, base_revision=None, updated_by="t")
+    store.save(OTHER, doc, base_revision=None, updated_by="t")
+    [moved] = store.move_owner(OWNER, OTHER, updated_by="panel")
+    assert moved.revision == 2
+    assert len(store.list(OTHER)) == 1
+
+
+def test_move_owner_refuses_when_the_target_would_go_over_the_cap(mod):
+    store = _new(mod)
+    for i in range(5):
+        store.save(OWNER, _doc(slotIndex=i), base_revision=None, updated_by="t")
+    for i in range(4):
+        store.save(OTHER, _doc(slotIndex=i), base_revision=None, updated_by="t")
+    with pytest.raises(mod.ComplicationValidationError) as exc:
+        store.move_owner(OWNER, OTHER, updated_by="panel")
+    assert str(MAX_PER_OWNER) in str(exc.value)
+    assert store.token == 9
+    assert len(store.list(OWNER)) == 5
+    assert len(store.list(OTHER)) == 4
+
+
+def test_move_owner_refuses_the_same_watch(mod):
+    store = _new(mod)
+    store.save(OWNER, _doc(), base_revision=None, updated_by="t")
+    with pytest.raises(mod.ComplicationValidationError):
+        store.move_owner(OWNER, OWNER, updated_by="panel")
+    assert store.token == 1
+    assert len(store.list(OWNER)) == 1
+
+
+def test_move_owner_refuses_an_owner_with_nothing_live(mod):
+    store = _new(mod)
+    doc = _doc()
+    store.save(OWNER, doc, base_revision=None, updated_by="t")
+    store.delete(OWNER, doc["id"], base_revision=1, updated_by="t")
+    with pytest.raises(mod.ComplicationNotFoundError):
+        store.move_owner(OWNER, OTHER, updated_by="panel")
+    with pytest.raises(mod.ComplicationNotFoundError):
+        store.move_owner("watch-never-seen", OTHER, updated_by="panel")
+    assert store.token == 2
+
+
+def test_move_owner_survives_a_restart(mod):
+    store = _new(mod)
+    doc = _doc(name="Garage")
+    store.save(OWNER, doc, base_revision=None, updated_by="t")
+    store.move_owner(OWNER, OTHER, updated_by="panel")
+
+    reloaded = _new(mod)
+    assert [r.document["name"] for r in reloaded.list(OTHER)] == ["Garage"]
+    assert reloaded.list(OWNER) == []
+    assert reloaded.get(OWNER, doc["id"]).deleted is True
+    assert reloaded.token == 3
