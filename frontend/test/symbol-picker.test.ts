@@ -2,7 +2,7 @@
 // names the grid offers, and what the line under it claims about them.
 
 import { describe, expect, it } from "vitest";
-import { drawableCount, symbolChoices, symbolCount, symbolPool } from "../src/editors.js";
+import { drawableCount, reachableCount, symbolChoices, symbolCount, symbolPool } from "../src/editors.js";
 import { CURATED_SYMBOLS, SYMBOL_CATEGORIES } from "../src/symbols.js";
 
 const CATEGORY = SYMBOL_CATEGORIES[0]!;
@@ -88,15 +88,25 @@ describe("symbolChoices", () => {
   });
 });
 
-describe("symbolCount", () => {
-  it("reports the whole catalogue while browsing", () => {
-    expect(symbolCount(282, 282, false, 282)).toBe("282 symbols available.");
+describe("reachableCount", () => {
+  it("counts the installed pack, which search can reach in full", () => {
+    expect(reachableCount(PACK)).toBe(PACK.length);
   });
 
-  it("still reports the whole catalogue inside a category", () => {
+  it("falls back to the curated catalogue with no pack installed", () => {
+    expect(reachableCount([])).toBe(CURATED_SYMBOLS.length);
+  });
+});
+
+describe("symbolCount", () => {
+  it("reports everything reachable while browsing", () => {
+    expect(symbolCount(282, 282, false, 6945)).toBe("6945 symbols available.");
+  });
+
+  it("reports the same total inside a category", () => {
     // The dropdown already says how big the category is, so this line keeps
     // pointing at everything there is to find.
-    expect(symbolCount(18, 18, false, 282)).toBe("282 symbols available.");
+    expect(symbolCount(18, 18, false, 6945)).toBe("6945 symbols available.");
   });
 
   it("reports a plain total for a search that fits", () => {

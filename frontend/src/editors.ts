@@ -201,17 +201,25 @@ export function symbolChoices(known: Set<string>): { value: string; label: strin
   ];
 }
 
+/** Everything a search can reach: the whole installed pack, or the curated
+ * catalogue when no pack answers with its names. Both the starter set and each
+ * category are a window onto this, and the dropdown already sizes those, so this
+ * is the one number the picker cannot show anywhere else. */
+export function reachableCount(pack: readonly string[]): number {
+  return pack.length > 0 ? pack.length : CURATED_SYMBOLS.length;
+}
+
 /**
  * The line under the grid.
  *
- * With nothing typed it reports the whole catalogue, not the chosen category:
- * the dropdown already says how big each category is, so repeating that here
- * would waste the one line that can say how much more there is to find. Once a
- * search is running it counts matches, and never says "x of x", because a count
- * is a total when nothing was left out and only truncation needs the arithmetic.
+ * With nothing typed it reports everything reachable, whatever set is chosen.
+ * The dropdown already says how big each set is, so repeating that here would
+ * waste the one line that can say how much more there is to find. Once a search
+ * is running it counts matches, and never says "x of x", because a count is a
+ * total when nothing was left out and only truncation needs the arithmetic.
  */
-export function symbolCount(shown: number, matches: number, searching: boolean, catalogue: number): string {
-  if (!searching) return catalogue === 1 ? "1 symbol available." : `${catalogue} symbols available.`;
+export function symbolCount(shown: number, matches: number, searching: boolean, reachable: number): string {
+  if (!searching) return reachable === 1 ? "1 symbol available." : `${reachable} symbols available.`;
   if (matches > shown) return `Showing ${shown} of ${matches}. Type more to narrow it down.`;
   return matches === 1 ? "1 symbol matches." : `${matches} symbols match.`;
 }
@@ -262,7 +270,7 @@ function symbolField(host: EditorHost, symbol: string, set: (v: string) => void,
       ${matches.length === 0
         ? html`<div class="hint">Nothing matches that search. Any name can still be typed above.</div>`
         : html`<div class="hint">
-            ${symbolCount(shown.length, matches.length, browser.query.trim() !== "", drawableCount(CURATED_SYMBOLS, known))}
+            ${symbolCount(shown.length, matches.length, browser.query.trim() !== "", reachableCount(pack))}
           </div>`}
       ${!host.icons.available()
         ? html`<div class="hint warn">No icon pack is installed, so the list shows names without pictures. Install the Cupertino Icons frontend to see them.</div>`
