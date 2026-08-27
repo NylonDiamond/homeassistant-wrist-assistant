@@ -186,12 +186,34 @@ export function symbolPool(
   return { names: drawable(CURATED_SYMBOLS), fromPack: false };
 }
 
-/** The line under the grid. Never says "x of x": a count is a total when nothing
- * was left out, and only the truncated case needs the arithmetic. */
-export function symbolCount(shown: number, total: number, searching: boolean): string {
-  if (total > shown) return `Showing ${shown} of ${total}. Type more to narrow it down.`;
-  if (searching) return total === 1 ? "1 symbol matches." : `${total} symbols match.`;
-  return total === 1 ? "1 symbol available." : `${total} symbols available.`;
+/** How many of a list the installed pack can actually draw, which is what both
+ * the grid and every count in the picker is measured in. */
+export function drawableCount(list: readonly string[], known: Set<string>): number {
+  return known.size === 0 ? list.length : list.filter((s) => known.has(s)).length;
+}
+
+/** The category dropdown. Each label carries its own size, so choosing one is a
+ * decision made before the grid redraws rather than after. */
+export function symbolChoices(known: Set<string>): { value: string; label: string }[] {
+  return [
+    { value: "", label: `Starter set (${drawableCount(CURATED_SYMBOLS, known)})` },
+    ...SYMBOL_CATEGORIES.map((c) => ({ value: c.name, label: `${c.name} (${drawableCount(c.symbols, known)})` })),
+  ];
+}
+
+/**
+ * The line under the grid.
+ *
+ * With nothing typed it reports the whole catalogue, not the chosen category:
+ * the dropdown already says how big each category is, so repeating that here
+ * would waste the one line that can say how much more there is to find. Once a
+ * search is running it counts matches, and never says "x of x", because a count
+ * is a total when nothing was left out and only truncation needs the arithmetic.
+ */
+export function symbolCount(shown: number, matches: number, searching: boolean, catalogue: number): string {
+  if (!searching) return catalogue === 1 ? "1 symbol available." : `${catalogue} symbols available.`;
+  if (matches > shown) return `Showing ${shown} of ${matches}. Type more to narrow it down.`;
+  return matches === 1 ? "1 symbol matches." : `${matches} symbols match.`;
 }
 
 function symbolTile(host: EditorHost, name: string, selected: boolean, pick: (n: string) => void): TemplateResult {
@@ -229,8 +251,9 @@ function symbolField(host: EditorHost, symbol: string, set: (v: string) => void,
       <div class="sym-controls">
         <input type="search" placeholder="Search symbols" .value=${browser.query} @input=${onInput((v) => browser.setQuery(v))} />
         <select @change=${onInput((v) => browser.setCategory(v))}>
-          <option value="" ?selected=${browser.category === ""}>Starter set</option>
-          ${SYMBOL_CATEGORIES.map((c) => html`<option value=${c.name} ?selected=${c.name === browser.category}>${c.name}</option>`)}
+          ${symbolChoices(known).map(
+            (c) => html`<option value=${c.value} ?selected=${c.value === browser.category}>${c.label}</option>`
+          )}
         </select>
       </div>
       ${recent.length === 0 ? nothing : html`<div class="hint">Recent</div>
@@ -238,7 +261,9 @@ function symbolField(host: EditorHost, symbol: string, set: (v: string) => void,
       <div class="sym-grid">${shown.map((n) => symbolTile(host, n, n === current, pick))}</div>
       ${matches.length === 0
         ? html`<div class="hint">Nothing matches that search. Any name can still be typed above.</div>`
-        : html`<div class="hint">${symbolCount(shown.length, matches.length, browser.query.trim() !== "")}</div>`}
+        : html`<div class="hint">
+            ${symbolCount(shown.length, matches.length, browser.query.trim() !== "", drawableCount(CURATED_SYMBOLS, known))}
+          </div>`}
       ${!host.icons.available()
         ? html`<div class="hint warn">No icon pack is installed, so the list shows names without pictures. Install the Cupertino Icons frontend to see them.</div>`
         : listed !== undefined && listed.length === 0

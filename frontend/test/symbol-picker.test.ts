@@ -2,7 +2,7 @@
 // names the grid offers, and what the line under it claims about them.
 
 import { describe, expect, it } from "vitest";
-import { symbolCount, symbolPool } from "../src/editors.js";
+import { drawableCount, symbolChoices, symbolCount, symbolPool } from "../src/editors.js";
 import { CURATED_SYMBOLS, SYMBOL_CATEGORIES } from "../src/symbols.js";
 
 const CATEGORY = SYMBOL_CATEGORIES[0]!;
@@ -58,26 +58,62 @@ describe("symbolPool", () => {
   });
 });
 
+describe("drawableCount", () => {
+  it("counts the whole list when no pack is installed", () => {
+    expect(drawableCount(CURATED_SYMBOLS, new Set())).toBe(CURATED_SYMBOLS.length);
+  });
+
+  it("counts only what the pack can draw", () => {
+    const known = new Set(CURATED_SYMBOLS.slice(0, 4));
+    expect(drawableCount(CURATED_SYMBOLS, known)).toBe(4);
+  });
+});
+
+describe("symbolChoices", () => {
+  const known = new Set(PACK);
+
+  it("offers the starter set first, sized by the whole catalogue", () => {
+    expect(symbolChoices(known)[0]).toEqual({ value: "", label: `Starter set (${CURATED_SYMBOLS.length})` });
+  });
+
+  it("gives every category its own size", () => {
+    const choices = symbolChoices(known);
+    expect(choices).toHaveLength(SYMBOL_CATEGORIES.length + 1);
+    expect(choices[1]).toEqual({ value: CATEGORY.name, label: `${CATEGORY.name} (${CATEGORY.symbols.length})` });
+  });
+
+  it("counts what the pack can draw, not what the catalogue lists", () => {
+    const partial = new Set(CATEGORY.symbols.slice(0, 2));
+    expect(symbolChoices(partial)[1]?.label).toBe(`${CATEGORY.name} (2)`);
+  });
+});
+
 describe("symbolCount", () => {
-  it("reports a plain total while browsing", () => {
-    expect(symbolCount(282, 282, false)).toBe("282 symbols available.");
+  it("reports the whole catalogue while browsing", () => {
+    expect(symbolCount(282, 282, false, 282)).toBe("282 symbols available.");
+  });
+
+  it("still reports the whole catalogue inside a category", () => {
+    // The dropdown already says how big the category is, so this line keeps
+    // pointing at everything there is to find.
+    expect(symbolCount(18, 18, false, 282)).toBe("282 symbols available.");
   });
 
   it("reports a plain total for a search that fits", () => {
-    expect(symbolCount(12, 12, true)).toBe("12 symbols match.");
+    expect(symbolCount(12, 12, true, 282)).toBe("12 symbols match.");
   });
 
   it("never says x of x", () => {
-    expect(symbolCount(9, 9, false)).not.toContain("of 9");
-    expect(symbolCount(9, 9, true)).not.toContain("of 9");
+    expect(symbolCount(9, 9, false, 9)).not.toContain("of 9");
+    expect(symbolCount(9, 9, true, 282)).not.toContain("of 9");
   });
 
   it("does the arithmetic only when something was left out", () => {
-    expect(symbolCount(120, 843, true)).toBe("Showing 120 of 843. Type more to narrow it down.");
+    expect(symbolCount(120, 843, true, 282)).toBe("Showing 120 of 843. Type more to narrow it down.");
   });
 
   it("counts one symbol in the singular", () => {
-    expect(symbolCount(1, 1, false)).toBe("1 symbol available.");
-    expect(symbolCount(1, 1, true)).toBe("1 symbol matches.");
+    expect(symbolCount(1, 1, false, 1)).toBe("1 symbol available.");
+    expect(symbolCount(1, 1, true, 282)).toBe("1 symbol matches.");
   });
 });
