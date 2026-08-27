@@ -6,6 +6,7 @@
 import {
   type AggregateSpec,
   type CustomComplicationConfig,
+  type DataSource,
   type EntityRef,
   type NamedValue,
   type Value,
@@ -253,4 +254,21 @@ export function normaliseScalar(raw: unknown): string {
     return String(raw);
   }
   return JSON.stringify(raw);
+}
+
+/** What the phone editor stores in `dataSources` on save (schema §6.1):
+ * entities sorted by id, then at most one template holding the document. */
+export function deriveDataSources(config: CustomComplicationConfig): DataSource[] {
+  const compiled = compile(config);
+  const out: DataSource[] = [...compiled.entities.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([, ref]) => ({
+      kind: "entity",
+      entityId: ref.entityId,
+      displayName: ref.displayName,
+      domain: ref.domain,
+      ...(ref.iconName !== undefined ? { iconName: ref.iconName } : {}),
+    }));
+  if (compiled.document) out.push({ kind: "template", value: compiled.document });
+  return out;
 }

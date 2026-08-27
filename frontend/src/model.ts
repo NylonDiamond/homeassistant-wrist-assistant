@@ -606,6 +606,425 @@ export function parseConfig(raw: unknown): CustomComplicationConfig {
   return cfg;
 }
 
+// ── encoding ──────────────────────────────────────────────────────────────
+// Writes exactly what the Swift synthesised/custom encoders write
+// (docs/custom_complication_schema_v4.md §0-§5, §8): nested Value with
+// `format` omitted when empty, perFamily as the alternating array, Placement
+// with `isHidden` only when true and `size` only when set, FamilyLayout with
+// `placements`/`rules` only when non-empty and optionals only when present.
+
+function encNum(n: number): number | string {
+  if (Number.isNaN(n)) return "nan";
+  if (n === Infinity) return "+inf";
+  if (n === -Infinity) return "-inf";
+  return n;
+}
+
+function encodeEntityRef(r: EntityRef): J {
+  const o: J = { entityId: r.entityId, displayName: r.displayName, domain: r.domain };
+  if (r.iconName !== undefined) o.iconName = r.iconName;
+  return o;
+}
+
+function encodeFormat(f: ValueFormat): J {
+  const o: J = {};
+  if (f.decimals !== undefined) o.decimals = encNum(f.decimals);
+  if (f.multiply !== undefined) o.multiply = encNum(f.multiply);
+  if (f.offset !== undefined) o.offset = encNum(f.offset);
+  if (f.prefix) o.prefix = f.prefix;
+  if (f.suffix) o.suffix = f.suffix;
+  if (f.useEntityUnit) o.useEntityUnit = true;
+  if (f.relativeTime) o.relativeTime = true;
+  if (f.textCase !== undefined) o.textCase = f.textCase;
+  return o;
+}
+
+function encodeAggregate(a: AggregateSpec): J {
+  const scope: J =
+    a.scope.kind === "entities"
+      ? { kind: "entities", entities: a.scope.entities.map(encodeEntityRef) }
+      : { kind: "filter", domains: a.scope.domains, areaIds: a.scope.areaIds, labelIds: a.scope.labelIds, floorIds: a.scope.floorIds };
+  const o: J = { function: a.function, scope };
+  if (a.stateFilter) {
+    o.stateFilter = a.stateFilter.kind === "equals" || a.stateFilter.kind === "notEquals"
+      ? { kind: a.stateFilter.kind, value: a.stateFilter.value }
+      : { kind: a.stateFilter.kind };
+  }
+  if (a.attribute !== undefined) o.attribute = a.attribute;
+  return o;
+}
+
+function encodeValueKind(k: ValueKind): J {
+  switch (k.kind) {
+    case "literal": return { kind: "literal", value: k.value };
+    case "entityState": return { kind: "entityState", ...encodeEntityRef(k) };
+    case "entityAttribute": return { kind: "entityAttribute", ...encodeEntityRef(k), attribute: k.attribute };
+    case "entityAge": return { kind: "entityAge", ...encodeEntityRef(k) };
+    case "aggregate": return { kind: "aggregate", aggregate: encodeAggregate(k.aggregate) };
+    case "time": return { kind: "time", timeField: k.timeField };
+    case "dataAge": return { kind: "dataAge" };
+    case "jinja": return { kind: "jinja", value: k.value };
+    case "named": return { kind: "named", id: k.id };
+  }
+}
+
+export function encodeValue(v: Value): J {
+  const o: J = { kind: encodeValueKind(v.kind) };
+  if (!formatIsEmpty(v.format)) o.format = encodeFormat(v.format!);
+  return o;
+}
+
+function encodeFrame(f: NormalizedFrame): J {
+  return { x: encNum(f.x), y: encNum(f.y), width: encNum(f.width), height: encNum(f.height), rotationDegrees: encNum(f.rotationDegrees) };
+}
+
+function encodeComparison(c: Comparison): J {
+  const o: J = { kind: c.kind };
+  switch (c.kind) {
+    case "equals": case "notEquals": case "greaterThan": case "greaterOrEqual":
+    case "lessThan": case "lessOrEqual": case "contains": case "startsWith": case "endsWith":
+      o.value = encodeValue(c.value ?? literal(""));
+      break;
+    case "between":
+      o.value = encodeValue(c.value ?? literal(""));
+      o.upper = encodeValue(c.upper ?? literal(""));
+      break;
+    case "matchesRegex":
+      o.pattern = c.pattern ?? "";
+      break;
+    case "isOneOf":
+      o.options = c.options ?? [];
+      break;
+    default:
+      break;
+  }
+  return o;
+}
+
+function encodeStyleChange(c: StyleChange): J {
+  const o: J = { kind: c.kind };
+  switch (c.kind) {
+    case "setColor": case "setText": case "setIcon": case "setGaugeValue":
+    case "setBorderColor": case "setBackgroundColor":
+      o.value = encodeValue(c.value ?? literal(""));
+      break;
+    case "setOpacity": case "setFontSize": case "setRotation": case "setGaugeMin":
+    case "setGaugeMax": case "setBorderWidth":
+      o.number = encNum(c.number ?? 0);
+      break;
+    case "setFontWeight":
+      o.weight = c.weight ?? "regular";
+      break;
+    default:
+      break;
+  }
+  return o;
+}
+
+export function encodeRules(rules: Rule[]): J[] {
+  return rules.map((r) => {
+    const o: J = {
+      id: r.id,
+      cases: r.cases.map((c) => ({
+        id: c.id,
+        when: {
+          join: c.when.join,
+          tests: c.when.tests.map((t) => ({ id: t.id, value: encodeValue(t.value), comparison: encodeComparison(t.comparison) })),
+        },
+        then: c.then.map(encodeStyleChange),
+      })),
+    };
+    if (r.otherwise) o.otherwise = r.otherwise.map(encodeStyleChange);
+    return o;
+  });
+}
+
+function encodeElement(el: Element): J {
+  const base = (p: ElementBase): J => ({
+    id: p.id,
+    colorSlot: { baseColorHex: p.colorSlot.baseColorHex },
+    rules: encodeRules(p.rules),
+    frame: encodeFrame(p.frame),
+    isHidden: p.isHidden,
+  });
+  switch (el.kind) {
+    case "text":
+      return { kind: "text", payload: { ...base(el.payload), value: encodeValue(el.payload.value), fontSize: encNum(el.payload.fontSize), fontWeight: el.payload.fontWeight } };
+    case "icon":
+      return { kind: "icon", payload: { ...base(el.payload), symbol: encodeValue(el.payload.symbol), size: encNum(el.payload.size) } };
+    case "gauge":
+      return {
+        kind: "gauge",
+        payload: {
+          ...base(el.payload),
+          value: encodeValue(el.payload.value),
+          minValue: encNum(el.payload.minValue),
+          maxValue: encNum(el.payload.maxValue),
+          style: el.payload.style,
+          lineWidth: encNum(el.payload.lineWidth),
+          trackColorHex: el.payload.trackColorHex,
+        },
+      };
+    case "shape": {
+      const o: J = { ...base(el.payload), kind: el.payload.kind, cornerRadius: encNum(el.payload.cornerRadius), borderWidth: encNum(el.payload.borderWidth) };
+      if (el.payload.borderColorHex !== undefined) o.borderColorHex = el.payload.borderColorHex;
+      return { kind: "shape", payload: o };
+    }
+  }
+}
+
+function encodeLayout(l: FamilyLayout): J {
+  const o: J = {};
+  const ids = Object.keys(l.placements);
+  if (ids.length > 0) {
+    const placements: J = {};
+    for (const id of ids) {
+      const p = l.placements[id]!;
+      const po: J = { frame: encodeFrame(p.frame) };
+      if (p.isHidden) po.isHidden = true;
+      if (p.size !== undefined) po.size = encNum(p.size);
+      placements[id] = po;
+    }
+    o.placements = placements;
+  }
+  if (l.bezelText) o.bezelText = encodeValue(l.bezelText);
+  if (l.backgroundColorHex !== undefined) o.backgroundColorHex = l.backgroundColorHex;
+  o.cornerBodyShape = l.cornerBodyShape;
+  if (l.borderColorHex !== undefined) o.borderColorHex = l.borderColorHex;
+  o.borderWidth = encNum(l.borderWidth);
+  if (l.rules.length > 0) o.rules = encodeRules(l.rules);
+  return o;
+}
+
+function encodeTapAction(t: TapAction): J {
+  if ("entityId" in t) return { type: t.type, ...encodeEntityRef(t) };
+  return { type: t.type };
+}
+
+export function encodeConfig(cfg: CustomComplicationConfig): J {
+  const perFamily: unknown[] = [];
+  for (const family of ["rectangular", "circular", "corner", "inline"] as FamilyKind[]) {
+    const l = cfg.perFamily[family];
+    if (l) perFamily.push(family, encodeLayout(l));
+  }
+  const o: J = {
+    schemaVersion: 4,
+    id: cfg.id,
+    name: cfg.name,
+    values: cfg.values.map((v) => ({ id: v.id, name: v.name, value: encodeValue(v.value) })),
+    slotIndex: cfg.slotIndex,
+    elements: cfg.elements.map(encodeElement),
+    supportedFamilies: cfg.supportedFamilies,
+    perFamily,
+    dataSources: cfg.dataSources.map((d) => (d.kind === "template" ? { kind: "template", value: d.value } : { kind: "entity", ...encodeEntityRef(d) })),
+    tapAction: encodeTapAction(cfg.tapAction),
+  };
+  if (cfg.refreshMinutes !== undefined) o.refreshMinutes = cfg.refreshMinutes;
+  if (cfg.showSuccessFlash !== undefined) o.showSuccessFlash = cfg.showSuccessFlash;
+  if (cfg.successFlashColorHex !== undefined) o.successFlashColorHex = cfg.successFlashColorHex;
+  return o;
+}
+
+// ── unknown-key audit ─────────────────────────────────────────────────────
+// The parser drops keys it does not know, so a save after editing would
+// silently lose them. The panel refuses to edit a document whose audit is
+// non-empty and tells the user which paths it does not understand.
+
+const K = {
+  config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "dataSources", "refreshMinutes", "tapAction", "showSuccessFlash", "successFlashColorHex"],
+  named: ["id", "name", "value"],
+  value: ["kind", "format"],
+  format: ["decimals", "multiply", "offset", "prefix", "suffix", "useEntityUnit", "relativeTime", "textCase"],
+  entityRef: ["entityId", "displayName", "domain", "iconName"],
+  aggregate: ["function", "scope", "stateFilter", "attribute"],
+  scope: ["kind", "entities", "domains", "areaIds", "labelIds", "floorIds"],
+  stateFilter: ["kind", "value"],
+  frame: ["x", "y", "width", "height", "rotationDegrees"],
+  elementEnvelope: ["kind", "payload"],
+  elementBase: ["id", "colorSlot", "rules", "frame", "isHidden"],
+  text: ["value", "fontSize", "fontWeight"],
+  icon: ["symbol", "size"],
+  gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex"],
+  shape: ["kind", "cornerRadius", "borderColorHex", "borderWidth"],
+  colorSlot: ["baseColorHex"],
+  rule: ["id", "cases", "otherwise"],
+  case: ["id", "when", "then"],
+  condition: ["join", "tests"],
+  test: ["id", "value", "comparison"],
+  comparison: ["kind", "value", "upper", "pattern", "options"],
+  styleChange: ["kind", "value", "number", "weight"],
+  layout: ["placements", "bezelText", "backgroundColorHex", "cornerBodyShape", "borderColorHex", "borderWidth", "rules"],
+  placement: ["frame", "isHidden", "size"],
+  tapAction: ["type", "entityId", "displayName", "domain", "iconName"],
+  dataSource: ["kind", "entityId", "displayName", "domain", "iconName", "value"],
+};
+
+const VALUE_KIND_KEYS: Record<string, string[]> = {
+  literal: ["kind", "value"],
+  entityState: ["kind", ...K.entityRef],
+  entityAttribute: ["kind", ...K.entityRef, "attribute"],
+  entityAge: ["kind", ...K.entityRef],
+  aggregate: ["kind", "aggregate"],
+  time: ["kind", "timeField"],
+  dataAge: ["kind"],
+  jinja: ["kind", "value"],
+  named: ["kind", "id"],
+};
+
+export function auditUnknownKeys(raw: unknown): string[] {
+  const out: string[] = [];
+  const check = (o: unknown, allowed: string[], path: string) => {
+    if (!isObject(o)) return;
+    for (const key of Object.keys(o)) if (!allowed.includes(key)) out.push(`${path}.${key}`);
+  };
+  const valueKind = (o: unknown, path: string) => {
+    if (!isObject(o)) return;
+    const kind = typeof o.kind === "string" ? o.kind : "";
+    check(o, VALUE_KIND_KEYS[kind] ?? ["kind"], path);
+    if (kind === "aggregate" && isObject(o.aggregate)) {
+      check(o.aggregate, K.aggregate, `${path}.aggregate`);
+      check(o.aggregate.scope, K.scope, `${path}.aggregate.scope`);
+      if (isObject(o.aggregate.scope) && Array.isArray(o.aggregate.scope.entities)) {
+        o.aggregate.scope.entities.forEach((e, i) => check(e, K.entityRef, `${path}.aggregate.scope.entities[${i}]`));
+      }
+      check(o.aggregate.stateFilter, K.stateFilter, `${path}.aggregate.stateFilter`);
+    }
+  };
+  const value = (o: unknown, path: string) => {
+    if (!isObject(o)) return;
+    if (isObject(o.kind)) {
+      check(o, K.value, path);
+      valueKind(o.kind, `${path}.kind`);
+    } else {
+      const kind = typeof o.kind === "string" ? o.kind : "";
+      check(o, [...(VALUE_KIND_KEYS[kind] ?? ["kind"]), "format"], path);
+      if (kind === "aggregate") valueKind(o, path);
+    }
+    check(o.format, K.format, `${path}.format`);
+  };
+  const changes = (list: unknown, path: string) => {
+    if (!Array.isArray(list)) return;
+    list.forEach((c, i) => {
+      check(c, K.styleChange, `${path}[${i}]`);
+      if (isObject(c)) value(c.value, `${path}[${i}].value`);
+    });
+  };
+  const rules = (list: unknown, path: string) => {
+    if (!Array.isArray(list)) return;
+    list.forEach((r, i) => {
+      const rp = `${path}[${i}]`;
+      check(r, K.rule, rp);
+      if (!isObject(r)) return;
+      if (Array.isArray(r.cases)) {
+        r.cases.forEach((c, j) => {
+          const cp = `${rp}.cases[${j}]`;
+          check(c, K.case, cp);
+          if (!isObject(c)) return;
+          check(c.when, K.condition, `${cp}.when`);
+          if (isObject(c.when) && Array.isArray(c.when.tests)) {
+            c.when.tests.forEach((t, k) => {
+              const tp = `${cp}.when.tests[${k}]`;
+              check(t, K.test, tp);
+              if (!isObject(t)) return;
+              value(t.value, `${tp}.value`);
+              check(t.comparison, K.comparison, `${tp}.comparison`);
+              if (isObject(t.comparison)) {
+                value(t.comparison.value, `${tp}.comparison.value`);
+                value(t.comparison.upper, `${tp}.comparison.upper`);
+              }
+            });
+          }
+          changes(c.then, `${cp}.then`);
+        });
+      }
+      changes(r.otherwise, `${rp}.otherwise`);
+    });
+  };
+  if (!isObject(raw)) return out;
+  check(raw, K.config, "$");
+  if (Array.isArray(raw.values)) {
+    raw.values.forEach((v, i) => {
+      check(v, K.named, `$.values[${i}]`);
+      if (isObject(v)) value(v.value, `$.values[${i}].value`);
+    });
+  }
+  if (Array.isArray(raw.elements)) {
+    raw.elements.forEach((e, i) => {
+      const ep = `$.elements[${i}]`;
+      check(e, K.elementEnvelope, ep);
+      if (!isObject(e) || !isObject(e.payload)) return;
+      const kind = typeof e.kind === "string" ? e.kind : "";
+      const extra = (K as Record<string, string[]>)[kind] ?? [];
+      check(e.payload, [...K.elementBase, ...extra], `${ep}.payload`);
+      check(e.payload.colorSlot, K.colorSlot, `${ep}.payload.colorSlot`);
+      check(e.payload.frame, K.frame, `${ep}.payload.frame`);
+      rules(e.payload.rules, `${ep}.payload.rules`);
+      for (const vk of ["value", "symbol"]) if (vk in e.payload) value(e.payload[vk], `${ep}.payload.${vk}`);
+    });
+  }
+  const layouts: [string, unknown][] = [];
+  if (Array.isArray(raw.perFamily)) {
+    for (let i = 0; i + 1 < raw.perFamily.length; i += 2) layouts.push([String(raw.perFamily[i]), raw.perFamily[i + 1]]);
+  } else if (isObject(raw.perFamily)) {
+    layouts.push(...Object.entries(raw.perFamily));
+  }
+  for (const [family, l] of layouts) {
+    const lp = `$.perFamily.${family}`;
+    check(l, K.layout, lp);
+    if (!isObject(l)) continue;
+    if (isObject(l.placements)) {
+      for (const [id, p] of Object.entries(l.placements)) {
+        check(p, K.placement, `${lp}.placements.${id}`);
+        if (isObject(p)) check(p.frame, K.frame, `${lp}.placements.${id}.frame`);
+      }
+    }
+    value(l.bezelText, `${lp}.bezelText`);
+    rules(l.rules, `${lp}.rules`);
+  }
+  if (Array.isArray(raw.dataSources)) raw.dataSources.forEach((d, i) => check(d, K.dataSource, `$.dataSources[${i}]`));
+  check(raw.tapAction, K.tapAction, "$.tapAction");
+  return out;
+}
+
+// ── construction helpers ──────────────────────────────────────────────────
+
+export function newId(): string {
+  const c = globalThis.crypto;
+  if (c && "randomUUID" in c) return c.randomUUID().toUpperCase();
+  const hex = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, "0");
+  return `${hex()}${hex()}-${hex()}-4${hex().slice(1)}-${hex()}-${hex()}${hex()}${hex()}`.toUpperCase();
+}
+
+export function defaultLayout(): FamilyLayout {
+  return { placements: {}, cornerBodyShape: "wedge", borderWidth: 2, rules: [] };
+}
+
+export function newConfig(name: string, slotIndex: number): CustomComplicationConfig {
+  return {
+    schemaVersion: 4,
+    id: newId(),
+    name,
+    values: [],
+    slotIndex,
+    elements: [],
+    supportedFamilies: ["rectangular", "circular", "corner"],
+    perFamily: { rectangular: defaultLayout(), circular: defaultLayout(), corner: defaultLayout() },
+    dataSources: [],
+    refreshMinutes: 15,
+    tapAction: { type: "refresh" },
+  };
+}
+
+export function newElement(kind: Element["kind"]): Element {
+  const base = (color: string): ElementBase => ({ id: newId(), colorSlot: { baseColorHex: color }, rules: [], frame: { ...CENTERED_FRAME }, isHidden: false });
+  switch (kind) {
+    case "text": return { kind, payload: { ...base("#FFFFFF"), value: literal("Text"), fontSize: 14, fontWeight: "regular" } };
+    case "icon": return { kind, payload: { ...base("#FFFFFF"), symbol: literal("lightbulb"), size: 14 } };
+    case "gauge": return { kind, payload: { ...base("#FFFFFF"), value: literal("50"), minValue: 0, maxValue: 100, style: "arc", lineWidth: 4, trackColorHex: "#FFFFFF40" } };
+    case "shape": return { kind, payload: { ...base("#FFFFFF33"), kind: "roundedRectangle", cornerRadius: 6, borderWidth: 1 } };
+  }
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────
 
 export function literal(value: string): Value {

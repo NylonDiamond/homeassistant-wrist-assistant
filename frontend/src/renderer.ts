@@ -29,6 +29,8 @@ export interface RenderOptions {
   showHidden?: boolean;
   /** Element id to outline. */
   highlightId?: string;
+  /** Draw resize handles on the highlighted element (active family only). */
+  handles?: boolean;
 }
 
 const FONT_WEIGHT: Record<string, number> = { regular: 400, medium: 500, semibold: 600, bold: 700 };
@@ -164,11 +166,21 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     case "shape": body = renderShape(el, box); break;
   }
   const opacity = Math.min(1, Math.max(0, el.opacity)) * (el.isHidden ? 0.35 : 1);
-  const highlight = options.highlightId === el.id
+  const selected = options.highlightId === el.id;
+  const highlight = selected
     ? svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} fill="none" stroke="#0A84FF" stroke-width="0.75" stroke-dasharray="2 1" vector-effect="non-scaling-stroke" />`
     : nothing;
-  return svg`<g data-element-id=${el.id} opacity=${opacity}
-    transform="rotate(${el.frame.rotationDegrees} ${box.cx} ${box.cy})">${body}${highlight}</g>`;
+  // An invisible hit box so empty text and thin gauges are still grabbable.
+  const hit = svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} fill="transparent" stroke="none" />`;
+  const hs = 3;
+  const handles = selected && options.handles
+    ? [["nw", box.x, box.y], ["ne", box.x + box.w, box.y], ["sw", box.x, box.y + box.h], ["se", box.x + box.w, box.y + box.h]].map(
+        ([corner, x, y]) => svg`<rect data-handle=${corner} x=${(x as number) - hs / 2} y=${(y as number) - hs / 2} width=${hs} height=${hs}
+          fill="#FFFFFF" stroke="#0A84FF" stroke-width="0.5" style="cursor:${corner}-resize" />`,
+      )
+    : nothing;
+  return svg`<g data-element-id=${el.id} opacity=${opacity} style=${options.handles ? "cursor:move" : nothing}
+    transform="rotate(${el.frame.rotationDegrees} ${box.cx} ${box.cy})">${hit}${body}${highlight}${handles}</g>`;
 }
 
 /** Corner wedge geometry, straight from CustomComplicationViews.swift:377-409. */
