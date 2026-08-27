@@ -1081,3 +1081,81 @@ export function ruleValues(rules: Rule[]): Value[] {
   }
   return out;
 }
+
+// ── rule construction ─────────────────────────────────────────────────────
+
+export type RuleTarget = Element["kind"] | "layout";
+
+/** Properties each target actually reads (schema §5.3). Others are stored but ignored. */
+export const RULE_TARGET_PROPERTIES: Record<RuleTarget, StyleProperty[]> = {
+  text: ["color", "opacity", "text", "fontSize", "fontWeight", "rotation", "visibility"],
+  icon: ["color", "opacity", "icon", "fontSize", "rotation", "visibility"],
+  gauge: ["color", "opacity", "gaugeValue", "gaugeMin", "gaugeMax", "rotation", "visibility"],
+  shape: ["color", "opacity", "borderColor", "borderWidth", "rotation", "visibility"],
+  layout: ["backgroundColor", "borderColor", "borderWidth", "text"],
+};
+
+export const COMPARISON_KINDS: ComparisonKind[] = [
+  "isOn", "isOff", "equals", "notEquals", "isUnavailable", "isStale", "isEmpty",
+  "greaterThan", "greaterOrEqual", "lessThan", "lessOrEqual", "between",
+  "contains", "startsWith", "endsWith", "matchesRegex", "isOneOf",
+];
+
+export function comparisonOperand(kind: ComparisonKind): "none" | "value" | "between" | "pattern" | "options" {
+  switch (kind) {
+    case "isOn": case "isOff": case "isUnavailable": case "isStale": case "isEmpty": return "none";
+    case "between": return "between";
+    case "matchesRegex": return "pattern";
+    case "isOneOf": return "options";
+    default: return "value";
+  }
+}
+
+export function styleChangePayload(kind: StyleChangeKind): "none" | "value" | "number" | "weight" {
+  switch (kind) {
+    case "hide": case "show": return "none";
+    case "setFontWeight": return "weight";
+    case "setOpacity": case "setFontSize": case "setRotation": case "setGaugeMin": case "setGaugeMax": case "setBorderWidth": return "number";
+    default: return "value";
+  }
+}
+
+export function newTest(): Test {
+  return { id: newId(), value: literal(""), comparison: { kind: "isOn" } };
+}
+
+export function newCase(): RuleCase {
+  return { id: newId(), when: { join: "all", tests: [newTest()] }, then: [] };
+}
+
+export function newRule(): Rule {
+  return { id: newId(), cases: [newCase()] };
+}
+
+/** Change the comparison kind, keeping an operand the new kind can still use. */
+export function switchComparison(c: Comparison, kind: ComparisonKind): Comparison {
+  const next: Comparison = { kind };
+  switch (comparisonOperand(kind)) {
+    case "value": next.value = c.value ?? literal(""); break;
+    case "between": next.value = c.value ?? literal(""); next.upper = c.upper ?? literal(""); break;
+    case "pattern": next.pattern = c.pattern ?? ""; break;
+    case "options": next.options = c.options ?? []; break;
+    case "none": break;
+  }
+  return next;
+}
+
+export function newStyleChange(kind: StyleChangeKind): StyleChange {
+  const c: StyleChange = { kind };
+  switch (styleChangePayload(kind)) {
+    case "value":
+      c.value = literal(kind === "setColor" || kind === "setBorderColor" || kind === "setBackgroundColor" ? "#FF453A" : kind === "setIcon" ? "exclamationmark.triangle" : kind === "setGaugeValue" ? "50" : "Text");
+      break;
+    case "number":
+      c.number = kind === "setOpacity" ? 0.5 : kind === "setFontSize" ? 14 : kind === "setBorderWidth" ? 2 : kind === "setGaugeMax" ? 100 : 0;
+      break;
+    case "weight": c.weight = "bold"; break;
+    case "none": break;
+  }
+  return c;
+}

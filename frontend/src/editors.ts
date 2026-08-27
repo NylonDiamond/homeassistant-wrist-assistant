@@ -7,6 +7,7 @@ import { html, nothing, type TemplateResult } from "lit";
 import {
   type AggregateSpec,
   type Comparison,
+  type ComparisonKind,
   type CustomComplicationConfig,
   type Element as CElement,
   type EntityRef,
@@ -16,16 +17,32 @@ import {
   type NamedValue,
   type NormalizedFrame,
   type Placement,
+  type Rule,
+  type RuleCase,
+  type RuleTarget,
+  type StyleChange,
+  type StyleChangeKind,
   type TapAction,
   type TimeField,
   type Value,
   type ValueFormat,
   type ValueKind,
+  COMPARISON_KINDS,
   DRAWABLE_FAMILIES,
+  RULE_TARGET_PROPERTIES,
+  STYLE_PROPERTY,
+  comparisonOperand,
   formatIsEmpty,
   literal,
+  newCase,
   newId,
+  newRule,
+  newStyleChange,
+  newTest,
+  styleChangePayload,
+  switchComparison,
 } from "./model.js";
+import type { ForcedBranches } from "./resolver.js";
 import type { HassLike } from "./ha-api.js";
 import { familyTitle } from "./renderer.js";
 
@@ -37,6 +54,12 @@ export interface EditorHost {
   endGesture(): void;
   /** Resolved text for a value, for the "current value" line. */
   resolve(value: Value): string | undefined;
+  /** Live result of one rule test. */
+  evaluateTest(test: import("./model.js").Test): boolean;
+  /** Which branch a rule takes live: a case id, "otherwise", or "none". */
+  liveBranch(rule: Rule): string;
+  forced: ForcedBranches;
+  setForced(ruleId: string, branch: { caseId: string } | "otherwise" | "live"): void;
 }
 
 // ── small controls ────────────────────────────────────────────────────────
@@ -434,7 +457,8 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
     ${el.kind === "shape" ? nothing : html`<div class="row-inline">
       ${numberField(`${sizeLabel} in ${familyTitle(family)} (blank = shared ${elementSize(el)})`, eff.size, (v) => host.update((c) => (v === undefined ? setPlacement(c, family, id, {}, true) : setPlacement(c, family, id, { size: v })), `${key}-psize-${family}`), { step: 1, min: 1, optional: true })}
     </div>`}
-    <div class="hint">Drag the layer in the ${familyTitle(family)} preview to move it. Drag a corner to resize it. Frames are fractions of the canvas.</div>`;
+    <div class="hint">Drag the layer in the ${familyTitle(family)} preview to move it. Drag a corner to resize it. Frames are fractions of the canvas.</div>
+    <div class="hint">${el.payload.rules.length === 0 ? "No rules." : `${el.payload.rules.length} rule${el.payload.rules.length === 1 ? "" : "s"}.`} Use the Rules tab to change how this layer reacts to values.</div>`;
 }
 
 // ── Family layout ─────────────────────────────────────────────────────────
@@ -458,8 +482,211 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
       : nothing}
     <div class="hint">${placed === 0 ? "Layers use their shared frames here." : `${placed} layer${placed === 1 ? " has" : "s have"} a ${familyTitle(family)} placement.`}</div>
     ${placed > 0 ? html`<button class="small" @click=${() => upd((l) => { l.placements = {}; })}>Reset placements to the shared frames</button>` : nothing}
-    ${layout.rules.length ? html`<div class="hint">${layout.rules.length} layout rule${layout.rules.length === 1 ? "" : "s"} (rule editing arrives in the next slice).</div>` : nothing}`;
+    <div class="hint">${layout.rules.length === 0 ? "No layout rules." : `${layout.rules.length} layout rule${layout.rules.length === 1 ? "" : "s"}.`} Use the Rules tab to change the background, border, and bezel label from values.</div>`;
 }
 
 export const FAMILY_OPTIONS = DRAWABLE_FAMILIES.map((f): [FamilyKind, string] => [f, familyTitle(f)]);
 export type { Comparison };
+
+// ── Rules ─────────────────────────────────────────────────────────────────
+
+const COMPARISON_LABELS: Record<ComparisonKind, string> = {
+  isOn: "is on", isOff: "is off", equals: "equals", notEquals: "does not equal",
+  isUnavailable: "is unavailable or unknown", isStale: "data is stale", isEmpty: "is empty",
+  greaterThan: "is greater than", greaterOrEqual: "is at least", lessThan: "is less than", lessOrEqual: "is at most",
+  between: "is between", contains: "contains", startsWith: "starts with", endsWith: "ends with",
+  matchesRegex: "matches regex", isOneOf: "is one of",
+};
+
+const CHANGE_LABELS: Record<StyleChangeKind, string> = {
+  setColor: "Set colour", setOpacity: "Set opacity", setText: "Set text", setIcon: "Set icon",
+  setFontSize: "Set size", setFontWeight: "Set weight", setRotation: "Set rotation",
+  hide: "Hide", show: "Show", setGaugeValue: "Set gauge value", setGaugeMin: "Set gauge min", setGaugeMax: "Set gauge max",
+  setBorderColor: "Set border colour", setBorderWidth: "Set border width", setBackgroundColor: "Set background colour",
+};
+
+const CHANGE_KINDS = Object.keys(CHANGE_LABELS) as StyleChangeKind[];
+
+function changeKindsFor(target: RuleTarget): StyleChangeKind[] {
+  const allowed = RULE_TARGET_PROPERTIES[target];
+  return CHANGE_KINDS.filter((k) => allowed.includes(STYLE_PROPERTY[k]));
+}
+
+/** Short one-line description of a value, for rule summaries. */
+export function describeValue(v: Value): string {
+  const k = v.kind;
+  switch (k.kind) {
+    case "literal": return k.value ? `"${k.value}"` : "(empty)";
+    case "entityState": return k.entityId || "(no entity)";
+    case "entityAttribute": return `${k.entityId}.${k.attribute}`;
+    case "entityAge": return `age of ${k.entityId}`;
+    case "aggregate": return `${k.aggregate.function}(...)`;
+    case "time": return `time.${k.timeField}`;
+    case "dataAge": return "data age";
+    case "jinja": return "jinja";
+    case "named": return `named ${k.id.slice(0, 8)}`;
+  }
+}
+
+function moveItem<T>(list: T[], from: number, to: number): void {
+  if (to < 0 || to >= list.length) return;
+  const [item] = list.splice(from, 1);
+  list.splice(to, 0, item!);
+}
+
+/**
+ * Rule list editor for one layer or one family layout. `locate` finds the
+ * live rule array inside a config so every edit goes through the undo history.
+ */
+export function rulesEditor(host: EditorHost, rules: Rule[], target: RuleTarget, locate: (cfg: CustomComplicationConfig) => Rule[] | undefined, key: string): TemplateResult {
+  const upd = (mutate: (rules: Rule[]) => void, k?: string) => host.update((c) => { const r = locate(c); if (r) mutate(r); }, k ? `${key}-${k}` : undefined);
+  return html`
+    ${rules.length === 0 ? html`<div class="hint">No rules yet. A rule checks values and changes how this ${target === "layout" ? "family" : "layer"} looks.</div>` : nothing}
+    ${rules.map((rule, ri) => ruleEditor(host, rule, ri, rules.length, target, upd, `${key}-${rule.id}`))}
+    <div class="adders"><button class="small" @click=${() => upd((r) => { r.push(newRule()); })}>+ rule</button></div>
+    <div class="hint">Inside a rule the first matching case wins. Across rules the later rule wins for the same property. Different properties add up.</div>`;
+}
+
+function ruleEditor(host: EditorHost, rule: Rule, ri: number, count: number, target: RuleTarget, upd: (m: (rules: Rule[]) => void, k?: string) => void, key: string): TemplateResult {
+  const live = host.liveBranch(rule);
+  const current = host.forced.get(rule.id) ?? "live";
+  const isActive = (v: string) => (current === "live" ? v === "live" : current === "otherwise" ? v === "otherwise" : current.caseId === v);
+  const updRule = (m: (r: Rule) => void, k?: string) => upd((rs) => { const r = rs.find((x) => x.id === rule.id); if (r) m(r); }, k);
+  return html`<div class="rule-box">
+    <div class="rule-head">
+      <b>Rule ${ri + 1}</b>
+      <span class="spacer"></span>
+      <button class="icon" title="Move up" ?disabled=${ri === 0} @click=${() => upd((rs) => moveItem(rs, ri, ri - 1))}>▲</button>
+      <button class="icon" title="Move down" ?disabled=${ri === count - 1} @click=${() => upd((rs) => moveItem(rs, ri, ri + 1))}>▼</button>
+      <button class="icon" title="Delete rule" @click=${() => upd((rs) => { const i = rs.findIndex((x) => x.id === rule.id); if (i >= 0) rs.splice(i, 1); })}>×</button>
+    </div>
+    <div class="branches">
+      <span class="hint" style="margin:0 4px 0 0">Preview:</span>
+      <button class=${isActive("live") ? "active" : ""} @click=${() => host.setForced(rule.id, "live")}>Live</button>
+      ${rule.cases.map((c, i) => html`<button class="${isActive(c.id) ? "active" : ""} ${live === c.id ? "live-match" : ""}" @click=${() => host.setForced(rule.id, { caseId: c.id })}>Case ${i + 1}</button>`)}
+      ${rule.otherwise ? html`<button class="${isActive("otherwise") ? "active" : ""} ${live === "otherwise" ? "live-match" : ""}" @click=${() => host.setForced(rule.id, "otherwise")}>Otherwise</button>` : nothing}
+    </div>
+    ${rule.cases.map((c, ci) => caseEditor(host, c, ci, rule, target, updRule, `${key}-${c.id}`))}
+    <div class="adders"><button class="small" @click=${() => updRule((r) => { r.cases.push(newCase()); })}>+ case</button></div>
+    ${checkField("Otherwise (when no case matches)", rule.otherwise !== undefined, (v) => updRule((r) => { if (v) r.otherwise = r.otherwise ?? []; else delete r.otherwise; }))}
+    ${rule.otherwise
+      ? html`<div class="case-box otherwise">
+          <div class="hint">${live === "otherwise" ? html`<b>Active now.</b> ` : nothing}Changes when no case matches:</div>
+          ${changesEditor(host, rule.otherwise, target, (m) => updRule((r) => { if (r.otherwise) m(r.otherwise); }), `${key}-otherwise`)}
+        </div>`
+      : nothing}
+  </div>`;
+}
+
+function caseEditor(host: EditorHost, c: RuleCase, ci: number, rule: Rule, target: RuleTarget, updRule: (m: (r: Rule) => void, k?: string) => void, key: string): TemplateResult {
+  const updCase = (m: (c: RuleCase) => void, k?: string) => updRule((r) => { const x = r.cases.find((y) => y.id === c.id); if (x) m(x); }, k);
+  const matches = host.liveBranch(rule) === c.id;
+  return html`<div class="case-box ${matches ? "match" : ""}">
+    <div class="rule-head">
+      <span>Case ${ci + 1}${matches ? html` <span class="ok">· active now</span>` : nothing}</span>
+      <span class="spacer"></span>
+      <button class="icon" title="Move up" ?disabled=${ci === 0} @click=${() => updRule((r) => moveItem(r.cases, ci, ci - 1))}>▲</button>
+      <button class="icon" title="Move down" ?disabled=${ci === rule.cases.length - 1} @click=${() => updRule((r) => moveItem(r.cases, ci, ci + 1))}>▼</button>
+      <button class="icon" title="Delete case" @click=${() => updRule((r) => { const i = r.cases.findIndex((y) => y.id === c.id); if (i >= 0) r.cases.splice(i, 1); })}>×</button>
+    </div>
+    <div class="row-inline">
+      ${selectField("When", c.when.join, [["all", "all of these are true"], ["any", "any of these is true"]], (v) => updCase((x) => { x.when.join = v; }))}
+    </div>
+    ${c.when.tests.length === 0 ? html`<div class="hint">No tests: this case always matches.</div>` : nothing}
+    ${c.when.tests.map((t, ti) => testEditor(host, t, ti, (m) => updCase((x) => { const y = x.when.tests.find((z) => z.id === t.id); if (y) m(y); }), () => updCase((x) => { x.when.tests = x.when.tests.filter((z) => z.id !== t.id); }), `${key}-${t.id}`))}
+    <div class="adders"><button class="small" @click=${() => updCase((x) => { x.when.tests.push(newTest()); })}>+ test</button></div>
+    <div class="hint" style="margin-top:8px">Then:</div>
+    ${changesEditor(host, c.then, target, (m) => updCase((x) => m(x.then)), `${key}-then`)}
+  </div>`;
+}
+
+function testEditor(host: EditorHost, t: import("./model.js").Test, ti: number, updTest: (m: (t: import("./model.js").Test) => void, k?: string) => void, remove: () => void, key: string): TemplateResult {
+  const upd = (m: (t: import("./model.js").Test) => void, k?: string) => updTest(m, k ? `${key}-${k}` : undefined);
+  const c = t.comparison;
+  const operand = comparisonOperand(c.kind);
+  const result = host.evaluateTest(t);
+  let extra: TemplateResult | typeof nothing = nothing;
+  switch (operand) {
+    case "value":
+      extra = html`<details class="sub" open><summary>Compare with: ${c.value ? describeValue(c.value) : "(empty)"}</summary>
+        ${valueEditor(host, c.value ?? literal(""), (v) => upd((x) => { x.comparison.value = v; }, "rhs"), { showResolved: true, key: `${key}-rhs` })}</details>`;
+      break;
+    case "between":
+      extra = html`<details class="sub" open><summary>Lower bound: ${c.value ? describeValue(c.value) : "(empty)"}</summary>
+        ${valueEditor(host, c.value ?? literal(""), (v) => upd((x) => { x.comparison.value = v; }, "rhs"), { showResolved: true, key: `${key}-rhs` })}</details>
+        <details class="sub" open><summary>Upper bound: ${c.upper ? describeValue(c.upper) : "(empty)"}</summary>
+        ${valueEditor(host, c.upper ?? literal(""), (v) => upd((x) => { x.comparison.upper = v; }, "upper"), { showResolved: true, key: `${key}-upper` })}</details>`;
+      break;
+    case "pattern":
+      extra = html`${textField("Pattern", c.pattern ?? "", (v) => upd((x) => { x.comparison.pattern = v; }, "pattern"), { mono: true, placeholder: "^on$" })}
+        ${c.pattern && !regexOk(c.pattern) ? html`<div class="hint warn">This pattern does not compile. The test fails until it does.</div>` : nothing}`;
+      break;
+    case "options":
+      extra = textField("Options (comma separated)", (c.options ?? []).join(", "), (v) => upd((x) => { x.comparison.options = v.split(",").map((s) => s.trim()).filter(Boolean); }, "options"));
+      break;
+    case "none":
+      break;
+  }
+  return html`<div class="test-box">
+    <div class="rule-head">
+      <span>Test ${ti + 1} <span class=${result ? "ok" : "no"}>${result ? "✓ true now" : "✗ false now"}</span></span>
+      <span class="spacer"></span>
+      <button class="icon" title="Delete test" @click=${remove}>×</button>
+    </div>
+    ${c.kind === "isStale"
+      ? html`<div class="hint">True when the watch's cached values are older than the staleness limit. The value below is not read.</div>`
+      : html`<details class="sub" open><summary>Value: ${describeValue(t.value)}</summary>
+          ${valueEditor(host, t.value, (v) => upd((x) => { x.value = v; }, "lhs"), { showResolved: true, key: `${key}-lhs` })}</details>`}
+    ${selectField("Comparison", c.kind, COMPARISON_KINDS.map((k): [ComparisonKind, string] => [k, COMPARISON_LABELS[k]]), (v) => upd((x) => { x.comparison = switchComparison(x.comparison, v); }))}
+    ${extra}
+  </div>`;
+}
+
+function regexOk(pattern: string): boolean {
+  try { new RegExp(pattern); return true; } catch { return false; }
+}
+
+function changesEditor(host: EditorHost, changes: StyleChange[], target: RuleTarget, updList: (m: (list: StyleChange[]) => void, k?: string) => void, key: string): TemplateResult {
+  const allowed = changeKindsFor(target);
+  return html`
+    ${changes.length === 0 ? html`<div class="hint">No changes.</div>` : nothing}
+    ${changes.map((ch, i) => changeEditor(host, ch, i, target, (m, k) => updList((list) => { if (list[i]) m(list[i]!); }, k ? `${key}-${i}-${k}` : undefined), () => updList((list) => { list.splice(i, 1); }), `${key}-${i}`))}
+    <select class="adder" @change=${(e: Event) => { const sel = e.target as HTMLSelectElement; const kind = sel.value as StyleChangeKind; sel.value = ""; if (kind) updList((list) => { list.push(newStyleChange(kind)); }); }}>
+      <option value="">+ change…</option>
+      ${allowed.map((k) => html`<option value=${k}>${CHANGE_LABELS[k]}</option>`)}
+    </select>`;
+}
+
+const COLOR_KINDS: StyleChangeKind[] = ["setColor", "setBorderColor", "setBackgroundColor"];
+
+function changeEditor(host: EditorHost, ch: StyleChange, i: number, target: RuleTarget, upd: (m: (c: StyleChange) => void, k?: string) => void, remove: () => void, key: string): TemplateResult {
+  const ignored = !RULE_TARGET_PROPERTIES[target].includes(STYLE_PROPERTY[ch.kind]);
+  const payload = styleChangePayload(ch.kind);
+  let body: TemplateResult | typeof nothing = nothing;
+  if (payload === "value") {
+    const v = ch.value ?? literal("");
+    if (COLOR_KINDS.includes(ch.kind)) {
+      const fixed = v.kind.kind === "literal";
+      body = html`${fixed
+        ? colorField("Colour", v.kind.kind === "literal" ? v.kind.value : "", (hex) => upd((c) => { c.value = literal(hex ?? "#FFFFFF"); }, "color"))
+        : valueEditor(host, v, (nv) => upd((c) => { c.value = nv; }, "value"), { noFormat: true, showResolved: true, key: `${key}-value` })}
+        <button class="link" @click=${() => upd((c) => { c.value = fixed ? { kind: { kind: "entityAttribute", entityId: "", displayName: "", domain: "", attribute: "rgb_color" } } : literal("#FFFFFF"); })}>${fixed ? "Read the colour from a value instead" : "Use a fixed colour instead"}</button>
+        ${fixed ? nothing : html`<div class="hint">The value must resolve to a hex colour such as <code>#FF9F0A</code>. Empty or invalid results leave the colour unchanged.</div>`}`;
+    } else {
+      body = valueEditor(host, v, (nv) => upd((c) => { c.value = nv; }, "value"), { noFormat: ch.kind === "setIcon", showResolved: true, key: `${key}-value` });
+    }
+  } else if (payload === "number") {
+    const opts = ch.kind === "setOpacity" ? { step: 0.05, min: 0, max: 1 } : ch.kind === "setRotation" ? { step: 1 } : { step: 0.5, min: 0 };
+    body = numberField(ch.kind === "setOpacity" ? "Opacity (0 to 1)" : ch.kind === "setRotation" ? "Degrees" : ch.kind === "setFontSize" ? "Points" : "Value", ch.number ?? 0, (n) => upd((c) => { c.number = n ?? 0; }, "number"), opts);
+  } else if (payload === "weight") {
+    body = selectField("Weight", ch.weight ?? "regular", FONT_WEIGHTS, (w) => upd((c) => { c.weight = w; }));
+  }
+  return html`<div class="change-box">
+    <div class="rule-head">
+      <span>${CHANGE_LABELS[ch.kind]}${ignored ? html` <span class="no">(ignored by ${target === "layout" ? "layouts" : `${target} layers`})</span>` : nothing}</span>
+      <span class="spacer"></span>
+      <button class="icon" title="Delete change" @click=${remove}>×</button>
+    </div>
+    ${body}
+  </div>`;
+}

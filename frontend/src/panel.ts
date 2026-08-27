@@ -2,7 +2,7 @@
 // Pick an iPhone, pick a complication, edit a browser-side draft with live
 // previews for all three families, then Save with the record's revision so
 // a concurrent edit is caught instead of overwritten (plan §"Save and
-// conflict rules"). Rule editing is slice 4; rules are shown and forceable.
+// conflict rules"). Rules are edited in the inspector's Rules tab.
 
 import { LitElement, html, css, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
@@ -45,12 +45,14 @@ import { Draft } from "./draft.js";
 import { beginGesture, type HandleCorner } from "./interact.js";
 import {
   type EditorHost,
+  describeValue,
   effectivePlacement,
   entityDatalist,
   familyEditor,
   generalEditor,
   layerEditor,
   namedValueEditor,
+  rulesEditor,
   newNamedValue,
   setPlacement,
 } from "./editors.js";
@@ -62,7 +64,9 @@ type Inspect =
   | { kind: "general" }
   | { kind: "family" }
   | { kind: "data"; id: string }
-  | { kind: "layer"; id: string };
+  | { kind: "layer"; id: string }
+  | { kind: "layer-rules"; id: string }
+  | { kind: "family-rules" };
 
 type Conflict = { current: ComplicationRecord | null; message: string };
 
@@ -211,6 +215,15 @@ export class WristAssistantPanel extends LitElement {
     .banner.warn { border-left: 4px solid var(--warning-color, #ffa600); }
     .banner.err { border-left: 4px solid var(--error-color, #db4437); }
     .banner .acts { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+    .rule-box { border: 1px solid var(--divider-color); border-radius: 8px; padding: 8px; margin: 8px 0; }
+    .case-box { border-left: 3px solid var(--divider-color); padding: 4px 8px; margin: 8px 0; }
+    .case-box.match { border-left-color: var(--success-color, #43a047); }
+    .case-box.otherwise { border-left-style: dashed; }
+    .test-box, .change-box { background: var(--secondary-background-color, rgba(0,0,0,.04)); border-radius: 6px; padding: 4px 8px; margin: 6px 0; }
+    .rule-head { display: flex; align-items: center; gap: 4px; font-size: 13px; }
+    .ok { color: var(--success-color, #43a047); font-size: 12px; }
+    .no { color: var(--error-color, #db4437); font-size: 12px; }
+    select.adder { font: inherit; font-size: 12px; padding: 3px 6px; margin-top: 4px; }
     .tabs { display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap; }
     .tabs button { font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--divider-color); background: transparent; color: inherit; cursor: pointer; }
     .tabs button.active { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: transparent; }
@@ -481,7 +494,18 @@ export class WristAssistantPanel extends LitElement {
       update: (m, c) => this.mutate(m, c),
       endGesture: () => this.draft?.endGesture(),
       resolve: (v: Value) => resolver.resolve(v),
+      evaluateTest: (t) => resolver.evaluateTest(t),
+      liveBranch: (rule) => resolver.liveBranches([rule]).get(rule.id) ?? "none",
+      forced: this.forced,
+      setForced: (ruleId, branch) => this.setForced(ruleId, branch),
     };
+  }
+
+  private setForced(ruleId: string, branch: { caseId: string } | "otherwise" | "live") {
+    const next = new Map(this.forced);
+    if (branch === "live") next.delete(ruleId);
+    else next.set(ruleId, branch);
+    this.forced = next;
   }
 
   // ── save / delete ─────────────────────────────────────────────────────
@@ -854,14 +878,27 @@ export class WristAssistantPanel extends LitElement {
     let body: TemplateResult;
     let title: string;
     const ins = this.inspect;
-    if (ins.kind === "layer") {
+    if (ins.kind === "layer" || ins.kind === "layer-rules") {
       const el = cfg.elements.find((e) => e.payload.id === ins.id);
       if (!el) {
         this.inspect = { kind: "general" };
         return nothing;
       }
-      title = `${el.kind} layer`;
-      body = layerEditor(host, el, this.activeFamily);
+      if (ins.kind === "layer") {
+        title = `${el.kind} layer`;
+        body = layerEditor(host, el, this.activeFamily);
+      } else {
+        title = `${el.kind} layer rules`;
+        const id = el.payload.id;
+        body = rulesEditor(host, el.payload.rules, el.kind, (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`);
+      }
+    } else if (ins.kind === "family-rules") {
+      const family = this.activeFamily;
+      const layout = cfg.perFamily[family];
+      title = `${familyTitle(family)} layout rules`;
+      body = layout
+        ? rulesEditor(host, layout.rules, "layout", (c) => c.perFamily[family]?.rules, `rules-${family}`)
+        : html`<div class="hint">Add ${familyTitle(family)} settings first (on the layout tab).</div>`;
     } else if (ins.kind === "data") {
       const nv = cfg.values.find((v) => v.id === ins.id);
       if (!nv) {
@@ -881,7 +918,8 @@ export class WristAssistantPanel extends LitElement {
       <div class="tabs">
         ${tab("General", ins.kind === "general", () => { this.inspect = { kind: "general" }; })}
         ${tab(`${familyTitle(this.activeFamily)} layout`, ins.kind === "family", () => { this.inspect = { kind: "family" }; })}
-        ${ins.kind === "layer" ? tab("Layer", true, () => undefined) : nothing}
+        ${ins.kind === "family" || ins.kind === "family-rules" ? tab("Rules", ins.kind === "family-rules", () => { this.inspect = { kind: "family-rules" }; }) : nothing}
+        ${ins.kind === "layer" || ins.kind === "layer-rules" ? html`${tab("Layer", ins.kind === "layer", () => { this.inspect = { kind: "layer", id: ins.id }; })}${tab("Rules", ins.kind === "layer-rules", () => { this.inspect = { kind: "layer-rules", id: ins.id }; })}` : nothing}
         ${ins.kind === "data" ? tab("Value", true, () => undefined) : nothing}
       </div>
       <h2>${title}</h2>
@@ -915,21 +953,21 @@ export class WristAssistantPanel extends LitElement {
     const cfg = this.draft?.config;
     if (!cfg) return nothing;
     const resolver = new Resolver(this.buildContext());
-    const groups: { title: string; rules: Rule[] }[] = [];
-    for (const el of cfg.elements) if (el.payload.rules.length) groups.push({ title: layerTitle(el), rules: el.payload.rules });
+    const groups: { title: string; rules: Rule[]; go: () => void }[] = [];
+    for (const el of cfg.elements) if (el.payload.rules.length) groups.push({ title: `${el.kind}: ${layerTitle(el)}`, rules: el.payload.rules, go: () => { this.inspect = { kind: "layer-rules", id: el.payload.id }; } });
     for (const family of DRAWABLE_FAMILIES) {
       const layout = cfg.perFamily[family];
-      if (layout?.rules.length) groups.push({ title: `${familyTitle(family)} layout`, rules: layout.rules });
+      if (layout?.rules.length) groups.push({ title: `${familyTitle(family)} layout`, rules: layout.rules, go: () => { this.activeFamily = family; this.inspect = { kind: "family-rules" }; } });
     }
     if (groups.length === 0) return nothing;
     return html`<div class="card">
       <h2>Rules</h2>
-      ${groups.map((g) => g.rules.map((rule, i) => this.renderRule(`${g.title} · rule ${i + 1}`, rule, resolver)))}
-      <div class="hint">Rule editing arrives in the next slice. Forcing a branch changes the preview only.</div>
+      ${groups.map((g) => g.rules.map((rule, i) => this.renderRule(`${g.title} · rule ${i + 1}`, rule, resolver, g.go)))}
+      <div class="hint">Forcing a branch changes the previews only. Click a rule name to edit it.</div>
     </div>`;
   }
 
-  private renderRule(title: string, rule: Rule, resolver: Resolver): TemplateResult {
+  private renderRule(title: string, rule: Rule, resolver: Resolver, go: () => void): TemplateResult {
     const live = resolver.liveBranches([rule]).get(rule.id);
     const current = this.forced.get(rule.id) ?? "live";
     const set = (v: ForcedBranches extends Map<string, infer V> ? V : never) => {
@@ -940,7 +978,7 @@ export class WristAssistantPanel extends LitElement {
     };
     const isActive = (v: string) => (current === "live" ? v === "live" : current === "otherwise" ? v === "otherwise" : current.caseId === v);
     return html`<div class="rule">
-      <div class="title">${title}</div>
+      <div class="title"><button class="link" @click=${go}>${title}</button></div>
       <div class="branches">
         <button class=${isActive("live") ? "active" : ""} @click=${() => set("live")}>Live</button>
         ${rule.cases.map((c, i) => html`<button class="${isActive(c.id) ? "active" : ""} ${live === c.id ? "live-match" : ""}"
@@ -973,20 +1011,6 @@ function layerTitle(el: CElement): string {
   }
 }
 
-function describeValue(v: Value): string {
-  const k = v.kind;
-  switch (k.kind) {
-    case "literal": return k.value ? `"${k.value}"` : "(empty)";
-    case "entityState": return k.entityId;
-    case "entityAttribute": return `${k.entityId}.${k.attribute}`;
-    case "entityAge": return `age of ${k.entityId}`;
-    case "aggregate": return `${k.aggregate.function}(...)`;
-    case "time": return `time.${k.timeField}`;
-    case "dataAge": return "data age";
-    case "jinja": return "jinja";
-    case "named": return `named ${k.id.slice(0, 8)}`;
-  }
-}
 
 // After an HA restart the frontend re-imports the panel module under its
 // new cache-busted URL in the same page, so a plain @customElement would

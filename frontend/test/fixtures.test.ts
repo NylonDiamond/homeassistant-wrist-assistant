@@ -94,6 +94,26 @@ describe.each(files)("fixture %s", (file) => {
     }
   });
 
+  it("honours every forced branch in the fixture", () => {
+    const specs = fx.expected.forced as
+      | { ruleId: string; branch: string; family: "rectangular" | "circular" | "corner"; elementId?: string; expect: Record<string, unknown> }[]
+      | undefined;
+    if (!specs) return;
+    for (const spec of specs) {
+      const forced: ForcedBranches = new Map([[spec.ruleId, spec.branch === "otherwise" ? "otherwise" : { caseId: spec.branch }]]);
+      const layouts = resolveAll(config, contextFor(fx), forced);
+      const layout = layouts[spec.family];
+      const label = `forced ${spec.ruleId.slice(0, 8)} -> ${spec.branch.slice(0, 8)} in ${spec.family}`;
+      if (spec.elementId) {
+        const el = layout.elements.find((e) => e.id === spec.elementId);
+        expect(el, label).toBeDefined();
+        expectSubset(el as unknown as Record<string, unknown>, spec.expect, label);
+      } else {
+        expectSubset(layout as unknown as Record<string, unknown>, spec.expect, label);
+      }
+    }
+  });
+
   it("honours a forced rule branch", () => {
     const forcedSpec = fx.expected.forcedCase as
       | { ruleId: string; caseId: string; rectangularTextColorHex: string }

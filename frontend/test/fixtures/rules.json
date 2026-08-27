@@ -1,0 +1,985 @@
+{
+  "name": "Rules",
+  "description": "Every comparison kind and style change kind, rule precedence, forced branches, and layout rules. The Swift side must produce the same resolved output.",
+  "config": {
+    "schemaVersion": 4,
+    "id": "AAAAAAAA-0000-4000-8000-000000000001",
+    "name": "Rules",
+    "slotIndex": 1,
+    "supportedFamilies": [
+      "rectangular",
+      "circular",
+      "corner"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000001",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.temp",
+              "displayName": "Temp",
+              "domain": "sensor"
+            }
+          },
+          "fontSize": 14,
+          "fontWeight": "regular",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [
+            {
+              "id": "RRRRRRRR-0000-4000-8000-000000000003",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000002",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "TTTTTTTT-0000-4000-8000-000000000001",
+                        "value": {
+                          "kind": {
+                            "kind": "entityState",
+                            "entityId": "sensor.temp",
+                            "displayName": "Temp",
+                            "domain": "sensor"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "greaterThan",
+                          "value": {
+                            "kind": {
+                              "kind": "literal",
+                              "value": "70"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    {
+                      "kind": "setColor",
+                      "value": {
+                        "kind": {
+                          "kind": "literal",
+                          "value": "#FF0000"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "setFontWeight",
+                      "weight": "bold"
+                    }
+                  ]
+                }
+              ],
+              "otherwise": [
+                {
+                  "kind": "setColor",
+                  "value": {
+                    "kind": {
+                      "kind": "literal",
+                      "value": "#0000FF"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "id": "RRRRRRRR-0000-4000-8000-000000000008",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000006",
+                  "when": {
+                    "join": "any",
+                    "tests": [
+                      {
+                        "id": "TTTTTTTT-0000-4000-8000-000000000004",
+                        "value": {
+                          "kind": {
+                            "kind": "entityState",
+                            "entityId": "binary_sensor.door",
+                            "displayName": "Door",
+                            "domain": "binary_sensor"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "isOff"
+                        }
+                      },
+                      {
+                        "id": "TTTTTTTT-0000-4000-8000-000000000005",
+                        "value": {
+                          "kind": {
+                            "kind": "entityState",
+                            "entityId": "light.lamp",
+                            "displayName": "Lamp",
+                            "domain": "light"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "isOn"
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    {
+                      "kind": "setColor",
+                      "value": {
+                        "kind": {
+                          "kind": "literal",
+                          "value": "#00FF00"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000007",
+                  "when": {
+                    "join": "all",
+                    "tests": []
+                  },
+                  "then": [
+                    {
+                      "kind": "setText",
+                      "value": {
+                        "kind": {
+                          "kind": "literal",
+                          "value": "Fallback"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "setOpacity",
+                      "number": 0.5
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "frame": {
+            "x": 0.1,
+            "y": 0.1,
+            "width": 0.5,
+            "height": 0.5,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "icon",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000002",
+          "symbol": {
+            "kind": {
+              "kind": "literal",
+              "value": "lightbulb"
+            }
+          },
+          "size": 14,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [
+            {
+              "id": "RRRRRRRR-0000-4000-8000-000000000016",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000015",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "TTTTTTTT-0000-4000-8000-000000000009",
+                        "value": {
+                          "kind": {
+                            "kind": "entityState",
+                            "entityId": "sensor.mode",
+                            "displayName": "Mode",
+                            "domain": "sensor"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "contains",
+                          "value": {
+                            "kind": {
+                              "kind": "literal",
+                              "value": "away"
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "id": "TTTTTTTT-0000-4000-8000-000000000010",
+                        "value": {
+                          "kind": {
+                            "kind": "entityState",
+                            "entityId": "sensor.mode",
+                            "displayName": "Mode",
+                            "domain": "sensor"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "startsWith",
+                          "value": {
+                            "kind": {
+                              "kind": "literal",
+                              "value": "AWAY"
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "id": "TTTTTTTT-0000-4000-8000-000000000011",
+                        "value": {
+                          "kind": {
+                            "kind": "entityState",
+                            "entityId": "sensor.mode",
+                            "displayName": "Mode",
+                            "domain": "sensor"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "endsWith",
+                          "value": {
+                            "kind": {
+                              "kind": "literal",
+                              "value": "MODE"
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "id": "TTTTTTTT-0000-4000-8000-000000000012",
+                        "value": {
+                          "kind": {
+                            "kind": "entityState",
+                            "entityId": "sensor.mode",
+                            "displayName": "Mode",
+                            "domain": "sensor"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "isOneOf",
+                          "options": [
+                            "home",
+                            "away mode"
+                          ]
+                        }
+                      },
+                      {
+                        "id": "TTTTTTTT-0000-4000-8000-000000000013",
+                        "value": {
+                          "kind": {
+                            "kind": "entityState",
+                            "entityId": "sensor.mode",
+                            "displayName": "Mode",
+                            "domain": "sensor"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "matchesRegex",
+                          "pattern": "^Away\\s+Mode$"
+                        }
+                      },
+                      {
+                        "id": "TTTTTTTT-0000-4000-8000-000000000014",
+                        "value": {
+                          "kind": {
+                            "kind": "entityState",
+                            "entityId": "sensor.mode",
+                            "displayName": "Mode",
+                            "domain": "sensor"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "notEquals",
+                          "value": {
+                            "kind": {
+                              "kind": "literal",
+                              "value": "Home"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    {
+                      "kind": "setIcon",
+                      "value": {
+                        "kind": {
+                          "kind": "literal",
+                          "value": "house.slash"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "setFontSize",
+                      "number": 20
+                    },
+                    {
+                      "kind": "setRotation",
+                      "number": 45
+                    }
+                  ]
+                }
+              ],
+              "otherwise": [
+                {
+                  "kind": "hide"
+                }
+              ]
+            }
+          ],
+          "frame": {
+            "x": 0.1,
+            "y": 0.1,
+            "width": 0.5,
+            "height": 0.5,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "shape",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000003",
+          "kind": "roundedRectangle",
+          "cornerRadius": 6,
+          "colorSlot": {
+            "baseColorHex": "#111111"
+          },
+          "borderWidth": 1,
+          "rules": [
+            {
+              "id": "RRRRRRRR-0000-4000-8000-000000000019",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000018",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "TTTTTTTT-0000-4000-8000-000000000017",
+                        "value": {
+                          "kind": {
+                            "kind": "entityState",
+                            "entityId": "sensor.humidity",
+                            "displayName": "Humidity",
+                            "domain": "sensor"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "between",
+                          "value": {
+                            "kind": {
+                              "kind": "literal",
+                              "value": "60"
+                            }
+                          },
+                          "upper": {
+                            "kind": {
+                              "kind": "literal",
+                              "value": "40"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    {
+                      "kind": "setBorderColor",
+                      "value": {
+                        "kind": {
+                          "kind": "literal",
+                          "value": "#ABCDEF"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "setBorderWidth",
+                      "number": 3
+                    },
+                    {
+                      "kind": "setColor",
+                      "value": {
+                        "kind": {
+                          "kind": "literal",
+                          "value": "#222222"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "RRRRRRRR-0000-4000-8000-000000000022",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000021",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "TTTTTTTT-0000-4000-8000-000000000020",
+                        "value": {
+                          "kind": {
+                            "kind": "entityState",
+                            "entityId": "sensor.temp",
+                            "displayName": "Temp",
+                            "domain": "sensor"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "lessThan",
+                          "value": {
+                            "kind": {
+                              "kind": "literal",
+                              "value": "70"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    {
+                      "kind": "show"
+                    }
+                  ]
+                }
+              ],
+              "otherwise": [
+                {
+                  "kind": "hide"
+                }
+              ]
+            }
+          ],
+          "frame": {
+            "x": 0.1,
+            "y": 0.1,
+            "width": 0.5,
+            "height": 0.5,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "gauge",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000004",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.humidity",
+              "displayName": "Humidity",
+              "domain": "sensor"
+            }
+          },
+          "minValue": 0,
+          "maxValue": 100,
+          "style": "ring",
+          "lineWidth": 4,
+          "trackColorHex": "#FFFFFF40",
+          "colorSlot": {
+            "baseColorHex": "#0A84FF"
+          },
+          "rules": [
+            {
+              "id": "RRRRRRRR-0000-4000-8000-000000000028",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000024",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "TTTTTTTT-0000-4000-8000-000000000023",
+                        "value": {
+                          "kind": {
+                            "kind": "dataAge"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "isStale"
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    {
+                      "kind": "setColor",
+                      "value": {
+                        "kind": {
+                          "kind": "literal",
+                          "value": "#FF9F0A"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000027",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "TTTTTTTT-0000-4000-8000-000000000025",
+                        "value": {
+                          "kind": {
+                            "kind": "entityState",
+                            "entityId": "light.lamp",
+                            "displayName": "Lamp",
+                            "domain": "light"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "isUnavailable"
+                        }
+                      },
+                      {
+                        "id": "TTTTTTTT-0000-4000-8000-000000000026",
+                        "value": {
+                          "kind": {
+                            "kind": "entityState",
+                            "entityId": "sensor.missing",
+                            "displayName": "Missing",
+                            "domain": "sensor"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "isUnavailable"
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    {
+                      "kind": "setGaugeMax",
+                      "number": 50
+                    },
+                    {
+                      "kind": "setGaugeValue",
+                      "value": {
+                        "kind": {
+                          "kind": "literal",
+                          "value": "25"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "RRRRRRRR-0000-4000-8000-000000000032",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000031",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "TTTTTTTT-0000-4000-8000-000000000029",
+                        "value": {
+                          "kind": {
+                            "kind": "literal",
+                            "value": "  "
+                          }
+                        },
+                        "comparison": {
+                          "kind": "isEmpty"
+                        }
+                      },
+                      {
+                        "id": "TTTTTTTT-0000-4000-8000-000000000030",
+                        "value": {
+                          "kind": {
+                            "kind": "entityState",
+                            "entityId": "sensor.temp",
+                            "displayName": "Temp",
+                            "domain": "sensor"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "equals",
+                          "value": {
+                            "kind": {
+                              "kind": "literal",
+                              "value": "72.5"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    {
+                      "kind": "setOpacity",
+                      "number": 0.25
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "frame": {
+            "x": 0.1,
+            "y": 0.1,
+            "width": 0.5,
+            "height": 0.5,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "wedge",
+        "borderWidth": 2,
+        "rules": [
+          {
+            "id": "RRRRRRRR-0000-4000-8000-000000000035",
+            "cases": [
+              {
+                "id": "CCCCCCCC-0000-4000-8000-000000000034",
+                "when": {
+                  "join": "all",
+                  "tests": [
+                    {
+                      "id": "TTTTTTTT-0000-4000-8000-000000000033",
+                      "value": {
+                        "kind": {
+                          "kind": "entityState",
+                          "entityId": "binary_sensor.door",
+                          "displayName": "Door",
+                          "domain": "binary_sensor"
+                        }
+                      },
+                      "comparison": {
+                        "kind": "isOn"
+                      }
+                    }
+                  ]
+                },
+                "then": [
+                  {
+                    "kind": "setBackgroundColor",
+                    "value": {
+                      "kind": {
+                        "kind": "literal",
+                        "value": "#000000"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "setBorderColor",
+                    "value": {
+                      "kind": {
+                        "kind": "literal",
+                        "value": "#FFFFFF"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "setBorderWidth",
+                    "number": 4
+                  },
+                  {
+                    "kind": "setText",
+                    "value": {
+                      "kind": {
+                        "kind": "literal",
+                        "value": "Door"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "circular",
+      {
+        "cornerBodyShape": "wedge",
+        "borderWidth": 2
+      },
+      "corner",
+      {
+        "cornerBodyShape": "wedge",
+        "borderWidth": 2,
+        "bezelText": {
+          "kind": {
+            "kind": "literal",
+            "value": "Base"
+          }
+        },
+        "rules": [
+          {
+            "id": "RRRRRRRR-0000-4000-8000-000000000038",
+            "cases": [
+              {
+                "id": "CCCCCCCC-0000-4000-8000-000000000037",
+                "when": {
+                  "join": "all",
+                  "tests": [
+                    {
+                      "id": "TTTTTTTT-0000-4000-8000-000000000036",
+                      "value": {
+                        "kind": {
+                          "kind": "entityState",
+                          "entityId": "binary_sensor.door",
+                          "displayName": "Door",
+                          "domain": "binary_sensor"
+                        }
+                      },
+                      "comparison": {
+                        "kind": "isOff"
+                      }
+                    }
+                  ]
+                },
+                "then": [
+                  {
+                    "kind": "setText",
+                    "value": {
+                      "kind": {
+                        "kind": "literal",
+                        "value": "Open"
+                      }
+                    }
+                  }
+                ]
+              }
+            ],
+            "otherwise": [
+              {
+                "kind": "setText",
+                "value": {
+                  "kind": {
+                    "kind": "literal",
+                    "value": "Shut"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {
+      "sensor.temp": {
+        "state": "72.5",
+        "unitOfMeasurement": "°F",
+        "domain": "sensor"
+      },
+      "binary_sensor.door": {
+        "state": "on",
+        "domain": "binary_sensor"
+      },
+      "light.lamp": {
+        "state": "unavailable",
+        "domain": "light"
+      },
+      "sensor.mode": {
+        "state": "Away Mode",
+        "domain": "sensor"
+      },
+      "sensor.humidity": {
+        "state": "48",
+        "domain": "sensor"
+      }
+    },
+    "templateResults": {},
+    "dataAgeSeconds": 30
+  },
+  "expectedCompiled": {
+    "entities": [
+      "binary_sensor.door",
+      "light.lamp",
+      "sensor.humidity",
+      "sensor.missing",
+      "sensor.mode",
+      "sensor.temp"
+    ],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "backgroundColorHex": "#000000",
+      "borderColorHex": "#FFFFFF",
+      "borderWidth": 4,
+      "bezelText": "Door",
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000001",
+          "kind": "text",
+          "isHidden": false,
+          "text": "Fallback",
+          "fontSize": 14,
+          "fontWeight": "bold",
+          "colorHex": "#FF0000",
+          "opacity": 0.5
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000002",
+          "kind": "icon",
+          "isHidden": false,
+          "symbol": "house.slash",
+          "size": 20,
+          "colorHex": "#FFFFFF",
+          "opacity": 1,
+          "frame": {
+            "x": 0.1,
+            "y": 0.1,
+            "width": 0.5,
+            "height": 0.5,
+            "rotationDegrees": 45
+          }
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000003",
+          "kind": "shape",
+          "isHidden": true,
+          "fillColorHex": "#222222",
+          "borderColorHex": "#ABCDEF",
+          "borderWidth": 3,
+          "opacity": 1
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000004",
+          "kind": "gauge",
+          "isHidden": false,
+          "fraction": 0.5,
+          "colorHex": "#0A84FF",
+          "opacity": 0.25
+        }
+      ]
+    },
+    "circular": {
+      "backgroundColorHex": null,
+      "borderColorHex": null,
+      "borderWidth": 2,
+      "bezelText": null,
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000001",
+          "kind": "text",
+          "text": "Fallback",
+          "colorHex": "#FF0000"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000002",
+          "kind": "icon"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000003",
+          "kind": "shape"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000004",
+          "kind": "gauge"
+        }
+      ]
+    },
+    "corner": {
+      "bezelText": "Shut",
+      "borderWidth": 2,
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000001",
+          "kind": "text"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000002",
+          "kind": "icon"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000003",
+          "kind": "shape"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000004",
+          "kind": "gauge"
+        }
+      ]
+    },
+    "forced": [
+      {
+        "ruleId": "RRRRRRRR-0000-4000-8000-000000000008",
+        "branch": "CCCCCCCC-0000-4000-8000-000000000006",
+        "family": "rectangular",
+        "elementId": "EEEEEEEE-0000-4000-8000-000000000001",
+        "expect": {
+          "text": "72.5",
+          "colorHex": "#00FF00",
+          "fontWeight": "bold",
+          "opacity": 1
+        }
+      },
+      {
+        "ruleId": "RRRRRRRR-0000-4000-8000-000000000003",
+        "branch": "otherwise",
+        "family": "circular",
+        "elementId": "EEEEEEEE-0000-4000-8000-000000000001",
+        "expect": {
+          "colorHex": "#0000FF",
+          "fontWeight": "regular",
+          "text": "Fallback"
+        }
+      },
+      {
+        "ruleId": "RRRRRRRR-0000-4000-8000-000000000022",
+        "branch": "CCCCCCCC-0000-4000-8000-000000000021",
+        "family": "corner",
+        "elementId": "EEEEEEEE-0000-4000-8000-000000000003",
+        "expect": {
+          "isHidden": false
+        }
+      },
+      {
+        "ruleId": "RRRRRRRR-0000-4000-8000-000000000028",
+        "branch": "CCCCCCCC-0000-4000-8000-000000000024",
+        "family": "rectangular",
+        "elementId": "EEEEEEEE-0000-4000-8000-000000000004",
+        "expect": {
+          "colorHex": "#FF9F0A",
+          "fraction": 0.48
+        }
+      },
+      {
+        "ruleId": "RRRRRRRR-0000-4000-8000-000000000038",
+        "branch": "CCCCCCCC-0000-4000-8000-000000000037",
+        "family": "corner",
+        "expect": {
+          "bezelText": "Open"
+        }
+      }
+    ]
+  }
+}

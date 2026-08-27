@@ -1,14 +1,16 @@
 // Round trip and lossiness guards for the editor's save path.
 
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { auditUnknownKeys, encodeConfig, newConfig, newElement, parseConfig } from "../src/model.js";
+import { COMPARISON_KINDS, auditUnknownKeys, encodeConfig, newCase, newConfig, newElement, newRule, newStyleChange, newTest, parseConfig, switchComparison, type StyleChangeKind } from "../src/model.js";
 import { deriveDataSources } from "../src/compiler.js";
 import { Draft } from "../src/draft.js";
 import { effectivePlacement, setPlacement } from "../src/editors.js";
 
-const fixture = JSON.parse(readFileSync(join(__dirname, "fixtures", "living_room.json"), "utf8")) as { config: Record<string, unknown> };
+const fixtureDir = join(__dirname, "fixtures");
+const fixtureFiles = readdirSync(fixtureDir).filter((f) => f.endsWith(".json"));
+const fixture = JSON.parse(readFileSync(join(fixtureDir, "living_room.json"), "utf8")) as { config: Record<string, unknown> };
 
 /** Sort keys so two documents compare by content. */
 function canon(v: unknown): unknown {
@@ -22,6 +24,35 @@ describe("encodeConfig", () => {
     const parsed = parseConfig(fixture.config);
     const encoded = encodeConfig(parsed);
     expect(canon(encoded)).toEqual(canon(fixture.config));
+  });
+
+  it.each(fixtureFiles)("round-trips fixture %s, so the file is in canonical Swift form", (file) => {
+    const fx = JSON.parse(readFileSync(join(fixtureDir, file), "utf8")) as { config: Record<string, unknown> };
+    expect(canon(encodeConfig(parseConfig(fx.config)))).toEqual(canon(fx.config));
+    expect(auditUnknownKeys(fx.config)).toEqual([]);
+  });
+
+  it("round-trips every comparison kind and style change kind", () => {
+    const cfg = newConfig("X", 0);
+    const el = newElement("text");
+    const rule = newRule();
+    const c = newCase();
+    c.when.tests = COMPARISON_KINDS.map((k) => { const t = newTest(); t.comparison = switchComparison({ kind: "isOn" }, k); return t; });
+    const kinds = Object.keys({ setColor: 0, setOpacity: 0, setText: 0, setIcon: 0, setFontSize: 0, setFontWeight: 0, setRotation: 0, hide: 0, show: 0, setGaugeValue: 0, setGaugeMin: 0, setGaugeMax: 0, setBorderColor: 0, setBorderWidth: 0, setBackgroundColor: 0 }) as StyleChangeKind[];
+    c.then = kinds.map(newStyleChange);
+    rule.cases = [c];
+    rule.otherwise = [newStyleChange("hide")];
+    el.payload.rules = [rule];
+    cfg.elements.push(el);
+    const enc = encodeConfig(cfg);
+    expect(encodeConfig(parseConfig(enc))).toEqual(enc);
+    const tests = ((enc as { elements: { payload: { rules: { cases: { when: { tests: { comparison: Record<string, unknown> }[] } }[] }[] } }[] }).elements[0]!.payload.rules[0]!.cases[0]!.when.tests);
+    const keysOf = (kind: string) => Object.keys(tests.find((t) => t.comparison.kind === kind)!.comparison).sort();
+    expect(keysOf("isOn")).toEqual(["kind"]);
+    expect(keysOf("between")).toEqual(["kind", "upper", "value"]);
+    expect(keysOf("matchesRegex")).toEqual(["kind", "pattern"]);
+    expect(keysOf("isOneOf")).toEqual(["kind", "options"]);
+    expect(keysOf("equals")).toEqual(["kind", "value"]);
   });
 
   it("is stable: encode(parse(encode(x))) === encode(x)", () => {
