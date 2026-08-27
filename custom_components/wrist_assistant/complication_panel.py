@@ -13,6 +13,7 @@ first thing users would otherwise report.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from pathlib import Path
 
@@ -34,6 +35,10 @@ def _frontend_dir() -> Path:
     return Path(__file__).parent / "frontend"
 
 
+def _bundle_digest(bundle: Path) -> str:
+    return hashlib.sha256(bundle.read_bytes()).hexdigest()[:12]
+
+
 async def async_register_panel(hass: HomeAssistant, version: str) -> None:
     bundle = _frontend_dir() / _BUNDLE_NAME
     if not bundle.is_file():
@@ -50,11 +55,16 @@ async def async_register_panel(hass: HomeAssistant, version: str) -> None:
         )
         hass.data[flag] = True
 
+    # Cache-bust on the bundle's own content, not the integration version: a
+    # dev deploy that only touches the JS would otherwise serve the browser's
+    # stale copy until the next version bump.
+    digest = await hass.async_add_executor_job(_bundle_digest, bundle)
+
     await panel_custom.async_register_panel(
         hass,
         webcomponent_name=_WEBCOMPONENT,
         frontend_url_path=PANEL_URL_PATH,
-        module_url=f"{_STATIC_URL}/{_BUNDLE_NAME}?v={version}",
+        module_url=f"{_STATIC_URL}/{_BUNDLE_NAME}?v={version}-{digest}",
         sidebar_title="Wrist Assistant",
         sidebar_icon="mdi:watch-variant",
         require_admin=True,
