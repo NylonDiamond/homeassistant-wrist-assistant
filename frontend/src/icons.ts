@@ -17,6 +17,8 @@ interface CustomIconResult {
 }
 interface CustomIconSet {
   getIcon(name: string): Promise<CustomIconResult> | CustomIconResult;
+  /** Optional in the Home Assistant custom-icons convention, so always guarded. */
+  getIconList?(): Promise<{ name: string }[]> | { name: string }[];
 }
 
 declare global {
@@ -29,9 +31,24 @@ export function sfToCupertino(symbol: string): string {
   return symbol.trim().replace(/\./g, "-");
 }
 
+/** The reverse. Apple's names use dots and no hyphens, so this round-trips. */
+export function cupertinoToSF(name: string): string {
+  return name.trim().replace(/-/g, ".");
+}
+
 export class PlaceholderIconProvider implements IconProvider {
   render(): TemplateResult | undefined {
     return undefined;
+  }
+
+  available(): boolean {
+    return false;
+  }
+
+  /** Draws nothing, so it can honestly claim no names. The picker falls back to
+   * its own curated catalogue and shows the names without pictures. */
+  names(): string[] {
+    return [];
   }
 }
 
@@ -42,11 +59,46 @@ export class PlaceholderIconProvider implements IconProvider {
 export class CupertinoIconProvider implements IconProvider {
   private cache = new Map<string, CustomIconResult | null>();
   private pending = new Set<string>();
+  private nameList: string[] = [];
+  private nameState: "idle" | "loading" | "loaded" = "idle";
 
   constructor(private readonly onReady: () => void) {}
 
   static available(): boolean {
     return typeof window !== "undefined" && !!window.customIcons?.ios;
+  }
+
+  available(): boolean {
+    return CupertinoIconProvider.available();
+  }
+
+  /** Undefined on the first call; `onReady` fires once the pack has answered.
+   * `getIconList` is optional in the custom-icons convention, so a pack that
+   * draws fine can still settle on an empty list. */
+  names(): string[] | undefined {
+    if (this.nameState === "idle") this.fetchNames();
+    return this.nameState === "loaded" ? this.nameList : undefined;
+  }
+
+  private fetchNames() {
+    this.nameState = "loading";
+    const set = window.customIcons?.ios;
+    if (!set || typeof set.getIconList !== "function") {
+      this.nameState = "loaded";
+      return;
+    }
+    Promise.resolve()
+      .then(() => set.getIconList!())
+      .then((items) => {
+        this.nameList = (items ?? []).map((i) => cupertinoToSF(i.name)).sort();
+      })
+      .catch(() => {
+        this.nameList = [];
+      })
+      .finally(() => {
+        this.nameState = "loaded";
+        this.onReady();
+      });
   }
 
   render(symbol: string, size: number, colorHex: string): TemplateResult | undefined {

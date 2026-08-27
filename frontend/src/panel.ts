@@ -41,6 +41,7 @@ import {
 } from "./resolver.js";
 import { CANVAS, familyTitle, renderLayout, type IconProvider } from "./renderer.js";
 import { makeIconProvider } from "./icons.js";
+import { SymbolBrowser } from "./symbols.js";
 import { Draft } from "./draft.js";
 import { beginGesture, type HandleCorner } from "./interact.js";
 import {
@@ -101,6 +102,7 @@ export class WristAssistantPanel extends LitElement {
   private compiled?: Compiled;
   private compiledDocument?: string;
   private icons: IconProvider = makeIconProvider(() => this.requestUpdate());
+  private symbols = new SymbolBrowser(() => this.requestUpdate());
   private unsubscribe?: () => Promise<void>;
   private templateTimer?: number;
   private debounceTimer?: number;
@@ -252,6 +254,21 @@ export class WristAssistantPanel extends LitElement {
     .chips { display: flex; gap: 6px; flex-wrap: wrap; }
     .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 8px; border: 1px solid var(--divider-color); border-radius: 999px; }
     .value-editor { border-left: 2px solid var(--divider-color); padding-left: 10px; margin: 4px 0 8px; }
+
+    /* Symbol picker */
+    .sym-browse { margin: 6px 0; }
+    .sym-controls { display: flex; gap: 6px; margin-bottom: 6px; }
+    .sym-controls input[type=search] { flex: 1; min-width: 0; }
+    .sym-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 4px; max-height: 240px; overflow-y: auto; padding: 2px; }
+    button.sym { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 5px 2px; background: none; cursor: pointer; color: var(--primary-text-color); border: 1px solid transparent; border-radius: 6px; overflow: hidden; }
+    button.sym:hover { border-color: var(--divider-color); background: var(--secondary-background-color); }
+    button.sym.on { border-color: var(--primary-color); }
+    .sym-glyph { display: flex; align-items: center; justify-content: center; height: 24px; }
+    /* Beats the fill the provider writes as a presentation attribute, so tiles
+       follow the Home Assistant theme instead of the canvas colour. */
+    .sym-glyph svg path { fill: currentColor; fill-opacity: 1; }
+    .sym-none { font-size: 14px; opacity: .4; }
+    .sym-name { font-size: 9px; line-height: 1.1; text-align: center; opacity: .8; overflow-wrap: anywhere; max-height: 22px; overflow: hidden; }
   `;
 
   // ── lifecycle ─────────────────────────────────────────────────────────
@@ -483,6 +500,8 @@ export class WristAssistantPanel extends LitElement {
     return {
       hass: this.hass,
       config: this.draft!.config,
+      icons: this.icons,
+      symbols: this.symbols,
       update: (m, c) => this.mutate(m, c),
       endGesture: () => this.draft?.endGesture(),
       resolve: (v: Value) => resolver.resolve(v),

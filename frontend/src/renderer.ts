@@ -21,6 +21,15 @@ export const CANVAS: Record<"rectangular" | "circular" | "corner", CanvasSize> =
 /** Draws an SF Symbol by name. Returns undefined when the symbol is unknown. */
 export interface IconProvider {
   render(symbol: string, size: number, colorHex: string): TemplateResult | undefined;
+  /** Whether this provider draws anything at all. */
+  available(): boolean;
+  /**
+   * Every name this provider can draw, for the picker to browse, or `undefined`
+   * while that is still being loaded. An empty array means the provider settled
+   * on knowing no names, which is not the same as an absent icon pack: a pack
+   * can draw perfectly well and still decline to enumerate itself.
+   */
+  names(): string[] | undefined;
 }
 
 export interface RenderOptions {

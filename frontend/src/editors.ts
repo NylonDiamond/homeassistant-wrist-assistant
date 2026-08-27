@@ -44,11 +44,16 @@ import {
 } from "./model.js";
 import type { ForcedBranches } from "./resolver.js";
 import type { HassLike } from "./ha-api.js";
-import { familyTitle } from "./renderer.js";
+import { familyTitle, type IconProvider } from "./renderer.js";
+import { CURATED_SYMBOLS, SYMBOL_CATEGORIES, SymbolBrowser, searchSymbols } from "./symbols.js";
 
 export interface EditorHost {
   hass: HassLike;
   config: CustomComplicationConfig;
+  /** Draws and enumerates SF Symbols for the symbol picker. */
+  icons: IconProvider;
+  /** Search text, category and recents for the symbol picker. */
+  symbols: SymbolBrowser;
   /** Mutate the draft. `coalesce` groups rapid edits of one control into one undo step. */
   update(mutate: (cfg: CustomComplicationConfig) => void, coalesce?: string): void;
   endGesture(): void;
@@ -144,6 +149,97 @@ function entityField(host: EditorHost, label: string, ref: EntityRef, set: (ref:
     ${textField("Display name", ref.displayName, (v) => set({ ...ref, displayName: v }))}`;
 }
 
+// ── Symbol picker ─────────────────────────────────────────────────────────
+
+/**
+ * How many tiles the grid draws at once. An installed icon pack can list a few
+ * thousand names and every tile is an inline SVG, so the grid is capped and the
+ * search box is how the rest is reached.
+ */
+const SYMBOL_GRID_LIMIT = 120;
+
+/**
+ * Which names the grid offers.
+ *
+ * The installed pack is the authority on what will actually draw, so when one is
+ * present every list is filtered down to it. A picker tile with no picture in it
+ * helps nobody, and a name the pack lacks can still be typed into the field.
+ * With no pack at all (`known` empty) nothing is filtered and the tiles show
+ * names only.
+ */
+function symbolPool(category: string, query: string, pack: readonly string[], known: Set<string>): string[] {
+  const drawable = (list: readonly string[]) => (known.size === 0 ? [...list] : list.filter((s) => known.has(s)));
+  if (category !== "") return drawable(SYMBOL_CATEGORIES.find((c) => c.name === category)?.symbols ?? []);
+  // Searching reaches the whole pack; browsing starts from the curated set,
+  // which is short enough to skim and ordered by category.
+  if (query.trim() !== "" && pack.length > 0) return [...pack];
+  return drawable(CURATED_SYMBOLS);
+}
+
+function symbolTile(host: EditorHost, name: string, selected: boolean, pick: (n: string) => void): TemplateResult {
+  // The colour passed here is overridden by CSS `currentColor`, which wins over
+  // the presentation attribute the provider writes, so tiles follow the theme.
+  const glyph = host.icons.render(name, 22, "#FFFFFF");
+  return html`<button type="button" class="sym ${selected ? "on" : ""}" title=${name} @click=${() => pick(name)}>
+    <span class="sym-glyph">${glyph ?? html`<span class="sym-none">?</span>`}</span>
+    <span class="sym-name">${name}</span>
+  </button>`;
+}
+
+/** A name field plus a searchable grid of glyphs. Stores the canonical Apple
+ * name, never the Home Assistant asset name. */
+function symbolField(host: EditorHost, symbol: string, set: (v: string) => void, key: string): TemplateResult {
+  const browser = host.symbols;
+  const open = browser.openFor === key;
+  const listed = host.icons.names();
+  const pack = listed ?? [];
+  const known = new Set(pack);
+  const current = symbol.trim();
+  const missing = current !== "" && known.size > 0 && !known.has(current);
+  const pick = (name: string) => {
+    set(name);
+    browser.noteUsed(name);
+  };
+
+  let browsePane: TemplateResult | typeof nothing = nothing;
+  if (open) {
+    const matches = searchSymbols(symbolPool(browser.category, browser.query, pack, known), browser.query);
+    const shown = matches.slice(0, SYMBOL_GRID_LIMIT);
+    const recent = known.size === 0 ? browser.recent : browser.recent.filter((s) => known.has(s));
+    browsePane = html`<div class="sym-browse">
+      <div class="sym-controls">
+        <input type="search" placeholder="Search symbols" .value=${browser.query} @input=${onInput((v) => browser.setQuery(v))} />
+        <select @change=${onInput((v) => browser.setCategory(v))}>
+          <option value="" ?selected=${browser.category === ""}>Starter set</option>
+          ${SYMBOL_CATEGORIES.map((c) => html`<option value=${c.name} ?selected=${c.name === browser.category}>${c.name}</option>`)}
+        </select>
+      </div>
+      ${recent.length === 0 ? nothing : html`<div class="hint">Recent</div>
+        <div class="sym-grid">${recent.map((n) => symbolTile(host, n, n === current, pick))}</div>`}
+      <div class="sym-grid">${shown.map((n) => symbolTile(host, n, n === current, pick))}</div>
+      ${matches.length === 0 ? html`<div class="hint">Nothing matches that search. Any name can still be typed above.</div>` : nothing}
+      ${matches.length > shown.length ? html`<div class="hint">Showing ${shown.length} of ${matches.length}. Type more to narrow it down.</div>` : nothing}
+      ${!host.icons.available()
+        ? html`<div class="hint warn">No icon pack is installed, so the list shows names without pictures. Install the Cupertino Icons frontend to see them.</div>`
+        : listed !== undefined && listed.length === 0
+          ? html`<div class="hint">The icon pack does not list its symbols, so search covers the built-in set only. Any other name can still be typed above.</div>`
+          : nothing}
+    </div>`;
+  }
+
+  return html`
+    <label class="field"><span>Symbol</span>
+      <input type="text" class="mono" .value=${symbol} placeholder="lightbulb.fill"
+        @input=${onInput(set)} @change=${onInput((v) => {
+          // A typed name only joins the recents list once it is known to be
+          // real, so a half finished name never sticks around as a tile.
+          if (known.size === 0 || known.has(v.trim())) browser.noteUsed(v);
+        })} /></label>
+    ${missing ? html`<div class="hint warn">The installed icon pack has no <code>${current}</code>, so the preview shows a placeholder. The watch still draws it if the name is a real SF Symbol.</div>` : nothing}
+    <button type="button" class="link" @click=${() => browser.toggle(key)}>${open ? "Hide symbols" : "Browse symbols"}</button>
+    ${browsePane}`;
+}
+
 // ── Value editor ──────────────────────────────────────────────────────────
 
 const VALUE_KINDS: [ValueKind["kind"], string][] = [
@@ -184,6 +280,8 @@ export interface ValueEditorOptions {
   noFormat?: boolean;
   /** Show the live resolved value. */
   showResolved?: boolean;
+  /** Fixed text is an SF Symbol name, so offer the picker instead of a plain field. */
+  symbol?: boolean;
   /** Undo coalescing key prefix. */
   key: string;
 }
@@ -196,7 +294,9 @@ export function valueEditor(host: EditorHost, value: Value, set: (v: Value) => v
   let body: TemplateResult | typeof nothing = nothing;
   switch (k.kind) {
     case "literal":
-      body = textField("Text", k.value, (v) => setKind({ ...k, value: v }));
+      body = opts.symbol
+        ? symbolField(host, k.value, (v) => setKind({ ...k, value: v }), key)
+        : textField("Text", k.value, (v) => setKind({ ...k, value: v }));
       break;
     case "entityState":
     case "entityAge":
@@ -414,8 +514,8 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       break;
     case "icon":
       content = html`
-        ${valueEditor(host, el.payload.symbol, (v) => upd((e) => { (e as typeof el).payload.symbol = v; }, "symbol"), { noFormat: true, showResolved: true, key: `${key}-symbol` })}
-        <div class="hint">Fixed text is an SF Symbol name such as <code>thermometer.medium</code>. An entity source uses that entity's icon.</div>
+        ${valueEditor(host, el.payload.symbol, (v) => upd((e) => { (e as typeof el).payload.symbol = v; }, "symbol"), { noFormat: true, showResolved: true, symbol: true, key: `${key}-symbol` })}
+        <div class="hint">An entity source uses that entity's own icon instead.</div>
         ${numberField("Icon size (pt)", el.payload.size, (v) => upd((e) => { (e as typeof el).payload.size = v ?? 14; }, "size"), { step: 1, min: 4 })}`;
       break;
     case "gauge":
@@ -672,7 +772,7 @@ function changeEditor(host: EditorHost, ch: StyleChange, i: number, target: Rule
         <button class="link" @click=${() => upd((c) => { c.value = fixed ? { kind: { kind: "entityAttribute", entityId: "", displayName: "", domain: "", attribute: "rgb_color" } } : literal("#FFFFFF"); })}>${fixed ? "Read the colour from a value instead" : "Use a fixed colour instead"}</button>
         ${fixed ? nothing : html`<div class="hint">The value must resolve to a hex colour such as <code>#FF9F0A</code>. Empty or invalid results leave the colour unchanged.</div>`}`;
     } else {
-      body = valueEditor(host, v, (nv) => upd((c) => { c.value = nv; }, "value"), { noFormat: ch.kind === "setIcon", showResolved: true, key: `${key}-value` });
+      body = valueEditor(host, v, (nv) => upd((c) => { c.value = nv; }, "value"), { noFormat: ch.kind === "setIcon", symbol: ch.kind === "setIcon", showResolved: true, key: `${key}-value` });
     }
   } else if (payload === "number") {
     const opts = ch.kind === "setOpacity" ? { step: 0.05, min: 0, max: 1 } : ch.kind === "setRotation" ? { step: 1 } : { step: 0.5, min: 0 };
