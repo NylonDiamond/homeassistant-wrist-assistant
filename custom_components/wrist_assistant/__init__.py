@@ -9,6 +9,7 @@ from pathlib import Path
 
 import voluptuous as vol
 
+from homeassistant import loader
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import (
@@ -37,6 +38,7 @@ from .camera_stream import (
     capture_notification_snapshot,
     jpeg_aspect,
 )
+from .complication_panel import async_register_panel, async_remove_panel
 from .complication_store import ComplicationStore
 from .complication_ws import async_register_websocket_commands
 from .const import (
@@ -787,6 +789,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
 
         hass.data[f"{DOMAIN}_views_registered"] = True
 
+    # The sidebar panel is re-registered on every setup (panel_custom
+    # replaces an existing entry) and removed on unload.
+    integration = await loader.async_get_integration(hass, DOMAIN)
+    await async_register_panel(hass, str(integration.version))
+
     apns_client = await _create_apns_client(hass)
     if apns_client is None:
         runtime_data.apns_client = None
@@ -948,6 +955,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: WristAssistantConfigEnt
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
+        async_remove_panel(hass)
         data: WristAssistantData | None = hass.data.pop(DOMAIN, None)
         if data is not None:
             data.coordinator.async_shutdown()

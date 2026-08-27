@@ -13,6 +13,7 @@ Commands:
     wrist_assistant/complications/save        {owner_iphone_id, document, base_revision?}
     wrist_assistant/complications/delete      {owner_iphone_id, id, base_revision?}
     wrist_assistant/complications/subscribe   {owner_iphone_id?}
+    wrist_assistant/complications/render_values {templates: {key: jinja}}
 
 ``save`` is all-or-nothing: the browser submits the whole document plus the
 revision it loaded. A mismatch returns error code ``conflict`` with the
@@ -29,6 +30,7 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.components.websocket_api import ActiveConnection
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.template import Template, TemplateError
 
 from .complication_store import (
     ComplicationChange,
@@ -47,6 +49,7 @@ _CMD_GET = f"{DOMAIN}/complications/get"
 _CMD_SAVE = f"{DOMAIN}/complications/save"
 _CMD_DELETE = f"{DOMAIN}/complications/delete"
 _CMD_SUBSCRIBE = f"{DOMAIN}/complications/subscribe"
+_CMD_RENDER = f"{DOMAIN}/complications/render_values"
 
 
 def _store(hass: HomeAssistant) -> ComplicationStore | None:
@@ -84,6 +87,7 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_save)
     websocket_api.async_register_command(hass, ws_delete)
     websocket_api.async_register_command(hass, ws_subscribe)
+    websocket_api.async_register_command(hass, ws_render_values)
 
 
 @websocket_api.websocket_command({vol.Required("type"): _CMD_OWNERS})
@@ -296,3 +300,36 @@ def ws_subscribe(
 
     connection.subscriptions[msg["id"]] = store.async_add_listener(_on_change)
     connection.send_result(msg["id"], {"token": store.token})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_RENDER,
+        vol.Required("templates"): {str: str},
+    }
+)
+@callback
+def ws_render_values(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Render a batch of Jinja templates for the preview.
+
+    The browser resolves plain entity states from ``hass.states`` itself; only
+    Jinja needs the server, because the browser must not reimplement Home
+    Assistant's template engine. Each key resolves independently so one bad
+    template does not blank the whole preview: ``{key: {ok, value}}`` or
+    ``{key: {ok: false, error}}``. Renders with the same ``Template`` path the
+    watch's signed ``template`` op uses, so the panel and the watch agree.
+    """
+    results: dict[str, dict[str, Any]] = {}
+    for key, template_str in msg["templates"].items():
+        if not template_str.strip():
+            results[key] = {"ok": False, "error": "empty template"}
+            continue
+        try:
+            value = Template(template_str, hass).async_render(parse_result=False)
+        except TemplateError as err:
+            results[key] = {"ok": False, "error": str(err)}
+            continue
+        results[key] = {"ok": True, "value": value}
+    connection.send_result(msg["id"], {"results": results})
