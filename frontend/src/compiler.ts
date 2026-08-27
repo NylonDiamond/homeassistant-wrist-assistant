@@ -101,14 +101,17 @@ function aggregateExpression(spec: AggregateSpec): string {
   let pipeline = scope;
   const sf = spec.stateFilter;
   if (sf) {
-    if (sf.kind === "isOn") pipeline += " | selectattr('state','eq','on')";
-    else if (sf.kind === "isOff") pipeline += " | selectattr('state','eq','off')";
-    else if (sf.kind === "equals") pipeline += ` | selectattr('state','eq',${quote(sf.value)})`;
-    else pipeline += ` | rejectattr('state','eq',${quote(sf.value)})`;
+    // Spacing here is load-bearing: the expression string is hashed into the value
+    // key, so a stray space would give Swift and the browser different keys for the
+    // same aggregate. Match CustomComplicationCompiler.aggregateExpression exactly.
+    if (sf.kind === "isOn") pipeline += " | selectattr('state', 'eq', 'on')";
+    else if (sf.kind === "isOff") pipeline += " | selectattr('state', 'eq', 'off')";
+    else if (sf.kind === "equals") pipeline += ` | selectattr('state', 'eq', ${quote(sf.value)})`;
+    else pipeline += ` | rejectattr('state', 'eq', ${quote(sf.value)})`;
   }
   if (spec.function === "count") return `(${pipeline} | list | count)`;
   const attr = spec.attribute ? `attributes.${spec.attribute}` : "state";
-  const numbers = `${pipeline} | map(attribute='${attr}') | map('float', 0) | list`;
+  const numbers = `${pipeline} | map(attribute=${quote(attr)}) | map('float', 0) | list`;
   switch (spec.function) {
     case "sum": return `(${numbers} | sum)`;
     case "average": return `(${numbers} | average(0))`;
