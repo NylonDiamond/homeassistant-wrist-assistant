@@ -152,28 +152,46 @@ function entityField(host: EditorHost, label: string, ref: EntityRef, set: (ref:
 // ── Symbol picker ─────────────────────────────────────────────────────────
 
 /**
- * How many tiles the grid draws at once. An installed icon pack can list a few
- * thousand names and every tile is an inline SVG, so the grid is capped and the
- * search box is how the rest is reached.
+ * How many tiles the grid draws when the pool is the whole icon pack. Every tile
+ * is an inline SVG fetched on demand, and a one letter search can match
+ * thousands, so that case is capped and the search box is how the rest is
+ * reached. The curated pools are at most a few hundred names and always draw in
+ * full, which keeps browsing free of "showing some of" arithmetic.
  */
 const SYMBOL_GRID_LIMIT = 120;
 
 /**
- * Which names the grid offers.
+ * Which names the grid offers, and whether they came from the icon pack rather
+ * than the curated catalogue.
  *
  * The installed pack is the authority on what will actually draw, so when one is
- * present every list is filtered down to it. A picker tile with no picture in it
- * helps nobody, and a name the pack lacks can still be typed into the field.
- * With no pack at all (`known` empty) nothing is filtered and the tiles show
- * names only.
+ * present every curated list is filtered down to it. A picker tile with no
+ * picture in it helps nobody, and a name the pack lacks can still be typed into
+ * the field. With no pack at all (`known` empty) nothing is filtered and the
+ * tiles show names only.
  */
-function symbolPool(category: string, query: string, pack: readonly string[], known: Set<string>): string[] {
+export function symbolPool(
+  category: string,
+  query: string,
+  pack: readonly string[],
+  known: Set<string>
+): { names: string[]; fromPack: boolean } {
   const drawable = (list: readonly string[]) => (known.size === 0 ? [...list] : list.filter((s) => known.has(s)));
-  if (category !== "") return drawable(SYMBOL_CATEGORIES.find((c) => c.name === category)?.symbols ?? []);
+  if (category !== "") {
+    return { names: drawable(SYMBOL_CATEGORIES.find((c) => c.name === category)?.symbols ?? []), fromPack: false };
+  }
   // Searching reaches the whole pack; browsing starts from the curated set,
   // which is short enough to skim and ordered by category.
-  if (query.trim() !== "" && pack.length > 0) return [...pack];
-  return drawable(CURATED_SYMBOLS);
+  if (query.trim() !== "" && pack.length > 0) return { names: [...pack], fromPack: true };
+  return { names: drawable(CURATED_SYMBOLS), fromPack: false };
+}
+
+/** The line under the grid. Never says "x of x": a count is a total when nothing
+ * was left out, and only the truncated case needs the arithmetic. */
+export function symbolCount(shown: number, total: number, searching: boolean): string {
+  if (total > shown) return `Showing ${shown} of ${total}. Type more to narrow it down.`;
+  if (searching) return total === 1 ? "1 symbol matches." : `${total} symbols match.`;
+  return total === 1 ? "1 symbol available." : `${total} symbols available.`;
 }
 
 function symbolTile(host: EditorHost, name: string, selected: boolean, pick: (n: string) => void): TemplateResult {
@@ -203,8 +221,9 @@ function symbolField(host: EditorHost, symbol: string, set: (v: string) => void,
 
   let browsePane: TemplateResult | typeof nothing = nothing;
   if (open) {
-    const matches = searchSymbols(symbolPool(browser.category, browser.query, pack, known), browser.query);
-    const shown = matches.slice(0, SYMBOL_GRID_LIMIT);
+    const pool = symbolPool(browser.category, browser.query, pack, known);
+    const matches = searchSymbols(pool.names, browser.query);
+    const shown = pool.fromPack ? matches.slice(0, SYMBOL_GRID_LIMIT) : matches;
     const recent = known.size === 0 ? browser.recent : browser.recent.filter((s) => known.has(s));
     browsePane = html`<div class="sym-browse">
       <div class="sym-controls">
@@ -217,8 +236,9 @@ function symbolField(host: EditorHost, symbol: string, set: (v: string) => void,
       ${recent.length === 0 ? nothing : html`<div class="hint">Recent</div>
         <div class="sym-grid">${recent.map((n) => symbolTile(host, n, n === current, pick))}</div>`}
       <div class="sym-grid">${shown.map((n) => symbolTile(host, n, n === current, pick))}</div>
-      ${matches.length === 0 ? html`<div class="hint">Nothing matches that search. Any name can still be typed above.</div>` : nothing}
-      ${matches.length > shown.length ? html`<div class="hint">Showing ${shown.length} of ${matches.length}. Type more to narrow it down.</div>` : nothing}
+      ${matches.length === 0
+        ? html`<div class="hint">Nothing matches that search. Any name can still be typed above.</div>`
+        : html`<div class="hint">${symbolCount(shown.length, matches.length, browser.query.trim() !== "")}</div>`}
       ${!host.icons.available()
         ? html`<div class="hint warn">No icon pack is installed, so the list shows names without pictures. Install the Cupertino Icons frontend to see them.</div>`
         : listed !== undefined && listed.length === 0
