@@ -60,9 +60,27 @@ function expectSubset(actual: Record<string, unknown>, expected: Record<string, 
   }
 }
 
+/** A UUID-shaped string whose digits are not all hexadecimal. */
+const UUID_SHAPED = /^[0-9A-Za-z]{8}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{12}$/;
+const REAL_UUID = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
+
+function badUUIDs(value: unknown, found: string[] = []): string[] {
+  if (Array.isArray(value)) value.forEach((v) => badUUIDs(v, found));
+  else if (value && typeof value === "object") Object.values(value).forEach((v) => badUUIDs(v, found));
+  else if (typeof value === "string" && UUID_SHAPED.test(value) && !REAL_UUID.test(value)) found.push(value);
+  return found;
+}
+
 describe.each(files)("fixture %s", (file) => {
   const fx = JSON.parse(readFileSync(join(dir, file), "utf8")) as Fixture;
   const config = parseConfig(fx.config);
+
+  // TypeScript keeps ids as plain strings, so a mnemonic id like `RRRRRRRR-…` reads fine
+  // here and then fails to decode on the Swift side, where every id is a real `UUID`.
+  // Catch it where the fixtures are written instead.
+  it("uses only valid hexadecimal UUIDs", () => {
+    expect(badUUIDs(fx)).toEqual([]);
+  });
 
   it("compiles to the expected keys and document", () => {
     if (!fx.expectedCompiled) return;

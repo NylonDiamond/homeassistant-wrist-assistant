@@ -53,7 +53,7 @@
           "colorSlot": { "baseColorHex": "#FFFFFF" },
           "rules": [
             {
-              "id": "R1R1R1R1-0000-4000-8000-000000000001",
+              "id": "D1D1D1D1-0000-4000-8000-000000000001",
               "cases": [
                 {
                   "id": "C1C1C1C1-0000-4000-8000-000000000001",
@@ -61,7 +61,7 @@
                     "join": "all",
                     "tests": [
                       {
-                        "id": "T1T1T1T1-0000-4000-8000-000000000001",
+                        "id": "B1B1B1B1-0000-4000-8000-000000000001",
                         "value": { "kind": { "kind": "named", "id": "11111111-1111-4111-8111-111111111111" } },
                         "comparison": { "kind": "greaterThan", "value": { "kind": { "kind": "literal", "value": "80" } } }
                       }
@@ -180,7 +180,7 @@
       ]
     },
     "forcedCase": {
-      "ruleId": "R1R1R1R1-0000-4000-8000-000000000001",
+      "ruleId": "D1D1D1D1-0000-4000-8000-000000000001",
       "caseId": "C1C1C1C1-0000-4000-8000-000000000001",
       "rectangularTextColorHex": "#FF453A"
     }

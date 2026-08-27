@@ -1,0 +1,234 @@
+{
+  "name": "aggregates",
+  "description": "Every aggregate scope and state filter, pinned as an exact compiled document. The expression strings are hashed into the value keys, so a single character of drift between Swift and TypeScript gives the two sides different keys for the same value and the panel's preview silently stops matching the watch.",
+  "config": {
+    "schemaVersion": 4,
+    "id": "7C1F0E2A-3B4D-4E5F-8A9B-0C1D2E3F4A5B",
+    "name": "Aggregates",
+    "slotIndex": 0,
+    "supportedFamilies": [
+      "rectangular",
+      "circular",
+      "corner"
+    ],
+    "values": [
+      {
+        "id": "AAAAAAA1-0000-4000-8000-000000000001",
+        "name": "Lights",
+        "value": {
+          "kind": {
+            "kind": "aggregate",
+            "aggregate": {
+              "function": "count",
+              "scope": {
+                "kind": "entities",
+                "entities": [
+                  {
+                    "entityId": "light.kitchen",
+                    "displayName": "Kitchen",
+                    "domain": "light",
+                    "iconName": "lightbulb"
+                  },
+                  {
+                    "entityId": "light.hall",
+                    "displayName": "Hall",
+                    "domain": "light",
+                    "iconName": "lightbulb"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "AAAAAAA2-0000-4000-8000-000000000002",
+        "name": "LightsOn",
+        "value": {
+          "kind": {
+            "kind": "aggregate",
+            "aggregate": {
+              "function": "count",
+              "scope": {
+                "kind": "filter",
+                "domains": [
+                  "light"
+                ],
+                "areaIds": [],
+                "labelIds": [],
+                "floorIds": []
+              },
+              "stateFilter": {
+                "kind": "isOn"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "AAAAAAA3-0000-4000-8000-000000000003",
+        "name": "OpenDoors",
+        "value": {
+          "kind": {
+            "kind": "aggregate",
+            "aggregate": {
+              "function": "count",
+              "scope": {
+                "kind": "filter",
+                "domains": [
+                  "binary_sensor"
+                ],
+                "areaIds": [],
+                "labelIds": [],
+                "floorIds": []
+              },
+              "stateFilter": {
+                "kind": "notEquals",
+                "value": "off"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "AAAAAAA4-0000-4000-8000-000000000004",
+        "name": "AvgBrightness",
+        "value": {
+          "kind": {
+            "kind": "aggregate",
+            "aggregate": {
+              "function": "average",
+              "scope": {
+                "kind": "filter",
+                "domains": [
+                  "light"
+                ],
+                "areaIds": [
+                  "kitchen"
+                ],
+                "labelIds": [],
+                "floorIds": []
+              },
+              "stateFilter": {
+                "kind": "equals",
+                "value": "on"
+              },
+              "attribute": "brightness"
+            }
+          }
+        }
+      },
+      {
+        "id": "AAAAAAA5-0000-4000-8000-000000000005",
+        "name": "MinTemp",
+        "value": {
+          "kind": {
+            "kind": "aggregate",
+            "aggregate": {
+              "function": "min",
+              "scope": {
+                "kind": "filter",
+                "domains": [],
+                "areaIds": [],
+                "labelIds": [
+                  "cold"
+                ],
+                "floorIds": [
+                  "upstairs"
+                ]
+              }
+            }
+          }
+        }
+      }
+    ],
+    "elements": [
+      {
+        "kind": "text",
+        "payload": {
+          "id": "BBBBBBBB-0000-4000-8000-000000000001",
+          "value": {
+            "kind": {
+              "kind": "named",
+              "id": "AAAAAAA2-0000-4000-8000-000000000002"
+            }
+          },
+          "fontSize": 18,
+          "fontWeight": "regular",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 1,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "wedge",
+        "borderWidth": 2
+      },
+      "circular",
+      {
+        "cornerBodyShape": "wedge",
+        "borderWidth": 2
+      },
+      "corner",
+      {
+        "cornerBodyShape": "wedge",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 0,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {},
+    "templateResults": {
+      "n_aaaaaaa2000040008000000000000002": "3"
+    },
+    "dataAgeSeconds": 0
+  },
+  "expectedCompiled": {
+    "entities": [],
+    "expressionKeys": [
+      "n_aaaaaaa1000040008000000000000001",
+      "n_aaaaaaa2000040008000000000000002",
+      "n_aaaaaaa3000040008000000000000003",
+      "n_aaaaaaa4000040008000000000000004",
+      "n_aaaaaaa5000040008000000000000005"
+    ],
+    "document": "{% set v_n_aaaaaaa1000040008000000000000001 = (expand(['light.kitchen', 'light.hall']) | list | count) %}\n{% set v_n_aaaaaaa2000040008000000000000002 = (((states.light | list)) | selectattr('state', 'eq', 'on') | list | count) %}\n{% set v_n_aaaaaaa3000040008000000000000003 = (((states.binary_sensor | list)) | rejectattr('state', 'eq', 'off') | list | count) %}\n{% set v_n_aaaaaaa4000040008000000000000004 = ((expand(area_entities('kitchen')) | selectattr('domain', 'in', ['light'])) | selectattr('state', 'eq', 'on') | map(attribute='attributes.brightness') | map('float', 0) | list | average(0)) %}\n{% set v_n_aaaaaaa5000040008000000000000005 = ((expand(label_entities('cold') + ((floor_areas('upstairs')) | map('area_entities') | sum(start=[])))) | map(attribute='state') | map('float', 0) | list | min(default=0)) %}\n{{ { \"n_aaaaaaa1000040008000000000000001\": v_n_aaaaaaa1000040008000000000000001, \"n_aaaaaaa2000040008000000000000002\": v_n_aaaaaaa2000040008000000000000002, \"n_aaaaaaa3000040008000000000000003\": v_n_aaaaaaa3000040008000000000000003, \"n_aaaaaaa4000040008000000000000004\": v_n_aaaaaaa4000040008000000000000004, \"n_aaaaaaa5000040008000000000000005\": v_n_aaaaaaa5000040008000000000000005 } | to_json }}"
+  },
+  "expected": {
+    "rectangular": {
+      "bezelText": null,
+      "backgroundColorHex": null,
+      "borderColorHex": null,
+      "borderWidth": 2,
+      "elements": [
+        {
+          "id": "BBBBBBBB-0000-4000-8000-000000000001",
+          "kind": "text",
+          "isHidden": false,
+          "text": "3",
+          "fontSize": 18,
+          "fontWeight": "regular",
+          "colorHex": "#FFFFFF",
+          "opacity": 1
+        }
+      ]
+    }
+  }
+}
