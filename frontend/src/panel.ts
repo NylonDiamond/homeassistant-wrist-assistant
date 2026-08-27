@@ -1,5 +1,5 @@
 // Home Assistant sidebar panel: <wrist-assistant-panel>.
-// Pick an iPhone, pick a complication, edit a browser-side draft with live
+// Pick a watch, pick a complication, edit a browser-side draft with live
 // previews for all three families, then Save with the record's revision so
 // a concurrent edit is caught instead of overwritten (plan §"Save and
 // conflict rules"). Rules are edited in the inspector's Rules tab.
@@ -343,7 +343,7 @@ export class WristAssistantPanel extends LitElement {
       this.loadError = undefined;
       if (!this.ownerId && this.owners.length > 0) {
         const withData = this.owners.find((o) => o.complication_count > 0) ?? this.owners[0]!;
-        await this.selectOwner(withData.owner_iphone_id);
+        await this.selectOwner(withData.owner_watch_id);
       }
     } catch (err) {
       this.loadError = `Could not load devices: ${errText(err)}`;
@@ -722,10 +722,10 @@ export class WristAssistantPanel extends LitElement {
           <button @click=${() => this.redo()} ?disabled=${!d?.canRedo} title="Redo (⇧⌘Z)">Redo</button>
           <button class="primary" @click=${() => void this.save()} ?disabled=${!this.canEdit || !dirty || this.saving} title="Save (⌘S)">${this.saving ? "Saving…" : d?.baseRevision === null ? "Save new" : "Save"}</button>
         </div>
-        <label>iPhone
+        <label>Watch
           <select @change=${(e: Event) => void this.selectOwner((e.target as HTMLSelectElement).value)}>
-            ${this.owners.map((o) => html`<option value=${o.owner_iphone_id} ?selected=${o.owner_iphone_id === this.ownerId}>
-              ${o.device_name ?? o.owner_iphone_id} (${o.complication_count})</option>`)}
+            ${this.owners.map((o) => html`<option value=${o.owner_watch_id} ?selected=${o.owner_watch_id === this.ownerId}>
+              ${o.device_name ?? o.owner_watch_id} (${o.complication_count})</option>`)}
           </select>
         </label>
       </header>
@@ -767,7 +767,7 @@ export class WristAssistantPanel extends LitElement {
         ${this.hass.user?.is_admin ? html`<button class="small" @click=${() => this.startNew(newConfig("New complication", this.freeSlot()))} ?disabled=${this.records.length >= 8}>New</button>` : nothing}
       </h2>
       ${this.records.length === 0 && !(this.draft && this.draft.baseRevision === null)
-        ? html`<div class="empty">No complications for this iPhone yet.</div>`
+        ? html`<div class="empty">No complications for this watch yet.</div>`
         : html`<ul>${this.records.map((r) => html`
             <li class="row ${r.id === this.selectedId ? "selected" : ""}" @click=${() => this.selectRecord(r)}>
               <span>${String(r.document?.name ?? "Untitled")}</span>
@@ -961,7 +961,7 @@ export class WristAssistantPanel extends LitElement {
         <dt>Templates</dt><dd class=${this.templateError ? "err" : "ok"}>${this.templateError ?? (this.compiled?.document ? "rendered" : "none")}</dd>
         <dt>Entities</dt><dd>${this.compiled?.entities.size ?? 0}</dd>
       </dl>
-      <p class="hint" style="margin:8px 0 0">Save writes to Home Assistant. Open Wrist Assistant on the iPhone to send it to the watch.</p>
+      <p class="hint" style="margin:8px 0 0">Save writes to Home Assistant. Open Wrist Assistant on the watch to pull it down.</p>
     </div>`;
   }
 

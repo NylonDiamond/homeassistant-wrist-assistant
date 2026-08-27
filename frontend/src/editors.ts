@@ -456,8 +456,8 @@ export function generalEditor(host: EditorHost): TemplateResult {
   const cfg = host.config;
   const tap = cfg.tapAction;
   const needsEntity = (t: TapAction["type"]) => ["toggleEntity", "runScene", "runScript", "addTodo", "runHTTPAction"].includes(t);
-  // The watch slot is not editable here: only the iPhone knows which of the 8 slots
-  // the preset complications already hold, so it assigns one when it pulls this record.
+  // The watch slot is not editable here yet: the panel picks the first free one
+  // of the 8 when the complication is created.
   return html`
     ${textField("Name", cfg.name, (v) => host.update((c) => { c.name = v; }, "name"))}
     ${numberField("Refresh every (minutes, 0 = never)", cfg.refreshMinutes ?? 0, (v) => host.update((c) => { c.refreshMinutes = v ?? 0; }, "refresh"), { step: 1, min: 0 })}

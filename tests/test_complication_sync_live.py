@@ -3,7 +3,7 @@
 The store is the one writer behind the whole custom complication feature, and
 the rules that matter most are the ones a unit test cannot reach: that a
 revision survives a restart, that two open panels cannot silently overwrite
-each other, and that a phone holding a stale replica can never resurrect a
+each other, and that a watch holding a stale replica can never resurrect a
 complication somebody deleted.
 
 Everything here runs under one throwaway owner id, so the real collection is
@@ -13,7 +13,7 @@ of erasing the row: fresh ids every run would grow the stored file forever,
 while stable ids just revive and re-delete a fixed handful of rows.
 
 Two things about the wire format are worth knowing before reading the
-assertions. Records come back camelCase (`ownerIphoneId`, `updatedAt`). And a
+assertions. Records come back camelCase (`ownerWatchId`, `updatedAt`). And a
 conflict is deliberately not a websocket error: it arrives as an ordinary
 result carrying `ok: false` plus the record that won, because the panel needs
 that record to draw its conflict screen and `send_error` can only carry a
@@ -134,7 +134,7 @@ class Panel:
     def save(self, doc: dict[str, Any], base: Any = ...) -> dict[str, Any]:
         msg: dict[str, Any] = {
             "type": "wrist_assistant/complications/save",
-            "owner_iphone_id": OWNER,
+            "owner_watch_id": OWNER,
             "document": doc,
         }
         if base is not ...:
@@ -144,7 +144,7 @@ class Panel:
     def delete(self, cid: str, base: Any = ...) -> dict[str, Any]:
         msg: dict[str, Any] = {
             "type": "wrist_assistant/complications/delete",
-            "owner_iphone_id": OWNER,
+            "owner_watch_id": OWNER,
             "complication_id": cid,
         }
         if base is not ...:
@@ -154,21 +154,21 @@ class Panel:
     def get(self, cid: str) -> dict[str, Any]:
         return self.command(
             type="wrist_assistant/complications/get",
-            owner_iphone_id=OWNER,
+            owner_watch_id=OWNER,
             complication_id=cid,
         )
 
     def listing(self, include_deleted: bool = False) -> dict[str, Any]:
         reply = self.command(
             type="wrist_assistant/complications/list",
-            owner_iphone_id=OWNER,
+            owner_watch_id=OWNER,
             include_deleted=include_deleted,
         )
         return reply["result"]
 
     def subscribe(self, owner: str = OWNER) -> dict[str, Any]:
         return self.command(
-            type="wrist_assistant/complications/subscribe", owner_iphone_id=owner
+            type="wrist_assistant/complications/subscribe", owner_watch_id=owner
         )
 
 
@@ -291,7 +291,7 @@ def test_deleting_an_already_deleted_record_is_harmless(panel: Panel, fresh):
     assert accepted(first), first
     again = panel.delete(cid, base=rev + 1)
     assert accepted(again), again
-    # Idempotent, so the repeat must not burn a revision the phone would then
+    # Idempotent, so the repeat must not burn a revision the watch would then
     # have to fetch for no change.
     assert record(again)["revision"] == record(first)["revision"]
 
@@ -343,14 +343,14 @@ def test_a_second_panel_is_told_about_the_first_panel_s_save(base_url, token, pa
         event = watcher.event()
         assert event is not None, "no change was pushed to the second panel"
         pushed = event["event"]
-        assert pushed["owner_iphone_id"] == OWNER
+        assert pushed["owner_watch_id"] == OWNER
         assert pushed["record"]["id"] == cid
         assert isinstance(pushed["token"], int)
     finally:
         watcher.close()
 
 
-def test_a_panel_watching_another_iphone_hears_nothing(base_url, token, panel, fresh):
+def test_a_panel_watching_another_watch_hears_nothing(base_url, token, panel, fresh):
     cid, rev = fresh
     watcher = Panel.open(base_url, token)
     try:
@@ -389,7 +389,7 @@ def test_the_stale_panel_loses_and_can_recover(base_url, token, panel, fresh):
 def test_the_collection_survives_a_restart(base_url: str, token: str, session: requests.Session):
     """A restart must change nothing, and must not rewind the store token.
 
-    The token is the whole basis of the phone's "anything new since N?" pull.
+    The token is the whole basis of the watch's "anything new since N?" pull.
     If it ever went backwards across a restart, the next write would reuse a
     number a replica had already seen, and that change would never be fetched.
     """

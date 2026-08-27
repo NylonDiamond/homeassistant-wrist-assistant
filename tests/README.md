@@ -43,7 +43,7 @@ WA_LIVE_RESTART=1 .venv-test/bin/pytest -v tests/test_complication_sync_live.py:
 ```
 
 It is worth running before a release, since a store token that rewound across a
-restart would make the phone miss changes silently rather than fail loudly.
+restart would make the watch miss changes silently rather than fail loudly.
 
 ## Conventions
 
@@ -85,7 +85,7 @@ Always wrap the test body in `try: ... finally: _delete_state(...)` so transient
 ### Complications: reuse ids, because deleting never erases a row
 
 Deleting a complication writes a tombstone rather than removing it, so that a
-stale phone replica cannot resurrect something somebody deleted. A test that
+stale watch replica cannot resurrect something somebody deleted. A test that
 invented a fresh UUID each run would therefore add a permanent row to the
 stored file every single run.
 
@@ -96,9 +96,9 @@ Follow the same pattern for any new complication test, and keep using the
 `wa-test-owner` owner id so the real collection is never written to.
 
 Those rows are invisible in the panel, which lists only owners holding a live
-complication, and they are never sent anywhere, because no phone claims that
+complication, and they are never sent anywhere, because no watch claims that
 owner id. To clear them out anyway, edit
 `/config/.storage/wrist_assistant.custom_complications` on the HA box, drop
-every record whose `ownerIphoneId` starts with `wa-test-`, leave `data.token`
+every record whose `ownerWatchId` starts with `wa-test-`, leave `data.token`
 alone, and restart HA. The restart matters: the running instance holds the
 collection in memory and would otherwise write it straight back over the edit.

@@ -2,17 +2,17 @@
 
 The HA frontend panel is the only editor of custom complications. It talks to
 this module over the authenticated WebSocket the frontend already holds; every
-mutation requires an HA administrator. The iPhone never uses these commands;
+mutation requires an HA administrator. The watch never uses these commands;
 it pulls over the HMAC-signed ``/v2/action`` ops in ``wa_v2_views.py``.
 
 Commands:
 
     wrist_assistant/complications/owners
-    wrist_assistant/complications/list        {owner_iphone_id}
-    wrist_assistant/complications/get         {owner_iphone_id, id}
-    wrist_assistant/complications/save        {owner_iphone_id, document, base_revision?}
-    wrist_assistant/complications/delete      {owner_iphone_id, id, base_revision?}
-    wrist_assistant/complications/subscribe   {owner_iphone_id?}
+    wrist_assistant/complications/list        {owner_watch_id}
+    wrist_assistant/complications/get         {owner_watch_id, id}
+    wrist_assistant/complications/save        {owner_watch_id, document, base_revision?}
+    wrist_assistant/complications/delete      {owner_watch_id, id, base_revision?}
+    wrist_assistant/complications/subscribe   {owner_watch_id?}
     wrist_assistant/complications/render_values {templates: {key: jinja}}
 
 ``save`` is all-or-nothing: the browser submits the whole document plus the
@@ -39,7 +39,7 @@ from .complication_store import (
     ComplicationStoreError,
 )
 from .const import COMPLICATION_MAX_SCHEMA_VERSION, DOMAIN
-from .widget_secret_store import DEVICE_KIND_IPHONE
+from .widget_secret_store import DEVICE_KIND_WATCH
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -95,10 +95,10 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
 def ws_owners(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Every provisioned iPhone, with how many live complications it owns.
+    """Every provisioned watch, with how many live complications it owns.
 
-    Owners come from the widget secret store (an iPhone self-provisions under
-    its own id), not from the complication store, so a phone with nothing
+    Owners come from the widget secret store (a watch self-provisions under
+    its own id), not from the complication store, so a watch with nothing
     saved yet still shows up as a target for the first complication.
     """
     domain_data = hass.data.get(DOMAIN)
@@ -109,33 +109,33 @@ def ws_owners(
     owners: list[dict[str, Any]] = []
     seen: set[str] = set()
     for device_id, entry in domain_data.widget_secret_store.all_entries.items():
-        if entry.device_kind != DEVICE_KIND_IPHONE:
+        if entry.device_kind != DEVICE_KIND_WATCH:
             continue
         seen.add(device_id)
         owners.append(
             {
-                "owner_iphone_id": device_id,
+                "owner_watch_id": device_id,
                 "device_name": entry.device_name,
                 "app_version": entry.app_version,
                 "complication_count": len(store.list(device_id)),
                 "token": store.owner_token(device_id),
             }
         )
-    # An owner whose iPhone entry was removed still has records; list it so
+    # An owner whose watch entry was removed still has records; list it so
     # the data is reachable rather than orphaned.
     for owner in store.owners():
         if owner in seen or store.is_empty(owner):
             continue
         owners.append(
             {
-                "owner_iphone_id": owner,
+                "owner_watch_id": owner,
                 "device_name": None,
                 "app_version": None,
                 "complication_count": len(store.list(owner)),
                 "token": store.owner_token(owner),
             }
         )
-    owners.sort(key=lambda o: (o["device_name"] or "", o["owner_iphone_id"]))
+    owners.sort(key=lambda o: (o["device_name"] or "", o["owner_watch_id"]))
     connection.send_result(
         msg["id"],
         {
@@ -149,7 +149,7 @@ def ws_owners(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_LIST,
-        vol.Required("owner_iphone_id"): str,
+        vol.Required("owner_watch_id"): str,
         vol.Optional("include_deleted", default=False): bool,
     }
 )
@@ -161,11 +161,11 @@ def ws_list(
     if store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
-    owner = msg["owner_iphone_id"]
+    owner = msg["owner_watch_id"]
     connection.send_result(
         msg["id"],
         {
-            "owner_iphone_id": owner,
+            "owner_watch_id": owner,
             "token": store.owner_token(owner),
             "max_schema_version": COMPLICATION_MAX_SCHEMA_VERSION,
             "records": [
@@ -179,7 +179,7 @@ def ws_list(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_GET,
-        vol.Required("owner_iphone_id"): str,
+        vol.Required("owner_watch_id"): str,
         vol.Required("complication_id"): str,
     }
 )
@@ -191,7 +191,7 @@ def ws_get(
     if store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
-    record = store.get(msg["owner_iphone_id"], msg["complication_id"].upper())
+    record = store.get(msg["owner_watch_id"], msg["complication_id"].upper())
     if record is None:
         connection.send_error(msg["id"], "not_found", "no such complication")
         return
@@ -202,7 +202,7 @@ def ws_get(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_SAVE,
-        vol.Required("owner_iphone_id"): str,
+        vol.Required("owner_watch_id"): str,
         vol.Required("document"): dict,
         vol.Optional("base_revision"): vol.Any(int, None),
     }
@@ -219,7 +219,7 @@ def ws_save(
     updated_by = f"ha-panel:{user.name or user.id}" if user else "ha-panel"
     try:
         record = store.save(
-            msg["owner_iphone_id"],
+            msg["owner_watch_id"],
             msg["document"],
             base_revision=msg.get("base_revision"),
             updated_by=updated_by,
@@ -234,7 +234,7 @@ def ws_save(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_DELETE,
-        vol.Required("owner_iphone_id"): str,
+        vol.Required("owner_watch_id"): str,
         vol.Required("complication_id"): str,
         vol.Optional("base_revision"): vol.Any(int, None),
     }
@@ -251,7 +251,7 @@ def ws_delete(
     updated_by = f"ha-panel:{user.name or user.id}" if user else "ha-panel"
     try:
         record = store.delete(
-            msg["owner_iphone_id"],
+            msg["owner_watch_id"],
             msg["complication_id"],
             base_revision=msg.get("base_revision"),
             updated_by=updated_by,
@@ -265,7 +265,7 @@ def ws_delete(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_SUBSCRIBE,
-        vol.Optional("owner_iphone_id"): str,
+        vol.Optional("owner_watch_id"): str,
     }
 )
 @callback
@@ -281,17 +281,17 @@ def ws_subscribe(
     if store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
-    owner_filter = msg.get("owner_iphone_id")
+    owner_filter = msg.get("owner_watch_id")
 
     @callback
     def _on_change(change: ComplicationChange) -> None:
-        if owner_filter is not None and change.owner_iphone_id != owner_filter:
+        if owner_filter is not None and change.owner_watch_id != owner_filter:
             return
         connection.send_message(
             websocket_api.event_message(
                 msg["id"],
                 {
-                    "owner_iphone_id": change.owner_iphone_id,
+                    "owner_watch_id": change.owner_watch_id,
                     "token": change.token,
                     "record": change.record.as_dict(),
                 },

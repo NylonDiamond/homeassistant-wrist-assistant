@@ -24,7 +24,7 @@ export interface HassLike {
 }
 
 export interface OwnerSummary {
-  owner_iphone_id: string;
+  owner_watch_id: string;
   device_name: string | null;
   app_version: string | null;
   complication_count: number;
@@ -33,7 +33,7 @@ export interface OwnerSummary {
 
 export interface ComplicationRecord {
   id: string;
-  ownerIphoneId: string;
+  ownerWatchId: string;
   revision: number;
   token: number;
   updatedAt: string;
@@ -43,7 +43,7 @@ export interface ComplicationRecord {
 }
 
 export interface ChangeEvent {
-  owner_iphone_id: string;
+  owner_watch_id: string;
   token: number;
   record: ComplicationRecord;
 }
@@ -72,11 +72,11 @@ export async function fetchOwners(hass: HassLike) {
 
 export async function fetchList(hass: HassLike, owner: string) {
   return hass.connection.sendMessagePromise<{
-    owner_iphone_id: string;
+    owner_watch_id: string;
     token: number;
     max_schema_version: number;
     records: ComplicationRecord[];
-  }>({ type: `${D}/list`, owner_iphone_id: owner });
+  }>({ type: `${D}/list`, owner_watch_id: owner });
 }
 
 export async function saveRecord(
@@ -87,7 +87,7 @@ export async function saveRecord(
 ) {
   return hass.connection.sendMessagePromise<SaveResult>({
     type: `${D}/save`,
-    owner_iphone_id: owner,
+    owner_watch_id: owner,
     document,
     base_revision: baseRevision,
   });
@@ -101,7 +101,7 @@ export async function deleteRecord(
 ) {
   return hass.connection.sendMessagePromise<SaveResult>({
     type: `${D}/delete`,
-    owner_iphone_id: owner,
+    owner_watch_id: owner,
     // Not `id`: that key is the WebSocket message id and the schema rejects it.
     complication_id: id,
     base_revision: baseRevision,
@@ -114,7 +114,7 @@ export function subscribeChanges(
   callback: (event: ChangeEvent) => void,
 ) {
   const message: Record<string, unknown> = { type: `${D}/subscribe` };
-  if (owner) message.owner_iphone_id = owner;
+  if (owner) message.owner_watch_id = owner;
   return hass.connection.subscribeMessage<ChangeEvent>(callback, message);
 }
 

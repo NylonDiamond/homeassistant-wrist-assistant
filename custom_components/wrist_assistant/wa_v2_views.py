@@ -2750,16 +2750,16 @@ class WAVersionView(HomeAssistantView):
         return self.json(payload)
 
 
-# ── custom complications (iPhone replica pull) ───────────────────────────
+# ── custom complications (watch replica pull) ────────────────────────────
 
 
 async def _op_complications_sync(ctx: _OpContext) -> Response:
     """Return every complication record committed after the caller's token.
 
-    The iPhone is a read-only replica: it pulls this on launch, foreground and
-    manual Sync, applies tombstones first, then forwards the collection to the
-    watch over WatchConnectivity. The owner is always the caller (an iPhone
-    self-provisions under its own id), so no cross-device scoping is possible.
+    The watch is a read-only replica: it pulls this on app foreground and on
+    manual Sync, then applies tombstones first. The owner is always the caller
+    (a watch self-provisions under its own id), so no cross-device scoping is
+    possible.
 
     Body: {"since_token": <int>}  # 0 or absent = full collection incl. tombstones
     Reply: {"token", "since_token", "max_schema_version", "records": [...]}
@@ -2780,11 +2780,11 @@ async def _op_complications_sync(ctx: _OpContext) -> Response:
 
 
 async def _op_complications_restore(ctx: _OpContext) -> Response:
-    """Seed an empty HA collection from the iPhone's last accepted replica.
+    """Seed an empty HA collection from the watch's last accepted replica.
 
     Recovery only (integration reinstalled, store wiped). Refused with a
     signed 409 when HA already holds live complications for this owner, so a
-    stale phone can never overwrite the panel's data. Not an editing path.
+    stale watch can never overwrite the panel's data. Not an editing path.
 
     Body: {"documents": [<CustomComplicationConfig JSON>, ...]}
     """
@@ -2794,7 +2794,7 @@ async def _op_complications_restore(ctx: _OpContext) -> Response:
     store = ctx.domain_data.complication_store
     try:
         records = store.restore(
-            ctx.watch_id, documents, updated_by=f"ios-restore:{ctx.watch_id}"
+            ctx.watch_id, documents, updated_by=f"watch-restore:{ctx.watch_id}"
         )
     except ComplicationConflictError as err:
         return ctx.signed_json(

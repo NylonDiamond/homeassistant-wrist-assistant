@@ -132,8 +132,8 @@ def _new(mod):
     return store
 
 
-OWNER = "iphone-A"
-OTHER = "iphone-B"
+OWNER = "watch-A"
+OTHER = "watch-B"
 
 
 # ── save / revision ────────────────────────────────────────────────────────
@@ -271,7 +271,7 @@ def test_owners_are_isolated(mod):
     assert rec.revision == 1
     assert store.owners() == [OWNER, OTHER]
     with pytest.raises(mod.ComplicationNotFoundError):
-        store.delete("iphone-C", doc["id"], base_revision=None, updated_by="t")
+        store.delete("watch-C", doc["id"], base_revision=None, updated_by="t")
 
 
 # ── change token / sync ────────────────────────────────────────────────────
@@ -307,7 +307,7 @@ def test_listener_fires_on_every_commit(mod):
     # synchronously) but would make a stored reference misleading here.
     remove = store.async_add_listener(
         lambda change: seen.append(
-            (change.owner_iphone_id, change.token, change.record.deleted)
+            (change.owner_watch_id, change.token, change.record.deleted)
         )
     )
     doc = _doc()
@@ -349,7 +349,7 @@ def test_load_skips_malformed_rows_and_heals_token(mod):
         "records": [
             {
                 "id": good["id"],
-                "ownerIphoneId": OWNER,
+                "ownerWatchId": OWNER,
                 "revision": 3,
                 "token": 7,
                 "deleted": False,
@@ -357,7 +357,7 @@ def test_load_skips_malformed_rows_and_heals_token(mod):
             },
             {"id": "broken"},
             "not a dict",
-            {"id": "X", "ownerIphoneId": OWNER, "revision": 1, "deleted": False},
+            {"id": "X", "ownerWatchId": OWNER, "revision": 1, "deleted": False},
         ],
     }
     store = _new(mod)

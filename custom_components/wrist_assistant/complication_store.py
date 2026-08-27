@@ -1,15 +1,15 @@
 """Canonical storage for custom watch complications.
 
 Home Assistant owns custom complication configuration. The HA panel is the only
-editor; iOS keeps a read-only replica and forwards accepted revisions to the
-watch. This module is the single writer behind that design (see
-``docs/custom_complication_ha_editor_mvp.md`` in the app repo).
+editor; the watch keeps a read-only replica that it pulls itself. This module
+is the single writer behind that design (see
+``docs/custom_complication_watch_direct.md`` in the app repo).
 
-Records are scoped by ``owner_iphone_id``, the stable identity an iPhone
-self-provisions under (the same value that links a watch entry to its paired
-iPhone). Each record carries its own monotonic ``revision``; the whole store
-carries one monotonic ``token`` so a client can ask "anything new since N?"
-without downloading every document.
+Records are scoped by ``owner_watch_id``, the stable identity a watch
+self-provisions under (the same id it signs its requests with). Each record
+carries its own monotonic ``revision``; the whole store carries one monotonic
+``token`` so a client can ask "anything new since N?" without downloading every
+document.
 
 Deleting a complication writes a tombstone (``deleted: true``) with a new
 revision instead of erasing the row. A stale device replica must never be able
@@ -50,7 +50,7 @@ _LOGGER = logging.getLogger(__name__)
 _SAVE_DEBOUNCE_SECONDS = 1
 
 # Keys the Swift decoder (`CustomComplicationConfig.init(from:)`) requires. A
-# document missing any of these would throw on the phone, so refuse it here
+# document missing any of these would throw on the watch, so refuse it here
 # rather than store something no client can render.
 _REQUIRED_DOCUMENT_KEYS: dict[str, type | tuple[type, ...]] = {
     "id": str,
@@ -111,7 +111,7 @@ class ComplicationRecord:
     """One stored complication plus its sync envelope."""
 
     id: str
-    owner_iphone_id: str
+    owner_watch_id: str
     revision: int
     token: int
     updated_at: str
@@ -122,7 +122,7 @@ class ComplicationRecord:
     def as_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
-            "ownerIphoneId": self.owner_iphone_id,
+            "ownerWatchId": self.owner_watch_id,
             "revision": self.revision,
             "token": self.token,
             "updatedAt": self.updated_at,
@@ -136,7 +136,7 @@ class ComplicationRecord:
         try:
             record = cls(
                 id=str(raw["id"]),
-                owner_iphone_id=str(raw["ownerIphoneId"]),
+                owner_watch_id=str(raw["ownerWatchId"]),
                 revision=int(raw["revision"]),
                 token=int(raw.get("token", 0)),
                 updated_at=str(raw.get("updatedAt", "")),
@@ -157,7 +157,7 @@ class ComplicationRecord:
 class ComplicationChange:
     """What a listener receives after a commit."""
 
-    owner_iphone_id: str
+    owner_watch_id: str
     token: int
     record: ComplicationRecord
 
@@ -253,7 +253,7 @@ class ComplicationStore:
     """Persistent, owner-scoped collection of complication records."""
 
     def __init__(self, hass: HomeAssistant) -> None:
-        # owner_iphone_id → record id → record
+        # owner_watch_id → record id → record
         self._records: dict[str, dict[str, ComplicationRecord]] = {}
         self._token = 0
         self._listeners: list[ChangeListener] = []
@@ -280,7 +280,7 @@ class ComplicationStore:
             if record is None:
                 skipped += 1
                 continue
-            self._records.setdefault(record.owner_iphone_id, {})[record.id] = record
+            self._records.setdefault(record.owner_watch_id, {})[record.id] = record
             # A token on disk can never be behind a record's token; heal
             # rather than hand out a duplicate on the next commit.
             self._token = max(self._token, record.token)
@@ -338,28 +338,28 @@ class ComplicationStore:
     def owners(self) -> list[str]:
         return sorted(self._records)
 
-    def owner_token(self, owner_iphone_id: str) -> int:
+    def owner_token(self, owner_watch_id: str) -> int:
         """Highest token among this owner's records (0 when empty)."""
-        by_id = self._records.get(owner_iphone_id, {})
+        by_id = self._records.get(owner_watch_id, {})
         return max((r.token for r in by_id.values()), default=0)
 
     def list(
-        self, owner_iphone_id: str, *, include_deleted: bool = False
+        self, owner_watch_id: str, *, include_deleted: bool = False
     ) -> list[ComplicationRecord]:
-        by_id = self._records.get(owner_iphone_id, {})
+        by_id = self._records.get(owner_watch_id, {})
         records = [r for r in by_id.values() if include_deleted or not r.deleted]
         return sorted(records, key=lambda r: (r.document or {}).get("slotIndex", 0))
 
-    def get(self, owner_iphone_id: str, record_id: str) -> ComplicationRecord | None:
-        return self._records.get(owner_iphone_id, {}).get(record_id)
+    def get(self, owner_watch_id: str, record_id: str) -> ComplicationRecord | None:
+        return self._records.get(owner_watch_id, {}).get(record_id)
 
-    def is_empty(self, owner_iphone_id: str) -> bool:
+    def is_empty(self, owner_watch_id: str) -> bool:
         return not any(
-            not r.deleted for r in self._records.get(owner_iphone_id, {}).values()
+            not r.deleted for r in self._records.get(owner_watch_id, {}).values()
         )
 
     def changes_since(
-        self, owner_iphone_id: str, since_token: int
+        self, owner_watch_id: str, since_token: int
     ) -> list[ComplicationRecord]:
         """Every record (live or tombstone) committed after ``since_token``.
 
@@ -367,7 +367,7 @@ class ComplicationStore:
         which is what a fresh replica needs so it can never resurrect a deletion
         it has not yet seen.
         """
-        by_id = self._records.get(owner_iphone_id, {})
+        by_id = self._records.get(owner_watch_id, {})
         return sorted(
             (r for r in by_id.values() if r.token > since_token),
             key=lambda r: r.token,
@@ -379,11 +379,11 @@ class ComplicationStore:
         self._token += 1
         record.token = self._token
         record.updated_at = _now_iso()
-        self._records.setdefault(record.owner_iphone_id, {})[record.id] = record
+        self._records.setdefault(record.owner_watch_id, {})[record.id] = record
         self._schedule_save()
         self._notify(
             ComplicationChange(
-                owner_iphone_id=record.owner_iphone_id,
+                owner_watch_id=record.owner_watch_id,
                 token=self._token,
                 record=record,
             )
@@ -392,7 +392,7 @@ class ComplicationStore:
 
     def save(
         self,
-        owner_iphone_id: str,
+        owner_watch_id: str,
         document: Any,
         *,
         base_revision: int | None,
@@ -405,8 +405,8 @@ class ComplicationStore:
         existing: reviving one requires its current revision, so a stale
         client cannot undo a delete by re-saving an old draft).
         """
-        if not isinstance(owner_iphone_id, str) or not owner_iphone_id:
-            raise ComplicationValidationError("owner_iphone_id is required")
+        if not isinstance(owner_watch_id, str) or not owner_watch_id:
+            raise ComplicationValidationError("owner_watch_id is required")
         document = validate_document(document)
         record_id = _validate_uuid(document["id"], "document.id")
         if base_revision is not None and (
@@ -414,7 +414,7 @@ class ComplicationStore:
         ):
             raise ComplicationValidationError("base_revision must be an integer")
 
-        by_id = self._records.get(owner_iphone_id, {})
+        by_id = self._records.get(owner_watch_id, {})
         existing = by_id.get(record_id)
 
         if existing is None:
@@ -429,7 +429,7 @@ class ComplicationStore:
                 )
             record = ComplicationRecord(
                 id=record_id,
-                owner_iphone_id=owner_iphone_id,
+                owner_watch_id=owner_watch_id,
                 revision=1,
                 token=0,
                 updated_at="",
@@ -453,7 +453,7 @@ class ComplicationStore:
 
     def delete(
         self,
-        owner_iphone_id: str,
+        owner_watch_id: str,
         record_id: str,
         *,
         base_revision: int | None,
@@ -461,7 +461,7 @@ class ComplicationStore:
     ) -> ComplicationRecord:
         """Tombstone one complication. Idempotent on an already-deleted id."""
         record_id = _validate_uuid(record_id, "id")
-        existing = self._records.get(owner_iphone_id, {}).get(record_id)
+        existing = self._records.get(owner_watch_id, {}).get(record_id)
         if existing is None:
             raise ComplicationNotFoundError("no such complication")
         if existing.deleted:
@@ -480,7 +480,7 @@ class ComplicationStore:
 
     def restore(
         self,
-        owner_iphone_id: str,
+        owner_watch_id: str,
         documents: list[Any],
         *,
         updated_by: str,
@@ -488,10 +488,10 @@ class ComplicationStore:
         """Seed an *empty* owner collection from a device replica.
 
         Recovery only. Refuses when the owner already has live records so a
-        stale phone can never overwrite what the panel holds. Every document is
+        stale watch can never overwrite what the panel holds. Every document is
         validated before any is written, so a bad batch stores nothing.
         """
-        if not self.is_empty(owner_iphone_id):
+        if not self.is_empty(owner_watch_id):
             raise ComplicationConflictError(
                 "owner already has complications; restore refused", None
             )
@@ -514,13 +514,13 @@ class ComplicationStore:
         committed: list[ComplicationRecord] = []
         for document in validated:
             record_id = _validate_uuid(document["id"], "document.id")
-            existing = self._records.get(owner_iphone_id, {}).get(record_id)
+            existing = self._records.get(owner_watch_id, {}).get(record_id)
             # A tombstone for this id may exist; revive it with a fresh
             # revision so replicas see the change rather than a stale delete.
             revision = existing.revision + 1 if existing is not None else 1
             record = ComplicationRecord(
                 id=record_id,
-                owner_iphone_id=owner_iphone_id,
+                owner_watch_id=owner_watch_id,
                 revision=revision,
                 token=0,
                 updated_at="",
