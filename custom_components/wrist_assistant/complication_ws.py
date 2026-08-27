@@ -8,6 +8,7 @@ it pulls over the HMAC-signed ``/v2/action`` ops in ``wa_v2_views.py``.
 Commands:
 
     wrist_assistant/complications/owners
+    wrist_assistant/devices/forget            {watch_id, force?}
     wrist_assistant/complications/list        {owner_watch_id}
     wrist_assistant/complications/get         {owner_watch_id, id}
     wrist_assistant/complications/save        {owner_watch_id, document, base_revision?}
@@ -19,6 +20,11 @@ Commands:
 revision it loaded. A mismatch returns error code ``conflict`` with the
 current record so the panel can offer reload / save-as-copy / discard. There
 is deliberately no force flag; last-write-wins is not a path that exists.
+
+``devices/forget`` is the odd one out: it is not a complication command at
+all, it drops a provisioned device from the widget secret store. It lives
+here because ``owners`` is what surfaces that store to a human, so the list
+and the way to prune it stay in one file.
 """
 
 from __future__ import annotations
@@ -30,6 +36,7 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.components.websocket_api import ActiveConnection
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.template import Template, TemplateError
 
 from .complication_store import (
@@ -50,6 +57,7 @@ _CMD_SAVE = f"{DOMAIN}/complications/save"
 _CMD_DELETE = f"{DOMAIN}/complications/delete"
 _CMD_SUBSCRIBE = f"{DOMAIN}/complications/subscribe"
 _CMD_RENDER = f"{DOMAIN}/complications/render_values"
+_CMD_FORGET = f"{DOMAIN}/devices/forget"
 
 
 def _store(hass: HomeAssistant) -> ComplicationStore | None:
@@ -88,6 +96,7 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_delete)
     websocket_api.async_register_command(hass, ws_subscribe)
     websocket_api.async_register_command(hass, ws_render_values)
+    websocket_api.async_register_command(hass, ws_forget_device)
 
 
 @websocket_api.websocket_command({vol.Required("type"): _CMD_OWNERS})
@@ -142,6 +151,84 @@ def ws_owners(
             "owners": owners,
             "max_schema_version": COMPLICATION_MAX_SCHEMA_VERSION,
             "token": store.token,
+        },
+    )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_FORGET,
+        vol.Required("watch_id"): str,
+        vol.Optional("force", default=False): bool,
+    }
+)
+@callback
+def ws_forget_device(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Drop one provisioned device from the widget secret store.
+
+    The same teardown ``async_remove_config_entry_device`` performs when an
+    admin deletes the device from HA's UI, reachable without a device
+    registry entry to click on. That matters for anything that provisions an
+    id and then wants it gone again: the HTTP test suite registers throwaway
+    identities on every run, and without this each run left an entry behind
+    that the ``owners`` list then offered as a real watch.
+
+    A device that still holds a push token or a live complication is refused
+    with ``in_use`` unless ``force`` is set, so a mistyped id cannot silently
+    unregister somebody's watch. Removal is not reversible: the device has to
+    re-provision, which the app does on its next foreground identity check.
+    """
+    domain_data = hass.data.get(DOMAIN)
+    if domain_data is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+
+    watch_id = msg["watch_id"]
+    if domain_data.widget_secret_store.get(watch_id) is None:
+        connection.send_error(
+            msg["id"], "not_found", f"no registered device with id {watch_id}"
+        )
+        return
+
+    if not msg["force"]:
+        blockers: list[str] = []
+        if domain_data.notification_store.get_entries(watch_id):
+            blockers.append("a registered push token")
+        if not domain_data.complication_store.is_empty(watch_id):
+            blockers.append("live complications")
+        if blockers:
+            connection.send_error(
+                msg["id"],
+                "in_use",
+                f"{watch_id} still has {' and '.join(blockers)}; "
+                "pass force to remove it anyway",
+            )
+            return
+
+    domain_data.widget_secret_store.remove(watch_id)
+    domain_data.notification_store.remove(watch_id)
+
+    # Removing the store entry strips the device's entities on the next
+    # listener pass, but the device registry record itself would linger as an
+    # empty shell until a restart pruned it. Drop it here so the UI matches
+    # the store, exactly as the UI-initiated removal leaves things.
+    device_registry = dr.async_get(hass)
+    device = device_registry.async_get_device(
+        identifiers={(DOMAIN, f"watch_{watch_id}")}
+    )
+    if device is not None:
+        device_registry.async_remove_device(device.id)
+
+    _LOGGER.info("Forgot device watch_id=%s (force=%s)", watch_id, msg["force"])
+    connection.send_result(
+        msg["id"],
+        {
+            "ok": True,
+            "watch_id": watch_id,
+            "device_removed": device is not None,
         },
     )
 

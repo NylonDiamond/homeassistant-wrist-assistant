@@ -25,11 +25,11 @@ Run from the repo root:
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
 import secrets
 import time
+from collections.abc import Callable
 
 import requests
 
@@ -50,25 +50,6 @@ def _sign_request(
         + body
     )
     return hmac.new(secret, canonical, hashlib.sha256).hexdigest()
-
-
-def _register_key(
-    session: requests.Session, base_url: str, watch_id: str
-) -> bytes:
-    """Register an ephemeral HMAC key (bearer-authed), return its secret bytes."""
-    secret_bytes = secrets.token_bytes(32)
-    r = session.post(
-        f"{base_url}/api/wrist_assistant/v2/register_secret",
-        json={
-            "watch_id": watch_id,
-            "secret_b64": base64.b64encode(secret_bytes).decode("ascii"),
-            "label": "pytest op_service invalid-data regression",
-            "algo": "hmac-sha256",
-        },
-        timeout=10,
-    )
-    assert r.status_code == 200, r.text
-    return secret_bytes
 
 
 def _call_service(
@@ -96,7 +77,7 @@ def _call_service(
 
 
 def test_invalid_service_data_returns_400(
-    base_url: str, session: requests.Session
+    base_url: str, register_secret: Callable[..., bytes]
 ) -> None:
     """A ``uid`` key HA's todo schema rejects must yield 400, never 500.
 
@@ -104,7 +85,9 @@ def test_invalid_service_data_returns_400(
     unhandled 500; the fix returns a clean 400.
     """
     watch_id = f"watch-{secrets.token_hex(8)}"
-    secret = _register_key(session, base_url, watch_id)
+    secret = register_secret(
+        watch_id, label="pytest op_service invalid-data regression"
+    )
 
     body = (
         '{"domain": "todo", "service": "update_item", '
@@ -122,7 +105,7 @@ def test_invalid_service_data_returns_400(
 
 
 def test_valid_service_data_not_rejected(
-    base_url: str, session: requests.Session
+    base_url: str, register_secret: Callable[..., bytes]
 ) -> None:
     """Control: well-formed data must not be caught by the new 400 branch.
 
@@ -130,7 +113,9 @@ def test_valid_service_data_not_rejected(
     catch doesn't over-trigger on valid input.
     """
     watch_id = f"watch-{secrets.token_hex(8)}"
-    secret = _register_key(session, base_url, watch_id)
+    secret = register_secret(
+        watch_id, label="pytest op_service invalid-data regression"
+    )
 
     body = (
         '{"domain": "todo", "service": "get_items", '

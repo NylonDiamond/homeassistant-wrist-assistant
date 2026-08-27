@@ -59,6 +59,32 @@ When a test calls `/api/watch/updates` (or `/v2/delta`), the coordinator creates
 
 The session is still tracked normally inside the coordinator — only the visible device side-effect is suppressed.
 
+### Signed identities: register through the fixture
+
+Anything that needs to sign a v2 request must get its identity from the
+`register_secret` fixture in `conftest.py`, never by posting to
+`/v2/register_secret` directly:
+
+```python
+def test_something(register_secret):
+    watch_id = f"iphone:test-{secrets.token_hex(8)}"
+    secret = register_secret(watch_id, label="pytest something smoke")
+```
+
+The fixture records every id it creates and forgets them all at the end of the
+session over the admin-only `wrist_assistant/devices/forget` WebSocket command.
+Registering by hand is what left 120 abandoned `iphone:test-*` / `watch-*`
+entries in the box's `.storage/wrist_assistant.widget_secrets`, where the
+complication panel's watch picker then offered every one of them as a real
+device.
+
+Extra keyword arguments go into the register payload, so `owner_iphone_id`,
+`app_version`, `app_build`, and `device_name` are all passed the same way.
+
+Cleanup needs an HA instance running an integration build that has the forget
+command. Against an older one the run still passes, with a warning naming the
+ids it could not remove.
+
 ### Test entities — clean up after yourself
 
 Tests that need to fire a real `state_changed` event use HA's REST endpoint to create a uniquely-named entity:

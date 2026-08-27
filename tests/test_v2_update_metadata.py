@@ -12,17 +12,17 @@ Run from the repo root against a dev HA running this integration version:
         pytest -v tests/test_v2_update_metadata.py
 
 Each run registers a fresh ephemeral secret under a randomized
-`iphone:test-*` watch_id, so re-runs don't collide. The integration retains
-those entries; the dev HA can be reset to drop them when they accumulate.
+`iphone:test-*` watch_id, so re-runs don't collide, through the
+`register_secret` fixture, which forgets it again when the session ends.
 """
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
 import secrets
 import time
+from collections.abc import Callable
 
 import pytest
 import requests
@@ -82,27 +82,17 @@ def _post_op(
 
 
 @pytest.fixture
-def registered_watch(
-    base_url: str, session: requests.Session
-) -> tuple[str, bytes]:
+def registered_watch(register_secret: Callable[..., bytes]) -> tuple[str, bytes]:
     """Register an ephemeral HMAC key with initial metadata, as the watch's
     self-provision (or iOS provisioning) would have."""
     watch_id = f"iphone:test-{secrets.token_hex(8)}"
-    secret_bytes = secrets.token_bytes(32)
-    r = session.post(
-        f"{base_url}/api/wrist_assistant/v2/register_secret",
-        json={
-            "watch_id": watch_id,
-            "secret_b64": base64.b64encode(secret_bytes).decode("ascii"),
-            "label": "pytest update_metadata smoke",
-            "algo": "hmac-sha256",
-            "app_version": "0.0.1",
-            "app_build": "1",
-            "device_name": "Pytest Watch",
-        },
-        timeout=10,
+    secret_bytes = register_secret(
+        watch_id,
+        label="pytest update_metadata smoke",
+        app_version="0.0.1",
+        app_build="1",
+        device_name="Pytest Watch",
     )
-    assert r.status_code == 200, r.text
     return watch_id, secret_bytes
 
 
@@ -184,26 +174,18 @@ def test_update_metadata_rejects_bad_signature(
 
 
 def test_update_metadata_cannot_touch_other_watch(
-    base_url: str, session: requests.Session, registered_watch: tuple[str, bytes]
+    base_url: str,
+    register_secret: Callable[..., bytes],
+    registered_watch: tuple[str, bytes],
 ) -> None:
     """The op updates the HMAC-authenticated identity only — there is no
     payload field that can address a different watch's entry."""
     watch_id, secret = registered_watch
 
     other_id = f"iphone:test-{secrets.token_hex(8)}"
-    other_secret = secrets.token_bytes(32)
-    r = session.post(
-        f"{base_url}/api/wrist_assistant/v2/register_secret",
-        json={
-            "watch_id": other_id,
-            "secret_b64": base64.b64encode(other_secret).decode("ascii"),
-            "label": "pytest update_metadata other",
-            "algo": "hmac-sha256",
-            "app_version": "5.5.5",
-        },
-        timeout=10,
+    other_secret = register_secret(
+        other_id, label="pytest update_metadata other", app_version="5.5.5"
     )
-    assert r.status_code == 200, r.text
 
     # Try to smuggle a watch_id into the payload while signed as `watch_id`.
     body = (

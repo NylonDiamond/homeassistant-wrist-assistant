@@ -22,17 +22,17 @@ Run from the repo root:
     HA_URL=https://homeassistant.local:8123 HA_TOKEN=<long-lived> \\
         pytest -v tests/test_v2_companion_authz.py
 
-Each run registers fresh randomized ids so re-runs don't collide. The
-integration retains those entries; the dev HA can be reset to drop them.
+Each run registers fresh randomized ids so re-runs don't collide, through the
+``register_secret`` fixture, which forgets them again when the session ends.
 """
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
 import secrets
 import time
+from collections.abc import Callable
 
 import requests
 
@@ -51,29 +51,16 @@ def _sign_request(
 
 
 def _register_key(
-    session: requests.Session,
-    base_url: str,
+    register_secret: Callable[..., bytes],
     watch_id: str,
     *,
     owner_iphone_id: str | None = None,
 ) -> bytes:
-    """Register an ephemeral HMAC key (bearer-authed), return its secret bytes."""
-    secret_bytes = secrets.token_bytes(32)
-    payload = {
-        "watch_id": watch_id,
-        "secret_b64": base64.b64encode(secret_bytes).decode("ascii"),
-        "label": "pytest companion authz smoke",
-        "algo": "hmac-sha256",
-    }
-    if owner_iphone_id is not None:
-        payload["owner_iphone_id"] = owner_iphone_id
-    r = session.post(
-        f"{base_url}/api/wrist_assistant/v2/register_secret",
-        json=payload,
-        timeout=10,
+    """Register an ephemeral HMAC key, return its secret bytes."""
+    extra = {} if owner_iphone_id is None else {"owner_iphone_id": owner_iphone_id}
+    return register_secret(
+        watch_id, label="pytest companion authz smoke", **extra
     )
-    assert r.status_code == 200, r.text
-    return secret_bytes
 
 
 def _watch_secret_status(
@@ -100,20 +87,24 @@ def _watch_secret_status(
     )
 
 
-def test_owner_can_query_companion(base_url: str, session: requests.Session) -> None:
+def test_owner_can_query_companion(
+    base_url: str, register_secret: Callable[..., bytes]
+) -> None:
     """The owning iPhone may query its paired watch's status (200)."""
     suffix = secrets.token_hex(8)
     owner_id = f"iphone:owner-{suffix}"
     watch_id = f"watch-{suffix}"
-    owner_secret = _register_key(session, base_url, owner_id)
-    _register_key(session, base_url, watch_id, owner_iphone_id=owner_id)
+    owner_secret = _register_key(register_secret, owner_id)
+    _register_key(register_secret, watch_id, owner_iphone_id=owner_id)
 
     r = _watch_secret_status(base_url, owner_id, owner_secret, watch_id)
     assert r.status_code == 200, r.text
     assert r.json()["registered"] is True
 
 
-def test_non_owner_is_rejected(base_url: str, session: requests.Session) -> None:
+def test_non_owner_is_rejected(
+    base_url: str, register_secret: Callable[..., bytes]
+) -> None:
     """A different authenticated iPhone cannot query someone else's watch (403).
 
     The attacker presents a valid HMAC (real registered secret) — auth passes —
@@ -123,23 +114,23 @@ def test_non_owner_is_rejected(base_url: str, session: requests.Session) -> None
     owner_id = f"iphone:owner-{suffix}"
     watch_id = f"watch-{suffix}"
     attacker_id = f"iphone:attacker-{suffix}"
-    _register_key(session, base_url, owner_id)
-    _register_key(session, base_url, watch_id, owner_iphone_id=owner_id)
-    attacker_secret = _register_key(session, base_url, attacker_id)
+    _register_key(register_secret, owner_id)
+    _register_key(register_secret, watch_id, owner_iphone_id=owner_id)
+    attacker_secret = _register_key(register_secret, attacker_id)
 
     r = _watch_secret_status(base_url, attacker_id, attacker_secret, watch_id)
     assert r.status_code == 403, r.text
 
 
 def test_ownerless_watch_allowed_for_backcompat(
-    base_url: str, session: requests.Session
+    base_url: str, register_secret: Callable[..., bytes]
 ) -> None:
     """A watch with no recorded owner stays queryable (pre-owner-tracking compat)."""
     suffix = secrets.token_hex(8)
     watch_id = f"watch-noowner-{suffix}"
     caller_id = f"iphone:caller-{suffix}"
-    _register_key(session, base_url, watch_id)  # no owner_iphone_id
-    caller_secret = _register_key(session, base_url, caller_id)
+    _register_key(register_secret, watch_id)  # no owner_iphone_id
+    caller_secret = _register_key(register_secret, caller_id)
 
     r = _watch_secret_status(base_url, caller_id, caller_secret, watch_id)
     assert r.status_code == 200, r.text

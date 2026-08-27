@@ -12,17 +12,17 @@ Run from the repo root:
         pytest -v tests/test_v2_verify_identity.py
 
 Each run registers a fresh ephemeral secret under a randomized
-`iphone:test-*` watch_id, so re-runs don't collide. The integration retains
-those entries; the dev HA can be reset to drop them when they accumulate.
+`iphone:test-*` watch_id, so re-runs don't collide, through the
+`register_secret` fixture, which forgets it again when the session ends.
 """
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
 import secrets
 import time
+from collections.abc import Callable
 
 import pytest
 import requests
@@ -54,27 +54,14 @@ def _verify_response(
 
 
 @pytest.fixture
-def iphone_key(
-    base_url: str, session: requests.Session
-) -> tuple[str, bytes]:
+def iphone_key(register_secret: Callable[..., bytes]) -> tuple[str, bytes]:
     """Register an ephemeral iPhone-namespaced HMAC key with HA.
 
-    Returns (watch_id, secret_bytes). The bearer-authenticated session
-    fixture from conftest.py covers /v2/register_secret.
+    Returns (watch_id, secret_bytes). The `register_secret` fixture from
+    conftest.py owns the POST and the end-of-session cleanup.
     """
     watch_id = f"iphone:test-{secrets.token_hex(8)}"
-    secret_bytes = secrets.token_bytes(32)
-    r = session.post(
-        f"{base_url}/api/wrist_assistant/v2/register_secret",
-        json={
-            "watch_id": watch_id,
-            "secret_b64": base64.b64encode(secret_bytes).decode("ascii"),
-            "label": "pytest verify_identity smoke",
-            "algo": "hmac-sha256",
-        },
-        timeout=10,
-    )
-    assert r.status_code == 200, r.text
+    secret_bytes = register_secret(watch_id, label="pytest verify_identity smoke")
     return watch_id, secret_bytes
 
 
