@@ -12,6 +12,7 @@
 import { svg, type TemplateResult } from "lit";
 import type { IconProvider } from "./renderer.js";
 import { parseColor } from "./renderer.js";
+import { SYMBOL_DIGEST } from "./symbol-digest.js";
 
 interface CustomIconResult {
   path?: string;
@@ -178,8 +179,10 @@ export class BundledIconProvider implements IconProvider {
     if (this.state !== "idle") return;
     this.state = "loading";
     // Beside the panel bundle, whatever URL that was served from, so the same
-    // code works under a subpath or a reverse proxy.
-    const url = new URL("symbol-icons.json.gz", import.meta.url);
+    // code works under a subpath or a reverse proxy. The digest is in the query
+    // because Home Assistant serves this route with a month of cache, and a
+    // rebuilt symbol file would otherwise stay invisible for that long.
+    const url = new URL(`symbol-icons.json.gz?v=${SYMBOL_DIGEST}`, import.meta.url);
     fetch(url)
       .then((res) => {
         if (!res.ok || !res.body) throw new Error(`symbol file: ${res.status}`);
