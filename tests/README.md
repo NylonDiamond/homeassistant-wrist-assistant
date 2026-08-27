@@ -35,6 +35,16 @@ Single file or test:
 
 The full suite finishes in ~1.5s against a healthy HA.
 
+One test is gated behind an environment variable, because it restarts the Home
+Assistant instance it is pointed at and takes about a minute:
+
+```sh
+WA_LIVE_RESTART=1 .venv-test/bin/pytest -v tests/test_complication_sync_live.py::test_the_collection_survives_a_restart
+```
+
+It is worth running before a release, since a store token that rewound across a
+restart would make the phone miss changes silently rather than fail loudly.
+
 ## Conventions
 
 ### Watch IDs — avoid polluting the device registry
@@ -71,3 +81,24 @@ requests.delete(
 ```
 
 Always wrap the test body in `try: ... finally: _delete_state(...)` so transient state never lingers on HA between runs.
+
+### Complications: reuse ids, because deleting never erases a row
+
+Deleting a complication writes a tombstone rather than removing it, so that a
+stale phone replica cannot resurrect something somebody deleted. A test that
+invented a fresh UUID each run would therefore add a permanent row to the
+stored file every single run.
+
+`test_complication_sync_live.py` derives each test's complication id from the
+test's own name with `uuid.uuid5`, so every run revives and re-deletes the same
+fixed handful of rows. Measured across three consecutive runs: 14 rows, flat.
+Follow the same pattern for any new complication test, and keep using the
+`wa-test-owner` owner id so the real collection is never written to.
+
+Those rows are invisible in the panel, which lists only owners holding a live
+complication, and they are never sent anywhere, because no phone claims that
+owner id. To clear them out anyway, edit
+`/config/.storage/wrist_assistant.custom_complications` on the HA box, drop
+every record whose `ownerIphoneId` starts with `wa-test-`, leave `data.token`
+alone, and restart HA. The restart matters: the running instance holds the
+collection in memory and would otherwise write it straight back over the edit.
