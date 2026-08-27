@@ -180,7 +180,7 @@ def ws_list(
     {
         vol.Required("type"): _CMD_GET,
         vol.Required("owner_iphone_id"): str,
-        vol.Required("id"): str,
+        vol.Required("complication_id"): str,
     }
 )
 @callback
@@ -191,7 +191,7 @@ def ws_get(
     if store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
-    record = store.get(msg["owner_iphone_id"], msg["id"].upper())
+    record = store.get(msg["owner_iphone_id"], msg["complication_id"].upper())
     if record is None:
         connection.send_error(msg["id"], "not_found", "no such complication")
         return
@@ -235,7 +235,7 @@ def ws_save(
     {
         vol.Required("type"): _CMD_DELETE,
         vol.Required("owner_iphone_id"): str,
-        vol.Required("id"): str,
+        vol.Required("complication_id"): str,
         vol.Optional("base_revision"): vol.Any(int, None),
     }
 )
@@ -252,7 +252,7 @@ def ws_delete(
     try:
         record = store.delete(
             msg["owner_iphone_id"],
-            msg["id"],
+            msg["complication_id"],
             base_revision=msg.get("base_revision"),
             updated_by=updated_by,
         )

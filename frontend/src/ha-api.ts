@@ -102,7 +102,8 @@ export async function deleteRecord(
   return hass.connection.sendMessagePromise<SaveResult>({
     type: `${D}/delete`,
     owner_iphone_id: owner,
-    id,
+    // Not `id`: that key is the WebSocket message id and the schema rejects it.
+    complication_id: id,
     base_revision: baseRevision,
   });
 }
