@@ -11,9 +11,15 @@
 // full pack is reached by typing in the search box. Any name at all can still be
 // typed into the field by hand, whether it is in this list or not.
 //
-// Every name here was checked against `NSImage(systemSymbolName:)` on
-// 2026-08-27. Adding an invented name costs the user a placeholder box on the
-// watch with no warning, so re-run that check when extending the list.
+// Every name here passed two checks on 2026-08-27, and both are worth repeating
+// when the list grows:
+//
+//  1. `NSImage(systemSymbolName:)` accepts it. An invented name costs the user a
+//     placeholder box on the watch with no warning at all.
+//  2. The Cupertino Icons pack ships it. Apple keeps old spellings working as
+//     aliases, so `airplayaudio` passes check 1 while only the modern
+//     `airplay.audio` has a glyph to draw, which would leave a tile blank in a
+//     picker whose whole point is the pictures.
 
 export interface SymbolCategory {
   name: string;
@@ -28,15 +34,15 @@ export const SYMBOL_CATEGORIES: SymbolCategory[] = [
       "lamp.desk.fill", "washer.fill", "dryer.fill", "refrigerator.fill", "oven.fill", "dishwasher.fill",
       "microwave.fill", "shower.fill", "bathtub.fill", "toilet.fill", "stairs", "door.left.hand.open",
       "door.left.hand.closed", "window.casement", "curtains.closed", "spigot.fill", "humidifier.fill",
-      "air.purifier.fill", "fan.fill", "fanblades.fill",
+      "air.purifier.fill", "fan.fill", "fan.ceiling.fill",
     ],
   },
   {
     name: "Climate",
     symbols: [
-      "thermometer", "thermometer.medium", "thermometer.low", "thermometer.high", "thermometer.sun.fill",
+      "thermometer.variable", "thermometer.medium", "thermometer.low", "thermometer.high", "thermometer.sun.fill",
       "thermometer.snowflake", "humidity.fill", "drop.fill", "drop.degreesign", "flame.fill", "snowflake",
-      "wind", "air.conditioner.horizontal.fill", "heater.vertical.fill", "gauge.medium",
+      "wind", "air.conditioner.horizontal.fill", "heater.vertical.fill", "gauge.with.needle",
     ],
   },
   {
@@ -71,7 +77,7 @@ export const SYMBOL_CATEGORIES: SymbolCategory[] = [
       "play.fill", "pause.fill", "stop.fill", "forward.fill", "backward.fill", "forward.end.fill",
       "backward.end.fill", "speaker.wave.2.fill", "speaker.wave.3.fill", "speaker.slash.fill",
       "music.note", "music.note.list", "tv", "tv.fill", "appletv.fill", "homepod.fill", "homepod.2.fill",
-      "airplayaudio", "airplayvideo", "hifispeaker.fill", "headphones", "radio.fill", "film.fill",
+      "airplay.audio", "airplay.video", "hifispeaker.fill", "headphones", "radio.fill", "film.fill",
       "photo.fill",
     ],
   },
@@ -97,9 +103,9 @@ export const SYMBOL_CATEGORIES: SymbolCategory[] = [
     symbols: [
       "checkmark", "checkmark.circle.fill", "xmark", "xmark.circle.fill", "exclamationmark.triangle.fill",
       "exclamationmark.circle.fill", "questionmark.circle.fill", "info.circle.fill", "circle.fill",
-      "circle", "largecircle.fill.circle", "minus.circle.fill", "plus.circle.fill", "hand.thumbsup.fill",
+      "circle", "circle.circle.fill", "minus.circle.fill", "plus.circle.fill", "hand.thumbsup.fill",
       "hand.thumbsdown.fill", "star.fill", "heart.fill", "flag.fill", "pin.fill",
-      "wrench.and.screwdriver.fill", "gearshape.fill", "arrow.triangle.2.circlepath", "hourglass",
+      "wrench.and.screwdriver.fill", "gearshape.fill", "hourglass",
       "ellipsis",
     ],
   },
@@ -182,7 +188,7 @@ const ALIASES: Record<string, string[]> = {
   "fan.fill": ["ventilation"],
   "figure.walk": ["motion", "presence"],
   "flame.fill": ["heat", "heating", "boiler", "fire"],
-  "gauge.medium": ["pressure"],
+  "gauge.with.needle": ["pressure"],
   "gearshape.fill": ["settings", "config"],
   "house.fill": ["home"],
   "leaf.fill": ["eco", "plant", "garden"],
