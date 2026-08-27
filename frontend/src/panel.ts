@@ -438,14 +438,6 @@ export class WristAssistantPanel extends LitElement {
     return 0;
   }
 
-  private usedSlots(): Map<number, string> {
-    const m = new Map<number, string>();
-    for (const r of this.records) {
-      if (r.id === this.selectedId || !r.document) continue;
-      m.set(Number(r.document.slotIndex ?? -1), String(r.document.name ?? "Untitled"));
-    }
-    return m;
-  }
 
   // ── draft mutation ────────────────────────────────────────────────────
 
@@ -755,7 +747,7 @@ export class WristAssistantPanel extends LitElement {
         : html`<ul>${this.records.map((r) => html`
             <li class="row ${r.id === this.selectedId ? "selected" : ""}" @click=${() => this.selectRecord(r)}>
               <span>${String(r.document?.name ?? "Untitled")}</span>
-              <span class="meta">slot ${Number(r.document?.slotIndex ?? -1) + 1} · r${r.revision}</span>
+              <span class="meta">r${r.revision}</span>
             </li>`)}
             ${this.draft && this.draft.baseRevision === null ? html`<li class="row selected"><span>${this.draft.config.name}</span><span class="meta">unsaved</span></li>` : nothing}
           </ul>`}
@@ -912,7 +904,7 @@ export class WristAssistantPanel extends LitElement {
       body = familyEditor(host, this.activeFamily);
     } else {
       title = "Complication";
-      body = generalEditor(host, this.usedSlots());
+      body = generalEditor(host);
     }
     return html`<div class="card" style=${this.canEdit ? "" : "pointer-events:none;opacity:.6"} @change=${() => this.draft?.endGesture()}>
       <div class="tabs">

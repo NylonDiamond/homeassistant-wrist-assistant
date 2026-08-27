@@ -297,15 +297,14 @@ const TAP_TYPES: [TapAction["type"], string][] = [
   ["toggleEntity", "Toggle an entity"], ["runScene", "Run a scene"], ["runScript", "Run a script"], ["addTodo", "Add a to-do"], ["runHTTPAction", "Run an HTTP action"],
 ];
 
-export function generalEditor(host: EditorHost, usedSlots: Map<number, string>): TemplateResult {
+export function generalEditor(host: EditorHost): TemplateResult {
   const cfg = host.config;
   const tap = cfg.tapAction;
   const needsEntity = (t: TapAction["type"]) => ["toggleEntity", "runScene", "runScript", "addTodo", "runHTTPAction"].includes(t);
-  const clash = usedSlots.get(cfg.slotIndex);
+  // The watch slot is not editable here: only the iPhone knows which of the 8 slots
+  // the preset complications already hold, so it assigns one when it pulls this record.
   return html`
     ${textField("Name", cfg.name, (v) => host.update((c) => { c.name = v; }, "name"))}
-    ${selectField("Slot", String(cfg.slotIndex), Array.from({ length: 8 }, (_, i): [string, string] => [String(i), `Slot ${i + 1}${usedSlots.has(i) && i !== cfg.slotIndex ? ` (used by ${usedSlots.get(i)})` : ""}`]), (v) => host.update((c) => { c.slotIndex = Number(v); }))}
-    ${clash ? html`<div class="hint warn">"${clash}" already uses this slot. The watch shows one complication per slot.</div>` : nothing}
     ${numberField("Refresh every (minutes, 0 = never)", cfg.refreshMinutes ?? 0, (v) => host.update((c) => { c.refreshMinutes = v ?? 0; }, "refresh"), { step: 1, min: 0 })}
     ${selectField("Tap action", tap.type, TAP_TYPES, (v) => host.update((c) => {
       c.tapAction = needsEntity(v) ? { type: v as "toggleEntity", ...("entityId" in c.tapAction ? { entityId: c.tapAction.entityId, displayName: c.tapAction.displayName, domain: c.tapAction.domain } : { entityId: "", displayName: "", domain: "" }) } : { type: v as "refresh" };
