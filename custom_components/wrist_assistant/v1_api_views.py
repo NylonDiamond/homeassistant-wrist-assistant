@@ -165,7 +165,7 @@ class WatchUpdatesView(HomeAssistantView):
         if body is None:
             return Response(status=status)
 
-        json_bytes = orjson.dumps(body)
+        json_bytes = orjson.dumps(body, option=orjson.OPT_NON_STR_KEYS)
 
         # Gzip compress if the client supports it (skip for tiny payloads)
         accept_encoding = request.headers.get("Accept-Encoding", "")
@@ -260,7 +260,7 @@ class WatchSummaryView(HomeAssistantView):
             "capabilities": coordinator._sorted_capabilities,
         }
 
-        json_bytes = orjson.dumps(body)
+        json_bytes = orjson.dumps(body, option=orjson.OPT_NON_STR_KEYS)
         accept_encoding = request.headers.get("Accept-Encoding", "")
         if "gzip" in accept_encoding and len(json_bytes) > 256:
             compressed = gzip.compress(json_bytes, compresslevel=1)
@@ -343,7 +343,10 @@ class WatchStatesBatchView(HomeAssistantView):
                 append_state(state)
 
         body = {"states": states_out}
-        json_bytes = orjson.dumps(body, default=str)
+        # OPT_NON_STR_KEYS: raw state attributes can carry non-str dict keys
+        # (e.g. `reserved_values: {0: "..."}`); plain orjson.dumps raises
+        # "Dict key must be str" and the view 500s. Matches the v2 signer.
+        json_bytes = orjson.dumps(body, default=str, option=orjson.OPT_NON_STR_KEYS)
 
         accept_encoding = request.headers.get("Accept-Encoding", "")
         if "gzip" in accept_encoding and len(json_bytes) > 256:

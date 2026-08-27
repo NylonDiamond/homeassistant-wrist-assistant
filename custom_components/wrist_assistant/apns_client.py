@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
-from aiohttp import ClientError, ClientSession
+from aiohttp import ClientConnectorError, ClientError, ClientSession, ClientTimeout
 
 from .notifications import NotificationTokenStore, TokenEntry
 
 _LOGGER = logging.getLogger(__name__)
+
+# Bound every relay round trip. Without this aiohttp's session default (300 s
+# total) applies, so a relay that accepts the TCP connection and then stalls
+# pins the calling automation for five minutes before surfacing an error.
+_RELAY_TIMEOUT = ClientTimeout(total=10, connect=5)
+# One retry, only for failures in the connect phase (DNS, refused, unreachable,
+# connect timeout). Those provably never reached the relay, so retrying cannot
+# deliver a push twice. A read-phase timeout is NOT retried for that reason.
+_CONNECT_RETRY_DELAY = 1.0
 
 _DEAD_TOKEN_REASONS = frozenset({
     "BadDeviceToken",
@@ -203,12 +213,26 @@ class APNsClient:
 
     async def _post_json(self, path: str, payload: dict) -> dict | None:
         url = f"{self._relay_base_url}{path}"
-        try:
-            async with self._http_session.post(url, json=payload) as response:
-                return await response.json()
-        except (ClientError, ValueError):
-            _LOGGER.exception("Push relay request failed for %s", path)
-            return None
+        for attempt in (1, 2):
+            try:
+                async with self._http_session.post(
+                    url, json=payload, timeout=_RELAY_TIMEOUT
+                ) as response:
+                    return await response.json()
+            except ClientConnectorError as err:
+                # Never reached the relay: safe to retry exactly once.
+                if attempt == 1:
+                    _LOGGER.debug(
+                        "Push relay connect failed for %s (%s); retrying once", path, err
+                    )
+                    await asyncio.sleep(_CONNECT_RETRY_DELAY)
+                    continue
+                _LOGGER.warning("Push relay unreachable for %s: %s", path, err)
+                return None
+            except (ClientError, TimeoutError, ValueError):
+                _LOGGER.exception("Push relay request failed for %s", path)
+                return None
+        return None
 
     @staticmethod
     def is_dead_token(reason: str | None) -> bool:

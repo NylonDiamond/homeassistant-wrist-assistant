@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import timedelta
 from pathlib import Path
@@ -452,6 +453,7 @@ async def _deliver_push(
     # token (reliable when away; ~15s when the phone is present). Never both.
     sent = 0
     failure_map: dict[str, str] = {}
+    routed: list[tuple[str, TokenEntry]] = []
     for watch_id, entries in targets.items():
         delivery_mode = store.get_watch_metadata(watch_id, "delivery_mode", "mirror")
         tok_entry = _choose_token(entries, delivery_mode)
@@ -464,13 +466,16 @@ async def _deliver_push(
         )
         if tok_entry is None:
             continue
+        routed.append((watch_id, tok_entry))
+
+    async def _send_one(watch_id: str, tok_entry: TokenEntry) -> tuple[bool, str | None, str]:
         # A mirrored (iOS) push with no sound delivers to the wrist silently AND
         # without a haptic — the user never perceives it. Force at least the
         # default alert sound when the chosen token is the companion iPhone.
         target_sound = sound
         if tok_entry.platform == "ios" and not target_sound:
             target_sound = "default"
-        success, reason, used_env = await client.send_push(
+        return await client.send_push(
             watch_id=watch_id,
             device_token=tok_entry.device_token,
             title=title,
@@ -482,6 +487,25 @@ async def _deliver_push(
             environment=tok_entry.environment,
             platform=tok_entry.platform,
         )
+
+    # Fan out: every watch's relay round trip runs concurrently, so a
+    # multi-watch household gets the alert on all wrists at once instead of
+    # one relay RTT apart. Exceptions are folded into failure_map so one bad
+    # target never hides the others' results.
+    results = await asyncio.gather(
+        *(_send_one(wid, tok) for wid, tok in routed), return_exceptions=True
+    )
+    for (watch_id, tok_entry), result in zip(routed, results, strict=True):
+        if isinstance(result, BaseException):
+            _LOGGER.warning(
+                "deliver_push raised for watch_id=%s platform=%s: %s",
+                watch_id,
+                tok_entry.platform,
+                result,
+            )
+            failure_map[watch_id] = "exception"
+            continue
+        success, reason, used_env = result
         if success:
             sent += 1
             _LOGGER.debug(

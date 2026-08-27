@@ -210,6 +210,7 @@ def _process_frame(
 
     img = Image.open(BytesIO(frame_bytes))
     source_w, source_h = img.size
+    _draft_to_needed(img, source_w, source_h, viewport, width, None)
 
     # Crop if viewport is not full-frame
     if not (viewport.x <= 0.001 and viewport.y <= 0.001 and viewport.w >= 0.999 and viewport.h >= 0.999):
@@ -236,10 +237,47 @@ def _process_frame(
     if img.mode not in ("RGB", "L"):
         img = img.convert("RGB")
 
-    # Recompress as JPEG
+    # Recompress as JPEG. optimize=True stays: measured on a 400 px tile it
+    # costs well under 1 ms and saves ~20% bytes, which matters more on the
+    # watch radio than on the server CPU.
     buf = BytesIO()
     img.save(buf, format="JPEG", quality=quality, optimize=True)
     return buf.getvalue(), source_w, source_h
+
+
+def _draft_to_needed(
+    img,
+    source_w: int,
+    source_h: int,
+    viewport: ViewportState,
+    width: int,
+    max_height: int | None,
+) -> None:
+    """Ask the JPEG decoder for a reduced-scale decode when that is enough.
+
+    ``Image.draft`` makes libjpeg decode at 1/2, 1/4 or 1/8 scale (DCT
+    scaling) when the requested size is smaller than the source, which is
+    several times cheaper than decoding a 1080p/4K frame in full and then
+    resizing it down to a 400 px watch tile. The result is never smaller than
+    the requested size, so the crop/resize below still has enough pixels. The
+    requested size is the output size scaled up by the viewport fraction, so a
+    zoomed-in crop keeps its detail. No-op for non-JPEG sources.
+    """
+    if img.format != "JPEG":
+        return
+    vw = max(viewport.w, 0.01)
+    vh = max(viewport.h, 0.01)
+    needed_w = int(width / vw) + 1
+    if max_height is not None:
+        needed_h = int(max_height / vh) + 1
+    else:
+        needed_h = int(needed_w * source_h / max(source_w, 1)) + 1
+    if needed_w >= source_w or needed_h >= source_h:
+        return
+    try:
+        img.draft("RGB", (needed_w, needed_h))
+    except Exception:  # noqa: BLE001 — draft is an optimization only
+        return
 
 
 def _frame_fingerprint(data: bytes) -> int:
@@ -373,7 +411,7 @@ async def run_mjpeg_stream(
     await response.prepare(request)
 
     consecutive_source_errors = 0
-    last_frame_hash: int | None = None
+    last_frame_hash: tuple | None = None
     loop = asyncio.get_running_loop()
 
     # Adaptive frame rate state
@@ -416,8 +454,20 @@ async def run_mjpeg_stream(
                     await asyncio.sleep(max(0, next_frame_at - loop.time()))
                     continue
 
-                # Skip duplicate frames from the source camera
-                frame_hash = _frame_fingerprint(image.content)
+                # Skip duplicate frames from the source camera. The key
+                # includes the output params too: a Crown zoom or a quality
+                # change must re-render the SAME source frame, otherwise the
+                # watch keeps the old crop until the camera itself changes.
+                frame_hash = (
+                    _frame_fingerprint(image.content),
+                    current_viewport.x,
+                    current_viewport.y,
+                    current_viewport.w,
+                    current_viewport.h,
+                    current_width,
+                    current_quality,
+                    fetch_entity,
+                )
                 if frame_hash == last_frame_hash:
                     await asyncio.sleep(max(0, next_frame_at - loop.time()))
                     continue
@@ -531,8 +581,10 @@ def _process_snapshot(
     from PIL import Image  # lazy: see module-top note
 
     img = Image.open(BytesIO(frame_bytes))
+    src_w, src_h = img.size
+    _draft_to_needed(img, src_w, src_h, viewport, width, max_height)
 
-    # Crop from full resolution if viewport is not full-frame
+    # Crop from (possibly draft-reduced) resolution if viewport is not full-frame
     if not (viewport.x <= 0.001 and viewport.y <= 0.001 and viewport.w >= 0.999 and viewport.h >= 0.999):
         img_w, img_h = img.size
         left = int(viewport.x * img_w)

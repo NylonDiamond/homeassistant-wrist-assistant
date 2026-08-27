@@ -637,3 +637,76 @@ def test_run_batch_snapshot_stream_unlimited_concurrency() -> None:
 
         assert max_inflight == 6  # all grabbed in parallel, no cap
         assert resp.body.count(b"X-WA-Status: ok\r\n") == 6
+
+
+# ── Draft-mode (DCT-scaled) decode ────────────────────────────────────────
+# _process_frame / _process_snapshot ask libjpeg for a reduced-scale decode
+# when the output is much smaller than the source. These guard the contract
+# the client relies on: reported source dimensions are the ORIGINAL frame,
+# output size is unchanged, and a zoomed viewport still gets full output width.
+
+
+def test_process_frame_draft_keeps_source_dims_and_output_width() -> None:
+    pytest.importorskip("PIL")
+    with _fresh_camera_stream("cs_draft_frame") as cs:
+        raw = _test_jpeg(3840, 2160)
+        out, source_w, source_h = cs._process_frame(
+            raw, cs.ViewportState(), 400, 75
+        )
+        assert (source_w, source_h) == (3840, 2160)
+        (w, h), _ = _jpeg_dims(out)
+        assert w == 400
+        assert h == 225
+
+
+def test_process_frame_draft_with_zoomed_viewport_keeps_width() -> None:
+    """A quarter-frame crop needs 4x the pixels of the output; draft must not
+    reduce below that, or the crop would come out narrower than requested."""
+    pytest.importorskip("PIL")
+    with _fresh_camera_stream("cs_draft_zoom") as cs:
+        raw = _test_jpeg(3840, 2160)
+        vp = cs.ViewportState(x=0.25, y=0.25, w=0.25, h=0.25)
+        out, source_w, source_h = cs._process_frame(raw, vp, 400, 75)
+        assert (source_w, source_h) == (3840, 2160)
+        (w, h), _ = _jpeg_dims(out)
+        assert w == 400
+        assert abs(h - 225) <= 2
+
+
+def test_process_frame_draft_skipped_for_small_source() -> None:
+    pytest.importorskip("PIL")
+    with _fresh_camera_stream("cs_draft_small") as cs:
+        raw = _test_jpeg(320, 240)
+        out, source_w, source_h = cs._process_frame(
+            raw, cs.ViewportState(), 400, 75
+        )
+        assert (source_w, source_h) == (320, 240)
+        (w, h), _ = _jpeg_dims(out)
+        assert (w, h) == (320, 240)
+
+
+def test_process_snapshot_draft_fits_bounding_box() -> None:
+    pytest.importorskip("PIL")
+    with _fresh_camera_stream("cs_draft_snap") as cs:
+        raw = _test_jpeg(3840, 2160)
+        out = cs._process_snapshot(raw, cs.ViewportState(), 400, 300, 75, 200_000)
+        assert out is not None
+        (w, h), _ = _jpeg_dims(out)
+        assert w == 400
+        assert h == 225
+
+
+def test_process_frame_png_source_unaffected_by_draft() -> None:
+    """draft() is JPEG-only; a PNG source must still go through the normal path."""
+    pytest.importorskip("PIL")
+    from PIL import Image
+
+    with _fresh_camera_stream("cs_draft_png") as cs:
+        buf = BytesIO()
+        Image.new("RGB", (1600, 1200), (5, 5, 5)).save(buf, "PNG")
+        out, source_w, source_h = cs._process_frame(
+            buf.getvalue(), cs.ViewportState(), 400, 75
+        )
+        assert (source_w, source_h) == (1600, 1200)
+        (w, h), _ = _jpeg_dims(out)
+        assert (w, h) == (400, 300)
