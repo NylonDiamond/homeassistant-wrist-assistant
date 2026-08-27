@@ -4,7 +4,7 @@
 // inspect the raw document. Editing arrives in slice 3.
 
 import { LitElement, html, css, nothing, type PropertyValues, type TemplateResult } from "lit";
-import { customElement, property, state } from "lit/decorators.js";
+import { property, state } from "lit/decorators.js";
 import {
   type ComplicationRecord,
   type HassLike,
@@ -35,7 +35,6 @@ import { makeIconProvider } from "./icons.js";
 
 const TEMPLATE_REFRESH_MS = 30_000;
 
-@customElement("wrist-assistant-panel")
 export class WristAssistantPanel extends LitElement {
   @property({ attribute: false }) hass!: HassLike;
   @property({ type: Boolean }) narrow = false;
@@ -461,6 +460,13 @@ function describeValue(v: Value): string {
     case "jinja": return "jinja";
     case "named": return `named ${k.id.slice(0, 8)}`;
   }
+}
+
+// After an HA restart the frontend re-imports the panel module under its
+// new cache-busted URL in the same page, so a plain @customElement would
+// throw "name already used". The old class keeps serving until reload.
+if (!customElements.get("wrist-assistant-panel")) {
+  customElements.define("wrist-assistant-panel", WristAssistantPanel);
 }
 
 declare global {
