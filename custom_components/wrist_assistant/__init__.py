@@ -37,6 +37,8 @@ from .camera_stream import (
     capture_notification_snapshot,
     jpeg_aspect,
 )
+from .complication_store import ComplicationStore
+from .complication_ws import async_register_websocket_commands
 from .const import (
     DOMAIN,
     NOTIFICATION_TOKEN_STORAGE_KEY,
@@ -696,8 +698,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     await snapshot_aspect_store.async_load()
     batch_snapshot_settings_store = BatchSnapshotSettingsStore(hass)
     await batch_snapshot_settings_store.async_load()
+    complication_store = ComplicationStore(hass)
+    await complication_store.async_load()
 
     # Register server capabilities
+    # HA-owned custom complications: iOS checks this before offering the
+    # read-only replica screen and the complications_sync / restore ops.
+    coordinator.register_capability("custom_complications")
     coordinator.register_capability("gzip")
     coordinator.register_capability("slim_payloads")
     coordinator.register_capability("camera_batch")
@@ -724,11 +731,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         snapshot_stream_store=snapshot_stream_store,
         snapshot_aspect_store=snapshot_aspect_store,
         batch_snapshot_settings_store=batch_snapshot_settings_store,
+        complication_store=complication_store,
     )
     entry.runtime_data = runtime_data
     hass.data[DOMAIN] = runtime_data
 
     if not hass.data.get(f"{DOMAIN}_views_registered"):
+        # Panel-facing complication editor API (admin-only mutations).
+        # Registered once per HA process, like the HTTP views below.
+        async_register_websocket_commands(hass)
         # v2 transport: /v2/* HMAC for all watch traffic. WARegisterSecretView
         # is the one bearer-authed exception — iOS posts to it once to
         # provision the per-watch secret, and the secret never leaves iOS

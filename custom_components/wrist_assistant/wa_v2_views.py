@@ -96,8 +96,10 @@ from .camera_stream import (
     run_batch_snapshot_stream,
     run_mjpeg_stream,
 )
+from .complication_store import ComplicationConflictError, ComplicationStoreError
 from .const import (
     APP_UPDATE_MESSAGE,
+    COMPLICATION_MAX_SCHEMA_VERSION,
     DOMAIN,
     MIN_SUPPORTED_APP_PROTOCOL_VERSION,
     WA_PROTOCOL_VERSION,
@@ -2748,8 +2750,73 @@ class WAVersionView(HomeAssistantView):
         return self.json(payload)
 
 
+# ── custom complications (iPhone replica pull) ───────────────────────────
+
+
+async def _op_complications_sync(ctx: _OpContext) -> Response:
+    """Return every complication record committed after the caller's token.
+
+    The iPhone is a read-only replica: it pulls this on launch, foreground and
+    manual Sync, applies tombstones first, then forwards the collection to the
+    watch over WatchConnectivity. The owner is always the caller (an iPhone
+    self-provisions under its own id), so no cross-device scoping is possible.
+
+    Body: {"since_token": <int>}  # 0 or absent = full collection incl. tombstones
+    Reply: {"token", "since_token", "max_schema_version", "records": [...]}
+    """
+    raw_since = ctx.payload.get("since_token", 0)
+    if isinstance(raw_since, bool) or not isinstance(raw_since, int) or raw_since < 0:
+        return Response(status=400, text="since_token must be a non-negative integer")
+    store = ctx.domain_data.complication_store
+    records = store.changes_since(ctx.watch_id, raw_since)
+    return ctx.signed_json(
+        {
+            "token": store.owner_token(ctx.watch_id),
+            "since_token": raw_since,
+            "max_schema_version": COMPLICATION_MAX_SCHEMA_VERSION,
+            "records": [r.as_dict() for r in records],
+        }
+    )
+
+
+async def _op_complications_restore(ctx: _OpContext) -> Response:
+    """Seed an empty HA collection from the iPhone's last accepted replica.
+
+    Recovery only (integration reinstalled, store wiped). Refused with a
+    signed 409 when HA already holds live complications for this owner, so a
+    stale phone can never overwrite the panel's data. Not an editing path.
+
+    Body: {"documents": [<CustomComplicationConfig JSON>, ...]}
+    """
+    documents = ctx.payload.get("documents")
+    if not isinstance(documents, list):
+        return Response(status=400, text="documents must be a list")
+    store = ctx.domain_data.complication_store
+    try:
+        records = store.restore(
+            ctx.watch_id, documents, updated_by=f"ios-restore:{ctx.watch_id}"
+        )
+    except ComplicationConflictError as err:
+        return ctx.signed_json(
+            {"ok": False, "error": err.code, "message": err.message}, status=409
+        )
+    except ComplicationStoreError as err:
+        return ctx.signed_json(
+            {"ok": False, "error": err.code, "message": err.message}, status=400
+        )
+    return ctx.signed_json(
+        {
+            "ok": True,
+            "token": store.owner_token(ctx.watch_id),
+            "records": [r.as_dict() for r in records],
+        }
+    )
+
+
 # Op dispatch table. Adding a new op = add a key here.
 _OP_HANDLERS: dict[str, Any] = {
+    "complications_sync": _op_complications_sync,
+    "complications_restore": _op_complications_restore,
     "service": _op_service,
     "state": _op_state,
     "history": _op_history,

@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from .apns_client import APNsClient
     from .batch_snapshot_settings_store import BatchSnapshotSettingsStore
     from .camera_stream import CameraStreamCoordinator
+    from .complication_store import ComplicationStore
     from .notification_snapshot import NotificationSnapshotStore
     from .notifications import NotificationTokenStore
     from .snapshot_aspect_store import SnapshotAspectStore
@@ -46,6 +47,9 @@ class WristAssistantData:
     # across every paired device — set from the iOS Camera Settings, read per
     # batch stream. Persisted so it survives restarts.
     batch_snapshot_settings_store: BatchSnapshotSettingsStore
+    # Canonical custom watch complications, scoped by owning iPhone. HA is the
+    # only editor; iOS pulls accepted revisions and forwards them to the watch.
+    complication_store: ComplicationStore
     apns_client: APNsClient | None = field(default=None)
 
 
@@ -72,6 +76,20 @@ BATCH_SNAPSHOT_SETTINGS_STORAGE_VERSION = 1
 # even on the first push after a restart.
 SNAPSHOT_ASPECT_STORAGE_KEY = "wrist_assistant.snapshot_aspects"
 SNAPSHOT_ASPECT_STORAGE_VERSION = 1
+# Custom watch complications (owner iPhone → record id → envelope + document).
+# Revisions, tombstones and the collection token live in the envelope; the
+# document is the Apple clients' CustomComplicationConfig JSON, stored as-is.
+COMPLICATION_STORAGE_KEY = "wrist_assistant.custom_complications"
+COMPLICATION_STORAGE_VERSION = 1
+# Highest CustomComplicationConfig schemaVersion this integration can edit.
+# Must track `CustomComplicationConfig.currentSchemaVersion` in the app repo.
+# A newer document is displayed read-only and never re-saved.
+COMPLICATION_MAX_SCHEMA_VERSION = 4
+COMPLICATION_MAX_DOCUMENT_BYTES = 256 * 1024
+COMPLICATION_MAX_LAYERS = 64
+# The watch face picker exposes 8 stable slots (ComplicationStableSlot); one
+# complication per slot at most, so 8 is the ceiling per iPhone.
+COMPLICATION_MAX_PER_OWNER = 8
 
 # Wire-format version of the Wrist Assistant HMAC protocol. The watch app sends
 # `X-WA-Version: <int>` on every signed request; the server rejects versions
