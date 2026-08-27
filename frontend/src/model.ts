@@ -991,8 +991,11 @@ export function auditUnknownKeys(raw: unknown): string[] {
 export function newId(): string {
   const c = globalThis.crypto;
   if (c && "randomUUID" in c) return c.randomUUID().toUpperCase();
+  // Plain-http Home Assistant is not a secure context, so randomUUID is
+  // missing there. Build a real v4: version nibble 4, variant nibble 8..B.
   const hex = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, "0");
-  return `${hex()}${hex()}-${hex()}-4${hex().slice(1)}-${hex()}-${hex()}${hex()}${hex()}`.toUpperCase();
+  const variant = (8 + Math.floor(Math.random() * 4)).toString(16) + hex().slice(1);
+  return `${hex()}${hex()}-${hex()}-4${hex().slice(1)}-${variant}-${hex()}${hex()}${hex()}`.toUpperCase();
 }
 
 export function defaultLayout(): FamilyLayout {
