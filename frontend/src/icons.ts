@@ -1,11 +1,13 @@
 // SF Symbol providers behind one interface so the development and release
 // providers can differ without touching the saved document format.
 //
+// `BundledIconProvider` reads the gzipped symbol file the integration ships
+// beside the panel bundle, so pictures work with nothing else installed.
 // `CupertinoIconProvider` uses the icon set the Home Assistant Cupertino
 // Icons frontend registers on `window.customIcons.ios` (names like
-// `lightbulb-fill` for `lightbulb.fill`). `PlaceholderIconProvider` draws
-// nothing and lets the renderer show its dashed "?" box; it is the fallback
-// when no icon pack is installed.
+// `lightbulb-fill` for `lightbulb.fill`); it stays as a fallback for anyone
+// who already has that integration. `PlaceholderIconProvider` draws nothing
+// and lets the renderer show its dashed "?" box.
 
 import { svg, type TemplateResult } from "lit";
 import type { IconProvider } from "./renderer.js";
@@ -134,6 +136,76 @@ export class CupertinoIconProvider implements IconProvider {
   }
 }
 
+/** One symbol as the build script writes it: the path data, then the viewBox. */
+type BundledIcon = [path: string, viewBox: string];
+
+/**
+ * The symbols the integration ships, in one gzipped file served beside the
+ * panel bundle.
+ *
+ * Home Assistant serves static files uncompressed, so the file arrives zipped
+ * and is unpacked here with `DecompressionStream`. It is fetched once, on the
+ * first question asked of it, and answered from memory after that.
+ */
+export class BundledIconProvider implements IconProvider {
+  private icons = new Map<string, BundledIcon>();
+  private state: "idle" | "loading" | "loaded" = "idle";
+
+  constructor(private readonly onReady: () => void) {}
+
+  /** True once anything has been loaded. Before that the picker cannot tell
+   * this apart from a missing file, which is why nothing warns until the
+   * fetch has settled. */
+  available(): boolean {
+    return this.state !== "loaded" || this.icons.size > 0;
+  }
+
+  names(): string[] | undefined {
+    this.load();
+    return this.state === "loaded" ? [...this.icons.keys()].sort() : undefined;
+  }
+
+  render(symbol: string, size: number, colorHex: string): TemplateResult | undefined {
+    this.load();
+    const icon = this.icons.get(symbol.trim());
+    if (!icon) return undefined;
+    const c = parseColor(colorHex) ?? { color: "#FFFFFF", opacity: 1 };
+    return svg`<svg x="0" y="0" width=${size} height=${size} viewBox=${icon[1]}>
+      <path d=${icon[0]} fill=${c.color} fill-opacity=${c.opacity} /></svg>`;
+  }
+
+  private load() {
+    if (this.state !== "idle") return;
+    this.state = "loading";
+    // Beside the panel bundle, whatever URL that was served from, so the same
+    // code works under a subpath or a reverse proxy.
+    const url = new URL("symbol-icons.json.gz", import.meta.url);
+    fetch(url)
+      .then((res) => {
+        if (!res.ok || !res.body) throw new Error(`symbol file: ${res.status}`);
+        return new Response(res.body.pipeThrough(new DecompressionStream("gzip"))).json();
+      })
+      .then((data: unknown) => {
+        if (data && typeof data === "object") {
+          for (const [name, icon] of Object.entries(data as Record<string, unknown>)) {
+            if (Array.isArray(icon) && typeof icon[0] === "string" && typeof icon[1] === "string") {
+              this.icons.set(name, [icon[0], icon[1]]);
+            }
+          }
+        }
+      })
+      .catch(() => {
+        // A missing or broken file leaves the picker showing names without
+        // pictures, which is worth saying out loud but not worth breaking on.
+      })
+      .finally(() => {
+        this.state = "loaded";
+        this.onReady();
+      });
+  }
+}
+
 export function makeIconProvider(onReady: () => void): IconProvider {
-  return CupertinoIconProvider.available() ? new CupertinoIconProvider(onReady) : new PlaceholderIconProvider();
+  if (CupertinoIconProvider.available()) return new CupertinoIconProvider(onReady);
+  return new BundledIconProvider(onReady);
 }
