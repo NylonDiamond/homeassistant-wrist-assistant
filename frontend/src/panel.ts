@@ -418,10 +418,9 @@ export class WristAssistantPanel extends LitElement {
     this.scheduleTemplates(0);
   }
 
-  /** First slot no other record uses. `excludeSelected` is for a new draft
-   * replacing nothing; a copy or "save as new" must also avoid the original. */
-  private freeSlot(excludeSelected = true): number {
-    const used = new Set(this.records.filter((r) => !excludeSelected || r.id !== this.selectedId).map((r) => Number(r.document?.slotIndex ?? -1)));
+  /** First slot no stored record uses. */
+  private freeSlot(): number {
+    const used = new Set(this.records.map((r) => Number(r.document?.slotIndex ?? -1)));
     for (let i = 0; i < 8; i++) if (!used.has(i)) return i;
     return 0;
   }
@@ -497,7 +496,7 @@ export class WristAssistantPanel extends LitElement {
       if (asNew) {
         const cfg = structuredClone(draft.config);
         cfg.id = newId();
-        cfg.slotIndex = this.freeSlot(false);
+        cfg.slotIndex = this.freeSlot();
         draft = new Draft(cfg, null);
       }
       const doc = draft.encoded();
@@ -556,7 +555,7 @@ export class WristAssistantPanel extends LitElement {
     const cfg = structuredClone(this.draft.config);
     cfg.id = newId();
     cfg.name = `${cfg.name} copy`;
-    cfg.slotIndex = this.freeSlot(false);
+    cfg.slotIndex = this.freeSlot();
     this.startNew(cfg);
   }
 
