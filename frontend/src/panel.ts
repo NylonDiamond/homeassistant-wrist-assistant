@@ -83,14 +83,19 @@ export class WristAssistantPanel extends LitElement {
     header select { font: inherit; padding: 4px 8px; }
     .layout {
       display: grid;
-      grid-template-columns: 280px 1fr 320px;
+      grid-template-columns: 260px minmax(0, 1fr) 300px;
       gap: 16px;
       padding: 16px;
       height: calc(100% - 52px);
       box-sizing: border-box;
       overflow: hidden;
     }
-    .layout.narrow { grid-template-columns: 1fr; height: auto; overflow: auto; }
+    /* Tablet: keep the three previews together, inspector drops below. */
+    @media (max-width: 1180px) {
+      .layout { grid-template-columns: 260px minmax(0, 1fr); height: auto; overflow: auto; }
+      .layout > .column:nth-child(3) { grid-column: 1 / -1; }
+    }
+    .layout.narrow, .layout.narrow > .column:nth-child(3) { grid-template-columns: 1fr; grid-column: auto; height: auto; overflow: auto; }
     .column { overflow: auto; min-height: 0; }
     .card {
       background: var(--card-background-color, #fff);
@@ -114,7 +119,10 @@ export class WristAssistantPanel extends LitElement {
     .preview svg { display: block; margin: 0 auto; background: #000; border-radius: 12px; }
     .preview.rectangular svg { width: 320px; height: 124px; }
     .preview.circular svg { width: 220px; height: 220px; border-radius: 50%; }
-    .preview.corner svg { width: 312px; height: 252px; }
+    /* The corner canvas is the wedge, not the SVG box: a dark grey surround
+       makes the black wedge shape readable, like a watch face's dead zone. */
+    .preview.corner svg { width: 312px; height: 252px; background: #2c2c2e; }
+    .preview.circular svg { background: #000; }
     .previews-row { display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; }
     .status { font-size: 13px; line-height: 1.5; }
     .status .ok { color: var(--success-color, #43a047); }
