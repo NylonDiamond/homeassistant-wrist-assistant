@@ -170,6 +170,18 @@ blueprint:
           default: ""
           selector:
             text:
+        button_1_expanded:
+          name: Open expanded
+          description: >
+            Show this button's quick controls (presets, media transport,
+            volume) as soon as the notification opens, instead of after a
+            double tap. Only applies to entities that have them (light,
+            cover, fan, climate, media player, alarm, vacuum, valve).
+            Expanded buttons take about three times the height, so keep
+            it to one or two per notification on the watch.
+          default: false
+          selector:
+            boolean:
     section_button_2:
       name: "☝️ Button 2"
       collapsed: true
@@ -190,6 +202,18 @@ blueprint:
           default: ""
           selector:
             text:
+        button_2_expanded:
+          name: Open expanded
+          description: >
+            Show this button's quick controls (presets, media transport,
+            volume) as soon as the notification opens, instead of after a
+            double tap. Only applies to entities that have them (light,
+            cover, fan, climate, media player, alarm, vacuum, valve).
+            Expanded buttons take about three times the height, so keep
+            it to one or two per notification on the watch.
+          default: false
+          selector:
+            boolean:
     section_button_3:
       name: "☝️ Button 3"
       collapsed: true
@@ -210,6 +234,18 @@ blueprint:
           default: ""
           selector:
             text:
+        button_3_expanded:
+          name: Open expanded
+          description: >
+            Show this button's quick controls (presets, media transport,
+            volume) as soon as the notification opens, instead of after a
+            double tap. Only applies to entities that have them (light,
+            cover, fan, climate, media player, alarm, vacuum, valve).
+            Expanded buttons take about three times the height, so keep
+            it to one or two per notification on the watch.
+          default: false
+          selector:
+            boolean:
     section_button_4:
       name: "☝️ Button 4"
       collapsed: true
@@ -230,6 +266,18 @@ blueprint:
           default: ""
           selector:
             text:
+        button_4_expanded:
+          name: Open expanded
+          description: >
+            Show this button's quick controls (presets, media transport,
+            volume) as soon as the notification opens, instead of after a
+            double tap. Only applies to entities that have them (light,
+            cover, fan, climate, media player, alarm, vacuum, valve).
+            Expanded buttons take about three times the height, so keep
+            it to one or two per notification on the watch.
+          default: false
+          selector:
+            boolean:
     section_settings:
       name: "⚙️ Settings"
       collapsed: true
@@ -614,12 +662,16 @@ sequence:
       bp_image: !input image
       bp_b1_entity: !input button_1_entity
       bp_b1_label: !input button_1_label
+      bp_b1_expanded: !input button_1_expanded
       bp_b2_entity: !input button_2_entity
       bp_b2_label: !input button_2_label
+      bp_b2_expanded: !input button_2_expanded
       bp_b3_entity: !input button_3_entity
       bp_b3_label: !input button_3_label
+      bp_b3_expanded: !input button_3_expanded
       bp_b4_entity: !input button_4_entity
       bp_b4_label: !input button_4_label
+      bp_b4_expanded: !input button_4_expanded
       bp_auto_dismiss: !input auto_dismiss
       bp_priority: !input priority
       bp_sound: !input sound
@@ -647,15 +699,16 @@ sequence:
       {%- if bp_image and not bp_live_stream_watch %}{%- set extra.items = extra.items + [("live_stream_watch", false)] -%}{%- endif -%}
       {%- set actions = namespace(list=[]) -%}
       {%- set slots = [
-        (bp_b1_entity, bp_b1_label),
-        (bp_b2_entity, bp_b2_label),
-        (bp_b3_entity, bp_b3_label),
-        (bp_b4_entity, bp_b4_label),
+        (bp_b1_entity, bp_b1_label, bp_b1_expanded),
+        (bp_b2_entity, bp_b2_label, bp_b2_expanded),
+        (bp_b3_entity, bp_b3_label, bp_b3_expanded),
+        (bp_b4_entity, bp_b4_label, bp_b4_expanded),
       ] -%}
-      {%- for eid, btn_label in slots -%}
+      {%- for eid, btn_label, btn_expanded in slots -%}
         {%- if eid -%}
           {%- set a = namespace(items=[("entity_id", eid)]) -%}
           {%- if btn_label %}{%- set a.items = a.items + [("label", btn_label)] -%}{%- endif -%}
+          {%- if btn_expanded %}{%- set a.items = a.items + [("expanded", true)] -%}{%- endif -%}
           {%- set actions.list = actions.list + [dict(a.items)] -%}
         {%- endif -%}
       {%- endfor -%}
