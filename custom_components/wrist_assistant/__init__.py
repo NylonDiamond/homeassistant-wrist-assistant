@@ -845,6 +845,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
             "cover": ["current_position"],
             "fan": ["percentage"],
             "climate": ["temperature", "min_temp", "max_temp", "temperature_unit"],
+            "media_player": ["volume_level", "is_volume_muted", "media_title", "media_artist"],
         }
         enriched = []
         for action in actions:
