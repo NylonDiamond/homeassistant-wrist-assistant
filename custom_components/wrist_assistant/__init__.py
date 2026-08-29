@@ -100,6 +100,8 @@ _ACTION_SCHEMA = vol.Schema(
         vol.Optional("friendly_name"): cv.string,
         vol.Optional("attributes"): dict,
         vol.Optional("icon"): cv.string,
+        vol.Optional("confirm"): cv.boolean,
+        vol.Optional("expanded"): cv.boolean,
     }
 )
 _SEND_NOTIFICATION_SCHEMA = vol.Schema(
