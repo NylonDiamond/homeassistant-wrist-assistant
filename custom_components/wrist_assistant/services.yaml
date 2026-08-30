@@ -42,7 +42,9 @@ send_notification:
         appropriate service call based on the entity's domain and state.
         The server enriches each action with the entity's current state
         and attributes before sending. Optional keys: label (custom
-        button text, defaults to friendly_name), icon (SF Symbol name).
+        button text, defaults to friendly_name), icon (SF Symbol name),
+        confirm (true = hold to confirm), expanded (true = open the
+        button's quick controls without a double tap).
         Example: [{entity_id: "lock.front_door", icon: "lock.fill"},
         {entity_id: "light.porch", label: "Porch", icon: "lightbulb.fill"}]
       selector:
