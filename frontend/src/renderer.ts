@@ -147,16 +147,24 @@ function frameBox(el: ResolvedElement, canvas: CanvasSize): Box {
 
 function renderText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box) {
   const c = colorAttrs(el.colorHex, "fill");
-  // lineLimit(1) + minimumScaleFactor(0.5): shrink to fit the box width
-  // down to half size. textLength is the closest SVG analogue without
-  // measuring glyphs.
-  const approxWidth = el.text.length * el.fontSize * 0.55;
+  // lineLimit(1) + minimumScaleFactor(0.5): shrink to fit the box width down
+  // to half size; when the half-size floor still overflows, SwiftUI truncates
+  // the tail with an ellipsis, so emulate that too instead of overflowing the
+  // box. 0.55 em per glyph is the same heuristic the shrink step always used.
+  const charW = (size: number) => size * 0.55;
+  const approxWidth = el.text.length * charW(el.fontSize);
   const scale = approxWidth > box.w && box.w > 0 ? Math.max(0.5, box.w / approxWidth) : 1;
   const fontSize = el.fontSize * scale;
+  let text = el.text;
+  if (box.w > 0 && text.length * charW(fontSize) > box.w) {
+    const budget = box.w - 0.8 * fontSize; // ellipsis width
+    const keep = Math.max(1, Math.floor(budget / charW(fontSize)));
+    text = `${text.slice(0, keep).replace(/\s+$/, "")}…`;
+  }
   return svg`<text x=${box.cx} y=${box.cy} text-anchor="middle" dominant-baseline="central"
     font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif"
     font-size=${fontSize} font-weight=${FONT_WEIGHT[el.fontWeight] ?? 400}
-    fill=${c.fill} fill-opacity=${c["fill-opacity"]}>${el.text}</text>`;
+    fill=${c.fill} fill-opacity=${c["fill-opacity"]}>${text}</text>`;
 }
 
 function renderGauge(el: Extract<ResolvedElement, { kind: "gauge" }>, box: Box) {
@@ -264,13 +272,11 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
 
 /**
  * Corner preview geometry, in 46 mm reference points multiplied by `s` (the
- * design-box scale of the previewed case). The wedge body is gone: the device
- * test (app repo docs/custom_complication_design_box.md, corner addendum)
- * showed the corner slot is a small upright square near the screen corner that
- * watchOS never rotates, so the only honest corner look is Apple's own — a
- * disc at the corner plus a system-curved bezel label. The preview shows the
- * top-right quadrant of the watch screen with the disc where the real face
- * puts it (measured off a 46 mm watch photo).
+ * design-box scale of the previewed case). The corner slot is a small upright
+ * square near the screen corner that watchOS never rotates; the curved part is
+ * the system bezel label. All numbers below were measured off a 46 mm watch
+ * screenshot on 2026-08-30 (app repo docs/custom_complication_design_box.md,
+ * corner addendum). The preview shows the top-right screen quadrant.
  */
 export function cornerContext(s: number) {
   return {
@@ -278,22 +284,65 @@ export function cornerContext(s: number) {
     quad: { width: 104 * s, height: 124 * s },
     /** Screen shell corner radius. */
     cornerRadius: 52 * s,
-    /** Slot disc centre: 24 pt in from the right edge, 29.5 pt down from the top. */
-    disc: { cx: 80 * s, cy: 29.5 * s },
+    /** Content-tile centre: 29.75 pt in from the right edge, 24 pt down. */
+    tile: { cx: (104 - 29.75) * s, cy: 24 * s },
     /** Bezel-label baseline circle, centred on the dial (the quadrant's bottom-left). */
-    dial: { cx: 0, cy: 124 * s, r: 96 * s },
+    dial: { cx: 0, cy: 124 * s, r: 100.5 * s },
+    /** Label arc region for a top-right corner, degrees (0 = right, -90 = up). */
+    labelArc: { start: -90, end: -24 },
   };
 }
 
+/**
+ * Side of the visible corner content square, in 46 mm reference points times
+ * the case scale. With a bezel label watchOS shrinks the main content to a
+ * ~23.5 pt square (measured; matches the HIG's ClockKit-era 24 pt corner
+ * text/gauge size). Without a label Apple documents the content as larger,
+ * but that size is not measured yet, so it renders the same until a device
+ * photo calibrates it.
+ */
+export function cornerTileSide(caseScale: number, hasBezel: boolean): number {
+  return (hasBezel ? 23.5 : 23.5) * caseScale;
+}
+
+const BEZEL_FONT = 10.5; // cap height measured 7.5 pt; SF cap ratio ~0.71
+
+/**
+ * Emulates the watch's bezel-label typesetting: watchOS uppercases the text
+ * and truncates it with an ellipsis when it overruns the label arc. Widths are
+ * a per-glyph heuristic (em fractions of SF Semibold), good to about one
+ * character against the device photo.
+ */
+export function bezelDisplayText(text: string, arcLen: number, fontSize: number): string {
+  const up = text.toUpperCase();
+  const w = (ch: string) =>
+    (ch === " " ? 0.35 : /[ILJ1.,:;'!|]/.test(ch) ? 0.34 : /[MW]/.test(ch) ? 0.92 : 0.66) * fontSize;
+  const ellipsis = 0.9 * fontSize;
+  let total = 0;
+  for (const ch of up) total += w(ch);
+  if (total <= arcLen) return up;
+  let used = 0;
+  let out = "";
+  for (const ch of up) {
+    if (used + w(ch) + ellipsis > arcLen) break;
+    out += ch;
+    used += w(ch);
+  }
+  return `${out.replace(/\s+$/, "")}…`;
+}
+
 function cornerLabelArc(s: number, id: string) {
-  const { dial } = cornerContext(s);
-  // Baseline arc through the corner diagonal (-50 deg from the dial centre),
-  // spanning [-90, -10] so centred text sits on the diagonal, inside the disc.
+  const { dial, labelArc } = cornerContext(s);
+  // Baseline arc for the top-right corner. Measured: the label starts at
+  // 12 o'clock (-90) and the truncation ellipsis lands at about -25, so the
+  // reserved region is [-90, -24]; text is centred in it (a truncated label
+  // fills it edge to edge, matching the photo).
   const toXY = (deg: number) => {
     const rad = (deg * Math.PI) / 180;
     return `${dial.cx + dial.r * Math.cos(rad)} ${dial.cy + dial.r * Math.sin(rad)}`;
   };
-  return { id, d: `M ${toXY(-90)} A ${dial.r} ${dial.r} 0 0 1 ${toXY(-10)}` };
+  const sweepRad = ((labelArc.end - labelArc.start) * Math.PI) / 180;
+  return { id, d: `M ${toXY(labelArc.start)} A ${dial.r} ${dial.r} 0 0 1 ${toXY(labelArc.end)}`, length: dial.r * sweepRad };
 }
 
 export function renderLayout(layout: ResolvedLayout, options: RenderOptions): TemplateResult {
@@ -310,39 +359,45 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
   const bw = layout.borderWidth * fit.scale;
 
   if (family === "corner") {
-    // Watch-corner context preview: black screen quadrant, the slot disc where
-    // the real face puts it, and the bezel label on the system's curve. The
-    // slot content group is only translated (never scaled beyond `fit`), so
-    // pointer deltas in interact.ts keep normalising against the fit box.
+    // Watch-corner context preview: black screen quadrant, the content tile
+    // where the real face puts it, and the bezel label on the system's curve.
+    // The tile is the VISIBLE content square (smaller than the 34 pt design
+    // box when a bezel label is present, because watchOS shrinks the main
+    // view to make room for the label), so the design box gets an extra
+    // uniform scale here. interact.ts drags stay correct because panel.ts
+    // passes the tile side as the gesture canvas for corner.
     const s = fit.scale; // corner slots are square, so fit.x = fit.y = 0
     const ctx = cornerContext(s);
-    const r = Math.min(canvas.width, canvas.height) / 2;
-    const slotX = ctx.disc.cx - canvas.width / 2;
-    const slotY = ctx.disc.cy - canvas.height / 2;
+    const hasBezel = !!layout.bezelText;
+    const tile = cornerTileSide(s, hasBezel);
+    const tileScale = tile / (design.width * s);
+    const slotX = ctx.tile.cx - tile / 2;
+    const slotY = ctx.tile.cy - tile / 2;
     const shell = `M 0 0 H ${ctx.quad.width - ctx.cornerRadius} A ${ctx.cornerRadius} ${ctx.cornerRadius} 0 0 1 ${ctx.quad.width} ${ctx.cornerRadius} V ${ctx.quad.height} H 0 Z`;
     let bezel: TemplateResult | typeof nothing = nothing;
-    if (layout.bezelText) {
+    if (hasBezel) {
       const arc = cornerLabelArc(s, `${uid}-bezel`);
       bezel = svg`<defs><path id=${arc.id} d=${arc.d} /></defs>
-        <text font-size=${13 * s} font-weight="600" fill="#FFFFFF" font-family="-apple-system, 'SF Pro Text', Helvetica, Arial, sans-serif">
-          <textPath href="#${arc.id}" startOffset="50%" text-anchor="middle">${layout.bezelText}</textPath></text>`;
+        <text font-size=${BEZEL_FONT * s} font-weight="600" fill="#FFFFFF" font-family="-apple-system, 'SF Pro Text', Helvetica, Arial, sans-serif">
+          <textPath href="#${arc.id}" startOffset="50%" text-anchor="middle">${bezelDisplayText(layout.bezelText!, arc.length, BEZEL_FONT * s)}</textPath></text>`;
     }
+    const tileBW = layout.borderWidth * fit.scale * tileScale;
     const chrome = border
-      ? svg`<circle cx=${canvas.width / 2} cy=${canvas.height / 2} r=${r - bw / 2} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${bw} />`
+      ? svg`<rect x=${tileBW / 2} y=${tileBW / 2} width=${tile - tileBW} height=${tile - tileBW} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${tileBW} />`
       : nothing;
     return svg`<svg viewBox=${`0 0 ${ctx.quad.width} ${ctx.quad.height}`} xmlns="http://www.w3.org/2000/svg" class="complication corner"
         width=${ctx.quad.width} height=${ctx.quad.height}>
-      <defs><clipPath id=${uid}><circle cx=${canvas.width / 2} cy=${canvas.height / 2} r=${r} /></clipPath></defs>
+      <defs><clipPath id=${uid}><rect width=${tile} height=${tile} /></clipPath></defs>
       <path d=${shell} fill="#000000" />
       ${bezel}
       <g transform="translate(${slotX} ${slotY})">
         <g clip-path=${`url(#${uid})`}>
-          ${bg ? svg`<rect width=${canvas.width} height=${canvas.height} fill=${bg.color} fill-opacity=${bg.opacity} />` : nothing}
-          <g data-design-box transform="translate(${fit.x} ${fit.y}) scale(${fit.scale})">
+          ${bg ? svg`<rect width=${tile} height=${tile} fill=${bg.color} fill-opacity=${bg.opacity} />` : nothing}
+          <g data-design-box transform="scale(${fit.scale * tileScale})">
             ${layout.elements.map((el) => renderElement(el, design, options))}
           </g>
         </g>
-        <circle cx=${canvas.width / 2} cy=${canvas.height / 2} r=${r} fill="none"
+        <rect width=${tile} height=${tile} fill="none"
           stroke="rgba(255,255,255,0.22)" stroke-width=${0.75 * s} stroke-dasharray=${`${2 * s} ${2 * s}`} />
         ${chrome}
       </g>

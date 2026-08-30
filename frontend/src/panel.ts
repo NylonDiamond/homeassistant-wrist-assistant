@@ -40,7 +40,7 @@ import {
   Resolver,
   resolveAll,
 } from "./resolver.js";
-import { CASES, REFERENCE_CASE, caseForScreenSize, familyTitle, fitBox, renderLayout, type DrawableFamily, type IconProvider } from "./renderer.js";
+import { CASES, REFERENCE_CASE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, renderLayout, type DrawableFamily, type IconProvider } from "./renderer.js";
 import { makeIconProvider } from "./icons.js";
 import { SymbolBrowser } from "./symbols.js";
 import { Draft } from "./draft.js";
@@ -771,8 +771,15 @@ export class WristAssistantPanel extends LitElement {
     const frame = effectivePlacement(this.draft.config, family, el).frame;
     // Pointer deltas arrive in slot points; normalize against the design box as
     // it lands in this slot, so a drag in a 41 mm preview moves the same fraction.
+    // Corner draws the design box scaled down into the visible content tile
+    // (renderer.ts cornerTileSide), so its gestures normalize against the tile.
     const fit = fitBox(this.previewSlot(family as DrawableFamily), family as DrawableFamily);
-    const canvas = { width: fit.width, height: fit.height };
+    let canvas = { width: fit.width, height: fit.height };
+    if (family === "corner") {
+      const hasBezel = !!this.draft.config.perFamily.corner?.bezelText;
+      const tile = cornerTileSide(fit.scale, hasBezel);
+      canvas = { width: tile, height: tile };
+    }
     this.cancelGesture?.();
     this.cancelGesture = beginGesture(svg, canvas, e, { elementId: id, frame, handle: handle ?? undefined }, {
       onFrame: (elementId: string, f: NormalizedFrame, done: boolean) => {
