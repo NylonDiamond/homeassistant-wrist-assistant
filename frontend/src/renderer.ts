@@ -348,27 +348,41 @@ function arcPathD(dial: { cx: number; cy: number }, r: number, a0: number, a1: n
   return `M ${p0.x} ${p0.y} A ${r} ${r} 0 0 1 ${p1.x} ${p1.y}`;
 }
 
-function cornerArc(s: number, id: string, radius: number) {
-  const { dial, labelArc } = cornerContext(s, true);
+function cornerArc(s: number, id: string, radius: number, arc: { start: number; end: number }) {
+  const { dial } = cornerContext(s, true);
+  const sweepRad = ((arc.end - arc.start) * Math.PI) / 180;
+  return { id, d: arcPathD(dial, radius, arc.start, arc.end), length: radius * sweepRad };
+}
+
+function cornerLabelArc(s: number, id: string) {
   // Baseline arc for the top-right corner. Measured: the label starts at
   // 12 o'clock (-90) and the truncation ellipsis lands at about -25, so the
   // reserved region is [-90, -24]; text is centred in it (a truncated label
   // fills it edge to edge, matching the photo).
-  const sweepRad = ((labelArc.end - labelArc.start) * Math.PI) / 180;
-  return { id, d: arcPathD(dial, radius, labelArc.start, labelArc.end), length: radius * sweepRad };
-}
-
-function cornerLabelArc(s: number, id: string) {
-  return cornerArc(s, id, cornerContext(s, true).dial.r);
+  const ctx = cornerContext(s, true);
+  return cornerArc(s, id, ctx.dial.r, ctx.labelArc);
 }
 
 /**
  * Big curved main text (`widgetCurvesContent` on the watch), the stock
- * Calendar "SUN" / Weather "86°" look. Font size and baseline radius are
- * first-pass guesses pending device-photo calibration.
+ * Calendar "SUN" / Weather "86°" look. Measured off a 46 mm watch screenshot
+ * 2026-08-30: caps ~13.1 pt tall (so ~18.5 pt SF Semibold), baseline on a
+ * 113 pt circle (outside the widget label, per Apple's "content on the
+ * outside of the curve"), uppercased, ellipsis-truncated to roughly
+ * [-71°, -36°] for a top-right corner.
  */
-const CURVED_FONT = 20;
-const CURVED_BASELINE_INSET = 16;
+const CURVED_FONT = 18.5;
+const CURVED_BASELINE_R = 113;
+const CURVED_ARC = { start: -71, end: -36 };
+
+/**
+ * Bezel gauge geometry, measured off the same screenshot: 6.2 pt stroke
+ * centred on a 104 pt circle spanning about [-77°, -30.5°], sitting inside
+ * the curved content.
+ */
+const GAUGE_R = 104;
+const GAUGE_W = 6.2;
+const GAUGE_ARC = { start: -77, end: -30.5 };
 
 function hexToRgb(hex: string): [number, number, number] {
   const h = hex.replace("#", "");
@@ -396,36 +410,36 @@ function gaugeColorAt(colors: string[], t: number): string {
  * gradient (SVG cannot run a linearGradient along an arc).
  */
 function cornerGaugeSvg(g: ResolvedBezelGauge, s: number): TemplateResult {
-  const { dial, labelArc } = cornerContext(s, true);
-  const hasLabels = g.minLabel !== undefined || g.maxLabel !== undefined;
-  // With end numbers the colored arc gives up room at both ends, like the
-  // stock Weather corner where "60" and "87" sit on the same curve.
-  const inset = hasLabels ? 11 : 0;
-  const a0 = labelArc.start + inset;
-  const a1 = labelArc.end - inset;
+  const { dial } = cornerContext(s, true);
+  const r = GAUGE_R * s;
+  const a0 = GAUGE_ARC.start;
+  const a1 = GAUGE_ARC.end;
   const span = a1 - a0;
   const segs = 24;
   const parts: TemplateResult[] = [];
   for (let i = 0; i < segs; i++) {
     const b0 = a0 + (span * i) / segs;
     const b1 = Math.min(a1, a0 + (span * (i + 1)) / segs + 0.4);
-    parts.push(svg`<path d=${arcPathD(dial, dial.r, b0, b1)} fill="none"
-      stroke=${gaugeColorAt(g.colorHexes, (i + 0.5) / segs)} stroke-width=${5.5 * s}
+    parts.push(svg`<path d=${arcPathD(dial, r, b0, b1)} fill="none"
+      stroke=${gaugeColorAt(g.colorHexes, (i + 0.5) / segs)} stroke-width=${GAUGE_W * s}
       stroke-linecap=${i === 0 || i === segs - 1 ? "round" : "butt"} />`);
   }
   const frac = (g.value - g.minValue) / (g.maxValue - g.minValue);
-  const dot = arcPointXY(dial, dial.r, a0 + span * frac);
+  const dot = arcPointXY(dial, r, a0 + span * frac);
   const labelFont = 9 * s;
   const labelAt = (deg: number, text: string) => {
-    const p = arcPointXY(dial, dial.r, deg);
+    const p = arcPointXY(dial, r, deg);
     return svg`<text x=${p.x} y=${p.y + labelFont * 0.35} font-size=${labelFont} font-weight="600" fill="#FFFFFF"
       text-anchor="middle" font-family="-apple-system, 'SF Pro Text', Helvetica, Arial, sans-serif">${text}</text>`;
   };
+  // End numbers sit just past the arc ends on the same curve, like the stock
+  // Weather corner's "60" and "87". Their exact system placement is not yet
+  // measured from a device photo.
   return svg`${parts}
-    <circle cx=${dot.x} cy=${dot.y} r=${2.4 * s} fill=${gaugeColorAt(g.colorHexes, frac)}
+    <circle cx=${dot.x} cy=${dot.y} r=${3.2 * s} fill=${gaugeColorAt(g.colorHexes, frac)}
       stroke="#000000" stroke-width=${1.2 * s} />
-    ${g.minLabel !== undefined ? labelAt(labelArc.start + 4, g.minLabel) : nothing}
-    ${g.maxLabel !== undefined ? labelAt(labelArc.end - 4, g.maxLabel) : nothing}`;
+    ${g.minLabel !== undefined ? labelAt(a0 - 5.5, g.minLabel) : nothing}
+    ${g.maxLabel !== undefined ? labelAt(a1 + 5.5, g.maxLabel) : nothing}`;
 }
 
 export function renderLayout(layout: ResolvedLayout, options: RenderOptions): TemplateResult {
@@ -473,11 +487,15 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
     let main: TemplateResult | typeof nothing = nothing;
     if (curvedMode) {
       const curvedColor = parseColor(layout.curvedColorHex ?? "#FFFFFF") ?? { color: "#FFFFFF", opacity: 1 };
-      const arc = cornerArc(s, `${uid}-curved`, cornerContext(s, true).dial.r - CURVED_BASELINE_INSET * s);
+      const arc = cornerArc(s, `${uid}-curved`, CURVED_BASELINE_R * s, CURVED_ARC);
+      // The 0.88 narrows the glyph-width model only (not the drawn size): SF
+      // tracks tighter at ~18.5 pt than at the 10.5 pt the widths were tuned
+      // for, and without it the preview truncates one glyph earlier than the
+      // watch ("TEXT…" where the wrist shows "TEXT 1…").
       main = svg`<defs><path id=${arc.id} d=${arc.d} /></defs>
         <text font-size=${CURVED_FONT * s} font-weight="600" fill=${curvedColor.color} fill-opacity=${curvedColor.opacity}
           font-family="-apple-system, 'SF Pro Rounded', 'SF Pro Text', Helvetica, Arial, sans-serif">
-          <textPath href="#${arc.id}" startOffset="50%" text-anchor="middle">${curved}</textPath></text>`;
+          <textPath href="#${arc.id}" startOffset="50%" text-anchor="middle">${bezelDisplayText(curved, arc.length, CURVED_FONT * s * 0.88)}</textPath></text>`;
     } else {
       const tileBW = layout.borderWidth * fit.scale * tileScale;
       // The watch strokes the border as a circle ring (the shape the system
