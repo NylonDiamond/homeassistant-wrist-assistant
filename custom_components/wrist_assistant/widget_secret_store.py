@@ -84,6 +84,13 @@ class WidgetSecretEntry:
     that predate this field — DeviceInfo falls back to `Watch <short_id>` /
     `iPhone <short_id>`."""
 
+    screen_size: str | None = None
+    """Watch screen size in points, "WIDTHxHEIGHT" (e.g. "208x248"), as
+    WKInterfaceDevice.screenBounds reports it. The complication panel matches
+    it against its watch-case table so the preview dropdown defaults to the
+    selected watch's case. None for entries written by builds that predate
+    this field — the panel keeps its 46 mm reference default."""
+
     secret_bytes: bytes | None = field(init=False, repr=False, default=None)
     """Decoded HMAC key bytes, cached on construction to avoid base64-decoding
     on every signed request and every signed response. None if `secret_b64`
@@ -144,6 +151,7 @@ class WidgetSecretStore:
                     last_provision=last_provision,
                     owner_iphone_id=entry.get("owner_iphone_id"),
                     device_name=entry.get("device_name"),
+                    screen_size=entry.get("screen_size"),
                 )
         _LOGGER.debug("Loaded %d widget secrets from storage", len(self._secrets))
 
@@ -163,6 +171,7 @@ class WidgetSecretStore:
                     ),
                     "owner_iphone_id": entry.owner_iphone_id,
                     "device_name": entry.device_name,
+                    "screen_size": entry.screen_size,
                 }
                 for watch_id, entry in self._secrets.items()
             }
@@ -179,6 +188,7 @@ class WidgetSecretStore:
         app_build: str | None = None,
         owner_iphone_id: str | None = None,
         device_name: str | None = None,
+        screen_size: str | None = None,
     ) -> Literal["new", "rekey", "idempotent"]:
         """Register or replace a secret for a watch.
 
@@ -201,6 +211,7 @@ class WidgetSecretStore:
             and existing.app_build == app_build
             and existing.owner_iphone_id == owner_iphone_id
             and existing.device_name == device_name
+            and existing.screen_size == screen_size
         ):
             # Idempotent re-provision: secret material + identity unchanged.
             # Still refresh `last_provision` so the iPhone "Last provision"
@@ -219,6 +230,7 @@ class WidgetSecretStore:
             last_provision=now,
             owner_iphone_id=owner_iphone_id,
             device_name=device_name,
+            screen_size=screen_size,
         )
         _LOGGER.info(
             "Registered widget secret for watch_id=%s algo=%s app_version=%s owner_iphone_id=%s",
@@ -239,6 +251,7 @@ class WidgetSecretStore:
         app_build: str | None = None,
         owner_iphone_id: str | None = None,
         device_name: str | None = None,
+        screen_size: str | None = None,
     ) -> bool:
         """Update diagnostic metadata on an existing entry without touching the
         secret material, algo, or label.
@@ -269,6 +282,9 @@ class WidgetSecretStore:
             changed = True
         if device_name is not None and entry.device_name != device_name:
             entry.device_name = device_name
+            changed = True
+        if screen_size is not None and entry.screen_size != screen_size:
+            entry.screen_size = screen_size
             changed = True
 
         # Refresh the provision timestamp either way — like `register()`'s

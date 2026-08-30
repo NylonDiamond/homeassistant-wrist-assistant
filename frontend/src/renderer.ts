@@ -46,6 +46,21 @@ export const CASES: WatchCase[] = [
 
 export const REFERENCE_CASE = CASES.find((c) => c.measured)!;
 
+/**
+ * The case matching a watch-reported `screen_size` string ("208x248", points,
+ * from WKInterfaceDevice.screenBounds). Undefined when the string is missing,
+ * malformed, or from a case this table doesn't know (a future watch model) —
+ * callers keep their current default.
+ */
+export function caseForScreenSize(screenSize: string | null | undefined): WatchCase | undefined {
+  if (!screenSize) return undefined;
+  const match = /^(\d+)x(\d+)$/.exec(screenSize.trim());
+  if (!match) return undefined;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  return CASES.find((c) => c.screen.width === width && c.screen.height === height);
+}
+
 export interface Fit {
   scale: number;
   x: number;

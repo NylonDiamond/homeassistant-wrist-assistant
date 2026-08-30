@@ -2255,8 +2255,9 @@ async def _op_verify_identity(ctx: _OpContext) -> Response:
 async def _op_update_metadata(ctx: _OpContext) -> Response:
     """HMAC-signed metadata refresh for an already-registered watch.
 
-    Body: `{app_version?, app_build?, owner_iphone_id?, device_name?}` — all
-    optional strings; omitted/empty fields are left unchanged.
+    Body: `{app_version?, app_build?, owner_iphone_id?, device_name?,
+    screen_size?}` — all optional strings; omitted/empty fields are left
+    unchanged.
 
     This exists so a registered watch never needs the HA bearer token to keep
     its diagnostic sensors current. The bearer-authed `register_secret` path
@@ -2289,6 +2290,7 @@ async def _op_update_metadata(ctx: _OpContext) -> Response:
         app_build=_clean("app_build"),
         owner_iphone_id=_clean("owner_iphone_id"),
         device_name=device_name,
+        screen_size=_clean("screen_size"),
     )
     if not ok:
         # Entry vanished between HMAC validation and dispatch (concurrent
@@ -2317,6 +2319,7 @@ async def _op_update_metadata(ctx: _OpContext) -> Response:
             "app_build": entry.app_build if entry else None,
             "owner_iphone_id": entry.owner_iphone_id if entry else None,
             "device_name": entry.device_name if entry else None,
+            "screen_size": entry.screen_size if entry else None,
         }
     )
 
@@ -2613,6 +2616,16 @@ class WARegisterSecretView(HomeAssistantView):
             if isinstance(raw_device_name, str) and raw_device_name.strip()
             else None
         )
+        # Screen size in points ("208x248"). The complication panel matches it
+        # against its watch-case table so the preview dropdown defaults to
+        # this watch's case. Older builds omit it — the panel keeps its 46 mm
+        # reference default.
+        raw_screen_size = payload.get("screen_size")
+        screen_size = (
+            raw_screen_size.strip()
+            if isinstance(raw_screen_size, str) and raw_screen_size.strip()
+            else None
+        )
 
         if not isinstance(watch_id, str) or not watch_id:
             return self.json_message("watch_id required", status_code=400)
@@ -2647,6 +2660,7 @@ class WARegisterSecretView(HomeAssistantView):
             app_build=app_build,
             owner_iphone_id=owner_iphone_id,
             device_name=device_name,
+            screen_size=screen_size,
         )
         if register_result == "new":
             log_secret_registered(

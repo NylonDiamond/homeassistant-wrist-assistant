@@ -92,6 +92,7 @@ def registered_watch(register_secret: Callable[..., bytes]) -> tuple[str, bytes]
         app_version="0.0.1",
         app_build="1",
         device_name="Pytest Watch",
+        screen_size="184x224",
     )
     return watch_id, secret_bytes
 
@@ -104,7 +105,7 @@ def test_update_metadata_roundtrip(
     op = "update_metadata"
     body = (
         b'{"app_version": "9.9.9", "app_build": "999",'
-        b' "device_name": "Pytest Watch Renamed"}'
+        b' "device_name": "Pytest Watch Renamed", "screen_size": "208x248"}'
     )
     r = _post_op(base_url, secret, watch_id, op, body)
     assert r.status_code == 200, r.text
@@ -120,6 +121,7 @@ def test_update_metadata_roundtrip(
     assert payload["app_version"] == "9.9.9"
     assert payload["app_build"] == "999"
     assert payload["device_name"] == "Pytest Watch Renamed"
+    assert payload["screen_size"] == "208x248"
 
 
 def test_update_metadata_omitted_fields_left_unchanged(
@@ -137,6 +139,7 @@ def test_update_metadata_omitted_fields_left_unchanged(
     # From the register fixture, untouched by this call:
     assert payload["app_build"] == "1"
     assert payload["device_name"] == "Pytest Watch"
+    assert payload["screen_size"] == "184x224"
 
     # Empty / whitespace strings are treated as omitted, not as a wipe.
     r = _post_op(

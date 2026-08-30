@@ -40,7 +40,7 @@ import {
   Resolver,
   resolveAll,
 } from "./resolver.js";
-import { CASES, REFERENCE_CASE, familyTitle, fitBox, renderLayout, type DrawableFamily, type IconProvider } from "./renderer.js";
+import { CASES, REFERENCE_CASE, caseForScreenSize, familyTitle, fitBox, renderLayout, type DrawableFamily, type IconProvider } from "./renderer.js";
 import { makeIconProvider } from "./icons.js";
 import { SymbolBrowser } from "./symbols.js";
 import { Draft } from "./draft.js";
@@ -369,6 +369,13 @@ export class WristAssistantPanel extends LitElement {
     this.selectedId = undefined;
     this.moveTarget = undefined;
     this.moveError = undefined;
+    // Default the preview to this watch's own case when the app reported one.
+    // A manual dropdown pick survives record switches but re-defaults when a
+    // different watch is selected — that's the watch being previewed now.
+    const reported = caseForScreenSize(
+      this.owners.find((o) => o.owner_watch_id === ownerId)?.screen_size,
+    );
+    if (reported) this.previewCase = reported.label;
     this.clearDraft();
     await this.unsubscribe?.();
     this.unsubscribe = await subscribeChanges(this.hass, ownerId, () => void this.loadRecords());

@@ -30,6 +30,9 @@ export interface OwnerSummary {
       themselves as "Apple Watch", so this is what tells them apart. */
   paired_iphone_name: string | null;
   app_version: string | null;
+  /** Screen size in points ("208x248"), reported by the watch app. Matches a
+      renderer `WatchCase` so the preview dropdown defaults to this watch. */
+  screen_size: string | null;
   complication_count: number;
   token: number;
   /** No device is registered under this id any more, but it still owns

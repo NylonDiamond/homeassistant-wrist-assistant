@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CANVAS, CASES, REFERENCE_CASE, fitBox } from "../src/renderer.js";
+import { CANVAS, CASES, REFERENCE_CASE, caseForScreenSize, fitBox } from "../src/renderer.js";
 
 // Mirror of CustomComplicationDesignBoxTests.swift in the app repo. The two
 // fit functions must agree to the point, or the panel preview drifts from the
@@ -50,5 +50,30 @@ describe("design box", () => {
     const fit = fitBox({ width: 0, height: 0 }, "circular");
     expect(fit.scale).toBe(0);
     expect(Number.isNaN(fit.x)).toBe(false);
+  });
+});
+
+// The watch reports `screen_size` as "WIDTHxHEIGHT" in points (from
+// WKInterfaceDevice.screenBounds); the panel uses it to default the preview
+// dropdown. Unknown or malformed values must fall through to undefined so the
+// caller keeps its current default.
+describe("caseForScreenSize", () => {
+  it("round-trips every case's own screen size", () => {
+    for (const c of CASES) {
+      expect(caseForScreenSize(`${c.screen.width}x${c.screen.height}`)).toBe(c);
+    }
+  });
+
+  it("tolerates surrounding whitespace", () => {
+    expect(caseForScreenSize(" 208x248 ")?.label).toBe("46 mm");
+  });
+
+  it("returns undefined for missing, malformed, or unknown sizes", () => {
+    expect(caseForScreenSize(null)).toBeUndefined();
+    expect(caseForScreenSize(undefined)).toBeUndefined();
+    expect(caseForScreenSize("")).toBeUndefined();
+    expect(caseForScreenSize("208×248")).toBeUndefined();
+    expect(caseForScreenSize("banana")).toBeUndefined();
+    expect(caseForScreenSize("999x999")).toBeUndefined();
   });
 });
