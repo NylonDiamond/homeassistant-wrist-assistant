@@ -278,14 +278,21 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
  * screenshot on 2026-08-30 (app repo docs/custom_complication_design_box.md,
  * corner addendum). The preview shows the top-right screen quadrant.
  */
-export function cornerContext(s: number) {
+export function cornerContext(s: number, hasBezel: boolean) {
   return {
     /** Top-right quarter of the 208x248 pt 46 mm screen. */
     quad: { width: 104 * s, height: 124 * s },
     /** Screen shell corner radius. */
     cornerRadius: 52 * s,
-    /** Content-tile centre: 29.75 pt in from the right edge, 24 pt down. */
-    tile: { cx: (104 - 29.75) * s, cy: 24 * s },
+    /**
+     * Content-disc centre. Measured: with a bezel label 29.75 pt in from the
+     * right edge and 24 pt down; without one the bigger disc sits 34 pt in and
+     * 29.5 pt down (the outer margin to the screen edges stays put, the disc
+     * grows inward).
+     */
+    tile: hasBezel
+      ? { cx: (104 - 29.75) * s, cy: 24 * s }
+      : { cx: (104 - 34) * s, cy: 29.5 * s },
     /** Bezel-label baseline circle, centred on the dial (the quadrant's bottom-left). */
     dial: { cx: 0, cy: 124 * s, r: 100.5 * s },
     /** Label arc region for a top-right corner, degrees (0 = right, -90 = up). */
@@ -294,15 +301,14 @@ export function cornerContext(s: number) {
 }
 
 /**
- * Side of the visible corner content square, in 46 mm reference points times
- * the case scale. With a bezel label watchOS shrinks the main content to a
- * ~23.5 pt square (measured; matches the HIG's ClockKit-era 24 pt corner
- * text/gauge size). Without a label Apple documents the content as larger,
- * but that size is not measured yet, so it renders the same until a device
- * photo calibrates it.
+ * Diameter of the visible corner content disc, in 46 mm reference points times
+ * the case scale. watchOS always hands the widget a 34x34 slot (the probe
+ * shows 34 in both states) and masks the result to a circle; without a bezel
+ * label it composites 1:1 (a full 34 pt disc, measured), with one it scales
+ * the render down to ~23.5 pt to make room for the curved text.
  */
 export function cornerTileSide(caseScale: number, hasBezel: boolean): number {
-  return (hasBezel ? 23.5 : 23.5) * caseScale;
+  return (hasBezel ? 23.5 : 34) * caseScale;
 }
 
 const BEZEL_FONT = 10.5; // cap height measured 7.5 pt; SF cap ratio ~0.71
@@ -332,7 +338,7 @@ export function bezelDisplayText(text: string, arcLen: number, fontSize: number)
 }
 
 function cornerLabelArc(s: number, id: string) {
-  const { dial, labelArc } = cornerContext(s);
+  const { dial, labelArc } = cornerContext(s, true);
   // Baseline arc for the top-right corner. Measured: the label starts at
   // 12 o'clock (-90) and the truncation ellipsis lands at about -25, so the
   // reserved region is [-90, -24]; text is centred in it (a truncated label
@@ -359,16 +365,16 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
   const bw = layout.borderWidth * fit.scale;
 
   if (family === "corner") {
-    // Watch-corner context preview: black screen quadrant, the content tile
+    // Watch-corner context preview: black screen quadrant, the content disc
     // where the real face puts it, and the bezel label on the system's curve.
-    // The tile is the VISIBLE content square (smaller than the 34 pt design
-    // box when a bezel label is present, because watchOS shrinks the main
-    // view to make room for the label), so the design box gets an extra
+    // The widget always draws into a 34 pt square, but watchOS masks the
+    // composite to a circle and, when a bezel label is present, scales it
+    // down to make room for the curved text, so the design box gets an extra
     // uniform scale here. interact.ts drags stay correct because panel.ts
     // passes the tile side as the gesture canvas for corner.
     const s = fit.scale; // corner slots are square, so fit.x = fit.y = 0
-    const ctx = cornerContext(s);
     const hasBezel = !!layout.bezelText;
+    const ctx = cornerContext(s, hasBezel);
     const tile = cornerTileSide(s, hasBezel);
     const tileScale = tile / (design.width * s);
     const slotX = ctx.tile.cx - tile / 2;
@@ -382,12 +388,14 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
           <textPath href="#${arc.id}" startOffset="50%" text-anchor="middle">${bezelDisplayText(layout.bezelText!, arc.length, BEZEL_FONT * s)}</textPath></text>`;
     }
     const tileBW = layout.borderWidth * fit.scale * tileScale;
+    // The watch strokes the border as a circle ring (the shape the system
+    // mask leaves visible), inscribed in the slot square.
     const chrome = border
-      ? svg`<rect x=${tileBW / 2} y=${tileBW / 2} width=${tile - tileBW} height=${tile - tileBW} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${tileBW} />`
+      ? svg`<circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2 - tileBW / 2} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${tileBW} />`
       : nothing;
     return svg`<svg viewBox=${`0 0 ${ctx.quad.width} ${ctx.quad.height}`} xmlns="http://www.w3.org/2000/svg" class="complication corner"
         width=${ctx.quad.width} height=${ctx.quad.height}>
-      <defs><clipPath id=${uid}><rect width=${tile} height=${tile} /></clipPath></defs>
+      <defs><clipPath id=${uid}><circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} /></clipPath></defs>
       <path d=${shell} fill="#000000" />
       ${bezel}
       <g transform="translate(${slotX} ${slotY})">
@@ -397,7 +405,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
             ${layout.elements.map((el) => renderElement(el, design, options))}
           </g>
         </g>
-        <rect width=${tile} height=${tile} fill="none"
+        <circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} fill="none"
           stroke="rgba(255,255,255,0.22)" stroke-width=${0.75 * s} stroke-dasharray=${`${2 * s} ${2 * s}`} />
         ${chrome}
       </g>
