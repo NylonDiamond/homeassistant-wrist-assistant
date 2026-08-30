@@ -40,7 +40,7 @@ import {
   Resolver,
   resolveAll,
 } from "./resolver.js";
-import { CANVAS, familyTitle, renderLayout, type IconProvider } from "./renderer.js";
+import { CASES, REFERENCE_CASE, familyTitle, fitBox, renderLayout, type DrawableFamily, type IconProvider } from "./renderer.js";
 import { makeIconProvider } from "./icons.js";
 import { SymbolBrowser } from "./symbols.js";
 import { Draft } from "./draft.js";
@@ -92,6 +92,8 @@ export class WristAssistantPanel extends LitElement {
   @state() private showRaw = false;
   @state() private inspect: Inspect = { kind: "general" };
   @state() private activeFamily: FamilyKind = "rectangular";
+  /** Which watch case the previews are drawn in. The reference (46 mm) is scale 1. */
+  @state() private previewCase = REFERENCE_CASE.label;
   @state() private loadError?: string;
   @state() private saveError?: string;
   @state() private saving = false;
@@ -185,9 +187,13 @@ export class WristAssistantPanel extends LitElement {
     .preview.active .label { color: var(--primary-color); opacity: 1; font-weight: 500; }
     .preview svg { display: block; margin: 0 auto; background: #000; border-radius: 12px; touch-action: none; }
     .preview.active svg { outline: 2px solid var(--primary-color); outline-offset: 3px; }
-    .preview.rectangular svg { width: 320px; height: 124px; }
-    .preview.circular svg { width: 220px; height: 220px; border-radius: 50%; }
-    .preview.corner svg { width: 312px; height: 252px; background: #2c2c2e; }
+    /* 2x / 4x / 3x the 46 mm design box, so the three keep their true ratios. */
+    .preview.rectangular svg { width: 362px; height: 131px; }
+    .preview.circular svg { width: 204px; height: 204px; border-radius: 50%; }
+    .preview.corner svg { width: 234px; height: 234px; background: #2c2c2e; }
+    .preview-case { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+    .preview-case label { font-size: 13px; display: flex; align-items: center; gap: 8px; }
+    .preview-case select { font: inherit; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--divider-color, #444); background: var(--card-background-color, #1c1c1e); color: inherit; }
     .previews-row { display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; }
     .status { font-size: 13px; line-height: 1.5; }
     .ok { color: var(--success-color, #43a047); }
@@ -754,7 +760,10 @@ export class WristAssistantPanel extends LitElement {
     }
     e.preventDefault();
     const frame = effectivePlacement(this.draft.config, family, el).frame;
-    const canvas = CANVAS[family as "rectangular" | "circular" | "corner"];
+    // Pointer deltas arrive in slot points; normalize against the design box as
+    // it lands in this slot, so a drag in a 41 mm preview moves the same fraction.
+    const fit = fitBox(this.previewSlot(family as DrawableFamily), family as DrawableFamily);
+    const canvas = { width: fit.width, height: fit.height };
     this.cancelGesture?.();
     this.cancelGesture = beginGesture(svg, canvas, e, { elementId: id, frame, handle: handle ?? undefined }, {
       onFrame: (elementId: string, f: NormalizedFrame, done: boolean) => {
@@ -952,22 +961,42 @@ export class WristAssistantPanel extends LitElement {
     if (!cfg) return html`<div class="card"><div class="empty">Select a complication, or press New.</div></div>`;
     const layouts = resolveAll(cfg, this.buildContext(), this.forced);
     const highlightId = this.inspect.kind === "layer" ? this.inspect.id : undefined;
-    const one = (family: "rectangular" | "circular" | "corner") => {
+    const watchCase = this.currentCase();
+    const one = (family: DrawableFamily) => {
       const active = family === this.activeFamily;
-      const opts = { icons: this.icons, showHidden: true, highlightId, handles: active && this.canEdit };
+      const slot = watchCase.slots[family];
+      const fit = fitBox(slot, family);
+      const opts = { icons: this.icons, showHidden: true, highlightId, handles: active && this.canEdit, slot };
+      const pct = Math.round(fit.scale * 100);
       return html`
       <div class="preview ${family} ${active ? "active" : ""}" @pointerdown=${(e: PointerEvent) => this.onPreviewPointerDown(family, e)}>
         ${renderLayout(layouts[family], opts)}
-        <div class="label" @click=${() => { this.activeFamily = family; }}>${familyTitle(family)} · ${CANVAS[family].width}×${CANVAS[family].height} pt${active ? " · editing" : ""}</div>
+        <div class="label" @click=${() => { this.activeFamily = family; }}>${familyTitle(family)} · ${slot.width}×${slot.height} pt${pct !== 100 ? ` · ${pct}%` : ""}${active ? " · editing" : ""}</div>
       </div>`;
     };
     return html`<div class="card">
+      <div class="preview-case">
+        <label>Preview as
+          <select @change=${(e: Event) => { this.previewCase = (e.target as HTMLSelectElement).value; }}>
+            ${CASES.map((c) => html`<option value=${c.label} ?selected=${c.label === watchCase.label}>${c.label}${c.measured ? "" : " (estimated)"}</option>`)}
+          </select>
+        </label>
+        <span class="hint">Layouts are authored in the ${REFERENCE_CASE.label} box. Other cases draw the same box scaled down.</span>
+      </div>
       <div class="previews">
         ${one("rectangular")}
         <div class="previews-row">${one("circular")}${one("corner")}</div>
       </div>
       <div class="hint" style="text-align:center;margin-top:10px">Click a preview to make it the editing family. Drags and placement fields change only that family.</div>
     </div>`;
+  }
+
+  private currentCase() {
+    return CASES.find((c) => c.label === this.previewCase) ?? REFERENCE_CASE;
+  }
+
+  private previewSlot(family: DrawableFamily) {
+    return this.currentCase().slots[family];
   }
 
   private renderInspector() {

@@ -12,11 +12,60 @@ export interface CanvasSize {
   height: number;
 }
 
+// The design box: the real WidgetKit slot on a 46 mm watch, measured 2026-08-30
+// (app repo docs/custom_complication_design_box.md). Every watch draws a uniformly
+// scaled copy of this box. Mirrors `CustomComplication.DesignBox` in Swift; keep the
+// two identical.
 export const CANVAS: Record<"rectangular" | "circular" | "corner", CanvasSize> = {
-  rectangular: { width: 160, height: 62 },
-  circular: { width: 50, height: 50 },
-  corner: { width: 60, height: 40 },
+  rectangular: { width: 181, height: 65.5 },
+  circular: { width: 51, height: 51 },
+  corner: { width: 34, height: 34 },
 };
+
+export type DrawableFamily = keyof typeof CANVAS;
+
+/** A watch case the panel can preview as. Slots in points, from the design-box doc. */
+export interface WatchCase {
+  label: string;
+  /** Screen size in points, as WKInterfaceDevice reports it. */
+  screen: CanvasSize;
+  slots: Record<DrawableFamily, CanvasSize>;
+  /** Only the 46 mm row was read off a real watch; the rest are scaled by screen width. */
+  measured: boolean;
+}
+
+export const CASES: WatchCase[] = [
+  { label: "40 mm", screen: { width: 162, height: 197 }, slots: { rectangular: { width: 141, height: 51 }, circular: { width: 40, height: 40 }, corner: { width: 26, height: 26 } }, measured: false },
+  { label: "41 mm", screen: { width: 176, height: 215 }, slots: { rectangular: { width: 153, height: 55.5 }, circular: { width: 43, height: 43 }, corner: { width: 29, height: 29 } }, measured: false },
+  { label: "42 mm", screen: { width: 187, height: 223 }, slots: { rectangular: { width: 163, height: 59 }, circular: { width: 46, height: 46 }, corner: { width: 31, height: 31 } }, measured: false },
+  { label: "44 mm", screen: { width: 184, height: 224 }, slots: { rectangular: { width: 160, height: 58 }, circular: { width: 45, height: 45 }, corner: { width: 30, height: 30 } }, measured: false },
+  { label: "45 mm", screen: { width: 198, height: 242 }, slots: { rectangular: { width: 172, height: 62.5 }, circular: { width: 48.5, height: 48.5 }, corner: { width: 32, height: 32 } }, measured: false },
+  { label: "46 mm", screen: { width: 208, height: 248 }, slots: CANVAS, measured: true },
+  { label: "49 mm", screen: { width: 205, height: 251 }, slots: { rectangular: { width: 178.5, height: 64.5 }, circular: { width: 50, height: 50 }, corner: { width: 33.5, height: 33.5 } }, measured: false },
+];
+
+export const REFERENCE_CASE = CASES.find((c) => c.measured)!;
+
+export interface Fit {
+  scale: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Uniform fit of the family's design box into a real slot, centred. Mirrors
+ * `CustomComplication.DesignBox.fit` in Swift; the two must agree to the point.
+ */
+export function fitBox(slot: CanvasSize, family: DrawableFamily): Fit {
+  const ref = CANVAS[family];
+  if (slot.width <= 0 || slot.height <= 0) return { scale: 0, x: 0, y: 0, width: 0, height: 0 };
+  const scale = Math.min(slot.width / ref.width, slot.height / ref.height);
+  const width = ref.width * scale;
+  const height = ref.height * scale;
+  return { scale, x: (slot.width - width) / 2, y: (slot.height - height) / 2, width, height };
+}
 
 /** Draws an SF Symbol by name. Returns undefined when the symbol is unknown. */
 export interface IconProvider {
@@ -40,6 +89,12 @@ export interface RenderOptions {
   highlightId?: string;
   /** Draw resize handles on the highlighted element (active family only). */
   handles?: boolean;
+  /**
+   * The real slot to preview in. Defaults to the design box itself (the 46 mm
+   * slot). Any other size draws the design box uniformly scaled and centred,
+   * exactly as the watch does.
+   */
+  slot?: CanvasSize;
 }
 
 const FONT_WEIGHT: Record<string, number> = { regular: 400, medium: 500, semibold: 600, bold: 700 };
@@ -221,13 +276,18 @@ function bezelArc(canvas: CanvasSize, id: string) {
   return { id, d: `M ${toXY(start)} A ${r} ${r} 0 0 1 ${toXY(end)}` };
 }
 
-export function renderLayout(layout: ResolvedLayout, options: RenderOptions, canvasOverride?: CanvasSize): TemplateResult {
-  const family = layout.family as "rectangular" | "circular" | "corner";
-  const canvas = canvasOverride ?? CANVAS[family] ?? CANVAS.rectangular;
+export function renderLayout(layout: ResolvedLayout, options: RenderOptions): TemplateResult {
+  const family = (layout.family in CANVAS ? layout.family : "rectangular") as DrawableFamily;
+  // `canvas` is the real slot: background, body clip, border and bezel fill it,
+  // as on the watch. `design` is the box the layers were authored in; it lands
+  // inside the slot through `fit` (docs/custom_complication_design_box.md).
+  const canvas = options.slot ?? CANVAS[family];
+  const design = CANVAS[family];
+  const fit = fitBox(canvas, family);
   const uid = `clip-${family}-${Math.random().toString(36).slice(2, 8)}`;
   const bg = parseColor(layout.backgroundColorHex);
   const border = parseColor(layout.borderColorHex);
-  const bw = layout.borderWidth;
+  const bw = layout.borderWidth * fit.scale;
 
   let clip;
   let chrome;
@@ -255,7 +315,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions, can
     if (layout.bezelText) {
       const arc = bezelArc(canvas, `${uid}-bezel`);
       bezel = svg`<defs><path id=${arc.id} d=${arc.d} /></defs>
-        <text font-size="13" font-weight="600" fill="#FFFFFF" font-family="-apple-system, 'SF Pro Text', Helvetica, Arial, sans-serif">
+        <text font-size=${13 * fit.scale} font-weight="600" fill="#FFFFFF" font-family="-apple-system, 'SF Pro Text', Helvetica, Arial, sans-serif">
           <textPath href="#${arc.id}" startOffset="50%" text-anchor="middle">${layout.bezelText}</textPath></text>`;
     }
   } else {
@@ -276,7 +336,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions, can
   const clipAttr = useMask ? `url(#${uid})` : undefined;
 
   // The bezel sits outside the corner canvas, so give the corner SVG margin.
-  const pad = family === "corner" ? 22 : 0;
+  const pad = family === "corner" ? 22 * fit.scale : 0;
   const viewBox = `${-pad} ${-pad} ${canvas.width + pad * 2} ${canvas.height + pad * 2}`;
 
   return svg`<svg viewBox=${viewBox} xmlns="http://www.w3.org/2000/svg" class="complication ${family}"
@@ -285,7 +345,9 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions, can
     <g mask=${clipAttr ?? nothing} clip-path=${useMask ? nothing : `url(#${uid})`}>
       ${well}
       ${bg ? svg`<rect width=${canvas.width} height=${canvas.height} fill=${bg.color} fill-opacity=${bg.opacity} />` : nothing}
-      ${layout.elements.map((el) => renderElement(el, canvas, options))}
+      <g data-design-box transform="translate(${fit.x} ${fit.y}) scale(${fit.scale})">
+        ${layout.elements.map((el) => renderElement(el, design, options))}
+      </g>
     </g>
     ${chrome}
     ${bezel}
