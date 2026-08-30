@@ -88,6 +88,28 @@ describe("encodeConfig", () => {
     expect(Object.keys(p)).toEqual(["frame"]);
   });
 
+  it("round-trips the corner curved text and bezel gauge", () => {
+    const cfg = newConfig("X", 0);
+    const corner = cfg.perFamily.corner!;
+    corner.curvedText = { kind: { kind: "literal", value: "86°" } };
+    corner.curvedColorHex = "#FF9500";
+    corner.bezelGauge = {
+      value: { kind: { kind: "literal", value: "72" } },
+      minValue: 60,
+      maxValue: 87,
+      colorHexes: ["#34C759", "#FFCC00", "#FF3B30"],
+      minLabel: { kind: { kind: "literal", value: "60" } },
+      maxLabel: { kind: { kind: "literal", value: "87" } },
+    };
+    const enc = encodeConfig(cfg);
+    expect(auditUnknownKeys(enc)).toEqual([]);
+    const back = parseConfig(enc).perFamily.corner!;
+    expect(back.curvedText).toEqual(corner.curvedText);
+    expect(back.curvedColorHex).toBe("#FF9500");
+    expect(back.bezelGauge).toEqual(corner.bezelGauge);
+    expect(encodeConfig(parseConfig(enc))).toEqual(enc);
+  });
+
   it("writes non-finite numbers the way the Swift coder does", () => {
     const cfg = newConfig("X", 0);
     const el = newElement("gauge");

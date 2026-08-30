@@ -200,6 +200,12 @@ export function compile(config: CustomComplicationConfig): Compiled {
     const layout = config.perFamily[family];
     if (!layout) continue;
     if (layout.bezelText) visit(layout.bezelText);
+    if (layout.curvedText) visit(layout.curvedText);
+    if (layout.bezelGauge) {
+      visit(layout.bezelGauge.value);
+      if (layout.bezelGauge.minLabel) visit(layout.bezelGauge.minLabel);
+      if (layout.bezelGauge.maxLabel) visit(layout.bezelGauge.maxLabel);
+    }
     for (const v of ruleValues(layout.rules)) visit(v);
   }
 

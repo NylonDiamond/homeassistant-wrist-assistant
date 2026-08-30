@@ -82,10 +82,24 @@ export interface ResolvedShape extends ResolvedBase {
 }
 export type ResolvedElement = ResolvedText | ResolvedIcon | ResolvedGauge | ResolvedShape;
 
+export interface ResolvedBezelGauge {
+  value: number;
+  minValue: number;
+  maxValue: number;
+  colorHexes: string[];
+  minLabel?: string;
+  maxLabel?: string;
+}
+
 export interface ResolvedLayout {
   family: FamilyKind;
   elements: ResolvedElement[];
   bezelText?: string;
+  /** Big curved main text (corner only); when set, the canvas is not drawn. */
+  curvedText?: string;
+  curvedColorHex?: string;
+  /** Corner bezel gauge; wins over bezelText. */
+  bezelGauge?: ResolvedBezelGauge;
   backgroundColorHex?: string;
   cornerBodyShape: CornerBodyShape;
   borderColorHex?: string;
@@ -439,6 +453,29 @@ export class Resolver {
     };
     const bezel = this.styleText(style, "text") ?? this.resolve(layout?.bezelText);
     if (bezel !== undefined) out.bezelText = bezel;
+    const curved = this.resolve(layout?.curvedText);
+    if (curved !== undefined) out.curvedText = curved;
+    if (layout?.curvedColorHex !== undefined) out.curvedColorHex = layout.curvedColorHex;
+    if (layout?.bezelGauge) {
+      const g = layout.bezelGauge;
+      const raw = this.resolve(g.value);
+      const n = raw === undefined ? undefined : leadingNumber(raw);
+      if (n !== undefined) {
+        const lo = Math.min(g.minValue, g.maxValue);
+        const hi = Math.max(g.minValue, g.maxValue);
+        const gauge: ResolvedBezelGauge = {
+          value: Math.min(hi, Math.max(lo, n)),
+          minValue: lo,
+          maxValue: hi === lo ? lo + 1 : hi,
+          colorHexes: g.colorHexes,
+        };
+        const loLabel = this.resolve(g.minLabel);
+        if (loLabel !== undefined) gauge.minLabel = loLabel;
+        const hiLabel = this.resolve(g.maxLabel);
+        if (hiLabel !== undefined) gauge.maxLabel = hiLabel;
+        out.bezelGauge = gauge;
+      }
+    }
     const bg = this.styleColor(style, "backgroundColor") ?? layout?.backgroundColorHex;
     if (bg !== undefined) out.backgroundColorHex = bg;
     const border = this.styleColor(style, "borderColor") ?? layout?.borderColorHex;

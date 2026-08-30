@@ -776,7 +776,8 @@ export class WristAssistantPanel extends LitElement {
     const fit = fitBox(this.previewSlot(family as DrawableFamily), family as DrawableFamily);
     let canvas = { width: fit.width, height: fit.height };
     if (family === "corner") {
-      const hasBezel = !!this.draft.config.perFamily.corner?.bezelText;
+      const corner = this.draft.config.perFamily.corner;
+      const hasBezel = !!corner?.bezelText || !!corner?.bezelGauge;
       const tile = cornerTileSide(fit.scale, hasBezel);
       canvas = { width: tile, height: tile };
     }

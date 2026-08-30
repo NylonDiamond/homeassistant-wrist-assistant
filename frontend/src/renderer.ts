@@ -5,7 +5,7 @@
 
 import { svg, nothing, type TemplateResult } from "lit";
 import type { FamilyKind } from "./model.js";
-import type { ResolvedElement, ResolvedLayout } from "./resolver.js";
+import type { ResolvedBezelGauge, ResolvedElement, ResolvedLayout } from "./resolver.js";
 
 export interface CanvasSize {
   width: number;
@@ -337,18 +337,95 @@ export function bezelDisplayText(text: string, arcLen: number, fontSize: number)
   return `${out.replace(/\s+$/, "")}…`;
 }
 
-function cornerLabelArc(s: number, id: string) {
+function arcPointXY(dial: { cx: number; cy: number }, r: number, deg: number): { x: number; y: number } {
+  const rad = (deg * Math.PI) / 180;
+  return { x: dial.cx + r * Math.cos(rad), y: dial.cy + r * Math.sin(rad) };
+}
+
+function arcPathD(dial: { cx: number; cy: number }, r: number, a0: number, a1: number): string {
+  const p0 = arcPointXY(dial, r, a0);
+  const p1 = arcPointXY(dial, r, a1);
+  return `M ${p0.x} ${p0.y} A ${r} ${r} 0 0 1 ${p1.x} ${p1.y}`;
+}
+
+function cornerArc(s: number, id: string, radius: number) {
   const { dial, labelArc } = cornerContext(s, true);
   // Baseline arc for the top-right corner. Measured: the label starts at
   // 12 o'clock (-90) and the truncation ellipsis lands at about -25, so the
   // reserved region is [-90, -24]; text is centred in it (a truncated label
   // fills it edge to edge, matching the photo).
-  const toXY = (deg: number) => {
-    const rad = (deg * Math.PI) / 180;
-    return `${dial.cx + dial.r * Math.cos(rad)} ${dial.cy + dial.r * Math.sin(rad)}`;
-  };
   const sweepRad = ((labelArc.end - labelArc.start) * Math.PI) / 180;
-  return { id, d: `M ${toXY(labelArc.start)} A ${dial.r} ${dial.r} 0 0 1 ${toXY(labelArc.end)}`, length: dial.r * sweepRad };
+  return { id, d: arcPathD(dial, radius, labelArc.start, labelArc.end), length: radius * sweepRad };
+}
+
+function cornerLabelArc(s: number, id: string) {
+  return cornerArc(s, id, cornerContext(s, true).dial.r);
+}
+
+/**
+ * Big curved main text (`widgetCurvesContent` on the watch), the stock
+ * Calendar "SUN" / Weather "86°" look. Font size and baseline radius are
+ * first-pass guesses pending device-photo calibration.
+ */
+const CURVED_FONT = 20;
+const CURVED_BASELINE_INSET = 16;
+
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace("#", "");
+  const v = (i: number) => parseInt(h.slice(i, i + 2), 16) || 0;
+  return [v(0), v(2), v(4)];
+}
+
+/** Piecewise-linear interpolation across the gauge's gradient stops. */
+function gaugeColorAt(colors: string[], t: number): string {
+  if (colors.length === 0) return "#34C759";
+  if (colors.length === 1) return colors[0]!;
+  const pos = Math.min(1, Math.max(0, t)) * (colors.length - 1);
+  const i = Math.min(colors.length - 2, Math.floor(pos));
+  const f = pos - i;
+  const a = hexToRgb(colors[i]!);
+  const b = hexToRgb(colors[i + 1]!);
+  const mix = (x: number, y: number) => Math.round(x + (y - x) * f);
+  return `rgb(${mix(a[0], b[0])}, ${mix(a[1], b[1])}, ${mix(a[2], b[2])})`;
+}
+
+/**
+ * Bezel gauge preview: a gradient arc along the system label curve with an
+ * indicator dot at the current value and optional end numbers, emulating a
+ * `Gauge` in the corner's `.widgetLabel`. Segmented strokes approximate the
+ * gradient (SVG cannot run a linearGradient along an arc).
+ */
+function cornerGaugeSvg(g: ResolvedBezelGauge, s: number): TemplateResult {
+  const { dial, labelArc } = cornerContext(s, true);
+  const hasLabels = g.minLabel !== undefined || g.maxLabel !== undefined;
+  // With end numbers the colored arc gives up room at both ends, like the
+  // stock Weather corner where "60" and "87" sit on the same curve.
+  const inset = hasLabels ? 11 : 0;
+  const a0 = labelArc.start + inset;
+  const a1 = labelArc.end - inset;
+  const span = a1 - a0;
+  const segs = 24;
+  const parts: TemplateResult[] = [];
+  for (let i = 0; i < segs; i++) {
+    const b0 = a0 + (span * i) / segs;
+    const b1 = Math.min(a1, a0 + (span * (i + 1)) / segs + 0.4);
+    parts.push(svg`<path d=${arcPathD(dial, dial.r, b0, b1)} fill="none"
+      stroke=${gaugeColorAt(g.colorHexes, (i + 0.5) / segs)} stroke-width=${5.5 * s}
+      stroke-linecap=${i === 0 || i === segs - 1 ? "round" : "butt"} />`);
+  }
+  const frac = (g.value - g.minValue) / (g.maxValue - g.minValue);
+  const dot = arcPointXY(dial, dial.r, a0 + span * frac);
+  const labelFont = 9 * s;
+  const labelAt = (deg: number, text: string) => {
+    const p = arcPointXY(dial, dial.r, deg);
+    return svg`<text x=${p.x} y=${p.y + labelFont * 0.35} font-size=${labelFont} font-weight="600" fill="#FFFFFF"
+      text-anchor="middle" font-family="-apple-system, 'SF Pro Text', Helvetica, Arial, sans-serif">${text}</text>`;
+  };
+  return svg`${parts}
+    <circle cx=${dot.x} cy=${dot.y} r=${2.4 * s} fill=${gaugeColorAt(g.colorHexes, frac)}
+      stroke="#000000" stroke-width=${1.2 * s} />
+    ${g.minLabel !== undefined ? labelAt(labelArc.start + 4, g.minLabel) : nothing}
+    ${g.maxLabel !== undefined ? labelAt(labelArc.end - 4, g.maxLabel) : nothing}`;
 }
 
 export function renderLayout(layout: ResolvedLayout, options: RenderOptions): TemplateResult {
@@ -373,7 +450,9 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
     // uniform scale here. interact.ts drags stay correct because panel.ts
     // passes the tile side as the gesture canvas for corner.
     const s = fit.scale; // corner slots are square, so fit.x = fit.y = 0
-    const hasBezel = !!layout.bezelText;
+    const hasBezel = !!layout.bezelText || !!layout.bezelGauge;
+    const curved = layout.curvedText ?? "";
+    const curvedMode = curved !== "";
     const ctx = cornerContext(s, hasBezel);
     const tile = cornerTileSide(s, hasBezel);
     const tileScale = tile / (design.width * s);
@@ -381,24 +460,32 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
     const slotY = ctx.tile.cy - tile / 2;
     const shell = `M 0 0 H ${ctx.quad.width - ctx.cornerRadius} A ${ctx.cornerRadius} ${ctx.cornerRadius} 0 0 1 ${ctx.quad.width} ${ctx.cornerRadius} V ${ctx.quad.height} H 0 Z`;
     let bezel: TemplateResult | typeof nothing = nothing;
-    if (hasBezel) {
+    if (layout.bezelGauge) {
+      bezel = cornerGaugeSvg(layout.bezelGauge, s);
+    } else if (layout.bezelText) {
       const arc = cornerLabelArc(s, `${uid}-bezel`);
       bezel = svg`<defs><path id=${arc.id} d=${arc.d} /></defs>
         <text font-size=${BEZEL_FONT * s} font-weight="600" fill="#FFFFFF" font-family="-apple-system, 'SF Pro Text', Helvetica, Arial, sans-serif">
-          <textPath href="#${arc.id}" startOffset="50%" text-anchor="middle">${bezelDisplayText(layout.bezelText!, arc.length, BEZEL_FONT * s)}</textPath></text>`;
+          <textPath href="#${arc.id}" startOffset="50%" text-anchor="middle">${bezelDisplayText(layout.bezelText, arc.length, BEZEL_FONT * s)}</textPath></text>`;
     }
-    const tileBW = layout.borderWidth * fit.scale * tileScale;
-    // The watch strokes the border as a circle ring (the shape the system
-    // mask leaves visible), inscribed in the slot square.
-    const chrome = border
-      ? svg`<circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2 - tileBW / 2} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${tileBW} />`
-      : nothing;
-    return svg`<svg viewBox=${`0 0 ${ctx.quad.width} ${ctx.quad.height}`} xmlns="http://www.w3.org/2000/svg" class="complication corner"
-        width=${ctx.quad.width} height=${ctx.quad.height}>
-      <defs><clipPath id=${uid}><circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} /></clipPath></defs>
-      <path d=${shell} fill="#000000" />
-      ${bezel}
-      <g transform="translate(${slotX} ${slotY})">
+    // Curved main text replaces the canvas disc entirely (the system curves a
+    // single Text along the corner; there is no disc in that mode).
+    let main: TemplateResult | typeof nothing = nothing;
+    if (curvedMode) {
+      const curvedColor = parseColor(layout.curvedColorHex ?? "#FFFFFF") ?? { color: "#FFFFFF", opacity: 1 };
+      const arc = cornerArc(s, `${uid}-curved`, cornerContext(s, true).dial.r - CURVED_BASELINE_INSET * s);
+      main = svg`<defs><path id=${arc.id} d=${arc.d} /></defs>
+        <text font-size=${CURVED_FONT * s} font-weight="600" fill=${curvedColor.color} fill-opacity=${curvedColor.opacity}
+          font-family="-apple-system, 'SF Pro Rounded', 'SF Pro Text', Helvetica, Arial, sans-serif">
+          <textPath href="#${arc.id}" startOffset="50%" text-anchor="middle">${curved}</textPath></text>`;
+    } else {
+      const tileBW = layout.borderWidth * fit.scale * tileScale;
+      // The watch strokes the border as a circle ring (the shape the system
+      // mask leaves visible), inscribed in the slot square.
+      const chrome = border
+        ? svg`<circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2 - tileBW / 2} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${tileBW} />`
+        : nothing;
+      main = svg`<g transform="translate(${slotX} ${slotY})">
         <g clip-path=${`url(#${uid})`}>
           ${bg ? svg`<rect width=${tile} height=${tile} fill=${bg.color} fill-opacity=${bg.opacity} />` : nothing}
           <g data-design-box transform="scale(${fit.scale * tileScale})">
@@ -408,7 +495,14 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
         <circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} fill="none"
           stroke="rgba(255,255,255,0.22)" stroke-width=${0.75 * s} stroke-dasharray=${`${2 * s} ${2 * s}`} />
         ${chrome}
-      </g>
+      </g>`;
+    }
+    return svg`<svg viewBox=${`0 0 ${ctx.quad.width} ${ctx.quad.height}`} xmlns="http://www.w3.org/2000/svg" class="complication corner"
+        width=${ctx.quad.width} height=${ctx.quad.height}>
+      <defs><clipPath id=${uid}><circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} /></clipPath></defs>
+      <path d=${shell} fill="#000000" />
+      ${bezel}
+      ${main}
     </svg>`;
   }
 

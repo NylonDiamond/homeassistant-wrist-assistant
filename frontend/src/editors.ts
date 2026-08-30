@@ -6,6 +6,7 @@
 import { html, nothing, type TemplateResult } from "lit";
 import {
   type AggregateSpec,
+  type BezelGauge,
   type Comparison,
   type ComparisonKind,
   type CustomComplicationConfig,
@@ -652,13 +653,72 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
     ${colorField("Background (blank = transparent)", layout.backgroundColorHex, (v) => upd((l) => { if (v === undefined) delete l.backgroundColorHex; else l.backgroundColorHex = v; }, "bg"), true)}
     ${colorField("Border colour", layout.borderColorHex, (v) => upd((l) => { if (v === undefined) delete l.borderColorHex; else l.borderColorHex = v; }, "border"), true)}
     ${numberField("Border width (pt)", layout.borderWidth, (v) => upd((l) => { l.borderWidth = v ?? 2; }, "bw"), { step: 0.5, min: 0 })}
-    ${family === "corner"
-      ? html`${checkField("Bezel label", !!layout.bezelText, (v) => upd((l) => { if (v) l.bezelText = literal("Label"); else delete l.bezelText; }))}
-          ${layout.bezelText ? valueEditor(host, layout.bezelText, (val) => upd((l) => { l.bezelText = val; }, "bezel"), { showResolved: true, key: `fam-${family}-bezel` }) : nothing}`
-      : nothing}
+    ${family === "corner" ? cornerEditor(host, layout, upd) : nothing}
     <div class="hint">${placed === 0 ? "Layers use their shared frames here." : `${placed} layer${placed === 1 ? " has" : "s have"} a ${familyTitle(family)} placement.`}</div>
     ${placed > 0 ? html`<button class="small" @click=${() => upd((l) => { l.placements = {}; })}>Reset placements to the shared frames</button>` : nothing}
     <div class="hint">${layout.rules.length === 0 ? "No layout rules." : `${layout.rules.length} layout rule${layout.rules.length === 1 ? "" : "s"}.`} Use the Rules tab to change the background, border, and bezel label from values.</div>`;
+}
+
+/** Corner-only controls: main content mode (canvas vs big curved text) and the
+ * bezel (none / text label / gauge arc), matching what the watch can draw. */
+function cornerEditor(
+  host: EditorHost,
+  layout: FamilyLayout,
+  upd: (mutate: (l: FamilyLayout) => void, k?: string) => void,
+): TemplateResult {
+  const mode: "canvas" | "curved" = layout.curvedText ? "curved" : "canvas";
+  const bezelKind: "none" | "text" | "gauge" = layout.bezelGauge ? "gauge" : layout.bezelText ? "text" : "none";
+  return html`
+    <h3>Corner content</h3>
+    ${selectField("Main content", mode, [["canvas", "Layer canvas (circle)"], ["curved", "Big curved text"]], (v) => upd((l) => {
+      if (v === "curved") { if (!l.curvedText) l.curvedText = literal("Text"); }
+      else { delete l.curvedText; delete l.curvedColorHex; }
+    }))}
+    ${mode === "curved" && layout.curvedText ? html`
+      ${valueEditor(host, layout.curvedText, (val) => upd((l) => { l.curvedText = val; }, "curved"), { showResolved: true, key: "fam-corner-curved" })}
+      ${colorField("Curved text colour", layout.curvedColorHex ?? "#FFFFFF", (v) => upd((l) => { if (v === undefined) delete l.curvedColorHex; else l.curvedColorHex = v; }, "curvedcolor"))}
+      <div class="hint">Curved text replaces the layer canvas in the corner. The watch draws it big along the corner curve, like the stock Calendar and Weather corners.</div>
+    ` : nothing}
+    ${selectField("Bezel", bezelKind, [["none", "None (biggest circle)"], ["text", "Text label"], ["gauge", "Gauge arc"]], (v) => upd((l) => {
+      if (v === "text") { delete l.bezelGauge; if (!l.bezelText) l.bezelText = literal("Label"); }
+      else if (v === "gauge") { delete l.bezelText; if (!l.bezelGauge) l.bezelGauge = { value: literal("50"), minValue: 0, maxValue: 100, colorHexes: ["#34C759", "#FFCC00", "#FF3B30"] }; }
+      else { delete l.bezelText; delete l.bezelGauge; }
+    }))}
+    ${bezelKind === "text" && layout.bezelText ? valueEditor(host, layout.bezelText, (val) => upd((l) => { l.bezelText = val; }, "bezel"), { showResolved: true, key: "fam-corner-bezel" }) : nothing}
+    ${bezelKind === "gauge" && layout.bezelGauge ? bezelGaugeEditor(host, layout.bezelGauge, upd) : nothing}`;
+}
+
+function bezelGaugeEditor(
+  host: EditorHost,
+  g: BezelGauge,
+  upd: (mutate: (l: FamilyLayout) => void, k?: string) => void,
+): TemplateResult {
+  const stops = [
+    g.colorHexes[0] ?? "#34C759",
+    g.colorHexes[1] ?? g.colorHexes[g.colorHexes.length - 1] ?? "#FFCC00",
+    g.colorHexes[g.colorHexes.length - 1] ?? "#FF3B30",
+  ];
+  const setStop = (i: number) => (v: string | undefined) => upd((l) => {
+    const next = [...stops];
+    next[i] = v ?? next[i]!;
+    l.bezelGauge!.colorHexes = next;
+  }, `gstop${i}`);
+  return html`
+    ${valueEditor(host, g.value, (val) => upd((l) => { l.bezelGauge!.value = val; }, "gvalue"), { showResolved: true, key: "fam-corner-gvalue" })}
+    <div class="grid2">
+      ${numberField("Gauge min", g.minValue, (v) => upd((l) => { l.bezelGauge!.minValue = v ?? 0; }, "gmin"), { step: 1 })}
+      ${numberField("Gauge max", g.maxValue, (v) => upd((l) => { l.bezelGauge!.maxValue = v ?? 100; }, "gmax"), { step: 1 })}
+    </div>
+    ${colorField("Arc colour (min end)", stops[0], setStop(0))}
+    ${colorField("Arc colour (middle)", stops[1], setStop(1))}
+    ${colorField("Arc colour (max end)", stops[2], setStop(2))}
+    ${checkField("End number labels", !!(g.minLabel || g.maxLabel), (v) => upd((l) => {
+      const gauge = l.bezelGauge!;
+      if (v) { gauge.minLabel = literal(String(gauge.minValue)); gauge.maxLabel = literal(String(gauge.maxValue)); }
+      else { delete gauge.minLabel; delete gauge.maxLabel; }
+    }))}
+    ${g.minLabel ? valueEditor(host, g.minLabel, (val) => upd((l) => { l.bezelGauge!.minLabel = val; }, "gminlab"), { key: "fam-corner-gminlab" }) : nothing}
+    ${g.maxLabel ? valueEditor(host, g.maxLabel, (val) => upd((l) => { l.bezelGauge!.maxLabel = val; }, "gmaxlab"), { key: "fam-corner-gmaxlab" }) : nothing}`;
 }
 
 export const FAMILY_OPTIONS = DRAWABLE_FAMILIES.map((f): [FamilyKind, string] => [f, familyTitle(f)]);

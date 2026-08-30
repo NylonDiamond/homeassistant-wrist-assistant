@@ -204,9 +204,27 @@ export interface Placement {
   size?: number;
 }
 
+/** Colored arc gauge in the corner's bezel (the stock Weather temperature look).
+ * `colorHexes` are gradient stops from the min end to the max end; the optional
+ * labels are the small numbers the system draws at the two ends of the arc. */
+export interface BezelGauge {
+  value: Value;
+  minValue: number;
+  maxValue: number;
+  colorHexes: string[];
+  minLabel?: Value;
+  maxLabel?: Value;
+}
+
 export interface FamilyLayout {
   placements: Record<string, Placement>;
   bezelText?: Value;
+  /** Big curved main text (corner only). When set, the corner ignores the
+   * element canvas: the system curves only plain text. */
+  curvedText?: Value;
+  curvedColorHex?: string;
+  /** Corner bezel gauge; wins over bezelText when set. */
+  bezelGauge?: BezelGauge;
   backgroundColorHex?: string;
   cornerBodyShape: CornerBodyShape;
   borderColorHex?: string;
@@ -535,6 +553,22 @@ function parseLayout(o: unknown): FamilyLayout {
     rules: parseRules(l.rules),
   };
   if (isObject(l.bezelText)) layout.bezelText = parseValue(l.bezelText);
+  if (isObject(l.curvedText)) layout.curvedText = parseValue(l.curvedText);
+  if (typeof l.curvedColorHex === "string") layout.curvedColorHex = l.curvedColorHex;
+  if (isObject(l.bezelGauge)) {
+    const g = l.bezelGauge;
+    const gauge: BezelGauge = {
+      value: isObject(g.value) ? parseValue(g.value) : literal("50"),
+      minValue: num(g.minValue, 0),
+      maxValue: num(g.maxValue, 100),
+      colorHexes: Array.isArray(g.colorHexes) && g.colorHexes.length > 0
+        ? g.colorHexes.filter((c): c is string => typeof c === "string")
+        : ["#34C759", "#FFCC00", "#FF3B30"],
+    };
+    if (isObject(g.minLabel)) gauge.minLabel = parseValue(g.minLabel);
+    if (isObject(g.maxLabel)) gauge.maxLabel = parseValue(g.maxLabel);
+    layout.bezelGauge = gauge;
+  }
   if (typeof l.backgroundColorHex === "string") layout.backgroundColorHex = l.backgroundColorHex;
   if (typeof l.borderColorHex === "string") layout.borderColorHex = l.borderColorHex;
   return layout;
@@ -788,6 +822,20 @@ function encodeLayout(l: FamilyLayout): J {
     o.placements = placements;
   }
   if (l.bezelText) o.bezelText = encodeValue(l.bezelText);
+  if (l.curvedText) o.curvedText = encodeValue(l.curvedText);
+  if (l.curvedColorHex !== undefined) o.curvedColorHex = l.curvedColorHex;
+  if (l.bezelGauge) {
+    const g = l.bezelGauge;
+    const go: J = {
+      value: encodeValue(g.value),
+      minValue: encNum(g.minValue),
+      maxValue: encNum(g.maxValue),
+      colorHexes: g.colorHexes,
+    };
+    if (g.minLabel) go.minLabel = encodeValue(g.minLabel);
+    if (g.maxLabel) go.maxLabel = encodeValue(g.maxLabel);
+    o.bezelGauge = go;
+  }
   if (l.backgroundColorHex !== undefined) o.backgroundColorHex = l.backgroundColorHex;
   o.cornerBodyShape = l.cornerBodyShape;
   if (l.borderColorHex !== undefined) o.borderColorHex = l.borderColorHex;
@@ -853,7 +901,8 @@ const K = {
   test: ["id", "value", "comparison"],
   comparison: ["kind", "value", "upper", "pattern", "options"],
   styleChange: ["kind", "value", "number", "weight"],
-  layout: ["placements", "bezelText", "backgroundColorHex", "cornerBodyShape", "borderColorHex", "borderWidth", "rules"],
+  layout: ["placements", "bezelText", "curvedText", "curvedColorHex", "bezelGauge", "backgroundColorHex", "cornerBodyShape", "borderColorHex", "borderWidth", "rules"],
+  bezelGauge: ["value", "minValue", "maxValue", "colorHexes", "minLabel", "maxLabel"],
   placement: ["frame", "isHidden", "size"],
   tapAction: ["type", "entityId", "displayName", "domain", "iconName"],
   dataSource: ["kind", "entityId", "displayName", "domain", "iconName", "value"],
@@ -979,6 +1028,14 @@ export function auditUnknownKeys(raw: unknown): string[] {
       }
     }
     value(l.bezelText, `${lp}.bezelText`);
+    value(l.curvedText, `${lp}.curvedText`);
+    if (isObject(l.bezelGauge)) {
+      const gp = `${lp}.bezelGauge`;
+      check(l.bezelGauge, K.bezelGauge, gp);
+      value(l.bezelGauge.value, `${gp}.value`);
+      value(l.bezelGauge.minLabel, `${gp}.minLabel`);
+      value(l.bezelGauge.maxLabel, `${gp}.maxLabel`);
+    }
     rules(l.rules, `${lp}.rules`);
   }
   if (Array.isArray(raw.dataSources)) raw.dataSources.forEach((d, i) => check(d, K.dataSource, `$.dataSources[${i}]`));
