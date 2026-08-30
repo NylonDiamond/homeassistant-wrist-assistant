@@ -319,10 +319,21 @@ const BEZEL_FONT = 10.5; // cap height measured 7.5 pt; SF cap ratio ~0.71
  * a per-glyph heuristic (em fractions of SF Semibold), good to about one
  * character against the device photo.
  */
+/** Per-glyph width heuristic (em fractions of SF Semibold), good to about one
+ * character against the device photos. */
+function glyphWidth(ch: string, fontSize: number): number {
+  return (ch === " " ? 0.35 : /[ILJ1.,:;'!|]/.test(ch) ? 0.34 : /[MW]/.test(ch) ? 0.92 : 0.66) * fontSize;
+}
+
+function estimateTextWidth(text: string, fontSize: number): number {
+  let total = 0;
+  for (const ch of text) total += glyphWidth(ch, fontSize);
+  return total;
+}
+
 export function bezelDisplayText(text: string, arcLen: number, fontSize: number): string {
   const up = text.toUpperCase();
-  const w = (ch: string) =>
-    (ch === " " ? 0.35 : /[ILJ1.,:;'!|]/.test(ch) ? 0.34 : /[MW]/.test(ch) ? 0.92 : 0.66) * fontSize;
+  const w = (ch: string) => glyphWidth(ch, fontSize);
   const ellipsis = 0.9 * fontSize;
   let total = 0;
   for (const ch of up) total += w(ch);
@@ -409,11 +420,22 @@ function gaugeColorAt(colors: string[], t: number): string {
  * `Gauge` in the corner's `.widgetLabel`. Segmented strokes approximate the
  * gradient (SVG cannot run a linearGradient along an arc).
  */
-function cornerGaugeSvg(g: ResolvedBezelGauge, s: number): TemplateResult {
+/** End-number typography, measured 2026-08-30: caps ~7.75 pt on the gauge
+ * circle, so ~11 pt semibold, curved along the same arc. */
+const GAUGE_LABEL_FONT = 11;
+
+function cornerGaugeSvg(g: ResolvedBezelGauge, s: number, uid: string): TemplateResult {
   const { dial } = cornerContext(s, true);
   const r = GAUGE_R * s;
-  const a0 = GAUGE_ARC.start;
-  const a1 = GAUGE_ARC.end;
+  // Measured with labels on: the colored arc retreats from each end by about
+  // the label's angular width minus ~1.8 degrees (so "0" barely moves the
+  // start while "100" pulls the end from -30.5 to -38.2), and the numbers sit
+  // just past the arc ends on the same circle.
+  const degPerPt = 180 / (Math.PI * GAUGE_R);
+  const wMin = g.minLabel !== undefined ? estimateTextWidth(g.minLabel, GAUGE_LABEL_FONT) * degPerPt : 0;
+  const wMax = g.maxLabel !== undefined ? estimateTextWidth(g.maxLabel, GAUGE_LABEL_FONT) * degPerPt : 0;
+  const a0 = GAUGE_ARC.start + (wMin > 0 ? Math.max(0, wMin - 1.8) : 0);
+  const a1 = GAUGE_ARC.end - (wMax > 0 ? Math.max(0, wMax - 1.8) : 0);
   const span = a1 - a0;
   const segs = 24;
   const parts: TemplateResult[] = [];
@@ -426,20 +448,17 @@ function cornerGaugeSvg(g: ResolvedBezelGauge, s: number): TemplateResult {
   }
   const frac = (g.value - g.minValue) / (g.maxValue - g.minValue);
   const dot = arcPointXY(dial, r, a0 + span * frac);
-  const labelFont = 9 * s;
-  const labelAt = (deg: number, text: string) => {
-    const p = arcPointXY(dial, r, deg);
-    return svg`<text x=${p.x} y=${p.y + labelFont * 0.35} font-size=${labelFont} font-weight="600" fill="#FFFFFF"
-      text-anchor="middle" font-family="-apple-system, 'SF Pro Text', Helvetica, Arial, sans-serif">${text}</text>`;
-  };
-  // End numbers sit just past the arc ends on the same curve, like the stock
-  // Weather corner's "60" and "87". Their exact system placement is not yet
-  // measured from a device photo.
+  const gap = 1.5;
+  const curvedLabel = (id: string, from: number, to: number, text: string) => svg`
+    <defs><path id=${id} d=${arcPathD(dial, r, from, to)} /></defs>
+    <text font-size=${GAUGE_LABEL_FONT * s} font-weight="600" fill="#FFFFFF"
+      font-family="-apple-system, 'SF Pro Text', Helvetica, Arial, sans-serif">
+      <textPath href="#${id}" startOffset="50%" text-anchor="middle">${text}</textPath></text>`;
   return svg`${parts}
     <circle cx=${dot.x} cy=${dot.y} r=${3.2 * s} fill=${gaugeColorAt(g.colorHexes, frac)}
       stroke="#000000" stroke-width=${1.2 * s} />
-    ${g.minLabel !== undefined ? labelAt(a0 - 5.5, g.minLabel) : nothing}
-    ${g.maxLabel !== undefined ? labelAt(a1 + 5.5, g.maxLabel) : nothing}`;
+    ${g.minLabel !== undefined ? curvedLabel(`${uid}-gmin`, a0 - gap - Math.max(wMin, 3), a0 - gap, g.minLabel) : nothing}
+    ${g.maxLabel !== undefined ? curvedLabel(`${uid}-gmax`, a1 + gap, a1 + gap + Math.max(wMax, 3), g.maxLabel) : nothing}`;
 }
 
 export function renderLayout(layout: ResolvedLayout, options: RenderOptions): TemplateResult {
@@ -475,7 +494,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
     const shell = `M 0 0 H ${ctx.quad.width - ctx.cornerRadius} A ${ctx.cornerRadius} ${ctx.cornerRadius} 0 0 1 ${ctx.quad.width} ${ctx.cornerRadius} V ${ctx.quad.height} H 0 Z`;
     let bezel: TemplateResult | typeof nothing = nothing;
     if (layout.bezelGauge) {
-      bezel = cornerGaugeSvg(layout.bezelGauge, s);
+      bezel = cornerGaugeSvg(layout.bezelGauge, s, uid);
     } else if (layout.bezelText) {
       const arc = cornerLabelArc(s, `${uid}-bezel`);
       bezel = svg`<defs><path id=${arc.id} d=${arc.d} /></defs>
