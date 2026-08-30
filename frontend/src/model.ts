@@ -999,7 +999,9 @@ export function newId(): string {
 }
 
 export function defaultLayout(): FamilyLayout {
-  return { placements: {}, cornerBodyShape: "wedge", borderWidth: 2, rules: [] };
+  // cornerBodyShape is legacy: renderers always draw the circle body since
+  // 2026-08-30 (the wedge could never match the wrist). New documents say so.
+  return { placements: {}, cornerBodyShape: "circle", borderWidth: 2, rules: [] };
 }
 
 export function newConfig(name: string, slotIndex: number): CustomComplicationConfig {

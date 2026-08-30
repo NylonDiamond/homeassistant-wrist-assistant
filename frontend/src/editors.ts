@@ -540,7 +540,7 @@ export function setPlacement(cfg: CustomComplicationConfig, family: FamilyKind, 
   if (!el) return;
   let layout = cfg.perFamily[family];
   if (!layout) {
-    layout = { placements: {}, cornerBodyShape: "wedge", borderWidth: 2, rules: [] };
+    layout = { placements: {}, cornerBodyShape: "circle", borderWidth: 2, rules: [] };
     cfg.perFamily[family] = layout;
   }
   const eff = effectivePlacement(cfg, family, el);
@@ -644,7 +644,7 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
   const layout = host.config.perFamily[family];
   if (!layout) {
     return html`<div class="hint">No settings stored for ${familyTitle(family)} yet.</div>
-      <button class="small" @click=${() => host.update((c) => { c.perFamily[family] = { placements: {}, cornerBodyShape: "wedge", borderWidth: 2, rules: [] }; })}>Add ${familyTitle(family)} settings</button>`;
+      <button class="small" @click=${() => host.update((c) => { c.perFamily[family] = { placements: {}, cornerBodyShape: "circle", borderWidth: 2, rules: [] }; })}>Add ${familyTitle(family)} settings</button>`;
   }
   const upd = (mutate: (l: FamilyLayout) => void, k?: string) => host.update((c) => mutate(c.perFamily[family]!), k ? `fam-${family}-${k}` : undefined);
   const placed = Object.keys(layout.placements).length;
@@ -653,8 +653,7 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
     ${colorField("Border colour", layout.borderColorHex, (v) => upd((l) => { if (v === undefined) delete l.borderColorHex; else l.borderColorHex = v; }, "border"), true)}
     ${numberField("Border width (pt)", layout.borderWidth, (v) => upd((l) => { l.borderWidth = v ?? 2; }, "bw"), { step: 0.5, min: 0 })}
     ${family === "corner"
-      ? html`${selectField("Body shape", layout.cornerBodyShape, [["wedge", "Wedge"], ["circle", "Circle"]], (v) => upd((l) => { l.cornerBodyShape = v; }))}
-          ${checkField("Bezel label", !!layout.bezelText, (v) => upd((l) => { if (v) l.bezelText = literal("Label"); else delete l.bezelText; }))}
+      ? html`${checkField("Bezel label", !!layout.bezelText, (v) => upd((l) => { if (v) l.bezelText = literal("Label"); else delete l.bezelText; }))}
           ${layout.bezelText ? valueEditor(host, layout.bezelText, (val) => upd((l) => { l.bezelText = val; }, "bezel"), { showResolved: true, key: `fam-${family}-bezel` }) : nothing}`
       : nothing}
     <div class="hint">${placed === 0 ? "Layers use their shared frames here." : `${placed} layer${placed === 1 ? " has" : "s have"} a ${familyTitle(family)} placement.`}</div>

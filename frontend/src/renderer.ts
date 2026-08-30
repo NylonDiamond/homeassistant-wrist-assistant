@@ -262,33 +262,38 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     transform="rotate(${el.frame.rotationDegrees} ${box.cx} ${box.cy})">${hit}${body}${highlight}${handles}</g>`;
 }
 
-/** Corner wedge geometry, straight from CustomComplicationViews.swift:377-409. */
-export function cornerWedge(canvas: CanvasSize) {
-  const { width: W, height: H } = canvas;
-  const radius = Math.max(0, Math.min(H / (1 + 2 * 0.54), (W / 2) / (1 + 0.54)));
-  const body = 0.54 * radius;
-  const tail = 0.42 * radius;
-  return { radius, body, tail, cx: W / 2, cy: H - body, bulbX: W / 2 + radius, bulbY: H - body };
+/**
+ * Corner preview geometry, in 46 mm reference points multiplied by `s` (the
+ * design-box scale of the previewed case). The wedge body is gone: the device
+ * test (app repo docs/custom_complication_design_box.md, corner addendum)
+ * showed the corner slot is a small upright square near the screen corner that
+ * watchOS never rotates, so the only honest corner look is Apple's own — a
+ * disc at the corner plus a system-curved bezel label. The preview shows the
+ * top-right quadrant of the watch screen with the disc where the real face
+ * puts it (measured off a 46 mm watch photo).
+ */
+export function cornerContext(s: number) {
+  return {
+    /** Top-right quarter of the 208x248 pt 46 mm screen. */
+    quad: { width: 104 * s, height: 124 * s },
+    /** Screen shell corner radius. */
+    cornerRadius: 52 * s,
+    /** Slot disc centre: 24 pt in from the right edge, 29.5 pt down from the top. */
+    disc: { cx: 80 * s, cy: 29.5 * s },
+    /** Bezel-label baseline circle, centred on the dial (the quadrant's bottom-left). */
+    dial: { cx: 0, cy: 124 * s, r: 96 * s },
+  };
 }
 
-function wedgePath(canvas: CanvasSize): string {
-  const g = cornerWedge(canvas);
-  // 180-degree arc from 180 to 360 degrees (SwiftUI clockwise on a flipped
-  // y axis is the top half here), stroked at `tail` with round caps.
-  return `M ${g.cx - g.radius} ${g.cy} A ${g.radius} ${g.radius} 0 0 1 ${g.cx + g.radius} ${g.cy}`;
-}
-
-function bezelArc(canvas: CanvasSize, id: string) {
-  const g = cornerWedge(canvas);
-  const r = g.radius + g.tail / 2 + 6;
-  // Centred at 270 degrees (top), spanning 160 degrees.
-  const start = 270 - 80;
-  const end = 270 + 80;
+function cornerLabelArc(s: number, id: string) {
+  const { dial } = cornerContext(s);
+  // Baseline arc through the corner diagonal (-50 deg from the dial centre),
+  // spanning [-90, -10] so centred text sits on the diagonal, inside the disc.
   const toXY = (deg: number) => {
     const rad = (deg * Math.PI) / 180;
-    return `${g.cx + r * Math.cos(rad)} ${g.cy + r * Math.sin(rad)}`;
+    return `${dial.cx + dial.r * Math.cos(rad)} ${dial.cy + dial.r * Math.sin(rad)}`;
   };
-  return { id, d: `M ${toXY(start)} A ${r} ${r} 0 0 1 ${toXY(end)}` };
+  return { id, d: `M ${toXY(-90)} A ${dial.r} ${dial.r} 0 0 1 ${toXY(-10)}` };
 }
 
 export function renderLayout(layout: ResolvedLayout, options: RenderOptions): TemplateResult {
@@ -304,60 +309,59 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
   const border = parseColor(layout.borderColorHex);
   const bw = layout.borderWidth * fit.scale;
 
-  let clip;
-  let chrome;
-  let bezel: TemplateResult | typeof nothing = nothing;
+  if (family === "corner") {
+    // Watch-corner context preview: black screen quadrant, the slot disc where
+    // the real face puts it, and the bezel label on the system's curve. The
+    // slot content group is only translated (never scaled beyond `fit`), so
+    // pointer deltas in interact.ts keep normalising against the fit box.
+    const s = fit.scale; // corner slots are square, so fit.x = fit.y = 0
+    const ctx = cornerContext(s);
+    const r = Math.min(canvas.width, canvas.height) / 2;
+    const slotX = ctx.disc.cx - canvas.width / 2;
+    const slotY = ctx.disc.cy - canvas.height / 2;
+    const shell = `M 0 0 H ${ctx.quad.width - ctx.cornerRadius} A ${ctx.cornerRadius} ${ctx.cornerRadius} 0 0 1 ${ctx.quad.width} ${ctx.cornerRadius} V ${ctx.quad.height} H 0 Z`;
+    let bezel: TemplateResult | typeof nothing = nothing;
+    if (layout.bezelText) {
+      const arc = cornerLabelArc(s, `${uid}-bezel`);
+      bezel = svg`<defs><path id=${arc.id} d=${arc.d} /></defs>
+        <text font-size=${13 * s} font-weight="600" fill="#FFFFFF" font-family="-apple-system, 'SF Pro Text', Helvetica, Arial, sans-serif">
+          <textPath href="#${arc.id}" startOffset="50%" text-anchor="middle">${layout.bezelText}</textPath></text>`;
+    }
+    const chrome = border
+      ? svg`<circle cx=${canvas.width / 2} cy=${canvas.height / 2} r=${r - bw / 2} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${bw} />`
+      : nothing;
+    return svg`<svg viewBox=${`0 0 ${ctx.quad.width} ${ctx.quad.height}`} xmlns="http://www.w3.org/2000/svg" class="complication corner"
+        width=${ctx.quad.width} height=${ctx.quad.height}>
+      <defs><clipPath id=${uid}><circle cx=${canvas.width / 2} cy=${canvas.height / 2} r=${r} /></clipPath></defs>
+      <path d=${shell} fill="#000000" />
+      ${bezel}
+      <g transform="translate(${slotX} ${slotY})">
+        <g clip-path=${`url(#${uid})`}>
+          ${bg ? svg`<rect width=${canvas.width} height=${canvas.height} fill=${bg.color} fill-opacity=${bg.opacity} />` : nothing}
+          <g data-design-box transform="translate(${fit.x} ${fit.y}) scale(${fit.scale})">
+            ${layout.elements.map((el) => renderElement(el, design, options))}
+          </g>
+        </g>
+        <circle cx=${canvas.width / 2} cy=${canvas.height / 2} r=${r} fill="none"
+          stroke="rgba(255,255,255,0.22)" stroke-width=${0.75 * s} stroke-dasharray=${`${2 * s} ${2 * s}`} />
+        ${chrome}
+      </g>
+    </svg>`;
+  }
+
+  const clip = svg`<rect width=${canvas.width} height=${canvas.height} />`;
+  const chrome = border
+    ? svg`<rect x=${bw / 2} y=${bw / 2} width=${canvas.width - bw} height=${canvas.height - bw} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${bw} />`
+    : nothing;
   // Editor affordance: a black well when there is no background so white
   // layers stay visible (the watch face itself is black).
   const well = svg`<rect width=${canvas.width} height=${canvas.height} fill="#000000" />`;
-  if (family === "corner") {
-    const g = cornerWedge(canvas);
-    if (layout.cornerBodyShape === "circle") {
-      const r = Math.min(canvas.width, canvas.height) / 2;
-      clip = svg`<circle cx=${canvas.width / 2} cy=${canvas.height / 2} r=${r} />`;
-      chrome = border
-        ? svg`<circle cx=${canvas.width / 2} cy=${canvas.height / 2} r=${r - bw / 2} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${bw} />`
-        : nothing;
-    } else {
-      clip = svg`<path d=${wedgePath(canvas)} fill="none" stroke="#000" stroke-width=${g.tail} stroke-linecap="round" />
-        <circle cx=${g.bulbX} cy=${g.bulbY} r=${g.body} />`;
-      // A stroked path cannot be a clipPath child in every browser; use a mask.
-      chrome = border
-        ? svg`<path d=${wedgePath(canvas)} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${bw} stroke-linecap="round" />
-          <circle cx=${g.bulbX} cy=${g.bulbY} r=${g.body - bw / 2} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${bw} />`
-        : nothing;
-    }
-    if (layout.bezelText) {
-      const arc = bezelArc(canvas, `${uid}-bezel`);
-      bezel = svg`<defs><path id=${arc.id} d=${arc.d} /></defs>
-        <text font-size=${13 * fit.scale} font-weight="600" fill="#FFFFFF" font-family="-apple-system, 'SF Pro Text', Helvetica, Arial, sans-serif">
-          <textPath href="#${arc.id}" startOffset="50%" text-anchor="middle">${layout.bezelText}</textPath></text>`;
-    }
-  } else {
-    clip = svg`<rect width=${canvas.width} height=${canvas.height} />`;
-    chrome = border
-      ? svg`<rect x=${bw / 2} y=${bw / 2} width=${canvas.width - bw} height=${canvas.height - bw} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${bw} />`
-      : nothing;
-  }
-
-  const useMask = family === "corner" && layout.cornerBodyShape === "wedge";
-  const g = cornerWedge(canvas);
-  const maskDef = useMask
-    ? svg`<mask id=${uid}>
-        <path d=${wedgePath(canvas)} fill="none" stroke="#fff" stroke-width=${g.tail} stroke-linecap="round" />
-        <circle cx=${g.bulbX} cy=${g.bulbY} r=${g.body} fill="#fff" />
-      </mask>`
-    : svg`<clipPath id=${uid}>${clip}</clipPath>`;
-  const clipAttr = useMask ? `url(#${uid})` : undefined;
-
-  // The bezel sits outside the corner canvas, so give the corner SVG margin.
-  const pad = family === "corner" ? 22 * fit.scale : 0;
-  const viewBox = `${-pad} ${-pad} ${canvas.width + pad * 2} ${canvas.height + pad * 2}`;
+  const viewBox = `0 0 ${canvas.width} ${canvas.height}`;
 
   return svg`<svg viewBox=${viewBox} xmlns="http://www.w3.org/2000/svg" class="complication ${family}"
-      width=${canvas.width + pad * 2} height=${canvas.height + pad * 2}>
-    <defs>${maskDef}</defs>
-    <g mask=${clipAttr ?? nothing} clip-path=${useMask ? nothing : `url(#${uid})`}>
+      width=${canvas.width} height=${canvas.height}>
+    <defs><clipPath id=${uid}>${clip}</clipPath></defs>
+    <g clip-path=${`url(#${uid})`}>
       ${well}
       ${bg ? svg`<rect width=${canvas.width} height=${canvas.height} fill=${bg.color} fill-opacity=${bg.opacity} />` : nothing}
       <g data-design-box transform="translate(${fit.x} ${fit.y}) scale(${fit.scale})">
@@ -365,7 +369,6 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
       </g>
     </g>
     ${chrome}
-    ${bezel}
   </svg>`;
 }
 

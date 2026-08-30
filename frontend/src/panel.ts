@@ -190,7 +190,9 @@ export class WristAssistantPanel extends LitElement {
     /* 2x / 4x / 3x the 46 mm design box, so the three keep their true ratios. */
     .preview.rectangular svg { width: 362px; height: 131px; }
     .preview.circular svg { width: 204px; height: 204px; border-radius: 50%; }
-    .preview.corner svg { width: 234px; height: 234px; background: #2c2c2e; }
+    /* The corner preview draws the top-right screen quadrant (104x124 reference
+       points), so the card keeps that aspect. */
+    .preview.corner svg { width: 201px; height: 240px; background: #2c2c2e; }
     .preview-case { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
     .preview-case label { font-size: 13px; display: flex; align-items: center; gap: 8px; }
     .preview-case select { font: inherit; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--divider-color, #444); background: var(--card-background-color, #1c1c1e); color: inherit; }

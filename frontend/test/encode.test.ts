@@ -69,7 +69,7 @@ describe("encodeConfig", () => {
     expect(Array.isArray(enc.perFamily)).toBe(true);
     expect((enc.perFamily as unknown[]).length).toBe(6);
     const layout = (enc.perFamily as unknown[])[1] as Record<string, unknown>;
-    expect(layout).toEqual({ cornerBodyShape: "wedge", borderWidth: 2 });
+    expect(layout).toEqual({ cornerBodyShape: "circle", borderWidth: 2 });
     const el = (enc.elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
     expect(el.rules).toEqual([]);
     expect(el.isHidden).toBe(false);
