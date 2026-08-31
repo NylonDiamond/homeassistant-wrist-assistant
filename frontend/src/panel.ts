@@ -26,6 +26,7 @@ import {
   type Rule,
   type Value,
   DRAWABLE_FAMILIES,
+  MAX_SLOTS,
   auditUnknownKeys,
   newConfig,
   newElement,
@@ -85,6 +86,9 @@ export class WristAssistantPanel extends LitElement {
   @state() private readOnlyReason?: string;
   @state() private parseError?: string;
   @state() private maxSchemaVersion = 4;
+  /** iPhone presets on the selected watch (slot + name). freeSlot() skips
+   * their slots; the list shows them as locked rows. */
+  @state() private presets: { slot: number; name: string }[] = [];
   @state() private templateResults = new Map<string, string>();
   @state() private templateError?: string;
   @state() private templateFetchedAt?: number;
@@ -181,6 +185,8 @@ export class WristAssistantPanel extends LitElement {
     li.row:hover { background: var(--secondary-background-color); }
     li.row.selected { background: var(--primary-color); color: var(--text-primary-color, #fff); }
     li.row .meta { font-size: 12px; opacity: .7; }
+    li.row.locked { cursor: default; opacity: .6; }
+    li.row.locked:hover { background: none; }
     .previews { display: flex; flex-direction: column; gap: 16px; align-items: center; }
     .preview { text-align: center; position: relative; }
     .preview .label { font-size: 12px; opacity: .7; margin-top: 6px; cursor: pointer; }
@@ -390,6 +396,7 @@ export class WristAssistantPanel extends LitElement {
       const reply = await fetchList(this.hass, this.ownerId);
       this.records = reply.records;
       this.maxSchemaVersion = reply.max_schema_version;
+      this.presets = reply.presets ?? [];
       const still = this.records.find((r) => r.id === this.selectedId);
       if (still) {
         if (this.draft && this.draft.dirty) {
@@ -474,29 +481,21 @@ export class WristAssistantPanel extends LitElement {
     this.scheduleTemplates(0);
   }
 
-  /** First slot no stored record uses, or -1 when this watch has all eight. */
+  /** First slot neither a stored record nor an iPhone preset uses, or -1
+   * when every slot is taken. Presets come from the watch's last sync
+   * report; a custom written under a preset would be masked at render, so
+   * the assigner treats their slots as occupied. */
   private freeSlot(): number {
     const used = new Set(this.records.map((r) => Number(r.document?.slotIndex ?? -1)));
-    for (let i = 0; i < 8; i++) if (!used.has(i)) return i;
+    for (const p of this.presets) used.add(p.slot);
+    for (let i = 0; i < MAX_SLOTS; i++) if (!used.has(i)) return i;
     return -1;
   }
 
-  /** Slot → name of the other record holding it, for the General tab picker. */
-  private slotHolders(): Map<number, string> {
-    const held = new Map<number, string>();
-    for (const r of this.records) {
-      if (r.deleted || r.id === this.selectedId) continue;
-      const slot = Number(r.document?.slotIndex ?? -1);
-      if (slot < 0 || slot > 7 || held.has(slot)) continue;
-      held.set(slot, String(r.document?.name || "Untitled"));
-    }
-    return held;
-  }
-
-  /** The store refuses a document whose slot is outside 0..7. */
+  /** The store refuses a document whose slot is outside 0..MAX_SLOTS-1. */
   private get slotChosen(): boolean {
     const slot = this.draft?.config.slotIndex ?? -1;
-    return slot >= 0 && slot <= 7;
+    return slot >= 0 && slot < MAX_SLOTS;
   }
 
 
@@ -547,7 +546,6 @@ export class WristAssistantPanel extends LitElement {
       icons: this.icons,
       symbols: this.symbols,
       update: (m, c) => this.mutate(m, c),
-      slotHolders: this.slotHolders(),
       endGesture: () => this.draft?.endGesture(),
       resolve: (v: Value) => resolver.resolve(v),
       evaluateTest: (t) => resolver.evaluateTest(t),
@@ -570,7 +568,9 @@ export class WristAssistantPanel extends LitElement {
     if (!this.draft || !this.ownerId || !this.canEdit || this.saving) return;
     if (!asNew && !this.draft.dirty) return;
     if (!asNew && !this.slotChosen) {
-      this.saveError = "Pick a watch slot on the General tab first.";
+      // Slots are auto-assigned and there is no picker; this only trips when
+      // the draft was created with every slot taken.
+      this.saveError = "The watch is full. Delete a complication first.";
       return;
     }
     this.saving = true;
@@ -580,7 +580,7 @@ export class WristAssistantPanel extends LitElement {
       if (asNew) {
         const slot = this.freeSlot();
         if (slot < 0) {
-          this.saveError = "Every slot on this watch is taken, so there is nowhere to put a copy. Delete one first.";
+          this.saveError = "The watch is full (iPhone presets count too), so there is nowhere to put a copy. Delete a complication first.";
           return;
         }
         const cfg = structuredClone(draft.config);
@@ -872,16 +872,33 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private renderList() {
+    // One list for everything on the watch, ordered the way the watch face
+    // picker orders it (by slot, which stays invisible here). iPhone presets
+    // are locked rows: this panel cannot edit them, but hiding them is what
+    // used to make slots look haunted.
+    type Row =
+      | { slot: number; kind: "record"; record: ComplicationRecord }
+      | { slot: number; kind: "preset"; name: string };
+    const rows: Row[] = [
+      ...this.records.map((r): Row => ({ slot: Number(r.document?.slotIndex ?? 0), kind: "record", record: r })),
+      ...this.presets.map((p): Row => ({ slot: p.slot, kind: "preset", name: p.name })),
+    ].sort((a, b) => a.slot - b.slot);
     return html`<div class="card">
       <h2>Complications<span class="spacer"></span>
-        ${this.hass.user?.is_admin ? html`<button class="small" @click=${() => this.startNew(newConfig("New complication", this.freeSlot()))} ?disabled=${this.records.length >= 8}>New</button>` : nothing}
+        ${this.hass.user?.is_admin ? html`<button class="small" @click=${() => this.startNew(newConfig("New complication", this.freeSlot()))} ?disabled=${this.freeSlot() < 0}>New</button>` : nothing}
       </h2>
-      ${this.records.length === 0 && !(this.draft && this.draft.baseRevision === null)
+      ${rows.length === 0 && !(this.draft && this.draft.baseRevision === null)
         ? html`<div class="empty">No complications for this watch yet.</div>`
-        : html`<ul>${this.records.map((r) => html`
-            <li class="row ${r.id === this.selectedId ? "selected" : ""}" @click=${() => this.selectRecord(r)}>
-              <span>${String(r.document?.name ?? "Untitled")}</span>
-              <span class="meta">r${r.revision}</span>
+        : html`<ul>${rows.map((row) => row.kind === "record"
+            ? html`
+            <li class="row ${row.record.id === this.selectedId ? "selected" : ""}" @click=${() => this.selectRecord(row.record)}>
+              <span>${String(row.record.document?.name ?? "Untitled")}</span>
+              <span class="meta">r${row.record.revision}</span>
+            </li>`
+            : html`
+            <li class="row locked" title="An iPhone preset complication. Edit it in the Wrist Assistant app on the iPhone.">
+              <span>${row.name || "Unnamed preset"}</span>
+              <span class="meta">iPhone</span>
             </li>`)}
             ${this.draft && this.draft.baseRevision === null ? html`<li class="row selected"><span>${this.draft.config.name}</span><span class="meta">unsaved</span></li>` : nothing}
           </ul>`}

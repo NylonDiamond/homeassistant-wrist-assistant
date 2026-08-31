@@ -1,11 +1,26 @@
-// CustomComplicationConfig schemaVersion 4, as the Apple clients encode it.
+// CustomComplicationConfig schemaVersion 4/5, as the Apple clients encode it.
 // Wire-format reference: docs/custom_complication_schema_v4.md in the app
 // repo. `parseConfig` normalises the two shapes Swift can emit (perFamily as
 // an alternating array, `Value` in flat v2 or nested v3 form) into one typed
 // object; `encodeConfig` writes back exactly the shape the phone expects.
+// v5 is shape-identical to v4 and only marks slotIndex > 7 (see schemaVersionFor).
 
 export type FamilyKind = "rectangular" | "circular" | "corner" | "inline";
 export const DRAWABLE_FAMILIES: FamilyKind[] = ["rectangular", "circular", "corner"];
+
+// The watch face picker always shows the first BASE_SLOTS slots and grows past
+// them only when a higher slot is occupied; MAX_SLOTS is the hard ceiling both
+// the app and the integration enforce.
+export const BASE_SLOTS = 8;
+export const MAX_SLOTS = 64;
+
+// Slots above the original 8 are stamped schemaVersion 5 so an old app shows
+// "needs app update" for them instead of silently dropping the complication
+// (its slot-id parser rejects ids past 8). Low slots stay at 4 so nothing
+// existing changes byte-wise for old apps.
+export function schemaVersionFor(slotIndex: number): number {
+  return slotIndex > 7 ? 5 : 4;
+}
 
 export type FontWeight = "regular" | "medium" | "semibold" | "bold";
 export type TextCase = "upper" | "lower" | "capitalized";
@@ -856,7 +871,7 @@ export function encodeConfig(cfg: CustomComplicationConfig): J {
     if (l) perFamily.push(family, encodeLayout(l));
   }
   const o: J = {
-    schemaVersion: 4,
+    schemaVersion: schemaVersionFor(cfg.slotIndex),
     id: cfg.id,
     name: cfg.name,
     values: cfg.values.map((v) => ({ id: v.id, name: v.name, value: encodeValue(v.value) })),
@@ -1063,7 +1078,7 @@ export function defaultLayout(): FamilyLayout {
 
 export function newConfig(name: string, slotIndex: number): CustomComplicationConfig {
   return {
-    schemaVersion: 4,
+    schemaVersion: schemaVersionFor(slotIndex),
     id: newId(),
     name,
     values: [],

@@ -29,10 +29,13 @@ _STORE_PATH = (
 
 _PKG = "wa_compl_test_pkg"
 
+# Deliberately smaller than production (64) so the cap tests stay a handful of
+# saves; the store only ever reads the injected constant.
 MAX_PER_OWNER = 8
+MAX_SLOTS = 64
 MAX_LAYERS = 64
 MAX_BYTES = 4096
-MAX_SCHEMA = 4
+MAX_SCHEMA = 5
 
 
 class _FakeStore:
@@ -86,6 +89,7 @@ def _loaded_module():
             COMPLICATION_MAX_DOCUMENT_BYTES=MAX_BYTES,
             COMPLICATION_MAX_LAYERS=MAX_LAYERS,
             COMPLICATION_MAX_PER_OWNER=MAX_PER_OWNER,
+            COMPLICATION_MAX_SLOTS=MAX_SLOTS,
         )
 
         spec = importlib.util.spec_from_file_location(
@@ -365,6 +369,89 @@ def test_load_skips_malformed_rows_and_heals_token(mod):
     assert [r.id for r in store.list(OWNER)] == [good["id"]]
 
 
+# ── preset-slot report ─────────────────────────────────────────────────────
+
+
+def test_presets_round_trip_and_survive_restart(mod):
+    store = _new(mod)
+    assert store.presets(OWNER) == []
+    assert (
+        store.set_presets(
+            OWNER,
+            [{"slot": 5, "name": "Garage"}, {"slot": 0, "name": " Battery "}],
+        )
+        is True
+    )
+    # Sorted by slot, names trimmed.
+    assert store.presets(OWNER) == [
+        {"slot": 0, "name": "Battery"},
+        {"slot": 5, "name": "Garage"},
+    ]
+    assert store.preset_slots(OWNER) == [0, 5]
+    # Same report again says unchanged.
+    assert (
+        store.set_presets(
+            OWNER, [{"slot": 0, "name": "Battery"}, {"slot": 5, "name": "Garage"}]
+        )
+        is False
+    )
+
+    reloaded = _new(mod)
+    assert reloaded.presets(OWNER) == [
+        {"slot": 0, "name": "Battery"},
+        {"slot": 5, "name": "Garage"},
+    ]
+    assert reloaded.presets(OTHER) == []
+
+
+def test_presets_drop_junk_and_clear_on_empty(mod):
+    store = _new(mod)
+    # Booleans, strings, negatives, off-the-end slots and duplicate slots all
+    # drop or collapse; bare ints (pre-release report shape) still count with
+    # an empty name. Advisory report, not a validation gate.
+    store.set_presets(
+        OWNER,
+        [
+            True,
+            "3",
+            {"slot": 1.5, "name": "x"},
+            {"slot": -1, "name": "x"},
+            {"slot": MAX_SLOTS, "name": "x"},
+            {"slot": 4, "name": "Lamp"},
+            {"slot": 4, "name": "dupe loses"},
+            {"slot": 6, "name": 12},
+            2,
+        ],
+    )
+    assert store.presets(OWNER) == [
+        {"slot": 2, "name": ""},
+        {"slot": 4, "name": "Lamp"},
+        {"slot": 6, "name": ""},
+    ]
+    assert store.set_presets(OWNER, []) is True
+    assert store.presets(OWNER) == []
+
+    reloaded = _new(mod)
+    assert reloaded.presets(OWNER) == []
+
+
+def test_presets_load_accepts_legacy_bare_slots_and_ignores_junk(mod):
+    # "presetSlots" with bare ints is what a short-lived pre-release build
+    # wrote to disk; it must load as presets with empty names.
+    _FakeStore.saved = {
+        "token": 0,
+        "presetSlots": {
+            OWNER: [1, "x", MAX_SLOTS, 3],
+            OTHER: "not a list",
+            7: [1],
+        },
+        "records": [],
+    }
+    store = _new(mod)
+    assert store.presets(OWNER) == [{"slot": 1, "name": ""}, {"slot": 3, "name": ""}]
+    assert store.presets(OTHER) == []
+
+
 # ── validation ─────────────────────────────────────────────────────────────
 
 
@@ -374,6 +461,9 @@ def test_load_skips_malformed_rows_and_heals_token(mod):
         lambda d: d.pop("id"),
         lambda d: d.update(id="not-a-uuid"),
         lambda d: d.update(name="   "),
+        lambda d: d.update(slotIndex=MAX_SLOTS),
+        # slot above 7 without the schema-5 marker: an old app would silently
+        # drop it, so the store refuses the combination outright.
         lambda d: d.update(slotIndex=8),
         lambda d: d.update(slotIndex=True),
         lambda d: d.update(supportedFamilies=[]),
@@ -397,6 +487,15 @@ def test_invalid_documents_are_refused(mod, mutate):
     with pytest.raises(mod.ComplicationValidationError):
         store.save(OWNER, doc, base_revision=None, updated_by="t")
     assert store.token == 0
+
+
+def test_high_slots_are_valid_with_the_schema_marker(mod):
+    """Slots above the original 8 save fine once the document says schema 5."""
+    store = _new(mod)
+    store.save(OWNER, _doc(slotIndex=8, schemaVersion=5), base_revision=None, updated_by="t")
+    top = _doc(slotIndex=MAX_SLOTS - 1, schemaVersion=5)
+    rec = store.save(OWNER, top, base_revision=None, updated_by="t")
+    assert rec.document["slotIndex"] == MAX_SLOTS - 1
 
 
 def test_document_is_stored_unchanged(mod):
@@ -436,7 +535,7 @@ def test_restore_refuses_when_owner_has_live_records(mod):
 def test_restore_is_all_or_nothing(mod):
     store = _new(mod)
     with pytest.raises(mod.ComplicationValidationError):
-        store.restore(OWNER, [_doc(), _doc(slotIndex=9)], updated_by="ios")
+        store.restore(OWNER, [_doc(), _doc(slotIndex=MAX_SLOTS)], updated_by="ios")
     assert store.is_empty(OWNER)
     assert store.token == 0
 

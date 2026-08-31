@@ -294,6 +294,11 @@ def ws_list(
             "owner_watch_id": owner,
             "token": store.owner_token(owner),
             "max_schema_version": COMPLICATION_MAX_SCHEMA_VERSION,
+            # iPhone presets on this watch (slot + name, its last sync
+            # report). The panel's auto-assigner must skip these slots (a
+            # custom written under a preset is masked at render time) and
+            # lists the presets by name as locked rows.
+            "presets": store.presets(owner),
             "records": [
                 r.as_dict()
                 for r in store.list(owner, include_deleted=msg["include_deleted"])

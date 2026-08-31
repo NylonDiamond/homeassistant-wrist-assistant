@@ -42,6 +42,7 @@ from .const import (
     COMPLICATION_MAX_LAYERS,
     COMPLICATION_MAX_PER_OWNER,
     COMPLICATION_MAX_SCHEMA_VERSION,
+    COMPLICATION_MAX_SLOTS,
     COMPLICATION_STORAGE_KEY,
     COMPLICATION_STORAGE_VERSION,
 )
@@ -71,8 +72,41 @@ _OPTIONAL_DOCUMENT_KEYS: dict[str, type | tuple[type, ...]] = {
     "successFlashColorHex": str,
 }
 _FAMILY_KINDS = frozenset({"rectangular", "circular", "corner"})
-# 0..7 into `ComplicationStableSlot` on the watch.
-_SLOT_RANGE = range(8)
+# 0..COMPLICATION_MAX_SLOTS-1 into `ComplicationStableSlot` on the watch.
+_SLOT_RANGE = range(COMPLICATION_MAX_SLOTS)
+# Slots the original 8-slot pool covered. A document using a slot above these
+# must carry schemaVersion >= 5 so old apps surface "needs app update" for it
+# instead of silently dropping the claim (their slot-id parser rejects ids
+# past 8).
+_LEGACY_SLOT_RANGE = range(8)
+# A preset name in the watch's report is display text only; cap it so a
+# malformed report cannot bloat the store.
+_PRESET_NAME_MAX_CHARS = 80
+
+
+def _clean_preset_entries(entries: list[Any]) -> list[dict[str, Any]]:
+    """Normalize a preset report to ``[{"slot": int, "name": str}]``, sorted.
+
+    Accepts ``{"slot": n, "name": s}`` dicts and bare slot ints (the shape a
+    short-lived pre-release build sent, name empty). The report is advisory
+    (it only steers the panel), so junk entries drop rather than refuse; the
+    first entry wins a duplicated slot.
+    """
+    cleaned: dict[int, str] = {}
+    for entry in entries:
+        if isinstance(entry, dict):
+            slot = entry.get("slot")
+            name = entry.get("name", "")
+        else:
+            slot, name = entry, ""
+        if isinstance(slot, bool) or not isinstance(slot, int) or slot not in _SLOT_RANGE:
+            continue
+        if slot in cleaned:
+            continue
+        if not isinstance(name, str):
+            name = ""
+        cleaned[slot] = name.strip()[:_PRESET_NAME_MAX_CHARS]
+    return [{"slot": slot, "name": cleaned[slot]} for slot in sorted(cleaned)]
 
 
 class ComplicationStoreError(Exception):
@@ -224,7 +258,9 @@ def validate_document(document: Any) -> dict[str, Any]:
         raise ComplicationValidationError("document.name must not be empty")
 
     if document["slotIndex"] not in _SLOT_RANGE:
-        raise ComplicationValidationError("document.slotIndex must be 0..7")
+        raise ComplicationValidationError(
+            f"document.slotIndex must be 0..{COMPLICATION_MAX_SLOTS - 1}"
+        )
 
     families = document["supportedFamilies"]
     if not families or any(f not in _FAMILY_KINDS for f in families):
@@ -242,6 +278,10 @@ def validate_document(document: Any) -> dict[str, Any]:
         raise ComplicationValidationError(
             f"document.schemaVersion {schema_version} is newer than this "
             f"integration supports ({COMPLICATION_MAX_SCHEMA_VERSION})"
+        )
+    if document["slotIndex"] not in _LEGACY_SLOT_RANGE and schema_version < 5:
+        raise ComplicationValidationError(
+            "document.slotIndex above 7 requires schemaVersion 5 or newer"
         )
 
     elements = document.get("elements") or []
@@ -269,6 +309,13 @@ class ComplicationStore:
     def __init__(self, hass: HomeAssistant) -> None:
         # owner_watch_id → record id → record
         self._records: dict[str, dict[str, ComplicationRecord]] = {}
+        # owner_watch_id → [{"slot": int, "name": str}] sorted by slot: the
+        # iPhone presets on that watch. Reported by the watch on every
+        # complications_sync pull; the panel's auto-assigner skips these slots
+        # so a new custom never lands under a preset (presets win at render,
+        # masking the custom silently), and lists the presets by name as
+        # locked rows. Slots are plumbing; the name is the user-facing handle.
+        self._presets: dict[str, list[dict[str, Any]]] = {}
         self._token = 0
         self._listeners: list[ChangeListener] = []
         self._store: Store = Store(
@@ -285,6 +332,16 @@ class ComplicationStore:
             self._token = max(0, int(data.get("token", 0)))
         except (TypeError, ValueError):
             self._token = 0
+        # "presetSlots" ({owner: [int]}) is the shape a short-lived pre-release
+        # build wrote; accept it so those slots survive one more restart.
+        raw_presets = data.get("presets", data.get("presetSlots", {}))
+        if isinstance(raw_presets, dict):
+            for owner, entries in raw_presets.items():
+                if not isinstance(owner, str) or not isinstance(entries, list):
+                    continue
+                cleaned = _clean_preset_entries(entries)
+                if cleaned:
+                    self._presets[owner] = cleaned
         raw_records = data.get("records", [])
         if not isinstance(raw_records, list):
             return
@@ -309,6 +366,10 @@ class ComplicationStore:
     def _serialize(self) -> dict[str, Any]:
         return {
             "token": self._token,
+            "presets": {
+                owner: [dict(e) for e in entries]
+                for owner, entries in self._presets.items()
+            },
             "records": [
                 record.as_dict()
                 for by_id in self._records.values()
@@ -321,6 +382,7 @@ class ComplicationStore:
 
     async def async_remove(self) -> None:
         self._records.clear()
+        self._presets.clear()
         self._token = 0
         await self._store.async_remove()
 
@@ -356,6 +418,31 @@ class ComplicationStore:
         """Highest token among this owner's records (0 when empty)."""
         by_id = self._records.get(owner_watch_id, {})
         return max((r.token for r in by_id.values()), default=0)
+
+    def presets(self, owner_watch_id: str) -> list[dict[str, Any]]:
+        """iPhone presets on this watch (slot + name), per its last sync report."""
+        return [dict(e) for e in self._presets.get(owner_watch_id, [])]
+
+    def preset_slots(self, owner_watch_id: str) -> list[int]:
+        """Just the slots from :meth:`presets`, sorted."""
+        return [e["slot"] for e in self._presets.get(owner_watch_id, [])]
+
+    def set_presets(self, owner_watch_id: str, entries: list[Any]) -> bool:
+        """Record the watch's preset report. Returns whether it changed.
+
+        Junk entries are dropped rather than refused (see
+        :func:`_clean_preset_entries`): the report is advisory, so a partially
+        valid report is better than none.
+        """
+        cleaned = _clean_preset_entries(entries)
+        if cleaned == self._presets.get(owner_watch_id, []):
+            return False
+        if cleaned:
+            self._presets[owner_watch_id] = cleaned
+        else:
+            self._presets.pop(owner_watch_id, None)
+        self._schedule_save()
+        return True
 
     def list(
         self, owner_watch_id: str, *, include_deleted: bool = False

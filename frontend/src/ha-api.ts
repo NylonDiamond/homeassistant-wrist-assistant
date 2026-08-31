@@ -84,6 +84,11 @@ export async function fetchList(hass: HassLike, owner: string) {
     owner_watch_id: string;
     token: number;
     max_schema_version: number;
+    // iPhone presets on this watch (slot + name, its last sync report). The
+    // auto-assigner skips their slots (a custom under a preset is masked at
+    // render) and the list shows them as locked rows. Absent from
+    // integrations older than this field.
+    presets?: { slot: number; name: string }[];
     records: ComplicationRecord[];
   }>({ type: `${D}/list`, owner_watch_id: owner });
 }

@@ -57,8 +57,6 @@ export interface EditorHost {
   symbols: SymbolBrowser;
   /** Mutate the draft. `coalesce` groups rapid edits of one control into one undo step. */
   update(mutate: (cfg: CustomComplicationConfig) => void, coalesce?: string): void;
-  /** Slot index → the name of the *other* record of this watch holding it. */
-  slotHolders: Map<number, string>;
   endGesture(): void;
   /** Resolved text for a value, for the "current value" line. */
   resolve(value: Value): string | undefined;
@@ -455,27 +453,11 @@ const TAP_TYPES: [TapAction["type"], string][] = [
   ["toggleEntity", "Toggle an entity"], ["runScene", "Run a scene"], ["runScript", "Run a script"], ["addTodo", "Add a to-do"], ["runHTTPAction", "Run an HTTP action"],
 ];
 
-/** The eight stable slots a watch face can hold, as a picker.
- *
- * A slot is what the watch face is actually configured with, so moving a
- * complication to another slot means re-picking it on the face. A slot held by
- * another of this watch's complications is offered but disabled: two watches
- * may share a slot number, one watch may not. Slots are numbered from 1 for a
- * human; `slotIndex` stays 0-based on the wire.
- */
-function slotField(host: EditorHost): TemplateResult {
-  const current = host.config.slotIndex;
-  const set = (v: string) => host.update((c) => { c.slotIndex = Number(v); }, "slot");
-  return html`<label class="field"><span>Watch slot</span>
-    <select @change=${onInput(set)}>
-      ${current < 0 || current > 7 ? html`<option value="-1" selected>No free slot</option>` : nothing}
-      ${[0, 1, 2, 3, 4, 5, 6, 7].map((i) => {
-        const held = host.slotHolders.get(i);
-        return html`<option value=${i} ?selected=${i === current} ?disabled=${held !== undefined}>
-          Slot ${i + 1}${held === undefined ? "" : ` (used by ${held})`}</option>`;
-      })}
-    </select></label>`;
-}
+// There is no slot picker. The slot index is plumbing: the panel assigns the
+// first free one at create/duplicate time and it never changes afterwards,
+// because moving a complication to another slot blanks its placement on the
+// watch face. The face picker lists complications by name, so the number
+// means nothing to the user.
 
 export function generalEditor(host: EditorHost): TemplateResult {
   const cfg = host.config;
@@ -483,7 +465,6 @@ export function generalEditor(host: EditorHost): TemplateResult {
   const needsEntity = (t: TapAction["type"]) => ["toggleEntity", "runScene", "runScript", "addTodo", "runHTTPAction"].includes(t);
   return html`
     ${textField("Name", cfg.name, (v) => host.update((c) => { c.name = v; }, "name"))}
-    ${slotField(host)}
     ${numberField("Refresh every (minutes, 0 = never)", cfg.refreshMinutes ?? 0, (v) => host.update((c) => { c.refreshMinutes = v ?? 0; }, "refresh"), { step: 1, min: 0 })}
     ${selectField("Tap action", tap.type, TAP_TYPES, (v) => host.update((c) => {
       c.tapAction = needsEntity(v) ? { type: v as "toggleEntity", ...("entityId" in c.tapAction ? { entityId: c.tapAction.entityId, displayName: c.tapAction.displayName, domain: c.tapAction.domain } : { entityId: "", displayName: "", domain: "" }) } : { type: v as "refresh" };

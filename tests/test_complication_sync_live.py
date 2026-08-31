@@ -289,6 +289,22 @@ def test_saving_on_the_current_revision_advances_it(panel: Panel, fresh):
     assert record(reply)["revision"] == rev + 1
 
 
+def test_a_high_slot_saves_with_the_schema_marker_and_not_without(panel: Panel, fresh):
+    """Slots above the original 8 need schemaVersion 5; the store's reply also
+    advertises schema 5 so the panel knows it may write it."""
+    cid, rev = fresh
+    high = document(cid, "high slot", slot=9)
+    high["schemaVersion"] = 5
+    reply = panel.save(high, base=rev)
+    assert accepted(reply), reply
+    assert record(reply)["document"]["slotIndex"] == 9
+    assert panel.listing()["max_schema_version"] >= 5
+
+    unmarked = document(cid, "unmarked high slot", slot=9)
+    bad = panel.save(unmarked, base=record(reply)["revision"])
+    assert not bad.get("success"), bad
+
+
 def test_a_save_on_a_stale_revision_is_refused(panel: Panel, fresh):
     cid, rev = fresh
     assert accepted(panel.save(document(cid, "first"), base=rev))

@@ -84,12 +84,20 @@ COMPLICATION_STORAGE_VERSION = 1
 # Highest CustomComplicationConfig schemaVersion this integration can edit.
 # Must track `CustomComplicationConfig.currentSchemaVersion` in the app repo.
 # A newer document is displayed read-only and never re-saved.
-COMPLICATION_MAX_SCHEMA_VERSION = 4
+# v5 is shape-identical to v4; it only marks documents with slotIndex > 7 so an
+# old app surfaces "needs app update" instead of silently dropping them. The
+# panel writes 5 only for slots above 7, keeping low-slot documents byte-stable.
+COMPLICATION_MAX_SCHEMA_VERSION = 5
 COMPLICATION_MAX_DOCUMENT_BYTES = 256 * 1024
 COMPLICATION_MAX_LAYERS = 64
-# The watch face picker exposes 8 stable slots (ComplicationStableSlot); one
-# complication per slot at most, so 8 is the ceiling per watch.
-COMPLICATION_MAX_PER_OWNER = 8
+# Slot indices 0..COMPLICATION_MAX_SLOTS-1 map onto ComplicationStableSlot on
+# the watch. The watch face picker always shows the first 8 slots and grows past
+# them only when a higher slot is occupied; 64 is the hard ceiling both sides
+# enforce.
+COMPLICATION_MAX_SLOTS = 64
+# One complication per slot at most, so the slot ceiling is also the per-watch
+# record ceiling.
+COMPLICATION_MAX_PER_OWNER = COMPLICATION_MAX_SLOTS
 
 # Wire-format version of the Wrist Assistant HMAC protocol. The watch app sends
 # `X-WA-Version: <int>` on every signed request; the server rejects versions

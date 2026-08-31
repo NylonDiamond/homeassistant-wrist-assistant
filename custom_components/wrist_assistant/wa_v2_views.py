@@ -2775,13 +2775,26 @@ async def _op_complications_sync(ctx: _OpContext) -> Response:
     (a watch self-provisions under its own id), so no cross-device scoping is
     possible.
 
-    Body: {"since_token": <int>}  # 0 or absent = full collection incl. tombstones
+    Body: {"since_token": <int>,   # 0 or absent = full collection incl. tombstones
+           "presets": [{"slot": <int>, "name": <str>}, ...]}  # optional
     Reply: {"token", "since_token", "max_schema_version", "records": [...]}
+
+    ``presets`` is the watch reporting the iPhone presets it renders: which
+    slots they occupy and the names the user gave them. The panel cannot see
+    presets, and its auto-assigner draws from the same slot pool; without this
+    it can put a new custom under a preset, which then masks it. The names let
+    the panel list the presets as locked rows. Advisory: bad entries are
+    dropped, and an absent key leaves the last report standing (old apps never
+    send it). ``preset_slots`` (bare ints) is the shape one pre-release build
+    sent and is still accepted.
     """
     raw_since = ctx.payload.get("since_token", 0)
     if isinstance(raw_since, bool) or not isinstance(raw_since, int) or raw_since < 0:
         return Response(status=400, text="since_token must be a non-negative integer")
     store = ctx.domain_data.complication_store
+    raw_presets = ctx.payload.get("presets", ctx.payload.get("preset_slots"))
+    if isinstance(raw_presets, list):
+        store.set_presets(ctx.watch_id, raw_presets)
     records = store.changes_since(ctx.watch_id, raw_since)
     return ctx.signed_json(
         {
