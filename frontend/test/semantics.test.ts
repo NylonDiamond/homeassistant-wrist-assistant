@@ -2,7 +2,7 @@
 // (docs/custom_complication_schema_v4.md §6.3, §7.4, §7.5).
 
 import { describe, expect, it } from "vitest";
-import { fnv1a64Hex, normaliseScalar, parseValueDocument } from "../src/compiler.js";
+import { compile, fnv1a64Hex, normaliseScalar, parseValueDocument } from "../src/compiler.js";
 import { countdownRemainingString, formatValue, gaugeFraction, leadingNumber, resolveAll, type EntityState } from "../src/resolver.js";
 import { newConfig, newElement, parseValue } from "../src/model.js";
 
@@ -148,5 +148,51 @@ describe("countdown resolution", () => {
     expect(countdownRemainingString(0)).toBe("0:00");
     expect(countdownRemainingString(65)).toBe("1:05");
     expect(countdownRemainingString(3735)).toBe("1:02:15");
+  });
+});
+
+describe("image resolution", () => {
+  const imageConfig = () => {
+    const cfg = newConfig("X", 0);
+    const el = newElement("image");
+    if (el.kind === "image") {
+      el.payload.entity = { entityId: "camera.front_door", displayName: "Front Door", domain: "camera" };
+      el.payload.timestamp = true;
+    }
+    cfg.elements = [el];
+    return cfg;
+  };
+
+  const resolveImage = (states: Map<string, EntityState>) => {
+    const layouts = resolveAll(imageConfig(), {
+      entityStates: states,
+      templateResults: new Map(),
+      namedValues: [],
+    });
+    const el = layouts.rectangular.elements[0];
+    return el?.kind === "image" ? el : undefined;
+  };
+
+  it("passes the camera's entity_picture through as the preview URL", () => {
+    const el = resolveImage(new Map([["camera.front_door", {
+      entityId: "camera.front_door",
+      state: "idle",
+      iconName: "",
+      domain: "camera",
+      entityPicture: "/api/camera_proxy/camera.front_door?token=abc",
+    }]]));
+    expect(el?.url).toBe("/api/camera_proxy/camera.front_door?token=abc");
+    expect(el?.entityId).toBe("camera.front_door");
+    expect(el?.showTimestamp).toBe(true);
+  });
+
+  it("has no URL when the entity is unknown, so the placeholder draws", () => {
+    const el = resolveImage(new Map());
+    expect(el?.url).toBeUndefined();
+  });
+
+  it("registers the camera entity with the compiler", () => {
+    const compiled = compile(imageConfig());
+    expect([...compiled.entities.keys()]).toEqual(["camera.front_door"]);
   });
 });

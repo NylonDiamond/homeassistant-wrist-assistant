@@ -210,11 +210,21 @@ export interface ShapeElement extends ElementBase {
   borderWidth: number;
 }
 
+/** A camera snapshot, aspect-filled into its frame. No colorSlot: photos have no
+ * tint. The watch fetches the pixels through op=snapshot; the panel previews the
+ * camera's own entity_picture URL. */
+export interface ImageElement extends Omit<ElementBase, "colorSlot"> {
+  entity: EntityRef;
+  /** Draw the fetched-at time in the picture's corner. Encoded only when true. */
+  timestamp?: boolean;
+}
+
 export type Element =
   | { kind: "text"; payload: TextElement }
   | { kind: "icon"; payload: IconElement }
   | { kind: "gauge"; payload: GaugeElement }
-  | { kind: "shape"; payload: ShapeElement };
+  | { kind: "shape"; payload: ShapeElement }
+  | { kind: "image"; payload: ImageElement };
 
 export interface Placement {
   frame: NormalizedFrame;
@@ -553,6 +563,15 @@ export function parseElement(raw: unknown): Element {
       if (typeof p.borderColorHex === "string") el.borderColorHex = p.borderColorHex;
       return { kind: "shape", payload: el };
     }
+    case "image": {
+      const { colorSlot: _unused, ...base } = parseElementBase(p, "#FFFFFF");
+      const el: ImageElement = {
+        ...base,
+        entity: parseEntityRef(isObject(p.entity) ? p.entity : {}),
+      };
+      if (p.timestamp === true) el.timestamp = true;
+      return { kind: "image", payload: el };
+    }
     default:
       throw new ConfigParseError(`unknown element kind ${String(raw.kind)}`);
   }
@@ -834,6 +853,18 @@ function encodeElement(el: Element): J {
       if (el.payload.borderColorHex !== undefined) o.borderColorHex = el.payload.borderColorHex;
       return { kind: "shape", payload: o };
     }
+    case "image": {
+      const p = el.payload;
+      const o: J = {
+        id: p.id,
+        entity: encodeEntityRef(p.entity),
+        rules: encodeRules(p.rules),
+        frame: encodeFrame(p.frame),
+        isHidden: p.isHidden,
+      };
+      if (p.timestamp === true) o.timestamp = true;
+      return { kind: "image", payload: o };
+    }
   }
 }
 
@@ -927,6 +958,7 @@ const K = {
   icon: ["symbol", "size"],
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex"],
   shape: ["kind", "cornerRadius", "borderColorHex", "borderWidth"],
+  image: ["entity", "timestamp"],
   colorSlot: ["baseColorHex"],
   rule: ["id", "cases", "otherwise"],
   case: ["id", "when", "then"],
@@ -1042,6 +1074,7 @@ export function auditUnknownKeys(raw: unknown): string[] {
       check(e.payload.frame, K.frame, `${ep}.payload.frame`);
       rules(e.payload.rules, `${ep}.payload.rules`);
       for (const vk of ["value", "symbol"]) if (vk in e.payload) value(e.payload[vk], `${ep}.payload.${vk}`);
+      if (kind === "image") check(e.payload.entity, K.entityRef, `${ep}.payload.entity`);
     });
   }
   const layouts: [string, unknown][] = [];
@@ -1117,6 +1150,10 @@ export function newElement(kind: Element["kind"]): Element {
     case "icon": return { kind, payload: { ...base("#FFFFFF"), symbol: literal("lightbulb"), size: 14 } };
     case "gauge": return { kind, payload: { ...base("#FFFFFF"), value: literal("50"), minValue: 0, maxValue: 100, style: "arc", lineWidth: 4, trackColorHex: "#FFFFFF40" } };
     case "shape": return { kind, payload: { ...base("#FFFFFF33"), kind: "roundedRectangle", cornerRadius: 6, borderWidth: 1 } };
+    case "image": {
+      const { colorSlot: _unused, ...b } = base("#FFFFFF");
+      return { kind, payload: { ...b, entity: { entityId: "", displayName: "", domain: "camera" } } };
+    }
   }
 }
 
@@ -1126,7 +1163,7 @@ export function literal(value: string): Value {
   return { kind: { kind: "literal", value } };
 }
 
-export function elementBase(el: Element): ElementBase {
+export function elementBase(el: Element): Omit<ElementBase, "colorSlot"> {
   return el.payload;
 }
 
@@ -1147,13 +1184,15 @@ export function elementsFor(config: CustomComplicationConfig, family: FamilyKind
   });
 }
 
-/** The value a layer shows (shapes have none). */
+/** The value a layer shows (shapes have none). An image reads its camera's state,
+ * so the compiler registers the entity and rules can test it. */
 export function primaryValue(el: Element): Value | undefined {
   switch (el.kind) {
     case "text": return el.payload.value;
     case "icon": return el.payload.symbol;
     case "gauge": return el.payload.value;
     case "shape": return undefined;
+    case "image": return { kind: { kind: "entityState", ...el.payload.entity } };
   }
 }
 
@@ -1187,6 +1226,7 @@ export const RULE_TARGET_PROPERTIES: Record<RuleTarget, StyleProperty[]> = {
   icon: ["color", "opacity", "icon", "fontSize", "rotation", "visibility"],
   gauge: ["color", "opacity", "gaugeValue", "gaugeMin", "gaugeMax", "rotation", "visibility"],
   shape: ["color", "opacity", "borderColor", "borderWidth", "rotation", "visibility"],
+  image: ["opacity", "rotation", "visibility"],
   layout: ["backgroundColor", "borderColor", "borderWidth", "text"],
 };
 

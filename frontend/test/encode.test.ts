@@ -76,6 +76,32 @@ describe("encodeConfig", () => {
     expect(JSON.stringify(encodeConfig(bare))).not.toContain("countdown");
   });
 
+  it("round-trips the image element, and the timestamp key stays absent when off", () => {
+    const cfg = newConfig("X", 0);
+    const el = newElement("image");
+    if (el.kind === "image") {
+      el.payload.entity = { entityId: "camera.front_door", displayName: "Front Door", domain: "camera" };
+      el.payload.timestamp = true;
+    }
+    cfg.elements = [el];
+    const enc = encodeConfig(cfg) as Record<string, unknown>;
+    expect(auditUnknownKeys(enc)).toEqual([]);
+    const back = parseConfig(enc).elements[0];
+    expect(back?.kind).toBe("image");
+    if (back?.kind === "image") {
+      expect(back.payload.entity.entityId).toBe("camera.front_door");
+      expect(back.payload.timestamp).toBe(true);
+      expect("colorSlot" in back.payload).toBe(false);
+    }
+    expect(encodeConfig(parseConfig(enc))).toEqual(enc);
+
+    const bare = newConfig("Y", 1);
+    bare.elements = [newElement("image")];
+    const bareJson = JSON.stringify(encodeConfig(bare));
+    expect(bareJson).not.toContain("timestamp");
+    expect(bareJson).not.toContain("colorSlot");
+  });
+
   it("round-trips every comparison kind and style change kind", () => {
     const cfg = newConfig("X", 0);
     const el = newElement("text");

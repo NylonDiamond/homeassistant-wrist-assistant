@@ -247,6 +247,39 @@ function renderIcon(el: Extract<ResolvedElement, { kind: "icon" }>, box: Box, ic
       fill=${c.stroke} fill-opacity=${c["stroke-opacity"]} font-family="sans-serif">?</text>`;
 }
 
+/** Camera snapshot preview: HA's entity_picture aspect-filled into the frame,
+ * clipped to the same 6 pt rounded rectangle the watch uses. No URL (entity not
+ * found, or a non-camera entity) draws the placeholder the watch shows before
+ * its first fetch. The timestamp chip mirrors the watch's overlay with the
+ * current time, since the preview image is always live. */
+function renderImage(el: Extract<ResolvedElement, { kind: "image" }>, box: Box, icons: IconProvider) {
+  const clipId = `imgclip-${el.id}`;
+  const r = 6;
+  const chip = el.showTimestamp && el.url
+    ? (() => {
+        const now = new Date();
+        const h = now.getHours() % 12 || 12;
+        const two = (n: number) => String(n).padStart(2, "0");
+        const label = `${h}:${two(now.getMinutes())}:${two(now.getSeconds())}`;
+        const w = label.length * 5.2 + 8;
+        return svg`
+          <rect x=${box.x + 4} y=${box.y + 4} width=${w} height=${11} rx=${5.5} fill="#000000" fill-opacity="0.55" />
+          <text x=${box.x + 4 + w / 2} y=${box.y + 9.5} text-anchor="middle" dominant-baseline="central"
+            font-size="9" font-weight="600" fill="#FFFFFF"
+            font-family="-apple-system, 'SF Pro Rounded', Helvetica, Arial, sans-serif">${label}</text>`;
+      })()
+    : nothing;
+  const content = el.url
+    ? svg`<image href=${el.url} x=${box.x} y=${box.y} width=${box.w} height=${box.h}
+        preserveAspectRatio="xMidYMid slice" />`
+    : svg`
+      <rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} rx=${r} fill="#FFFFFF" fill-opacity="0.18" />
+      <g transform="translate(${box.cx - 7} ${box.cy - 7})">${icons.render("camera.fill", 14, "#FFFFFF99") ?? nothing}</g>`;
+  return svg`
+    <defs><clipPath id=${clipId}><rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} rx=${r} /></clipPath></defs>
+    <g clip-path=${`url(#${clipId})`}>${content}${chip}</g>`;
+}
+
 function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderOptions) {
   if (el.isHidden && !options.showHidden) return nothing;
   const box = frameBox(el, canvas);
@@ -256,6 +289,7 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     case "icon": body = renderIcon(el, box, options.icons); break;
     case "gauge": body = renderGauge(el, box); break;
     case "shape": body = renderShape(el, box); break;
+    case "image": body = renderImage(el, box, options.icons); break;
   }
   const opacity = Math.min(1, Math.max(0, el.opacity)) * (el.isHidden ? 0.35 : 1);
   const selected = options.highlightId === el.id;

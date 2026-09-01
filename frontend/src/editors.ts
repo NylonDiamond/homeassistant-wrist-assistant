@@ -577,6 +577,7 @@ export function elementSize(el: CElement): number | undefined {
     case "icon": return el.payload.size;
     case "gauge": return el.payload.lineWidth;
     case "shape": return undefined;
+    case "image": return undefined;
   }
 }
 
@@ -633,11 +634,21 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         ${colorField("Border colour", el.payload.borderColorHex, (v) => upd((e) => { if (v === undefined) delete (e as typeof el).payload.borderColorHex; else (e as typeof el).payload.borderColorHex = v; }, "border"), true)}
         ${el.payload.borderColorHex !== undefined ? numberField("Border width (pt)", el.payload.borderWidth, (v) => upd((e) => { (e as typeof el).payload.borderWidth = v ?? 1; }, "bw"), { step: 0.5, min: 0 }) : nothing}`;
       break;
+    case "image":
+      content = html`
+        ${entityField(host, "Camera", el.payload.entity, (ref) => upd((e) => { (e as typeof el).payload.entity = ref; }, "entity"), key)}
+        ${el.payload.entity.entityId && !el.payload.entity.entityId.startsWith("camera.") ? html`<div class="hint warn">Pick a camera.* entity — only cameras have snapshots.</div>` : nothing}
+        ${checkField("Show timestamp", el.payload.timestamp === true, (v) => upd((e) => {
+          const p = (e as typeof el).payload;
+          if (v) p.timestamp = true; else delete p.timestamp;
+        }))}
+        <div class="hint">The watch fetches a fresh snapshot on refresh and shows the cached frame in between; the timestamp says when it was taken. This preview shows the camera's live picture.</div>`;
+      break;
   }
 
   return html`
     ${content}
-    ${colorField(el.kind === "shape" ? "Fill colour" : "Colour", el.payload.colorSlot.baseColorHex, (v) => upd((e) => { e.payload.colorSlot.baseColorHex = v ?? "#FFFFFF"; }, "color"))}
+    ${el.kind === "image" ? nothing : colorField(el.kind === "shape" ? "Fill colour" : "Colour", el.payload.colorSlot.baseColorHex, (v) => upd((e) => { if (e.kind !== "image") e.payload.colorSlot.baseColorHex = v ?? "#FFFFFF"; }, "color"))}
     ${checkField("Hidden in every family", el.payload.isHidden, (v) => upd((e) => { e.payload.isHidden = v; }))}
     <h3>${familyTitle(family)} placement${eff.fromPlacement ? "" : " (shared frame)"}</h3>
     <div class="grid4">
@@ -648,7 +659,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
     </div>
     ${numberField("Rotation (degrees)", f.rotationDegrees, (v) => setFrame({ rotationDegrees: v ?? 0 }, "rot"), { step: 1 })}
     ${checkField(`Hidden in ${familyTitle(family)}`, eff.isHidden, (v) => host.update((c) => setPlacement(c, family, id, { isHidden: v })))}
-    ${el.kind === "shape" ? nothing : html`<div class="row-inline">
+    ${el.kind === "shape" || el.kind === "image" ? nothing : html`<div class="row-inline">
       ${numberField(`${sizeLabel} in ${familyTitle(family)} (blank = shared ${elementSize(el)})`, eff.size, (v) => host.update((c) => (v === undefined ? setPlacement(c, family, id, {}, true) : setPlacement(c, family, id, { size: v })), `${key}-psize-${family}`), { step: 1, min: 1, optional: true })}
     </div>`}
     <div class="hint">Drag the layer in the ${familyTitle(family)} preview to move it. Drag a corner to resize it. Frames are fractions of the canvas.</div>

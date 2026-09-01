@@ -40,6 +40,9 @@ export interface EntityState {
   finishesAt?: string;
   /** timer.* entities only: seconds remaining while paused. */
   remaining?: number;
+  /** camera.* entities: HA's tokenized entity_picture URL, for the preview's
+   * image elements (the watch fetches real snapshots through op=snapshot). */
+  entityPicture?: string;
 }
 
 export interface ResolveContext {
@@ -91,7 +94,15 @@ export interface ResolvedShape extends ResolvedBase {
   borderColorHex?: string;
   borderWidth: number;
 }
-export type ResolvedElement = ResolvedText | ResolvedIcon | ResolvedGauge | ResolvedShape;
+export interface ResolvedImage extends ResolvedBase {
+  kind: "image";
+  entityId: string;
+  /** Preview URL (HA's entity_picture). Absent = draw the camera placeholder. */
+  url?: string;
+  /** Whether the watch draws the fetched-at overlay. */
+  showTimestamp: boolean;
+}
+export type ResolvedElement = ResolvedText | ResolvedIcon | ResolvedGauge | ResolvedShape | ResolvedImage;
 
 export interface ResolvedBezelGauge {
   value: number;
@@ -473,7 +484,7 @@ export class Resolver {
           text: this.styleText(style, "text") ?? fallback ?? this.resolve(el.payload.value) ?? "--",
           fontSize: this.styleNumber(style, "fontSize") ?? el.payload.fontSize,
           fontWeight: style.get("fontWeight")?.weight ?? el.payload.fontWeight,
-          colorHex: this.styleColor(style, "color") ?? p.colorSlot.baseColorHex,
+          colorHex: this.styleColor(style, "color") ?? el.payload.colorSlot.baseColorHex,
         };
         if (countdownEnd !== undefined) out.countdownEnd = countdownEnd;
         return out;
@@ -485,7 +496,7 @@ export class Resolver {
           ...base,
           symbol: this.styleText(style, "icon") ?? baseSymbol,
           size: this.styleNumber(style, "fontSize") ?? el.payload.size,
-          colorHex: this.styleColor(style, "color") ?? p.colorSlot.baseColorHex,
+          colorHex: this.styleColor(style, "color") ?? el.payload.colorSlot.baseColorHex,
         };
       }
       case "gauge": {
@@ -498,7 +509,7 @@ export class Resolver {
           fraction: gaugeFraction(raw, min, max),
           style: el.payload.style,
           lineWidth: el.payload.lineWidth,
-          colorHex: this.styleColor(style, "color") ?? p.colorSlot.baseColorHex,
+          colorHex: this.styleColor(style, "color") ?? el.payload.colorSlot.baseColorHex,
           trackColorHex: el.payload.trackColorHex,
         };
       }
@@ -508,11 +519,22 @@ export class Resolver {
           ...base,
           shapeKind: el.payload.kind,
           cornerRadius: el.payload.cornerRadius,
-          fillColorHex: this.styleColor(style, "color") ?? p.colorSlot.baseColorHex,
+          fillColorHex: this.styleColor(style, "color") ?? el.payload.colorSlot.baseColorHex,
           borderWidth: this.styleNumber(style, "borderWidth") ?? el.payload.borderWidth,
         };
         const border = this.styleColor(style, "borderColor") ?? el.payload.borderColorHex;
         if (border !== undefined) out.borderColorHex = border;
+        return out;
+      }
+      case "image": {
+        const out: ResolvedImage = {
+          kind: "image",
+          ...base,
+          entityId: el.payload.entity.entityId,
+          showTimestamp: el.payload.timestamp === true,
+        };
+        const url = this.ctx.entityStates.get(el.payload.entity.entityId)?.entityPicture;
+        if (url !== undefined) out.url = url;
         return out;
       }
     }

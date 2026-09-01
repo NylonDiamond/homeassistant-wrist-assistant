@@ -768,6 +768,10 @@ export class WristAssistantPanel extends LitElement {
         const remaining = parseDurationSeconds(attrs.remaining);
         if (remaining !== undefined) entry.remaining = remaining;
       }
+      if (domain === "camera" && typeof attrs.entity_picture === "string") {
+        // Image elements: the preview draws the camera's own tokenized proxy URL.
+        entry.entityPicture = attrs.entity_picture;
+      }
       entityStates.set(id, entry);
     }
     return {
@@ -1016,7 +1020,7 @@ export class WristAssistantPanel extends LitElement {
         </div>`;
       })}
       ${edit ? html`<div class="adders">
-        ${(["text", "icon", "gauge", "shape"] as const).map((k) => html`<button class="small" ?disabled=${cfg.elements.length >= 64} @click=${() => { const el = newElement(k); this.mutate((c) => { c.elements.push(el); }); this.inspect = { kind: "layer", id: el.payload.id }; }}>+ ${k}</button>`)}
+        ${(["text", "icon", "gauge", "shape", "image"] as const).map((k) => html`<button class="small" ?disabled=${cfg.elements.length >= 64} @click=${() => { const el = newElement(k); this.mutate((c) => { c.elements.push(el); }); this.inspect = { kind: "layer", id: el.payload.id }; }}>+ ${k === "image" ? "camera" : k}</button>`)}
       </div>` : nothing}
     </div>`;
   }
@@ -1220,6 +1224,10 @@ function layerTitle(el: CElement): string {
     case "icon": return describeValue(el.payload.symbol);
     case "gauge": return describeValue(el.payload.value);
     case "shape": return el.payload.kind;
+    case "image": {
+      const e = el.payload.entity;
+      return e.displayName || e.entityId || "camera";
+    }
   }
 }
 
