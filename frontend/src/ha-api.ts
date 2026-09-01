@@ -89,6 +89,8 @@ export async function fetchList(hass: HassLike, owner: string) {
     // render) and the list shows them as locked rows. Absent from
     // integrations older than this field.
     presets?: { slot: number; name: string }[];
+    /** Watch-app pages (id + name, watch order), per its last sync report. */
+    pages?: { id: string; name: string }[];
     records: ComplicationRecord[];
   }>({ type: `${D}/list`, owner_watch_id: owner });
 }

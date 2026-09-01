@@ -48,6 +48,7 @@ import gzip
 import logging
 import os
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial
@@ -96,9 +97,15 @@ from .camera_stream import (
     run_batch_snapshot_stream,
     run_mjpeg_stream,
 )
-from .complication_store import ComplicationConflictError, ComplicationStoreError
+from .complication_store import (
+    ComplicationConflictError,
+    ComplicationStoreError,
+    ComplicationValidationError,
+    validate_document,
+)
 from .const import (
     APP_UPDATE_MESSAGE,
+    COMPLICATION_MAX_PER_OWNER,
     COMPLICATION_MAX_SCHEMA_VERSION,
     DOMAIN,
     MIN_SUPPORTED_APP_PROTOCOL_VERSION,
@@ -2795,6 +2802,11 @@ async def _op_complications_sync(ctx: _OpContext) -> Response:
     raw_presets = ctx.payload.get("presets", ctx.payload.get("preset_slots"))
     if isinstance(raw_presets, list):
         store.set_presets(ctx.watch_id, raw_presets)
+    # The watch's page list (id + name), feeding the panel's "Open the page"
+    # tap-action picker. Advisory like the preset report; absent = keep last.
+    raw_pages = ctx.payload.get("pages")
+    if isinstance(raw_pages, list):
+        store.set_pages(ctx.watch_id, raw_pages)
     records = store.changes_since(ctx.watch_id, raw_since)
     return ctx.signed_json(
         {
@@ -2840,10 +2852,128 @@ async def _op_complications_restore(ctx: _OpContext) -> Response:
     )
 
 
+async def _op_complications_create(ctx: _OpContext) -> Response:
+    """Create complication documents alongside whatever the owner already has.
+
+    The iPhone's one-time preset transfer signs with the watch's pair and
+    posts the converted documents here, so unlike ``complications_restore``
+    this must coexist with records the panel already authored.
+
+    Body: {"documents": [<CustomComplicationConfig JSON>, ...]}
+    Reply: {"ok", "token", "results": [{"id", "slotIndex", "status", "message"?}]}
+
+    Two phases. Structural problems (bad shape, duplicate id/slot inside the
+    batch, over the per-owner cap) refuse the whole batch with a signed 400
+    and write nothing, so a clean retry is always possible. Per-document
+    outcomes then commit in order: "created", "exists" (same id already live,
+    the idempotent-retry case; document ids are stable across retries),
+    "slot_conflict" (a different live record holds the slot), or "error"
+    (the id was deleted on the server; never revive a tombstone).
+
+    Slot conflicts are checked against live records only, never against the
+    owner's reported preset slots: at transfer time the presets being handed
+    over are still in the report, and the app guarantees it is transferring
+    exactly those slots.
+    """
+    documents = ctx.payload.get("documents")
+    if not isinstance(documents, list) or not documents:
+        return ctx.signed_json(
+            {
+                "ok": False,
+                "error": "invalid",
+                "message": "documents must be a non-empty list",
+            },
+            status=400,
+        )
+    store = ctx.domain_data.complication_store
+
+    validated: list[tuple[str, dict[str, Any]]] = []
+    batch_ids: set[str] = set()
+    batch_slots: set[int] = set()
+    try:
+        for document in documents:
+            cleaned = validate_document(document)
+            doc_id = str(uuid.UUID(cleaned["id"])).upper()
+            if doc_id in batch_ids:
+                raise ComplicationValidationError(f"duplicate document id {doc_id}")
+            slot = cleaned["slotIndex"]
+            if slot in batch_slots:
+                raise ComplicationValidationError(
+                    f"duplicate slotIndex {slot} in the batch"
+                )
+            batch_ids.add(doc_id)
+            batch_slots.add(slot)
+            validated.append((doc_id, cleaned))
+    except ComplicationStoreError as err:
+        return ctx.signed_json(
+            {"ok": False, "error": err.code, "message": err.message}, status=400
+        )
+
+    live = store.list(ctx.watch_id)
+    live_by_id = {r.id: r for r in live}
+    new_creates = sum(1 for doc_id, _ in validated if doc_id not in live_by_id)
+    if len(live) + new_creates > COMPLICATION_MAX_PER_OWNER:
+        return ctx.signed_json(
+            {
+                "ok": False,
+                "error": "invalid",
+                "message": (
+                    f"batch would exceed {COMPLICATION_MAX_PER_OWNER} "
+                    "complications for this owner"
+                ),
+            },
+            status=400,
+        )
+
+    results: list[dict[str, Any]] = []
+    for doc_id, document in validated:
+        slot = document["slotIndex"]
+        outcome: dict[str, Any] = {"id": doc_id, "slotIndex": slot}
+        if doc_id in live_by_id:
+            outcome["status"] = "exists"
+        elif store.get(ctx.watch_id, doc_id) is not None:
+            outcome["status"] = "error"
+            outcome["message"] = "id was deleted on the server"
+        else:
+            slot_holder = next(
+                (r for r in live if (r.document or {}).get("slotIndex") == slot),
+                None,
+            )
+            if slot_holder is not None:
+                outcome["status"] = "slot_conflict"
+                outcome["message"] = f"slot {slot} is held by {slot_holder.id}"
+            else:
+                try:
+                    record = store.save(
+                        ctx.watch_id,
+                        document,
+                        base_revision=None,
+                        updated_by=f"app-import:{ctx.watch_id}",
+                    )
+                except ComplicationStoreError as err:
+                    outcome["status"] = "error"
+                    outcome["message"] = err.message
+                else:
+                    outcome["status"] = "created"
+                    # Claim the slot for later collision checks in this batch.
+                    live.append(record)
+                    live_by_id[record.id] = record
+        results.append(outcome)
+
+    return ctx.signed_json(
+        {
+            "ok": True,
+            "token": store.owner_token(ctx.watch_id),
+            "results": results,
+        }
+    )
+
+
 # Op dispatch table. Adding a new op = add a key here.
 _OP_HANDLERS: dict[str, Any] = {
     "complications_sync": _op_complications_sync,
     "complications_restore": _op_complications_restore,
+    "complications_create": _op_complications_create,
     "service": _op_service,
     "state": _op_state,
     "history": _op_history,

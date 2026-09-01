@@ -5,7 +5,7 @@
 
 import { svg, nothing, type TemplateResult } from "lit";
 import type { FamilyKind } from "./model.js";
-import type { ResolvedBezelGauge, ResolvedElement, ResolvedLayout } from "./resolver.js";
+import { countdownRemainingString, type ResolvedBezelGauge, type ResolvedElement, type ResolvedLayout } from "./resolver.js";
 
 export interface CanvasSize {
   width: number;
@@ -147,6 +147,11 @@ function frameBox(el: ResolvedElement, canvas: CanvasSize): Box {
 
 function renderText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box) {
   const c = colorAttrs(el.colorHex, "fill");
+  // Live countdown: the preview shows the remaining time at render; the panel
+  // re-renders once a second while any countdown is live, so it ticks too.
+  if (el.countdownEnd !== undefined && el.countdownEnd > Date.now()) {
+    el = { ...el, text: countdownRemainingString((el.countdownEnd - Date.now()) / 1000) };
+  }
   // lineLimit(1) + minimumScaleFactor(0.5): shrink to fit the box width down
   // to half size; when the half-size floor still overflows, SwiftUI truncates
   // the tail with an ellipsis, so emulate that too instead of overflowing the
@@ -497,9 +502,12 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
       bezel = cornerGaugeSvg(layout.bezelGauge, s, uid);
     } else if (layout.bezelText) {
       const arc = cornerLabelArc(s, `${uid}-bezel`);
+      const bezelStr = layout.bezelCountdownEnd !== undefined && layout.bezelCountdownEnd > Date.now()
+        ? countdownRemainingString((layout.bezelCountdownEnd - Date.now()) / 1000)
+        : layout.bezelText;
       bezel = svg`<defs><path id=${arc.id} d=${arc.d} /></defs>
         <text font-size=${BEZEL_FONT * s} font-weight="600" fill="#FFFFFF" font-family="-apple-system, 'SF Pro Text', Helvetica, Arial, sans-serif">
-          <textPath href="#${arc.id}" startOffset="50%" text-anchor="middle">${bezelDisplayText(layout.bezelText, arc.length, BEZEL_FONT * s)}</textPath></text>`;
+          <textPath href="#${arc.id}" startOffset="50%" text-anchor="middle">${bezelDisplayText(bezelStr, arc.length, BEZEL_FONT * s)}</textPath></text>`;
     }
     // Curved main text replaces the canvas disc entirely (the system curves a
     // single Text along the corner; there is no disc in that mode).

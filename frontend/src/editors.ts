@@ -55,6 +55,9 @@ export interface EditorHost {
   icons: IconProvider;
   /** Search text, category and recents for the symbol picker. */
   symbols: SymbolBrowser;
+  /** Watch-app pages (id + name, watch order) from the watch's last sync
+   * report; feeds the "Open the page" tap-action picker. */
+  pages: { id: string; name: string }[];
   /** Mutate the draft. `coalesce` groups rapid edits of one control into one undo step. */
   update(mutate: (cfg: CustomComplicationConfig) => void, coalesce?: string): void;
   endGesture(): void;
@@ -468,14 +471,41 @@ export function generalEditor(host: EditorHost): TemplateResult {
     ${numberField("Refresh every (minutes, 0 = never)", cfg.refreshMinutes ?? 0, (v) => host.update((c) => { c.refreshMinutes = v ?? 0; }, "refresh"), { step: 1, min: 0 })}
     ${selectField("Tap action", tap.type, TAP_TYPES, (v) => host.update((c) => {
       c.tapAction = needsEntity(v) ? { type: v as "toggleEntity", ...("entityId" in c.tapAction ? { entityId: c.tapAction.entityId, displayName: c.tapAction.displayName, domain: c.tapAction.domain } : { entityId: "", displayName: "", domain: "" }) } : { type: v as "refresh" };
+      // Mirrors the iPhone preset editor: the chosen page belongs to the
+      // openPage type; leaving it clears the choice.
+      if (v !== "openPage") { delete c.openPageId; delete c.openPageName; }
     }))}
     ${"entityId" in tap ? entityField(host, "Target", tap, (ref) => host.update((c) => { c.tapAction = { type: tap.type, ...ref }; }, "tap-entity"), "tap") : nothing}
+    ${tap.type === "openPage" ? openPageField(host) : nothing}
     ${checkField("Flash on success", cfg.showSuccessFlash ?? true, (v) => host.update((c) => { c.showSuccessFlash = v; }))}
     ${colorField("Flash colour (blank = green)", cfg.successFlashColorHex, (v) => host.update((c) => { if (v === undefined) delete c.successFlashColorHex; else c.successFlashColorHex = v; }, "flash"), true)}
     <div class="field"><span>Families</span>
       <div class="chips">${(["rectangular", "circular", "corner", "inline"] as FamilyKind[]).map((f) => html`<label class="chip"><input type="checkbox" .checked=${cfg.supportedFamilies.includes(f)}
         @change=${(e: Event) => host.update((c) => { const on = (e.target as HTMLInputElement).checked; c.supportedFamilies = on ? [...new Set([...c.supportedFamilies, f])] : c.supportedFamilies.filter((x) => x !== f); })} />${familyTitle(f)}</label>`)}</div>
     </div>`;
+}
+
+/** Page picker for the openPage tap action. Options come from the watch's
+ * page report; a stored id the report no longer lists stays selectable under
+ * its stored name so opening the editor never silently drops the choice. */
+function openPageField(host: EditorHost): TemplateResult {
+  const cfg = host.config;
+  const current = cfg.openPageId ?? "";
+  const options: [string, string][] = host.pages.map((p) => [p.id, p.name || "Unnamed page"]);
+  if (current && !host.pages.some((p) => p.id.toUpperCase() === current.toUpperCase())) {
+    options.unshift([current, `${cfg.openPageName || "Unknown page"} (not on the watch)`]);
+  }
+  if (!current) options.unshift(["", "Choose a page…"]);
+  if (options.length <= 1 && !current) {
+    return html`<div class="hint">No pages reported yet. Open the watch app once so it can send its page list.</div>`;
+  }
+  return html`${selectField("Page", current, options, (v) => host.update((c) => {
+    if (!v) { delete c.openPageId; delete c.openPageName; return; }
+    c.openPageId = v;
+    const name = host.pages.find((p) => p.id === v)?.name;
+    if (name) c.openPageName = name; else delete c.openPageName;
+  }))}
+  ${current ? nothing : html`<div class="hint">Without a page the tap falls back to the complication list.</div>`}`;
 }
 
 // ── Data (named values) ───────────────────────────────────────────────────
@@ -570,7 +600,12 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         <div class="grid2">
           ${numberField("Font size (pt)", el.payload.fontSize, (v) => upd((e) => { (e as typeof el).payload.fontSize = v ?? 14; }, "size"), { step: 1, min: 4 })}
           ${selectField("Weight", el.payload.fontWeight, FONT_WEIGHTS, (v) => upd((e) => { (e as typeof el).payload.fontWeight = v; }))}
-        </div>`;
+        </div>
+        ${checkField("Live countdown", el.payload.countdown === true, (v) => upd((e) => {
+          const p = (e as typeof el).payload;
+          if (v) p.countdown = true; else delete p.countdown;
+        }))}
+        ${el.payload.countdown ? html`<div class="hint">Ticks down to the value's target: an active HA timer's finish, or any future timestamp. Paused timers show their remaining time; idle ones show "Idle".</div>` : nothing}`;
       break;
     case "icon":
       content = html`
@@ -665,7 +700,11 @@ function cornerEditor(
       else if (v === "gauge") { delete l.bezelText; if (!l.bezelGauge) l.bezelGauge = { value: literal("50"), minValue: 0, maxValue: 100, colorHexes: ["#34C759", "#FFCC00", "#FF3B30"] }; }
       else { delete l.bezelText; delete l.bezelGauge; }
     }))}
-    ${bezelKind === "text" && layout.bezelText ? valueEditor(host, layout.bezelText, (val) => upd((l) => { l.bezelText = val; }, "bezel"), { showResolved: true, key: "fam-corner-bezel" }) : nothing}
+    ${bezelKind === "text" && layout.bezelText ? html`
+      ${valueEditor(host, layout.bezelText, (val) => upd((l) => { l.bezelText = val; }, "bezel"), { showResolved: true, key: "fam-corner-bezel" })}
+      ${checkField("Live countdown", layout.bezelCountdown === true, (v) => upd((l) => {
+        if (v) l.bezelCountdown = true; else delete l.bezelCountdown;
+      }))}` : nothing}
     ${bezelKind === "gauge" && layout.bezelGauge ? bezelGaugeEditor(host, layout.bezelGauge, upd) : nothing}`;
 }
 

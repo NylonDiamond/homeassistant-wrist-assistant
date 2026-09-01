@@ -299,6 +299,9 @@ def ws_list(
             # custom written under a preset is masked at render time) and
             # lists the presets by name as locked rows.
             "presets": store.presets(owner),
+            # Watch-app pages (id + name, watch order), for the "Open the
+            # page" tap-action picker.
+            "pages": store.pages(owner),
             "records": [
                 r.as_dict()
                 for r in store.list(owner, include_deleted=msg["include_deleted"])

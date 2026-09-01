@@ -68,6 +68,10 @@ _OPTIONAL_DOCUMENT_KEYS: dict[str, type | tuple[type, ...]] = {
     "elements": list,
     "dataSources": list,
     "refreshMinutes": int,
+    # Page an openPage tap opens (watch page UUID) and its display name at
+    # choosing time. Cosmetic pairing for the panel; the id is authoritative.
+    "openPageId": str,
+    "openPageName": str,
     "showSuccessFlash": bool,
     "successFlashColorHex": str,
 }
@@ -82,6 +86,41 @@ _LEGACY_SLOT_RANGE = range(8)
 # A preset name in the watch's report is display text only; cap it so a
 # malformed report cannot bloat the store.
 _PRESET_NAME_MAX_CHARS = 80
+
+
+# A watch could not plausibly have more pages than this; cap the report so a
+# malformed one cannot bloat the store.
+_PAGE_MAX_ENTRIES = 100
+
+
+def _clean_page_entries(entries: list[Any]) -> list[dict[str, Any]]:
+    """Normalize a page report to ``[{"id": uuid-str, "name": str}]``.
+
+    Watch order is preserved (it is the order the user arranged the pages in),
+    the first entry wins a duplicated id, and junk entries drop rather than
+    refuse — like the preset report, this is advisory: it only feeds the
+    panel's "Open the page" tap-action picker.
+    """
+    cleaned: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for entry in entries[:_PAGE_MAX_ENTRIES]:
+        if not isinstance(entry, dict):
+            continue
+        raw_id = entry.get("id")
+        if not isinstance(raw_id, str):
+            continue
+        try:
+            page_id = str(uuid.UUID(raw_id)).upper()
+        except ValueError:
+            continue
+        if page_id in seen:
+            continue
+        seen.add(page_id)
+        name = entry.get("name", "")
+        if not isinstance(name, str):
+            name = ""
+        cleaned.append({"id": page_id, "name": name.strip()[:_PRESET_NAME_MAX_CHARS]})
+    return cleaned
 
 
 def _clean_preset_entries(entries: list[Any]) -> list[dict[str, Any]]:
@@ -316,6 +355,10 @@ class ComplicationStore:
         # masking the custom silently), and lists the presets by name as
         # locked rows. Slots are plumbing; the name is the user-facing handle.
         self._presets: dict[str, list[dict[str, Any]]] = {}
+        # owner_watch_id → [{"id": uuid-str, "name": str}] in watch order: the
+        # watch-app pages, reported alongside presets. Feeds the panel's
+        # "Open the page" tap-action picker; advisory like the preset report.
+        self._pages: dict[str, list[dict[str, Any]]] = {}
         self._token = 0
         self._listeners: list[ChangeListener] = []
         self._store: Store = Store(
@@ -342,6 +385,14 @@ class ComplicationStore:
                 cleaned = _clean_preset_entries(entries)
                 if cleaned:
                     self._presets[owner] = cleaned
+        raw_pages = data.get("pages", {})
+        if isinstance(raw_pages, dict):
+            for owner, entries in raw_pages.items():
+                if not isinstance(owner, str) or not isinstance(entries, list):
+                    continue
+                cleaned = _clean_page_entries(entries)
+                if cleaned:
+                    self._pages[owner] = cleaned
         raw_records = data.get("records", [])
         if not isinstance(raw_records, list):
             return
@@ -370,6 +421,10 @@ class ComplicationStore:
                 owner: [dict(e) for e in entries]
                 for owner, entries in self._presets.items()
             },
+            "pages": {
+                owner: [dict(e) for e in entries]
+                for owner, entries in self._pages.items()
+            },
             "records": [
                 record.as_dict()
                 for by_id in self._records.values()
@@ -383,6 +438,7 @@ class ComplicationStore:
     async def async_remove(self) -> None:
         self._records.clear()
         self._presets.clear()
+        self._pages.clear()
         self._token = 0
         await self._store.async_remove()
 
@@ -441,6 +497,26 @@ class ComplicationStore:
             self._presets[owner_watch_id] = cleaned
         else:
             self._presets.pop(owner_watch_id, None)
+        self._schedule_save()
+        return True
+
+    def pages(self, owner_watch_id: str) -> list[dict[str, Any]]:
+        """Watch-app pages (id + name), per the watch's last sync report."""
+        return [dict(e) for e in self._pages.get(owner_watch_id, [])]
+
+    def set_pages(self, owner_watch_id: str, entries: list[Any]) -> bool:
+        """Record the watch's page report. Returns whether it changed.
+
+        Advisory like :meth:`set_presets`: junk entries drop rather than
+        refuse, and an absent report leaves the last one standing.
+        """
+        cleaned = _clean_page_entries(entries)
+        if cleaned == self._pages.get(owner_watch_id, []):
+            return False
+        if cleaned:
+            self._pages[owner_watch_id] = cleaned
+        else:
+            self._pages.pop(owner_watch_id, None)
         self._schedule_save()
         return True
 

@@ -452,6 +452,67 @@ def test_presets_load_accepts_legacy_bare_slots_and_ignores_junk(mod):
     assert store.presets(OTHER) == []
 
 
+# ── page report ────────────────────────────────────────────────────────────
+
+PAGE_A = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
+PAGE_B = "11111111-2222-3333-4444-555555555555"
+
+
+def test_pages_round_trip_and_survive_restart(mod):
+    store = _new(mod)
+    assert store.pages(OWNER) == []
+    report = [
+        {"id": PAGE_A, "name": " Upstairs "},
+        {"id": PAGE_B, "name": "Garage"},
+    ]
+    assert store.set_pages(OWNER, report) is True
+    # Watch order preserved (not sorted), names trimmed.
+    assert store.pages(OWNER) == [
+        {"id": PAGE_A, "name": "Upstairs"},
+        {"id": PAGE_B, "name": "Garage"},
+    ]
+    # Same report again says unchanged.
+    assert (
+        store.set_pages(
+            OWNER,
+            [{"id": PAGE_A, "name": "Upstairs"}, {"id": PAGE_B, "name": "Garage"}],
+        )
+        is False
+    )
+
+    reloaded = _new(mod)
+    assert reloaded.pages(OWNER) == [
+        {"id": PAGE_A, "name": "Upstairs"},
+        {"id": PAGE_B, "name": "Garage"},
+    ]
+    assert reloaded.pages(OTHER) == []
+
+
+def test_pages_drop_junk_and_clear_on_empty(mod):
+    store = _new(mod)
+    store.set_pages(
+        OWNER,
+        [
+            True,
+            "not a dict",
+            {"id": 5, "name": "x"},
+            {"id": "not-a-uuid", "name": "x"},
+            {"id": PAGE_A.lower(), "name": "Upstairs"},  # id normalizes upper
+            {"id": PAGE_A, "name": "dupe loses"},
+            {"id": PAGE_B, "name": 12},  # non-string name empties
+        ],
+    )
+    assert store.pages(OWNER) == [
+        {"id": PAGE_A, "name": "Upstairs"},
+        {"id": PAGE_B, "name": ""},
+    ]
+    assert store.set_pages(OWNER, []) is True
+    assert store.pages(OWNER) == []
+
+    reloaded = _new(mod)
+    assert reloaded.pages(OWNER) == []
+
+
 # ── validation ─────────────────────────────────────────────────────────────
 
 
@@ -477,6 +538,8 @@ def test_presets_load_accepts_legacy_bare_slots_and_ignores_junk(mod):
         lambda d: d.update(elements=[1]),
         lambda d: d.update(elements=[{}] * (MAX_LAYERS + 1)),
         lambda d: d.update(refreshMinutes=True),
+        lambda d: d.update(openPageId=5),
+        lambda d: d.update(openPageName=["x"]),
         lambda d: d.update(name="x" * MAX_BYTES),
     ],
 )
@@ -487,6 +550,18 @@ def test_invalid_documents_are_refused(mod, mutate):
     with pytest.raises(mod.ComplicationValidationError):
         store.save(OWNER, doc, base_revision=None, updated_by="t")
     assert store.token == 0
+
+
+def test_open_page_fields_are_accepted(mod):
+    """openPageId/openPageName ride along as plain optional strings."""
+    store = _new(mod)
+    doc = _doc()
+    doc["tapAction"] = {"type": "openPage"}
+    doc["openPageId"] = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
+    doc["openPageName"] = "Upstairs"
+    rec = store.save(OWNER, doc, base_revision=None, updated_by="t")
+    assert rec.document["openPageId"] == "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
+    assert rec.document["openPageName"] == "Upstairs"
 
 
 def test_high_slots_are_valid_with_the_schema_marker(mod):

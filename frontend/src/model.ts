@@ -184,6 +184,9 @@ export interface TextElement extends ElementBase {
   value: Value;
   fontSize: number;
   fontWeight: FontWeight;
+  /** Live countdown mode: the watch ticks toward the value's target instant (an
+   * active HA timer's finishes_at, or any future ISO/unix timestamp). */
+  countdown?: boolean;
 }
 
 export interface IconElement extends ElementBase {
@@ -234,6 +237,8 @@ export interface BezelGauge {
 export interface FamilyLayout {
   placements: Record<string, Placement>;
   bezelText?: Value;
+  /** Live countdown mode for bezelText, same semantics as TextElement.countdown. */
+  bezelCountdown?: boolean;
   /** Big curved main text (corner only). When set, the corner ignores the
    * element canvas: the system curves only plain text. */
   curvedText?: Value;
@@ -267,6 +272,10 @@ export interface CustomComplicationConfig {
   dataSources: DataSource[];
   refreshMinutes?: number;
   tapAction: TapAction;
+  /** Page an openPage tap opens (watch page UUID); the id is authoritative. */
+  openPageId?: string;
+  /** Display name of that page when chosen; cosmetic label for the picker. */
+  openPageName?: string;
   showSuccessFlash?: boolean;
   successFlashColorHex?: string;
 }
@@ -502,16 +511,16 @@ export function parseElement(raw: unknown): Element {
   if (!isObject(raw) || !isObject(raw.payload)) throw new ConfigParseError("element must have a payload");
   const p = raw.payload;
   switch (raw.kind) {
-    case "text":
-      return {
-        kind: "text",
-        payload: {
-          ...parseElementBase(p, "#FFFFFF"),
-          value: isObject(p.value) ? parseValue(p.value) : literal(""),
-          fontSize: num(p.fontSize, 14),
-          fontWeight: (optStr(p.fontWeight) as FontWeight | undefined) ?? "regular",
-        },
+    case "text": {
+      const payload: TextElement = {
+        ...parseElementBase(p, "#FFFFFF"),
+        value: isObject(p.value) ? parseValue(p.value) : literal(""),
+        fontSize: num(p.fontSize, 14),
+        fontWeight: (optStr(p.fontWeight) as FontWeight | undefined) ?? "regular",
       };
+      if (p.countdown === true) payload.countdown = true;
+      return { kind: "text", payload };
+    }
     case "icon":
       return {
         kind: "icon",
@@ -568,6 +577,7 @@ function parseLayout(o: unknown): FamilyLayout {
     rules: parseRules(l.rules),
   };
   if (isObject(l.bezelText)) layout.bezelText = parseValue(l.bezelText);
+  if (l.bezelCountdown === true) layout.bezelCountdown = true;
   if (isObject(l.curvedText)) layout.curvedText = parseValue(l.curvedText);
   if (typeof l.curvedColorHex === "string") layout.curvedColorHex = l.curvedColorHex;
   if (isObject(l.bezelGauge)) {
@@ -650,6 +660,8 @@ export function parseConfig(raw: unknown): CustomComplicationConfig {
   };
   const rm = optNum(raw.refreshMinutes);
   if (rm !== undefined) cfg.refreshMinutes = rm;
+  if (typeof raw.openPageId === "string") cfg.openPageId = raw.openPageId;
+  if (typeof raw.openPageName === "string") cfg.openPageName = raw.openPageName;
   if (typeof raw.showSuccessFlash === "boolean") cfg.showSuccessFlash = raw.showSuccessFlash;
   if (typeof raw.successFlashColorHex === "string") cfg.successFlashColorHex = raw.successFlashColorHex;
   return cfg;
@@ -797,8 +809,11 @@ function encodeElement(el: Element): J {
     isHidden: p.isHidden,
   });
   switch (el.kind) {
-    case "text":
-      return { kind: "text", payload: { ...base(el.payload), value: encodeValue(el.payload.value), fontSize: encNum(el.payload.fontSize), fontWeight: el.payload.fontWeight } };
+    case "text": {
+      const o: J = { ...base(el.payload), value: encodeValue(el.payload.value), fontSize: encNum(el.payload.fontSize), fontWeight: el.payload.fontWeight };
+      if (el.payload.countdown === true) o.countdown = true;
+      return { kind: "text", payload: o };
+    }
     case "icon":
       return { kind: "icon", payload: { ...base(el.payload), symbol: encodeValue(el.payload.symbol), size: encNum(el.payload.size) } };
     case "gauge":
@@ -837,6 +852,7 @@ function encodeLayout(l: FamilyLayout): J {
     o.placements = placements;
   }
   if (l.bezelText) o.bezelText = encodeValue(l.bezelText);
+  if (l.bezelCountdown === true) o.bezelCountdown = true;
   if (l.curvedText) o.curvedText = encodeValue(l.curvedText);
   if (l.curvedColorHex !== undefined) o.curvedColorHex = l.curvedColorHex;
   if (l.bezelGauge) {
@@ -883,6 +899,8 @@ export function encodeConfig(cfg: CustomComplicationConfig): J {
     tapAction: encodeTapAction(cfg.tapAction),
   };
   if (cfg.refreshMinutes !== undefined) o.refreshMinutes = cfg.refreshMinutes;
+  if (cfg.openPageId !== undefined) o.openPageId = cfg.openPageId;
+  if (cfg.openPageName !== undefined) o.openPageName = cfg.openPageName;
   if (cfg.showSuccessFlash !== undefined) o.showSuccessFlash = cfg.showSuccessFlash;
   if (cfg.successFlashColorHex !== undefined) o.successFlashColorHex = cfg.successFlashColorHex;
   return o;
@@ -894,7 +912,7 @@ export function encodeConfig(cfg: CustomComplicationConfig): J {
 // non-empty and tells the user which paths it does not understand.
 
 const K = {
-  config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "dataSources", "refreshMinutes", "tapAction", "showSuccessFlash", "successFlashColorHex"],
+  config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "dataSources", "refreshMinutes", "tapAction", "openPageId", "openPageName", "showSuccessFlash", "successFlashColorHex"],
   named: ["id", "name", "value"],
   value: ["kind", "format"],
   format: ["decimals", "multiply", "offset", "prefix", "suffix", "useEntityUnit", "relativeTime", "textCase"],
@@ -905,7 +923,7 @@ const K = {
   frame: ["x", "y", "width", "height", "rotationDegrees"],
   elementEnvelope: ["kind", "payload"],
   elementBase: ["id", "colorSlot", "rules", "frame", "isHidden"],
-  text: ["value", "fontSize", "fontWeight"],
+  text: ["value", "fontSize", "fontWeight", "countdown"],
   icon: ["symbol", "size"],
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex"],
   shape: ["kind", "cornerRadius", "borderColorHex", "borderWidth"],
@@ -916,7 +934,7 @@ const K = {
   test: ["id", "value", "comparison"],
   comparison: ["kind", "value", "upper", "pattern", "options"],
   styleChange: ["kind", "value", "number", "weight"],
-  layout: ["placements", "bezelText", "curvedText", "curvedColorHex", "bezelGauge", "backgroundColorHex", "cornerBodyShape", "borderColorHex", "borderWidth", "rules"],
+  layout: ["placements", "bezelText", "bezelCountdown", "curvedText", "curvedColorHex", "bezelGauge", "backgroundColorHex", "cornerBodyShape", "borderColorHex", "borderWidth", "rules"],
   bezelGauge: ["value", "minValue", "maxValue", "colorHexes", "minLabel", "maxLabel"],
   placement: ["frame", "isHidden", "size"],
   tapAction: ["type", "entityId", "displayName", "domain", "iconName"],

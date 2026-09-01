@@ -34,6 +34,12 @@ export interface EntityState {
   unitOfMeasurement?: string;
   iconName: string;
   domain: string;
+  /** timer.* entities only: "idle" | "active" | "paused". */
+  timerState?: string;
+  /** timer.* entities only: ISO timestamp of the finish instant (active timers). */
+  finishesAt?: string;
+  /** timer.* entities only: seconds remaining while paused. */
+  remaining?: number;
 }
 
 export interface ResolveContext {
@@ -43,6 +49,8 @@ export interface ResolveContext {
   /** Seconds since the value cache was written; undefined = never synced. */
   dataAgeSeconds?: number;
   stalenessThresholdSeconds?: number;
+  /** Injectable clock for countdown resolution (epoch ms); defaults to Date.now(). */
+  nowMs?: number;
 }
 
 export interface ResolvedBase {
@@ -57,6 +65,9 @@ export interface ResolvedText extends ResolvedBase {
   fontSize: number;
   fontWeight: FontWeight;
   colorHex: string;
+  /** Live-countdown target (epoch ms). When set, the watch ticks toward it;
+   * `text` is the static fallback the preview may also show. */
+  countdownEnd?: number;
 }
 export interface ResolvedIcon extends ResolvedBase {
   kind: "icon";
@@ -95,6 +106,8 @@ export interface ResolvedLayout {
   family: FamilyKind;
   elements: ResolvedElement[];
   bezelText?: string;
+  /** Live-countdown target for the bezel label (epoch ms). */
+  bezelCountdownEnd?: number;
   /** Big curved main text (corner only); when set, the canvas is not drawn. */
   curvedText?: string;
   curvedColorHex?: string;
@@ -185,6 +198,17 @@ export function formatValue(raw: string, format: ValueFormat | undefined, unit: 
   return text;
 }
 
+/** Clock-style remaining time for a paused timer: "4:30", "1:02:15". Mirrors
+ * `CustomComplication.countdownRemainingString` in Swift. */
+export function countdownRemainingString(seconds: number): string {
+  const total = Math.trunc(Math.max(0, seconds));
+  const h = Math.trunc(total / 3600);
+  const m = Math.trunc((total % 3600) / 60);
+  const s = total % 60;
+  const two = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${two(m)}:${two(s)}` : `${m}:${two(s)}`;
+}
+
 export function gaugeFraction(raw: string | undefined, min: number, max: number): number {
   if (raw === undefined) return 0;
   const n = leadingNumber(raw);
@@ -253,6 +277,54 @@ export class Resolver {
     }
     if (raw === undefined) return undefined;
     return formatValue(raw, deref.format, this.directEntityUnit(deref));
+  }
+
+  private nowMs(): number {
+    return this.ctx.nowMs ?? Date.now();
+  }
+
+  /** Live-countdown target for a countdown-enabled text or bezel value. Mirrors
+   * `ResolveContext.countdownEnd(for:)` in Swift: an entity-state source pointing
+   * at an HA timer counts down to its finish instant while active; any other
+   * source is accepted when it resolves to a future ISO timestamp or unix
+   * seconds. Tolerance vs Swift: `Date.parse` accepts a few more ISO shapes. */
+  countdownEnd(value: Value | undefined): number | undefined {
+    if (!value) return undefined;
+    const deref = this.dereference(value);
+    if (!deref) return undefined;
+    const k = deref.kind;
+    if (k.kind === "entityState") {
+      const s = this.ctx.entityStates.get(k.entityId);
+      if (s?.timerState !== undefined) {
+        if (s.timerState !== "active" || !s.finishesAt) return undefined;
+        const t = Date.parse(s.finishesAt);
+        return Number.isFinite(t) && t > this.nowMs() ? t : undefined;
+      }
+    }
+    const raw = this.resolve(value)?.trim();
+    if (!raw) return undefined;
+    let t = Date.parse(raw);
+    if (!Number.isFinite(t)) {
+      const n = swiftDouble(raw);
+      t = n === undefined ? NaN : n * 1000;
+    }
+    return Number.isFinite(t) && t > this.nowMs() ? t : undefined;
+  }
+
+  /** Static stand-in behind a countdown when the source is a timer entity:
+   * paused shows the remaining time, everything else "Idle" (the preset's
+   * wording). Undefined for non-timer sources. */
+  countdownFallbackText(value: Value | undefined): string | undefined {
+    if (!value) return undefined;
+    const deref = this.dereference(value);
+    if (!deref || deref.kind.kind !== "entityState") return undefined;
+    const s = this.ctx.entityStates.get(deref.kind.entityId);
+    if (s?.timerState === undefined) return undefined;
+    if (s.timerState === "paused") {
+      if (s.remaining !== undefined && s.remaining > 0) return countdownRemainingString(s.remaining);
+      return "Paused";
+    }
+    return "Idle";
   }
 
   entityIcon(symbol: Value): string | undefined {
@@ -392,15 +464,20 @@ export class Resolver {
     const opacity = this.styleNumber(style, "opacity") ?? 1;
     const base = { id: p.id, isHidden, frame, opacity };
     switch (el.kind) {
-      case "text":
-        return {
+      case "text": {
+        const countdownEnd = el.payload.countdown ? this.countdownEnd(el.payload.value) : undefined;
+        const fallback = el.payload.countdown ? this.countdownFallbackText(el.payload.value) : undefined;
+        const out: ResolvedText = {
           kind: "text",
           ...base,
-          text: this.styleText(style, "text") ?? this.resolve(el.payload.value) ?? "--",
+          text: this.styleText(style, "text") ?? fallback ?? this.resolve(el.payload.value) ?? "--",
           fontSize: this.styleNumber(style, "fontSize") ?? el.payload.fontSize,
           fontWeight: style.get("fontWeight")?.weight ?? el.payload.fontWeight,
           colorHex: this.styleColor(style, "color") ?? p.colorSlot.baseColorHex,
         };
+        if (countdownEnd !== undefined) out.countdownEnd = countdownEnd;
+        return out;
+      }
       case "icon": {
         const baseSymbol = this.entityIcon(el.payload.symbol) ?? this.resolve(el.payload.symbol) ?? "questionmark.circle";
         return {
@@ -451,8 +528,14 @@ export class Resolver {
       cornerBodyShape: layout?.cornerBodyShape ?? "wedge",
       borderWidth: this.styleNumber(style, "borderWidth") ?? layout?.borderWidth ?? 2,
     };
-    const bezel = this.styleText(style, "text") ?? this.resolve(layout?.bezelText);
+    const bezelStyled = this.styleText(style, "text");
+    const bezelCountdownEnd = layout?.bezelCountdown && bezelStyled === undefined
+      ? this.countdownEnd(layout.bezelText) : undefined;
+    const bezelFallback = layout?.bezelCountdown
+      ? this.countdownFallbackText(layout.bezelText) : undefined;
+    const bezel = bezelStyled ?? bezelFallback ?? this.resolve(layout?.bezelText);
     if (bezel !== undefined) out.bezelText = bezel;
+    if (bezelCountdownEnd !== undefined) out.bezelCountdownEnd = bezelCountdownEnd;
     const curved = this.resolve(layout?.curvedText);
     if (curved !== undefined) out.curvedText = curved;
     if (layout?.curvedColorHex !== undefined) out.curvedColorHex = layout.curvedColorHex;

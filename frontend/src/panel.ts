@@ -89,6 +89,9 @@ export class WristAssistantPanel extends LitElement {
   /** iPhone presets on the selected watch (slot + name). freeSlot() skips
    * their slots; the list shows them as locked rows. */
   @state() private presets: { slot: number; name: string }[] = [];
+  /** Watch-app pages (id + name) from the watch's last sync report; feeds the
+   * "Open the page" tap-action picker. */
+  @state() private pages: { id: string; name: string }[] = [];
   @state() private templateResults = new Map<string, string>();
   @state() private templateError?: string;
   @state() private templateFetchedAt?: number;
@@ -310,12 +313,29 @@ export class WristAssistantPanel extends LitElement {
     void this.unsubscribe?.();
     if (this.templateTimer) window.clearInterval(this.templateTimer);
     if (this.debounceTimer) window.clearTimeout(this.debounceTimer);
+    if (this.countdownTimer !== undefined) window.clearInterval(this.countdownTimer);
     this.cancelGesture?.();
   }
 
   private beforeUnload = (e: BeforeUnloadEvent) => {
     if (this.draft?.dirty) e.preventDefault();
   };
+
+  /** One-second re-render while any preview shows a live countdown, so the
+   * remaining time ticks like it does on the watch. Cleared as soon as no
+   * countdown is live (and on disconnect). */
+  private countdownTimer?: number;
+  private syncCountdownTicker(layouts: Record<DrawableFamily, ReturnType<Resolver["resolveLayout"]>>) {
+    const live = Object.values(layouts).some((l) =>
+      l.bezelCountdownEnd !== undefined ||
+      l.elements.some((el) => el.kind === "text" && el.countdownEnd !== undefined));
+    if (live && this.countdownTimer === undefined) {
+      this.countdownTimer = window.setInterval(() => this.requestUpdate(), 1000);
+    } else if (!live && this.countdownTimer !== undefined) {
+      window.clearInterval(this.countdownTimer);
+      this.countdownTimer = undefined;
+    }
+  }
 
   protected override updated(changed: PropertyValues) {
     if (changed.has("hass") && this.draft) {
@@ -397,6 +417,7 @@ export class WristAssistantPanel extends LitElement {
       this.records = reply.records;
       this.maxSchemaVersion = reply.max_schema_version;
       this.presets = reply.presets ?? [];
+      this.pages = reply.pages ?? [];
       const still = this.records.find((r) => r.id === this.selectedId);
       if (still) {
         if (this.draft && this.draft.dirty) {
@@ -545,6 +566,7 @@ export class WristAssistantPanel extends LitElement {
       config: this.draft!.config,
       icons: this.icons,
       symbols: this.symbols,
+      pages: this.pages,
       update: (m, c) => this.mutate(m, c),
       endGesture: () => this.draft?.endGesture(),
       resolve: (v: Value) => resolver.resolve(v),
@@ -730,13 +752,23 @@ export class WristAssistantPanel extends LitElement {
       const s = this.hass.states[id];
       if (!s) continue;
       const attrs = s.attributes;
-      entityStates.set(id, {
+      const domain = id.split(".")[0] ?? "";
+      const entry: EntityState = {
         entityId: id,
         state: s.state,
         unitOfMeasurement: typeof attrs.unit_of_measurement === "string" ? attrs.unit_of_measurement : undefined,
         iconName: this.compiled?.entities.get(id)?.iconName ?? "",
-        domain: id.split(".")[0] ?? "",
-      });
+        domain,
+      };
+      if (domain === "timer") {
+        // Countdown support: the resolver needs the timer's phase, finish
+        // instant, and paused remaining (HA serializes remaining as "H:MM:SS").
+        entry.timerState = s.state;
+        if (typeof attrs.finishes_at === "string") entry.finishesAt = attrs.finishes_at;
+        const remaining = parseDurationSeconds(attrs.remaining);
+        if (remaining !== undefined) entry.remaining = remaining;
+      }
+      entityStates.set(id, entry);
     }
     return {
       entityStates,
@@ -994,6 +1026,7 @@ export class WristAssistantPanel extends LitElement {
     const cfg = this.draft?.config;
     if (!cfg) return html`<div class="card"><div class="empty">Select a complication, or press New.</div></div>`;
     const layouts = resolveAll(cfg, this.buildContext(), this.forced);
+    this.syncCountdownTicker(layouts);
     const highlightId = this.inspect.kind === "layer" ? this.inspect.id : undefined;
     const watchCase = this.currentCase();
     const one = (family: DrawableFamily) => {
@@ -1167,6 +1200,15 @@ function errText(err: unknown): string {
 
 /** Watch name plus the iPhone it is paired to, which is what tells two
     watches apart when both report themselves as "Apple Watch". */
+/** HA serializes timer durations as "H:MM:SS" (numbers pass through). */
+function parseDurationSeconds(v: unknown): number | undefined {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v !== "string" || v === "") return undefined;
+  const parts = v.split(":").map((p) => Number(p));
+  if (parts.length === 0 || parts.length > 3 || parts.some((n) => Number.isNaN(n))) return undefined;
+  return parts.reduce((acc, n) => acc * 60 + n, 0);
+}
+
 function ownerLabel(o: OwnerSummary): string {
   const name = o.device_name ?? o.owner_watch_id;
   return o.paired_iphone_name ? `${name} (${o.paired_iphone_name})` : name;

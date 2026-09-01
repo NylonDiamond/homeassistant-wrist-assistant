@@ -3,8 +3,8 @@
 
 import { describe, expect, it } from "vitest";
 import { fnv1a64Hex, normaliseScalar, parseValueDocument } from "../src/compiler.js";
-import { formatValue, gaugeFraction, leadingNumber } from "../src/resolver.js";
-import { parseValue } from "../src/model.js";
+import { countdownRemainingString, formatValue, gaugeFraction, leadingNumber, resolveAll, type EntityState } from "../src/resolver.js";
+import { newConfig, newElement, parseValue } from "../src/model.js";
 
 describe("fnv1a64Hex", () => {
   it("matches the reference vectors, without zero padding", () => {
@@ -87,5 +87,66 @@ describe("parseValue", () => {
   it("accepts the flat v2 shape and the nested v3 shape", () => {
     expect(parseValue({ kind: "literal", value: "x" })).toEqual({ kind: { kind: "literal", value: "x" } });
     expect(parseValue({ kind: { kind: "literal", value: "x" }, format: {} })).toEqual({ kind: { kind: "literal", value: "x" } });
+  });
+});
+
+describe("countdown resolution", () => {
+  // Same instant the Swift tests pin: 2023-11-14T22:13:20Z.
+  const nowMs = 1_700_000_000_000;
+
+  const timerEntity = (state: string, extra: Partial<EntityState> = {}): EntityState => ({
+    entityId: "timer.laundry",
+    state,
+    iconName: "timer",
+    domain: "timer",
+    timerState: state,
+    ...extra,
+  });
+
+  const countdownConfig = () => {
+    const cfg = newConfig("X", 0);
+    const el = newElement("text");
+    if (el.kind === "text") {
+      el.payload.countdown = true;
+      el.payload.value = { kind: { kind: "entityState", entityId: "timer.laundry", displayName: "Laundry", domain: "timer" } };
+    }
+    cfg.elements = [el];
+    return cfg;
+  };
+
+  const resolveCountdownText = (s: EntityState) => {
+    const layouts = resolveAll(countdownConfig(), {
+      entityStates: new Map([["timer.laundry", s]]),
+      templateResults: new Map(),
+      namedValues: [],
+      nowMs,
+    });
+    const el = layouts.rectangular.elements[0];
+    return el?.kind === "text" ? el : undefined;
+  };
+
+  it("an active timer yields a live target and 'Idle' fallback text", () => {
+    const el = resolveCountdownText(timerEntity("active", { finishesAt: "2023-11-14T22:18:20+00:00" }));
+    expect(el?.countdownEnd).toBe(nowMs + 300_000);
+    expect(el?.text).toBe("Idle");
+  });
+
+  it("a paused timer shows its remaining time", () => {
+    expect(resolveCountdownText(timerEntity("paused", { remaining: 270 }))?.text).toBe("4:30");
+    expect(resolveCountdownText(timerEntity("paused", { remaining: 3735 }))?.text).toBe("1:02:15");
+    expect(resolveCountdownText(timerEntity("paused", { remaining: 270 }))?.countdownEnd).toBeUndefined();
+  });
+
+  it("idle and expired timers show 'Idle'", () => {
+    expect(resolveCountdownText(timerEntity("idle"))?.text).toBe("Idle");
+    const expired = resolveCountdownText(timerEntity("active", { finishesAt: "2023-11-14T22:13:10+00:00" }));
+    expect(expired?.countdownEnd).toBeUndefined();
+    expect(expired?.text).toBe("Idle");
+  });
+
+  it("countdownRemainingString matches the Swift formatting", () => {
+    expect(countdownRemainingString(0)).toBe("0:00");
+    expect(countdownRemainingString(65)).toBe("1:05");
+    expect(countdownRemainingString(3735)).toBe("1:02:15");
   });
 });

@@ -32,6 +32,50 @@ describe("encodeConfig", () => {
     expect(auditUnknownKeys(fx.config)).toEqual([]);
   });
 
+  it("round-trips the openPage fields", () => {
+    const cfg = newConfig("X", 0);
+    cfg.tapAction = { type: "openPage" };
+    cfg.openPageId = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE";
+    cfg.openPageName = "Upstairs";
+    const enc = encodeConfig(cfg) as Record<string, unknown>;
+    expect(enc.openPageId).toBe(cfg.openPageId);
+    expect(enc.openPageName).toBe("Upstairs");
+    const back = parseConfig(enc);
+    expect(back.openPageId).toBe(cfg.openPageId);
+    expect(back.openPageName).toBe("Upstairs");
+    // Absent stays absent — no null/undefined keys leak into the document.
+    const bare = encodeConfig(newConfig("Y", 1)) as Record<string, unknown>;
+    expect("openPageId" in bare).toBe(false);
+    expect("openPageName" in bare).toBe(false);
+  });
+
+  it("round-trips the countdown flags, and absent stays absent", () => {
+    const cfg = newConfig("X", 0);
+    const el = newElement("text");
+    if (el.kind === "text") el.payload.countdown = true;
+    cfg.elements = [el];
+    cfg.perFamily.corner = {
+      placements: {},
+      bezelText: { kind: { kind: "literal", value: "x" } },
+      bezelCountdown: true,
+      cornerBodyShape: "circle",
+      borderWidth: 2,
+      rules: [],
+    };
+    const enc = encodeConfig(cfg) as Record<string, unknown>;
+    const back = parseConfig(enc);
+    const textBack = back.elements[0];
+    expect(textBack?.kind === "text" && textBack.payload.countdown).toBe(true);
+    expect(back.perFamily.corner?.bezelCountdown).toBe(true);
+    expect(auditUnknownKeys(enc)).toEqual([]);
+
+    // A plain text element / layout never emits the keys, so old watch builds
+    // see byte-identical documents.
+    const bare = newConfig("Y", 1);
+    bare.elements = [newElement("text")];
+    expect(JSON.stringify(encodeConfig(bare))).not.toContain("countdown");
+  });
+
   it("round-trips every comparison kind and style change kind", () => {
     const cfg = newConfig("X", 0);
     const el = newElement("text");
