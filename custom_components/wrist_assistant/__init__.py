@@ -704,6 +704,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     await batch_snapshot_settings_store.async_load()
     complication_store = ComplicationStore(hass)
     await complication_store.async_load()
+    # Custom complications ride the watch's long-poll: the owner's store
+    # token on every reply, the watch's ack on every request, and a panel
+    # save wakes the parked poll so the watch pulls at once.
+    coordinator.attach_complication_store(complication_store)
 
     # Register server capabilities
     # HA-owned custom complications: iOS checks this before offering the

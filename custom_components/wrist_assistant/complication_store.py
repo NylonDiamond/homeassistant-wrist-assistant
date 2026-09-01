@@ -148,6 +148,54 @@ def _clean_preset_entries(entries: list[Any]) -> list[dict[str, Any]]:
     return [{"slot": slot, "name": cleaned[slot]} for slot in sorted(cleaned)]
 
 
+_OCCUPIED_KINDS = frozenset({"preset", "custom"})
+
+
+def _clean_occupied_entries(entries: list[Any]) -> list[dict[str, Any]]:
+    """Normalize an occupied-slot report, sorted by slot.
+
+    Shape: ``[{"slot": int, "name": str, "kind": "preset"|"custom",
+    "home": str}]``. ``kind`` says what holds the slot: an iPhone preset (any
+    home) or a custom complication that lives on a different Home Assistant.
+    ``home`` is the display name of the home it belongs to, empty when the
+    watch did not say. Advisory like the preset report: junk entries drop,
+    the first entry wins a duplicated slot, and a missing kind reads as
+    "preset" so a report that only knows presets still parses.
+    """
+    cleaned: dict[int, dict[str, Any]] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        slot = entry.get("slot")
+        if isinstance(slot, bool) or not isinstance(slot, int) or slot not in _SLOT_RANGE:
+            continue
+        if slot in cleaned:
+            continue
+        name = entry.get("name", "")
+        if not isinstance(name, str):
+            name = ""
+        kind = entry.get("kind", "preset")
+        if kind not in _OCCUPIED_KINDS:
+            kind = "preset"
+        home = entry.get("home", "")
+        if not isinstance(home, str):
+            home = ""
+        cleaned[slot] = {
+            "slot": slot,
+            "name": name.strip()[:_PRESET_NAME_MAX_CHARS],
+            "kind": kind,
+            "home": home.strip()[:_PRESET_NAME_MAX_CHARS],
+        }
+    return [cleaned[slot] for slot in sorted(cleaned)]
+
+
+def _presets_from_occupied(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The preset-kind rows of an occupied report, in the preset shape."""
+    return [
+        {"slot": e["slot"], "name": e["name"]} for e in entries if e["kind"] == "preset"
+    ]
+
+
 class ComplicationStoreError(Exception):
     """Base class; ``code`` is the stable machine-readable reason."""
 
@@ -229,14 +277,23 @@ class ComplicationRecord:
 
 @dataclass
 class ComplicationChange:
-    """What a listener receives after a commit."""
+    """What a listener receives after a commit, or after the watch acks.
+
+    A commit carries the record. An ack (the watch reported the token it has
+    applied) carries no record; ``applied_token`` is the news. ``token`` is
+    the store token at the time either way.
+    """
 
     owner_watch_id: str
     token: int
-    record: ComplicationRecord
+    record: ComplicationRecord | None = None
+    applied_token: int | None = None
 
 
 ChangeListener = Callable[[ComplicationChange], None]
+# Called with the owner watch id after every commit for that owner, so the
+# long-poll the watch is holding can wake and hand it the new token.
+WakeCallback = Callable[[str], None]
 
 
 def _now_iso() -> str:
@@ -359,8 +416,19 @@ class ComplicationStore:
         # watch-app pages, reported alongside presets. Feeds the panel's
         # "Open the page" tap-action picker; advisory like the preset report.
         self._pages: dict[str, list[dict[str, Any]]] = {}
+        # owner_watch_id → the whole slot pool as the watch sees it, minus
+        # this server's own records: presets from every home plus customs
+        # that live on another Home Assistant. Newer apps send this instead
+        # of the bare preset report; `_presets` is derived from it so every
+        # reader of presets() keeps working.
+        self._occupied: dict[str, list[dict[str, Any]]] = {}
+        # owner_watch_id → the store token the watch last said it applied.
+        # Sent on every long-poll request; the panel's "Send to watch" is
+        # green exactly when it equals owner_token().
+        self._applied: dict[str, int] = {}
         self._token = 0
         self._listeners: list[ChangeListener] = []
+        self._wake: WakeCallback | None = None
         self._store: Store = Store(
             hass, COMPLICATION_STORAGE_VERSION, COMPLICATION_STORAGE_KEY
         )
@@ -393,6 +461,20 @@ class ComplicationStore:
                 cleaned = _clean_page_entries(entries)
                 if cleaned:
                     self._pages[owner] = cleaned
+        raw_occupied = data.get("occupied", {})
+        if isinstance(raw_occupied, dict):
+            for owner, entries in raw_occupied.items():
+                if not isinstance(owner, str) or not isinstance(entries, list):
+                    continue
+                cleaned = _clean_occupied_entries(entries)
+                if cleaned:
+                    self._occupied[owner] = cleaned
+                    self._presets[owner] = _presets_from_occupied(cleaned)
+        raw_applied = data.get("applied", {})
+        if isinstance(raw_applied, dict):
+            for owner, value in raw_applied.items():
+                if isinstance(owner, str) and isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                    self._applied[owner] = value
         raw_records = data.get("records", [])
         if not isinstance(raw_records, list):
             return
@@ -425,6 +507,11 @@ class ComplicationStore:
                 owner: [dict(e) for e in entries]
                 for owner, entries in self._pages.items()
             },
+            "occupied": {
+                owner: [dict(e) for e in entries]
+                for owner, entries in self._occupied.items()
+            },
+            "applied": dict(self._applied),
             "records": [
                 record.as_dict()
                 for by_id in self._records.values()
@@ -439,6 +526,8 @@ class ComplicationStore:
         self._records.clear()
         self._presets.clear()
         self._pages.clear()
+        self._occupied.clear()
+        self._applied.clear()
         self._token = 0
         await self._store.async_remove()
 
@@ -460,6 +549,23 @@ class ComplicationStore:
                 listener(change)
             except Exception:
                 _LOGGER.exception("Complication change listener failed")
+
+    @callback
+    def async_set_wake_callback(self, wake: WakeCallback | None) -> None:
+        """Install the hook that wakes an owner's parked long-poll.
+
+        The delta coordinator owns the poll; the store only knows that an
+        owner's token moved. One hook, set once at setup.
+        """
+        self._wake = wake
+
+    def _wake_owner(self, owner_watch_id: str) -> None:
+        if self._wake is None:
+            return
+        try:
+            self._wake(owner_watch_id)
+        except Exception:
+            _LOGGER.exception("Complication wake callback failed")
 
     # ── reads ──────────────────────────────────────────────────────────
 
@@ -491,7 +597,11 @@ class ComplicationStore:
         valid report is better than none.
         """
         cleaned = _clean_preset_entries(entries)
-        if cleaned == self._presets.get(owner_watch_id, []):
+        # A bare preset report comes from an app that knows nothing about
+        # other homes' customs, so any occupied report on file is from a
+        # newer build that is no longer the one on the wrist. Drop it.
+        had_occupied = self._occupied.pop(owner_watch_id, None) is not None
+        if cleaned == self._presets.get(owner_watch_id, []) and not had_occupied:
             return False
         if cleaned:
             self._presets[owner_watch_id] = cleaned
@@ -503,6 +613,71 @@ class ComplicationStore:
     def pages(self, owner_watch_id: str) -> list[dict[str, Any]]:
         """Watch-app pages (id + name), per the watch's last sync report."""
         return [dict(e) for e in self._pages.get(owner_watch_id, [])]
+
+    def occupied(self, owner_watch_id: str) -> list[dict[str, Any]]:
+        """Every slot something other than this server's records holds.
+
+        The watch's last ``occupied`` report when it sent one; otherwise the
+        preset report dressed in the occupied shape, so a panel talking to an
+        older app still sees one list.
+        """
+        stored = self._occupied.get(owner_watch_id)
+        if stored is not None:
+            return [dict(e) for e in stored]
+        return [
+            {"slot": e["slot"], "name": e["name"], "kind": "preset", "home": ""}
+            for e in self._presets.get(owner_watch_id, [])
+        ]
+
+    def set_occupied(self, owner_watch_id: str, entries: list[Any]) -> bool:
+        """Record the watch's occupied-slot report. Returns whether it changed.
+
+        Replaces the preset report for this owner: the preset rows are
+        derived from it, so ``presets()`` and ``preset_slots()`` stay in
+        step. Advisory like :meth:`set_presets`.
+        """
+        cleaned = _clean_occupied_entries(entries)
+        derived = _presets_from_occupied(cleaned)
+        if (
+            cleaned == self._occupied.get(owner_watch_id, [])
+            and derived == self._presets.get(owner_watch_id, [])
+        ):
+            return False
+        if cleaned:
+            self._occupied[owner_watch_id] = cleaned
+        else:
+            self._occupied.pop(owner_watch_id, None)
+        if derived:
+            self._presets[owner_watch_id] = derived
+        else:
+            self._presets.pop(owner_watch_id, None)
+        self._schedule_save()
+        return True
+
+    def applied_token(self, owner_watch_id: str) -> int:
+        """The store token the watch last reported it had applied (0 = never)."""
+        return self._applied.get(owner_watch_id, 0)
+
+    def set_applied_token(self, owner_watch_id: str, token: int) -> bool:
+        """Record the watch's ack. Returns whether it changed.
+
+        Notifies listeners with a record-less change so the panel's
+        subscription can flip "Send to watch" green without polling.
+        """
+        if isinstance(token, bool) or not isinstance(token, int) or token < 0:
+            return False
+        if self.applied_token(owner_watch_id) == token:
+            return False
+        self._applied[owner_watch_id] = token
+        self._schedule_save()
+        self._notify(
+            ComplicationChange(
+                owner_watch_id=owner_watch_id,
+                token=self.owner_token(owner_watch_id),
+                applied_token=token,
+            )
+        )
+        return True
 
     def set_pages(self, owner_watch_id: str, entries: list[Any]) -> bool:
         """Record the watch's page report. Returns whether it changed.
@@ -565,6 +740,7 @@ class ComplicationStore:
                 record=record,
             )
         )
+        self._wake_owner(record.owner_watch_id)
         return record
 
     def save(

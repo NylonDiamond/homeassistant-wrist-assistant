@@ -14,6 +14,28 @@ export const DRAWABLE_FAMILIES: FamilyKind[] = ["rectangular", "circular", "corn
 export const BASE_SLOTS = 8;
 export const MAX_SLOTS = 64;
 
+/** One watch-face slot something other than this server's records holds,
+ * per the watch's last sync report: an iPhone preset (any home) or a custom
+ * complication that lives on another Home Assistant. `home` is that home's
+ * display name, empty when the watch did not say. */
+export interface OccupiedSlot {
+  slot: number;
+  name: string;
+  kind: "preset" | "custom";
+  home: string;
+}
+
+/** First slot neither a stored record nor an occupied entry uses, or -1 when
+ * every slot is taken. A custom written under a preset would be masked at
+ * render, and one written under another home's custom would collide on the
+ * face, so both count as taken. */
+export function freeSlotFrom(recordSlots: Iterable<number>, occupied: Iterable<{ slot: number }>): number {
+  const used = new Set<number>(recordSlots);
+  for (const o of occupied) used.add(o.slot);
+  for (let i = 0; i < MAX_SLOTS; i++) if (!used.has(i)) return i;
+  return -1;
+}
+
 // Slots above the original 8 are stamped schemaVersion 5 so an old app shows
 // "needs app update" for them instead of silently dropping the complication
 // (its slot-id parser rejects ids past 8). Low slots stay at 4 so nothing

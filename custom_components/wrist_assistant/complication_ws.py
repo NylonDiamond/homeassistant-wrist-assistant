@@ -60,6 +60,7 @@ _CMD_DELETE = f"{DOMAIN}/complications/delete"
 _CMD_SUBSCRIBE = f"{DOMAIN}/complications/subscribe"
 _CMD_MOVE_OWNER = f"{DOMAIN}/complications/move_owner"
 _CMD_RENDER = f"{DOMAIN}/complications/render_values"
+_CMD_NUDGE = f"{DOMAIN}/complications/nudge"
 _CMD_FORGET = f"{DOMAIN}/devices/forget"
 
 
@@ -100,6 +101,7 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_subscribe)
     websocket_api.async_register_command(hass, ws_move_owner)
     websocket_api.async_register_command(hass, ws_render_values)
+    websocket_api.async_register_command(hass, ws_nudge)
     websocket_api.async_register_command(hass, ws_forget_device)
 
 
@@ -288,17 +290,32 @@ def ws_list(
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
     owner = msg["owner_watch_id"]
+    domain_data = hass.data.get(DOMAIN)
+    coordinator = domain_data.coordinator if domain_data is not None else None
     connection.send_result(
         msg["id"],
         {
             "owner_watch_id": owner,
             "token": store.owner_token(owner),
+            # The token the watch last said it applied. Equal to `token`
+            # means everything here is on the wrist ("Send to watch" is
+            # green); anything else means not yet.
+            "applied_token": store.applied_token(owner),
+            # Whether this watch holds a long-poll on this server right now,
+            # which is the only way a save can reach it without the user
+            # tapping Sync now on the watch.
+            "polling": bool(coordinator and coordinator.is_polling(owner)),
             "max_schema_version": COMPLICATION_MAX_SCHEMA_VERSION,
             # iPhone presets on this watch (slot + name, its last sync
             # report). The panel's auto-assigner must skip these slots (a
             # custom written under a preset is masked at render time) and
             # lists the presets by name as locked rows.
             "presets": store.presets(owner),
+            # Every slot something other than this server's records holds:
+            # the presets above plus customs on another home, each with a
+            # kind and a home name. The panel lists them as locked rows and
+            # its auto-assigner skips them all.
+            "occupied": store.occupied(owner),
             # Watch-app pages (id + name, watch order), for the "Open the
             # page" tap-action picker.
             "pages": store.pages(owner),
@@ -406,10 +423,13 @@ def ws_delete(
 def ws_subscribe(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Push every commit (save, delete, restore) to the panel as an event.
+    """Push every commit (save, delete, restore) and every watch ack to the
+    panel as an event.
 
     Lets a second tab or a second admin see that the record they hold is now
-    stale before they try to save it. Optional owner filter.
+    stale before they try to save it, and lets "Send to watch" go green the
+    moment the watch reports the token it applied (``record`` is null on
+    those, ``applied_token`` carries the news). Optional owner filter.
     """
     store = _store(hass)
     if store is None:
@@ -427,13 +447,51 @@ def ws_subscribe(
                 {
                     "owner_watch_id": change.owner_watch_id,
                     "token": change.token,
-                    "record": change.record.as_dict(),
+                    "record": change.record.as_dict() if change.record else None,
+                    "applied_token": change.applied_token,
                 },
             )
         )
 
     connection.subscriptions[msg["id"]] = store.async_add_listener(_on_change)
     connection.send_result(msg["id"], {"token": store.token})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_NUDGE,
+        vol.Required("owner_watch_id"): str,
+    }
+)
+@callback
+def ws_nudge(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The panel's "Send to watch": wake the watch's parked long-poll so it
+    is handed the current token again.
+
+    Changes nothing in the store. A watch that already applied the current
+    token gets nothing from it; the ack that turns the button green arrives
+    on the watch's next poll request either way. ``polling`` in the reply is
+    whether there was a poll to wake at all.
+    """
+    domain_data = hass.data.get(DOMAIN)
+    if domain_data is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    owner = msg["owner_watch_id"]
+    coordinator = domain_data.coordinator
+    polling = coordinator.is_polling(owner)
+    coordinator.wake_watch(owner, renotify=True)
+    connection.send_result(
+        msg["id"],
+        {
+            "polling": polling,
+            "token": domain_data.complication_store.owner_token(owner),
+            "applied_token": domain_data.complication_store.applied_token(owner),
+        },
+    )
 
 
 @websocket_api.require_admin

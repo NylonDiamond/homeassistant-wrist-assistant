@@ -762,3 +762,114 @@ def test_move_owner_survives_a_restart(mod):
     assert reloaded.list(OWNER) == []
     assert reloaded.get(OWNER, doc["id"]).deleted is True
     assert reloaded.token == 3
+
+
+# ── occupied report (presets + other homes' customs) ─────────────────────
+
+
+def test_occupied_round_trip_derives_presets_and_survives_restart(mod):
+    store = _new(mod)
+    assert store.occupied(OWNER) == []
+    report = [
+        {"slot": 9, "name": "Comp 1", "kind": "custom", "home": "Cabin"},
+        {"slot": 2, "name": " Lamp ", "kind": "preset", "home": " Home "},
+        {"slot": 4, "name": "No kind"},
+    ]
+    assert store.set_occupied(OWNER, report) is True
+    # Sorted by slot, trimmed, missing kind reads as preset.
+    assert store.occupied(OWNER) == [
+        {"slot": 2, "name": "Lamp", "kind": "preset", "home": "Home"},
+        {"slot": 4, "name": "No kind", "kind": "preset", "home": ""},
+        {"slot": 9, "name": "Comp 1", "kind": "custom", "home": "Cabin"},
+    ]
+    # The preset rows are derived, so every reader of presets() still works.
+    assert store.presets(OWNER) == [{"slot": 2, "name": "Lamp"}, {"slot": 4, "name": "No kind"}]
+    assert store.preset_slots(OWNER) == [2, 4]
+    assert store.set_occupied(OWNER, report) is False
+
+    reloaded = _new(mod)
+    assert reloaded.occupied(OWNER)[2]["home"] == "Cabin"
+    assert reloaded.presets(OWNER) == [{"slot": 2, "name": "Lamp"}, {"slot": 4, "name": "No kind"}]
+    assert reloaded.occupied(OTHER) == []
+
+
+def test_occupied_drops_junk_and_unknown_kinds(mod):
+    store = _new(mod)
+    store.set_occupied(
+        OWNER,
+        [
+            "junk",
+            {"slot": True, "kind": "custom"},
+            {"slot": MAX_SLOTS, "kind": "custom"},
+            {"slot": 1, "kind": "widget", "name": 5, "home": 7},
+            {"slot": 1, "kind": "custom", "name": "dupe loses"},
+        ],
+    )
+    assert store.occupied(OWNER) == [{"slot": 1, "name": "", "kind": "preset", "home": ""}]
+    assert store.set_occupied(OWNER, []) is True
+    assert store.occupied(OWNER) == []
+    assert store.presets(OWNER) == []
+
+
+def test_occupied_falls_back_to_the_preset_report(mod):
+    # An old app sends presets only; the panel still gets one occupied list.
+    store = _new(mod)
+    store.set_presets(OWNER, [{"slot": 3, "name": "Garage"}])
+    assert store.occupied(OWNER) == [{"slot": 3, "name": "Garage", "kind": "preset", "home": ""}]
+    # A newer app's report replaces it, and a later bare preset report (the
+    # user went back to an older build) drops the occupied list again.
+    store.set_occupied(OWNER, [{"slot": 5, "name": "C", "kind": "custom", "home": "Cabin"}])
+    assert store.presets(OWNER) == []
+    assert store.set_presets(OWNER, [{"slot": 3, "name": "Garage"}]) is True
+    assert store.occupied(OWNER) == [{"slot": 3, "name": "Garage", "kind": "preset", "home": ""}]
+
+
+# ── applied token (the watch's ack) and the wake hook ────────────────────
+
+
+def test_applied_token_round_trip_notifies_and_survives_restart(mod):
+    store = _new(mod)
+    seen = []
+    store.async_add_listener(seen.append)
+    assert store.applied_token(OWNER) == 0
+    assert store.set_applied_token(OWNER, 0) is False  # already the default
+    store.save(OWNER, _doc(), base_revision=None, updated_by="t")
+    assert store.set_applied_token(OWNER, 1) is True
+    assert store.set_applied_token(OWNER, 1) is False
+    assert store.set_applied_token(OWNER, True) is False
+    assert store.set_applied_token(OWNER, -1) is False
+    assert store.applied_token(OWNER) == 1
+    assert store.applied_token(OTHER) == 0
+    # One record commit, one ack: the ack carries no record.
+    assert [c.record is None for c in seen] == [False, True]
+    assert seen[1].applied_token == 1 and seen[1].token == 1
+
+    reloaded = _new(mod)
+    assert reloaded.applied_token(OWNER) == 1
+
+
+def test_every_commit_wakes_the_owner(mod):
+    store = _new(mod)
+    woken = []
+    store.async_set_wake_callback(woken.append)
+    doc = _doc()
+    store.save(OWNER, doc, base_revision=None, updated_by="t")
+    store.delete(OWNER, doc["id"], base_revision=1, updated_by="t")
+    store.restore(OTHER, [_doc(slotIndex=1)], updated_by="t")
+    assert woken == [OWNER, OWNER, OTHER]
+    # Acks and reports do not wake anything.
+    store.set_applied_token(OWNER, 2)
+    store.set_occupied(OWNER, [{"slot": 7, "name": "x", "kind": "custom", "home": "h"}])
+    assert woken == [OWNER, OWNER, OTHER]
+
+
+def test_wake_callback_failure_does_not_break_the_commit(mod):
+    store = _new(mod)
+
+    def boom(_owner):
+        raise RuntimeError("boom")
+
+    store.async_set_wake_callback(boom)
+    record = store.save(OWNER, _doc(), base_revision=None, updated_by="t")
+    assert record.revision == 1
+    assert store.list(OWNER)[0].id == record.id

@@ -493,6 +493,19 @@ class WADeltaView(HomeAssistantView):
                 if isinstance(k, str) and isinstance(v, str) and k and v
             }
 
+        # The custom-complication store token the watch last applied. Its
+        # ack for the panel's "Send to watch", and what the coordinator
+        # compares against to hand out the current token. Absent from apps
+        # that predate it; junk reads as absent.
+        raw_complications_token = payload.get("complications_token")
+        complications_token: int | None = None
+        if (
+            isinstance(raw_complications_token, int)
+            and not isinstance(raw_complications_token, bool)
+            and raw_complications_token >= 0
+        ):
+            complications_token = raw_complications_token
+
         # Push notification token registration piggybacks on long-poll.
         device_token = payload.get("device_token")
         notification_store = domain_data.notification_store
@@ -545,6 +558,7 @@ class WADeltaView(HomeAssistantView):
             ),
             templates=templates,
             custom_entity_ids=custom_entity_ids,
+            complications_token=complications_token,
         )
 
         if status == 204 or body_dict is None:
@@ -2799,9 +2813,18 @@ async def _op_complications_sync(ctx: _OpContext) -> Response:
     if isinstance(raw_since, bool) or not isinstance(raw_since, int) or raw_since < 0:
         return Response(status=400, text="since_token must be a non-negative integer")
     store = ctx.domain_data.complication_store
-    raw_presets = ctx.payload.get("presets", ctx.payload.get("preset_slots"))
-    if isinstance(raw_presets, list):
-        store.set_presets(ctx.watch_id, raw_presets)
+    # ``occupied`` is the whole slot pool minus this server's own records:
+    # presets from every home plus customs that live on another Home
+    # Assistant, each with a kind and a home name. Newer apps send it and it
+    # replaces the preset report (the preset rows are derived from it).
+    # Older apps send ``presets`` alone.
+    raw_occupied = ctx.payload.get("occupied")
+    if isinstance(raw_occupied, list):
+        store.set_occupied(ctx.watch_id, raw_occupied)
+    else:
+        raw_presets = ctx.payload.get("presets", ctx.payload.get("preset_slots"))
+        if isinstance(raw_presets, list):
+            store.set_presets(ctx.watch_id, raw_presets)
     # The watch's page list (id + name), feeding the panel's "Open the page"
     # tap-action picker. Advisory like the preset report; absent = keep last.
     raw_pages = ctx.payload.get("pages")

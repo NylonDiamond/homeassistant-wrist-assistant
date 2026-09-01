@@ -23,6 +23,8 @@ export interface HassLike {
   language?: string;
 }
 
+import type { OccupiedSlot } from "./model.js";
+
 export interface OwnerSummary {
   owner_watch_id: string;
   device_name: string | null;
@@ -54,7 +56,10 @@ export interface ComplicationRecord {
 export interface ChangeEvent {
   owner_watch_id: string;
   token: number;
-  record: ComplicationRecord;
+  /** Null on an ack event: the watch reported the token it applied. */
+  record: ComplicationRecord | null;
+  /** Set on an ack event; absent from integrations older than the field. */
+  applied_token?: number | null;
 }
 
 export interface SaveResult {
@@ -89,10 +94,30 @@ export async function fetchList(hass: HassLike, owner: string) {
     // render) and the list shows them as locked rows. Absent from
     // integrations older than this field.
     presets?: { slot: number; name: string }[];
+    /** Every slot something other than this server's records holds: the
+     * presets above plus customs on another home. Absent from integrations
+     * older than the field; the panel then builds it from `presets`. */
+    occupied?: OccupiedSlot[];
+    /** The store token the watch last said it applied (0 = never). Equal to
+     * `token` means everything here is on the wrist. Absent from older
+     * integrations, where "Send to watch" is not offered. */
+    applied_token?: number;
+    /** Whether the watch holds a long-poll on this server right now. */
+    polling?: boolean;
     /** Watch-app pages (id + name, watch order), per its last sync report. */
     pages?: { id: string; name: string }[];
     records: ComplicationRecord[];
   }>({ type: `${D}/list`, owner_watch_id: owner });
+}
+
+/** "Send to watch": wake the watch's parked long-poll so it is handed the
+ * current token again. Changes nothing in the store. */
+export async function nudgeWatch(hass: HassLike, owner: string) {
+  return hass.connection.sendMessagePromise<{
+    polling: boolean;
+    token: number;
+    applied_token: number;
+  }>({ type: `${D}/nudge`, owner_watch_id: owner });
 }
 
 export async function saveRecord(

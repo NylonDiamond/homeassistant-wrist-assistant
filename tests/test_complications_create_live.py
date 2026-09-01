@@ -344,3 +344,138 @@ def test_tombstoned_id_is_not_revived(
     assert row["status"] == "error"
     assert "deleted" in row["message"]
     assert _sync_records(base_url, owner) == []
+
+
+def _post_delta(
+    base_url: str, secret: bytes, watch_id: str, payload: dict[str, Any]
+) -> requests.Response:
+    """A signed /v2/delta poll. The op in the canonical string is fixed to
+    "delta" on both sides."""
+    body = json.dumps(payload).encode("utf-8")
+    ts = int(time.time())
+    nonce = secrets.token_hex(16)
+    sig = _sign_request(secret, "delta", watch_id, ts, nonce, body)
+    return requests.post(
+        f"{base_url}/api/wrist_assistant/v2/delta",
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "X-WA-Version": str(WA_PROTOCOL_VERSION),
+            "X-WA-Op": "delta",
+            "X-WA-Watch": watch_id,
+            "X-WA-Ts": str(ts),
+            "X-WA-Nonce": nonce,
+            "X-WA-Sig": sig,
+        },
+        timeout=15,
+    )
+
+
+def _listing(base_url: str, token: str, watch_id: str) -> dict[str, Any]:
+    return _ws_admin_commands(
+        base_url,
+        token,
+        [{"type": "wrist_assistant/complications/list", "owner_watch_id": watch_id}],
+    )[0]["result"]
+
+
+def test_occupied_report_replaces_presets_and_lists_by_kind(
+    base_url: str, token: str, owner: tuple[str, bytes]
+) -> None:
+    """A newer app reports the whole slot pool: presets from every home plus
+    customs on other homes. The panel gets it as `occupied`, and `presets`
+    is derived from it so an older panel still works."""
+    watch_id, secret = owner
+    r = _post_op(
+        base_url,
+        secret,
+        watch_id,
+        "complications_sync",
+        {
+            "since_token": 0,
+            "occupied": [
+                {"slot": 9, "name": "Comp 1", "kind": "custom", "home": "Cabin"},
+                {"slot": 2, "name": "Lamp", "kind": "preset", "home": "Home"},
+            ],
+        },
+    )
+    assert r.status_code == 200, r.text
+    listed = _listing(base_url, token, watch_id)
+    assert listed["occupied"] == [
+        {"slot": 2, "name": "Lamp", "kind": "preset", "home": "Home"},
+        {"slot": 9, "name": "Comp 1", "kind": "custom", "home": "Cabin"},
+    ]
+    assert listed["presets"] == [{"slot": 2, "name": "Lamp"}]
+
+    # A create onto the other home's slot is refused by nothing here (the
+    # server only checks its own records), which is what the panel's
+    # assigner is for; but a bare preset report from an older build drops
+    # the occupied list again.
+    r = _post_op(
+        base_url, secret, watch_id, "complications_sync",
+        {"since_token": 0, "presets": [{"slot": 3, "name": "Garage"}]},
+    )
+    assert r.status_code == 200, r.text
+    listed = _listing(base_url, token, watch_id)
+    assert listed["occupied"] == [{"slot": 3, "name": "Garage", "kind": "preset", "home": ""}]
+
+    # Clear so the test watch leaves nothing behind.
+    r = _post_op(
+        base_url, secret, watch_id, "complications_sync", {"since_token": 0, "occupied": []}
+    )
+    assert r.status_code == 200, r.text
+    assert _listing(base_url, token, watch_id)["occupied"] == []
+
+
+def test_poll_carries_the_token_and_the_ack_turns_green(
+    base_url: str, token: str, owner: tuple[str, bytes]
+) -> None:
+    """The store token rides every delta reply; the watch's applied token on
+    the request is its ack; a behind watch gets an empty reply at once."""
+    watch_id, secret = owner
+
+    # Nothing saved: token 0, and a snapshot poll says so.
+    r = _post_delta(
+        base_url, secret, watch_id,
+        {"config_hash": "x", "timeout": 1, "entities": [], "complications_token": 0},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["complications_token"] == 0
+    cursor = r.json()["next_cursor"]
+
+    # A create bumps the token. The watch, still at 0, polls: it must not
+    # park for the full timeout, and the reply must carry the new token.
+    r = _create(base_url, owner, [_document(_cid(), "Sent", 1)])
+    assert r.status_code == 200, r.text
+    started = time.monotonic()
+    r = _post_delta(
+        base_url, secret, watch_id,
+        {"config_hash": "x", "timeout": 10, "since": cursor, "entities": [], "complications_token": 0},
+    )
+    assert r.status_code == 200, r.text
+    assert time.monotonic() - started < 3, "behind watch parked instead of being told"
+    new_token = r.json()["complications_token"]
+    assert new_token > 0
+    assert r.json()["events"] == []
+
+    listed = _listing(base_url, token, watch_id)
+    assert listed["token"] == new_token
+    assert listed["applied_token"] == 0
+    assert listed["polling"] is True
+
+    # The watch applies it and says so on its next poll (a probe is enough).
+    r = _post_delta(
+        base_url, secret, watch_id,
+        {"config_hash": "x", "timeout": 0, "since": cursor, "entities": [], "complications_token": new_token},
+    )
+    assert r.status_code in (200, 204), r.text
+    listed = _listing(base_url, token, watch_id)
+    assert listed["applied_token"] == new_token
+
+    # The panel's nudge is harmless on a current watch.
+    reply = _ws_admin_commands(
+        base_url, token,
+        [{"type": "wrist_assistant/complications/nudge", "owner_watch_id": watch_id}],
+    )[0]
+    assert reply["success"], reply
+    assert reply["result"]["applied_token"] == new_token

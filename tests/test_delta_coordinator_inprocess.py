@@ -390,3 +390,215 @@ def test_probe_answers_at_once_and_leaves_held_poll_alone(coordinator) -> None:
         assert body["next_cursor"] > c0
 
     asyncio.run(run())
+
+
+# ── custom complications on the poll ───────────────────────────────────────
+
+
+class _FakeComplicationStore:
+    """Just the surface the coordinator touches: a token per owner, the ack,
+    and the wake hook a commit fires."""
+
+    def __init__(self) -> None:
+        self.tokens: dict[str, int] = {}
+        self.applied: dict[str, int] = {}
+        self.wake = None
+
+    def async_set_wake_callback(self, wake) -> None:  # noqa: ANN001
+        self.wake = wake
+
+    def owner_token(self, owner: str) -> int:
+        return self.tokens.get(owner, 0)
+
+    def applied_token(self, owner: str) -> int:
+        return self.applied.get(owner, 0)
+
+    def set_applied_token(self, owner: str, token: int) -> bool:
+        if self.applied.get(owner) == token:
+            return False
+        self.applied[owner] = token
+        return True
+
+    def commit(self, owner: str) -> int:
+        """What a panel save does: bump the owner's token, wake its poll."""
+        self.tokens[owner] = self.tokens.get(owner, 0) + 1
+        self.wake(owner)
+        return self.tokens[owner]
+
+
+def test_poll_reply_carries_the_token_and_records_the_ack(coordinator) -> None:
+    module, hass, coord = coordinator
+    store = _FakeComplicationStore()
+    coord.attach_complication_store(store)
+    ent = "wrist_assistant.c1"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        # Snapshot reply carries the token (0: nothing saved yet).
+        status, body = await _poll(coord, entities=[ent], complications_token=0)
+        assert status == 200
+        assert body["complications_token"] == 0
+        assert store.applied_token("w1") == 0
+
+        # A save bumps it; the next snapshot says so and the ack is stored.
+        store.tokens["w1"] = 4
+        status, body = await _poll(coord, entities=[ent], complications_token=3)
+        assert body["complications_token"] == 4
+        assert store.applied_token("w1") == 3
+
+        # An old app sends nothing: no ack recorded, token still on the reply.
+        status, body = await _poll(coord, entities=[ent])
+        assert body["complications_token"] == 4
+        assert store.applied_token("w1") == 3
+
+    asyncio.run(run())
+
+
+def test_commit_wakes_the_parked_poll_with_an_empty_reply(coordinator) -> None:
+    """Save at t; the reply must arrive well inside a second, empty, with the
+    new token; and the waiter must be gone afterwards (no busy loop)."""
+    module, hass, coord = coordinator
+    store = _FakeComplicationStore()
+    coord.attach_complication_store(store)
+    ent = "wrist_assistant.c2"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent], complications_token=0)
+        c0 = body["next_cursor"]
+        assert coord.is_polling("w1")
+
+        held = asyncio.create_task(
+            _poll(coord, since=c0, entities=[ent], timeout=10, complications_token=0)
+        )
+        await asyncio.sleep(0.05)
+        assert "w1" in coord._waiters
+
+        started = hass.loop.time()
+        new_token = store.commit("w1")
+        status, body = await asyncio.wait_for(held, timeout=2)
+        assert hass.loop.time() - started < 1.0
+        assert status == 200, body
+        assert body["events"] == []
+        assert body["complications_token"] == new_token
+        assert "w1" not in coord._waiters
+
+        # The watch re-polls having applied it: parks normally (no reply).
+        held = asyncio.create_task(
+            _poll(coord, since=c0, entities=[ent], timeout=1, complications_token=new_token)
+        )
+        status, body = await asyncio.wait_for(held, timeout=2)
+        assert status == 204 and body is None
+        assert store.applied_token("w1") == new_token
+
+    asyncio.run(run())
+
+
+def test_behind_watch_is_told_once_per_token_then_waits(coordinator) -> None:
+    """A watch whose pull keeps failing re-polls with the old applied token.
+    It gets the "you are behind" reply once per token change, then parks like
+    any other poll, so it cannot spin on immediate empty replies."""
+    module, hass, coord = coordinator
+    store = _FakeComplicationStore()
+    coord.attach_complication_store(store)
+    ent = "wrist_assistant.c3"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent], complications_token=0)
+        c0 = body["next_cursor"]
+        store.tokens["w1"] = 2
+
+        # First poll behind: immediate empty 200 with the token.
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=c0, entities=[ent], timeout=10, complications_token=0),
+            timeout=1,
+        )
+        assert status == 200 and body["events"] == []
+        assert body["complications_token"] == 2
+
+        # Still behind, same token: parks and times out.
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=c0, entities=[ent], timeout=1, complications_token=0),
+            timeout=3,
+        )
+        assert status == 204
+
+        # The panel's nudge hands it out again.
+        held = asyncio.create_task(
+            _poll(coord, since=c0, entities=[ent], timeout=10, complications_token=0)
+        )
+        await asyncio.sleep(0.05)
+        coord.wake_watch("w1", renotify=True)
+        status, body = await asyncio.wait_for(held, timeout=1)
+        assert status == 200 and body["complications_token"] == 2
+
+        # A new token is news again.
+        store.tokens["w1"] = 3
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=c0, entities=[ent], timeout=10, complications_token=0),
+            timeout=1,
+        )
+        assert status == 200 and body["complications_token"] == 3
+
+        # A probe from a behind watch also gets the token, not a bare 204.
+        store.tokens["w1"] = 4
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=c0, entities=[ent], timeout=0, complications_token=0),
+            timeout=1,
+        )
+        assert status == 200 and body["complications_token"] == 4
+
+    asyncio.run(run())
+
+
+def test_nudge_on_a_current_watch_changes_nothing(coordinator) -> None:
+    module, hass, coord = coordinator
+    store = _FakeComplicationStore()
+    coord.attach_complication_store(store)
+    ent = "wrist_assistant.c4"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        store.tokens["w1"] = 1
+        status, body = await _poll(coord, entities=[ent], complications_token=1)
+        c0 = body["next_cursor"]
+        held = asyncio.create_task(
+            _poll(coord, since=c0, entities=[ent], timeout=1, complications_token=1)
+        )
+        await asyncio.sleep(0.05)
+        coord.wake_watch("w1", renotify=True)
+        # Woken, nothing to say: parks again and times out.
+        status, body = await asyncio.wait_for(held, timeout=3)
+        assert status == 204 and body is None
+        # Nobody polling any more once the gap passes.
+        assert coord.is_polling("w1")
+        coord._last_poll_at["w1"] -= module.POLL_GAP_SECONDS + 1
+        assert not coord.is_polling("w1")
+
+    asyncio.run(run())
+
+
+def test_entity_events_still_win_over_the_token(coordinator) -> None:
+    """A wake that carries real events delivers them; the token rides along."""
+    module, hass, coord = coordinator
+    store = _FakeComplicationStore()
+    coord.attach_complication_store(store)
+    ent = "wrist_assistant.c5"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent], complications_token=0)
+        c0 = body["next_cursor"]
+        held = asyncio.create_task(
+            _poll(coord, since=c0, entities=[ent], timeout=10, complications_token=0)
+        )
+        await asyncio.sleep(0.05)
+        store.tokens["w1"] = 9
+        _change(hass, coord, ent, "on")
+        status, body = await asyncio.wait_for(held, timeout=2)
+        assert status == 200
+        assert [e["entity_id"] for e in body["events"]] == [ent]
+        assert body["complications_token"] == 9
+
+    asyncio.run(run())

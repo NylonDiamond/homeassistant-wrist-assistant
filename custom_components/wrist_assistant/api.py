@@ -26,6 +26,9 @@ from .logbook_events import log_first_sync, log_session_dropped
 DEFAULT_TIMEOUT_SECONDS = 45
 MIN_TIMEOUT_SECONDS = 5
 MAX_TIMEOUT_SECONDS = 55
+# A watch re-polls right after each reply; a gap longer than this between
+# two polls means it is not holding a poll here any more (is_polling).
+POLL_GAP_SECONDS = 10
 MAX_EVENTS_BUFFER = 5000
 MAX_EVENTS_PER_RESPONSE = 250
 SESSION_TTL = timedelta(minutes=5)
@@ -283,6 +286,18 @@ class DeltaCoordinator:
         self._session_callbacks: list[callback] = []
         self._capabilities: set[str] = {"smart_camera_stream", "template_subscriptions", "compact_events", "attribute_diffs", "instant_poll"}
         self._sorted_capabilities: list[str] = sorted(self._capabilities)
+        # Custom complications ride the poll: the owner's store token goes
+        # out on every reply, the watch's applied token comes in on every
+        # request, and a commit wakes the parked poll. None until setup
+        # attaches the store (attach_complication_store).
+        self._complication_store: Any | None = None
+        # watch_id → loop time of its last poll, for is_polling().
+        self._last_poll_at: dict[str, float] = {}
+        # watch_id → store token the watch was last handed in a "you are
+        # behind" reply. Bounds that reply to once per token change, so a
+        # watch whose pull keeps failing waits out the poll window instead
+        # of spinning on immediate empty replies.
+        self._token_notified: dict[str, int] = {}
         self._unsub_state_changed = hass.bus.async_listen(
             EVENT_STATE_CHANGED, self._handle_state_changed
         )
@@ -291,6 +306,59 @@ class DeltaCoordinator:
         """Register a server capability advertised to clients."""
         self._capabilities.add(cap)
         self._sorted_capabilities = sorted(self._capabilities)
+
+    # ── custom complications on the poll ──────────────────────────────
+
+    @callback
+    def attach_complication_store(self, store: Any) -> None:
+        """Wire the complication store in: token on replies, ack on requests,
+        and a commit wakes the owner's parked poll."""
+        self._complication_store = store
+        store.async_set_wake_callback(self.wake_watch)
+
+    @callback
+    def wake_watch(self, watch_id: str, *, renotify: bool = False) -> None:
+        """Release this watch's parked long-poll, if it has one.
+
+        ``renotify`` forgets that the watch was already told about the
+        current token, so the panel's "Send to watch" can hand it out again
+        to a watch that missed the first wake.
+        """
+        if renotify:
+            self._token_notified.pop(watch_id, None)
+        waiter = self._waiters.get(watch_id)
+        if waiter is not None:
+            waiter.set()
+
+    def is_polling(self, watch_id: str) -> bool:
+        """Whether this watch holds a long-poll here right now (or did within
+        the gap between two consecutive polls)."""
+        if watch_id in self._waiters:
+            return True
+        last = self._last_poll_at.get(watch_id)
+        return last is not None and self.hass.loop.time() - last < POLL_GAP_SECONDS
+
+    def complications_token(self, watch_id: str) -> int | None:
+        """The owner's store token, or None when no store is attached."""
+        if self._complication_store is None:
+            return None
+        return self._complication_store.owner_token(watch_id)
+
+    def _complications_behind(self, watch_id: str, applied: int | None) -> bool:
+        """True when the watch should be handed the current token now: it
+        told us what it applied, that is older, and it has not been told
+        about this token yet."""
+        if applied is None:
+            return False
+        server = self.complications_token(watch_id)
+        if server is None or server == applied:
+            return False
+        return self._token_notified.get(watch_id) != server
+
+    def _note_complications_notified(self, watch_id: str) -> None:
+        server = self.complications_token(watch_id)
+        if server is not None:
+            self._token_notified[watch_id] = server
 
     @callback
     def async_add_session_listener(self, cb: callback) -> callback:
@@ -460,8 +528,61 @@ class DeltaCoordinator:
         include_summary: bool = False,
         templates: dict[str, str] | None = None,
         custom_entity_ids: list[str] | None = None,
+        complications_token: int | None = None,
     ) -> tuple[int, dict[str, Any] | None]:
-        """Handle a single long-poll request."""
+        """Handle a single long-poll request.
+
+        ``complications_token`` is the custom-complication store token the
+        watch last applied (None from apps that predate it). It is recorded
+        as the watch's ack, and every reply with a body carries the owner's
+        current token as ``complications_token`` so the watch can pull only
+        when the two differ.
+        """
+        self._last_poll_at[watch_id] = self.hass.loop.time()
+        store = self._complication_store
+        if store is not None and complications_token is not None:
+            store.set_applied_token(watch_id, complications_token)
+        status, body = await self._handle_poll_inner(
+            watch_id=watch_id,
+            since=since,
+            config_hash=config_hash,
+            entities=entities,
+            timeout=timeout,
+            force_delta=force_delta,
+            battery_threshold=battery_threshold,
+            summary_entities=summary_entities,
+            slim=slim,
+            compact=compact,
+            attribute_diffs=attribute_diffs,
+            include_summary=include_summary,
+            templates=templates,
+            custom_entity_ids=custom_entity_ids,
+            applied_complications_token=complications_token,
+        )
+        if body is not None:
+            token = self.complications_token(watch_id)
+            if token is not None:
+                body["complications_token"] = token
+        return status, body
+
+    async def _handle_poll_inner(
+        self,
+        watch_id: str,
+        since: str | int | None,
+        config_hash: str,
+        entities: list[str] | None,
+        timeout: int,
+        force_delta: bool = False,
+        battery_threshold: int = 20,
+        summary_entities: dict[str, list[str]] | None = None,
+        slim: bool = False,
+        compact: bool = False,
+        attribute_diffs: bool = False,
+        include_summary: bool = False,
+        templates: dict[str, str] | None = None,
+        custom_entity_ids: list[str] | None = None,
+        applied_complications_token: int | None = None,
+    ) -> tuple[int, dict[str, Any] | None]:
         self._prune_sessions()
         session = self._sessions.get(watch_id)
         is_new_session = session is None
@@ -604,6 +725,23 @@ class DeltaCoordinator:
         # its first poll after a short background pause, purely to learn that
         # the server is reachable and the screen is current. Advertised as the
         # "instant_poll" capability; older clients never send timeout 0.
+        #
+        # A watch that is behind on its custom complications gets an empty
+        # 200 instead of parking or probing: the wrapper stamps the current
+        # token on it and the watch pulls. Once per token change, so a pull
+        # that keeps failing does not turn this into a tight loop.
+        if self._complications_behind(watch_id, applied_complications_token):
+            self._note_complications_notified(watch_id)
+            return 200, self._response_payload(
+                events=[],
+                next_cursor=next_cursor,
+                need_entities=False,
+                resync_required=False,
+                battery_threshold=battery_threshold,
+                summary_entities=summary_entities,
+                include_summary=include_summary,
+                custom_entity_ids=custom_entity_ids,
+            )
         if timeout <= 0:
             return 204, None
 
@@ -686,6 +824,21 @@ class DeltaCoordinator:
                 if events:
                     return 200, self._response_payload(
                         events=events,
+                        next_cursor=next_cursor,
+                        need_entities=False,
+                        resync_required=False,
+                        battery_threshold=battery_threshold,
+                        summary_entities=summary_entities,
+                        include_summary=include_summary,
+                        custom_entity_ids=custom_entity_ids,
+                    )
+                # Woken by a complication commit (or a panel nudge) rather
+                # than an entity: nothing to deliver but the token, which the
+                # wrapper stamps on this empty reply.
+                if self._complications_behind(watch_id, applied_complications_token):
+                    self._note_complications_notified(watch_id)
+                    return 200, self._response_payload(
+                        events=[],
                         next_cursor=next_cursor,
                         need_entities=False,
                         resync_required=False,

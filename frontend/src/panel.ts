@@ -14,6 +14,7 @@ import {
   fetchList,
   fetchOwners,
   moveOwner,
+  nudgeWatch,
   renderTemplates,
   saveRecord,
   subscribeChanges,
@@ -23,16 +24,19 @@ import {
   type Element as CElement,
   type FamilyKind,
   type NormalizedFrame,
+  type OccupiedSlot,
   type Rule,
   type Value,
   DRAWABLE_FAMILIES,
   MAX_SLOTS,
   auditUnknownKeys,
+  freeSlotFrom,
   newConfig,
   newElement,
   newId,
   parseConfig,
 } from "./model.js";
+import { SEND_WAIT_MS, describeSend, sendState } from "./send-state.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
 import {
   type EntityState,
@@ -89,6 +93,21 @@ export class WristAssistantPanel extends LitElement {
   /** iPhone presets on the selected watch (slot + name). freeSlot() skips
    * their slots; the list shows them as locked rows. */
   @state() private presets: { slot: number; name: string }[] = [];
+  /** Every slot something other than this server's records holds: the presets
+   * plus customs on another home. The list shows them as locked rows and
+   * freeSlot() skips them all. Built from `presets` when the integration
+   * predates the field. */
+  @state() private occupied: OccupiedSlot[] = [];
+  /** The store token for the selected watch and the one it last confirmed.
+   * Equal means everything here is on the wrist. `appliedToken` stays
+   * undefined on integrations without the ack, which hides the button. */
+  @state() private serverToken = 0;
+  @state() private appliedToken?: number;
+  /** Whether the watch holds a long-poll on this server right now. */
+  @state() private polling = false;
+  /** A save or a Send tap is waiting for the watch's ack. */
+  @state() private sendPending = false;
+  private sendTimer?: number;
   /** Watch-app pages (id + name) from the watch's last sync report; feeds the
    * "Open the page" tap-action picker. */
   @state() private pages: { id: string; name: string }[] = [];
@@ -190,6 +209,9 @@ export class WristAssistantPanel extends LitElement {
     li.row .meta { font-size: 12px; opacity: .7; }
     li.row.locked { cursor: default; opacity: .6; }
     li.row.locked:hover { background: none; }
+    button.send.sent { color: var(--success-color, #43a047); border-color: currentColor; opacity: 1; }
+    button.send.sending { opacity: .7; }
+    button.send.offline { color: var(--warning-color, #ffa600); }
     .previews { display: flex; flex-direction: column; gap: 16px; align-items: center; }
     .preview { text-align: center; position: relative; }
     .preview .label { font-size: 12px; opacity: .7; margin-top: 6px; cursor: pointer; }
@@ -314,6 +336,7 @@ export class WristAssistantPanel extends LitElement {
     if (this.templateTimer) window.clearInterval(this.templateTimer);
     if (this.debounceTimer) window.clearTimeout(this.debounceTimer);
     if (this.countdownTimer !== undefined) window.clearInterval(this.countdownTimer);
+    if (this.sendTimer !== undefined) window.clearTimeout(this.sendTimer);
     this.cancelGesture?.();
   }
 
@@ -417,7 +440,13 @@ export class WristAssistantPanel extends LitElement {
       this.records = reply.records;
       this.maxSchemaVersion = reply.max_schema_version;
       this.presets = reply.presets ?? [];
+      this.occupied = reply.occupied
+        ?? this.presets.map((p): OccupiedSlot => ({ slot: p.slot, name: p.name, kind: "preset", home: "" }));
       this.pages = reply.pages ?? [];
+      this.serverToken = reply.token;
+      this.appliedToken = reply.applied_token;
+      this.polling = reply.polling ?? false;
+      if (this.appliedToken === this.serverToken) this.endSendWait();
       const still = this.records.find((r) => r.id === this.selectedId);
       if (still) {
         if (this.draft && this.draft.dirty) {
@@ -502,15 +531,62 @@ export class WristAssistantPanel extends LitElement {
     this.scheduleTemplates(0);
   }
 
-  /** First slot neither a stored record nor an iPhone preset uses, or -1
-   * when every slot is taken. Presets come from the watch's last sync
-   * report; a custom written under a preset would be masked at render, so
-   * the assigner treats their slots as occupied. */
+  /** First slot neither a stored record nor an occupied entry (a preset, or
+   * a custom on another home) uses, or -1 when every slot is taken. */
   private freeSlot(): number {
-    const used = new Set(this.records.map((r) => Number(r.document?.slotIndex ?? -1)));
-    for (const p of this.presets) used.add(p.slot);
-    for (let i = 0; i < MAX_SLOTS; i++) if (!used.has(i)) return i;
-    return -1;
+    return freeSlotFrom(
+      this.records.map((r) => Number(r.document?.slotIndex ?? -1)),
+      this.occupied,
+    );
+  }
+
+  // ── send to watch ─────────────────────────────────────────────────────
+
+  /** Start (or restart) the wait for the watch's ack. Ends on the ack via
+   * the subscription, or on the timeout, whichever comes first. */
+  private beginSendWait() {
+    if (this.sendTimer !== undefined) window.clearTimeout(this.sendTimer);
+    this.sendPending = true;
+    this.sendTimer = window.setTimeout(() => {
+      this.sendTimer = undefined;
+      this.sendPending = false;
+      // The watch may have stopped polling meanwhile; refresh so the button
+      // says "not connected" rather than offering a wake that goes nowhere.
+      void this.loadRecords();
+    }, SEND_WAIT_MS);
+  }
+
+  private endSendWait() {
+    if (this.sendTimer !== undefined) window.clearTimeout(this.sendTimer);
+    this.sendTimer = undefined;
+    this.sendPending = false;
+  }
+
+  /** Wake the watch's parked long-poll so it is handed the current token
+   * again. The store does not change; the ack does the rest. */
+  private async sendToWatch() {
+    if (!this.ownerId) return;
+    try {
+      const reply = await nudgeWatch(this.hass, this.ownerId);
+      this.polling = reply.polling;
+      this.serverToken = reply.token;
+      this.appliedToken = reply.applied_token;
+      if (reply.applied_token !== reply.token) this.beginSendWait();
+    } catch (err) {
+      this.saveError = errText(err);
+    }
+  }
+
+  private renderSendButton() {
+    const s = sendState({
+      token: this.serverToken,
+      appliedToken: this.appliedToken,
+      polling: this.polling,
+      pending: this.sendPending,
+    });
+    if (s.kind === "unsupported") return nothing;
+    const d = describeSend(s);
+    return html`<button class="send ${s.kind}" ?disabled=${d.disabled || !this.hass.user?.is_admin} title=${d.title} @click=${() => void this.sendToWatch()}>${s.kind === "sent" ? "✓ " : ""}${d.label}</button>`;
   }
 
   /** The store refuses a document whose slot is outside 0..MAX_SLOTS-1. */
@@ -625,6 +701,9 @@ export class WristAssistantPanel extends LitElement {
       this.selectedId = result.record.id;
       this.draft = Draft.fromDocument(result.record.document, result.record.revision);
       this.recompile();
+      // The commit woke the watch's poll; wait for its ack before offering
+      // a manual re-send.
+      this.beginSendWait();
       await this.loadRecords();
     } catch (err) {
       this.saveError = errText(err);
@@ -842,6 +921,7 @@ export class WristAssistantPanel extends LitElement {
           <button @click=${() => this.undo()} ?disabled=${!d?.canUndo} title="Undo (⌘Z)">Undo</button>
           <button @click=${() => this.redo()} ?disabled=${!d?.canRedo} title="Redo (⇧⌘Z)">Redo</button>
           <button class="primary" @click=${() => void this.save()} ?disabled=${!this.canEdit || !dirty || this.saving || !this.slotChosen} title="Save (⌘S)">${this.saving ? "Saving…" : d?.baseRevision === null ? "Save new" : "Save"}</button>
+          ${this.renderSendButton()}
         </div>
         <label>Watch
           <select @change=${(e: Event) => void this.selectOwner((e.target as HTMLSelectElement).value)}>
@@ -910,14 +990,28 @@ export class WristAssistantPanel extends LitElement {
   private renderList() {
     // One list for everything on the watch, ordered the way the watch face
     // picker orders it (by slot, which stays invisible here). iPhone presets
-    // are locked rows: this panel cannot edit them, but hiding them is what
-    // used to make slots look haunted.
+    // and customs on another home are locked rows: this panel cannot edit
+    // them, but hiding them is what used to make slots look haunted.
     type Row =
       | { slot: number; kind: "record"; record: ComplicationRecord }
-      | { slot: number; kind: "preset"; name: string };
+      | { slot: number; kind: "locked"; name: string; badge: string; title: string };
     const rows: Row[] = [
       ...this.records.map((r): Row => ({ slot: Number(r.document?.slotIndex ?? 0), kind: "record", record: r })),
-      ...this.presets.map((p): Row => ({ slot: p.slot, kind: "preset", name: p.name })),
+      ...this.occupied.map((o): Row => o.kind === "custom"
+        ? {
+          slot: o.slot,
+          kind: "locked",
+          name: o.name || "Unnamed complication",
+          badge: o.home || "Other home",
+          title: `A complication on ${o.home ? `the ${o.home} home` : "another home"}. Edit it in that home's Wrist Assistant panel.`,
+        }
+        : {
+          slot: o.slot,
+          kind: "locked",
+          name: o.name || "Unnamed preset",
+          badge: "iPhone",
+          title: "An iPhone preset complication. Edit it in the Wrist Assistant app on the iPhone.",
+        }),
     ].sort((a, b) => a.slot - b.slot);
     return html`<div class="card">
       <h2>Complications<span class="spacer"></span>
@@ -932,9 +1026,9 @@ export class WristAssistantPanel extends LitElement {
               <span class="meta">r${row.record.revision}</span>
             </li>`
             : html`
-            <li class="row locked" title="An iPhone preset complication. Edit it in the Wrist Assistant app on the iPhone.">
-              <span>${row.name || "Unnamed preset"}</span>
-              <span class="meta">iPhone</span>
+            <li class="row locked" title=${row.title}>
+              <span>${row.name}</span>
+              <span class="meta">${row.badge}</span>
             </li>`)}
             ${this.draft && this.draft.baseRevision === null ? html`<li class="row selected"><span>${this.draft.config.name}</span><span class="meta">unsaved</span></li>` : nothing}
           </ul>`}
