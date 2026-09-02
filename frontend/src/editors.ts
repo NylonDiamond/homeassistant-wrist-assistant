@@ -490,7 +490,7 @@ export function generalEditor(host: EditorHost): TemplateResult {
   const renamed = nameChangedFromWatch(host.savedName, cfg.name);
   return html`
     ${textField("Name", cfg.name, (v) => host.update((c) => { c.name = v; }, "name"))}
-    ${renamed ? html`<div class="hint warn">The watch face picker keeps the old name. To fix it, edit the watch face and pick this complication again in its slot. A restart does not update it. The complication itself updates as soon as the watch pulls.</div>` : nothing}
+    ${renamed ? html`<div class="hint warn">After you change a complication name, let the change sync to the watch, then re-select the complication in the watch's complication picker. Otherwise the list starts to look wrong.</div>` : nothing}
     ${numberField("Refresh every (minutes, 0 = never)", cfg.refreshMinutes ?? 0, (v) => host.update((c) => { c.refreshMinutes = v ?? 0; }, "refresh"), { step: 1, min: 0 })}
     ${selectField("Tap action", tap.type, TAP_TYPES, (v) => host.update((c) => {
       c.tapAction = needsEntity(v) ? { type: v as "toggleEntity", ...("entityId" in c.tapAction ? { entityId: c.tapAction.entityId, displayName: c.tapAction.displayName, domain: c.tapAction.domain } : { entityId: "", displayName: "", domain: "" }) } : { type: v as "refresh" };
