@@ -48,7 +48,6 @@ import type { HassLike } from "./ha-api.js";
 import { familyTitle, type IconProvider } from "./renderer.js";
 import { CURATED_SYMBOLS, SYMBOL_CATEGORIES, SymbolBrowser, searchSymbols } from "./symbols.js";
 import { canRemoveFamily, missingFamilies, supportedFamilies } from "./layouts.js";
-import { SHAPES_NEED_UPDATE_MESSAGE } from "./version.js";
 
 export interface EditorHost {
   hass: HassLike;
@@ -74,10 +73,6 @@ export interface EditorHost {
   /** The shape being edited; the Layouts row and the layout tab follow it. */
   activeFamily: FamilyKind;
   setActiveFamily(family: FamilyKind): void;
-  /** Whether the selected watch can take a document with fewer than three
-   * canvas shapes or with Inline (rule 8: gated on the watch's app version).
-   * When false the Layouts row is static and says why. */
-  shapesEditable: boolean;
   /** Add a shape and seed its layout. Also makes it the active shape. */
   addFamily(family: FamilyKind): void;
   /** Remove a shape and its layout, confirming first when it holds content. */
@@ -503,12 +498,11 @@ function layoutsRow(host: EditorHost): TemplateResult {
   const cfg = host.config;
   const have = supportedFamilies(cfg);
   const missing = missingFamilies(cfg);
-  const canAdd = host.shapesEditable && missing.length > 0;
   return html`
     <div class="field"><span>Layouts</span>
       <div class="chips">
         ${have.map((f) => html`<button class="chip ${f === host.activeFamily ? "active" : ""}" title=${`Edit the ${familyTitle(f)} layout`} @click=${() => host.setActiveFamily(f)}>${familyTitle(f)}</button>`)}
-        ${canAdd ? html`<select class="chip-add" title="Add a layout" @change=${(e: Event) => {
+        ${missing.length > 0 ? html`<select class="chip-add" title="Add a layout" @change=${(e: Event) => {
           const sel = e.target as HTMLSelectElement;
           const f = sel.value as FamilyKind | "";
           sel.value = "";
@@ -519,9 +513,7 @@ function layoutsRow(host: EditorHost): TemplateResult {
         </select>` : nothing}
       </div>
     </div>
-    ${host.shapesEditable
-      ? html`<div class="hint">The watch lists this complication in the face picker for these shapes only. Inline is one line of text with no canvas.</div>`
-      : html`<div class="hint warn">${SHAPES_NEED_UPDATE_MESSAGE}</div>`}`;
+    <div class="hint">The watch lists this complication in the face picker for these shapes only. Inline is one line of text with no canvas.</div>`;
 }
 
 /** Page picker for the openPage tap action. Options come from the watch's
@@ -729,19 +721,18 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
 }
 
 /** "Remove layout" sits in the shape's own tab. Disabled on the last
- * remaining shape (the set is never empty) and on a watch that cannot take a
- * one-shape document (rule 8). The host confirms when the layout has content. */
+ * remaining shape (the set is never empty). The host confirms when the
+ * layout has content. */
 function removeLayoutRow(host: EditorHost, family: FamilyKind): TemplateResult {
   const last = !canRemoveFamily(host.config, family);
-  const blocked = !host.shapesEditable;
   const title = last
     ? "A complication keeps at least one shape."
-    : blocked ? SHAPES_NEED_UPDATE_MESSAGE : `Drop the ${familyTitle(family)} shape. The watch stops listing this complication for ${familyTitle(family)} slots.`;
+    : `Drop the ${familyTitle(family)} shape. The watch stops listing this complication for ${familyTitle(family)} slots.`;
   return html`<h3>Shape</h3>
     <div class="adders">
-      <button class="danger small" ?disabled=${last || blocked} title=${title} @click=${() => host.removeFamily(family)}>Remove ${familyTitle(family)} layout</button>
+      <button class="danger small" ?disabled=${last} title=${title} @click=${() => host.removeFamily(family)}>Remove ${familyTitle(family)} layout</button>
     </div>
-    ${last ? html`<div class="hint">This is the only shape. Add another before removing it.</div>` : blocked ? html`<div class="hint warn">${SHAPES_NEED_UPDATE_MESSAGE}</div>` : nothing}`;
+    ${last ? html`<div class="hint">This is the only shape. Add another before removing it.</div>` : nothing}`;
 }
 
 /** The Inline shape: one line of text, no canvas. The watch draws

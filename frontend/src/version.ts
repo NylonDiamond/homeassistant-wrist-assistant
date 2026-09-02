@@ -1,18 +1,15 @@
-// Which watch app can draw what, by the version it reports.
+// Which watch app the panel will work with, by the version it reports.
 //
 // The owners reply carries the watch's `app_version` (CFBundleShortVersionString,
-// "2.8.0" style). A watch older than the per-shape release draws every canvas
-// shape from the shared layers and "Custom" for Inline, so the panel must not
-// author a document with fewer than three canvas shapes, or with Inline, for
-// it. It would be skipped on the wrist with "needs app update" and the user
-// would see nothing. Rule 8 of app repo docs/custom_complication_family_kinds.md.
+// "2.8.0" style). The panel authors documents only the per-shape watch app can
+// draw (one shape is enough, Inline is real), and nothing older has ever been
+// released with the HA editor, so a watch below the minimum gets no editor at
+// all: a message to update, and the watch picker. Rule 8 of app repo
+// docs/custom_complication_family_kinds.md, tightened 2026-09-02.
 
-/** First watch app version that lists complications per shape and draws
- * Inline. Bump only when the app's marketing version for that release is
- * known. */
+/** First watch app version the panel works with: the per-shape release.
+ * Bump only when the app's marketing version for that release is known. */
 export const MIN_WATCH_VERSION_FOR_SHAPES = "2.8.0";
-
-export const SHAPES_NEED_UPDATE_MESSAGE = "Update Wrist Assistant on the watch to use one shape or Inline.";
 
 export type Version = [number, number, number];
 
@@ -34,11 +31,20 @@ export function compareVersions(a: Version, b: Version): number {
   return 0;
 }
 
-/** Whether a watch reporting `appVersion` can take a one-shape or Inline
- * document. Unknown or unparseable reads as no. */
+/** Whether a watch reporting `appVersion` can use the panel. Unknown or
+ * unparseable reads as no. */
 export function watchSupportsShapes(appVersion: string | null | undefined, minimum = MIN_WATCH_VERSION_FOR_SHAPES): boolean {
   const have = parseVersion(appVersion);
   const need = parseVersion(minimum);
   if (!have || !need) return false;
   return compareVersions(have, need) >= 0;
+}
+
+/** The whole-panel block, worded for what the watch reported. */
+export function updateWatchMessage(appVersion: string | null | undefined, minimum = MIN_WATCH_VERSION_FOR_SHAPES): string {
+  const have = parseVersion(appVersion);
+  const reported = have
+    ? `This watch runs Wrist Assistant ${appVersion}.`
+    : "This watch has not reported its Wrist Assistant version yet.";
+  return `${reported} The complication editor needs ${minimum} or newer. Update Wrist Assistant on the watch, open it once so it reports its version, then reload this page.`;
 }

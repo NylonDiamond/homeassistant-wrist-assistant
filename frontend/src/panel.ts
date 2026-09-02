@@ -35,7 +35,6 @@ import {
   newElement,
   newId,
   parseConfig,
-  schemaVersionFor,
 } from "./model.js";
 import { SEND_WAIT_MS, describeSend, sendState } from "./send-state.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
@@ -51,7 +50,7 @@ import {
 } from "./resolver.js";
 import { CASES, REFERENCE_CASE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, renderLayout, type DrawableFamily, type IconProvider } from "./renderer.js";
 import { ALL_FAMILIES, addFamily, canRemoveFamily, familyContentSummary, firstDrawable, isDrawable, removeFamily, supportedFamilies } from "./layouts.js";
-import { SHAPES_NEED_UPDATE_MESSAGE, watchSupportsShapes } from "./version.js";
+import { updateWatchMessage, watchSupportsShapes } from "./version.js";
 import { makeIconProvider } from "./icons.js";
 import { SymbolBrowser } from "./symbols.js";
 import { Draft } from "./draft.js";
@@ -532,10 +531,6 @@ export class WristAssistantPanel extends LitElement {
         this.readOnlyReason = `This document is schema v${schema}; this integration understands up to v${this.maxSchemaVersion}. Update the Wrist Assistant integration to edit it.`;
       } else if (unknown.length > 0) {
         this.readOnlyReason = `This document has fields the panel does not understand, so saving would drop them: ${unknown.slice(0, 5).join(", ")}${unknown.length > 5 ? ` and ${unknown.length - 5} more` : ""}. Update the integration to edit it.`;
-      } else if (!this.shapesEditable && schemaVersionFor(this.draft.config) >= 6) {
-        // A one-shape or Inline document on a watch that predates per-shape
-        // support: the watch skips it, and saving it here could not help.
-        this.readOnlyReason = SHAPES_NEED_UPDATE_MESSAGE;
       }
       this.recompile();
       this.ensureActiveFamily();
@@ -682,7 +677,6 @@ export class WristAssistantPanel extends LitElement {
       setForced: (ruleId, branch) => this.setForced(ruleId, branch),
       activeFamily: this.activeFamily,
       setActiveFamily: (family) => { this.activeFamily = family; this.inspect = { kind: "family" }; },
-      shapesEditable: this.shapesEditable,
       addFamily: (family) => this.addShape(family),
       removeFamily: (family) => this.removeShape(family),
     };
@@ -690,10 +684,14 @@ export class WristAssistantPanel extends LitElement {
 
   // ── shapes ────────────────────────────────────────────────────────────
 
-  /** Rule 8: only a watch at or above the per-shape release can take a
-   * document with fewer than three canvas shapes or with Inline. */
-  private get shapesEditable(): boolean {
-    return watchSupportsShapes(this.selectedOwner?.app_version);
+  /** Rule 8: the panel works only with a watch at or above the per-shape
+   * release. Below it the editor is replaced by an update message, so every
+   * document authored here is one the wrist can draw. An orphaned owner has
+   * no device to report a version and is exempt: its only action is Move. */
+  private get watchSupported(): boolean {
+    const owner = this.selectedOwner;
+    if (!owner) return true;
+    return owner.is_orphan || watchSupportsShapes(owner.app_version);
   }
 
   /** The canvas shape the layer controls work on. Inline has no canvas, so
@@ -714,7 +712,6 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private addShape(family: FamilyKind) {
-    if (!this.shapesEditable) return;
     this.mutate((c) => addFamily(c, family));
     this.activeFamily = family;
     this.inspect = { kind: "family" };
@@ -722,7 +719,7 @@ export class WristAssistantPanel extends LitElement {
 
   private removeShape(family: FamilyKind) {
     const cfg = this.draft?.config;
-    if (!cfg || !this.shapesEditable || !canRemoveFamily(cfg, family)) return;
+    if (!cfg || !canRemoveFamily(cfg, family)) return;
     const lost = familyContentSummary(cfg, family);
     if (lost.length > 0 && !window.confirm(`Remove the ${familyTitle(family)} layout? This drops ${lost.join(", ")}.`)) return;
     this.mutate((c) => removeFamily(c, family));
@@ -1013,11 +1010,16 @@ export class WristAssistantPanel extends LitElement {
         </label>
       </header>
       ${this.loadError ? html`<div class="card error">${this.loadError}</div>` : nothing}
-      <div class="layout ${this.narrow ? "narrow" : ""}">
-        <div class="column">${this.renderList()}${this.renderData()}${this.renderLayers()}</div>
-        <div class="column">${this.renderBanners()}${this.renderPreviews()}</div>
-        <div class="column">${this.renderInspector()}${this.renderStatus()}${this.renderRules()}${this.renderRaw()}</div>
-      </div>`;
+      ${this.watchSupported
+        ? html`<div class="layout ${this.narrow ? "narrow" : ""}">
+            <div class="column">${this.renderList()}${this.renderData()}${this.renderLayers()}</div>
+            <div class="column">${this.renderBanners()}${this.renderPreviews()}</div>
+            <div class="column">${this.renderInspector()}${this.renderStatus()}${this.renderRules()}${this.renderRaw()}</div>
+          </div>`
+        : html`<div class="card">
+            <div class="banner warn"><b>Update the watch app first.</b> ${updateWatchMessage(this.selectedOwner?.app_version)}</div>
+            <div class="hint">Nothing on this watch is changed or lost. Its ${this.selectedOwner?.complication_count ?? 0} complication${this.selectedOwner?.complication_count === 1 ? "" : "s"} stay in Home Assistant and can be edited once the watch is updated.</div>
+          </div>`}`;
   }
 
   private renderBanners() {
@@ -1098,9 +1100,7 @@ export class WristAssistantPanel extends LitElement {
     return html`<div class="card">
       <h2>Complications<span class="spacer"></span>
         ${this.hass.user?.is_admin
-          ? this.shapesEditable
-            ? html`<button class="small" @click=${() => { this.newShapeChooser = !this.newShapeChooser; }} ?disabled=${this.freeSlot() < 0}>New</button>`
-            : html`<button class="small" @click=${() => this.startNew(newConfig("New complication", this.freeSlot()))} ?disabled=${this.freeSlot() < 0}>New</button>`
+          ? html`<button class="small" @click=${() => { this.newShapeChooser = !this.newShapeChooser; }} ?disabled=${this.freeSlot() < 0}>New</button>`
           : nothing}
       </h2>
       ${this.newShapeChooser && this.freeSlot() >= 0 ? html`<div class="new-shape">

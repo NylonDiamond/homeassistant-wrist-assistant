@@ -1,7 +1,20 @@
 // The watch-version gate for one-shape and Inline documents (rule 8).
 
 import { describe, expect, it } from "vitest";
-import { MIN_WATCH_VERSION_FOR_SHAPES, compareVersions, parseVersion, watchSupportsShapes } from "../src/version.js";
+import { MIN_WATCH_VERSION_FOR_SHAPES, compareVersions, parseVersion, updateWatchMessage, watchSupportsShapes } from "../src/version.js";
+
+describe("updateWatchMessage", () => {
+  it("names the reported version and the minimum", () => {
+    expect(updateWatchMessage("2.7.2", "2.8.0")).toBe(
+      "This watch runs Wrist Assistant 2.7.2. The complication editor needs 2.8.0 or newer. Update Wrist Assistant on the watch, open it once so it reports its version, then reload this page.",
+    );
+  });
+
+  it("says so when the watch never reported a version", () => {
+    expect(updateWatchMessage(null, "2.8.0")).toMatch(/^This watch has not reported its Wrist Assistant version yet\./);
+    expect(updateWatchMessage("beta", "2.8.0")).toMatch(/^This watch has not reported/);
+  });
+});
 
 describe("parseVersion", () => {
   it.each([
