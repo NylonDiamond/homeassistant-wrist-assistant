@@ -89,7 +89,7 @@ export class WristAssistantPanel extends LitElement {
   @state() private draft?: Draft;
   @state() private readOnlyReason?: string;
   @state() private parseError?: string;
-  @state() private maxSchemaVersion = 4;
+  @state() private maxSchemaVersion = 6;
   /** iPhone presets on the selected watch (slot + name). freeSlot() skips
    * their slots; the list shows them as locked rows. */
   @state() private presets: { slot: number; name: string }[] = [];

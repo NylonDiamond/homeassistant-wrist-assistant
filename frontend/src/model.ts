@@ -1,9 +1,11 @@
-// CustomComplicationConfig schemaVersion 4/5, as the Apple clients encode it.
+// CustomComplicationConfig schemaVersion 4/5/6, as the Apple clients encode it.
 // Wire-format reference: docs/custom_complication_schema_v4.md in the app
 // repo. `parseConfig` normalises the two shapes Swift can emit (perFamily as
 // an alternating array, `Value` in flat v2 or nested v3 form) into one typed
 // object; `encodeConfig` writes back exactly the shape the phone expects.
-// v5 is shape-identical to v4 and only marks slotIndex > 7 (see schemaVersionFor).
+// v5 is shape-identical to v4 and only marks slotIndex > 7; v6 adds the
+// optional `inline` object and marks a document that lacks a canvas shape or
+// carries Inline (see schemaVersionFor).
 
 export type FamilyKind = "rectangular" | "circular" | "corner" | "inline";
 export const DRAWABLE_FAMILIES: FamilyKind[] = ["rectangular", "circular", "corner"];
@@ -36,12 +38,19 @@ export function freeSlotFrom(recordSlots: Iterable<number>, occupied: Iterable<{
   return -1;
 }
 
-// Slots above the original 8 are stamped schemaVersion 5 so an old app shows
-// "needs app update" for them instead of silently dropping the complication
-// (its slot-id parser rejects ids past 8). Low slots stay at 4 so nothing
-// existing changes byte-wise for old apps.
-export function schemaVersionFor(slotIndex: number): number {
-  return slotIndex > 7 ? 5 : 4;
+/** The schema a document must carry for its content. Mirrors
+ * `CustomComplicationConfig.schemaVersion(for:)` in the app.
+ *
+ * 6 when the document lacks one of the three canvas shapes, lists Inline, or
+ * carries an `inline` object: an app that predates per-shape support would
+ * draw the missing shapes from the shared layers, or "Custom" for Inline, so
+ * it must skip the document ("needs app update") instead. Otherwise 5 above
+ * slot 7 (an old app's slot-id parser rejects ids past 8) and 4 below, so an
+ * unchanged document stays byte-stable for old apps. */
+export function schemaVersionFor(cfg: Pick<CustomComplicationConfig, "slotIndex" | "supportedFamilies" | "inline">): number {
+  const missesCanvasShape = DRAWABLE_FAMILIES.some((f) => !cfg.supportedFamilies.includes(f));
+  if (missesCanvasShape || cfg.supportedFamilies.includes("inline") || cfg.inline !== undefined) return 6;
+  return cfg.slotIndex > 7 ? 5 : 4;
 }
 
 export type FontWeight = "regular" | "medium" | "semibold" | "bold";
@@ -292,6 +301,18 @@ export type DataSource =
   | ({ kind: "entity" } & EntityRef)
   | { kind: "template"; value: string };
 
+/** The Inline shape's whole layout: one line of text and an optional symbol.
+ * The watch draws `symbol label: value`, value alone when the face is narrow.
+ * Lives beside perFamily because it has no canvas. Present exactly when
+ * supportedFamilies includes "inline". */
+export interface InlineLayout {
+  label?: string;
+  value: Value;
+  symbol?: string;
+  /** Live countdown mode, same semantics as TextElement.countdown. */
+  countdown?: boolean;
+}
+
 export interface CustomComplicationConfig {
   schemaVersion: number;
   id: string;
@@ -299,8 +320,12 @@ export interface CustomComplicationConfig {
   values: NamedValue[];
   slotIndex: number;
   elements: Element[];
+  /** The shapes this complication has. Authoritative since schema 6: the
+   * watch draws only these and each shape's picker lists the document only
+   * when its shape is here. One is enough; never empty. */
   supportedFamilies: FamilyKind[];
   perFamily: Partial<Record<FamilyKind, FamilyLayout>>;
+  inline?: InlineLayout;
   dataSources: DataSource[];
   refreshMinutes?: number;
   tapAction: TapAction;
@@ -654,6 +679,14 @@ function parsePerFamily(raw: unknown): Partial<Record<FamilyKind, FamilyLayout>>
   return out;
 }
 
+function parseInline(raw: J): InlineLayout {
+  const out: InlineLayout = { value: isObject(raw.value) ? parseValue(raw.value) : literal("") };
+  if (typeof raw.label === "string") out.label = raw.label;
+  if (typeof raw.symbol === "string") out.symbol = raw.symbol;
+  if (raw.countdown === true) out.countdown = true;
+  return out;
+}
+
 function parseTapAction(raw: unknown): TapAction {
   if (!isObject(raw) || typeof raw.type !== "string") return { type: "none" };
   switch (raw.type) {
@@ -699,6 +732,7 @@ export function parseConfig(raw: unknown): CustomComplicationConfig {
     dataSources,
     tapAction: parseTapAction(raw.tapAction),
   };
+  if (isObject(raw.inline)) cfg.inline = parseInline(raw.inline);
   const rm = optNum(raw.refreshMinutes);
   if (rm !== undefined) cfg.refreshMinutes = rm;
   if (typeof raw.openPageId === "string") cfg.openPageId = raw.openPageId;
@@ -933,14 +967,24 @@ function encodeTapAction(t: TapAction): J {
   return { type: t.type };
 }
 
+function encodeInline(i: InlineLayout): J {
+  const o: J = {};
+  if (i.label !== undefined) o.label = i.label;
+  o.value = encodeValue(i.value);
+  if (i.symbol !== undefined) o.symbol = i.symbol;
+  if (i.countdown) o.countdown = true;
+  return o;
+}
+
 export function encodeConfig(cfg: CustomComplicationConfig): J {
   const perFamily: unknown[] = [];
-  for (const family of ["rectangular", "circular", "corner", "inline"] as FamilyKind[]) {
+  // Inline has no canvas layout, so it never appears in perFamily.
+  for (const family of DRAWABLE_FAMILIES) {
     const l = cfg.perFamily[family];
     if (l) perFamily.push(family, encodeLayout(l));
   }
   const o: J = {
-    schemaVersion: schemaVersionFor(cfg.slotIndex),
+    schemaVersion: schemaVersionFor(cfg),
     id: cfg.id,
     name: cfg.name,
     values: cfg.values.map((v) => ({ id: v.id, name: v.name, value: encodeValue(v.value) })),
@@ -951,6 +995,7 @@ export function encodeConfig(cfg: CustomComplicationConfig): J {
     dataSources: cfg.dataSources.map((d) => (d.kind === "template" ? { kind: "template", value: d.value } : { kind: "entity", ...encodeEntityRef(d) })),
     tapAction: encodeTapAction(cfg.tapAction),
   };
+  if (cfg.inline !== undefined) o.inline = encodeInline(cfg.inline);
   if (cfg.refreshMinutes !== undefined) o.refreshMinutes = cfg.refreshMinutes;
   if (cfg.openPageId !== undefined) o.openPageId = cfg.openPageId;
   if (cfg.openPageName !== undefined) o.openPageName = cfg.openPageName;
@@ -965,7 +1010,8 @@ export function encodeConfig(cfg: CustomComplicationConfig): J {
 // non-empty and tells the user which paths it does not understand.
 
 const K = {
-  config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "dataSources", "refreshMinutes", "tapAction", "openPageId", "openPageName", "showSuccessFlash", "successFlashColorHex"],
+  config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "inline", "dataSources", "refreshMinutes", "tapAction", "openPageId", "openPageName", "showSuccessFlash", "successFlashColorHex"],
+  inline: ["label", "value", "symbol", "countdown"],
   named: ["id", "name", "value"],
   value: ["kind", "format"],
   format: ["decimals", "multiply", "offset", "prefix", "suffix", "useEntityUnit", "relativeTime", "textCase"],
@@ -1126,6 +1172,10 @@ export function auditUnknownKeys(raw: unknown): string[] {
     }
     rules(l.rules, `${lp}.rules`);
   }
+  if (isObject(raw.inline)) {
+    check(raw.inline, K.inline, "$.inline");
+    value(raw.inline.value, "$.inline.value");
+  }
   if (Array.isArray(raw.dataSources)) raw.dataSources.forEach((d, i) => check(d, K.dataSource, `$.dataSources[${i}]`));
   check(raw.tapAction, K.tapAction, "$.tapAction");
   return out;
@@ -1150,8 +1200,8 @@ export function defaultLayout(): FamilyLayout {
 }
 
 export function newConfig(name: string, slotIndex: number): CustomComplicationConfig {
-  return {
-    schemaVersion: schemaVersionFor(slotIndex),
+  const cfg: CustomComplicationConfig = {
+    schemaVersion: 4,
     id: newId(),
     name,
     values: [],
@@ -1163,6 +1213,8 @@ export function newConfig(name: string, slotIndex: number): CustomComplicationCo
     refreshMinutes: 15,
     tapAction: { type: "refresh" },
   };
+  cfg.schemaVersion = schemaVersionFor(cfg);
+  return cfg;
 }
 
 export function newElement(kind: Element["kind"]): Element {

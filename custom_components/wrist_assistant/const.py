@@ -87,7 +87,11 @@ COMPLICATION_STORAGE_VERSION = 1
 # v5 is shape-identical to v4; it only marks documents with slotIndex > 7 so an
 # old app surfaces "needs app update" instead of silently dropping them. The
 # panel writes 5 only for slots above 7, keeping low-slot documents byte-stable.
-COMPLICATION_MAX_SCHEMA_VERSION = 5
+# v6 marks a document an app that predates per-shape support must not draw:
+# one missing a canvas shape (rectangular, circular or corner) or one carrying
+# Inline (the `inline` object). A document with all three canvas shapes and no
+# Inline keeps 4 or 5. The store refuses a document that breaks the pairing.
+COMPLICATION_MAX_SCHEMA_VERSION = 6
 COMPLICATION_MAX_DOCUMENT_BYTES = 256 * 1024
 COMPLICATION_MAX_LAYERS = 64
 # Slot indices 0..COMPLICATION_MAX_SLOTS-1 map onto ComplicationStableSlot on

@@ -1,0 +1,63 @@
+{
+  "name": "Single shape with Inline",
+  "description": "A schema 6 document that supports Rectangular and Inline only. The corner layout left behind carries a bezel entity that must NOT be compiled or fetched, because supportedFamilies is authoritative. Inline resolves the porch temperature with a label and a symbol.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-000000000006",
+    "name": "Porch",
+    "slotIndex": 2,
+    "supportedFamilies": ["rectangular", "inline"],
+    "values": [],
+    "elements": [
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000061",
+          "value": {"kind": {"kind": "entityState", "entityId": "sensor.porch_temp", "displayName": "Porch", "domain": "sensor"}},
+          "fontSize": 14,
+          "fontWeight": "regular",
+          "colorSlot": {"baseColorHex": "#FFFFFF"},
+          "rules": [],
+          "frame": {"x": 0.1, "y": 0.1, "width": 0.8, "height": 0.8, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular", {"cornerBodyShape": "circle", "borderWidth": 2},
+      "corner", {"bezelText": {"kind": {"kind": "entityState", "entityId": "sensor.unused_bezel", "displayName": "Unused", "domain": "sensor"}}, "cornerBodyShape": "circle", "borderWidth": 2}
+    ],
+    "inline": {
+      "label": "Porch",
+      "value": {"kind": {"kind": "entityState", "entityId": "sensor.porch_temp", "displayName": "Porch", "domain": "sensor"}},
+      "symbol": "thermometer"
+    },
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {"type": "refresh"}
+  },
+  "inputs": {
+    "entityStates": {
+      "sensor.porch_temp": {"state": "64", "domain": "sensor"},
+      "sensor.unused_bezel": {"state": "never shown", "domain": "sensor"}
+    },
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": ["sensor.porch_temp"],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {"id": "EEEEEEEE-0000-4000-8000-000000000061", "kind": "text", "text": "64", "isHidden": false}
+      ]
+    },
+    "inline": {
+      "label": "Porch",
+      "text": "64",
+      "symbol": "thermometer",
+      "countdownEnd": null
+    }
+  }
+}

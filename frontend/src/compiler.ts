@@ -196,7 +196,11 @@ export function compile(config: CustomComplicationConfig): Compiled {
     if (primary) visit(primary);
     for (const v of ruleValues(el.payload.rules)) visit(v);
   }
+  // Only the shapes the document supports: a layout left behind by a removed
+  // shape must not cost a fetch (supportedFamilies is authoritative since
+  // schema 6). Mirrors CustomComplicationCompiler.compile in the app.
   for (const family of DRAWABLE_FAMILIES) {
+    if (!config.supportedFamilies.includes(family)) continue;
     const layout = config.perFamily[family];
     if (!layout) continue;
     if (layout.bezelText) visit(layout.bezelText);
@@ -208,6 +212,7 @@ export function compile(config: CustomComplicationConfig): Compiled {
     }
     for (const v of ruleValues(layout.rules)) visit(v);
   }
+  if (config.supportedFamilies.includes("inline") && config.inline) visit(config.inline.value);
 
   const compiled: Compiled = { entities, expressions };
   if (expressions.size > 0) compiled.document = buildDocument(expressions);

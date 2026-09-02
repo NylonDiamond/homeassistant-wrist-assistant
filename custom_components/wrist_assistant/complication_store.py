@@ -74,8 +74,15 @@ _OPTIONAL_DOCUMENT_KEYS: dict[str, type | tuple[type, ...]] = {
     "openPageName": str,
     "showSuccessFlash": bool,
     "successFlashColorHex": str,
+    # The Inline shape's text; present exactly when supportedFamilies has "inline".
+    "inline": dict,
 }
-_FAMILY_KINDS = frozenset({"rectangular", "circular", "corner"})
+_CANVAS_FAMILY_KINDS = frozenset({"rectangular", "circular", "corner"})
+_FAMILY_KINDS = _CANVAS_FAMILY_KINDS | {"inline"}
+# First schema whose writers treat supportedFamilies as authoritative. Older
+# apps draw every canvas shape from the shared layers and draw "Custom" for
+# Inline, so a document that lacks a canvas shape or carries Inline must say 6.
+_FAMILY_SCHEMA_VERSION = 6
 # 0..COMPLICATION_MAX_SLOTS-1 into `ComplicationStableSlot` on the watch.
 _SLOT_RANGE = range(COMPLICATION_MAX_SLOTS)
 # Slots the original 8-slot pool covered. A document using a slot above these
@@ -362,7 +369,19 @@ def validate_document(document: Any) -> dict[str, Any]:
     if not families or any(f not in _FAMILY_KINDS for f in families):
         raise ComplicationValidationError(
             "document.supportedFamilies must be a non-empty list of "
-            "rectangular, circular, corner"
+            "rectangular, circular, corner, inline"
+        )
+    has_inline = "inline" in families
+    inline = document.get("inline")
+    if has_inline:
+        if not isinstance(inline, dict) or not isinstance(inline.get("value"), dict):
+            raise ComplicationValidationError(
+                "document.inline with a value object is required when "
+                "supportedFamilies includes inline"
+            )
+    elif inline is not None:
+        raise ComplicationValidationError(
+            "document.inline is only allowed when supportedFamilies includes inline"
         )
 
     schema_version = document.get("schemaVersion")
@@ -378,6 +397,12 @@ def validate_document(document: Any) -> dict[str, Any]:
     if document["slotIndex"] not in _LEGACY_SLOT_RANGE and schema_version < 5:
         raise ComplicationValidationError(
             "document.slotIndex above 7 requires schemaVersion 5 or newer"
+        )
+    needs_family_schema = has_inline or not _CANVAS_FAMILY_KINDS.issubset(families)
+    if needs_family_schema and schema_version < _FAMILY_SCHEMA_VERSION:
+        raise ComplicationValidationError(
+            "document with fewer than three canvas shapes, or with inline, "
+            f"requires schemaVersion {_FAMILY_SCHEMA_VERSION} or newer"
         )
 
     elements = document.get("elements") or []

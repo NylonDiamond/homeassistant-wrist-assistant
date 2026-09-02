@@ -131,6 +131,52 @@ describe("encodeConfig", () => {
     expect(twice).toEqual(once);
   });
 
+  // The per-shape contract (docs/custom_complication_family_kinds.md in the
+  // app repo): a document with the three canvas shapes and no Inline keeps 4
+  // or 5; one shape, or Inline, is 6. Mirrors CustomComplicationConfig.schemaVersion(for:).
+  it("stamps schema 6 for one shape or Inline, and 4/5 otherwise", () => {
+    const cfg = newConfig("X", 3);
+    expect(encodeConfig(cfg).schemaVersion).toBe(4);
+    cfg.slotIndex = 9;
+    expect(encodeConfig(cfg).schemaVersion).toBe(5);
+
+    cfg.slotIndex = 3;
+    cfg.supportedFamilies = ["rectangular"];
+    expect(encodeConfig(cfg).schemaVersion).toBe(6);
+
+    cfg.supportedFamilies = ["rectangular", "circular", "corner", "inline"];
+    expect(encodeConfig(cfg).schemaVersion).toBe(6);
+
+    cfg.supportedFamilies = ["rectangular", "circular", "corner"];
+    cfg.inline = { value: { kind: { kind: "literal", value: "x" } } };
+    expect(encodeConfig(cfg).schemaVersion).toBe(6);
+  });
+
+  it("round-trips inline and omits it when absent", () => {
+    const plain = encodeConfig(newConfig("X", 0));
+    expect("inline" in plain).toBe(false);
+
+    const cfg = newConfig("X", 0);
+    cfg.supportedFamilies = ["inline"];
+    cfg.perFamily = {};
+    cfg.inline = { label: "Tea", value: { kind: { kind: "literal", value: "3 min" } }, countdown: true };
+    const enc = encodeConfig(cfg) as Record<string, unknown>;
+    expect(enc.inline).toEqual({ label: "Tea", value: { kind: { kind: "literal", value: "3 min" } }, countdown: true });
+    expect(enc.perFamily).toEqual([]);
+    expect(auditUnknownKeys(enc)).toEqual([]);
+
+    const back = parseConfig(enc);
+    expect(back.inline).toEqual(cfg.inline);
+    expect(encodeConfig(back)).toEqual(enc);
+  });
+
+  it("never writes Inline into perFamily", () => {
+    const cfg = newConfig("X", 0);
+    (cfg.perFamily as Record<string, unknown>).inline = { placements: {}, cornerBodyShape: "circle", borderWidth: 2, rules: [] };
+    const enc = encodeConfig(cfg) as { perFamily: unknown[] };
+    expect(enc.perFamily.filter((v) => typeof v === "string")).toEqual(["rectangular", "circular", "corner"]);
+  });
+
   it("writes the phone's shape rules", () => {
     const cfg = newConfig("X", 3);
     cfg.elements.push(newElement("text"));

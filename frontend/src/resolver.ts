@@ -12,6 +12,7 @@ import {
   type FamilyKind,
   type FontWeight,
   type GaugeStyle,
+  type InlineLayout,
   type NamedValue,
   type NormalizedFrame,
   type Rule,
@@ -589,18 +590,45 @@ export class Resolver {
   }
 }
 
-/** Convenience: resolve every drawable family at once. */
+/** The Inline shape, resolved. Mirrors `CustomComplication.resolveInline`:
+ * the value through the same path as a text layer, empty label and symbol
+ * read as absent, "--" when nothing resolves. */
+export interface ResolvedInline {
+  label?: string;
+  text: string;
+  symbol?: string;
+  /** Live-countdown target (epoch ms), as on ResolvedText. */
+  countdownEnd?: number;
+}
+
+export function resolveInline(inline: InlineLayout, ctx: ResolveContext): ResolvedInline {
+  const r = new Resolver(ctx);
+  const countdownEnd = inline.countdown ? r.countdownEnd(inline.value) : undefined;
+  const fallback = inline.countdown ? r.countdownFallbackText(inline.value) : undefined;
+  const out: ResolvedInline = { text: fallback ?? r.resolve(inline.value) ?? "--" };
+  if (inline.label) out.label = inline.label;
+  if (inline.symbol) out.symbol = inline.symbol;
+  if (countdownEnd !== undefined) out.countdownEnd = countdownEnd;
+  return out;
+}
+
+/** Convenience: resolve every drawable family at once, plus Inline when the
+ * document supports it. The three canvas entries stay unconditional for the
+ * editor's previews; which of them a document actually draws on the watch is
+ * `supportedFamilies`. */
 export function resolveAll(
   config: CustomComplicationConfig,
   ctx: ResolveContext,
   forced?: ForcedBranches,
-): Record<"rectangular" | "circular" | "corner", ResolvedLayout> {
+): Record<"rectangular" | "circular" | "corner", ResolvedLayout> & { inline?: ResolvedInline } {
   const r = new Resolver(ctx);
-  return {
+  const out: Record<"rectangular" | "circular" | "corner", ResolvedLayout> & { inline?: ResolvedInline } = {
     rectangular: r.resolveLayout(config, "rectangular", forced),
     circular: r.resolveLayout(config, "circular", forced),
     corner: r.resolveLayout(config, "corner", forced),
   };
+  if (config.supportedFamilies.includes("inline") && config.inline) out.inline = resolveInline(config.inline, ctx);
+  return out;
 }
 
 export function comparisonNeedsValue(c: Comparison): boolean {

@@ -34,8 +34,8 @@ describe("transferred preset documents", () => {
       expect(config.tapAction.type).toBe(
         typeof raw.tapAction === "string" ? raw.tapAction : raw.tapAction.type,
       );
-      // The Swift side stamps the same slot → schemaVersion rule the panel uses.
-      expect(raw.schemaVersion).toBe(schemaVersionFor(raw.slotIndex));
+      // The Swift side stamps the same content → schemaVersion rule the panel uses.
+      expect(raw.schemaVersion).toBe(schemaVersionFor(config));
       // An Open Page tap keeps its page through parse (and the editor's save
       // path re-encodes it — see encode.test.ts).
       if (typeof raw.openPageId === "string") {

@@ -35,7 +35,7 @@ MAX_PER_OWNER = 8
 MAX_SLOTS = 64
 MAX_LAYERS = 64
 MAX_BYTES = 4096
-MAX_SCHEMA = 5
+MAX_SCHEMA = 6
 
 
 class _FakeStore:
@@ -529,6 +529,16 @@ def test_pages_drop_junk_and_clear_on_empty(mod):
         lambda d: d.update(slotIndex=True),
         lambda d: d.update(supportedFamilies=[]),
         lambda d: d.update(supportedFamilies=["square"]),
+        # One shape or Inline needs the schema-6 marker (an old app would draw
+        # the missing shapes from the shared layers, or "Custom" for Inline).
+        lambda d: d.update(supportedFamilies=["rectangular"]),
+        lambda d: d.update(supportedFamilies=["rectangular", "circular", "corner", "inline"],
+                           inline={"value": {"kind": {"kind": "literal", "value": "x"}}}),
+        # Inline and its object come as a pair, at schema 6.
+        lambda d: d.update(schemaVersion=6, supportedFamilies=["inline"]),
+        lambda d: d.update(schemaVersion=6, supportedFamilies=["inline"], inline={}),
+        lambda d: d.update(schemaVersion=6, supportedFamilies=["inline"], inline="on"),
+        lambda d: d.update(schemaVersion=6, inline={"value": {"kind": {"kind": "literal", "value": "x"}}}),
         lambda d: d.pop("perFamily"),
         lambda d: d.pop("tapAction"),
         lambda d: d.pop("schemaVersion"),
@@ -562,6 +572,31 @@ def test_open_page_fields_are_accepted(mod):
     rec = store.save(OWNER, doc, base_revision=None, updated_by="t")
     assert rec.document["openPageId"] == "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
     assert rec.document["openPageName"] == "Upstairs"
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        dict(schemaVersion=6, supportedFamilies=["rectangular"]),
+        dict(schemaVersion=6, supportedFamilies=["corner"]),
+        dict(schemaVersion=6, supportedFamilies=["inline"],
+             inline={"value": {"kind": {"kind": "literal", "value": "72°"}}}),
+        dict(schemaVersion=6, supportedFamilies=["rectangular", "circular", "corner", "inline"],
+             inline={"label": "Tea", "value": {"kind": {"kind": "literal", "value": "3 min"}},
+                     "symbol": "timer", "countdown": True}),
+        # Three canvas shapes and no Inline may still say 6; nothing forces 4.
+        dict(schemaVersion=6),
+        dict(schemaVersion=6, slotIndex=12, supportedFamilies=["circular"]),
+    ],
+)
+def test_single_shape_and_inline_documents_save_at_schema_six(mod, overrides):
+    """The per-shape contract (docs/custom_complication_family_kinds.md)."""
+    store = _new(mod)
+    rec = store.save(OWNER, _doc(**overrides), base_revision=None, updated_by="t")
+    assert rec.document["supportedFamilies"] == overrides.get(
+        "supportedFamilies", ["rectangular", "circular", "corner"]
+    )
+    assert rec.document.get("inline") == overrides.get("inline")
 
 
 def test_high_slots_are_valid_with_the_schema_marker(mod):

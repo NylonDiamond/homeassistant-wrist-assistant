@@ -22,7 +22,10 @@ interface Fixture {
     dataAgeSeconds?: number;
   };
   expectedCompiled?: { entities: string[]; expressionKeys: string[]; document?: string };
-  expected: Record<string, { bezelText?: string | null; elements: Record<string, unknown>[] } & Record<string, unknown>>;
+  expected: Record<string, { bezelText?: string | null; elements: Record<string, unknown>[] } & Record<string, unknown>> & {
+    /** The Inline shape (schema 6). null for a key means "absent", as elsewhere. */
+    inline?: Record<string, unknown>;
+  };
 }
 
 function contextFor(fx: Fixture): ResolveContext {
@@ -88,6 +91,14 @@ describe.each(files)("fixture %s", (file) => {
     expect([...compiled.entities.keys()].sort()).toEqual([...fx.expectedCompiled.entities].sort());
     expect([...compiled.expressions.keys()].sort()).toEqual([...fx.expectedCompiled.expressionKeys].sort());
     if (fx.expectedCompiled.document !== undefined) expect(compiled.document).toBe(fx.expectedCompiled.document);
+  });
+
+  it("resolves Inline to the expected text", () => {
+    const want = fx.expected.inline;
+    if (!want) return;
+    const got = resolveAll(config, contextFor(fx)).inline;
+    expect(got, "inline").toBeDefined();
+    expectSubset(got as unknown as Record<string, unknown>, want, "inline");
   });
 
   it("resolves every family to the expected layout", () => {
