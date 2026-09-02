@@ -1219,7 +1219,7 @@ export class WristAssistantPanel extends LitElement {
         </div>`;
       })}
       ${edit ? html`<div class="adders">
-        ${(["text", "icon", "gauge", "shape", "image"] as const).map((k) => html`<button class="small" ?disabled=${cfg.elements.length >= 64} @click=${() => { const el = newElement(k); this.mutate((c) => { c.elements.push(el); }); this.inspect = { kind: "layer", id: el.payload.id }; }}>+ ${k === "image" ? "camera" : k}</button>`)}
+        ${(["text", "icon", "gauge", "shape", "image", "tap"] as const).map((k) => html`<button class="small" ?disabled=${cfg.elements.length >= 64} @click=${() => { const el = newElement(k); this.mutate((c) => { c.elements.push(el); }); this.inspect = { kind: "layer", id: el.payload.id }; }}>+ ${k === "image" ? "camera" : k === "tap" ? "tap area" : k}</button>`)}
       </div>` : nothing}
     </div>`;
   }
@@ -1240,7 +1240,7 @@ export class WristAssistantPanel extends LitElement {
       const active = family === this.activeFamily;
       const slot = watchCase.slots[family];
       const fit = fitBox(slot, family);
-      const opts = { icons: this.icons, showHidden: true, highlightId, handles: active && this.canEdit, slot };
+      const opts = { icons: this.icons, showHidden: true, tapAreas: true, highlightId, handles: active && this.canEdit, slot };
       const pct = Math.round(fit.scale * 100);
       return html`
       <div class="preview ${family} ${active ? "active" : ""}" @pointerdown=${(e: PointerEvent) => this.onPreviewPointerDown(family, e)}>
@@ -1457,6 +1457,11 @@ function layerTitle(el: CElement): string {
     case "image": {
       const e = el.payload.entity;
       return e.displayName || e.entityId || "camera";
+    }
+    case "tap": {
+      const a = el.payload.action;
+      const target = "entityId" in a ? (a.displayName || a.entityId) : a.type === "openPage" ? (el.payload.openPageName || "") : "";
+      return target ? `${a.type} · ${target}` : a.type;
     }
   }
 }

@@ -102,6 +102,45 @@ describe("encodeConfig", () => {
     expect(bareJson).not.toContain("colorSlot");
   });
 
+  it("round-trips the tap element, and the page pair stays absent when unset", () => {
+    const cfg = newConfig("X", 0);
+    const el = newElement("tap");
+    if (el.kind === "tap") {
+      el.payload.action = { type: "toggleEntity", entityId: "light.kitchen", displayName: "Kitchen", domain: "light" };
+      el.payload.openPageId = "P1";
+      el.payload.openPageName = "Kitchen page";
+      el.payload.frame = { x: 0, y: 0.5, width: 1, height: 0.5, rotationDegrees: 0 };
+    }
+    cfg.elements = [el];
+    const enc = encodeConfig(cfg) as Record<string, unknown>;
+    expect(auditUnknownKeys(enc)).toEqual([]);
+    const back = parseConfig(enc).elements[0];
+    expect(back?.kind).toBe("tap");
+    if (back?.kind === "tap") {
+      expect(back.payload.action).toEqual({ type: "toggleEntity", entityId: "light.kitchen", displayName: "Kitchen", domain: "light" });
+      expect(back.payload.openPageId).toBe("P1");
+      expect(back.payload.openPageName).toBe("Kitchen page");
+      expect(back.payload.frame.y).toBe(0.5);
+      expect("colorSlot" in back.payload).toBe(false);
+    }
+    expect(encodeConfig(parseConfig(enc))).toEqual(enc);
+
+    // Fresh layer: refresh, no page keys, no colour.
+    const bare = newConfig("Y", 1);
+    bare.elements = [newElement("tap")];
+    const bareJson = JSON.stringify(encodeConfig(bare));
+    expect(bareJson).toContain('"action":{"type":"refresh"}');
+    expect(bareJson).not.toContain("openPageId");
+    expect(bareJson).not.toContain("openPageName");
+    expect(bareJson).not.toContain("colorSlot");
+
+    // A payload with no action at all reads as refresh, matching the watch decoder.
+    const raw = encodeConfig(bare) as { elements: { payload: Record<string, unknown> }[] };
+    delete raw.elements[0]!.payload.action;
+    const parsed = parseConfig(raw).elements[0];
+    expect(parsed?.kind === "tap" && parsed.payload.action.type).toBe("refresh");
+  });
+
   it("round-trips every comparison kind and style change kind", () => {
     const cfg = newConfig("X", 0);
     const el = newElement("text");

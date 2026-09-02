@@ -104,6 +104,8 @@ export interface RenderOptions {
   highlightId?: string;
   /** Draw resize handles on the highlighted element (active family only). */
   handles?: boolean;
+  /** Editor affordance: outline tap layers, which the watch never draws. */
+  tapAreas?: boolean;
   /**
    * The real slot to preview in. Defaults to the design box itself (the 46 mm
    * slot). Any other size draws the design box uniformly scaled and centred,
@@ -280,8 +282,23 @@ function renderImage(el: Extract<ResolvedElement, { kind: "image" }>, box: Box, 
     <g clip-path=${`url(#${clipId})`}>${content}${chip}</g>`;
 }
 
+/** Tap area, editor only: a faint dashed box with a small hand glyph so the
+ * author can see and grab what the watch never draws. Off (nothing) unless the
+ * caller asked for tap areas. */
+function renderTap(el: Extract<ResolvedElement, { kind: "tap" }>, box: Box, icons: IconProvider, show: boolean) {
+  if (!show) return nothing;
+  const glyph = Math.min(10, box.w * 0.5, box.h * 0.5);
+  return svg`
+    <rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} rx="2" fill="#FFD60A" fill-opacity="0.08"
+      stroke="#FFD60A" stroke-opacity="0.8" stroke-width="0.6" stroke-dasharray="1.5 1" vector-effect="non-scaling-stroke" />
+    ${glyph >= 5 ? svg`<g transform="translate(${box.cx - glyph / 2} ${box.cy - glyph / 2})" opacity="0.8">${icons.render("hand.tap.fill", glyph, "#FFD60A") ?? nothing}</g>` : nothing}`;
+}
+
 function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderOptions) {
   if (el.isHidden && !options.showHidden) return nothing;
+  // A tap layer draws nothing on the watch. Outside the editor it takes no space
+  // and no clicks either, so the preview matches the watch.
+  if (el.kind === "tap" && !options.tapAreas) return nothing;
   const box = frameBox(el, canvas);
   let body;
   switch (el.kind) {
@@ -290,6 +307,7 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     case "gauge": body = renderGauge(el, box); break;
     case "shape": body = renderShape(el, box); break;
     case "image": body = renderImage(el, box, options.icons); break;
+    case "tap": body = renderTap(el, box, options.icons, options.tapAreas === true); break;
   }
   const opacity = Math.min(1, Math.max(0, el.opacity)) * (el.isHidden ? 0.35 : 1);
   const selected = options.highlightId === el.id;

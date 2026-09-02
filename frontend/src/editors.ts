@@ -467,6 +467,11 @@ const TAP_TYPES: [TapAction["type"], string][] = [
   ["toggleEntity", "Toggle an entity"], ["runScene", "Run a scene"], ["runScript", "Run a script"], ["addTodo", "Add a to-do"], ["runHTTPAction", "Run an HTTP action"],
 ];
 
+/** A tap layer offers everything but "Nothing": a layer that does nothing would
+ * just let the tap fall through to the whole-complication action, which is what
+ * deleting the layer does. */
+const LAYER_TAP_TYPES: [TapAction["type"], string][] = TAP_TYPES.filter(([t]) => t !== "none");
+
 // There is no slot picker. The slot index is plumbing: the panel assigns the
 // first free one at create/duplicate time and it never changes afterwards,
 // because moving a complication to another slot blanks its placement on the
@@ -536,21 +541,30 @@ function layoutsRow(host: EditorHost): TemplateResult {
  * its stored name so opening the editor never silently drops the choice. */
 function openPageField(host: EditorHost): TemplateResult {
   const cfg = host.config;
-  const current = cfg.openPageId ?? "";
+  return pageChoiceField(host, cfg.openPageId, cfg.openPageName, (id, name) => host.update((c) => {
+    if (id === undefined) { delete c.openPageId; delete c.openPageName; return; }
+    c.openPageId = id;
+    if (name) c.openPageName = name; else delete c.openPageName;
+  }));
+}
+
+/** The page picker behind an openPage action, for the document and for a tap
+ * layer alike. `set` gets undefined when the choice is cleared, else the page
+ * id and its name when the watch reported one. */
+function pageChoiceField(host: EditorHost, pageId: string | undefined, pageName: string | undefined, set: (id: string | undefined, name: string | undefined) => void): TemplateResult {
+  const current = pageId ?? "";
   const options: [string, string][] = host.pages.map((p) => [p.id, p.name || "Unnamed page"]);
   if (current && !host.pages.some((p) => p.id.toUpperCase() === current.toUpperCase())) {
-    options.unshift([current, `${cfg.openPageName || "Unknown page"} (not on the watch)`]);
+    options.unshift([current, `${pageName || "Unknown page"} (not on the watch)`]);
   }
   if (!current) options.unshift(["", "Choose a page…"]);
   if (options.length <= 1 && !current) {
     return html`<div class="hint">No pages reported yet. Open the watch app once so it can send its page list.</div>`;
   }
-  return html`${selectField("Page", current, options, (v) => host.update((c) => {
-    if (!v) { delete c.openPageId; delete c.openPageName; return; }
-    c.openPageId = v;
-    const name = host.pages.find((p) => p.id === v)?.name;
-    if (name) c.openPageName = name; else delete c.openPageName;
-  }))}
+  return html`${selectField("Page", current, options, (v) => {
+    if (!v) { set(undefined, undefined); return; }
+    set(v, host.pages.find((p) => p.id === v)?.name);
+  })}
   ${current ? nothing : html`<div class="hint">Without a page the tap falls back to the complication list.</div>`}`;
 }
 
@@ -624,6 +638,7 @@ export function elementSize(el: CElement): number | undefined {
     case "gauge": return el.payload.lineWidth;
     case "shape": return undefined;
     case "image": return undefined;
+    case "tap": return undefined;
   }
 }
 
@@ -690,11 +705,30 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         }))}
         <div class="hint">The watch fetches a fresh snapshot on refresh and shows the cached frame in between; the timestamp says when it was taken. This preview shows the camera's live picture.</div>`;
       break;
+    case "tap": {
+      const tap = el.payload.action;
+      const needsEntity = (t: TapAction["type"]) => ["toggleEntity", "runScene", "runScript", "addTodo", "runHTTPAction"].includes(t);
+      content = html`
+        ${selectField("Tap action", tap.type, LAYER_TAP_TYPES, (v) => upd((e) => {
+          const p = (e as typeof el).payload;
+          p.action = needsEntity(v) ? { type: v as "toggleEntity", ...("entityId" in p.action ? { entityId: p.action.entityId, displayName: p.action.displayName, domain: p.action.domain } : { entityId: "", displayName: "", domain: "" }) } : { type: v as "refresh" };
+          if (v !== "openPage") { delete p.openPageId; delete p.openPageName; }
+        }))}
+        ${"entityId" in tap ? entityField(host, "Target", tap, (ref) => upd((e) => { (e as typeof el).payload.action = { type: tap.type, ...ref }; }, "tap-entity"), `${key}-tap`) : nothing}
+        ${tap.type === "openPage" ? pageChoiceField(host, el.payload.openPageId, el.payload.openPageName, (pid, name) => upd((e) => {
+          const p = (e as typeof el).payload;
+          if (pid === undefined) { delete p.openPageId; delete p.openPageName; return; }
+          p.openPageId = pid;
+          if (name) p.openPageName = name; else delete p.openPageName;
+        }, "tap-page")) : nothing}
+        <div class="hint">An invisible tap area. On the watch, a tap inside this frame runs this action; the rest of the complication keeps the tap action on the General tab. Put it over a row, an icon, or any part you want to respond on its own. Layers higher in the list win where two overlap.</div>`;
+      break;
+    }
   }
 
   return html`
     ${content}
-    ${el.kind === "image" ? nothing : colorField(el.kind === "shape" ? "Fill colour" : "Colour", el.payload.colorSlot.baseColorHex, (v) => upd((e) => { if (e.kind !== "image") e.payload.colorSlot.baseColorHex = v ?? "#FFFFFF"; }, "color"))}
+    ${el.kind === "image" || el.kind === "tap" ? nothing : colorField(el.kind === "shape" ? "Fill colour" : "Colour", el.payload.colorSlot.baseColorHex, (v) => upd((e) => { if (e.kind !== "image" && e.kind !== "tap") e.payload.colorSlot.baseColorHex = v ?? "#FFFFFF"; }, "color"))}
     ${checkField("Hidden in every family", el.payload.isHidden, (v) => upd((e) => { e.payload.isHidden = v; }))}
     <h3>${familyTitle(family)} placement${eff.fromPlacement ? "" : " (shared frame)"}</h3>
     <div class="grid4">
@@ -705,7 +739,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
     </div>
     ${numberField("Rotation (degrees)", f.rotationDegrees, (v) => setFrame({ rotationDegrees: v ?? 0 }, "rot"), { step: 1 })}
     ${checkField(`Hidden in ${familyTitle(family)}`, eff.isHidden, (v) => host.update((c) => setPlacement(c, family, id, { isHidden: v })))}
-    ${el.kind === "shape" || el.kind === "image" ? nothing : html`<div class="row-inline">
+    ${el.kind === "shape" || el.kind === "image" || el.kind === "tap" ? nothing : html`<div class="row-inline">
       ${numberField(`${sizeLabel} in ${familyTitle(family)} (blank = shared ${elementSize(el)})`, eff.size, (v) => host.update((c) => (v === undefined ? setPlacement(c, family, id, {}, true) : setPlacement(c, family, id, { size: v })), `${key}-psize-${family}`), { step: 1, min: 1, optional: true })}
     </div>`}
     <div class="hint">Drag the layer in the ${familyTitle(family)} preview to move it. Drag a corner to resize it. Frames are fractions of the canvas.</div>

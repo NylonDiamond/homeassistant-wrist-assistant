@@ -196,3 +196,41 @@ describe("image resolution", () => {
     expect([...compiled.entities.keys()]).toEqual(["camera.front_door"]);
   });
 });
+
+describe("tap layer resolution", () => {
+  const tapConfig = () => {
+    const cfg = newConfig("X", 0);
+    const visible = newElement("tap");
+    const hidden = newElement("tap");
+    if (visible.kind === "tap") {
+      visible.payload.action = { type: "runScene", entityId: "scene.movie", displayName: "Movie", domain: "scene" };
+      visible.payload.openPageId = "P1";
+      visible.payload.frame = { x: 0, y: 0, width: 1, height: 0.5, rotationDegrees: 15 };
+    }
+    if (hidden.kind === "tap") {
+      hidden.payload.rules = [{ id: "R1", cases: [], otherwise: [{ kind: "hide" }] }];
+    }
+    cfg.elements = [visible, hidden];
+    return cfg;
+  };
+
+  it("carries the action and page through, keeps the frame, and honours hide rules", () => {
+    const layouts = resolveAll(tapConfig(), { entityStates: new Map(), templateResults: new Map(), namedValues: [] });
+    const [first, second] = layouts.rectangular?.elements ?? [];
+    expect(first?.kind).toBe("tap");
+    if (first?.kind === "tap") {
+      expect(first.action).toEqual({ type: "runScene", entityId: "scene.movie", displayName: "Movie", domain: "scene" });
+      expect(first.openPageId).toBe("P1");
+      expect(first.frame.rotationDegrees).toBe(15);
+      expect(first.isHidden).toBe(false);
+      expect(first.opacity).toBe(1);
+    }
+    expect(second?.kind).toBe("tap");
+    expect(second?.isHidden).toBe(true);
+  });
+
+  it("registers nothing with the compiler: a tap area reads no data", () => {
+    const compiled = compile(tapConfig());
+    expect([...compiled.entities.keys()]).toEqual([]);
+  });
+});

@@ -19,6 +19,7 @@ import {
   type ShapeKind,
   type StyleChange,
   type StyleProperty,
+  type TapAction,
   type Test,
   type Value,
   type ValueFormat,
@@ -103,7 +104,14 @@ export interface ResolvedImage extends ResolvedBase {
   /** Whether the watch draws the fetched-at overlay. */
   showTimestamp: boolean;
 }
-export type ResolvedElement = ResolvedText | ResolvedIcon | ResolvedGauge | ResolvedShape | ResolvedImage;
+/** A tap area after rules ran. Draws nothing on the watch; the preview outlines
+ * it in edit mode. Only visibility rules apply, so opacity is always 1. */
+export interface ResolvedTap extends ResolvedBase {
+  kind: "tap";
+  action: TapAction;
+  openPageId?: string;
+}
+export type ResolvedElement = ResolvedText | ResolvedIcon | ResolvedGauge | ResolvedShape | ResolvedImage | ResolvedTap;
 
 export interface ResolvedBezelGauge {
   value: number;
@@ -536,6 +544,19 @@ export class Resolver {
         };
         const url = this.ctx.entityStates.get(el.payload.entity.entityId)?.entityPicture;
         if (url !== undefined) out.url = url;
+        return out;
+      }
+      case "tap": {
+        // Mirrors resolveTap in the app: visibility is the only rule that applies,
+        // the frame's own rotation stays, opacity is always 1.
+        const out: ResolvedTap = {
+          kind: "tap",
+          ...base,
+          frame: el.payload.frame,
+          opacity: 1,
+          action: el.payload.action,
+        };
+        if (el.payload.openPageId !== undefined) out.openPageId = el.payload.openPageId;
         return out;
       }
     }

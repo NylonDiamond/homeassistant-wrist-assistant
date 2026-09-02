@@ -256,12 +256,24 @@ export interface ImageElement extends Omit<ElementBase, "colorSlot"> {
   timestamp?: boolean;
 }
 
+/** An invisible tap area. Draws nothing on the watch; its frame becomes its own
+ * tap target laid over everything else, so a complication can carry as many taps
+ * as it has tap layers. Inside the frame `action` wins; outside it the document's
+ * whole-complication tapAction still applies. The page pair mirrors the
+ * document-level one and is encoded only when set. No colorSlot. */
+export interface TapElement extends Omit<ElementBase, "colorSlot"> {
+  action: TapAction;
+  openPageId?: string;
+  openPageName?: string;
+}
+
 export type Element =
   | { kind: "text"; payload: TextElement }
   | { kind: "icon"; payload: IconElement }
   | { kind: "gauge"; payload: GaugeElement }
   | { kind: "shape"; payload: ShapeElement }
-  | { kind: "image"; payload: ImageElement };
+  | { kind: "image"; payload: ImageElement }
+  | { kind: "tap"; payload: TapElement };
 
 export interface Placement {
   frame: NormalizedFrame;
@@ -625,6 +637,18 @@ export function parseElement(raw: unknown): Element {
       if (p.timestamp === true) el.timestamp = true;
       return { kind: "image", payload: el };
     }
+    case "tap": {
+      const { colorSlot: _unused, ...base } = parseElementBase(p, "#FFFFFF");
+      const el: TapElement = {
+        ...base,
+        // A layer with no action yet reads as refresh, the same default the watch
+        // decoder applies, so both sides agree on a half-written document.
+        action: isObject(p.action) ? parseTapAction(p.action) : { type: "refresh" },
+      };
+      if (typeof p.openPageId === "string") el.openPageId = p.openPageId;
+      if (typeof p.openPageName === "string") el.openPageName = p.openPageName;
+      return { kind: "tap", payload: el };
+    }
     default:
       throw new ConfigParseError(`unknown element kind ${String(raw.kind)}`);
   }
@@ -927,6 +951,16 @@ function encodeElement(el: Element): J {
       if (p.timestamp === true) o.timestamp = true;
       return { kind: "image", payload: o };
     }
+    case "tap": {
+      const p = el.payload;
+      const o: J = { id: p.id, action: encodeTapAction(p.action) };
+      if (p.openPageId !== undefined) o.openPageId = p.openPageId;
+      if (p.openPageName !== undefined) o.openPageName = p.openPageName;
+      o.rules = encodeRules(p.rules);
+      o.frame = encodeFrame(p.frame);
+      o.isHidden = p.isHidden;
+      return { kind: "tap", payload: o };
+    }
   }
 }
 
@@ -1033,6 +1067,7 @@ const K = {
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex"],
   shape: ["kind", "cornerRadius", "borderColorHex", "borderWidth"],
   image: ["entity", "timestamp"],
+  tap: ["action", "openPageId", "openPageName"],
   colorSlot: ["baseColorHex"],
   rule: ["id", "cases", "otherwise"],
   case: ["id", "when", "then"],
@@ -1149,6 +1184,7 @@ export function auditUnknownKeys(raw: unknown): string[] {
       rules(e.payload.rules, `${ep}.payload.rules`);
       for (const vk of ["value", "symbol"]) if (vk in e.payload) value(e.payload[vk], `${ep}.payload.${vk}`);
       if (kind === "image") check(e.payload.entity, K.entityRef, `${ep}.payload.entity`);
+      if (kind === "tap") check(e.payload.action, K.tapAction, `${ep}.payload.action`);
     });
   }
   const layouts: [string, unknown][] = [];
@@ -1241,6 +1277,10 @@ export function newElement(kind: Element["kind"]): Element {
       const { colorSlot: _unused, ...b } = base("#FFFFFF");
       return { kind, payload: { ...b, entity: { entityId: "", displayName: "", domain: "camera" } } };
     }
+    case "tap": {
+      const { colorSlot: _unused, ...b } = base("#FFFFFF");
+      return { kind, payload: { ...b, action: { type: "refresh" } } };
+    }
   }
 }
 
@@ -1280,6 +1320,7 @@ export function primaryValue(el: Element): Value | undefined {
     case "gauge": return el.payload.value;
     case "shape": return undefined;
     case "image": return { kind: { kind: "entityState", ...el.payload.entity } };
+    case "tap": return undefined;
   }
 }
 
@@ -1314,6 +1355,7 @@ export const RULE_TARGET_PROPERTIES: Record<RuleTarget, StyleProperty[]> = {
   gauge: ["color", "opacity", "gaugeValue", "gaugeMin", "gaugeMax", "rotation", "visibility"],
   shape: ["color", "opacity", "borderColor", "borderWidth", "rotation", "visibility"],
   image: ["opacity", "rotation", "visibility"],
+  tap: ["visibility"],
   layout: ["backgroundColor", "borderColor", "borderWidth", "text"],
 };
 
