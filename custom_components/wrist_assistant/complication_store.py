@@ -162,12 +162,15 @@ def _clean_occupied_entries(entries: list[Any]) -> list[dict[str, Any]]:
     """Normalize an occupied-slot report, sorted by slot.
 
     Shape: ``[{"slot": int, "name": str, "kind": "preset"|"custom",
-    "home": str}]``. ``kind`` says what holds the slot: an iPhone preset (any
-    home) or a custom complication that lives on a different Home Assistant.
-    ``home`` is the display name of the home it belongs to, empty when the
-    watch did not say. Advisory like the preset report: junk entries drop,
-    the first entry wins a duplicated slot, and a missing kind reads as
-    "preset" so a report that only knows presets still parses.
+    "home": str, "families": [str]?}]``. ``kind`` says what holds the slot:
+    an iPhone preset (any home) or a custom complication that lives on a
+    different Home Assistant. ``home`` is the display name of the home it
+    belongs to, empty when the watch did not say. ``families`` is a custom
+    document's ``supportedFamilies``, sorted; it is absent when the watch did
+    not send it (a watch from before per-shape documents) or sent nothing
+    usable, so a row never needs it. Advisory like the preset report: junk
+    entries drop, the first entry wins a duplicated slot, and a missing kind
+    reads as "preset" so a report that only knows presets still parses.
     """
     cleaned: dict[int, dict[str, Any]] = {}
     for entry in entries:
@@ -187,12 +190,18 @@ def _clean_occupied_entries(entries: list[Any]) -> list[dict[str, Any]]:
         home = entry.get("home", "")
         if not isinstance(home, str):
             home = ""
-        cleaned[slot] = {
+        row: dict[str, Any] = {
             "slot": slot,
             "name": name.strip()[:_PRESET_NAME_MAX_CHARS],
             "kind": kind,
             "home": home.strip()[:_PRESET_NAME_MAX_CHARS],
         }
+        families = entry.get("families")
+        if isinstance(families, list):
+            known = sorted({f for f in families if isinstance(f, str) and f in _FAMILY_KINDS})
+            if known:
+                row["families"] = known
+        cleaned[slot] = row
     return [cleaned[slot] for slot in sorted(cleaned)]
 
 

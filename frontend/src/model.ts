@@ -28,6 +28,9 @@ export interface OccupiedSlot {
   name: string;
   kind: "preset" | "custom";
   home: string;
+  /** A custom document's `supportedFamilies`, sorted. Absent for presets and
+   * from a watch that predates per-shape documents. */
+  families?: FamilyKind[];
 }
 
 /** First slot neither a stored record nor an occupied entry uses, or -1 when

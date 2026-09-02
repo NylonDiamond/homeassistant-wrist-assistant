@@ -1087,7 +1087,7 @@ export class WristAssistantPanel extends LitElement {
           kind: "locked",
           name: o.name || "Unnamed complication",
           badge: o.home || "Other home",
-          title: `A complication on ${o.home ? `the ${o.home} home` : "another home"}. Edit it in that home's Wrist Assistant panel.`,
+          title: `A complication on ${o.home ? `the ${o.home} home` : "another home"}${o.families?.length ? ` (${o.families.map(familyTitle).join(", ")})` : ""}. Edit it in that home's Wrist Assistant panel.`,
         }
         : {
           slot: o.slot,

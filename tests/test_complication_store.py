@@ -828,6 +828,32 @@ def test_occupied_round_trip_derives_presets_and_survives_restart(mod):
     assert reloaded.occupied(OTHER) == []
 
 
+def test_occupied_keeps_a_custom_rows_families(mod):
+    # A per-shape watch says which shapes each foreign custom draws. Sorted,
+    # unknown names dropped, and the key left out when nothing usable came.
+    store = _new(mod)
+    store.set_occupied(
+        OWNER,
+        [
+            {"slot": 1, "name": "A", "kind": "custom", "home": "Cabin", "families": ["inline", "rectangular", "inline"]},
+            {"slot": 2, "name": "B", "kind": "custom", "home": "Cabin", "families": ["hexagon", 3]},
+            {"slot": 3, "name": "C", "kind": "custom", "home": "Cabin", "families": "rectangular"},
+            {"slot": 4, "name": "D", "kind": "custom", "home": "Cabin"},
+            {"slot": 5, "name": "P", "kind": "preset", "families": ["circular"]},
+        ],
+    )
+    rows = store.occupied(OWNER)
+    assert rows[0]["families"] == ["inline", "rectangular"]
+    assert "families" not in rows[1]
+    assert "families" not in rows[2]
+    assert "families" not in rows[3]
+    # A preset has no document; the key is still passed through as sent, the
+    # panel ignores it for presets.
+    assert rows[4]["families"] == ["circular"]
+    # Round trip through storage keeps it.
+    assert _new(mod).occupied(OWNER)[0]["families"] == ["inline", "rectangular"]
+
+
 def test_occupied_drops_junk_and_unknown_kinds(mod):
     store = _new(mod)
     store.set_occupied(
