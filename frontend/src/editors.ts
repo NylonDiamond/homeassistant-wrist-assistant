@@ -47,6 +47,8 @@ import type { ForcedBranches } from "./resolver.js";
 import type { HassLike } from "./ha-api.js";
 import { familyTitle, type IconProvider } from "./renderer.js";
 import { CURATED_SYMBOLS, SYMBOL_CATEGORIES, SymbolBrowser, searchSymbols } from "./symbols.js";
+import { canRemoveFamily, missingFamilies, supportedFamilies } from "./layouts.js";
+import { SHAPES_NEED_UPDATE_MESSAGE } from "./version.js";
 
 export interface EditorHost {
   hass: HassLike;
@@ -69,6 +71,17 @@ export interface EditorHost {
   liveBranch(rule: Rule): string;
   forced: ForcedBranches;
   setForced(ruleId: string, branch: { caseId: string } | "otherwise" | "live"): void;
+  /** The shape being edited; the Layouts row and the layout tab follow it. */
+  activeFamily: FamilyKind;
+  setActiveFamily(family: FamilyKind): void;
+  /** Whether the selected watch can take a document with fewer than three
+   * canvas shapes or with Inline (rule 8: gated on the watch's app version).
+   * When false the Layouts row is static and says why. */
+  shapesEditable: boolean;
+  /** Add a shape and seed its layout. Also makes it the active shape. */
+  addFamily(family: FamilyKind): void;
+  /** Remove a shape and its layout, confirming first when it holds content. */
+  removeFamily(family: FamilyKind): void;
 }
 
 // ── small controls ────────────────────────────────────────────────────────
@@ -479,10 +492,36 @@ export function generalEditor(host: EditorHost): TemplateResult {
     ${tap.type === "openPage" ? openPageField(host) : nothing}
     ${checkField("Flash on success", cfg.showSuccessFlash ?? true, (v) => host.update((c) => { c.showSuccessFlash = v; }))}
     ${colorField("Flash colour (blank = green)", cfg.successFlashColorHex, (v) => host.update((c) => { if (v === undefined) delete c.successFlashColorHex; else c.successFlashColorHex = v; }, "flash"), true)}
-    <div class="field"><span>Families</span>
-      <div class="chips">${(["rectangular", "circular", "corner", "inline"] as FamilyKind[]).map((f) => html`<label class="chip"><input type="checkbox" .checked=${cfg.supportedFamilies.includes(f)}
-        @change=${(e: Event) => host.update((c) => { const on = (e.target as HTMLInputElement).checked; c.supportedFamilies = on ? [...new Set([...c.supportedFamilies, f])] : c.supportedFamilies.filter((x) => x !== f); })} />${familyTitle(f)}</label>`)}</div>
-    </div>`;
+    ${layoutsRow(host)}`;
+}
+
+/** The shapes this complication has: one tab per supported shape (click to
+ * edit it) and an "Add layout" menu for the missing ones. Removing a shape
+ * lives in that shape's own layout tab. Adding a shape seeds its layout in
+ * the same update, so the set and the document never disagree. */
+function layoutsRow(host: EditorHost): TemplateResult {
+  const cfg = host.config;
+  const have = supportedFamilies(cfg);
+  const missing = missingFamilies(cfg);
+  const canAdd = host.shapesEditable && missing.length > 0;
+  return html`
+    <div class="field"><span>Layouts</span>
+      <div class="chips">
+        ${have.map((f) => html`<button class="chip ${f === host.activeFamily ? "active" : ""}" title=${`Edit the ${familyTitle(f)} layout`} @click=${() => host.setActiveFamily(f)}>${familyTitle(f)}</button>`)}
+        ${canAdd ? html`<select class="chip-add" title="Add a layout" @change=${(e: Event) => {
+          const sel = e.target as HTMLSelectElement;
+          const f = sel.value as FamilyKind | "";
+          sel.value = "";
+          if (f) host.addFamily(f);
+        }}>
+          <option value="" selected>Add layout…</option>
+          ${missing.map((f) => html`<option value=${f}>${familyTitle(f)}</option>`)}
+        </select>` : nothing}
+      </div>
+    </div>
+    ${host.shapesEditable
+      ? html`<div class="hint">The watch lists this complication in the face picker for these shapes only. Inline is one line of text with no canvas.</div>`
+      : html`<div class="hint warn">${SHAPES_NEED_UPDATE_MESSAGE}</div>`}`;
 }
 
 /** Page picker for the openPage tap action. Options come from the watch's
@@ -669,10 +708,12 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
 // ── Family layout ─────────────────────────────────────────────────────────
 
 export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResult {
+  if (family === "inline") return html`${inlineEditor(host)}${removeLayoutRow(host, family)}`;
   const layout = host.config.perFamily[family];
   if (!layout) {
     return html`<div class="hint">No settings stored for ${familyTitle(family)} yet.</div>
-      <button class="small" @click=${() => host.update((c) => { c.perFamily[family] = { placements: {}, cornerBodyShape: "circle", borderWidth: 2, rules: [] }; })}>Add ${familyTitle(family)} settings</button>`;
+      <button class="small" @click=${() => host.update((c) => { c.perFamily[family] = { placements: {}, cornerBodyShape: "circle", borderWidth: 2, rules: [] }; })}>Add ${familyTitle(family)} settings</button>
+      ${removeLayoutRow(host, family)}`;
   }
   const upd = (mutate: (l: FamilyLayout) => void, k?: string) => host.update((c) => mutate(c.perFamily[family]!), k ? `fam-${family}-${k}` : undefined);
   const placed = Object.keys(layout.placements).length;
@@ -683,7 +724,46 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
     ${family === "corner" ? cornerEditor(host, layout, upd) : nothing}
     <div class="hint">${placed === 0 ? "Layers use their shared frames here." : `${placed} layer${placed === 1 ? " has" : "s have"} a ${familyTitle(family)} placement.`}</div>
     ${placed > 0 ? html`<button class="small" @click=${() => upd((l) => { l.placements = {}; })}>Reset placements to the shared frames</button>` : nothing}
-    <div class="hint">${layout.rules.length === 0 ? "No layout rules." : `${layout.rules.length} layout rule${layout.rules.length === 1 ? "" : "s"}.`} Use the Rules tab to change the background, border, and bezel label from values.</div>`;
+    <div class="hint">${layout.rules.length === 0 ? "No layout rules." : `${layout.rules.length} layout rule${layout.rules.length === 1 ? "" : "s"}.`} Use the Rules tab to change the background, border, and bezel label from values.</div>
+    ${removeLayoutRow(host, family)}`;
+}
+
+/** "Remove layout" sits in the shape's own tab. Disabled on the last
+ * remaining shape (the set is never empty) and on a watch that cannot take a
+ * one-shape document (rule 8). The host confirms when the layout has content. */
+function removeLayoutRow(host: EditorHost, family: FamilyKind): TemplateResult {
+  const last = !canRemoveFamily(host.config, family);
+  const blocked = !host.shapesEditable;
+  const title = last
+    ? "A complication keeps at least one shape."
+    : blocked ? SHAPES_NEED_UPDATE_MESSAGE : `Drop the ${familyTitle(family)} shape. The watch stops listing this complication for ${familyTitle(family)} slots.`;
+  return html`<h3>Shape</h3>
+    <div class="adders">
+      <button class="danger small" ?disabled=${last || blocked} title=${title} @click=${() => host.removeFamily(family)}>Remove ${familyTitle(family)} layout</button>
+    </div>
+    ${last ? html`<div class="hint">This is the only shape. Add another before removing it.</div>` : blocked ? html`<div class="hint warn">${SHAPES_NEED_UPDATE_MESSAGE}</div>` : nothing}`;
+}
+
+/** The Inline shape: one line of text, no canvas. The watch draws
+ * `symbol label: value` and drops the label when the face is narrow. The
+ * value is the same control a text layer uses, so an entity, an attribute or
+ * a template all work; the symbol is the same picker an icon layer uses. */
+function inlineEditor(host: EditorHost): TemplateResult {
+  const inline = host.config.inline;
+  if (!inline) {
+    return html`<div class="hint">This complication lists Inline but has no Inline text yet (it was saved by an older integration). The watch shows "No inline layout" until one is added.</div>
+      <button class="small" @click=${() => host.addFamily("inline")}>Add Inline text</button>`;
+  }
+  const upd = (mutate: (i: NonNullable<CustomComplicationConfig["inline"]>) => void, k?: string) => host.update((c) => { if (c.inline) mutate(c.inline); }, k ? `inline-${k}` : undefined);
+  return html`
+    ${textField("Label (blank = value only)", inline.label ?? "", (v) => upd((i) => { if (v) i.label = v; else delete i.label; }, "label"))}
+    ${valueEditor(host, inline.value, (v) => upd((i) => { i.value = v; }, "value"), { showResolved: true, key: "inline-value" })}
+    ${checkField("Live countdown", inline.countdown === true, (v) => upd((i) => { if (v) i.countdown = true; else delete i.countdown; }))}
+    ${inline.countdown ? html`<div class="hint">Ticks down to the value's target: an active HA timer's finish, or any future timestamp. Paused timers show their remaining time; idle ones show "Idle".</div>` : nothing}
+    <h3>Symbol</h3>
+    ${symbolField(host, inline.symbol ?? "", (v) => upd((i) => { if (v) i.symbol = v; else delete i.symbol; }, "symbol"), "inline-symbol")}
+    <div class="hint">Drawn before the text. Leave blank for text only.</div>
+    <div class="hint">On the face: ${inline.symbol ? `${inline.symbol} ` : ""}${inline.label ? `${inline.label}: ` : ""}${host.resolve(inline.value) ?? "--"}</div>`;
 }
 
 /** Corner-only controls: main content mode (canvas vs big curved text) and the

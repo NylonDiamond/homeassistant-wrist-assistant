@@ -121,7 +121,7 @@ describe("countdown resolution", () => {
       namedValues: [],
       nowMs,
     });
-    const el = layouts.rectangular.elements[0];
+    const el = layouts.rectangular?.elements[0];
     return el?.kind === "text" ? el : undefined;
   };
 
@@ -169,7 +169,7 @@ describe("image resolution", () => {
       templateResults: new Map(),
       namedValues: [],
     });
-    const el = layouts.rectangular.elements[0];
+    const el = layouts.rectangular?.elements[0];
     return el?.kind === "image" ? el : undefined;
   };
 

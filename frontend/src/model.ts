@@ -9,6 +9,9 @@
 
 export type FamilyKind = "rectangular" | "circular" | "corner" | "inline";
 export const DRAWABLE_FAMILIES: FamilyKind[] = ["rectangular", "circular", "corner"];
+/** Every shape, in the order the schema lists them. `layouts.ts` re-exports it
+ * as ALL_FAMILIES for the panel; it lives here so newConfig can order a set. */
+const ALL_FAMILY_ORDER: FamilyKind[] = ["rectangular", "circular", "corner", "inline"];
 
 // The watch face picker always shows the first BASE_SLOTS slots and grows past
 // them only when a higher slot is occupied; MAX_SLOTS is the hard ceiling both
@@ -1199,7 +1202,13 @@ export function defaultLayout(): FamilyLayout {
   return { placements: {}, cornerBodyShape: "circle", borderWidth: 2, rules: [] };
 }
 
-export function newConfig(name: string, slotIndex: number): CustomComplicationConfig {
+/** A fresh document with the given shapes. The default is the three canvas
+ * shapes, which is what a watch that predates per-shape support needs and
+ * what every document had before schema 6; the panel's create dialog passes
+ * one shape. Inline starts with a literal since there is no text layer yet. */
+export function newConfig(name: string, slotIndex: number, families: FamilyKind[] = [...DRAWABLE_FAMILIES]): CustomComplicationConfig {
+  const perFamily: Partial<Record<FamilyKind, FamilyLayout>> = {};
+  for (const f of DRAWABLE_FAMILIES) if (families.includes(f)) perFamily[f] = defaultLayout();
   const cfg: CustomComplicationConfig = {
     schemaVersion: 4,
     id: newId(),
@@ -1207,12 +1216,13 @@ export function newConfig(name: string, slotIndex: number): CustomComplicationCo
     values: [],
     slotIndex,
     elements: [],
-    supportedFamilies: ["rectangular", "circular", "corner"],
-    perFamily: { rectangular: defaultLayout(), circular: defaultLayout(), corner: defaultLayout() },
+    supportedFamilies: ALL_FAMILY_ORDER.filter((f) => families.includes(f)),
+    perFamily,
     dataSources: [],
     refreshMinutes: 15,
     tapAction: { type: "refresh" },
   };
+  if (families.includes("inline")) cfg.inline = { value: literal("Text") };
   cfg.schemaVersion = schemaVersionFor(cfg);
   return cfg;
 }

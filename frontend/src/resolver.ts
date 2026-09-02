@@ -612,21 +612,23 @@ export function resolveInline(inline: InlineLayout, ctx: ResolveContext): Resolv
   return out;
 }
 
-/** Convenience: resolve every drawable family at once, plus Inline when the
- * document supports it. The three canvas entries stay unconditional for the
- * editor's previews; which of them a document actually draws on the watch is
- * `supportedFamilies`. */
+/** Every shape the document supports, resolved at once: the supported canvas
+ * shapes as layouts, plus Inline when the document supports it and carries
+ * one. A shape not in `supportedFamilies` is absent, the same as the watch
+ * (app repo `CustomComplication.resolveDocument`), so a preview never shows a
+ * shape the wrist would not draw. */
+export type ResolvedAll = Partial<Record<"rectangular" | "circular" | "corner", ResolvedLayout>> & { inline?: ResolvedInline };
+
 export function resolveAll(
   config: CustomComplicationConfig,
   ctx: ResolveContext,
   forced?: ForcedBranches,
-): Record<"rectangular" | "circular" | "corner", ResolvedLayout> & { inline?: ResolvedInline } {
+): ResolvedAll {
   const r = new Resolver(ctx);
-  const out: Record<"rectangular" | "circular" | "corner", ResolvedLayout> & { inline?: ResolvedInline } = {
-    rectangular: r.resolveLayout(config, "rectangular", forced),
-    circular: r.resolveLayout(config, "circular", forced),
-    corner: r.resolveLayout(config, "corner", forced),
-  };
+  const out: ResolvedAll = {};
+  for (const family of ["rectangular", "circular", "corner"] as const) {
+    if (config.supportedFamilies.includes(family)) out[family] = r.resolveLayout(config, family, forced);
+  }
   if (config.supportedFamilies.includes("inline") && config.inline) out.inline = resolveInline(config.inline, ctx);
   return out;
 }

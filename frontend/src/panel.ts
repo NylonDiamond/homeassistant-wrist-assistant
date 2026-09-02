@@ -35,6 +35,7 @@ import {
   newElement,
   newId,
   parseConfig,
+  schemaVersionFor,
 } from "./model.js";
 import { SEND_WAIT_MS, describeSend, sendState } from "./send-state.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
@@ -42,10 +43,15 @@ import {
   type EntityState,
   type ForcedBranches,
   type ResolveContext,
+  type ResolvedAll,
+  type ResolvedInline,
   Resolver,
+  countdownRemainingString,
   resolveAll,
 } from "./resolver.js";
 import { CASES, REFERENCE_CASE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, renderLayout, type DrawableFamily, type IconProvider } from "./renderer.js";
+import { ALL_FAMILIES, addFamily, canRemoveFamily, familyContentSummary, firstDrawable, isDrawable, removeFamily, supportedFamilies } from "./layouts.js";
+import { SHAPES_NEED_UPDATE_MESSAGE, watchSupportsShapes } from "./version.js";
 import { makeIconProvider } from "./icons.js";
 import { SymbolBrowser } from "./symbols.js";
 import { Draft } from "./draft.js";
@@ -118,6 +124,9 @@ export class WristAssistantPanel extends LitElement {
   @state() private showRaw = false;
   @state() private inspect: Inspect = { kind: "general" };
   @state() private activeFamily: FamilyKind = "rectangular";
+  /** The New button's shape picker is open. Only offered when the watch can
+   * take a one-shape document; an older watch gets the three-shape default. */
+  @state() private newShapeChooser = false;
   /** Which watch case the previews are drawn in. The reference (46 mm) is scale 1. */
   @state() private previewCase = REFERENCE_CASE.label;
   @state() private loadError?: string;
@@ -295,8 +304,16 @@ export class WristAssistantPanel extends LitElement {
     .hint.warn { opacity: 1; }
     details.sub { margin: 6px 0; }
     details.sub summary { font-size: 12px; opacity: .8; cursor: pointer; }
-    .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+    .chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
     .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 8px; border: 1px solid var(--divider-color); border-radius: 999px; }
+    button.chip { font: inherit; font-size: 12px; background: transparent; color: inherit; cursor: pointer; }
+    button.chip.active { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: transparent; }
+    .chip-add { font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px dashed var(--divider-color); background: transparent; color: inherit; cursor: pointer; }
+    .new-shape { margin: 0 0 10px; }
+    .preview.inline .inline-line { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 200px; padding: 6px 16px; border-radius: 999px; background: #000; color: #fff; font-size: 14px; cursor: pointer; }
+    .preview.inline .inline-line svg { display: inline-block; margin: 0; background: transparent; border-radius: 0; }
+    .preview.inline.active .inline-line { outline: 2px solid var(--primary-color); outline-offset: 3px; }
+    .preview.inline .inline-line.missing { color: #999; font-style: italic; }
     .value-editor { border-left: 2px solid var(--divider-color); padding-left: 10px; margin: 4px 0 8px; }
 
     /* Symbol picker */
@@ -349,8 +366,10 @@ export class WristAssistantPanel extends LitElement {
    * remaining time ticks like it does on the watch. Cleared as soon as no
    * countdown is live (and on disconnect). */
   private countdownTimer?: number;
-  private syncCountdownTicker(layouts: Record<DrawableFamily, ReturnType<Resolver["resolveLayout"]>>) {
-    const live = Object.values(layouts).some((l) =>
+  private syncCountdownTicker(layouts: ResolvedAll) {
+    const canvas = [layouts.rectangular, layouts.circular, layouts.corner]
+      .filter((l): l is ReturnType<Resolver["resolveLayout"]> => l !== undefined);
+    const live = layouts.inline?.countdownEnd !== undefined || canvas.some((l) =>
       l.bezelCountdownEnd !== undefined ||
       l.elements.some((el) => el.kind === "text" && el.countdownEnd !== undefined));
     if (live && this.countdownTimer === undefined) {
@@ -513,8 +532,13 @@ export class WristAssistantPanel extends LitElement {
         this.readOnlyReason = `This document is schema v${schema}; this integration understands up to v${this.maxSchemaVersion}. Update the Wrist Assistant integration to edit it.`;
       } else if (unknown.length > 0) {
         this.readOnlyReason = `This document has fields the panel does not understand, so saving would drop them: ${unknown.slice(0, 5).join(", ")}${unknown.length > 5 ? ` and ${unknown.length - 5} more` : ""}. Update the integration to edit it.`;
+      } else if (!this.shapesEditable && schemaVersionFor(this.draft.config) >= 6) {
+        // A one-shape or Inline document on a watch that predates per-shape
+        // support: the watch skips it, and saving it here could not help.
+        this.readOnlyReason = SHAPES_NEED_UPDATE_MESSAGE;
       }
       this.recompile();
+      this.ensureActiveFamily();
     } catch (err) {
       this.parseError = errText(err);
     }
@@ -529,6 +553,7 @@ export class WristAssistantPanel extends LitElement {
     this.inspect = { kind: "general" };
     this.draft = new Draft(config, null);
     this.recompile();
+    this.ensureActiveFamily();
     this.scheduleTemplates(0);
   }
 
@@ -611,6 +636,7 @@ export class WristAssistantPanel extends LitElement {
   private afterMutation() {
     this.version++;
     this.recompile();
+    this.ensureActiveFamily();
   }
 
   private recompile() {
@@ -654,7 +680,59 @@ export class WristAssistantPanel extends LitElement {
       liveBranch: (rule) => resolver.liveBranches([rule]).get(rule.id) ?? "none",
       forced: this.forced,
       setForced: (ruleId, branch) => this.setForced(ruleId, branch),
+      activeFamily: this.activeFamily,
+      setActiveFamily: (family) => { this.activeFamily = family; this.inspect = { kind: "family" }; },
+      shapesEditable: this.shapesEditable,
+      addFamily: (family) => this.addShape(family),
+      removeFamily: (family) => this.removeShape(family),
     };
+  }
+
+  // ── shapes ────────────────────────────────────────────────────────────
+
+  /** Rule 8: only a watch at or above the per-shape release can take a
+   * document with fewer than three canvas shapes or with Inline. */
+  private get shapesEditable(): boolean {
+    return watchSupportsShapes(this.selectedOwner?.app_version);
+  }
+
+  /** The canvas shape the layer controls work on. Inline has no canvas, so
+   * while it is active the placement fields and drags target the document's
+   * first canvas shape instead. */
+  private get canvasFamily(): DrawableFamily {
+    if (isDrawable(this.activeFamily)) return this.activeFamily;
+    const cfg = this.draft?.config;
+    return (cfg && firstDrawable(cfg)) ?? "rectangular";
+  }
+
+  /** Keep the active shape one the document has: after opening a document
+   * that lacks the previous one, and after a shape is removed. */
+  private ensureActiveFamily() {
+    const cfg = this.draft?.config;
+    if (!cfg || cfg.supportedFamilies.includes(this.activeFamily)) return;
+    this.activeFamily = supportedFamilies(cfg)[0] ?? "rectangular";
+  }
+
+  private addShape(family: FamilyKind) {
+    if (!this.shapesEditable) return;
+    this.mutate((c) => addFamily(c, family));
+    this.activeFamily = family;
+    this.inspect = { kind: "family" };
+  }
+
+  private removeShape(family: FamilyKind) {
+    const cfg = this.draft?.config;
+    if (!cfg || !this.shapesEditable || !canRemoveFamily(cfg, family)) return;
+    const lost = familyContentSummary(cfg, family);
+    if (lost.length > 0 && !window.confirm(`Remove the ${familyTitle(family)} layout? This drops ${lost.join(", ")}.`)) return;
+    this.mutate((c) => removeFamily(c, family));
+    this.ensureActiveFamily();
+    if (this.inspect.kind === "family-rules") this.inspect = { kind: "family" };
+  }
+
+  private createNew(family: FamilyKind) {
+    this.newShapeChooser = false;
+    this.startNew(newConfig("New complication", this.freeSlot(), [family]));
   }
 
   private setForced(ruleId: string, branch: { caseId: string } | "otherwise" | "live") {
@@ -1019,8 +1097,19 @@ export class WristAssistantPanel extends LitElement {
     ].sort((a, b) => a.slot - b.slot);
     return html`<div class="card">
       <h2>Complications<span class="spacer"></span>
-        ${this.hass.user?.is_admin ? html`<button class="small" @click=${() => this.startNew(newConfig("New complication", this.freeSlot()))} ?disabled=${this.freeSlot() < 0}>New</button>` : nothing}
+        ${this.hass.user?.is_admin
+          ? this.shapesEditable
+            ? html`<button class="small" @click=${() => { this.newShapeChooser = !this.newShapeChooser; }} ?disabled=${this.freeSlot() < 0}>New</button>`
+            : html`<button class="small" @click=${() => this.startNew(newConfig("New complication", this.freeSlot()))} ?disabled=${this.freeSlot() < 0}>New</button>`
+          : nothing}
       </h2>
+      ${this.newShapeChooser && this.freeSlot() >= 0 ? html`<div class="new-shape">
+        <div class="hint">Shape of the new complication. More shapes can be added later on its General tab.</div>
+        <div class="adders">
+          ${ALL_FAMILIES.map((f) => html`<button class="small ${f === "rectangular" ? "primary" : ""}" @click=${() => this.createNew(f)}>${familyTitle(f)}</button>`)}
+          <button class="small" @click=${() => { this.newShapeChooser = false; }}>Cancel</button>
+        </div>
+      </div>` : nothing}
       ${rows.length === 0 && !(this.draft && this.draft.baseRevision === null)
         ? html`<div class="empty">No complications for this watch yet.</div>`
         : html`<ul>${rows.map((row) => row.kind === "record"
@@ -1064,7 +1153,7 @@ export class WristAssistantPanel extends LitElement {
     const cfg = this.draft?.config;
     if (!cfg) return nothing;
     const edit = this.canEdit;
-    const family = this.activeFamily;
+    const family = this.canvasFamily;
     const move = (id: string, dir: -1 | 1) => this.mutate((c) => {
       const i = c.elements.findIndex((e) => e.payload.id === id);
       const j = i + dir;
@@ -1098,6 +1187,7 @@ export class WristAssistantPanel extends LitElement {
     const ordered = [...cfg.elements].reverse();
     return html`<div class="card">
       <h2>Layers <span class="meta" style="text-transform:none;letter-spacing:0">(top first)</span></h2>
+      ${this.activeFamily === "inline" ? html`<div class="hint">Inline is one line of text and draws no layers. The controls here apply to the ${familyTitle(family)} layout.</div>` : nothing}
       ${cfg.elements.length === 0 ? html`<div class="empty">No layers.</div>` : nothing}
       ${ordered.map((el) => {
         const id = el.payload.id;
@@ -1131,7 +1221,11 @@ export class WristAssistantPanel extends LitElement {
     this.syncCountdownTicker(layouts);
     const highlightId = this.inspect.kind === "layer" ? this.inspect.id : undefined;
     const watchCase = this.currentCase();
+    // Only the supported shapes draw, the same as the watch. A shape the
+    // document lacks is simply not here; the Layouts row adds it.
     const one = (family: DrawableFamily) => {
+      const layout = layouts[family];
+      if (!layout) return nothing;
       const active = family === this.activeFamily;
       const slot = watchCase.slots[family];
       const fit = fitBox(slot, family);
@@ -1139,10 +1233,11 @@ export class WristAssistantPanel extends LitElement {
       const pct = Math.round(fit.scale * 100);
       return html`
       <div class="preview ${family} ${active ? "active" : ""}" @pointerdown=${(e: PointerEvent) => this.onPreviewPointerDown(family, e)}>
-        ${renderLayout(layouts[family], opts)}
+        ${renderLayout(layout, opts)}
         <div class="label" @click=${() => { this.activeFamily = family; }}>${familyTitle(family)} · ${slot.width}×${slot.height} pt${pct !== 100 ? ` · ${pct}%` : ""}${active ? " · editing" : ""}</div>
       </div>`;
     };
+    const hasRow = layouts.circular !== undefined || layouts.corner !== undefined;
     return html`<div class="card">
       <div class="preview-case">
         <label>Preview as
@@ -1154,9 +1249,33 @@ export class WristAssistantPanel extends LitElement {
       </div>
       <div class="previews">
         ${one("rectangular")}
-        <div class="previews-row">${one("circular")}${one("corner")}</div>
+        ${hasRow ? html`<div class="previews-row">${one("circular")}${one("corner")}</div>` : nothing}
+        ${cfg.supportedFamilies.includes("inline") ? this.renderInlinePreview(layouts.inline) : nothing}
       </div>
-      <div class="hint" style="text-align:center;margin-top:10px">Click a preview to make it the editing family. Drags and placement fields change only that family.</div>
+      <div class="hint" style="text-align:center;margin-top:10px">Click a preview to make it the editing shape. Drags and placement fields change only that shape. Add or remove shapes on the General tab.</div>
+    </div>`;
+  }
+
+  /** The Inline shape as one line: symbol, then `label: value`, the way the
+   * watch draws it on a wide face. A live countdown ticks with the same timer
+   * the canvas previews use. */
+  private renderInlinePreview(inline: ResolvedInline | undefined) {
+    const active = this.activeFamily === "inline";
+    const select = () => { this.activeFamily = "inline"; this.inspect = { kind: "family" }; };
+    let line: TemplateResult;
+    if (!inline) {
+      line = html`<div class="inline-line missing" @click=${select}>No inline layout</div>`;
+    } else {
+      const now = Date.now();
+      const value = inline.countdownEnd !== undefined && inline.countdownEnd > now
+        ? countdownRemainingString((inline.countdownEnd - now) / 1000)
+        : inline.text;
+      const symbol = inline.symbol ? this.icons.render(inline.symbol, 14, "#FFFFFF") : undefined;
+      line = html`<div class="inline-line" @click=${select}>${symbol ?? nothing}<span>${inline.label ? `${inline.label}: ` : ""}${value}</span></div>`;
+    }
+    return html`<div class="preview inline ${active ? "active" : ""}">
+      ${line}
+      <div class="label" @click=${select}>Inline · one line${active ? " · editing" : ""}</div>
     </div>`;
   }
 
@@ -1184,7 +1303,7 @@ export class WristAssistantPanel extends LitElement {
       }
       if (ins.kind === "layer") {
         title = `${el.kind} layer`;
-        body = layerEditor(host, el, this.activeFamily);
+        body = layerEditor(host, el, this.canvasFamily);
       } else {
         title = `${el.kind} layer rules`;
         const id = el.payload.id;
@@ -1192,11 +1311,13 @@ export class WristAssistantPanel extends LitElement {
       }
     } else if (ins.kind === "family-rules") {
       const family = this.activeFamily;
-      const layout = cfg.perFamily[family];
+      const layout = family === "inline" ? undefined : cfg.perFamily[family];
       title = `${familyTitle(family)} layout rules`;
       body = layout
         ? rulesEditor(host, layout.rules, "layout", (c) => c.perFamily[family]?.rules, `rules-${family}`)
-        : html`<div class="hint">Add ${familyTitle(family)} settings first (on the layout tab).</div>`;
+        : family === "inline"
+          ? html`<div class="hint">Inline has no layout rules. Put a rule on the value itself, or use a template.</div>`
+          : html`<div class="hint">Add ${familyTitle(family)} settings first (on the layout tab).</div>`;
     } else if (ins.kind === "data") {
       const nv = cfg.values.find((v) => v.id === ins.id);
       if (!nv) {
@@ -1216,7 +1337,7 @@ export class WristAssistantPanel extends LitElement {
       <div class="tabs">
         ${tab("General", ins.kind === "general", () => { this.inspect = { kind: "general" }; })}
         ${tab(`${familyTitle(this.activeFamily)} layout`, ins.kind === "family", () => { this.inspect = { kind: "family" }; })}
-        ${ins.kind === "family" || ins.kind === "family-rules" ? tab("Rules", ins.kind === "family-rules", () => { this.inspect = { kind: "family-rules" }; }) : nothing}
+        ${(ins.kind === "family" || ins.kind === "family-rules") && this.activeFamily !== "inline" ? tab("Rules", ins.kind === "family-rules", () => { this.inspect = { kind: "family-rules" }; }) : nothing}
         ${ins.kind === "layer" || ins.kind === "layer-rules" ? html`${tab("Layer", ins.kind === "layer", () => { this.inspect = { kind: "layer", id: ins.id }; })}${tab("Rules", ins.kind === "layer-rules", () => { this.inspect = { kind: "layer-rules", id: ins.id }; })}` : nothing}
         ${ins.kind === "data" ? tab("Value", true, () => undefined) : nothing}
       </div>

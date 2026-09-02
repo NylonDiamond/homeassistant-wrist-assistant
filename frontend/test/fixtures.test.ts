@@ -107,10 +107,11 @@ describe.each(files)("fixture %s", (file) => {
       const want = fx.expected[family];
       if (!want) continue;
       const got = layouts[family];
+      expect(got, `${family} is resolved because the document supports it`).toBeDefined();
       expectSubset(got as unknown as Record<string, unknown>, want, family);
-      expect(got.elements.map((e) => e.id), `${family}.elements order`).toEqual(want.elements.map((e) => e.id));
+      expect(got!.elements.map((e) => e.id), `${family}.elements order`).toEqual(want.elements.map((e) => e.id));
       want.elements.forEach((wantEl, i) => {
-        const gotEl = got.elements[i] as ResolvedElement & Record<string, unknown>;
+        const gotEl = got!.elements[i] as ResolvedElement & Record<string, unknown>;
         if (wantEl.kind === "shape") {
           // The fixture names the shape kind `kind`; the resolver uses shapeKind.
           const { shapeKind, ...rest } = wantEl as { shapeKind?: string };
@@ -131,7 +132,7 @@ describe.each(files)("fixture %s", (file) => {
     for (const spec of specs) {
       const forced: ForcedBranches = new Map([[spec.ruleId, spec.branch === "otherwise" ? "otherwise" : { caseId: spec.branch }]]);
       const layouts = resolveAll(config, contextFor(fx), forced);
-      const layout = layouts[spec.family];
+      const layout = layouts[spec.family]!;
       const label = `forced ${spec.ruleId.slice(0, 8)} -> ${spec.branch.slice(0, 8)} in ${spec.family}`;
       if (spec.elementId) {
         const el = layout.elements.find((e) => e.id === spec.elementId);
@@ -150,7 +151,7 @@ describe.each(files)("fixture %s", (file) => {
     if (!forcedSpec) return;
     const forced: ForcedBranches = new Map([[forcedSpec.ruleId, { caseId: forcedSpec.caseId }]]);
     const layouts = resolveAll(config, contextFor(fx), forced);
-    const text = layouts.rectangular.elements.find((e) => e.kind === "text");
+    const text = layouts.rectangular!.elements.find((e) => e.kind === "text");
     expect(text && text.kind === "text" ? text.colorHex : undefined).toBe(forcedSpec.rectangularTextColorHex);
   });
 });
