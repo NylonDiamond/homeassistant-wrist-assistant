@@ -50,12 +50,18 @@ describe("sendState", () => {
   it("offers a re-send once the wait has run out on a connected watch", () => {
     const s = sendState({ token: 4, appliedToken: 3, polling: true, pending: false });
     expect(s.kind).toBe("waiting");
-    expect(describeSend(s).disabled).toBe(false);
+    expect(describeSend(s).resend).toBe(true);
+    expect(describeSend({ kind: "sent" }).resend).toBe(false);
+    expect(describeSend({ kind: "sending" }).resend).toBe(false);
   });
 
-  it("explains when the watch is not connected to this home", () => {
+  // A save lands by itself while the watch app is open on this home, so the
+  // status says what to do (open the app), not a step to take here.
+  it("tells the user to open the watch app when it is not connected", () => {
     const s = sendState({ token: 4, appliedToken: 3, polling: false, pending: true });
     expect(s.kind).toBe("offline");
-    expect(describeSend(s).title).toContain("Sync now");
+    expect(describeSend(s).label).toBe("Open the watch app to sync");
+    expect(describeSend(s).title).toContain("by themselves");
+    expect(describeSend(s).resend).toBe(true);
   });
 });

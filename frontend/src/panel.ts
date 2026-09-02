@@ -209,9 +209,10 @@ export class WristAssistantPanel extends LitElement {
     li.row .meta { font-size: 12px; opacity: .7; }
     li.row.locked { cursor: default; opacity: .6; }
     li.row.locked:hover { background: none; }
-    button.send.sent { color: var(--success-color, #43a047); border-color: currentColor; opacity: 1; }
-    button.send.sending { opacity: .7; }
-    button.send.offline { color: var(--warning-color, #ffa600); }
+    .send { font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+    .send.sent { color: var(--success-color, #43a047); }
+    .send.sending { opacity: .7; }
+    .send.offline { color: var(--warning-color, #ffa600); }
     .previews { display: flex; flex-direction: column; gap: 16px; align-items: center; }
     .preview { text-align: center; position: relative; }
     .preview .label { font-size: 12px; opacity: .7; margin-top: 6px; cursor: pointer; }
@@ -586,7 +587,10 @@ export class WristAssistantPanel extends LitElement {
     });
     if (s.kind === "unsupported") return nothing;
     const d = describeSend(s);
-    return html`<button class="send ${s.kind}" ?disabled=${d.disabled || !this.hass.user?.is_admin} title=${d.title} @click=${() => void this.sendToWatch()}>${s.kind === "sent" ? "✓ " : ""}${d.label}</button>`;
+    const resend = d.resend && this.hass.user?.is_admin
+      ? html`<button class="link" title="Wake the watch again" @click=${() => void this.sendToWatch()}>Resend</button>`
+      : nothing;
+    return html`<span class="send ${s.kind}" title=${d.title}>${s.kind === "sent" ? "✓ " : ""}${d.label}${resend}</span>`;
   }
 
   /** The store refuses a document whose slot is outside 0..MAX_SLOTS-1. */

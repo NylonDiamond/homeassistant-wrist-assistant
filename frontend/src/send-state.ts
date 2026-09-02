@@ -1,11 +1,13 @@
-// The "Send to watch" button, as a pure function of what the server said.
+// The watch status in the panel header, as a pure function of what the
+// server said.
 //
 // The watch pulls its custom complications only when the token on its
 // long-poll reply differs from the one it applied, and it reports the applied
 // token on every poll request. So the server knows two numbers per watch:
 // `token` (what it holds) and `appliedToken` (what the watch last confirmed).
-// Equal means on the wrist. The button exists to make that state visible and
-// to re-wake a watch that missed the first wake.
+// Equal means on the wrist. A save wakes the parked poll, so while the watch
+// app is open on this home a save lands by itself; this status makes that
+// visible, and the Resend link re-wakes a watch that missed the first wake.
 
 export interface SendInputs {
   /** The owner's store token on the server. */
@@ -37,26 +39,27 @@ export function sendState(i: SendInputs): SendState {
   return { kind: "offline" };
 }
 
-/** Button label and title for a state; the title is the explanation. */
-export function describeSend(s: SendState): { label: string; title: string; disabled: boolean } {
+/** Status text and its explanation; `resend` offers the re-wake link. */
+export function describeSend(s: SendState): { label: string; title: string; resend: boolean } {
   switch (s.kind) {
     case "unsupported":
-      return { label: "", title: "", disabled: true };
+      return { label: "", title: "", resend: false };
     case "sent":
-      return { label: "On watch", title: "The watch has applied every change here.", disabled: true };
+      return { label: "On watch", title: "The watch has applied every change here.", resend: false };
     case "sending":
-      return { label: "Sending…", title: "Waiting for the watch to pull and confirm.", disabled: true };
+      return { label: "Sending…", title: "Waiting for the watch to pull and confirm.", resend: false };
     case "waiting":
       return {
-        label: "Send to watch",
-        title: "The watch is connected but has not confirmed the latest change. Tap to wake it again.",
-        disabled: false,
+        label: "Not on watch yet",
+        title: "The watch is connected but has not confirmed the latest change. Resend wakes it again.",
+        resend: true,
       };
     case "offline":
       return {
-        label: "Send to watch",
-        title: "The watch is not connected to this home. Open Wrist Assistant on the watch, or switch it to this home, then tap Sync now.",
-        disabled: false,
+        label: "Open the watch app to sync",
+        title:
+          "Saves reach the watch by themselves while Wrist Assistant is open on this home. Open the app, or switch the watch to this home, and it pulls at once.",
+        resend: true,
       };
   }
 }
