@@ -123,6 +123,10 @@ export class WristAssistantPanel extends LitElement {
   @state() private showRaw = false;
   @state() private inspect: Inspect = { kind: "general" };
   @state() private activeFamily: FamilyKind = "rectangular";
+  /** The name the open complication had when its edit session started, so the
+   * General tab can warn that a rename does not reach the watch face picker.
+   * Undefined for a brand-new complication (nothing is on the watch yet). */
+  @state() private savedName?: string;
   /** The New button's shape picker is open. Only offered when the watch can
    * take a one-shape document; an older watch gets the three-shape default. */
   @state() private newShapeChooser = false;
@@ -525,6 +529,7 @@ export class WristAssistantPanel extends LitElement {
     this.inspect = { kind: "general" };
     try {
       this.draft = Draft.fromDocument(record.document, record.revision);
+      this.savedName = String(record.document?.name ?? "");
       const schema = Number(record.document?.schemaVersion ?? 0);
       const unknown = auditUnknownKeys(record.document);
       if (schema > this.maxSchemaVersion) {
@@ -546,6 +551,7 @@ export class WristAssistantPanel extends LitElement {
     this.clearDraft();
     this.forced = new Map();
     this.inspect = { kind: "general" };
+    this.savedName = undefined;
     this.draft = new Draft(config, null);
     this.recompile();
     this.ensureActiveFamily();
@@ -679,6 +685,7 @@ export class WristAssistantPanel extends LitElement {
       setActiveFamily: (family) => { this.activeFamily = family; this.inspect = { kind: "family" }; },
       addFamily: (family) => this.addShape(family),
       removeFamily: (family) => this.removeShape(family),
+      savedName: this.savedName,
     };
   }
 
@@ -779,6 +786,10 @@ export class WristAssistantPanel extends LitElement {
       this.remoteRevision = undefined;
       this.selectedId = result.record.id;
       this.draft = Draft.fromDocument(result.record.document, result.record.revision);
+      // The saved name is the new baseline: the rename note clears until the
+      // next edit. The watch still caches the picker label, but that is a
+      // one-time re-pick on the wrist, not a per-save nag.
+      this.savedName = String(result.record.document?.name ?? "");
       this.recompile();
       // The commit woke the watch's poll; wait for its ack before offering
       // a manual re-send.

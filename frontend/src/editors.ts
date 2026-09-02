@@ -77,6 +77,9 @@ export interface EditorHost {
   addFamily(family: FamilyKind): void;
   /** Remove a shape and its layout, confirming first when it holds content. */
   removeFamily(family: FamilyKind): void;
+  /** The complication's name when this edit session opened, for the rename
+   * note. Undefined for a brand-new complication (nothing on the watch yet). */
+  savedName?: string;
 }
 
 // ── small controls ────────────────────────────────────────────────────────
@@ -470,12 +473,24 @@ const TAP_TYPES: [TapAction["type"], string][] = [
 // watch face. The face picker lists complications by name, so the number
 // means nothing to the user.
 
+/** Whether the current name differs from the one the watch last had, ignoring
+ * surrounding whitespace and blanks. Undefined `savedName` means a brand-new
+ * complication with nothing on the watch yet, so there is nothing to warn about. */
+export function nameChangedFromWatch(savedName: string | undefined, name: string): boolean {
+  return savedName !== undefined && name.trim() !== "" && name.trim() !== savedName.trim();
+}
+
 export function generalEditor(host: EditorHost): TemplateResult {
   const cfg = host.config;
   const tap = cfg.tapAction;
   const needsEntity = (t: TapAction["type"]) => ["toggleEntity", "runScene", "runScript", "addTodo", "runHTTPAction"].includes(t);
+  // The watch face picker caches each complication's name per widget kind and
+  // does not refresh it after a rename. Warn once the name actually differs
+  // from what the watch last had, so the user knows to re-pick it there.
+  const renamed = nameChangedFromWatch(host.savedName, cfg.name);
   return html`
     ${textField("Name", cfg.name, (v) => host.update((c) => { c.name = v; }, "name"))}
+    ${renamed ? html`<div class="hint warn">The watch face picker keeps the old name until you re-pick this complication on the watch, or restart the watch. The complication itself updates as soon as the watch pulls.</div>` : nothing}
     ${numberField("Refresh every (minutes, 0 = never)", cfg.refreshMinutes ?? 0, (v) => host.update((c) => { c.refreshMinutes = v ?? 0; }, "refresh"), { step: 1, min: 0 })}
     ${selectField("Tap action", tap.type, TAP_TYPES, (v) => host.update((c) => {
       c.tapAction = needsEntity(v) ? { type: v as "toggleEntity", ...("entityId" in c.tapAction ? { entityId: c.tapAction.entityId, displayName: c.tapAction.displayName, domain: c.tapAction.domain } : { entityId: "", displayName: "", domain: "" }) } : { type: v as "refresh" };
