@@ -265,6 +265,12 @@ export interface TapElement extends Omit<ElementBase, "colorSlot"> {
   action: TapAction;
   openPageId?: string;
   openPageName?: string;
+  /** Id of the drawing layer this tap belongs to (the editor's Tappable
+   * checkbox). The tap then copies that layer's frame and per-shape
+   * placements and sits directly above it, so the author never lines a
+   * rectangle up by hand. Encoded only when set; the watch ignores it and
+   * draws the frame exactly as it does for a free-standing tap. */
+  attachedTo?: string;
 }
 
 export type Element =
@@ -647,6 +653,9 @@ export function parseElement(raw: unknown): Element {
       };
       if (typeof p.openPageId === "string") el.openPageId = p.openPageId;
       if (typeof p.openPageName === "string") el.openPageName = p.openPageName;
+      // Element ids are uppercased on the way in, so the owner id has to be
+      // too or nothing would ever match it.
+      if (typeof p.attachedTo === "string") el.attachedTo = p.attachedTo.toUpperCase();
       return { kind: "tap", payload: el };
     }
     default:
@@ -956,6 +965,7 @@ function encodeElement(el: Element): J {
       const o: J = { id: p.id, action: encodeTapAction(p.action) };
       if (p.openPageId !== undefined) o.openPageId = p.openPageId;
       if (p.openPageName !== undefined) o.openPageName = p.openPageName;
+      if (p.attachedTo !== undefined) o.attachedTo = p.attachedTo;
       o.rules = encodeRules(p.rules);
       o.frame = encodeFrame(p.frame);
       o.isHidden = p.isHidden;
@@ -1067,7 +1077,7 @@ const K = {
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex"],
   shape: ["kind", "cornerRadius", "borderColorHex", "borderWidth"],
   image: ["entity", "timestamp"],
-  tap: ["action", "openPageId", "openPageName"],
+  tap: ["action", "openPageId", "openPageName", "attachedTo"],
   colorSlot: ["baseColorHex"],
   rule: ["id", "cases", "otherwise"],
   case: ["id", "when", "then"],
@@ -1342,6 +1352,195 @@ export function ruleValues(rules: Rule[]): Value[] {
     if (rule.otherwise) fromChanges(rule.otherwise);
   }
   return out;
+}
+
+// ── attached taps ─────────────────────────────────────────────────────────
+// A tap layer with `attachedTo` belongs to a drawing layer instead of standing
+// on its own: it copies that layer's frame and per-shape placements and sits
+// directly above it in z-order. Everything here is pure, so the editor never
+// has to remember to keep the two in step; `syncAttachedTaps` runs once after
+// every draft mutation and fixes whatever the edit disturbed.
+
+/** Domains whose entities a tap can sensibly toggle. Starts from the list the
+ * iPhone preset converter uses (PresetCustomConverter) and adds the rest of
+ * what Home Assistant's own toggle service handles. Read only to pick a
+ * default action, so a domain missing here costs the user one dropdown. */
+export const TOGGLEABLE_DOMAINS = [
+  "light", "switch", "fan", "input_boolean", "cover", "lock", "media_player",
+  "siren", "humidifier", "valve", "automation", "group",
+];
+
+/** The entity a drawing layer is about, when it has one: whatever its value or
+ * symbol reads, followed through named values, or a camera's own entity. */
+export function elementEntity(cfg: CustomComplicationConfig, el: Element): EntityRef | undefined {
+  let value = primaryValue(el);
+  for (let hop = 0; value !== undefined && hop < 4; hop++) {
+    const kind = value.kind;
+    if ("entityId" in kind) {
+      return kind.entityId === "" ? undefined : { entityId: kind.entityId, displayName: kind.displayName, domain: kind.domain };
+    }
+    if (kind.kind !== "named") return undefined;
+    const id = kind.id.toUpperCase();
+    value = cfg.values.find((n) => n.id.toUpperCase() === id)?.value;
+  }
+  return undefined;
+}
+
+/** The action a newly attached tap starts with: toggle the layer's own entity
+ * when that entity is something a toggle makes sense for, else the same
+ * default a free-standing tap layer gets. */
+export function defaultAttachedTapAction(cfg: CustomComplicationConfig, owner: Element): TapAction {
+  const ref = elementEntity(cfg, owner);
+  const domain = ref ? (ref.domain || ref.entityId.split(".")[0] || "") : "";
+  if (ref && TOGGLEABLE_DOMAINS.includes(domain)) return { type: "toggleEntity", ...ref, domain };
+  return { type: "refresh" };
+}
+
+/** The tap layers attached to one drawing layer, in document order. */
+export function attachedTapsOf(cfg: CustomComplicationConfig, ownerId: string): Element[] {
+  return cfg.elements.filter((el) => el.kind === "tap" && el.payload.attachedTo === ownerId);
+}
+
+/** Whether this layer is a tap that follows an owner the document still has.
+ * The Layers card hides these rows, and the preview sends their hits to the
+ * owner, so an attached tap is never selected or dragged on its own. */
+export function isAttachedTap(cfg: CustomComplicationConfig, el: Element): boolean {
+  if (el.kind !== "tap" || el.payload.attachedTo === undefined) return false;
+  return cfg.elements.some((o) => o.payload.id === el.payload.attachedTo && o.kind !== "tap");
+}
+
+/**
+ * Glue every attached tap back to its owner: same frame, same per-shape
+ * placements, same hidden state, sitting directly above it in `elements`.
+ * A tap whose owner is gone (or is another tap) loses `attachedTo` and goes
+ * back to being an ordinary free-standing tap rather than disappearing.
+ *
+ * Idempotent, and cheap enough to run after every single edit, which is the
+ * point: drags, resizes, nudges, field edits, per-shape overrides and reorders
+ * all keep the tap aligned without any of them knowing it exists.
+ */
+export function syncAttachedTaps(cfg: CustomComplicationConfig): void {
+  const byId = new Map(cfg.elements.map((el) => [el.payload.id, el] as const));
+  const taps = new Map<string, Element[]>();
+  for (const el of cfg.elements) {
+    if (el.kind !== "tap") continue;
+    const ownerId = el.payload.attachedTo;
+    if (ownerId === undefined) continue;
+    const owner = byId.get(ownerId);
+    if (!owner || owner.kind === "tap" || ownerId === el.payload.id) {
+      delete el.payload.attachedTo;
+      continue;
+    }
+    const list = taps.get(ownerId);
+    if (list) list.push(el);
+    else taps.set(ownerId, [el]);
+  }
+  if (taps.size === 0) return;
+
+  for (const [ownerId, list] of taps) {
+    const owner = byId.get(ownerId)!;
+    for (const tap of list) {
+      tap.payload.frame = { ...owner.payload.frame };
+      // A hidden layer with a live tap area would be a button nobody can see,
+      // so the tap follows the owner's visibility too.
+      tap.payload.isHidden = owner.payload.isHidden;
+      for (const family of DRAWABLE_FAMILIES) {
+        const layout = cfg.perFamily[family];
+        if (!layout) continue;
+        const p = layout.placements[ownerId];
+        // No placement for the owner means it uses the shared frame here, and
+        // so must the tap: an override left behind would strand it.
+        if (p) layout.placements[tap.payload.id] = { frame: { ...p.frame }, isHidden: p.isHidden };
+        else delete layout.placements[tap.payload.id];
+      }
+    }
+  }
+
+  const ordered: Element[] = [];
+  for (const el of cfg.elements) {
+    if (el.kind === "tap" && el.payload.attachedTo !== undefined) continue;
+    ordered.push(el);
+    const list = taps.get(el.payload.id);
+    if (list) ordered.push(...list);
+  }
+  cfg.elements = ordered;
+}
+
+/**
+ * Make a drawing layer tappable and return the tap that now belongs to it.
+ * This is the one way to create an attached tap: the Tappable checkbox calls
+ * it, and so should anything else that builds one (a preset, say). Already
+ * tappable layers are left alone and their existing tap comes back.
+ * Undefined for a missing layer, or for a tap layer (a tap has no tap).
+ */
+export function attachTap(cfg: CustomComplicationConfig, ownerId: string, action?: TapAction): TapElement | undefined {
+  const owner = cfg.elements.find((el) => el.payload.id === ownerId);
+  if (!owner || owner.kind === "tap") return undefined;
+  const existing = attachedTapsOf(cfg, ownerId)[0];
+  if (existing) return existing.payload as TapElement;
+  const el = newElement("tap");
+  const tap = el.payload as TapElement;
+  tap.attachedTo = ownerId;
+  tap.action = action ?? defaultAttachedTapAction(cfg, owner);
+  cfg.elements.push(el);
+  syncAttachedTaps(cfg);
+  return tap;
+}
+
+/** Drop the taps attached to a layer, leaving the layer itself alone. */
+export function detachTaps(cfg: CustomComplicationConfig, ownerId: string): void {
+  const doomed = attachedTapsOf(cfg, ownerId).map((el) => el.payload.id);
+  if (doomed.length === 0) return;
+  cfg.elements = cfg.elements.filter((el) => !doomed.includes(el.payload.id));
+  for (const family of DRAWABLE_FAMILIES) {
+    for (const id of doomed) delete cfg.perFamily[family]?.placements[id];
+  }
+}
+
+/** Delete a layer, the taps attached to it, and every per-shape placement any
+ * of them had. Deleting an owner takes its tap with it: the tap was never a
+ * layer of its own in the editor, so leaving it behind would be a mystery. */
+export function removeElement(cfg: CustomComplicationConfig, id: string): void {
+  detachTaps(cfg, id);
+  cfg.elements = cfg.elements.filter((el) => el.payload.id !== id);
+  for (const family of DRAWABLE_FAMILIES) delete cfg.perFamily[family]?.placements[id];
+  syncAttachedTaps(cfg);
+}
+
+/** Copy a layer (and any tap attached to it) directly above the original,
+ * nudged so the copy is visible. Returns the copy's id. */
+export function duplicateElement(cfg: CustomComplicationConfig, id: string): string | undefined {
+  const index = cfg.elements.findIndex((el) => el.payload.id === id);
+  const src = cfg.elements[index];
+  if (!src) return undefined;
+  const copyId = newId();
+  const copy = structuredClone(src);
+  copy.payload.id = copyId;
+  copy.payload.frame = {
+    ...copy.payload.frame,
+    x: Math.min(0.9, copy.payload.frame.x + 0.05),
+    y: Math.min(0.9, copy.payload.frame.y + 0.05),
+  };
+  const clones: Element[] = [copy];
+  const placementSources: [string, string][] = [[id, copyId]];
+  for (const tap of attachedTapsOf(cfg, id)) {
+    const tapCopy = structuredClone(tap);
+    tapCopy.payload.id = newId();
+    (tapCopy.payload as TapElement).attachedTo = copyId;
+    clones.push(tapCopy);
+    placementSources.push([tap.payload.id, tapCopy.payload.id]);
+  }
+  cfg.elements.splice(index + 1, 0, ...clones);
+  for (const family of DRAWABLE_FAMILIES) {
+    const layout = cfg.perFamily[family];
+    if (!layout) continue;
+    for (const [from, to] of placementSources) {
+      const p = layout.placements[from];
+      if (p) layout.placements[to] = structuredClone(p);
+    }
+  }
+  syncAttachedTaps(cfg);
+  return copyId;
 }
 
 // ── rule construction ─────────────────────────────────────────────────────

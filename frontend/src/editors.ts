@@ -24,6 +24,7 @@ import {
   type StyleChange,
   type StyleChangeKind,
   type TapAction,
+  type TapElement,
   type TimeField,
   type Value,
   type ValueFormat,
@@ -32,7 +33,11 @@ import {
   DRAWABLE_FAMILIES,
   RULE_TARGET_PROPERTIES,
   STYLE_PROPERTY,
+  attachTap,
+  attachedTapsOf,
   comparisonOperand,
+  defaultAttachedTapAction,
+  detachTaps,
   formatIsEmpty,
   literal,
   newCase,
@@ -1085,22 +1090,10 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         <div class="hint">The watch fetches a fresh snapshot on refresh and shows the cached frame in between; the timestamp says when it was taken. This preview shows the camera's live picture.</div>`;
       break;
     case "tap": {
-      const tap = el.payload.action;
-      const needsEntity = (t: TapAction["type"]) => ["toggleEntity", "runScene", "runScript", "addTodo", "runHTTPAction"].includes(t);
       content = html`
-        ${selectField("Tap action", tap.type, LAYER_TAP_TYPES, (v) => upd((e) => {
-          const p = (e as typeof el).payload;
-          p.action = needsEntity(v) ? { type: v as "toggleEntity", ...("entityId" in p.action ? { entityId: p.action.entityId, displayName: p.action.displayName, domain: p.action.domain } : { entityId: "", displayName: "", domain: "" }) } : { type: v as "refresh" };
-          if (v !== "openPage") { delete p.openPageId; delete p.openPageName; }
-        }))}
-        ${"entityId" in tap ? entityField(host, "Target", tap, (ref) => upd((e) => { (e as typeof el).payload.action = { type: tap.type, ...ref }; }, "tap-entity"), `${key}-tap-entity`) : nothing}
-        ${tap.type === "openPage" ? pageChoiceField(host, el.payload.openPageId, el.payload.openPageName, (pid, name) => upd((e) => {
-          const p = (e as typeof el).payload;
-          if (pid === undefined) { delete p.openPageId; delete p.openPageName; return; }
-          p.openPageId = pid;
-          if (name) p.openPageName = name; else delete p.openPageName;
-        }, "tap-page")) : nothing}
-        <div class="hint">An invisible tap area. On the watch, a tap inside this frame runs this action; the rest of the complication keeps the tap action on the General tab. Put it over a row, an icon, or any part you want to respond on its own. Layers higher in the list win where two overlap.</div>`;
+        ${tapActionEditor(host, el.payload, (m, k) => upd((e) => m((e as typeof el).payload), k), key)}
+        <div class="hint">An invisible tap area. On the watch, a tap inside this frame runs this action; the rest of the complication keeps the tap action on the General tab. Put it over a row, an icon, or any part you want to respond on its own. Layers higher in the list win where two overlap.</div>
+        <div class="hint">To make one layer tappable, tick Tappable on that layer instead. Its tap follows the layer and needs no lining up.</div>`;
       break;
     }
   }
@@ -1109,6 +1102,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
     ${content}
     ${el.kind === "image" || el.kind === "tap" ? nothing : colorField(el.kind === "shape" ? "Fill colour" : "Colour", el.payload.colorSlot.baseColorHex, (v) => upd((e) => { if (e.kind !== "image" && e.kind !== "tap") e.payload.colorSlot.baseColorHex = v ?? "#FFFFFF"; }, "color"))}
     ${checkField("Hidden in every family", el.payload.isHidden, (v) => upd((e) => { e.payload.isHidden = v; }))}
+    ${tappableSection(host, el, key)}
     <h3>${familyTitle(family)} placement${eff.fromPlacement ? "" : " (shared frame)"}</h3>
     <div class="grid4">
       ${numberField("X", f.x, (v) => setFrame({ x: v ?? 0 }, "x"), { step: 0.01 })}
@@ -1123,6 +1117,74 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
     </div>`}
     <div class="hint">Drag the layer in the ${familyTitle(family)} preview to move it. Drag a corner to resize it. Frames are fractions of the canvas.</div>
     <div class="hint">${el.payload.rules.length === 0 ? "No rules." : `${el.payload.rules.length} rule${el.payload.rules.length === 1 ? "" : "s"}.`} Use the Rules tab to change how this layer reacts to values.</div>`;
+}
+
+// ── Tappable ──────────────────────────────────────────────────────────────
+
+/**
+ * The action form behind a tap: what it does, the entity it does it to, and
+ * the page picker for Open the page. Shared by a free-standing tap layer's own
+ * editor and by the Tappable section below, so the two can never drift apart.
+ */
+export function tapActionEditor(
+  host: EditorHost,
+  tap: TapElement,
+  upd: (mutate: (p: TapElement) => void, k?: string) => void,
+  key: string,
+): TemplateResult {
+  const action = tap.action;
+  const needsEntity = (t: TapAction["type"]) => ["toggleEntity", "runScene", "runScript", "addTodo", "runHTTPAction"].includes(t);
+  return html`
+    ${selectField("Tap action", action.type, LAYER_TAP_TYPES, (v) => upd((p) => {
+      p.action = needsEntity(v)
+        ? { type: v as "toggleEntity", ...("entityId" in p.action ? { entityId: p.action.entityId, displayName: p.action.displayName, domain: p.action.domain } : { entityId: "", displayName: "", domain: "" }) }
+        : { type: v as "refresh" };
+      if (v !== "openPage") { delete p.openPageId; delete p.openPageName; }
+    }))}
+    ${"entityId" in action ? entityField(host, "Target", action, (ref) => upd((p) => { p.action = { type: action.type, ...ref }; }, "tap-entity"), `${key}-tap`) : nothing}
+    ${action.type === "openPage" ? pageChoiceField(host, tap.openPageId, tap.openPageName, (pid, name) => upd((p) => {
+      if (pid === undefined) { delete p.openPageId; delete p.openPageName; return; }
+      p.openPageId = pid;
+      if (name) p.openPageName = name; else delete p.openPageName;
+    }, "tap-page")) : nothing}`;
+}
+
+/** One-line description of a tap action, for the checkbox hint. */
+function describeTapAction(action: TapAction): string {
+  const label = TAP_TYPES.find(([t]) => t === action.type)?.[1] ?? action.type;
+  if (!("entityId" in action)) return label;
+  const target = action.displayName || action.entityId;
+  return target ? `${label}: ${target}` : label;
+}
+
+/**
+ * "Tappable" on a drawing layer. Ticking it attaches a tap that copies this
+ * layer's frame and per-shape placements, so the author never sizes an
+ * invisible rectangle by hand; the action editor then sits right here, which
+ * is why an attached tap needs no row of its own in the Layers card.
+ */
+function tappableSection(host: EditorHost, el: CElement, key: string): TemplateResult | typeof nothing {
+  // A tap has no tap, and a free-standing tap layer is edited on its own.
+  if (el.kind === "tap") return nothing;
+  const id = el.payload.id;
+  const attached = attachedTapsOf(host.config, id)[0];
+  const updTap = (mutate: (p: TapElement) => void, k?: string) => host.update((c) => {
+    const t = c.elements.find((e) => e.kind === "tap" && e.payload.attachedTo === id);
+    if (t) mutate(t.payload as TapElement);
+  }, k ? `${key}-${k}` : undefined);
+  const preview = defaultAttachedTapAction(host.config, el);
+  return html`
+    <h3>Tap</h3>
+    ${checkField("Tappable", attached !== undefined, (v) => host.update((c) => {
+      if (v) attachTap(c, id);
+      else detachTaps(c, id);
+    }))}
+    ${attached
+      ? html`<div class="value-editor">
+          ${tapActionEditor(host, attached.payload as TapElement, updTap, `${key}-attached`)}
+        </div>
+        <div class="hint">The tap area is this layer's own frame and follows it in every shape, so there is nothing to line up. Unticking Tappable removes it; Undo brings it back with its action.</div>`
+      : html`<div class="hint">Tapping this layer runs an action of its own, instead of the complication's tap action. It starts as <b>${describeTapAction(preview)}</b>.</div>`}`;
 }
 
 // ── Family layout ─────────────────────────────────────────────────────────
