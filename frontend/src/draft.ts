@@ -9,6 +9,40 @@ import { deriveDataSources } from "./compiler.js";
 
 const HISTORY_LIMIT = 100;
 
+/** What a draft's saved state is, for the one line the panel's footer shows
+ * while it is collapsed. */
+export interface DraftStatusInput {
+  /** Revision on the server, or null for a complication never saved. */
+  revision: number | null;
+  dirty: boolean;
+  /** A failed save, which outranks everything else here. */
+  error?: string;
+  /** A template that did not render, which is a live document that is wrong
+   * rather than a document that failed to store. */
+  templateError?: string;
+}
+
+export interface DraftStatus {
+  tone: "ok" | "warn" | "err";
+  text: string;
+}
+
+/**
+ * The footer's summary line.
+ *
+ * Worst news first: a save that failed is the only thing worth reading, then a
+ * template that will not render, then work that is not on the server yet.
+ * Everything fine is the only case that names the revision, because that is
+ * the only case where the number is the whole story.
+ */
+export function draftStatus(i: DraftStatusInput): DraftStatus {
+  if (i.error !== undefined && i.error !== "") return { tone: "err", text: `Not saved: ${i.error}` };
+  if (i.templateError !== undefined && i.templateError !== "") return { tone: "err", text: `Template error: ${i.templateError}` };
+  if (i.dirty) return { tone: "warn", text: "Unsaved changes" };
+  if (i.revision === null) return { tone: "warn", text: "Not saved yet" };
+  return { tone: "ok", text: `Saved, revision ${i.revision}` };
+}
+
 export class Draft {
   /** Revision the draft was loaded from; null for a brand-new complication. */
   readonly baseRevision: number | null;

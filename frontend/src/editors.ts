@@ -40,6 +40,7 @@ import {
   comparisonOperand,
   defaultAttachedTapAction,
   detachTaps,
+  elementEntity,
   formatIsEmpty,
   layerEntityUses,
   literal,
@@ -69,7 +70,6 @@ import {
   setOtherwise,
   setTestedValue,
   shownColumns,
-  statesSummary,
   tableShape,
   whenText,
 } from "./states.js";
@@ -184,14 +184,6 @@ export function entityRefFrom(states: Record<string, HassEntityState>, entityId:
 
 export function entityRefFor(hass: HassLike, entityId: string): EntityRef {
   return entityRefFrom(hass.states, entityId);
-}
-
-/** One shared <datalist> of entity ids; rendered once per panel. Entity fields
- * use the search field below instead, so this is only still here for anything
- * outside this file that asks for it. */
-export function entityDatalist(hass: HassLike, id: string) {
-  const ids = Object.keys(hass.states).sort();
-  return html`<datalist id=${id}>${ids.map((e) => html`<option value=${e}>${String(hass.states[e]?.attributes.friendly_name ?? "")}</option>`)}</datalist>`;
 }
 
 // ── entity search ─────────────────────────────────────────────────────────
@@ -408,7 +400,7 @@ export function entityField(host: EditorHost, label: string, ref: EntityRef, set
   };
 
   const caption = ref.entityId === ""
-    ? html`<div class="hint">Nothing chosen yet. Type a name such as "kitchen" to search.</div>`
+    ? html`<div class="hint">Type part of a name, such as "kitchen".</div>`
     : live
       ? html`<div class="entity-current"><span class="ent-name">${typeof live.attributes.friendly_name === "string" ? live.attributes.friendly_name : ref.entityId}</span><span class="ent-state">${live.state}</span></div>`
       : html`<div class="hint warn">Not in Home Assistant right now.</div>`;
@@ -1191,6 +1183,29 @@ export function layerEntityNote(el: CElement, uses: readonly LayerEntityUse[]): 
   return `Used by ${joinWords(parts)}.${keptNote}`;
 }
 
+/**
+ * One titled band of the inspector's single scroll.
+ *
+ * Deliberately light: a small uppercase title over a hairline, never a
+ * bordered card, because a card inside the inspector's own card is two boxes
+ * saying the same thing. `note` carries what the old tab strip used to say in
+ * its label, such as which shape a placement belongs to.
+ */
+function section(title: string, body: unknown, note?: string): TemplateResult {
+  return html`<section class="sect">
+    <h4>${title}${note === undefined ? nothing : html`<span class="sect-note">${note}</span>`}</h4>
+    ${body}
+  </section>`;
+}
+
+/**
+ * Everything about one layer, as one scroll: what it shows, how it looks,
+ * whether it is tappable, what it does in other states, and where it sits.
+ *
+ * There are no tabs. A layer is one object and the sections are always in the
+ * same order, so the second click after selecting a layer lands on the same
+ * thing every time, whatever was selected before it.
+ */
 export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind): TemplateResult {
   const id = el.payload.id;
   const idx = host.config.elements.findIndex((e) => e.payload.id === id);
@@ -1201,26 +1216,30 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
   const setFrame = (patch: Partial<NormalizedFrame>, k: string) => host.update((c) => setPlacement(c, family, id, { frame: { ...f, ...patch } }), `${key}-${k}-${family}`);
   const sizeLabel = el.kind === "text" ? "Font size" : el.kind === "icon" ? "Icon size" : "Line width";
 
+  // Content is what the layer shows; look is how it is drawn. Splitting them
+  // per kind is the whole difference between a form and a page a person can
+  // skim: the size of a font is never the answer to "what does this say".
   let content: TemplateResult;
+  let look: TemplateResult | undefined;
   switch (el.kind) {
     case "text":
       content = html`
         ${valueEditor(host, el.payload.value, (v) => upd((e) => { (e as typeof el).payload.value = v; }, "value"), { showResolved: true, label: "Text", key: `${key}-value` })}
-        <div class="grid2">
-          ${numberField("Font size (pt)", el.payload.fontSize, (v) => upd((e) => { (e as typeof el).payload.fontSize = v ?? 14; }, "size"), { step: 1, min: 4 })}
-          ${selectField("Weight", el.payload.fontWeight, FONT_WEIGHTS, (v) => upd((e) => { (e as typeof el).payload.fontWeight = v; }))}
-        </div>
         ${checkField("Live countdown", el.payload.countdown === true, (v) => upd((e) => {
           const p = (e as typeof el).payload;
           if (v) p.countdown = true; else delete p.countdown;
         }))}
-        ${el.payload.countdown ? html`<div class="hint">Ticks down to the value's target: an active HA timer's finish, or any future timestamp. Paused timers show their remaining time; idle ones show "Idle".</div>` : nothing}`;
+        ${el.payload.countdown ? html`<div class="hint">Ticks down to the value's target: an active timer's finish, or any future timestamp. A paused timer shows its remaining time.</div>` : nothing}`;
+      look = html`<div class="grid2">
+          ${numberField("Font size (pt)", el.payload.fontSize, (v) => upd((e) => { (e as typeof el).payload.fontSize = v ?? 14; }, "size"), { step: 1, min: 4 })}
+          ${selectField("Weight", el.payload.fontWeight, FONT_WEIGHTS, (v) => upd((e) => { (e as typeof el).payload.fontWeight = v; }))}
+        </div>`;
       break;
     case "icon":
       content = html`
         ${valueEditor(host, el.payload.symbol, (v) => upd((e) => { (e as typeof el).payload.symbol = v; }, "symbol"), { noFormat: true, showResolved: true, symbol: true, label: "Symbol", key: `${key}-symbol` })}
-        <div class="hint">An entity source uses that entity's own icon instead.</div>
-        ${numberField("Icon size (pt)", el.payload.size, (v) => upd((e) => { (e as typeof el).payload.size = v ?? 14; }, "size"), { step: 1, min: 4 })}`;
+        <div class="hint">An entity source draws that entity's own icon instead.</div>`;
+      look = numberField("Icon size (pt)", el.payload.size, (v) => upd((e) => { (e as typeof el).payload.size = v ?? 14; }, "size"), { step: 1, min: 4 });
       break;
     case "gauge":
       content = html`
@@ -1228,17 +1247,20 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         <div class="grid2">
           ${numberField("Min", el.payload.minValue, (v) => upd((e) => { (e as typeof el).payload.minValue = v ?? 0; }, "min"))}
           ${numberField("Max", el.payload.maxValue, (v) => upd((e) => { (e as typeof el).payload.maxValue = v ?? 100; }, "max"))}
+        </div>`;
+      look = html`
+        <div class="grid2">
           ${selectField("Style", el.payload.style, [["arc", "Arc (270°)"], ["ring", "Ring"], ["bar", "Bar"]], (v) => upd((e) => { (e as typeof el).payload.style = v; }))}
           ${numberField("Line width (pt)", el.payload.lineWidth, (v) => upd((e) => { (e as typeof el).payload.lineWidth = v ?? 4; }, "lw"), { step: 0.5, min: 0.5 })}
         </div>
         ${colorField("Track colour", el.payload.trackColorHex, (v) => upd((e) => { (e as typeof el).payload.trackColorHex = v ?? "#FFFFFF40"; }, "track"))}`;
       break;
     case "shape":
-      content = html`
-        <div class="grid2">
+      content = html`<div class="grid2">
           ${selectField("Shape", el.payload.kind, [["roundedRectangle", "Rounded rectangle"], ["rectangle", "Rectangle"], ["capsule", "Capsule"], ["circle", "Circle"]], (v) => upd((e) => { (e as typeof el).payload.kind = v; }))}
           ${el.payload.kind === "roundedRectangle" ? numberField("Corner radius (pt)", el.payload.cornerRadius, (v) => upd((e) => { (e as typeof el).payload.cornerRadius = v ?? 6; }, "radius"), { step: 0.5, min: 0 }) : nothing}
-        </div>
+        </div>`;
+      look = html`
         ${colorField("Border colour", el.payload.borderColorHex, (v) => upd((e) => { if (v === undefined) delete (e as typeof el).payload.borderColorHex; else (e as typeof el).payload.borderColorHex = v; }, "border"), true)}
         ${el.payload.borderColorHex !== undefined ? numberField("Border width (pt)", el.payload.borderWidth, (v) => upd((e) => { (e as typeof el).payload.borderWidth = v ?? 1; }, "bw"), { step: 0.5, min: 0 }) : nothing}`;
       break;
@@ -1249,37 +1271,46 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
           const p = (e as typeof el).payload;
           if (v) p.timestamp = true; else delete p.timestamp;
         }))}
-        <div class="hint">The watch fetches a fresh snapshot on refresh and shows the cached frame in between; the timestamp says when it was taken. This preview shows the camera's live picture.</div>`;
+        <div class="hint">The watch fetches a snapshot on refresh and shows the cached frame in between. This preview shows the camera live.</div>`;
       break;
     case "tap": {
       content = html`
         ${tapActionEditor(host, el.payload, (m, k) => upd((e) => m((e as typeof el).payload), k), key)}
-        <div class="hint">An invisible tap area. On the watch, a tap inside this frame runs this action; the rest of the complication keeps the tap action on the General tab. Put it over a row, an icon, or any part you want to respond on its own. Layers higher in the list win where two overlap.</div>
-        <div class="hint">To make one layer tappable, tick Tappable on that layer instead. Its tap follows the layer and needs no lining up.</div>`;
+        <div class="hint">An invisible area: a tap inside this frame runs this action, and the layer highest in the list wins where two overlap.</div>
+        <div class="hint">To make one layer tappable, tick Tappable on that layer instead.</div>`;
       break;
     }
   }
 
+  const colour = el.kind === "image" || el.kind === "tap"
+    ? undefined
+    : colorField(el.kind === "shape" ? "Fill colour" : "Colour", el.payload.colorSlot.baseColorHex, (v) => upd((e) => { if (e.kind !== "image" && e.kind !== "tap") e.payload.colorSlot.baseColorHex = v ?? "#FFFFFF"; }, "color"));
+
+  // A layer already bound to an entity is what a new states table tests, so the
+  // entity is asked for once at the top of this editor and never again.
+  const ref = elementEntity(host.config, el);
+  const tested: Value | undefined = ref ? { kind: { kind: "entityState", ...ref } } : undefined;
+
   return html`
-    ${el.kind === "tap" ? nothing : layerEntityField(host, el, key)}
-    ${content}
-    ${el.kind === "image" || el.kind === "tap" ? nothing : colorField(el.kind === "shape" ? "Fill colour" : "Colour", el.payload.colorSlot.baseColorHex, (v) => upd((e) => { if (e.kind !== "image" && e.kind !== "tap") e.payload.colorSlot.baseColorHex = v ?? "#FFFFFF"; }, "color"))}
-    ${checkField("Hidden in every family", el.payload.isHidden, (v) => upd((e) => { e.payload.isHidden = v; }))}
-    ${tappableSection(host, el, key)}
-    <h3>${familyTitle(family)} placement${eff.fromPlacement ? "" : " (shared frame)"}</h3>
-    <div class="grid4">
-      ${numberField("X", f.x, (v) => setFrame({ x: v ?? 0 }, "x"), { step: 0.01 })}
-      ${numberField("Y", f.y, (v) => setFrame({ y: v ?? 0 }, "y"), { step: 0.01 })}
-      ${numberField("W", f.width, (v) => setFrame({ width: v ?? 0.5 }, "w"), { step: 0.01, min: 0 })}
-      ${numberField("H", f.height, (v) => setFrame({ height: v ?? 0.5 }, "h"), { step: 0.01, min: 0 })}
-    </div>
-    ${numberField("Rotation (degrees)", f.rotationDegrees, (v) => setFrame({ rotationDegrees: v ?? 0 }, "rot"), { step: 1 })}
-    ${checkField(`Hidden in ${familyTitle(family)}`, eff.isHidden, (v) => host.update((c) => setPlacement(c, family, id, { isHidden: v })))}
-    ${el.kind === "shape" || el.kind === "image" || el.kind === "tap" ? nothing : html`<div class="row-inline">
-      ${numberField(`${sizeLabel} in ${familyTitle(family)} (blank = shared ${elementSize(el)})`, eff.size, (v) => host.update((c) => (v === undefined ? setPlacement(c, family, id, {}, true) : setPlacement(c, family, id, { size: v })), `${key}-psize-${family}`), { step: 1, min: 1, optional: true })}
-    </div>`}
-    <div class="hint">Drag the layer in the ${familyTitle(family)} preview to move it. Drag a corner to resize it. Frames are fractions of the canvas.</div>
-    <div class="hint">${statesSummary(el.payload.rules)} Use the States tab to give this layer a different look when a value changes.</div>`;
+    ${section("Content", html`${el.kind === "tap" ? nothing : layerEntityField(host, el, key)}${content}`)}
+    ${look === undefined && colour === undefined ? nothing : section("Look", html`${look ?? nothing}${colour ?? nothing}`)}
+    ${el.kind === "tap" ? nothing : section("Tappable", tappableSection(host, el, key))}
+    ${section("States", statesEditor(host, el.payload.rules, el.kind,
+      (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`, tested))}
+    ${section("Placement", html`
+      <div class="grid4">
+        ${numberField("X", f.x, (v) => setFrame({ x: v ?? 0 }, "x"), { step: 0.01 })}
+        ${numberField("Y", f.y, (v) => setFrame({ y: v ?? 0 }, "y"), { step: 0.01 })}
+        ${numberField("W", f.width, (v) => setFrame({ width: v ?? 0.5 }, "w"), { step: 0.01, min: 0 })}
+        ${numberField("H", f.height, (v) => setFrame({ height: v ?? 0.5 }, "h"), { step: 0.01, min: 0 })}
+      </div>
+      ${numberField("Rotation (degrees)", f.rotationDegrees, (v) => setFrame({ rotationDegrees: v ?? 0 }, "rot"), { step: 1 })}
+      ${el.kind === "shape" || el.kind === "image" || el.kind === "tap" ? nothing
+        : numberField(`${sizeLabel} in ${familyTitle(family)} (blank = shared ${elementSize(el)})`, eff.size, (v) => host.update((c) => (v === undefined ? setPlacement(c, family, id, {}, true) : setPlacement(c, family, id, { size: v })), `${key}-psize-${family}`), { step: 1, min: 1, optional: true })}
+      ${checkField(`Hidden in ${familyTitle(family)}`, eff.isHidden, (v) => host.update((c) => setPlacement(c, family, id, { isHidden: v })))}
+      ${checkField("Hidden in every shape", el.payload.isHidden, (v) => upd((e) => { e.payload.isHidden = v; }))}
+      <div class="hint">Drag the layer in the ${familyTitle(family)} preview to move it, or a corner to resize it. Frames are fractions of the canvas.</div>`,
+      `${familyTitle(family)}${eff.fromPlacement ? "" : " · shared frame"}`)}`;
 }
 
 // ── Tappable ──────────────────────────────────────────────────────────────
@@ -1337,7 +1368,6 @@ function tappableSection(host: EditorHost, el: CElement, key: string): TemplateR
   }, k ? `${key}-${k}` : undefined);
   const preview = defaultAttachedTapAction(host.config, el);
   return html`
-    <h3>Tap</h3>
     ${checkField("Tappable", attached !== undefined, (v) => host.update((c) => {
       if (v) attachTap(c, id);
       else detachTaps(c, id);
@@ -1346,7 +1376,7 @@ function tappableSection(host: EditorHost, el: CElement, key: string): TemplateR
       ? html`<div class="value-editor">
           ${tapActionEditor(host, attached.payload as TapElement, updTap, `${key}-attached`)}
         </div>
-        <div class="hint">The tap area is this layer's own frame and follows it in every shape, so there is nothing to line up. Unticking Tappable removes it; Undo brings it back with its action.</div>`
+        <div class="hint">The tap area follows this layer's frame in every shape, so there is nothing to line up.</div>`
       : html`<div class="hint">Tapping this layer runs an action of its own, instead of the complication's tap action. It starts as <b>${describeTapAction(preview)}</b>.</div>`}`;
 }
 
@@ -1362,18 +1392,22 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
   }
   const upd = (mutate: (l: FamilyLayout) => void, k?: string) => host.update((c) => mutate(c.perFamily[family]!), k ? `fam-${family}-${k}` : undefined);
   const placed = Object.keys(layout.placements).length;
+  // Same sections as a layer, in the same order and for the same reason: a
+  // shape is another object in the one inspector, not another tab.
   return html`
-    ${colorField("Background (blank = transparent)", layout.backgroundColorHex, (v) => upd((l) => { if (v === undefined) delete l.backgroundColorHex; else l.backgroundColorHex = v; }, "bg"), true)}
-    ${colorField("Border colour", layout.borderColorHex, (v) => upd((l) => { if (v === undefined) delete l.borderColorHex; else l.borderColorHex = v; }, "border"), true)}
-    ${numberField("Border width (pt)", layout.borderWidth, (v) => upd((l) => { l.borderWidth = v ?? 2; }, "bw"), { step: 0.5, min: 0 })}
-    ${family === "corner" ? cornerEditor(host, layout, upd) : nothing}
-    <div class="hint">${placed === 0 ? "Layers use their shared frames here." : `${placed} layer${placed === 1 ? " has" : "s have"} a ${familyTitle(family)} placement.`}</div>
-    ${placed > 0 ? html`<button class="small" @click=${() => upd((l) => { l.placements = {}; })}>Reset placements to the shared frames</button>` : nothing}
-    <div class="hint">${statesSummary(layout.rules)} Use the States tab to change the background, border and bezel label from values.</div>
+    ${section("Look", html`
+      ${colorField("Background (blank = transparent)", layout.backgroundColorHex, (v) => upd((l) => { if (v === undefined) delete l.backgroundColorHex; else l.backgroundColorHex = v; }, "bg"), true)}
+      ${colorField("Border colour", layout.borderColorHex, (v) => upd((l) => { if (v === undefined) delete l.borderColorHex; else l.borderColorHex = v; }, "border"), true)}
+      ${numberField("Border width (pt)", layout.borderWidth, (v) => upd((l) => { l.borderWidth = v ?? 2; }, "bw"), { step: 0.5, min: 0 })}`)}
+    ${family === "corner" ? section("Corner content", cornerEditor(host, layout, upd)) : nothing}
+    ${section("States", statesEditor(host, layout.rules, "layout", (c) => c.perFamily[family]?.rules, `rules-${family}`))}
+    ${section("Placements", html`
+      <div class="hint">${placed === 0 ? "Layers use their shared frames here." : `${placed} layer${placed === 1 ? " has" : "s have"} a ${familyTitle(family)} placement.`}</div>
+      ${placed > 0 ? html`<button class="small" @click=${() => upd((l) => { l.placements = {}; })}>Reset placements to the shared frames</button>` : nothing}`)}
     ${removeLayoutRow(host, family)}`;
 }
 
-/** "Remove layout" sits in the shape's own tab. Disabled on the last
+/** "Remove layout" sits in the shape's own selection. Disabled on the last
  * remaining shape (the set is never empty). The host confirms when the
  * layout has content. */
 function removeLayoutRow(host: EditorHost, family: FamilyKind): TemplateResult {
@@ -1381,11 +1415,11 @@ function removeLayoutRow(host: EditorHost, family: FamilyKind): TemplateResult {
   const title = last
     ? "A complication keeps at least one shape."
     : `Drop the ${familyTitle(family)} shape. The watch stops listing this complication for ${familyTitle(family)} slots.`;
-  return html`<h3>Shape</h3>
+  return section("Shape", html`
     <div class="adders">
       <button class="danger small" ?disabled=${last} title=${title} @click=${() => host.removeFamily(family)}>Remove ${familyTitle(family)} layout</button>
     </div>
-    ${last ? html`<div class="hint">This is the only shape. Add another before removing it.</div>` : nothing}`;
+    ${last ? html`<div class="hint">This is the only shape. Add another before removing it.</div>` : nothing}`);
 }
 
 /** The Inline shape: one line of text, no canvas. The watch draws
@@ -1400,14 +1434,15 @@ function inlineEditor(host: EditorHost): TemplateResult {
   }
   const upd = (mutate: (i: NonNullable<CustomComplicationConfig["inline"]>) => void, k?: string) => host.update((c) => { if (c.inline) mutate(c.inline); }, k ? `inline-${k}` : undefined);
   return html`
-    ${textField("Label (blank = value only)", inline.label ?? "", (v) => upd((i) => { if (v) i.label = v; else delete i.label; }, "label"))}
-    ${valueEditor(host, inline.value, (v) => upd((i) => { i.value = v; }, "value"), { showResolved: true, label: "Text", key: "inline-value" })}
-    ${checkField("Live countdown", inline.countdown === true, (v) => upd((i) => { if (v) i.countdown = true; else delete i.countdown; }))}
-    ${inline.countdown ? html`<div class="hint">Ticks down to the value's target: an active HA timer's finish, or any future timestamp. Paused timers show their remaining time; idle ones show "Idle".</div>` : nothing}
-    <h3>Symbol</h3>
-    ${symbolField(host, inline.symbol ?? "", (v) => upd((i) => { if (v) i.symbol = v; else delete i.symbol; }, "symbol"), "inline-symbol")}
-    <div class="hint">Drawn before the text. Leave blank for text only.</div>
-    <div class="hint">On the face: ${inline.symbol ? `${inline.symbol} ` : ""}${inline.label ? `${inline.label}: ` : ""}${host.resolve(inline.value) ?? "--"}</div>`;
+    ${section("Content", html`
+      ${textField("Label (blank = value only)", inline.label ?? "", (v) => upd((i) => { if (v) i.label = v; else delete i.label; }, "label"))}
+      ${valueEditor(host, inline.value, (v) => upd((i) => { i.value = v; }, "value"), { showResolved: true, label: "Text", key: "inline-value" })}
+      ${checkField("Live countdown", inline.countdown === true, (v) => upd((i) => { if (v) i.countdown = true; else delete i.countdown; }))}
+      ${inline.countdown ? html`<div class="hint">Ticks down to the value's target: an active timer's finish, or any future timestamp. A paused timer shows its remaining time.</div>` : nothing}`)}
+    ${section("Symbol", html`
+      ${symbolField(host, inline.symbol ?? "", (v) => upd((i) => { if (v) i.symbol = v; else delete i.symbol; }, "symbol"), "inline-symbol")}
+      <div class="hint">Drawn before the text. Leave it blank for text only.</div>
+      <div class="hint">On the face: ${inline.symbol ? `${inline.symbol} ` : ""}${inline.label ? `${inline.label}: ` : ""}${host.resolve(inline.value) ?? "--"}</div>`)}`;
 }
 
 /** Corner-only controls: main content mode (canvas vs big curved text) and the
@@ -1420,7 +1455,6 @@ function cornerEditor(
   const mode: "canvas" | "curved" = layout.curvedText ? "curved" : "canvas";
   const bezelKind: "none" | "text" | "gauge" = layout.bezelGauge ? "gauge" : layout.bezelText ? "text" : "none";
   return html`
-    <h3>Corner content</h3>
     ${selectField("Main content", mode, [["canvas", "Layer canvas (circle)"], ["curved", "Big curved text"]], (v) => upd((l) => {
       if (v === "curved") { if (!l.curvedText) l.curvedText = literal("Text"); }
       else { delete l.curvedText; delete l.curvedColorHex; }
@@ -1763,8 +1797,8 @@ const pendingColumnRemoval = new Map<string, StyleProperty>();
 const pendingTestValues = new Map<string, Value>();
 
 /**
- * The Rules tab for a layer: the states table when the rules are one, today's
- * `rulesEditor` when they are not.
+ * The States section of a layer: the states table when the rules are one,
+ * today's `rulesEditor` when they are not.
  *
  * `defaultValue` is what a brand-new table tests, which the panel fills in
  * from the layer's own entity: a light layer already knows it is about the
@@ -1878,7 +1912,7 @@ function statesTable(
   return html`
     <div class="states">
       ${valueEditor(host, tested ?? literal(""), setTested, { label: "Testing", showResolved: true, key: `${key}-lhs` })}
-      ${tested === undefined ? html`<div class="hint">Choose what these states look at. A layer bound to an entity fills this in for you.</div>` : nothing}
+      ${tested === undefined ? html`<div class="hint">Choose what these states look at.</div>` : nothing}
       <table class="states-table">
         <thead>
           <tr>
@@ -1933,7 +1967,7 @@ function statesTable(
       <div class="hint">${numberMode
         ? "States are checked top to bottom and the first match wins, so each band only has to say where it starts."
         : "States are checked top to bottom and the first match wins. Otherwise applies when none of them do."}</div>
-      <div class="hint">Click a row to hold the previews on it. Click it again for the live value.</div>
+      <div class="hint">Click a row to hold the previews on it, and again to go back to live.</div>
       <div class="states-switch">
         <button class="link" @click=${(e: Event) => { advancedRules.add(key); requestRerender(e.target); }}>Advanced</button>
         <span class="hint">Several rules, several tests per state, or a regular expression.</span>

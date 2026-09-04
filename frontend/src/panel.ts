@@ -2,7 +2,7 @@
 // Pick a watch, pick a complication, edit a browser-side draft with live
 // previews for all three families, then Save with the record's revision so
 // a concurrent edit is caught instead of overwritten (plan §"Save and
-// conflict rules"). Rules are edited in the inspector's Rules tab.
+// conflict rules"). Rules are edited in the inspector's States section.
 
 import { LitElement, html, css, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
@@ -31,7 +31,6 @@ import {
   attachedTapsOf,
   auditUnknownKeys,
   duplicateElement,
-  elementEntity,
   freeSlotFrom,
   isAttachedTap,
   newConfig,
@@ -57,13 +56,15 @@ import { ALL_FAMILIES, addFamily, canRemoveFamily, familyContentSummary, firstDr
 import { updateWatchMessage, watchSupportsShapes } from "./version.js";
 import { makeIconProvider } from "./icons.js";
 import { SymbolBrowser } from "./symbols.js";
-import { Draft } from "./draft.js";
+import { Draft, draftStatus } from "./draft.js";
+import { statesSummary } from "./states.js";
 import { beginGesture, type HandleCorner } from "./interact.js";
 import {
+  type DescribeContext,
   type EditorHost,
+  describeContext,
   describeValue,
   effectivePlacement,
-  entityDatalist,
   entityField,
   entitySearchOpen,
   familyEditor,
@@ -72,7 +73,6 @@ import {
   namedValueEditor,
   newNamedValue,
   setPlacement,
-  statesEditor,
 } from "./editors.js";
 import { type PresetEnv, type PresetKind, LAYER_PRESETS, applyPreset, presetSpec } from "./presets.js";
 
@@ -83,13 +83,19 @@ const TEMPLATE_DEBOUNCE_MS = 500;
  * one key; the field's transient search state lives in editors.ts under it. */
 const PRESET_ENTITY_KEY = "preset-entity";
 
+/** What the inspector is showing. One object, one selection: a layer's states
+ * and its placement are sections of the layer, not selections of their own. */
 type Inspect =
   | { kind: "general" }
   | { kind: "family" }
   | { kind: "data"; id: string }
-  | { kind: "layer"; id: string }
-  | { kind: "layer-rules"; id: string }
-  | { kind: "family-rules" };
+  | { kind: "layer"; id: string };
+
+/** Identity of a selection, so a re-render can tell "the same thing changed"
+ * from "something else is selected now". */
+function inspectKey(i: Inspect): string {
+  return "id" in i ? `${i.kind}:${i.id}` : i.kind;
+}
 
 type Conflict = { current: ComplicationRecord | null; message: string };
 
@@ -172,7 +178,10 @@ export class WristAssistantPanel extends LitElement {
 
   static override styles = css`
     :host {
-      display: block;
+      /* Column so the footer can sit under a layout that takes the rest of the
+         height, rather than being pushed off the bottom of the page. */
+      display: flex;
+      flex-direction: column;
       height: 100%;
       color: var(--primary-text-color);
       background: var(--primary-background-color);
@@ -207,16 +216,44 @@ export class WristAssistantPanel extends LitElement {
       grid-template-columns: 270px minmax(0, 1fr) 340px;
       gap: 16px;
       padding: 16px;
-      height: calc(100% - 52px);
+      flex: 1 1 auto;
+      min-height: 0;
       box-sizing: border-box;
       overflow: hidden;
     }
     @media (max-width: 1180px) {
-      .layout { grid-template-columns: 270px minmax(0, 1fr); height: auto; overflow: auto; }
+      .layout { grid-template-columns: 270px minmax(0, 1fr); overflow: auto; }
       .layout > .column:nth-child(3) { grid-column: 1 / -1; }
     }
-    .layout.narrow, .layout.narrow > .column:nth-child(3) { grid-template-columns: 1fr; grid-column: auto; height: auto; overflow: auto; }
+    .layout.narrow, .layout.narrow > .column:nth-child(3) { grid-template-columns: 1fr; grid-column: auto; overflow: auto; }
     .column { overflow: auto; min-height: 0; }
+
+    /* Status and the raw document: one line at the foot of the panel, shut by
+       default, saying only whether the work is saved. */
+    details.foot { flex: none; border-top: 1px solid var(--divider-color); background: var(--card-background-color, #fff); }
+    details.foot > summary { display: flex; align-items: center; gap: 8px; padding: 8px 16px; font-size: 13px; cursor: pointer; list-style: none; }
+    details.foot > summary::-webkit-details-marker { display: none; }
+    details.foot > summary:hover { background: var(--secondary-background-color); }
+    details.foot .foot-dot { font-size: 10px; }
+    details.foot .foot-dot.ok { color: var(--success-color, #43a047); }
+    details.foot .foot-dot.warn { color: var(--warning-color, #ffa600); }
+    details.foot .foot-dot.err { color: var(--error-color, #db4437); }
+    details.foot .foot-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    details.foot .foot-more { font-size: 12px; opacity: .6; }
+    details.foot[open] .foot-more { opacity: .4; }
+    details.foot .foot-body { padding: 0 16px 12px; max-height: 40vh; overflow: auto; }
+    details.foot .foot-body .hint { margin: 8px 0; }
+
+    /* Inspector sections: one scroll, no tabs. A hairline and a small title,
+       because a bordered box inside the inspector's own card is two boxes
+       saying the same thing. */
+    .sect { padding: 12px 0 2px; border-top: 1px solid var(--divider-color); }
+    .sect:first-of-type { padding-top: 2px; border-top: none; }
+    .sect > h4 {
+      display: flex; align-items: baseline; gap: 8px; margin: 0 0 6px;
+      font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; opacity: .6;
+    }
+    .sect > h4 .sect-note { font-size: 11px; font-weight: 400; text-transform: none; letter-spacing: 0; opacity: .75; }
     .card {
       background: var(--card-background-color, #fff);
       border-radius: var(--ha-card-border-radius, 12px);
@@ -257,7 +294,6 @@ export class WristAssistantPanel extends LitElement {
     .preview-case label { font-size: 13px; display: flex; align-items: center; gap: 8px; }
     .preview-case select { font: inherit; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--divider-color, #444); background: var(--card-background-color, #1c1c1e); color: inherit; }
     .previews-row { display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; }
-    .status { font-size: 13px; line-height: 1.5; }
     .ok { color: var(--success-color, #43a047); }
     .warn { color: var(--warning-color, #ffa600); }
     .err, .error { color: var(--error-color, #db4437); }
@@ -516,7 +552,17 @@ export class WristAssistantPanel extends LitElement {
     }
   }
 
+  /** The selection the inspector was last drawn for. A re-render for an edit
+   * keeps its scroll position; a different selection starts at the top. */
+  private lastInspectKey?: string;
+
   protected override updated(changed: PropertyValues) {
+    const key = inspectKey(this.inspect);
+    if (key !== this.lastInspectKey) {
+      this.lastInspectKey = key;
+      const column = this.renderRoot.querySelector<HTMLElement>(".column.inspector");
+      if (column) column.scrollTop = 0;
+    }
     if (changed.has("hass") && this.draft) {
       const snapshot: Record<string, unknown> = {};
       for (const id of this.compiled?.entities.keys() ?? []) snapshot[id] = this.hass.states[id]?.last_updated;
@@ -864,7 +910,6 @@ export class WristAssistantPanel extends LitElement {
     if (lost.length > 0 && !window.confirm(`Remove the ${familyTitle(family)} layout? This drops ${lost.join(", ")}.`)) return;
     this.mutate((c) => removeFamily(c, family));
     this.ensureActiveFamily();
-    if (this.inspect.kind === "family-rules") this.inspect = { kind: "family" };
   }
 
   private createNew(family: FamilyKind) {
@@ -1144,7 +1189,6 @@ export class WristAssistantPanel extends LitElement {
     const d = this.draft;
     const dirty = !!d?.dirty;
     return html`
-      ${entityDatalist(this.hass, "wa-entities")}
       <header>
         <h1>Wrist Assistant${dirty ? html`<span class="dirty-dot" title="Unsaved changes"></span>` : nothing}</h1>
         <div class="toolbar">
@@ -1165,8 +1209,9 @@ export class WristAssistantPanel extends LitElement {
         ? html`<div class="layout ${this.narrow ? "narrow" : ""}">
             <div class="column">${this.renderList()}${this.renderData()}${this.renderLayers()}</div>
             <div class="column">${this.renderBanners()}${this.renderPreviews()}</div>
-            <div class="column">${this.renderInspector()}${this.renderStatus()}${this.renderRaw()}</div>
-          </div>`
+            <div class="column inspector">${this.renderInspector()}</div>
+          </div>
+          ${this.renderFooter()}`
         : html`<div class="card">
             <div class="banner warn"><b>Update the watch app first.</b> ${updateWatchMessage(this.selectedOwner?.app_version)}</div>
             <div class="hint">Nothing on this watch is changed or lost. Its ${this.selectedOwner?.complication_count ?? 0} complication${this.selectedOwner?.complication_count === 1 ? "" : "s"} stay in Home Assistant and can be edited once the watch is updated.</div>
@@ -1283,6 +1328,7 @@ export class WristAssistantPanel extends LitElement {
     const cfg = this.draft?.config;
     if (!cfg) return nothing;
     const resolver = new Resolver(this.buildContext());
+    const ctx = describeContext(this.host());
     return html`<div class="card">
       <h2>Data<span class="spacer"></span>
         ${this.canEdit ? html`<button class="small" @click=${() => { const nv = newNamedValue(); this.mutate((c) => { c.values.push(nv); }); this.inspect = { kind: "data", id: nv.id }; }}>Add</button>` : nothing}
@@ -1293,7 +1339,7 @@ export class WristAssistantPanel extends LitElement {
         const hl = this.inspect.kind === "data" && this.inspect.id === v.id;
         return html`<div class="datum ${hl ? "hl" : ""}" @click=${() => { this.inspect = { kind: "data", id: v.id }; }}>
           <span class="name">${v.name || "(unnamed)"}</span>
-          <span class="meta" title=${describeValue(v.value)}>${r ?? "unresolved"}</span>
+          <span class="meta" title=${describeValue(v.value, ctx)}>${r ?? "unresolved"}</span>
           ${this.canEdit ? html`<button class="icon" title="Delete value" @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { c.values = c.values.filter((x) => x.id !== v.id); }); if (hl) this.inspect = { kind: "general" }; }}>×</button>` : nothing}
         </div>`;
       })}
@@ -1329,6 +1375,7 @@ export class WristAssistantPanel extends LitElement {
     // Top of the list = drawn last = on top, like the phone editor. Attached
     // taps are not rows: they show as a badge on the layer they belong to.
     const ordered = [...cfg.elements].filter((el) => !isAttachedTap(cfg, el)).reverse();
+    const ctx = describeContext(this.host());
     return html`<div class="card">
       <h2>Layers <span class="meta" style="text-transform:none;letter-spacing:0">(top first)</span></h2>
       ${this.activeFamily === "inline" ? html`<div class="hint">Inline is one line of text and draws no layers. The controls here apply to the ${familyTitle(family)} layout.</div>` : nothing}
@@ -1341,10 +1388,14 @@ export class WristAssistantPanel extends LitElement {
         // A tappable layer says so on its own row, because its tap is edited
         // here rather than as a layer of its own.
         const tap = attachedTapsOf(cfg, id)[0];
+        // Both badges answer "what will this layer do" without opening it: one
+        // says it responds to a tap, the other that it changes with a value.
+        const states = statesSummary(el.payload.rules);
         return html`<div class="layer ${hl ? "hl" : ""}" @click=${() => { this.inspect = { kind: "layer", id }; }}>
           <span class="kind">${el.kind}</span>
-          <span class="name" style=${hidden ? "opacity:.5" : ""}>${layerTitle(el)}</span>
-          ${tap ? html`<span class="chip" title=${`Tappable · ${layerTitle(tap)}`}>tap</span>` : nothing}
+          <span class="name" style=${hidden ? "opacity:.5" : ""}>${layerTitle(el, ctx)}</span>
+          ${tap ? html`<span class="chip" title=${`Tappable · ${layerTitle(tap, ctx)}`}>tap</span>` : nothing}
+          ${el.payload.rules.length === 0 ? nothing : html`<span class="chip" title=${states}>${states.replace(/\.$/, "").toLowerCase()}</span>`}
           ${hidden ? html`<span class="meta">hidden</span>` : nothing}
           ${edit ? html`<span class="acts">
             <button class="icon" title="Bring forward" @click=${(e: Event) => { e.stopPropagation(); move(id, 1); }}>▲</button>
@@ -1397,7 +1448,7 @@ export class WristAssistantPanel extends LitElement {
           <button class="primary" ?disabled=${chosen === undefined} @click=${() => this.createFromPreset()}>Create</button>
           <button class="small" @click=${() => this.closePresetDialog()}>Cancel</button>
         </div>
-        <div class="hint">Escape closes this and creates nothing. Undo removes the whole preset in one step.</div>`}
+        <div class="hint">Escape creates nothing, and Undo removes a whole preset in one step.</div>`}
     </dialog>`;
   }
 
@@ -1528,6 +1579,14 @@ export class WristAssistantPanel extends LitElement {
     return this.currentCase().slots[family];
   }
 
+  /**
+   * The inspector: one object, one scroll.
+   *
+   * The row above the title is navigation, not tabs. Its two buttons always
+   * mean the same two things (the whole complication, and the shape being
+   * edited), so a click never lands somewhere different because of what was
+   * selected a moment ago. Anything else selected says so in the title.
+   */
   private renderInspector() {
     const cfg = this.draft?.config;
     if (!cfg) return nothing;
@@ -1536,33 +1595,14 @@ export class WristAssistantPanel extends LitElement {
     let body: TemplateResult;
     let title: string;
     const ins = this.inspect;
-    if (ins.kind === "layer" || ins.kind === "layer-rules") {
+    if (ins.kind === "layer") {
       const el = cfg.elements.find((e) => e.payload.id === ins.id);
       if (!el) {
         this.inspect = { kind: "general" };
         return nothing;
       }
-      if (ins.kind === "layer") {
-        title = `${el.kind} layer`;
-        body = layerEditor(host, el, this.canvasFamily);
-      } else {
-        title = `${el.kind} layer states`;
-        const id = el.payload.id;
-        // A layer already bound to an entity is what a new table tests, so the
-        // entity is asked for once for the whole layer and never again.
-        const ref = elementEntity(cfg, el);
-        const bound: Value | undefined = ref ? { kind: { kind: "entityState", ...ref } } : undefined;
-        body = statesEditor(host, el.payload.rules, el.kind, (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`, bound);
-      }
-    } else if (ins.kind === "family-rules") {
-      const family = this.activeFamily;
-      const layout = family === "inline" ? undefined : cfg.perFamily[family];
-      title = `${familyTitle(family)} layout states`;
-      body = layout
-        ? statesEditor(host, layout.rules, "layout", (c) => c.perFamily[family]?.rules, `rules-${family}`)
-        : family === "inline"
-          ? html`<div class="hint">Inline has no layout rules. Put a rule on the value itself, or use a template.</div>`
-          : html`<div class="hint">Add ${familyTitle(family)} settings first (on the layout tab).</div>`;
+      title = `${el.kind} layer`;
+      body = layerEditor(host, el, this.canvasFamily);
     } else if (ins.kind === "data") {
       const nv = cfg.values.find((v) => v.id === ins.id);
       if (!nv) {
@@ -1575,16 +1615,15 @@ export class WristAssistantPanel extends LitElement {
       title = `${familyTitle(this.activeFamily)} layout`;
       body = familyEditor(host, this.activeFamily);
     } else {
-      title = "Complication";
+      // The complication's own name, rather than the word the button above
+      // already says.
+      title = cfg.name.trim() || "Complication";
       body = generalEditor(host);
     }
     return html`<div class="card" style=${this.canEdit ? "" : "pointer-events:none;opacity:.6"} @change=${() => this.draft?.endGesture()}>
       <div class="tabs">
-        ${tab("General", ins.kind === "general", () => { this.inspect = { kind: "general" }; })}
+        ${tab("Complication", ins.kind === "general", () => { this.inspect = { kind: "general" }; })}
         ${tab(`${familyTitle(this.activeFamily)} layout`, ins.kind === "family", () => { this.inspect = { kind: "family" }; })}
-        ${(ins.kind === "family" || ins.kind === "family-rules") && this.activeFamily !== "inline" ? tab("States", ins.kind === "family-rules", () => { this.inspect = { kind: "family-rules" }; }) : nothing}
-        ${ins.kind === "layer" || ins.kind === "layer-rules" ? html`${tab("Layer", ins.kind === "layer", () => { this.inspect = { kind: "layer", id: ins.id }; })}${tab("States", ins.kind === "layer-rules", () => { this.inspect = { kind: "layer-rules", id: ins.id }; })}` : nothing}
-        ${ins.kind === "data" ? tab("Value", true, () => undefined) : nothing}
       </div>
       <h2>${title}</h2>
       ${body}
@@ -1597,33 +1636,46 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
   }
 
-  private renderStatus() {
-    const rec = this.records.find((r) => r.id === this.selectedId);
-    const d = this.draft;
-    if (!d) return nothing;
-    return html`<div class="card status">
-      <h2>Status</h2>
-      <dl class="kv">
-        <dt>Revision</dt><dd>${rec ? rec.revision : "unsaved"}${d.dirty ? html` <span class="warn">· unsaved changes</span>` : ""}</dd>
-        ${rec ? html`<dt>Saved</dt><dd>${rec.updatedAt || "—"} by ${rec.updatedBy || "—"}</dd>` : nothing}
-        <dt>Templates</dt><dd class=${this.templateError ? "err" : "ok"}>${this.templateError ?? (this.compiled?.document ? "rendered" : "none")}</dd>
-        <dt>Entities</dt><dd>${this.compiled?.entities.size ?? 0}</dd>
-      </dl>
-      <p class="hint" style="margin:8px 0 0">Save writes to Home Assistant. Open Wrist Assistant on the watch to pull it down.</p>
-    </div>`;
-  }
-
   // The Rules card that used to sit here is gone. Its one unique job was
   // forcing a branch for the previews, which the states table now does on the
-  // row itself; everything else it showed was a link to a tab the Layers card
-  // already opens.
+  // row itself; everything else it showed was a link to an editor the Layers
+  // card already opens.
 
-  private renderRaw() {
-    if (!this.draft) return nothing;
-    return html`<div class="card">
-      <h2>Raw configuration <button class="link" @click=${() => (this.showRaw = !this.showRaw)}>${this.showRaw ? "hide" : "show"}</button></h2>
-      ${this.showRaw ? html`<pre>${JSON.stringify(this.draft.encoded(), null, 2)}</pre>` : nothing}
-    </div>`;
+  /**
+   * Status and the raw document, folded into one line at the foot of the panel.
+   *
+   * Neither is part of authoring, so neither earns a card in the column beside
+   * the previews. The summary still says the one thing that is worth a glance
+   * while it is shut, which is whether the work is saved.
+   */
+  private renderFooter() {
+    const d = this.draft;
+    if (!d) return nothing;
+    const rec = this.records.find((r) => r.id === this.selectedId);
+    const status = draftStatus({
+      revision: rec?.revision ?? null,
+      dirty: d.dirty,
+      ...(this.saveError !== undefined ? { error: this.saveError } : {}),
+      ...(this.templateError !== undefined ? { templateError: this.templateError } : {}),
+    });
+    return html`<details class="foot">
+      <summary>
+        <span class="foot-dot ${status.tone}">●</span>
+        <span class="foot-text">${status.text}</span>
+        <span class="foot-more">Details and raw configuration</span>
+      </summary>
+      <div class="foot-body">
+        <dl class="kv">
+          <dt>Revision</dt><dd>${rec ? rec.revision : "unsaved"}${d.dirty ? html` <span class="warn">· unsaved changes</span>` : ""}</dd>
+          ${rec ? html`<dt>Saved</dt><dd>${rec.updatedAt || "—"} by ${rec.updatedBy || "—"}</dd>` : nothing}
+          <dt>Templates</dt><dd class=${this.templateError ? "err" : "ok"}>${this.templateError ?? (this.compiled?.document ? "rendered" : "none")}</dd>
+          <dt>Entities</dt><dd>${this.compiled?.entities.size ?? 0}</dd>
+        </dl>
+        <p class="hint">Save writes to Home Assistant. Open Wrist Assistant on the watch to pull it down.</p>
+        <button class="link" @click=${() => (this.showRaw = !this.showRaw)}>${this.showRaw ? "Hide the raw configuration" : "Show the raw configuration"}</button>
+        ${this.showRaw ? html`<pre>${JSON.stringify(d.encoded(), null, 2)}</pre>` : nothing}
+      </div>
+    </details>`;
   }
 }
 
@@ -1647,11 +1699,11 @@ function ownerLabel(o: OwnerSummary): string {
   return o.paired_iphone_name ? `${name} (${o.paired_iphone_name})` : name;
 }
 
-function layerTitle(el: CElement): string {
+function layerTitle(el: CElement, ctx?: DescribeContext): string {
   switch (el.kind) {
-    case "text": return describeValue(el.payload.value);
-    case "icon": return describeValue(el.payload.symbol);
-    case "gauge": return describeValue(el.payload.value);
+    case "text": return describeValue(el.payload.value, ctx);
+    case "icon": return describeValue(el.payload.symbol, ctx);
+    case "gauge": return describeValue(el.payload.value, ctx);
     case "shape": return el.payload.kind;
     case "image": {
       const e = el.payload.entity;

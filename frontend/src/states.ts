@@ -291,8 +291,8 @@ export function compileTable(table: StatesTable): Rule[] {
   return [buildStatesRule(value, rows, table.otherwise, table.ruleId || undefined)];
 }
 
-/** How many states a layer has, in words, for the line that points at the
- * States tab. Rules the table cannot show say so rather than counting cases
+/** How many states a layer has, in words, for the badge on its row in the
+ * Layers card. Rules the table cannot show say so rather than counting cases
  * that do not mean what a row means. */
 export function statesSummary(rules: Rule[]): string {
   if (rules.length === 0) return "No states yet.";
