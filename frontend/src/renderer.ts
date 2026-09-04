@@ -262,7 +262,9 @@ function renderIcon(el: Extract<ResolvedElement, { kind: "icon" }>, box: Box, ic
  *
  * `fill` scales until the frame is covered and throws the overflow away; `fit`
  * scales until the whole picture is inside and leaves the spare edges empty.
- * `zoom` multiplies whichever was chosen. `panX`/`panY` then slide the frame
+ * `zoom` multiplies whichever was chosen: above 1 even a fitted picture starts
+ * to crop, below 1 even a filled one pulls away from the frame and leaves the
+ * spare edges empty. `panX`/`panY` then slide the frame
  * over the picture: 0 centred, -1 the picture's left (or top) edge against the
  * frame's, 1 the right (or bottom) one. An axis with nothing to spare cannot
  * move, because its overflow is zero.
@@ -271,6 +273,12 @@ function renderIcon(el: Extract<ResolvedElement, { kind: "icon" }>, box: Box, ic
  * (Shared/CustomComplicationRendering.swift). The numbers are pinned on both
  * sides; change one and change the other.
  */
+/** The zoom range the editor offers and the drawing clamps to. Below 1 is
+ * allowed on purpose: shrinking a filled picture away from the frame's edges is
+ * a look, not a mistake to prevent. Mirrors `CustomComplication.minimumZoom`. */
+export const MIN_ZOOM = 0.25;
+export const MAX_ZOOM = 8;
+
 export function pictureRect(
   boxWidth: number,
   boxHeight: number,
@@ -283,7 +291,7 @@ export function pictureRect(
 ): { x: number; y: number; width: number; height: number } {
   const whole = { x: 0, y: 0, width: boxWidth, height: boxHeight };
   if (!(boxWidth > 0) || !(boxHeight > 0) || !(imageWidth > 0) || !(imageHeight > 0)) return whole;
-  const z = Math.min(Math.max(Number.isFinite(zoom) ? zoom : 1, 1), 8);
+  const z = Math.min(Math.max(Number.isFinite(zoom) ? zoom : 1, MIN_ZOOM), MAX_ZOOM);
   const cover = Math.max(boxWidth / imageWidth, boxHeight / imageHeight);
   const contain = Math.min(boxWidth / imageWidth, boxHeight / imageHeight);
   const scale = (contentMode === "fit" ? contain : cover) * z;
@@ -305,7 +313,7 @@ export function pictureRect(
  * way the watch crops it, clipped to the layer's own rounded rectangle. No URL
  * (entity not found, or a non-camera entity) draws the placeholder the watch
  * shows before its first fetch. The timestamp chip mirrors the watch's overlay;
- * the preview picture is always live, so the age style reads "now". */
+ * the preview picture is always live, so the age style reads "0s". */
 function renderImage(el: Extract<ResolvedElement, { kind: "image" }>, box: Box, options: RenderOptions) {
   const icons = options.icons;
   const clipId = `imgclip-${el.id}`;
@@ -315,7 +323,9 @@ function renderImage(el: Extract<ResolvedElement, { kind: "image" }>, box: Box, 
         const size = Math.min(Math.max(el.timestampSize, 4), 40);
         let label: string;
         if (el.timestampStyle === "age") {
-          label = "now";
+          // The watch draws the same compact duration the `.entityAge` format
+          // uses. The preview picture is live, so its age is zero.
+          label = "0s";
         } else {
           const now = new Date();
           const h = now.getHours() % 12 || 12;

@@ -78,7 +78,7 @@ import {
 } from "./states.js";
 import type { ForcedBranches } from "./resolver.js";
 import type { HassEntityState, HassLike } from "./ha-api.js";
-import { familyTitle, type IconProvider } from "./renderer.js";
+import { MIN_ZOOM, familyTitle, type IconProvider } from "./renderer.js";
 import { CURATED_SYMBOLS, SYMBOL_CATEGORIES, SymbolBrowser, searchSymbols } from "./symbols.js";
 import { canRemoveFamily, missingFamilies, supportedFamilies } from "./layouts.js";
 import { uiIcon } from "./ui-icons.js";
@@ -1223,6 +1223,9 @@ export function layerEntityNote(el: CElement, uses: readonly LayerEntityUse[]): 
  * nothing spilling off the frame has nothing to move, and that is the first
  * thing anyone drags a dead slider over. */
 function imagePanHint(img: ImageElement): string {
+  if (img.zoom < 1) {
+    return "Below 1x the picture pulls away from the frame and the spare edges are left empty. Pan still moves whatever does overflow.";
+  }
   if (img.contentMode === "fit" && img.zoom === 1) {
     return "The whole picture is inside the frame, so there is nothing to pan. Zoom in, or switch to Fill, to crop it first.";
   }
@@ -1247,7 +1250,7 @@ function imageTimestampSection(img: ImageElement, upd: (m: (p: ImageElement) => 
       ${selectField("Shows", img.timestampStyle, [["clock", "The clock time it was taken"], ["age", "How long ago it was taken"]],
         (v) => upd((p) => { p.timestampStyle = v; }))}
       <div class="hint">${img.timestampStyle === "age"
-        ? "The watch counts up on its own between snapshots, so a stale picture says so. The preview is live, so it reads \"now\"."
+        ? "A compact age: 45s, 5m, 2h, 3d. It grows every time the complication redraws, so a camera that has stopped answering says so. The preview is live, so it reads 0s."
         : "The time the snapshot was fetched, not the time now. A frame that stops updating keeps its old time."}</div>`}`;
 }
 
@@ -1337,7 +1340,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         ${selectField("Picture", img.contentMode, [["fill", "Fill the frame (crop)"], ["fit", "Fit the whole picture"]],
           (v) => setImage((p) => { p.contentMode = v; }))}
         ${sliderField("Zoom", img.zoom, (v) => setImage((p) => { p.zoom = v; }, "zoom"),
-          { min: 1, max: 4, step: 0.05, def: 1, format: (v) => `${v.toFixed(2)}x` })}
+          { min: MIN_ZOOM, max: 4, step: 0.05, def: 1, format: (v) => `${v.toFixed(2)}x` })}
         ${sliderField("Pan left/right", img.panX, (v) => setImage((p) => { p.panX = v; }, "panx"),
           { min: -1, max: 1, step: 0.02, def: 0 })}
         ${sliderField("Pan up/down", img.panY, (v) => setImage((p) => { p.panY = v; }, "pany"),

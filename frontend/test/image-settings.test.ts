@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import { encodeConfig, newConfig, newElement, parseConfig } from "../src/model.js";
-import { pictureRect } from "../src/renderer.js";
+import { MAX_ZOOM, MIN_ZOOM, pictureRect } from "../src/renderer.js";
 
 /** A 200x100 picture in a 100x100 frame: twice as wide as it is tall. */
 function rect(opts: Partial<{ mode: "fill" | "fit"; zoom: number; panX: number; panY: number; iw: number; ih: number }> = {}) {
@@ -39,8 +39,13 @@ describe("pictureRect", () => {
     expect(rect({ mode: "fit", zoom: 2, panX: 1 }).x).toBe(-100);
   });
 
-  it("clamps a zoom below 1 and draws the whole frame for a picture with no size", () => {
-    expect(rect({ zoom: 0.2 }).width).toBe(rect({ zoom: 1 }).width);
+  it("shrinks a filled picture away from the frame's edges below 1x", () => {
+    expect(rect({ zoom: 0.5 })).toEqual({ x: 0, y: 25, width: 100, height: 50 });
+  });
+
+  it("stops at the ends of the zoom range, and draws the whole frame for a picture with no size", () => {
+    expect(rect({ zoom: 0.01 }).width).toBe(rect({ zoom: MIN_ZOOM }).width);
+    expect(rect({ zoom: 99 }).width).toBe(rect({ zoom: MAX_ZOOM }).width);
     expect(rect({ iw: 0, ih: 0 })).toEqual({ x: 0, y: 0, width: 100, height: 100 });
   });
 });
