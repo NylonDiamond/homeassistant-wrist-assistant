@@ -103,9 +103,61 @@ const COL_LEFT_DEFAULT = 270;
 const COL_RIGHT_DEFAULT = 340;
 const COL_MIN = 200;
 const COL_MAX = 720;
+/** The canvas column never goes below this while three columns are shown. */
+const CANVAS_MIN = 320;
+/** .layout's own padding (16 each side) plus its column gaps and gutter tracks:
+ * four 8px gaps and two 8px gutters with three columns, two gaps and one
+ * gutter with two. */
+const CHROME_3 = 32 + 4 * 8 + 2 * 8;
+const CHROME_2 = 32 + 2 * 8 + 8;
 const COL_STORE_KEY = "wrist-assistant-panel.columns";
 
 const clampColumn = (n: number) => Math.max(COL_MIN, Math.min(COL_MAX, Math.round(n)));
+
+/** How many columns fit, and how wide the side ones may actually be.
+ *
+ * The stored widths are what the user dragged; these are what the panel can
+ * afford right now. Shrinking the window used to push the inspector past the
+ * right edge of a grid that clips, so it was simply cut off. Sizing from the
+ * measured panel width instead of a viewport media query also handles the
+ * Home Assistant sidebar, which changes the panel's width without changing
+ * the window's. */
+export function columnFit(
+  panelWidth: number,
+  wantLeft: number,
+  wantRight: number,
+): { columns: 1 | 2 | 3; left: number; right: number } {
+  // Before the first measurement, assume there is room: the observer corrects
+  // it on the same frame and a wide-to-narrow flash is worse than the reverse.
+  if (panelWidth <= 0) return { columns: 3, left: wantLeft, right: wantRight };
+
+  const forThree = panelWidth - CHROME_3;
+  if (forThree >= COL_MIN * 2 + CANVAS_MIN) {
+    const budget = forThree - CANVAS_MIN;
+    let left = wantLeft;
+    let right = wantRight;
+    if (left + right > budget) {
+      const factor = budget / (left + right);
+      left = Math.max(COL_MIN, Math.floor(left * factor));
+      right = Math.max(COL_MIN, Math.floor(right * factor));
+      // Flooring at COL_MIN can put the pair back over; take the rest off
+      // whichever side still has slack.
+      const over = left + right - budget;
+      if (over > 0) {
+        if (left >= right) left = Math.max(COL_MIN, left - over);
+        else right = Math.max(COL_MIN, right - over);
+      }
+    }
+    return { columns: 3, left, right };
+  }
+
+  const forTwo = panelWidth - CHROME_2;
+  if (forTwo >= COL_MIN + CANVAS_MIN) {
+    return { columns: 2, left: Math.min(wantLeft, forTwo - CANVAS_MIN), right: wantRight };
+  }
+
+  return { columns: 1, left: wantLeft, right: wantRight };
+}
 
 export class WristAssistantPanel extends LitElement {
   @property({ attribute: false }) hass!: HassLike;
@@ -113,9 +165,12 @@ export class WristAssistantPanel extends LitElement {
   @property({ attribute: false }) panel?: { config?: { version?: string } };
 
   /** Side column widths in px, dragged by the gutters and kept per browser.
-   * The middle column takes whatever is left. */
+   * These are the widths the user asked for; columnFit() decides how much of
+   * that the panel can afford at its current width. */
   @state() private colLeft = COL_LEFT_DEFAULT;
   @state() private colRight = COL_RIGHT_DEFAULT;
+  /** Measured width of the panel, not of the window. */
+  @state() private panelWidth = 0;
 
   @state() private owners: OwnerSummary[] = [];
   @state() private ownerId?: string;
@@ -224,12 +279,16 @@ export class WristAssistantPanel extends LitElement {
     button.icon { font: inherit; border: none; background: none; cursor: pointer; padding: 2px 6px; opacity: .7; color: inherit; }
     button.icon:hover { opacity: 1; }
     .dirty-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--warning-color, #ffa600); margin-left: 6px; }
-    /* Three columns with a draggable gutter between each pair. The widths are
-       custom properties so a drag is one style write on .layout rather than a
-       re-render of the whole grid, and they persist per browser. */
+    /* Three columns with a draggable gutter between each pair. The side widths
+       come in as custom properties already fitted to the measured panel width
+       (see columnFit), and every track can shrink to zero here, so the grid
+       itself can never be wider than the panel and clip a column. How many
+       columns there are is decided from that same measurement rather than from
+       a viewport media query, because the Home Assistant sidebar changes the
+       panel's width without changing the window's. */
     .layout {
       display: grid;
-      grid-template-columns: var(--wa-left, 270px) 8px minmax(280px, 1fr) 8px var(--wa-right, 340px);
+      grid-template-columns: var(--wa-left, 270px) 8px minmax(0, 1fr) 8px var(--wa-right, 340px);
       column-gap: 8px;
       row-gap: 16px;
       padding: 16px;
@@ -247,14 +306,17 @@ export class WristAssistantPanel extends LitElement {
       background: var(--divider-color); opacity: .35;
     }
     .gutter:hover::after, .gutter.dragging::after { background: var(--primary-color); opacity: 1; }
-    @media (max-width: 1180px) {
-      .layout { grid-template-columns: var(--wa-left, 270px) 8px minmax(0, 1fr); overflow: auto; }
-      .layout > .column.inspector { grid-column: 1 / -1; }
-      .layout > .gutter.right { display: none; }
+    /* Two columns: the inspector drops to a full-width band underneath. */
+    .layout.cols-2 {
+      grid-template-columns: var(--wa-left, 270px) 8px minmax(0, 1fr);
+      overflow: auto;
     }
-    .layout.narrow { grid-template-columns: 1fr; overflow: auto; }
-    .layout.narrow > .column { grid-column: auto; }
-    .layout.narrow > .gutter { display: none; }
+    .layout.cols-2 > .column.inspector { grid-column: 1 / -1; }
+    .layout.cols-2 > .gutter.right { display: none; }
+    /* One column: everything stacks and the whole panel scrolls. */
+    .layout.cols-1 { grid-template-columns: minmax(0, 1fr); overflow: auto; }
+    .layout.cols-1 > .column { grid-column: auto; }
+    .layout.cols-1 > .gutter { display: none; }
     .column { overflow: auto; min-height: 0; }
     /* The canvas column is a query container so the previews can grow into the
        space a wide screen gives them instead of leaving it blank. */
@@ -331,22 +393,32 @@ export class WristAssistantPanel extends LitElement {
       display: flex; flex-direction: column; gap: 16px; align-items: center;
       --pv: 1; --pvr: min(var(--pv), 1.4);
     }
+    /* Ascending, so the widest matching rule wins. The sub-1 steps matter as
+       much as the rest: a narrow canvas column has to shrink the previews, not
+       let them run past the card. */
+    @container (max-width: 430px) { .previews { --pv: .78; } }
+    @container (max-width: 340px) { .previews { --pv: .6; } }
     @container (min-width: 620px) { .previews { --pv: 1.15; } }
     @container (min-width: 730px) { .previews { --pv: 1.35; } }
     @container (min-width: 850px) { .previews { --pv: 1.6; } }
     @container (min-width: 990px) { .previews { --pv: 1.8; } }
     @container (min-width: 1130px) { .previews { --pv: 2; } }
-    .preview { text-align: center; position: relative; }
+    .preview { text-align: center; position: relative; max-width: 100%; min-width: 0; }
     .preview .label { font-size: 12px; opacity: .7; margin-top: 6px; cursor: pointer; }
     .preview.active .label { color: var(--primary-color); opacity: 1; font-weight: 500; }
-    .preview svg { display: block; margin: 0 auto; background: #000; border-radius: 12px; touch-action: none; }
+    /* height:auto plus the viewBox keeps every ratio, so max-width can be a
+       hard stop at the card edge without squashing anything. */
+    .preview svg {
+      display: block; margin: 0 auto; background: #000; border-radius: 12px; touch-action: none;
+      height: auto; max-width: 100%;
+    }
     .preview.active svg { outline: 2px solid var(--primary-color); outline-offset: 3px; }
     /* 2x / 4x / 3x the 46 mm design box, so the three keep their true ratios. */
-    .preview.rectangular svg { width: calc(362px * var(--pv)); height: calc(131px * var(--pv)); }
-    .preview.circular svg { width: calc(204px * var(--pvr)); height: calc(204px * var(--pvr)); border-radius: 50%; }
+    .preview.rectangular svg { width: calc(362px * var(--pv)); }
+    .preview.circular svg { width: calc(204px * var(--pvr)); border-radius: 50%; }
     /* The corner preview draws the top-right screen quadrant (104x124 reference
        points) at 3x, so the small content disc stays big enough to edit. */
-    .preview.corner svg { width: calc(312px * var(--pvr)); height: calc(372px * var(--pvr)); background: #2c2c2e; }
+    .preview.corner svg { width: calc(312px * var(--pvr)); background: #2c2c2e; }
     .preview-case { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
     .preview-case label { font-size: 13px; display: flex; align-items: center; gap: 8px; }
     .preview-case select { font: inherit; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--divider-color, #444); background: var(--card-background-color, #1c1c1e); color: inherit; }
@@ -581,10 +653,18 @@ export class WristAssistantPanel extends LitElement {
   override connectedCallback() {
     super.connectedCallback();
     this.loadColumnWidths();
+    this.sizeObserver.observe(this);
     window.addEventListener("keydown", this.keyHandler);
     window.addEventListener("beforeunload", this.beforeUnload);
     void this.loadOwners();
   }
+
+  /** Watches the panel itself, not the window, so opening or closing the Home
+   * Assistant sidebar re-fits the columns too. */
+  private sizeObserver = new ResizeObserver((entries) => {
+    const w = entries[0]?.contentRect.width ?? 0;
+    if (Math.abs(w - this.panelWidth) >= 1) this.panelWidth = w;
+  });
 
   // ── column widths ─────────────────────────────────────────────────────
 
@@ -626,7 +706,11 @@ export class WristAssistantPanel extends LitElement {
     start.preventDefault();
     const bar = start.currentTarget as HTMLElement;
     const startX = start.clientX;
-    const base = side === "left" ? this.colLeft : this.colRight;
+    // Drag from the width on screen, not from the stored preference: on a
+    // squeezed panel those differ, and starting from the stored one would make
+    // the bar jump away from the pointer on the first move.
+    const shown = columnFit(this.panelWidth, this.colLeft, this.colRight);
+    const base = side === "left" ? shown.left : shown.right;
     bar.setPointerCapture(start.pointerId);
     bar.classList.add("dragging");
     const move = (ev: PointerEvent) => {
@@ -659,6 +743,7 @@ export class WristAssistantPanel extends LitElement {
 
   override disconnectedCallback() {
     super.disconnectedCallback();
+    this.sizeObserver.disconnect();
     window.removeEventListener("keydown", this.keyHandler);
     window.removeEventListener("beforeunload", this.beforeUnload);
     void this.unsubscribe?.();
@@ -1327,6 +1412,11 @@ export class WristAssistantPanel extends LitElement {
   override render() {
     const d = this.draft;
     const dirty = !!d?.dirty;
+    // `narrow` is Home Assistant telling us it is a phone; otherwise the fit
+    // is decided from the panel's own measured width.
+    const fit = this.narrow
+      ? { columns: 1 as const, left: this.colLeft, right: this.colRight }
+      : columnFit(this.panelWidth, this.colLeft, this.colRight);
     return html`
       <header>
         <h1>Wrist Assistant${dirty ? html`<span class="dirty-dot" title="Unsaved changes"></span>` : nothing}</h1>
@@ -1345,8 +1435,8 @@ export class WristAssistantPanel extends LitElement {
       </header>
       ${this.loadError ? html`<div class="card error">${this.loadError}</div>` : nothing}
       ${this.watchSupported
-        ? html`<div class="layout ${this.narrow ? "narrow" : ""}"
-              style="--wa-left:${this.colLeft}px;--wa-right:${this.colRight}px">
+        ? html`<div class="layout cols-${fit.columns}"
+              style="--wa-left:${fit.left}px;--wa-right:${fit.right}px">
             <div class="column left">${this.renderList()}${this.renderData()}${this.renderLayers()}</div>
             ${this.renderGutter("left")}
             <div class="column canvas">${this.renderBanners()}${this.renderPreviews()}</div>
