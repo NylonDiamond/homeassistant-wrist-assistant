@@ -420,8 +420,10 @@ export function entityField(host: EditorHost, label: string, ref: EntityRef, set
             ? html`<div class="hint" style="padding:6px 8px">${looksLikeEntityId(search.query) ? "Nothing here has that id. Press Enter to use it anyway." : "Nothing matches that search."}</div>`
             : results.map((c, i) => html`<button type="button" role="option" aria-selected=${i === index ? "true" : "false"} class="ent ${i === index ? "hl" : ""}"
                 @mousedown=${(e: MouseEvent) => e.preventDefault()} @click=${(e: MouseEvent) => pick(c, e.target)}>
-                <span class="ent-name">${c.name}</span>
-                <span class="ent-id mono">${c.entityId}</span>
+                <span class="ent-main">
+                  <span class="ent-name">${c.name}</span>
+                  <span class="ent-id mono">${c.entityId}</span>
+                </span>
                 <span class="ent-state">${c.state}</span>
               </button>`)}
         </div>`

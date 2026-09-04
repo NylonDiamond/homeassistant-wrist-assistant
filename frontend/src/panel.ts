@@ -99,10 +99,23 @@ function inspectKey(i: Inspect): string {
 
 type Conflict = { current: ComplicationRecord | null; message: string };
 
+const COL_LEFT_DEFAULT = 270;
+const COL_RIGHT_DEFAULT = 340;
+const COL_MIN = 200;
+const COL_MAX = 720;
+const COL_STORE_KEY = "wrist-assistant-panel.columns";
+
+const clampColumn = (n: number) => Math.max(COL_MIN, Math.min(COL_MAX, Math.round(n)));
+
 export class WristAssistantPanel extends LitElement {
   @property({ attribute: false }) hass!: HassLike;
   @property({ type: Boolean }) narrow = false;
   @property({ attribute: false }) panel?: { config?: { version?: string } };
+
+  /** Side column widths in px, dragged by the gutters and kept per browser.
+   * The middle column takes whatever is left. */
+  @state() private colLeft = COL_LEFT_DEFAULT;
+  @state() private colRight = COL_RIGHT_DEFAULT;
 
   @state() private owners: OwnerSummary[] = [];
   @state() private ownerId?: string;
@@ -211,22 +224,41 @@ export class WristAssistantPanel extends LitElement {
     button.icon { font: inherit; border: none; background: none; cursor: pointer; padding: 2px 6px; opacity: .7; color: inherit; }
     button.icon:hover { opacity: 1; }
     .dirty-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--warning-color, #ffa600); margin-left: 6px; }
+    /* Three columns with a draggable gutter between each pair. The widths are
+       custom properties so a drag is one style write on .layout rather than a
+       re-render of the whole grid, and they persist per browser. */
     .layout {
       display: grid;
-      grid-template-columns: 270px minmax(0, 1fr) 340px;
-      gap: 16px;
+      grid-template-columns: var(--wa-left, 270px) 8px minmax(280px, 1fr) 8px var(--wa-right, 340px);
+      column-gap: 8px;
+      row-gap: 16px;
       padding: 16px;
       flex: 1 1 auto;
       min-height: 0;
       box-sizing: border-box;
       overflow: hidden;
     }
-    @media (max-width: 1180px) {
-      .layout { grid-template-columns: 270px minmax(0, 1fr); overflow: auto; }
-      .layout > .column:nth-child(3) { grid-column: 1 / -1; }
+    .gutter {
+      align-self: stretch; cursor: col-resize; border-radius: 4px;
+      background: transparent; position: relative; touch-action: none;
     }
-    .layout.narrow, .layout.narrow > .column:nth-child(3) { grid-template-columns: 1fr; grid-column: auto; overflow: auto; }
+    .gutter::after {
+      content: ""; position: absolute; inset: 0 3px; border-radius: 2px;
+      background: var(--divider-color); opacity: .35;
+    }
+    .gutter:hover::after, .gutter.dragging::after { background: var(--primary-color); opacity: 1; }
+    @media (max-width: 1180px) {
+      .layout { grid-template-columns: var(--wa-left, 270px) 8px minmax(0, 1fr); overflow: auto; }
+      .layout > .column.inspector { grid-column: 1 / -1; }
+      .layout > .gutter.right { display: none; }
+    }
+    .layout.narrow { grid-template-columns: 1fr; overflow: auto; }
+    .layout.narrow > .column { grid-column: auto; }
+    .layout.narrow > .gutter { display: none; }
     .column { overflow: auto; min-height: 0; }
+    /* The canvas column is a query container so the previews can grow into the
+       space a wide screen gives them instead of leaving it blank. */
+    .column.canvas { container-type: inline-size; }
 
     /* Status and the raw document: one line at the foot of the panel, shut by
        default, saying only whether the work is saved. */
@@ -244,16 +276,20 @@ export class WristAssistantPanel extends LitElement {
     details.foot .foot-body { padding: 0 16px 12px; max-height: 40vh; overflow: auto; }
     details.foot .foot-body .hint { margin: 8px 0; }
 
-    /* Inspector sections: one scroll, no tabs. A hairline and a small title,
-       because a bordered box inside the inspector's own card is two boxes
-       saying the same thing. */
-    .sect { padding: 12px 0 2px; border-top: 1px solid var(--divider-color); }
-    .sect:first-of-type { padding-top: 2px; border-top: none; }
+    /* Inspector sections: one scroll, no tabs. Each title sits in a tinted band
+       with a coloured edge, so a long inspector can be skimmed by heading
+       instead of read top to bottom. Still not a bordered card, because a card
+       inside the inspector's own card is two boxes saying the same thing. */
+    .sect { margin: 18px 0 2px; }
+    .sect:first-of-type { margin-top: 2px; }
     .sect > h4 {
-      display: flex; align-items: baseline; gap: 8px; margin: 0 0 6px;
-      font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; opacity: .6;
+      display: flex; align-items: baseline; gap: 8px; margin: 0 0 10px;
+      padding: 5px 8px; border-radius: 5px;
+      border-left: 3px solid var(--primary-color);
+      background: var(--secondary-background-color, rgba(127,127,127,.12));
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; opacity: 1;
     }
-    .sect > h4 .sect-note { font-size: 11px; font-weight: 400; text-transform: none; letter-spacing: 0; opacity: .75; }
+    .sect > h4 .sect-note { font-size: 11px; font-weight: 400; text-transform: none; letter-spacing: 0; opacity: .7; }
     .card {
       background: var(--card-background-color, #fff);
       border-radius: var(--ha-card-border-radius, 12px);
@@ -261,7 +297,12 @@ export class WristAssistantPanel extends LitElement {
       padding: 12px 16px;
       margin-bottom: 16px;
     }
-    .card h2 { font-size: 14px; font-weight: 500; margin: 0 0 8px; opacity: .8; text-transform: uppercase; letter-spacing: .04em; display: flex; align-items: center; gap: 8px; }
+    .card h2 {
+      font-size: 13px; font-weight: 700; margin: 0 0 8px; opacity: 1;
+      text-transform: uppercase; letter-spacing: .08em;
+      display: flex; align-items: center; gap: 8px;
+      padding-bottom: 8px; border-bottom: 1px solid var(--divider-color);
+    }
     .card h2 .spacer { flex: 1; }
     .card h3 { font-size: 13px; font-weight: 500; margin: 14px 0 6px; opacity: .8; }
     ul { list-style: none; margin: 0; padding: 0; }
@@ -269,6 +310,10 @@ export class WristAssistantPanel extends LitElement {
       padding: 8px 10px; border-radius: 8px; cursor: pointer;
       display: flex; justify-content: space-between; align-items: center; gap: 8px;
     }
+    /* Hairlines between rows: the lists are the thing you scan first, and an
+       unbroken stack of same-sized rows has nothing to count against. */
+    li.row + li.row, .layer + .layer, .datum + .datum { box-shadow: inset 0 1px 0 var(--divider-color); }
+    li.row:hover, .layer:hover, .datum:hover, li.row.selected, .layer.hl, .datum.hl { box-shadow: none; }
     li.row:hover { background: var(--secondary-background-color); }
     li.row.selected { background: var(--primary-color); color: var(--text-primary-color, #fff); }
     li.row .meta { font-size: 12px; opacity: .7; }
@@ -278,18 +323,30 @@ export class WristAssistantPanel extends LitElement {
     .send.sent { color: var(--success-color, #43a047); }
     .send.sending { opacity: .7; }
     .send.offline { color: var(--warning-color, #ffa600); }
-    .previews { display: flex; flex-direction: column; gap: 16px; align-items: center; }
+    /* --pv multiplies the base preview size. The circular and corner shapes
+       stand side by side, so they get their own smaller cap (--pvr) and never
+       wrap out of the card. Pointer maths reads the SVG's screen CTM, so any
+       scale here is picked up for free. */
+    .previews {
+      display: flex; flex-direction: column; gap: 16px; align-items: center;
+      --pv: 1; --pvr: min(var(--pv), 1.4);
+    }
+    @container (min-width: 620px) { .previews { --pv: 1.15; } }
+    @container (min-width: 730px) { .previews { --pv: 1.35; } }
+    @container (min-width: 850px) { .previews { --pv: 1.6; } }
+    @container (min-width: 990px) { .previews { --pv: 1.8; } }
+    @container (min-width: 1130px) { .previews { --pv: 2; } }
     .preview { text-align: center; position: relative; }
     .preview .label { font-size: 12px; opacity: .7; margin-top: 6px; cursor: pointer; }
     .preview.active .label { color: var(--primary-color); opacity: 1; font-weight: 500; }
     .preview svg { display: block; margin: 0 auto; background: #000; border-radius: 12px; touch-action: none; }
     .preview.active svg { outline: 2px solid var(--primary-color); outline-offset: 3px; }
     /* 2x / 4x / 3x the 46 mm design box, so the three keep their true ratios. */
-    .preview.rectangular svg { width: 362px; height: 131px; }
-    .preview.circular svg { width: 204px; height: 204px; border-radius: 50%; }
+    .preview.rectangular svg { width: calc(362px * var(--pv)); height: calc(131px * var(--pv)); }
+    .preview.circular svg { width: calc(204px * var(--pvr)); height: calc(204px * var(--pvr)); border-radius: 50%; }
     /* The corner preview draws the top-right screen quadrant (104x124 reference
        points) at 3x, so the small content disc stays big enough to edit. */
-    .preview.corner svg { width: 312px; height: 372px; background: #2c2c2e; }
+    .preview.corner svg { width: calc(312px * var(--pvr)); height: calc(372px * var(--pvr)); background: #2c2c2e; }
     .preview-case { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
     .preview-case label { font-size: 13px; display: flex; align-items: center; gap: 8px; }
     .preview-case select { font: inherit; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--divider-color, #444); background: var(--card-background-color, #1c1c1e); color: inherit; }
@@ -303,7 +360,14 @@ export class WristAssistantPanel extends LitElement {
     .layer, .datum { padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px; }
     .layer:hover, .datum:hover { background: var(--secondary-background-color); }
     .layer.hl, .datum.hl { background: var(--primary-color); color: var(--text-primary-color, #fff); }
-    .layer .kind { opacity: .6; font-size: 11px; text-transform: uppercase; margin-right: 2px; min-width: 42px; }
+    /* The kind is the fastest thing to scan a layer list by, so it reads as a
+       badge rather than as faint grey text. */
+    .layer .kind {
+      flex: none; font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+      min-width: 46px; text-align: center; padding: 2px 4px; border-radius: 4px; margin-right: 2px;
+      background: var(--secondary-background-color, rgba(127,127,127,.16)); opacity: .95;
+    }
+    .layer.hl .kind { background: rgba(255,255,255,.24); }
     .layer .name, .datum .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .layer .meta, .datum .meta { font-size: 12px; opacity: .7; }
     .layer .chip { font-size: 10px; padding: 0 6px; opacity: .8; }
@@ -406,7 +470,7 @@ export class WristAssistantPanel extends LitElement {
     .value-chip .chip-now { max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .65; }
     .value-chip .chip-caret { opacity: .55; font-size: 11px; }
     .value-pop {
-      position: fixed; inset: auto; margin: 0; width: min(380px, calc(100vw - 16px)); box-sizing: border-box;
+      position: fixed; inset: auto; margin: 0; width: min(430px, calc(100vw - 16px)); box-sizing: border-box;
       max-height: 70vh; overflow: auto; padding: 10px 14px 14px;
       border: 1px solid var(--divider-color); border-radius: 12px;
       background: var(--card-background-color, #fff); color: var(--primary-text-color);
@@ -472,19 +536,22 @@ export class WristAssistantPanel extends LitElement {
     .value-chip-field.compact { margin: 0; }
     .value-chip-field.compact button.value-chip { padding: 3px 8px; font-size: 13px; max-width: 190px; }
 
-    /* Entity search */
+    /* Entity search. The friendly name and the entity id both matter and both
+       are long, so they stack on two lines instead of fighting for one. */
     .entity-field { position: relative; }
-    .entity-results { border: 1px solid var(--divider-color); border-radius: 8px; margin-top: 4px; max-height: 232px; overflow: auto; }
+    .entity-results { border: 1px solid var(--divider-color); border-radius: 8px; margin-top: 4px; max-height: 300px; overflow: auto; }
     button.ent {
-      display: flex; align-items: baseline; gap: 8px; width: 100%; box-sizing: border-box;
-      font: inherit; font-size: 13px; text-align: left; padding: 5px 8px;
+      display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box;
+      font: inherit; font-size: 13px; text-align: left; padding: 6px 8px;
       background: none; border: none; color: inherit; cursor: pointer;
     }
     button.ent + button.ent { border-top: 1px solid var(--divider-color); }
     button.ent:hover, button.ent.hl { background: var(--secondary-background-color); }
-    .ent .ent-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .ent .ent-id { opacity: .6; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .ent .ent-state { font-size: 11px; opacity: .8; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ent .ent-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .ent .ent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ent .ent-id { font-size: 11px; opacity: .6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ent .ent-state { flex: none; font-size: 11px; opacity: .8; max-width: 34%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .entity-current .ent-name { flex: 1; }
     .entity-current { display: flex; gap: 8px; align-items: baseline; font-size: 12px; opacity: .8; margin-top: 3px; }
     .entity-current .ent-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -513,9 +580,81 @@ export class WristAssistantPanel extends LitElement {
 
   override connectedCallback() {
     super.connectedCallback();
+    this.loadColumnWidths();
     window.addEventListener("keydown", this.keyHandler);
     window.addEventListener("beforeunload", this.beforeUnload);
     void this.loadOwners();
+  }
+
+  // ── column widths ─────────────────────────────────────────────────────
+
+  private loadColumnWidths() {
+    try {
+      const raw = window.localStorage.getItem(COL_STORE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { left?: unknown; right?: unknown };
+      if (typeof saved.left === "number") this.colLeft = clampColumn(saved.left);
+      if (typeof saved.right === "number") this.colRight = clampColumn(saved.right);
+    } catch {
+      /* A browser with storage off keeps the defaults. */
+    }
+  }
+
+  private saveColumnWidths() {
+    try {
+      window.localStorage.setItem(COL_STORE_KEY, JSON.stringify({ left: this.colLeft, right: this.colRight }));
+    } catch {
+      /* Storage off: the widths still work for this visit. */
+    }
+  }
+
+  private renderGutter(side: "left" | "right") {
+    return html`<div class="gutter ${side}" role="separator" aria-orientation="vertical"
+      title="Drag to resize. Double-click to reset."
+      @pointerdown=${(e: PointerEvent) => this.beginColumnDrag(side, e)}
+      @dblclick=${() => {
+        if (side === "left") this.colLeft = COL_LEFT_DEFAULT;
+        else this.colRight = COL_RIGHT_DEFAULT;
+        this.saveColumnWidths();
+      }}></div>`;
+  }
+
+  /** Drag one gutter. The right column grows as the pointer moves left, so
+   * both gutters push the middle column rather than the page. */
+  private beginColumnDrag(side: "left" | "right", start: PointerEvent) {
+    if (start.button !== 0) return;
+    start.preventDefault();
+    const bar = start.currentTarget as HTMLElement;
+    const startX = start.clientX;
+    const base = side === "left" ? this.colLeft : this.colRight;
+    bar.setPointerCapture(start.pointerId);
+    bar.classList.add("dragging");
+    const move = (ev: PointerEvent) => {
+      if (ev.pointerId !== start.pointerId) return;
+      const dx = ev.clientX - startX;
+      const next = clampColumn(side === "left" ? base + dx : base - dx);
+      if (side === "left") this.colLeft = next;
+      else this.colRight = next;
+    };
+    const finish = (ev: PointerEvent) => {
+      if (ev.pointerId !== start.pointerId) return;
+      cleanup();
+      this.saveColumnWidths();
+    };
+    const cleanup = () => {
+      bar.classList.remove("dragging");
+      bar.removeEventListener("pointermove", move);
+      bar.removeEventListener("pointerup", finish);
+      bar.removeEventListener("pointercancel", finish);
+      try {
+        bar.releasePointerCapture(start.pointerId);
+      } catch {
+        /* already released */
+      }
+    };
+    bar.addEventListener("pointermove", move);
+    bar.addEventListener("pointerup", finish);
+    bar.addEventListener("pointercancel", finish);
   }
 
   override disconnectedCallback() {
@@ -1206,9 +1345,12 @@ export class WristAssistantPanel extends LitElement {
       </header>
       ${this.loadError ? html`<div class="card error">${this.loadError}</div>` : nothing}
       ${this.watchSupported
-        ? html`<div class="layout ${this.narrow ? "narrow" : ""}">
-            <div class="column">${this.renderList()}${this.renderData()}${this.renderLayers()}</div>
-            <div class="column">${this.renderBanners()}${this.renderPreviews()}</div>
+        ? html`<div class="layout ${this.narrow ? "narrow" : ""}"
+              style="--wa-left:${this.colLeft}px;--wa-right:${this.colRight}px">
+            <div class="column left">${this.renderList()}${this.renderData()}${this.renderLayers()}</div>
+            ${this.renderGutter("left")}
+            <div class="column canvas">${this.renderBanners()}${this.renderPreviews()}</div>
+            ${this.renderGutter("right")}
             <div class="column inspector">${this.renderInspector()}</div>
           </div>
           ${this.renderFooter()}`
