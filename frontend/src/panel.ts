@@ -318,9 +318,6 @@ export class WristAssistantPanel extends LitElement {
     .layout.cols-1 > .column { grid-column: auto; }
     .layout.cols-1 > .gutter { display: none; }
     .column { overflow: auto; min-height: 0; }
-    /* The canvas column is a query container so the previews can grow into the
-       space a wide screen gives them instead of leaving it blank. */
-    .column.canvas { container-type: inline-size; }
 
     /* Status and the raw document: one line at the foot of the panel, shut by
        default, saying only whether the work is saved. */
@@ -385,44 +382,32 @@ export class WristAssistantPanel extends LitElement {
     .send.sent { color: var(--success-color, #43a047); }
     .send.sending { opacity: .7; }
     .send.offline { color: var(--warning-color, #ffa600); }
-    /* --pv multiplies the base preview size. The circular and corner shapes
-       stand side by side, so they get their own smaller cap (--pvr) and never
-       wrap out of the card. Pointer maths reads the SVG's screen CTM, so any
-       scale here is picked up for free. */
-    .previews {
-      display: flex; flex-direction: column; gap: 16px; align-items: center;
-      --pv: 1; --pvr: min(var(--pv), 1.4);
-    }
-    /* Ascending, so the widest matching rule wins. The sub-1 steps matter as
-       much as the rest: a narrow canvas column has to shrink the previews, not
-       let them run past the card. */
-    @container (max-width: 430px) { .previews { --pv: .78; } }
-    @container (max-width: 340px) { .previews { --pv: .6; } }
-    @container (min-width: 620px) { .previews { --pv: 1.15; } }
-    @container (min-width: 730px) { .previews { --pv: 1.35; } }
-    @container (min-width: 850px) { .previews { --pv: 1.6; } }
-    @container (min-width: 990px) { .previews { --pv: 1.8; } }
-    @container (min-width: 1130px) { .previews { --pv: 2; } }
-    .preview { text-align: center; position: relative; max-width: 100%; min-width: 0; }
+    /* The shapes always stack, one per row. Standing two of them side by side
+       made each one small and left a wide empty gutter down both sides of the
+       card, and a shape is easier to edit big than it is to compare with its
+       neighbour. Width alone drives the size and the viewBox supplies the
+       ratio, so every shape follows the column and none can be squashed.
+       Pointer maths reads the SVG's screen CTM, so drags follow for free. */
+    .previews { display: flex; flex-direction: column; gap: 22px; align-items: center; width: 100%; }
+    .preview { text-align: center; position: relative; width: 100%; min-width: 0; }
     .preview .label { font-size: 12px; opacity: .7; margin-top: 6px; cursor: pointer; }
     .preview.active .label { color: var(--primary-color); opacity: 1; font-weight: 500; }
-    /* height:auto plus the viewBox keeps every ratio, so max-width can be a
-       hard stop at the card edge without squashing anything. */
     .preview svg {
       display: block; margin: 0 auto; background: #000; border-radius: 12px; touch-action: none;
       height: auto; max-width: 100%;
     }
     .preview.active svg { outline: 2px solid var(--primary-color); outline-offset: 3px; }
-    /* 2x / 4x / 3x the 46 mm design box, so the three keep their true ratios. */
-    .preview.rectangular svg { width: calc(362px * var(--pv)); }
-    .preview.circular svg { width: calc(204px * var(--pvr)); border-radius: 50%; }
-    /* The corner preview draws the top-right screen quadrant (104x124 reference
-       points) at 3x, so the small content disc stays big enough to edit. */
-    .preview.corner svg { width: calc(312px * var(--pvr)); background: #2c2c2e; }
+    /* Rectangular is the shape people author in, so it takes the whole card.
+       The other two are near square and would run off the bottom of the screen
+       at that width, so they keep a cap. */
+    .preview.rectangular svg { width: 100%; max-width: 960px; }
+    .preview.circular svg { width: min(100%, 470px); border-radius: 50%; }
+    /* The corner preview draws the top-right screen quadrant (104x124
+       reference points), so the small content disc stays big enough to edit. */
+    .preview.corner svg { width: min(100%, 430px); background: #2c2c2e; }
     .preview-case { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
     .preview-case label { font-size: 13px; display: flex; align-items: center; gap: 8px; }
     .preview-case select { font: inherit; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--divider-color, #444); background: var(--card-background-color, #1c1c1e); color: inherit; }
-    .previews-row { display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; }
     .ok { color: var(--success-color, #43a047); }
     .warn { color: var(--warning-color, #ffa600); }
     .err, .error { color: var(--error-color, #db4437); }
@@ -1761,7 +1746,6 @@ export class WristAssistantPanel extends LitElement {
         <div class="label" @click=${() => { this.activeFamily = family; }}>${familyTitle(family)} · ${slot.width}×${slot.height} pt${pct !== 100 ? ` · ${pct}%` : ""}${active ? " · editing" : ""}</div>
       </div>`;
     };
-    const hasRow = layouts.circular !== undefined || layouts.corner !== undefined;
     return html`<div class="card">
       <div class="preview-case">
         <label>Preview as
@@ -1773,7 +1757,8 @@ export class WristAssistantPanel extends LitElement {
       </div>
       <div class="previews">
         ${one("rectangular")}
-        ${hasRow ? html`<div class="previews-row">${one("circular")}${one("corner")}</div>` : nothing}
+        ${one("circular")}
+        ${one("corner")}
         ${cfg.supportedFamilies.includes("inline") ? this.renderInlinePreview(layouts.inline) : nothing}
       </div>
       <div class="hint" style="text-align:center;margin-top:10px">Click a preview to make it the editing shape. Drags and placement fields change only that shape. Add or remove shapes on the General tab.</div>
