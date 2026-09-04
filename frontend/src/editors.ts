@@ -15,6 +15,7 @@ import {
   type FamilyKind,
   type FamilyLayout,
   type FontWeight,
+  type LayerEntityUse,
   type NamedValue,
   type NormalizedFrame,
   type Placement,
@@ -39,12 +40,14 @@ import {
   defaultAttachedTapAction,
   detachTaps,
   formatIsEmpty,
+  layerEntityUses,
   literal,
   newCase,
   newId,
   newRule,
   newStyleChange,
   newTest,
+  setLayerEntity,
   styleChangePayload,
   switchComparison,
 } from "./model.js";
@@ -182,13 +185,15 @@ export interface EntityChoice {
 }
 
 /** Everything the search can offer, name first. `domain` restricts the pool to
- * one domain (a camera layer only wants `camera.*`); a name typed by hand is
+ * one domain or a list of them (a camera layer only wants `camera.*`, a toggle
+ * button wants everything a toggle makes sense for); a name typed by hand is
  * still accepted whatever the restriction. */
-export function entityChoices(states: Record<string, HassEntityState>, domain?: string): EntityChoice[] {
+export function entityChoices(states: Record<string, HassEntityState>, domain?: string | readonly string[]): EntityChoice[] {
+  const allowed = domain === undefined ? undefined : typeof domain === "string" ? [domain] : domain;
   const out: EntityChoice[] = [];
   for (const [entityId, s] of Object.entries(states)) {
     const dom = entityId.split(".")[0] ?? "";
-    if (domain !== undefined && dom !== domain) continue;
+    if (allowed !== undefined && !allowed.includes(dom)) continue;
     const friendly = typeof s?.attributes?.friendly_name === "string" ? s.attributes.friendly_name.trim() : "";
     out.push({ entityId, name: friendly || entityId, state: s?.state ?? "", domain: dom });
   }
@@ -198,6 +203,14 @@ export function entityChoices(states: Record<string, HassEntityState>, domain?: 
 
 export const ENTITY_RESULT_LIMIT = 50;
 
+/** Whether an entity's state reads as a number, which is all a gauge can draw.
+ * Used to float the plausible answers to the top of the gauge preset's search
+ * rather than to hide anything: a template sensor's state can be anything. */
+export function looksNumeric(c: EntityChoice): boolean {
+  const head = c.state.trim().split(/\s+/)[0] ?? "";
+  return head !== "" && Number.isFinite(Number(head));
+}
+
 /**
  * Rank the pool against what has been typed, over both the friendly name and
  * the id, because a user knows one or the other and rarely both.
@@ -206,10 +219,21 @@ export const ENTITY_RESULT_LIMIT = 50;
  * name, since a typed id is usually meant literally), then anything containing
  * it, and last a multi word search where every word appears somewhere. Ties
  * keep the pool's own alphabetical order.
+ *
+ * `boost` is a second, weaker key: entities it likes come first among equally
+ * good matches. It never removes anything, so a field can prefer numbers
+ * without pretending the others do not exist.
  */
-export function searchEntities(choices: readonly EntityChoice[], query: string, limit = ENTITY_RESULT_LIMIT): EntityChoice[] {
+export function searchEntities(
+  choices: readonly EntityChoice[],
+  query: string,
+  limit = ENTITY_RESULT_LIMIT,
+  boost?: (c: EntityChoice) => boolean,
+): EntityChoice[] {
   const q = query.trim().toLowerCase();
-  if (q === "") return choices.slice(0, limit);
+  const rate = (c: EntityChoice) => (boost === undefined || boost(c) ? 0 : 1);
+  // Sort is stable, so the pool's alphabetical order survives inside each group.
+  if (q === "") return (boost === undefined ? choices.slice() : [...choices].sort((a, b) => rate(a) - rate(b))).slice(0, limit);
   const words = q.split(/\s+/);
   const scored: { c: EntityChoice; rank: number }[] = [];
   for (const c of choices) {
@@ -224,7 +248,7 @@ export function searchEntities(choices: readonly EntityChoice[], query: string, 
     else if (words.length > 1 && words.every((w) => id.includes(w) || name.includes(w))) rank = 5;
     if (rank >= 0) scored.push({ c, rank });
   }
-  scored.sort((a, b) => a.rank - b.rank || a.c.name.localeCompare(b.c.name) || a.c.entityId.localeCompare(b.c.entityId));
+  scored.sort((a, b) => a.rank - b.rank || rate(a.c) - rate(b.c) || a.c.name.localeCompare(b.c.name) || a.c.entityId.localeCompare(b.c.entityId));
   return scored.slice(0, limit).map((s) => s.c);
 }
 
@@ -282,11 +306,20 @@ function requestRerender(node: EventTarget | null): void {
   }
 }
 
-interface EntityFieldOptions {
-  /** Only offer this domain in the list (the id can still be typed). */
-  domain?: string;
+export interface EntityFieldOptions {
+  /** Only offer this domain, or these domains, in the list (the id can still
+   * be typed). */
+  domain?: string | readonly string[];
   /** Drop the display-name control, for rows that are already tight. */
   compact?: boolean;
+  /** Float entities whose state reads as a number to the top of the results. */
+  preferNumeric?: boolean;
+}
+
+/** Whether a field's result list is open right now. The preset dialog asks so
+ * that its own Enter shortcut waits until the search has been answered. */
+export function entitySearchOpen(key: string): boolean {
+  return entitySearches.has(key);
 }
 
 /**
@@ -295,10 +328,12 @@ interface EntityFieldOptions {
  * id, the friendly name and the domain together, which is what every caller
  * used to have to get right by hand.
  */
-function entityField(host: EditorHost, label: string, ref: EntityRef, set: (ref: EntityRef) => void, key: string, opts: EntityFieldOptions = {}): TemplateResult {
+export function entityField(host: EditorHost, label: string, ref: EntityRef, set: (ref: EntityRef) => void, key: string, opts: EntityFieldOptions = {}): TemplateResult {
   const states = host.hass.states;
   const search = entitySearches.get(key);
-  const results = search ? searchEntities(entityChoices(states, opts.domain), search.query) : [];
+  const results = search
+    ? searchEntities(entityChoices(states, opts.domain), search.query, ENTITY_RESULT_LIMIT, opts.preferNumeric ? looksNumeric : undefined)
+    : [];
   const index = search ? Math.max(0, Math.min(search.index, results.length - 1)) : 0;
   const live = ref.entityId ? states[ref.entityId] : undefined;
 
@@ -1028,6 +1063,68 @@ export function elementSize(el: CElement): number | undefined {
 
 const FONT_WEIGHTS: [FontWeight, string][] = [["regular", "Regular"], ["medium", "Medium"], ["semibold", "Semibold"], ["bold", "Bold"]];
 
+/**
+ * The one Entity field at the top of a drawing layer.
+ *
+ * Nothing stores it. It is read back from wherever the layer already names an
+ * entity (`layerEntityUses`), and setting it writes that entity into the
+ * layer's own content and into the tap attached to it. A layer whose content
+ * is a template, a named value or a chosen symbol keeps that content: the note
+ * under the field says where the entity did land, so the field is never a
+ * control that quietly did nothing.
+ */
+function layerEntityField(host: EditorHost, el: CElement, key: string): TemplateResult {
+  const id = el.payload.id;
+  const uses = layerEntityUses(host.config, id);
+  const ref = uses[0]?.ref ?? { entityId: "", displayName: "", domain: "" };
+  const opts: EntityFieldOptions = el.kind === "image" ? { domain: "camera" } : {};
+  return html`
+    ${entityField(host, el.kind === "image" ? "Camera" : "Entity", ref,
+      (next) => host.update((c) => setLayerEntity(c, id, next), `${key}-entity`), `${key}-layer-entity`, opts)}
+    <div class="hint">${layerEntityNote(el, uses)}</div>`;
+}
+
+/** The layer's own content value, which is the part an entity pick may rewrite. */
+function contentValue(el: CElement): Value | undefined {
+  if (el.kind === "text" || el.kind === "gauge") return el.payload.value;
+  if (el.kind === "icon") return el.payload.symbol;
+  return undefined;
+}
+
+function joinWords(parts: string[]): string {
+  if (parts.length <= 1) return parts.join("");
+  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
+/** Where the entity actually lives on this layer, in words. */
+export function layerEntityNote(el: CElement, uses: readonly LayerEntityUse[]): string {
+  const content = contentValue(el);
+  const contentKind = content?.kind.kind;
+  // A literal on a text or gauge layer is a placeholder an entity pick replaces;
+  // everywhere else the content is something the author chose, and it stays.
+  const contentKept = content !== undefined
+    && !("entityId" in content.kind)
+    && !(contentKind === "literal" && (el.kind === "text" || el.kind === "gauge"));
+  const keptNote = !contentKept
+    ? ""
+    : contentKind === "named"
+      ? " Its content comes through a named value, so change that value in the Data card to point it somewhere else."
+      : el.kind === "icon" && contentKind === "literal"
+        ? " The symbol above is a fixed name and stays as it is."
+        : " The value above was written by hand and stays as it is.";
+  if (uses.length === 0) {
+    if (el.kind === "shape") return "A shape draws no value, so an entity reaches it only through a tap. Tick Tappable below, then choose the entity here.";
+    return `Nothing on this layer reads an entity yet. Choosing one points the layer, and its tap, at it.${keptNote}`;
+  }
+  const parts: string[] = [];
+  const own = uses.find((u) => u.where === "value" || u.where === "symbol" || u.where === "camera");
+  if (own) parts.push(own.where === "symbol" ? "the symbol" : own.where === "camera" ? "the picture" : el.kind === "gauge" ? "the reading" : "the text");
+  if (uses.some((u) => u.where === "tap")) parts.push("the tap");
+  const tests = uses.filter((u) => u.where === "test").length;
+  if (tests > 0) parts.push(tests === 1 ? "1 state test" : `${tests} state tests`);
+  return `Used by ${joinWords(parts)}.${keptNote}`;
+}
+
 export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind): TemplateResult {
   const id = el.payload.id;
   const idx = host.config.elements.findIndex((e) => e.payload.id === id);
@@ -1081,7 +1178,6 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       break;
     case "image":
       content = html`
-        ${entityField(host, "Camera", el.payload.entity, (ref) => upd((e) => { (e as typeof el).payload.entity = ref; }, "entity"), `${key}-camera`, { domain: "camera" })}
         ${el.payload.entity.entityId && !el.payload.entity.entityId.startsWith("camera.") ? html`<div class="hint warn">Only camera entities have snapshots, so this layer stays blank until the entity is a camera.</div>` : nothing}
         ${checkField("Show timestamp", el.payload.timestamp === true, (v) => upd((e) => {
           const p = (e as typeof el).payload;
@@ -1099,6 +1195,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
   }
 
   return html`
+    ${el.kind === "tap" ? nothing : layerEntityField(host, el, key)}
     ${content}
     ${el.kind === "image" || el.kind === "tap" ? nothing : colorField(el.kind === "shape" ? "Fill colour" : "Colour", el.payload.colorSlot.baseColorHex, (v) => upd((e) => { if (e.kind !== "image" && e.kind !== "tap") e.payload.colorSlot.baseColorHex = v ?? "#FFFFFF"; }, "color"))}
     ${checkField("Hidden in every family", el.payload.isHidden, (v) => upd((e) => { e.payload.isHidden = v; }))}

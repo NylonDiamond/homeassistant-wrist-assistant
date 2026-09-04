@@ -1370,20 +1370,32 @@ export const TOGGLEABLE_DOMAINS = [
   "siren", "humidifier", "valve", "automation", "group",
 ];
 
+/** The entity a value reads, followed through named values, and the id of the
+ * last named value it went through when it took that road. */
+export function valueEntity(
+  cfg: CustomComplicationConfig,
+  value: Value | undefined,
+): { ref: EntityRef; namedId?: string } | undefined {
+  let namedId: string | undefined;
+  let current = value;
+  for (let hop = 0; current !== undefined && hop < 4; hop++) {
+    const kind = current.kind;
+    if ("entityId" in kind) {
+      if (kind.entityId === "") return undefined;
+      const ref: EntityRef = { entityId: kind.entityId, displayName: kind.displayName, domain: kind.domain };
+      return namedId === undefined ? { ref } : { ref, namedId };
+    }
+    if (kind.kind !== "named") return undefined;
+    namedId = kind.id.toUpperCase();
+    current = cfg.values.find((n) => n.id.toUpperCase() === namedId)?.value;
+  }
+  return undefined;
+}
+
 /** The entity a drawing layer is about, when it has one: whatever its value or
  * symbol reads, followed through named values, or a camera's own entity. */
 export function elementEntity(cfg: CustomComplicationConfig, el: Element): EntityRef | undefined {
-  let value = primaryValue(el);
-  for (let hop = 0; value !== undefined && hop < 4; hop++) {
-    const kind = value.kind;
-    if ("entityId" in kind) {
-      return kind.entityId === "" ? undefined : { entityId: kind.entityId, displayName: kind.displayName, domain: kind.domain };
-    }
-    if (kind.kind !== "named") return undefined;
-    const id = kind.id.toUpperCase();
-    value = cfg.values.find((n) => n.id.toUpperCase() === id)?.value;
-  }
-  return undefined;
+  return valueEntity(cfg, primaryValue(el))?.ref;
 }
 
 /** The action a newly attached tap starts with: toggle the layer's own entity
@@ -1541,6 +1553,123 @@ export function duplicateElement(cfg: CustomComplicationConfig, id: string): str
   }
   syncAttachedTaps(cfg);
   return copyId;
+}
+
+// ── layer entity ──────────────────────────────────────────────────────────
+// What a layer is *about* is nowhere in the schema. It is read back from the
+// places the layer already names an entity: its own value or symbol, the tap
+// attached to it, and the left-hand side of its rule tests. Keeping it derived
+// means a document written by any other route still opens with the right
+// entity in the field, and nothing new has to be stored or migrated.
+
+export interface LayerEntityUse {
+  /** Which part of the layer holds the reference. */
+  where: "value" | "symbol" | "camera" | "tap" | "test";
+  ref: EntityRef;
+  /** Set when the reference is reached through a named value rather than
+   * written on the layer itself. */
+  namedId?: string;
+  tapId?: string;
+  ruleId?: string;
+  caseId?: string;
+  testId?: string;
+}
+
+/**
+ * Every place one layer names an entity, in the order the editor trusts them:
+ * the layer's own content first, then its tap, then its rule tests.
+ *
+ * The states table reads this to default the left-hand side of a new test to
+ * the entity the layer is already about, which is the whole reason a user
+ * never types an entity id twice.
+ */
+export function layerEntityUses(cfg: CustomComplicationConfig, layerId: string): LayerEntityUse[] {
+  const el = cfg.elements.find((e) => e.payload.id === layerId);
+  if (!el) return [];
+  const out: LayerEntityUse[] = [];
+  const own = valueEntity(cfg, primaryValue(el));
+  if (own) {
+    const where = el.kind === "icon" ? "symbol" : el.kind === "image" ? "camera" : "value";
+    out.push(own.namedId === undefined ? { where, ref: own.ref } : { where, ref: own.ref, namedId: own.namedId });
+  }
+  for (const tap of attachedTapsOf(cfg, layerId)) {
+    const action = (tap.payload as TapElement).action;
+    if (!("entityId" in action) || action.entityId === "") continue;
+    out.push({
+      where: "tap",
+      ref: { entityId: action.entityId, displayName: action.displayName, domain: action.domain },
+      tapId: tap.payload.id,
+    });
+  }
+  for (const rule of el.payload.rules) {
+    for (const c of rule.cases) {
+      for (const t of c.when.tests) {
+        const found = valueEntity(cfg, t.value);
+        if (!found) continue;
+        const use: LayerEntityUse = { where: "test", ref: found.ref, ruleId: rule.id, caseId: c.id, testId: t.id };
+        if (found.namedId !== undefined) use.namedId = found.namedId;
+        out.push(use);
+      }
+    }
+  }
+  return out;
+}
+
+/** The one entity a layer is about, or undefined when it is about none. */
+export function layerEntity(cfg: CustomComplicationConfig, layerId: string): EntityRef | undefined {
+  return layerEntityUses(cfg, layerId)[0]?.ref;
+}
+
+/**
+ * What the layer's own value becomes when its entity changes.
+ *
+ * An entity-shaped value is retargeted and keeps its kind, so an attribute
+ * layer stays an attribute layer. A placeholder literal on a text or gauge
+ * layer becomes that entity's state, because a literal there is content
+ * nobody chose. Everything else is left exactly as it is: a template, an
+ * aggregate or a named value is work somebody typed, and an icon's symbol is
+ * the name of a picture rather than a reading, so neither is something an
+ * entity pick should overwrite.
+ */
+function rebindValue(value: Value | undefined, ref: EntityRef, kind: Element["kind"]): Value | undefined {
+  if (!value) return undefined;
+  const k = value.kind;
+  switch (k.kind) {
+    case "entityState": return { ...value, kind: { kind: "entityState", ...ref } };
+    case "entityAge": return { ...value, kind: { kind: "entityAge", ...ref } };
+    case "entityAttribute": return { ...value, kind: { kind: "entityAttribute", ...ref, attribute: k.attribute } };
+    case "literal":
+      return kind === "text" || kind === "gauge" ? { ...value, kind: { kind: "entityState", ...ref } } : undefined;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Point a layer at an entity: its own content where that is safe (see
+ * `rebindValue`), and the target of the tap attached to it. Rule tests are
+ * deliberately left alone; the states table owns those.
+ */
+export function setLayerEntity(cfg: CustomComplicationConfig, layerId: string, ref: EntityRef): void {
+  const el = cfg.elements.find((e) => e.payload.id === layerId);
+  // An empty reference is not an edit. The field is derived, so there is no
+  // "no entity" to store: clearing it would only blank the layer's content,
+  // and deleting the layer is what someone means by that.
+  if (!el || ref.entityId === "") return;
+  const full: EntityRef = { ...ref, domain: ref.domain || ref.entityId.split(".")[0] || "" };
+  if (el.kind === "image") {
+    el.payload.entity = full;
+  } else if (el.kind === "text" || el.kind === "gauge") {
+    const next = rebindValue(el.payload.value, full, el.kind);
+    if (next) el.payload.value = next;
+  } else if (el.kind === "icon") {
+    const next = rebindValue(el.payload.symbol, full, el.kind);
+    if (next) el.payload.symbol = next;
+  }
+  for (const tap of attachedTapsOf(cfg, layerId)) {
+    const p = tap.payload as TapElement;
+    if ("entityId" in p.action) p.action = { type: p.action.type, ...full };
+  }
 }
 
 // ── rule construction ─────────────────────────────────────────────────────

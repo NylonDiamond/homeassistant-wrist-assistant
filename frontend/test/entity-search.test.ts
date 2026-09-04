@@ -2,7 +2,7 @@
 // is, how a search over it is ranked, and what a typed line should store.
 
 import { describe, expect, it } from "vitest";
-import { commitTypedEntity, entityChoices, looksLikeEntityId, searchEntities } from "../src/editors.js";
+import { commitTypedEntity, entityChoices, looksLikeEntityId, looksNumeric, searchEntities } from "../src/editors.js";
 import type { HassEntityState } from "../src/ha-api.js";
 import type { EntityRef } from "../src/model.js";
 
@@ -48,6 +48,24 @@ describe("entityChoices", () => {
   it("keeps only one domain when the field asks for one", () => {
     expect(entityChoices(STATES, "camera").map((c) => c.entityId)).toEqual(["camera.garage", "camera.porch"]);
   });
+
+  it("keeps every domain a preset asks for", () => {
+    expect(entityChoices(STATES, ["light", "switch"]).map((c) => c.entityId).sort()).toEqual([
+      "light.kitchen", "light.kitchen_counter", "switch.kettle",
+    ]);
+  });
+});
+
+describe("looksNumeric", () => {
+  it("accepts a reading a gauge could draw, with or without its unit", () => {
+    expect(looksNumeric({ entityId: "sensor.a", name: "A", state: "12.4", domain: "sensor" })).toBe(true);
+    expect(looksNumeric({ entityId: "sensor.b", name: "B", state: "40 %", domain: "sensor" })).toBe(true);
+  });
+
+  it("rejects a word and an empty state", () => {
+    expect(looksNumeric({ entityId: "light.a", name: "A", state: "on", domain: "light" })).toBe(false);
+    expect(looksNumeric({ entityId: "light.b", name: "B", state: "", domain: "light" })).toBe(false);
+  });
 });
 
 describe("searchEntities", () => {
@@ -82,6 +100,23 @@ describe("searchEntities", () => {
 
   it("caps how much it hands back", () => {
     expect(searchEntities(CHOICES, "", 2)).toHaveLength(2);
+  });
+
+  it("floats the entities a boost likes without dropping the rest", () => {
+    const hits = searchEntities(CHOICES, "", 10, looksNumeric);
+    expect(hits[0]?.entityId).toBe("sensor.outside_temp");
+    expect(hits).toHaveLength(CHOICES.length);
+  });
+
+  it("still lets the better match win over the boost", () => {
+    const pool = entityChoices(states([
+      ["sensor.kitchen_humidity", "Kitchen humidity", "48"],
+      ["light.kitchen", "Kitchen light", "on"],
+    ]));
+    // A typed id is meant literally, so it wins even against a number.
+    expect(searchEntities(pool, "light.kitchen", 10, looksNumeric)[0]?.entityId).toBe("light.kitchen");
+    // With only a name to go on, the reading a gauge could draw comes first.
+    expect(searchEntities(pool, "kitchen", 10, looksNumeric)[0]?.entityId).toBe("sensor.kitchen_humidity");
   });
 });
 

@@ -22,6 +22,7 @@ import {
 import {
   type CustomComplicationConfig,
   type Element as CElement,
+  type EntityRef,
   type FamilyKind,
   type NormalizedFrame,
   type OccupiedSlot,
@@ -64,6 +65,8 @@ import {
   describeValue,
   effectivePlacement,
   entityDatalist,
+  entityField,
+  entitySearchOpen,
   familyEditor,
   generalEditor,
   layerEditor,
@@ -72,9 +75,14 @@ import {
   newNamedValue,
   setPlacement,
 } from "./editors.js";
+import { type PresetEnv, type PresetKind, LAYER_PRESETS, applyPreset, presetSpec } from "./presets.js";
 
 const TEMPLATE_REFRESH_MS = 30_000;
 const TEMPLATE_DEBOUNCE_MS = 500;
+
+/** Search key for the preset dialog's entity field. One dialog, one field, so
+ * one key; the field's transient search state lives in editors.ts under it. */
+const PRESET_ENTITY_KEY = "preset-entity";
 
 type Inspect =
   | { kind: "general" }
@@ -131,6 +139,11 @@ export class WristAssistantPanel extends LitElement {
    * General tab can warn that a rename does not reach the watch face picker.
    * Undefined for a brand-new complication (nothing is on the watch yet). */
   @state() private savedName?: string;
+  /** The preset whose entity dialog is open, and the entity chosen in it so
+   * far. A preset asks for its entity before it creates anything, so closing
+   * the dialog leaves the document exactly as it was. */
+  @state() private presetKind?: PresetKind;
+  @state() private presetEntity?: EntityRef;
   /** The New button's shape picker is open. Only offered when the watch can
    * take a one-shape document; an older watch gets the three-shape default. */
   @state() private newShapeChooser = false;
@@ -262,6 +275,26 @@ export class WristAssistantPanel extends LitElement {
     .layer .acts { display: none; gap: 0; }
     .layer:hover .acts, .layer.hl .acts { display: inline-flex; }
     .adders { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    /* Layer presets are the primary way to add a layer: each one is a whole
+       working thing (an icon, its tap and its states), so it carries the
+       weight. The blank kinds underneath stay available but stay quiet. */
+    .adders.presets { gap: 8px; }
+    button.preset {
+      font: inherit; font-size: 13px; font-weight: 500; padding: 7px 12px; border-radius: 8px; cursor: pointer;
+      border: 1px solid var(--primary-color); background: var(--card-background-color, #fff); color: var(--primary-color);
+    }
+    button.preset:hover:not(:disabled) { background: var(--primary-color); color: var(--text-primary-color, #fff); }
+    .adders.blanks { gap: 4px; margin-top: 6px; align-items: center; }
+    .adders.blanks .hint { margin: 0 2px 0 0; }
+    .adders.blanks button.small { opacity: .8; }
+    dialog.preset-dialog {
+      width: min(420px, calc(100vw - 32px)); box-sizing: border-box; padding: 16px 18px 18px;
+      border: 1px solid var(--divider-color); border-radius: 12px;
+      background: var(--card-background-color, #fff); color: var(--primary-text-color);
+      box-shadow: 0 12px 40px rgba(0,0,0,.4);
+    }
+    dialog.preset-dialog::backdrop { background: rgba(0,0,0,.45); }
+    .card dialog.preset-dialog h2 { margin: 0 0 4px; font-size: 15px; font-weight: 500; text-transform: none; letter-spacing: 0; opacity: 1; }
     .rule { margin: 6px 0 10px; font-size: 13px; }
     .rule .title { opacity: .7; margin-bottom: 4px; }
     .branches { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -1269,10 +1302,103 @@ export class WristAssistantPanel extends LitElement {
           </span>` : nothing}
         </div>`;
       })}
-      ${edit ? html`<div class="adders">
+      ${edit ? html`<div class="adders presets">
+        ${LAYER_PRESETS.map((p) => html`<button class="preset" title=${p.blurb}
+          ?disabled=${cfg.elements.length + p.layerCount > 64}
+          @click=${() => this.openPreset(p.kind)}>${p.title}</button>`)}
+      </div>
+      <div class="adders blanks">
+        <span class="hint">or start blank</span>
         ${(["text", "icon", "gauge", "shape", "image", "tap"] as const).map((k) => html`<button class="small" ?disabled=${cfg.elements.length >= 64} @click=${() => { const el = newElement(k); this.mutate((c) => { c.elements.push(el); }); this.inspect = { kind: "layer", id: el.payload.id }; }}>+ ${k === "image" ? "camera" : k === "tap" ? "tap area" : k}</button>`)}
-      </div>` : nothing}
+      </div>
+      ${this.renderPresetDialog()}` : nothing}
     </div>`;
+  }
+
+  /**
+   * The one question a preset asks: which entity is this about.
+   *
+   * A preset with no entity would be a broken thing on the face, so it is
+   * asked for before anything is created and Escape or Cancel creates nothing.
+   * A native dialog brings the backdrop, the focus trap and Escape with it;
+   * Escape reaches the entity search first, so the first press closes the
+   * result list and the second closes the dialog.
+   */
+  private renderPresetDialog() {
+    const spec = this.presetKind ? presetSpec(this.presetKind) : undefined;
+    const chosen = this.presetEntity;
+    return html`<dialog class="preset-dialog" @keydown=${this.presetKeys}
+        @close=${() => { this.presetKind = undefined; this.presetEntity = undefined; }}>
+      ${spec === undefined ? nothing : html`
+        <h2>${spec.title}</h2>
+        <div class="hint">${spec.blurb}</div>
+        ${entityField(this.host(), "Entity", chosen ?? { entityId: "", displayName: "", domain: "" },
+          (ref) => { this.presetEntity = ref.entityId === "" ? undefined : ref; },
+          PRESET_ENTITY_KEY,
+          {
+            compact: true,
+            ...(spec.domains ? { domain: spec.domains } : {}),
+            ...(spec.preferNumeric ? { preferNumeric: true } : {}),
+          })}
+        <div class="adders">
+          <button class="primary" ?disabled=${chosen === undefined} @click=${() => this.createFromPreset()}>Create</button>
+          <button class="small" @click=${() => this.closePresetDialog()}>Cancel</button>
+        </div>
+        <div class="hint">Escape closes this and creates nothing. Undo removes the whole preset in one step.</div>`}
+    </dialog>`;
+  }
+
+  private openPreset(kind: PresetKind) {
+    if (!this.canEdit) return;
+    this.presetKind = kind;
+    this.presetEntity = undefined;
+    void this.updateComplete.then(() => {
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.preset-dialog");
+      if (!dialog) return;
+      if (!dialog.open) dialog.showModal();
+      // Straight into the search: the entity is the only thing being asked for.
+      dialog.querySelector<HTMLInputElement>(".entity-field input")?.focus();
+    });
+  }
+
+  private closePresetDialog() {
+    const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.preset-dialog");
+    if (dialog?.open) dialog.close();
+    else {
+      this.presetKind = undefined;
+      this.presetEntity = undefined;
+    }
+  }
+
+  /**
+   * Enter confirms, but only once the search has been answered. The entity
+   * field's own Enter takes the highlighted row, so this listener runs in the
+   * capture phase and stands back while the list is open.
+   */
+  private presetKeys = {
+    handleEvent: (e: Event) => {
+      if ((e as KeyboardEvent).key !== "Enter") return;
+      if (this.presetEntity === undefined || entitySearchOpen(PRESET_ENTITY_KEY)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.createFromPreset();
+    },
+    capture: true,
+  };
+
+  /** Build the preset in one draft update, so undo removes all of it at once,
+   * then select what it made. */
+  private createFromPreset() {
+    const kind = this.presetKind;
+    const ref = this.presetEntity;
+    if (!kind || !ref) return;
+    const env: PresetEnv = { family: this.canvasFamily };
+    const state = this.hass.states[ref.entityId];
+    if (state) env.state = state;
+    let created: string | undefined;
+    this.mutate((c) => { created = applyPreset(c, kind, ref, env); });
+    this.closePresetDialog();
+    if (created) this.inspect = { kind: "layer", id: created };
   }
 
   private renderPreviews() {
