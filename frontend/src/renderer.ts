@@ -312,8 +312,8 @@ export function pictureRect(
 /** Camera snapshot preview: HA's entity_picture cropped into the frame the same
  * way the watch crops it, clipped to the layer's own rounded rectangle. No URL
  * (entity not found, or a non-camera entity) draws the placeholder the watch
- * shows before its first fetch. The timestamp chip mirrors the watch's overlay;
- * the preview picture is always live, so the age style reads "0s". */
+ * shows before its first fetch. The timestamp chip mirrors the watch's overlay
+ * with the current time, since the preview picture is always live. */
 function renderImage(el: Extract<ResolvedElement, { kind: "image" }>, box: Box, options: RenderOptions) {
   const icons = options.icons;
   const clipId = `imgclip-${el.id}`;
@@ -321,17 +321,10 @@ function renderImage(el: Extract<ResolvedElement, { kind: "image" }>, box: Box, 
   const chip = el.showTimestamp && el.url
     ? (() => {
         const size = Math.min(Math.max(el.timestampSize, 4), 40);
-        let label: string;
-        if (el.timestampStyle === "age") {
-          // The watch draws the same compact duration the `.entityAge` format
-          // uses. The preview picture is live, so its age is zero.
-          label = "0s";
-        } else {
-          const now = new Date();
-          const h = now.getHours() % 12 || 12;
-          const two = (n: number) => String(n).padStart(2, "0");
-          label = `${h}:${two(now.getMinutes())}:${two(now.getSeconds())}`;
-        }
+        const now = new Date();
+        const hour12 = now.getHours() % 12 || 12;
+        const two = (n: number) => String(n).padStart(2, "0");
+        const label = `${hour12}:${two(now.getMinutes())}:${two(now.getSeconds())}`;
         const w = label.length * size * 0.578 + size * 0.89;
         const h = size * 1.25;
         const pad = 4;

@@ -1247,11 +1247,7 @@ function imageTimestampSection(img: ImageElement, upd: (m: (p: ImageElement) => 
         ["bottomTrailing", "Bottom right"],
       ], (v) => upd((p) => { p.timestampCorner = v; }))}
       ${numberField("Text size (pt)", img.timestampSize, (v) => upd((p) => { p.timestampSize = Math.min(40, Math.max(4, v ?? IMAGE_DEFAULT_TIMESTAMP_SIZE)); }, "tssize"), { step: 1, min: 4, max: 40 })}
-      ${selectField("Shows", img.timestampStyle, [["clock", "The clock time it was taken"], ["age", "How long ago it was taken"]],
-        (v) => upd((p) => { p.timestampStyle = v; }))}
-      <div class="hint">${img.timestampStyle === "age"
-        ? "A compact age: 45s, 5m, 2h, 3d. It grows every time the complication redraws, so a camera that has stopped answering says so. The preview is live, so it reads 0s."
-        : "The time the snapshot was fetched, not the time now. A frame that stops updating keeps its old time."}</div>`}`;
+      <div class="hint">The time the snapshot was fetched, not the time now. A frame that stops updating keeps its old time.</div>`}`;
 }
 
 function section(title: string, body: unknown, note?: string): TemplateResult {

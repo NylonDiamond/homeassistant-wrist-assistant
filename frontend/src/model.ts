@@ -253,8 +253,6 @@ export interface ShapeElement extends ElementBase {
 /** How a snapshot meets its frame: `fill` crops it, `fit` shows all of it. */
 export type ImageContentMode = "fill" | "fit";
 export type ImageTimestampCorner = "topLeading" | "topTrailing" | "bottomLeading" | "bottomTrailing";
-/** What the timestamp says: the clock time it was fetched, or how long ago. */
-export type ImageTimestampStyle = "clock" | "age";
 
 export const IMAGE_DEFAULT_CORNER_RADIUS = 6;
 export const IMAGE_DEFAULT_TIMESTAMP_SIZE = 9;
@@ -276,7 +274,6 @@ export interface ImageElement extends Omit<ElementBase, "colorSlot"> {
   cornerRadius: number;
   timestampCorner: ImageTimestampCorner;
   timestampSize: number;
-  timestampStyle: ImageTimestampStyle;
 }
 
 /** An invisible tap area. Draws nothing on the watch; its frame becomes its own
@@ -671,7 +668,6 @@ export function parseElement(raw: unknown): Element {
           ? (p.timestampCorner as ImageTimestampCorner)
           : "topLeading",
         timestampSize: num(p.timestampSize, IMAGE_DEFAULT_TIMESTAMP_SIZE),
-        timestampStyle: p.timestampStyle === "age" ? "age" : "clock",
       };
       if (p.timestamp === true) el.timestamp = true;
       return { kind: "image", payload: el };
@@ -1000,7 +996,6 @@ function encodeElement(el: Element): J {
       if (p.cornerRadius !== IMAGE_DEFAULT_CORNER_RADIUS) o.cornerRadius = encNum(p.cornerRadius);
       if (p.timestampCorner !== "topLeading") o.timestampCorner = p.timestampCorner;
       if (p.timestampSize !== IMAGE_DEFAULT_TIMESTAMP_SIZE) o.timestampSize = encNum(p.timestampSize);
-      if (p.timestampStyle !== "clock") o.timestampStyle = p.timestampStyle;
       return { kind: "image", payload: o };
     }
     case "tap": {
@@ -1119,6 +1114,10 @@ const K = {
   icon: ["symbol", "size"],
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex"],
   shape: ["kind", "cornerRadius", "borderColorHex", "borderWidth"],
+  // `timestampStyle` is retired (the age style, built and removed 2026-09-04).
+  // It stays listed so a document saved while it existed does not read as
+  // corrupt; nothing decodes it, and it leaves the wire on that document's next
+  // save.
   image: ["entity", "timestamp", "contentMode", "zoom", "panX", "panY", "cornerRadius",
     "timestampCorner", "timestampSize", "timestampStyle"],
   tap: ["action", "openPageId", "openPageName", "attachedTo"],
@@ -1341,7 +1340,6 @@ export function newElement(kind: Element["kind"]): Element {
           cornerRadius: IMAGE_DEFAULT_CORNER_RADIUS,
           timestampCorner: "topLeading",
           timestampSize: IMAGE_DEFAULT_TIMESTAMP_SIZE,
-          timestampStyle: "clock",
         },
       };
     }

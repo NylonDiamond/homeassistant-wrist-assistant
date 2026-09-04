@@ -77,7 +77,6 @@ describe("image element wire format", () => {
       p.cornerRadius = 0;
       p.timestampCorner = "bottomTrailing";
       p.timestampSize = 12;
-      p.timestampStyle = "age";
     });
     const written = payloadOf(doc);
     expect(written.contentMode).toBe("fit");
@@ -86,13 +85,11 @@ describe("image element wire format", () => {
     expect(written.cornerRadius).toBe(0);
     expect(written.timestampCorner).toBe("bottomTrailing");
     expect(written.timestampSize).toBe(12);
-    expect(written.timestampStyle).toBe("age");
 
     const p = parseConfig(doc).elements[0]!.payload as unknown as Record<string, unknown>;
     expect(p.contentMode).toBe("fit");
     expect(p.zoom).toBe(2.5);
     expect(p.panY).toBe(0.75);
-    expect(p.timestampStyle).toBe("age");
   });
 
   it("reads a document written before the settings existed as the old look", () => {
@@ -107,6 +104,5 @@ describe("image element wire format", () => {
     expect(p.cornerRadius).toBe(6);
     expect(p.timestampCorner).toBe("topLeading");
     expect(p.timestampSize).toBe(9);
-    expect(p.timestampStyle).toBe("clock");
   });
 });

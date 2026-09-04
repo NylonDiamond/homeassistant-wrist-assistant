@@ -14,7 +14,6 @@ import {
   type GaugeStyle,
   type ImageContentMode,
   type ImageTimestampCorner,
-  type ImageTimestampStyle,
   type InlineLayout,
   type NamedValue,
   type NormalizedFrame,
@@ -116,7 +115,6 @@ export interface ResolvedImage extends ResolvedBase {
   cornerRadius: number;
   timestampCorner: ImageTimestampCorner;
   timestampSize: number;
-  timestampStyle: ImageTimestampStyle;
 }
 /** A tap area after rules ran. Draws nothing on the watch; the preview outlines
  * it in edit mode. Only visibility rules apply, so opacity is always 1. */
@@ -565,7 +563,6 @@ export class Resolver {
           cornerRadius: el.payload.cornerRadius,
           timestampCorner: el.payload.timestampCorner,
           timestampSize: el.payload.timestampSize,
-          timestampStyle: el.payload.timestampStyle,
         };
         const url = this.ctx.entityStates.get(el.payload.entity.entityId)?.entityPicture;
         if (url !== undefined) out.url = url;
