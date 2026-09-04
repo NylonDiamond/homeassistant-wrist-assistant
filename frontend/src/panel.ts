@@ -59,6 +59,7 @@ import { makeIconProvider } from "./icons.js";
 import { SymbolBrowser } from "./symbols.js";
 import { Draft, draftStatus } from "./draft.js";
 import { statesSummary } from "./states.js";
+import { uiIcon } from "./ui-icons.js";
 import { beginGesture, type HandleCorner } from "./interact.js";
 import {
   type DescribeContext,
@@ -282,9 +283,23 @@ export class WristAssistantPanel extends LitElement {
     .toolbar button:disabled, button:disabled { opacity: .45; cursor: default; }
     button.primary { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: transparent; }
     button.danger { color: var(--error-color, #db4437); border-color: var(--error-color, #db4437); }
-    button.small { padding: 3px 8px; font-size: 12px; }
-    button.icon { font: inherit; border: none; background: none; cursor: pointer; padding: 2px 6px; opacity: .7; color: inherit; }
-    button.icon:hover { opacity: 1; }
+    /* The adders and the row buttons. 3px of padding made a 21px target for a
+       12px label; this is the same button one size up, which is still small
+       against a preset button but no longer something to aim at. */
+    button.small { padding: 5px 10px; font-size: 12.5px; min-height: 26px; }
+    /* Row actions. They were 12px glyphs in a 2px box: too small to hit and
+       too cryptic to read (a filled dot meant "visible"). Now every one is a
+       28px target with a drawn icon, which is about a fingertip and the
+       smallest thing a pointer hits without aiming. */
+    button.icon {
+      font: inherit; border: none; background: none; cursor: pointer; color: inherit;
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px; padding: 0; border-radius: 6px; opacity: .75;
+    }
+    button.icon:hover:not(:disabled) { opacity: 1; background: rgba(127,127,127,.22); }
+    button.icon:focus-visible { opacity: 1; outline: 2px solid var(--primary-color); outline-offset: -2px; }
+    button.icon.danger:hover:not(:disabled) { color: var(--error-color, #db4437); }
+    svg.ui-icon { width: 17px; height: 17px; display: block; }
     .dirty-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--warning-color, #ffa600); margin-left: 6px; }
     /* Three columns with a draggable gutter between each pair. The side widths
        come in as custom properties already fitted to the measured panel width
@@ -454,8 +469,11 @@ export class WristAssistantPanel extends LitElement {
     .layer .name, .datum .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .layer .meta, .datum .meta { font-size: 12px; opacity: .7; }
     .layer .chip { font-size: 10px; padding: 0 6px; opacity: .8; }
-    .layer .acts { display: none; gap: 0; }
-    .layer:hover .acts, .layer.hl .acts { display: inline-flex; }
+    /* Reserved, not removed: taking the actions out of the layout made the row
+       change height and the name change width the moment the pointer arrived,
+       so the thing being aimed at moved. */
+    .layer .acts { display: inline-flex; gap: 0; flex: none; visibility: hidden; }
+    .layer:hover .acts, .layer.hl .acts, .layer:focus-within .acts { visibility: visible; }
     .adders { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
     /* Layer presets are the primary way to add a layer: each one is a whole
        working thing (an icon, its tap and its states), so it carries the
@@ -1647,7 +1665,7 @@ export class WristAssistantPanel extends LitElement {
         return html`<div class="datum ${hl ? "hl" : ""}" @click=${() => { this.inspect = { kind: "data", id: v.id }; }}>
           <span class="name">${v.name || "(unnamed)"}</span>
           <span class="meta" title=${describeValue(v.value, ctx)}>${r ?? "unresolved"}</span>
-          ${this.canEdit ? html`<button class="icon" title="Delete value" @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { c.values = c.values.filter((x) => x.id !== v.id); }); if (hl) this.inspect = { kind: "general" }; }}>×</button>` : nothing}
+          ${this.canEdit ? html`<button class="icon danger" title="Delete value" aria-label="Delete value" @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { c.values = c.values.filter((x) => x.id !== v.id); }); if (hl) this.inspect = { kind: "general" }; }}>${uiIcon("delete")}</button>` : nothing}
         </div>`;
       })}
     </div>`;
@@ -1707,11 +1725,11 @@ export class WristAssistantPanel extends LitElement {
           ${el.payload.rules.length === 0 ? nothing : html`<span class="chip" title=${states}>${states.replace(/\.$/, "").toLowerCase()}</span>`}
           ${hidden ? html`<span class="meta">hidden</span>` : nothing}
           ${edit ? html`<span class="acts">
-            <button class="icon" title="Bring forward" @click=${(e: Event) => { e.stopPropagation(); move(id, 1); }}>▲</button>
-            <button class="icon" title="Send back" @click=${(e: Event) => { e.stopPropagation(); move(id, -1); }}>▼</button>
-            <button class="icon" title=${eff.isHidden ? `Show in ${familyTitle(family)}` : `Hide in ${familyTitle(family)}`} @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => setPlacement(c, family, id, { isHidden: !eff.isHidden })); }}>${eff.isHidden ? "◌" : "●"}</button>
-            <button class="icon" title="Duplicate" @click=${(e: Event) => { e.stopPropagation(); dup(id); }}>⧉</button>
-            <button class="icon" title="Delete" @click=${(e: Event) => { e.stopPropagation(); del(id); }}>×</button>
+            <button class="icon" title="Bring forward" aria-label="Bring forward" @click=${(e: Event) => { e.stopPropagation(); move(id, 1); }}>${uiIcon("up")}</button>
+            <button class="icon" title="Send back" aria-label="Send back" @click=${(e: Event) => { e.stopPropagation(); move(id, -1); }}>${uiIcon("down")}</button>
+            <button class="icon" title=${eff.isHidden ? `Show in ${familyTitle(family)}` : `Hide in ${familyTitle(family)}`} aria-label=${eff.isHidden ? "Show this layer" : "Hide this layer"} @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => setPlacement(c, family, id, { isHidden: !eff.isHidden })); }}>${uiIcon(eff.isHidden ? "hide" : "show")}</button>
+            <button class="icon" title="Duplicate" aria-label="Duplicate" @click=${(e: Event) => { e.stopPropagation(); dup(id); }}>${uiIcon("duplicate")}</button>
+            <button class="icon danger" title="Delete" aria-label="Delete" @click=${(e: Event) => { e.stopPropagation(); del(id); }}>${uiIcon("delete")}</button>
           </span>` : nothing}
         </div>`;
       })}

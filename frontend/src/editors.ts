@@ -78,6 +78,7 @@ import type { HassEntityState, HassLike } from "./ha-api.js";
 import { familyTitle, type IconProvider } from "./renderer.js";
 import { CURATED_SYMBOLS, SYMBOL_CATEGORIES, SymbolBrowser, searchSymbols } from "./symbols.js";
 import { canRemoveFamily, missingFamilies, supportedFamilies } from "./layouts.js";
+import { uiIcon } from "./ui-icons.js";
 
 export interface EditorHost {
   hass: HassLike;
@@ -924,7 +925,7 @@ function aggregateEditor(host: EditorHost, a: AggregateSpec, set: (a: AggregateS
         </div>`
       : html`${scope.entities.map((e, i) => html`<div class="row-inline">
             ${entityField(host, `Entity ${i + 1}`, e, (ref) => { const list = [...scope.entities]; list[i] = ref; set({ ...a, scope: { ...scope, entities: list } }); }, `${key}-agg-${i}`, { compact: true })}
-            <button class="icon" title="Remove" @click=${() => set({ ...a, scope: { ...scope, entities: scope.entities.filter((_, j) => j !== i) } })}>×</button>
+            <button class="icon" title="Remove" @click=${() => set({ ...a, scope: { ...scope, entities: scope.entities.filter((_, j) => j !== i) } })}>${uiIcon("close")}</button>
           </div>`)}
           <button class="small" @click=${() => set({ ...a, scope: { ...scope, entities: [...scope.entities, { entityId: "", displayName: "", domain: "" }] } })}>Add entity</button>`}
     ${selectField("Only count when", a.stateFilter?.kind ?? "", [["", "Any state"], ["isOn", "On"], ["isOff", "Off"], ["equals", "State equals"], ["notEquals", "State does not equal"]], (v) => {
@@ -1641,9 +1642,9 @@ function ruleEditor(host: EditorHost, rule: Rule, ri: number, count: number, tar
     <div class="rule-head">
       <b>Rule ${ri + 1}</b>
       <span class="spacer"></span>
-      <button class="icon" title="Move up" ?disabled=${ri === 0} @click=${() => upd((rs) => moveItem(rs, ri, ri - 1))}>▲</button>
-      <button class="icon" title="Move down" ?disabled=${ri === count - 1} @click=${() => upd((rs) => moveItem(rs, ri, ri + 1))}>▼</button>
-      <button class="icon" title="Delete rule" @click=${() => upd((rs) => { const i = rs.findIndex((x) => x.id === rule.id); if (i >= 0) rs.splice(i, 1); })}>×</button>
+      <button class="icon" title="Move up" ?disabled=${ri === 0} @click=${() => upd((rs) => moveItem(rs, ri, ri - 1))}>${uiIcon("up")}</button>
+      <button class="icon" title="Move down" ?disabled=${ri === count - 1} @click=${() => upd((rs) => moveItem(rs, ri, ri + 1))}>${uiIcon("down")}</button>
+      <button class="icon danger" title="Delete rule" @click=${() => upd((rs) => { const i = rs.findIndex((x) => x.id === rule.id); if (i >= 0) rs.splice(i, 1); })}>${uiIcon("delete")}</button>
     </div>
     <div class="branches">
       <span class="hint" style="margin:0 4px 0 0">Preview:</span>
@@ -1670,9 +1671,9 @@ function caseEditor(host: EditorHost, c: RuleCase, ci: number, rule: Rule, targe
     <div class="rule-head">
       <span>Case ${ci + 1}${matches ? html` <span class="ok">· active now</span>` : nothing}</span>
       <span class="spacer"></span>
-      <button class="icon" title="Move up" ?disabled=${ci === 0} @click=${() => updRule((r) => moveItem(r.cases, ci, ci - 1))}>▲</button>
-      <button class="icon" title="Move down" ?disabled=${ci === rule.cases.length - 1} @click=${() => updRule((r) => moveItem(r.cases, ci, ci + 1))}>▼</button>
-      <button class="icon" title="Delete case" @click=${() => updRule((r) => { const i = r.cases.findIndex((y) => y.id === c.id); if (i >= 0) r.cases.splice(i, 1); })}>×</button>
+      <button class="icon" title="Move up" ?disabled=${ci === 0} @click=${() => updRule((r) => moveItem(r.cases, ci, ci - 1))}>${uiIcon("up")}</button>
+      <button class="icon" title="Move down" ?disabled=${ci === rule.cases.length - 1} @click=${() => updRule((r) => moveItem(r.cases, ci, ci + 1))}>${uiIcon("down")}</button>
+      <button class="icon danger" title="Delete case" @click=${() => updRule((r) => { const i = r.cases.findIndex((y) => y.id === c.id); if (i >= 0) r.cases.splice(i, 1); })}>${uiIcon("delete")}</button>
     </div>
     <div class="row-inline">
       ${selectField("When", c.when.join, [["all", "all of these are true"], ["any", "any of these is true"]], (v) => updCase((x) => { x.when.join = v; }))}
@@ -1713,7 +1714,7 @@ function testEditor(host: EditorHost, t: import("./model.js").Test, ti: number, 
     <div class="rule-head">
       <span>Test ${ti + 1} <span class=${result ? "ok" : "no"}>${result ? "✓ true now" : "✗ false now"}</span></span>
       <span class="spacer"></span>
-      <button class="icon" title="Delete test" @click=${remove}>×</button>
+      <button class="icon danger" title="Delete test" @click=${remove}>${uiIcon("delete")}</button>
     </div>
     ${c.kind === "isStale"
       ? html`<div class="hint">True when the watch's cached values are older than the staleness limit. The value below is not read.</div>`
@@ -1746,7 +1747,7 @@ function changeEditor(host: EditorHost, ch: StyleChange, i: number, target: Rule
     <div class="rule-head">
       <span>${CHANGE_LABELS[ch.kind]}${ignored ? html` <span class="no">(ignored by ${target === "layout" ? "layouts" : `${target} layers`})</span>` : nothing}</span>
       <span class="spacer"></span>
-      <button class="icon" title="Delete change" @click=${remove}>×</button>
+      <button class="icon danger" title="Delete change" @click=${remove}>${uiIcon("delete")}</button>
     </div>
     ${changeBody(host, ch, upd, key)}
   </div>`;
@@ -1890,9 +1891,9 @@ function statesTable(
       if (c) m(c.then);
     }, k && `${row.caseId}-${k}`),
     acts: html`
-      <button class="icon" title="Move up" ?disabled=${i === 0} @click=${() => upd((rs) => moveStateRow(rs, i, i - 1))}>▲</button>
-      <button class="icon" title="Move down" ?disabled=${i === table.rows.length - 1} @click=${() => upd((rs) => moveStateRow(rs, i, i + 1))}>▼</button>
-      <button class="icon" title="Delete this state" @click=${() => upd((rs) => removeStateRow(rs, row.caseId))}>×</button>`,
+      <button class="icon" title="Move up" ?disabled=${i === 0} @click=${() => upd((rs) => moveStateRow(rs, i, i - 1))}>${uiIcon("up")}</button>
+      <button class="icon" title="Move down" ?disabled=${i === table.rows.length - 1} @click=${() => upd((rs) => moveStateRow(rs, i, i + 1))}>${uiIcon("down")}</button>
+      <button class="icon danger" title="Delete this state" @click=${() => upd((rs) => removeStateRow(rs, row.caseId))}>${uiIcon("delete")}</button>`,
   }));
 
   const otherwiseRow = table.otherwise === undefined ? nothing : statesRow(host, {
@@ -1905,7 +1906,7 @@ function statesTable(
     onForce: () => force("otherwise"),
     when: html`<span class="when-otherwise">Otherwise</span>`,
     updChanges: (m, k) => upd((rs) => { const o = rs[0]?.otherwise; if (o) m(o); }, k),
-    acts: html`<button class="icon" title="Remove the Otherwise row" @click=${() => upd((rs) => setOtherwise(rs, false))}>×</button>`,
+    acts: html`<button class="icon" title="Remove the Otherwise row" @click=${() => upd((rs) => setOtherwise(rs, false))}>${uiIcon("close")}</button>`,
   });
 
   const pendingRemoval = pendingColumnRemoval.get(key);
@@ -1922,7 +1923,7 @@ function statesTable(
             ${columns.map((p) => html`<th>
               <span>${PROPERTY_LABELS[p]}</span>
               <button class="icon" title=${`Remove the ${PROPERTY_LABELS[p]} column`}
-                @click=${(e: Event) => { pendingColumnRemoval.set(key, p); requestRerender(e.target); }}>×</button>
+                @click=${(e: Event) => { pendingColumnRemoval.set(key, p); requestRerender(e.target); }}>${uiIcon("close")}</button>
             </th>`)}
             <th class="acts"></th>
           </tr>
