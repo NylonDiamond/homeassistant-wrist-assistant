@@ -29,12 +29,16 @@ import {
   type Value,
   DRAWABLE_FAMILIES,
   MAX_SLOTS,
+  attachedTapsOf,
   auditUnknownKeys,
+  duplicateElement,
   freeSlotFrom,
+  isAttachedTap,
   newConfig,
   newElement,
   newId,
   parseConfig,
+  removeElement,
 } from "./model.js";
 import { SEND_WAIT_MS, describeSend, sendState } from "./send-state.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
@@ -254,6 +258,7 @@ export class WristAssistantPanel extends LitElement {
     .layer .kind { opacity: .6; font-size: 11px; text-transform: uppercase; margin-right: 2px; min-width: 42px; }
     .layer .name, .datum .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .layer .meta, .datum .meta { font-size: 12px; opacity: .7; }
+    .layer .chip { font-size: 10px; padding: 0 6px; opacity: .8; }
     .layer .acts { display: none; gap: 0; }
     .layer:hover .acts, .layer.hl .acts { display: inline-flex; }
     .adders { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
@@ -962,12 +967,19 @@ export class WristAssistantPanel extends LitElement {
     const target = e.target as SVGElement;
     const handle = target.closest("[data-handle]")?.getAttribute("data-handle") as HandleCorner | null;
     const group = target.closest("[data-element-id]");
-    const id = group?.getAttribute("data-element-id");
-    if (!id) return;
+    const hitId = group?.getAttribute("data-element-id");
+    if (!hitId) return;
     const svg = target.closest("svg") as SVGSVGElement | null;
     if (!svg) return;
-    const el = this.draft.config.elements.find((x) => x.payload.id === id);
-    if (!el) return;
+    const hit = this.draft.config.elements.find((x) => x.payload.id === hitId);
+    if (!hit) return;
+    // An attached tap sits exactly over its owner and is not a layer the user
+    // ever selects or drags: send the hit to the layer it belongs to, which is
+    // what the author sees there. A free-standing tap is grabbed as before.
+    const el = (hit.kind === "tap" && hit.payload.attachedTo !== undefined
+      ? this.draft.config.elements.find((x) => x.payload.id === hit.payload.attachedTo)
+      : hit) ?? hit;
+    const id = el.payload.id;
     if (this.inspect.kind !== "layer" || this.inspect.id !== id) {
       this.inspect = { kind: "layer", id };
       if (handle) return;
@@ -1165,37 +1177,30 @@ export class WristAssistantPanel extends LitElement {
     if (!cfg) return nothing;
     const edit = this.canEdit;
     const family = this.canvasFamily;
+    // An attached tap has no row of its own, so a step here is a step over the
+    // rows the card shows. The tap travels with its owner; syncAttachedTaps
+    // puts it back directly above whichever layer it belongs to.
     const move = (id: string, dir: -1 | 1) => this.mutate((c) => {
-      const i = c.elements.findIndex((e) => e.payload.id === id);
+      const rows = c.elements.filter((e) => !isAttachedTap(c, e));
+      const taps = c.elements.filter((e) => isAttachedTap(c, e));
+      const i = rows.findIndex((e) => e.payload.id === id);
       const j = i + dir;
-      if (i < 0 || j < 0 || j >= c.elements.length) return;
-      [c.elements[i], c.elements[j]] = [c.elements[j]!, c.elements[i]!];
+      if (i < 0 || j < 0 || j >= rows.length) return;
+      [rows[i], rows[j]] = [rows[j]!, rows[i]!];
+      c.elements = [...rows, ...taps];
     });
     const dup = (id: string) => {
-      const copyId = newId();
-      this.mutate((c) => {
-        const i = c.elements.findIndex((e) => e.payload.id === id);
-        const src = c.elements[i]!;
-        const copy = structuredClone(src);
-        copy.payload.id = copyId;
-        copy.payload.frame = { ...copy.payload.frame, x: Math.min(0.9, copy.payload.frame.x + 0.05), y: Math.min(0.9, copy.payload.frame.y + 0.05) };
-        c.elements.splice(i + 1, 0, copy);
-        for (const fam of DRAWABLE_FAMILIES) {
-          const p = c.perFamily[fam]?.placements[id];
-          if (p) c.perFamily[fam]!.placements[copyId] = structuredClone(p);
-        }
-      });
-      this.inspect = { kind: "layer", id: copyId };
+      let copyId: string | undefined;
+      this.mutate((c) => { copyId = duplicateElement(c, id); });
+      if (copyId) this.inspect = { kind: "layer", id: copyId };
     };
     const del = (id: string) => {
-      this.mutate((c) => {
-        c.elements = c.elements.filter((e) => e.payload.id !== id);
-        for (const fam of DRAWABLE_FAMILIES) delete c.perFamily[fam]?.placements[id];
-      });
+      this.mutate((c) => removeElement(c, id));
       if (this.inspect.kind === "layer" && this.inspect.id === id) this.inspect = { kind: "general" };
     };
-    // Top of the list = drawn last = on top, like the phone editor.
-    const ordered = [...cfg.elements].reverse();
+    // Top of the list = drawn last = on top, like the phone editor. Attached
+    // taps are not rows: they show as a badge on the layer they belong to.
+    const ordered = [...cfg.elements].filter((el) => !isAttachedTap(cfg, el)).reverse();
     return html`<div class="card">
       <h2>Layers <span class="meta" style="text-transform:none;letter-spacing:0">(top first)</span></h2>
       ${this.activeFamily === "inline" ? html`<div class="hint">Inline is one line of text and draws no layers. The controls here apply to the ${familyTitle(family)} layout.</div>` : nothing}
@@ -1205,9 +1210,13 @@ export class WristAssistantPanel extends LitElement {
         const hl = this.inspect.kind === "layer" && this.inspect.id === id;
         const eff = effectivePlacement(cfg, family, el);
         const hidden = el.payload.isHidden || eff.isHidden;
+        // A tappable layer says so on its own row, because its tap is edited
+        // here rather than as a layer of its own.
+        const tap = attachedTapsOf(cfg, id)[0];
         return html`<div class="layer ${hl ? "hl" : ""}" @click=${() => { this.inspect = { kind: "layer", id }; }}>
           <span class="kind">${el.kind}</span>
           <span class="name" style=${hidden ? "opacity:.5" : ""}>${layerTitle(el)}</span>
+          ${tap ? html`<span class="chip" title=${`Tappable · ${layerTitle(tap)}`}>tap</span>` : nothing}
           ${hidden ? html`<span class="meta">hidden</span>` : nothing}
           ${edit ? html`<span class="acts">
             <button class="icon" title="Bring forward" @click=${(e: Event) => { e.stopPropagation(); move(id, 1); }}>▲</button>

@@ -1,0 +1,260 @@
+{
+  "name": "Attached tap",
+  "description": "The plan's test case: a lightbulb icon whose tap toggles the light, built as one drawing layer with an attached tap (`attachedTo`) rather than a hand-aligned rectangle. The tap carries no geometry of its own: its frame and its circular placement are copies of the icon's, which is what the editor guarantees and what both resolvers must agree on. Rules swap the icon and its colour with the light's state.",
+  "config": {
+    "schemaVersion": 4,
+    "id": "AAAAAAAA-0000-4000-8000-000000000071",
+    "name": "Kitchen light",
+    "values": [],
+    "slotIndex": 3,
+    "elements": [
+      {
+        "kind": "icon",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000071",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [
+            {
+              "id": "DDDDDDDD-0000-4000-8000-000000000071",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000071",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "BBBBBBBB-0000-4000-8000-000000000071",
+                        "value": {
+                          "kind": {
+                            "kind": "entityState",
+                            "entityId": "light.kitchen",
+                            "displayName": "Kitchen light",
+                            "domain": "light"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "isOn"
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    {
+                      "kind": "setIcon",
+                      "value": {
+                        "kind": {
+                          "kind": "literal",
+                          "value": "lightbulb.fill"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "setColor",
+                      "value": {
+                        "kind": {
+                          "kind": "literal",
+                          "value": "#FFD60A"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ],
+              "otherwise": [
+                {
+                  "kind": "setColor",
+                  "value": {
+                    "kind": {
+                      "kind": "literal",
+                      "value": "#8E8E93"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "frame": {
+            "x": 0.4,
+            "y": 0.15,
+            "width": 0.2,
+            "height": 0.7,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "symbol": {
+            "kind": {
+              "kind": "literal",
+              "value": "lightbulb"
+            }
+          },
+          "size": 22
+        }
+      },
+      {
+        "kind": "tap",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000072",
+          "action": {
+            "type": "toggleEntity",
+            "entityId": "light.kitchen",
+            "displayName": "Kitchen light",
+            "domain": "light"
+          },
+          "attachedTo": "EEEEEEEE-0000-4000-8000-000000000071",
+          "rules": [],
+          "frame": {
+            "x": 0.4,
+            "y": 0.15,
+            "width": 0.2,
+            "height": 0.7,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "supportedFamilies": [
+      "rectangular",
+      "circular",
+      "corner"
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      },
+      "circular",
+      {
+        "placements": {
+          "EEEEEEEE-0000-4000-8000-000000000072": {
+            "frame": {
+              "x": 0.3,
+              "y": 0.25,
+              "width": 0.4,
+              "height": 0.5,
+              "rotationDegrees": 0
+            }
+          },
+          "EEEEEEEE-0000-4000-8000-000000000071": {
+            "frame": {
+              "x": 0.3,
+              "y": 0.25,
+              "width": 0.4,
+              "height": 0.5,
+              "rotationDegrees": 0
+            },
+            "size": 30
+          }
+        },
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      },
+      "corner",
+      {
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "tapAction": {
+      "type": "refresh"
+    },
+    "refreshMinutes": 15
+  },
+  "inputs": {
+    "entityStates": {
+      "light.kitchen": {
+        "state": "on",
+        "domain": "light"
+      }
+    },
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": [
+      "light.kitchen"
+    ],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000071",
+          "kind": "icon",
+          "symbol": "lightbulb.fill",
+          "colorHex": "#FFD60A",
+          "size": 22,
+          "isHidden": false,
+          "frame": {
+            "x": 0.4,
+            "y": 0.15,
+            "width": 0.2,
+            "height": 0.7,
+            "rotationDegrees": 0
+          }
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000072",
+          "kind": "tap",
+          "isHidden": false,
+          "opacity": 1,
+          "frame": {
+            "x": 0.4,
+            "y": 0.15,
+            "width": 0.2,
+            "height": 0.7,
+            "rotationDegrees": 0
+          }
+        }
+      ]
+    },
+    "circular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000071",
+          "kind": "icon",
+          "symbol": "lightbulb.fill",
+          "colorHex": "#FFD60A",
+          "size": 30,
+          "isHidden": false,
+          "frame": {
+            "x": 0.3,
+            "y": 0.25,
+            "width": 0.4,
+            "height": 0.5,
+            "rotationDegrees": 0
+          }
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000072",
+          "kind": "tap",
+          "isHidden": false,
+          "opacity": 1,
+          "frame": {
+            "x": 0.3,
+            "y": 0.25,
+            "width": 0.4,
+            "height": 0.5,
+            "rotationDegrees": 0
+          }
+        }
+      ]
+    },
+    "forced": [
+      {
+        "ruleId": "DDDDDDDD-0000-4000-8000-000000000071",
+        "branch": "otherwise",
+        "family": "rectangular",
+        "elementId": "EEEEEEEE-0000-4000-8000-000000000071",
+        "expect": {
+          "symbol": "lightbulb",
+          "colorHex": "#8E8E93"
+        }
+      }
+    ]
+  }
+}
