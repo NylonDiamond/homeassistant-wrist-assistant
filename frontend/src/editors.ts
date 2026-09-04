@@ -24,6 +24,7 @@ import {
   type RuleTarget,
   type StyleChange,
   type StyleChangeKind,
+  type StyleProperty,
   type TapAction,
   type TapElement,
   type TimeField,
@@ -51,6 +52,27 @@ import {
   styleChangePayload,
   switchComparison,
 } from "./model.js";
+import {
+  type StatesTable,
+  COMPARISON_LABELS,
+  DEFAULT_COLUMN,
+  PROPERTY_CHANGE_KIND,
+  PROPERTY_LABELS,
+  TABLE_COMPARISONS,
+  addStateRow,
+  cellChange,
+  isNumericComparison,
+  looksBinary,
+  moveStateRow,
+  removeColumn,
+  removeStateRow,
+  setOtherwise,
+  setTestedValue,
+  shownColumns,
+  statesSummary,
+  tableShape,
+  whenText,
+} from "./states.js";
 import type { ForcedBranches } from "./resolver.js";
 import type { HassEntityState, HassLike } from "./ha-api.js";
 import { familyTitle, type IconProvider } from "./renderer.js";
@@ -623,6 +645,9 @@ export interface ValueEditorOptions {
   /** Draw the whole form in place instead of behind a chip. For the one screen
    * where the value is the entire subject (a named value's own editor). */
   inline?: boolean;
+  /** Drop the label line and tighten the chip, for a states table cell where
+   * the column heading has already said what the value is for. */
+  compact?: boolean;
 }
 
 /**
@@ -640,21 +665,27 @@ export function valueEditor(host: EditorHost, value: Value, set: (v: Value) => v
   const label = opts.label ?? "Value";
   const resolved = opts.showResolved ? host.resolve(value) : undefined;
   const summary = describeValue(value, describeContext(host));
-  return html`<div class="field value-chip-field">
-    <span>${label}</span>
-    <button type="button" class="value-chip" popovertarget=${id} aria-haspopup="dialog" title=${`${label}: ${summary}. Click to change it.`}>
+  return html`<div class="field value-chip-field ${opts.compact ? "compact" : ""}">
+    ${opts.compact ? nothing : html`<span>${label}</span>`}
+    <button type="button" class="value-chip ${opts.compact ? "chip-cell" : ""}" popovertarget=${id} aria-haspopup="dialog" title=${`${label}: ${summary}. Click to change it.`}>
       <span class="chip-text">${summary}</span>
       ${resolved === undefined ? nothing : html`<span class="chip-now mono" title="Value right now">${resolved}</span>`}
       <span class="chip-caret" aria-hidden="true">▾</span>
     </button>
-    <div class="value-pop" id=${id} popover role="dialog" aria-label=${label} @toggle=${onValuePopoverToggle}>
-      <div class="pop-head">
-        <b>${label}</b>
-        <span class="spacer"></span>
-        <button type="button" class="small" popovertarget=${id} popovertargetaction="hide">Done</button>
-      </div>
-      ${openedPopovers.has(id) ? valueForm(host, value, set, opts) : nothing}
+    ${valuePopover(host, id, label, value, set, opts)}
+  </div>`;
+}
+
+/** The popover half of a value chip, on its own so a states table can hang one
+ * off a plain number input's "…" button without also drawing a chip. */
+function valuePopover(host: EditorHost, id: string, label: string, value: Value, set: (v: Value) => void, opts: ValueEditorOptions): TemplateResult {
+  return html`<div class="value-pop" id=${id} popover role="dialog" aria-label=${label} @toggle=${onValuePopoverToggle}>
+    <div class="pop-head">
+      <b>${label}</b>
+      <span class="spacer"></span>
+      <button type="button" class="small" popovertarget=${id} popovertargetaction="hide">Done</button>
     </div>
+    ${openedPopovers.has(id) ? valueForm(host, value, set, opts) : nothing}
   </div>`;
 }
 
@@ -691,6 +722,41 @@ const openedPopovers = new Set<string>();
 /** Popovers being kept under their chip while the page scrolls. */
 const popoverTrackers = new WeakMap<HTMLElement, () => void>();
 
+/**
+ * The control a popover belongs under.
+ *
+ * Found by the `popovertarget` that opened it rather than by the class of the
+ * chip, so a table cell, a row's "…" button and the original value chip all
+ * position the same way. Where two controls share one popover (a plain number
+ * input beside its "…" button) the first in document order wins, which is the
+ * one the user is looking at.
+ */
+function anchorFor(pop: HTMLElement): HTMLElement | null {
+  const root = pop.getRootNode();
+  const scope = root instanceof ShadowRoot || root instanceof Document ? root : pop.ownerDocument;
+  return scope.querySelector<HTMLElement>(`[popovertarget="${pop.id}"]`);
+}
+
+/**
+ * Open a popover that does not exist yet.
+ *
+ * Filling an empty cell writes the change and then wants the form for it, but
+ * the button carrying the popover is only built by the redraw that the edit
+ * causes. Two frames is enough for lit to have rendered it; failing to find it
+ * simply leaves the cell filled with its default, which is still a step
+ * forward rather than an error.
+ */
+function openPopoverSoon(node: EventTarget | null, id: string): void {
+  const start = node instanceof Node ? node : null;
+  if (!start) return;
+  const root = start.getRootNode();
+  if (!(root instanceof ShadowRoot) && !(root instanceof Document)) return;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const el = root.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
+    if (el && typeof el.showPopover === "function" && !el.matches(":popover-open")) el.showPopover();
+  }));
+}
+
 function onValuePopoverToggle(e: Event): void {
   const pop = e.currentTarget as HTMLElement;
   const opening = (e as Event & { newState?: string }).newState === "open";
@@ -701,7 +767,7 @@ function onValuePopoverToggle(e: Event): void {
     return;
   }
 
-  const anchor = pop.parentElement?.querySelector<HTMLElement>("button.value-chip") ?? null;
+  const anchor = anchorFor(pop);
   if (!anchor) return;
   const track = () => {
     if (!pop.isConnected || !pop.matches(":popover-open")) { popoverTrackers.get(pop)?.(); popoverTrackers.delete(pop); return; }
@@ -1213,7 +1279,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       ${numberField(`${sizeLabel} in ${familyTitle(family)} (blank = shared ${elementSize(el)})`, eff.size, (v) => host.update((c) => (v === undefined ? setPlacement(c, family, id, {}, true) : setPlacement(c, family, id, { size: v })), `${key}-psize-${family}`), { step: 1, min: 1, optional: true })}
     </div>`}
     <div class="hint">Drag the layer in the ${familyTitle(family)} preview to move it. Drag a corner to resize it. Frames are fractions of the canvas.</div>
-    <div class="hint">${el.payload.rules.length === 0 ? "No rules." : `${el.payload.rules.length} rule${el.payload.rules.length === 1 ? "" : "s"}.`} Use the Rules tab to change how this layer reacts to values.</div>`;
+    <div class="hint">${statesSummary(el.payload.rules)} Use the States tab to give this layer a different look when a value changes.</div>`;
 }
 
 // ── Tappable ──────────────────────────────────────────────────────────────
@@ -1303,7 +1369,7 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
     ${family === "corner" ? cornerEditor(host, layout, upd) : nothing}
     <div class="hint">${placed === 0 ? "Layers use their shared frames here." : `${placed} layer${placed === 1 ? " has" : "s have"} a ${familyTitle(family)} placement.`}</div>
     ${placed > 0 ? html`<button class="small" @click=${() => upd((l) => { l.placements = {}; })}>Reset placements to the shared frames</button>` : nothing}
-    <div class="hint">${layout.rules.length === 0 ? "No layout rules." : `${layout.rules.length} layout rule${layout.rules.length === 1 ? "" : "s"}.`} Use the Rules tab to change the background, border, and bezel label from values.</div>
+    <div class="hint">${statesSummary(layout.rules)} Use the States tab to change the background, border and bezel label from values.</div>
     ${removeLayoutRow(host, family)}`;
 }
 
@@ -1415,13 +1481,8 @@ export type { Comparison };
 
 // ── Rules ─────────────────────────────────────────────────────────────────
 
-const COMPARISON_LABELS: Record<ComparisonKind, string> = {
-  isOn: "is on", isOff: "is off", equals: "equals", notEquals: "does not equal",
-  isUnavailable: "is unavailable or unknown", isStale: "data is stale", isEmpty: "is empty",
-  greaterThan: "is greater than", greaterOrEqual: "is at least", lessThan: "is less than", lessOrEqual: "is at most",
-  between: "is between", contains: "contains", startsWith: "starts with", endsWith: "ends with",
-  matchesRegex: "matches regex", isOneOf: "is one of",
-};
+// COMPARISON_LABELS lives in states.ts, beside the table that turns a numeric
+// comparison into "below 20", so the two wordings cannot drift apart.
 
 const CHANGE_LABELS: Record<StyleChangeKind, string> = {
   setColor: "Set colour", setOpacity: "Set opacity", setText: "Set text", setIcon: "Set icon",
@@ -1645,6 +1706,20 @@ const COLOR_KINDS: StyleChangeKind[] = ["setColor", "setBorderColor", "setBackgr
 
 function changeEditor(host: EditorHost, ch: StyleChange, i: number, target: RuleTarget, upd: (m: (c: StyleChange) => void, k?: string) => void, remove: () => void, key: string): TemplateResult {
   const ignored = !RULE_TARGET_PROPERTIES[target].includes(STYLE_PROPERTY[ch.kind]);
+  return html`<div class="change-box">
+    <div class="rule-head">
+      <span>${CHANGE_LABELS[ch.kind]}${ignored ? html` <span class="no">(ignored by ${target === "layout" ? "layouts" : `${target} layers`})</span>` : nothing}</span>
+      <span class="spacer"></span>
+      <button class="icon" title="Delete change" @click=${remove}>×</button>
+    </div>
+    ${changeBody(host, ch, upd, key)}
+  </div>`;
+}
+
+/** The controls behind one style change: a colour, a symbol, a value, a number
+ * or a weight. Shared by the Advanced editor's change box and by a states
+ * table cell, so the two can never offer different things. */
+function changeBody(host: EditorHost, ch: StyleChange, upd: (m: (c: StyleChange) => void, k?: string) => void, key: string): TemplateResult | typeof nothing {
   const payload = styleChangePayload(ch.kind);
   let body: TemplateResult | typeof nothing = nothing;
   if (payload === "value") {
@@ -1665,12 +1740,410 @@ function changeEditor(host: EditorHost, ch: StyleChange, i: number, target: Rule
   } else if (payload === "weight") {
     body = selectField("Weight", ch.weight ?? "regular", FONT_WEIGHTS, (w) => upd((c) => { c.weight = w; }));
   }
-  return html`<div class="change-box">
-    <div class="rule-head">
-      <span>${CHANGE_LABELS[ch.kind]}${ignored ? html` <span class="no">(ignored by ${target === "layout" ? "layouts" : `${target} layers`})</span>` : nothing}</span>
-      <span class="spacer"></span>
-      <button class="icon" title="Delete change" @click=${remove}>×</button>
-    </div>
-    ${body}
-  </div>`;
+  return body;
+}
+
+// ── States table ──────────────────────────────────────────────────────────
+// A two-state light is two rows and nothing else. The table is a view of one
+// ordinary rule (see states.ts): rows are cases, columns are the properties a
+// change sets, and every edit here writes the same `Rule` the Advanced editor
+// would have written by hand.
+
+/** Keys the user has sent to the Advanced editor. Transient on purpose: which
+ * editor is open is not part of the document and does not belong in undo. */
+const advancedRules = new Set<string>();
+/** Columns added by the picker that no change fills in yet. A column with a
+ * change in it is always shown, so this only ever holds empty ones. */
+const pickedColumns = new Map<string, Set<StyleProperty>>();
+/** The column a "Remove column" click is waiting for confirmation on. */
+const pendingColumnRemoval = new Map<string, StyleProperty>();
+/** What the header chip says before the first row exists. A table with no rows
+ * has nowhere to store the value being tested, and inventing an empty rule to
+ * hold it would put a rule on the watch that does nothing. */
+const pendingTestValues = new Map<string, Value>();
+
+/**
+ * The Rules tab for a layer: the states table when the rules are one, today's
+ * `rulesEditor` when they are not.
+ *
+ * `defaultValue` is what a brand-new table tests, which the panel fills in
+ * from the layer's own entity: a light layer already knows it is about the
+ * light, and asking again would be the duplication this whole slice removes.
+ */
+export function statesEditor(
+  host: EditorHost,
+  rules: Rule[],
+  target: RuleTarget,
+  locate: (cfg: CustomComplicationConfig) => Rule[] | undefined,
+  key: string,
+  defaultValue?: Value,
+): TemplateResult {
+  const shape = tableShape(rules);
+  const advanced = !shape.ok || advancedRules.has(key);
+  if (advanced) {
+    return html`
+      <div class="states-switch">
+        <button class="link" ?disabled=${!shape.ok} title=${shape.ok ? "Go back to the table" : "These rules cannot be shown as a table"}
+          @click=${(e: Event) => { advancedRules.delete(key); requestRerender(e.target); }}>Show as table</button>
+        ${shape.ok ? nothing : html`<span class="hint">${shape.reason}</span>`}
+      </div>
+      ${rulesEditor(host, rules, target, locate, key)}`;
+  }
+  return statesTable(host, shape.table, rules[0], target, locate, key, defaultValue);
+}
+
+function statesTable(
+  host: EditorHost,
+  table: StatesTable,
+  rule: Rule | undefined,
+  target: RuleTarget,
+  locate: (cfg: CustomComplicationConfig) => Rule[] | undefined,
+  key: string,
+  defaultValue?: Value,
+): TemplateResult {
+  const upd = (mutate: (rules: Rule[]) => void, k?: string) =>
+    host.update((c) => { const r = locate(c); if (r) mutate(r); }, k ? `${key}-${k}` : undefined);
+
+  // What a new row tests: whatever the rows already test, else the header
+  // chip's pending choice, else the layer's own entity.
+  const tested = table.value ?? pendingTestValues.get(key) ?? defaultValue;
+  // An empty table guesses from the value itself: a light gets on/off rows, a
+  // thermometer gets bands. The live reading settles the cases a domain name
+  // cannot, such as a sensor that reports words.
+  const fresh = table.rows.length === 0;
+  const numberMode = table.numberMode
+    || (fresh && tested !== undefined && !looksBinary(tested) && isNumberish(host.resolve(tested)));
+
+  const allowed = RULE_TARGET_PROPERTIES[target];
+  const picked = pickedColumns.get(key) ?? new Set<StyleProperty>();
+  const seed = table.columns.length === 0 && picked.size === 0 ? [DEFAULT_COLUMN[target]] : [];
+  const columns = shownColumns(table.columns, [...picked, ...seed.filter((p): p is StyleProperty => p !== undefined)], allowed);
+
+  const live = rule ? host.liveBranch(rule) : "none";
+  const forced = rule ? host.forced.get(rule.id) ?? "live" : "live";
+  const isForced = (branch: string) => forced !== "live" && (forced === "otherwise" ? branch === "otherwise" : forced.caseId === branch);
+  const force = (branch: string) => {
+    if (!rule) return;
+    host.setForced(rule.id, isForced(branch) ? "live" : branch === "otherwise" ? "otherwise" : { caseId: branch });
+  };
+
+  const setTested = (v: Value) => {
+    pendingTestValues.set(key, v);
+    if (table.rows.length === 0) return;
+    upd((rs) => setTestedValue(rs, v), "lhs");
+  };
+
+  const addRow = () => upd((rs) => addStateRow(rs, tested ?? literal(""), numberMode));
+
+  const rows = table.rows.map((row, i) => statesRow(host, {
+    key: `${key}-${row.caseId}`,
+    label: whenText(row.comparison, (v) => describeValue(v, describeContext(host))),
+    columns,
+    changes: row.changes,
+    live: live === row.caseId,
+    forced: isForced(row.caseId),
+    onForce: () => force(row.caseId),
+    // Coalescing keys carry the row and the column, so typing in one cell is
+    // one undo step and typing in the next one is another.
+    when: whenCell(host, row.comparison, `${key}-${row.caseId}`, (m, k) => upd((rs) => {
+      const t = rs[0]?.cases.find((c) => c.id === row.caseId)?.when.tests[0];
+      if (t) m(t.comparison);
+    }, k && `${row.caseId}-${k}`)),
+    updChanges: (m, k) => upd((rs) => {
+      const c = rs[0]?.cases.find((x) => x.id === row.caseId);
+      if (c) m(c.then);
+    }, k && `${row.caseId}-${k}`),
+    acts: html`
+      <button class="icon" title="Move up" ?disabled=${i === 0} @click=${() => upd((rs) => moveStateRow(rs, i, i - 1))}>▲</button>
+      <button class="icon" title="Move down" ?disabled=${i === table.rows.length - 1} @click=${() => upd((rs) => moveStateRow(rs, i, i + 1))}>▼</button>
+      <button class="icon" title="Delete this state" @click=${() => upd((rs) => removeStateRow(rs, row.caseId))}>×</button>`,
+  }));
+
+  const otherwiseRow = table.otherwise === undefined ? nothing : statesRow(host, {
+    key: `${key}-otherwise`,
+    label: "Otherwise",
+    columns,
+    changes: table.otherwise,
+    live: live === "otherwise",
+    forced: isForced("otherwise"),
+    onForce: () => force("otherwise"),
+    when: html`<span class="when-otherwise">Otherwise</span>`,
+    updChanges: (m, k) => upd((rs) => { const o = rs[0]?.otherwise; if (o) m(o); }, k),
+    acts: html`<button class="icon" title="Remove the Otherwise row" @click=${() => upd((rs) => setOtherwise(rs, false))}>×</button>`,
+  });
+
+  const pendingRemoval = pendingColumnRemoval.get(key);
+  const spare = COLUMN_PICKER_ORDER.filter((p) => allowed.includes(p) && !columns.includes(p));
+
+  return html`
+    <div class="states">
+      ${valueEditor(host, tested ?? literal(""), setTested, { label: "Testing", showResolved: true, key: `${key}-lhs` })}
+      ${tested === undefined ? html`<div class="hint">Choose what these states look at. A layer bound to an entity fills this in for you.</div>` : nothing}
+      <table class="states-table">
+        <thead>
+          <tr>
+            <th class="when">When</th>
+            ${columns.map((p) => html`<th>
+              <span>${PROPERTY_LABELS[p]}</span>
+              <button class="icon" title=${`Remove the ${PROPERTY_LABELS[p]} column`}
+                @click=${(e: Event) => { pendingColumnRemoval.set(key, p); requestRerender(e.target); }}>×</button>
+            </th>`)}
+            <th class="acts"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+          ${otherwiseRow}
+          ${table.rows.length === 0 && table.otherwise === undefined
+            ? html`<tr><td class="empty-row" colspan=${columns.length + 2}>No states yet. Add one to change how this ${target === "layout" ? "shape" : "layer"} looks when a value changes.</td></tr>`
+            : nothing}
+        </tbody>
+      </table>
+      ${pendingRemoval === undefined ? nothing : html`<div class="hint warn confirm-row">
+        Remove the ${PROPERTY_LABELS[pendingRemoval]} column? Its ${countColumnUses(table, pendingRemoval)} value${countColumnUses(table, pendingRemoval) === 1 ? "" : "s"} are deleted from every state.
+        <button class="danger small" @click=${(e: Event) => {
+          pendingColumnRemoval.delete(key);
+          pickedColumns.get(key)?.delete(pendingRemoval);
+          requestRerender(e.target);
+          upd((rs) => removeColumn(rs, pendingRemoval));
+        }}>Remove</button>
+        <button class="small" @click=${(e: Event) => { pendingColumnRemoval.delete(key); requestRerender(e.target); }}>Cancel</button>
+      </div>`}
+      <div class="states-foot">
+        <button class="small" @click=${addRow}>+ state</button>
+        ${table.otherwise === undefined
+          ? html`<button class="small" title="What this layer looks like when no state above matches" @click=${() => upd((rs) => setOtherwise(rs, true))}>+ otherwise</button>`
+          : nothing}
+        <span class="spacer"></span>
+        ${forced === "live" ? nothing : html`<button class="small" @click=${() => rule && host.setForced(rule.id, "live")}>Back to live</button>`}
+        ${spare.length === 0 ? nothing : html`<select class="chip-add" title="Add a column" @change=${(e: Event) => {
+          const sel = e.target as HTMLSelectElement;
+          const p = sel.value as StyleProperty | "";
+          sel.value = "";
+          if (!p) return;
+          const set = pickedColumns.get(key) ?? new Set<StyleProperty>();
+          set.add(p);
+          pickedColumns.set(key, set);
+          requestRerender(sel);
+        }}>
+          <option value="" selected>+ column…</option>
+          ${spare.map((p) => html`<option value=${p}>${PROPERTY_LABELS[p]}</option>`)}
+        </select>`}
+      </div>
+      <div class="hint">${numberMode
+        ? "States are checked top to bottom and the first match wins, so each band only has to say where it starts."
+        : "States are checked top to bottom and the first match wins. Otherwise applies when none of them do."}</div>
+      <div class="hint">Click a row to hold the previews on it. Click it again for the live value.</div>
+      <div class="states-switch">
+        <button class="link" @click=${(e: Event) => { advancedRules.add(key); requestRerender(e.target); }}>Advanced</button>
+        <span class="hint">Several rules, several tests per state, or a regular expression.</span>
+      </div>
+    </div>`;
+}
+
+/** Whether a resolved reading is a number, which is what makes a fresh table
+ * a set of bands rather than a set of states. */
+function isNumberish(resolved: string | undefined): boolean {
+  const t = (resolved ?? "").trim();
+  return t !== "" && Number.isFinite(Number(t));
+}
+
+/** Column picker order. The same order the header reads in, so a column lands
+ * where the list said it would. */
+const COLUMN_PICKER_ORDER: StyleProperty[] = [
+  "icon", "text", "color", "visibility", "opacity", "fontSize", "fontWeight",
+  "rotation", "gaugeValue", "gaugeMin", "gaugeMax", "backgroundColor",
+  "borderColor", "borderWidth",
+];
+
+function countColumnUses(table: StatesTable, property: StyleProperty): number {
+  let n = 0;
+  for (const row of table.rows) if (cellChange(row.changes, property)) n += 1;
+  if (table.otherwise && cellChange(table.otherwise, property)) n += 1;
+  return n;
+}
+
+interface StatesRowOptions {
+  key: string;
+  label: string;
+  columns: StyleProperty[];
+  changes: StyleChange[];
+  live: boolean;
+  forced: boolean;
+  onForce: () => void;
+  when: TemplateResult;
+  updChanges: (m: (list: StyleChange[]) => void, k?: string) => void;
+  acts: TemplateResult;
+}
+
+/** Whether a click landed on something that handles its own clicks, so the row
+ * does not also treat it as "preview this state". */
+function onControl(e: Event): boolean {
+  const el = e.target as HTMLElement | null;
+  return !!el?.closest?.("input, select, textarea, button, label, [popover]");
+}
+
+function statesRow(host: EditorHost, o: StatesRowOptions): TemplateResult {
+  return html`<tr class="state-row ${o.live ? "live" : ""} ${o.forced ? "forced" : ""}"
+    title=${`${o.label}. Click to hold the previews on this state.`}
+    @click=${(e: Event) => { if (!onControl(e)) o.onForce(); }}>
+    <td class="when">
+      <span class="row-flag" title=${o.forced ? "The previews are held on this state" : o.live ? "This state matches right now" : ""}>${o.forced ? "◉" : o.live ? "●" : ""}</span>
+      ${o.when}
+    </td>
+    ${o.columns.map((p) => html`<td>${statesCell(host, p, o.changes, o.updChanges, `${o.key}-${p}`)}</td>`)}
+    <td class="acts">${o.acts}</td>
+  </tr>`;
+}
+
+/** One cell: what this state sets for one column, or "unchanged". Clicking an
+ * empty cell writes the column's default and opens its form, so filling in a
+ * table is one click per cell rather than a trip through an adder menu. */
+function statesCell(
+  host: EditorHost,
+  property: StyleProperty,
+  changes: StyleChange[],
+  updChanges: (m: (list: StyleChange[]) => void, k?: string) => void,
+  key: string,
+): TemplateResult {
+  const ch = cellChange(changes, property);
+  const id = popoverId(key);
+  if (!ch) {
+    return html`<button type="button" class="cell empty" title=${`Set ${PROPERTY_LABELS[property]} for this state`}
+      @click=${(e: Event) => {
+        updChanges((list) => { list.push(newStyleChange(PROPERTY_CHANGE_KIND[property])); });
+        openPopoverSoon(e.target, id);
+      }}>unchanged</button>`;
+  }
+  const upd = (m: (c: StyleChange) => void, k?: string) => updChanges((list) => {
+    const target = list.find((x) => STYLE_PROPERTY[x.kind] === property);
+    if (target) m(target);
+  }, k && `${property}-${k}`);
+  const label = PROPERTY_LABELS[property];
+  return html`
+    <button type="button" class="cell filled" popovertarget=${id} aria-haspopup="dialog" title=${`${label}. Click to change it.`}>${cellSummary(host, ch)}</button>
+    <div class="value-pop" id=${id} popover role="dialog" aria-label=${label} @toggle=${onValuePopoverToggle}>
+      <div class="pop-head">
+        <b>${label}</b>
+        <span class="spacer"></span>
+        <button type="button" class="small" popovertarget=${id} popovertargetaction="hide">Done</button>
+      </div>
+      ${openedPopovers.has(id)
+        ? html`${property === "visibility"
+            ? selectField("This state", ch.kind === "hide" ? "hide" : "show", [["show", "Shown"], ["hide", "Hidden"]], (v) => upd((c) => { c.kind = v as StyleChangeKind; }))
+            : changeBody(host, ch, upd, key)}
+          <button class="link" @click=${(e: Event) => {
+            // Closed first: emptying the cell takes this popover's own button
+            // out of the document, and a popover removed while open never
+            // fires the toggle that tidies up after it.
+            (e.target as HTMLElement).closest<HTMLElement>("[popover]")?.hidePopover();
+            updChanges((list) => {
+              const i = list.findIndex((x) => STYLE_PROPERTY[x.kind] === property);
+              if (i >= 0) list.splice(i, 1);
+            });
+          }}>Leave ${label.toLowerCase()} unchanged</button>`
+        : nothing}
+    </div>`;
+}
+
+/** What a filled cell shows: a colour swatch, a symbol and its name, or the
+ * value in words. Short enough that a row still reads as one line. */
+function cellSummary(host: EditorHost, ch: StyleChange): TemplateResult {
+  if (ch.kind === "hide") return html`<span class="cell-word">Hidden</span>`;
+  if (ch.kind === "show") return html`<span class="cell-word">Shown</span>`;
+  const payload = styleChangePayload(ch.kind);
+  if (payload === "number") return html`<span class="cell-word mono">${ch.number ?? 0}</span>`;
+  if (payload === "weight") return html`<span class="cell-word">${FONT_WEIGHTS.find(([w]) => w === (ch.weight ?? "regular"))?.[1]}</span>`;
+  const v = ch.value ?? literal("");
+  const fixed = v.kind.kind === "literal" ? v.kind.value : undefined;
+  if (COLOR_KINDS.includes(ch.kind)) {
+    return html`<span class="swatch" style=${`background:${fixed && /^#[0-9a-fA-F]{6,8}$/.test(fixed) ? fixed : "transparent"}`}></span>
+      <span class="cell-word">${fixed ? colorWords(fixed) : describeValue(v, describeContext(host))}</span>`;
+  }
+  if (ch.kind === "setIcon" && fixed) {
+    const glyph = host.icons.render(fixed, 16, "#FFFFFF");
+    return html`${glyph ?? nothing}<span class="cell-word">${fixed}</span>`;
+  }
+  return html`<span class="cell-word">${describeValue(v, describeContext(host))}</span>`;
+}
+
+/** A hex colour as something a person can read back. Names are the closest of
+ * the Apple system colours the rest of the editor already offers; anything
+ * else keeps its hex. */
+export function colorWords(hex: string): string {
+  const named: Record<string, string> = {
+    "#FF453A": "red", "#FF9F0A": "orange", "#FFD60A": "amber", "#34C759": "green",
+    "#30D158": "green", "#0A84FF": "blue", "#64D2FF": "cyan", "#BF5AF2": "purple",
+    "#FFFFFF": "white", "#8E8E93": "grey", "#000000": "black", "#FFCC00": "amber",
+    "#FF3B30": "red",
+  };
+  return named[hex.toUpperCase()] ?? hex;
+}
+
+/**
+ * The "When" cell: a comparison and, when it needs one, its right-hand side.
+ *
+ * A literal right-hand side is a plain input, because that is what it is; a
+ * value that reads an entity or a template shows the chip instead. The "…"
+ * button beside a literal is how the first becomes the second.
+ */
+function whenCell(host: EditorHost, c: Comparison, key: string, upd: (m: (c: Comparison) => void, k?: string) => void): TemplateResult {
+  const operand = comparisonOperand(c.kind);
+  const numeric = isNumericComparison(c.kind);
+  const rhs = (v: Value, set: (v: Value) => void, k: string, placeholder: string) =>
+    compactValue(host, v, set, `${key}-${k}`, numeric, placeholder, k === "rhs" ? "Compare with" : "Upper bound");
+  return html`<span class="when-cell">
+    <select class="when-op" title="How this state is decided" @change=${onInput((v) => upd((x) => {
+      const next = switchComparison(x, v as ComparisonKind);
+      x.kind = next.kind;
+      if (next.value !== undefined) x.value = next.value; else delete x.value;
+      if (next.upper !== undefined) x.upper = next.upper; else delete x.upper;
+    }))}>
+      ${TABLE_COMPARISONS.map((k) => html`<option value=${k} ?selected=${k === c.kind}>${tableComparisonLabel(k)}</option>`)}
+    </select>
+    ${operand === "value" || operand === "between"
+      ? rhs(c.value ?? literal(""), (v) => upd((x) => { x.value = v; }, "rhs"), "rhs", numeric ? "0" : "value")
+      : nothing}
+    ${operand === "between" ? html`<span class="when-and">to</span>${rhs(c.upper ?? literal(""), (v) => upd((x) => { x.upper = v; }, "upper"), "upper", "100")}` : nothing}
+  </span>`;
+}
+
+/** The comparison dropdown's wording. Numeric kinds read the way the row will
+ * read once it has a number in it, so choosing one is choosing a sentence. */
+function tableComparisonLabel(kind: ComparisonKind): string {
+  switch (kind) {
+    case "lessThan": return "below…";
+    case "lessOrEqual": return "…or below";
+    case "between": return "between…";
+    case "greaterOrEqual": return "…or above";
+    case "greaterThan": return "above…";
+    default: return COMPARISON_LABELS[kind];
+  }
+}
+
+/** A right-hand side inside a row: a plain input while it is a literal, the
+ * value chip once it is anything else, and one button between the two. */
+function compactValue(
+  host: EditorHost,
+  v: Value,
+  set: (v: Value) => void,
+  key: string,
+  numeric: boolean,
+  placeholder: string,
+  label: string,
+): TemplateResult {
+  const id = popoverId(key);
+  const opts: ValueEditorOptions = { showResolved: true, label, key };
+  if (v.kind.kind !== "literal") {
+    return html`<span class="rhs">
+      ${valueEditor(host, v, set, { ...opts, compact: true })}
+    </span>`;
+  }
+  const text = v.kind.value;
+  return html`<span class="rhs">
+    <input class="cellin ${numeric ? "num" : ""}" type=${numeric ? "number" : "text"} .value=${text} placeholder=${placeholder}
+      @input=${onInput((val) => set({ ...v, kind: { kind: "literal", value: val } }))} />
+    <button type="button" class="icon more" popovertarget=${id} title="Compare with an entity or a template instead">…</button>
+    ${valuePopover(host, id, label, v, set, opts)}
+  </span>`;
 }
