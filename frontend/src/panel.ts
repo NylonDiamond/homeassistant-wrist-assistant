@@ -319,6 +319,48 @@ export class WristAssistantPanel extends LitElement {
     .preview.inline .inline-line.missing { color: #999; font-style: italic; }
     .value-editor { border-left: 2px solid var(--divider-color); padding-left: 10px; margin: 4px 0 8px; }
 
+    /* Value chip: one line saying what a value is, with the full form behind it.
+       The form lives in a popover, which the browser draws in the top layer, so
+       a scrolling card cannot clip it. Its position is set in editors.ts. */
+    .value-chip-field { gap: 4px; }
+    button.value-chip {
+      display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box;
+      font: inherit; font-size: 13px; text-align: left; padding: 6px 10px; border-radius: 8px;
+      border: 1px solid var(--divider-color); background: var(--card-background-color, #fff);
+      color: inherit; cursor: pointer;
+    }
+    button.value-chip:hover { border-color: var(--primary-color); }
+    button.value-chip:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+    .value-chip .chip-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .value-chip .chip-now { max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .65; }
+    .value-chip .chip-caret { opacity: .55; font-size: 11px; }
+    .value-pop {
+      position: fixed; inset: auto; margin: 0; width: min(380px, calc(100vw - 16px)); box-sizing: border-box;
+      max-height: 70vh; overflow: auto; padding: 10px 14px 14px;
+      border: 1px solid var(--divider-color); border-radius: 12px;
+      background: var(--card-background-color, #fff); color: var(--primary-text-color);
+      box-shadow: 0 10px 30px rgba(0,0,0,.35);
+    }
+    .value-pop::backdrop { background: transparent; }
+    .pop-head { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 2px; position: sticky; top: -10px; background: inherit; padding: 4px 0; }
+    .pop-head .spacer { flex: 1; }
+
+    /* Entity search */
+    .entity-field { position: relative; }
+    .entity-results { border: 1px solid var(--divider-color); border-radius: 8px; margin-top: 4px; max-height: 232px; overflow: auto; }
+    button.ent {
+      display: flex; align-items: baseline; gap: 8px; width: 100%; box-sizing: border-box;
+      font: inherit; font-size: 13px; text-align: left; padding: 5px 8px;
+      background: none; border: none; color: inherit; cursor: pointer;
+    }
+    button.ent + button.ent { border-top: 1px solid var(--divider-color); }
+    button.ent:hover, button.ent.hl { background: var(--secondary-background-color); }
+    .ent .ent-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ent .ent-id { opacity: .6; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ent .ent-state { font-size: 11px; opacity: .8; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .entity-current { display: flex; gap: 8px; align-items: baseline; font-size: 12px; opacity: .8; margin-top: 3px; }
+    .entity-current .ent-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
     /* Symbol picker */
     .sym-browse { margin: 6px 0; }
     .sym-controls { display: flex; gap: 6px; margin-bottom: 6px; }

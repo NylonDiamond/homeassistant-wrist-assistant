@@ -44,7 +44,7 @@ import {
   switchComparison,
 } from "./model.js";
 import type { ForcedBranches } from "./resolver.js";
-import type { HassLike } from "./ha-api.js";
+import type { HassEntityState, HassLike } from "./ha-api.js";
 import { familyTitle, type IconProvider } from "./renderer.js";
 import { CURATED_SYMBOLS, SYMBOL_CATEGORIES, SymbolBrowser, searchSymbols } from "./symbols.js";
 import { canRemoveFamily, missingFamilies, supportedFamilies } from "./layouts.js";
@@ -146,22 +146,246 @@ export function colorField(label: string, value: string | undefined, set: (v: st
 
 // ── entity helpers ────────────────────────────────────────────────────────
 
-export function entityRefFor(hass: HassLike, entityId: string): EntityRef {
-  const s = hass.states[entityId];
+export function entityRefFrom(states: Record<string, HassEntityState>, entityId: string): EntityRef {
+  const s = states[entityId];
   const friendly = s && typeof s.attributes.friendly_name === "string" ? s.attributes.friendly_name : entityId;
   return { entityId, displayName: friendly, domain: entityId.split(".")[0] ?? "" };
 }
 
-/** One shared <datalist> of entity ids; rendered once per panel. */
+export function entityRefFor(hass: HassLike, entityId: string): EntityRef {
+  return entityRefFrom(hass.states, entityId);
+}
+
+/** One shared <datalist> of entity ids; rendered once per panel. Entity fields
+ * use the search field below instead, so this is only still here for anything
+ * outside this file that asks for it. */
 export function entityDatalist(hass: HassLike, id: string) {
   const ids = Object.keys(hass.states).sort();
   return html`<datalist id=${id}>${ids.map((e) => html`<option value=${e}>${String(hass.states[e]?.attributes.friendly_name ?? "")}</option>`)}</datalist>`;
 }
 
-function entityField(host: EditorHost, label: string, ref: EntityRef, set: (ref: EntityRef) => void, key: string) {
-  return html`${textField(label, ref.entityId, (v) => set(v in host.hass.states ? entityRefFor(host.hass, v) : { ...ref, entityId: v, domain: v.split(".")[0] ?? "" }), { list: "wa-entities", mono: true })}
-    ${ref.entityId && !(ref.entityId in host.hass.states) ? html`<div class="hint warn">Not in Home Assistant right now.</div>` : nothing}
-    ${textField("Display name", ref.displayName, (v) => set({ ...ref, displayName: v }))}`;
+// ── entity search ─────────────────────────────────────────────────────────
+
+/** One row of the entity search list: what the user reads, plus what gets
+ * stored when they pick it. */
+export interface EntityChoice {
+  entityId: string;
+  /** friendly_name when Home Assistant has one, else the id. */
+  name: string;
+  state: string;
+  domain: string;
+}
+
+/** Everything the search can offer, name first. `domain` restricts the pool to
+ * one domain (a camera layer only wants `camera.*`); a name typed by hand is
+ * still accepted whatever the restriction. */
+export function entityChoices(states: Record<string, HassEntityState>, domain?: string): EntityChoice[] {
+  const out: EntityChoice[] = [];
+  for (const [entityId, s] of Object.entries(states)) {
+    const dom = entityId.split(".")[0] ?? "";
+    if (domain !== undefined && dom !== domain) continue;
+    const friendly = typeof s?.attributes?.friendly_name === "string" ? s.attributes.friendly_name.trim() : "";
+    out.push({ entityId, name: friendly || entityId, state: s?.state ?? "", domain: dom });
+  }
+  out.sort((a, b) => a.name.localeCompare(b.name) || a.entityId.localeCompare(b.entityId));
+  return out;
+}
+
+export const ENTITY_RESULT_LIMIT = 50;
+
+/**
+ * Rank the pool against what has been typed, over both the friendly name and
+ * the id, because a user knows one or the other and rarely both.
+ *
+ * The order is: the exact id, then anything starting with the text (id before
+ * name, since a typed id is usually meant literally), then anything containing
+ * it, and last a multi word search where every word appears somewhere. Ties
+ * keep the pool's own alphabetical order.
+ */
+export function searchEntities(choices: readonly EntityChoice[], query: string, limit = ENTITY_RESULT_LIMIT): EntityChoice[] {
+  const q = query.trim().toLowerCase();
+  if (q === "") return choices.slice(0, limit);
+  const words = q.split(/\s+/);
+  const scored: { c: EntityChoice; rank: number }[] = [];
+  for (const c of choices) {
+    const id = c.entityId.toLowerCase();
+    const name = c.name.toLowerCase();
+    let rank = -1;
+    if (id === q) rank = 0;
+    else if (id.startsWith(q)) rank = 1;
+    else if (name.startsWith(q)) rank = 2;
+    else if (id.includes(q)) rank = 3;
+    else if (name.includes(q)) rank = 4;
+    else if (words.length > 1 && words.every((w) => id.includes(w) || name.includes(w))) rank = 5;
+    if (rank >= 0) scored.push({ c, rank });
+  }
+  scored.sort((a, b) => a.rank - b.rank || a.c.name.localeCompare(b.c.name) || a.c.entityId.localeCompare(b.c.entityId));
+  return scored.slice(0, limit).map((s) => s.c);
+}
+
+const ENTITY_ID_RE = /^[a-z0-9_]+\.[a-z0-9_]+$/i;
+
+/** Whether text is shaped like an entity id, which is what lets an id Home
+ * Assistant has never heard of still be stored by hand. */
+export function looksLikeEntityId(text: string): boolean {
+  return ENTITY_ID_RE.test(text.trim());
+}
+
+/**
+ * What a typed entity field should store when it is left.
+ *
+ * `undefined` means keep what is already there: the text was a half finished
+ * search rather than an id, so nothing should be written over a working entity.
+ */
+export function commitTypedEntity(text: string, ref: EntityRef, states: Record<string, HassEntityState>): EntityRef | undefined {
+  const t = text.trim();
+  if (t === ref.entityId) return undefined;
+  if (t === "") return { entityId: "", displayName: "", domain: "" };
+  if (t in states) return entityRefFrom(states, t);
+  if (looksLikeEntityId(t)) return { ...ref, entityId: t, domain: t.split(".")[0] ?? "" };
+  return undefined;
+}
+
+/**
+ * Transient search state, keyed by field. It is deliberately not part of the
+ * draft: a half typed search is not an edit, and putting it in the document
+ * would fill the undo history with keystrokes. A field with no entry here is
+ * closed and shows its stored id.
+ */
+interface EntitySearchState { query: string; index: number }
+const entitySearches = new Map<string, EntitySearchState>();
+
+/**
+ * Ask the panel to draw again after transient state changed.
+ *
+ * These controls are plain templates rendered by the panel rather than
+ * elements of their own, so there is no reactive property to set. Walking out
+ * of the shadow root reaches the panel element, whose `requestUpdate` is the
+ * same thing a `@state` change would have called.
+ */
+function requestRerender(node: EventTarget | null): void {
+  let el: Node | null = node instanceof Node ? node : null;
+  for (let hops = 0; el && hops < 8; hops += 1) {
+    const root = el.getRootNode();
+    if (!(root instanceof ShadowRoot)) return;
+    const shadowHost = root.host as HTMLElement & { requestUpdate?: () => void };
+    if (typeof shadowHost.requestUpdate === "function") {
+      shadowHost.requestUpdate();
+      return;
+    }
+    el = shadowHost;
+  }
+}
+
+interface EntityFieldOptions {
+  /** Only offer this domain in the list (the id can still be typed). */
+  domain?: string;
+  /** Drop the display-name control, for rows that are already tight. */
+  compact?: boolean;
+}
+
+/**
+ * A search field over every entity: type part of a friendly name or part of an
+ * id, arrow keys to move, Enter to take the highlighted row. Picking writes the
+ * id, the friendly name and the domain together, which is what every caller
+ * used to have to get right by hand.
+ */
+function entityField(host: EditorHost, label: string, ref: EntityRef, set: (ref: EntityRef) => void, key: string, opts: EntityFieldOptions = {}): TemplateResult {
+  const states = host.hass.states;
+  const search = entitySearches.get(key);
+  const results = search ? searchEntities(entityChoices(states, opts.domain), search.query) : [];
+  const index = search ? Math.max(0, Math.min(search.index, results.length - 1)) : 0;
+  const live = ref.entityId ? states[ref.entityId] : undefined;
+
+  const open = (target: EventTarget | null, query: string, at = 0) => {
+    entitySearches.set(key, { query, index: at });
+    requestRerender(target);
+  };
+  const close = (target: EventTarget | null) => {
+    entitySearches.delete(key);
+    requestRerender(target);
+  };
+  const commitText = (text: string) => {
+    const next = commitTypedEntity(text, ref, states);
+    if (next) set(next);
+  };
+  const pick = (choice: EntityChoice, target: EventTarget | null) => {
+    set(entityRefFrom(states, choice.entityId));
+    close(target);
+  };
+
+  // Read back rather than closing over `index`: a second key can arrive before
+  // the redraw that the first one asked for.
+  const liveIndex = () => Math.max(0, Math.min(entitySearches.get(key)?.index ?? 0, results.length - 1));
+
+  const onKey = (e: KeyboardEvent) => {
+    const el = e.target as HTMLInputElement;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const st = entitySearches.get(key);
+      if (!st) { open(el, el.value); return; }
+      const next = e.key === "ArrowDown" ? liveIndex() + 1 : liveIndex() - 1;
+      open(el, st.query, Math.max(0, Math.min(results.length - 1, next)));
+      revealHighlight(el);
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const choice = results[liveIndex()];
+      if (search && choice) pick(choice, el);
+      else { commitText(el.value); close(el); }
+      return;
+    }
+    if (e.key === "Escape") {
+      if (!search) return;
+      // Swallowed so it closes the list and not the popover around it.
+      e.preventDefault();
+      e.stopPropagation();
+      close(el);
+    }
+  };
+
+  const caption = ref.entityId === ""
+    ? html`<div class="hint">Nothing chosen yet. Type a name such as "kitchen" to search.</div>`
+    : live
+      ? html`<div class="entity-current"><span class="ent-name">${typeof live.attributes.friendly_name === "string" ? live.attributes.friendly_name : ref.entityId}</span><span class="ent-state">${live.state}</span></div>`
+      : html`<div class="hint warn">Not in Home Assistant right now.</div>`;
+
+  return html`<div class="field entity-field">
+    <span>${label}</span>
+    <input type="text" class="mono" role="combobox" aria-autocomplete="list" aria-expanded=${search ? "true" : "false"} autocomplete="off" spellcheck="false"
+      .value=${search ? search.query : ref.entityId}
+      placeholder="Search entities, or type an id"
+      @focus=${(e: FocusEvent) => { const el = e.target as HTMLInputElement; open(el, ref.entityId); el.select(); }}
+      @input=${(e: Event) => { const el = e.target as HTMLInputElement; open(el, el.value); }}
+      @keydown=${onKey}
+      @blur=${(e: FocusEvent) => { const el = e.target as HTMLInputElement; if (search) commitText(el.value); close(el); }} />
+    ${search
+      ? html`<div class="entity-results" role="listbox">
+          ${results.length === 0
+            ? html`<div class="hint" style="padding:6px 8px">${looksLikeEntityId(search.query) ? "Nothing here has that id. Press Enter to use it anyway." : "Nothing matches that search."}</div>`
+            : results.map((c, i) => html`<button type="button" role="option" aria-selected=${i === index ? "true" : "false"} class="ent ${i === index ? "hl" : ""}"
+                @mousedown=${(e: MouseEvent) => e.preventDefault()} @click=${(e: MouseEvent) => pick(c, e.target)}>
+                <span class="ent-name">${c.name}</span>
+                <span class="ent-id mono">${c.entityId}</span>
+                <span class="ent-state">${c.state}</span>
+              </button>`)}
+        </div>`
+      : caption}
+    ${opts.compact ? nothing : html`<details class="sub">
+      <summary>Display name: ${ref.displayName || "(none)"}</summary>
+      ${textField("Display name", ref.displayName, (v) => set({ ...ref, displayName: v }))}
+      <div class="hint">Stored with the entity and used where the watch needs a label for it.</div>
+    </details>`}
+  </div>`;
+}
+
+/** Keep the arrow-key selection visible when the result list scrolls. */
+function revealHighlight(input: HTMLElement): void {
+  requestAnimationFrame(() => {
+    const hl = input.closest(".entity-field")?.querySelector<HTMLElement>("button.ent.hl");
+    hl?.scrollIntoView({ block: "nearest" });
+  });
 }
 
 // ── Symbol picker ─────────────────────────────────────────────────────────
@@ -354,9 +578,163 @@ export interface ValueEditorOptions {
   symbol?: boolean;
   /** Undo coalescing key prefix. */
   key: string;
+  /** What this value is for, shown beside the chip. */
+  label?: string;
+  /** Draw the whole form in place instead of behind a chip. For the one screen
+   * where the value is the entire subject (a named value's own editor). */
+  inline?: boolean;
 }
 
+/**
+ * A value, as one line that says what it is, with the full form a click away.
+ *
+ * The form underneath is unchanged: a source, a body for that source and a
+ * format panel. What changed is that it no longer costs a screen of space to
+ * say "the kitchen light". Six of these can sit in one rule and still be read
+ * at a glance.
+ */
 export function valueEditor(host: EditorHost, value: Value, set: (v: Value) => void, opts: ValueEditorOptions): TemplateResult {
+  if (opts.inline || !popoverSupported()) return html`<div class="value-editor">${valueForm(host, value, set, opts)}</div>`;
+
+  const id = popoverId(opts.key);
+  const label = opts.label ?? "Value";
+  const resolved = opts.showResolved ? host.resolve(value) : undefined;
+  const summary = describeValue(value, describeContext(host));
+  return html`<div class="field value-chip-field">
+    <span>${label}</span>
+    <button type="button" class="value-chip" popovertarget=${id} aria-haspopup="dialog" title=${`${label}: ${summary}. Click to change it.`}>
+      <span class="chip-text">${summary}</span>
+      ${resolved === undefined ? nothing : html`<span class="chip-now mono" title="Value right now">${resolved}</span>`}
+      <span class="chip-caret" aria-hidden="true">▾</span>
+    </button>
+    <div class="value-pop" id=${id} popover role="dialog" aria-label=${label} @toggle=${onValuePopoverToggle}>
+      <div class="pop-head">
+        <b>${label}</b>
+        <span class="spacer"></span>
+        <button type="button" class="small" popovertarget=${id} popovertargetaction="hide">Done</button>
+      </div>
+      ${openedPopovers.has(id) ? valueForm(host, value, set, opts) : nothing}
+    </div>
+  </div>`;
+}
+
+/** The named values and live states `describeValue` reads to put names where
+ * ids would otherwise be. */
+export function describeContext(host: EditorHost): DescribeContext {
+  return { values: host.config.values, hass: host.hass };
+}
+
+function popoverId(key: string): string {
+  return `wa-pop-${key.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+}
+
+/**
+ * The popover is what lets the form escape the inspector's scrolling card, and
+ * it brings Escape, click-outside and focus return with it for free. A browser
+ * old enough to lack it falls back to the form drawn in place, which is what
+ * the editor did before: more scrolling, nothing broken.
+ */
+function popoverSupported(): boolean {
+  return typeof HTMLElement !== "undefined" && typeof HTMLElement.prototype.showPopover === "function";
+}
+
+/**
+ * Which popovers are open right now.
+ *
+ * The body of a closed popover is never built. It saves the inspector from
+ * laying out a dozen full value forms (and, for icons, a dozen symbol grids)
+ * that nobody has asked to see, and it is why the chip is cheaper than the
+ * inline form it replaced rather than merely tidier.
+ */
+const openedPopovers = new Set<string>();
+
+/** Popovers being kept under their chip while the page scrolls. */
+const popoverTrackers = new WeakMap<HTMLElement, () => void>();
+
+function onValuePopoverToggle(e: Event): void {
+  const pop = e.currentTarget as HTMLElement;
+  const opening = (e as Event & { newState?: string }).newState === "open";
+  const stop = popoverTrackers.get(pop);
+  if (stop) { stop(); popoverTrackers.delete(pop); }
+  if (!opening) {
+    if (openedPopovers.delete(pop.id)) requestRerender(pop);
+    return;
+  }
+
+  const anchor = pop.parentElement?.querySelector<HTMLElement>("button.value-chip") ?? null;
+  if (!anchor) return;
+  const track = () => {
+    if (!pop.isConnected || !pop.matches(":popover-open")) { popoverTrackers.get(pop)?.(); popoverTrackers.delete(pop); return; }
+    // Following a chip that has scrolled out of the card would leave the form
+    // floating over unrelated content, so it closes with it instead.
+    const a = anchor.getBoundingClientRect();
+    if (a.bottom < 0 || a.top > window.innerHeight) { pop.hidePopover(); return; }
+    positionPopover(pop, a);
+  };
+  window.addEventListener("scroll", track, true);
+  window.addEventListener("resize", track);
+  popoverTrackers.set(pop, () => {
+    window.removeEventListener("scroll", track, true);
+    window.removeEventListener("resize", track);
+  });
+
+  positionPopover(pop, anchor.getBoundingClientRect());
+  if (!openedPopovers.has(pop.id)) {
+    openedPopovers.add(pop.id);
+    requestRerender(pop);
+    // The form only exists after that redraw, so measure once it does.
+    requestAnimationFrame(() => { if (pop.isConnected) positionPopover(pop, anchor.getBoundingClientRect()); });
+  }
+}
+
+function positionPopover(pop: HTMLElement, anchor: DOMRect): void {
+  // Measured without the last placement's ceiling, so a form that was squeezed
+  // once is not treated as short for ever.
+  pop.style.maxHeight = "";
+  const box = pop.getBoundingClientRect();
+  const at = placePopover(
+    { left: anchor.left, top: anchor.top, bottom: anchor.bottom, width: anchor.width },
+    { width: box.width, height: box.height },
+    { width: window.innerWidth, height: window.innerHeight },
+  );
+  pop.style.left = `${at.left}px`;
+  pop.style.top = `${at.top}px`;
+  pop.style.maxHeight = `${at.maxHeight}px`;
+}
+
+export interface AnchorBox { left: number; top: number; bottom: number; width: number }
+export interface PopoverPlacement { left: number; top: number; maxHeight: number; above: boolean }
+
+/** How far a popover stays from the edge of the window. */
+const POPOVER_MARGIN = 8;
+/** Gap between the chip and its popover. */
+const POPOVER_GAP = 6;
+/** Below this a popover is squeezed enough that flipping is worth it. */
+const POPOVER_MIN_HEIGHT = 140;
+
+/**
+ * Where a popover goes under its chip.
+ *
+ * Under the chip by default, above it when there is not enough room below and
+ * more room above, and always inside the window: a chip near the right edge of
+ * a narrow inspector would otherwise open a form half off screen. The popover
+ * itself sits in the top layer, so nothing an ancestor does with `overflow`
+ * can clip it, which is the reason these are window coordinates.
+ */
+export function placePopover(anchor: AnchorBox, size: { width: number; height: number }, viewport: { width: number; height: number }): PopoverPlacement {
+  const below = viewport.height - anchor.bottom - POPOVER_GAP - POPOVER_MARGIN;
+  const above = anchor.top - POPOVER_GAP - POPOVER_MARGIN;
+  const flip = size.height > below && above > below && below < POPOVER_MIN_HEIGHT;
+  const room = Math.max(POPOVER_MIN_HEIGHT, flip ? above : below);
+  const height = Math.min(size.height, room);
+  const left = Math.max(POPOVER_MARGIN, Math.min(anchor.left, viewport.width - size.width - POPOVER_MARGIN));
+  const top = flip
+    ? Math.max(POPOVER_MARGIN, anchor.top - POPOVER_GAP - height)
+    : Math.max(POPOVER_MARGIN, Math.min(anchor.bottom + POPOVER_GAP, viewport.height - height - POPOVER_MARGIN));
+  return { left, top, maxHeight: room, above: flip };
+}
+
+function valueForm(host: EditorHost, value: Value, set: (v: Value) => void, opts: ValueEditorOptions): TemplateResult {
   const k = value.kind;
   const setKind = (kind: ValueKind) => set({ ...value, kind });
   const key = opts.key;
@@ -370,12 +748,12 @@ export function valueEditor(host: EditorHost, value: Value, set: (v: Value) => v
       break;
     case "entityState":
     case "entityAge":
-      body = entityField(host, "Entity", k, (ref) => setKind({ ...k, ...ref }), key);
+      body = entityField(host, "Entity", k, (ref) => setKind({ ...k, ...ref }), `${key}-entity`);
       break;
     case "entityAttribute": {
       const attrs = Object.keys(host.hass.states[k.entityId]?.attributes ?? {}).sort();
       const listId = `wa-attrs-${key.replace(/[^a-z0-9]/gi, "")}`;
-      body = html`${entityField(host, "Entity", k, (ref) => setKind({ ...k, ...ref }), key)}
+      body = html`${entityField(host, "Entity", k, (ref) => setKind({ ...k, ...ref }), `${key}-entity`)}
         ${textField("Attribute", k.attribute, (v) => setKind({ ...k, attribute: v }), { list: listId, mono: true })}
         <datalist id=${listId}>${attrs.map((a) => html`<option value=${a}></option>`)}</datalist>`;
       break;
@@ -394,16 +772,17 @@ export function valueEditor(host: EditorHost, value: Value, set: (v: Value) => v
         <div class="hint">Rendered by Home Assistant. The result should be one value, not a whole document.</div>`;
       break;
     case "named":
-      body = selectField("Value", k.id, [["", "(choose)"], ...host.config.values.map((n): [string, string] => [n.id, n.name || n.id.slice(0, 8)])], (v) => setKind({ ...k, id: v }));
+      body = host.config.values.length === 0
+        ? html`<div class="hint warn">There are no named values yet. Add one in the Data card first.</div>`
+        : selectField("Value", k.id, [["", "(choose)"], ...host.config.values.map((n): [string, string] => [n.id, n.name || n.id.slice(0, 8)])], (v) => setKind({ ...k, id: v }));
       break;
   }
   const resolved = opts.showResolved ? host.resolve(value) : undefined;
-  return html`<div class="value-editor">
+  return html`
     ${selectField("Source", k.kind, kinds, (kind) => setKind(switchKind(k, kind)))}
     ${body}
     ${opts.noFormat ? nothing : formatEditor(value.format, (f) => set(formatIsEmpty(f) ? { kind: value.kind } : { ...value, format: f }))}
-    ${opts.showResolved ? html`<div class="hint">Now: ${resolved === undefined ? html`<span class="warn">unresolved</span>` : html`<code>${resolved}</code>`}</div>` : nothing}
-  </div>`;
+    ${opts.showResolved ? html`<div class="hint">Now: ${resolved === undefined ? html`<span class="warn">unresolved</span>` : html`<code>${resolved}</code>`}</div>` : nothing}`;
 }
 
 function formatEditor(format: ValueFormat | undefined, set: (f: ValueFormat) => void) {
@@ -444,7 +823,7 @@ function aggregateEditor(host: EditorHost, a: AggregateSpec, set: (a: AggregateS
           ${textField("Floor ids", csv(scope.floorIds), (v) => set({ ...a, scope: { ...scope, floorIds: parse(v) } }))}
         </div>`
       : html`${scope.entities.map((e, i) => html`<div class="row-inline">
-            ${textField(`Entity ${i + 1}`, e.entityId, (v) => { const list = [...scope.entities]; list[i] = v in host.hass.states ? entityRefFor(host.hass, v) : { ...e, entityId: v, domain: v.split(".")[0] ?? "" }; set({ ...a, scope: { ...scope, entities: list } }); }, { list: "wa-entities", mono: true })}
+            ${entityField(host, `Entity ${i + 1}`, e, (ref) => { const list = [...scope.entities]; list[i] = ref; set({ ...a, scope: { ...scope, entities: list } }); }, `${key}-agg-${i}`, { compact: true })}
             <button class="icon" title="Remove" @click=${() => set({ ...a, scope: { ...scope, entities: scope.entities.filter((_, j) => j !== i) } })}>×</button>
           </div>`)}
           <button class="small" @click=${() => set({ ...a, scope: { ...scope, entities: [...scope.entities, { entityId: "", displayName: "", domain: "" }] } })}>Add entity</button>`}
@@ -503,7 +882,7 @@ export function generalEditor(host: EditorHost): TemplateResult {
       // openPage type; leaving it clears the choice.
       if (v !== "openPage") { delete c.openPageId; delete c.openPageName; }
     }))}
-    ${"entityId" in tap ? entityField(host, "Target", tap, (ref) => host.update((c) => { c.tapAction = { type: tap.type, ...ref }; }, "tap-entity"), "tap") : nothing}
+    ${"entityId" in tap ? entityField(host, "Target", tap, (ref) => host.update((c) => { c.tapAction = { type: tap.type, ...ref }; }, "tap-entity"), "general-tap") : nothing}
     ${tap.type === "openPage" ? openPageField(host) : nothing}
     ${checkField("Flash on success", cfg.showSuccessFlash ?? true, (v) => host.update((c) => { c.showSuccessFlash = v; }))}
     ${colorField("Flash colour (blank = green)", cfg.successFlashColorHex, (v) => host.update((c) => { if (v === undefined) delete c.successFlashColorHex; else c.successFlashColorHex = v; }, "flash"), true)}
@@ -575,7 +954,7 @@ export function namedValueEditor(host: EditorHost, nv: NamedValue): TemplateResu
   const key = `nv-${nv.id}`;
   return html`
     ${textField("Name", nv.name, (v) => host.update((c) => { c.values[idx]!.name = v; }, `${key}-name`))}
-    ${valueEditor(host, nv.value, (v) => host.update((c) => { c.values[idx]!.value = v; }, key), { allowNamed: false, showResolved: true, key })}
+    ${valueEditor(host, nv.value, (v) => host.update((c) => { c.values[idx]!.value = v; }, key), { allowNamed: false, showResolved: true, inline: true, key })}
     <div class="hint">Used by ${countNamedUses(host.config, nv.id)} layer${countNamedUses(host.config, nv.id) === 1 ? "" : "s"}.</div>`;
 }
 
@@ -658,7 +1037,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
   switch (el.kind) {
     case "text":
       content = html`
-        ${valueEditor(host, el.payload.value, (v) => upd((e) => { (e as typeof el).payload.value = v; }, "value"), { showResolved: true, key: `${key}-value` })}
+        ${valueEditor(host, el.payload.value, (v) => upd((e) => { (e as typeof el).payload.value = v; }, "value"), { showResolved: true, label: "Text", key: `${key}-value` })}
         <div class="grid2">
           ${numberField("Font size (pt)", el.payload.fontSize, (v) => upd((e) => { (e as typeof el).payload.fontSize = v ?? 14; }, "size"), { step: 1, min: 4 })}
           ${selectField("Weight", el.payload.fontWeight, FONT_WEIGHTS, (v) => upd((e) => { (e as typeof el).payload.fontWeight = v; }))}
@@ -671,13 +1050,13 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       break;
     case "icon":
       content = html`
-        ${valueEditor(host, el.payload.symbol, (v) => upd((e) => { (e as typeof el).payload.symbol = v; }, "symbol"), { noFormat: true, showResolved: true, symbol: true, key: `${key}-symbol` })}
+        ${valueEditor(host, el.payload.symbol, (v) => upd((e) => { (e as typeof el).payload.symbol = v; }, "symbol"), { noFormat: true, showResolved: true, symbol: true, label: "Symbol", key: `${key}-symbol` })}
         <div class="hint">An entity source uses that entity's own icon instead.</div>
         ${numberField("Icon size (pt)", el.payload.size, (v) => upd((e) => { (e as typeof el).payload.size = v ?? 14; }, "size"), { step: 1, min: 4 })}`;
       break;
     case "gauge":
       content = html`
-        ${valueEditor(host, el.payload.value, (v) => upd((e) => { (e as typeof el).payload.value = v; }, "value"), { showResolved: true, key: `${key}-value` })}
+        ${valueEditor(host, el.payload.value, (v) => upd((e) => { (e as typeof el).payload.value = v; }, "value"), { showResolved: true, label: "Reading", key: `${key}-value` })}
         <div class="grid2">
           ${numberField("Min", el.payload.minValue, (v) => upd((e) => { (e as typeof el).payload.minValue = v ?? 0; }, "min"))}
           ${numberField("Max", el.payload.maxValue, (v) => upd((e) => { (e as typeof el).payload.maxValue = v ?? 100; }, "max"))}
@@ -697,8 +1076,8 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       break;
     case "image":
       content = html`
-        ${entityField(host, "Camera", el.payload.entity, (ref) => upd((e) => { (e as typeof el).payload.entity = ref; }, "entity"), key)}
-        ${el.payload.entity.entityId && !el.payload.entity.entityId.startsWith("camera.") ? html`<div class="hint warn">Pick a camera.* entity — only cameras have snapshots.</div>` : nothing}
+        ${entityField(host, "Camera", el.payload.entity, (ref) => upd((e) => { (e as typeof el).payload.entity = ref; }, "entity"), `${key}-camera`, { domain: "camera" })}
+        ${el.payload.entity.entityId && !el.payload.entity.entityId.startsWith("camera.") ? html`<div class="hint warn">Only camera entities have snapshots, so this layer stays blank until the entity is a camera.</div>` : nothing}
         ${checkField("Show timestamp", el.payload.timestamp === true, (v) => upd((e) => {
           const p = (e as typeof el).payload;
           if (v) p.timestamp = true; else delete p.timestamp;
@@ -714,7 +1093,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
           p.action = needsEntity(v) ? { type: v as "toggleEntity", ...("entityId" in p.action ? { entityId: p.action.entityId, displayName: p.action.displayName, domain: p.action.domain } : { entityId: "", displayName: "", domain: "" }) } : { type: v as "refresh" };
           if (v !== "openPage") { delete p.openPageId; delete p.openPageName; }
         }))}
-        ${"entityId" in tap ? entityField(host, "Target", tap, (ref) => upd((e) => { (e as typeof el).payload.action = { type: tap.type, ...ref }; }, "tap-entity"), `${key}-tap`) : nothing}
+        ${"entityId" in tap ? entityField(host, "Target", tap, (ref) => upd((e) => { (e as typeof el).payload.action = { type: tap.type, ...ref }; }, "tap-entity"), `${key}-tap-entity`) : nothing}
         ${tap.type === "openPage" ? pageChoiceField(host, el.payload.openPageId, el.payload.openPageName, (pid, name) => upd((e) => {
           const p = (e as typeof el).payload;
           if (pid === undefined) { delete p.openPageId; delete p.openPageName; return; }
@@ -797,7 +1176,7 @@ function inlineEditor(host: EditorHost): TemplateResult {
   const upd = (mutate: (i: NonNullable<CustomComplicationConfig["inline"]>) => void, k?: string) => host.update((c) => { if (c.inline) mutate(c.inline); }, k ? `inline-${k}` : undefined);
   return html`
     ${textField("Label (blank = value only)", inline.label ?? "", (v) => upd((i) => { if (v) i.label = v; else delete i.label; }, "label"))}
-    ${valueEditor(host, inline.value, (v) => upd((i) => { i.value = v; }, "value"), { showResolved: true, key: "inline-value" })}
+    ${valueEditor(host, inline.value, (v) => upd((i) => { i.value = v; }, "value"), { showResolved: true, label: "Text", key: "inline-value" })}
     ${checkField("Live countdown", inline.countdown === true, (v) => upd((i) => { if (v) i.countdown = true; else delete i.countdown; }))}
     ${inline.countdown ? html`<div class="hint">Ticks down to the value's target: an active HA timer's finish, or any future timestamp. Paused timers show their remaining time; idle ones show "Idle".</div>` : nothing}
     <h3>Symbol</h3>
@@ -822,7 +1201,7 @@ function cornerEditor(
       else { delete l.curvedText; delete l.curvedColorHex; }
     }))}
     ${mode === "curved" && layout.curvedText ? html`
-      ${valueEditor(host, layout.curvedText, (val) => upd((l) => { l.curvedText = val; }, "curved"), { showResolved: true, key: "fam-corner-curved" })}
+      ${valueEditor(host, layout.curvedText, (val) => upd((l) => { l.curvedText = val; }, "curved"), { showResolved: true, label: "Curved text", key: "fam-corner-curved" })}
       ${colorField("Curved text colour", layout.curvedColorHex ?? "#FFFFFF", (v) => upd((l) => { if (v === undefined) delete l.curvedColorHex; else l.curvedColorHex = v; }, "curvedcolor"))}
       <div class="hint">Curved text replaces the layer canvas in the corner. The watch draws it big along the corner curve, like the stock Calendar and Weather corners.</div>
     ` : nothing}
@@ -832,7 +1211,7 @@ function cornerEditor(
       else { delete l.bezelText; delete l.bezelGauge; }
     }))}
     ${bezelKind === "text" && layout.bezelText ? html`
-      ${valueEditor(host, layout.bezelText, (val) => upd((l) => { l.bezelText = val; }, "bezel"), { showResolved: true, key: "fam-corner-bezel" })}
+      ${valueEditor(host, layout.bezelText, (val) => upd((l) => { l.bezelText = val; }, "bezel"), { showResolved: true, label: "Bezel label", key: "fam-corner-bezel" })}
       ${checkField("Live countdown", layout.bezelCountdown === true, (v) => upd((l) => {
         if (v) l.bezelCountdown = true; else delete l.bezelCountdown;
       }))}` : nothing}
@@ -855,7 +1234,7 @@ function bezelGaugeEditor(
     l.bezelGauge!.colorHexes = next;
   }, `gstop${i}`);
   return html`
-    ${valueEditor(host, g.value, (val) => upd((l) => { l.bezelGauge!.value = val; }, "gvalue"), { showResolved: true, key: "fam-corner-gvalue" })}
+    ${valueEditor(host, g.value, (val) => upd((l) => { l.bezelGauge!.value = val; }, "gvalue"), { showResolved: true, label: "Reading", key: "fam-corner-gvalue" })}
     <div class="grid2">
       ${numberField("Gauge min", g.minValue, (v) => upd((l) => { l.bezelGauge!.minValue = v ?? 0; }, "gmin"), { step: 1 })}
       ${numberField("Gauge max", g.maxValue, (v) => upd((l) => { l.bezelGauge!.maxValue = v ?? 100; }, "gmax"), { step: 1 })}
@@ -868,8 +1247,8 @@ function bezelGaugeEditor(
       if (v) { gauge.minLabel = literal(String(gauge.minValue)); gauge.maxLabel = literal(String(gauge.maxValue)); }
       else { delete gauge.minLabel; delete gauge.maxLabel; }
     }))}
-    ${g.minLabel ? valueEditor(host, g.minLabel, (val) => upd((l) => { l.bezelGauge!.minLabel = val; }, "gminlab"), { key: "fam-corner-gminlab" }) : nothing}
-    ${g.maxLabel ? valueEditor(host, g.maxLabel, (val) => upd((l) => { l.bezelGauge!.maxLabel = val; }, "gmaxlab"), { key: "fam-corner-gmaxlab" }) : nothing}`;
+    ${g.minLabel ? valueEditor(host, g.minLabel, (val) => upd((l) => { l.bezelGauge!.minLabel = val; }, "gminlab"), { label: "Min label", key: "fam-corner-gminlab" }) : nothing}
+    ${g.maxLabel ? valueEditor(host, g.maxLabel, (val) => upd((l) => { l.bezelGauge!.maxLabel = val; }, "gmaxlab"), { label: "Max label", key: "fam-corner-gmaxlab" }) : nothing}`;
 }
 
 export const FAMILY_OPTIONS = DRAWABLE_FAMILIES.map((f): [FamilyKind, string] => [f, familyTitle(f)]);
@@ -899,20 +1278,83 @@ function changeKindsFor(target: RuleTarget): StyleChangeKind[] {
   return CHANGE_KINDS.filter((k) => allowed.includes(STYLE_PROPERTY[k]));
 }
 
-/** Short one-line description of a value, for rule summaries. */
-export function describeValue(v: Value): string {
+/**
+ * What a value is, in words, for the chip on the front of every value editor
+ * and for rule summaries.
+ *
+ * The context is optional so callers that only hold a value (the layer list in
+ * the panel) still get a sensible line. With it, a named value reads as its
+ * name and an entity reads as its friendly name, which is what the user typed
+ * into the picker and what they will recognise.
+ */
+export interface DescribeContext {
+  values?: readonly NamedValue[];
+  hass?: HassLike;
+}
+
+const TIME_FIELD_WORDS: Record<TimeField, string> = {
+  now: "the time", hour: "the hour", minute: "the minute", weekday: "the weekday",
+  day: "the day", month: "the month", timestamp: "the timestamp",
+};
+
+/** The friendly name a stored entity reference should read as. */
+function entityWords(ref: EntityRef, ctx?: DescribeContext): string {
+  if (ref.entityId === "") return "(no entity)";
+  const stored = ref.displayName.trim();
+  if (stored !== "" && stored !== ref.entityId) return stored;
+  const live = ctx?.hass?.states[ref.entityId]?.attributes.friendly_name;
+  return typeof live === "string" && live.trim() !== "" ? live.trim() : ref.entityId;
+}
+
+function truncate(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
+/** The short form of a value's formatting, for the end of a description. */
+export function describeFormat(format: ValueFormat | undefined): string {
+  if (!format || formatIsEmpty(format)) return "";
+  const bits: string[] = [];
+  if (format.decimals !== undefined) bits.push(`${format.decimals} dp`);
+  if (format.multiply !== undefined) bits.push(`×${format.multiply}`);
+  if (format.offset !== undefined) bits.push(`${format.offset < 0 ? "" : "+"}${format.offset}`);
+  if (format.prefix) bits.push(`"${format.prefix}" first`);
+  if (format.suffix) bits.push(`"${format.suffix}" after`);
+  if (format.useEntityUnit) bits.push("with unit");
+  if (format.relativeTime) bits.push("as relative time");
+  if (format.textCase) bits.push(format.textCase === "capitalized" ? "Capitalized" : format.textCase === "upper" ? "UPPER" : "lower");
+  return bits.length === 0 ? "" : ` (${bits.join(", ")})`;
+}
+
+/** Short one-line description of a value, for the value chip and rule summaries. */
+export function describeValue(v: Value, ctx?: DescribeContext): string {
+  return `${describeValueBody(v, ctx)}${describeFormat(v.format)}`;
+}
+
+function describeValueBody(v: Value, ctx?: DescribeContext): string {
   const k = v.kind;
   switch (k.kind) {
-    case "literal": return k.value ? `"${k.value}"` : "(empty)";
-    case "entityState": return k.entityId || "(no entity)";
-    case "entityAttribute": return `${k.entityId}.${k.attribute}`;
-    case "entityAge": return `age of ${k.entityId}`;
-    case "aggregate": return `${k.aggregate.function}(...)`;
-    case "time": return `time.${k.timeField}`;
+    case "literal": return k.value ? `"${truncate(k.value, 40)}"` : "(empty)";
+    case "entityState": return entityWords(k, ctx);
+    case "entityAttribute": return k.attribute ? `${entityWords(k, ctx)} · ${k.attribute}` : entityWords(k, ctx);
+    case "entityAge": return `age of ${entityWords(k, ctx)}`;
+    case "aggregate": return describeAggregate(k.aggregate);
+    case "time": return TIME_FIELD_WORDS[k.timeField];
     case "dataAge": return "data age";
-    case "jinja": return "jinja";
-    case "named": return `named ${k.id.slice(0, 8)}`;
+    case "jinja": return k.value ? `template ${truncate(k.value, 32)}` : "template (empty)";
+    case "named": {
+      if (k.id === "") return "(no value chosen)";
+      const named = ctx?.values?.find((n) => n.id === k.id);
+      return named?.name?.trim() || `named ${k.id.slice(0, 8)}`;
+    }
   }
+}
+
+function describeAggregate(a: AggregateSpec): string {
+  const of = a.scope.kind === "entities"
+    ? `${a.scope.entities.length} entit${a.scope.entities.length === 1 ? "y" : "ies"}`
+    : a.scope.domains.length > 0 ? a.scope.domains.join(" + ") : "matching entities";
+  return `${a.function} of ${of}`;
 }
 
 function moveItem<T>(list: T[], from: number, to: number): void {
@@ -995,14 +1437,11 @@ function testEditor(host: EditorHost, t: import("./model.js").Test, ti: number, 
   let extra: TemplateResult | typeof nothing = nothing;
   switch (operand) {
     case "value":
-      extra = html`<details class="sub" open><summary>Compare with: ${c.value ? describeValue(c.value) : "(empty)"}</summary>
-        ${valueEditor(host, c.value ?? literal(""), (v) => upd((x) => { x.comparison.value = v; }, "rhs"), { showResolved: true, key: `${key}-rhs` })}</details>`;
+      extra = valueEditor(host, c.value ?? literal(""), (v) => upd((x) => { x.comparison.value = v; }, "rhs"), { showResolved: true, label: "Compare with", key: `${key}-rhs` });
       break;
     case "between":
-      extra = html`<details class="sub" open><summary>Lower bound: ${c.value ? describeValue(c.value) : "(empty)"}</summary>
-        ${valueEditor(host, c.value ?? literal(""), (v) => upd((x) => { x.comparison.value = v; }, "rhs"), { showResolved: true, key: `${key}-rhs` })}</details>
-        <details class="sub" open><summary>Upper bound: ${c.upper ? describeValue(c.upper) : "(empty)"}</summary>
-        ${valueEditor(host, c.upper ?? literal(""), (v) => upd((x) => { x.comparison.upper = v; }, "upper"), { showResolved: true, key: `${key}-upper` })}</details>`;
+      extra = html`${valueEditor(host, c.value ?? literal(""), (v) => upd((x) => { x.comparison.value = v; }, "rhs"), { showResolved: true, label: "Lower bound", key: `${key}-rhs` })}
+        ${valueEditor(host, c.upper ?? literal(""), (v) => upd((x) => { x.comparison.upper = v; }, "upper"), { showResolved: true, label: "Upper bound", key: `${key}-upper` })}`;
       break;
     case "pattern":
       extra = html`${textField("Pattern", c.pattern ?? "", (v) => upd((x) => { x.comparison.pattern = v; }, "pattern"), { mono: true, placeholder: "^on$" })}
@@ -1022,8 +1461,7 @@ function testEditor(host: EditorHost, t: import("./model.js").Test, ti: number, 
     </div>
     ${c.kind === "isStale"
       ? html`<div class="hint">True when the watch's cached values are older than the staleness limit. The value below is not read.</div>`
-      : html`<details class="sub" open><summary>Value: ${describeValue(t.value)}</summary>
-          ${valueEditor(host, t.value, (v) => upd((x) => { x.value = v; }, "lhs"), { showResolved: true, key: `${key}-lhs` })}</details>`}
+      : valueEditor(host, t.value, (v) => upd((x) => { x.value = v; }, "lhs"), { showResolved: true, label: "Value", key: `${key}-lhs` })}
     ${selectField("Comparison", c.kind, COMPARISON_KINDS.map((k): [ComparisonKind, string] => [k, COMPARISON_LABELS[k]]), (v) => upd((x) => { x.comparison = switchComparison(x.comparison, v); }))}
     ${extra}
   </div>`;
@@ -1056,11 +1494,11 @@ function changeEditor(host: EditorHost, ch: StyleChange, i: number, target: Rule
       const fixed = v.kind.kind === "literal";
       body = html`${fixed
         ? colorField("Colour", v.kind.kind === "literal" ? v.kind.value : "", (hex) => upd((c) => { c.value = literal(hex ?? "#FFFFFF"); }, "color"))
-        : valueEditor(host, v, (nv) => upd((c) => { c.value = nv; }, "value"), { noFormat: true, showResolved: true, key: `${key}-value` })}
+        : valueEditor(host, v, (nv) => upd((c) => { c.value = nv; }, "value"), { noFormat: true, showResolved: true, label: "Colour from", key: `${key}-value` })}
         <button class="link" @click=${() => upd((c) => { c.value = fixed ? { kind: { kind: "entityAttribute", entityId: "", displayName: "", domain: "", attribute: "rgb_color" } } : literal("#FFFFFF"); })}>${fixed ? "Read the colour from a value instead" : "Use a fixed colour instead"}</button>
         ${fixed ? nothing : html`<div class="hint">The value must resolve to a hex colour such as <code>#FF9F0A</code>. Empty or invalid results leave the colour unchanged.</div>`}`;
     } else {
-      body = valueEditor(host, v, (nv) => upd((c) => { c.value = nv; }, "value"), { noFormat: ch.kind === "setIcon", symbol: ch.kind === "setIcon", showResolved: true, key: `${key}-value` });
+      body = valueEditor(host, v, (nv) => upd((c) => { c.value = nv; }, "value"), { noFormat: ch.kind === "setIcon", symbol: ch.kind === "setIcon", showResolved: true, label: ch.kind === "setIcon" ? "Symbol" : "To", key: `${key}-value` });
     }
   } else if (payload === "number") {
     const opts = ch.kind === "setOpacity" ? { step: 0.05, min: 0, max: 1 } : ch.kind === "setRotation" ? { step: 1 } : { step: 0.5, min: 0 };
