@@ -25,13 +25,12 @@ import {
   type FamilyKind,
   type NormalizedFrame,
   type OccupiedSlot,
-  type Rule,
   type Value,
-  DRAWABLE_FAMILIES,
   MAX_SLOTS,
   attachedTapsOf,
   auditUnknownKeys,
   duplicateElement,
+  elementEntity,
   freeSlotFrom,
   isAttachedTap,
   newConfig,
@@ -68,9 +67,9 @@ import {
   generalEditor,
   layerEditor,
   namedValueEditor,
-  rulesEditor,
   newNamedValue,
   setPlacement,
+  statesEditor,
 } from "./editors.js";
 
 const TEMPLATE_REFRESH_MS = 30_000;
@@ -262,8 +261,6 @@ export class WristAssistantPanel extends LitElement {
     .layer .acts { display: none; gap: 0; }
     .layer:hover .acts, .layer.hl .acts { display: inline-flex; }
     .adders { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
-    .rule { margin: 6px 0 10px; font-size: 13px; }
-    .rule .title { opacity: .7; margin-bottom: 4px; }
     .branches { display: flex; flex-wrap: wrap; gap: 4px; }
     .branches button {
       font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 999px;
@@ -349,6 +346,62 @@ export class WristAssistantPanel extends LitElement {
     .value-pop::backdrop { background: transparent; }
     .pop-head { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 2px; position: sticky; top: -10px; background: inherit; padding: 4px 0; }
     .pop-head .spacer { flex: 1; }
+
+    /* States table: one rule as rows. A two-state light is two lines, so the
+       row has to stay one line: every control in it is sized to the text it
+       holds rather than to the column. */
+    .states-table { width: 100%; border-collapse: collapse; margin: 8px 0 4px; font-size: 13px; }
+    .states-table th {
+      text-align: left; font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+      opacity: .6; padding: 2px 6px; border-bottom: 1px solid var(--divider-color); white-space: nowrap;
+    }
+    .states-table th button.icon { opacity: 0; }
+    .states-table th:hover button.icon, .states-table th button.icon:focus-visible { opacity: .7; }
+    .states-table th.acts { width: 1%; }
+    .states-table td { padding: 3px 6px; border-bottom: 1px solid var(--divider-color); vertical-align: middle; }
+    .states-table td.empty-row { opacity: .6; padding: 12px 6px; border-bottom: none; }
+    .states-table tr.state-row { cursor: pointer; }
+    .states-table tr.state-row:hover td { background: var(--secondary-background-color); }
+    /* Two declarations: a browser without color-mix keeps the plain tint
+       rather than losing the held row entirely. */
+    .states-table tr.state-row.forced td { background: var(--secondary-background-color); }
+    .states-table tr.state-row.forced td { background: color-mix(in srgb, var(--primary-color) 14%, transparent); }
+    .states-table td.when { white-space: nowrap; }
+    .states-table td.acts { width: 1%; white-space: nowrap; }
+    .states-table td.acts button.icon { opacity: 0; }
+    .states-table tr:hover td.acts button.icon, .states-table td.acts button.icon:focus-visible { opacity: .8; }
+    .row-flag { display: inline-block; width: 12px; color: var(--success-color, #43a047); font-size: 11px; }
+    tr.forced .row-flag { color: var(--primary-color); }
+    .when-cell { display: inline-flex; align-items: center; gap: 4px; }
+    .when-cell select.when-op { font: inherit; font-size: 12px; padding: 2px 4px; border-radius: 6px; border: 1px solid transparent; background: transparent; color: inherit; }
+    .when-cell select.when-op:hover { border-color: var(--divider-color); }
+    .when-and { opacity: .6; font-size: 12px; }
+    .when-otherwise { opacity: .75; font-style: italic; }
+    .rhs { display: inline-flex; align-items: center; gap: 2px; }
+    .rhs .value-chip-field { margin: 0; }
+    input.cellin {
+      font: inherit; font-size: 13px; width: 90px; padding: 3px 6px; border-radius: 6px;
+      border: 1px solid var(--divider-color); background: var(--card-background-color, #fff); color: inherit;
+    }
+    input.cellin.num { width: 64px; }
+    button.more { font-size: 12px; opacity: .5; }
+    button.cell {
+      display: inline-flex; align-items: center; gap: 6px; max-width: 190px;
+      font: inherit; font-size: 13px; text-align: left; padding: 3px 6px; border-radius: 6px;
+      border: 1px solid transparent; background: transparent; color: inherit; cursor: pointer;
+    }
+    button.cell:hover { border-color: var(--divider-color); background: var(--card-background-color, #fff); }
+    button.cell.empty { opacity: .45; font-style: italic; }
+    .cell-word { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .swatch { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--divider-color); flex: none; }
+    button.cell svg { display: block; }
+    .states-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+    .states-foot .spacer { flex: 1; }
+    .states-switch { display: flex; align-items: baseline; gap: 8px; margin-top: 8px; }
+    .states-switch .hint { margin: 0; }
+    .confirm-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .value-chip-field.compact { margin: 0; }
+    .value-chip-field.compact button.value-chip { padding: 3px 8px; font-size: 13px; max-width: 190px; }
 
     /* Entity search */
     .entity-field { position: relative; }
@@ -1079,7 +1132,7 @@ export class WristAssistantPanel extends LitElement {
         ? html`<div class="layout ${this.narrow ? "narrow" : ""}">
             <div class="column">${this.renderList()}${this.renderData()}${this.renderLayers()}</div>
             <div class="column">${this.renderBanners()}${this.renderPreviews()}</div>
-            <div class="column">${this.renderInspector()}${this.renderStatus()}${this.renderRules()}${this.renderRaw()}</div>
+            <div class="column">${this.renderInspector()}${this.renderStatus()}${this.renderRaw()}</div>
           </div>`
         : html`<div class="card">
             <div class="banner warn"><b>Update the watch app first.</b> ${updateWatchMessage(this.selectedOwner?.app_version)}</div>
@@ -1367,16 +1420,20 @@ export class WristAssistantPanel extends LitElement {
         title = `${el.kind} layer`;
         body = layerEditor(host, el, this.canvasFamily);
       } else {
-        title = `${el.kind} layer rules`;
+        title = `${el.kind} layer states`;
         const id = el.payload.id;
-        body = rulesEditor(host, el.payload.rules, el.kind, (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`);
+        // A layer already bound to an entity is what a new table tests, so the
+        // entity is asked for once for the whole layer and never again.
+        const ref = elementEntity(cfg, el);
+        const bound: Value | undefined = ref ? { kind: { kind: "entityState", ...ref } } : undefined;
+        body = statesEditor(host, el.payload.rules, el.kind, (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`, bound);
       }
     } else if (ins.kind === "family-rules") {
       const family = this.activeFamily;
       const layout = family === "inline" ? undefined : cfg.perFamily[family];
-      title = `${familyTitle(family)} layout rules`;
+      title = `${familyTitle(family)} layout states`;
       body = layout
-        ? rulesEditor(host, layout.rules, "layout", (c) => c.perFamily[family]?.rules, `rules-${family}`)
+        ? statesEditor(host, layout.rules, "layout", (c) => c.perFamily[family]?.rules, `rules-${family}`)
         : family === "inline"
           ? html`<div class="hint">Inline has no layout rules. Put a rule on the value itself, or use a template.</div>`
           : html`<div class="hint">Add ${familyTitle(family)} settings first (on the layout tab).</div>`;
@@ -1399,8 +1456,8 @@ export class WristAssistantPanel extends LitElement {
       <div class="tabs">
         ${tab("General", ins.kind === "general", () => { this.inspect = { kind: "general" }; })}
         ${tab(`${familyTitle(this.activeFamily)} layout`, ins.kind === "family", () => { this.inspect = { kind: "family" }; })}
-        ${(ins.kind === "family" || ins.kind === "family-rules") && this.activeFamily !== "inline" ? tab("Rules", ins.kind === "family-rules", () => { this.inspect = { kind: "family-rules" }; }) : nothing}
-        ${ins.kind === "layer" || ins.kind === "layer-rules" ? html`${tab("Layer", ins.kind === "layer", () => { this.inspect = { kind: "layer", id: ins.id }; })}${tab("Rules", ins.kind === "layer-rules", () => { this.inspect = { kind: "layer-rules", id: ins.id }; })}` : nothing}
+        ${(ins.kind === "family" || ins.kind === "family-rules") && this.activeFamily !== "inline" ? tab("States", ins.kind === "family-rules", () => { this.inspect = { kind: "family-rules" }; }) : nothing}
+        ${ins.kind === "layer" || ins.kind === "layer-rules" ? html`${tab("Layer", ins.kind === "layer", () => { this.inspect = { kind: "layer", id: ins.id }; })}${tab("States", ins.kind === "layer-rules", () => { this.inspect = { kind: "layer-rules", id: ins.id }; })}` : nothing}
         ${ins.kind === "data" ? tab("Value", true, () => undefined) : nothing}
       </div>
       <h2>${title}</h2>
@@ -1430,45 +1487,10 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
   }
 
-  private renderRules() {
-    const cfg = this.draft?.config;
-    if (!cfg) return nothing;
-    const resolver = new Resolver(this.buildContext());
-    const groups: { title: string; rules: Rule[]; go: () => void }[] = [];
-    for (const el of cfg.elements) if (el.payload.rules.length) groups.push({ title: `${el.kind}: ${layerTitle(el)}`, rules: el.payload.rules, go: () => { this.inspect = { kind: "layer-rules", id: el.payload.id }; } });
-    for (const family of DRAWABLE_FAMILIES) {
-      const layout = cfg.perFamily[family];
-      if (layout?.rules.length) groups.push({ title: `${familyTitle(family)} layout`, rules: layout.rules, go: () => { this.activeFamily = family; this.inspect = { kind: "family-rules" }; } });
-    }
-    if (groups.length === 0) return nothing;
-    return html`<div class="card">
-      <h2>Rules</h2>
-      ${groups.map((g) => g.rules.map((rule, i) => this.renderRule(`${g.title} · rule ${i + 1}`, rule, resolver, g.go)))}
-      <div class="hint">Forcing a branch changes the previews only. Click a rule name to edit it.</div>
-    </div>`;
-  }
-
-  private renderRule(title: string, rule: Rule, resolver: Resolver, go: () => void): TemplateResult {
-    const live = resolver.liveBranches([rule]).get(rule.id);
-    const current = this.forced.get(rule.id) ?? "live";
-    const set = (v: ForcedBranches extends Map<string, infer V> ? V : never) => {
-      const next = new Map(this.forced);
-      if (v === "live") next.delete(rule.id);
-      else next.set(rule.id, v);
-      this.forced = next;
-    };
-    const isActive = (v: string) => (current === "live" ? v === "live" : current === "otherwise" ? v === "otherwise" : current.caseId === v);
-    return html`<div class="rule">
-      <div class="title"><button class="link" @click=${go}>${title}</button></div>
-      <div class="branches">
-        <button class=${isActive("live") ? "active" : ""} @click=${() => set("live")}>Live</button>
-        ${rule.cases.map((c, i) => html`<button class="${isActive(c.id) ? "active" : ""} ${live === c.id ? "live-match" : ""}"
-          @click=${() => set({ caseId: c.id })}>Case ${i + 1}</button>`)}
-        ${rule.otherwise ? html`<button class="${isActive("otherwise") ? "active" : ""} ${live === "otherwise" ? "live-match" : ""}"
-          @click=${() => set("otherwise")}>Otherwise</button>` : nothing}
-      </div>
-    </div>`;
-  }
+  // The Rules card that used to sit here is gone. Its one unique job was
+  // forcing a branch for the previews, which the states table now does on the
+  // row itself; everything else it showed was a link to a tab the Layers card
+  // already opens.
 
   private renderRaw() {
     if (!this.draft) return nothing;
