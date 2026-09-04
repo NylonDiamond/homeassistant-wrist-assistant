@@ -302,6 +302,11 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
   // A tap layer draws nothing on the watch. Outside the editor it takes no space
   // and no clicks either, so the preview matches the watch.
   if (el.kind === "tap" && !options.tapAreas) return nothing;
+  // An attached tap holds exactly its layer's frame, so its dashed box and its
+  // finger would sit on top of something already drawn and say nothing the
+  // layer's own "tap" chip does not. Only a free-standing tap needs to be shown,
+  // because nothing else marks where it is.
+  if (el.kind === "tap" && el.attachedTo !== undefined) return nothing;
   const box = frameBox(el, canvas);
   let body;
   switch (el.kind) {

@@ -110,6 +110,9 @@ export interface ResolvedTap extends ResolvedBase {
   kind: "tap";
   action: TapAction;
   openPageId?: string;
+  /** The layer this tap belongs to, if any. Carried only so the editor's
+   * preview can leave an attached tap undrawn; the watch ignores it. */
+  attachedTo?: string;
 }
 export type ResolvedElement = ResolvedText | ResolvedIcon | ResolvedGauge | ResolvedShape | ResolvedImage | ResolvedTap;
 
@@ -557,6 +560,7 @@ export class Resolver {
           action: el.payload.action,
         };
         if (el.payload.openPageId !== undefined) out.openPageId = el.payload.openPageId;
+        if (el.payload.attachedTo !== undefined) out.attachedTo = el.payload.attachedTo;
         return out;
       }
     }
