@@ -102,6 +102,9 @@ export interface RenderOptions {
   showHidden?: boolean;
   /** Element id to outline. */
   highlightId?: string;
+  /** Editor affordance: the layer the pick-mode pointer is over, filled and
+   * outlined the way a browser inspector shades the node under the cursor. */
+  hoverId?: string;
   /** Draw resize handles on the highlighted element (active family only). */
   handles?: boolean;
   /** Editor affordance: outline tap layers, which the watch never draws. */
@@ -314,6 +317,12 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
   const highlight = selected
     ? svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} fill="none" stroke="#0A84FF" stroke-width="0.75" stroke-dasharray="2 1" vector-effect="non-scaling-stroke" />`
     : nothing;
+  // Solid tint rather than the selection's dashes, so the two never read as the
+  // same state when the pointer happens to rest on the selected layer.
+  const hover = options.hoverId === el.id
+    ? svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} fill="#0A84FF" fill-opacity="0.22"
+        stroke="#0A84FF" stroke-width="1" vector-effect="non-scaling-stroke" pointer-events="none" />`
+    : nothing;
   // An invisible hit box so empty text and thin gauges are still grabbable.
   const hit = svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} fill="transparent" stroke="none" />`;
   const hs = 3;
@@ -324,7 +333,7 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
       )
     : nothing;
   return svg`<g data-element-id=${el.id} opacity=${opacity} style=${options.handles ? "cursor:move" : nothing}
-    transform="rotate(${el.frame.rotationDegrees} ${box.cx} ${box.cy})">${hit}${body}${highlight}${handles}</g>`;
+    transform="rotate(${el.frame.rotationDegrees} ${box.cx} ${box.cy})">${hit}${body}${hover}${highlight}${handles}</g>`;
 }
 
 /**

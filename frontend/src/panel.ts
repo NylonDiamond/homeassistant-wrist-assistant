@@ -38,6 +38,7 @@ import {
   newId,
   parseConfig,
   removeElement,
+  selectableLayerId,
 } from "./model.js";
 import { SEND_WAIT_MS, describeSend, sendState } from "./send-state.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
@@ -208,6 +209,12 @@ export class WristAssistantPanel extends LitElement {
   @state() private showRaw = false;
   @state() private inspect: Inspect = { kind: "general" };
   @state() private activeFamily: FamilyKind = "rectangular";
+  /** Pick mode: the pointer names the layer under it instead of dragging it,
+   * the way a browser inspector picks a node. One click selects and ends it. */
+  @state() private picking = false;
+  /** The layer the pick-mode pointer is over. Shaded in every preview and
+   * marked in the Layers card, so the two lists answer each other. */
+  @state() private pickHoverId?: string;
   /** The name the open complication had when its edit session started, so the
    * General tab can warn that a rename does not reach the watch face picker.
    * Undefined for a brand-new complication (nothing is on the watch yet). */
@@ -405,7 +412,23 @@ export class WristAssistantPanel extends LitElement {
     /* The corner preview draws the top-right screen quadrant (104x124
        reference points), so the small content disc stays big enough to edit. */
     .preview.corner svg { width: min(100%, 430px); background: #2c2c2e; }
+    /* Pick mode: the pointer names a layer, so nothing on the face should look
+       grabbable. The crosshair has to sit on the groups too, because a
+       draggable group carries its own inline cursor. */
+    .preview.picking svg, .preview.picking svg * { cursor: crosshair; }
     .preview-case { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+    .preview-case .spacer { flex: 1; min-width: 0; }
+    /* One toggle drawn in two places (over the previews and over the Layers
+       card), because the picking happens in one and the answer lands in the
+       other. The on class is the pressed state, not a second button. */
+    button.pick {
+      font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 999px; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+      border: 1px solid var(--divider-color); background: transparent; color: inherit;
+    }
+    button.pick:hover:not(:disabled) { border-color: var(--primary-color); }
+    button.pick.on { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: transparent; }
+    button.pick .glyph { font-size: 13px; line-height: 1; }
     .preview-case label { font-size: 13px; display: flex; align-items: center; gap: 8px; }
     .preview-case select { font: inherit; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--divider-color, #444); background: var(--card-background-color, #1c1c1e); color: inherit; }
     .ok { color: var(--success-color, #43a047); }
@@ -417,6 +440,9 @@ export class WristAssistantPanel extends LitElement {
     .layer, .datum { padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px; }
     .layer:hover, .datum:hover { background: var(--secondary-background-color); }
     .layer.hl, .datum.hl { background: var(--primary-color); color: var(--text-primary-color, #fff); }
+    /* The row for the layer the pick pointer is over. An outline rather than a
+       fill, so it still reads on the row that is also selected. */
+    .layer.pick { box-shadow: inset 0 0 0 2px var(--primary-color); }
     /* The kind is the fastest thing to scan a layer list by, so it reads as a
        badge rather than as faint grey text. */
     .layer .kind {
@@ -772,6 +798,11 @@ export class WristAssistantPanel extends LitElement {
       const column = this.renderRoot.querySelector<HTMLElement>(".column.inspector");
       if (column) column.scrollTop = 0;
     }
+    // Bring the pointed row into view, or a long Layers card can answer off
+    // screen. `nearest` means a row already visible never moves.
+    if (changed.has("pickHoverId") && this.pickHoverId !== undefined) {
+      this.renderRoot.querySelector<HTMLElement>(".layer.pick")?.scrollIntoView({ block: "nearest" });
+    }
     if (changed.has("hass") && this.draft) {
       const snapshot: Record<string, unknown> = {};
       for (const id of this.compiled?.entities.keys() ?? []) snapshot[id] = this.hass.states[id]?.last_updated;
@@ -785,6 +816,14 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private onKey(e: KeyboardEvent) {
+    // Escape leaves pick mode. It runs before the modifier gate, and only when
+    // picking, so nothing else that uses Escape (the preset dialog, the entity
+    // search) loses its key.
+    if (e.key === "Escape" && this.picking) {
+      e.preventDefault();
+      this.togglePicking(false);
+      return;
+    }
     const mod = e.metaKey || e.ctrlKey;
     if (!mod) return;
     const inField = (e.composedPath()[0] as HTMLElement | undefined)?.tagName?.match(/INPUT|TEXTAREA|SELECT/);
@@ -1340,7 +1379,61 @@ export class WristAssistantPanel extends LitElement {
 
   // ── preview gestures ──────────────────────────────────────────────────
 
+  /**
+   * The pick toggle, drawn over the previews and over the Layers card. Both
+   * buttons are the same switch: picking happens on the face, and the layer it
+   * names is a row in the other card, so either place is a fair place to reach
+   * for it.
+   */
+  private renderPickButton() {
+    const on = this.picking;
+    const off = !this.draft || this.parseError !== undefined;
+    return html`<button class="pick ${on ? "on" : ""}" ?disabled=${off}
+      aria-pressed=${on ? "true" : "false"}
+      title=${on ? "Point at the face to name a layer. Click one to select it. Escape stops." : "Point at a layer on the face to find it (Escape stops)"}
+      @click=${() => this.togglePicking()}><span class="glyph">⌖</span>${on ? "Picking…" : "Pick layer"}</button>`;
+  }
+
+  private togglePicking(next = !this.picking) {
+    this.picking = next;
+    this.pickHoverId = undefined;
+    if (next) this.cancelGesture?.();
+  }
+
+  /** The layer a preview event points at, with an attached tap sent to the
+   * layer it belongs to (the same redirect a drag does). */
+  private hitLayerId(e: Event): string | undefined {
+    const cfg = this.draft?.config;
+    if (!cfg) return undefined;
+    const target = e.target as Element | null;
+    const id = target?.closest?.("[data-element-id]")?.getAttribute("data-element-id");
+    return id ? selectableLayerId(cfg, id) : undefined;
+  }
+
+  private onPickMove(e: PointerEvent) {
+    if (!this.picking) return;
+    this.pickHoverId = this.hitLayerId(e);
+  }
+
+  /** Take the layer under the pointer and leave pick mode, so the next click is
+   * an ordinary one. A click on bare background picks nothing and still ends
+   * the mode, which is how it is cancelled without the keyboard. */
+  private pickAt(family: FamilyKind, e: PointerEvent) {
+    const id = this.hitLayerId(e);
+    this.togglePicking(false);
+    if (!id) return;
+    if (family !== this.activeFamily) this.activeFamily = family;
+    this.inspect = { kind: "layer", id };
+  }
+
   private onPreviewPointerDown(family: FamilyKind, e: PointerEvent) {
+    // Pick mode outranks dragging, and selecting is not an edit, so it works on
+    // a read-only complication too.
+    if (this.picking) {
+      e.preventDefault();
+      this.pickAt(family, e);
+      return;
+    }
     if (!this.draft || !this.canEdit) return;
     if (family !== this.activeFamily) {
       this.activeFamily = family;
@@ -1353,15 +1446,12 @@ export class WristAssistantPanel extends LitElement {
     if (!hitId) return;
     const svg = target.closest("svg") as SVGSVGElement | null;
     if (!svg) return;
-    const hit = this.draft.config.elements.find((x) => x.payload.id === hitId);
-    if (!hit) return;
     // An attached tap sits exactly over its owner and is not a layer the user
     // ever selects or drags: send the hit to the layer it belongs to, which is
     // what the author sees there. A free-standing tap is grabbed as before.
-    const el = (hit.kind === "tap" && hit.payload.attachedTo !== undefined
-      ? this.draft.config.elements.find((x) => x.payload.id === hit.payload.attachedTo)
-      : hit) ?? hit;
-    const id = el.payload.id;
+    const id = selectableLayerId(this.draft.config, hitId);
+    const el = this.draft.config.elements.find((x) => x.payload.id === id);
+    if (!id || !el) return;
     if (this.inspect.kind !== "layer" || this.inspect.id !== id) {
       this.inspect = { kind: "layer", id };
       if (handle) return;
@@ -1594,7 +1684,8 @@ export class WristAssistantPanel extends LitElement {
     const ordered = [...cfg.elements].filter((el) => !isAttachedTap(cfg, el)).reverse();
     const ctx = describeContext(this.host());
     return html`<div class="card">
-      <h2>Layers <span class="meta" style="text-transform:none;letter-spacing:0">(top first)</span></h2>
+      <h2>Layers <span class="meta" style="text-transform:none;letter-spacing:0">(top first)</span>
+        <span class="spacer"></span>${this.renderPickButton()}</h2>
       ${this.activeFamily === "inline" ? html`<div class="hint">Inline is one line of text and draws no layers. The controls here apply to the ${familyTitle(family)} layout.</div>` : nothing}
       ${cfg.elements.length === 0 ? html`<div class="empty">No layers.</div>` : nothing}
       ${ordered.map((el) => {
@@ -1608,7 +1699,8 @@ export class WristAssistantPanel extends LitElement {
         // Both badges answer "what will this layer do" without opening it: one
         // says it responds to a tap, the other that it changes with a value.
         const states = statesSummary(el.payload.rules);
-        return html`<div class="layer ${hl ? "hl" : ""}" @click=${() => { this.inspect = { kind: "layer", id }; }}>
+        const pointed = this.picking && this.pickHoverId === id;
+        return html`<div class="layer ${hl ? "hl" : ""} ${pointed ? "pick" : ""}" @click=${() => { this.inspect = { kind: "layer", id }; }}>
           <span class="kind">${el.kind}</span>
           <span class="name" style=${hidden ? "opacity:.5" : ""}>${layerTitle(el, ctx)}</span>
           ${tap ? html`<span class="chip" title=${`Tappable · ${layerTitle(tap, ctx)}`}>tap</span>` : nothing}
@@ -1738,10 +1830,19 @@ export class WristAssistantPanel extends LitElement {
       const active = family === this.activeFamily;
       const slot = watchCase.slots[family];
       const fit = fitBox(slot, family);
-      const opts = { icons: this.icons, showHidden: true, tapAreas: true, highlightId, handles: active && this.canEdit, slot };
+      // Pick mode drops the resize handles: they are drag affordances, and
+      // while picking nothing on the face is dragged.
+      const opts = {
+        icons: this.icons, showHidden: true, tapAreas: true, highlightId, slot,
+        handles: active && this.canEdit && !this.picking,
+        ...(this.picking && this.pickHoverId !== undefined ? { hoverId: this.pickHoverId } : {}),
+      };
       const pct = Math.round(fit.scale * 100);
       return html`
-      <div class="preview ${family} ${active ? "active" : ""}" @pointerdown=${(e: PointerEvent) => this.onPreviewPointerDown(family, e)}>
+      <div class="preview ${family} ${active ? "active" : ""} ${this.picking ? "picking" : ""}"
+        @pointerdown=${(e: PointerEvent) => this.onPreviewPointerDown(family, e)}
+        @pointermove=${(e: PointerEvent) => this.onPickMove(e)}
+        @pointerleave=${() => { if (this.picking) this.pickHoverId = undefined; }}>
         ${renderLayout(layout, opts)}
         <div class="label" @click=${() => { this.activeFamily = family; }}>${familyTitle(family)} · ${slot.width}×${slot.height} pt${pct !== 100 ? ` · ${pct}%` : ""}${active ? " · editing" : ""}</div>
       </div>`;
@@ -1754,6 +1855,8 @@ export class WristAssistantPanel extends LitElement {
           </select>
         </label>
         <span class="hint">Layouts are authored in the ${REFERENCE_CASE.label} box. Other cases draw the same box scaled down.</span>
+        <span class="spacer"></span>
+        ${this.renderPickButton()}
       </div>
       <div class="previews">
         ${one("rectangular")}

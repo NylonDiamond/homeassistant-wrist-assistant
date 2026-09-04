@@ -1422,6 +1422,21 @@ export function isAttachedTap(cfg: CustomComplicationConfig, el: Element): boole
 }
 
 /**
+ * The layer a preview hit belongs to. An attached tap sits exactly over its
+ * owner and is never a row or a selection of its own, so a hit on one answers
+ * with the owner. An id the document no longer has answers undefined.
+ */
+export function selectableLayerId(cfg: CustomComplicationConfig, hitId: string): string | undefined {
+  const hit = cfg.elements.find((x) => x.payload.id === hitId);
+  if (!hit) return undefined;
+  if (hit.kind === "tap" && hit.payload.attachedTo !== undefined) {
+    const owner = cfg.elements.find((x) => x.payload.id === hit.payload.attachedTo);
+    if (owner) return owner.payload.id;
+  }
+  return hit.payload.id;
+}
+
+/**
  * Glue every attached tap back to its owner: same frame, same per-shape
  * placements, same hidden state, sitting directly above it in `elements`.
  * A tap whose owner is gone (or is another tap) loses `attachedTo` and goes

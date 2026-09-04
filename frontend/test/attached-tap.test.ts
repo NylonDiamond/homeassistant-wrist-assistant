@@ -20,6 +20,7 @@ import {
   newElement,
   parseConfig,
   removeElement,
+  selectableLayerId,
   syncAttachedTaps,
 } from "../src/model.js";
 import { setPlacement } from "../src/editors.js";
@@ -279,5 +280,27 @@ describe("Draft", () => {
     expect(draft.dirty, "healing on open never looks like unsaved work").toBe(false);
     expect(draft.config.elements.map((e) => e.kind)).toEqual(["icon", "tap"]);
     expect(tapOf(draft.config, icon.payload.id).frame).toEqual(icon.payload.frame);
+  });
+});
+
+// The preview hit test both a drag and pick mode go through: a hit on an
+// attached tap has to answer with the layer the author can see there.
+describe("selectableLayerId", () => {
+  it("sends an attached tap's hit to its owner", () => {
+    const { cfg, icon } = withIcon();
+    const tap = attachTap(cfg, icon.payload.id)!;
+    expect(selectableLayerId(cfg, tap.id)).toBe(icon.payload.id);
+    expect(selectableLayerId(cfg, icon.payload.id)).toBe(icon.payload.id);
+  });
+
+  it("keeps a free-standing tap as itself", () => {
+    const cfg = newConfig("Test", 0);
+    const tap = newElement("tap");
+    cfg.elements.push(tap);
+    expect(selectableLayerId(cfg, tap.payload.id)).toBe(tap.payload.id);
+  });
+
+  it("answers undefined for an id the document does not have", () => {
+    expect(selectableLayerId(newConfig("Test", 0), "gone")).toBeUndefined();
   });
 });
