@@ -15,6 +15,7 @@ import {
   type FamilyKind,
   type FamilyLayout,
   type FontWeight,
+  type ImageElement,
   type LayerEntityUse,
   type NamedValue,
   type NormalizedFrame,
@@ -33,6 +34,8 @@ import {
   type ValueKind,
   COMPARISON_KINDS,
   DRAWABLE_FAMILIES,
+  IMAGE_DEFAULT_CORNER_RADIUS,
+  IMAGE_DEFAULT_TIMESTAMP_SIZE,
   RULE_TARGET_PROPERTIES,
   STYLE_PROPERTY,
   attachTap,
@@ -149,6 +152,28 @@ export function selectField<T extends string>(label: string, value: T, options: 
     <select @change=${onInput((v) => set(v as T))}>
       ${options.map(([v, text]) => html`<option value=${v} ?selected=${v === value}>${text}</option>`)}
     </select></label>`;
+}
+
+/**
+ * A number that is better dragged than typed: a slider with the value beside
+ * it and a reset button back to the default. Used for the picture crop, where
+ * the answer is found by eye and no one knows the number they want.
+ */
+export function sliderField(
+  label: string,
+  value: number,
+  set: (v: number) => void,
+  opts: { min: number; max: number; step: number; def: number; format?: (v: number) => string },
+) {
+  const show = opts.format ?? ((v: number) => String(Math.round(v * 100) / 100));
+  return html`<div class="field slider"><span>${label}</span>
+    <div class="slider-row">
+      <input type="range" min=${opts.min} max=${opts.max} step=${opts.step} .value=${String(value)}
+        @input=${onInput((v) => { const n = Number(v); if (!Number.isNaN(n)) set(n); })} />
+      <span class="slider-value mono">${show(value)}</span>
+      <button class="icon" title=${`Back to ${show(opts.def)}`} aria-label="Reset" ?disabled=${value === opts.def}
+        @click=${() => set(opts.def)}>${uiIcon("reset")}</button>
+    </div></div>`;
 }
 
 export function checkField(label: string, value: boolean, set: (v: boolean) => void) {
@@ -1194,6 +1219,38 @@ export function layerEntityNote(el: CElement, uses: readonly LayerEntityUse[]): 
  * saying the same thing. `note` carries what the old tab strip used to say in
  * its label, such as which shape a placement belongs to.
  */
+/** What the pan sliders can actually do right now, said in words: an axis with
+ * nothing spilling off the frame has nothing to move, and that is the first
+ * thing anyone drags a dead slider over. */
+function imagePanHint(img: ImageElement): string {
+  if (img.contentMode === "fit" && img.zoom === 1) {
+    return "The whole picture is inside the frame, so there is nothing to pan. Zoom in, or switch to Fill, to crop it first.";
+  }
+  return "Pan moves the frame over the picture: -1 is hard left (or top), 1 is hard right (or bottom). An edge the picture does not overflow cannot move.";
+}
+
+/** The fetched-at overlay: whether it is drawn, where, how big, and what it
+ * says. `age` keeps counting on the watch between snapshots, which is the
+ * honest answer to "is this picture current?". */
+function imageTimestampSection(img: ImageElement, upd: (m: (p: ImageElement) => void, key?: string) => void): TemplateResult {
+  const on = img.timestamp === true;
+  return html`
+    ${checkField("Show timestamp", on, (v) => upd((p) => { if (v) p.timestamp = true; else delete p.timestamp; }))}
+    ${!on ? nothing : html`
+      ${selectField("Corner", img.timestampCorner, [
+        ["topLeading", "Top left"],
+        ["topTrailing", "Top right"],
+        ["bottomLeading", "Bottom left"],
+        ["bottomTrailing", "Bottom right"],
+      ], (v) => upd((p) => { p.timestampCorner = v; }))}
+      ${numberField("Text size (pt)", img.timestampSize, (v) => upd((p) => { p.timestampSize = Math.min(40, Math.max(4, v ?? IMAGE_DEFAULT_TIMESTAMP_SIZE)); }, "tssize"), { step: 1, min: 4, max: 40 })}
+      ${selectField("Shows", img.timestampStyle, [["clock", "The clock time it was taken"], ["age", "How long ago it was taken"]],
+        (v) => upd((p) => { p.timestampStyle = v; }))}
+      <div class="hint">${img.timestampStyle === "age"
+        ? "The watch counts up on its own between snapshots, so a stale picture says so. The preview is live, so it reads \"now\"."
+        : "The time the snapshot was fetched, not the time now. A frame that stops updating keeps its old time."}</div>`}`;
+}
+
 function section(title: string, body: unknown, note?: string): TemplateResult {
   return html`<section class="sect">
     <h4>${title}${note === undefined ? nothing : html`<span class="sect-note">${note}</span>`}</h4>
@@ -1267,15 +1324,28 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         ${colorField("Border colour", el.payload.borderColorHex, (v) => upd((e) => { if (v === undefined) delete (e as typeof el).payload.borderColorHex; else (e as typeof el).payload.borderColorHex = v; }, "border"), true)}
         ${el.payload.borderColorHex !== undefined ? numberField("Border width (pt)", el.payload.borderWidth, (v) => upd((e) => { (e as typeof el).payload.borderWidth = v ?? 1; }, "bw"), { step: 0.5, min: 0 }) : nothing}`;
       break;
-    case "image":
+    case "image": {
+      const img = el.payload;
+      const setImage = (m: (p: ImageElement) => void, k?: string) => upd((e) => m((e as typeof el).payload), k);
       content = html`
-        ${el.payload.entity.entityId && !el.payload.entity.entityId.startsWith("camera.") ? html`<div class="hint warn">Only camera entities have snapshots, so this layer stays blank until the entity is a camera.</div>` : nothing}
-        ${checkField("Show timestamp", el.payload.timestamp === true, (v) => upd((e) => {
-          const p = (e as typeof el).payload;
-          if (v) p.timestamp = true; else delete p.timestamp;
-        }))}
+        ${img.entity.entityId && !img.entity.entityId.startsWith("camera.") ? html`<div class="hint warn">Only camera entities have snapshots, so this layer stays blank until the entity is a camera.</div>` : nothing}
         <div class="hint">The watch fetches a snapshot on refresh and shows the cached frame in between. This preview shows the camera live.</div>`;
+      // The crop, its own section: a picture that is the wrong shape for its
+      // frame has to be aimed, and every control here is about where the
+      // picture sits rather than what it is.
+      look = html`
+        ${selectField("Picture", img.contentMode, [["fill", "Fill the frame (crop)"], ["fit", "Fit the whole picture"]],
+          (v) => setImage((p) => { p.contentMode = v; }))}
+        ${sliderField("Zoom", img.zoom, (v) => setImage((p) => { p.zoom = v; }, "zoom"),
+          { min: 1, max: 4, step: 0.05, def: 1, format: (v) => `${v.toFixed(2)}x` })}
+        ${sliderField("Pan left/right", img.panX, (v) => setImage((p) => { p.panX = v; }, "panx"),
+          { min: -1, max: 1, step: 0.02, def: 0 })}
+        ${sliderField("Pan up/down", img.panY, (v) => setImage((p) => { p.panY = v; }, "pany"),
+          { min: -1, max: 1, step: 0.02, def: 0 })}
+        <div class="hint">${imagePanHint(img)}</div>
+        ${numberField("Corner radius (pt)", img.cornerRadius, (v) => setImage((p) => { p.cornerRadius = Math.max(0, v ?? IMAGE_DEFAULT_CORNER_RADIUS); }, "imgradius"), { step: 1, min: 0 })}`;
       break;
+    }
     case "tap": {
       content = html`
         ${tapActionEditor(host, el.payload, (m, k) => upd((e) => m((e as typeof el).payload), k), key)}
@@ -1296,7 +1366,9 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
 
   return html`
     ${section("Content", html`${el.kind === "tap" ? nothing : layerEntityField(host, el, key)}${content}`)}
-    ${look === undefined && colour === undefined ? nothing : section("Look", html`${look ?? nothing}${colour ?? nothing}`)}
+    ${look === undefined && colour === undefined ? nothing
+      : section(el.kind === "image" ? "Picture" : "Look", html`${look ?? nothing}${colour ?? nothing}`)}
+    ${el.kind === "image" ? section("Timestamp", imageTimestampSection(el.payload, (m, k) => upd((e) => m((e as typeof el).payload), k))) : nothing}
     ${el.kind === "tap" ? nothing : section("Tappable", tappableSection(host, el, key))}
     ${section("States", statesEditor(host, el.payload.rules, el.kind,
       (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`, tested))}

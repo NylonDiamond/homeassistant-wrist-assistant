@@ -250,10 +250,33 @@ export interface ShapeElement extends ElementBase {
 /** A camera snapshot, aspect-filled into its frame. No colorSlot: photos have no
  * tint. The watch fetches the pixels through op=snapshot; the panel previews the
  * camera's own entity_picture URL. */
+/** How a snapshot meets its frame: `fill` crops it, `fit` shows all of it. */
+export type ImageContentMode = "fill" | "fit";
+export type ImageTimestampCorner = "topLeading" | "topTrailing" | "bottomLeading" | "bottomTrailing";
+/** What the timestamp says: the clock time it was fetched, or how long ago. */
+export type ImageTimestampStyle = "clock" | "age";
+
+export const IMAGE_DEFAULT_CORNER_RADIUS = 6;
+export const IMAGE_DEFAULT_TIMESTAMP_SIZE = 9;
+export const IMAGE_TIMESTAMP_CORNERS: ImageTimestampCorner[] = ["topLeading", "topTrailing", "bottomLeading", "bottomTrailing"];
+
 export interface ImageElement extends Omit<ElementBase, "colorSlot"> {
   entity: EntityRef;
   /** Draw the fetched-at time in the picture's corner. Encoded only when true. */
   timestamp?: boolean;
+  /** Every field below matches `CustomComplication.ImageElement` in the app and
+   * is encoded only when it differs from the look an image layer has always
+   * had, so a document nobody has touched stays byte-identical and an older
+   * watch, which ignores keys it does not know, draws it exactly as before. */
+  contentMode: ImageContentMode;
+  zoom: number;
+  /** -1..1, 0 centred. Which part of an over-large picture is kept. */
+  panX: number;
+  panY: number;
+  cornerRadius: number;
+  timestampCorner: ImageTimestampCorner;
+  timestampSize: number;
+  timestampStyle: ImageTimestampStyle;
 }
 
 /** An invisible tap area. Draws nothing on the watch; its frame becomes its own
@@ -639,6 +662,16 @@ export function parseElement(raw: unknown): Element {
       const el: ImageElement = {
         ...base,
         entity: parseEntityRef(isObject(p.entity) ? p.entity : {}),
+        contentMode: p.contentMode === "fit" ? "fit" : "fill",
+        zoom: num(p.zoom, 1),
+        panX: num(p.panX, 0),
+        panY: num(p.panY, 0),
+        cornerRadius: num(p.cornerRadius, IMAGE_DEFAULT_CORNER_RADIUS),
+        timestampCorner: IMAGE_TIMESTAMP_CORNERS.includes(p.timestampCorner as ImageTimestampCorner)
+          ? (p.timestampCorner as ImageTimestampCorner)
+          : "topLeading",
+        timestampSize: num(p.timestampSize, IMAGE_DEFAULT_TIMESTAMP_SIZE),
+        timestampStyle: p.timestampStyle === "age" ? "age" : "clock",
       };
       if (p.timestamp === true) el.timestamp = true;
       return { kind: "image", payload: el };
@@ -958,6 +991,16 @@ function encodeElement(el: Element): J {
         isHidden: p.isHidden,
       };
       if (p.timestamp === true) o.timestamp = true;
+      // Same order and same "only when it differs" rule as the app's encoder,
+      // so the two write the same bytes for the same document.
+      if (p.contentMode !== "fill") o.contentMode = p.contentMode;
+      if (p.zoom !== 1) o.zoom = encNum(p.zoom);
+      if (p.panX !== 0) o.panX = encNum(p.panX);
+      if (p.panY !== 0) o.panY = encNum(p.panY);
+      if (p.cornerRadius !== IMAGE_DEFAULT_CORNER_RADIUS) o.cornerRadius = encNum(p.cornerRadius);
+      if (p.timestampCorner !== "topLeading") o.timestampCorner = p.timestampCorner;
+      if (p.timestampSize !== IMAGE_DEFAULT_TIMESTAMP_SIZE) o.timestampSize = encNum(p.timestampSize);
+      if (p.timestampStyle !== "clock") o.timestampStyle = p.timestampStyle;
       return { kind: "image", payload: o };
     }
     case "tap": {
@@ -1076,7 +1119,8 @@ const K = {
   icon: ["symbol", "size"],
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex"],
   shape: ["kind", "cornerRadius", "borderColorHex", "borderWidth"],
-  image: ["entity", "timestamp"],
+  image: ["entity", "timestamp", "contentMode", "zoom", "panX", "panY", "cornerRadius",
+    "timestampCorner", "timestampSize", "timestampStyle"],
   tap: ["action", "openPageId", "openPageName", "attachedTo"],
   colorSlot: ["baseColorHex"],
   rule: ["id", "cases", "otherwise"],
@@ -1285,7 +1329,21 @@ export function newElement(kind: Element["kind"]): Element {
     case "shape": return { kind, payload: { ...base("#FFFFFF33"), kind: "roundedRectangle", cornerRadius: 6, borderWidth: 1 } };
     case "image": {
       const { colorSlot: _unused, ...b } = base("#FFFFFF");
-      return { kind, payload: { ...b, entity: { entityId: "", displayName: "", domain: "camera" } } };
+      return {
+        kind,
+        payload: {
+          ...b,
+          entity: { entityId: "", displayName: "", domain: "camera" },
+          contentMode: "fill",
+          zoom: 1,
+          panX: 0,
+          panY: 0,
+          cornerRadius: IMAGE_DEFAULT_CORNER_RADIUS,
+          timestampCorner: "topLeading",
+          timestampSize: IMAGE_DEFAULT_TIMESTAMP_SIZE,
+          timestampStyle: "clock",
+        },
+      };
     }
     case "tap": {
       const { colorSlot: _unused, ...b } = base("#FFFFFF");

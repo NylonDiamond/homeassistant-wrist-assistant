@@ -9,7 +9,7 @@
 
 import { type TemplateResult, html, svg } from "lit";
 
-export type UiIconName = "up" | "down" | "show" | "hide" | "duplicate" | "delete" | "close";
+export type UiIconName = "up" | "down" | "show" | "hide" | "duplicate" | "delete" | "close" | "reset";
 
 function shape(name: UiIconName) {
   switch (name) {
@@ -34,6 +34,9 @@ function shape(name: UiIconName) {
         <path d="M10.2 11V17M13.8 11V17" />`;
     case "close":
       return svg`<path d="M6.5 6.5L17.5 17.5M17.5 6.5L6.5 17.5" />`;
+    case "reset":
+      return svg`<path d="M4.5 12A7.5 7.5 0 1 0 7 6.4" />
+        <path d="M4 3.5V7H7.5" />`;
   }
 }
 

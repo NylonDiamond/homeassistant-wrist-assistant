@@ -56,6 +56,7 @@ import { CASES, REFERENCE_CASE, caseForScreenSize, cornerTileSide, familyTitle, 
 import { ALL_FAMILIES, addFamily, canRemoveFamily, familyContentSummary, firstDrawable, isDrawable, removeFamily, supportedFamilies } from "./layouts.js";
 import { updateWatchMessage, watchSupportsShapes } from "./version.js";
 import { makeIconProvider } from "./icons.js";
+import { makeImageSizeProvider } from "./image-sizes.js";
 import { SymbolBrowser } from "./symbols.js";
 import { Draft, draftStatus } from "./draft.js";
 import { statesSummary } from "./states.js";
@@ -244,6 +245,9 @@ export class WristAssistantPanel extends LitElement {
   private compiled?: Compiled;
   private compiledDocument?: string;
   private icons: IconProvider = makeIconProvider(() => this.requestUpdate());
+  /** Natural sizes of the preview's camera pictures, so an image layer can be
+   * cropped exactly the way the watch crops it. */
+  private imageSizes = makeImageSizeProvider(() => this.requestUpdate());
   private symbols = new SymbolBrowser(() => this.requestUpdate());
   private unsubscribe?: () => Promise<void>;
   private templateTimer?: number;
@@ -529,6 +533,11 @@ export class WristAssistantPanel extends LitElement {
       background: var(--card-background-color, #fff); color: inherit; width: 100%; box-sizing: border-box;
     }
     .field .mono, code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    /* A slider with its number beside it: the crop controls are found by eye,
+       so the value is a readout rather than something to type into. */
+    .field.slider .slider-row { display: flex; align-items: center; gap: 8px; }
+    .field.slider input[type=range] { flex: 1; min-width: 60px; }
+    .field.slider .slider-value { min-width: 44px; text-align: right; opacity: .85; }
     .field.check { flex-direction: row; align-items: center; gap: 8px; }
     .field.check > span { opacity: 1; font-size: 13px; }
     .color-row { display: flex; align-items: center; gap: 6px; }
@@ -1851,7 +1860,7 @@ export class WristAssistantPanel extends LitElement {
       // Pick mode drops the resize handles: they are drag affordances, and
       // while picking nothing on the face is dragged.
       const opts = {
-        icons: this.icons, showHidden: true, tapAreas: true, highlightId, slot,
+        icons: this.icons, imageSizes: this.imageSizes, showHidden: true, tapAreas: true, highlightId, slot,
         handles: active && this.canEdit && !this.picking,
         ...(this.picking && this.pickHoverId !== undefined ? { hoverId: this.pickHoverId } : {}),
       };

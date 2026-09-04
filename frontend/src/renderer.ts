@@ -4,7 +4,8 @@
 // 160x62 rectangle scaled 2x looks like the native editor.
 
 import { svg, nothing, type TemplateResult } from "lit";
-import type { FamilyKind } from "./model.js";
+import type { FamilyKind, ImageContentMode } from "./model.js";
+import type { ImageSizeProvider } from "./image-sizes.js";
 import { countdownRemainingString, type ResolvedBezelGauge, type ResolvedElement, type ResolvedLayout } from "./resolver.js";
 
 export interface CanvasSize {
@@ -109,6 +110,9 @@ export interface RenderOptions {
   handles?: boolean;
   /** Editor affordance: outline tap layers, which the watch never draws. */
   tapAreas?: boolean;
+  /** Natural sizes of the camera pictures, so a layer can be cropped the way
+   * the watch crops it. Absent falls back to the browser's own fitting. */
+  imageSizes?: ImageSizeProvider;
   /**
    * The real slot to preview in. Defaults to the design box itself (the 46 mm
    * slot). Any other size draws the design box uniformly scaled and centred,
@@ -252,34 +256,101 @@ function renderIcon(el: Extract<ResolvedElement, { kind: "icon" }>, box: Box, ic
       fill=${c.stroke} fill-opacity=${c["stroke-opacity"]} font-family="sans-serif">?</text>`;
 }
 
-/** Camera snapshot preview: HA's entity_picture aspect-filled into the frame,
- * clipped to the same 6 pt rounded rectangle the watch uses. No URL (entity not
- * found, or a non-camera entity) draws the placeholder the watch shows before
- * its first fetch. The timestamp chip mirrors the watch's overlay with the
- * current time, since the preview image is always live. */
-function renderImage(el: Extract<ResolvedElement, { kind: "image" }>, box: Box, icons: IconProvider) {
+/**
+ * Where a picture's pixels land inside its layer frame, in that frame's own
+ * points with the frame's top-left as the origin.
+ *
+ * `fill` scales until the frame is covered and throws the overflow away; `fit`
+ * scales until the whole picture is inside and leaves the spare edges empty.
+ * `zoom` multiplies whichever was chosen. `panX`/`panY` then slide the frame
+ * over the picture: 0 centred, -1 the picture's left (or top) edge against the
+ * frame's, 1 the right (or bottom) one. An axis with nothing to spare cannot
+ * move, because its overflow is zero.
+ *
+ * This is a port of `CustomComplication.pictureRect` in the app
+ * (Shared/CustomComplicationRendering.swift). The numbers are pinned on both
+ * sides; change one and change the other.
+ */
+export function pictureRect(
+  boxWidth: number,
+  boxHeight: number,
+  imageWidth: number,
+  imageHeight: number,
+  contentMode: ImageContentMode,
+  zoom: number,
+  panX: number,
+  panY: number,
+): { x: number; y: number; width: number; height: number } {
+  const whole = { x: 0, y: 0, width: boxWidth, height: boxHeight };
+  if (!(boxWidth > 0) || !(boxHeight > 0) || !(imageWidth > 0) || !(imageHeight > 0)) return whole;
+  const z = Math.min(Math.max(Number.isFinite(zoom) ? zoom : 1, 1), 8);
+  const cover = Math.max(boxWidth / imageWidth, boxHeight / imageHeight);
+  const contain = Math.min(boxWidth / imageWidth, boxHeight / imageHeight);
+  const scale = (contentMode === "fit" ? contain : cover) * z;
+  const width = imageWidth * scale;
+  const height = imageHeight * scale;
+  const px = Math.min(Math.max(Number.isFinite(panX) ? panX : 0, -1), 1);
+  const py = Math.min(Math.max(Number.isFinite(panY) ? panY : 0, -1), 1);
+  // `+ 0` turns a negative zero back into zero: Swift's == does not tell them
+  // apart and neither should a test comparing the two ports.
+  return {
+    x: (-(width - boxWidth) / 2) * (1 + px) + 0,
+    y: (-(height - boxHeight) / 2) * (1 + py) + 0,
+    width,
+    height,
+  };
+}
+
+/** Camera snapshot preview: HA's entity_picture cropped into the frame the same
+ * way the watch crops it, clipped to the layer's own rounded rectangle. No URL
+ * (entity not found, or a non-camera entity) draws the placeholder the watch
+ * shows before its first fetch. The timestamp chip mirrors the watch's overlay;
+ * the preview picture is always live, so the age style reads "now". */
+function renderImage(el: Extract<ResolvedElement, { kind: "image" }>, box: Box, options: RenderOptions) {
+  const icons = options.icons;
   const clipId = `imgclip-${el.id}`;
-  const r = 6;
+  const r = Math.max(0, el.cornerRadius);
   const chip = el.showTimestamp && el.url
     ? (() => {
-        const now = new Date();
-        const h = now.getHours() % 12 || 12;
-        const two = (n: number) => String(n).padStart(2, "0");
-        const label = `${h}:${two(now.getMinutes())}:${two(now.getSeconds())}`;
-        const w = label.length * 5.2 + 8;
+        const size = Math.min(Math.max(el.timestampSize, 4), 40);
+        let label: string;
+        if (el.timestampStyle === "age") {
+          label = "now";
+        } else {
+          const now = new Date();
+          const h = now.getHours() % 12 || 12;
+          const two = (n: number) => String(n).padStart(2, "0");
+          label = `${h}:${two(now.getMinutes())}:${two(now.getSeconds())}`;
+        }
+        const w = label.length * size * 0.578 + size * 0.89;
+        const h = size * 1.25;
+        const pad = 4;
+        const x = el.timestampCorner.endsWith("Leading") ? box.x + pad : box.x + box.w - pad - w;
+        const y = el.timestampCorner.startsWith("top") ? box.y + pad : box.y + box.h - pad - h;
         return svg`
-          <rect x=${box.x + 4} y=${box.y + 4} width=${w} height=${11} rx=${5.5} fill="#000000" fill-opacity="0.55" />
-          <text x=${box.x + 4 + w / 2} y=${box.y + 9.5} text-anchor="middle" dominant-baseline="central"
-            font-size="9" font-weight="600" fill="#FFFFFF"
+          <rect x=${x} y=${y} width=${w} height=${h} rx=${h / 2} fill="#000000" fill-opacity="0.55" />
+          <text x=${x + w / 2} y=${y + h / 2} text-anchor="middle" dominant-baseline="central"
+            font-size=${size} font-weight="600" fill="#FFFFFF"
             font-family="-apple-system, 'SF Pro Rounded', Helvetica, Arial, sans-serif">${label}</text>`;
       })()
     : nothing;
-  const content = el.url
-    ? svg`<image href=${el.url} x=${box.x} y=${box.y} width=${box.w} height=${box.h}
-        preserveAspectRatio="xMidYMid slice" />`
-    : svg`
+  // The crop needs the picture's own pixel size. Until the browser reports it,
+  // fall back to its own fitting, which is exactly right at the default
+  // settings and one render out of date for the rest.
+  const natural = el.url ? options.imageSizes?.size(el.url) : undefined;
+  let content;
+  if (el.url && natural) {
+    const p = pictureRect(box.w, box.h, natural.width, natural.height, el.contentMode, el.zoom, el.panX, el.panY);
+    content = svg`<image href=${el.url} x=${box.x + p.x} y=${box.y + p.y} width=${p.width} height=${p.height}
+      preserveAspectRatio="none" />`;
+  } else if (el.url) {
+    content = svg`<image href=${el.url} x=${box.x} y=${box.y} width=${box.w} height=${box.h}
+      preserveAspectRatio=${el.contentMode === "fit" ? "xMidYMid meet" : "xMidYMid slice"} />`;
+  } else {
+    content = svg`
       <rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} rx=${r} fill="#FFFFFF" fill-opacity="0.18" />
       <g transform="translate(${box.cx - 7} ${box.cy - 7})">${icons.render("camera.fill", 14, "#FFFFFF99") ?? nothing}</g>`;
+  }
   return svg`
     <defs><clipPath id=${clipId}><rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} rx=${r} /></clipPath></defs>
     <g clip-path=${`url(#${clipId})`}>${content}${chip}</g>`;
@@ -314,7 +385,7 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     case "icon": body = renderIcon(el, box, options.icons); break;
     case "gauge": body = renderGauge(el, box); break;
     case "shape": body = renderShape(el, box); break;
-    case "image": body = renderImage(el, box, options.icons); break;
+    case "image": body = renderImage(el, box, options); break;
     case "tap": body = renderTap(el, box, options.icons, options.tapAreas === true); break;
   }
   const opacity = Math.min(1, Math.max(0, el.opacity)) * (el.isHidden ? 0.35 : 1);

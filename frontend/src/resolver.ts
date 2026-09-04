@@ -12,6 +12,9 @@ import {
   type FamilyKind,
   type FontWeight,
   type GaugeStyle,
+  type ImageContentMode,
+  type ImageTimestampCorner,
+  type ImageTimestampStyle,
   type InlineLayout,
   type NamedValue,
   type NormalizedFrame,
@@ -103,6 +106,17 @@ export interface ResolvedImage extends ResolvedBase {
   url?: string;
   /** Whether the watch draws the fetched-at overlay. */
   showTimestamp: boolean;
+  /** The picture and timestamp settings, straight off the payload: no rule
+   * changes any of them, they are just carried here so the preview can draw
+   * the same crop the watch does. */
+  contentMode: ImageContentMode;
+  zoom: number;
+  panX: number;
+  panY: number;
+  cornerRadius: number;
+  timestampCorner: ImageTimestampCorner;
+  timestampSize: number;
+  timestampStyle: ImageTimestampStyle;
 }
 /** A tap area after rules ran. Draws nothing on the watch; the preview outlines
  * it in edit mode. Only visibility rules apply, so opacity is always 1. */
@@ -544,6 +558,14 @@ export class Resolver {
           ...base,
           entityId: el.payload.entity.entityId,
           showTimestamp: el.payload.timestamp === true,
+          contentMode: el.payload.contentMode,
+          zoom: el.payload.zoom,
+          panX: el.payload.panX,
+          panY: el.payload.panY,
+          cornerRadius: el.payload.cornerRadius,
+          timestampCorner: el.payload.timestampCorner,
+          timestampSize: el.payload.timestampSize,
+          timestampStyle: el.payload.timestampStyle,
         };
         const url = this.ctx.entityStates.get(el.payload.entity.entityId)?.entityPicture;
         if (url !== undefined) out.url = url;
