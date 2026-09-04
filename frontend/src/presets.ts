@@ -13,6 +13,7 @@
 
 import { CANVAS, type DrawableFamily } from "./renderer.js";
 import type { HassEntityState } from "./ha-api.js";
+import { buildStatesRule, type StatesRowInput } from "./states.js";
 import {
   type Comparison,
   type CustomComplicationConfig,
@@ -65,7 +66,7 @@ export const LAYER_PRESETS: readonly PresetSpec[] = [
   {
     kind: "gauge",
     title: "Sensor gauge",
-    blurb: "An arc that fills with the entity's reading.",
+    blurb: "An arc that fills with the entity's reading and changes colour across three bands.",
     preferNumeric: true,
     layerCount: 1,
   },
@@ -96,6 +97,28 @@ export interface PresetEnv {
  * label colour, which is what an off thing should look like. */
 const ACCENT_HEX = "#FF9F0A";
 const MUTED_HEX = "#8E8E93";
+
+/** The three band colours of a gauge, lowest reading first. Every hex here is
+ * one `colorWords` can name, so a band cell reads "red" rather than "#FF453A". */
+export type BandColors = readonly [string, string, string];
+
+/** Low is bad: a battery at 10% should look alarming, and full should not. */
+export const ALARM_LOW_RAMP: BandColors = ["#FF453A", "#FFD60A", "#34C759"];
+/** Nothing is wrong with either end, so the ramp only says cool or warm. */
+export const NEUTRAL_RAMP: BandColors = ["#0A84FF", "#34C759", "#FF9F0A"];
+
+/**
+ * Which way a gauge's colours run.
+ *
+ * Only a charge level has an end that is plainly bad, so only that gets the
+ * red-to-green ramp. A temperature has no bad end, and neither does anything
+ * whose class the entity never states, so both get the neutral one rather than
+ * a colour that implies a judgement the panel cannot make.
+ */
+export function bandColors(state: HassEntityState | undefined): BandColors {
+  const deviceClass = state?.attributes?.device_class;
+  return deviceClass === "battery" ? ALARM_LOW_RAMP : NEUTRAL_RAMP;
+}
 
 // ── symbols ───────────────────────────────────────────────────────────────
 
@@ -344,6 +367,41 @@ export function unavailableRule(ref: EntityRef): Rule {
   return rule;
 }
 
+/**
+ * A threshold that reads like a number a person would have typed.
+ *
+ * A third of 0 to 100 is 33.333…, which nobody wants to see in a row that says
+ * "below 33.3333333". Anything ten or larger rounds to a whole number; smaller
+ * bands keep one decimal, because rounding 0.67 to 1 would move the band.
+ */
+export function bandThreshold(n: number): string {
+  const rounded = Math.abs(n) >= 10 ? Math.round(n) : Math.round(n * 10) / 10;
+  return String(rounded);
+}
+
+/**
+ * The three colour bands behind a sensor gauge: below the first third, between
+ * the thirds, above the second.
+ *
+ * Built through `buildStatesRule` so the result is exactly the shape the states
+ * table draws, and tested on the same value the gauge itself reads, because a
+ * band that watched something else would disagree with the header chip above
+ * it. The rows are checked top to bottom and the first match wins, so `below`,
+ * `between` and `above` cover every reading between them with no overlap to
+ * reason about.
+ */
+export function gaugeBandRule(ref: EntityRef, range: { min: number; max: number }, colors: BandColors = NEUTRAL_RAMP): Rule {
+  const span = range.max - range.min;
+  const low = bandThreshold(range.min + span / 3);
+  const high = bandThreshold(range.min + (span * 2) / 3);
+  const rows: StatesRowInput[] = [
+    { comparison: { kind: "lessThan", value: literal(low) }, changes: [setColorTo(colors[0])] },
+    { comparison: { kind: "between", value: literal(low), upper: literal(high) }, changes: [setColorTo(colors[1])] },
+    { comparison: { kind: "greaterThan", value: literal(high) }, changes: [setColorTo(colors[2])] },
+  ];
+  return buildStatesRule(entityStateValue(ref), rows);
+}
+
 /** Icon, tap and on/off rule, all pointed at one entity. The two steps the
  * whole authoring layer exists for. */
 export function addToggleButton(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
@@ -377,10 +435,7 @@ export function addSensorGauge(cfg: CustomComplicationConfig, ref: EntityRef, en
   const range = gaugeRange(env.state);
   el.payload.minValue = range.min;
   el.payload.maxValue = range.max;
-  // No colour bands yet: a band is a number test, and the states table only
-  // learns to show those in the next slice. Add them with `gaugeBandRule` when
-  // it does, so the gauge's rules stay table-shaped rather than dropping the
-  // author into the Advanced editor.
+  el.payload.rules = [gaugeBandRule(ref, range, bandColors(env.state))];
   placeLayer(cfg, el, env.family, gaugeGeometry);
   cfg.elements.push(el);
   return el.payload.id;

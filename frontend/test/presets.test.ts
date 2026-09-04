@@ -15,18 +15,25 @@ import {
   parseConfig,
 } from "../src/model.js";
 import {
+  ALARM_LOW_RAMP,
   LAYER_PRESETS,
+  NEUTRAL_RAMP,
   addCameraLayer,
   addSensorGauge,
   addStatusText,
   addToggleButton,
   applyPreset,
+  bandColors,
+  bandThreshold,
   centredFrame,
+  gaugeBandRule,
   gaugeRange,
   onComparison,
   presetSpec,
   toggleSymbols,
 } from "../src/presets.js";
+import { tableShape } from "../src/states.js";
+import { colorWords } from "../src/editors.js";
 import { CURATED_SYMBOLS } from "../src/symbols.js";
 import type { HassEntityState } from "../src/ha-api.js";
 
@@ -220,10 +227,75 @@ describe("the sensor gauge preset", () => {
     expect(el.payload.maxValue).toBe(100);
   });
 
-  it("ships without colour bands, which arrive with the states table", () => {
+  it("writes one rule the states table can draw, with a band per third", () => {
     const cfg = config();
     const el = layer(cfg, addSensorGauge(cfg, KITCHEN, { family: "circular" }));
-    expect(el.payload.rules).toEqual([]);
+    expect(el.payload.rules).toHaveLength(1);
+    const shape = tableShape(el.payload.rules);
+    expect(shape.ok).toBe(true);
+    if (!shape.ok) return;
+    expect(shape.table.rows).toHaveLength(3);
+    expect(shape.table.numberMode).toBe(true);
+    expect(shape.table.columns).toEqual(["color"]);
+    expect(shape.table.otherwise).toBeUndefined();
+  });
+
+  it("tests the same value the gauge itself reads, so the header chip agrees with the rows", () => {
+    const cfg = config();
+    const ref = { entityId: "sensor.battery", displayName: "Battery", domain: "sensor" };
+    const el = layer(cfg, addSensorGauge(cfg, ref, { family: "circular", state: state({ device_class: "battery" }, "62") }));
+    if (el.kind !== "gauge") throw new Error("not a gauge layer");
+    const shape = tableShape(el.payload.rules);
+    if (!shape.ok) throw new Error("not table shaped");
+    expect(shape.table.value).toEqual(el.payload.value);
+  });
+});
+
+describe("gaugeBandRule", () => {
+  const REF = { entityId: "sensor.battery", displayName: "Battery", domain: "sensor" };
+
+  function bands(rule: ReturnType<typeof gaugeBandRule>) {
+    return rule.cases.map((c) => ({
+      comparison: c.when.tests[0]!.comparison,
+      color: c.then[0]!.value?.kind.kind === "literal" ? c.then[0]!.value.kind.value : "",
+    }));
+  }
+
+  it("puts its thresholds on the thirds of the range", () => {
+    const rows = bands(gaugeBandRule(REF, { min: 0, max: 100 }));
+    expect(rows[0]!.comparison).toEqual({ kind: "lessThan", value: { kind: { kind: "literal", value: "33" } } });
+    expect(rows[1]!.comparison).toEqual({
+      kind: "between",
+      value: { kind: { kind: "literal", value: "33" } },
+      upper: { kind: { kind: "literal", value: "67" } },
+    });
+    expect(rows[2]!.comparison).toEqual({ kind: "greaterThan", value: { kind: { kind: "literal", value: "67" } } });
+  });
+
+  it("keeps a decimal where rounding would move a narrow band", () => {
+    const rows = bands(gaugeBandRule(REF, { min: 0, max: 3 }));
+    expect(rows[0]!.comparison.value).toEqual({ kind: { kind: "literal", value: "1" } });
+    expect(rows[1]!.comparison.upper).toEqual({ kind: { kind: "literal", value: "2" } });
+    expect(bandThreshold(6.666)).toBe("6.7");
+    expect(bandThreshold(-3.333)).toBe("-3.3");
+    expect(bandThreshold(23.333)).toBe("23");
+  });
+
+  it("runs red to green for a battery, where low is the alarming end", () => {
+    const rows = bands(gaugeBandRule(REF, { min: 0, max: 100 }, bandColors(state({ device_class: "battery" }))));
+    expect(rows.map((r) => r.color)).toEqual([...ALARM_LOW_RAMP]);
+  });
+
+  it("runs cool to warm for a temperature, which has no bad end", () => {
+    const rows = bands(gaugeBandRule(REF, { min: -10, max: 40 }, bandColors(state({ device_class: "temperature", unit_of_measurement: "°C" }))));
+    expect(rows.map((r) => r.color)).toEqual([...NEUTRAL_RAMP]);
+    expect(bandColors(undefined)).toEqual(NEUTRAL_RAMP);
+  });
+
+  it("names only colours a cell can put a word to", () => {
+    for (const ramp of [ALARM_LOW_RAMP, NEUTRAL_RAMP]) {
+      for (const hex of ramp) expect(colorWords(hex), hex).not.toBe(hex);
+    }
   });
 });
 
