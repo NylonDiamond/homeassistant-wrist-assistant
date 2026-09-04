@@ -3,8 +3,8 @@
 // its Swift tests pin (WristAssistantTests/CustomComplicationImageSettingsTests).
 
 import { describe, expect, it } from "vitest";
-import { encodeConfig, newConfig, newElement, parseConfig } from "../src/model.js";
-import { MAX_ZOOM, MIN_ZOOM, pictureRect } from "../src/renderer.js";
+import { encodeConfig, nearestTimestampCorner, newConfig, newElement, parseConfig } from "../src/model.js";
+import { MAX_ZOOM, MIN_ZOOM, pictureRect, timestampChipRect, timestampLabel } from "../src/renderer.js";
 
 /** A 200x100 picture in a 100x100 frame: twice as wide as it is tall. */
 function rect(opts: Partial<{ mode: "fill" | "fit"; zoom: number; panX: number; panY: number; iw: number; ih: number }> = {}) {
@@ -104,5 +104,102 @@ describe("image element wire format", () => {
     expect(p.cornerRadius).toBe(6);
     expect(p.timestampCorner).toBe("topLeading");
     expect(p.timestampSize).toBe(9);
+  });
+
+  it("writes neither free coordinate until both are set", () => {
+    expect(payloadOf(imageDoc((p) => { p.timestamp = true; })).timestampX).toBeUndefined();
+    // Half a point is not a position, so the encoder ignores it and the parser
+    // falls back to the corner.
+    const half = imageDoc((p) => { p.timestamp = true; p.timestampX = 0.4; });
+    expect(payloadOf(half).timestampX).toBeUndefined();
+    const back = parseConfig(half).elements[0]!.payload as unknown as Record<string, unknown>;
+    expect(back.timestampX).toBeUndefined();
+    expect(back.timestampCorner).toBe("topLeading");
+  });
+
+  it("writes both coordinates and the corner they are nearest, and reads them back", () => {
+    const doc = imageDoc((p) => { p.timestamp = true; p.timestampX = 0.8; p.timestampY = 0.9; });
+    const written = payloadOf(doc);
+    expect(written.timestampX).toBe(0.8);
+    expect(written.timestampY).toBe(0.9);
+    // The compatibility copy an older watch reads.
+    expect(written.timestampCorner).toBe("bottomTrailing");
+
+    const p = parseConfig(doc).elements[0]!.payload as unknown as Record<string, unknown>;
+    expect(p.timestampX).toBe(0.8);
+    expect(p.timestampY).toBe(0.9);
+  });
+
+  it("derives the compatibility corner rather than trusting the authored one", () => {
+    const doc = imageDoc((p) => {
+      p.timestamp = true;
+      p.timestampCorner = "bottomTrailing";
+      p.timestampX = 0.1;
+      p.timestampY = 0.1;
+    });
+    expect(payloadOf(doc).timestampCorner).toBeUndefined(); // topLeading is the default, so unwritten
+  });
+
+  it("clamps a coordinate that arrived outside the picture", () => {
+    const doc = imageDoc((p) => { p.timestamp = true; p.timestampX = 5; p.timestampY = -2; });
+    const p = parseConfig(doc).elements[0]!.payload as unknown as Record<string, unknown>;
+    expect(p.timestampX).toBe(1);
+    expect(p.timestampY).toBe(0);
+  });
+});
+
+describe("nearestTimestampCorner", () => {
+  it("splits the picture into quarters, with the midlines going to top and leading", () => {
+    expect(nearestTimestampCorner(0.1, 0.1)).toBe("topLeading");
+    expect(nearestTimestampCorner(0.9, 0.1)).toBe("topTrailing");
+    expect(nearestTimestampCorner(0.1, 0.9)).toBe("bottomLeading");
+    expect(nearestTimestampCorner(0.9, 0.9)).toBe("bottomTrailing");
+    expect(nearestTimestampCorner(0.5, 0.5)).toBe("topLeading");
+  });
+});
+
+describe("timestampChipRect", () => {
+  // A 100x50 picture at the canvas origin, the shape the clamp has to respect.
+  const box = { x: 0, y: 0, w: 100, h: 50, cx: 50, cy: 25 };
+  const label = "3:04:07";
+  const el = (over: Partial<{ timestampX: number; timestampY: number; timestampCorner: string; timestampSize: number }> = {}) => ({
+    timestampSize: 9,
+    timestampCorner: "topLeading",
+    ...over,
+  });
+
+  it("keeps the four corners exactly where they were", () => {
+    const tl = timestampChipRect(el(), box, label);
+    expect(tl.x).toBe(4);
+    expect(tl.y).toBe(4);
+    const br = timestampChipRect(el({ timestampCorner: "bottomTrailing" }), box, label);
+    expect(br.x).toBe(box.w - 4 - br.w);
+    expect(br.y).toBe(box.h - 4 - br.h);
+  });
+
+  it("treats a free pair as the chip's centre", () => {
+    const c = timestampChipRect(el({ timestampX: 0.5, timestampY: 0.5 }), box, label);
+    expect(c.x + c.w / 2).toBeCloseTo(50, 6);
+    expect(c.y + c.h / 2).toBeCloseTo(25, 6);
+  });
+
+  it("stops the chip at the edge instead of letting it hang off", () => {
+    const right = timestampChipRect(el({ timestampX: 1, timestampY: 1 }), box, label);
+    expect(right.x + right.w).toBeCloseTo(box.w, 6);
+    expect(right.y + right.h).toBeCloseTo(box.h, 6);
+    const left = timestampChipRect(el({ timestampX: 0, timestampY: 0 }), box, label);
+    expect(left.x).toBe(0);
+    expect(left.y).toBe(0);
+  });
+
+  it("centres a chip too wide for the picture rather than hanging it off one side", () => {
+    const narrow = { ...box, w: 20 };
+    const c = timestampChipRect(el({ timestampX: 0, timestampY: 0.5 }), narrow, label);
+    expect(c.x + c.w / 2).toBeCloseTo(10, 6);
+  });
+
+  it("labels the time as 12-hour with seconds and no AM/PM", () => {
+    expect(timestampLabel(new Date(2026, 8, 4, 15, 4, 7))).toBe("3:04:07");
+    expect(timestampLabel(new Date(2026, 8, 4, 0, 0, 0))).toBe("12:00:00");
   });
 });

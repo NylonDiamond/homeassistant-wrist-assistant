@@ -22,6 +22,8 @@ import {
   removeElement,
   selectableLayerId,
   syncAttachedTaps,
+  tapPointSize,
+  TAP_MAX_GROW,
 } from "../src/model.js";
 import { setPlacement } from "../src/editors.js";
 import { Draft } from "../src/draft.js";
@@ -177,6 +179,121 @@ describe("syncAttachedTaps", () => {
     const before = JSON.stringify(encodeConfig(cfg));
     syncAttachedTaps(cfg);
     expect(JSON.stringify(encodeConfig(cfg))).toBe(before);
+  });
+});
+
+// Growing the area is the whole point of the feature: a 20 pt icon is a hard
+// target on a wrist. The three design boxes are different sizes, so the same
+// point value has to become a different fraction in each shape.
+describe("grow", () => {
+  /** An icon in the middle, small enough that growing it never hits an edge. */
+  function withSmallIcon(): { cfg: CustomComplicationConfig; icon: CElement; tapId: string } {
+    const { cfg, icon } = withIcon();
+    icon.payload.frame = { x: 0.4, y: 0.4, width: 0.2, height: 0.2, rotationDegrees: 0 };
+    attachTap(cfg, icon.payload.id);
+    syncAttachedTaps(cfg);
+    return { cfg, icon, tapId: tapOf(cfg, icon.payload.id).id };
+  }
+
+  function grow(cfg: CustomComplicationConfig, ownerId: string, pt: number): void {
+    tapOf(cfg, ownerId).grow = pt;
+    syncAttachedTaps(cfg);
+  }
+
+  it("turns points into the right fraction for each shape", () => {
+    const { cfg, icon, tapId } = withSmallIcon();
+    grow(cfg, icon.payload.id, 8);
+
+    const rect = cfg.perFamily.rectangular!.placements[tapId]!.frame;
+    expect(rect.x).toBeCloseTo(0.4 - 8 / 181, 9);
+    expect(rect.width).toBeCloseTo(0.2 + 16 / 181, 9);
+    expect(rect.y).toBeCloseTo(0.4 - 8 / 65.5, 9);
+    expect(rect.height).toBeCloseTo(0.2 + 16 / 65.5, 9);
+
+    // A square box grows by the same fraction on both axes.
+    const circ = cfg.perFamily.circular!.placements[tapId]!.frame;
+    expect(circ.x).toBeCloseTo(0.4 - 8 / 51, 9);
+    expect(circ.y).toBeCloseTo(0.4 - 8 / 51, 9);
+    expect(circ.width).toBeCloseTo(0.2 + 16 / 51, 9);
+    expect(circ.height).toBeCloseTo(circ.width, 9);
+  });
+
+  it("writes a placement in every shape, even where the owner has none", () => {
+    const { cfg, icon, tapId } = withSmallIcon();
+    expect(cfg.perFamily.corner!.placements[tapId], "nothing to override yet").toBeUndefined();
+    grow(cfg, icon.payload.id, 4);
+    // The shared frame would be grown by the rectangular ratio, which is the
+    // wrong size here, so the tap needs its own frame in every shape.
+    for (const family of ["rectangular", "circular", "corner"] as const) {
+      expect(cfg.perFamily[family]!.placements[tapId], family).toBeDefined();
+    }
+  });
+
+  it("grows from the owner's own placement where it has one", () => {
+    const { cfg, icon, tapId } = withSmallIcon();
+    setPlacement(cfg, "corner", icon.payload.id, { frame: { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotationDegrees: 0 }, isHidden: true });
+    grow(cfg, icon.payload.id, 3);
+    const p = cfg.perFamily.corner!.placements[tapId]!;
+    expect(p.frame.x).toBeCloseTo(0.3 - 3 / 34, 9);
+    expect(p.frame.width).toBeCloseTo(0.4 + 6 / 34, 9);
+    expect(p.isHidden).toBe(true);
+  });
+
+  it("stops at the edge of the face instead of leaving it", () => {
+    const { cfg, icon, tapId } = withSmallIcon();
+    grow(cfg, icon.payload.id, 20);
+    const corner = cfg.perFamily.corner!.placements[tapId]!.frame;
+    expect(corner).toEqual({ x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 });
+  });
+
+  it("keeps the owner's rotation", () => {
+    const { cfg, icon, tapId } = withSmallIcon();
+    icon.payload.frame = { ...icon.payload.frame, rotationDegrees: 30 };
+    grow(cfg, icon.payload.id, 5);
+    expect(cfg.perFamily.circular!.placements[tapId]!.frame.rotationDegrees).toBe(30);
+  });
+
+  it("adds no key and no placements at zero", () => {
+    const { cfg, icon, tapId } = withSmallIcon();
+    grow(cfg, icon.payload.id, 8);
+    tapOf(cfg, icon.payload.id).grow = 0;
+    syncAttachedTaps(cfg);
+    expect(cfg.perFamily.corner!.placements[tapId]).toBeUndefined();
+    expect(tapOf(cfg, icon.payload.id).frame).toEqual(icon.payload.frame);
+    expect(JSON.stringify(encodeConfig(cfg))).not.toContain("grow");
+  });
+
+  it("is written only when set, and survives a round trip", () => {
+    const { cfg, icon } = withSmallIcon();
+    grow(cfg, icon.payload.id, 8);
+    const enc = encodeConfig(cfg) as { elements: { kind: string; payload: Record<string, unknown> }[] };
+    expect(enc.elements.find((e) => e.kind === "tap")!.payload.grow).toBe(8);
+    expect(auditUnknownKeys(enc)).toEqual([]);
+    expect(encodeConfig(parseConfig(enc))).toEqual(enc);
+  });
+
+  it("clamps a value that arrived too large, and ignores a negative one", () => {
+    const { cfg, icon } = withSmallIcon();
+    grow(cfg, icon.payload.id, 8);
+    const enc = encodeConfig(cfg) as { elements: { kind: string; payload: Record<string, unknown> }[] };
+    const payload = enc.elements.find((e) => e.kind === "tap")!.payload;
+
+    payload.grow = 500;
+    expect((parseConfig(enc).elements.find((e) => e.kind === "tap")!.payload as TapElement).grow).toBe(TAP_MAX_GROW);
+
+    payload.grow = -4;
+    expect((parseConfig(enc).elements.find((e) => e.kind === "tap")!.payload as TapElement).grow).toBeUndefined();
+  });
+
+  it("reports the tap's real size in points, per shape", () => {
+    const { cfg, icon, tapId } = withSmallIcon();
+    // 0.2 of 181 x 65.5 is a wide, short target; the corner box makes it square.
+    expect(tapPointSize(cfg, tapId, "rectangular")!.width).toBeCloseTo(0.2 * 181, 9);
+    expect(tapPointSize(cfg, tapId, "corner")!.height).toBeCloseTo(0.2 * 34, 9);
+
+    grow(cfg, icon.payload.id, 6);
+    expect(tapPointSize(cfg, tapId, "corner")!.width).toBeCloseTo(0.2 * 34 + 12, 9);
+    expect(tapPointSize(cfg, "gone", "corner")).toBeUndefined();
   });
 });
 

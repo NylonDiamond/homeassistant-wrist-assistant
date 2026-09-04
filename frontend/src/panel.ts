@@ -39,6 +39,7 @@ import {
   parseConfig,
   removeElement,
   selectableLayerId,
+  hasFreeTimestamp,
 } from "./model.js";
 import { SEND_WAIT_MS, describeSend, sendState } from "./send-state.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
@@ -61,7 +62,7 @@ import { SymbolBrowser } from "./symbols.js";
 import { Draft, draftStatus } from "./draft.js";
 import { statesSummary } from "./states.js";
 import { uiIcon } from "./ui-icons.js";
-import { beginGesture, type HandleCorner } from "./interact.js";
+import { beginGesture, beginPointDrag, type HandleCorner } from "./interact.js";
 import {
   type DescribeContext,
   type EditorHost,
@@ -1496,6 +1497,27 @@ export class WristAssistantPanel extends LitElement {
       const hasBezel = !!corner?.bezelText || !!corner?.bezelGauge;
       const tile = cornerTileSide(fit.scale, hasBezel);
       canvas = { width: tile, height: tile };
+    }
+    // The timestamp chip sits inside its image layer's group, so the layer hit
+    // above already selected the right layer. Dragging the chip moves the chip,
+    // not the layer, and only once the author has asked for free placement.
+    if (target.closest("[data-ts-handle]") && el.kind === "image" && hasFreeTimestamp(el.payload)) {
+      const chipBox = { x: 0, y: 0, w: frame.width * canvas.width, h: frame.height * canvas.height };
+      const base = { x: el.payload.timestampX!, y: el.payload.timestampY! };
+      this.cancelGesture?.();
+      this.cancelGesture = beginPointDrag(svg, chipBox, e, base, (x, y, done) => {
+        this.mutate((c) => {
+          const img = c.elements.find((n) => n.payload.id === id);
+          if (img?.kind !== "image") return;
+          img.payload.timestampX = x;
+          img.payload.timestampY = y;
+        }, `ts-${id}`);
+        if (done) {
+          this.draft?.endGesture();
+          this.cancelGesture = undefined;
+        }
+      });
+      return;
     }
     this.cancelGesture?.();
     this.cancelGesture = beginGesture(svg, canvas, e, { elementId: id, frame, handle: handle ?? undefined }, {

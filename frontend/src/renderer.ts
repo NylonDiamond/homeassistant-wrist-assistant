@@ -4,7 +4,7 @@
 // 160x62 rectangle scaled 2x looks like the native editor.
 
 import { svg, nothing, type TemplateResult } from "lit";
-import type { FamilyKind, ImageContentMode } from "./model.js";
+import { DESIGN_BOX, type FamilyKind, type ImageContentMode } from "./model.js";
 import type { ImageSizeProvider } from "./image-sizes.js";
 import { countdownRemainingString, type ResolvedBezelGauge, type ResolvedElement, type ResolvedLayout } from "./resolver.js";
 
@@ -15,13 +15,9 @@ export interface CanvasSize {
 
 // The design box: the real WidgetKit slot on a 46 mm watch, measured 2026-08-30
 // (app repo docs/custom_complication_design_box.md). Every watch draws a uniformly
-// scaled copy of this box. Mirrors `CustomComplication.DesignBox` in Swift; keep the
-// two identical.
-export const CANVAS: Record<"rectangular" | "circular" | "corner", CanvasSize> = {
-  rectangular: { width: 181, height: 65.5 },
-  circular: { width: 51, height: 51 },
-  corner: { width: 34, height: 34 },
-};
+// scaled copy of this box. It lives in model.ts because growing a tap area needs
+// it too, and one copy cannot drift from the other.
+export const CANVAS: Record<"rectangular" | "circular" | "corner", CanvasSize> = DESIGN_BOX;
 
 export type DrawableFamily = keyof typeof CANVAS;
 
@@ -314,27 +310,69 @@ export function pictureRect(
  * (entity not found, or a non-camera entity) draws the placeholder the watch
  * shows before its first fetch. The timestamp chip mirrors the watch's overlay
  * with the current time, since the preview picture is always live. */
+/** The chip's text: 12-hour with seconds and no AM/PM, matching
+ * `ImageElementView.clockFormatter` on the watch. */
+export function timestampLabel(d: Date): string {
+  const hour12 = d.getHours() % 12 || 12;
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${hour12}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
+}
+
+/** Distance from the picture's edge to a cornered chip. Free placement ignores
+ * it: an author who dragged the chip to the edge meant the edge. */
+const TIMESTAMP_PAD = 4;
+
+/**
+ * Where the timestamp chip sits inside an image layer's box.
+ *
+ * The size is computed, never measured. A widget render may not get a second
+ * layout pass, and the panel and the watch have to clamp to the same numbers or
+ * a chip dragged to the edge lands in two different places. The label is always
+ * `h:mm:ss`, so its width has only two possible values for a given text size and
+ * the formula below is exact enough to agree across both ports.
+ *
+ * Free placement treats the pair as the chip's centre and keeps the whole chip
+ * inside the picture. A chip wider than the picture it sits on cannot obey that,
+ * so it centres on the overflowing axis instead of hanging off one side.
+ */
+export function timestampChipRect(
+  el: { timestampSize: number; timestampCorner: string; timestampX?: number; timestampY?: number },
+  box: Box,
+  label: string,
+): { x: number; y: number; w: number; h: number; size: number; label: string } {
+  const size = Math.min(Math.max(el.timestampSize, 4), 40);
+  const w = label.length * size * 0.578 + size * 0.89;
+  const h = size * 1.25;
+  const free = Number.isFinite(el.timestampX) && Number.isFinite(el.timestampY);
+  if (!free) {
+    const x = el.timestampCorner.endsWith("Leading") ? box.x + TIMESTAMP_PAD : box.x + box.w - TIMESTAMP_PAD - w;
+    const y = el.timestampCorner.startsWith("top") ? box.y + TIMESTAMP_PAD : box.y + box.h - TIMESTAMP_PAD - h;
+    return { x, y, w, h, size, label };
+  }
+  const fit = (centre: number, origin: number, extent: number, chip: number) => {
+    if (chip >= extent) return origin + (extent - chip) / 2;
+    return Math.min(origin + extent - chip, Math.max(origin, centre - chip / 2));
+  };
+  return {
+    x: fit(box.x + el.timestampX! * box.w, box.x, box.w, w),
+    y: fit(box.y + el.timestampY! * box.h, box.y, box.h, h),
+    w, h, size, label,
+  };
+}
+
 function renderImage(el: Extract<ResolvedElement, { kind: "image" }>, box: Box, options: RenderOptions) {
   const icons = options.icons;
   const clipId = `imgclip-${el.id}`;
   const r = Math.max(0, el.cornerRadius);
   const chip = el.showTimestamp && el.url
     ? (() => {
-        const size = Math.min(Math.max(el.timestampSize, 4), 40);
-        const now = new Date();
-        const hour12 = now.getHours() % 12 || 12;
-        const two = (n: number) => String(n).padStart(2, "0");
-        const label = `${hour12}:${two(now.getMinutes())}:${two(now.getSeconds())}`;
-        const w = label.length * size * 0.578 + size * 0.89;
-        const h = size * 1.25;
-        const pad = 4;
-        const x = el.timestampCorner.endsWith("Leading") ? box.x + pad : box.x + box.w - pad - w;
-        const y = el.timestampCorner.startsWith("top") ? box.y + pad : box.y + box.h - pad - h;
+        const c = timestampChipRect(el, box, timestampLabel(new Date()));
         return svg`
-          <rect x=${x} y=${y} width=${w} height=${h} rx=${h / 2} fill="#000000" fill-opacity="0.55" />
-          <text x=${x + w / 2} y=${y + h / 2} text-anchor="middle" dominant-baseline="central"
-            font-size=${size} font-weight="600" fill="#FFFFFF"
-            font-family="-apple-system, 'SF Pro Rounded', Helvetica, Arial, sans-serif">${label}</text>`;
+          <rect data-ts-handle="1" x=${c.x} y=${c.y} width=${c.w} height=${c.h} rx=${c.h / 2}
+            fill="#000000" fill-opacity="0.55" />
+          <text data-ts-handle="1" x=${c.x + c.w / 2} y=${c.y + c.h / 2} text-anchor="middle" dominant-baseline="central"
+            font-size=${c.size} font-weight="600" fill="#FFFFFF"
+            font-family="-apple-system, 'SF Pro Rounded', Helvetica, Arial, sans-serif">${c.label}</text>`;
       })()
     : nothing;
   // The crop needs the picture's own pixel size. Until the browser reports it,

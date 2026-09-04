@@ -1,0 +1,229 @@
+{
+  "name": "Grown tap area",
+  "description": "A small icon whose tap area is bigger than the icon. The author set `grow` in the panel; the panel is what turns points into a fraction per shape, so by the time a document reaches a watch the grown frames are already written into the per-shape placements. This fixture pins what both resolvers must then do with them: draw the icon at its own frame, and hand the tap the bigger frame it was given, in every shape. `grow` itself is carried but never acted on, which is why the tap's frames here are not derived from it. The placements are round numbers rather than the exact 8 pt inflation, so the fixture compares whole values on both sides.",
+  "config": {
+    "schemaVersion": 4,
+    "id": "AAAAAAAA-0000-4000-8000-000000000081",
+    "name": "Grown tap",
+    "values": [],
+    "slotIndex": 4,
+    "elements": [
+      {
+        "kind": "icon",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000081",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.4,
+            "y": 0.4,
+            "width": 0.2,
+            "height": 0.2,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "symbol": {
+            "kind": {
+              "kind": "literal",
+              "value": "fan"
+            }
+          },
+          "size": 14
+        }
+      },
+      {
+        "kind": "tap",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000082",
+          "action": {
+            "type": "toggleEntity",
+            "entityId": "fan.office",
+            "displayName": "Office fan",
+            "domain": "fan"
+          },
+          "attachedTo": "EEEEEEEE-0000-4000-8000-000000000081",
+          "grow": 8,
+          "rules": [],
+          "frame": {
+            "x": 0.35,
+            "y": 0.28,
+            "width": 0.29,
+            "height": 0.44,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "supportedFamilies": [
+      "rectangular",
+      "circular",
+      "corner"
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "placements": {
+          "EEEEEEEE-0000-4000-8000-000000000082": {
+            "frame": {
+              "x": 0.35,
+              "y": 0.28,
+              "width": 0.29,
+              "height": 0.44,
+              "rotationDegrees": 0
+            }
+          }
+        },
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      },
+      "circular",
+      {
+        "placements": {
+          "EEEEEEEE-0000-4000-8000-000000000082": {
+            "frame": {
+              "x": 0.24,
+              "y": 0.24,
+              "width": 0.52,
+              "height": 0.52,
+              "rotationDegrees": 0
+            }
+          }
+        },
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      },
+      "corner",
+      {
+        "placements": {
+          "EEEEEEEE-0000-4000-8000-000000000082": {
+            "frame": {
+              "x": 0.16,
+              "y": 0.16,
+              "width": 0.68,
+              "height": 0.68,
+              "rotationDegrees": 0
+            }
+          }
+        },
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "tapAction": {
+      "type": "refresh"
+    },
+    "refreshMinutes": 15
+  },
+  "inputs": {
+    "entityStates": {
+      "fan.office": {
+        "state": "off",
+        "domain": "fan"
+      }
+    },
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": [],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000081",
+          "kind": "icon",
+          "symbol": "fan",
+          "size": 14,
+          "isHidden": false,
+          "frame": {
+            "x": 0.4,
+            "y": 0.4,
+            "width": 0.2,
+            "height": 0.2,
+            "rotationDegrees": 0
+          }
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000082",
+          "kind": "tap",
+          "isHidden": false,
+          "opacity": 1,
+          "frame": {
+            "x": 0.35,
+            "y": 0.28,
+            "width": 0.29,
+            "height": 0.44,
+            "rotationDegrees": 0
+          }
+        }
+      ]
+    },
+    "circular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000081",
+          "kind": "icon",
+          "symbol": "fan",
+          "size": 14,
+          "isHidden": false,
+          "frame": {
+            "x": 0.4,
+            "y": 0.4,
+            "width": 0.2,
+            "height": 0.2,
+            "rotationDegrees": 0
+          }
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000082",
+          "kind": "tap",
+          "isHidden": false,
+          "opacity": 1,
+          "frame": {
+            "x": 0.24,
+            "y": 0.24,
+            "width": 0.52,
+            "height": 0.52,
+            "rotationDegrees": 0
+          }
+        }
+      ]
+    },
+    "corner": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000081",
+          "kind": "icon",
+          "symbol": "fan",
+          "size": 14,
+          "isHidden": false,
+          "frame": {
+            "x": 0.4,
+            "y": 0.4,
+            "width": 0.2,
+            "height": 0.2,
+            "rotationDegrees": 0
+          }
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000082",
+          "kind": "tap",
+          "isHidden": false,
+          "opacity": 1,
+          "frame": {
+            "x": 0.16,
+            "y": 0.16,
+            "width": 0.68,
+            "height": 0.68,
+            "rotationDegrees": 0
+          }
+        }
+      ]
+    }
+  }
+}

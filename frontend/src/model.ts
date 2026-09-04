@@ -9,6 +9,17 @@
 
 export type FamilyKind = "rectangular" | "circular" | "corner" | "inline";
 export const DRAWABLE_FAMILIES: FamilyKind[] = ["rectangular", "circular", "corner"];
+
+/** The design box each shape is drawn in, in points: the real WidgetKit slot on
+ * a 46 mm watch. Frames are fractions of these, so the same point value is a
+ * different fraction in each shape, which is why growing a tap area has to be
+ * done per shape. `renderer.ts` re-exports this as CANVAS; mirrors
+ * `CustomComplication.DesignBox` in Swift. */
+export const DESIGN_BOX: Record<"rectangular" | "circular" | "corner", { width: number; height: number }> = {
+  rectangular: { width: 181, height: 65.5 },
+  circular: { width: 51, height: 51 },
+  corner: { width: 34, height: 34 },
+};
 /** Every shape, in the order the schema lists them. `layouts.ts` re-exports it
  * as ALL_FAMILIES for the panel; it lives here so newConfig can order a set. */
 const ALL_FAMILY_ORDER: FamilyKind[] = ["rectangular", "circular", "corner", "inline"];
@@ -274,6 +285,32 @@ export interface ImageElement extends Omit<ElementBase, "colorSlot"> {
   cornerRadius: number;
   timestampCorner: ImageTimestampCorner;
   timestampSize: number;
+  /** Free placement of the timestamp chip: its centre as 0..1 fractions of the
+   * layer's own box. Both set means free, either missing means the four-corner
+   * `timestampCorner` behaviour the element has always had. Encoded only when
+   * free, so a document that never left the corners keeps its exact bytes.
+   *
+   * `timestampCorner` is still written alongside them, set to whichever corner
+   * the free point is nearest, so a watch that predates these keys lands the
+   * chip near the mark instead of defaulting to the top left. */
+  timestampX?: number;
+  timestampY?: number;
+}
+
+/** Whether an image's timestamp is freely placed rather than cornered. Both
+ * coordinates have to be there: half a point is not a position. */
+export function hasFreeTimestamp(img: ImageElement): boolean {
+  return Number.isFinite(img.timestampX) && Number.isFinite(img.timestampY);
+}
+
+/** The corner a free timestamp point is nearest, for the compatibility copy an
+ * older watch reads. Exactly on a midline picks the leading/top side, which is
+ * arbitrary but has to be the same arbitrary answer in the tests. */
+export function nearestTimestampCorner(x: number, y: number): ImageTimestampCorner {
+  const top = y <= 0.5;
+  const leading = x <= 0.5;
+  if (top) return leading ? "topLeading" : "topTrailing";
+  return leading ? "bottomLeading" : "bottomTrailing";
 }
 
 /** An invisible tap area. Draws nothing on the watch; its frame becomes its own
@@ -291,7 +328,18 @@ export interface TapElement extends Omit<ElementBase, "colorSlot"> {
    * rectangle up by hand. Encoded only when set; the watch ignores it and
    * draws the frame exactly as it does for a free-standing tap. */
   attachedTo?: string;
+  /** Design-box points added on every side of an attached tap's area, so a
+   * small layer can still be an easy target. Default 0, encoded only when it
+   * is more. Meaningless on a free-standing tap, which is resized by dragging
+   * it; the inflation happens in `syncAttachedTaps`, per shape, because the
+   * three design boxes turn the same point value into different fractions.
+   * The watch never reads this: it draws the frames it is given. */
+  grow?: number;
 }
+
+/** How far a tap area can be grown, in design-box points. The corner box is
+ * only 34 pt across, so 20 on every side already covers all of it. */
+export const TAP_MAX_GROW = 20;
 
 export type Element =
   | { kind: "text"; payload: TextElement }
@@ -397,6 +445,12 @@ function num(v: unknown, fallback: number): number {
   if (v === "-inf") return -Infinity;
   if (v === "nan") return NaN;
   return fallback;
+}
+/** Squeeze a fraction back into 0..1. Infinities and NaN read as 0, so a
+ * corrupt coordinate parks the chip at the top left rather than off the face. */
+export function clamp01(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(1, Math.max(0, n));
 }
 function optNum(v: unknown): number | undefined {
   return v === undefined || v === null ? undefined : num(v, 0);
@@ -670,6 +724,15 @@ export function parseElement(raw: unknown): Element {
         timestampSize: num(p.timestampSize, IMAGE_DEFAULT_TIMESTAMP_SIZE),
       };
       if (p.timestamp === true) el.timestamp = true;
+      // Both or neither: a lone coordinate is not a position, and treating it as
+      // one would move the chip somewhere the author never put it. A half-written
+      // pair falls back to the corner, which is what the watch does too.
+      const tsx = optNum(p.timestampX);
+      const tsy = optNum(p.timestampY);
+      if (tsx !== undefined && tsy !== undefined && Number.isFinite(tsx) && Number.isFinite(tsy)) {
+        el.timestampX = clamp01(tsx);
+        el.timestampY = clamp01(tsy);
+      }
       return { kind: "image", payload: el };
     }
     case "tap": {
@@ -685,6 +748,10 @@ export function parseElement(raw: unknown): Element {
       // Element ids are uppercased on the way in, so the owner id has to be
       // too or nothing would ever match it.
       if (typeof p.attachedTo === "string") el.attachedTo = p.attachedTo.toUpperCase();
+      const grow = optNum(p.grow);
+      if (grow !== undefined && Number.isFinite(grow) && grow > 0) {
+        el.grow = Math.min(grow, TAP_MAX_GROW);
+      }
       return { kind: "tap", payload: el };
     }
     default:
@@ -994,8 +1061,18 @@ function encodeElement(el: Element): J {
       if (p.panX !== 0) o.panX = encNum(p.panX);
       if (p.panY !== 0) o.panY = encNum(p.panY);
       if (p.cornerRadius !== IMAGE_DEFAULT_CORNER_RADIUS) o.cornerRadius = encNum(p.cornerRadius);
-      if (p.timestampCorner !== "topLeading") o.timestampCorner = p.timestampCorner;
+      // A free timestamp still writes the corner it is nearest, so a watch that
+      // predates the two coordinates puts the chip near the mark rather than
+      // defaulting to the top left. That copy is derived, never authored, so it
+      // overrides whatever the corner field happens to hold.
+      const free = hasFreeTimestamp(p);
+      const corner = free ? nearestTimestampCorner(p.timestampX!, p.timestampY!) : p.timestampCorner;
+      if (corner !== "topLeading") o.timestampCorner = corner;
       if (p.timestampSize !== IMAGE_DEFAULT_TIMESTAMP_SIZE) o.timestampSize = encNum(p.timestampSize);
+      if (free) {
+        o.timestampX = encNum(p.timestampX!);
+        o.timestampY = encNum(p.timestampY!);
+      }
       return { kind: "image", payload: o };
     }
     case "tap": {
@@ -1004,6 +1081,7 @@ function encodeElement(el: Element): J {
       if (p.openPageId !== undefined) o.openPageId = p.openPageId;
       if (p.openPageName !== undefined) o.openPageName = p.openPageName;
       if (p.attachedTo !== undefined) o.attachedTo = p.attachedTo;
+      if (p.grow !== undefined && p.grow > 0) o.grow = encNum(p.grow);
       o.rules = encodeRules(p.rules);
       o.frame = encodeFrame(p.frame);
       o.isHidden = p.isHidden;
@@ -1119,8 +1197,8 @@ const K = {
   // corrupt; nothing decodes it, and it leaves the wire on that document's next
   // save.
   image: ["entity", "timestamp", "contentMode", "zoom", "panX", "panY", "cornerRadius",
-    "timestampCorner", "timestampSize", "timestampStyle"],
-  tap: ["action", "openPageId", "openPageName", "attachedTo"],
+    "timestampCorner", "timestampSize", "timestampStyle", "timestampX", "timestampY"],
+  tap: ["action", "openPageId", "openPageName", "attachedTo", "grow"],
   colorSlot: ["baseColorHex"],
   rule: ["id", "cases", "otherwise"],
   case: ["id", "when", "then"],
@@ -1464,6 +1542,51 @@ export function defaultAttachedTapAction(cfg: CustomComplicationConfig, owner: E
   return { type: "refresh" };
 }
 
+/**
+ * One frame with `grow` points added on every side, inside the given design
+ * box, then held inside the face. The box matters: 8 pt is 4.4% of a
+ * rectangular width and 23.5% of a corner one, so the same grow has to be
+ * turned into a fraction shape by shape.
+ *
+ * A grown edge that would leave the face stops at the edge instead, because a
+ * tap target outside the slot is area nobody can reach.
+ */
+export function grownFrame(frame: NormalizedFrame, grow: number, box: { width: number; height: number }): NormalizedFrame {
+  if (!(grow > 0) || box.width <= 0 || box.height <= 0) return { ...frame };
+  const gx = grow / box.width;
+  const gy = grow / box.height;
+  const left = clamp01(frame.x - gx);
+  const top = clamp01(frame.y - gy);
+  const right = clamp01(frame.x + frame.width + gx);
+  const bottom = clamp01(frame.y + frame.height + gy);
+  return {
+    ...frame,
+    x: left,
+    y: top,
+    width: Math.max(0, right - left),
+    height: Math.max(0, bottom - top),
+  };
+}
+
+/**
+ * The size of an attached tap's area in one shape, in design-box points. Read
+ * by the editor to say how big the target actually is, which is the number the
+ * author cares about and the one no fraction shows them.
+ */
+export function tapPointSize(
+  cfg: CustomComplicationConfig,
+  tapId: string,
+  family: "rectangular" | "circular" | "corner",
+): { width: number; height: number } | undefined {
+  const tap = cfg.elements.find((el) => el.payload.id === tapId);
+  if (!tap) return undefined;
+  const layout = cfg.perFamily[family];
+  if (!layout) return undefined;
+  const frame = layout.placements[tapId]?.frame ?? tap.payload.frame;
+  const box = DESIGN_BOX[family];
+  return { width: frame.width * box.width, height: frame.height * box.height };
+}
+
 /** The tap layers attached to one drawing layer, in document order. */
 export function attachedTapsOf(cfg: CustomComplicationConfig, ownerId: string): Element[] {
   return cfg.elements.filter((el) => el.kind === "tap" && el.payload.attachedTo === ownerId);
@@ -1523,18 +1646,33 @@ export function syncAttachedTaps(cfg: CustomComplicationConfig): void {
   for (const [ownerId, list] of taps) {
     const owner = byId.get(ownerId)!;
     for (const tap of list) {
-      tap.payload.frame = { ...owner.payload.frame };
+      const grow = (tap.payload as TapElement).grow ?? 0;
+      // The shared frame has no shape of its own, so it is grown in the
+      // rectangular box. Every supported shape gets its own placement below,
+      // so this fallback is only reached by a shape the document does not have.
+      tap.payload.frame = grownFrame(owner.payload.frame, grow, DESIGN_BOX.rectangular);
       // A hidden layer with a live tap area would be a button nobody can see,
       // so the tap follows the owner's visibility too.
       tap.payload.isHidden = owner.payload.isHidden;
       for (const family of DRAWABLE_FAMILIES) {
         const layout = cfg.perFamily[family];
         if (!layout) continue;
+        const box = DESIGN_BOX[family as "rectangular" | "circular" | "corner"];
         const p = layout.placements[ownerId];
-        // No placement for the owner means it uses the shared frame here, and
-        // so must the tap: an override left behind would strand it.
-        if (p) layout.placements[tap.payload.id] = { frame: { ...p.frame }, isHidden: p.isHidden };
-        else delete layout.placements[tap.payload.id];
+        if (grow > 0) {
+          // Grown, the shared frame is inflated by the wrong ratio for this
+          // shape, so the tap needs a placement here even where the owner has
+          // none: it is the only way to say the right fraction.
+          const base = p?.frame ?? owner.payload.frame;
+          const isHidden = p?.isHidden ?? owner.payload.isHidden;
+          layout.placements[tap.payload.id] = { frame: grownFrame(base, grow, box), isHidden };
+        } else if (p) {
+          layout.placements[tap.payload.id] = { frame: { ...p.frame }, isHidden: p.isHidden };
+        } else {
+          // No placement for the owner means it uses the shared frame here, and
+          // so must the tap: an override left behind would strand it.
+          delete layout.placements[tap.payload.id];
+        }
       }
     }
   }

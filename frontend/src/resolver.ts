@@ -29,6 +29,7 @@ import {
   STYLE_PROPERTY,
   elementsFor,
   formatIsEmpty,
+  hasFreeTimestamp,
 } from "./model.js";
 import { keyFor } from "./compiler.js";
 
@@ -115,6 +116,10 @@ export interface ResolvedImage extends ResolvedBase {
   cornerRadius: number;
   timestampCorner: ImageTimestampCorner;
   timestampSize: number;
+  /** Free chip placement, both or neither. Absent leaves `timestampCorner` in
+   * charge, exactly as before the pair existed. */
+  timestampX?: number;
+  timestampY?: number;
 }
 /** A tap area after rules ran. Draws nothing on the watch; the preview outlines
  * it in edit mode. Only visibility rules apply, so opacity is always 1. */
@@ -564,6 +569,10 @@ export class Resolver {
           timestampCorner: el.payload.timestampCorner,
           timestampSize: el.payload.timestampSize,
         };
+        if (hasFreeTimestamp(el.payload)) {
+          out.timestampX = el.payload.timestampX;
+          out.timestampY = el.payload.timestampY;
+        }
         const url = this.ctx.entityStates.get(el.payload.entity.entityId)?.entityPicture;
         if (url !== undefined) out.url = url;
         return out;

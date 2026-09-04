@@ -36,8 +36,13 @@ import {
   DRAWABLE_FAMILIES,
   IMAGE_DEFAULT_CORNER_RADIUS,
   IMAGE_DEFAULT_TIMESTAMP_SIZE,
+  clamp01,
+  hasFreeTimestamp,
+  nearestTimestampCorner,
   RULE_TARGET_PROPERTIES,
   STYLE_PROPERTY,
+  TAP_MAX_GROW,
+  tapPointSize,
   attachTap,
   attachedTapsOf,
   comparisonOperand,
@@ -1237,15 +1242,38 @@ function imagePanHint(img: ImageElement): string {
  * honest answer to "is this picture current?". */
 function imageTimestampSection(img: ImageElement, upd: (m: (p: ImageElement) => void, key?: string) => void): TemplateResult {
   const on = img.timestamp === true;
+  const free = hasFreeTimestamp(img);
+  // Leaving free placement keeps the corner the chip was nearest, so the chip
+  // barely moves; entering it starts from wherever the corner already put it,
+  // so the first drag is a nudge rather than a jump.
+  const setFree = (v: boolean) => upd((p) => {
+    if (v) {
+      p.timestampX = p.timestampCorner.endsWith("Leading") ? 0.16 : 0.84;
+      p.timestampY = p.timestampCorner.startsWith("top") ? 0.16 : 0.84;
+    } else {
+      if (hasFreeTimestamp(p)) p.timestampCorner = nearestTimestampCorner(p.timestampX!, p.timestampY!);
+      delete p.timestampX;
+      delete p.timestampY;
+    }
+  });
   return html`
     ${checkField("Show timestamp", on, (v) => upd((p) => { if (v) p.timestamp = true; else delete p.timestamp; }))}
     ${!on ? nothing : html`
-      ${selectField("Corner", img.timestampCorner, [
-        ["topLeading", "Top left"],
-        ["topTrailing", "Top right"],
-        ["bottomLeading", "Bottom left"],
-        ["bottomTrailing", "Bottom right"],
-      ], (v) => upd((p) => { p.timestampCorner = v; }))}
+      ${selectField("Placement", free ? "free" : "corner", [
+        ["corner", "A corner"],
+        ["free", "Anywhere"],
+      ], (v) => setFree(v === "free"))}
+      ${free
+        ? html`
+          ${numberField("Across (0 left, 1 right)", img.timestampX, (v) => upd((p) => { p.timestampX = clamp01(v ?? 0.5); }, "tsx"), { step: 0.01, min: 0, max: 1 })}
+          ${numberField("Down (0 top, 1 bottom)", img.timestampY, (v) => upd((p) => { p.timestampY = clamp01(v ?? 0.5); }, "tsy"), { step: 0.01, min: 0, max: 1 })}
+          <div class="hint">Drag the chip in the preview to move it. It stays inside the picture, so the numbers stop short of 0 and 1 once the chip meets an edge.</div>`
+        : selectField("Corner", img.timestampCorner, [
+            ["topLeading", "Top left"],
+            ["topTrailing", "Top right"],
+            ["bottomLeading", "Bottom left"],
+            ["bottomTrailing", "Bottom right"],
+          ], (v) => upd((p) => { p.timestampCorner = v; }))}
       ${numberField("Text size (pt)", img.timestampSize, (v) => upd((p) => { p.timestampSize = Math.min(40, Math.max(4, v ?? IMAGE_DEFAULT_TIMESTAMP_SIZE)); }, "tssize"), { step: 1, min: 4, max: 40 })}
       <div class="hint">The time the snapshot was fetched, not the time now. A frame that stops updating keeps its old time.</div>`}`;
 }
@@ -1425,6 +1453,33 @@ function describeTapAction(action: TapAction): string {
   return target ? `${label}: ${target}` : label;
 }
 
+/** A finger covers about this many points, so a target with a shorter side
+ * under it is hard to hit on a wrist. Apple's own guidance is 44 pt for a
+ * phone; a complication cannot afford that, so this is the point where the
+ * editor starts saying something rather than the point where it is fine. */
+const SMALL_TAP_POINTS = 24;
+
+/**
+ * How big the tap area really is, shape by shape, in points, and a warning when
+ * one of them is too small to hit. The fractions in the frame fields never show
+ * this, because the same fraction is a different size in each shape.
+ */
+function tapSizeHint(host: EditorHost, tapId: string): TemplateResult | typeof nothing {
+  const parts: string[] = [];
+  let smallest = Infinity;
+  for (const family of DRAWABLE_FAMILIES) {
+    if (family === "inline" || !host.config.supportedFamilies.includes(family)) continue;
+    const size = tapPointSize(host.config, tapId, family as "rectangular" | "circular" | "corner");
+    if (!size) continue;
+    parts.push(`${familyTitle(family)} ${Math.round(size.width)} x ${Math.round(size.height)} pt`);
+    smallest = Math.min(smallest, size.width, size.height);
+  }
+  if (parts.length === 0) return nothing;
+  const small = smallest < SMALL_TAP_POINTS;
+  return html`<div class=${small ? "hint warn" : "hint"}>${parts.join(" · ")}${
+    small ? html`<br />That is small for a wrist. Grow the tap area.` : nothing}</div>`;
+}
+
 /**
  * "Tappable" on a drawing layer. Ticking it attaches a tap that copies this
  * layer's frame and per-shape placements, so the author never sizes an
@@ -1449,8 +1504,12 @@ function tappableSection(host: EditorHost, el: CElement, key: string): TemplateR
     ${attached
       ? html`<div class="value-editor">
           ${tapActionEditor(host, attached.payload as TapElement, updTap, `${key}-attached`)}
+          ${sliderField("Grow tap area", (attached.payload as TapElement).grow ?? 0, (v) => updTap((p) => {
+            if (v > 0) p.grow = v; else delete p.grow;
+          }, "tap-grow"), { min: 0, max: TAP_MAX_GROW, step: 1, def: 0, format: (v) => `${Math.round(v)} pt` })}
         </div>
-        <div class="hint">The tap area follows this layer's frame in every shape, so there is nothing to line up.</div>`
+        ${tapSizeHint(host, attached.payload.id)}
+        <div class="hint">The tap area follows this layer's frame in every shape, so there is nothing to line up. Grow makes it bigger than the layer without moving the layer. Where two tap areas overlap, the one higher in Layers wins.</div>`
       : html`<div class="hint">Tapping this layer runs an action of its own, instead of the complication's tap action. It starts as <b>${describeTapAction(preview)}</b>.</div>`}`;
 }
 

@@ -104,6 +104,58 @@ export function beginGesture(
   return cleanup;
 }
 
+/**
+ * Drag a point that lives inside one layer's box, reported as 0..1 fractions of
+ * that box: the image timestamp chip is the only one so far.
+ *
+ * Deliberately not `beginGesture` with a tiny frame. The chip has no frame of
+ * its own on the wire, it is not selectable, and it must not pick up the
+ * KEEP_VISIBLE rule, which exists to stop a layer being dragged off the face and
+ * would let the chip leave the picture it belongs to.
+ */
+export function beginPointDrag(
+  svg: SVGSVGElement,
+  box: { x: number; y: number; w: number; h: number },
+  start: PointerEvent,
+  base: { x: number; y: number },
+  onPoint: (x: number, y: number, done: boolean) => void,
+): () => void {
+  const origin = canvasPoint(svg, start);
+  let last = base;
+  svg.setPointerCapture(start.pointerId);
+  const round = (n: number) => Math.round(n * 1000) / 1000;
+  const clamp = (n: number) => Math.min(1, Math.max(0, n));
+
+  const move = (ev: PointerEvent) => {
+    if (ev.pointerId !== start.pointerId) return;
+    const p = canvasPoint(svg, ev);
+    // A zero-sized box would divide by zero; it cannot be dragged either.
+    const x = box.w > 0 ? clamp(base.x + (p.x - origin.x) / box.w) : base.x;
+    const y = box.h > 0 ? clamp(base.y + (p.y - origin.y) / box.h) : base.y;
+    last = { x: round(x), y: round(y) };
+    onPoint(last.x, last.y, false);
+  };
+  const finish = (ev: PointerEvent) => {
+    if (ev.pointerId !== start.pointerId) return;
+    cleanup();
+    onPoint(last.x, last.y, true);
+  };
+  const cleanup = () => {
+    svg.removeEventListener("pointermove", move);
+    svg.removeEventListener("pointerup", finish);
+    svg.removeEventListener("pointercancel", finish);
+    try {
+      svg.releasePointerCapture(start.pointerId);
+    } catch {
+      /* already released */
+    }
+  };
+  svg.addEventListener("pointermove", move);
+  svg.addEventListener("pointerup", finish);
+  svg.addEventListener("pointercancel", finish);
+  return cleanup;
+}
+
 /** Corner handle positions in canvas points for a frame. */
 export function handlePoints(frame: NormalizedFrame, canvas: CanvasSize): { corner: HandleCorner; x: number; y: number }[] {
   const x0 = frame.x * canvas.width;

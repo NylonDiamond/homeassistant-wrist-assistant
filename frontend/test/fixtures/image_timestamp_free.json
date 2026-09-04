@@ -1,0 +1,133 @@
+{
+  "name": "Free timestamp",
+  "description": "Two camera layers on one face. The first places its fetched-at chip freely (`timestampX`/`timestampY` name the chip's centre as fractions of the layer's own box); the second keeps a corner and must carry no coordinates at all. Both resolvers have to pass the pair through untouched, and the second element pins the fallback: a document that never left the corners still resolves with `timestampCorner` in charge and the pair absent. The free element also writes a derived `timestampCorner` on the wire, set to whichever corner the point is nearest, so a watch that predates the pair lands the chip near the mark.",
+  "config": {
+    "schemaVersion": 4,
+    "id": "AAAAAAAA-0000-4000-8000-000000000081",
+    "name": "Front door",
+    "values": [],
+    "slotIndex": 2,
+    "elements": [
+      {
+        "kind": "image",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000081",
+          "entity": {
+            "entityId": "camera.front_door",
+            "displayName": "Front door",
+            "domain": "camera"
+          },
+          "timestamp": true,
+          "timestampCorner": "bottomTrailing",
+          "timestampX": 0.62,
+          "timestampY": 0.88,
+          "timestampSize": 11,
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 0.5,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "image",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000082",
+          "entity": {
+            "entityId": "camera.driveway",
+            "displayName": "Driveway",
+            "domain": "camera"
+          },
+          "timestamp": true,
+          "timestampCorner": "topTrailing",
+          "rules": [],
+          "frame": {
+            "x": 0.5,
+            "y": 0,
+            "width": 0.5,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "supportedFamilies": [
+      "rectangular",
+      "circular",
+      "corner"
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      },
+      "circular",
+      {
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      },
+      "corner",
+      {
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "tapAction": {
+      "type": "refresh"
+    },
+    "refreshMinutes": 15
+  },
+  "inputs": {
+    "entityStates": {
+      "camera.front_door": {
+        "state": "recording",
+        "domain": "camera"
+      },
+      "camera.driveway": {
+        "state": "idle",
+        "domain": "camera"
+      }
+    },
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": [
+      "camera.front_door",
+      "camera.driveway"
+    ],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000081",
+          "kind": "image",
+          "entityId": "camera.front_door",
+          "showTimestamp": true,
+          "timestampCorner": "bottomTrailing",
+          "timestampX": 0.62,
+          "timestampY": 0.88,
+          "isHidden": false
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000082",
+          "kind": "image",
+          "entityId": "camera.driveway",
+          "showTimestamp": true,
+          "timestampCorner": "topTrailing",
+          "timestampX": null,
+          "timestampY": null,
+          "isHidden": false
+        }
+      ]
+    }
+  }
+}
