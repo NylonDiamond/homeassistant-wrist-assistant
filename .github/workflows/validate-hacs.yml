@@ -92,7 +92,11 @@ jobs:
         with:
           python-version: "3.13"
       - run: pip install pytest
-      - run: pytest -q tests/test_module_ast_sanity.py
+      # --noconftest: these tests read the modules with `ast` and need no
+      # fixtures, but pytest loads tests/conftest.py regardless, and that
+      # conftest imports `requests` for the live HTTP suite. Without the flag
+      # the job dies on collection (exit 4) on a runner that has only pytest.
+      - run: pytest -q --noconftest tests/test_module_ast_sanity.py
 
   # Only runs for a tag push. HACS shows users the tag, the integration reports
   # manifest.json, and a mismatch makes the update banner lie.
