@@ -30,6 +30,7 @@ import {
   MAX_SLOTS,
   attachedTapsOf,
   auditUnknownKeys,
+  describeTapAction,
   duplicateElement,
   freeSlotFrom,
   isAttachedTap,
@@ -218,6 +219,10 @@ export class WristAssistantPanel extends LitElement {
   /** The layer the pick-mode pointer is over. Shaded in every preview and
    * marked in the Layers card, so the two lists answer each other. */
   @state() private pickHoverId?: string;
+  /** Review mode: every tap area on show, labelled, with the drawing dimmed.
+   * An attached tap is invisible during normal editing on purpose, which is
+   * exactly why "what happens if I tap here?" needed a mode of its own. */
+  @state() private showTaps = false;
   /** The name the open complication had when its edit session started, so the
    * General tab can warn that a rename does not reach the watch face picker.
    * Undefined for a brand-new complication (nothing is on the watch yet). */
@@ -1422,10 +1427,27 @@ export class WristAssistantPanel extends LitElement {
       @click=${() => this.togglePicking()}><span class="glyph">⌖</span>${on ? "Picking…" : "Pick layer"}</button>`;
   }
 
+  /** The review-mode toggle. Sits beside Pick layer because both answer a
+   * question about the face rather than changing it. */
+  private renderShowTapsButton() {
+    const on = this.showTaps;
+    return html`<button class="pick ${on ? "on" : ""}" ?disabled=${!this.draft || this.parseError !== undefined}
+      aria-pressed=${on ? "true" : "false"}
+      title="Show every tap area, labelled with what it does, over a dimmed face"
+      @click=${() => {
+        this.showTaps = !this.showTaps;
+        // Both modes take over the pointer, so only one can be on.
+        if (this.showTaps) this.togglePicking(false);
+      }}><span class="glyph">☞</span>Show taps</button>`;
+  }
+
   private togglePicking(next = !this.picking) {
     this.picking = next;
     this.pickHoverId = undefined;
-    if (next) this.cancelGesture?.();
+    if (next) {
+      this.showTaps = false;
+      this.cancelGesture?.();
+    }
   }
 
   /** The layer a preview event points at, with an attached tap sent to the
@@ -1460,6 +1482,15 @@ export class WristAssistantPanel extends LitElement {
     if (this.picking) {
       e.preventDefault();
       this.pickAt(family, e);
+      return;
+    }
+    // Review mode reads the face rather than moving it. A click still selects,
+    // so a tap box leads to its layer, but nothing drags: a grown tap reaches
+    // past its own layer, and dragging that outer margin would move a layer
+    // that is not under the pointer.
+    if (this.showTaps) {
+      const id = this.hitLayerId(e);
+      if (id) this.inspect = { kind: "layer", id };
       return;
     }
     if (!this.draft || !this.canEdit) return;
@@ -1883,7 +1914,8 @@ export class WristAssistantPanel extends LitElement {
       // while picking nothing on the face is dragged.
       const opts = {
         icons: this.icons, imageSizes: this.imageSizes, showHidden: true, tapAreas: true, highlightId, slot,
-        handles: active && this.canEdit && !this.picking,
+        tapReview: this.showTaps,
+        handles: active && this.canEdit && !this.picking && !this.showTaps,
         ...(this.picking && this.pickHoverId !== undefined ? { hoverId: this.pickHoverId } : {}),
       };
       const pct = Math.round(fit.scale * 100);
@@ -1905,6 +1937,7 @@ export class WristAssistantPanel extends LitElement {
         </label>
         <span class="hint">Layouts are authored in the ${REFERENCE_CASE.label} box. Other cases draw the same box scaled down.</span>
         <span class="spacer"></span>
+        ${this.renderShowTapsButton()}
         ${this.renderPickButton()}
       </div>
       <div class="previews">
@@ -1913,7 +1946,10 @@ export class WristAssistantPanel extends LitElement {
         ${one("corner")}
         ${cfg.supportedFamilies.includes("inline") ? this.renderInlinePreview(layouts.inline) : nothing}
       </div>
-      <div class="hint" style="text-align:center;margin-top:10px">Click a preview to make it the editing shape. Drags and placement fields change only that shape. Add or remove shapes on the General tab.</div>
+      ${this.showTaps
+        ? html`<div class="hint" style="text-align:center;margin-top:10px">Every tap area is outlined. Where two overlap, the one higher in Layers wins.
+            Anything outside all of them does <b>${describeTapAction(cfg.tapAction)}</b>.</div>`
+        : html`<div class="hint" style="text-align:center;margin-top:10px">Click a preview to make it the editing shape. Drags and placement fields change only that shape. Add or remove shapes on the General tab.</div>`}
     </div>`;
   }
 

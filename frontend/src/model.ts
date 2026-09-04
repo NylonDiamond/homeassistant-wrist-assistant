@@ -389,6 +389,25 @@ export type TapAction =
   | { type: "none" | "refresh" | "openApp" | "openPage" | "openRoomPage" | "timerStartPause" | "timerCancel" }
   | ({ type: "toggleEntity" | "runScene" | "runScript" | "addTodo" | "runHTTPAction" } & EntityRef);
 
+/** The human name of every tap action, in the order the pickers offer them.
+ * It lives here rather than beside the picker because the preview labels tap
+ * boxes with the same words in review mode, and the renderer cannot import the
+ * editors (they already import it). */
+export const TAP_ACTION_LABELS: [TapAction["type"], string][] = [
+  ["refresh", "Refresh"], ["none", "Nothing"], ["openApp", "Open the app"], ["openPage", "Open the page"], ["openRoomPage", "Open the room page"],
+  ["timerStartPause", "Timer start / pause"], ["timerCancel", "Timer cancel"],
+  ["toggleEntity", "Toggle an entity"], ["runScene", "Run a scene"], ["runScript", "Run a script"], ["addTodo", "Add a to-do"], ["runHTTPAction", "Run an HTTP action"],
+];
+
+/** One-line description of a tap action, for hints and for the review-mode
+ * labels in the preview. */
+export function describeTapAction(action: TapAction): string {
+  const label = TAP_ACTION_LABELS.find(([t]) => t === action.type)?.[1] ?? action.type;
+  if (!("entityId" in action)) return label;
+  const target = action.displayName || action.entityId;
+  return target ? `${label}: ${target}` : label;
+}
+
 export type DataSource =
   | ({ kind: "entity" } & EntityRef)
   | { kind: "template"; value: string };

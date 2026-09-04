@@ -41,7 +41,9 @@ import {
   nearestTimestampCorner,
   RULE_TARGET_PROPERTIES,
   STYLE_PROPERTY,
+  TAP_ACTION_LABELS,
   TAP_MAX_GROW,
+  describeTapAction,
   tapPointSize,
   attachTap,
   attachedTapsOf,
@@ -971,11 +973,7 @@ function aggregateEditor(host: EditorHost, a: AggregateSpec, set: (a: AggregateS
 
 // ── General ───────────────────────────────────────────────────────────────
 
-const TAP_TYPES: [TapAction["type"], string][] = [
-  ["refresh", "Refresh"], ["none", "Nothing"], ["openApp", "Open the app"], ["openPage", "Open the page"], ["openRoomPage", "Open the room page"],
-  ["timerStartPause", "Timer start / pause"], ["timerCancel", "Timer cancel"],
-  ["toggleEntity", "Toggle an entity"], ["runScene", "Run a scene"], ["runScript", "Run a script"], ["addTodo", "Add a to-do"], ["runHTTPAction", "Run an HTTP action"],
-];
+const TAP_TYPES = TAP_ACTION_LABELS;
 
 /** A tap layer offers everything but "Nothing": a layer that does nothing would
  * just let the tap fall through to the whole-complication action, which is what
@@ -1443,14 +1441,6 @@ export function tapActionEditor(
       p.openPageId = pid;
       if (name) p.openPageName = name; else delete p.openPageName;
     }, "tap-page")) : nothing}`;
-}
-
-/** One-line description of a tap action, for the checkbox hint. */
-function describeTapAction(action: TapAction): string {
-  const label = TAP_TYPES.find(([t]) => t === action.type)?.[1] ?? action.type;
-  if (!("entityId" in action)) return label;
-  const target = action.displayName || action.entityId;
-  return target ? `${label}: ${target}` : label;
 }
 
 /** A finger covers about this many points, so a target with a shorter side

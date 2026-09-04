@@ -27,6 +27,9 @@ import {
 } from "../src/model.js";
 import { setPlacement } from "../src/editors.js";
 import { Draft } from "../src/draft.js";
+import { nothing } from "lit";
+import { renderLayout, type IconProvider, type RenderOptions } from "../src/renderer.js";
+import { resolveAll } from "../src/resolver.js";
 
 /** A config with one icon layer bound to `entityId`, and its id. */
 function withIcon(entityId = "light.kitchen"): { cfg: CustomComplicationConfig; icon: CElement } {
@@ -419,5 +422,93 @@ describe("selectableLayerId", () => {
 
   it("answers undefined for an id the document does not have", () => {
     expect(selectableLayerId(newConfig("Test", 0), "gone")).toBeUndefined();
+  });
+});
+
+// ── Review mode ───────────────────────────────────────────────────────────
+//
+// An attached tap is invisible during normal editing on purpose: its box sits
+// on the layer and says nothing new. That is also why the Tappable checkbox was
+// missable, and why review mode exists. These tests read the rendered SVG as
+// plain text, which is enough to answer "is this box here, and what does it
+// say?" without a DOM.
+
+/** Flattens a lit template tree to plain text. */
+function flatten(node: unknown): string {
+  if (node === undefined || node === null || node === nothing) return "";
+  if (Array.isArray(node)) return node.map(flatten).join("");
+  if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
+    const t = node as { strings: readonly string[]; values: unknown[] };
+    return t.strings.map((s, i) => s + (i < t.values.length ? flatten(t.values[i]) : "")).join("");
+  }
+  return String(node);
+}
+
+const noIcons: IconProvider = { render: () => undefined, available: () => false, names: () => undefined };
+
+/** The rectangular face as text, with the given render options. */
+function draw(cfg: CustomComplicationConfig, opts: Partial<RenderOptions> = {}): string {
+  const layouts = resolveAll(cfg, { entityStates: new Map(), templateResults: new Map(), namedValues: cfg.values });
+  return flatten(renderLayout(layouts.rectangular!, { icons: noIcons, showHidden: true, tapAreas: true, ...opts }));
+}
+
+describe("tap review mode", () => {
+  it("hides an attached tap normally and shows it in review mode", () => {
+    const { cfg, icon } = withIcon();
+    const tap = attachTap(cfg, icon.payload.id)!;
+    expect(draw(cfg)).not.toContain(tap.id);
+    expect(draw(cfg, { tapReview: true })).toContain(tap.id);
+  });
+
+  it("labels a tap box with what the tap does", () => {
+    const { cfg, icon } = withIcon("light.kitchen");
+    icon.payload.frame = { x: 0.05, y: 0.2, width: 0.6, height: 0.4, rotationDegrees: 0 };
+    attachTap(cfg, icon.payload.id);
+    syncAttachedTaps(cfg);
+    expect(draw(cfg, { tapReview: true })).toContain("Toggle an entity: Kitchen");
+    expect(draw(cfg)).not.toContain("Toggle an entity");
+  });
+
+  it("trims a label that does not fit rather than spilling out of the box", () => {
+    const { cfg, icon } = withIcon("light.kitchen");
+    // 0.3 of the 181 pt box is 54 pt: room for some of the label, not all.
+    attachTap(cfg, icon.payload.id);
+    const review = draw(cfg, { tapReview: true });
+    expect(review).toContain("Toggle an entity:…");
+    expect(review).not.toContain("Kitchen");
+  });
+
+  it("keeps the glyph instead of a label when the box is too small", () => {
+    const { cfg, icon } = withIcon("light.kitchen");
+    icon.payload.frame = { x: 0.1, y: 0.1, width: 0.04, height: 0.04, rotationDegrees: 0 };
+    attachTap(cfg, icon.payload.id);
+    syncAttachedTaps(cfg);
+    expect(draw(cfg, { tapReview: true })).not.toContain("Toggle an entity");
+  });
+
+  it("dims the drawing layers and leaves the tap boxes bright", () => {
+    const { cfg, icon } = withIcon();
+    attachTap(cfg, icon.payload.id);
+    const review = draw(cfg, { tapReview: true });
+    // 0.35 is the dim factor, applied to the icon's own opacity of 1.
+    expect(review).toContain(`data-element-id=${icon.payload.id} opacity=0.35`);
+    expect(review).toContain(`data-element-id=${tapOf(cfg, icon.payload.id).id} opacity=1`);
+    expect(draw(cfg)).toContain(`data-element-id=${icon.payload.id} opacity=1`);
+  });
+
+  it("still draws a free-standing tap in both modes", () => {
+    const cfg = newConfig("Test", 0);
+    const tap = newElement("tap");
+    cfg.elements.push(tap);
+    expect(draw(cfg)).toContain(tap.payload.id);
+    expect(draw(cfg, { tapReview: true })).toContain(tap.payload.id);
+  });
+
+  it("shows taps even when the caller did not ask for tap areas", () => {
+    const cfg = newConfig("Test", 0);
+    const tap = newElement("tap");
+    cfg.elements.push(tap);
+    expect(draw(cfg, { tapAreas: false })).not.toContain(tap.payload.id);
+    expect(draw(cfg, { tapAreas: false, tapReview: true })).toContain(tap.payload.id);
   });
 });

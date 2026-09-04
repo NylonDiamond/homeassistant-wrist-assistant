@@ -4,7 +4,7 @@
 // 160x62 rectangle scaled 2x looks like the native editor.
 
 import { svg, nothing, type TemplateResult } from "lit";
-import { DESIGN_BOX, type FamilyKind, type ImageContentMode } from "./model.js";
+import { DESIGN_BOX, describeTapAction, type FamilyKind, type ImageContentMode } from "./model.js";
 import type { ImageSizeProvider } from "./image-sizes.js";
 import { countdownRemainingString, type ResolvedBezelGauge, type ResolvedElement, type ResolvedLayout } from "./resolver.js";
 
@@ -106,6 +106,12 @@ export interface RenderOptions {
   handles?: boolean;
   /** Editor affordance: outline tap layers, which the watch never draws. */
   tapAreas?: boolean;
+  /**
+   * Review mode: answer "what happens if I tap here?" and nothing else. Every
+   * tap area draws, attached ones included, each labelled with what it does,
+   * and everything that is not a tap dims out of the way. Implies `tapAreas`.
+   */
+  tapReview?: boolean;
   /** Natural sizes of the camera pictures, so a layer can be cropped the way
    * the watch crops it. Absent falls back to the browser's own fitting. */
   imageSizes?: ImageSizeProvider;
@@ -400,25 +406,60 @@ function renderImage(el: Extract<ResolvedElement, { kind: "image" }>, box: Box, 
 /** Tap area, editor only: a faint dashed box with a small hand glyph so the
  * author can see and grab what the watch never draws. Off (nothing) unless the
  * caller asked for tap areas. */
-function renderTap(el: Extract<ResolvedElement, { kind: "tap" }>, box: Box, icons: IconProvider, show: boolean) {
+function renderTap(
+  el: Extract<ResolvedElement, { kind: "tap" }>,
+  box: Box,
+  icons: IconProvider,
+  show: boolean,
+  label?: string,
+) {
   if (!show) return nothing;
   const glyph = Math.min(10, box.w * 0.5, box.h * 0.5);
+  const text = label !== undefined ? tapLabelText(label, box) : undefined;
   return svg`
     <rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} rx="2" fill="#FFD60A" fill-opacity="0.08"
       stroke="#FFD60A" stroke-opacity="0.8" stroke-width="0.6" stroke-dasharray="1.5 1" vector-effect="non-scaling-stroke" />
-    ${glyph >= 5 ? svg`<g transform="translate(${box.cx - glyph / 2} ${box.cy - glyph / 2})" opacity="0.8">${icons.render("hand.tap.fill", glyph, "#FFD60A") ?? nothing}</g>` : nothing}`;
+    ${text !== undefined
+      ? svg`<text x=${box.cx} y=${box.cy} text-anchor="middle" dominant-baseline="central"
+          font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif"
+          font-size=${TAP_LABEL_SIZE} font-weight="600" fill="#FFD60A" fill-opacity="0.95">${text}</text>`
+      : glyph >= 5
+        ? svg`<g transform="translate(${box.cx - glyph / 2} ${box.cy - glyph / 2})" opacity="0.8">${icons.render("hand.tap.fill", glyph, "#FFD60A") ?? nothing}</g>`
+        : nothing}`;
+}
+
+/** Design-box points. Small enough that a 24 pt target still fits a word or
+ * two, large enough to read at the preview's own scale. */
+const TAP_LABEL_SIZE = 5;
+
+/**
+ * The action label trimmed to the tap's box, or `undefined` when the box is too
+ * small to hold any of it. A box that cannot show a label keeps the hand glyph:
+ * half a truncated word says less than a finger does.
+ */
+function tapLabelText(label: string, box: Box): string | undefined {
+  const charW = TAP_LABEL_SIZE * 0.55;
+  const budget = box.w - 2;
+  if (box.h < TAP_LABEL_SIZE * 1.6 || budget < charW * 4) return undefined;
+  if (label.length * charW <= budget) return label;
+  const keep = Math.max(1, Math.floor(budget / charW) - 1);
+  return `${label.slice(0, keep).replace(/\s+$/, "")}…`;
 }
 
 function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderOptions) {
   if (el.isHidden && !options.showHidden) return nothing;
+  const review = options.tapReview === true;
+  const showTaps = options.tapAreas === true || review;
   // A tap layer draws nothing on the watch. Outside the editor it takes no space
   // and no clicks either, so the preview matches the watch.
-  if (el.kind === "tap" && !options.tapAreas) return nothing;
-  // An attached tap holds exactly its layer's frame, so its dashed box and its
+  if (el.kind === "tap" && !showTaps) return nothing;
+  // An attached tap holds its layer's frame, so normally its dashed box and its
   // finger would sit on top of something already drawn and say nothing the
   // layer's own "tap" chip does not. Only a free-standing tap needs to be shown,
-  // because nothing else marks where it is.
-  if (el.kind === "tap" && el.attachedTo !== undefined) return nothing;
+  // because nothing else marks where it is. Review mode is the exception: there
+  // the question is where the targets are, and a grown attached tap is exactly
+  // the target that reaches past what you can see.
+  if (el.kind === "tap" && el.attachedTo !== undefined && !review) return nothing;
   const box = frameBox(el, canvas);
   let body;
   switch (el.kind) {
@@ -427,9 +468,11 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     case "gauge": body = renderGauge(el, box); break;
     case "shape": body = renderShape(el, box); break;
     case "image": body = renderImage(el, box, options); break;
-    case "tap": body = renderTap(el, box, options.icons, options.tapAreas === true); break;
+    case "tap": body = renderTap(el, box, options.icons, showTaps, review ? describeTapAction(el.action) : undefined); break;
   }
-  const opacity = Math.min(1, Math.max(0, el.opacity)) * (el.isHidden ? 0.35 : 1);
+  // Review mode pushes the drawing back so the tap boxes are the thing you read.
+  const dim = review && el.kind !== "tap" ? 0.35 : 1;
+  const opacity = Math.min(1, Math.max(0, el.opacity)) * (el.isHidden ? 0.35 : 1) * dim;
   const selected = options.highlightId === el.id;
   const highlight = selected
     ? svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} fill="none" stroke="#0A84FF" stroke-width="0.75" stroke-dasharray="2 1" vector-effect="non-scaling-stroke" />`
