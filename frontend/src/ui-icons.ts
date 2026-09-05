@@ -11,7 +11,7 @@ import { type TemplateResult, html, svg } from "lit";
 
 export type UiIconName =
   | "up" | "down" | "show" | "hide" | "duplicate" | "delete" | "close" | "reset"
-  | "text" | "icon" | "gauge" | "shape" | "image" | "tap"
+  | "text" | "icon" | "gauge" | "chart" | "shape" | "image" | "tap"
   | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "plus"
   | "lock" | "unlock" | "folder" | "ungroup" | "watch";
 
@@ -24,6 +24,8 @@ function shape(name: UiIconName) {
       return svg`<path d="M12 3.5L14.6 9L20.5 9.7L16.1 13.8L17.3 19.7L12 16.8L6.7 19.7L7.9 13.8L3.5 9.7L9.4 9Z" />`;
     case "gauge":
       return svg`<path d="M5 17A8 8 0 1 1 19 17" /><path d="M12 13L15.5 9.5" /><circle cx="12" cy="13" r="1.4" />`;
+    case "chart":
+      return svg`<path d="M5 19V13" /><path d="M9.7 19V9" /><path d="M14.3 19V15" /><path d="M19 19V5" />`;
     case "shape":
       return svg`<rect x="4" y="5" width="16" height="14" rx="3" />`;
     case "image":

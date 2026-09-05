@@ -7,6 +7,12 @@ import { html, nothing, type TemplateResult } from "lit";
 import {
   type AggregateSpec,
   type BezelGauge,
+  type ChartBaseline,
+  type ChartElement,
+  type ChartHighlight,
+  type ChartMarker,
+  type ChartScale,
+  type ChartStyle,
   type Comparison,
   type ComparisonKind,
   type CustomComplicationConfig,
@@ -33,6 +39,8 @@ import {
   type Value,
   type ValueFormat,
   type ValueKind,
+  CHART_DEFAULT_HIGH_HEX,
+  CHART_DEFAULT_LOW_HEX,
   COMPARISON_KINDS,
   DRAWABLE_FAMILIES,
   IMAGE_DEFAULT_CORNER_RADIUS,
@@ -87,7 +95,7 @@ import {
   tableShape,
   whenText,
 } from "./states.js";
-import type { ForcedBranches } from "./resolver.js";
+import { chartNumbers, type ForcedBranches } from "./resolver.js";
 import type { HassEntityState, HassLike } from "./ha-api.js";
 import { MIN_ZOOM, familyTitle, type IconProvider } from "./renderer.js";
 import { CURATED_SYMBOLS, SYMBOL_CATEGORIES, SymbolBrowser, searchSymbols } from "./symbols.js";
@@ -654,6 +662,22 @@ const VALUE_KINDS: [ValueKind["kind"], string][] = [
   ["named", "Named value"],
 ];
 
+const CHART_STYLES: [ChartStyle, string][] = [
+  ["bars", "Bars"], ["line", "Line"], ["area", "Area"],
+];
+const CHART_SCALES: [ChartScale, string][] = [
+  ["auto", "Auto (fit the readings)"], ["fixed", "Fixed range"],
+];
+const CHART_BASELINES: [ChartBaseline, string][] = [
+  ["lowest", "Lowest value"], ["zero", "Zero"],
+];
+const CHART_HIGHLIGHTS: [ChartHighlight, string][] = [
+  ["none", "None"], ["highest", "Highest"], ["lowest", "Lowest"], ["both", "Both"],
+];
+const CHART_MARKERS: [ChartMarker, string][] = [
+  ["none", "None"], ["pointer", "Triangle and dot"], ["dot", "Dots"],
+];
+
 const TIME_FIELDS: [TimeField, string][] = [
   ["now", "Now (HH:mm)"], ["hour", "Hour"], ["minute", "Minute"], ["weekday", "Weekday"], ["day", "Day"], ["month", "Month"], ["timestamp", "Unix timestamp"],
 ];
@@ -1168,6 +1192,7 @@ export function elementSize(el: CElement): number | undefined {
     case "text": return el.payload.fontSize;
     case "icon": return el.payload.size;
     case "gauge": return el.payload.lineWidth;
+    case "chart": return el.payload.lineWidth;
     case "shape": return undefined;
     case "image": return undefined;
     case "tap": return undefined;
@@ -1250,7 +1275,7 @@ function layerEntityField(host: EditorHost, el: CElement, key: string): Template
 
 /** The layer's own content value, which is the part an entity pick may rewrite. */
 function contentValue(el: CElement): Value | undefined {
-  if (el.kind === "text" || el.kind === "gauge") return el.payload.value;
+  if (el.kind === "text" || el.kind === "gauge" || el.kind === "chart") return el.payload.value;
   if (el.kind === "icon") return el.payload.symbol;
   return undefined;
 }
@@ -1268,7 +1293,7 @@ export function layerEntityNote(el: CElement, uses: readonly LayerEntityUse[]): 
   // everywhere else the content is something the author chose, and it stays.
   const contentKept = content !== undefined
     && !("entityId" in content.kind)
-    && !(contentKind === "literal" && (el.kind === "text" || el.kind === "gauge"));
+    && !(contentKind === "literal" && (el.kind === "text" || el.kind === "gauge" || el.kind === "chart"));
   const keptNote = !contentKept
     ? ""
     : contentKind === "named"
@@ -1282,7 +1307,7 @@ export function layerEntityNote(el: CElement, uses: readonly LayerEntityUse[]): 
   }
   const parts: string[] = [];
   const own = uses.find((u) => u.where === "value" || u.where === "symbol" || u.where === "camera");
-  if (own) parts.push(own.where === "symbol" ? "the symbol" : own.where === "camera" ? "the picture" : el.kind === "gauge" ? "the reading" : "the text");
+  if (own) parts.push(own.where === "symbol" ? "the symbol" : own.where === "camera" ? "the picture" : el.kind === "gauge" ? "the reading" : el.kind === "chart" ? "the readings" : "the text");
   if (uses.some((u) => u.where === "tap")) parts.push("the tap");
   const tests = uses.filter((u) => u.where === "test").length;
   if (tests > 0) parts.push(tests === 1 ? "1 state test" : `${tests} state tests`);
@@ -1379,6 +1404,16 @@ function card(host: EditorHost, id: string, title: string, body: unknown, opts: 
   </section>`;
 }
 
+/** The parsed series as a short line of numbers, with the ends called out. Long
+ * series are elided in the middle, because the point is "did it read what I
+ * meant", not the whole list. */
+function chartReadout(values: number[]): string {
+  if (values.length === 0) return "nothing";
+  const fmt = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100));
+  if (values.length <= 12) return values.map(fmt).join(" ");
+  return `${values.slice(0, 6).map(fmt).join(" ")} … ${values.slice(-3).map(fmt).join(" ")}`;
+}
+
 /** What a layer shows, in a few words, for the Content card's summary line. */
 function contentSummary(host: EditorHost, el: CElement): string {
   const ctx = describeContext(host);
@@ -1386,6 +1421,7 @@ function contentSummary(host: EditorHost, el: CElement): string {
     case "text": return truncate(describeValue(el.payload.value, ctx), 48);
     case "icon": return truncate(describeValue(el.payload.symbol, ctx), 48);
     case "gauge": return truncate(describeValue(el.payload.value, ctx), 48);
+    case "chart": return truncate(describeValue(el.payload.value, ctx), 48);
     case "shape": return el.payload.kind === "roundedRectangle" ? "Rounded rectangle" : el.payload.kind;
     case "image": return el.payload.entity.displayName || el.payload.entity.entityId || "No camera yet";
     case "tap": return describeTapAction(el.payload.action);
@@ -1397,6 +1433,7 @@ function lookSummary(el: CElement): string | undefined {
     case "text": return `${el.payload.fontSize} pt ${el.payload.fontWeight.toLowerCase()} · ${colorWords(el.payload.colorSlot.baseColorHex)}`;
     case "icon": return `${el.payload.size} pt · ${colorWords(el.payload.colorSlot.baseColorHex)}`;
     case "gauge": return `${el.payload.style} · ${el.payload.lineWidth} pt line · ${colorWords(el.payload.colorSlot.baseColorHex)}`;
+    case "chart": return `${el.payload.style} · ${el.payload.scale === "auto" ? "auto scale" : `${el.payload.minValue} to ${el.payload.maxValue}`}${el.payload.highlight === "none" ? "" : ` · ${CHART_HIGHLIGHTS.find(([v]) => v === el.payload.highlight)?.[1].toLowerCase() ?? ""} marked`}`;
     case "shape": return `${colorWords(el.payload.colorSlot.baseColorHex)}${el.payload.borderColorHex ? ` · ${el.payload.borderWidth} pt border` : ""}`;
     case "image": return `${el.payload.contentMode === "fill" ? "Fill the frame" : "Fit inside"} · ${el.payload.zoom.toFixed(2)}x · corners ${el.payload.cornerRadius} pt`;
     case "tap": return undefined;
@@ -1460,6 +1497,63 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         </div>
         ${colorField("Track colour", el.payload.trackColorHex, (v) => upd((e) => { (e as typeof el).payload.trackColorHex = v ?? "#FFFFFF40"; }, "track"))}`;
       break;
+    case "chart": {
+      const c = el.payload;
+      const setChart = (m: (p: ChartElement) => void, k?: string) => upd((e) => m((e as typeof el).payload), k);
+      const series = chartNumbers(host.resolve(c.value) ?? "");
+      const shown = c.limit > 0 && series.length > c.limit
+        ? (c.takeFromEnd ? series.slice(series.length - c.limit) : series.slice(0, c.limit))
+        : series;
+      content = html`
+        ${valueEditor(host, c.value, (v) => setChart((p) => { p.value = v; }, "value"),
+          { label: "Readings", key: `${key}-value` })}
+        <div class="hint">Every number in what this resolves to becomes one point, in order.
+          Commas, spaces and square brackets are all just separators, so a text sensor, a list
+          attribute and a template that joins a forecast all work. A dot is a decimal point;
+          a comma never is.</div>
+        ${series.length === 0
+          ? html`<div class="hint warn">No numbers in this value yet, so the chart draws nothing.</div>`
+          : html`<div class="hint">Reads ${chartReadout(shown)}${series.length === shown.length
+              ? html` · ${shown.length} ${shown.length === 1 ? "value" : "values"}`
+              : html` · ${shown.length} of ${series.length}`}</div>`}
+        <div class="grid2">
+          ${numberField("Use", c.limit, (v) => setChart((p) => { p.limit = Math.max(0, Math.round(v ?? 0)); }, "limit"), { step: 1, min: 0 })}
+          ${selectField("From", c.takeFromEnd ? "end" : "start",
+            [["start", "The first readings"], ["end", "The last readings"]],
+            (v) => setChart((p) => { p.takeFromEnd = v === "end"; }))}
+        </div>
+        <div class="hint">A forecast sensor often carries 24 or 48 entries. 0 draws all of them.</div>`;
+      look = html`
+        ${selectField("Style", c.style, CHART_STYLES, (v) => setChart((p) => { p.style = v; }))}
+        <div class="grid2">
+          ${selectField("Scale", c.scale, CHART_SCALES, (v) => setChart((p) => { p.scale = v; }))}
+          ${selectField("Baseline", c.baseline, CHART_BASELINES, (v) => setChart((p) => { p.baseline = v; }))}
+        </div>
+        ${c.scale === "fixed"
+          ? html`<div class="grid2">
+              ${numberField("Min", c.minValue, (v) => setChart((p) => { p.minValue = v ?? 0; }, "cmin"))}
+              ${numberField("Max", c.maxValue, (v) => setChart((p) => { p.maxValue = v ?? 100; }, "cmax"))}
+            </div>`
+          : nothing}
+        <div class="hint">${c.baseline === "zero"
+          ? "Bars grow from where zero falls, so a negative reading hangs below the line."
+          : "Bars grow from the bottom, and the smallest reading keeps a visible stub. Switch to Zero when the readings can go negative."}</div>
+        ${c.style === "bars"
+          ? numberField("Bar gap (pt)", c.barGap, (v) => setChart((p) => { p.barGap = Math.max(0, v ?? 0); }, "gap"), { step: 0.5, min: 0 })
+          : numberField("Line width (pt)", c.lineWidth, (v) => setChart((p) => { p.lineWidth = Math.max(0.5, v ?? 2); }, "lw"), { step: 0.5, min: 0.5 })}
+        ${selectField("Highlight", c.highlight, CHART_HIGHLIGHTS, (v) => setChart((p) => { p.highlight = v; }))}
+        ${c.highlight === "none" ? nothing : html`
+          <div class="grid2">
+            ${c.highlight === "lowest" ? nothing
+              : colorField("Highest colour", c.highColorHex, (v) => setChart((p) => { p.highColorHex = v ?? CHART_DEFAULT_HIGH_HEX; }, "hicol"))}
+            ${c.highlight === "highest" ? nothing
+              : colorField("Lowest colour", c.lowColorHex, (v) => setChart((p) => { p.lowColorHex = v ?? CHART_DEFAULT_LOW_HEX; }, "locol"))}
+          </div>
+          ${selectField("Marker", c.marker, CHART_MARKERS, (v) => setChart((p) => { p.marker = v; }))}
+          <div class="hint">Worth keeping on: most watch faces tint a complication into one colour,
+            which flattens the two colours into each other, and the marker shape is what survives that.</div>`}`;
+      break;
+    }
     case "shape":
       content = html`<div class="grid2">
           ${selectField("Shape", el.payload.kind, [["roundedRectangle", "Rounded rectangle"], ["rectangle", "Rectangle"], ["capsule", "Capsule"], ["circle", "Circle"]], (v) => upd((e) => { (e as typeof el).payload.kind = v; }))}
@@ -1651,6 +1745,7 @@ export function layerTitle(el: CElement, ctx?: DescribeContext): string {
     case "text": return unquote(describeValue(el.payload.value, ctx));
     case "icon": return unquote(describeValue(el.payload.symbol, ctx));
     case "gauge": return describeValue(el.payload.value, ctx);
+    case "chart": return describeValue(el.payload.value, ctx);
     case "shape": return el.payload.kind === "roundedRectangle" ? "Rounded rectangle" : el.payload.kind;
     case "image": {
       const e = el.payload.entity;

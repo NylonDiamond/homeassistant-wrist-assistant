@@ -230,6 +230,125 @@ function renderGauge(el: Extract<ResolvedElement, { kind: "gauge" }>, box: Box) 
     </g>`;
 }
 
+/** Height of the band a chart reserves along its top for markers, in watch points.
+ * Mirrors `CustomComplicationChartGeometry.markerHeight` in Swift. */
+const CHART_MARKER_BAND = 5;
+
+/** Where every mark of a chart lands inside its frame.
+ *
+ * Pure geometry, no colours: mirrors `CustomComplicationChartGeometry` in the app
+ * repo, at scale 1 because the panel already draws in watch points. */
+function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) {
+  const values = el.values;
+  const n = Math.max(values.length, 1);
+  const marks = el.highIndex !== undefined || el.lowIndex !== undefined;
+  const band = el.marker === "none" || !marks ? 0 : CHART_MARKER_BAND;
+  // Line and area are stroked on the value itself, so half the stroke would fall
+  // outside a plot sized to the frame. Bars are filled inside theirs.
+  const inset = el.style === "bars" ? 0 : el.lineWidth / 2;
+
+  const top = box.y + band + inset;
+  const height = Math.max(box.h - band - inset * 2, 1);
+  const bottom = top + height;
+
+  const span = Math.max(el.domainMax - el.domainMin, Number.EPSILON);
+  const growsFromBottom = el.baseline === "lowest";
+  const minimumBar = growsFromBottom ? height * 0.12 : 0;
+
+  // Cap the gap so bars never starve, whatever the author typed.
+  const gap = Math.min(Math.max(el.barGap, 0), box.w / (n * 2));
+  const barWidth = Math.max((box.w - gap * (n - 1)) / n, 0.5);
+
+  const fraction = (v: number) => Math.min(1, Math.max(0, (v - el.domainMin) / span));
+  const y = (v: number) => bottom - fraction(v) * height;
+
+  return {
+    count: values.length,
+    barWidth,
+    baselineY: growsFromBottom ? bottom : y(0),
+    barRect(index: number) {
+      const x = box.x + index * (barWidth + gap);
+      const value = values[index]!;
+      let hi: number;
+      let lo: number;
+      if (growsFromBottom) {
+        // The lowest reading would otherwise be a zero-height sliver, and a run of
+        // equal readings would vanish entirely. Every bar keeps a visible stub.
+        const h = minimumBar + fraction(value) * (height - minimumBar);
+        hi = bottom - h;
+        lo = bottom;
+      } else {
+        hi = y(value);
+        lo = growsFromBottom ? bottom : y(0);
+        if (hi > lo) [hi, lo] = [lo, hi]; // negative reading, hanging below zero
+      }
+      return { x, y: hi, w: barWidth, h: Math.max(lo - hi, 0.5) };
+    },
+    point(index: number) {
+      const usable = Math.max(box.w - inset * 2, 0);
+      const x = values.length > 1
+        ? box.x + inset + (usable * index) / (values.length - 1)
+        : box.cx;
+      return { x, y: y(values[index]!) };
+    },
+    markerCenter(index: number, bars: boolean) {
+      const r = bars ? this.barRect(index) : undefined;
+      return { x: r ? r.x + r.w / 2 : this.point(index).x, y: box.y + band / 2 };
+    },
+  };
+}
+
+function renderChart(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) {
+  if (el.values.length === 0) return nothing;
+  const g = chartGeometry(el, box);
+  const base = colorAttrs(el.colorHex, "fill");
+  const high = colorAttrs(el.highColorHex, "fill", el.colorHex);
+  const low = colorAttrs(el.lowColorHex, "fill", el.colorHex);
+
+  const dot = (c: { x: number; y: number }, colour: ReturnType<typeof colorAttrs>) =>
+    svg`<circle cx=${c.x} cy=${c.y} r="1.7" fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} />`;
+
+  const body: TemplateResult[] = [];
+
+  if (el.style === "bars") {
+    for (let i = 0; i < g.count; i++) {
+      const r = g.barRect(i);
+      const colour = i === el.highIndex ? high : i === el.lowIndex ? low : base;
+      const radius = Math.min(1.2, r.w / 2, r.h / 2);
+      body.push(svg`<rect x=${r.x} y=${r.y} width=${r.w} height=${r.h} rx=${radius}
+        fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} />`);
+    }
+  } else {
+    const points = Array.from({ length: g.count }, (_, i) => g.point(i));
+    const line = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x} ${p.y}`).join(" ");
+    if (el.style === "area") {
+      const area = `${line} L${points[points.length - 1]!.x} ${g.baselineY} L${points[0]!.x} ${g.baselineY} Z`;
+      body.push(svg`<path d=${area} fill=${base.fill}
+        fill-opacity=${(base["fill-opacity"] as number) * 0.28} stroke="none" />`);
+    }
+    body.push(svg`<path d=${line} fill="none" stroke=${base.fill} stroke-opacity=${base["fill-opacity"]}
+      stroke-width=${el.lineWidth} stroke-linecap="round" stroke-linejoin="round" />`);
+    // A single stroke cannot change colour halfway without splitting into two
+    // paths, so line and area put the highlight on a dot at the reading.
+    if (el.highIndex !== undefined) body.push(dot(points[el.highIndex]!, high));
+    if (el.lowIndex !== undefined) body.push(dot(points[el.lowIndex]!, low));
+  }
+
+  if (el.marker !== "none") {
+    const bars = el.style === "bars";
+    if (el.highIndex !== undefined) {
+      const c = g.markerCenter(el.highIndex, bars);
+      body.push(el.marker === "pointer"
+        ? svg`<path d=${`M${c.x} ${c.y - 1.8} L${c.x + 2.2} ${c.y + 1.8} L${c.x - 2.2} ${c.y + 1.8} Z`}
+            fill=${high.fill} fill-opacity=${high["fill-opacity"]} />`
+        : dot(c, high));
+    }
+    if (el.lowIndex !== undefined) body.push(dot(g.markerCenter(el.lowIndex, bars), low));
+  }
+
+  return svg`${body}`;
+}
+
 function renderShape(el: Extract<ResolvedElement, { kind: "shape" }>, box: Box) {
   const fill = colorAttrs(el.fillColorHex, "fill");
   const border = el.borderColorHex ? parseColor(el.borderColorHex) : undefined;
@@ -496,6 +615,7 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     case "text": body = renderText(el, box); break;
     case "icon": body = renderIcon(el, box, options.icons); break;
     case "gauge": body = renderGauge(el, box); break;
+    case "chart": body = renderChart(el, box); break;
     case "shape": body = renderShape(el, box); break;
     case "image": body = renderImage(el, box, options); break;
     case "tap": body = renderTap(el, box, options.icons, showTaps, labelled ? describeTapAction(el.action) : undefined); break;

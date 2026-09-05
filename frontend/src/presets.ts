@@ -32,7 +32,7 @@ import {
   newStyleChange,
 } from "./model.js";
 
-export type PresetKind = "toggle" | "status" | "gauge" | "camera";
+export type PresetKind = "toggle" | "status" | "gauge" | "camera" | "chart";
 
 export interface PresetSpec {
   kind: PresetKind;
@@ -68,6 +68,12 @@ export const LAYER_PRESETS: readonly PresetSpec[] = [
     title: "Sensor gauge",
     blurb: "An arc that fills with the entity's reading and changes colour across three bands.",
     preferNumeric: true,
+    layerCount: 1,
+  },
+  {
+    kind: "chart",
+    title: "Forecast chart",
+    blurb: "A bar chart of the readings in the entity, with the highest and lowest marked.",
     layerCount: 1,
   },
   {
@@ -269,6 +275,22 @@ function gaugeGeometry(family: DrawableFamily): PresetGeometry {
   return { frame: centredFrame(family, side, side), size: Math.max(2.5, Math.round(side * 0.2) / 2) };
 }
 
+/** A wide, short band: a chart is read across, and on a rectangular tile it wants
+ * the room the text lines above and below it are not using. */
+function chartGeometry(family: DrawableFamily): PresetGeometry {
+  const wide = family === "rectangular";
+  return {
+    frame: {
+      x: 0.05,
+      y: wide ? 0.34 : 0.3,
+      width: 0.9,
+      height: wide ? 0.42 : 0.4,
+      rotationDegrees: 0,
+    },
+    size: 2,
+  };
+}
+
 function cameraGeometry(): PresetGeometry {
   return { frame: { x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 } };
 }
@@ -278,6 +300,7 @@ function applySize(el: Element, size: number | undefined): void {
   if (el.kind === "text") el.payload.fontSize = size;
   else if (el.kind === "icon") el.payload.size = size;
   else if (el.kind === "gauge") el.payload.lineWidth = size;
+  else if (el.kind === "chart") el.payload.lineWidth = size;
 }
 
 /**
@@ -441,6 +464,21 @@ export function addSensorGauge(cfg: CustomComplicationConfig, ref: EntityRef, en
   return el.payload.id;
 }
 
+/** A bar chart of whatever numbers the entity holds, both ends marked.
+ *
+ * Highlighting is on here where it is off by default, because the entity someone
+ * reaches this preset with is a forecast, and "when is it cheapest" is the whole
+ * question a forecast on a wrist is asked. */
+export function addForecastChart(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  const el = layerOf("chart");
+  el.payload.value = { kind: { kind: "entityState", ...withDomain(ref) } };
+  el.payload.highlight = "both";
+  el.payload.marker = "pointer";
+  placeLayer(cfg, el, env.family, chartGeometry);
+  cfg.elements.push(el);
+  return el.payload.id;
+}
+
 /** The camera's snapshot, filling the face. */
 export function addCameraLayer(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
   const el = layerOf("image");
@@ -461,6 +499,7 @@ export function applyPreset(
     case "toggle": return addToggleButton(cfg, ref, env);
     case "status": return addStatusText(cfg, ref, env);
     case "gauge": return addSensorGauge(cfg, ref, env);
+    case "chart": return addForecastChart(cfg, ref, env);
     case "camera": return addCameraLayer(cfg, ref, env);
   }
 }

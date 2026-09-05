@@ -1,0 +1,144 @@
+{
+  "name": "Chart series",
+  "description": "Three chart layers over the same electricity-price sensor, pinning the parts the Swift and TypeScript resolvers each compute for themselves: how a string is scanned for numbers, how `limit` trims it, what the auto and zero-baseline scales come out as, and which readings the highlight lands on. The prices layer is the Zonneplan shape a forecast sensor actually has, units and all. The window layer trims 12 readings to the last 4. The negative layer proves a zero baseline stretches the range across zero rather than clipping it.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-0000000000C0",
+    "name": "Prices",
+    "slotIndex": 1,
+    "supportedFamilies": ["rectangular"],
+    "values": [],
+    "elements": [
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000C1",
+          "value": {"kind": {"kind": "entityState", "entityId": "sensor.prices", "displayName": "Prices", "domain": "sensor"}},
+          "style": "bars",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "both",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "pointer",
+          "colorSlot": {"baseColorHex": "#9A6BFF"},
+          "rules": [],
+          "frame": {"x": 0.05, "y": 0.34, "width": 0.9, "height": 0.42, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000C2",
+          "value": {"kind": {"kind": "entityState", "entityId": "sensor.history", "displayName": "History", "domain": "sensor"}},
+          "style": "line",
+          "limit": 4,
+          "takeFromEnd": true,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "highest",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "dot",
+          "colorSlot": {"baseColorHex": "#FFFFFF"},
+          "rules": [],
+          "frame": {"x": 0, "y": 0, "width": 1, "height": 0.3, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000C3",
+          "value": {"kind": {"kind": "entityState", "entityId": "sensor.negative", "displayName": "Negative", "domain": "sensor"}},
+          "style": "area",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "zero",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "pointer",
+          "colorSlot": {"baseColorHex": "#FFFFFF"},
+          "rules": [],
+          "frame": {"x": 0, "y": 0.7, "width": 1, "height": 0.3, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": ["rectangular", {"cornerBodyShape": "wedge", "borderWidth": 2}],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {"type": "refresh"}
+  },
+  "inputs": {
+    "entityStates": {
+      "sensor.prices": {"state": "15ct, 13ct, 14ct, 17ct, 19ct, 22ct, 24ct, 28ct, 30ct", "domain": "sensor"},
+      "sensor.history": {"state": "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]", "domain": "sensor"},
+      "sensor.negative": {"state": "-4.5 -2 3", "domain": "sensor"}
+    },
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": ["sensor.prices", "sensor.history", "sensor.negative"],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000C1",
+          "kind": "chart",
+          "values": [15, 13, 14, 17, 19, 22, 24, 28, 30],
+          "style": "bars",
+          "domainMin": 13,
+          "domainMax": 30,
+          "baseline": "lowest",
+          "highIndex": 8,
+          "lowIndex": 1,
+          "marker": "pointer",
+          "colorHex": "#9A6BFF",
+          "isHidden": false
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000C2",
+          "kind": "chart",
+          "values": [9, 10, 11, 12],
+          "style": "line",
+          "domainMin": 9,
+          "domainMax": 12,
+          "highIndex": 3,
+          "lowIndex": null,
+          "marker": "dot"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000C3",
+          "kind": "chart",
+          "values": [-4.5, -2, 3],
+          "style": "area",
+          "domainMin": -4.5,
+          "domainMax": 3,
+          "baseline": "zero",
+          "highIndex": null,
+          "lowIndex": null
+        }
+      ]
+    }
+  }
+}

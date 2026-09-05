@@ -74,6 +74,11 @@ export type FontWeight = "regular" | "medium" | "semibold" | "bold";
 export type TextCase = "upper" | "lower" | "capitalized";
 export type TimeField = "now" | "hour" | "minute" | "weekday" | "day" | "month" | "timestamp";
 export type GaugeStyle = "ring" | "arc" | "bar";
+export type ChartStyle = "bars" | "line" | "area";
+export type ChartScale = "auto" | "fixed";
+export type ChartBaseline = "lowest" | "zero";
+export type ChartHighlight = "none" | "highest" | "lowest" | "both";
+export type ChartMarker = "none" | "dot" | "pointer";
 export type ShapeKind = "rectangle" | "roundedRectangle" | "capsule" | "circle";
 export type CornerBodyShape = "circle" | "wedge";
 export type AggregateFunction = "count" | "sum" | "average" | "min" | "max";
@@ -266,6 +271,40 @@ export interface GaugeElement extends ElementBase {
   trackColorHex: string;
 }
 
+/** A miniature chart of several readings.
+ *
+ * Takes the same single `Value` every other layer takes; every number in what it
+ * resolves to becomes one point (`chartNumbers`). So a text sensor holding
+ * "13,14,16", a list attribute serialised as "[13, 14, 16]", and a Jinja template
+ * that joins a forecast all work with no second data path.
+ *
+ * Mirrors `CustomComplication.ChartElement` in the app repo. */
+export interface ChartElement extends ElementBase {
+  value: Value;
+  style: ChartStyle;
+  /** How many readings to draw. 0 means all of them. */
+  limit: number;
+  /** Which end `limit` counts from: false = the first N, true = the last N. */
+  takeFromEnd: boolean;
+  scale: ChartScale;
+  /** Only read when `scale` is "fixed". */
+  minValue: number;
+  maxValue: number;
+  baseline: ChartBaseline;
+  /** Space between bars, in design-box points. Ignored by line and area. */
+  barGap: number;
+  /** Stroke thickness for line and area. This is the element's `size`, so a
+   * Placement can thin it down per shape. */
+  lineWidth: number;
+  highlight: ChartHighlight;
+  highColorHex: string;
+  lowColorHex: string;
+  marker: ChartMarker;
+}
+
+export const CHART_DEFAULT_HIGH_HEX = "#FF6B35";
+export const CHART_DEFAULT_LOW_HEX = "#32D74B";
+
 export interface ShapeElement extends ElementBase {
   kind: ShapeKind;
   cornerRadius: number;
@@ -371,6 +410,7 @@ export type Element =
   | { kind: "text"; payload: TextElement }
   | { kind: "icon"; payload: IconElement }
   | { kind: "gauge"; payload: GaugeElement }
+  | { kind: "chart"; payload: ChartElement }
   | { kind: "shape"; payload: ShapeElement }
   | { kind: "image"; payload: ImageElement }
   | { kind: "tap"; payload: TapElement };
@@ -752,6 +792,27 @@ function parseElementKind(raw: unknown): Element {
           trackColorHex: str(p.trackColorHex, "#FFFFFF40"),
         },
       };
+    case "chart":
+      return {
+        kind: "chart",
+        payload: {
+          ...parseElementBase(p, "#FFFFFF"),
+          value: isObject(p.value) ? parseValue(p.value) : literal("13,14,16,17,19,22,24,28,30"),
+          style: (optStr(p.style) as ChartStyle | undefined) ?? "bars",
+          limit: Math.max(0, Math.round(num(p.limit, 0))),
+          takeFromEnd: p.takeFromEnd === true,
+          scale: (optStr(p.scale) as ChartScale | undefined) ?? "auto",
+          minValue: num(p.minValue, 0),
+          maxValue: num(p.maxValue, 100),
+          baseline: (optStr(p.baseline) as ChartBaseline | undefined) ?? "lowest",
+          barGap: num(p.barGap, 1.5),
+          lineWidth: num(p.lineWidth, 2),
+          highlight: (optStr(p.highlight) as ChartHighlight | undefined) ?? "none",
+          highColorHex: str(p.highColorHex, CHART_DEFAULT_HIGH_HEX),
+          lowColorHex: str(p.lowColorHex, CHART_DEFAULT_LOW_HEX),
+          marker: (optStr(p.marker) as ChartMarker | undefined) ?? "pointer",
+        },
+      };
     case "shape": {
       const el: ShapeElement = {
         ...parseElementBase(p, "#FFFFFF33"),
@@ -1107,6 +1168,27 @@ function encodeElementKind(el: Element): J {
           trackColorHex: el.payload.trackColorHex,
         },
       };
+    case "chart":
+      return {
+        kind: "chart",
+        payload: {
+          ...base(el.payload),
+          value: encodeValue(el.payload.value),
+          style: el.payload.style,
+          limit: Math.max(0, Math.round(el.payload.limit)),
+          takeFromEnd: el.payload.takeFromEnd,
+          scale: el.payload.scale,
+          minValue: encNum(el.payload.minValue),
+          maxValue: encNum(el.payload.maxValue),
+          baseline: el.payload.baseline,
+          barGap: encNum(el.payload.barGap),
+          lineWidth: encNum(el.payload.lineWidth),
+          highlight: el.payload.highlight,
+          highColorHex: el.payload.highColorHex,
+          lowColorHex: el.payload.lowColorHex,
+          marker: el.payload.marker,
+        },
+      };
     case "shape": {
       const o: J = { ...base(el.payload), kind: el.payload.kind, cornerRadius: encNum(el.payload.cornerRadius), borderWidth: encNum(el.payload.borderWidth) };
       if (el.payload.borderColorHex !== undefined) o.borderColorHex = el.payload.borderColorHex;
@@ -1353,6 +1435,8 @@ const K = {
   text: ["value", "fontSize", "fontWeight", "countdown"],
   icon: ["symbol", "size"],
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex"],
+  chart: ["value", "style", "limit", "takeFromEnd", "scale", "minValue", "maxValue",
+    "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker"],
   shape: ["kind", "cornerRadius", "borderColorHex", "borderWidth"],
   // `timestampStyle` is retired (the age style, built and removed 2026-09-04).
   // It stays listed so a document saved while it existed does not read as
@@ -1570,6 +1654,7 @@ export function newElement(kind: Element["kind"]): Element {
     case "text": return { kind, payload: { ...base("#FFFFFF"), value: literal("Text"), fontSize: 14, fontWeight: "regular" } };
     case "icon": return { kind, payload: { ...base("#FFFFFF"), symbol: literal("lightbulb"), size: 14 } };
     case "gauge": return { kind, payload: { ...base("#FFFFFF"), value: literal("50"), minValue: 0, maxValue: 100, style: "arc", lineWidth: 4, trackColorHex: "#FFFFFF40" } };
+    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "pointer" } };
     case "shape": return { kind, payload: { ...base("#FFFFFF33"), kind: "roundedRectangle", cornerRadius: 6, borderWidth: 1 } };
     case "image": {
       const { colorSlot: _unused, ...b } = base("#FFFFFF");
@@ -1617,6 +1702,7 @@ export function elementsFor(config: CustomComplicationConfig, family: FamilyKind
       if (el.kind === "text") (payload as TextElement).fontSize = placement.size;
       else if (el.kind === "icon") (payload as IconElement).size = placement.size;
       else if (el.kind === "gauge") (payload as GaugeElement).lineWidth = placement.size;
+      else if (el.kind === "chart") (payload as ChartElement).lineWidth = placement.size;
     }
     return { kind: el.kind, payload } as Element;
   });
@@ -1629,6 +1715,7 @@ export function primaryValue(el: Element): Value | undefined {
     case "text": return el.payload.value;
     case "icon": return el.payload.symbol;
     case "gauge": return el.payload.value;
+    case "chart": return el.payload.value;
     case "shape": return undefined;
     case "image": return { kind: { kind: "entityState", ...el.payload.entity } };
     case "tap": return undefined;
@@ -2075,7 +2162,7 @@ function rebindValue(value: Value | undefined, ref: EntityRef, kind: Element["ki
     case "entityAge": return { ...value, kind: { kind: "entityAge", ...ref } };
     case "entityAttribute": return { ...value, kind: { kind: "entityAttribute", ...ref, attribute: k.attribute } };
     case "literal":
-      return kind === "text" || kind === "gauge" ? { ...value, kind: { kind: "entityState", ...ref } } : undefined;
+      return kind === "text" || kind === "gauge" || kind === "chart" ? { ...value, kind: { kind: "entityState", ...ref } } : undefined;
     default:
       return undefined;
   }
@@ -2095,7 +2182,7 @@ export function setLayerEntity(cfg: CustomComplicationConfig, layerId: string, r
   const full: EntityRef = { ...ref, domain: ref.domain || ref.entityId.split(".")[0] || "" };
   if (el.kind === "image") {
     el.payload.entity = full;
-  } else if (el.kind === "text" || el.kind === "gauge") {
+  } else if (el.kind === "text" || el.kind === "gauge" || el.kind === "chart") {
     const next = rebindValue(el.payload.value, full, el.kind);
     if (next) el.payload.value = next;
   } else if (el.kind === "icon") {
@@ -2117,6 +2204,9 @@ export const RULE_TARGET_PROPERTIES: Record<RuleTarget, StyleProperty[]> = {
   text: ["color", "opacity", "text", "fontSize", "fontWeight", "rotation", "visibility"],
   icon: ["color", "opacity", "icon", "fontSize", "rotation", "visibility"],
   gauge: ["color", "opacity", "gaugeValue", "gaugeMin", "gaugeMax", "rotation", "visibility"],
+  // No text or size effects: a chart's content is a whole series, and swapping that
+  // from a rule would need a second series source.
+  chart: ["color", "opacity", "rotation", "visibility"],
   shape: ["color", "opacity", "borderColor", "borderWidth", "rotation", "visibility"],
   image: ["opacity", "rotation", "visibility"],
   tap: ["visibility"],

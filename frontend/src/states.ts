@@ -453,6 +453,7 @@ export const DEFAULT_COLUMN: Record<string, StyleProperty> = {
   text: "text",
   icon: "icon",
   gauge: "color",
+  chart: "color",
   shape: "color",
   image: "visibility",
   tap: "visibility",

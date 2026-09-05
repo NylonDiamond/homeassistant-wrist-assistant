@@ -1,0 +1,224 @@
+// The chart layer: parsing one string into a series, the scale that series is
+// drawn against, and the marks that come out of it.
+//
+// `chartNumbers` and `chartDomain` are ports of the Swift in the app repo
+// (`CustomComplication.numbers(in:)` and `chartDomain`), and the cases here are
+// deliberately the same ones `CustomComplicationChartTests` uses, so drift
+// between the two implementations fails on both sides.
+
+import { describe, expect, it } from "vitest";
+import { nothing } from "lit";
+import { newConfig, newElement, type ChartElement, type CustomComplicationConfig, type Element } from "../src/model.js";
+import { renderLayout, type IconProvider } from "../src/renderer.js";
+import { chartDomain, chartNumbers, resolveAll, type EntityState, type ResolvedChart, type ResolvedLayout } from "../src/resolver.js";
+
+const noIcons: IconProvider = { render: () => undefined, available: () => false, names: () => undefined };
+
+function flatten(node: unknown): string {
+  if (node === undefined || node === null || node === nothing) return "";
+  if (Array.isArray(node)) return node.map(flatten).join("");
+  if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
+    const t = node as { strings: readonly string[]; values: unknown[] };
+    return t.strings.map((s, i) => s + (i < t.values.length ? flatten(t.values[i]) : "")).join("");
+  }
+  return String(node);
+}
+
+describe("chartNumbers", () => {
+  it("treats commas, spaces and brackets as separators alike", () => {
+    const expected = [13, 14, 16];
+    expect(chartNumbers("13,14,16")).toEqual(expected);
+    expect(chartNumbers("13 14 16")).toEqual(expected);
+    expect(chartNumbers("[13, 14, 16]")).toEqual(expected);
+    expect(chartNumbers("13ct 14ct 16ct")).toEqual(expected);
+    expect(chartNumbers("€13; €14; €16")).toEqual(expected);
+  });
+
+  it("reads a dot as a decimal point and a comma never as one", () => {
+    expect(chartNumbers("1.5,2.25")).toEqual([1.5, 2.25]);
+    expect(chartNumbers("1,5")).toEqual([1, 5]);
+  });
+
+  it("only counts a sign where nothing numeric precedes it", () => {
+    expect(chartNumbers("-4.5, 3")).toEqual([-4.5, 3]);
+    expect(chartNumbers("12,-3,+7")).toEqual([12, -3, 7]);
+    // The reason for that rule: a date must not read as negative numbers.
+    expect(chartNumbers("2026-09-05")).toEqual([2026, 9, 5]);
+  });
+
+  it("ends a reading at a stray second dot instead of voiding it", () => {
+    expect(chartNumbers("1.2.3")).toEqual([1.2, 0.3]);
+  });
+
+  it("reads nothing numeric as an empty series", () => {
+    expect(chartNumbers("")).toEqual([]);
+    expect(chartNumbers("unavailable")).toEqual([]);
+    expect(chartNumbers("▁▂▃▄▅▆▇█")).toEqual([]);
+  });
+
+  it("caps a runaway template", () => {
+    const huge = Array.from({ length: 500 }, (_, i) => i).join(",");
+    expect(chartNumbers(huge)).toHaveLength(240);
+    expect(chartNumbers(huge, 5)).toEqual([0, 1, 2, 3, 4]);
+  });
+});
+
+describe("chartDomain", () => {
+  const auto = { scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest" } as const;
+
+  it("fits the readings edge to edge", () => {
+    expect(chartDomain([13, 14, 16, 30], auto)).toEqual({ min: 13, max: 30 });
+  });
+
+  it("stretches to include zero on a zero baseline", () => {
+    expect(chartDomain([13, 14, 16], { ...auto, baseline: "zero" })).toEqual({ min: 0, max: 16 });
+    expect(chartDomain([-4, -2, 3], { ...auto, baseline: "zero" })).toEqual({ min: -4, max: 3 });
+  });
+
+  it("ignores the readings on a fixed scale and survives a reversed pair", () => {
+    expect(chartDomain([13, 14], { scale: "fixed", minValue: 100, maxValue: 0, baseline: "lowest" }))
+      .toEqual({ min: 0, max: 100 });
+  });
+
+  it("gives a flat series a range to divide by", () => {
+    const d = chartDomain([20, 20, 20], auto);
+    expect(d.max).toBeGreaterThan(d.min);
+  });
+});
+
+// ── resolve + draw ────────────────────────────────────────────────────────
+
+const HIGH = "#FF6B35";
+const LOW = "#32D74B";
+
+function chartConfig(state: string, tweak: (p: ChartElement) => void = () => {}) {
+  const cfg = newConfig("Prices", 0);
+  const el = newElement("chart") as Extract<Element, { kind: "chart" }>;
+  el.payload.frame = { x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 };
+  el.payload.value = { kind: { kind: "entityState", entityId: "sensor.prices", displayName: "Prices", domain: "sensor" } };
+  tweak(el.payload);
+  cfg.elements.push(el);
+  return { cfg, id: el.payload.id, state };
+}
+
+function rectangular(cfg: CustomComplicationConfig, state: string): ResolvedLayout {
+  const entityStates = new Map<string, EntityState>([
+    ["sensor.prices", { entityId: "sensor.prices", state, domain: "sensor", iconName: "chart.bar" }],
+  ]);
+  return resolveAll(cfg, { entityStates, templateResults: new Map(), namedValues: cfg.values }).rectangular!;
+}
+
+function chartOf(layout: ResolvedLayout): ResolvedChart {
+  const el = layout.elements.find((e) => e.kind === "chart");
+  if (!el || el.kind !== "chart") throw new Error("no chart layer resolved");
+  return el;
+}
+
+/** Every `<rect>` the layout drew, as numbers. The invisible full-frame hit box
+ * each layer carries is dropped: it is chrome, not a bar. */
+function rects(svg: string): { x: number; y: number; w: number; h: number }[] {
+  const out: { x: number; y: number; w: number; h: number }[] = [];
+  for (const m of svg.matchAll(/<rect x="?([-\d.]+)"? y="?([-\d.]+)"? width="?([-\d.]+)"? height="?([-\d.]+)"?/g)) {
+    out.push({ x: Number(m[1]), y: Number(m[2]), w: Number(m[3]), h: Number(m[4]) });
+  }
+  return out.filter((r) => !(r.x === 0 && r.y === 0));
+}
+
+describe("resolving a chart", () => {
+  it("marks the first occurrence of each end", () => {
+    const { cfg, state } = chartConfig("15,13,14,17,19,22,24,28,30", (p) => { p.highlight = "both"; });
+    const chart = chartOf(rectangular(cfg, state));
+    expect(chart.values).toEqual([15, 13, 14, 17, 19, 22, 24, 28, 30]);
+    expect(chart.highIndex).toBe(8);
+    expect(chart.lowIndex).toBe(1);
+  });
+
+  it("never marks one reading as both ends", () => {
+    const { cfg, state } = chartConfig("20,20,20", (p) => { p.highlight = "both"; });
+    const chart = chartOf(rectangular(cfg, state));
+    expect(chart.highIndex).toBe(0);
+    expect(chart.lowIndex).toBeUndefined();
+  });
+
+  it("trims to the limit from the end it was told to", () => {
+    const { cfg, state } = chartConfig("1,2,3,4,5", (p) => { p.limit = 3; p.takeFromEnd = true; });
+    expect(chartOf(rectangular(cfg, state)).values).toEqual([3, 4, 5]);
+  });
+});
+
+describe("drawing a chart", () => {
+  const prices = "15,13,14,17,19,22,24,28,30";
+
+  function draw(state: string, tweak?: (p: ChartElement) => void): string {
+    const { cfg } = chartConfig(state, tweak);
+    return flatten(renderLayout(rectangular(cfg, state), { icons: noIcons }));
+  }
+
+  it("draws one bar per reading, tallest for the highest", () => {
+    const bars = rects(draw(prices));
+    expect(bars).toHaveLength(9);
+    const heights = bars.map((b) => b.h);
+    expect(heights.indexOf(Math.max(...heights))).toBe(8); // the 30
+    expect(heights.indexOf(Math.min(...heights))).toBe(1); // the 13
+  });
+
+  it("keeps a visible stub under the lowest reading", () => {
+    const bars = rects(draw(prices));
+    expect(bars[1]!.h).toBeGreaterThan(0);
+    // A flat run must not vanish either.
+    for (const b of rects(draw("20,20,20"))) expect(b.h).toBeGreaterThan(0);
+  });
+
+  it("keeps every bar inside the layer's frame", () => {
+    const bars = rects(draw(prices));
+    const bottom = Math.max(...bars.map((b) => b.y + b.h));
+    for (const b of bars) {
+      expect(b.y).toBeGreaterThanOrEqual(-0.001);
+      expect(b.y + b.h).toBeLessThanOrEqual(bottom + 0.001);
+      expect(b.h).toBeGreaterThan(0);
+    }
+    // Bars sit left to right in reading order and never overlap.
+    for (let i = 1; i < bars.length; i++) expect(bars[i]!.x).toBeGreaterThanOrEqual(bars[i - 1]!.x + bars[i - 1]!.w - 0.001);
+  });
+
+  it("paints the marked ends in their own colours", () => {
+    const svg = draw(prices, (p) => { p.highlight = "both"; });
+    expect(svg).toContain(HIGH);
+    expect(svg).toContain(LOW);
+    expect(svg).not.toContain(HIGH.toLowerCase() + "x"); // guard against a substring match
+  });
+
+  it("draws a triangle over the highest and a dot over the lowest", () => {
+    const svg = draw(prices, (p) => { p.highlight = "both"; p.marker = "pointer"; });
+    expect(svg).toMatch(/<path d=M[\d.]+ [\d.]+ L/); // the triangle
+    expect(svg).toContain("<circle");
+  });
+
+  it("draws no marker when nothing is highlighted", () => {
+    const svg = draw(prices);
+    expect(svg).not.toContain("<circle");
+    expect(svg).not.toContain(HIGH);
+  });
+
+  it("draws a line and an area fill instead of bars", () => {
+    const line = draw(prices, (p) => { p.style = "line"; });
+    expect(rects(line)).toHaveLength(0);
+    expect(line).toContain("stroke-linejoin");
+
+    const area = draw(prices, (p) => { p.style = "area"; });
+    expect(area).toContain("fill-opacity=0.28");
+  });
+
+  it("hangs a negative reading below the zero line", () => {
+    const svg = draw("-4,-2,3", (p) => { p.baseline = "zero"; });
+    const bars = rects(svg);
+    expect(bars).toHaveLength(3);
+    // The two negatives start where zero falls and grow down; the positive ends there.
+    expect(bars[0]!.y).toBeCloseTo(bars[1]!.y, 6);
+    expect(bars[2]!.y + bars[2]!.h).toBeCloseTo(bars[0]!.y, 6);
+  });
+
+  it("draws nothing at all when the series is empty", () => {
+    expect(rects(draw("unavailable"))).toHaveLength(0);
+  });
+});

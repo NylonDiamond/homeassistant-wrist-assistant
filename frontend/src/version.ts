@@ -8,8 +8,15 @@
 // docs/custom_complication_family_kinds.md, tightened 2026-09-02.
 
 /** First watch app version the panel works with: the per-shape release.
- * Bump only when the app's marketing version for that release is known. */
+ * Bump only when the app's marketing version for that release is known.
+ *
+ * This is the only version gate. A watch decodes a document whole or not at
+ * all, so a layer kind it predates blanks the complication rather than
+ * dropping one layer; the answer is to keep the whole editor away from a watch
+ * that is too old, not to hide individual controls. So when a release adds a
+ * layer kind, bump this to that release. */
 export const MIN_WATCH_VERSION_FOR_SHAPES = "2.8.0";
+
 
 export type Version = [number, number, number];
 

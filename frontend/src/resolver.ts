@@ -11,6 +11,10 @@ import {
   type Element,
   type FamilyKind,
   type FontWeight,
+  type ChartBaseline,
+  type ChartMarker,
+  type ChartScale,
+  type ChartStyle,
   type GaugeStyle,
   type ImageContentMode,
   type ImageTimestampCorner,
@@ -91,6 +95,25 @@ export interface ResolvedGauge extends ResolvedBase {
   colorHex: string;
   trackColorHex: string;
 }
+/** A chart with its series already parsed and its scale already decided.
+ * Mirrors `CustomComplication.ResolvedChart` in the app repo. */
+export interface ResolvedChart extends ResolvedBase {
+  kind: "chart";
+  values: number[];
+  style: ChartStyle;
+  domainMin: number;
+  domainMax: number;
+  baseline: ChartBaseline;
+  barGap: number;
+  lineWidth: number;
+  colorHex: string;
+  /** Index into `values`; absent when nothing is highlighted. */
+  highIndex?: number;
+  lowIndex?: number;
+  highColorHex: string;
+  lowColorHex: string;
+  marker: ChartMarker;
+}
 export interface ResolvedShape extends ResolvedBase {
   kind: "shape";
   shapeKind: ShapeKind;
@@ -131,7 +154,7 @@ export interface ResolvedTap extends ResolvedBase {
    * preview can leave an attached tap undrawn; the watch ignores it. */
   attachedTo?: string;
 }
-export type ResolvedElement = ResolvedText | ResolvedIcon | ResolvedGauge | ResolvedShape | ResolvedImage | ResolvedTap;
+export type ResolvedElement = ResolvedText | ResolvedIcon | ResolvedGauge | ResolvedChart | ResolvedShape | ResolvedImage | ResolvedTap;
 
 export interface ResolvedBezelGauge {
   value: number;
@@ -247,6 +270,79 @@ export function countdownRemainingString(seconds: number): string {
   const s = total % 60;
   const two = (n: number) => String(n).padStart(2, "0");
   return h > 0 ? `${h}:${two(m)}:${two(s)}` : `${m}:${two(s)}`;
+}
+
+/** Every number in a string, in the order they appear. What turns one resolved
+ * value into a chart's series.
+ *
+ * Deliberately loose about what sits between the numbers: commas, spaces, square
+ * brackets, units and currency signs are all just separators. A dot is a decimal
+ * point and a comma never is, because a comma is the one separator every
+ * integration already emits. A sign only counts as a sign when nothing numeric
+ * precedes it, which keeps "2026-09-05" from reading as negative numbers.
+ *
+ * Mirrors `CustomComplication.numbers(in:)` in Swift; the two are held together
+ * by `CustomComplicationChartTests`. */
+export function chartNumbers(raw: string, limit = 240): number[] {
+  const out: number[] = [];
+  let token = "";
+  let previousWasNumeric = false;
+
+  const flush = () => {
+    if (token !== "") {
+      const parsed = Number(token);
+      if (Number.isFinite(parsed)) out.push(parsed);
+    }
+    token = "";
+  };
+
+  for (const ch of raw) {
+    if (out.length >= limit) break;
+    if (ch >= "0" && ch <= "9") {
+      token += ch;
+      previousWasNumeric = true;
+    } else if (ch === ".") {
+      // A second dot ends the reading rather than making it unparseable.
+      if (token.includes(".")) flush();
+      token += ".";
+      previousWasNumeric = true;
+    } else if (ch === "-" || ch === "+") {
+      const isSign = !previousWasNumeric;
+      flush();
+      if (isSign) token += ch;
+      previousWasNumeric = false;
+    } else {
+      flush();
+      previousWasNumeric = false;
+    }
+  }
+  if (out.length < limit) flush();
+  return out;
+}
+
+/** The value range a chart's plot covers. Mirrors `CustomComplication.chartDomain`. */
+export function chartDomain(
+  values: number[],
+  opts: { scale: ChartScale; minValue: number; maxValue: number; baseline: ChartBaseline },
+): { min: number; max: number } {
+  let lo: number;
+  let hi: number;
+
+  if (opts.scale === "fixed") {
+    lo = Math.min(opts.minValue, opts.maxValue);
+    hi = Math.max(opts.minValue, opts.maxValue);
+  } else {
+    lo = values.length > 0 ? Math.min(...values) : 0;
+    hi = values.length > 0 ? Math.max(...values) : 1;
+  }
+
+  if (opts.baseline === "zero") {
+    lo = Math.min(lo, 0);
+    hi = Math.max(hi, 0);
+  }
+
+  if (!(hi > lo)) hi = lo + 1;
+  return { min: lo, max: hi };
 }
 
 export function gaugeFraction(raw: string | undefined, min: number, max: number): number {
@@ -541,6 +637,39 @@ export class Resolver {
           colorHex: this.styleColor(style, "color") ?? el.payload.colorSlot.baseColorHex,
           trackColorHex: el.payload.trackColorHex,
         };
+      }
+      case "chart": {
+        const c = el.payload;
+        let values = chartNumbers(this.resolve(c.value) ?? "");
+        if (c.limit > 0 && values.length > c.limit) {
+          values = c.takeFromEnd ? values.slice(values.length - c.limit) : values.slice(0, c.limit);
+        }
+        const domain = chartDomain(values, c);
+        const out: ResolvedChart = {
+          kind: "chart",
+          ...base,
+          values,
+          style: c.style,
+          domainMin: domain.min,
+          domainMax: domain.max,
+          baseline: c.baseline,
+          barGap: c.barGap,
+          lineWidth: c.lineWidth,
+          colorHex: this.styleColor(style, "color") ?? c.colorSlot.baseColorHex,
+          highColorHex: c.highColorHex,
+          lowColorHex: c.lowColorHex,
+          marker: c.marker,
+        };
+        if (values.length > 0) {
+          const marksHigh = c.highlight === "highest" || c.highlight === "both";
+          const marksLow = c.highlight === "lowest" || c.highlight === "both";
+          const high = marksHigh ? values.indexOf(Math.max(...values)) : -1;
+          const low = marksLow ? values.indexOf(Math.min(...values)) : -1;
+          if (high >= 0) out.highIndex = high;
+          // One reading cannot be both ends of the range; highest wins.
+          if (low >= 0 && low !== high) out.lowIndex = low;
+        }
+        return out;
       }
       case "shape": {
         const out: ResolvedShape = {

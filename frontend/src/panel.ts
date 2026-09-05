@@ -62,6 +62,7 @@ import {
   type ResolvedAll,
   type ResolvedInline,
   Resolver,
+  chartNumbers,
   countdownRemainingString,
   resolveAll,
 } from "./resolver.js";
@@ -1658,6 +1659,7 @@ export class WristAssistantPanel extends LitElement {
     return owner.is_orphan || watchSupportsShapes(owner.app_version);
   }
 
+
   /** The canvas shape the layer controls work on. Inline has no canvas, so
    * while it is active the placement fields and drags target the document's
    * first canvas shape instead. */
@@ -2515,7 +2517,7 @@ export class WristAssistantPanel extends LitElement {
 
   // ── left column ───────────────────────────────────────────────────────
 
-  /** Six tinted buttons, one per kind, and the presets under them. Above the
+  /** One tinted button per kind, and the presets under them. Above the
    * list on purpose: adding a layer never moves the button just pressed. */
   private renderAddLayer() {
     const cfg = this.draft?.config;
@@ -3512,6 +3514,7 @@ function layerMeta(el: CElement, resolver: Resolver): string {
     case "text": return `${resolver.resolve(el.payload.value) ?? "--"} · ${el.payload.fontSize} pt`;
     case "icon": return `${el.payload.size} pt · ${colorWords(el.payload.colorSlot.baseColorHex)}`;
     case "gauge": return `${resolver.resolve(el.payload.value) ?? "--"} · ${el.payload.style}`;
+    case "chart": return `${el.payload.style} · ${chartNumbers(resolver.resolve(el.payload.value) ?? "").length} values`;
     case "shape": return `${colorWords(el.payload.colorSlot.baseColorHex)}${el.payload.borderColorHex ? " · border" : ""}`;
     case "image": return `${el.payload.contentMode === "fill" ? "fill" : "fit"} · ${el.payload.timestamp ? "time shown" : "no time"}`;
     case "tap": return describeTapAction(el.payload.action);
