@@ -829,6 +829,92 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
   </svg>`;
 }
 
+export interface ThumbOptions {
+  icons: IconProvider;
+  imageSizes?: ImageSizeProvider;
+  /** CSS size of the thumbnail box. The crop takes this aspect ratio. */
+  width: number;
+  height: number;
+}
+
+/** Padding around the cropped layers, as a share of the crop's longer side. */
+const THUMB_PAD = 0.14;
+
+/**
+ * The crop a layer thumbnail shows, in design-box points: the union of the
+ * layers' frames, padded, then widened or heightened to the thumbnail's own
+ * aspect ratio so the picture never squashes. Empty `ids` mean the whole
+ * canvas, which is what the background row shows.
+ */
+export function thumbCrop(layout: ResolvedLayout, ids: readonly string[], aspect: number): { x: number; y: number; w: number; h: number } {
+  const family = (layout.family in CANVAS ? layout.family : "rectangular") as DrawableFamily;
+  const design = CANVAS[family];
+  const picked = layout.elements.filter((el) => ids.includes(el.id));
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const el of picked) {
+    const b = frameBox(el, design);
+    // A rotated layer sweeps a bigger box; take its bounding circle's box so
+    // no corner of it falls outside the crop.
+    const r = el.frame.rotationDegrees % 180 === 0 ? 0 : Math.hypot(b.w, b.h) / 2;
+    x0 = Math.min(x0, r ? b.cx - r : b.x);
+    y0 = Math.min(y0, r ? b.cy - r : b.y);
+    x1 = Math.max(x1, r ? b.cx + r : b.x + b.w);
+    y1 = Math.max(y1, r ? b.cy + r : b.y + b.h);
+  }
+  let w = x1 - x0;
+  let h = y1 - y0;
+  if (picked.length === 0 || !(w > 0) || !(h > 0)) {
+    x0 = 0; y0 = 0; w = design.width; h = design.height;
+  } else {
+    const pad = Math.max(2, Math.max(w, h) * THUMB_PAD);
+    x0 -= pad; y0 -= pad; w += 2 * pad; h += 2 * pad;
+  }
+  // Grow the short side to the thumbnail's aspect, keeping the centre.
+  if (w / h < aspect) {
+    const nw = h * aspect;
+    x0 -= (nw - w) / 2;
+    w = nw;
+  } else {
+    const nh = w / aspect;
+    y0 -= (nh - h) / 2;
+    h = nh;
+  }
+  return { x: x0, y: y0, w, h };
+}
+
+/**
+ * One layer, or a group's layers, drawn alone the way a painting app's layer
+ * list shows each layer's own pixels. Cropped to the layers with a little
+ * room, so a 10 pt icon reads as an icon rather than a dot, on the black face
+ * and the shape's own background. Hidden layers draw dimmed, like the big
+ * preview. Empty `ids` draw just the canvas: background and border.
+ */
+export function renderLayerThumb(layout: ResolvedLayout, ids: readonly string[], options: ThumbOptions): TemplateResult {
+  const family = (layout.family in CANVAS ? layout.family : "rectangular") as DrawableFamily;
+  const design = CANVAS[family];
+  const crop = thumbCrop(layout, ids, options.width / options.height);
+  const bg = parseColor(layout.backgroundColorHex);
+  const border = parseColor(layout.borderColorHex);
+  const bw = layout.borderWidth;
+  const render: RenderOptions = { icons: options.icons, showHidden: true, tapAreas: true, ...(options.imageSizes ? { imageSizes: options.imageSizes } : {}) };
+  const picked = layout.elements.filter((el) => ids.includes(el.id));
+  const chrome = border && bw > 0
+    ? (family === "rectangular"
+      ? svg`<rect x=${bw / 2} y=${bw / 2} width=${design.width - bw} height=${design.height - bw} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${bw} />`
+      : svg`<circle cx=${design.width / 2} cy=${design.height / 2} r=${design.width / 2 - bw / 2} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${bw} />`)
+    : nothing;
+  const face = family === "rectangular"
+    ? svg`<rect width=${design.width} height=${design.height} fill=${bg ? bg.color : "#000000"} fill-opacity=${bg ? bg.opacity : 1} />`
+    : svg`<circle cx=${design.width / 2} cy=${design.height / 2} r=${design.width / 2} fill=${bg ? bg.color : "#000000"} fill-opacity=${bg ? bg.opacity : 1} />`;
+  return svg`<svg viewBox=${`${crop.x} ${crop.y} ${crop.w} ${crop.h}`} xmlns="http://www.w3.org/2000/svg" class="thumb ${family}"
+      width=${options.width} height=${options.height} preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+    <rect x=${crop.x} y=${crop.y} width=${crop.w} height=${crop.h} fill="#000000" />
+    ${face}
+    ${picked.map((el) => renderElement(el, design, render))}
+    ${chrome}
+  </svg>`;
+}
+
 export function familyTitle(family: FamilyKind): string {
   switch (family) {
     case "rectangular": return "Rectangular";

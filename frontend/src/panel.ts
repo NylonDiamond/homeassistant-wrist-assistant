@@ -65,7 +65,7 @@ import {
   countdownRemainingString,
   resolveAll,
 } from "./resolver.js";
-import { CASES, REFERENCE_CASE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, renderLayout, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type WatchCase } from "./renderer.js";
+import { CASES, REFERENCE_CASE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, renderLayerThumb, renderLayout, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type WatchCase } from "./renderer.js";
 import { ALL_FAMILIES, addFamily, canRemoveFamily, familyContentSummary, firstDrawable, isDrawable, removeFamily, supportedFamilies } from "./layouts.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { updateWatchMessage, watchSupportsShapes } from "./version.js";
@@ -152,6 +152,9 @@ function familiesOf(record: ComplicationRecord): string[] {
 
 const COL_LEFT_DEFAULT = 300;
 const COL_RIGHT_DEFAULT = 400;
+/** Layer-row thumbnail box, CSS px. Wide, because most layers are wider than tall. */
+const THUMB_W = 52;
+const THUMB_H = 36;
 const COL_MIN = 200;
 const COL_MAX = 720;
 /** The canvas column never goes below this while three columns are shown. */
@@ -561,7 +564,7 @@ export class WristAssistantPanel extends LitElement {
     /* Every row is its own outlined container at rest. The border is what
        tells one row from the next, so nothing here may set it to transparent. */
     .layer {
-      display: grid; grid-template-columns: 16px 4px minmax(0, 1fr) auto; align-items: center; gap: 8px;
+      display: grid; grid-template-columns: 16px 4px ${THUMB_W}px minmax(0, 1fr) auto; align-items: center; gap: 8px;
       padding: 6px 6px 6px 4px; border-radius: 8px;
       border: 1px solid var(--wa-line); background: color-mix(in srgb, var(--wa-panel) 30%, var(--wa-card));
       cursor: pointer; user-select: none; position: relative; font-size: 13px;
@@ -575,6 +578,16 @@ export class WristAssistantPanel extends LitElement {
     .layer .grip { color: var(--wa-muted); opacity: .6; display: grid; place-items: center; cursor: grab; }
     .layer .grip svg { width: 14px; height: 14px; }
     .layer .bar { width: 4px; height: 26px; border-radius: 2px; background: var(--k); }
+    /* The layer's own picture, cropped to it, on the black face. The rounded
+       black well is the picture's frame, so an empty thumb still reads as a
+       slot rather than a hole. */
+    .layer .thumb {
+      width: ${THUMB_W}px; height: ${THUMB_H}px; border-radius: 6px; overflow: hidden; flex: none;
+      background: #000; border: 1px solid var(--wa-line); box-sizing: border-box; display: block;
+    }
+    .layer .thumb svg { display: block; width: 100%; height: 100%; }
+    .layer.hl .thumb { border-color: color-mix(in srgb, var(--k) 60%, var(--wa-line)); }
+    .layer.dim .thumb { opacity: .6; }
     .layer .name { display: flex; flex-direction: column; min-width: 0; }
     .layer .name b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
     .layer .name .glyph { display: inline-grid; place-items: center; width: 18px; height: 18px; flex: none; }
@@ -2595,6 +2608,13 @@ export class WristAssistantPanel extends LitElement {
       ? "one line of text"
       : `${layout?.backgroundColorHex ? colorWords(layout.backgroundColorHex) : "transparent"} · ${layout?.borderColorHex ? `${layout.borderWidth} pt border` : "no border"}`;
     const pickedCount = [...this.multi].filter((id) => cfg.elements.some((e) => e.payload.id === id)).length;
+    // Each row carries a picture of its own layer, drawn alone, the way a
+    // painting app's layer list does. The rows resolve the shape the same way
+    // the big preview does, so a forced state shows in both.
+    const resolved = resolveAll(cfg, this.buildContext(), this.forced)[family];
+    const thumb = (ids: readonly string[]) => resolved
+      ? html`<span class="thumb">${renderLayerThumb(resolved, ids, { icons: this.icons, imageSizes: this.imageSizes, width: THUMB_W, height: THUMB_H })}</span>`
+      : html`<span class="thumb"></span>`;
 
     const layerRow = (el: CElement, inGroup: boolean) => {
       const id = el.payload.id;
@@ -2612,8 +2632,9 @@ export class WristAssistantPanel extends LitElement {
         @dragstart=${d.onStart} @dragend=${d.onEnd} @dragover=${d.onOver} @dragleave=${d.onLeave} @drop=${d.onDrop}>
         <span class="grip" title="Drag to reorder. Drop on a folder to put it inside.">${uiIcon("grip")}</span>
         <span class="bar"></span>
+        ${thumb([id])}
         <span class="name">
-          <b>${el.kind === "icon" ? html`<span class="glyph">${this.icons.render(resolver.resolve(el.payload.symbol) ?? "questionmark", 16, el.payload.colorSlot.baseColorHex) ?? nothing}</span>` : nothing}${layerTitle(el, ctx)}</b>
+          <b>${layerTitle(el, ctx)}</b>
           <small><span class="kind">${KIND_LABEL[el.kind]}</span> · ${layerMeta(el, resolver)}</small>
         </span>
         <span class="right">
@@ -2681,6 +2702,7 @@ export class WristAssistantPanel extends LitElement {
         <button class="chev" aria-expanded=${open ? "true" : "false"} title=${open ? "Fold the group" : "Unfold the group"}
           @click=${(e: Event) => { e.stopPropagation(); const next = new Set(this.collapsed); if (open) next.add(g.id); else next.delete(g.id); this.collapsed = next; }}>${uiIcon("chevron")}</button>
         <span class="bar"></span>
+        ${thumb(members.map((m) => m.payload.id))}
         <span class="name">
           <b>${g.name}</b>
           <small><span class="kind">Group</span> · ${members.length} layer${members.length === 1 ? "" : "s"} · ${g.locked ? "moves as one" : "unlocked"}</small>
@@ -2747,6 +2769,7 @@ export class WristAssistantPanel extends LitElement {
         }}>
         <span class="grip">${uiIcon("shape")}</span>
         <span class="bar"></span>
+        ${thumb([])}
         <span class="name">
           <b>${this.activeFamily === "inline" ? "Inline text" : `${familyTitle(this.activeFamily)} shape`}</b>
           <small><span class="kind">${this.activeFamily === "inline" ? "Inline" : "Background"}</span> · ${shapeMeta}</small>
