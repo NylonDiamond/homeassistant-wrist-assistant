@@ -381,6 +381,25 @@ export class WristAssistantPanel extends LitElement {
     .toolbar button:disabled, button:disabled { opacity: .45; cursor: default; }
     button.primary { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: transparent; }
     header button.primary { background: var(--wa-card); color: var(--primary-color); }
+    /* Save is the header's one call to action, so it opts out of the inverted
+       header treatment above. That rule paints a card-coloured button on a
+       card-coloured header under a dark theme, which reads as plain text. Here
+       it is filled while there is something to save and quiet once there is
+       not, and the pale hairline is what keeps it off a header that is itself
+       the primary colour. The halo is the dirty dot's colour, so the button,
+       the dot and the footer line all say "unsaved" the same way. */
+    header button.save {
+      font-weight: 600; padding: 6px 14px; min-height: 30px;
+      background: rgba(255,255,255,.14); color: inherit; border-color: rgba(255,255,255,.35);
+    }
+    header button.save:hover:not(:disabled) { background: rgba(255,255,255,.24); }
+    header button.save:focus-visible { outline: 2px solid var(--app-header-text-color, #fff); outline-offset: 2px; }
+    header button.save.dirty {
+      background: var(--primary-color); color: var(--text-primary-color, #fff);
+      border-color: rgba(255,255,255,.55);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning-color, #ffa600) 45%, transparent);
+    }
+    header button.save.dirty:hover:not(:disabled) { background: color-mix(in srgb, var(--primary-color) 86%, #fff); }
     button.danger { color: var(--error-color, #db4437); border-color: var(--error-color, #db4437); }
     button.small { padding: 5px 10px; font-size: 12.5px; min-height: 26px; }
     button.icon {
@@ -488,6 +507,9 @@ export class WristAssistantPanel extends LitElement {
     details.foot .foot-dot { font-size: 10px; }
     details.foot .foot-dot.ok { color: var(--success-color, #43a047); }
     details.foot .foot-dot.warn { color: var(--warning-color, #ffa600); }
+    /* Same colour on the words as on the dot, so the footer agrees with the
+       header's Save button about there being work to save. */
+    details.foot .foot-dot.warn + .foot-text { color: var(--warning-color, #ffa600); }
     details.foot .foot-dot.err { color: var(--error-color, #db4437); }
     details.foot .foot-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     details.foot .foot-more { font-size: 12px; opacity: .6; }
@@ -2006,7 +2028,7 @@ export class WristAssistantPanel extends LitElement {
               ${ownerLabel(o)} (${o.complication_count})</option>`)}
           </select>
         </label>
-        <button class="primary" @click=${() => void this.save()} ?disabled=${!this.canEdit || !dirty || this.saving || !this.slotChosen} title="Save (⌘S)">${this.saving ? "Saving…" : d?.baseRevision === null ? "Save new" : dirty ? "Save" : "Saved"}</button>
+        <button class="primary save ${dirty ? "dirty" : ""}" @click=${() => void this.save()} ?disabled=${!this.canEdit || !dirty || this.saving || !this.slotChosen} title="Save (⌘S)">${this.saving ? "Saving…" : d?.baseRevision === null ? "Save new" : dirty ? "Save" : "Saved"}</button>
       </header>
       ${this.loadError ? html`<div class="card error">${this.loadError}</div>` : nothing}
       ${this.watchSupported
