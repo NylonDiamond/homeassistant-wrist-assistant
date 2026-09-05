@@ -2237,6 +2237,9 @@ export class WristAssistantPanel extends LitElement {
   private clickRow(id: string, e: MouseEvent) {
     if (e.shiftKey) {
       const next = new Set(this.multi);
+      // The layer already selected counts as the first pick, so one shift-click
+      // on a second row is enough to have a pair.
+      if (next.size === 0 && this.inspect.kind === "layer" && this.inspect.id !== id) next.add(this.inspect.id);
       if (next.has(id)) next.delete(id); else next.add(id);
       this.multi = next;
       return;
