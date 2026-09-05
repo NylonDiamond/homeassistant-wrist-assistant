@@ -48,12 +48,23 @@ describe("thumbCrop", () => {
     expect(crop.w).toBeLessThan(box.width / 2);
   });
 
+  it("crops a text layer to its words, not its wide frame", () => {
+    const { cfg, wide } = twoLayers();
+    // "Text" at 14 pt is about 31 pt wide; the frame is 145 pt wide.
+    const crop = thumbCrop(rectangular(cfg), [wide], 52 / 36);
+    expect(crop.w).toBeLessThan(0.8 * CANVAS.rectangular.width / 2);
+    // Still centred on the frame's centre.
+    expect(crop.x + crop.w / 2).toBeCloseTo(0.6 * CANVAS.rectangular.width, 5);
+  });
+
   it("takes the union of a group's layers", () => {
     const { cfg, small, wide } = twoLayers();
     const one = thumbCrop(rectangular(cfg), [small], 52 / 36);
     const both = thumbCrop(rectangular(cfg), [small, wide], 52 / 36);
     expect(both.w).toBeGreaterThan(one.w);
-    expect(both.x + both.w).toBeGreaterThanOrEqual(CANVAS.rectangular.width);
+    // Reaches past the wide layer's words, which sit at 60% of the width.
+    expect(both.x + both.w).toBeGreaterThan(0.6 * CANVAS.rectangular.width + 14);
+    expect(both.x).toBeLessThan(0);
   });
 
   it("shows the whole face for no layers, and for an unknown id", () => {

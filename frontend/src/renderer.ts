@@ -841,6 +841,21 @@ export interface ThumbOptions {
 const THUMB_PAD = 0.14;
 
 /**
+ * Where a layer's ink is, in design-box points. Most kinds fill their frame.
+ * Text is drawn centred in a frame that is usually much wider than the
+ * words, so a crop to the frame would leave "1 open" as a speck; this narrows
+ * the box to the words themselves, using the same width model the renderer
+ * shrinks with, so the thumbnail shows the words big.
+ */
+function inkBox(el: ResolvedElement, canvas: CanvasSize): Box {
+  const b = frameBox(el, canvas);
+  if (el.kind !== "text" || el.text === "") return b;
+  const w = Math.min(b.w, Math.max(el.fontSize, el.text.length * el.fontSize * 0.55));
+  const h = Math.min(b.h, el.fontSize * 1.3);
+  return { x: b.cx - w / 2, y: b.cy - h / 2, w, h, cx: b.cx, cy: b.cy };
+}
+
+/**
  * The crop a layer thumbnail shows, in design-box points: the union of the
  * layers' frames, padded, then widened or heightened to the thumbnail's own
  * aspect ratio so the picture never squashes. Empty `ids` mean the whole
@@ -852,7 +867,7 @@ export function thumbCrop(layout: ResolvedLayout, ids: readonly string[], aspect
   const picked = layout.elements.filter((el) => ids.includes(el.id));
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const el of picked) {
-    const b = frameBox(el, design);
+    const b = inkBox(el, design);
     // A rotated layer sweeps a bigger box; take its bounding circle's box so
     // no corner of it falls outside the crop.
     const r = el.frame.rotationDegrees % 180 === 0 ? 0 : Math.hypot(b.w, b.h) / 2;
