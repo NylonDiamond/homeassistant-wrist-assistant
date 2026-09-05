@@ -121,9 +121,11 @@ export interface EditorHost {
   /** The complication's name when this edit session opened, for the rename
    * note. Undefined for a brand-new complication (nothing on the watch yet). */
   savedName?: string;
-  /** Turn on the preview's Show taps view. With this layer selected it shows
-   * only this layer's tap area, with corners to drag. */
-  showTapArea(): void;
+  /** Whether the preview's Show taps view is on. With this layer selected it
+   * shows only this layer's tap area, with corners to drag. */
+  tapAreaShown: boolean;
+  /** Turn that view on or off. */
+  showTapArea(on: boolean): void;
 }
 
 // ── small controls ────────────────────────────────────────────────────────
@@ -1496,8 +1498,9 @@ function tappableSection(host: EditorHost, el: CElement, key: string): TemplateR
       ? html`<div class="value-editor">
           ${tapActionEditor(host, attached.payload as TapElement, updTap, `${key}-attached`)}
           <div class="chips">
-            <button class="pick" title="Dim the face and show only this layer's tap area, with corners to drag"
-              @click=${() => host.showTapArea()}><span class="glyph">☞</span>Show tap area</button>
+            <button class="pick ${host.tapAreaShown ? "on" : ""}" aria-pressed=${host.tapAreaShown ? "true" : "false"}
+              title=${host.tapAreaShown ? "Back to the normal face" : "Dim the face and show only this layer's tap area, with corners to drag"}
+              @click=${() => host.showTapArea(!host.tapAreaShown)}><span class="glyph">☞</span>${host.tapAreaShown ? "Hide tap area" : "Show tap area"}</button>
             ${!isZeroOutset((attached.payload as TapElement).outset)
               ? html`<button class="icon" title="Fit the tap area to the layer again" aria-label="Fit the tap area to the layer again"
                   @click=${() => updTap((p) => { p.outset = { ...ZERO_OUTSET }; })}>${uiIcon("reset")}</button>`

@@ -1155,7 +1155,8 @@ export class WristAssistantPanel extends LitElement {
       addFamily: (family) => this.addShape(family),
       removeFamily: (family) => this.removeShape(family),
       savedName: this.savedName,
-      showTapArea: () => this.setShowTaps(true),
+      tapAreaShown: this.showTaps,
+      showTapArea: (on) => this.setShowTaps(on),
     };
   }
 
