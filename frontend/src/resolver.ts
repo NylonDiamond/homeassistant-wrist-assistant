@@ -30,11 +30,15 @@ import {
   type Value,
   type ValueFormat,
   type ChartLabelPlacement,
+  type ChartLabelStyle,
   type ChartLatestLabel,
   type CornerBodyShape,
   STYLE_PROPERTY,
   chartBandColor,
   chartHistoryKey,
+  chartLabelFontSize,
+  chartLabelHeight,
+  chartLabelWidth,
   chartScaleLabelText,
   chartSortedBands,
   chartUsesBands,
@@ -130,18 +134,32 @@ export interface ResolvedChart extends ResolvedBase {
   /** Whether an area's fill follows `pointColorHexes` too. */
   fillBands: boolean;
   /** The number printed at the top of the plot, absent when the labels are off
-   * or there is nothing to draw. Formatted here rather than in the renderer so
-   * the panel and the watch print the same digits. */
-  topLabel?: string;
-  bottomLabel?: string;
+   * or there is nothing to draw. Text and look both settled here rather than in
+   * the renderer, so the panel and the watch print and place the same thing. */
+  topLabel?: ResolvedChartLabel;
+  bottomLabel?: ResolvedChartLabel;
   scaleLabelPlacement: ChartLabelPlacement;
-  scaleLabelColorHex: string;
   /** The newest reading, formatted the same way, absent when not printed. */
-  latestLabel?: string;
+  latestLabel?: ResolvedChartLabel;
   latestLabelPlacement: ChartLatestLabel;
-  /** The newest reading's own band colour when the chart is banded, so the
-   * number and the mark it belongs to agree. */
-  latestLabelColorHex: string;
+}
+
+/** One number printed on a chart, with the look it is drawn in.
+ * Mirrors `CustomComplication.ResolvedChartLabel` in the app repo. */
+export interface ResolvedChartLabel {
+  text: string;
+  fontSize: number;
+  colorHex: string;
+  /** Fill of the plate behind the text, absent for no plate. */
+  pillColorHex?: string;
+}
+
+export function resolvedLabelWidth(l: ResolvedChartLabel): number {
+  return chartLabelWidth(l.text, l.fontSize, l.pillColorHex !== undefined);
+}
+
+export function resolvedLabelHeight(l: ResolvedChartLabel): number {
+  return chartLabelHeight(l.fontSize, l.pillColorHex !== undefined);
 }
 export interface ResolvedShape extends ResolvedBase {
   kind: "shape";
@@ -704,17 +722,35 @@ export class Resolver {
           pointColorHexes,
           fillBands: c.fillBands,
           scaleLabelPlacement: c.scaleLabelPlacement,
-          scaleLabelColorHex: c.scaleLabelColorHex,
           latestLabelPlacement: c.latestLabel,
-          latestLabelColorHex: pointColorHexes[pointColorHexes.length - 1] ?? c.scaleLabelColorHex,
         };
         const span = domain.max - domain.min;
+        const label = (text: string, style: ChartLabelStyle, colorHex?: string): ResolvedChartLabel => {
+          const l: ResolvedChartLabel = {
+            text,
+            fontSize: chartLabelFontSize(style),
+            colorHex: colorHex ?? style.colorHex,
+          };
+          if (style.pillColorHex !== undefined) l.pillColorHex = style.pillColorHex;
+          return l;
+        };
         if (c.scaleLabels !== "none" && values.length > 0) {
-          out.topLabel = chartScaleLabelText(domain.max, span);
-          if (c.scaleLabels === "range") out.bottomLabel = chartScaleLabelText(domain.min, span);
+          out.topLabel = label(chartScaleLabelText(domain.max, span), c.topLabelStyle);
+          if (c.scaleLabels === "range") {
+            out.bottomLabel = label(chartScaleLabelText(domain.min, span), c.bottomLabelStyle);
+          }
         }
         if (c.latestLabel !== "none" && values.length > 0) {
-          out.latestLabel = chartScaleLabelText(values[values.length - 1]!, span);
+          // A banded chart's newest number takes the mark's own colour by default,
+          // so the two agree without anyone setting the same hex twice.
+          const banded = c.latestLabelFollowsBand
+            ? pointColorHexes[pointColorHexes.length - 1]
+            : undefined;
+          out.latestLabel = label(
+            chartScaleLabelText(values[values.length - 1]!, span),
+            c.latestLabelStyle,
+            banded,
+          );
         }
         if (values.length > 0) {
           const marksHigh = c.highlight === "highest" || c.highlight === "both";

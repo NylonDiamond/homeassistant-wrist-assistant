@@ -1,6 +1,6 @@
 {
   "name": "Chart series",
-  "description": "Four chart layers, pinning the parts the Swift and TypeScript resolvers each compute for themselves: how a string is scanned for numbers, how `limit` trims it, what the auto and zero-baseline scales come out as, and which readings the highlight lands on. The prices layer is the Zonneplan shape a forecast sensor actually has, units and all. The window layer trims 12 readings to the last 4. The negative layer proves a zero baseline stretches the range across zero rather than clipping it. The history layer draws a recorder series instead of its own value, which is the one case where the entity's own state must be ignored: `sensor.voltage` reads 3068 and the chart must not show that single number. The prices layer also pins the two colour and label features: its readings are banded on their own values through a three-step colour table and both ends of its scale are printed. The window layer pins the decimal rule, which reads the span rather than the number: a spread of 3 prints one decimal, so its top reads 12.0 while the voltage layer's spread of 12 prints 3075 flat. The voltage layer prints its newest reading and lets its scale labels sit over the marks rather than beside them, so the plot keeps its full width.",
+  "description": "Four chart layers, pinning the parts the Swift and TypeScript resolvers each compute for themselves: how a string is scanned for numbers, how `limit` trims it, what the auto and zero-baseline scales come out as, and which readings the highlight lands on. The prices layer is the Zonneplan shape a forecast sensor actually has, units and all. The window layer trims 12 readings to the last 4. The negative layer proves a zero baseline stretches the range across zero rather than clipping it. The history layer draws a recorder series instead of its own value, which is the one case where the entity's own state must be ignored: `sensor.voltage` reads 3068 and the chart must not show that single number. The prices layer also pins the two colour and label features: its readings are banded on their own values through a three-step colour table and both ends of its scale are printed. The window layer pins the decimal rule, which reads the span rather than the number: a spread of 3 prints one decimal, so its top reads 12.0 while the voltage layer's spread of 12 prints 3075 flat. The voltage layer prints its newest reading and lets its scale labels sit over the marks rather than beside them, so the plot keeps its full width. Every printed number carries its own size, colour and optional plate; a label reads as `text@size` in the expectations, with `+pill` when it has one.",
   "config": {
     "schemaVersion": 6,
     "id": "AAAAAAAA-0000-4000-8000-0000000000C0",
@@ -55,7 +55,20 @@
           "fillBands": false,
           "scaleLabels": "range",
           "scaleLabelPlacement": "gutter",
-          "scaleLabelColorHex": "#FFFFFF99",
+          "topLabelStyle": {
+            "fontSize": 11,
+            "colorHex": "#FFFFFF",
+            "pillColorHex": "#000000AA"
+          },
+          "bottomLabelStyle": {
+            "fontSize": 6,
+            "colorHex": "#FFFFFF80"
+          },
+          "latestLabelStyle": {
+            "fontSize": 8,
+            "colorHex": "#FFFFFF99"
+          },
+          "latestLabelFollowsBand": true,
           "latestLabel": "none",
           "colorSlot": {
             "baseColorHex": "#9A6BFF"
@@ -104,7 +117,19 @@
           "fillBands": false,
           "scaleLabels": "top",
           "scaleLabelPlacement": "gutter",
-          "scaleLabelColorHex": "#FFFFFF99",
+          "topLabelStyle": {
+            "fontSize": 8,
+            "colorHex": "#FFFFFF99"
+          },
+          "bottomLabelStyle": {
+            "fontSize": 8,
+            "colorHex": "#FFFFFF99"
+          },
+          "latestLabelStyle": {
+            "fontSize": 8,
+            "colorHex": "#FFFFFF99"
+          },
+          "latestLabelFollowsBand": true,
           "latestLabel": "none",
           "colorSlot": {
             "baseColorHex": "#FFFFFF"
@@ -153,7 +178,19 @@
           "fillBands": false,
           "scaleLabels": "none",
           "scaleLabelPlacement": "gutter",
-          "scaleLabelColorHex": "#FFFFFF99",
+          "topLabelStyle": {
+            "fontSize": 8,
+            "colorHex": "#FFFFFF99"
+          },
+          "bottomLabelStyle": {
+            "fontSize": 8,
+            "colorHex": "#FFFFFF99"
+          },
+          "latestLabelStyle": {
+            "fontSize": 8,
+            "colorHex": "#FFFFFF99"
+          },
+          "latestLabelFollowsBand": true,
           "latestLabel": "none",
           "colorSlot": {
             "baseColorHex": "#FFFFFF"
@@ -202,7 +239,20 @@
           "fillBands": false,
           "scaleLabels": "range",
           "scaleLabelPlacement": "overlay",
-          "scaleLabelColorHex": "#FFFFFF99",
+          "topLabelStyle": {
+            "fontSize": 8,
+            "colorHex": "#FFFFFF99"
+          },
+          "bottomLabelStyle": {
+            "fontSize": 8,
+            "colorHex": "#FFFFFF99"
+          },
+          "latestLabelStyle": {
+            "fontSize": 10,
+            "colorHex": "#FFFFFF",
+            "pillColorHex": "#0A84FF66"
+          },
+          "latestLabelFollowsBand": true,
           "latestLabel": "end",
           "colorSlot": {
             "baseColorHex": "#FFFFFF"
@@ -305,8 +355,8 @@
             "#FF453A",
             "#FF453A"
           ],
-          "topLabel": "30",
-          "bottomLabel": "13"
+          "topLabel": "30@11+pill",
+          "bottomLabel": "13@6"
         },
         {
           "id": "EEEEEEEE-0000-4000-8000-0000000000C2",
@@ -324,7 +374,7 @@
           "lowIndex": null,
           "marker": "dot",
           "pointColorHexes": [],
-          "topLabel": "12.0"
+          "topLabel": "12.0@8"
         },
         {
           "id": "EEEEEEEE-0000-4000-8000-0000000000C3",
@@ -359,9 +409,9 @@
           "highIndex": 3,
           "lowIndex": 4,
           "marker": "dot",
-          "topLabel": "3075",
-          "bottomLabel": "3063",
-          "latestLabel": "3070"
+          "topLabel": "3075@8",
+          "bottomLabel": "3063@8",
+          "latestLabel": "3070@10+pill"
         }
       ]
     }

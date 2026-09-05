@@ -332,10 +332,33 @@ export interface ChartElement extends ElementBase {
   scaleLabels: ChartScaleLabels;
   /** Whether the scale labels take a strip of their own or sit over the marks. */
   scaleLabelPlacement: ChartLabelPlacement;
-  scaleLabelColorHex: string;
+  /** How each printed number looks. Three separate styles rather than one
+   * shared one: the top of a range and the reading happening right now are
+   * different statements, and a chart that wants the newest number loud and the
+   * scale quiet is the normal case rather than the odd one. */
+  topLabelStyle: ChartLabelStyle;
+  bottomLabelStyle: ChartLabelStyle;
+  latestLabelStyle: ChartLabelStyle;
+  /** Whether the newest reading's number takes its own band colour instead of
+   * `latestLabelStyle`'s. On by default, so a banded chart's number and the mark
+   * it names agree without anyone setting two colours to match. */
+  latestLabelFollowsBand: boolean;
   /** Where the newest reading is printed, if at all. The scale says what the
    * chart covers; this says where the entity is right now. */
   latestLabel: ChartLatestLabel;
+}
+
+/** How one of a chart's printed numbers looks.
+ *
+ * The pill is an optional colour rather than a flag plus a colour: a pill with
+ * no colour is not a thing, and one field cannot get into a state the other
+ * contradicts. Mirrors `ChartElement.ChartLabelStyle` in the app repo. */
+export interface ChartLabelStyle {
+  fontSize: number;
+  colorHex: string;
+  /** Fill of the rounded plate behind the text. Absent draws the number
+   * straight onto whatever is behind it. */
+  pillColorHex?: string;
 }
 
 /** One step of a chart's colour table.
@@ -357,10 +380,39 @@ export const CHART_DEFAULT_BAND_LOW_HEX = "#32D74B";
 export const CHART_DEFAULT_BAND_HIGH_HEX = "#FF453A";
 export const CHART_DEFAULT_SCALE_LABEL_HEX = "#FFFFFF99";
 
-/** Point size of a scale label in the design box. Fixed rather than settable:
- * smaller stops being readable on the wrist, larger eats a plot only 65 points
- * tall. Mirrors `scaleLabelFontSize` in Swift. */
-export const CHART_SCALE_LABEL_SIZE = 8;
+/** Point size a chart's numbers start at, and the range they may be set to.
+ * Mirrors `defaultLabelFontSize` and friends in Swift. */
+export const CHART_LABEL_SIZE = 8;
+export const CHART_LABEL_MIN_SIZE = 5;
+export const CHART_LABEL_MAX_SIZE = 24;
+
+/** Padding between a label's text and the edge of its pill, in design-box
+ * points. Shared with the app so both reserve the same room. */
+export const CHART_LABEL_PILL_PAD_X = 2.5;
+export const CHART_LABEL_PILL_PAD_Y = 1.5;
+
+/** Point size actually drawn. Below the floor a number stops being readable on
+ * the wrist; above the ceiling one label eats a tile 65 points tall. */
+export function chartLabelFontSize(style: ChartLabelStyle): number {
+  const raw = Number(style.fontSize);
+  if (!Number.isFinite(raw)) return CHART_LABEL_SIZE;
+  return Math.min(CHART_LABEL_MAX_SIZE, Math.max(CHART_LABEL_MIN_SIZE, raw));
+}
+
+/** How wide one printed number is, in design-box points.
+ *
+ * Estimated from the character count rather than measured, because the widget,
+ * the watch and this panel all have to reserve the same room and only one of
+ * them can measure text. Mirrors `labelWidth` in Swift. */
+export function chartLabelWidth(text: string, fontSize: number, pill: boolean): number {
+  if (text.length === 0) return 0;
+  return text.length * fontSize * 0.62 + (pill ? CHART_LABEL_PILL_PAD_X * 2 : 2);
+}
+
+/** How tall one printed number is, pill included. Mirrors `labelHeight`. */
+export function chartLabelHeight(fontSize: number, pill: boolean): number {
+  return fontSize + (pill ? CHART_LABEL_PILL_PAD_Y * 2 : 0);
+}
 
 /** The colour table in reading order, whatever order the author typed it in.
  * Mirrors `sortedBands` in Swift. */
@@ -395,16 +447,6 @@ export function chartScaleLabelText(value: number, span: number): string {
   return value.toFixed(places);
 }
 
-/** Width of the gutter the scale labels sit in, in design-box points.
- *
- * Derived from the longest label rather than measured, because the widget, the
- * watch and this panel all have to reserve the same strip and only one of them
- * can measure text. Mirrors `scaleLabelWidth` in Swift. */
-export function chartScaleLabelWidth(texts: readonly string[], fontSize: number): number {
-  const longest = texts.reduce((n, t) => Math.max(n, t.length), 0);
-  if (longest === 0) return 0;
-  return longest * fontSize * 0.62 + 2;
-}
 
 /** History spans the editor offers, in minutes. Free entry is deliberately not
  * offered: every distinct span is another recorder query shape for the server
@@ -922,6 +964,20 @@ function parseColorSlot(o: unknown, fallback: string): ColorSlot {
   return { baseColorHex: isObject(o) ? str(o.baseColorHex, fallback) : fallback };
 }
 
+/** One label's look, falling back to the single colour the first cut of scale
+ * labels wrote (2026-09-05) when the payload has no style of its own. Nothing
+ * back then had a size or a plate to lose, so both start at the default. */
+function parseChartLabelStyle(raw: unknown, payload: J): ChartLabelStyle {
+  const inherited = str(payload.scaleLabelColorHex, CHART_DEFAULT_SCALE_LABEL_HEX);
+  if (!isObject(raw)) return { fontSize: CHART_LABEL_SIZE, colorHex: inherited };
+  const out: ChartLabelStyle = {
+    fontSize: num(raw.fontSize, CHART_LABEL_SIZE),
+    colorHex: str(raw.colorHex, inherited),
+  };
+  if (typeof raw.pillColorHex === "string") out.pillColorHex = raw.pillColorHex;
+  return out;
+}
+
 /** A chart's colour table, reading the two-bound shape forward when that is all
  * the payload has.
  *
@@ -1027,7 +1083,10 @@ function parseElementKind(raw: unknown): Element {
           fillBands: p.fillBands === true,
           scaleLabels: (optStr(p.scaleLabels) as ChartScaleLabels | undefined) ?? "none",
           scaleLabelPlacement: (optStr(p.scaleLabelPlacement) as ChartLabelPlacement | undefined) ?? "gutter",
-          scaleLabelColorHex: str(p.scaleLabelColorHex, CHART_DEFAULT_SCALE_LABEL_HEX),
+          topLabelStyle: parseChartLabelStyle(p.topLabelStyle, p),
+          bottomLabelStyle: parseChartLabelStyle(p.bottomLabelStyle, p),
+          latestLabelStyle: parseChartLabelStyle(p.latestLabelStyle, p),
+          latestLabelFollowsBand: p.latestLabelFollowsBand !== false,
           latestLabel: (optStr(p.latestLabel) as ChartLatestLabel | undefined) ?? "none",
         },
       };
@@ -1266,6 +1325,12 @@ function encodeAggregate(a: AggregateSpec): J {
   return o;
 }
 
+function encodeChartLabelStyle(s: ChartLabelStyle): J {
+  const o: J = { fontSize: encNum(s.fontSize), colorHex: s.colorHex };
+  if (s.pillColorHex !== undefined) o.pillColorHex = s.pillColorHex;
+  return o;
+}
+
 function encodeValueKind(k: ValueKind): J {
   switch (k.kind) {
     case "literal": return { kind: "literal", value: k.value };
@@ -1413,7 +1478,10 @@ function encodeElementKind(el: Element): J {
           fillBands: el.payload.fillBands,
           scaleLabels: el.payload.scaleLabels,
           scaleLabelPlacement: el.payload.scaleLabelPlacement,
-          scaleLabelColorHex: el.payload.scaleLabelColorHex,
+          topLabelStyle: encodeChartLabelStyle(el.payload.topLabelStyle),
+          bottomLabelStyle: encodeChartLabelStyle(el.payload.bottomLabelStyle),
+          latestLabelStyle: encodeChartLabelStyle(el.payload.latestLabelStyle),
+          latestLabelFollowsBand: el.payload.latestLabelFollowsBand,
           latestLabel: el.payload.latestLabel,
         },
       };
@@ -1666,11 +1734,13 @@ const K = {
   chart: ["value", "historyMinutes", "historyPoints", "style", "limit", "takeFromEnd", "scale", "minValue", "maxValue",
     "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker",
     "coloring", "bands", "bandAboveColorHex", "fillBands",
-    "scaleLabels", "scaleLabelPlacement", "scaleLabelColorHex", "latestLabel",
-    // The two-bound band shape, written only on 2026-09-05 and read forward by
-    // `parseChartBands`. Still listed so a document saved that morning does not
-    // read as carrying unknown keys.
-    "bandLowColorHex", "bandHighColorHex", "bandLowerBound", "bandUpperBound"],
+    "scaleLabels", "scaleLabelPlacement", "latestLabel",
+    "topLabelStyle", "bottomLabelStyle", "latestLabelStyle", "latestLabelFollowsBand",
+    // Written only on 2026-09-05 and read forward by `parseChartBands` and
+    // `parseChartLabelStyle`. Still listed so a document saved that morning does
+    // not read as carrying unknown keys.
+    "bandLowColorHex", "bandHighColorHex", "bandLowerBound", "bandUpperBound",
+    "scaleLabelColorHex"],
   shape: ["kind", "cornerRadius", "borderColorHex", "borderWidth"],
   // `timestampStyle` is retired (the age style, built and removed 2026-09-04).
   // It stays listed so a document saved while it existed does not read as
@@ -1888,7 +1958,7 @@ export function newElement(kind: Element["kind"]): Element {
     case "text": return { kind, payload: { ...base("#FFFFFF"), value: literal("Text"), fontSize: 14, fontWeight: "regular" } };
     case "icon": return { kind, payload: { ...base("#FFFFFF"), symbol: literal("lightbulb"), size: 14 } };
     case "gauge": return { kind, payload: { ...base("#FFFFFF"), value: literal("50"), minValue: 0, maxValue: 100, style: "arc", lineWidth: 4, trackColorHex: "#FFFFFF40" } };
-    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: 0, historyPoints: 24, style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "pointer", coloring: "uniform", bands: [], bandAboveColorHex: CHART_DEFAULT_BAND_HIGH_HEX, fillBands: false, scaleLabels: "none", scaleLabelPlacement: "gutter", scaleLabelColorHex: CHART_DEFAULT_SCALE_LABEL_HEX, latestLabel: "none" } };
+    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: 0, historyPoints: 24, style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "pointer", coloring: "uniform", bands: [], bandAboveColorHex: CHART_DEFAULT_BAND_HIGH_HEX, fillBands: false, scaleLabels: "none", scaleLabelPlacement: "gutter", topLabelStyle: { fontSize: CHART_LABEL_SIZE, colorHex: CHART_DEFAULT_SCALE_LABEL_HEX }, bottomLabelStyle: { fontSize: CHART_LABEL_SIZE, colorHex: CHART_DEFAULT_SCALE_LABEL_HEX }, latestLabelStyle: { fontSize: CHART_LABEL_SIZE, colorHex: CHART_DEFAULT_SCALE_LABEL_HEX }, latestLabelFollowsBand: true, latestLabel: "none" } };
     case "shape": return { kind, payload: { ...base("#FFFFFF33"), kind: "roundedRectangle", cornerRadius: 6, borderWidth: 1 } };
     case "image": {
       const { colorSlot: _unused, ...b } = base("#FFFFFF");

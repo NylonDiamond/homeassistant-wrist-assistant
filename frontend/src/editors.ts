@@ -11,6 +11,7 @@ import {
   type ChartBand,
   type ChartColoring,
   type ChartLabelPlacement,
+  type ChartLabelStyle,
   type ChartLatestLabel,
   type ChartElement,
   type ChartHighlight,
@@ -54,6 +55,9 @@ import {
   chartHistoryKey,
   CHART_DEFAULT_LOW_HEX,
   CHART_DEFAULT_SCALE_LABEL_HEX,
+  CHART_LABEL_MAX_SIZE,
+  CHART_LABEL_MIN_SIZE,
+  CHART_LABEL_SIZE,
   COMPARISON_KINDS,
   DRAWABLE_FAMILIES,
   IMAGE_DEFAULT_CORNER_RADIUS,
@@ -705,6 +709,31 @@ const CHART_LABEL_PLACEMENTS: [ChartLabelPlacement, string][] = [
 const CHART_LATEST_LABELS: [ChartLatestLabel, string][] = [
   ["none", "None"], ["corner", "Top right"], ["end", "Beside the newest reading"],
 ];
+
+/** Size, colour and plate for one of a chart's printed numbers.
+ *
+ * The same three controls for every label, so learning one teaches all of them.
+ * The plate is one colour field that can be switched off rather than a checkbox
+ * plus a colour, because a plate with no colour is not a thing. */
+function labelStyleFields(
+  title: string,
+  style: ChartLabelStyle,
+  edit: (m: (s: ChartLabelStyle) => void, key: string) => void,
+  key: string,
+) {
+  return html`
+    <div class="hint"><b>${title}</b></div>
+    <div class="grid2">
+      ${numberField("Size (pt)", style.fontSize,
+        (v) => edit((s) => { s.fontSize = v ?? CHART_LABEL_SIZE; }, `${key}-size`),
+        { step: 0.5, min: CHART_LABEL_MIN_SIZE, max: CHART_LABEL_MAX_SIZE })}
+      ${colorField("Colour", style.colorHex,
+        (v) => edit((s) => { s.colorHex = v ?? CHART_DEFAULT_SCALE_LABEL_HEX; }, `${key}-col`))}
+    </div>
+    ${colorField("Pill behind it", style.pillColorHex,
+      (v) => edit((s) => { if (v === undefined) delete s.pillColorHex; else s.pillColorHex = v; }, `${key}-pill`),
+      true)}`;
+}
 
 /** The colour table a chart starts with when the author first switches it to
  * banded colour.
@@ -1670,21 +1699,29 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
           : html`
             ${selectField("Labels sit", c.scaleLabelPlacement, CHART_LABEL_PLACEMENTS,
               (v) => setChart((p) => { p.scaleLabelPlacement = v; }))}
-            ${colorField("Label colour", c.scaleLabelColorHex,
-              (v) => setChart((p) => { p.scaleLabelColorHex = v ?? CHART_DEFAULT_SCALE_LABEL_HEX; }, "sllcol"))}
             <div class="hint">The numbers come from the scale, so ${c.scale === "auto"
               ? "an Auto chart prints the readings it actually fitted, and they move as the data does."
               : "a Fixed chart always prints the Min and Max above."} ${c.scaleLabelPlacement === "gutter"
               ? "They sit in a strip down the left, which the plot gives up: a wide chart barely notices, a narrow one does."
-              : "They sit over the marks, so the plot keeps its full width and a busy left edge can end up behind a number."}</div>`}
+              : "They sit over the marks, so the plot keeps its full width and a busy left edge can end up behind a number."}</div>
+            ${labelStyleFields("Top number", c.topLabelStyle, (m, k) => setChart((p) => m(p.topLabelStyle), k), `${key}-topl`)}
+            ${c.scaleLabels === "range"
+              ? labelStyleFields("Bottom number", c.bottomLabelStyle, (m, k) => setChart((p) => m(p.bottomLabelStyle), k), `${key}-botl`)
+              : nothing}`}
         ${selectField("Newest reading", c.latestLabel, CHART_LATEST_LABELS,
           (v) => setChart((p) => { p.latestLabel = v; }))}
         ${c.latestLabel === "none"
           ? nothing
           : html`<div class="hint">Printed at the right-hand edge, ${c.latestLabel === "corner"
               ? "parked at the top wherever the data happens to be."
-              : "at the height of the last mark, so the number and the end of the line read as one thing."}
-              ${c.coloring === "bands" ? "It takes that reading's own band colour." : ""}</div>`}
+              : "at the height of the last mark, so the number and the end of the line read as one thing."}</div>
+            ${labelStyleFields("Newest number", c.latestLabelStyle, (m, k) => setChart((p) => m(p.latestLabelStyle), k), `${key}-latl`)}
+            ${c.coloring === "bands"
+              ? html`${checkField("Match the reading's colour", c.latestLabelFollowsBand,
+                  (v) => setChart((p) => { p.latestLabelFollowsBand = v; }))}
+                <div class="hint">On, the number takes the band colour of the reading it names, so
+                  the two always agree. Off, it keeps the colour above.</div>`
+              : nothing}`}
         ${selectField("Colour", c.coloring, CHART_COLORINGS, (v) => setChart((p) => {
           p.coloring = v;
           if (v === "bands" && p.bands.length === 0) p.bands = seedBands(shown);

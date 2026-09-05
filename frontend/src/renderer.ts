@@ -5,15 +5,21 @@
 
 import { svg, nothing, type TemplateResult } from "lit";
 import {
-  CHART_SCALE_LABEL_SIZE,
   DESIGN_BOX,
-  chartScaleLabelWidth,
   describeTapAction,
   type FamilyKind,
   type ImageContentMode,
 } from "./model.js";
 import type { ImageSizeProvider } from "./image-sizes.js";
-import { countdownRemainingString, type ResolvedBezelGauge, type ResolvedElement, type ResolvedLayout } from "./resolver.js";
+import {
+  countdownRemainingString,
+  resolvedLabelHeight,
+  resolvedLabelWidth,
+  type ResolvedBezelGauge,
+  type ResolvedChartLabel,
+  type ResolvedElement,
+  type ResolvedLayout,
+} from "./resolver.js";
 
 export interface CanvasSize {
   width: number;
@@ -257,9 +263,9 @@ function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box
   // Scale labels can take a strip down the left, which nothing else may draw in,
   // or sit over the marks and cost the plot nothing. The strip is the safe
   // reading; the overlay is the one that keeps a narrow chart wide.
-  const strip = chartScaleLabelWidth(
-    [el.topLabel, el.bottomLabel].filter((t): t is string => t !== undefined),
-    CHART_SCALE_LABEL_SIZE,
+  const strip = Math.max(
+    el.topLabel ? resolvedLabelWidth(el.topLabel) : 0,
+    el.bottomLabel ? resolvedLabelWidth(el.bottomLabel) : 0,
   );
   const gutter = el.scaleLabelPlacement === "gutter" ? strip : 0;
   const plotX = box.x + gutter;
@@ -414,29 +420,39 @@ function renderChart(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) 
   // The numbers sit in the gutter the geometry reserved, lined up with the top and
   // bottom of the plot rather than the frame: that is where the domain ends actually
   // land, so the number a reader sees is the number the tallest bar means.
-  const label = (text: string, x: number, y: number, hex: string) => {
-    const c = colorAttrs(hex, "fill");
-    return svg`<text x=${x} y=${y}
-      text-anchor="middle" dominant-baseline="central" font-size=${CHART_SCALE_LABEL_SIZE}
+  // Each number carries its own size, colour and optional plate. The plate is
+  // drawn first so the digits sit on top of it.
+  const label = (l: ResolvedChartLabel, x: number, y: number) => {
+    const c = colorAttrs(l.colorHex, "fill");
+    const out: TemplateResult[] = [];
+    if (l.pillColorHex !== undefined) {
+      const p = colorAttrs(l.pillColorHex, "fill");
+      const w = resolvedLabelWidth(l);
+      const h = resolvedLabelHeight(l);
+      out.push(svg`<rect x=${x - w / 2} y=${y - h / 2} width=${w} height=${h} rx=${h / 2}
+        fill=${p.fill} fill-opacity=${p["fill-opacity"]} />`);
+    }
+    out.push(svg`<text x=${x} y=${y}
+      text-anchor="middle" dominant-baseline="central" font-size=${l.fontSize}
       font-family="ui-rounded, system-ui, sans-serif" font-weight="500"
-      fill=${c.fill} fill-opacity=${c["fill-opacity"]}>${text}</text>`;
+      fill=${c.fill} fill-opacity=${c["fill-opacity"]}>${l.text}</text>`);
+    return out;
   };
   if (el.topLabel !== undefined) {
-    body.push(label(el.topLabel, g.labelCenterX, g.plotTop + CHART_SCALE_LABEL_SIZE / 2, el.scaleLabelColorHex));
+    body.push(...label(el.topLabel, g.labelCenterX, g.plotTop + resolvedLabelHeight(el.topLabel) / 2));
   }
   if (el.bottomLabel !== undefined) {
-    body.push(label(el.bottomLabel, g.labelCenterX, g.plotBottom - CHART_SCALE_LABEL_SIZE / 2, el.scaleLabelColorHex));
+    body.push(...label(el.bottomLabel, g.labelCenterX, g.plotBottom - resolvedLabelHeight(el.bottomLabel) / 2));
   }
   // The newest reading, right-aligned against the frame's own edge. "corner" parks
   // it at the top; "end" follows the last mark's height, clamped so a reading at
   // either extreme still has the whole number inside the frame.
   if (el.latestLabel !== undefined) {
-    const width = chartScaleLabelWidth([el.latestLabel], CHART_SCALE_LABEL_SIZE);
-    const half = CHART_SCALE_LABEL_SIZE / 2;
+    const half = resolvedLabelHeight(el.latestLabel) / 2;
     const y = el.latestLabelPlacement === "corner"
       ? g.plotTop + half
       : Math.min(Math.max(g.readingTop(g.count - 1, el.style === "bars"), box.y + half), g.plotBottom - half);
-    body.push(label(el.latestLabel, g.frameRight - width / 2, y, el.latestLabelColorHex));
+    body.push(...label(el.latestLabel, g.frameRight - resolvedLabelWidth(el.latestLabel) / 2, y));
   }
 
   return svg`${body}`;
