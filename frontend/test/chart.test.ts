@@ -26,6 +26,7 @@ import {
   type CustomComplicationConfig,
   type Element,
 } from "../src/model.js";
+import { applyLatestLabelStyleEdit } from "../src/editors.js";
 import { renderLayout, type IconProvider } from "../src/renderer.js";
 import { chartDomain, chartNumbers, resolveAll, type EntityState, type ResolvedChart, type ResolvedLayout } from "../src/resolver.js";
 
@@ -759,5 +760,41 @@ describe("styling a chart's numbers", () => {
     const encoded = encodeConfig(parseConfig(doc)) as Record<string, unknown>;
     const payload = (encoded.elements as { payload: Record<string, unknown> }[])[0]!.payload;
     expect(payload.scaleLabelColorHex).toBeUndefined();
+  });
+});
+
+describe("picking the newest number's colour", () => {
+  function latestChart(tweak: (p: ChartElement) => void = () => {}) {
+    const { cfg } = chartConfig("5, 15, 25", (p) => {
+      band(p, [[10, "#00FF00"], [20, "#9A6BFF"]]);
+      p.latestLabel = "corner";
+      tweak(p);
+    });
+    const el = cfg.elements[0]!;
+    if (el.kind !== "chart") throw new Error("expected a chart");
+    return { cfg, payload: el.payload };
+  }
+
+  it("turns off the band match, so the picked colour is the one drawn", () => {
+    const { cfg, payload } = latestChart();
+    expect(payload.latestLabelFollowsBand).toBe(true);
+
+    applyLatestLabelStyleEdit(payload, (s) => { s.colorHex = "#ABCDEF"; }, "colour");
+
+    expect(payload.latestLabelFollowsBand).toBe(false);
+    expect(chartOf(rectangular(cfg, "5, 15, 25")).latestLabel?.colorHex).toBe("#ABCDEF");
+  });
+
+  it("leaves the match alone for a size or a pill, which it never overrode", () => {
+    const { cfg, payload } = latestChart();
+    applyLatestLabelStyleEdit(payload, (s) => { s.fontSize = 14; }, "size");
+    applyLatestLabelStyleEdit(payload, (s) => { s.pillColorHex = "#000000"; }, "pill");
+
+    expect(payload.latestLabelFollowsBand).toBe(true);
+    const label = chartOf(rectangular(cfg, "5, 15, 25")).latestLabel;
+    expect(label?.fontSize).toBe(14);
+    expect(label?.pillColorHex).toBe("#000000");
+    // 25 is past the last band, so the number stays the "and the rest" colour.
+    expect(label?.colorHex).toBe("#FF0000");
   });
 });

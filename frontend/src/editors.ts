@@ -710,6 +710,22 @@ const CHART_LATEST_LABELS: [ChartLatestLabel, string][] = [
   ["none", "None"], ["corner", "Top right"], ["end", "Beside the newest reading"],
 ];
 
+/** How an edit to the newest-number style lands on the layer.
+ *
+ * Picking a colour by hand is an unmistakable "I want this one", so it also
+ * switches off the band match that would have quietly overridden it. Without
+ * this the colour well sits there doing nothing on every banded chart, which is
+ * indistinguishable from broken. Size and pill are unaffected: the match is only
+ * ever about colour. */
+export function applyLatestLabelStyleEdit(
+  el: ChartElement,
+  mutate: (s: ChartLabelStyle) => void,
+  what: "size" | "colour" | "pill",
+): void {
+  mutate(el.latestLabelStyle);
+  if (what === "colour") el.latestLabelFollowsBand = false;
+}
+
 /** Size, colour and plate for one of a chart's printed numbers.
  *
  * The same three controls for every label, so learning one teaches all of them.
@@ -718,20 +734,20 @@ const CHART_LATEST_LABELS: [ChartLatestLabel, string][] = [
 function labelStyleFields(
   title: string,
   style: ChartLabelStyle,
-  edit: (m: (s: ChartLabelStyle) => void, key: string) => void,
+  edit: (m: (s: ChartLabelStyle) => void, key: string, what: "size" | "colour" | "pill") => void,
   key: string,
 ) {
   return html`
     <div class="hint"><b>${title}</b></div>
     <div class="grid2">
       ${numberField("Size (pt)", style.fontSize,
-        (v) => edit((s) => { s.fontSize = v ?? CHART_LABEL_SIZE; }, `${key}-size`),
+        (v) => edit((s) => { s.fontSize = v ?? CHART_LABEL_SIZE; }, `${key}-size`, "size"),
         { step: 0.5, min: CHART_LABEL_MIN_SIZE, max: CHART_LABEL_MAX_SIZE })}
       ${colorField("Colour", style.colorHex,
-        (v) => edit((s) => { s.colorHex = v ?? CHART_DEFAULT_SCALE_LABEL_HEX; }, `${key}-col`))}
+        (v) => edit((s) => { s.colorHex = v ?? CHART_DEFAULT_SCALE_LABEL_HEX; }, `${key}-col`, "colour"))}
     </div>
     ${colorField("Pill behind it", style.pillColorHex,
-      (v) => edit((s) => { if (v === undefined) delete s.pillColorHex; else s.pillColorHex = v; }, `${key}-pill`),
+      (v) => edit((s) => { if (v === undefined) delete s.pillColorHex; else s.pillColorHex = v; }, `${key}-pill`, "pill"),
       true)}`;
 }
 
@@ -1715,13 +1731,15 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
           : html`<div class="hint">Printed at the right-hand edge, ${c.latestLabel === "corner"
               ? "parked at the top wherever the data happens to be."
               : "at the height of the last mark, so the number and the end of the line read as one thing."}</div>
-            ${labelStyleFields("Newest number", c.latestLabelStyle, (m, k) => setChart((p) => m(p.latestLabelStyle), k), `${key}-latl`)}
             ${c.coloring === "bands"
               ? html`${checkField("Match the reading's colour", c.latestLabelFollowsBand,
                   (v) => setChart((p) => { p.latestLabelFollowsBand = v; }))}
-                <div class="hint">On, the number takes the band colour of the reading it names, so
-                  the two always agree. Off, it keeps the colour above.</div>`
-              : nothing}`}
+                <div class="hint">${c.latestLabelFollowsBand
+                  ? "The number takes the band colour of the reading it names, so the two always agree. Picking a colour below turns this off."
+                  : "The number keeps the colour below, whatever band the reading is in."}</div>`
+              : nothing}
+            ${labelStyleFields("Newest number", c.latestLabelStyle,
+              (m, k, what) => setChart((p) => applyLatestLabelStyleEdit(p, m, what), k), `${key}-latl`)}`}
         ${selectField("Colour", c.coloring, CHART_COLORINGS, (v) => setChart((p) => {
           p.coloring = v;
           if (v === "bands" && p.bands.length === 0) p.bands = seedBands(shown);
