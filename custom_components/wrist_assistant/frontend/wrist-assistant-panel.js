@@ -1375,7 +1375,7 @@ var co=Object.defineProperty;var po=Object.getOwnPropertyDescriptor;var R=(e,t,n
               @click=${p=>{p.stopPropagation(),this.removeShape(a)}}>${P("delete")}</button>`:f}
           </div>`})}
       </div>
-      <div class="help">Click a shape to edit it in the big preview. Each shape keeps its own placements. The bin on a card removes that shape.</div>
+      <div class="help">Click a shape to edit it in the big preview. Each shape keeps its own placements. Each shape adds an entry to the watch face picker. If you do not need a shape, delete it with the trash can on its card.</div>
     </div>`}renderValuesRow(){let n=this.draft?.config;if(!n)return f;let i=[...this.compiled?.entities.keys()??[]],r=this.testValues.size>0;return u`<div class="strip-row">
       <h2 class="panel-title">Values on the watch<span class="spacer"></span>
         ${r?u`<span class="testing-pill">Testing with your values <button @click=${()=>{this.testValues=new Map,this.editingValue=void 0}}>Back to live</button></span>`:f}

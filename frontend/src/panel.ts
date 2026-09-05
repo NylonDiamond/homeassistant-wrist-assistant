@@ -2836,7 +2836,7 @@ export class WristAssistantPanel extends LitElement {
           </div>`;
         })}
       </div>
-      <div class="help">Click a shape to edit it in the big preview. Each shape keeps its own placements. The bin on a card removes that shape.</div>
+      <div class="help">Click a shape to edit it in the big preview. Each shape keeps its own placements. Each shape adds an entry to the watch face picker. If you do not need a shape, delete it with the trash can on its card.</div>
     </div>`;
   }
 
