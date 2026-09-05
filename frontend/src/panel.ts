@@ -526,7 +526,9 @@ export class WristAssistantPanel extends LitElement {
     .layer .grip svg { width: 14px; height: 14px; }
     .layer .bar { width: 4px; height: 26px; border-radius: 2px; background: var(--k); }
     .layer .name { display: flex; flex-direction: column; min-width: 0; }
-    .layer .name b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .layer .name b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+    .layer .name .glyph { display: inline-grid; place-items: center; width: 18px; height: 18px; flex: none; }
+    .layer .name .glyph svg { width: 16px; height: 16px; display: block; }
     .layer .name small { color: var(--wa-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .layer .kind { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--k); }
     .layer.dim .name b { opacity: .55; }
@@ -567,6 +569,8 @@ export class WristAssistantPanel extends LitElement {
     .layer.group .chev[aria-expanded="false"] svg { transform: rotate(-90deg); }
     .layer.group .bar { background: repeating-linear-gradient(180deg, var(--k) 0 5px, transparent 5px 8px); }
     .layer.group.drop-into { box-shadow: inset 0 0 0 2px var(--primary-color); }
+    .layer.group.locked { border-color: color-mix(in srgb, var(--k) 55%, transparent); }
+    .layer.group.locked .name b { color: var(--k); }
     .layer .lockbtn { width: 24px; height: 24px; opacity: .55; }
     .layer .lockbtn svg.ui-icon { width: 15px; height: 15px; }
     .layer .lockbtn.on { opacity: .95; color: var(--k); }
@@ -625,6 +629,10 @@ export class WristAssistantPanel extends LitElement {
     .links button.link { font-size: 13px; }
     .values-list { margin-top: 10px; max-width: 800px; }
     .tiles { display: flex; gap: 10px; flex-wrap: wrap; }
+    .tile-wrap { position: relative; display: flex; }
+    .tile-wrap .tile-x { position: absolute; top: 4px; right: 4px; opacity: .45; }
+    .tile-wrap:hover .tile-x, .tile-wrap .tile-x:focus-visible { opacity: 1; }
+    .tile-wrap .tile-x:disabled { opacity: .2; cursor: not-allowed; }
     button.tile {
       width: 180px; height: 104px; border-radius: 12px; background: var(--wa-card); border: 1px solid var(--wa-line);
       display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
@@ -2182,7 +2190,13 @@ export class WristAssistantPanel extends LitElement {
    * whole group, so blocks never nest. Attached taps stay out of the rows and
    * follow their owner, the same as the arrow buttons.
    */
-  private reorderLayer(id: string, targetId: string, before: boolean) {
+  /**
+   * Move a layer (or a whole group) next to another row. A layer dropped
+   * beside a group member joins that group, unless `outside` is set: then it
+   * lands beside the whole block instead, which is how a layer gets past a
+   * group that sits at the very top or bottom of the list.
+   */
+  private reorderLayer(id: string, targetId: string, before: boolean, outside = false) {
     if (id === targetId) return;
     this.mutate((c) => {
       const rows = c.elements.filter((e) => !isAttachedTap(c, e));
@@ -2197,7 +2211,7 @@ export class WristAssistantPanel extends LitElement {
       if (moving.length === 0 || moving.includes(target)) return;
       shown = shown.filter((e) => !moving.includes(e));
       let at: number;
-      if (movingGroup && target.payload.groupId !== undefined) {
+      if ((movingGroup || outside) && target.payload.groupId !== undefined) {
         // Beside the target's whole block, not inside it.
         const block = shown.filter((e) => e.payload.groupId === target.payload.groupId);
         at = before ? shown.indexOf(block[0]!) : shown.indexOf(block[block.length - 1]!) + 1;
@@ -2207,7 +2221,7 @@ export class WristAssistantPanel extends LitElement {
       shown.splice(at, 0, ...moving);
       if (!movingGroup) {
         const el = moving[0]!;
-        const gid = target.payload.groupId;
+        const gid = outside ? undefined : target.payload.groupId;
         if (gid === undefined) delete el.payload.groupId;
         else el.payload.groupId = gid;
       }
@@ -2343,7 +2357,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="grip" title="Drag to reorder. Drop on a folder to put it inside.">${uiIcon("grip")}</span>
         <span class="bar"></span>
         <span class="name">
-          <b>${layerTitle(el, ctx)}</b>
+          <b>${el.kind === "icon" ? html`<span class="glyph">${this.icons.render(resolver.resolve(el.payload.symbol) ?? "questionmark", 16, el.payload.colorSlot.baseColorHex) ?? nothing}</span>` : nothing}${layerTitle(el, ctx)}</b>
           <small><span class="kind">${KIND_LABEL[el.kind]}</span> · ${layerMeta(el, resolver)}</small>
         </span>
         <span class="right">
@@ -2367,21 +2381,45 @@ export class WristAssistantPanel extends LitElement {
       const hl = this.inspect.kind === "group" && this.inspect.id === g.id;
       const open = !this.collapsed.has(g.id);
       const d = this.rowDrag(g.id, edit);
-      // Dropping a layer onto the folder row itself puts it in at the top.
+      // The folder row has three drop zones. Its top edge puts the dragged row
+      // above the whole group, outside it. The middle puts it inside, at the
+      // top. When the group is folded, its bottom edge puts the row below the
+      // whole group. That is what lets a row get past a group that sits at
+      // the very top of the list.
       const first = members[0];
-      return html`<div class="layer group ${hl ? "hl" : ""}" style=${`--k:${SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
+      const last = members[members.length - 1];
+      const zones = ["drop-before", "drop-into", "drop-after"];
+      const zoneAt = (e: DragEvent): string => {
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        const y = (e.clientY - r.top) / r.height;
+        if (y < 0.25) return "drop-before";
+        if (!open && y > 0.75) return "drop-after";
+        return "drop-into";
+      };
+      return html`<div class="layer group ${hl ? "hl" : ""} ${g.locked ? "locked" : ""}" style=${`--k:${g.locked ? SECTION_COLOR.locked : SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
         @click=${() => { this.multi = new Set(); this.inspect = { kind: "group", id: g.id }; }}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "group", id: g.id }; }}
         @dragstart=${d.onStart} @dragend=${d.onEnd}
-        @dragover=${(e: DragEvent) => { if (!this.dragId || this.dragId === g.id) return; e.preventDefault(); (e.currentTarget as HTMLElement).classList.add("drop-into"); }}
-        @dragleave=${(e: DragEvent) => { (e.currentTarget as HTMLElement).classList.remove("drop-into"); }}
+        @dragover=${(e: DragEvent) => {
+          if (!this.dragId || this.dragId === g.id) return;
+          e.preventDefault();
+          const row = e.currentTarget as HTMLElement;
+          const zone = zoneAt(e);
+          for (const z of zones) row.classList.toggle(z, z === zone);
+        }}
+        @dragleave=${(e: DragEvent) => { (e.currentTarget as HTMLElement).classList.remove(...zones); }}
         @drop=${(e: DragEvent) => {
           e.preventDefault();
-          (e.currentTarget as HTMLElement).classList.remove("drop-into");
+          const row = e.currentTarget as HTMLElement;
+          const zone = zoneAt(e);
+          row.classList.remove(...zones);
           const id = this.dragId;
           this.dragId = undefined;
-          if (!id || this.isGroupId(id)) return;
-          if (first) this.reorderLayer(id, first.payload.id, true);
+          if (!id || !first || !last) return;
+          if (zone === "drop-before") { this.reorderLayer(id, first.payload.id, true, true); return; }
+          if (zone === "drop-after") { this.reorderLayer(id, last.payload.id, false, true); return; }
+          if (this.isGroupId(id)) return;
+          this.reorderLayer(id, first.payload.id, true);
           this.mutate((c) => setGroup(c, id, g.id));
         }}>
         <button class="chev" aria-expanded=${open ? "true" : "false"} title=${open ? "Fold the group" : "Unfold the group"}
@@ -2444,8 +2482,11 @@ export class WristAssistantPanel extends LitElement {
         @drop=${(e: DragEvent) => {
           e.preventDefault();
           (e.currentTarget as HTMLElement).classList.remove("drop-before");
-          const last = ordered[ordered.length - 1];
-          if (this.dragId && last) this.reorderLayer(this.dragId, last.payload.id, false);
+          // The very bottom, outside any group. The anchor is the lowest row
+          // that is not part of what is being dragged.
+          const id = this.dragId;
+          const last = [...ordered].reverse().find((e) => e.payload.id !== id && e.payload.groupId !== id);
+          if (id && last) this.reorderLayer(id, last.payload.id, false, true);
           this.dragId = undefined;
         }}>
         <span class="grip">${uiIcon("shape")}</span>
@@ -2740,14 +2781,23 @@ export class WristAssistantPanel extends LitElement {
             art = layout ? renderLayout(layout, { icons: this.icons, imageSizes: this.imageSizes, slot: REFERENCE_CASE.slots[f] }) : nothing;
           }
           const empty = f !== "inline" && cfg.elements.every((e) => effectivePlacement(cfg, f, e).isHidden || e.payload.isHidden) && cfg.elements.length > 0;
-          return html`<button class="tile ${f}" aria-pressed=${active ? "true" : "false"} title=${`Edit the ${familyTitle(f)} shape`}
-            @click=${() => { this.activeFamily = f; if (f === "inline" && this.inspect.kind === "layer") this.inspect = { kind: "family" }; }}>
-            <span class="art">${art}</span>
-            <span class="lbl">${familyTitle(f)}${empty ? html`<small>· nothing shown</small>` : nothing}${active ? html`<small>· editing</small>` : nothing}</span>
-          </button>`;
+          const removable = this.canEdit && canRemoveFamily(cfg, f);
+          // The remove button sits beside the tile, not inside it: a button
+          // inside a button is not valid markup.
+          return html`<div class="tile-wrap">
+            <button class="tile ${f}" aria-pressed=${active ? "true" : "false"} title=${`Edit the ${familyTitle(f)} shape`}
+              @click=${() => { this.activeFamily = f; if (f === "inline" && this.inspect.kind === "layer") this.inspect = { kind: "family" }; }}>
+              <span class="art">${art}</span>
+              <span class="lbl">${familyTitle(f)}${empty ? html`<small>· nothing shown</small>` : nothing}${active ? html`<small>· editing</small>` : nothing}</span>
+            </button>
+            ${this.canEdit ? html`<button class="icon danger tile-x" ?disabled=${!removable}
+              title=${removable ? `Remove the ${familyTitle(f)} shape` : "The only shape. Add another before removing it."}
+              aria-label=${`Remove the ${familyTitle(f)} shape`}
+              @click=${(e: Event) => { e.stopPropagation(); this.removeShape(f); }}>${uiIcon("delete")}</button>` : nothing}
+          </div>`;
         })}
       </div>
-      <div class="help">Click a shape to edit it in the big preview. Each shape keeps its own placements. Remove a shape from its own card on the right.</div>
+      <div class="help">Click a shape to edit it in the big preview. Each shape keeps its own placements. The bin on a card removes that shape.</div>
     </div>`;
   }
 

@@ -38,4 +38,6 @@ export const SECTION_COLOR = {
   place: "#78909c",
   complication: "#5c6bc0",
   group: "#90a4ae",
+  /** A locked group reads in red, so it stands out from the rest of the list. */
+  locked: "#e53935",
 } as const;
