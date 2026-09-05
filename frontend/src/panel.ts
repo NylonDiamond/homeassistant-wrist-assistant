@@ -536,13 +536,19 @@ export class WristAssistantPanel extends LitElement {
     button.preset:hover:not(:disabled) { color: var(--primary-color); border-color: var(--primary-color); }
 
     /* Layers: one row per layer, coloured by kind, the shape pinned last. */
-    .layers { display: flex; flex-direction: column; gap: 3px; }
+    .layers { display: flex; flex-direction: column; gap: 6px; }
+    /* Every row is its own outlined container at rest. The border is what
+       tells one row from the next, so nothing here may set it to transparent. */
     .layer {
       display: grid; grid-template-columns: 16px 4px minmax(0, 1fr) auto; align-items: center; gap: 8px;
-      padding: 6px 6px 6px 4px; border-radius: 8px; border: 1px solid transparent; background: transparent;
+      padding: 6px 6px 6px 4px; border-radius: 8px;
+      border: 1px solid var(--wa-line); background: color-mix(in srgb, var(--wa-panel) 30%, var(--wa-card));
       cursor: pointer; user-select: none; position: relative; font-size: 13px;
     }
-    .layer:hover { background: var(--wa-panel); }
+    /* A group's members keep their own outline, one shade deeper, so they read
+       as nested and still separate from each other. */
+    .layer.kid { background: color-mix(in srgb, var(--wa-panel) 60%, var(--wa-card)); }
+    .layer:hover { background: var(--wa-panel); border-color: color-mix(in srgb, var(--k) 45%, var(--wa-line)); }
     .layer.hl { border-color: var(--k); background: color-mix(in srgb, var(--k) 12%, var(--wa-card)); }
     .layer.pick { box-shadow: inset 0 0 0 2px var(--primary-color); }
     .layer .grip { color: var(--wa-muted); opacity: .6; display: grid; place-items: center; cursor: grab; }
@@ -569,14 +575,13 @@ export class WristAssistantPanel extends LitElement {
     .layer .acts button.icon { width: 24px; height: 24px; }
     .layer .acts svg.ui-icon { width: 15px; height: 15px; }
     .layer.dragging { opacity: .4; }
-    .layer.drop-before { box-shadow: 0 -2px 0 0 var(--primary-color); }
-    .layer.drop-after { box-shadow: 0 2px 0 0 var(--primary-color); }
-    .layer.pinned { margin-top: 6px; border: 1px dashed var(--wa-line); }
+    .layer.pinned { border-style: dashed; }
     .layer.pinned.hl { border-style: solid; }
     .layer.pinned .grip { cursor: default; opacity: .8; }
     .layer.pinned .bar { background: repeating-linear-gradient(180deg, var(--k) 0 3px, transparent 3px 6px); }
     .group-cta {
       display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 8px; margin-bottom: 6px; border-radius: 8px;
+      border: 1px solid color-mix(in srgb, var(--primary-color) 30%, transparent);
       background: color-mix(in srgb, var(--primary-color) 12%, transparent);
     }
     .group-cta .spacer { flex: 1; }
@@ -596,7 +601,14 @@ export class WristAssistantPanel extends LitElement {
     .layer .lockbtn svg.ui-icon { width: 15px; height: 15px; }
     .layer .lockbtn.on { opacity: 1; color: ${unsafeCSS(SECTION_COLOR.locked)}; filter: drop-shadow(0 0 4px ${unsafeCSS(SECTION_COLOR.locked)}); }
     .layer:hover .lockbtn, .layer.hl .lockbtn { opacity: 1; }
-    .group-kids { margin: 2px 0 4px 14px; padding-left: 8px; border-left: 2px solid var(--wa-line); display: flex; flex-direction: column; gap: 3px; }
+    .group-kids {
+      margin: 0 0 0 14px; padding-left: 10px; display: flex; flex-direction: column; gap: 6px;
+      border-left: 2px solid color-mix(in srgb, var(--wa-line) 60%, transparent);
+    }
+    /* Drop targets last, so the bar and the tinted edge beat whatever the row
+       already had on its own border. */
+    .layer.drop-before { border-top-color: var(--primary-color); box-shadow: 0 -3px 0 0 var(--primary-color); }
+    .layer.drop-after { border-bottom-color: var(--primary-color); box-shadow: 0 3px 0 0 var(--primary-color); }
 
     /* The canvas column: one card holding the bar, the big preview and the
        strip of things about the whole complication. */
