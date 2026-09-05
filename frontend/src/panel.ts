@@ -139,7 +139,9 @@ const CANVAS_MIN = 320;
  * gutter with two. */
 const CHROME_3 = 32 + 4 * 8 + 2 * 8;
 const CHROME_2 = 32 + 2 * 8 + 8;
-const COL_STORE_KEY = "wrist-assistant-panel.columns";
+/** Versioned: widths dragged for the old three-list layout gave the preview
+ * the narrowest column of the three, so they start over here. */
+const COL_STORE_KEY = "wrist-assistant-panel.columns.v2";
 
 const clampColumn = (n: number) => Math.max(COL_MIN, Math.min(COL_MAX, Math.round(n)));
 
@@ -2686,10 +2688,16 @@ function layerMeta(el: CElement, resolver: Resolver): string {
   }
 }
 
+/** A literal reads as `"lock"` in a rule, where the quotes say it is not an
+ * entity; as a row title the name alone is the clearer thing. */
+function unquote(s: string): string {
+  return s.length >= 2 && s.startsWith("\"") && s.endsWith("\"") ? s.slice(1, -1) : s;
+}
+
 function layerTitle(el: CElement, ctx?: DescribeContext): string {
   switch (el.kind) {
-    case "text": return describeValue(el.payload.value, ctx);
-    case "icon": return describeValue(el.payload.symbol, ctx);
+    case "text": return unquote(describeValue(el.payload.value, ctx));
+    case "icon": return unquote(describeValue(el.payload.symbol, ctx));
     case "gauge": return describeValue(el.payload.value, ctx);
     case "shape": return el.payload.kind;
     case "image": {
