@@ -403,6 +403,13 @@ describe("drawing a chart", () => {
   });
 });
 
+/** Turn a chart into a colour table: `[upTo, colour]` steps plus the rest. */
+function band(p: ChartElement, table: [number, string][], above = "#FF0000") {
+  p.coloring = "bands";
+  p.bands = table.map(([upTo, colorHex], i) => ({ id: `B${i}`, upTo, colorHex }));
+  p.bandAboveColorHex = above;
+}
+
 describe("colouring a chart by value", () => {
   it("carries no per-reading colours while the chart is one colour", () => {
     const { cfg, state } = chartConfig("1,5,9");
@@ -410,50 +417,48 @@ describe("colouring a chart by value", () => {
   });
 
   it("gives each reading the colour of the band it falls in", () => {
-    const { cfg, state } = chartConfig("5, 10, 15, 20, 25", (p) => {
-      p.coloring = "bands";
-      p.bandLowerBound = 10;
-      p.bandUpperBound = 20;
-      p.colorSlot.baseColorHex = "#9A6BFF";
-      p.bandLowColorHex = "#00FF00";
-      p.bandHighColorHex = "#FF0000";
-    });
-    // Only strictly outside gets a band colour, so a reading sitting exactly on a
-    // threshold is not yet an alarm.
+    const { cfg, state } = chartConfig("5, 10, 15, 20, 25",
+      (p) => band(p, [[10, "#00FF00"], [20, "#9A6BFF"]]));
+    // A band says where it ends, so a reading sitting exactly on a step belongs to
+    // that step rather than to the one after it.
     expect(chartOf(rectangular(cfg, state)).pointColorHexes)
-      .toEqual(["#00FF00", "#9A6BFF", "#9A6BFF", "#9A6BFF", "#FF0000"]);
+      .toEqual(["#00FF00", "#00FF00", "#9A6BFF", "#9A6BFF", "#FF0000"]);
   });
 
-  it("reads bounds typed the wrong way round as low and high anyway", () => {
-    const { cfg, state } = chartConfig("5, 15, 25", (p) => {
-      p.coloring = "bands";
-      p.bandLowerBound = 20;
-      p.bandUpperBound = 10;
-      p.bandLowColorHex = "#00FF00";
-      p.bandHighColorHex = "#FF0000";
-    });
+  it("takes as many steps as the table has", () => {
+    const { cfg, state } = chartConfig("5, 15, 25, 35",
+      (p) => band(p, [[10, "#FF0000"], [20, "#FF9500"], [30, "#FFD60A"]], "#32D74B"));
     expect(chartOf(rectangular(cfg, state)).pointColorHexes)
-      .toEqual(["#00FF00", "#FFFFFF", "#FF0000"]);
+      .toEqual(["#FF0000", "#FF9500", "#FFD60A", "#32D74B"]);
+  });
+
+  it("reads steps typed out of order lowest first anyway", () => {
+    const { cfg, state } = chartConfig("5, 15, 25",
+      (p) => band(p, [[20, "#FF9500"], [10, "#FF0000"]], "#32D74B"));
+    expect(chartOf(rectangular(cfg, state)).pointColorHexes)
+      .toEqual(["#FF0000", "#FF9500", "#32D74B"]);
+  });
+
+  it("leaves a chart with an empty table one colour", () => {
+    const { cfg, state } = chartConfig("5, 15, 25", (p) => { p.coloring = "bands"; });
+    expect(chartOf(rectangular(cfg, state)).pointColorHexes).toEqual([]);
   });
 
   it("has no colours to hand out when the series is empty", () => {
-    const { cfg, state } = chartConfig("unavailable", (p) => { p.coloring = "bands"; });
+    const { cfg, state } = chartConfig("unavailable",
+      (p) => band(p, [[10, "#00FF00"]]));
     expect(chartOf(rectangular(cfg, state)).pointColorHexes).toEqual([]);
   });
 
   it("paints each bar its own band and lets a highlight win over it", () => {
     const { cfg } = chartConfig("5, 15, 25", (p) => {
-      p.coloring = "bands";
-      p.bandLowerBound = 10;
-      p.bandUpperBound = 20;
-      p.bandLowColorHex = "#00FF00";
-      p.bandHighColorHex = "#FF0000";
+      band(p, [[10, "#00FF00"], [20, "#9A6BFF"]]);
       p.highlight = "highest";
       p.highColorHex = "#FF6B35";
     });
     const svg = flatten(renderLayout(rectangular(cfg, "5, 15, 25"), { icons: noIcons }));
     expect(svg).toContain("#00FF00");
-    // The tallest reading is in the high band, but the highlight is the more
+    // The tallest reading is past the last band, but the highlight is the more
     // specific statement, so its colour is what lands.
     expect(svg).not.toContain("#FF0000");
     expect(svg).toContain("#FF6B35");
@@ -462,17 +467,125 @@ describe("colouring a chart by value", () => {
   it("splits a banded line into one stroke per leg", () => {
     const { cfg } = chartConfig("5, 15, 25", (p) => {
       p.style = "line";
-      p.coloring = "bands";
-      p.bandLowerBound = 10;
-      p.bandUpperBound = 20;
-      p.bandLowColorHex = "#00FF00";
-      p.bandHighColorHex = "#FF0000";
+      band(p, [[10, "#00FF00"], [20, "#9A6BFF"]]);
     });
     const svg = flatten(renderLayout(rectangular(cfg, "5, 15, 25"), { icons: noIcons }));
     // Two readings make one leg, three make two. Each takes the band of the reading
     // it arrives at, so the last leg carries the newest reading's colour.
     expect(svg.match(/stroke-linejoin/g) ?? []).toHaveLength(2);
     expect(svg).toContain("#FF0000");
+  });
+
+  it("leaves an area's fill one colour until asked otherwise", () => {
+    const { cfg } = chartConfig("5, 15, 25", (p) => {
+      p.style = "area";
+      band(p, [[10, "#00FF00"], [20, "#9A6BFF"]]);
+      p.colorSlot.baseColorHex = "#123456";
+    });
+    const svg = flatten(renderLayout(rectangular(cfg, "5, 15, 25"), { icons: noIcons }));
+    // One wash, in the layer's own colour, under a banded stroke.
+    expect(svg.match(/fill-opacity=0\.28/g) ?? []).toHaveLength(1);
+    expect(svg).toContain("#123456");
+  });
+
+  it("bands an area's fill when asked, one quad per leg", () => {
+    const { cfg } = chartConfig("5, 15, 25", (p) => {
+      p.style = "area";
+      band(p, [[10, "#00FF00"], [20, "#9A6BFF"]]);
+      p.fillBands = true;
+    });
+    const svg = flatten(renderLayout(rectangular(cfg, "5, 15, 25"), { icons: noIcons }));
+    // Two legs, so two quads, each at the same wash opacity as the single fill.
+    expect(svg.match(/fill-opacity=0\.28/g) ?? []).toHaveLength(2);
+  });
+
+  it("reads the two-bound band shape forward into a table", () => {
+    // What the first cut of banded colour wrote, on the morning of 2026-09-05.
+    const doc = {
+      schemaVersion: 6,
+      id: "AAAAAAAA-0000-4000-8000-0000000000FF",
+      name: "Old",
+      slotIndex: 0,
+      supportedFamilies: ["rectangular"],
+      values: [],
+      elements: [{
+        kind: "chart",
+        payload: {
+          id: "EEEEEEEE-0000-4000-8000-0000000000FF",
+          value: { kind: { kind: "literal", value: "5,15,25" } },
+          colorSlot: { baseColorHex: "#9A6BFF" },
+          coloring: "bands",
+          bandLowerBound: 10,
+          bandUpperBound: 20,
+          bandLowColorHex: "#00FF00",
+          bandHighColorHex: "#FF0000",
+        },
+      }],
+      perFamily: [],
+      dataSources: [],
+      refreshMinutes: 15,
+      tapAction: { type: "refresh" },
+    };
+    const parsed = parseConfig(doc);
+    const el = parsed.elements[0]!;
+    if (el.kind !== "chart") throw new Error("expected a chart");
+    expect(el.payload.bands.map((b): [number, string] => [b.upTo, b.colorHex]))
+      .toEqual([[10, "#00FF00"], [20, "#9A6BFF"]]);
+    expect(el.payload.bandAboveColorHex).toBe("#FF0000");
+    // And the retired keys are not written back out.
+    const encoded = encodeConfig(parsed) as Record<string, unknown>;
+    const payload = (encoded.elements as { payload: Record<string, unknown> }[])[0]!.payload;
+    expect(payload.bandLowerBound).toBeUndefined();
+    expect(payload.bandLowColorHex).toBeUndefined();
+  });
+});
+
+describe("printing the newest reading", () => {
+  it("prints nothing by default", () => {
+    const { cfg, state } = chartConfig("1,2,3");
+    expect(chartOf(rectangular(cfg, state)).latestLabel).toBeUndefined();
+  });
+
+  it("prints the last reading, formatted like the scale", () => {
+    const label = (state: string) =>
+      chartOf(rectangular(chartConfig(state, (p) => { p.latestLabel = "corner"; }).cfg, state)).latestLabel;
+    expect(label("13, 20, 30")).toBe("30");
+    expect(label("9, 11, 12")).toBe("12.0");
+  });
+
+  it("follows the trimmed series, not the raw one", () => {
+    const { cfg, state } = chartConfig("13, 20, 30", (p) => {
+      p.latestLabel = "end";
+      p.limit = 2;
+    });
+    // 20 is the newest thing drawn, and the trim also narrows the span to 7,
+    // which is what puts a decimal on it.
+    expect(chartOf(rectangular(cfg, state)).latestLabel).toBe("20.0");
+  });
+
+  it("takes the newest reading's own band colour", () => {
+    const { cfg, state } = chartConfig("5, 15, 25", (p) => {
+      band(p, [[10, "#00FF00"], [20, "#9A6BFF"]]);
+      p.latestLabel = "corner";
+    });
+    expect(chartOf(rectangular(cfg, state)).latestLabelColorHex).toBe("#FF0000");
+
+    const plain = chartConfig("5, 15, 25", (p) => {
+      p.latestLabel = "corner";
+      p.scaleLabelColorHex = "#ABCDEF";
+    });
+    expect(chartOf(rectangular(plain.cfg, plain.state)).latestLabelColorHex).toBe("#ABCDEF");
+  });
+
+  it("draws it against the right-hand edge", () => {
+    const { cfg } = chartConfig("13,20,30", (p) => { p.latestLabel = "corner"; });
+    const svg = flatten(renderLayout(rectangular(cfg, "13,20,30"), { icons: noIcons }));
+    expect(svg).toContain(">30<");
+  });
+
+  it("prints nothing when there is nothing to draw", () => {
+    const { cfg, state } = chartConfig("unavailable", (p) => { p.latestLabel = "corner"; });
+    expect(chartOf(rectangular(cfg, state)).latestLabel).toBeUndefined();
   });
 });
 
@@ -531,5 +644,22 @@ describe("printing a chart's scale", () => {
     // every bar is narrower than it was without the numbers.
     expect(labelled[0]!.x).toBeGreaterThan(plain[0]!.x);
     expect(labelled[0]!.w).toBeLessThan(plain[0]!.w);
+  });
+
+  it("costs the plot nothing when the labels sit over the chart", () => {
+    const plain = rects(flatten(renderLayout(
+      rectangular(chartConfig("13,20,30").cfg, "13,20,30"), { icons: noIcons })));
+    const { cfg } = chartConfig("13,20,30", (p) => {
+      p.scaleLabels = "range";
+      p.scaleLabelPlacement = "overlay";
+    });
+    const svg = flatten(renderLayout(rectangular(cfg, "13,20,30"), { icons: noIcons }));
+    const overlaid = rects(svg);
+
+    // Same numbers, in the same place a gutter would have put them, but the bars
+    // are exactly where they were before the labels existed.
+    expect(svg).toContain(">30<");
+    expect(overlaid[0]!.x).toBeCloseTo(plain[0]!.x, 6);
+    expect(overlaid[0]!.w).toBeCloseTo(plain[0]!.w, 6);
   });
 });

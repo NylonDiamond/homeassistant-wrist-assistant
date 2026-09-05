@@ -254,13 +254,14 @@ function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box
   // outside a plot sized to the frame. Bars are filled inside theirs.
   const inset = el.style === "bars" ? 0 : el.lineWidth / 2;
 
-  // Scale labels get their own strip down the left. Taking it out of the plot
-  // rather than drawing over the marks means a bar can never sit behind a
-  // number, which at this size is the difference between a reading and a smudge.
-  const gutter = chartScaleLabelWidth(
+  // Scale labels can take a strip down the left, which nothing else may draw in,
+  // or sit over the marks and cost the plot nothing. The strip is the safe
+  // reading; the overlay is the one that keeps a narrow chart wide.
+  const strip = chartScaleLabelWidth(
     [el.topLabel, el.bottomLabel].filter((t): t is string => t !== undefined),
     CHART_SCALE_LABEL_SIZE,
   );
+  const gutter = el.scaleLabelPlacement === "gutter" ? strip : 0;
   const plotX = box.x + gutter;
   const plotW = Math.max(box.w - gutter, 0);
 
@@ -283,9 +284,13 @@ function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box
     count: values.length,
     barWidth,
     labelGutter: gutter,
-    /** Middle of the label gutter, in the same absolute space as everything else
-     * the renderer draws. */
-    labelCenterX: box.x + gutter / 2,
+    /** Where a scale label is centred, in the same absolute space as everything
+     * else the renderer draws. Overlaid labels still sit where a gutter would
+     * have put them, so switching placement moves the plot rather than the
+     * numbers. */
+    labelCenterX: box.x + strip / 2,
+    /** Right-hand edge of the frame, where the newest reading is anchored. */
+    frameRight: box.x + box.w,
     plotTop: top,
     plotBottom: bottom,
     baselineY: growsFromBottom ? bottom : y(0),
@@ -317,6 +322,11 @@ function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box
     markerCenter(index: number, bars: boolean) {
       const r = bars ? this.barRect(index) : undefined;
       return { x: r ? r.x + r.w / 2 : this.point(index).x, y: box.y + band / 2 };
+    },
+    /** Where a reading's mark sits vertically: the top of its bar, or the point
+     * the line passes through. What anchors a label to the newest reading. */
+    readingTop(index: number, bars: boolean) {
+      return bars ? this.barRect(index).y : this.point(index).y;
     },
   };
 }
@@ -350,11 +360,22 @@ function renderChart(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) 
     const points = Array.from({ length: g.count }, (_, i) => g.point(i));
     const line = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x} ${p.y}`).join(" ");
     if (el.style === "area") {
-      // The fill stays one colour even when the stroke is banded: tinting it would
-      // need a clip per band, and a banded wash under a banded line is noise.
-      const area = `${line} L${points[points.length - 1]!.x} ${g.baselineY} L${points[0]!.x} ${g.baselineY} Z`;
-      body.push(svg`<path d=${area} fill=${base.fill}
-        fill-opacity=${(base["fill-opacity"] as number) * 0.28} stroke="none" />`);
+      if (el.fillBands && banded && g.count > 1) {
+        // One quad per leg, each under its own stretch of line. No clipping and no
+        // gradient: the quads share their edges, so they read as one wash.
+        for (let i = 0; i < g.count - 1; i++) {
+          const a = points[i]!;
+          const b = points[i + 1]!;
+          const colour = bandAt(i + 1);
+          const quad = `M${a.x} ${a.y} L${b.x} ${b.y} L${b.x} ${g.baselineY} L${a.x} ${g.baselineY} Z`;
+          body.push(svg`<path d=${quad} fill=${colour.fill}
+            fill-opacity=${(colour["fill-opacity"] as number) * 0.28} stroke="none" />`);
+        }
+      } else {
+        const area = `${line} L${points[points.length - 1]!.x} ${g.baselineY} L${points[0]!.x} ${g.baselineY} Z`;
+        body.push(svg`<path d=${area} fill=${base.fill}
+          fill-opacity=${(base["fill-opacity"] as number) * 0.28} stroke="none" />`);
+      }
     }
     if (banded && g.count > 1) {
       // A stroke cannot change colour halfway, so a banded line is drawn one
@@ -393,18 +414,29 @@ function renderChart(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) 
   // The numbers sit in the gutter the geometry reserved, lined up with the top and
   // bottom of the plot rather than the frame: that is where the domain ends actually
   // land, so the number a reader sees is the number the tallest bar means.
-  if (el.topLabel !== undefined || el.bottomLabel !== undefined) {
-    const c = colorAttrs(el.scaleLabelColorHex, "fill");
-    const label = (text: string, y: number) => svg`<text x=${g.labelCenterX} y=${y}
+  const label = (text: string, x: number, y: number, hex: string) => {
+    const c = colorAttrs(hex, "fill");
+    return svg`<text x=${x} y=${y}
       text-anchor="middle" dominant-baseline="central" font-size=${CHART_SCALE_LABEL_SIZE}
       font-family="ui-rounded, system-ui, sans-serif" font-weight="500"
       fill=${c.fill} fill-opacity=${c["fill-opacity"]}>${text}</text>`;
-    if (el.topLabel !== undefined) {
-      body.push(label(el.topLabel, g.plotTop + CHART_SCALE_LABEL_SIZE / 2));
-    }
-    if (el.bottomLabel !== undefined) {
-      body.push(label(el.bottomLabel, g.plotBottom - CHART_SCALE_LABEL_SIZE / 2));
-    }
+  };
+  if (el.topLabel !== undefined) {
+    body.push(label(el.topLabel, g.labelCenterX, g.plotTop + CHART_SCALE_LABEL_SIZE / 2, el.scaleLabelColorHex));
+  }
+  if (el.bottomLabel !== undefined) {
+    body.push(label(el.bottomLabel, g.labelCenterX, g.plotBottom - CHART_SCALE_LABEL_SIZE / 2, el.scaleLabelColorHex));
+  }
+  // The newest reading, right-aligned against the frame's own edge. "corner" parks
+  // it at the top; "end" follows the last mark's height, clamped so a reading at
+  // either extreme still has the whole number inside the frame.
+  if (el.latestLabel !== undefined) {
+    const width = chartScaleLabelWidth([el.latestLabel], CHART_SCALE_LABEL_SIZE);
+    const half = CHART_SCALE_LABEL_SIZE / 2;
+    const y = el.latestLabelPlacement === "corner"
+      ? g.plotTop + half
+      : Math.min(Math.max(g.readingTop(g.count - 1, el.style === "bars"), box.y + half), g.plotBottom - half);
+    body.push(label(el.latestLabel, g.frameRight - width / 2, y, el.latestLabelColorHex));
   }
 
   return svg`${body}`;

@@ -1,6 +1,6 @@
 {
   "name": "Chart series",
-  "description": "Four chart layers, pinning the parts the Swift and TypeScript resolvers each compute for themselves: how a string is scanned for numbers, how `limit` trims it, what the auto and zero-baseline scales come out as, and which readings the highlight lands on. The prices layer is the Zonneplan shape a forecast sensor actually has, units and all. The window layer trims 12 readings to the last 4. The negative layer proves a zero baseline stretches the range across zero rather than clipping it. The history layer draws a recorder series instead of its own value, which is the one case where the entity's own state must be ignored: `sensor.voltage` reads 3068 and the chart must not show that single number. The prices layer also pins the two colour and label features: its readings are banded on their own values (under 18 green, over 25 red, the rest the layer's purple) and both ends of its scale are printed. The window layer pins the decimal rule, which reads the span rather than the number: a spread of 3 prints one decimal, so its top reads 12.0 while the voltage layer's spread of 12 prints 3075 flat.",
+  "description": "Four chart layers, pinning the parts the Swift and TypeScript resolvers each compute for themselves: how a string is scanned for numbers, how `limit` trims it, what the auto and zero-baseline scales come out as, and which readings the highlight lands on. The prices layer is the Zonneplan shape a forecast sensor actually has, units and all. The window layer trims 12 readings to the last 4. The negative layer proves a zero baseline stretches the range across zero rather than clipping it. The history layer draws a recorder series instead of its own value, which is the one case where the entity's own state must be ignored: `sensor.voltage` reads 3068 and the chart must not show that single number. The prices layer also pins the two colour and label features: its readings are banded on their own values through a three-step colour table and both ends of its scale are printed. The window layer pins the decimal rule, which reads the span rather than the number: a spread of 3 prints one decimal, so its top reads 12.0 while the voltage layer's spread of 12 prints 3075 flat. The voltage layer prints its newest reading and lets its scale labels sit over the marks rather than beside them, so the plot keeps its full width.",
   "config": {
     "schemaVersion": 6,
     "id": "AAAAAAAA-0000-4000-8000-0000000000C0",
@@ -39,12 +39,24 @@
           "lowColorHex": "#32D74B",
           "marker": "pointer",
           "coloring": "bands",
-          "bandLowColorHex": "#32D74B",
-          "bandHighColorHex": "#FF453A",
-          "bandLowerBound": 18,
-          "bandUpperBound": 25,
+          "bands": [
+            {
+              "id": "BBBBBBBB-0000-4000-8000-000000000001",
+              "upTo": 14,
+              "colorHex": "#32D74B"
+            },
+            {
+              "id": "BBBBBBBB-0000-4000-8000-000000000002",
+              "upTo": 22,
+              "colorHex": "#FFD60A"
+            }
+          ],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
           "scaleLabels": "range",
+          "scaleLabelPlacement": "gutter",
           "scaleLabelColorHex": "#FFFFFF99",
+          "latestLabel": "none",
           "colorSlot": {
             "baseColorHex": "#9A6BFF"
           },
@@ -87,12 +99,13 @@
           "lowColorHex": "#32D74B",
           "marker": "dot",
           "coloring": "uniform",
-          "bandLowColorHex": "#32D74B",
-          "bandHighColorHex": "#FF453A",
-          "bandLowerBound": 0,
-          "bandUpperBound": 100,
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
           "scaleLabels": "top",
+          "scaleLabelPlacement": "gutter",
           "scaleLabelColorHex": "#FFFFFF99",
+          "latestLabel": "none",
           "colorSlot": {
             "baseColorHex": "#FFFFFF"
           },
@@ -135,12 +148,13 @@
           "lowColorHex": "#32D74B",
           "marker": "pointer",
           "coloring": "uniform",
-          "bandLowColorHex": "#32D74B",
-          "bandHighColorHex": "#FF453A",
-          "bandLowerBound": 0,
-          "bandUpperBound": 100,
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
           "scaleLabels": "none",
+          "scaleLabelPlacement": "gutter",
           "scaleLabelColorHex": "#FFFFFF99",
+          "latestLabel": "none",
           "colorSlot": {
             "baseColorHex": "#FFFFFF"
           },
@@ -183,12 +197,13 @@
           "lowColorHex": "#32D74B",
           "marker": "dot",
           "coloring": "uniform",
-          "bandLowColorHex": "#32D74B",
-          "bandHighColorHex": "#FF453A",
-          "bandLowerBound": 0,
-          "bandUpperBound": 100,
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
           "scaleLabels": "range",
+          "scaleLabelPlacement": "overlay",
           "scaleLabelColorHex": "#FFFFFF99",
+          "latestLabel": "end",
           "colorSlot": {
             "baseColorHex": "#FFFFFF"
           },
@@ -280,13 +295,13 @@
           "colorHex": "#9A6BFF",
           "isHidden": false,
           "pointColorHexes": [
+            "#FFD60A",
             "#32D74B",
             "#32D74B",
-            "#32D74B",
-            "#32D74B",
-            "#9A6BFF",
-            "#9A6BFF",
-            "#9A6BFF",
+            "#FFD60A",
+            "#FFD60A",
+            "#FFD60A",
+            "#FF453A",
             "#FF453A",
             "#FF453A"
           ],
@@ -345,7 +360,8 @@
           "lowIndex": 4,
           "marker": "dot",
           "topLabel": "3075",
-          "bottomLabel": "3063"
+          "bottomLabel": "3063",
+          "latestLabel": "3070"
         }
       ]
     }

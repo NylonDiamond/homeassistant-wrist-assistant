@@ -8,7 +8,10 @@ import {
   type AggregateSpec,
   type BezelGauge,
   type ChartBaseline,
+  type ChartBand,
   type ChartColoring,
+  type ChartLabelPlacement,
+  type ChartLatestLabel,
   type ChartElement,
   type ChartHighlight,
   type ChartMarker,
@@ -42,6 +45,7 @@ import {
   type ValueFormat,
   type ValueKind,
   CHART_DEFAULT_BAND_HIGH_HEX,
+  chartSortedBands,
   CHART_DEFAULT_BAND_LOW_HEX,
   CHART_DEFAULT_HIGH_HEX,
   CHART_HISTORY_MAX_POINTS,
@@ -695,22 +699,40 @@ const CHART_COLORINGS: [ChartColoring, string][] = [
 const CHART_SCALE_LABEL_MODES: [ChartScaleLabels, string][] = [
   ["none", "None"], ["top", "Top value"], ["range", "Top and bottom"],
 ];
+const CHART_LABEL_PLACEMENTS: [ChartLabelPlacement, string][] = [
+  ["gutter", "Beside the chart"], ["overlay", "Over the chart"],
+];
+const CHART_LATEST_LABELS: [ChartLatestLabel, string][] = [
+  ["none", "None"], ["corner", "Top right"], ["end", "Beside the newest reading"],
+];
 
-/** Where the two band bounds land when the author first switches a chart to
+/** The colour table a chart starts with when the author first switches it to
  * banded colour.
  *
- * Seeded from the readings on screen rather than left at 0 and 100, because a
- * new setting that visibly does nothing reads as broken. Thirds of the current
+ * Seeded from the readings on screen rather than left empty, because a new
+ * setting that visibly does nothing reads as broken. Thirds of the current
  * spread is the same split the gauge preset uses, and it always paints all
  * three colours on the data in front of the author. */
-function seedBandBounds(values: readonly number[]): { lower: number; upper: number } | undefined {
-  if (values.length < 2) return undefined;
+function seedBands(values: readonly number[]): ChartBand[] {
+  const colors: [string, string] = [CHART_DEFAULT_BAND_LOW_HEX, "#FFD60A"];
+  if (values.length < 2) {
+    return colors.map((colorHex, i) => ({ id: newId(), upTo: (i + 1) * 33, colorHex }));
+  }
   const lo = Math.min(...values);
   const hi = Math.max(...values);
   const span = hi - lo;
-  if (!(span > 0)) return undefined;
   const round = (n: number) => Number(n.toFixed(span >= 10 ? 0 : 2));
-  return { lower: round(lo + span / 3), upper: round(lo + (span * 2) / 3) };
+  return colors.map((colorHex, i) => ({ id: newId(), upTo: round(lo + (span * (i + 1)) / 3), colorHex }));
+}
+
+/** A new row for the end of an existing table: one step past the last one, in
+ * the layer's own colour so it is visible before the author picks one. */
+function nextBand(el: ChartElement): ChartBand {
+  const last = chartSortedBands(el).at(-1);
+  const step = el.bands.length > 1
+    ? Math.abs(chartSortedBands(el)[1]!.upTo - chartSortedBands(el)[0]!.upTo)
+    : 10;
+  return { id: newId(), upTo: (last?.upTo ?? 0) + (step || 10), colorHex: el.colorSlot.baseColorHex };
 }
 
 const TIME_FIELDS: [TimeField, string][] = [
@@ -1646,33 +1668,52 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
           ? html`<div class="hint">A chart with no numbers on it shows that a reading moved, not
               what it moved to. Turn these on and the plot's own top (and bottom) print beside it.</div>`
           : html`
+            ${selectField("Labels sit", c.scaleLabelPlacement, CHART_LABEL_PLACEMENTS,
+              (v) => setChart((p) => { p.scaleLabelPlacement = v; }))}
             ${colorField("Label colour", c.scaleLabelColorHex,
               (v) => setChart((p) => { p.scaleLabelColorHex = v ?? CHART_DEFAULT_SCALE_LABEL_HEX; }, "sllcol"))}
             <div class="hint">The numbers come from the scale, so ${c.scale === "auto"
               ? "an Auto chart prints the readings it actually fitted, and they move as the data does."
-              : "a Fixed chart always prints the Min and Max above."} They sit in a strip down the
-              left, which the plot gives up: a wide chart barely notices, a narrow one does.</div>`}
+              : "a Fixed chart always prints the Min and Max above."} ${c.scaleLabelPlacement === "gutter"
+              ? "They sit in a strip down the left, which the plot gives up: a wide chart barely notices, a narrow one does."
+              : "They sit over the marks, so the plot keeps its full width and a busy left edge can end up behind a number."}</div>`}
+        ${selectField("Newest reading", c.latestLabel, CHART_LATEST_LABELS,
+          (v) => setChart((p) => { p.latestLabel = v; }))}
+        ${c.latestLabel === "none"
+          ? nothing
+          : html`<div class="hint">Printed at the right-hand edge, ${c.latestLabel === "corner"
+              ? "parked at the top wherever the data happens to be."
+              : "at the height of the last mark, so the number and the end of the line read as one thing."}
+              ${c.coloring === "bands" ? "It takes that reading's own band colour." : ""}</div>`}
         ${selectField("Colour", c.coloring, CHART_COLORINGS, (v) => setChart((p) => {
           p.coloring = v;
-          if (v === "bands" && p.bandLowerBound === 0 && p.bandUpperBound === 100) {
-            const seed = seedBandBounds(shown);
-            if (seed) { p.bandLowerBound = seed.lower; p.bandUpperBound = seed.upper; }
-          }
+          if (v === "bands" && p.bands.length === 0) p.bands = seedBands(shown);
         }))}
         ${c.coloring === "bands" ? html`
-          <div class="grid2">
-            ${colorField("Below colour", c.bandLowColorHex, (v) => setChart((p) => { p.bandLowColorHex = v ?? CHART_DEFAULT_BAND_LOW_HEX; }, "blcol"))}
-            ${colorField("Above colour", c.bandHighColorHex, (v) => setChart((p) => { p.bandHighColorHex = v ?? CHART_DEFAULT_BAND_HIGH_HEX; }, "bhcol"))}
-          </div>
-          <div class="grid2">
-            ${numberField("Below", c.bandLowerBound, (v) => setChart((p) => { p.bandLowerBound = v ?? 0; }, "blo"))}
-            ${numberField("Above", c.bandUpperBound, (v) => setChart((p) => { p.bandUpperBound = v ?? 100; }, "bhi"))}
-          </div>
-          <div class="hint">Readings under ${c.bandLowerBound} take the first colour, readings over
-            ${c.bandUpperBound} take the second, and everything between keeps the layer's own colour.
+          <div class="hint">Checked lowest first, so each row only says where it ends. A reading past
+            the last row takes the colour underneath.
             ${c.style === "bars"
               ? "Each bar is coloured on its own value."
-              : "A stroke cannot change colour halfway, so each leg of the line takes the band of the reading it arrives at. An area's fill stays one colour."}</div>`
+              : "A stroke cannot change colour halfway, so each leg of the line takes the band of the reading it arrives at."}</div>
+          ${c.bands.map((band, i) => html`
+            <div class="row-inline">
+              ${numberField("Up to", band.upTo,
+                (v) => setChart((p) => { const b = p.bands[i]; if (b) b.upTo = v ?? 0; }, `bup${band.id}`))}
+              ${colorField("Colour", band.colorHex,
+                (v) => setChart((p) => { const b = p.bands[i]; if (b) b.colorHex = v ?? "#FFFFFF"; }, `bcol${band.id}`))}
+              <button class="icon" title="Remove this band" aria-label="Remove this band"
+                @click=${() => setChart((p) => { p.bands = p.bands.filter((_, j) => j !== i); })}>${uiIcon("close")}</button>
+            </div>`)}
+          <button class="small" @click=${() => setChart((p) => { p.bands = [...p.bands, nextBand(p)]; })}>Add band</button>
+          ${colorField("And the rest", c.bandAboveColorHex,
+            (v) => setChart((p) => { p.bandAboveColorHex = v ?? CHART_DEFAULT_BAND_HIGH_HEX; }, "babove"))}
+          ${c.style === "area"
+            ? html`${checkField("Fill follows the bands", c.fillBands,
+                (v) => setChart((p) => { p.fillBands = v; }))}
+              <div class="hint">Off, the wash under the line stays one colour. On, each stretch of
+                fill takes its own band, which reads well on a chart that spends real time in more
+                than one band and as noise on one that flickers between them.</div>`
+            : nothing}`
           : nothing}
         ${selectField("Highlight", c.highlight, CHART_HIGHLIGHTS, (v) => setChart((p) => { p.highlight = v; }))}
         ${c.highlight === "none" ? nothing : html`

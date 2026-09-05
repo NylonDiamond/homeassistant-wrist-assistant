@@ -81,6 +81,8 @@ export type ChartHighlight = "none" | "highest" | "lowest" | "both";
 export type ChartMarker = "none" | "dot" | "pointer";
 export type ChartColoring = "uniform" | "bands";
 export type ChartScaleLabels = "none" | "top" | "range";
+export type ChartLabelPlacement = "gutter" | "overlay";
+export type ChartLatestLabel = "none" | "corner" | "end";
 export type ShapeKind = "rectangle" | "roundedRectangle" | "capsule" | "circle";
 export type CornerBodyShape = "circle" | "wedge";
 export type AggregateFunction = "count" | "sum" | "average" | "min" | "max";
@@ -315,19 +317,38 @@ export interface ChartElement extends ElementBase {
   /** Whether every reading shares one colour or takes the colour of the band it
    * falls in. */
   coloring: ChartColoring;
-  /** Colour of a reading below `bandLowerBound`. Only read when banding. */
-  bandLowColorHex: string;
-  /** Colour of a reading above `bandUpperBound`. Only read when banding. */
-  bandHighColorHex: string;
-  bandLowerBound: number;
-  /** Everything between the two bounds takes the series colour, so three
-   * colours cost two numbers. */
-  bandUpperBound: number;
+  /** The colour table, lowest step first. A reading takes the colour of the
+   * first band it is at or below, so each row only has to say where it ends.
+   * Empty means there is nothing to say and the chart stays one colour. */
+  bands: ChartBand[];
+  /** Colour of a reading past the last band. Every table needs an "and the
+   * rest", and on a chart that is usually the interesting end. */
+  bandAboveColorHex: string;
+  /** Whether an area chart's fill follows the bands too. */
+  fillBands: boolean;
   /** Which end of the plot's range is printed as a number beside it. Without
    * this a chart is a shape with no units: a reader can see that the line went
    * up but not what it went up to. */
   scaleLabels: ChartScaleLabels;
+  /** Whether the scale labels take a strip of their own or sit over the marks. */
+  scaleLabelPlacement: ChartLabelPlacement;
   scaleLabelColorHex: string;
+  /** Where the newest reading is printed, if at all. The scale says what the
+   * chart covers; this says where the entity is right now. */
+  latestLabel: ChartLatestLabel;
+}
+
+/** One step of a chart's colour table.
+ *
+ * A band says where it *ends*, not where it starts, so a table reads the way
+ * people describe one: "up to 10 red, up to 20 orange, and the rest green".
+ * Nothing names a lower bound twice, and there is no gap to leave open between
+ * two rows by accident. Mirrors `ChartElement.ChartBand` in the app repo. */
+export interface ChartBand {
+  id: string;
+  /** Readings at or below this take `colorHex`. */
+  upTo: number;
+  colorHex: string;
 }
 
 export const CHART_DEFAULT_HIGH_HEX = "#FF6B35";
@@ -341,16 +362,25 @@ export const CHART_DEFAULT_SCALE_LABEL_HEX = "#FFFFFF99";
  * tall. Mirrors `scaleLabelFontSize` in Swift. */
 export const CHART_SCALE_LABEL_SIZE = 8;
 
-/** Which band a reading falls in, as a colour.
- *
- * Bounds are sorted first, so an author who types them the wrong way round
- * still gets a low band and a high band. Mirrors `bandColorHex` in Swift. */
-export function chartBandColor(el: ChartElement, value: number, base: string): string {
-  const lo = Math.min(el.bandLowerBound, el.bandUpperBound);
-  const hi = Math.max(el.bandLowerBound, el.bandUpperBound);
-  if (value < lo) return el.bandLowColorHex;
-  if (value > hi) return el.bandHighColorHex;
-  return base;
+/** The colour table in reading order, whatever order the author typed it in.
+ * Mirrors `sortedBands` in Swift. */
+export function chartSortedBands(el: ChartElement): ChartBand[] {
+  return [...el.bands].sort((a, b) => a.upTo - b.upTo);
+}
+
+/** True when the chart has an actual table to paint from. An empty table says
+ * nothing, so it draws as one colour rather than as one flat "and the rest".
+ * Mirrors `usesBands` in Swift. */
+export function chartUsesBands(el: ChartElement): boolean {
+  return el.coloring === "bands" && el.bands.length > 0;
+}
+
+/** Which band a reading falls in, as a colour. Sort once, then call this per
+ * reading; the table is walked lowest first and the first match wins. Mirrors
+ * `bandColorHex` in Swift. */
+export function chartBandColor(value: number, sorted: readonly ChartBand[], above: string): string {
+  for (const band of sorted) if (value <= band.upTo) return band.colorHex;
+  return above;
 }
 
 /** How one end of the scale reads.
@@ -892,6 +922,30 @@ function parseColorSlot(o: unknown, fallback: string): ColorSlot {
   return { baseColorHex: isObject(o) ? str(o.baseColorHex, fallback) : fallback };
 }
 
+/** A chart's colour table, reading the two-bound shape forward when that is all
+ * the payload has.
+ *
+ * The first cut of banded colour (2026-09-05) had exactly two bounds and painted
+ * the middle with the layer's own colour. "Under lower" and "between the bounds"
+ * become two rows; "over upper" is what the table falls through to. A reading
+ * sitting exactly on the lower bound moves from the middle colour to the low
+ * one, which is the single value the two spellings disagree on. */
+function parseChartBands(p: J): ChartBand[] {
+  if (Array.isArray(p.bands)) {
+    return p.bands.filter(isObject).map((b) => ({
+      id: str(b.id, newId()),
+      upTo: num(b.upTo, 0),
+      colorHex: str(b.colorHex, "#FFFFFF"),
+    }));
+  }
+  if (typeof p.bandLowerBound !== "number") return [];
+  const slot = isObject(p.colorSlot) ? str(p.colorSlot.baseColorHex, "#FFFFFF") : "#FFFFFF";
+  return [
+    { id: newId(), upTo: p.bandLowerBound, colorHex: str(p.bandLowColorHex, CHART_DEFAULT_BAND_LOW_HEX) },
+    { id: newId(), upTo: num(p.bandUpperBound, 100), colorHex: slot },
+  ];
+}
+
 function parseElementBase(p: J, defaultColor: string): ElementBase {
   if (typeof p.id !== "string") throw new ConfigParseError("element id is required");
   return {
@@ -968,12 +1022,13 @@ function parseElementKind(raw: unknown): Element {
           lowColorHex: str(p.lowColorHex, CHART_DEFAULT_LOW_HEX),
           marker: (optStr(p.marker) as ChartMarker | undefined) ?? "pointer",
           coloring: (optStr(p.coloring) as ChartColoring | undefined) ?? "uniform",
-          bandLowColorHex: str(p.bandLowColorHex, CHART_DEFAULT_BAND_LOW_HEX),
-          bandHighColorHex: str(p.bandHighColorHex, CHART_DEFAULT_BAND_HIGH_HEX),
-          bandLowerBound: num(p.bandLowerBound, 0),
-          bandUpperBound: num(p.bandUpperBound, 100),
+          bands: parseChartBands(p),
+          bandAboveColorHex: str(p.bandHighColorHex, str(p.bandAboveColorHex, CHART_DEFAULT_BAND_HIGH_HEX)),
+          fillBands: p.fillBands === true,
           scaleLabels: (optStr(p.scaleLabels) as ChartScaleLabels | undefined) ?? "none",
+          scaleLabelPlacement: (optStr(p.scaleLabelPlacement) as ChartLabelPlacement | undefined) ?? "gutter",
           scaleLabelColorHex: str(p.scaleLabelColorHex, CHART_DEFAULT_SCALE_LABEL_HEX),
+          latestLabel: (optStr(p.latestLabel) as ChartLatestLabel | undefined) ?? "none",
         },
       };
     case "shape": {
@@ -1353,12 +1408,13 @@ function encodeElementKind(el: Element): J {
           lowColorHex: el.payload.lowColorHex,
           marker: el.payload.marker,
           coloring: el.payload.coloring,
-          bandLowColorHex: el.payload.bandLowColorHex,
-          bandHighColorHex: el.payload.bandHighColorHex,
-          bandLowerBound: encNum(el.payload.bandLowerBound),
-          bandUpperBound: encNum(el.payload.bandUpperBound),
+          bands: el.payload.bands.map((b) => ({ id: b.id, upTo: encNum(b.upTo), colorHex: b.colorHex })),
+          bandAboveColorHex: el.payload.bandAboveColorHex,
+          fillBands: el.payload.fillBands,
           scaleLabels: el.payload.scaleLabels,
+          scaleLabelPlacement: el.payload.scaleLabelPlacement,
           scaleLabelColorHex: el.payload.scaleLabelColorHex,
+          latestLabel: el.payload.latestLabel,
         },
       };
     case "shape": {
@@ -1609,8 +1665,12 @@ const K = {
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex"],
   chart: ["value", "historyMinutes", "historyPoints", "style", "limit", "takeFromEnd", "scale", "minValue", "maxValue",
     "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker",
-    "coloring", "bandLowColorHex", "bandHighColorHex", "bandLowerBound", "bandUpperBound",
-    "scaleLabels", "scaleLabelColorHex"],
+    "coloring", "bands", "bandAboveColorHex", "fillBands",
+    "scaleLabels", "scaleLabelPlacement", "scaleLabelColorHex", "latestLabel",
+    // The two-bound band shape, written only on 2026-09-05 and read forward by
+    // `parseChartBands`. Still listed so a document saved that morning does not
+    // read as carrying unknown keys.
+    "bandLowColorHex", "bandHighColorHex", "bandLowerBound", "bandUpperBound"],
   shape: ["kind", "cornerRadius", "borderColorHex", "borderWidth"],
   // `timestampStyle` is retired (the age style, built and removed 2026-09-04).
   // It stays listed so a document saved while it existed does not read as
@@ -1828,7 +1888,7 @@ export function newElement(kind: Element["kind"]): Element {
     case "text": return { kind, payload: { ...base("#FFFFFF"), value: literal("Text"), fontSize: 14, fontWeight: "regular" } };
     case "icon": return { kind, payload: { ...base("#FFFFFF"), symbol: literal("lightbulb"), size: 14 } };
     case "gauge": return { kind, payload: { ...base("#FFFFFF"), value: literal("50"), minValue: 0, maxValue: 100, style: "arc", lineWidth: 4, trackColorHex: "#FFFFFF40" } };
-    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: 0, historyPoints: 24, style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "pointer", coloring: "uniform", bandLowColorHex: CHART_DEFAULT_BAND_LOW_HEX, bandHighColorHex: CHART_DEFAULT_BAND_HIGH_HEX, bandLowerBound: 0, bandUpperBound: 100, scaleLabels: "none", scaleLabelColorHex: CHART_DEFAULT_SCALE_LABEL_HEX } };
+    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: 0, historyPoints: 24, style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "pointer", coloring: "uniform", bands: [], bandAboveColorHex: CHART_DEFAULT_BAND_HIGH_HEX, fillBands: false, scaleLabels: "none", scaleLabelPlacement: "gutter", scaleLabelColorHex: CHART_DEFAULT_SCALE_LABEL_HEX, latestLabel: "none" } };
     case "shape": return { kind, payload: { ...base("#FFFFFF33"), kind: "roundedRectangle", cornerRadius: 6, borderWidth: 1 } };
     case "image": {
       const { colorSlot: _unused, ...b } = base("#FFFFFF");
