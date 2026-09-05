@@ -36,13 +36,13 @@ import {
   DRAWABLE_FAMILIES,
   IMAGE_DEFAULT_CORNER_RADIUS,
   IMAGE_DEFAULT_TIMESTAMP_SIZE,
-  clamp01,
+  ZERO_OUTSET,
   hasFreeTimestamp,
+  isZeroOutset,
   nearestTimestampCorner,
   RULE_TARGET_PROPERTIES,
   STYLE_PROPERTY,
   TAP_ACTION_LABELS,
-  TAP_MAX_GROW,
   describeTapAction,
   tapPointSize,
   attachTap,
@@ -121,6 +121,9 @@ export interface EditorHost {
   /** The complication's name when this edit session opened, for the rename
    * note. Undefined for a brand-new complication (nothing on the watch yet). */
   savedName?: string;
+  /** Turn on the preview's Show taps view. With this layer selected it shows
+   * only this layer's tap area, with corners to drag. */
+  showTapArea(): void;
 }
 
 // ── small controls ────────────────────────────────────────────────────────
@@ -1262,10 +1265,7 @@ function imageTimestampSection(img: ImageElement, upd: (m: (p: ImageElement) => 
         ["free", "Anywhere"],
       ], (v) => setFree(v === "free"))}
       ${free
-        ? html`
-          ${numberField("Across (0 left, 1 right)", img.timestampX, (v) => upd((p) => { p.timestampX = clamp01(v ?? 0.5); }, "tsx"), { step: 0.01, min: 0, max: 1 })}
-          ${numberField("Down (0 top, 1 bottom)", img.timestampY, (v) => upd((p) => { p.timestampY = clamp01(v ?? 0.5); }, "tsy"), { step: 0.01, min: 0, max: 1 })}
-          <div class="hint">Drag the chip in the preview to move it. It stays inside the picture, so the numbers stop short of 0 and 1 once the chip meets an edge.</div>`
+        ? nothing
         : selectField("Corner", img.timestampCorner, [
             ["topLeading", "Top left"],
             ["topTrailing", "Top right"],
@@ -1273,6 +1273,7 @@ function imageTimestampSection(img: ImageElement, upd: (m: (p: ImageElement) => 
             ["bottomTrailing", "Bottom right"],
           ], (v) => upd((p) => { p.timestampCorner = v; }))}
       ${numberField("Text size (pt)", img.timestampSize, (v) => upd((p) => { p.timestampSize = Math.min(40, Math.max(4, v ?? IMAGE_DEFAULT_TIMESTAMP_SIZE)); }, "tssize"), { step: 1, min: 4, max: 40 })}
+      <div class="hint">Click the chip in the preview to select it. Drag it to move it (it stays inside the picture), or drag a corner to change the text size.</div>
       <div class="hint">The time the snapshot was fetched, not the time now. A frame that stops updating keeps its old time.</div>`}`;
 }
 
@@ -1467,7 +1468,7 @@ function tapSizeHint(host: EditorHost, tapId: string): TemplateResult | typeof n
   if (parts.length === 0) return nothing;
   const small = smallest < SMALL_TAP_POINTS;
   return html`<div class=${small ? "hint warn" : "hint"}>${parts.join(" · ")}${
-    small ? html`<br />That is small for a wrist. Grow the tap area.` : nothing}</div>`;
+    small ? html`<br />That is small for a wrist. Show the tap area and drag its corners out.` : nothing}</div>`;
 }
 
 /**
@@ -1494,12 +1495,17 @@ function tappableSection(host: EditorHost, el: CElement, key: string): TemplateR
     ${attached
       ? html`<div class="value-editor">
           ${tapActionEditor(host, attached.payload as TapElement, updTap, `${key}-attached`)}
-          ${sliderField("Grow tap area", (attached.payload as TapElement).grow ?? 0, (v) => updTap((p) => {
-            if (v > 0) p.grow = v; else delete p.grow;
-          }, "tap-grow"), { min: 0, max: TAP_MAX_GROW, step: 1, def: 0, format: (v) => `${Math.round(v)} pt` })}
+          <div class="chips">
+            <button class="pick" title="Dim the face and show only this layer's tap area, with corners to drag"
+              @click=${() => host.showTapArea()}><span class="glyph">☞</span>Show tap area</button>
+            ${!isZeroOutset((attached.payload as TapElement).outset)
+              ? html`<button class="icon" title="Fit the tap area to the layer again" aria-label="Fit the tap area to the layer again"
+                  @click=${() => updTap((p) => { p.outset = { ...ZERO_OUTSET }; })}>${uiIcon("reset")}</button>`
+              : nothing}
+          </div>
         </div>
         ${tapSizeHint(host, attached.payload.id)}
-        <div class="hint">The tap area follows this layer's frame in every shape, so there is nothing to line up. Grow makes it bigger than the layer without moving the layer. Where two tap areas overlap, the one higher in Layers wins.</div>`
+        <div class="hint">The tap area follows this layer in every shape, so there is nothing to line up. Show it to drag its corners past the layer, so a small layer is still an easy target. Where two tap areas overlap, the one higher in Layers wins.</div>`
       : html`<div class="hint">Tapping this layer runs an action of its own, instead of the complication's tap action. It starts as <b>${describeTapAction(preview)}</b>.</div>`}`;
 }
 

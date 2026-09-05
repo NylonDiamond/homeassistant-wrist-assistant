@@ -1,6 +1,6 @@
 {
-  "name": "Grown tap area",
-  "description": "A small icon whose tap area is bigger than the icon. The author set `grow` in the panel; the panel is what turns points into a fraction per shape, so by the time a document reaches a watch the grown frames are already written into the per-shape placements. This fixture pins what both resolvers must then do with them: draw the icon at its own frame, and hand the tap the bigger frame it was given, in every shape. `grow` itself is carried but never acted on, which is why the tap's frames here are not derived from it. The placements are round numbers rather than the exact 8 pt inflation, so the fixture compares whole values on both sides.",
+  "name": "Pushed-out tap area",
+  "description": "A small icon whose tap area is bigger than the icon. The author dragged the tap box out in the panel; the panel is what turns points into a fraction per shape, so by the time a document reaches a watch the bigger frames are already written into the per-shape placements. This fixture pins what both resolvers must then do with them: draw the icon at its own frame, and hand the tap the bigger frame it was given, in every shape. Nothing on the wire says how far the box was dragged (the retired `grow` key used to, and is still accepted); the frames are the whole story. The placements are round numbers rather than an exact inflation, so the fixture compares whole values on both sides.",
   "config": {
     "schemaVersion": 4,
     "id": "AAAAAAAA-0000-4000-8000-000000000081",
@@ -44,7 +44,6 @@
             "domain": "fan"
           },
           "attachedTo": "EEEEEEEE-0000-4000-8000-000000000081",
-          "grow": 8,
           "rules": [],
           "frame": {
             "x": 0.35,

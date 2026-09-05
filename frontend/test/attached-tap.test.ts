@@ -22,8 +22,8 @@ import {
   removeElement,
   selectableLayerId,
   syncAttachedTaps,
+  setTapOutsetFromFrame,
   tapPointSize,
-  TAP_MAX_GROW,
 } from "../src/model.js";
 import { setPlacement } from "../src/editors.js";
 import { Draft } from "../src/draft.js";
@@ -185,11 +185,13 @@ describe("syncAttachedTaps", () => {
   });
 });
 
-// Growing the area is the whole point of the feature: a 20 pt icon is a hard
-// target on a wrist. The three design boxes are different sizes, so the same
-// point value has to become a different fraction in each shape.
-describe("grow", () => {
-  /** An icon in the middle, small enough that growing it never hits an edge. */
+// Pushing the area out past its layer is the whole point of the feature: a
+// 20 pt icon is a hard target on a wrist. The three design boxes are different
+// sizes, so the same point value has to become a different fraction in each
+// shape. The outset is editor state read back from the frames, so the wire
+// carries nothing new and a round trip through the watch loses nothing.
+describe("outset", () => {
+  /** An icon in the middle, small enough that pushing it out never hits an edge. */
   function withSmallIcon(): { cfg: CustomComplicationConfig; icon: CElement; tapId: string } {
     const { cfg, icon } = withIcon();
     icon.payload.frame = { x: 0.4, y: 0.4, width: 0.2, height: 0.2, rotationDegrees: 0 };
@@ -198,14 +200,15 @@ describe("grow", () => {
     return { cfg, icon, tapId: tapOf(cfg, icon.payload.id).id };
   }
 
-  function grow(cfg: CustomComplicationConfig, ownerId: string, pt: number): void {
-    tapOf(cfg, ownerId).grow = pt;
+  /** The same points on every side, the shape the old `grow` slider made. */
+  function outsetAll(cfg: CustomComplicationConfig, ownerId: string, pt: number): void {
+    tapOf(cfg, ownerId).outset = { top: pt, left: pt, bottom: pt, right: pt };
     syncAttachedTaps(cfg);
   }
 
   it("turns points into the right fraction for each shape", () => {
     const { cfg, icon, tapId } = withSmallIcon();
-    grow(cfg, icon.payload.id, 8);
+    outsetAll(cfg, icon.payload.id, 8);
 
     const rect = cfg.perFamily.rectangular!.placements[tapId]!.frame;
     expect(rect.x).toBeCloseTo(0.4 - 8 / 181, 9);
@@ -221,21 +224,32 @@ describe("grow", () => {
     expect(circ.height).toBeCloseTo(circ.width, 9);
   });
 
+  it("applies each side on its own", () => {
+    const { cfg, icon, tapId } = withSmallIcon();
+    tapOf(cfg, icon.payload.id).outset = { top: 0, left: 10, bottom: 5, right: 0 };
+    syncAttachedTaps(cfg);
+    const circ = cfg.perFamily.circular!.placements[tapId]!.frame;
+    expect(circ.x).toBeCloseTo(0.4 - 10 / 51, 9);
+    expect(circ.width).toBeCloseTo(0.2 + 10 / 51, 9);
+    expect(circ.y).toBeCloseTo(0.4, 9);
+    expect(circ.height).toBeCloseTo(0.2 + 5 / 51, 9);
+  });
+
   it("writes a placement in every shape, even where the owner has none", () => {
     const { cfg, icon, tapId } = withSmallIcon();
     expect(cfg.perFamily.corner!.placements[tapId], "nothing to override yet").toBeUndefined();
-    grow(cfg, icon.payload.id, 4);
-    // The shared frame would be grown by the rectangular ratio, which is the
-    // wrong size here, so the tap needs its own frame in every shape.
+    outsetAll(cfg, icon.payload.id, 4);
+    // The shared frame would be pushed out by the rectangular ratio, which is
+    // the wrong size here, so the tap needs its own frame in every shape.
     for (const family of ["rectangular", "circular", "corner"] as const) {
       expect(cfg.perFamily[family]!.placements[tapId], family).toBeDefined();
     }
   });
 
-  it("grows from the owner's own placement where it has one", () => {
+  it("pushes out from the owner's own placement where it has one", () => {
     const { cfg, icon, tapId } = withSmallIcon();
     setPlacement(cfg, "corner", icon.payload.id, { frame: { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotationDegrees: 0 }, isHidden: true });
-    grow(cfg, icon.payload.id, 3);
+    outsetAll(cfg, icon.payload.id, 3);
     const p = cfg.perFamily.corner!.placements[tapId]!;
     expect(p.frame.x).toBeCloseTo(0.3 - 3 / 34, 9);
     expect(p.frame.width).toBeCloseTo(0.4 + 6 / 34, 9);
@@ -244,7 +258,7 @@ describe("grow", () => {
 
   it("stops at the edge of the face instead of leaving it", () => {
     const { cfg, icon, tapId } = withSmallIcon();
-    grow(cfg, icon.payload.id, 20);
+    outsetAll(cfg, icon.payload.id, 20);
     const corner = cfg.perFamily.corner!.placements[tapId]!.frame;
     expect(corner).toEqual({ x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 });
   });
@@ -252,40 +266,71 @@ describe("grow", () => {
   it("keeps the owner's rotation", () => {
     const { cfg, icon, tapId } = withSmallIcon();
     icon.payload.frame = { ...icon.payload.frame, rotationDegrees: 30 };
-    grow(cfg, icon.payload.id, 5);
+    outsetAll(cfg, icon.payload.id, 5);
     expect(cfg.perFamily.circular!.placements[tapId]!.frame.rotationDegrees).toBe(30);
   });
 
-  it("adds no key and no placements at zero", () => {
+  it("adds no placements at zero, and never writes a key", () => {
     const { cfg, icon, tapId } = withSmallIcon();
-    grow(cfg, icon.payload.id, 8);
-    tapOf(cfg, icon.payload.id).grow = 0;
-    syncAttachedTaps(cfg);
+    outsetAll(cfg, icon.payload.id, 8);
+    outsetAll(cfg, icon.payload.id, 0);
     expect(cfg.perFamily.corner!.placements[tapId]).toBeUndefined();
     expect(tapOf(cfg, icon.payload.id).frame).toEqual(icon.payload.frame);
+    expect(JSON.stringify(encodeConfig(cfg))).not.toContain("outset");
     expect(JSON.stringify(encodeConfig(cfg))).not.toContain("grow");
   });
 
-  it("is written only when set, and survives a round trip", () => {
+  it("is read back from the frames on the way in, so a round trip keeps the size", () => {
     const { cfg, icon } = withSmallIcon();
-    grow(cfg, icon.payload.id, 8);
-    const enc = encodeConfig(cfg) as { elements: { kind: string; payload: Record<string, unknown> }[] };
-    expect(enc.elements.find((e) => e.kind === "tap")!.payload.grow).toBe(8);
+    tapOf(cfg, icon.payload.id).outset = { top: 2, left: 8, bottom: 4, right: 6 };
+    syncAttachedTaps(cfg);
+    const enc = encodeConfig(cfg);
     expect(auditUnknownKeys(enc)).toEqual([]);
-    expect(encodeConfig(parseConfig(enc))).toEqual(enc);
+    expect(JSON.stringify(enc)).not.toContain("outset");
+    const back = parseConfig(enc);
+    expect(tapOf(back, icon.payload.id).outset).toBeUndefined();
+    syncAttachedTaps(back);
+    expect(tapOf(back, icon.payload.id).outset).toEqual({ top: 2, left: 8, bottom: 4, right: 6 });
+    expect(encodeConfig(back)).toEqual(enc);
   });
 
-  it("clamps a value that arrived too large, and ignores a negative one", () => {
+  it("still opens a document that carries the retired grow key, and drops it on save", () => {
     const { cfg, icon } = withSmallIcon();
-    grow(cfg, icon.payload.id, 8);
+    outsetAll(cfg, icon.payload.id, 8);
     const enc = encodeConfig(cfg) as { elements: { kind: string; payload: Record<string, unknown> }[] };
-    const payload = enc.elements.find((e) => e.kind === "tap")!.payload;
+    enc.elements.find((e) => e.kind === "tap")!.payload.grow = 8;
+    expect(auditUnknownKeys(enc)).toEqual([]);
+    const back = parseConfig(enc);
+    syncAttachedTaps(back);
+    // The frames carried the result, so the size is the one the slider made.
+    expect(tapOf(back, icon.payload.id).outset).toEqual({ top: 8, left: 8, bottom: 8, right: 8 });
+    expect(JSON.stringify(encodeConfig(back))).not.toContain("grow");
+  });
 
-    payload.grow = 500;
-    expect((parseConfig(enc).elements.find((e) => e.kind === "tap")!.payload as TapElement).grow).toBe(TAP_MAX_GROW);
+  it("takes a dragged frame in one shape and applies the points everywhere", () => {
+    const { cfg, icon, tapId } = withSmallIcon();
+    // Dragged out 6 pt on the left and 3 pt below in the circular preview.
+    setTapOutsetFromFrame(cfg, tapId, "circular", { x: 0.4 - 6 / 51, y: 0.4, width: 0.2 + 6 / 51, height: 0.2 + 3 / 51, rotationDegrees: 0 });
+    expect(tapOf(cfg, icon.payload.id).outset).toEqual({ top: 0, left: 6, bottom: 3, right: 0 });
+    syncAttachedTaps(cfg);
+    const rect = cfg.perFamily.rectangular!.placements[tapId]!.frame;
+    expect(rect.x).toBeCloseTo(0.4 - 6 / 181, 9);
+    expect(rect.height).toBeCloseTo(0.2 + 3 / 65.5, 9);
+  });
 
-    payload.grow = -4;
-    expect((parseConfig(enc).elements.find((e) => e.kind === "tap")!.payload as TapElement).grow).toBeUndefined();
+  it("holds a dragged frame inside the face before measuring it", () => {
+    const { cfg, icon, tapId } = withSmallIcon();
+    setTapOutsetFromFrame(cfg, tapId, "corner", { x: -0.5, y: 0.4, width: 1.6, height: 0.2, rotationDegrees: 0 });
+    // Left edge held at 0: 0.4 of 34 pt. Right edge held at 1: same.
+    expect(tapOf(cfg, icon.payload.id).outset).toEqual({ top: 0, left: 13.6, bottom: 0, right: 13.6 });
+  });
+
+  it("ignores a frame for a tap that is not attached", () => {
+    const { cfg } = withSmallIcon();
+    const free = newElement("tap");
+    cfg.elements.push(free);
+    setTapOutsetFromFrame(cfg, free.payload.id, "circular", { x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 });
+    expect((free.payload as TapElement).outset).toBeUndefined();
   });
 
   it("reports the tap's real size in points, per shape", () => {
@@ -294,7 +339,7 @@ describe("grow", () => {
     expect(tapPointSize(cfg, tapId, "rectangular")!.width).toBeCloseTo(0.2 * 181, 9);
     expect(tapPointSize(cfg, tapId, "corner")!.height).toBeCloseTo(0.2 * 34, 9);
 
-    grow(cfg, icon.payload.id, 6);
+    outsetAll(cfg, icon.payload.id, 6);
     expect(tapPointSize(cfg, tapId, "corner")!.width).toBeCloseTo(0.2 * 34 + 12, 9);
     expect(tapPointSize(cfg, "gone", "corner")).toBeUndefined();
   });
@@ -386,11 +431,13 @@ describe("Draft", () => {
     expect(tapOf(draft.config, icon.payload.id).frame.x).toBe(0.75);
   });
 
-  it("heals a document whose attached tap has drifted", () => {
+  it("keeps a tap that sits off its owner, as an outset, and still heals its order", () => {
     const { cfg, icon } = withIcon();
     attachTap(cfg, icon.payload.id);
     const doc = encodeConfig(cfg) as { elements: { kind: string; payload: Record<string, unknown> }[] };
-    // A hand-edit that moves the tap off its owner and behind it in z-order.
+    // A tap bigger than its owner and behind it in z-order. The size is what
+    // an author drags out, and the wire carries only the frames, so it has to
+    // be taken as meant; the order is not a thing anyone sets, so it is fixed.
     const tapIndex = doc.elements.findIndex((e) => e.kind === "tap");
     const [tapEl] = doc.elements.splice(tapIndex, 1);
     tapEl!.payload.frame = { x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 };
@@ -399,7 +446,16 @@ describe("Draft", () => {
     const draft = Draft.fromDocument(doc, 1);
     expect(draft.dirty, "healing on open never looks like unsaved work").toBe(false);
     expect(draft.config.elements.map((e) => e.kind)).toEqual(["icon", "tap"]);
-    expect(tapOf(draft.config, icon.payload.id).frame).toEqual(icon.payload.frame);
+    const tap = tapOf(draft.config, icon.payload.id);
+    // The points are kept to 0.01, so the frame comes back within float noise.
+    expect(tap.frame.x).toBeCloseTo(0, 9);
+    expect(tap.frame.y).toBeCloseTo(0, 9);
+    expect(tap.frame.width).toBeCloseTo(1, 9);
+    expect(tap.frame.height).toBeCloseTo(1, 9);
+    expect(tap.outset).toEqual({ left: 18.1, right: 108.6, top: 13.1, bottom: 26.2 });
+    // And from here on it follows the owner: a nudge moves the tap with it.
+    draft.update((c) => { c.elements[0]!.payload.frame = { ...c.elements[0]!.payload.frame, x: 0.2 }; });
+    expect(tapOf(draft.config, icon.payload.id).frame.x).toBeCloseTo(0.2 - 18.1 / 181, 9);
   });
 });
 
@@ -510,5 +566,82 @@ describe("tap review mode", () => {
     cfg.elements.push(tap);
     expect(draw(cfg, { tapAreas: false })).not.toContain(tap.payload.id);
     expect(draw(cfg, { tapAreas: false, tapReview: true })).toContain(tap.payload.id);
+  });
+});
+
+// Review mode narrowed to one tap: the box the author is sizing is the only
+// tap on the face, and it carries the handles a selected layer would.
+describe("tap focus view", () => {
+  /** Two tappable icons, so there is a tap to hide as well as one to show. */
+  function withTwoTaps(): { cfg: CustomComplicationConfig; a: string; b: string } {
+    const { cfg, icon } = withIcon("light.kitchen");
+    const other = newElement("icon");
+    other.payload.frame = { x: 0.6, y: 0.2, width: 0.3, height: 0.4, rotationDegrees: 0 };
+    cfg.elements.push(other);
+    const a = attachTap(cfg, icon.payload.id)!.id;
+    const b = attachTap(cfg, other.payload.id)!.id;
+    syncAttachedTaps(cfg);
+    return { cfg, a, b };
+  }
+
+  it("draws only the focused tap, with its handles", () => {
+    const { cfg, a, b } = withTwoTaps();
+    const out = draw(cfg, { tapReview: true, tapFocusId: a, highlightId: a, handles: true });
+    expect(out).toContain(a);
+    expect(out).not.toContain(b);
+    expect(out).toContain("data-handle=se");
+  });
+
+  it("gives no handles and no move cursor to the dimmed layers", () => {
+    const { cfg, a } = withTwoTaps();
+    const out = draw(cfg, { tapReview: true, tapFocusId: a, highlightId: a, handles: true });
+    // One group has the move cursor: the focused tap. Every other group has none.
+    expect(out.match(/cursor:move/g)).toHaveLength(1);
+    expect(out.match(/data-handle=/g)).toHaveLength(4);
+  });
+
+  it("is ignored outside review mode", () => {
+    const { cfg, a, b } = withTwoTaps();
+    const out = draw(cfg, { tapFocusId: a });
+    expect(out).not.toContain(a);
+    expect(out).not.toContain(b);
+  });
+
+  it("shows every tap again without a focus", () => {
+    const { cfg, a, b } = withTwoTaps();
+    const out = draw(cfg, { tapReview: true });
+    expect(out).toContain(a);
+    expect(out).toContain(b);
+  });
+});
+
+describe("timestamp chip selection", () => {
+  function withChip(): { cfg: CustomComplicationConfig; id: string } {
+    const cfg = newConfig("Test", 0);
+    const img = newElement("image");
+    if (img.kind === "image") {
+      img.payload.entity = { entityId: "camera.door", displayName: "Door", domain: "camera" };
+      img.payload.timestamp = true;
+    }
+    cfg.elements.push(img);
+    return { cfg, id: img.payload.id };
+  }
+
+  /** The rectangular face with the camera's picture known, so the chip draws. */
+  function drawWithPicture(cfg: CustomComplicationConfig, opts: Partial<RenderOptions>): string {
+    const entityStates = new Map([["camera.door", {
+      entityId: "camera.door", state: "idle", iconName: "camera", domain: "camera", entityPicture: "/api/camera_proxy/camera.door?token=t",
+    }]]);
+    const layouts = resolveAll(cfg, { entityStates, templateResults: new Map(), namedValues: cfg.values });
+    return flatten(renderLayout(layouts.rectangular!, { icons: noIcons, showHidden: true, tapAreas: true, ...opts }));
+  }
+
+  it("draws a box and corner handles only for the selected chip", () => {
+    const { cfg, id } = withChip();
+    const plain = drawWithPicture(cfg, { highlightId: id, handles: true });
+    expect(plain).toContain("data-ts-handle");
+    expect(plain).not.toContain("data-ts-corner");
+    const selected = drawWithPicture(cfg, { highlightId: id, handles: true, timestampActiveId: id });
+    expect(selected.match(/data-ts-corner=/g)).toHaveLength(4);
   });
 });

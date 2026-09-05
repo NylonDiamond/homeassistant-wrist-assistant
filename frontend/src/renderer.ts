@@ -112,6 +112,16 @@ export interface RenderOptions {
    * and everything that is not a tap dims out of the way. Implies `tapAreas`.
    */
   tapReview?: boolean;
+  /**
+   * Review mode narrowed to one tap: only this tap area draws, with the
+   * highlight and handles that `highlightId` and `handles` would give a layer,
+   * so it can be dragged out to size. Every other tap hides (attached) or dims
+   * with the drawing (free-standing). Only read when `tapReview` is on.
+   */
+  tapFocusId?: string;
+  /** The image layer whose timestamp chip is selected: it draws a selection
+   * box and corner handles (`data-ts-corner`) so it reads as movable. */
+  timestampActiveId?: string;
   /** Natural sizes of the camera pictures, so a layer can be cropped the way
    * the watch crops it. Absent falls back to the browser's own fitting. */
   imageSizes?: ImageSizeProvider;
@@ -370,16 +380,27 @@ function renderImage(el: Extract<ResolvedElement, { kind: "image" }>, box: Box, 
   const icons = options.icons;
   const clipId = `imgclip-${el.id}`;
   const r = Math.max(0, el.cornerRadius);
-  const chip = el.showTimestamp && el.url
-    ? (() => {
-        const c = timestampChipRect(el, box, timestampLabel(new Date()));
-        return svg`
-          <rect data-ts-handle="1" x=${c.x} y=${c.y} width=${c.w} height=${c.h} rx=${c.h / 2}
-            fill="#000000" fill-opacity="0.55" />
-          <text data-ts-handle="1" x=${c.x + c.w / 2} y=${c.y + c.h / 2} text-anchor="middle" dominant-baseline="central"
-            font-size=${c.size} font-weight="600" fill="#FFFFFF"
-            font-family="-apple-system, 'SF Pro Rounded', Helvetica, Arial, sans-serif">${c.label}</text>`;
-      })()
+  const c = el.showTimestamp && el.url ? timestampChipRect(el, box, timestampLabel(new Date())) : undefined;
+  const chip = c
+    ? svg`
+        <rect data-ts-handle="1" x=${c.x} y=${c.y} width=${c.w} height=${c.h} rx=${c.h / 2}
+          fill="#000000" fill-opacity="0.55" />
+        <text data-ts-handle="1" x=${c.x + c.w / 2} y=${c.y + c.h / 2} text-anchor="middle" dominant-baseline="central"
+          font-size=${c.size} font-weight="600" fill="#FFFFFF"
+          font-family="-apple-system, 'SF Pro Rounded', Helvetica, Arial, sans-serif">${c.label}</text>`
+    : nothing;
+  // The selected chip gets the same dashed box and corner handles a selected
+  // layer gets, drawn outside the picture's clip so a chip on the edge still
+  // shows all four. The corners resize the text; the chip itself moves.
+  const hs = 3;
+  const chipSelection = c && options.timestampActiveId === el.id
+    ? svg`
+        <rect x=${c.x} y=${c.y} width=${c.w} height=${c.h} fill="none" stroke="#0A84FF" stroke-width="0.75"
+          stroke-dasharray="2 1" vector-effect="non-scaling-stroke" pointer-events="none" />
+        ${[["nw", c.x, c.y], ["ne", c.x + c.w, c.y], ["sw", c.x, c.y + c.h], ["se", c.x + c.w, c.y + c.h]].map(
+          ([corner, x, y]) => svg`<rect data-ts-corner=${corner} x=${(x as number) - hs / 2} y=${(y as number) - hs / 2} width=${hs} height=${hs}
+            fill="#FFFFFF" stroke="#0A84FF" stroke-width="0.5" style="cursor:${corner}-resize" />`,
+        )}`
     : nothing;
   // The crop needs the picture's own pixel size. Until the browser reports it,
   // fall back to its own fitting, which is exactly right at the default
@@ -400,7 +421,7 @@ function renderImage(el: Extract<ResolvedElement, { kind: "image" }>, box: Box, 
   }
   return svg`
     <defs><clipPath id=${clipId}><rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} rx=${r} /></clipPath></defs>
-    <g clip-path=${`url(#${clipId})`}>${content}${chip}</g>`;
+    <g clip-path=${`url(#${clipId})`}>${content}${chip}</g>${chipSelection}`;
 }
 
 /** Tap area, editor only: a faint dashed box with a small hand glyph so the
@@ -450,6 +471,11 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
   if (el.isHidden && !options.showHidden) return nothing;
   const review = options.tapReview === true;
   const showTaps = options.tapAreas === true || review;
+  // Review narrowed to one tap: that tap is the whole point of the picture, and
+  // every other tap steps back with the drawing.
+  const focus = review ? options.tapFocusId : undefined;
+  const focused = focus !== undefined && el.id === focus;
+  const inFocusView = focus !== undefined;
   // A tap layer draws nothing on the watch. Outside the editor it takes no space
   // and no clicks either, so the preview matches the watch.
   if (el.kind === "tap" && !showTaps) return nothing;
@@ -457,10 +483,11 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
   // finger would sit on top of something already drawn and say nothing the
   // layer's own "tap" chip does not. Only a free-standing tap needs to be shown,
   // because nothing else marks where it is. Review mode is the exception: there
-  // the question is where the targets are, and a grown attached tap is exactly
-  // the target that reaches past what you can see.
-  if (el.kind === "tap" && el.attachedTo !== undefined && !review) return nothing;
+  // the question is where the targets are, and a pushed-out attached tap is
+  // exactly the target that reaches past what you can see.
+  if (el.kind === "tap" && el.attachedTo !== undefined && (!review || (inFocusView && !focused))) return nothing;
   const box = frameBox(el, canvas);
+  const labelled = review && (!inFocusView || focused);
   let body;
   switch (el.kind) {
     case "text": body = renderText(el, box); break;
@@ -468,12 +495,15 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     case "gauge": body = renderGauge(el, box); break;
     case "shape": body = renderShape(el, box); break;
     case "image": body = renderImage(el, box, options); break;
-    case "tap": body = renderTap(el, box, options.icons, showTaps, review ? describeTapAction(el.action) : undefined); break;
+    case "tap": body = renderTap(el, box, options.icons, showTaps, labelled ? describeTapAction(el.action) : undefined); break;
   }
   // Review mode pushes the drawing back so the tap boxes are the thing you read.
-  const dim = review && el.kind !== "tap" ? 0.35 : 1;
+  const dim = review && (el.kind !== "tap" || (inFocusView && !focused)) ? 0.35 : 1;
   const opacity = Math.min(1, Math.max(0, el.opacity)) * (el.isHidden ? 0.35 : 1) * dim;
   const selected = options.highlightId === el.id;
+  // In the focus view only the focused tap is a thing you drag, so only it gets
+  // the move cursor and the handles.
+  const draggable = options.handles === true && (!inFocusView || focused);
   const highlight = selected
     ? svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} fill="none" stroke="#0A84FF" stroke-width="0.75" stroke-dasharray="2 1" vector-effect="non-scaling-stroke" />`
     : nothing;
@@ -486,13 +516,13 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
   // An invisible hit box so empty text and thin gauges are still grabbable.
   const hit = svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} fill="transparent" stroke="none" />`;
   const hs = 3;
-  const handles = selected && options.handles
+  const handles = selected && draggable
     ? [["nw", box.x, box.y], ["ne", box.x + box.w, box.y], ["sw", box.x, box.y + box.h], ["se", box.x + box.w, box.y + box.h]].map(
         ([corner, x, y]) => svg`<rect data-handle=${corner} x=${(x as number) - hs / 2} y=${(y as number) - hs / 2} width=${hs} height=${hs}
           fill="#FFFFFF" stroke="#0A84FF" stroke-width="0.5" style="cursor:${corner}-resize" />`,
       )
     : nothing;
-  return svg`<g data-element-id=${el.id} opacity=${opacity} style=${options.handles ? "cursor:move" : nothing}
+  return svg`<g data-element-id=${el.id} opacity=${opacity} style=${draggable ? "cursor:move" : nothing}
     transform="rotate(${el.frame.rotationDegrees} ${box.cx} ${box.cy})">${hit}${body}${hover}${highlight}${handles}</g>`;
 }
 

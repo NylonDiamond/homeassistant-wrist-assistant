@@ -156,6 +156,56 @@ export function beginPointDrag(
   return cleanup;
 }
 
+/**
+ * Drag a corner of a box whose only variable is its scale: the image timestamp
+ * chip, whose width and height both follow one text size. Reports the factor
+ * the box should be multiplied by, taken from whichever axis the pointer has
+ * pulled further, so a diagonal drag and a sideways one both do what they look
+ * like they do. `size` is the box as drawn, in the SVG's own units.
+ */
+export function beginScaleDrag(
+  svg: SVGSVGElement,
+  start: PointerEvent,
+  corner: HandleCorner,
+  size: { w: number; h: number },
+  onScale: (factor: number, done: boolean) => void,
+): () => void {
+  const origin = canvasPoint(svg, start);
+  let last = 1;
+  svg.setPointerCapture(start.pointerId);
+
+  const move = (ev: PointerEvent) => {
+    if (ev.pointerId !== start.pointerId) return;
+    const p = canvasPoint(svg, ev);
+    const dx = (p.x - origin.x) * (corner.includes("e") ? 1 : -1);
+    const dy = (p.y - origin.y) * (corner.includes("s") ? 1 : -1);
+    const fx = size.w > 0 ? (size.w + dx) / size.w : 1;
+    const fy = size.h > 0 ? (size.h + dy) / size.h : 1;
+    const f = Math.abs(fx - 1) >= Math.abs(fy - 1) ? fx : fy;
+    last = Math.max(0.05, f);
+    onScale(last, false);
+  };
+  const finish = (ev: PointerEvent) => {
+    if (ev.pointerId !== start.pointerId) return;
+    cleanup();
+    onScale(last, true);
+  };
+  const cleanup = () => {
+    svg.removeEventListener("pointermove", move);
+    svg.removeEventListener("pointerup", finish);
+    svg.removeEventListener("pointercancel", finish);
+    try {
+      svg.releasePointerCapture(start.pointerId);
+    } catch {
+      /* already released */
+    }
+  };
+  svg.addEventListener("pointermove", move);
+  svg.addEventListener("pointerup", finish);
+  svg.addEventListener("pointercancel", finish);
+  return cleanup;
+}
+
 /** Corner handle positions in canvas points for a frame. */
 export function handlePoints(frame: NormalizedFrame, canvas: CanvasSize): { corner: HandleCorner; x: number; y: number }[] {
   const x0 = frame.x * canvas.width;

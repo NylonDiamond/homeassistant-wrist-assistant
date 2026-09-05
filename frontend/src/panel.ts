@@ -40,7 +40,9 @@ import {
   parseConfig,
   removeElement,
   selectableLayerId,
+  setTapOutsetFromFrame,
   hasFreeTimestamp,
+  DESIGN_BOX,
 } from "./model.js";
 import { SEND_WAIT_MS, describeSend, sendState } from "./send-state.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
@@ -54,7 +56,7 @@ import {
   countdownRemainingString,
   resolveAll,
 } from "./resolver.js";
-import { CASES, REFERENCE_CASE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, renderLayout, type DrawableFamily, type IconProvider } from "./renderer.js";
+import { CASES, REFERENCE_CASE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, renderLayout, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider } from "./renderer.js";
 import { ALL_FAMILIES, addFamily, canRemoveFamily, familyContentSummary, firstDrawable, isDrawable, removeFamily, supportedFamilies } from "./layouts.js";
 import { updateWatchMessage, watchSupportsShapes } from "./version.js";
 import { makeIconProvider } from "./icons.js";
@@ -63,7 +65,7 @@ import { SymbolBrowser } from "./symbols.js";
 import { Draft, draftStatus } from "./draft.js";
 import { statesSummary } from "./states.js";
 import { uiIcon } from "./ui-icons.js";
-import { beginGesture, beginPointDrag, type HandleCorner } from "./interact.js";
+import { beginGesture, beginPointDrag, beginScaleDrag, type HandleCorner } from "./interact.js";
 import {
   type DescribeContext,
   type EditorHost,
@@ -223,6 +225,10 @@ export class WristAssistantPanel extends LitElement {
    * An attached tap is invisible during normal editing on purpose, which is
    * exactly why "what happens if I tap here?" needed a mode of its own. */
   @state() private showTaps = false;
+  /** The image layer whose timestamp chip was clicked. The chip then shows a
+   * selection box and corner handles, so it reads as the movable, resizable
+   * thing it is. Cleared by any other click on the face, or by Escape. */
+  @state() private timestampActiveId?: string;
   /** The name the open complication had when its edit session started, so the
    * General tab can warn that a rename does not reach the watch face picker.
    * Undefined for a brand-new complication (nothing is on the watch yet). */
@@ -857,6 +863,9 @@ export class WristAssistantPanel extends LitElement {
       this.togglePicking(false);
       return;
     }
+    // Escape also drops the timestamp chip's selection. Not claimed (no
+    // preventDefault), so a dialog that is open keeps its Escape too.
+    if (e.key === "Escape") this.timestampActiveId = undefined;
     const mod = e.metaKey || e.ctrlKey;
     if (!mod) return;
     const inField = (e.composedPath()[0] as HTMLElement | undefined)?.tagName?.match(/INPUT|TEXTAREA|SELECT/);
@@ -1146,6 +1155,7 @@ export class WristAssistantPanel extends LitElement {
       addFamily: (family) => this.addShape(family),
       removeFamily: (family) => this.removeShape(family),
       savedName: this.savedName,
+      showTapArea: () => this.setShowTaps(true),
     };
   }
 
@@ -1433,12 +1443,14 @@ export class WristAssistantPanel extends LitElement {
     const on = this.showTaps;
     return html`<button class="pick ${on ? "on" : ""}" ?disabled=${!this.draft || this.parseError !== undefined}
       aria-pressed=${on ? "true" : "false"}
-      title="Show every tap area, labelled with what it does, over a dimmed face"
-      @click=${() => {
-        this.showTaps = !this.showTaps;
-        // Both modes take over the pointer, so only one can be on.
-        if (this.showTaps) this.togglePicking(false);
-      }}><span class="glyph">☞</span>Show taps</button>`;
+      title="Show every tap area, labelled with what it does, over a dimmed face. With a layer selected, only its tap area shows, and you can drag its corners to size it."
+      @click=${() => this.setShowTaps(!this.showTaps)}><span class="glyph">☞</span>Show taps</button>`;
+  }
+
+  private setShowTaps(on: boolean) {
+    this.showTaps = on;
+    // Both modes take over the pointer, so only one can be on.
+    if (on) this.togglePicking(false);
   }
 
   private togglePicking(next = !this.picking) {
@@ -1484,13 +1496,35 @@ export class WristAssistantPanel extends LitElement {
       this.pickAt(family, e);
       return;
     }
+    const target = e.target as SVGElement;
+    const handle = target.closest("[data-handle]")?.getAttribute("data-handle") as HandleCorner | null;
+    const hitId = target.closest("[data-element-id]")?.getAttribute("data-element-id") ?? undefined;
+    const svg = target.closest("svg") as SVGSVGElement | null;
+    // Any press on the face that is not on the timestamp chip drops the chip's
+    // selection, the way a click elsewhere drops any selection.
+    const tsCorner = target.closest("[data-ts-corner]")?.getAttribute("data-ts-corner") as HandleCorner | null;
+    const onChip = tsCorner !== null || target.closest("[data-ts-handle]") !== null;
+    if (!onChip) this.timestampActiveId = undefined;
     // Review mode reads the face rather than moving it. A click still selects,
-    // so a tap box leads to its layer, but nothing drags: a grown tap reaches
-    // past its own layer, and dragging that outer margin would move a layer
-    // that is not under the pointer.
+    // so a tap box leads to its layer, but a layer never drags here: a pushed-out
+    // tap reaches past its own layer, and dragging that outer margin would move
+    // a layer that is not under the pointer. The one thing that does drag is
+    // the focused tap box itself, which is how a tap area is sized.
     if (this.showTaps) {
+      const focus = this.focusTapId();
+      if (focus !== undefined && hitId === focus && svg && this.draft && this.canEdit) {
+        if (family !== this.activeFamily) {
+          this.activeFamily = family;
+          return;
+        }
+        e.preventDefault();
+        this.beginTapBoxGesture(family as DrawableFamily, e, svg, focus, handle ?? undefined);
+        return;
+      }
       const id = this.hitLayerId(e);
       if (id) this.inspect = { kind: "layer", id };
+      // Bare background: back to every tap area.
+      else if (hitId === undefined) this.inspect = { kind: "general" };
       return;
     }
     if (!this.draft || !this.canEdit) return;
@@ -1498,13 +1532,7 @@ export class WristAssistantPanel extends LitElement {
       this.activeFamily = family;
       return;
     }
-    const target = e.target as SVGElement;
-    const handle = target.closest("[data-handle]")?.getAttribute("data-handle") as HandleCorner | null;
-    const group = target.closest("[data-element-id]");
-    const hitId = group?.getAttribute("data-element-id");
-    if (!hitId) return;
-    const svg = target.closest("svg") as SVGSVGElement | null;
-    if (!svg) return;
+    if (!hitId || !svg) return;
     // An attached tap sits exactly over its owner and is not a layer the user
     // ever selects or drags: send the hit to the layer it belongs to, which is
     // what the author sees there. A free-standing tap is grabbed as before.
@@ -1517,32 +1545,56 @@ export class WristAssistantPanel extends LitElement {
     }
     e.preventDefault();
     const frame = effectivePlacement(this.draft.config, family, el).frame;
-    // Pointer deltas arrive in slot points; normalize against the design box as
-    // it lands in this slot, so a drag in a 41 mm preview moves the same fraction.
-    // Corner draws the design box scaled down into the visible content tile
-    // (renderer.ts cornerTileSide), so its gestures normalize against the tile.
-    const fit = fitBox(this.previewSlot(family as DrawableFamily), family as DrawableFamily);
-    let canvas = { width: fit.width, height: fit.height };
-    if (family === "corner") {
-      const corner = this.draft.config.perFamily.corner;
-      const hasBezel = !!corner?.bezelText || !!corner?.bezelGauge;
-      const tile = cornerTileSide(fit.scale, hasBezel);
-      canvas = { width: tile, height: tile };
-    }
+    const canvas = this.gestureCanvas(family as DrawableFamily);
     // The timestamp chip sits inside its image layer's group, so the layer hit
-    // above already selected the right layer. Dragging the chip moves the chip,
-    // not the layer, and only once the author has asked for free placement.
-    if (target.closest("[data-ts-handle]") && el.kind === "image" && hasFreeTimestamp(el.payload)) {
-      const chipBox = { x: 0, y: 0, w: frame.width * canvas.width, h: frame.height * canvas.height };
-      const base = { x: el.payload.timestampX!, y: el.payload.timestampY! };
+    // above already selected the right layer. A press on the chip selects the
+    // chip: dragging it moves it (and frees it from its corner on the first
+    // move), dragging one of its corners changes the text size.
+    if (onChip && el.kind === "image" && el.payload.timestamp === true) {
+      this.timestampActiveId = id;
+      const img = el.payload;
+      const design = DESIGN_BOX[family as DrawableFamily];
+      const lw = frame.width * design.width;
+      const lh = frame.height * design.height;
+      const layerBox = { x: 0, y: 0, w: lw, h: lh, cx: lw / 2, cy: lh / 2 };
+      const chip = timestampChipRect(img, layerBox, timestampLabel(new Date()));
       this.cancelGesture?.();
+      if (tsCorner) {
+        // Chip geometry is in design points; the pointer moves in slot points.
+        const scale = canvas.width / design.width;
+        const startSize = img.timestampSize;
+        this.cancelGesture = beginScaleDrag(svg, e, tsCorner, { w: chip.w * scale, h: chip.h * scale }, (factor, done) => {
+          const size = Math.min(40, Math.max(4, Math.round(startSize * factor)));
+          this.mutate((c) => {
+            const n = c.elements.find((x) => x.payload.id === id);
+            if (n?.kind === "image") n.payload.timestampSize = size;
+          }, `ts-size-${id}`);
+          if (done) {
+            this.draft?.endGesture();
+            this.cancelGesture = undefined;
+          }
+        });
+        return;
+      }
+      const chipBox = { x: 0, y: 0, w: frame.width * canvas.width, h: frame.height * canvas.height };
+      // A cornered chip starts its drag from where the corner put it, so the
+      // first move is a nudge rather than a jump.
+      const base = hasFreeTimestamp(img)
+        ? { x: img.timestampX!, y: img.timestampY! }
+        : { x: (chip.x + chip.w / 2) / layerBox.w, y: (chip.y + chip.h / 2) / layerBox.h };
+      let moved = false;
       this.cancelGesture = beginPointDrag(svg, chipBox, e, base, (x, y, done) => {
-        this.mutate((c) => {
-          const img = c.elements.find((n) => n.payload.id === id);
-          if (img?.kind !== "image") return;
-          img.payload.timestampX = x;
-          img.payload.timestampY = y;
-        }, `ts-${id}`);
+        // A plain click selects the chip and changes nothing, so a cornered
+        // chip stays cornered until it is actually dragged.
+        if (!done) moved = true;
+        if (moved) {
+          this.mutate((c) => {
+            const n = c.elements.find((x) => x.payload.id === id);
+            if (n?.kind !== "image") return;
+            n.payload.timestampX = x;
+            n.payload.timestampY = y;
+          }, `ts-${id}`);
+        }
         if (done) {
           this.draft?.endGesture();
           this.cancelGesture = undefined;
@@ -1554,6 +1606,61 @@ export class WristAssistantPanel extends LitElement {
     this.cancelGesture = beginGesture(svg, canvas, e, { elementId: id, frame, handle: handle ?? undefined }, {
       onFrame: (elementId: string, f: NormalizedFrame, done: boolean) => {
         this.mutate((c) => setPlacement(c, family, elementId, { frame: f }), `drag-${elementId}-${family}`);
+        if (done) {
+          this.draft?.endGesture();
+          this.cancelGesture = undefined;
+        }
+      },
+    });
+  }
+
+  /**
+   * The canvas gestures in one preview normalise against. Pointer deltas arrive
+   * in slot points; the design box as it lands in this slot turns them into the
+   * same fraction a 41 mm and a 46 mm preview would both move. Corner draws the
+   * design box scaled down into the visible content tile (renderer.ts
+   * cornerTileSide), so its gestures normalise against the tile.
+   */
+  private gestureCanvas(family: DrawableFamily): { width: number; height: number } {
+    const fit = fitBox(this.previewSlot(family), family);
+    if (family !== "corner") return { width: fit.width, height: fit.height };
+    const corner = this.draft?.config.perFamily.corner;
+    const hasBezel = !!corner?.bezelText || !!corner?.bezelGauge;
+    const tile = cornerTileSide(fit.scale, hasBezel);
+    return { width: tile, height: tile };
+  }
+
+  /** The tap the Show taps view is narrowed to: the selected layer's attached
+   * tap, or the selected layer itself when it is a free-standing tap. Undefined
+   * shows every tap area, as before there was anything to narrow to. */
+  private focusTapId(): string | undefined {
+    const cfg = this.draft?.config;
+    if (!cfg || !this.showTaps || this.inspect.kind !== "layer") return undefined;
+    const id = this.inspect.id;
+    const el = cfg.elements.find((x) => x.payload.id === id);
+    if (!el) return undefined;
+    if (el.kind === "tap") return el.payload.id;
+    return attachedTapsOf(cfg, id)[0]?.payload.id;
+  }
+
+  /**
+   * Drag the focused tap box: a corner resizes it, the body moves it. An
+   * attached tap turns the frame into points past its layer's edges, which then
+   * apply in every shape; a free-standing tap is simply placed, as any layer is.
+   */
+  private beginTapBoxGesture(family: DrawableFamily, e: PointerEvent, svg: SVGSVGElement, tapId: string, handle?: HandleCorner) {
+    const cfg = this.draft?.config;
+    const tap = cfg?.elements.find((x) => x.payload.id === tapId);
+    if (!cfg || !tap) return;
+    const attached = isAttachedTap(cfg, tap);
+    const frame = effectivePlacement(cfg, family, tap).frame;
+    this.cancelGesture?.();
+    this.cancelGesture = beginGesture(svg, this.gestureCanvas(family), e, { elementId: tapId, frame, handle }, {
+      onFrame: (elementId: string, f: NormalizedFrame, done: boolean) => {
+        this.mutate((c) => {
+          if (attached) setTapOutsetFromFrame(c, elementId, family, f);
+          else setPlacement(c, family, elementId, { frame: f });
+        }, `tap-box-${elementId}-${family}`);
         if (done) {
           this.draft?.endGesture();
           this.cancelGesture = undefined;
@@ -1912,11 +2019,18 @@ export class WristAssistantPanel extends LitElement {
       const fit = fitBox(slot, family);
       // Pick mode drops the resize handles: they are drag affordances, and
       // while picking nothing on the face is dragged.
+      // Review mode drops them too, except on the one tap box it is narrowed
+      // to, which is dragged to size there.
+      const focus = this.focusTapId();
       const opts = {
-        icons: this.icons, imageSizes: this.imageSizes, showHidden: true, tapAreas: true, highlightId, slot,
+        icons: this.icons, imageSizes: this.imageSizes, showHidden: true, tapAreas: true, slot,
+        highlightId: focus ?? highlightId,
         tapReview: this.showTaps,
-        handles: active && this.canEdit && !this.picking && !this.showTaps,
+        ...(focus !== undefined ? { tapFocusId: focus } : {}),
+        handles: active && this.canEdit && !this.picking && (!this.showTaps || focus !== undefined),
         ...(this.picking && this.pickHoverId !== undefined ? { hoverId: this.pickHoverId } : {}),
+        ...(this.timestampActiveId !== undefined && this.timestampActiveId === highlightId && !this.showTaps && !this.picking
+          ? { timestampActiveId: this.timestampActiveId } : {}),
       };
       const pct = Math.round(fit.scale * 100);
       return html`

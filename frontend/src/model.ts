@@ -328,18 +328,29 @@ export interface TapElement extends Omit<ElementBase, "colorSlot"> {
    * rectangle up by hand. Encoded only when set; the watch ignores it and
    * draws the frame exactly as it does for a free-standing tap. */
   attachedTo?: string;
-  /** Design-box points added on every side of an attached tap's area, so a
-   * small layer can still be an easy target. Default 0, encoded only when it
-   * is more. Meaningless on a free-standing tap, which is resized by dragging
-   * it; the inflation happens in `syncAttachedTaps`, per shape, because the
-   * three design boxes turn the same point value into different fractions.
-   * The watch never reads this: it draws the frames it is given. */
-  grow?: number;
+  /** How far an attached tap's area reaches past its layer on each side, in
+   * design-box points (negative pulls it inside the layer). Editor state, not
+   * on the wire: the frames already carry the result, and `syncAttachedTaps`
+   * reads it back from them when a document arrives, so a round trip through
+   * the watch loses nothing. Applied per shape, because the three design
+   * boxes turn the same point value into different fractions. Undefined means
+   * "adopt whatever frame the document has for this tap". */
+  outset?: TapOutset;
 }
 
-/** How far a tap area can be grown, in design-box points. The corner box is
- * only 34 pt across, so 20 on every side already covers all of it. */
-export const TAP_MAX_GROW = 20;
+/** Points past the owner's edge on each side of an attached tap. */
+export interface TapOutset {
+  top: number;
+  left: number;
+  bottom: number;
+  right: number;
+}
+
+export const ZERO_OUTSET: TapOutset = { top: 0, left: 0, bottom: 0, right: 0 };
+
+export function isZeroOutset(o: TapOutset | undefined): boolean {
+  return o === undefined || (o.top === 0 && o.left === 0 && o.bottom === 0 && o.right === 0);
+}
 
 export type Element =
   | { kind: "text"; payload: TextElement }
@@ -767,10 +778,9 @@ export function parseElement(raw: unknown): Element {
       // Element ids are uppercased on the way in, so the owner id has to be
       // too or nothing would ever match it.
       if (typeof p.attachedTo === "string") el.attachedTo = p.attachedTo.toUpperCase();
-      const grow = optNum(p.grow);
-      if (grow !== undefined && Number.isFinite(grow) && grow > 0) {
-        el.grow = Math.min(grow, TAP_MAX_GROW);
-      }
+      // `grow` (a uniform inflation, retired 2026-09-04) is not read: the frames
+      // already carry its result, and syncAttachedTaps recovers the outset from
+      // them. It stays in the key audit so an older document still opens.
       return { kind: "tap", payload: el };
     }
     default:
@@ -1100,7 +1110,6 @@ function encodeElement(el: Element): J {
       if (p.openPageId !== undefined) o.openPageId = p.openPageId;
       if (p.openPageName !== undefined) o.openPageName = p.openPageName;
       if (p.attachedTo !== undefined) o.attachedTo = p.attachedTo;
-      if (p.grow !== undefined && p.grow > 0) o.grow = encNum(p.grow);
       o.rules = encodeRules(p.rules);
       o.frame = encodeFrame(p.frame);
       o.isHidden = p.isHidden;
@@ -1217,6 +1226,10 @@ const K = {
   // save.
   image: ["entity", "timestamp", "contentMode", "zoom", "panX", "panY", "cornerRadius",
     "timestampCorner", "timestampSize", "timestampStyle", "timestampX", "timestampY"],
+  // `grow` is retired (the uniform tap inflation, replaced by a resizable tap
+  // box on 2026-09-04). Listed so a document saved while it existed still
+  // opens; nothing decodes it, and it leaves the wire on that document's next
+  // save. The tap's frames already carry what it did.
   tap: ["action", "openPageId", "openPageName", "attachedTo", "grow"],
   colorSlot: ["baseColorHex"],
   rule: ["id", "cases", "otherwise"],
@@ -1562,22 +1575,28 @@ export function defaultAttachedTapAction(cfg: CustomComplicationConfig, owner: E
 }
 
 /**
- * One frame with `grow` points added on every side, inside the given design
- * box, then held inside the face. The box matters: 8 pt is 4.4% of a
- * rectangular width and 23.5% of a corner one, so the same grow has to be
+ * One frame pushed out by `outset` points on each side, inside the given
+ * design box, then held inside the face. The box matters: 8 pt is 4.4% of a
+ * rectangular width and 23.5% of a corner one, so the same points have to be
  * turned into a fraction shape by shape.
  *
- * A grown edge that would leave the face stops at the edge instead, because a
- * tap target outside the slot is area nobody can reach.
+ * An edge that would leave the face stops at the edge instead, because a tap
+ * target outside the slot is area nobody can reach. An outset that would turn
+ * the box inside out collapses it to a line at the owner's centre instead.
  */
-export function grownFrame(frame: NormalizedFrame, grow: number, box: { width: number; height: number }): NormalizedFrame {
-  if (!(grow > 0) || box.width <= 0 || box.height <= 0) return { ...frame };
-  const gx = grow / box.width;
-  const gy = grow / box.height;
-  const left = clamp01(frame.x - gx);
-  const top = clamp01(frame.y - gy);
-  const right = clamp01(frame.x + frame.width + gx);
-  const bottom = clamp01(frame.y + frame.height + gy);
+export function outsetFrame(frame: NormalizedFrame, outset: TapOutset | undefined, box: { width: number; height: number }): NormalizedFrame {
+  if (isZeroOutset(outset) || box.width <= 0 || box.height <= 0) return { ...frame };
+  const o = outset!;
+  let left = frame.x - o.left / box.width;
+  let right = frame.x + frame.width + o.right / box.width;
+  let top = frame.y - o.top / box.height;
+  let bottom = frame.y + frame.height + o.bottom / box.height;
+  if (right < left) left = right = (left + right) / 2;
+  if (bottom < top) top = bottom = (top + bottom) / 2;
+  left = clamp01(left);
+  right = clamp01(right);
+  top = clamp01(top);
+  bottom = clamp01(bottom);
   return {
     ...frame,
     x: left,
@@ -1585,6 +1604,48 @@ export function grownFrame(frame: NormalizedFrame, grow: number, box: { width: n
     width: Math.max(0, right - left),
     height: Math.max(0, bottom - top),
   };
+}
+
+/** The outset, in points of `box`, that takes `owner` to `tap`. The inverse of
+ * `outsetFrame` short of the face clamp: an edge that was held at the face
+ * reads as reaching exactly the face, which draws the same. */
+export function outsetBetween(owner: NormalizedFrame, tap: NormalizedFrame, box: { width: number; height: number }): TapOutset {
+  // `|| 0` turns the -0 a tiny negative rounds to into a plain 0, so two
+  // outsets that draw the same also compare the same.
+  const r = (n: number) => Math.round(n * 100) / 100 || 0;
+  return {
+    left: r((owner.x - tap.x) * box.width),
+    right: r((tap.x + tap.width - owner.x - owner.width) * box.width),
+    top: r((owner.y - tap.y) * box.height),
+    bottom: r((tap.y + tap.height - owner.y - owner.height) * box.height),
+  };
+}
+
+/**
+ * Set an attached tap's outset from a frame the author dragged out in one
+ * shape. The frame is measured against the owner's frame in that shape and
+ * kept to the face, and the resulting points then apply to every shape, so
+ * one drag sizes the target everywhere. Does nothing for a tap that is not
+ * attached. The caller's `syncAttachedTaps` (every draft update runs it)
+ * writes the frames.
+ */
+export function setTapOutsetFromFrame(
+  cfg: CustomComplicationConfig,
+  tapId: string,
+  family: "rectangular" | "circular" | "corner",
+  frame: NormalizedFrame,
+): void {
+  const tap = cfg.elements.find((el) => el.payload.id === tapId);
+  if (!tap || tap.kind !== "tap" || tap.payload.attachedTo === undefined) return;
+  const owner = cfg.elements.find((el) => el.payload.id === tap.payload.attachedTo);
+  if (!owner) return;
+  const base = cfg.perFamily[family]?.placements[owner.payload.id]?.frame ?? owner.payload.frame;
+  const left = clamp01(frame.x);
+  const top = clamp01(frame.y);
+  const right = clamp01(frame.x + frame.width);
+  const bottom = clamp01(frame.y + frame.height);
+  const held = { ...frame, x: left, y: top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
+  tap.payload.outset = outsetBetween(base, held, DESIGN_BOX[family]);
 }
 
 /**
@@ -1665,11 +1726,19 @@ export function syncAttachedTaps(cfg: CustomComplicationConfig): void {
   for (const [ownerId, list] of taps) {
     const owner = byId.get(ownerId)!;
     for (const tap of list) {
-      const grow = (tap.payload as TapElement).grow ?? 0;
-      // The shared frame has no shape of its own, so it is grown in the
+      const payload = tap.payload as TapElement;
+      // A tap that just arrived carries no outset, only the frames the last
+      // save wrote. Read the outset back from the shared frame, so the target
+      // the author sized keeps its size and keeps following its layer.
+      if (payload.outset === undefined) {
+        payload.outset = outsetBetween(owner.payload.frame, payload.frame, DESIGN_BOX.rectangular);
+      }
+      const outset = payload.outset;
+      const pushed = !isZeroOutset(outset);
+      // The shared frame has no shape of its own, so it is pushed out in the
       // rectangular box. Every supported shape gets its own placement below,
       // so this fallback is only reached by a shape the document does not have.
-      tap.payload.frame = grownFrame(owner.payload.frame, grow, DESIGN_BOX.rectangular);
+      tap.payload.frame = outsetFrame(owner.payload.frame, outset, DESIGN_BOX.rectangular);
       // A hidden layer with a live tap area would be a button nobody can see,
       // so the tap follows the owner's visibility too.
       tap.payload.isHidden = owner.payload.isHidden;
@@ -1678,13 +1747,13 @@ export function syncAttachedTaps(cfg: CustomComplicationConfig): void {
         if (!layout) continue;
         const box = DESIGN_BOX[family as "rectangular" | "circular" | "corner"];
         const p = layout.placements[ownerId];
-        if (grow > 0) {
-          // Grown, the shared frame is inflated by the wrong ratio for this
-          // shape, so the tap needs a placement here even where the owner has
-          // none: it is the only way to say the right fraction.
+        if (pushed) {
+          // Pushed out, the shared frame is inflated by the wrong ratio for
+          // this shape, so the tap needs a placement here even where the owner
+          // has none: it is the only way to say the right fraction.
           const base = p?.frame ?? owner.payload.frame;
           const isHidden = p?.isHidden ?? owner.payload.isHidden;
-          layout.placements[tap.payload.id] = { frame: grownFrame(base, grow, box), isHidden };
+          layout.placements[tap.payload.id] = { frame: outsetFrame(base, outset, box), isHidden };
         } else if (p) {
           layout.placements[tap.payload.id] = { frame: { ...p.frame }, isHidden: p.isHidden };
         } else {
@@ -1721,6 +1790,9 @@ export function attachTap(cfg: CustomComplicationConfig, ownerId: string, action
   const el = newElement("tap");
   const tap = el.payload as TapElement;
   tap.attachedTo = ownerId;
+  // A fresh tap starts flush with its layer. Left undefined, the sync would
+  // read an outset back from the new element's default frame instead.
+  tap.outset = { ...ZERO_OUTSET };
   tap.action = action ?? defaultAttachedTapAction(cfg, owner);
   cfg.elements.push(el);
   syncAttachedTaps(cfg);
