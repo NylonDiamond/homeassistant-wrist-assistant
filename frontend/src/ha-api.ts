@@ -21,6 +21,8 @@ export interface HassLike {
   states: Record<string, HassEntityState>;
   user?: { is_admin?: boolean; name?: string };
   language?: string;
+  /** The frontend's theme state; `darkMode` is what the panel's dark skin keys off. */
+  themes?: { darkMode?: boolean };
 }
 
 import type { OccupiedSlot } from "./model.js";
