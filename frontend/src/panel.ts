@@ -78,7 +78,9 @@ import { uiIcon } from "./ui-icons.js";
 import { beginGesture, beginPointDrag, beginScaleDrag, type HandleCorner } from "./interact.js";
 import {
   type EditorHost,
+  type PickedFlag,
   ALL_SECTIONS,
+  colorField,
   colorWords,
   describeContext,
   describeValue,
@@ -92,6 +94,7 @@ import {
   layerTitle,
   namedValueEditor,
   newNamedValue,
+  pickedCommon,
   setPlacement,
 } from "./editors.js";
 import { type PresetEnv, type PresetKind, LAYER_PRESETS, applyPreset, presetSpec } from "./presets.js";
@@ -776,6 +779,16 @@ export class WristAssistantPanel extends LitElement {
     .sec-h .chev svg { width: 16px; height: 16px; }
     .sec[data-open="true"] .sec-h .chev { transform: rotate(180deg); }
     .sec-b { padding: 8px 12px 12px; }
+    /* The picked layers, read only: the Layers list's colour coding without
+       its controls, so the eye can check the pick without leaving the form. */
+    .picked { display: flex; flex-direction: column; gap: 5px; margin-bottom: 4px; }
+    .picked .row { display: grid; grid-template-columns: 4px minmax(0, 1fr); align-items: center; gap: 8px; font-size: 13px; }
+    .picked .row .bar { width: 4px; height: 22px; border-radius: 2px; background: var(--k); }
+    .picked .row .name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .picked .row .name b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .picked .row .glyph { display: inline-grid; place-items: center; width: 18px; height: 18px; flex: none; }
+    .picked .row .glyph svg { width: 16px; height: 16px; display: block; }
+    .picked .row .kind { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--k); flex: none; }
     .adders { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
     dialog.preset-dialog {
       width: min(420px, calc(100vw - 32px)); padding: 16px 18px 18px;
@@ -844,6 +857,7 @@ export class WristAssistantPanel extends LitElement {
     .field.check { grid-template-columns: auto minmax(0, 1fr); gap: 8px; }
     .field.check input { width: 16px; height: 16px; margin: 0; accent-color: var(--c, var(--primary-color)); }
     .field.check > span { color: inherit; }
+    .field.check .mixed { color: var(--wa-muted); font-size: 12px; }
     .field.entity-field, .field.value-chip-field { display: flex; flex-direction: column; gap: 3px; align-items: stretch; }
     .field.entity-field > span, .field.value-chip-field > span { font-size: 12px; }
     .color-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -2958,16 +2972,20 @@ export class WristAssistantPanel extends LitElement {
 
   // ── inspector ─────────────────────────────────────────────────────────
 
-  private crumbs(cfg: CustomComplicationConfig) {
+  private crumbs(cfg: CustomComplicationConfig, picked?: number) {
     const ins = this.inspect;
     const name = cfg.name.trim() || "Complication";
     const shape = this.activeFamily === "inline" ? "Inline" : familyTitle(this.activeFamily);
-    const shapeCrumb = ins.kind === "family"
+    const shapeCrumb = ins.kind === "family" && picked === undefined
       ? html`<span class="here" style=${`--k:${SECTION_COLOR.place}`}>${shape} shape</span>`
       : html`<button @click=${() => { this.inspect = { kind: "family" }; }} title="Edit the shape">${shape}</button>`;
     let here: TemplateResult | typeof nothing = nothing;
     let parent: TemplateResult | typeof nothing = nothing;
-    if (ins.kind === "layer") {
+    // A pick of several layers is what the inspector is about, whatever the
+    // one selected layer under it happens to be.
+    if (picked !== undefined) {
+      here = html`<span class="here" style="--k:var(--primary-color)"><span class="kchip">Picked</span>${picked} layers</span>`;
+    } else if (ins.kind === "layer") {
       const el = cfg.elements.find((e) => e.payload.id === ins.id);
       if (el) {
         here = html`<span class="here" style=${`--k:${KIND_COLOR[el.kind]}`}><span class="kchip">${KIND_LABEL[el.kind]}</span>${layerTitle(el, describeContext(this.host()))}</span>`;
@@ -2989,14 +3007,32 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
   }
 
+  /** The picked layers that still exist, in the document's draw order. */
+  private pickedElements(cfg: CustomComplicationConfig): CElement[] {
+    if (this.multi.size < 2) return [];
+    return cfg.elements.filter((e) => this.multi.has(e.payload.id));
+  }
+
   /**
    * The inspector: the thing that was clicked, as a column of cards. The
    * complication's own settings live under the preview, so with nothing
    * selected the column says so instead of showing a form.
+   *
+   * A pick of two or more layers takes the column over. The one-layer form
+   * would still be showing whichever layer was selected first, and every edit
+   * in it would land on that one layer alone, which is a lie the size of the
+   * whole inspector.
    */
   private renderInspector() {
     const cfg = this.draft?.config;
     if (!cfg) return nothing;
+    const picked = this.pickedElements(cfg);
+    if (picked.length >= 2) {
+      return html`
+        <div class="insp-head">${this.crumbs(cfg, picked.length)}</div>
+        <div class="insp-body" style=${this.canEdit ? "" : "pointer-events:none;opacity:.6"}
+          @change=${() => this.draft?.endGesture()}>${this.multiEditor(cfg, picked)}</div>`;
+    }
     const host = this.host();
     const ins = this.inspect;
     let body: TemplateResult | typeof nothing = nothing;
@@ -3041,6 +3077,85 @@ export class WristAssistantPanel extends LitElement {
         ${cards ? html`<button class="expand" @click=${() => { this.openSections = all ? new Set([defaultSection(ins)]) : new Set(ALL_SECTIONS); }}>${all ? "One at a time" : "Open all"}</button>` : nothing}
       </div>
       <div class="insp-body" style=${this.canEdit ? "" : "pointer-events:none;opacity:.6"} @change=${() => this.draft?.endGesture()}>${body}</div>`;
+  }
+
+  /**
+   * A tick that three states fit into: on, off, and "these layers disagree".
+   * A click on a mixed one settles the argument rather than flipping each
+   * layer, which is the only reading that is the same before and after.
+   */
+  private triCheck(label: string, state: PickedFlag, set: (v: boolean) => void) {
+    return html`<label class="field check">
+      <input type="checkbox" .checked=${state === "all"} .indeterminate=${state === "mixed"}
+        @change=${(e: Event) => set((e.target as HTMLInputElement).checked)} />
+      <span>${label}${state === "mixed" ? html` <span class="mixed">(mixed)</span>` : nothing}</span></label>`;
+  }
+
+  /**
+   * The inspector with several layers picked: which ones, what to do with the
+   * set, and the few settings they all have in common.
+   *
+   * Deliberately short. Everything here has to mean the same thing on a text
+   * layer, a picture and a tap area, so anything that reads differently per
+   * kind stays in the one-layer editor where the form matches the object.
+   */
+  private multiEditor(cfg: CustomComplicationConfig, picked: readonly CElement[]): TemplateResult {
+    const family = this.canvasFamily;
+    const ctx = describeContext(this.host());
+    const resolver = new Resolver(this.buildContext());
+    const common = pickedCommon(cfg, family, picked);
+    const n = picked.length;
+    // Top of the list draws last, same as the Layers card, so the two agree.
+    const rows = [...picked].reverse();
+    const setHiddenHere = (v: boolean) => this.mutate((c) => {
+      for (const el of picked) setPlacement(c, family, el.payload.id, { isHidden: v });
+    });
+    const setHiddenEverywhere = (v: boolean) => this.mutate((c) => {
+      for (const el of picked) {
+        const t = c.elements.find((e) => e.payload.id === el.payload.id);
+        if (t) t.payload.isHidden = v;
+      }
+    });
+    const setColour = (v: string) => this.mutate((c) => {
+      for (const el of picked) {
+        const t = c.elements.find((e) => e.payload.id === el.payload.id);
+        if (t && t.kind !== "image" && t.kind !== "tap") t.payload.colorSlot.baseColorHex = v;
+      }
+    }, "multi-colour");
+    return html`
+      <div class="sec" data-open="true" style="--c:var(--primary-color)">
+        <div class="sec-h"><span class="swatch">${uiIcon("layers")}</span>
+          <span class="tt"><h4>${n} layers picked</h4><span class="sum">Edits here land on all ${n}</span></span></div>
+        <div class="sec-b">
+          <div class="picked">
+            ${rows.map((el) => html`<div class="row" style=${`--k:${KIND_COLOR[el.kind]}`}>
+              <span class="bar"></span>
+              <span class="name">
+                ${el.kind === "icon" ? html`<span class="glyph">${this.icons.render(resolver.resolve(el.payload.symbol) ?? "questionmark", 16, el.payload.colorSlot.baseColorHex) ?? nothing}</span>` : nothing}
+                <b>${layerTitle(el, ctx)}</b><span class="kind">${KIND_LABEL[el.kind]}</span>
+              </span>
+            </div>`)}
+          </div>
+          <div class="hint">${MULTI_KEY}-click a layer to add it or take it out. Click one on its own to edit it alone.</div>
+          <div class="adders">
+            <button class="small primary" @click=${() => this.groupPicked()}>Group them</button>
+            <button class="small" @click=${() => { this.multi = new Set(); }}>Clear</button>
+          </div>
+        </div>
+      </div>
+      <div class="sec" data-open="true" style=${`--c:${SECTION_COLOR.place}`}>
+        <div class="sec-h"><span class="swatch">${uiIcon("place")}</span>
+          <span class="tt"><h4>All ${n} at once</h4><span class="sum">The settings every picked layer has</span></span></div>
+        <div class="sec-b">
+          ${this.triCheck(`Hidden in ${familyTitle(family)}`, common.hiddenHere, setHiddenHere)}
+          ${this.triCheck("Hidden in every shape", common.hiddenEverywhere, setHiddenEverywhere)}
+          ${common.colourable
+            ? html`${colorField("Colour", common.colour, (v) => { if (v !== undefined) setColour(v); })}
+              ${common.colour === undefined ? html`<div class="hint">These layers are different colours. Pick one to give them all the same.</div>` : nothing}`
+            : html`<div class="hint">No shared colour: a picture and a tap area have none.</div>`}
+          <div class="hint">Size, content and states belong to one layer at a time. Click a layer on its own to reach them.</div>
+        </div>
+      </div>`;
   }
 
   /**

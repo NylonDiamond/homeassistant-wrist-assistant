@@ -1174,6 +1174,57 @@ export function elementSize(el: CElement): number | undefined {
   }
 }
 
+// ── Several layers at once ────────────────────────────────────────────────
+
+/**
+ * One yes/no setting read across several picked layers: they are all on, all
+ * off, or they disagree. A mixed setting shows as an indeterminate tick, so
+ * the click that follows means "make them all this" rather than "flip each".
+ */
+export type PickedFlag = "all" | "none" | "mixed";
+
+export function flagAcross(values: readonly boolean[]): PickedFlag {
+  if (values.length === 0) return "none";
+  if (values.every((v) => v)) return "all";
+  if (values.every((v) => !v)) return "none";
+  return "mixed";
+}
+
+/** A layer's own colour, or undefined for the kinds that have none: a picture
+ * draws a photo and a tap area draws nothing. */
+export function elementColour(el: CElement): string | undefined {
+  return el.kind === "image" || el.kind === "tap" ? undefined : el.payload.colorSlot.baseColorHex;
+}
+
+export interface PickedCommon {
+  /** Hidden in the shape being edited. */
+  hiddenHere: PickedFlag;
+  /** Hidden in every shape: each layer's own flag. */
+  hiddenEverywhere: PickedFlag;
+  /** Whether every picked layer has a colour to set at all. */
+  colourable: boolean;
+  /** The colour they already share, or undefined when they differ or one of
+   * them has none. Blank in the field is what "they differ" looks like. */
+  colour: string | undefined;
+}
+
+/**
+ * What the picked layers agree on, for the inspector's multi-pick panel.
+ *
+ * Only settings every kind of layer has are read here. Anything narrower
+ * belongs to the one-layer editor, where the form can match the kind.
+ */
+export function pickedCommon(cfg: CustomComplicationConfig, family: FamilyKind, els: readonly CElement[]): PickedCommon {
+  const hiddenHere = flagAcross(els.map((el) => effectivePlacement(cfg, family, el).isHidden));
+  const hiddenEverywhere = flagAcross(els.map((el) => el.payload.isHidden));
+  const colours = els.map(elementColour);
+  const colourable = els.length > 0 && colours.every((c) => c !== undefined);
+  const first = colours[0];
+  const shared = colourable && first !== undefined
+    && colours.every((c) => c !== undefined && c.toUpperCase() === first.toUpperCase());
+  return { hiddenHere, hiddenEverywhere, colourable, colour: shared ? first : undefined };
+}
+
 const FONT_WEIGHTS: [FontWeight, string][] = [["regular", "Regular"], ["medium", "Medium"], ["semibold", "Semibold"], ["bold", "Bold"]];
 
 /**
