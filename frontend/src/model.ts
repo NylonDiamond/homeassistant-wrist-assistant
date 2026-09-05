@@ -1556,7 +1556,7 @@ export function newConfig(name: string, slotIndex: number, families: FamilyKind[
     supportedFamilies: ALL_FAMILY_ORDER.filter((f) => families.includes(f)),
     perFamily,
     dataSources: [],
-    refreshMinutes: 15,
+    refreshMinutes: 0,
     tapAction: { type: "refresh" },
   };
   if (families.includes("inline")) cfg.inline = { value: literal("Text") };

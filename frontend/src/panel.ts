@@ -261,7 +261,6 @@ export class WristAssistantPanel extends LitElement {
   /** The header's complication menu is open. */
   @state() private pickerOpen = false;
   /** The Shared values list under the complication settings is unfolded. */
-  @state() private showValues = false;
   /** Entity states typed in under the preview, standing in for the live ones
    * so the other states can be seen without waiting for the house. Never
    * saved; cleared by Back to live. */
@@ -272,6 +271,8 @@ export class WristAssistantPanel extends LitElement {
   private dragId?: string;
   /** Layers picked with Cmd/Ctrl-click, in the list or on the preview, waiting to be grouped. */
   @state() private multi: ReadonlySet<string> = new Set();
+  /** The row a shift-click measures its range from: the last row clicked. */
+  private pickAnchor?: string;
   /** Groups folded shut in the Layers list. List state only, never saved. */
   @state() private collapsed: ReadonlySet<string> = new Set();
   @state() private activeFamily: FamilyKind = "rectangular";
@@ -569,11 +570,9 @@ export class WristAssistantPanel extends LitElement {
     .layer.group .chev[aria-expanded="false"] svg { transform: rotate(-90deg); }
     .layer.group .bar { background: repeating-linear-gradient(180deg, var(--k) 0 5px, transparent 5px 8px); }
     .layer.group.drop-into { box-shadow: inset 0 0 0 2px var(--primary-color); }
-    .layer.group.locked { border-color: color-mix(in srgb, var(--k) 55%, transparent); }
-    .layer.group.locked .name b { color: var(--k); }
     .layer .lockbtn { width: 24px; height: 24px; opacity: .55; }
     .layer .lockbtn svg.ui-icon { width: 15px; height: 15px; }
-    .layer .lockbtn.on { opacity: .95; color: var(--k); }
+    .layer .lockbtn.on { opacity: 1; color: ${unsafeCSS(SECTION_COLOR.locked)}; filter: drop-shadow(0 0 4px ${unsafeCSS(SECTION_COLOR.locked)}); }
     .layer:hover .lockbtn, .layer.hl .lockbtn { opacity: 1; }
     .group-kids { margin: 2px 0 4px 14px; padding-left: 8px; border-left: 2px solid var(--wa-line); display: flex; flex-direction: column; gap: 3px; }
 
@@ -622,12 +621,24 @@ export class WristAssistantPanel extends LitElement {
     .strip-row { padding: 18px 0 20px; }
     .strip-row + .strip-row { border-top: 1px solid var(--wa-line); }
     .strip-row .help { font-size: 12px; color: var(--wa-muted); margin-top: 8px; }
-    .settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 380px)); gap: 0 32px; }
-    .settings .field { margin: 5px 0; }
-    .settings .entity-field, .settings .hint { grid-column: 1 / -1; max-width: 800px; }
-    .links { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin-top: 8px; font-size: 13px; }
-    .links button.link { font-size: 13px; }
-    .values-list { margin-top: 10px; max-width: 800px; }
+    .settings { max-width: 1100px; }
+    .settings .gen-row { display: grid; grid-template-columns: minmax(160px, 1.3fr) minmax(130px, .8fr) minmax(150px, 1fr) minmax(220px, 1.4fr); gap: 4px 18px; align-items: start; }
+    .settings .gen-row .field { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin: 4px 0; min-width: 0; }
+    .settings .gen-row .field > span { font-size: 12px; }
+    .settings .flash-row { display: flex; align-items: center; gap: 8px; min-height: 30px; min-width: 0; }
+    .settings .flash-row > input[type=checkbox] { width: 16px; height: 16px; margin: 0; flex: none; accent-color: var(--c, var(--primary-color)); }
+    .settings .flash-row .field.color { flex: 1; margin: 0; gap: 0; }
+    .settings .flash-row .field.color > span { display: none; }
+    .settings .flash-row .muted { color: var(--wa-muted); font-size: 13px; }
+    .settings .entity-field, .settings .hint { max-width: 800px; }
+    .values-list { margin-top: 12px; }
+    .values-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .values-head .sub { font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--wa-muted); }
+    .values-head .help { margin: 0; }
+    .values-list .data { display: flex; flex-wrap: wrap; gap: 6px; }
+    .values-list .datum { border: 1px solid var(--wa-line); border-radius: 8px; padding: 6px 8px 6px 10px; max-width: 320px; }
+    .values-list .datum + .datum { box-shadow: none; }
+    .values-list .datum .name { flex: none; max-width: 160px; }
     .tiles { display: flex; gap: 10px; flex-wrap: wrap; }
     .tile-wrap { position: relative; display: flex; }
     .tile-wrap .tile-x { position: absolute; top: 4px; right: 4px; opacity: .45; }
@@ -2263,14 +2274,42 @@ export class WristAssistantPanel extends LitElement {
     };
   }
 
-  /** Cmd/Ctrl-click picks several rows; a plain click selects one and clears the pick. */
+  /**
+   * Cmd/Ctrl-click adds one row to the pick. Shift-click picks every row from
+   * the last clicked row to this one. A plain click selects one and clears
+   * the pick.
+   */
   private clickRow(id: string, e: MouseEvent) {
+    if (e.shiftKey && !e.metaKey && !e.ctrlKey) {
+      this.pickRange(id);
+      return;
+    }
     if (isMultiKey(e)) {
       this.togglePick(id);
+      this.pickAnchor = id;
       return;
     }
     this.multi = new Set();
     this.inspect = { kind: "layer", id };
+    this.pickAnchor = id;
+  }
+
+  /** Pick every row between the anchor and `id`, in list order, groups and all. */
+  private pickRange(id: string) {
+    const cfg = this.draft?.config;
+    const anchor = this.pickAnchor ?? (this.inspect.kind === "layer" ? this.inspect.id : undefined);
+    if (!cfg || anchor === undefined || anchor === id) {
+      this.togglePick(id);
+      return;
+    }
+    const ids = [...cfg.elements].filter((el) => !isAttachedTap(cfg, el)).reverse().map((el) => el.payload.id);
+    const a = ids.indexOf(anchor);
+    const b = ids.indexOf(id);
+    if (a < 0 || b < 0) {
+      this.togglePick(id);
+      return;
+    }
+    this.multi = new Set(ids.slice(Math.min(a, b), Math.max(a, b) + 1));
   }
 
   /**
@@ -2396,7 +2435,7 @@ export class WristAssistantPanel extends LitElement {
         if (!open && y > 0.75) return "drop-after";
         return "drop-into";
       };
-      return html`<div class="layer group ${hl ? "hl" : ""} ${g.locked ? "locked" : ""}" style=${`--k:${g.locked ? SECTION_COLOR.locked : SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
+      return html`<div class="layer group ${hl ? "hl" : ""}" style=${`--k:${SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
         @click=${() => { this.multi = new Set(); this.inspect = { kind: "group", id: g.id }; }}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "group", id: g.id }; }}
         @dragstart=${d.onStart} @dragend=${d.onEnd}
@@ -2469,7 +2508,7 @@ export class WristAssistantPanel extends LitElement {
             <button class="small primary" @click=${() => this.groupPicked()}>Group them</button>
             <button class="small" @click=${() => { this.multi = new Set(); }}>Clear</button></div>`
         : cfg.elements.length >= 2 && edit && !cfg.groups?.length
-          ? html`<div class="hint">${MULTI_KEY}-click two or more layers, here or on the preview, to group them so a finished part moves as one.</div>`
+          ? html`<div class="hint">${MULTI_KEY}-click layers here or on the preview, or shift-click a range of rows, then group them so a finished part moves as one.</div>`
           : nothing}
       ${cfg.elements.length === 0 ? html`<div class="empty">No layers yet. Add one above.</div>` : nothing}
       <div class="layers">
@@ -2723,6 +2762,7 @@ export class WristAssistantPanel extends LitElement {
     const ctx = describeContext(host);
     return html`<div class="strip-row" style=${`--c:${SECTION_COLOR.complication}`} @change=${() => this.draft?.endGesture()}>
       <h2 class="panel-title">Complication<span class="spacer"></span><span class="mini">${mini}</span>
+        <button class="small" @click=${() => this.openRaw()}>Raw JSON</button>
         ${this.canEdit ? html`
           <button class="small" @click=${() => this.duplicate()}>Duplicate</button>
           ${this.confirmDelete
@@ -2730,12 +2770,12 @@ export class WristAssistantPanel extends LitElement {
             : html`<button class="danger small" @click=${() => { this.confirmDelete = true; }}>Delete</button>`}` : nothing}
       </h2>
       <div class="settings" style=${this.canEdit ? "" : "pointer-events:none;opacity:.6"}>${generalEditor(host)}</div>
-      <div class="links">
-        <button class="link" @click=${() => { this.showValues = !this.showValues; }}>Shared values · ${values.length === 0 ? "none" : values.length}</button>
-        <button class="link" @click=${() => this.openRaw()}>Raw JSON</button>
-      </div>
-      ${this.showValues ? html`<div class="values-list">
-        <div class="hint">A value defined once and read by several layers. Set a layer's Source to "Named value" to use one. A layer that needs a value only once can read the entity directly.</div>
+      <div class="values-list">
+        <div class="values-head"><span class="sub">Shared values</span>
+          ${this.canEdit ? html`<button class="small" @click=${() => { const nv = newNamedValue(); this.mutate((c) => { c.values.push(nv); }); this.inspect = { kind: "data", id: nv.id }; }}>Add</button>` : nothing}
+          <span class="help" title="A value defined once and read by several layers. Set a layer's Source to &quot;Named value&quot; to use one.">Defined once, read by several layers.</span>
+        </div>
+        ${values.length === 0 ? nothing : html`<div class="data">
         ${values.map((v) => {
           const r = resolver.resolve({ kind: { kind: "named", id: v.id } });
           const hl = this.inspect.kind === "data" && this.inspect.id === v.id;
@@ -2745,8 +2785,8 @@ export class WristAssistantPanel extends LitElement {
             ${this.canEdit ? html`<button class="icon danger" title="Delete value" aria-label="Delete value" @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { c.values = c.values.filter((x) => x.id !== v.id); }); if (hl) this.inspect = { kind: "general" }; }}>${uiIcon("delete")}</button>` : nothing}
           </div>`;
         })}
-        ${this.canEdit ? html`<div class="adders"><button class="small" @click=${() => { const nv = newNamedValue(); this.mutate((c) => { c.values.push(nv); }); this.inspect = { kind: "data", id: nv.id }; }}>Add a shared value</button></div>` : nothing}
-      </div>` : nothing}
+        </div>`}
+      </div>
     </div>`;
   }
 

@@ -1018,22 +1018,46 @@ export function generalEditor(host: EditorHost): TemplateResult {
   // does not refresh it after a rename. Warn once the name actually differs
   // from what the watch last had, so the user knows to re-pick it there.
   const renamed = nameChangedFromWatch(host.savedName, cfg.name);
+  const refresh = cfg.refreshMinutes ?? 0;
+  const refreshOptions: [string, string][] = REFRESH_CHOICES.map((m) => [String(m), refreshLabel(m)]);
+  // A stored value that is not one of the choices stays selectable, so
+  // opening the editor never silently changes it.
+  if (!REFRESH_CHOICES.includes(refresh)) refreshOptions.push([String(refresh), refreshLabel(refresh)]);
+  const flashOn = cfg.showSuccessFlash ?? true;
+  // The main settings sit on one line: name, refresh, tap action, flash.
+  // Anything a tap action needs beyond its type (an entity, a page) goes on
+  // the line under it, full width.
   return html`
-    ${textField("Name", cfg.name, (v) => host.update((c) => { c.name = v; }, "name"))}
+    <div class="gen-row">
+      ${textField("Name", cfg.name, (v) => host.update((c) => { c.name = v; }, "name"))}
+      ${selectField("Refresh", String(refresh), refreshOptions, (v) => host.update((c) => { c.refreshMinutes = Number(v) || 0; }, "refresh"))}
+      ${selectField("Tap action", tap.type, TAP_TYPES, (v) => host.update((c) => {
+        c.tapAction = needsEntity(v) ? { type: v as "toggleEntity", ...("entityId" in c.tapAction ? { entityId: c.tapAction.entityId, displayName: c.tapAction.displayName, domain: c.tapAction.domain } : { entityId: "", displayName: "", domain: "" }) } : { type: v as "refresh" };
+        // Mirrors the iPhone preset editor: the chosen page belongs to the
+        // openPage type; leaving it clears the choice.
+        if (v !== "openPage") { delete c.openPageId; delete c.openPageName; }
+      }))}
+      <div class="field flash-cell"><span>Flash when a tap works</span>
+        <div class="flash-row">
+          <input type="checkbox" .checked=${flashOn} title="Flash when a tap works" @change=${(e: Event) => host.update((c) => { c.showSuccessFlash = (e.target as HTMLInputElement).checked; })} />
+          ${flashOn
+            ? colorField("", cfg.successFlashColorHex, (v) => host.update((c) => { if (v === undefined) delete c.successFlashColorHex; else c.successFlashColorHex = v; }, "flash"), true)
+            : html`<span class="muted">Off</span>`}
+        </div>
+      </div>
+    </div>
     ${renamed ? html`<div class="hint warn">After you change a complication name, let the change sync to the watch, then re-select the complication in the watch's complication picker. Otherwise the list starts to look wrong.</div>` : nothing}
-    ${numberField("Refresh (minutes, 0 = never)", cfg.refreshMinutes ?? 0, (v) => host.update((c) => { c.refreshMinutes = v ?? 0; }, "refresh"), { step: 1, min: 0 })}
-    ${selectField("Tap action", tap.type, TAP_TYPES, (v) => host.update((c) => {
-      c.tapAction = needsEntity(v) ? { type: v as "toggleEntity", ...("entityId" in c.tapAction ? { entityId: c.tapAction.entityId, displayName: c.tapAction.displayName, domain: c.tapAction.domain } : { entityId: "", displayName: "", domain: "" }) } : { type: v as "refresh" };
-      // Mirrors the iPhone preset editor: the chosen page belongs to the
-      // openPage type; leaving it clears the choice.
-      if (v !== "openPage") { delete c.openPageId; delete c.openPageName; }
-    }))}
     ${"entityId" in tap ? entityField(host, "Target", tap, (ref) => host.update((c) => { c.tapAction = { type: tap.type, ...ref }; }, "tap-entity"), "general-tap") : nothing}
-    ${tap.type === "openPage" ? openPageField(host) : nothing}
-    ${checkField("Flash green when a tap works", cfg.showSuccessFlash ?? true, (v) => host.update((c) => { c.showSuccessFlash = v; }))}
-    ${cfg.showSuccessFlash ?? true
-      ? colorField("Flash colour (blank = green)", cfg.successFlashColorHex, (v) => host.update((c) => { if (v === undefined) delete c.successFlashColorHex; else c.successFlashColorHex = v; }, "flash"), true)
-      : nothing}`;
+    ${tap.type === "openPage" ? openPageField(host) : nothing}`;
+}
+
+/** Refresh choices, in minutes. 0 means the watch never refreshes on a timer. */
+const REFRESH_CHOICES = [0, 1, 5, 10, 15, 30, 60, 120];
+
+function refreshLabel(m: number): string {
+  if (m === 0) return "None";
+  if (m % 60 === 0) return m === 60 ? "Every hour" : `Every ${m / 60} hours`;
+  return m === 1 ? "Every minute" : `Every ${m} minutes`;
 }
 
 /** Page picker for the openPage tap action. Options come from the watch's
