@@ -75,7 +75,7 @@ import { SymbolBrowser } from "./symbols.js";
 import { Draft, draftStatus } from "./draft.js";
 import { statesSummary } from "./states.js";
 import { uiIcon } from "./ui-icons.js";
-import { beginGesture, beginPointDrag, beginScaleDrag, type HandleCorner } from "./interact.js";
+import { NUDGE_COARSE, beginGesture, beginPointDrag, beginScaleDrag, nudgeFrame, nudgePoint, type HandleCorner } from "./interact.js";
 import {
   type EditorHost,
   type PickedFlag,
@@ -105,6 +105,15 @@ const TEMPLATE_DEBOUNCE_MS = 500;
 /** Search key for the preset dialog's entity field. One dialog, one field, so
  * one key; the field's transient search state lives in editors.ts under it. */
 const PRESET_ENTITY_KEY = "preset-entity";
+
+/** Which way each arrow key moves the selection, in design points. Screen
+ * coordinates, so Down is +y. */
+const ARROW_STEP: Record<string, { dx: number; dy: number } | undefined> = {
+  ArrowLeft: { dx: -1, dy: 0 },
+  ArrowRight: { dx: 1, dy: 0 },
+  ArrowUp: { dx: 0, dy: -1 },
+  ArrowDown: { dx: 0, dy: 1 },
+};
 
 /** What the inspector is showing. One object, one selection: a layer's states
  * and its placement are sections of the layer, not selections of their own. */
@@ -331,6 +340,15 @@ export class WristAssistantPanel extends LitElement {
   private lastStatesSnapshot?: Record<string, unknown>;
   private cancelGesture?: () => void;
   private keyHandler = (e: KeyboardEvent) => this.onKey(e);
+  /** Arrows being held down right now, only the ones that actually nudged. */
+  private heldArrows = new Set<string>();
+  /** Letting the last one go closes the coalescing window, the way a pointer up
+   * does, so the next run of presses is a fresh undo step. Counting them keeps
+   * a diagonal nudge (two arrows at once) one step rather than two. */
+  private keyUpHandler = (e: KeyboardEvent) => {
+    if (!this.heldArrows.delete(e.key)) return;
+    if (this.heldArrows.size === 0) this.draft?.endGesture();
+  };
 
   static override styles = css`
     :host {
@@ -1004,6 +1022,7 @@ export class WristAssistantPanel extends LitElement {
     this.loadColumnWidths();
     this.sizeObserver.observe(this);
     window.addEventListener("keydown", this.keyHandler);
+    window.addEventListener("keyup", this.keyUpHandler);
     window.addEventListener("beforeunload", this.beforeUnload);
     void this.loadOwners();
   }
@@ -1094,6 +1113,7 @@ export class WristAssistantPanel extends LitElement {
     super.disconnectedCallback();
     this.sizeObserver.disconnect();
     window.removeEventListener("keydown", this.keyHandler);
+    window.removeEventListener("keyup", this.keyUpHandler);
     window.removeEventListener("beforeunload", this.beforeUnload);
     void this.unsubscribe?.();
     if (this.templateTimer) window.clearInterval(this.templateTimer);
@@ -1176,9 +1196,21 @@ export class WristAssistantPanel extends LitElement {
     // Escape also drops the timestamp chip's selection. Not claimed (no
     // preventDefault), so a dialog that is open keeps its Escape too.
     if (e.key === "Escape") this.timestampActiveId = undefined;
+    const focused = e.composedPath()[0] as HTMLElement | undefined;
+    const inField = !!focused?.tagName?.match(/INPUT|TEXTAREA|SELECT/) || focused?.isContentEditable === true;
+    // Arrows nudge what is selected on the preview, but only when they are not
+    // a caret key in a field and nothing else has claimed them: ⌘← is history,
+    // ⌥→ is a word. Shift is the coarse step, so it is allowed through.
+    const step = ARROW_STEP[e.key];
+    if (step && !inField && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (this.nudge(step.dx, step.dy, e.shiftKey)) {
+        e.preventDefault();
+        this.heldArrows.add(e.key);
+      }
+      return;
+    }
     const mod = e.metaKey || e.ctrlKey;
     if (!mod) return;
-    const inField = (e.composedPath()[0] as HTMLElement | undefined)?.tagName?.match(/INPUT|TEXTAREA|SELECT/);
     if (e.key === "s") {
       e.preventDefault();
       void this.save();
@@ -1996,6 +2028,121 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
+   * Arrow keys move what is selected by whole design points: the correction a
+   * drag is too coarse for. One point a press, ten with Shift held, on the
+   * shape the layer controls work on, so the move lands in the same per-shape
+   * layout a drag would write and is clamped the way that drag is clamped.
+   *
+   * Returns whether the key was used, which is what decides `preventDefault`:
+   * with nothing movable selected the arrows stay the page's, and it still
+   * scrolls.
+   */
+  private nudge(dx: number, dy: number, coarse: boolean): boolean {
+    const cfg = this.draft?.config;
+    // Review mode reads the face rather than moving it, and pick mode is
+    // choosing a layer rather than editing one. Neither drags, so neither
+    // nudges.
+    if (!cfg || !this.canEdit || this.showTaps || this.picking) return false;
+    const step = coarse ? NUDGE_COARSE : 1;
+    const px = dx * step;
+    const py = dy * step;
+    const family = this.canvasFamily;
+    const box = DESIGN_BOX[family];
+    // The chip is the innermost thing that can be selected, and it moves inside
+    // its own picture rather than on the face, so it answers first.
+    if (this.timestampActiveId !== undefined && this.nudgeTimestamp(this.timestampActiveId, family, px, py)) return true;
+    if (this.multi.size >= 2) return this.nudgeMany([...this.multi], family, box, `nudge-multi-${family}`, px, py);
+    if (this.inspect.kind === "group") {
+      const gid = this.inspect.id;
+      return this.nudgeMany(groupMembers(cfg, gid).map((m) => m.payload.id), family, box, `nudge-group-${gid}-${family}`, px, py);
+    }
+    if (this.inspect.kind !== "layer") return false;
+    const id = this.inspect.id;
+    const el = cfg.elements.find((x) => x.payload.id === id);
+    if (!el) return false;
+    // A locked group moves as one under the pointer, so it moves as one under
+    // the keyboard too: otherwise a layer could leave its group by arrow and
+    // not by drag.
+    const group = groupOf(cfg, id);
+    if (group?.locked) {
+      return this.nudgeMany(groupMembers(cfg, group.id).map((m) => m.payload.id), family, box, `nudge-group-${group.id}-${family}`, px, py);
+    }
+    const frame = effectivePlacement(cfg, family, el).frame;
+    const next = nudgeFrame(frame, px, py, box);
+    // At the edge of the face the clamp gives the frame back unchanged. The key
+    // is still ours (the page must not scroll under a nudge), but there is
+    // nothing to record.
+    if (next.x !== frame.x || next.y !== frame.y) {
+      this.mutate((c) => setPlacement(c, family, id, { frame: next }), `nudge-${id}-${family}`);
+    }
+    return true;
+  }
+
+  /**
+   * Move several layers by one delta, the way the group drag does: the clamp
+   * runs on their bounding box, so the block keeps its shape and reaches the
+   * edge of the face together instead of piling up against it.
+   */
+  private nudgeMany(ids: string[], family: DrawableFamily, box: { width: number; height: number }, key: string, px: number, py: number): boolean {
+    const cfg = this.draft?.config;
+    if (!cfg) return false;
+    const round = (n: number) => Math.round(n * 1000) / 1000;
+    const starts = new Map<string, NormalizedFrame>();
+    for (const id of ids) {
+      const el = cfg.elements.find((x) => x.payload.id === id);
+      if (el) starts.set(id, effectivePlacement(cfg, family, el).frame);
+    }
+    if (starts.size === 0) return false;
+    const frames = [...starts.values()];
+    const x0 = Math.min(...frames.map((f) => f.x));
+    const y0 = Math.min(...frames.map((f) => f.y));
+    const x1 = Math.max(...frames.map((f) => f.x + f.width));
+    const y1 = Math.max(...frames.map((f) => f.y + f.height));
+    const bounds: NormalizedFrame = { x: x0, y: y0, width: x1 - x0, height: y1 - y0, rotationDegrees: 0 };
+    const moved = nudgeFrame(bounds, px, py, box);
+    const dx = moved.x - bounds.x;
+    const dy = moved.y - bounds.y;
+    if (dx !== 0 || dy !== 0) {
+      this.mutate((c) => {
+        for (const [mid, sf] of starts) setPlacement(c, family, mid, { frame: { ...sf, x: round(sf.x + dx), y: round(sf.y + dy) } });
+      }, key);
+    }
+    return true;
+  }
+
+  /**
+   * Move the image timestamp chip inside its own picture, writing the free
+   * position its drag writes: the first nudge frees a cornered chip, exactly as
+   * the first drag move does. Returns false when the selected chip is not one
+   * that can move, so the arrows fall through to whatever else is selected.
+   */
+  private nudgeTimestamp(id: string, family: DrawableFamily, px: number, py: number): boolean {
+    const cfg = this.draft?.config;
+    const el = cfg?.elements.find((x) => x.payload.id === id);
+    if (!cfg || el?.kind !== "image" || el.payload.timestamp !== true) return false;
+    const img = el.payload;
+    const design = DESIGN_BOX[family];
+    const frame = effectivePlacement(cfg, family, el).frame;
+    // Chip geometry is in design points, as it is for the drag.
+    const lw = frame.width * design.width;
+    const lh = frame.height * design.height;
+    const chip = timestampChipRect(img, { x: 0, y: 0, w: lw, h: lh, cx: lw / 2, cy: lh / 2 }, timestampLabel(new Date()));
+    const base = hasFreeTimestamp(img)
+      ? { x: img.timestampX!, y: img.timestampY! }
+      : { x: lw > 0 ? (chip.x + chip.w / 2) / lw : 0.5, y: lh > 0 ? (chip.y + chip.h / 2) / lh : 0.5 };
+    const next = nudgePoint(base, px, py, { w: lw, h: lh });
+    if (next.x !== base.x || next.y !== base.y) {
+      this.mutate((c) => {
+        const n = c.elements.find((x) => x.payload.id === id);
+        if (n?.kind !== "image") return;
+        n.payload.timestampX = next.x;
+        n.payload.timestampY = next.y;
+      }, `nudge-ts-${id}`);
+    }
+    return true;
+  }
+
+  /**
    * The canvas gestures in one preview normalise against. Pointer deltas arrive
    * in slot points; the design box as it lands in this slot turns them into the
    * same fraction a 41 mm and a 46 mm preview would both move. Corner draws the
@@ -2790,8 +2937,8 @@ export class WristAssistantPanel extends LitElement {
     } else if (sel) {
       const g = groupOf(cfg, sel.payload.id);
       tail = g?.locked
-        ? html`editing <b>${layerTitle(sel, ctx)}</b> in <b>${g.name}</b>. A drag moves the whole group; pull a corner to resize this layer.`
-        : html`editing <b>${layerTitle(sel, ctx)}</b>. Drag it, or pull a corner.`;
+        ? html`editing <b>${layerTitle(sel, ctx)}</b> in <b>${g.name}</b>. A drag moves the whole group; pull a corner to resize this layer. Arrow keys nudge the group.`
+        : html`editing <b>${layerTitle(sel, ctx)}</b>. Drag it, or pull a corner. Arrow keys nudge it.`;
     } else {
       tail = "click a layer to edit it";
     }

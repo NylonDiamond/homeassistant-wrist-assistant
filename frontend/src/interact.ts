@@ -38,6 +38,50 @@ function clampFrame(f: NormalizedFrame): NormalizedFrame {
   return { ...f, x, y };
 }
 
+/** Frames carry three decimals on the wire, and every gesture rounds to them
+ * so a move is reproducible rather than a long tail of float noise. */
+const round3 = (n: number) => Math.round(n * 1000) / 1000;
+
+/** How much further one arrow press moves with Shift held. */
+export const NUDGE_COARSE = 10;
+
+/**
+ * Move a frame by whole design points: what an arrow key does to a layer.
+ *
+ * `dx`/`dy` are points in the family's design box, so one press moves the same
+ * distance on the wrist in every shape, and the result is clamped exactly the
+ * way a drag is (KEEP_VISIBLE), so the keyboard cannot put a layer somewhere a
+ * pointer could not.
+ */
+export function nudgeFrame(
+  frame: NormalizedFrame,
+  dx: number,
+  dy: number,
+  box: { width: number; height: number },
+): NormalizedFrame {
+  const x = box.width > 0 ? frame.x + dx / box.width : frame.x;
+  const y = box.height > 0 ? frame.y + dy / box.height : frame.y;
+  return clampFrame({ ...frame, x: round3(x), y: round3(y) });
+}
+
+/**
+ * Move a point inside a layer's box by whole design points: what an arrow key
+ * does to the image timestamp chip. `box` is that layer's box in design points,
+ * and the point stays inside it, as `beginPointDrag` keeps it.
+ */
+export function nudgePoint(
+  base: { x: number; y: number },
+  dx: number,
+  dy: number,
+  box: { w: number; h: number },
+): { x: number; y: number } {
+  const clamp = (n: number) => Math.min(1, Math.max(0, n));
+  return {
+    x: box.w > 0 ? round3(clamp(base.x + dx / box.w)) : base.x,
+    y: box.h > 0 ? round3(clamp(base.y + dy / box.h)) : base.y,
+  };
+}
+
 /**
  * Start a gesture on `pointerdown`. Captures the pointer on the SVG and
  * reports frames until release. Returns a cleanup that cancels the gesture.
