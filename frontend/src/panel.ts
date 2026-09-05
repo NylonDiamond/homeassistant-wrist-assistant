@@ -652,14 +652,37 @@ export class WristAssistantPanel extends LitElement {
     .settings .flash-row input.flash-color { width: 36px; height: 28px; padding: 0; border: 1px solid var(--wa-line); border-radius: 6px; background: none; cursor: pointer; }
     .settings .flash-row .muted { color: var(--wa-muted); font-size: 13px; }
     .settings .entity-field, .settings .hint { max-width: 800px; }
-    .values-list { margin-top: 12px; }
-    .values-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
-    .values-head .sub { font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--wa-muted); }
+    /* Shared values: a chip per named value, laid out as a titled sub-section
+       of the settings rather than a loose row of boxes. The whole chip opens
+       the editor, so it carries the hover and selected states a row would, and
+       the delete button stays out of the way until the pointer is on it. */
+    .values-list { margin-top: 14px; }
+    .values-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; }
+    .values-head .sub { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--wa-muted); }
     .values-head .help { margin: 0; }
-    .values-list .data { display: flex; flex-wrap: wrap; gap: 6px; }
-    .values-list .datum { border: 1px solid var(--wa-line); border-radius: 8px; padding: 6px 8px 6px 10px; max-width: 320px; }
+    .values-list .data { display: flex; flex-wrap: wrap; gap: 8px; }
+    .values-list .empty { font-size: 12px; color: var(--wa-muted); margin: 0; }
+    .values-list .datum {
+      gap: 8px; max-width: 320px; padding: 5px 5px 5px 10px; border-radius: 10px;
+      background: var(--wa-card); border: 1px solid var(--wa-line);
+      transition: border-color .12s ease-out, background-color .12s ease-out;
+    }
     .values-list .datum + .datum { box-shadow: none; }
-    .values-list .datum .name { flex: none; max-width: 160px; }
+    .values-list .datum:hover { border-color: var(--primary-color); background: color-mix(in srgb, var(--primary-color) 7%, var(--wa-card)); }
+    /* Selected: the same tint the inspector gives its complication section. */
+    .values-list .datum.hl { border-color: var(--c); background: color-mix(in srgb, var(--c) 12%, var(--wa-card)); }
+    .values-list .datum .name { flex: none; min-width: 0; max-width: 160px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .values-list .datum .meta {
+      flex: none; min-width: 0; max-width: 140px; opacity: 1; color: var(--wa-muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
+      background: var(--wa-panel); border-radius: 999px; padding: 1px 8px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .values-list .datum .meta.none { font-family: inherit; font-style: italic; background: transparent; padding: 1px 0; }
+    .values-list .datum button.icon { width: 24px; height: 24px; opacity: 0; pointer-events: none; }
+    .values-list .datum button.icon svg.ui-icon { width: 15px; height: 15px; }
+    .values-list .datum:hover button.icon, .values-list .datum:focus-within button.icon { opacity: .7; pointer-events: auto; }
+    .values-list .datum button.icon:hover:not(:disabled), .values-list .datum button.icon:focus-visible { opacity: 1; }
     .tiles { display: flex; gap: 10px; flex-wrap: wrap; }
     .tile-wrap { position: relative; display: flex; }
     .tile-wrap .tile-x { position: absolute; top: 4px; right: 4px; opacity: .45; }
@@ -2796,13 +2819,13 @@ export class WristAssistantPanel extends LitElement {
           ${this.canEdit ? html`<button class="small" @click=${() => { const nv = newNamedValue(); this.mutate((c) => { c.values.push(nv); }); this.inspect = { kind: "data", id: nv.id }; }}>Add</button>` : nothing}
           <span class="help" title="A value defined once and read by several layers. Set a layer's Source to &quot;Named value&quot; to use one.">Defined once, read by several layers.</span>
         </div>
-        ${values.length === 0 ? nothing : html`<div class="data">
+        ${values.length === 0 ? html`<p class="empty">No shared values yet.</p>` : html`<div class="data">
         ${values.map((v) => {
           const r = resolver.resolve({ kind: { kind: "named", id: v.id } });
           const hl = this.inspect.kind === "data" && this.inspect.id === v.id;
           return html`<div class="datum ${hl ? "hl" : ""}" @click=${() => { this.inspect = { kind: "data", id: v.id }; }}>
             <span class="name">${v.name || "(unnamed)"}</span>
-            <span class="meta" title=${describeValue(v.value, ctx)}>${r ?? "unresolved"}</span>
+            <span class="meta ${r === undefined ? "none" : ""}" title=${describeValue(v.value, ctx)}>${r ?? "unresolved"}</span>
             ${this.canEdit ? html`<button class="icon danger" title="Delete value" aria-label="Delete value" @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { c.values = c.values.filter((x) => x.id !== v.id); }); if (hl) this.inspect = { kind: "general" }; }}>${uiIcon("delete")}</button>` : nothing}
           </div>`;
         })}
