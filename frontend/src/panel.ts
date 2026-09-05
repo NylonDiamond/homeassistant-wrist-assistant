@@ -1503,7 +1503,10 @@ export class WristAssistantPanel extends LitElement {
     const svg = target.closest("svg") as SVGSVGElement | null;
     // Any press on the face that is not on the timestamp chip drops the chip's
     // selection, the way a click elsewhere drops any selection.
-    const tsCorner = target.closest("[data-ts-corner]")?.getAttribute("data-ts-corner") as HandleCorner | null;
+    // `closest` gives undefined through the optional chain when nothing
+    // matches, so the corner has to be normalised to null before the test, or
+    // every press on the picture reads as a press on the chip.
+    const tsCorner = (target.closest("[data-ts-corner]")?.getAttribute("data-ts-corner") ?? null) as HandleCorner | null;
     const onChip = tsCorner !== null || target.closest("[data-ts-handle]") !== null;
     if (!onChip) this.timestampActiveId = undefined;
     // Review mode reads the face rather than moving it. A click still selects,
@@ -1828,7 +1831,9 @@ export class WristAssistantPanel extends LitElement {
       <h2>Data<span class="spacer"></span>
         ${this.canEdit ? html`<button class="small" @click=${() => { const nv = newNamedValue(); this.mutate((c) => { c.values.push(nv); }); this.inspect = { kind: "data", id: nv.id }; }}>Add</button>` : nothing}
       </h2>
-      ${cfg.values.length === 0 ? html`<div class="empty">No named values. Layers can also read entities directly.</div>` : nothing}
+      ${cfg.values.length === 0
+        ? html`<div class="empty">Named values: a value defined once and read by several layers. Add one here, then set a layer's Source to "Named value". A layer that needs a value only once can read the entity directly.</div>`
+        : html`<div class="hint">Used by layers whose Source is "Named value". A value listed here draws nothing on its own.</div>`}
       ${cfg.values.map((v) => {
         const r = resolver.resolve({ kind: { kind: "named", id: v.id } });
         const hl = this.inspect.kind === "data" && this.inspect.id === v.id;
