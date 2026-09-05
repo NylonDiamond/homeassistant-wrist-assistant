@@ -9,10 +9,45 @@
 
 import { type TemplateResult, html, svg } from "lit";
 
-export type UiIconName = "up" | "down" | "show" | "hide" | "duplicate" | "delete" | "close" | "reset";
+export type UiIconName =
+  | "up" | "down" | "show" | "hide" | "duplicate" | "delete" | "close" | "reset"
+  | "text" | "icon" | "gauge" | "shape" | "image" | "tap"
+  | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "plus";
 
 function shape(name: UiIconName) {
   switch (name) {
+    // Layer kinds, for the add buttons and the Layers list.
+    case "text":
+      return svg`<path d="M5 6H19M12 6V19M9 19H15" />`;
+    case "icon":
+      return svg`<path d="M12 3.5L14.6 9L20.5 9.7L16.1 13.8L17.3 19.7L12 16.8L6.7 19.7L7.9 13.8L3.5 9.7L9.4 9Z" />`;
+    case "gauge":
+      return svg`<path d="M5 17A8 8 0 1 1 19 17" /><path d="M12 13L15.5 9.5" /><circle cx="12" cy="13" r="1.4" />`;
+    case "shape":
+      return svg`<rect x="4" y="5" width="16" height="14" rx="3" />`;
+    case "image":
+      return svg`<rect x="3.5" y="5" width="17" height="14" rx="2.5" /><circle cx="9" cy="10" r="1.6" /><path d="M20.5 15.5L15.5 11L7 19" />`;
+    case "tap":
+      return svg`<path d="M10 12V5.5a1.8 1.8 0 0 1 3.6 0V12" /><path d="M13.6 10.5a1.8 1.8 0 0 1 3.6 0V13" /><path d="M10 11.5a1.8 1.8 0 0 0-3.6 0v3.5a6.6 6.6 0 0 0 13.2 0v-1.5" />`;
+    // Inspector card icons.
+    case "content":
+      return svg`<rect x="3.5" y="5" width="17" height="14" rx="2.5" /><path d="M7 9.5H17M7 13H13" />`;
+    case "look":
+      return svg`<circle cx="12" cy="12" r="8.5" /><circle cx="8.5" cy="10.5" r="1.1" /><circle cx="12" cy="8" r="1.1" /><circle cx="15.5" cy="10.5" r="1.1" /><path d="M12 20.5a2.5 2.5 0 0 0 0-5h-1a1.8 1.8 0 0 1 0-3.6" />`;
+    case "clock":
+      return svg`<circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12L15 14" />`;
+    case "states":
+      return svg`<path d="M6 4V9.5A2.5 2.5 0 0 0 8.5 12H15.5A2.5 2.5 0 0 1 18 14.5V20" /><circle cx="6" cy="4" r="1.4" /><circle cx="18" cy="20" r="1.4" /><path d="M6 20V14" />`;
+    case "place":
+      return svg`<path d="M12 3V6.5M12 17.5V21M3 12H6.5M17.5 12H21" /><circle cx="12" cy="12" r="4.5" />`;
+    case "layers":
+      return svg`<path d="M12 4L20 8.5L12 13L4 8.5Z" /><path d="M4 12.5L12 17L20 12.5" /><path d="M4 16.5L12 21L20 16.5" />`;
+    case "grip":
+      return svg`<circle cx="9" cy="6" r="1.3" /><circle cx="15" cy="6" r="1.3" /><circle cx="9" cy="12" r="1.3" /><circle cx="15" cy="12" r="1.3" /><circle cx="9" cy="18" r="1.3" /><circle cx="15" cy="18" r="1.3" />`;
+    case "chevron":
+      return svg`<path d="M6 9L12 15L18 9" />`;
+    case "plus":
+      return svg`<path d="M12 5V19M5 12H19" />`;
     case "up":
       return svg`<path d="M6 14L12 8L18 14" />`;
     case "down":

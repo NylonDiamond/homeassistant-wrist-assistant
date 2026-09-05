@@ -4,7 +4,7 @@
 // a concurrent edit is caught instead of overwritten (plan §"Save and
 // conflict rules"). Rules are edited in the inspector's States section.
 
-import { LitElement, html, css, nothing, type PropertyValues, type TemplateResult } from "lit";
+import { LitElement, html, css, nothing, unsafeCSS, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
 import {
   type ComplicationRecord,
@@ -34,6 +34,7 @@ import {
   duplicateElement,
   freeSlotFrom,
   isAttachedTap,
+  layerEntityUses,
   newConfig,
   newElement,
   newId,
@@ -56,8 +57,9 @@ import {
   countdownRemainingString,
   resolveAll,
 } from "./resolver.js";
-import { CASES, REFERENCE_CASE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, renderLayout, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider } from "./renderer.js";
+import { CASES, REFERENCE_CASE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, renderLayout, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type WatchCase } from "./renderer.js";
 import { ALL_FAMILIES, addFamily, canRemoveFamily, familyContentSummary, firstDrawable, isDrawable, removeFamily, supportedFamilies } from "./layouts.js";
+import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { updateWatchMessage, watchSupportsShapes } from "./version.js";
 import { makeIconProvider } from "./icons.js";
 import { makeImageSizeProvider } from "./image-sizes.js";
@@ -69,6 +71,8 @@ import { beginGesture, beginPointDrag, beginScaleDrag, type HandleCorner } from 
 import {
   type DescribeContext,
   type EditorHost,
+  ALL_SECTIONS,
+  colorWords,
   describeContext,
   describeValue,
   effectivePlacement,
@@ -104,10 +108,28 @@ function inspectKey(i: Inspect): string {
   return "id" in i ? `${i.kind}:${i.id}` : i.kind;
 }
 
+/** The card that opens first when something is selected: what it shows for a
+ * layer, how it looks for a shape. */
+function defaultSection(i: Inspect): string {
+  return i.kind === "family" ? "look" : "content";
+}
+
 type Conflict = { current: ComplicationRecord | null; message: string };
 
-const COL_LEFT_DEFAULT = 270;
-const COL_RIGHT_DEFAULT = 340;
+/** One row of the header picker: an editable record, or a slot something
+ * else holds (an iPhone preset, or a custom on another home). */
+type PickerRow =
+  | { slot: number; kind: "record"; record: ComplicationRecord }
+  | { slot: number; kind: "locked"; name: string; badge: string; title: string; families: readonly string[] };
+
+/** The shapes a stored document lists, read without parsing the whole thing. */
+function familiesOf(record: ComplicationRecord): string[] {
+  const raw = record.document?.supportedFamilies;
+  return Array.isArray(raw) ? raw.filter((f): f is string => typeof f === "string") : [];
+}
+
+const COL_LEFT_DEFAULT = 280;
+const COL_RIGHT_DEFAULT = 400;
 const COL_MIN = 200;
 const COL_MAX = 720;
 /** The canvas column never goes below this while three columns are shown. */
@@ -214,6 +236,21 @@ export class WristAssistantPanel extends LitElement {
   @state() private forced: ForcedBranches = new Map();
   @state() private showRaw = false;
   @state() private inspect: Inspect = { kind: "general" };
+  /** The inspector cards that are open. One entry means one at a time. Reset
+   * to the first card whenever something else is selected (willUpdate). */
+  @state() private openSections: ReadonlySet<string> = new Set(["content"]);
+  /** The header's complication menu is open. */
+  @state() private pickerOpen = false;
+  /** The Shared values list under the complication settings is unfolded. */
+  @state() private showValues = false;
+  /** Entity states typed in under the preview, standing in for the live ones
+   * so the other states can be seen without waiting for the house. Never
+   * saved; cleared by Back to live. */
+  @state() private testValues: ReadonlyMap<string, string> = new Map();
+  /** The value chip whose input is showing. */
+  @state() private editingValue?: string;
+  /** The layer row being dragged in the Layers list. */
+  private dragId?: string;
   @state() private activeFamily: FamilyKind = "rectangular";
   /** Pick mode: the pointer names the layer under it instead of dragging it,
    * the way a browser inspector picks a node. One click selects and ends it. */
@@ -278,35 +315,50 @@ export class WristAssistantPanel extends LitElement {
       color: var(--primary-text-color);
       background: var(--primary-background-color);
       font-family: var(--paper-font-body1_-_font-family, Roboto, sans-serif);
+      font-size: 14px;
+      /* Colours the whole editor shares: one per layer kind, one per section
+         that is not about a kind. Set once so a badge, a bar and a card agree. */
+      --wa-text: ${unsafeCSS(KIND_COLOR.text)};
+      --wa-icon: ${unsafeCSS(KIND_COLOR.icon)};
+      --wa-gauge: ${unsafeCSS(KIND_COLOR.gauge)};
+      --wa-shape: ${unsafeCSS(KIND_COLOR.shape)};
+      --wa-image: ${unsafeCSS(KIND_COLOR.image)};
+      --wa-tap: ${unsafeCSS(KIND_COLOR.tap)};
+      --wa-states: ${unsafeCSS(SECTION_COLOR.states)};
+      --wa-place: ${unsafeCSS(SECTION_COLOR.place)};
+      --wa-card: var(--card-background-color, #fff);
+      --wa-panel: var(--secondary-background-color, rgba(127,127,127,.12));
+      --wa-line: var(--divider-color, rgba(127,127,127,.3));
+      --wa-muted: var(--secondary-text-color, rgba(127,127,127,.9));
     }
+    * { box-sizing: border-box; }
+    svg { display: block; }
     header {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
       padding: 8px 16px;
-      border-bottom: 1px solid var(--divider-color);
+      border-bottom: 1px solid var(--wa-line);
       background: var(--app-header-background-color, var(--primary-color));
       color: var(--app-header-text-color, #fff);
       flex-wrap: wrap;
+      position: relative;
+      z-index: 20;
     }
-    header h1 { font-size: 18px; font-weight: 500; margin: 0; flex: 1; }
-    header select { font: inherit; padding: 4px 8px; }
+    header h1 { font-size: 17px; font-weight: 500; margin: 0 8px 0 0; white-space: nowrap; }
+    header .spacer { flex: 1; }
+    header select { font: inherit; font-size: 13px; padding: 4px 8px; border-radius: 6px; }
+    header label { font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
     .toolbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
     .toolbar button, button.primary, button.small, button.danger {
       font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 8px; cursor: pointer;
-      border: 1px solid var(--divider-color); background: var(--card-background-color, #fff); color: var(--primary-text-color);
+      border: 1px solid var(--wa-line); background: var(--wa-card); color: var(--primary-text-color);
     }
     .toolbar button:disabled, button:disabled { opacity: .45; cursor: default; }
     button.primary { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: transparent; }
+    header button.primary { background: var(--wa-card); color: var(--primary-color); }
     button.danger { color: var(--error-color, #db4437); border-color: var(--error-color, #db4437); }
-    /* The adders and the row buttons. 3px of padding made a 21px target for a
-       12px label; this is the same button one size up, which is still small
-       against a preset button but no longer something to aim at. */
     button.small { padding: 5px 10px; font-size: 12.5px; min-height: 26px; }
-    /* Row actions. They were 12px glyphs in a 2px box: too small to hit and
-       too cryptic to read (a filled dot meant "visible"). Now every one is a
-       28px target with a drawn icon, which is about a fingertip and the
-       smallest thing a pointer hits without aiming. */
     button.icon {
       font: inherit; border: none; background: none; cursor: pointer; color: inherit;
       display: inline-flex; align-items: center; justify-content: center;
@@ -316,23 +368,56 @@ export class WristAssistantPanel extends LitElement {
     button.icon:focus-visible { opacity: 1; outline: 2px solid var(--primary-color); outline-offset: -2px; }
     button.icon.danger:hover:not(:disabled) { color: var(--error-color, #db4437); }
     svg.ui-icon { width: 17px; height: 17px; display: block; }
-    .dirty-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--warning-color, #ffa600); margin-left: 6px; }
+    .dirty-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--warning-color, #ffa600); margin-left: 6px; vertical-align: middle; }
+
+    /* The complication picker: one dropdown in the header instead of a list
+       down the side, because the list was read once per session and the space
+       it held is worth more to the layers. */
+    .picker { position: relative; }
+    .picker > button {
+      display: inline-flex; align-items: center; gap: 8px; font: inherit; font-size: 14px; font-weight: 500;
+      padding: 6px 10px 6px 12px; border-radius: 8px; cursor: pointer; color: inherit;
+      border: 1px solid rgba(255,255,255,.35); background: rgba(255,255,255,.14); min-width: 220px; max-width: 380px;
+    }
+    .picker > button:hover { background: rgba(255,255,255,.22); }
+    .picker .pk-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+    .picker .pk-rev { opacity: .75; font-weight: 400; font-size: 12px; white-space: nowrap; }
+    .picker > button svg { width: 16px; height: 16px; opacity: .8; }
+    .picker .menu {
+      position: absolute; top: calc(100% + 6px); left: 0; z-index: 50; width: 360px; max-height: 60vh; overflow: auto;
+      background: var(--wa-card); color: var(--primary-text-color); border: 1px solid var(--wa-line);
+      border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,.35); padding: 6px;
+    }
+    .picker .menu .row {
+      display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; font-size: 13px;
+      background: transparent; border: 0; color: inherit; padding: 7px 10px; border-radius: 6px; cursor: pointer;
+    }
+    .picker .menu .row:hover { background: var(--wa-panel); }
+    .picker .menu .row[aria-current="true"] { background: color-mix(in srgb, var(--primary-color) 16%, transparent); }
+    .picker .menu .row.locked { opacity: .6; cursor: default; }
+    .picker .menu .pk-badge { font-size: 11px; opacity: .7; white-space: nowrap; }
+    .picker .menu .new { margin-top: 6px; border-top: 1px solid var(--wa-line); padding-top: 10px; color: var(--primary-color); font-weight: 500; }
+    .picker .menu .new-shape { padding: 4px 10px 8px; }
+    .picker .menu .new-shape .hint { margin: 4px 0 8px; }
+    .shape-dots { display: inline-flex; gap: 3px; align-items: center; flex: none; }
+    .shape-dot { width: 14px; height: 10px; border-radius: 2px; background: currentColor; opacity: .3; display: inline-block; }
+    .shape-dot.circular { width: 10px; border-radius: 50%; }
+    .shape-dot.corner { width: 10px; border-radius: 0 6px 0 0; }
+    .shape-dot.inline { width: 16px; height: 4px; }
+    .shape-dot.on { opacity: 1; }
+
     /* Three columns with a draggable gutter between each pair. The side widths
        come in as custom properties already fitted to the measured panel width
        (see columnFit), and every track can shrink to zero here, so the grid
-       itself can never be wider than the panel and clip a column. How many
-       columns there are is decided from that same measurement rather than from
-       a viewport media query, because the Home Assistant sidebar changes the
-       panel's width without changing the window's. */
+       itself can never be wider than the panel and clip a column. */
     .layout {
       display: grid;
-      grid-template-columns: var(--wa-left, 270px) 8px minmax(0, 1fr) 8px var(--wa-right, 340px);
+      grid-template-columns: var(--wa-left, 280px) 8px minmax(0, 1fr) 8px var(--wa-right, 400px);
       column-gap: 8px;
       row-gap: 16px;
       padding: 16px;
       flex: 1 1 auto;
       min-height: 0;
-      box-sizing: border-box;
       overflow: hidden;
     }
     .gutter {
@@ -341,28 +426,41 @@ export class WristAssistantPanel extends LitElement {
     }
     .gutter::after {
       content: ""; position: absolute; inset: 0 3px; border-radius: 2px;
-      background: var(--divider-color); opacity: .35;
+      background: var(--wa-line); opacity: .35;
     }
     .gutter:hover::after, .gutter.dragging::after { background: var(--primary-color); opacity: 1; }
-    /* Two columns: the inspector drops to a full-width band underneath. */
     .layout.cols-2 {
-      grid-template-columns: var(--wa-left, 270px) 8px minmax(0, 1fr);
+      grid-template-columns: var(--wa-left, 280px) 8px minmax(0, 1fr);
       overflow: auto;
     }
     .layout.cols-2 > .column.inspector { grid-column: 1 / -1; }
     .layout.cols-2 > .gutter.right { display: none; }
-    /* One column: everything stacks and the whole panel scrolls. */
     .layout.cols-1 { grid-template-columns: minmax(0, 1fr); overflow: auto; }
     .layout.cols-1 > .column { grid-column: auto; }
     .layout.cols-1 > .gutter { display: none; }
     .column { overflow: auto; min-height: 0; }
+    .card {
+      background: var(--wa-card);
+      border-radius: var(--ha-card-border-radius, 12px);
+      box-shadow: var(--ha-card-box-shadow, 0 1px 3px rgba(0,0,0,.2));
+      padding: 14px 16px;
+    }
+    .column.left { display: flex; flex-direction: column; gap: 16px; }
+    .column.left .card { flex: none; }
+    .panel-title {
+      display: flex; align-items: center; gap: 8px; margin: 0 0 10px;
+      font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--wa-muted);
+    }
+    .panel-title .spacer { flex: 1; }
+    .panel-title .mini { text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 12px; }
+    .panel-title button.small { text-transform: none; letter-spacing: 0; }
 
     /* Status and the raw document: one line at the foot of the panel, shut by
        default, saying only whether the work is saved. */
-    details.foot { flex: none; border-top: 1px solid var(--divider-color); background: var(--card-background-color, #fff); }
+    details.foot { flex: none; border-top: 1px solid var(--wa-line); background: var(--wa-card); }
     details.foot > summary { display: flex; align-items: center; gap: 8px; padding: 8px 16px; font-size: 13px; cursor: pointer; list-style: none; }
     details.foot > summary::-webkit-details-marker { display: none; }
-    details.foot > summary:hover { background: var(--secondary-background-color); }
+    details.foot > summary:hover { background: var(--wa-panel); }
     details.foot .foot-dot { font-size: 10px; }
     details.foot .foot-dot.ok { color: var(--success-color, #43a047); }
     details.foot .foot-dot.warn { color: var(--warning-color, #ffa600); }
@@ -373,217 +471,294 @@ export class WristAssistantPanel extends LitElement {
     details.foot .foot-body { padding: 0 16px 12px; max-height: 40vh; overflow: auto; }
     details.foot .foot-body .hint { margin: 8px 0; }
 
-    /* Inspector sections: one scroll, no tabs. Each title sits in a tinted band
-       with a coloured edge, so a long inspector can be skimmed by heading
-       instead of read top to bottom. Still not a bordered card, because a card
-       inside the inspector's own card is two boxes saying the same thing. */
-    .sect { margin: 18px 0 2px; }
-    .sect:first-of-type { margin-top: 2px; }
-    .sect > h4 {
-      display: flex; align-items: baseline; gap: 8px; margin: 0 0 10px;
-      padding: 5px 8px; border-radius: 5px;
-      border-left: 3px solid var(--primary-color);
-      background: var(--secondary-background-color, rgba(127,127,127,.12));
-      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; opacity: 1;
+    /* Add a layer: six tinted buttons, one per kind, then the presets. It sits
+       above the list so adding a layer never moves the button just pressed. */
+    .add-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    button.add {
+      display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 6px; border-radius: 8px;
+      font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--primary-text-color);
+      background: color-mix(in srgb, var(--k) 12%, var(--wa-card)); border: 1px solid color-mix(in srgb, var(--k) 40%, transparent);
     }
-    .sect > h4 .sect-note { font-size: 11px; font-weight: 400; text-transform: none; letter-spacing: 0; opacity: .7; }
-    .card {
-      background: var(--card-background-color, #fff);
-      border-radius: var(--ha-card-border-radius, 12px);
-      box-shadow: var(--ha-card-box-shadow, 0 1px 3px rgba(0,0,0,.2));
-      padding: 12px 16px;
-      margin-bottom: 16px;
+    button.add:hover:not(:disabled) { background: color-mix(in srgb, var(--k) 24%, var(--wa-card)); }
+    button.add svg { color: var(--k); width: 15px; height: 15px; flex: none; }
+    .presets-l { margin: 12px 0 6px; font-size: 12px; color: var(--wa-muted); }
+    .presets { display: flex; flex-wrap: wrap; gap: 6px; }
+    button.preset {
+      font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 999px; cursor: pointer;
+      border: 1px solid var(--wa-line); background: var(--wa-card); color: var(--wa-muted);
     }
-    .card h2 {
-      font-size: 13px; font-weight: 700; margin: 0 0 8px; opacity: 1;
-      text-transform: uppercase; letter-spacing: .08em;
-      display: flex; align-items: center; gap: 8px;
-      padding-bottom: 8px; border-bottom: 1px solid var(--divider-color);
+    button.preset:hover:not(:disabled) { color: var(--primary-color); border-color: var(--primary-color); }
+
+    /* Layers: one row per layer, coloured by kind, the shape pinned last. */
+    .layers { display: flex; flex-direction: column; gap: 3px; }
+    .layer {
+      display: grid; grid-template-columns: 16px 4px minmax(0, 1fr) auto; align-items: center; gap: 8px;
+      padding: 6px 6px 6px 4px; border-radius: 8px; border: 1px solid transparent; background: transparent;
+      cursor: pointer; user-select: none; position: relative; font-size: 13px;
     }
-    .card h2 .spacer { flex: 1; }
-    .card h3 { font-size: 13px; font-weight: 500; margin: 14px 0 6px; opacity: .8; }
-    ul { list-style: none; margin: 0; padding: 0; }
-    li.row {
-      padding: 8px 10px; border-radius: 8px; cursor: pointer;
-      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    .layer:hover { background: var(--wa-panel); }
+    .layer.hl { border-color: var(--k); background: color-mix(in srgb, var(--k) 12%, var(--wa-card)); }
+    .layer.pick { box-shadow: inset 0 0 0 2px var(--primary-color); }
+    .layer .grip { color: var(--wa-muted); opacity: .6; display: grid; place-items: center; cursor: grab; }
+    .layer .grip svg { width: 14px; height: 14px; }
+    .layer .bar { width: 4px; height: 26px; border-radius: 2px; background: var(--k); }
+    .layer .name { display: flex; flex-direction: column; min-width: 0; }
+    .layer .name b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .layer .name small { color: var(--wa-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .layer .kind { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--k); }
+    .layer.dim .name b { opacity: .55; }
+    .layer .right { display: flex; align-items: center; gap: 2px; }
+    .layer .badges { display: inline-flex; gap: 4px; }
+    .badge { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--wa-panel); color: var(--wa-muted); white-space: nowrap; }
+    .badge.tap { color: var(--wa-tap); background: color-mix(in srgb, var(--wa-tap) 16%, transparent); }
+    .badge.states { color: color-mix(in srgb, var(--wa-states) 70%, var(--primary-text-color)); background: color-mix(in srgb, var(--wa-states) 18%, transparent); }
+    /* Reserved, not removed: taking the actions out of the layout made the
+       name change width the moment the pointer arrived. The badges step aside
+       for them instead, so the row keeps its width. */
+    .layer .acts { display: none; gap: 0; }
+    .layer:hover .acts, .layer.hl .acts, .layer:focus-within .acts { display: inline-flex; }
+    .layer:hover .badges, .layer.hl .badges, .layer:focus-within .badges { display: none; }
+    .layer .acts button.icon { width: 24px; height: 24px; }
+    .layer .acts svg.ui-icon { width: 15px; height: 15px; }
+    .layer.dragging { opacity: .4; }
+    .layer.drop-before { box-shadow: 0 -2px 0 0 var(--primary-color); }
+    .layer.drop-after { box-shadow: 0 2px 0 0 var(--primary-color); }
+    .layer.pinned { margin-top: 6px; border: 1px dashed var(--wa-line); }
+    .layer.pinned.hl { border-style: solid; }
+    .layer.pinned .grip { cursor: default; opacity: .8; }
+    .layer.pinned .bar { background: repeating-linear-gradient(180deg, var(--k) 0 3px, transparent 3px 6px); }
+    .group-cta {
+      display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 8px; margin-bottom: 6px; border-radius: 8px;
+      background: color-mix(in srgb, var(--primary-color) 12%, transparent);
     }
-    /* Hairlines between rows: the lists are the thing you scan first, and an
-       unbroken stack of same-sized rows has nothing to count against. */
-    li.row + li.row, .layer + .layer, .datum + .datum { box-shadow: inset 0 1px 0 var(--divider-color); }
-    li.row:hover, .layer:hover, .datum:hover, li.row.selected, .layer.hl, .datum.hl { box-shadow: none; }
-    li.row:hover { background: var(--secondary-background-color); }
-    li.row.selected { background: var(--primary-color); color: var(--text-primary-color, #fff); }
-    li.row .meta { font-size: 12px; opacity: .7; }
-    li.row.locked { cursor: default; opacity: .6; }
-    li.row.locked:hover { background: none; }
-    .send { font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
-    .send.sent { color: var(--success-color, #43a047); }
-    .send.sending { opacity: .7; }
-    .send.offline { color: var(--warning-color, #ffa600); }
-    /* The shapes always stack, one per row. Standing two of them side by side
-       made each one small and left a wide empty gutter down both sides of the
-       card, and a shape is easier to edit big than it is to compare with its
-       neighbour. Width alone drives the size and the viewBox supplies the
-       ratio, so every shape follows the column and none can be squashed.
-       Pointer maths reads the SVG's screen CTM, so drags follow for free. */
-    .previews { display: flex; flex-direction: column; gap: 22px; align-items: center; width: 100%; }
-    .preview { text-align: center; position: relative; width: 100%; min-width: 0; }
-    .preview .label { font-size: 12px; opacity: .7; margin-top: 6px; cursor: pointer; }
-    .preview.active .label { color: var(--primary-color); opacity: 1; font-weight: 500; }
-    .preview svg {
-      display: block; margin: 0 auto; background: #000; border-radius: 12px; touch-action: none;
-      height: auto; max-width: 100%;
-    }
-    .preview.active svg { outline: 2px solid var(--primary-color); outline-offset: 3px; }
-    /* Rectangular is the shape people author in, so it takes the whole card.
-       The other two are near square and would run off the bottom of the screen
-       at that width, so they keep a cap. */
-    .preview.rectangular svg { width: 100%; max-width: 960px; }
-    .preview.circular svg { width: min(100%, 470px); border-radius: 50%; }
-    /* The corner preview draws the top-right screen quadrant (104x124
-       reference points), so the small content disc stays big enough to edit. */
-    .preview.corner svg { width: min(100%, 430px); background: #2c2c2e; }
-    /* Pick mode: the pointer names a layer, so nothing on the face should look
-       grabbable. The crosshair has to sit on the groups too, because a
-       draggable group carries its own inline cursor. */
-    .preview.picking svg, .preview.picking svg * { cursor: crosshair; }
-    .preview-case { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
-    .preview-case .spacer { flex: 1; min-width: 0; }
-    /* One toggle drawn in two places (over the previews and over the Layers
-       card), because the picking happens in one and the answer lands in the
-       other. The on class is the pressed state, not a second button. */
+
+    /* The canvas column: one card holding the bar, the big preview and the
+       strip of things about the whole complication. */
+    .column.canvas > .card.canvas-card { padding: 0; overflow: hidden; }
+    .banner { padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; background: var(--wa-panel); }
+    .banner.warn { border-left: 4px solid var(--warning-color, #ffa600); }
+    .banner.err { border-left: 4px solid var(--error-color, #db4437); }
+    .banner .acts { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+    .canvas-bar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--wa-line); flex-wrap: wrap; font-size: 13px; }
+    .canvas-bar .spacer { flex: 1; min-width: 0; }
+    .canvas-bar .hint { margin: 0; }
+    .canvas-bar label { display: inline-flex; align-items: center; gap: 8px; }
+    .canvas-bar select { font: inherit; font-size: 13px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--wa-line); background: var(--wa-card); color: inherit; }
     button.pick {
-      font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 999px; cursor: pointer;
-      display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
-      border: 1px solid var(--divider-color); background: transparent; color: inherit;
+      font: inherit; font-size: 12px; padding: 4px 11px; border-radius: 999px; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+      border: 1px solid var(--wa-line); background: transparent; color: inherit;
     }
     button.pick:hover:not(:disabled) { border-color: var(--primary-color); }
     button.pick.on { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: transparent; }
     button.pick .glyph { font-size: 13px; line-height: 1; }
-    .preview-case label { font-size: 13px; display: flex; align-items: center; gap: 8px; }
-    .preview-case select { font: inherit; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--divider-color, #444); background: var(--card-background-color, #1c1c1e); color: inherit; }
+    .stage {
+      display: grid; justify-items: center; padding: 26px 20px 18px;
+      background: radial-gradient(circle at 50% 30%, rgba(127,127,127,.14) 0, transparent 70%);
+    }
+    .preview { text-align: center; position: relative; width: 100%; min-width: 0; }
+    .preview svg {
+      display: block; margin: 0 auto; background: #000; border-radius: 12px; touch-action: none;
+      height: auto; max-width: 100%;
+    }
+    .preview.rectangular svg { width: 100%; max-width: 900px; }
+    .preview.circular svg { width: min(100%, 440px); border-radius: 50%; }
+    .preview.corner svg { width: min(100%, 420px); background: #2c2c2e; }
+    .preview.picking svg, .preview.picking svg * { cursor: crosshair; }
+    .preview.inline .inline-line {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 220px;
+      padding: 8px 18px; border-radius: 999px; background: #000; color: #fff; font-size: 15px;
+    }
+    .preview.inline .inline-line svg { display: inline-block; margin: 0; background: transparent; border-radius: 0; }
+    .preview.inline .inline-line.missing { color: #999; font-style: italic; }
+    .under { text-align: center; font-size: 13px; color: var(--wa-muted); margin-top: 12px; }
+    .under b { color: var(--primary-text-color); font-weight: 500; }
+    .strip { padding: 0 20px 24px; }
+    .strip-row { padding: 18px 0 20px; }
+    .strip-row + .strip-row { border-top: 1px solid var(--wa-line); }
+    .strip-row .help { font-size: 12px; color: var(--wa-muted); margin-top: 8px; }
+    .settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 380px)); gap: 0 32px; }
+    .settings .field { margin: 5px 0; }
+    .settings .entity-field, .settings .hint { grid-column: 1 / -1; max-width: 800px; }
+    .links { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin-top: 8px; font-size: 13px; }
+    .links button.link { font-size: 13px; }
+    .values-list { margin-top: 10px; max-width: 800px; }
+    .tiles { display: flex; gap: 10px; flex-wrap: wrap; }
+    button.tile {
+      width: 180px; height: 104px; border-radius: 12px; background: var(--wa-card); border: 1px solid var(--wa-line);
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+      color: var(--wa-muted); font: inherit; font-size: 13px; padding: 8px; cursor: pointer; overflow: hidden;
+    }
+    button.tile:hover:not(:disabled) { border-color: var(--primary-color); color: var(--primary-text-color); }
+    button.tile[aria-pressed="true"] { border-color: var(--primary-color); color: var(--primary-text-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 22%, transparent); }
+    button.tile.off { border-style: dashed; background: transparent; }
+    .tile .art { width: 160px; height: 62px; display: grid; place-items: center; pointer-events: none; }
+    .tile .art svg { display: block; max-width: 100%; max-height: 62px; width: auto; height: auto; background: #000; border-radius: 6px; }
+    .tile.circular .art svg { border-radius: 50%; }
+    .tile.corner .art svg { background: #2c2c2e; }
+    .tile .art .inline-line { font-size: 11px; padding: 3px 10px; min-width: 0; display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; background: #000; color: #fff; }
+    .tile .art .inline-line svg { background: transparent; border-radius: 0; }
+    .tile .ghost { border: 1.5px dashed var(--wa-line); }
+    .tile .ghost.rectangular { width: 130px; height: 48px; border-radius: 8px; }
+    .tile .ghost.circular { width: 52px; height: 52px; border-radius: 50%; }
+    .tile .ghost.corner { width: 52px; height: 52px; border-radius: 50% 0 0 0; border-right: 0; border-bottom: 0; }
+    .tile .ghost.inline { width: 120px; height: 20px; border-radius: 10px; }
+    .tile .lbl { font-weight: 500; display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+    .tile .lbl small { font-weight: 400; opacity: .7; }
+    .chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .chips.values { gap: 8px; }
+    .vchip {
+      display: inline-flex; align-items: center; gap: 8px; font: inherit; font-size: 13px; color: inherit;
+      background: var(--wa-card); border: 1px solid var(--wa-line); border-radius: 999px; padding: 5px 12px 5px 6px; cursor: pointer;
+    }
+    .vchip:hover { border-color: var(--primary-color); }
+    .vchip .dom { width: 22px; height: 22px; border-radius: 50%; background: color-mix(in srgb, var(--k) 20%, transparent); color: var(--k); display: grid; place-items: center; flex: none; }
+    .vchip .dom svg { width: 13px; height: 13px; }
+    .vchip b { font-weight: 500; }
+    .vchip .val { color: var(--wa-muted); border-bottom: 1px dashed var(--wa-line); }
+    .vchip.testing { border-color: var(--wa-states); }
+    .vchip.testing .val { color: color-mix(in srgb, var(--wa-states) 70%, var(--primary-text-color)); border-bottom-color: var(--wa-states); }
+    .vchip input { width: 110px; font: inherit; font-size: 13px; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--wa-states); background: var(--wa-card); color: inherit; }
+    .testing-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; text-transform: none; letter-spacing: 0; color: color-mix(in srgb, var(--wa-states) 70%, var(--primary-text-color)); }
+    .testing-pill button { font: inherit; font-size: 12px; font-weight: 500; background: var(--wa-states); color: #1a1600; border: 0; border-radius: 999px; padding: 2px 9px; cursor: pointer; }
+    .empty { opacity: .6; padding: 24px; text-align: center; }
+
+    /* The inspector: crumbs on top, then one card per section of the thing
+       selected, tinted by what it is. */
+    .column.inspector { padding: 0; }
+    .insp-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--wa-line); position: sticky; top: 0; background: var(--wa-card); z-index: 5; }
+    .crumbs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; color: var(--wa-muted); }
+    .crumbs button { font: inherit; font-size: 13px; background: transparent; border: 0; padding: 3px 6px; border-radius: 5px; color: var(--wa-muted); cursor: pointer; }
+    .crumbs button:hover { background: var(--wa-panel); color: var(--primary-text-color); }
+    .crumbs .sep { opacity: .5; }
+    .here {
+      display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px 3px 6px; border-radius: 6px;
+      background: color-mix(in srgb, var(--k) 14%, transparent); border: 1px solid color-mix(in srgb, var(--k) 40%, transparent);
+      color: var(--primary-text-color); font-weight: 500;
+    }
+    .kchip { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #fff; background: var(--k); padding: 1px 5px; border-radius: 3px; }
+    .insp-head .expand { flex: none; font: inherit; font-size: 12px; font-weight: 500; color: var(--primary-color); background: transparent; border: 0; padding: 3px 4px; cursor: pointer; }
+    .insp-body { padding: 14px 14px 30px; }
+    .empty-insp { padding: 40px 20px; text-align: center; color: var(--wa-muted); display: flex; flex-direction: column; gap: 10px; align-items: center; font-size: 13px; }
+    .empty-insp svg { width: 40px; height: 40px; opacity: .5; }
+    .empty-insp b { color: var(--primary-text-color); font-weight: 500; font-size: 14px; }
+    .sec {
+      --c: var(--primary-color);
+      border: 1px solid color-mix(in srgb, var(--c) 30%, var(--wa-line)); border-radius: 10px;
+      background: var(--wa-card); margin-bottom: 10px; overflow: hidden;
+    }
+    .sec[data-open="true"] { border-color: color-mix(in srgb, var(--c) 60%, var(--wa-line)); }
+    .sec-h { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: color-mix(in srgb, var(--c) 10%, var(--wa-card)); cursor: pointer; }
+    .sec-h:hover { background: color-mix(in srgb, var(--c) 18%, var(--wa-card)); }
+    .sec-h:focus-visible { outline: 2px solid var(--c); outline-offset: -2px; }
+    .sec-h .swatch { width: 26px; height: 26px; border-radius: 7px; background: color-mix(in srgb, var(--c) 18%, transparent); color: var(--c); flex: none; display: grid; place-items: center; }
+    .sec-h .swatch svg { width: 15px; height: 15px; }
+    .sec-h .tt { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+    .sec-h h4 { margin: 0; font-size: 14px; font-weight: 500; }
+    .sec-h .sum { color: var(--wa-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sec-h .chev { color: var(--wa-muted); opacity: .7; flex: none; transition: transform .15s ease-out; }
+    .sec-h .chev svg { width: 16px; height: 16px; }
+    .sec[data-open="true"] .sec-h .chev { transform: rotate(180deg); }
+    .sec-b { padding: 8px 12px 12px; }
+    .adders { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+    dialog.preset-dialog {
+      width: min(420px, calc(100vw - 32px)); padding: 16px 18px 18px;
+      border: 1px solid var(--wa-line); border-radius: 12px;
+      background: var(--wa-card); color: var(--primary-text-color);
+      box-shadow: 0 12px 40px rgba(0,0,0,.4);
+    }
+    dialog.preset-dialog::backdrop { background: rgba(0,0,0,.45); }
+    dialog.preset-dialog h2 { margin: 0 0 4px; font-size: 15px; font-weight: 500; }
     .ok { color: var(--success-color, #43a047); }
     .warn { color: var(--warning-color, #ffa600); }
     .err, .error { color: var(--error-color, #db4437); }
     .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 13px; }
     .kv dt { opacity: .7; }
     .kv dd { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .layer, .datum { padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px; }
-    .layer:hover, .datum:hover { background: var(--secondary-background-color); }
-    .layer.hl, .datum.hl { background: var(--primary-color); color: var(--text-primary-color, #fff); }
-    /* The row for the layer the pick pointer is over. An outline rather than a
-       fill, so it still reads on the row that is also selected. */
-    .layer.pick { box-shadow: inset 0 0 0 2px var(--primary-color); }
-    /* The kind is the fastest thing to scan a layer list by, so it reads as a
-       badge rather than as faint grey text. */
-    .layer .kind {
-      flex: none; font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
-      min-width: 46px; text-align: center; padding: 2px 4px; border-radius: 4px; margin-right: 2px;
-      background: var(--secondary-background-color, rgba(127,127,127,.16)); opacity: .95;
-    }
-    .layer.hl .kind { background: rgba(255,255,255,.24); }
-    .layer .name, .datum .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .layer .meta, .datum .meta { font-size: 12px; opacity: .7; }
-    .layer .chip { font-size: 10px; padding: 0 6px; opacity: .8; }
-    /* Reserved, not removed: taking the actions out of the layout made the row
-       change height and the name change width the moment the pointer arrived,
-       so the thing being aimed at moved. */
-    .layer .acts { display: inline-flex; gap: 0; flex: none; visibility: hidden; }
-    .layer:hover .acts, .layer.hl .acts, .layer:focus-within .acts { visibility: visible; }
-    .adders { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
-    /* Layer presets are the primary way to add a layer: each one is a whole
-       working thing (an icon, its tap and its states), so it carries the
-       weight. The blank kinds underneath stay available but stay quiet. */
-    .adders.presets { gap: 8px; }
-    button.preset {
-      font: inherit; font-size: 13px; font-weight: 500; padding: 7px 12px; border-radius: 8px; cursor: pointer;
-      border: 1px solid var(--primary-color); background: var(--card-background-color, #fff); color: var(--primary-color);
-    }
-    button.preset:hover:not(:disabled) { background: var(--primary-color); color: var(--text-primary-color, #fff); }
-    .adders.blanks { gap: 4px; margin-top: 6px; align-items: center; }
-    .adders.blanks .hint { margin: 0 2px 0 0; }
-    .adders.blanks button.small { opacity: .8; }
-    dialog.preset-dialog {
-      width: min(420px, calc(100vw - 32px)); box-sizing: border-box; padding: 16px 18px 18px;
-      border: 1px solid var(--divider-color); border-radius: 12px;
-      background: var(--card-background-color, #fff); color: var(--primary-text-color);
-      box-shadow: 0 12px 40px rgba(0,0,0,.4);
-    }
-    dialog.preset-dialog::backdrop { background: rgba(0,0,0,.45); }
-    .card dialog.preset-dialog h2 { margin: 0 0 4px; font-size: 15px; font-weight: 500; text-transform: none; letter-spacing: 0; opacity: 1; }
+    .send { font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+    .send.sent { color: var(--success-color, #43a047); }
+    .send.sending { opacity: .7; }
+    .send.offline { color: var(--warning-color, #ffa600); }
+    header .send.sent { color: inherit; }
+    ul { list-style: none; margin: 0; padding: 0; }
+    .datum { padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+    .datum + .datum { box-shadow: inset 0 1px 0 var(--wa-line); }
+    .datum:hover, .datum.hl { box-shadow: none; }
+    .datum:hover { background: var(--wa-panel); }
+    .datum.hl { background: color-mix(in srgb, var(--primary-color) 14%, transparent); }
+    .datum .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .datum .meta { font-size: 12px; opacity: .7; }
     .branches { display: flex; flex-wrap: wrap; gap: 4px; }
     .branches button {
       font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 999px;
-      border: 1px solid var(--divider-color); background: transparent; color: inherit; cursor: pointer;
+      border: 1px solid var(--wa-line); background: transparent; color: inherit; cursor: pointer;
     }
     .branches button.active { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: transparent; }
     .branches button.live-match { border-color: var(--success-color, #43a047); }
-    pre { font-size: 11px; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow: auto; background: var(--secondary-background-color); padding: 8px; border-radius: 6px; }
+    pre { font-size: 11px; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow: auto; background: var(--wa-panel); padding: 8px; border-radius: 6px; }
     button.link { font: inherit; background: none; border: none; color: var(--primary-color); cursor: pointer; padding: 0; }
-    .empty { opacity: .6; padding: 24px; text-align: center; }
-    .banner { padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; background: var(--secondary-background-color); }
-    .banner.warn { border-left: 4px solid var(--warning-color, #ffa600); }
-    .banner.err { border-left: 4px solid var(--error-color, #db4437); }
-    .banner .acts { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
-    .rule-box { border: 1px solid var(--divider-color); border-radius: 8px; padding: 8px; margin: 8px 0; }
-    .case-box { border-left: 3px solid var(--divider-color); padding: 4px 8px; margin: 8px 0; }
+    .rule-box { border: 1px solid var(--wa-line); border-radius: 8px; padding: 8px; margin: 8px 0; }
+    .case-box { border-left: 3px solid var(--wa-line); padding: 4px 8px; margin: 8px 0; }
     .case-box.match { border-left-color: var(--success-color, #43a047); }
     .case-box.otherwise { border-left-style: dashed; }
-    .test-box, .change-box { background: var(--secondary-background-color, rgba(0,0,0,.04)); border-radius: 6px; padding: 4px 8px; margin: 6px 0; }
+    .test-box, .change-box { background: var(--wa-panel); border-radius: 6px; padding: 4px 8px; margin: 6px 0; }
     .rule-head { display: flex; align-items: center; gap: 4px; font-size: 13px; }
     .ok { color: var(--success-color, #43a047); font-size: 12px; }
     .no { color: var(--error-color, #db4437); font-size: 12px; }
     select.adder { font: inherit; font-size: 12px; padding: 3px 6px; margin-top: 4px; }
-    .tabs { display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap; }
-    .tabs button { font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--divider-color); background: transparent; color: inherit; cursor: pointer; }
-    .tabs button.active { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: transparent; }
-    /* form controls */
-    .field { display: flex; flex-direction: column; gap: 3px; margin: 6px 0; font-size: 13px; }
-    .field > span { opacity: .75; font-size: 12px; }
-    .field input[type=text], .field input[type=number], .field select, .field textarea {
-      font: inherit; font-size: 13px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--divider-color);
-      background: var(--card-background-color, #fff); color: inherit; width: 100%; box-sizing: border-box;
+
+    /* Form controls: label on the left, control on the right, the way a
+       settings page reads. Fields that carry their own machinery (the entity
+       search, the value chip) keep the label above, so nothing inside them
+       has to fit a half-width column. */
+    .field {
+      display: grid; grid-template-columns: minmax(84px, 32%) minmax(0, 1fr); align-items: center;
+      gap: 4px 10px; margin: 6px 0; font-size: 13px;
     }
+    .field > span { color: var(--wa-muted); font-size: 13px; line-height: 1.25; }
+    .field input[type=text], .field input[type=number], .field select, .field textarea {
+      font: inherit; font-size: 13px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--wa-line);
+      background: var(--wa-card); color: inherit; width: 100%; min-width: 0;
+    }
+    .field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible { outline: none; border-color: var(--c, var(--primary-color)); }
     .field .mono, code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-    /* A slider with its number beside it: the crop controls are found by eye,
-       so the value is a readout rather than something to type into. */
-    .field.slider .slider-row { display: flex; align-items: center; gap: 8px; }
-    .field.slider input[type=range] { flex: 1; min-width: 60px; }
+    .field.slider .slider-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .field.slider input[type=range] { flex: 1; min-width: 60px; accent-color: var(--c, var(--primary-color)); }
     .field.slider .slider-value { min-width: 44px; text-align: right; opacity: .85; }
-    .field.check { flex-direction: row; align-items: center; gap: 8px; }
-    .field.check > span { opacity: 1; font-size: 13px; }
-    .color-row { display: flex; align-items: center; gap: 6px; }
-    .color-row input[type=color] { width: 32px; height: 26px; padding: 0; border: 1px solid var(--divider-color); border-radius: 6px; background: none; }
-    .color-row input[type=range] { flex: 1; min-width: 40px; }
-    .color-row input.hex { width: 96px; }
+    .field.check { grid-template-columns: auto minmax(0, 1fr); gap: 8px; }
+    .field.check input { width: 16px; height: 16px; margin: 0; accent-color: var(--c, var(--primary-color)); }
+    .field.check > span { color: inherit; }
+    .field.entity-field, .field.value-chip-field { display: flex; flex-direction: column; gap: 3px; align-items: stretch; }
+    .field.entity-field > span, .field.value-chip-field > span { font-size: 12px; }
+    .color-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .color-row input[type=color] { width: 32px; height: 26px; padding: 0; border: 1px solid var(--wa-line); border-radius: 6px; background: none; }
+    .color-row input[type=range] { flex: 1; min-width: 40px; accent-color: var(--c, var(--primary-color)); }
+    .color-row input.hex { width: 90px; flex: none; }
     .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
     .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0 6px; }
+    .grid2 .field, .grid4 .field { display: flex; flex-direction: column; align-items: stretch; gap: 3px; }
+    .grid2 .field > span, .grid4 .field > span { font-size: 12px; }
+    .grid4 input[type=number] { text-align: right; padding-left: 4px; padding-right: 6px; }
     .row-inline { display: flex; align-items: flex-end; gap: 4px; }
     .row-inline .field { flex: 1; }
     .hint { font-size: 12px; opacity: .75; margin: 4px 0; }
     .hint.warn { opacity: 1; }
     details.sub { margin: 6px 0; }
     details.sub summary { font-size: 12px; opacity: .8; cursor: pointer; }
-    .chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-    .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 8px; border: 1px solid var(--divider-color); border-radius: 999px; }
+    .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 8px; border: 1px solid var(--wa-line); border-radius: 999px; }
     button.chip { font: inherit; font-size: 12px; background: transparent; color: inherit; cursor: pointer; }
     button.chip.active { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: transparent; }
-    .chip-add { font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px dashed var(--divider-color); background: transparent; color: inherit; cursor: pointer; }
-    .new-shape { margin: 0 0 10px; }
-    .preview.inline .inline-line { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 200px; padding: 6px 16px; border-radius: 999px; background: #000; color: #fff; font-size: 14px; cursor: pointer; }
-    .preview.inline .inline-line svg { display: inline-block; margin: 0; background: transparent; border-radius: 0; }
-    .preview.inline.active .inline-line { outline: 2px solid var(--primary-color); outline-offset: 3px; }
-    .preview.inline .inline-line.missing { color: #999; font-style: italic; }
-    .value-editor { border-left: 2px solid var(--divider-color); padding-left: 10px; margin: 4px 0 8px; }
+    .chip-add { font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px dashed var(--wa-line); background: transparent; color: inherit; cursor: pointer; }
+    .value-editor { border-left: 2px solid var(--wa-line); padding-left: 10px; margin: 4px 0 8px; }
 
     /* Value chip: one line saying what a value is, with the full form behind it.
        The form lives in a popover, which the browser draws in the top layer, so
        a scrolling card cannot clip it. Its position is set in editors.ts. */
     .value-chip-field { gap: 4px; }
     button.value-chip {
-      display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box;
+      display: flex; align-items: center; gap: 8px; width: 100%;
       font: inherit; font-size: 13px; text-align: left; padding: 6px 10px; border-radius: 8px;
-      border: 1px solid var(--divider-color); background: var(--card-background-color, #fff);
+      border: 1px solid var(--wa-line); background: var(--wa-card);
       color: inherit; cursor: pointer;
     }
     button.value-chip:hover { border-color: var(--primary-color); }
@@ -592,15 +767,16 @@ export class WristAssistantPanel extends LitElement {
     .value-chip .chip-now { max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .65; }
     .value-chip .chip-caret { opacity: .55; font-size: 11px; }
     .value-pop {
-      position: fixed; inset: auto; margin: 0; width: min(430px, calc(100vw - 16px)); box-sizing: border-box;
+      position: fixed; inset: auto; margin: 0; width: min(430px, calc(100vw - 16px));
       max-height: 70vh; overflow: auto; padding: 10px 14px 14px;
-      border: 1px solid var(--divider-color); border-radius: 12px;
-      background: var(--card-background-color, #fff); color: var(--primary-text-color);
+      border: 1px solid var(--wa-line); border-radius: 12px;
+      background: var(--wa-card); color: var(--primary-text-color);
       box-shadow: 0 10px 30px rgba(0,0,0,.35);
     }
     .value-pop::backdrop { background: transparent; }
     .pop-head { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 2px; position: sticky; top: -10px; background: inherit; padding: 4px 0; }
     .pop-head .spacer { flex: 1; }
+    .value-pop .field { display: flex; flex-direction: column; align-items: stretch; gap: 3px; }
 
     /* States table: one rule as rows. A two-state light is two lines, so the
        row has to stay one line: every control in it is sized to the text it
@@ -608,35 +784,33 @@ export class WristAssistantPanel extends LitElement {
     .states-table { width: 100%; border-collapse: collapse; margin: 8px 0 4px; font-size: 13px; }
     .states-table th {
       text-align: left; font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
-      opacity: .6; padding: 2px 6px; border-bottom: 1px solid var(--divider-color); white-space: nowrap;
+      opacity: .6; padding: 2px 6px; border-bottom: 1px solid var(--wa-line); white-space: nowrap;
     }
     .states-table th button.icon { opacity: 0; }
     .states-table th:hover button.icon, .states-table th button.icon:focus-visible { opacity: .7; }
     .states-table th.acts { width: 1%; }
-    .states-table td { padding: 3px 6px; border-bottom: 1px solid var(--divider-color); vertical-align: middle; }
+    .states-table td { padding: 3px 6px; border-bottom: 1px solid var(--wa-line); vertical-align: middle; }
     .states-table td.empty-row { opacity: .6; padding: 12px 6px; border-bottom: none; }
     .states-table tr.state-row { cursor: pointer; }
-    .states-table tr.state-row:hover td { background: var(--secondary-background-color); }
-    /* Two declarations: a browser without color-mix keeps the plain tint
-       rather than losing the held row entirely. */
-    .states-table tr.state-row.forced td { background: var(--secondary-background-color); }
-    .states-table tr.state-row.forced td { background: color-mix(in srgb, var(--primary-color) 14%, transparent); }
+    .states-table tr.state-row:hover td { background: var(--wa-panel); }
+    .states-table tr.state-row.forced td { background: var(--wa-panel); }
+    .states-table tr.state-row.forced td { background: color-mix(in srgb, var(--wa-states) 18%, transparent); }
     .states-table td.when { white-space: nowrap; }
     .states-table td.acts { width: 1%; white-space: nowrap; }
     .states-table td.acts button.icon { opacity: 0; }
     .states-table tr:hover td.acts button.icon, .states-table td.acts button.icon:focus-visible { opacity: .8; }
     .row-flag { display: inline-block; width: 12px; color: var(--success-color, #43a047); font-size: 11px; }
-    tr.forced .row-flag { color: var(--primary-color); }
+    tr.forced .row-flag { color: color-mix(in srgb, var(--wa-states) 70%, var(--primary-text-color)); }
     .when-cell { display: inline-flex; align-items: center; gap: 4px; }
     .when-cell select.when-op { font: inherit; font-size: 12px; padding: 2px 4px; border-radius: 6px; border: 1px solid transparent; background: transparent; color: inherit; }
-    .when-cell select.when-op:hover { border-color: var(--divider-color); }
+    .when-cell select.when-op:hover { border-color: var(--wa-line); }
     .when-and { opacity: .6; font-size: 12px; }
     .when-otherwise { opacity: .75; font-style: italic; }
     .rhs { display: inline-flex; align-items: center; gap: 2px; }
     .rhs .value-chip-field { margin: 0; }
     input.cellin {
       font: inherit; font-size: 13px; width: 90px; padding: 3px 6px; border-radius: 6px;
-      border: 1px solid var(--divider-color); background: var(--card-background-color, #fff); color: inherit;
+      border: 1px solid var(--wa-line); background: var(--wa-card); color: inherit;
     }
     input.cellin.num { width: 64px; }
     button.more { font-size: 12px; opacity: .5; }
@@ -645,10 +819,10 @@ export class WristAssistantPanel extends LitElement {
       font: inherit; font-size: 13px; text-align: left; padding: 3px 6px; border-radius: 6px;
       border: 1px solid transparent; background: transparent; color: inherit; cursor: pointer;
     }
-    button.cell:hover { border-color: var(--divider-color); background: var(--card-background-color, #fff); }
+    button.cell:hover { border-color: var(--wa-line); background: var(--wa-card); }
     button.cell.empty { opacity: .45; font-style: italic; }
     .cell-word { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .swatch { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--divider-color); flex: none; }
+    .swatch { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--wa-line); flex: none; }
     button.cell svg { display: block; }
     .states-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
     .states-foot .spacer { flex: 1; }
@@ -661,19 +835,18 @@ export class WristAssistantPanel extends LitElement {
     /* Entity search. The friendly name and the entity id both matter and both
        are long, so they stack on two lines instead of fighting for one. */
     .entity-field { position: relative; }
-    .entity-results { border: 1px solid var(--divider-color); border-radius: 8px; margin-top: 4px; max-height: 300px; overflow: auto; }
+    .entity-results { border: 1px solid var(--wa-line); border-radius: 8px; margin-top: 4px; max-height: 300px; overflow: auto; }
     button.ent {
-      display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box;
+      display: flex; align-items: center; gap: 8px; width: 100%;
       font: inherit; font-size: 13px; text-align: left; padding: 6px 8px;
       background: none; border: none; color: inherit; cursor: pointer;
     }
-    button.ent + button.ent { border-top: 1px solid var(--divider-color); }
-    button.ent:hover, button.ent.hl { background: var(--secondary-background-color); }
+    button.ent + button.ent { border-top: 1px solid var(--wa-line); }
+    button.ent:hover, button.ent.hl { background: var(--wa-panel); }
     .ent .ent-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
     .ent .ent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ent .ent-id { font-size: 11px; opacity: .6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ent .ent-state { flex: none; font-size: 11px; opacity: .8; max-width: 34%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .entity-current .ent-name { flex: 1; }
     .entity-current { display: flex; gap: 8px; align-items: baseline; font-size: 12px; opacity: .8; margin-top: 3px; }
     .entity-current .ent-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -682,20 +855,16 @@ export class WristAssistantPanel extends LitElement {
     .sym-controls { display: flex; gap: 6px; margin-bottom: 6px; }
     .sym-controls input[type=search] { flex: 1; min-width: 0; }
     .sym-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 4px; max-height: 240px; overflow-y: auto; padding: 2px; }
-    /* Recents are a shortcut back to a handful of names, not a second
-       catalogue, so they stay one strip that scrolls sideways instead of
-       growing tall enough to push the real grid off screen. */
     .sym-grid.one-row { display: flex; flex-wrap: nowrap; max-height: none; overflow-x: auto; overflow-y: hidden; }
     .sym-grid.one-row button.sym { flex: 0 0 64px; }
     button.sym { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 5px 2px; background: none; cursor: pointer; color: var(--primary-text-color); border: 1px solid transparent; border-radius: 6px; overflow: hidden; }
-    button.sym:hover { border-color: var(--divider-color); background: var(--secondary-background-color); }
+    button.sym:hover { border-color: var(--wa-line); background: var(--wa-panel); }
     button.sym.on { border-color: var(--primary-color); }
     .sym-glyph { display: flex; align-items: center; justify-content: center; height: 24px; }
-    /* Beats the fill the provider writes as a presentation attribute, so tiles
-       follow the Home Assistant theme instead of the canvas colour. */
     .sym-glyph svg path { fill: currentColor; fill-opacity: 1; }
     .sym-none { font-size: 14px; opacity: .4; }
     .sym-name { font-size: 9px; line-height: 1.1; text-align: center; opacity: .8; overflow-wrap: anywhere; max-height: 22px; overflow: hidden; }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
   `;
 
   // ── lifecycle ─────────────────────────────────────────────────────────
@@ -829,6 +998,17 @@ export class WristAssistantPanel extends LitElement {
   /** The selection the inspector was last drawn for. A re-render for an edit
    * keeps its scroll position; a different selection starts at the top. */
   private lastInspectKey?: string;
+
+  protected override willUpdate(changed: PropertyValues) {
+    // A different selection starts with its first card open and the rest
+    // shut, whatever the last one had unfolded.
+    if (changed.has("inspect")) {
+      const before = changed.get("inspect") as Inspect | undefined;
+      if (before === undefined || inspectKey(before) !== inspectKey(this.inspect)) {
+        this.openSections = new Set([defaultSection(this.inspect)]);
+      }
+    }
+  }
 
   protected override updated(changed: PropertyValues) {
     const key = inspectKey(this.inspect);
@@ -1157,7 +1337,19 @@ export class WristAssistantPanel extends LitElement {
       savedName: this.savedName,
       tapAreaShown: this.showTaps,
       showTapArea: (on) => this.setShowTaps(on),
+      openSections: this.openSections,
+      toggleSection: (id) => this.toggleSection(id),
     };
+  }
+
+  /** Open or shut one inspector card. With one card open (the default), a
+   * click on another swaps to it; after Open all, each card shuts alone. */
+  private toggleSection(id: string) {
+    const next = new Set(this.openSections);
+    if (next.has(id)) next.delete(id);
+    else if (next.size <= 1) { next.clear(); next.add(id); }
+    else next.add(id);
+    this.openSections = next;
   }
 
   // ── shapes ────────────────────────────────────────────────────────────
@@ -1394,7 +1586,9 @@ export class WristAssistantPanel extends LitElement {
       const domain = id.split(".")[0] ?? "";
       const entry: EntityState = {
         entityId: id,
-        state: s.state,
+        // A typed test value stands in for the live state, and only here: the
+        // document, the templates and the watch never see it.
+        state: this.testValues.get(id) ?? s.state,
         unitOfMeasurement: typeof attrs.unit_of_measurement === "string" ? attrs.unit_of_measurement : undefined,
         iconName: this.compiled?.entities.get(id)?.iconName ?? "",
         domain,
@@ -1685,29 +1879,32 @@ export class WristAssistantPanel extends LitElement {
       : columnFit(this.panelWidth, this.colLeft, this.colRight);
     return html`
       <header>
-        <h1>Wrist Assistant${dirty ? html`<span class="dirty-dot" title="Unsaved changes"></span>` : nothing}</h1>
+        <h1>Wrist Assistant</h1>
+        ${this.renderPicker()}
+        ${dirty ? html`<span class="dirty-dot" title="Unsaved changes"></span>` : nothing}
         <div class="toolbar">
           <button @click=${() => this.undo()} ?disabled=${!d?.canUndo} title="Undo (⌘Z)">Undo</button>
           <button @click=${() => this.redo()} ?disabled=${!d?.canRedo} title="Redo (⇧⌘Z)">Redo</button>
-          <button class="primary" @click=${() => void this.save()} ?disabled=${!this.canEdit || !dirty || this.saving || !this.slotChosen} title="Save (⌘S)">${this.saving ? "Saving…" : d?.baseRevision === null ? "Save new" : "Save"}</button>
-          ${this.renderSendButton()}
         </div>
+        <span class="spacer"></span>
+        ${this.renderSendButton()}
         <label>Watch
           <select @change=${(e: Event) => void this.selectOwner((e.target as HTMLSelectElement).value)}>
             ${this.owners.map((o) => html`<option value=${o.owner_watch_id} ?selected=${o.owner_watch_id === this.ownerId}>
               ${ownerLabel(o)} (${o.complication_count})</option>`)}
           </select>
         </label>
+        <button class="primary" @click=${() => void this.save()} ?disabled=${!this.canEdit || !dirty || this.saving || !this.slotChosen} title="Save (⌘S)">${this.saving ? "Saving…" : d?.baseRevision === null ? "Save new" : dirty ? "Save" : "Saved"}</button>
       </header>
       ${this.loadError ? html`<div class="card error">${this.loadError}</div>` : nothing}
       ${this.watchSupported
         ? html`<div class="layout cols-${fit.columns}"
               style="--wa-left:${fit.left}px;--wa-right:${fit.right}px">
-            <div class="column left">${this.renderList()}${this.renderData()}${this.renderLayers()}</div>
+            <div class="column left">${this.renderAddLayer()}${this.renderLayers()}</div>
             ${this.renderGutter("left")}
-            <div class="column canvas">${this.renderBanners()}${this.renderPreviews()}</div>
+            <div class="column canvas">${this.renderBanners()}${this.renderCanvas()}</div>
             ${this.renderGutter("right")}
-            <div class="column inspector">${this.renderInspector()}</div>
+            <div class="column inspector card">${this.renderInspector()}</div>
           </div>
           ${this.renderFooter()}`
         : html`<div class="card">
@@ -1715,6 +1912,95 @@ export class WristAssistantPanel extends LitElement {
             <div class="hint">Nothing on this watch is changed or lost. Its ${this.selectedOwner?.complication_count ?? 0} complication${this.selectedOwner?.complication_count === 1 ? "" : "s"} stay in Home Assistant and can be edited once the watch is updated.</div>
           </div>`}`;
   }
+
+  // ── header picker ─────────────────────────────────────────────────────
+
+  /** The rows the picker shows, in watch face order (by slot). iPhone presets
+   * and customs on another home are locked rows: this panel cannot edit them,
+   * but hiding them is what used to make slots look haunted. */
+  private pickerRows(): PickerRow[] {
+    const rows: PickerRow[] = [
+      ...this.records.map((r): PickerRow => ({ slot: Number(r.document?.slotIndex ?? 0), kind: "record", record: r })),
+      ...this.occupied.map((o): PickerRow => o.kind === "custom"
+        ? {
+          slot: o.slot,
+          kind: "locked",
+          name: o.name || "Unnamed complication",
+          badge: o.home || "Other home",
+          title: `A complication on ${o.home ? `the ${o.home} home` : "another home"}${o.families?.length ? ` (${o.families.map(familyTitle).join(", ")})` : ""}. Edit it in that home's Wrist Assistant panel.`,
+          families: o.families ?? [],
+        }
+        : {
+          slot: o.slot,
+          kind: "locked",
+          name: o.name || "Unnamed preset",
+          badge: "iPhone",
+          title: "An iPhone preset complication. Edit it in the Wrist Assistant app on the iPhone.",
+          families: [],
+        }),
+    ];
+    return rows.sort((a, b) => a.slot - b.slot);
+  }
+
+  private shapeDots(families: readonly string[]) {
+    return html`<span class="shape-dots">${ALL_FAMILIES.map((f) => html`<span class="shape-dot ${f} ${families.includes(f) ? "on" : ""}" title=${familyTitle(f)}></span>`)}</span>`;
+  }
+
+  private renderPicker() {
+    const d = this.draft;
+    const rec = this.records.find((r) => r.id === this.selectedId);
+    const name = d ? (d.config.name.trim() || "Untitled") : "No complication";
+    const families = d ? d.config.supportedFamilies : [];
+    const rows = this.pickerRows();
+    const free = this.freeSlot();
+    return html`<div class="picker">
+      <button aria-haspopup="listbox" aria-expanded=${this.pickerOpen ? "true" : "false"} title="Choose a complication"
+        @click=${() => this.togglePicker()}>
+        ${this.shapeDots(families)}
+        <span class="pk-name">${name}</span>
+        ${rec ? html`<span class="pk-rev">r${rec.revision}</span>` : d && d.baseRevision === null ? html`<span class="pk-rev">unsaved</span>` : nothing}
+        ${uiIcon("chevron")}
+      </button>
+      ${this.pickerOpen ? html`<div class="menu" role="listbox">
+        ${rows.length === 0 && !(d && d.baseRevision === null) ? html`<div class="empty">No complications for this watch yet.</div>` : nothing}
+        ${rows.map((row) => row.kind === "record"
+          ? html`<button class="row" role="option" aria-current=${row.record.id === this.selectedId ? "true" : "false"}
+              @click=${() => { this.togglePicker(false); this.selectRecord(row.record); }}>
+              ${this.shapeDots(familiesOf(row.record))}
+              <span class="pk-name">${String(row.record.document?.name ?? "Untitled")}</span>
+              <span class="pk-badge">r${row.record.revision}</span>
+            </button>`
+          : html`<div class="row locked" title=${row.title}>
+              ${this.shapeDots(row.families)}
+              <span class="pk-name">${row.name}</span>
+              <span class="pk-badge">${row.badge}</span>
+            </div>`)}
+        ${d && d.baseRevision === null ? html`<div class="row" aria-current="true">${this.shapeDots(families)}<span class="pk-name">${name}</span><span class="pk-badge">unsaved</span></div>` : nothing}
+        ${this.hass.user?.is_admin ? html`
+          <button class="row new" ?disabled=${free < 0} @click=${() => { this.newShapeChooser = !this.newShapeChooser; }}>
+            ${uiIcon("plus")}<span class="pk-name">New complication</span>${free < 0 ? html`<span class="pk-badge">watch is full</span>` : nothing}
+          </button>
+          ${this.newShapeChooser && free >= 0 ? html`<div class="new-shape">
+            <div class="hint">Start with one shape. More can be added under the preview later.</div>
+            <div class="adders">
+              ${ALL_FAMILIES.map((f) => html`<button class="small ${f === "rectangular" ? "primary" : ""}" @click=${() => { this.togglePicker(false); this.createNew(f); }}>${familyTitle(f)}</button>`)}
+            </div>
+          </div>` : nothing}` : nothing}
+      </div>` : nothing}
+    </div>`;
+  }
+
+  private togglePicker(next = !this.pickerOpen) {
+    this.pickerOpen = next;
+    if (!next) this.newShapeChooser = false;
+    if (next) window.addEventListener("pointerdown", this.pickerOutside, { capture: true });
+    else window.removeEventListener("pointerdown", this.pickerOutside, { capture: true });
+  }
+
+  private pickerOutside = (e: PointerEvent) => {
+    const inside = e.composedPath().some((n) => n instanceof HTMLElement && n.classList.contains("picker"));
+    if (!inside) this.togglePicker(false);
+  };
 
   private renderBanners() {
     const out: TemplateResult[] = [];
@@ -1765,85 +2051,48 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
   }
 
-  private renderList() {
-    // One list for everything on the watch, ordered the way the watch face
-    // picker orders it (by slot, which stays invisible here). iPhone presets
-    // and customs on another home are locked rows: this panel cannot edit
-    // them, but hiding them is what used to make slots look haunted.
-    type Row =
-      | { slot: number; kind: "record"; record: ComplicationRecord }
-      | { slot: number; kind: "locked"; name: string; badge: string; title: string };
-    const rows: Row[] = [
-      ...this.records.map((r): Row => ({ slot: Number(r.document?.slotIndex ?? 0), kind: "record", record: r })),
-      ...this.occupied.map((o): Row => o.kind === "custom"
-        ? {
-          slot: o.slot,
-          kind: "locked",
-          name: o.name || "Unnamed complication",
-          badge: o.home || "Other home",
-          title: `A complication on ${o.home ? `the ${o.home} home` : "another home"}${o.families?.length ? ` (${o.families.map(familyTitle).join(", ")})` : ""}. Edit it in that home's Wrist Assistant panel.`,
-        }
-        : {
-          slot: o.slot,
-          kind: "locked",
-          name: o.name || "Unnamed preset",
-          badge: "iPhone",
-          title: "An iPhone preset complication. Edit it in the Wrist Assistant app on the iPhone.",
-        }),
-    ].sort((a, b) => a.slot - b.slot);
+  // ── left column ───────────────────────────────────────────────────────
+
+  /** Six tinted buttons, one per kind, and the presets under them. Above the
+   * list on purpose: adding a layer never moves the button just pressed. */
+  private renderAddLayer() {
+    const cfg = this.draft?.config;
+    if (!cfg || !this.canEdit) return nothing;
+    const full = cfg.elements.length >= 64;
     return html`<div class="card">
-      <h2>Complications<span class="spacer"></span>
-        ${this.hass.user?.is_admin
-          ? html`<button class="small" @click=${() => { this.newShapeChooser = !this.newShapeChooser; }} ?disabled=${this.freeSlot() < 0}>New</button>`
-          : nothing}
-      </h2>
-      ${this.newShapeChooser && this.freeSlot() >= 0 ? html`<div class="new-shape">
-        <div class="hint">Shape of the new complication. More shapes can be added later on its General tab.</div>
-        <div class="adders">
-          ${ALL_FAMILIES.map((f) => html`<button class="small ${f === "rectangular" ? "primary" : ""}" @click=${() => this.createNew(f)}>${familyTitle(f)}</button>`)}
-          <button class="small" @click=${() => { this.newShapeChooser = false; }}>Cancel</button>
-        </div>
-      </div>` : nothing}
-      ${rows.length === 0 && !(this.draft && this.draft.baseRevision === null)
-        ? html`<div class="empty">No complications for this watch yet.</div>`
-        : html`<ul>${rows.map((row) => row.kind === "record"
-            ? html`
-            <li class="row ${row.record.id === this.selectedId ? "selected" : ""}" @click=${() => this.selectRecord(row.record)}>
-              <span>${String(row.record.document?.name ?? "Untitled")}</span>
-              <span class="meta">r${row.record.revision}</span>
-            </li>`
-            : html`
-            <li class="row locked" title=${row.title}>
-              <span>${row.name}</span>
-              <span class="meta">${row.badge}</span>
-            </li>`)}
-            ${this.draft && this.draft.baseRevision === null ? html`<li class="row selected"><span>${this.draft.config.name}</span><span class="meta">unsaved</span></li>` : nothing}
-          </ul>`}
+      <h2 class="panel-title">Add a layer</h2>
+      <div class="add-grid">
+        ${KIND_ORDER.map((k) => html`<button class="add" style=${`--k:${KIND_COLOR[k]}`} ?disabled=${full} title=${`Add a blank ${KIND_LABEL[k].toLowerCase()} layer`}
+          @click=${() => { const el = newElement(k); this.mutate((c) => { c.elements.push(el); }); this.inspect = { kind: "layer", id: el.payload.id }; }}>${uiIcon(k)}<span>${KIND_LABEL[k]}</span></button>`)}
+      </div>
+      <div class="presets-l">Or start from a preset</div>
+      <div class="presets">
+        ${LAYER_PRESETS.map((p) => html`<button class="preset" title=${p.blurb}
+          ?disabled=${cfg.elements.length + p.layerCount > 64}
+          @click=${() => this.openPreset(p.kind)}>${p.title}</button>`)}
+      </div>
+      ${this.renderPresetDialog()}
     </div>`;
   }
 
-  private renderData() {
-    const cfg = this.draft?.config;
-    if (!cfg) return nothing;
-    const resolver = new Resolver(this.buildContext());
-    const ctx = describeContext(this.host());
-    return html`<div class="card">
-      <h2>Data<span class="spacer"></span>
-        ${this.canEdit ? html`<button class="small" @click=${() => { const nv = newNamedValue(); this.mutate((c) => { c.values.push(nv); }); this.inspect = { kind: "data", id: nv.id }; }}>Add</button>` : nothing}
-      </h2>
-      ${cfg.values.length === 0
-        ? html`<div class="empty">Named values: a value defined once and read by several layers. Add one here, then set a layer's Source to "Named value". A layer that needs a value only once can read the entity directly.</div>`
-        : html`<div class="hint">Used by layers whose Source is "Named value". A value listed here draws nothing on its own.</div>`}
-      ${cfg.values.map((v) => {
-        const r = resolver.resolve({ kind: { kind: "named", id: v.id } });
-        const hl = this.inspect.kind === "data" && this.inspect.id === v.id;
-        return html`<div class="datum ${hl ? "hl" : ""}" @click=${() => { this.inspect = { kind: "data", id: v.id }; }}>
-          <span class="name">${v.name || "(unnamed)"}</span>
-          <span class="meta" title=${describeValue(v.value, ctx)}>${r ?? "unresolved"}</span>
-          ${this.canEdit ? html`<button class="icon danger" title="Delete value" aria-label="Delete value" @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { c.values = c.values.filter((x) => x.id !== v.id); }); if (hl) this.inspect = { kind: "general" }; }}>${uiIcon("delete")}</button>` : nothing}
-        </div>`;
-      })}
-    </div>`;
+  /** Reorder by drag: `id` lands before or after `targetId` in the list as
+   * shown (top drawn last). Attached taps stay out of the rows and follow
+   * their owner, the same as the arrow buttons. */
+  private reorderLayer(id: string, targetId: string, before: boolean) {
+    if (id === targetId) return;
+    this.mutate((c) => {
+      const rows = c.elements.filter((e) => !isAttachedTap(c, e));
+      const taps = c.elements.filter((e) => isAttachedTap(c, e));
+      const shown = [...rows].reverse();
+      const from = shown.findIndex((e) => e.payload.id === id);
+      if (from < 0) return;
+      const [item] = shown.splice(from, 1);
+      let to = shown.findIndex((e) => e.payload.id === targetId);
+      if (to < 0) return;
+      if (!before) to += 1;
+      shown.splice(to, 0, item!);
+      c.elements = [...shown.reverse(), ...taps];
+    });
   }
 
   private renderLayers() {
@@ -1851,9 +2100,6 @@ export class WristAssistantPanel extends LitElement {
     if (!cfg) return nothing;
     const edit = this.canEdit;
     const family = this.canvasFamily;
-    // An attached tap has no row of its own, so a step here is a step over the
-    // rows the card shows. The tap travels with its owner; syncAttachedTaps
-    // puts it back directly above whichever layer it belongs to.
     const move = (id: string, dir: -1 | 1) => this.mutate((c) => {
       const rows = c.elements.filter((e) => !isAttachedTap(c, e));
       const taps = c.elements.filter((e) => isAttachedTap(c, e));
@@ -1872,52 +2118,96 @@ export class WristAssistantPanel extends LitElement {
       this.mutate((c) => removeElement(c, id));
       if (this.inspect.kind === "layer" && this.inspect.id === id) this.inspect = { kind: "general" };
     };
-    // Top of the list = drawn last = on top, like the phone editor. Attached
-    // taps are not rows: they show as a badge on the layer they belong to.
+    // Top of the list = drawn last = on top. Attached taps are not rows: they
+    // show as a badge on the layer they belong to.
     const ordered = [...cfg.elements].filter((el) => !isAttachedTap(cfg, el)).reverse();
     const ctx = describeContext(this.host());
+    const resolver = new Resolver(this.buildContext());
+    const layout = cfg.perFamily[this.activeFamily];
+    const shapeHl = this.inspect.kind === "family";
+    const shapeMeta = this.activeFamily === "inline"
+      ? "one line of text"
+      : `${layout?.backgroundColorHex ? colorWords(layout.backgroundColorHex) : "transparent"} · ${layout?.borderColorHex ? `${layout.borderWidth} pt border` : "no border"}`;
     return html`<div class="card">
-      <h2>Layers <span class="meta" style="text-transform:none;letter-spacing:0">(top first)</span>
-        <span class="spacer"></span>${this.renderPickButton()}</h2>
-      ${this.activeFamily === "inline" ? html`<div class="hint">Inline is one line of text and draws no layers. The controls here apply to the ${familyTitle(family)} layout.</div>` : nothing}
-      ${cfg.elements.length === 0 ? html`<div class="empty">No layers.</div>` : nothing}
+      <h2 class="panel-title">Layers<span class="spacer"></span><span class="mini">top draws last</span>${this.renderPickButton()}</h2>
+      ${this.activeFamily === "inline" ? html`<div class="hint">Inline is one line of text and draws no layers. The rows here belong to the ${familyTitle(family)} shape.</div>` : nothing}
+      ${cfg.elements.length === 0 ? html`<div class="empty">No layers yet. Add one above.</div>` : nothing}
+      <div class="layers">
       ${ordered.map((el) => {
         const id = el.payload.id;
         const hl = this.inspect.kind === "layer" && this.inspect.id === id;
         const eff = effectivePlacement(cfg, family, el);
         const hidden = el.payload.isHidden || eff.isHidden;
-        // A tappable layer says so on its own row, because its tap is edited
-        // here rather than as a layer of its own.
         const tap = attachedTapsOf(cfg, id)[0];
-        // Both badges answer "what will this layer do" without opening it: one
-        // says it responds to a tap, the other that it changes with a value.
         const states = statesSummary(el.payload.rules);
         const pointed = this.picking && this.pickHoverId === id;
-        return html`<div class="layer ${hl ? "hl" : ""} ${pointed ? "pick" : ""}" @click=${() => { this.inspect = { kind: "layer", id }; }}>
-          <span class="kind">${el.kind}</span>
-          <span class="name" style=${hidden ? "opacity:.5" : ""}>${layerTitle(el, ctx)}</span>
-          ${tap ? html`<span class="chip" title=${`Tappable · ${layerTitle(tap, ctx)}`}>tap</span>` : nothing}
-          ${el.payload.rules.length === 0 ? nothing : html`<span class="chip" title=${states}>${states.replace(/\.$/, "").toLowerCase()}</span>`}
-          ${hidden ? html`<span class="meta">hidden</span>` : nothing}
-          ${edit ? html`<span class="acts">
-            <button class="icon" title="Bring forward" aria-label="Bring forward" @click=${(e: Event) => { e.stopPropagation(); move(id, 1); }}>${uiIcon("up")}</button>
-            <button class="icon" title="Send back" aria-label="Send back" @click=${(e: Event) => { e.stopPropagation(); move(id, -1); }}>${uiIcon("down")}</button>
-            <button class="icon" title=${eff.isHidden ? `Show in ${familyTitle(family)}` : `Hide in ${familyTitle(family)}`} aria-label=${eff.isHidden ? "Show this layer" : "Hide this layer"} @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => setPlacement(c, family, id, { isHidden: !eff.isHidden })); }}>${uiIcon(eff.isHidden ? "hide" : "show")}</button>
-            <button class="icon" title="Duplicate" aria-label="Duplicate" @click=${(e: Event) => { e.stopPropagation(); dup(id); }}>${uiIcon("duplicate")}</button>
-            <button class="icon danger" title="Delete" aria-label="Delete" @click=${(e: Event) => { e.stopPropagation(); del(id); }}>${uiIcon("delete")}</button>
-          </span>` : nothing}
+        return html`<div class="layer ${hl ? "hl" : ""} ${pointed ? "pick" : ""} ${hidden ? "dim" : ""}" style=${`--k:${KIND_COLOR[el.kind]}`}
+          tabindex="0" draggable=${edit ? "true" : "false"}
+          @click=${() => { this.inspect = { kind: "layer", id }; }}
+          @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "layer", id }; }}
+          @dragstart=${(e: DragEvent) => { this.dragId = id; e.dataTransfer?.setData("text/plain", id); if (e.dataTransfer) e.dataTransfer.effectAllowed = "move"; (e.currentTarget as HTMLElement).classList.add("dragging"); }}
+          @dragend=${(e: DragEvent) => { this.dragId = undefined; (e.currentTarget as HTMLElement).classList.remove("dragging"); }}
+          @dragover=${(e: DragEvent) => {
+            if (!this.dragId || this.dragId === id) return;
+            e.preventDefault();
+            const row = e.currentTarget as HTMLElement;
+            const r = row.getBoundingClientRect();
+            const before = e.clientY < r.top + r.height / 2;
+            row.classList.toggle("drop-before", before);
+            row.classList.toggle("drop-after", !before);
+          }}
+          @dragleave=${(e: DragEvent) => { (e.currentTarget as HTMLElement).classList.remove("drop-before", "drop-after"); }}
+          @drop=${(e: DragEvent) => {
+            e.preventDefault();
+            const row = e.currentTarget as HTMLElement;
+            const before = row.classList.contains("drop-before");
+            row.classList.remove("drop-before", "drop-after");
+            if (this.dragId) this.reorderLayer(this.dragId, id, before);
+            this.dragId = undefined;
+          }}>
+          <span class="grip" title="Drag to reorder">${uiIcon("grip")}</span>
+          <span class="bar"></span>
+          <span class="name">
+            <b>${layerTitle(el, ctx)}</b>
+            <small><span class="kind">${KIND_LABEL[el.kind]}</span> · ${layerMeta(el, resolver)}</small>
+          </span>
+          <span class="right">
+            <span class="badges">
+              ${tap ? html`<span class="badge tap" title=${`Tappable · ${layerTitle(tap, ctx)}`}>tap</span>` : nothing}
+              ${el.payload.rules.length === 0 ? nothing : html`<span class="badge states" title=${states}>${states.replace(/\.$/, "").toLowerCase()}</span>`}
+              ${hidden ? html`<span class="badge">hidden</span>` : nothing}
+            </span>
+            ${edit ? html`<span class="acts">
+              <button class="icon" title="Bring forward" aria-label="Bring forward" @click=${(e: Event) => { e.stopPropagation(); move(id, 1); }}>${uiIcon("up")}</button>
+              <button class="icon" title="Send back" aria-label="Send back" @click=${(e: Event) => { e.stopPropagation(); move(id, -1); }}>${uiIcon("down")}</button>
+              <button class="icon" title=${eff.isHidden ? `Show in ${familyTitle(family)}` : `Hide in ${familyTitle(family)}`} aria-label=${eff.isHidden ? "Show this layer" : "Hide this layer"} @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => setPlacement(c, family, id, { isHidden: !eff.isHidden })); }}>${uiIcon(eff.isHidden ? "hide" : "show")}</button>
+              <button class="icon" title="Duplicate" aria-label="Duplicate" @click=${(e: Event) => { e.stopPropagation(); dup(id); }}>${uiIcon("duplicate")}</button>
+              <button class="icon danger" title="Delete" aria-label="Delete" @click=${(e: Event) => { e.stopPropagation(); del(id); }}>${uiIcon("delete")}</button>
+            </span>` : nothing}
+          </span>
         </div>`;
       })}
-      ${edit ? html`<div class="adders presets">
-        ${LAYER_PRESETS.map((p) => html`<button class="preset" title=${p.blurb}
-          ?disabled=${cfg.elements.length + p.layerCount > 64}
-          @click=${() => this.openPreset(p.kind)}>${p.title}</button>`)}
+      <div class="layer pinned ${shapeHl ? "hl" : ""}" style=${`--k:${SECTION_COLOR.place}`} tabindex="0" title="The shape is always the bottom layer"
+        @click=${() => { this.inspect = { kind: "family" }; }}
+        @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "family" }; }}
+        @dragover=${(e: DragEvent) => { if (!this.dragId) return; e.preventDefault(); (e.currentTarget as HTMLElement).classList.add("drop-before"); }}
+        @dragleave=${(e: DragEvent) => { (e.currentTarget as HTMLElement).classList.remove("drop-before"); }}
+        @drop=${(e: DragEvent) => {
+          e.preventDefault();
+          (e.currentTarget as HTMLElement).classList.remove("drop-before");
+          const last = ordered[ordered.length - 1];
+          if (this.dragId && last) this.reorderLayer(this.dragId, last.payload.id, false);
+          this.dragId = undefined;
+        }}>
+        <span class="grip">${uiIcon("shape")}</span>
+        <span class="bar"></span>
+        <span class="name">
+          <b>${this.activeFamily === "inline" ? "Inline text" : `${familyTitle(this.activeFamily)} shape`}</b>
+          <small><span class="kind">${this.activeFamily === "inline" ? "Inline" : "Background"}</span> · ${shapeMeta}</small>
+        </span>
+        <span class="right"><span class="badges"><span class="badge">always bottom</span></span></span>
       </div>
-      <div class="adders blanks">
-        <span class="hint">or start blank</span>
-        ${(["text", "icon", "gauge", "shape", "image", "tap"] as const).map((k) => html`<button class="small" ?disabled=${cfg.elements.length >= 64} @click=${() => { const el = newElement(k); this.mutate((c) => { c.elements.push(el); }); this.inspect = { kind: "layer", id: el.payload.id }; }}>+ ${k === "image" ? "camera" : k === "tap" ? "tap area" : k}</button>`)}
       </div>
-      ${this.renderPresetDialog()}` : nothing}
     </div>`;
   }
 
@@ -2007,93 +2297,243 @@ export class WristAssistantPanel extends LitElement {
     if (created) this.inspect = { kind: "layer", id: created };
   }
 
-  private renderPreviews() {
+  // ── canvas column ─────────────────────────────────────────────────────
+
+  /**
+   * The middle column is the whole complication: the shape being edited,
+   * big, then everything that belongs to the complication rather than to one
+   * layer (its settings, its shapes, the live values it reads).
+   */
+  private renderCanvas() {
     if (this.parseError) return html`<div class="card error">This document cannot be read: ${this.parseError}</div>`;
     const cfg = this.draft?.config;
-    if (!cfg) return html`<div class="card"><div class="empty">Select a complication, or press New.</div></div>`;
+    if (!cfg) return html`<div class="card"><div class="empty">Choose a complication in the picker above, or make a new one.</div></div>`;
     const layouts = resolveAll(cfg, this.buildContext(), this.forced);
     this.syncCountdownTicker(layouts);
-    const highlightId = this.inspect.kind === "layer" ? this.inspect.id : undefined;
     const watchCase = this.currentCase();
-    // Only the supported shapes draw, the same as the watch. A shape the
-    // document lacks is simply not here; the Layouts row adds it.
-    const one = (family: DrawableFamily) => {
-      const layout = layouts[family];
-      if (!layout) return nothing;
-      const active = family === this.activeFamily;
-      const slot = watchCase.slots[family];
-      const fit = fitBox(slot, family);
-      // Pick mode drops the resize handles: they are drag affordances, and
-      // while picking nothing on the face is dragged.
-      // Review mode drops them too, except on the one tap box it is narrowed
-      // to, which is dragged to size there.
-      const focus = this.focusTapId();
-      const opts = {
-        icons: this.icons, imageSizes: this.imageSizes, showHidden: true, tapAreas: true, slot,
-        highlightId: focus ?? highlightId,
-        tapReview: this.showTaps,
-        ...(focus !== undefined ? { tapFocusId: focus } : {}),
-        handles: active && this.canEdit && !this.picking && (!this.showTaps || focus !== undefined),
-        ...(this.picking && this.pickHoverId !== undefined ? { hoverId: this.pickHoverId } : {}),
-        ...(this.timestampActiveId !== undefined && this.timestampActiveId === highlightId && !this.showTaps && !this.picking
-          ? { timestampActiveId: this.timestampActiveId } : {}),
-      };
-      const pct = Math.round(fit.scale * 100);
-      return html`
-      <div class="preview ${family} ${active ? "active" : ""} ${this.picking ? "picking" : ""}"
-        @pointerdown=${(e: PointerEvent) => this.onPreviewPointerDown(family, e)}
-        @pointermove=${(e: PointerEvent) => this.onPickMove(e)}
-        @pointerleave=${() => { if (this.picking) this.pickHoverId = undefined; }}>
-        ${renderLayout(layout, opts)}
-        <div class="label" @click=${() => { this.activeFamily = family; }}>${familyTitle(family)} · ${slot.width}×${slot.height} pt${pct !== 100 ? ` · ${pct}%` : ""}${active ? " · editing" : ""}</div>
-      </div>`;
-    };
-    return html`<div class="card">
-      <div class="preview-case">
+    const family = this.activeFamily;
+    return html`<div class="card canvas-card">
+      <div class="canvas-bar">
         <label>Preview as
           <select @change=${(e: Event) => { this.previewCase = (e.target as HTMLSelectElement).value; }}>
             ${CASES.map((c) => html`<option value=${c.label} ?selected=${c.label === watchCase.label}>${c.label}${c.measured ? "" : " (estimated)"}</option>`)}
           </select>
         </label>
-        <span class="hint">Layouts are authored in the ${REFERENCE_CASE.label} box. Other cases draw the same box scaled down.</span>
+        <span class="hint">Layouts are made in the ${REFERENCE_CASE.label} box. Smaller cases scale it down.</span>
         <span class="spacer"></span>
         ${this.renderShowTapsButton()}
-        ${this.renderPickButton()}
       </div>
-      <div class="previews">
-        ${one("rectangular")}
-        ${one("circular")}
-        ${one("corner")}
-        ${cfg.supportedFamilies.includes("inline") ? this.renderInlinePreview(layouts.inline) : nothing}
+      <div class="stage">
+        ${family === "inline" ? this.renderInlinePreview(layouts.inline, false) : this.renderBigPreview(family, layouts, watchCase)}
+        ${this.renderUnder(cfg, family)}
       </div>
-      ${this.showTaps
-        ? html`<div class="hint" style="text-align:center;margin-top:10px">Every tap area is outlined. Where two overlap, the one higher in Layers wins.
-            Anything outside all of them does <b>${describeTapAction(cfg.tapAction)}</b>.</div>`
-        : html`<div class="hint" style="text-align:center;margin-top:10px">Click a preview to make it the editing shape. Drags and placement fields change only that shape. Add or remove shapes on the General tab.</div>`}
+      <div class="strip">
+        ${this.renderSettingsRow(cfg)}
+        ${this.renderShapesRow(cfg, layouts)}
+        ${this.renderValuesRow()}
+      </div>
     </div>`;
+  }
+
+  private renderBigPreview(family: DrawableFamily, layouts: ResolvedAll, watchCase: WatchCase) {
+    const layout = layouts[family];
+    if (!layout) return nothing;
+    const highlightId = this.inspect.kind === "layer" ? this.inspect.id : undefined;
+    const slot = watchCase.slots[family];
+    // Pick mode drops the resize handles: they are drag affordances, and
+    // while picking nothing on the face is dragged. Review mode drops them
+    // too, except on the one tap box it is narrowed to.
+    const focus = this.focusTapId();
+    const opts = {
+      icons: this.icons, imageSizes: this.imageSizes, showHidden: true, tapAreas: true, slot,
+      highlightId: focus ?? highlightId,
+      tapReview: this.showTaps,
+      ...(focus !== undefined ? { tapFocusId: focus } : {}),
+      handles: this.canEdit && !this.picking && (!this.showTaps || focus !== undefined),
+      ...(this.picking && this.pickHoverId !== undefined ? { hoverId: this.pickHoverId } : {}),
+      ...(this.timestampActiveId !== undefined && this.timestampActiveId === highlightId && !this.showTaps && !this.picking
+        ? { timestampActiveId: this.timestampActiveId } : {}),
+    };
+    return html`<div class="preview ${family} active ${this.picking ? "picking" : ""}"
+      @pointerdown=${(e: PointerEvent) => this.onPreviewPointerDown(family, e)}
+      @pointermove=${(e: PointerEvent) => this.onPickMove(e)}
+      @pointerleave=${() => { if (this.picking) this.pickHoverId = undefined; }}>
+      ${renderLayout(layout, opts)}
+    </div>`;
+  }
+
+  /** The line under the preview: which shape, its size, and what a drag does now. */
+  private renderUnder(cfg: CustomComplicationConfig, family: FamilyKind) {
+    const ctx = describeContext(this.host());
+    const ins = this.inspect;
+    const sel = ins.kind === "layer" ? cfg.elements.find((e) => e.payload.id === ins.id) : undefined;
+    let tail: TemplateResult | string;
+    if (this.showTaps) {
+      tail = html`Every tap area is outlined. Where two overlap, the one higher in Layers wins. Anywhere else does <b>${describeTapAction(cfg.tapAction)}</b>.`;
+    } else if (this.picking) {
+      tail = "Point at a layer and click it. Escape stops.";
+    } else if (family === "inline") {
+      tail = "One line of text. Edit it on the right.";
+    } else if (sel) {
+      tail = html`editing <b>${layerTitle(sel, ctx)}</b>. Drag it, or pull a corner.`;
+    } else {
+      tail = "click a layer to edit it";
+    }
+    if (family === "inline") return html`<div class="under"><b>Inline</b> · ${tail}</div>`;
+    const slot = this.currentCase().slots[family];
+    const fit = fitBox(slot, family);
+    const pct = Math.round(fit.scale * 100);
+    return html`<div class="under"><b>${familyTitle(family)}</b> · ${slot.width} × ${slot.height} pt${pct !== 100 ? ` · ${pct}%` : ""} · ${tail}</div>`;
   }
 
   /** The Inline shape as one line: symbol, then `label: value`, the way the
    * watch draws it on a wide face. A live countdown ticks with the same timer
    * the canvas previews use. */
-  private renderInlinePreview(inline: ResolvedInline | undefined) {
-    const active = this.activeFamily === "inline";
-    const select = () => { this.activeFamily = "inline"; this.inspect = { kind: "family" }; };
+  private renderInlinePreview(inline: ResolvedInline | undefined, small: boolean) {
     let line: TemplateResult;
     if (!inline) {
-      line = html`<div class="inline-line missing" @click=${select}>No inline layout</div>`;
+      line = html`<div class="inline-line missing">No inline text</div>`;
     } else {
       const now = Date.now();
       const value = inline.countdownEnd !== undefined && inline.countdownEnd > now
         ? countdownRemainingString((inline.countdownEnd - now) / 1000)
         : inline.text;
-      const symbol = inline.symbol ? this.icons.render(inline.symbol, 14, "#FFFFFF") : undefined;
-      line = html`<div class="inline-line" @click=${select}>${symbol ?? nothing}<span>${inline.label ? `${inline.label}: ` : ""}${value}</span></div>`;
+      const symbol = inline.symbol ? this.icons.render(inline.symbol, small ? 11 : 15, "#FFFFFF") : undefined;
+      line = html`<div class="inline-line">${symbol ?? nothing}<span>${inline.label ? `${inline.label}: ` : ""}${value}</span></div>`;
     }
-    return html`<div class="preview inline ${active ? "active" : ""}">
-      ${line}
-      <div class="label" @click=${select}>Inline · one line${active ? " · editing" : ""}</div>
+    if (small) return line;
+    return html`<div class="preview inline active" @click=${() => { this.inspect = { kind: "family" }; }}>${line}</div>`;
+  }
+
+  /** The complication's own settings, as plain fields under the preview. */
+  private renderSettingsRow(cfg: CustomComplicationConfig) {
+    const host = this.host();
+    const rec = this.records.find((r) => r.id === this.selectedId);
+    const owner = this.selectedOwner;
+    const mini = [rec ? `Revision ${rec.revision}` : "Not saved yet", owner ? ownerLabel(owner) : undefined].filter(Boolean).join(" · ");
+    const values = cfg.values;
+    const resolver = new Resolver(this.buildContext());
+    const ctx = describeContext(host);
+    return html`<div class="strip-row" style=${`--c:${SECTION_COLOR.complication}`} @change=${() => this.draft?.endGesture()}>
+      <h2 class="panel-title">Complication<span class="spacer"></span><span class="mini">${mini}</span>
+        ${this.canEdit ? html`
+          <button class="small" @click=${() => this.duplicate()}>Duplicate</button>
+          ${this.confirmDelete
+            ? html`<button class="danger small" @click=${() => void this.deleteCurrent()}>Really delete</button><button class="small" @click=${() => { this.confirmDelete = false; }}>Cancel</button>`
+            : html`<button class="danger small" @click=${() => { this.confirmDelete = true; }}>Delete</button>`}` : nothing}
+      </h2>
+      <div class="settings" style=${this.canEdit ? "" : "pointer-events:none;opacity:.6"}>${generalEditor(host)}</div>
+      <div class="links">
+        <button class="link" @click=${() => { this.showValues = !this.showValues; }}>Shared values · ${values.length === 0 ? "none" : values.length}</button>
+        <button class="link" @click=${() => this.openRaw()}>Raw JSON</button>
+      </div>
+      ${this.showValues ? html`<div class="values-list">
+        <div class="hint">A value defined once and read by several layers. Set a layer's Source to "Named value" to use one. A layer that needs a value only once can read the entity directly.</div>
+        ${values.map((v) => {
+          const r = resolver.resolve({ kind: { kind: "named", id: v.id } });
+          const hl = this.inspect.kind === "data" && this.inspect.id === v.id;
+          return html`<div class="datum ${hl ? "hl" : ""}" @click=${() => { this.inspect = { kind: "data", id: v.id }; }}>
+            <span class="name">${v.name || "(unnamed)"}</span>
+            <span class="meta" title=${describeValue(v.value, ctx)}>${r ?? "unresolved"}</span>
+            ${this.canEdit ? html`<button class="icon danger" title="Delete value" aria-label="Delete value" @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { c.values = c.values.filter((x) => x.id !== v.id); }); if (hl) this.inspect = { kind: "general" }; }}>${uiIcon("delete")}</button>` : nothing}
+          </div>`;
+        })}
+        ${this.canEdit ? html`<div class="adders"><button class="small" @click=${() => { const nv = newNamedValue(); this.mutate((c) => { c.values.push(nv); }); this.inspect = { kind: "data", id: nv.id }; }}>Add a shared value</button></div>` : nothing}
+      </div>` : nothing}
     </div>`;
+  }
+
+  /** Open the footer on its raw document, which is where the JSON lives. */
+  private openRaw() {
+    this.showRaw = true;
+    const foot = this.renderRoot.querySelector<HTMLDetailsElement>("details.foot");
+    if (foot) foot.open = true;
+    void this.updateComplete.then(() => this.renderRoot.querySelector("pre")?.scrollIntoView({ block: "nearest" }));
+  }
+
+  /** One tile per shape. The supported ones draw small; clicking one swaps it
+   * into the big preview. A missing one is a dashed "Add". */
+  private renderShapesRow(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
+    const have = cfg.supportedFamilies;
+    return html`<div class="strip-row">
+      <h2 class="panel-title">Shapes</h2>
+      <div class="tiles">
+        ${ALL_FAMILIES.map((f) => {
+          const on = have.includes(f);
+          if (!on) {
+            return html`<button class="tile off ${f}" ?disabled=${!this.canEdit} title=${`Add the ${familyTitle(f)} shape`} @click=${() => this.addShape(f)}>
+              <span class="art"><span class="ghost ${f}"></span></span>
+              <span class="lbl">+ Add ${familyTitle(f)}</span>
+            </button>`;
+          }
+          const active = f === this.activeFamily;
+          let art: TemplateResult | typeof nothing;
+          if (f === "inline") art = this.renderInlinePreview(layouts.inline, true);
+          else {
+            const layout = layouts[f];
+            art = layout ? renderLayout(layout, { icons: this.icons, imageSizes: this.imageSizes, slot: REFERENCE_CASE.slots[f] }) : nothing;
+          }
+          const empty = f !== "inline" && cfg.elements.every((e) => effectivePlacement(cfg, f, e).isHidden || e.payload.isHidden) && cfg.elements.length > 0;
+          return html`<button class="tile ${f}" aria-pressed=${active ? "true" : "false"} title=${`Edit the ${familyTitle(f)} shape`}
+            @click=${() => { this.activeFamily = f; if (f === "inline" && this.inspect.kind === "layer") this.inspect = { kind: "family" }; }}>
+            <span class="art">${art}</span>
+            <span class="lbl">${familyTitle(f)}${empty ? html`<small>· nothing shown</small>` : nothing}${active ? html`<small>· editing</small>` : nothing}</span>
+          </button>`;
+        })}
+      </div>
+      <div class="help">Click a shape to edit it in the big preview. Each shape keeps its own placements. Remove a shape from its own card on the right.</div>
+    </div>`;
+  }
+
+  /**
+   * Every entity the complication reads, with its live value. Clicking one
+   * lets a different value be typed in, and the previews and the States cards
+   * react to it exactly as the watch would. Nothing is saved: it is a way to
+   * see the other states without waiting for the house to change.
+   */
+  private renderValuesRow() {
+    const cfg = this.draft?.config;
+    if (!cfg) return nothing;
+    const ids = [...(this.compiled?.entities.keys() ?? [])];
+    const testing = this.testValues.size > 0;
+    return html`<div class="strip-row">
+      <h2 class="panel-title">Values on the watch<span class="spacer"></span>
+        ${testing ? html`<span class="testing-pill">Testing with your values <button @click=${() => { this.testValues = new Map(); this.editingValue = undefined; }}>Back to live</button></span>` : nothing}
+      </h2>
+      ${ids.length === 0 ? html`<div class="hint">No entities yet. Give a layer an entity and its live value shows here.</div>` : html`<div class="chips values">
+        ${ids.map((id) => {
+          const s = this.hass.states[id];
+          const name = typeof s?.attributes.friendly_name === "string" ? s.attributes.friendly_name : id;
+          const unit = typeof s?.attributes.unit_of_measurement === "string" ? ` ${s.attributes.unit_of_measurement}` : "";
+          const live = s ? `${s.state}${unit}` : "not in Home Assistant";
+          const override = this.testValues.get(id);
+          const user = cfg.elements.find((e) => layerEntityUses(cfg, e.payload.id).some((u) => u.ref.entityId === id));
+          const kind = user?.kind ?? "text";
+          const editing = this.editingValue === id;
+          return html`<button class="vchip ${override !== undefined ? "testing" : ""}" style=${`--k:${KIND_COLOR[kind]}`}
+            title=${override !== undefined ? `Live value: ${live}. Click to change the test value.` : "Click to try a different value"}
+            @click=${(e: Event) => { if ((e.target as HTMLElement).tagName === "INPUT") return; this.editingValue = id; void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLInputElement>(".vchip input")?.focus()); }}>
+            <span class="dom">${uiIcon(kind)}</span><b>${name}</b>
+            ${editing
+              ? html`<input type="text" .value=${override ?? s?.state ?? ""} aria-label=${`Test value for ${name}`}
+                  @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { this.editingValue = undefined; } }}
+                  @blur=${(e: FocusEvent) => this.commitTestValue(id, (e.target as HTMLInputElement).value)} />`
+              : html`<span class="val">${override !== undefined ? `${override}${unit}` : live}</span>`}
+          </button>`;
+        })}
+      </div>
+      <div class="help">Live from Home Assistant. Click a value to try a different one and watch the states react. Nothing is saved.</div>`}
+    </div>`;
+  }
+
+  private commitTestValue(id: string, raw: string) {
+    this.editingValue = undefined;
+    const v = raw.trim();
+    const next = new Map(this.testValues);
+    const live = this.hass.states[id]?.state;
+    if (v === "" || v === live) next.delete(id);
+    else next.set(id, v);
+    this.testValues = next;
   }
 
   private currentCase() {
@@ -2104,29 +2544,49 @@ export class WristAssistantPanel extends LitElement {
     return this.currentCase().slots[family];
   }
 
+  // ── inspector ─────────────────────────────────────────────────────────
+
+  private crumbs(cfg: CustomComplicationConfig) {
+    const ins = this.inspect;
+    const name = cfg.name.trim() || "Complication";
+    const shape = this.activeFamily === "inline" ? "Inline" : familyTitle(this.activeFamily);
+    const shapeCrumb = ins.kind === "family"
+      ? html`<span class="here" style=${`--k:${SECTION_COLOR.place}`}>${shape} shape</span>`
+      : html`<button @click=${() => { this.inspect = { kind: "family" }; }} title="Edit the shape">${shape}</button>`;
+    let here: TemplateResult | typeof nothing = nothing;
+    if (ins.kind === "layer") {
+      const el = cfg.elements.find((e) => e.payload.id === ins.id);
+      if (el) here = html`<span class="here" style=${`--k:${KIND_COLOR[el.kind]}`}><span class="kchip">${KIND_LABEL[el.kind]}</span>${layerTitle(el, describeContext(this.host()))}</span>`;
+    } else if (ins.kind === "data") {
+      const nv = cfg.values.find((v) => v.id === ins.id);
+      if (nv) here = html`<span class="here" style=${`--k:${SECTION_COLOR.complication}`}><span class="kchip">Value</span>${nv.name || "(unnamed)"}</span>`;
+    } else if (ins.kind === "general") {
+      here = html`<span class="mini">nothing selected</span>`;
+    }
+    return html`<div class="crumbs">
+      <span>${name}</span><span class="sep">›</span>${shapeCrumb}
+      ${here === nothing ? nothing : html`<span class="sep">›</span>${here}`}
+    </div>`;
+  }
+
   /**
-   * The inspector: one object, one scroll.
-   *
-   * The row above the title is navigation, not tabs. Its two buttons always
-   * mean the same two things (the whole complication, and the shape being
-   * edited), so a click never lands somewhere different because of what was
-   * selected a moment ago. Anything else selected says so in the title.
+   * The inspector: the thing that was clicked, as a column of cards. The
+   * complication's own settings live under the preview, so with nothing
+   * selected the column says so instead of showing a form.
    */
   private renderInspector() {
     const cfg = this.draft?.config;
     if (!cfg) return nothing;
     const host = this.host();
-    const tab = (label: string, active: boolean, go: () => void) => html`<button class=${active ? "active" : ""} @click=${go}>${label}</button>`;
-    let body: TemplateResult;
-    let title: string;
     const ins = this.inspect;
+    let body: TemplateResult | typeof nothing = nothing;
+    let cards = true;
     if (ins.kind === "layer") {
       const el = cfg.elements.find((e) => e.payload.id === ins.id);
       if (!el) {
         this.inspect = { kind: "general" };
         return nothing;
       }
-      title = `${el.kind} layer`;
       body = layerEditor(host, el, this.canvasFamily);
     } else if (ins.kind === "data") {
       const nv = cfg.values.find((v) => v.id === ins.id);
@@ -2134,37 +2594,26 @@ export class WristAssistantPanel extends LitElement {
         this.inspect = { kind: "general" };
         return nothing;
       }
-      title = "Named value";
-      body = namedValueEditor(host, nv);
+      cards = false;
+      body = html`<div class="sec" data-open="true" style=${`--c:${SECTION_COLOR.complication}`}>
+        <div class="sec-h"><span class="swatch">${uiIcon("content")}</span><span class="tt"><h4>Shared value</h4><span class="sum">Read by layers whose Source is "Named value"</span></span></div>
+        <div class="sec-b">${namedValueEditor(host, nv)}</div>
+      </div>`;
     } else if (ins.kind === "family") {
-      title = `${familyTitle(this.activeFamily)} layout`;
       body = familyEditor(host, this.activeFamily);
     } else {
-      // The complication's own name, rather than the word the button above
-      // already says.
-      title = cfg.name.trim() || "Complication";
-      body = generalEditor(host);
+      cards = false;
+      body = html`<div class="empty-insp">${uiIcon("layers")}<b>Nothing selected</b>
+        <span>Click a layer on the watch or in the list to edit it.<br />The shape's own background and border are the bottom row of the list.</span></div>`;
     }
-    return html`<div class="card" style=${this.canEdit ? "" : "pointer-events:none;opacity:.6"} @change=${() => this.draft?.endGesture()}>
-      <div class="tabs">
-        ${tab("Complication", ins.kind === "general", () => { this.inspect = { kind: "general" }; })}
-        ${tab(`${familyTitle(this.activeFamily)} layout`, ins.kind === "family", () => { this.inspect = { kind: "family" }; })}
+    const all = this.openSections.size > 1;
+    return html`
+      <div class="insp-head">
+        ${this.crumbs(cfg)}
+        ${cards ? html`<button class="expand" @click=${() => { this.openSections = all ? new Set([defaultSection(ins)]) : new Set(ALL_SECTIONS); }}>${all ? "One at a time" : "Open all"}</button>` : nothing}
       </div>
-      <h2>${title}</h2>
-      ${body}
-      ${ins.kind === "general" && this.canEdit ? html`<h3>Actions</h3><div class="adders">
-        <button class="small" @click=${() => this.duplicate()}>Duplicate</button>
-        ${this.confirmDelete
-          ? html`<button class="danger small" @click=${() => void this.deleteCurrent()}>Really delete</button><button class="small" @click=${() => { this.confirmDelete = false; }}>Cancel</button>`
-          : html`<button class="danger small" @click=${() => { this.confirmDelete = true; }}>Delete</button>`}
-      </div>` : nothing}
-    </div>`;
+      <div class="insp-body" style=${this.canEdit ? "" : "pointer-events:none;opacity:.6"} @change=${() => this.draft?.endGesture()}>${body}</div>`;
   }
-
-  // The Rules card that used to sit here is gone. Its one unique job was
-  // forcing a branch for the previews, which the states table now does on the
-  // row itself; everything else it showed was a link to an editor the Layers
-  // card already opens.
 
   /**
    * Status and the raw document, folded into one line at the foot of the panel.
@@ -2222,6 +2671,19 @@ function parseDurationSeconds(v: unknown): number | undefined {
 function ownerLabel(o: OwnerSummary): string {
   const name = o.device_name ?? o.owner_watch_id;
   return o.paired_iphone_name ? `${name} (${o.paired_iphone_name})` : name;
+}
+
+/** The second line of a Layers row: the live reading and the one look fact
+ * that tells this layer from its neighbours. */
+function layerMeta(el: CElement, resolver: Resolver): string {
+  switch (el.kind) {
+    case "text": return `${resolver.resolve(el.payload.value) ?? "--"} · ${el.payload.fontSize} pt`;
+    case "icon": return `${el.payload.size} pt · ${colorWords(el.payload.colorSlot.baseColorHex)}`;
+    case "gauge": return `${resolver.resolve(el.payload.value) ?? "--"} · ${el.payload.style}`;
+    case "shape": return `${colorWords(el.payload.colorSlot.baseColorHex)}${el.payload.borderColorHex ? " · border" : ""}`;
+    case "image": return `${el.payload.contentMode === "fill" ? "fill" : "fit"} · ${el.payload.timestamp ? "time shown" : "no time"}`;
+    case "tap": return describeTapAction(el.payload.action);
+  }
 }
 
 function layerTitle(el: CElement, ctx?: DescribeContext): string {
