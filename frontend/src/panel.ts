@@ -128,7 +128,7 @@ function familiesOf(record: ComplicationRecord): string[] {
   return Array.isArray(raw) ? raw.filter((f): f is string => typeof f === "string") : [];
 }
 
-const COL_LEFT_DEFAULT = 280;
+const COL_LEFT_DEFAULT = 300;
 const COL_RIGHT_DEFAULT = 400;
 const COL_MIN = 200;
 const COL_MAX = 720;
@@ -477,8 +477,8 @@ export class WristAssistantPanel extends LitElement {
        above the list so adding a layer never moves the button just pressed. */
     .add-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
     button.add {
-      display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 6px; border-radius: 8px;
-      font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--primary-text-color);
+      display: flex; align-items: center; justify-content: center; gap: 5px; padding: 8px 4px; border-radius: 8px;
+      font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; color: var(--primary-text-color); white-space: nowrap;
       background: color-mix(in srgb, var(--k) 12%, var(--wa-card)); border: 1px solid color-mix(in srgb, var(--k) 40%, transparent);
     }
     button.add:hover:not(:disabled) { background: color-mix(in srgb, var(--k) 24%, var(--wa-card)); }
