@@ -627,8 +627,7 @@ export class WristAssistantPanel extends LitElement {
     .settings .gen-row .field > span { font-size: 12px; }
     .settings .flash-row { display: flex; align-items: center; gap: 8px; min-height: 30px; min-width: 0; }
     .settings .flash-row > input[type=checkbox] { width: 16px; height: 16px; margin: 0; flex: none; accent-color: var(--c, var(--primary-color)); }
-    .settings .flash-row .field.color { flex: 1; margin: 0; gap: 0; }
-    .settings .flash-row .field.color > span { display: none; }
+    .settings .flash-row input.flash-color { width: 36px; height: 28px; padding: 0; border: 1px solid var(--wa-line); border-radius: 6px; background: none; cursor: pointer; }
     .settings .flash-row .muted { color: var(--wa-muted); font-size: 13px; }
     .settings .entity-field, .settings .hint { max-width: 800px; }
     .values-list { margin-top: 12px; }

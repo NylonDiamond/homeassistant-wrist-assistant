@@ -1039,9 +1039,17 @@ export function generalEditor(host: EditorHost): TemplateResult {
       }))}
       <div class="field flash-cell"><span>Flash when a tap works</span>
         <div class="flash-row">
-          <input type="checkbox" .checked=${flashOn} title="Flash when a tap works" @change=${(e: Event) => host.update((c) => { c.showSuccessFlash = (e.target as HTMLInputElement).checked; })} />
+          <input type="checkbox" .checked=${flashOn} title="Flash when a tap works"
+            @change=${(e: Event) => host.update((c) => {
+              const on = (e.target as HTMLInputElement).checked;
+              c.showSuccessFlash = on;
+              // Turning the flash on writes the green in, so the watch and
+              // the picker agree on the colour from the start.
+              if (on && !c.successFlashColorHex) c.successFlashColorHex = FLASH_GREEN;
+            })} />
           ${flashOn
-            ? colorField("", cfg.successFlashColorHex, (v) => host.update((c) => { if (v === undefined) delete c.successFlashColorHex; else c.successFlashColorHex = v; }, "flash"), true)
+            ? html`<input type="color" class="flash-color" title="Flash colour. Click to change it." .value=${(cfg.successFlashColorHex ?? FLASH_GREEN).slice(0, 7)}
+                @input=${onInput((v) => host.update((c) => { c.successFlashColorHex = v.toUpperCase(); }, "flash"))} />`
             : html`<span class="muted">Off</span>`}
         </div>
       </div>
@@ -1051,8 +1059,14 @@ export function generalEditor(host: EditorHost): TemplateResult {
     ${tap.type === "openPage" ? openPageField(host) : nothing}`;
 }
 
-/** Refresh choices, in minutes. 0 means the watch never refreshes on a timer. */
-const REFRESH_CHOICES = [0, 1, 5, 10, 15, 30, 60, 120];
+/** The green the flash starts on. The watch's own fallback is grey, so the
+ * editor writes this in rather than leaving the colour blank. */
+const FLASH_GREEN = "#34C759";
+
+/** Refresh choices, in minutes. 0 means the watch never refreshes on a timer.
+ * watchOS wakes a complication at most every 15 minutes, and the watch rounds
+ * anything shorter up to that, so nothing under 15 is offered. */
+const REFRESH_CHOICES = [0, 15, 30, 60, 120];
 
 function refreshLabel(m: number): string {
   if (m === 0) return "None";
