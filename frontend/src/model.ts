@@ -79,6 +79,8 @@ export type ChartScale = "auto" | "fixed";
 export type ChartBaseline = "lowest" | "zero";
 export type ChartHighlight = "none" | "highest" | "lowest" | "both";
 export type ChartMarker = "none" | "dot" | "pointer";
+export type ChartColoring = "uniform" | "bands";
+export type ChartScaleLabels = "none" | "top" | "range";
 export type ShapeKind = "rectangle" | "roundedRectangle" | "capsule" | "circle";
 export type CornerBodyShape = "circle" | "wedge";
 export type AggregateFunction = "count" | "sum" | "average" | "min" | "max";
@@ -310,10 +312,69 @@ export interface ChartElement extends ElementBase {
   highColorHex: string;
   lowColorHex: string;
   marker: ChartMarker;
+  /** Whether every reading shares one colour or takes the colour of the band it
+   * falls in. */
+  coloring: ChartColoring;
+  /** Colour of a reading below `bandLowerBound`. Only read when banding. */
+  bandLowColorHex: string;
+  /** Colour of a reading above `bandUpperBound`. Only read when banding. */
+  bandHighColorHex: string;
+  bandLowerBound: number;
+  /** Everything between the two bounds takes the series colour, so three
+   * colours cost two numbers. */
+  bandUpperBound: number;
+  /** Which end of the plot's range is printed as a number beside it. Without
+   * this a chart is a shape with no units: a reader can see that the line went
+   * up but not what it went up to. */
+  scaleLabels: ChartScaleLabels;
+  scaleLabelColorHex: string;
 }
 
 export const CHART_DEFAULT_HIGH_HEX = "#FF6B35";
 export const CHART_DEFAULT_LOW_HEX = "#32D74B";
+export const CHART_DEFAULT_BAND_LOW_HEX = "#32D74B";
+export const CHART_DEFAULT_BAND_HIGH_HEX = "#FF453A";
+export const CHART_DEFAULT_SCALE_LABEL_HEX = "#FFFFFF99";
+
+/** Point size of a scale label in the design box. Fixed rather than settable:
+ * smaller stops being readable on the wrist, larger eats a plot only 65 points
+ * tall. Mirrors `scaleLabelFontSize` in Swift. */
+export const CHART_SCALE_LABEL_SIZE = 8;
+
+/** Which band a reading falls in, as a colour.
+ *
+ * Bounds are sorted first, so an author who types them the wrong way round
+ * still gets a low band and a high band. Mirrors `bandColorHex` in Swift. */
+export function chartBandColor(el: ChartElement, value: number, base: string): string {
+  const lo = Math.min(el.bandLowerBound, el.bandUpperBound);
+  const hi = Math.max(el.bandLowerBound, el.bandUpperBound);
+  if (value < lo) return el.bandLowColorHex;
+  if (value > hi) return el.bandHighColorHex;
+  return base;
+}
+
+/** How one end of the scale reads.
+ *
+ * Decimal places come from the span, not from the number, so both ends carry
+ * the same shape: a half-degree spread printing "21" twice would look broken,
+ * and a 3000 mV reading with two decimals would not fit. Mirrors
+ * `scaleLabelText` in Swift. */
+export function chartScaleLabelText(value: number, span: number): string {
+  const magnitude = Math.abs(span);
+  const places = magnitude >= 10 ? 0 : magnitude >= 1 ? 1 : 2;
+  return value.toFixed(places);
+}
+
+/** Width of the gutter the scale labels sit in, in design-box points.
+ *
+ * Derived from the longest label rather than measured, because the widget, the
+ * watch and this panel all have to reserve the same strip and only one of them
+ * can measure text. Mirrors `scaleLabelWidth` in Swift. */
+export function chartScaleLabelWidth(texts: readonly string[], fontSize: number): number {
+  const longest = texts.reduce((n, t) => Math.max(n, t.length), 0);
+  if (longest === 0) return 0;
+  return longest * fontSize * 0.62 + 2;
+}
 
 /** History spans the editor offers, in minutes. Free entry is deliberately not
  * offered: every distinct span is another recorder query shape for the server
@@ -906,6 +967,13 @@ function parseElementKind(raw: unknown): Element {
           highColorHex: str(p.highColorHex, CHART_DEFAULT_HIGH_HEX),
           lowColorHex: str(p.lowColorHex, CHART_DEFAULT_LOW_HEX),
           marker: (optStr(p.marker) as ChartMarker | undefined) ?? "pointer",
+          coloring: (optStr(p.coloring) as ChartColoring | undefined) ?? "uniform",
+          bandLowColorHex: str(p.bandLowColorHex, CHART_DEFAULT_BAND_LOW_HEX),
+          bandHighColorHex: str(p.bandHighColorHex, CHART_DEFAULT_BAND_HIGH_HEX),
+          bandLowerBound: num(p.bandLowerBound, 0),
+          bandUpperBound: num(p.bandUpperBound, 100),
+          scaleLabels: (optStr(p.scaleLabels) as ChartScaleLabels | undefined) ?? "none",
+          scaleLabelColorHex: str(p.scaleLabelColorHex, CHART_DEFAULT_SCALE_LABEL_HEX),
         },
       };
     case "shape": {
@@ -1284,6 +1352,13 @@ function encodeElementKind(el: Element): J {
           highColorHex: el.payload.highColorHex,
           lowColorHex: el.payload.lowColorHex,
           marker: el.payload.marker,
+          coloring: el.payload.coloring,
+          bandLowColorHex: el.payload.bandLowColorHex,
+          bandHighColorHex: el.payload.bandHighColorHex,
+          bandLowerBound: encNum(el.payload.bandLowerBound),
+          bandUpperBound: encNum(el.payload.bandUpperBound),
+          scaleLabels: el.payload.scaleLabels,
+          scaleLabelColorHex: el.payload.scaleLabelColorHex,
         },
       };
     case "shape": {
@@ -1533,7 +1608,9 @@ const K = {
   icon: ["symbol", "size"],
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex"],
   chart: ["value", "historyMinutes", "historyPoints", "style", "limit", "takeFromEnd", "scale", "minValue", "maxValue",
-    "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker"],
+    "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker",
+    "coloring", "bandLowColorHex", "bandHighColorHex", "bandLowerBound", "bandUpperBound",
+    "scaleLabels", "scaleLabelColorHex"],
   shape: ["kind", "cornerRadius", "borderColorHex", "borderWidth"],
   // `timestampStyle` is retired (the age style, built and removed 2026-09-04).
   // It stays listed so a document saved while it existed does not read as
@@ -1751,7 +1828,7 @@ export function newElement(kind: Element["kind"]): Element {
     case "text": return { kind, payload: { ...base("#FFFFFF"), value: literal("Text"), fontSize: 14, fontWeight: "regular" } };
     case "icon": return { kind, payload: { ...base("#FFFFFF"), symbol: literal("lightbulb"), size: 14 } };
     case "gauge": return { kind, payload: { ...base("#FFFFFF"), value: literal("50"), minValue: 0, maxValue: 100, style: "arc", lineWidth: 4, trackColorHex: "#FFFFFF40" } };
-    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: 0, historyPoints: 24, style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "pointer" } };
+    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: 0, historyPoints: 24, style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "pointer", coloring: "uniform", bandLowColorHex: CHART_DEFAULT_BAND_LOW_HEX, bandHighColorHex: CHART_DEFAULT_BAND_HIGH_HEX, bandLowerBound: 0, bandUpperBound: 100, scaleLabels: "none", scaleLabelColorHex: CHART_DEFAULT_SCALE_LABEL_HEX } };
     case "shape": return { kind, payload: { ...base("#FFFFFF33"), kind: "roundedRectangle", cornerRadius: 6, borderWidth: 1 } };
     case "image": {
       const { colorSlot: _unused, ...b } = base("#FFFFFF");

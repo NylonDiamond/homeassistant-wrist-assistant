@@ -31,7 +31,9 @@ import {
   type ValueFormat,
   type CornerBodyShape,
   STYLE_PROPERTY,
+  chartBandColor,
   chartHistoryKey,
+  chartScaleLabelText,
   elementsFor,
   formatIsEmpty,
   hasFreeTimestamp,
@@ -118,6 +120,15 @@ export interface ResolvedChart extends ResolvedBase {
   highColorHex: string;
   lowColorHex: string;
   marker: ChartMarker;
+  /** One colour per reading, parallel to `values`. Empty when the whole series
+   * is one colour, which keeps the common case free of a second array. */
+  pointColorHexes: string[];
+  /** The number printed at the top of the plot, absent when the labels are off
+   * or there is nothing to draw. Formatted here rather than in the renderer so
+   * the panel and the watch print the same digits. */
+  topLabel?: string;
+  bottomLabel?: string;
+  scaleLabelColorHex: string;
 }
 export interface ResolvedShape extends ResolvedBase {
   kind: "shape";
@@ -658,6 +669,11 @@ export class Resolver {
           values = c.takeFromEnd ? values.slice(values.length - c.limit) : values.slice(0, c.limit);
         }
         const domain = chartDomain(values, c);
+        // A rule that recolours the chart moves the middle band with it, because the
+        // series colour is what the middle band paints. The rule says "this whole
+        // chart is in an unusual state"; the bands still say which readings inside
+        // it crossed a line.
+        const baseColorHex = this.styleColor(style, "color") ?? c.colorSlot.baseColorHex;
         const out: ResolvedChart = {
           kind: "chart",
           ...base,
@@ -668,11 +684,20 @@ export class Resolver {
           baseline: c.baseline,
           barGap: c.barGap,
           lineWidth: c.lineWidth,
-          colorHex: this.styleColor(style, "color") ?? c.colorSlot.baseColorHex,
+          colorHex: baseColorHex,
           highColorHex: c.highColorHex,
           lowColorHex: c.lowColorHex,
           marker: c.marker,
+          pointColorHexes: c.coloring === "bands"
+            ? values.map((v) => chartBandColor(c, v, baseColorHex))
+            : [],
+          scaleLabelColorHex: c.scaleLabelColorHex,
         };
+        if (c.scaleLabels !== "none" && values.length > 0) {
+          const span = domain.max - domain.min;
+          out.topLabel = chartScaleLabelText(domain.max, span);
+          if (c.scaleLabels === "range") out.bottomLabel = chartScaleLabelText(domain.min, span);
+        }
         if (values.length > 0) {
           const marksHigh = c.highlight === "highest" || c.highlight === "both";
           const marksLow = c.highlight === "lowest" || c.highlight === "both";

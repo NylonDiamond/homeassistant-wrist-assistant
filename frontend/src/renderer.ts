@@ -4,7 +4,14 @@
 // 160x62 rectangle scaled 2x looks like the native editor.
 
 import { svg, nothing, type TemplateResult } from "lit";
-import { DESIGN_BOX, describeTapAction, type FamilyKind, type ImageContentMode } from "./model.js";
+import {
+  CHART_SCALE_LABEL_SIZE,
+  DESIGN_BOX,
+  chartScaleLabelWidth,
+  describeTapAction,
+  type FamilyKind,
+  type ImageContentMode,
+} from "./model.js";
 import type { ImageSizeProvider } from "./image-sizes.js";
 import { countdownRemainingString, type ResolvedBezelGauge, type ResolvedElement, type ResolvedLayout } from "./resolver.js";
 
@@ -247,6 +254,16 @@ function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box
   // outside a plot sized to the frame. Bars are filled inside theirs.
   const inset = el.style === "bars" ? 0 : el.lineWidth / 2;
 
+  // Scale labels get their own strip down the left. Taking it out of the plot
+  // rather than drawing over the marks means a bar can never sit behind a
+  // number, which at this size is the difference between a reading and a smudge.
+  const gutter = chartScaleLabelWidth(
+    [el.topLabel, el.bottomLabel].filter((t): t is string => t !== undefined),
+    CHART_SCALE_LABEL_SIZE,
+  );
+  const plotX = box.x + gutter;
+  const plotW = Math.max(box.w - gutter, 0);
+
   const top = box.y + band + inset;
   const height = Math.max(box.h - band - inset * 2, 1);
   const bottom = top + height;
@@ -256,8 +273,8 @@ function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box
   const minimumBar = growsFromBottom ? height * 0.12 : 0;
 
   // Cap the gap so bars never starve, whatever the author typed.
-  const gap = Math.min(Math.max(el.barGap, 0), box.w / (n * 2));
-  const barWidth = Math.max((box.w - gap * (n - 1)) / n, 0.5);
+  const gap = Math.min(Math.max(el.barGap, 0), plotW / (n * 2));
+  const barWidth = Math.max((plotW - gap * (n - 1)) / n, 0.5);
 
   const fraction = (v: number) => Math.min(1, Math.max(0, (v - el.domainMin) / span));
   const y = (v: number) => bottom - fraction(v) * height;
@@ -265,9 +282,15 @@ function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box
   return {
     count: values.length,
     barWidth,
+    labelGutter: gutter,
+    /** Middle of the label gutter, in the same absolute space as everything else
+     * the renderer draws. */
+    labelCenterX: box.x + gutter / 2,
+    plotTop: top,
+    plotBottom: bottom,
     baselineY: growsFromBottom ? bottom : y(0),
     barRect(index: number) {
-      const x = box.x + index * (barWidth + gap);
+      const x = plotX + index * (barWidth + gap);
       const value = values[index]!;
       let hi: number;
       let lo: number;
@@ -285,10 +308,10 @@ function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box
       return { x, y: hi, w: barWidth, h: Math.max(lo - hi, 0.5) };
     },
     point(index: number) {
-      const usable = Math.max(box.w - inset * 2, 0);
+      const usable = Math.max(plotW - inset * 2, 0);
       const x = values.length > 1
-        ? box.x + inset + (usable * index) / (values.length - 1)
-        : box.cx;
+        ? plotX + inset + (usable * index) / (values.length - 1)
+        : plotX + plotW / 2;
       return { x, y: y(values[index]!) };
     },
     markerCenter(index: number, bars: boolean) {
@@ -310,10 +333,15 @@ function renderChart(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) 
 
   const body: TemplateResult[] = [];
 
+  // One colour per reading when the chart is banded, otherwise the series colour.
+  const banded = el.pointColorHexes.length === g.count;
+  const bandAt = (i: number) => (banded ? colorAttrs(el.pointColorHexes[i]!, "fill", el.colorHex) : base);
+
   if (el.style === "bars") {
     for (let i = 0; i < g.count; i++) {
       const r = g.barRect(i);
-      const colour = i === el.highIndex ? high : i === el.lowIndex ? low : base;
+      // The highlight is the more specific statement, so it paints over its band.
+      const colour = i === el.highIndex ? high : i === el.lowIndex ? low : bandAt(i);
       const radius = Math.min(1.2, r.w / 2, r.h / 2);
       body.push(svg`<rect x=${r.x} y=${r.y} width=${r.w} height=${r.h} rx=${radius}
         fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} />`);
@@ -322,12 +350,28 @@ function renderChart(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) 
     const points = Array.from({ length: g.count }, (_, i) => g.point(i));
     const line = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x} ${p.y}`).join(" ");
     if (el.style === "area") {
+      // The fill stays one colour even when the stroke is banded: tinting it would
+      // need a clip per band, and a banded wash under a banded line is noise.
       const area = `${line} L${points[points.length - 1]!.x} ${g.baselineY} L${points[0]!.x} ${g.baselineY} Z`;
       body.push(svg`<path d=${area} fill=${base.fill}
         fill-opacity=${(base["fill-opacity"] as number) * 0.28} stroke="none" />`);
     }
-    body.push(svg`<path d=${line} fill="none" stroke=${base.fill} stroke-opacity=${base["fill-opacity"]}
-      stroke-width=${el.lineWidth} stroke-linecap="round" stroke-linejoin="round" />`);
+    if (banded && g.count > 1) {
+      // A stroke cannot change colour halfway, so a banded line is drawn one
+      // segment at a time. Each segment takes the band of the reading it arrives
+      // at, which puts the newest reading's colour on the last segment.
+      for (let i = 0; i < g.count - 1; i++) {
+        const a = points[i]!;
+        const b = points[i + 1]!;
+        const colour = bandAt(i + 1);
+        body.push(svg`<path d=${`M${a.x} ${a.y} L${b.x} ${b.y}`} fill="none"
+          stroke=${colour.fill} stroke-opacity=${colour["fill-opacity"]}
+          stroke-width=${el.lineWidth} stroke-linecap="round" stroke-linejoin="round" />`);
+      }
+    } else {
+      body.push(svg`<path d=${line} fill="none" stroke=${base.fill} stroke-opacity=${base["fill-opacity"]}
+        stroke-width=${el.lineWidth} stroke-linecap="round" stroke-linejoin="round" />`);
+    }
     // A single stroke cannot change colour halfway without splitting into two
     // paths, so line and area put the highlight on a dot at the reading.
     if (el.highIndex !== undefined) body.push(dot(points[el.highIndex]!, high));
@@ -344,6 +388,23 @@ function renderChart(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) 
         : dot(c, high));
     }
     if (el.lowIndex !== undefined) body.push(dot(g.markerCenter(el.lowIndex, bars), low));
+  }
+
+  // The numbers sit in the gutter the geometry reserved, lined up with the top and
+  // bottom of the plot rather than the frame: that is where the domain ends actually
+  // land, so the number a reader sees is the number the tallest bar means.
+  if (el.topLabel !== undefined || el.bottomLabel !== undefined) {
+    const c = colorAttrs(el.scaleLabelColorHex, "fill");
+    const label = (text: string, y: number) => svg`<text x=${g.labelCenterX} y=${y}
+      text-anchor="middle" dominant-baseline="central" font-size=${CHART_SCALE_LABEL_SIZE}
+      font-family="ui-rounded, system-ui, sans-serif" font-weight="500"
+      fill=${c.fill} fill-opacity=${c["fill-opacity"]}>${text}</text>`;
+    if (el.topLabel !== undefined) {
+      body.push(label(el.topLabel, g.plotTop + CHART_SCALE_LABEL_SIZE / 2));
+    }
+    if (el.bottomLabel !== undefined) {
+      body.push(label(el.bottomLabel, g.plotBottom - CHART_SCALE_LABEL_SIZE / 2));
+    }
   }
 
   return svg`${body}`;

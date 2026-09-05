@@ -8,10 +8,12 @@ import {
   type AggregateSpec,
   type BezelGauge,
   type ChartBaseline,
+  type ChartColoring,
   type ChartElement,
   type ChartHighlight,
   type ChartMarker,
   type ChartScale,
+  type ChartScaleLabels,
   type ChartStyle,
   type Comparison,
   type ComparisonKind,
@@ -39,12 +41,15 @@ import {
   type Value,
   type ValueFormat,
   type ValueKind,
+  CHART_DEFAULT_BAND_HIGH_HEX,
+  CHART_DEFAULT_BAND_LOW_HEX,
   CHART_DEFAULT_HIGH_HEX,
   CHART_HISTORY_MAX_POINTS,
   CHART_HISTORY_MIN_POINTS,
   CHART_HISTORY_SPANS,
   chartHistoryKey,
   CHART_DEFAULT_LOW_HEX,
+  CHART_DEFAULT_SCALE_LABEL_HEX,
   COMPARISON_KINDS,
   DRAWABLE_FAMILIES,
   IMAGE_DEFAULT_CORNER_RADIUS,
@@ -684,6 +689,29 @@ const CHART_HIGHLIGHTS: [ChartHighlight, string][] = [
 const CHART_MARKERS: [ChartMarker, string][] = [
   ["none", "None"], ["pointer", "Triangle and dot"], ["dot", "Dots"],
 ];
+const CHART_COLORINGS: [ChartColoring, string][] = [
+  ["uniform", "One colour"], ["bands", "By value"],
+];
+const CHART_SCALE_LABEL_MODES: [ChartScaleLabels, string][] = [
+  ["none", "None"], ["top", "Top value"], ["range", "Top and bottom"],
+];
+
+/** Where the two band bounds land when the author first switches a chart to
+ * banded colour.
+ *
+ * Seeded from the readings on screen rather than left at 0 and 100, because a
+ * new setting that visibly does nothing reads as broken. Thirds of the current
+ * spread is the same split the gauge preset uses, and it always paints all
+ * three colours on the data in front of the author. */
+function seedBandBounds(values: readonly number[]): { lower: number; upper: number } | undefined {
+  if (values.length < 2) return undefined;
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo;
+  if (!(span > 0)) return undefined;
+  const round = (n: number) => Number(n.toFixed(span >= 10 ? 0 : 2));
+  return { lower: round(lo + span / 3), upper: round(lo + (span * 2) / 3) };
+}
 
 const TIME_FIELDS: [TimeField, string][] = [
   ["now", "Now (HH:mm)"], ["hour", "Hour"], ["minute", "Minute"], ["weekday", "Weekday"], ["day", "Day"], ["month", "Month"], ["timestamp", "Unix timestamp"],
@@ -1612,6 +1640,40 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         ${c.style === "bars"
           ? numberField("Bar gap (pt)", c.barGap, (v) => setChart((p) => { p.barGap = Math.max(0, v ?? 0); }, "gap"), { step: 0.5, min: 0 })
           : numberField("Line width (pt)", c.lineWidth, (v) => setChart((p) => { p.lineWidth = Math.max(0.5, v ?? 2); }, "lw"), { step: 0.5, min: 0.5 })}
+        ${selectField("Scale labels", c.scaleLabels, CHART_SCALE_LABEL_MODES,
+          (v) => setChart((p) => { p.scaleLabels = v; }))}
+        ${c.scaleLabels === "none"
+          ? html`<div class="hint">A chart with no numbers on it shows that a reading moved, not
+              what it moved to. Turn these on and the plot's own top (and bottom) print beside it.</div>`
+          : html`
+            ${colorField("Label colour", c.scaleLabelColorHex,
+              (v) => setChart((p) => { p.scaleLabelColorHex = v ?? CHART_DEFAULT_SCALE_LABEL_HEX; }, "sllcol"))}
+            <div class="hint">The numbers come from the scale, so ${c.scale === "auto"
+              ? "an Auto chart prints the readings it actually fitted, and they move as the data does."
+              : "a Fixed chart always prints the Min and Max above."} They sit in a strip down the
+              left, which the plot gives up: a wide chart barely notices, a narrow one does.</div>`}
+        ${selectField("Colour", c.coloring, CHART_COLORINGS, (v) => setChart((p) => {
+          p.coloring = v;
+          if (v === "bands" && p.bandLowerBound === 0 && p.bandUpperBound === 100) {
+            const seed = seedBandBounds(shown);
+            if (seed) { p.bandLowerBound = seed.lower; p.bandUpperBound = seed.upper; }
+          }
+        }))}
+        ${c.coloring === "bands" ? html`
+          <div class="grid2">
+            ${colorField("Below colour", c.bandLowColorHex, (v) => setChart((p) => { p.bandLowColorHex = v ?? CHART_DEFAULT_BAND_LOW_HEX; }, "blcol"))}
+            ${colorField("Above colour", c.bandHighColorHex, (v) => setChart((p) => { p.bandHighColorHex = v ?? CHART_DEFAULT_BAND_HIGH_HEX; }, "bhcol"))}
+          </div>
+          <div class="grid2">
+            ${numberField("Below", c.bandLowerBound, (v) => setChart((p) => { p.bandLowerBound = v ?? 0; }, "blo"))}
+            ${numberField("Above", c.bandUpperBound, (v) => setChart((p) => { p.bandUpperBound = v ?? 100; }, "bhi"))}
+          </div>
+          <div class="hint">Readings under ${c.bandLowerBound} take the first colour, readings over
+            ${c.bandUpperBound} take the second, and everything between keeps the layer's own colour.
+            ${c.style === "bars"
+              ? "Each bar is coloured on its own value."
+              : "A stroke cannot change colour halfway, so each leg of the line takes the band of the reading it arrives at. An area's fill stays one colour."}</div>`
+          : nothing}
         ${selectField("Highlight", c.highlight, CHART_HIGHLIGHTS, (v) => setChart((p) => { p.highlight = v; }))}
         ${c.highlight === "none" ? nothing : html`
           <div class="grid2">

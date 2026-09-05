@@ -402,3 +402,134 @@ describe("drawing a chart", () => {
     expect(rects(draw("unavailable"))).toHaveLength(0);
   });
 });
+
+describe("colouring a chart by value", () => {
+  it("carries no per-reading colours while the chart is one colour", () => {
+    const { cfg, state } = chartConfig("1,5,9");
+    expect(chartOf(rectangular(cfg, state)).pointColorHexes).toEqual([]);
+  });
+
+  it("gives each reading the colour of the band it falls in", () => {
+    const { cfg, state } = chartConfig("5, 10, 15, 20, 25", (p) => {
+      p.coloring = "bands";
+      p.bandLowerBound = 10;
+      p.bandUpperBound = 20;
+      p.colorSlot.baseColorHex = "#9A6BFF";
+      p.bandLowColorHex = "#00FF00";
+      p.bandHighColorHex = "#FF0000";
+    });
+    // Only strictly outside gets a band colour, so a reading sitting exactly on a
+    // threshold is not yet an alarm.
+    expect(chartOf(rectangular(cfg, state)).pointColorHexes)
+      .toEqual(["#00FF00", "#9A6BFF", "#9A6BFF", "#9A6BFF", "#FF0000"]);
+  });
+
+  it("reads bounds typed the wrong way round as low and high anyway", () => {
+    const { cfg, state } = chartConfig("5, 15, 25", (p) => {
+      p.coloring = "bands";
+      p.bandLowerBound = 20;
+      p.bandUpperBound = 10;
+      p.bandLowColorHex = "#00FF00";
+      p.bandHighColorHex = "#FF0000";
+    });
+    expect(chartOf(rectangular(cfg, state)).pointColorHexes)
+      .toEqual(["#00FF00", "#FFFFFF", "#FF0000"]);
+  });
+
+  it("has no colours to hand out when the series is empty", () => {
+    const { cfg, state } = chartConfig("unavailable", (p) => { p.coloring = "bands"; });
+    expect(chartOf(rectangular(cfg, state)).pointColorHexes).toEqual([]);
+  });
+
+  it("paints each bar its own band and lets a highlight win over it", () => {
+    const { cfg } = chartConfig("5, 15, 25", (p) => {
+      p.coloring = "bands";
+      p.bandLowerBound = 10;
+      p.bandUpperBound = 20;
+      p.bandLowColorHex = "#00FF00";
+      p.bandHighColorHex = "#FF0000";
+      p.highlight = "highest";
+      p.highColorHex = "#FF6B35";
+    });
+    const svg = flatten(renderLayout(rectangular(cfg, "5, 15, 25"), { icons: noIcons }));
+    expect(svg).toContain("#00FF00");
+    // The tallest reading is in the high band, but the highlight is the more
+    // specific statement, so its colour is what lands.
+    expect(svg).not.toContain("#FF0000");
+    expect(svg).toContain("#FF6B35");
+  });
+
+  it("splits a banded line into one stroke per leg", () => {
+    const { cfg } = chartConfig("5, 15, 25", (p) => {
+      p.style = "line";
+      p.coloring = "bands";
+      p.bandLowerBound = 10;
+      p.bandUpperBound = 20;
+      p.bandLowColorHex = "#00FF00";
+      p.bandHighColorHex = "#FF0000";
+    });
+    const svg = flatten(renderLayout(rectangular(cfg, "5, 15, 25"), { icons: noIcons }));
+    // Two readings make one leg, three make two. Each takes the band of the reading
+    // it arrives at, so the last leg carries the newest reading's colour.
+    expect(svg.match(/stroke-linejoin/g) ?? []).toHaveLength(2);
+    expect(svg).toContain("#FF0000");
+  });
+});
+
+describe("printing a chart's scale", () => {
+  it("prints nothing by default, so an existing chart is untouched", () => {
+    const { cfg, state } = chartConfig("1,2,3");
+    const chart = chartOf(rectangular(cfg, state));
+    expect(chart.topLabel).toBeUndefined();
+    expect(chart.bottomLabel).toBeUndefined();
+  });
+
+  it("prints the top of the range only", () => {
+    const { cfg, state } = chartConfig("13, 20, 30", (p) => { p.scaleLabels = "top"; });
+    const chart = chartOf(rectangular(cfg, state));
+    expect(chart.topLabel).toBe("30");
+    expect(chart.bottomLabel).toBeUndefined();
+  });
+
+  it("prints the domain rather than the readings", () => {
+    const { cfg, state } = chartConfig("13, 20, 30", (p) => {
+      p.scaleLabels = "range";
+      p.scale = "fixed";
+      p.minValue = 0;
+      p.maxValue = 50;
+    });
+    const chart = chartOf(rectangular(cfg, state));
+    expect(chart.topLabel).toBe("50");
+    expect(chart.bottomLabel).toBe("0");
+  });
+
+  it("takes its decimals from the span, so both ends carry one shape", () => {
+    const label = (state: string) =>
+      chartOf(rectangular(chartConfig(state, (p) => { p.scaleLabels = "range"; }).cfg, state));
+    expect(label("13, 30").topLabel).toBe("30");
+    // A spread of 0.4 would otherwise print "21" at both ends.
+    expect(label("21.1, 21.5").topLabel).toBe("21.50");
+    expect(label("21.1, 21.5").bottomLabel).toBe("21.10");
+    expect(label("9, 12").topLabel).toBe("12.0");
+  });
+
+  it("prints no numbers when there is nothing to draw", () => {
+    const { cfg, state } = chartConfig("unavailable", (p) => { p.scaleLabels = "range"; });
+    expect(chartOf(rectangular(cfg, state)).topLabel).toBeUndefined();
+  });
+
+  it("gives the labels a gutter the bars then stay out of", () => {
+    const plain = rects(flatten(renderLayout(
+      rectangular(chartConfig("13,20,30").cfg, "13,20,30"), { icons: noIcons })));
+    const { cfg } = chartConfig("13,20,30", (p) => { p.scaleLabels = "range"; });
+    const svg = flatten(renderLayout(rectangular(cfg, "13,20,30"), { icons: noIcons }));
+    const labelled = rects(svg);
+
+    expect(svg).toContain(">30<");
+    expect(svg).toContain(">13<");
+    // The strip comes out of the plot, so the first bar starts further right and
+    // every bar is narrower than it was without the numbers.
+    expect(labelled[0]!.x).toBeGreaterThan(plain[0]!.x);
+    expect(labelled[0]!.w).toBeLessThan(plain[0]!.w);
+  });
+});
