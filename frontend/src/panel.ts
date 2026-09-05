@@ -155,6 +155,13 @@ const COL_STORE_KEY = "wrist-assistant-panel.columns.v2";
 
 const clampColumn = (n: number) => Math.max(COL_MIN, Math.min(COL_MAX, Math.round(n)));
 
+/**
+ * Picking several layers uses the platform's multi-select key: Cmd on a Mac,
+ * Ctrl everywhere else. Shift keeps working too, since it did before.
+ */
+const isMultiKey = (e: MouseEvent | PointerEvent) => e.metaKey || e.ctrlKey || e.shiftKey;
+const MULTI_KEY = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "Cmd" : "Ctrl";
+
 /** How many columns fit, and how wide the side ones may actually be.
  *
  * The stored widths are what the user dragged; these are what the panel can
@@ -263,7 +270,7 @@ export class WristAssistantPanel extends LitElement {
   @state() private editingValue?: string;
   /** The layer row being dragged in the Layers list. */
   private dragId?: string;
-  /** Rows picked with shift-click, waiting to be grouped. */
+  /** Layers picked with Cmd/Ctrl-click, in the list or on the preview, waiting to be grouped. */
   @state() private multi: ReadonlySet<string> = new Set();
   /** Groups folded shut in the Layers list. List state only, never saved. */
   @state() private collapsed: ReadonlySet<string> = new Set();
@@ -1764,6 +1771,10 @@ export class WristAssistantPanel extends LitElement {
       this.activeFamily = family;
       return;
     }
+    // A plain press anywhere on the face drops the pick, the way a plain
+    // click on a row does. A modified press keeps it and toggles the layer hit.
+    const multiKey = isMultiKey(e);
+    if (!multiKey && this.multi.size > 0) this.multi = new Set();
     if (!hitId || !svg) return;
     // An attached tap sits exactly over its owner and is not a layer the user
     // ever selects or drags: send the hit to the layer it belongs to, which is
@@ -1771,6 +1782,11 @@ export class WristAssistantPanel extends LitElement {
     const id = selectableLayerId(this.draft.config, hitId);
     const el = this.draft.config.elements.find((x) => x.payload.id === id);
     if (!id || !el) return;
+    if (multiKey) {
+      e.preventDefault();
+      this.togglePick(id);
+      return;
+    }
     // A locked group moves as one: a press on any member grabs all of them,
     // and selects the group. Its corners stay with the member selected from
     // the list, so a handle press still resizes that one layer.
@@ -2233,19 +2249,28 @@ export class WristAssistantPanel extends LitElement {
     };
   }
 
-  /** Shift-click picks several rows; a plain click selects one and clears the pick. */
+  /** Cmd/Ctrl-click picks several rows; a plain click selects one and clears the pick. */
   private clickRow(id: string, e: MouseEvent) {
-    if (e.shiftKey) {
-      const next = new Set(this.multi);
-      // The layer already selected counts as the first pick, so one shift-click
-      // on a second row is enough to have a pair.
-      if (next.size === 0 && this.inspect.kind === "layer" && this.inspect.id !== id) next.add(this.inspect.id);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      this.multi = next;
+    if (isMultiKey(e)) {
+      this.togglePick(id);
       return;
     }
     this.multi = new Set();
     this.inspect = { kind: "layer", id };
+  }
+
+  /**
+   * Add a layer to the pick, or take it out again. The list and the preview
+   * both share the one pick set, so a layer picked on the face lights up in
+   * the list and the other way round.
+   */
+  private togglePick(id: string) {
+    const next = new Set(this.multi);
+    // The layer already selected counts as the first pick, so one modified
+    // click on a second layer is enough to have a pair.
+    if (next.size === 0 && this.inspect.kind === "layer" && this.inspect.id !== id) next.add(this.inspect.id);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    this.multi = next;
   }
 
   private groupPicked() {
@@ -2406,7 +2431,7 @@ export class WristAssistantPanel extends LitElement {
             <button class="small primary" @click=${() => this.groupPicked()}>Group them</button>
             <button class="small" @click=${() => { this.multi = new Set(); }}>Clear</button></div>`
         : cfg.elements.length >= 2 && edit && !cfg.groups?.length
-          ? html`<div class="hint">Shift-click two or more rows to group them, so a finished part moves as one.</div>`
+          ? html`<div class="hint">${MULTI_KEY}-click two or more layers, here or on the preview, to group them so a finished part moves as one.</div>`
           : nothing}
       ${cfg.elements.length === 0 ? html`<div class="empty">No layers yet. Add one above.</div>` : nothing}
       <div class="layers">
@@ -2569,6 +2594,9 @@ export class WristAssistantPanel extends LitElement {
     const gid = this.inspect.kind === "group" ? this.inspect.id : highlightId !== undefined && cfg ? groupOf(cfg, highlightId)?.id : undefined;
     const groupIds = cfg && gid !== undefined && (this.inspect.kind === "group" || groupOf(cfg, highlightId!)?.locked)
       ? groupMembers(cfg, gid).map((m) => m.payload.id) : [];
+    // Layers picked for grouping, in the list or on the face, outline as well,
+    // so the pick reads the same in both places.
+    const outlineIds = [...new Set([...groupIds, ...this.multi])];
     const slot = watchCase.slots[family];
     // Pick mode drops the resize handles: they are drag affordances, and
     // while picking nothing on the face is dragged. Review mode drops them
@@ -2577,7 +2605,7 @@ export class WristAssistantPanel extends LitElement {
     const opts = {
       icons: this.icons, imageSizes: this.imageSizes, showHidden: true, tapAreas: true, slot,
       highlightId: focus ?? highlightId,
-      ...(groupIds.length > 0 && !this.showTaps ? { highlightIds: groupIds } : {}),
+      ...(outlineIds.length > 0 && !this.showTaps ? { highlightIds: outlineIds } : {}),
       tapReview: this.showTaps,
       ...(focus !== undefined ? { tapFocusId: focus } : {}),
       handles: this.canEdit && !this.picking && (!this.showTaps || focus !== undefined),
