@@ -31,6 +31,7 @@ import {
   type ValueFormat,
   type CornerBodyShape,
   STYLE_PROPERTY,
+  chartHistoryKey,
   elementsFor,
   formatIsEmpty,
   hasFreeTimestamp,
@@ -57,6 +58,10 @@ export interface EntityState {
 export interface ResolveContext {
   entityStates: Map<string, EntityState>;
   templateResults: Map<string, string>;
+  /** Recorder series for the chart layers that draw history, keyed by
+   * `chartHistoryKey`. A missing key draws an empty chart, which is what the
+   * watch does too before its first fetch lands. */
+  historySeries?: Map<string, string>;
   namedValues: NamedValue[];
   /** Seconds since the value cache was written; undefined = never synced. */
   dataAgeSeconds?: number;
@@ -640,7 +645,15 @@ export class Resolver {
       }
       case "chart": {
         const c = el.payload;
-        let values = chartNumbers(this.resolve(c.value) ?? "");
+        // A history chart never reads its own value: the value only names the
+        // entity, and the readings are whatever the last recorder fetch left
+        // behind. Before that arrives the chart is empty rather than one bar of
+        // the current state, which would draw a lie that looks like real data.
+        const historyKey = chartHistoryKey(c);
+        const raw = historyKey !== undefined
+          ? (this.ctx.historySeries?.get(historyKey) ?? "")
+          : (this.resolve(c.value) ?? "");
+        let values = chartNumbers(raw);
         if (c.limit > 0 && values.length > c.limit) {
           values = c.takeFromEnd ? values.slice(values.length - c.limit) : values.slice(0, c.limit);
         }

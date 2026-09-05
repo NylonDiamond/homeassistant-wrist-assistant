@@ -10,6 +10,8 @@ import {
   DRAWABLE_FAMILIES,
   attachedTapsOf,
   auditUnknownKeys,
+  chartHistoryEntity,
+  chartHistoryRequests,
   encodeConfig,
   newConfig,
   parseConfig,
@@ -308,6 +310,34 @@ describe("the camera preset", () => {
     if (el.kind !== "image") return;
     expect(el.payload.entity).toEqual(ref);
     expect(el.payload.frame).toEqual({ x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 });
+  });
+});
+
+describe("the history chart preset", () => {
+  it("asks the recorder for the entity's last six hours", () => {
+    const cfg = config();
+    const id = applyPreset(cfg, "history", KITCHEN, { family: "rectangular" });
+    const el = layer(cfg, id);
+    expect(el.kind).toBe("chart");
+    if (el.kind !== "chart") throw new Error("unreachable");
+    expect(el.payload.historyMinutes).toBe(360);
+    expect(chartHistoryEntity(el.payload)).toBe(KITCHEN.entityId);
+    expect(chartHistoryRequests(cfg)).toHaveLength(1);
+  });
+
+  it("is a line with both ends marked, unlike the forecast preset's bars", () => {
+    const cfg = config();
+    const history = layer(cfg, applyPreset(cfg, "history", KITCHEN, { family: "rectangular" }));
+    if (history.kind !== "chart") throw new Error("unreachable");
+    expect(history.payload.style).toBe("line");
+    expect(history.payload.highlight).toBe("both");
+
+    const other = config();
+    const forecast = layer(other, applyPreset(other, "chart", KITCHEN, { family: "rectangular" }));
+    if (forecast.kind !== "chart") throw new Error("unreachable");
+    expect(forecast.payload.style).toBe("bars");
+    // And the forecast preset asks the recorder for nothing.
+    expect(chartHistoryRequests(other)).toEqual([]);
   });
 });
 

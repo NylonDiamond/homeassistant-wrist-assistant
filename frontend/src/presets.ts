@@ -32,7 +32,7 @@ import {
   newStyleChange,
 } from "./model.js";
 
-export type PresetKind = "toggle" | "status" | "gauge" | "camera" | "chart";
+export type PresetKind = "toggle" | "status" | "gauge" | "camera" | "chart" | "history";
 
 export interface PresetSpec {
   kind: PresetKind;
@@ -73,7 +73,14 @@ export const LAYER_PRESETS: readonly PresetSpec[] = [
   {
     kind: "chart",
     title: "Forecast chart",
-    blurb: "A bar chart of the readings in the entity, with the highest and lowest marked.",
+    blurb: "A bar chart of the readings already in the entity, with the highest and lowest marked. For a forecast sensor that holds a list.",
+    layerCount: 1,
+  },
+  {
+    kind: "history",
+    title: "History chart",
+    blurb: "A line of how the entity has moved over the last six hours, read from Home Assistant's recorder.",
+    preferNumeric: true,
     layerCount: 1,
   },
   {
@@ -479,6 +486,31 @@ export function addForecastChart(cfg: CustomComplicationConfig, ref: EntityRef, 
   return el.payload.id;
 }
 
+/** How an ordinary sensor has moved, from the recorder.
+ *
+ * The counterpart to the forecast chart, and the one most people actually want:
+ * a forecast sensor holds a list, but every other sensor holds one number, and
+ * pointing a chart at one of those draws a single bar. Six hours is the default
+ * because it is long enough to show a shape and short enough that the recorder
+ * still has it under any purge setting.
+ *
+ * A line rather than bars: a reading sampled every quarter hour is a continuous
+ * quantity, and bars imply buckets that mean something. Highlights are on for
+ * the same reason they are on the forecast preset: "when was it highest" is the
+ * question someone charting a history came to ask. */
+export function addHistoryChart(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  const el = layerOf("chart");
+  el.payload.value = { kind: { kind: "entityState", ...withDomain(ref) } };
+  el.payload.historyMinutes = 360;
+  el.payload.historyPoints = 24;
+  el.payload.style = "line";
+  el.payload.highlight = "both";
+  el.payload.marker = "pointer";
+  placeLayer(cfg, el, env.family, chartGeometry);
+  cfg.elements.push(el);
+  return el.payload.id;
+}
+
 /** The camera's snapshot, filling the face. */
 export function addCameraLayer(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
   const el = layerOf("image");
@@ -500,6 +532,7 @@ export function applyPreset(
     case "status": return addStatusText(cfg, ref, env);
     case "gauge": return addSensorGauge(cfg, ref, env);
     case "chart": return addForecastChart(cfg, ref, env);
+    case "history": return addHistoryChart(cfg, ref, env);
     case "camera": return addCameraLayer(cfg, ref, env);
   }
 }

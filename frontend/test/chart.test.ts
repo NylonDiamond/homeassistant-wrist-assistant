@@ -8,7 +8,20 @@
 
 import { describe, expect, it } from "vitest";
 import { nothing } from "lit";
-import { newConfig, newElement, type ChartElement, type CustomComplicationConfig, type Element } from "../src/model.js";
+import {
+  chartHistoryEntity,
+  chartHistoryKey,
+  chartHistoryPoints,
+  chartHistoryRequests,
+  encodeConfig,
+  literal,
+  newConfig,
+  newElement,
+  parseConfig,
+  type ChartElement,
+  type CustomComplicationConfig,
+  type Element,
+} from "../src/model.js";
 import { renderLayout, type IconProvider } from "../src/renderer.js";
 import { chartDomain, chartNumbers, resolveAll, type EntityState, type ResolvedChart, type ResolvedLayout } from "../src/resolver.js";
 
@@ -143,6 +156,132 @@ describe("resolving a chart", () => {
   it("trims to the limit from the end it was told to", () => {
     const { cfg, state } = chartConfig("1,2,3,4,5", (p) => { p.limit = 3; p.takeFromEnd = true; });
     expect(chartOf(rectangular(cfg, state)).values).toEqual([3, 4, 5]);
+  });
+});
+
+// ── history ───────────────────────────────────────────────────────────────
+//
+// The cases here mirror the "History" section of `CustomComplicationChartTests`
+// in the app repo. The shared fixture `chart_series.json` covers the resolved
+// output; these cover the decisions around it.
+
+describe("chart history", () => {
+  function historyChart(tweak: (p: ChartElement) => void = () => {}) {
+    const cfg = newConfig("Volts", 0);
+    const el = newElement("chart") as Extract<Element, { kind: "chart" }>;
+    el.payload.value = { kind: { kind: "entityState", entityId: "sensor.voltage", displayName: "Voltage", domain: "sensor" } };
+    el.payload.historyMinutes = 360;
+    el.payload.historyPoints = 24;
+    tweak(el.payload);
+    cfg.elements.push(el);
+    return { cfg, payload: el.payload };
+  }
+
+  it("asks for history only when a span and an entity are both set", () => {
+    const plain = newElement("chart") as Extract<Element, { kind: "chart" }>;
+    expect(chartHistoryKey(plain.payload)).toBeUndefined();
+
+    // A span with the default typed-in list: a string has no past.
+    plain.payload.historyMinutes = 360;
+    expect(chartHistoryKey(plain.payload)).toBeUndefined();
+
+    const { payload } = historyChart();
+    expect(chartHistoryEntity(payload)).toBe("sensor.voltage");
+    expect(chartHistoryKey(payload)).toBe("sensor.voltage|360|24");
+
+    payload.historyMinutes = 0;
+    expect(chartHistoryKey(payload)).toBeUndefined();
+  });
+
+  it("makes a wider window a different question, not a stale answer", () => {
+    const { payload } = historyChart();
+    const six = chartHistoryKey(payload);
+    payload.historyMinutes = 720;
+    expect(chartHistoryKey(payload)).not.toBe(six);
+  });
+
+  it("clamps the point count the same way the watch and the server do", () => {
+    const { payload } = historyChart((p) => { p.historyPoints = 5000; });
+    expect(chartHistoryPoints(payload)).toBe(120);
+    payload.historyPoints = 0;
+    expect(chartHistoryPoints(payload)).toBe(2);
+    // The clamp is in the key, so the panel asks for what it will draw.
+    expect(chartHistoryKey(payload)).toBe("sensor.voltage|360|2");
+  });
+
+  it("collects one request per distinct question", () => {
+    const { cfg } = historyChart();
+    const twin = newElement("chart") as Extract<Element, { kind: "chart" }>;
+    twin.payload.value = { kind: { kind: "entityState", entityId: "sensor.voltage", displayName: "Voltage", domain: "sensor" } };
+    twin.payload.historyMinutes = 360;
+    twin.payload.historyPoints = 24;
+    twin.payload.style = "line";
+    cfg.elements.push(twin);
+
+    const wider = newElement("chart") as Extract<Element, { kind: "chart" }>;
+    wider.payload.value = { kind: { kind: "entityState", entityId: "sensor.voltage", displayName: "Voltage", domain: "sensor" } };
+    wider.payload.historyMinutes = 1440;
+    wider.payload.historyPoints = 24;
+    cfg.elements.push(wider);
+
+    const requests = chartHistoryRequests(cfg);
+    expect(requests.map((r) => r.key).sort()).toEqual(["sensor.voltage|1440|24", "sensor.voltage|360|24"]);
+    expect(requests[0]).toMatchObject({ entityId: "sensor.voltage", minutes: 360, points: 24 });
+  });
+
+  it("draws the fetched series and never the entity's own state", () => {
+    const { cfg } = historyChart((p) => { p.historyPoints = 6; });
+    const entityStates = new Map<string, EntityState>([
+      ["sensor.voltage", { entityId: "sensor.voltage", state: "3068", domain: "sensor", iconName: "bolt" }],
+    ]);
+    const layout = resolveAll(cfg, {
+      entityStates,
+      templateResults: new Map(),
+      historySeries: new Map([["sensor.voltage|360|6", "3068,3071,3069,3075,3063,3070"]]),
+      namedValues: cfg.values,
+    }).rectangular!;
+    expect(chartOf(layout).values).toEqual([3068, 3071, 3069, 3075, 3063, 3070]);
+  });
+
+  it("is empty before the first fetch, not one bar of the current state", () => {
+    // The behaviour the whole feature exists to replace: a plain sensor reads
+    // 3068, and drawing that single number as a chart is the confusing part.
+    const { cfg } = historyChart();
+    const entityStates = new Map<string, EntityState>([
+      ["sensor.voltage", { entityId: "sensor.voltage", state: "3068", domain: "sensor", iconName: "bolt" }],
+    ]);
+    const layout = resolveAll(cfg, {
+      entityStates,
+      templateResults: new Map(),
+      namedValues: cfg.values,
+    }).rectangular!;
+    expect(chartOf(layout).values).toEqual([]);
+  });
+
+  it("leaves the value in charge when the chart names no entity", () => {
+    const cfg = newConfig("Volts", 0);
+    const el = newElement("chart") as Extract<Element, { kind: "chart" }>;
+    el.payload.value = literal("1,2,3");
+    el.payload.historyMinutes = 720;
+    cfg.elements.push(el);
+
+    const layout = resolveAll(cfg, {
+      entityStates: new Map(),
+      templateResults: new Map(),
+      namedValues: cfg.values,
+    }).rectangular!;
+    expect(chartOf(layout).values).toEqual([1, 2, 3]);
+    expect(chartHistoryRequests(cfg)).toEqual([]);
+  });
+
+  it("survives an encode and parse round trip", () => {
+    const { cfg } = historyChart((p) => { p.historyMinutes = 1440; p.historyPoints = 30; });
+    const back = parseConfig(encodeConfig(cfg) as Record<string, unknown>);
+    const el = back.elements[0]!;
+    expect(el.kind).toBe("chart");
+    if (el.kind !== "chart") throw new Error("unreachable");
+    expect(el.payload.historyMinutes).toBe(1440);
+    expect(el.payload.historyPoints).toBe(30);
   });
 });
 

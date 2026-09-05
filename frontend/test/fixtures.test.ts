@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { parseConfig } from "../src/model.js";
+import { chartHistoryRequests, parseConfig } from "../src/model.js";
 import { compile } from "../src/compiler.js";
 import { resolveAll, type EntityState, type ForcedBranches, type ResolveContext, type ResolvedElement } from "../src/resolver.js";
 
@@ -19,9 +19,17 @@ interface Fixture {
   inputs: {
     entityStates: Record<string, { state: string; unitOfMeasurement?: string; iconName?: string; domain?: string }>;
     templateResults: Record<string, string>;
+    /** Recorder series, keyed `entity|minutes|points` (see `chartHistoryKey`). */
+    historySeries?: Record<string, string>;
     dataAgeSeconds?: number;
   };
-  expectedCompiled?: { entities: string[]; expressionKeys: string[]; document?: string };
+  expectedCompiled?: {
+    entities: string[];
+    expressionKeys: string[];
+    document?: string;
+    /** Same `entity|minutes|points` keys the config should ask the recorder for. */
+    historyKeys?: string[];
+  };
   expected: Record<string, { bezelText?: string | null; elements: Record<string, unknown>[] } & Record<string, unknown>> & {
     /** The Inline shape (schema 6). null for a key means "absent", as elsewhere. */
     inline?: Record<string, unknown>;
@@ -43,6 +51,7 @@ function contextFor(fx: Fixture): ResolveContext {
   return {
     entityStates,
     templateResults: new Map(Object.entries(fx.inputs.templateResults)),
+    historySeries: new Map(Object.entries(fx.inputs.historySeries ?? {})),
     namedValues,
     dataAgeSeconds: fx.inputs.dataAgeSeconds,
   };
@@ -91,6 +100,10 @@ describe.each(files)("fixture %s", (file) => {
     expect([...compiled.entities.keys()].sort()).toEqual([...fx.expectedCompiled.entities].sort());
     expect([...compiled.expressions.keys()].sort()).toEqual([...fx.expectedCompiled.expressionKeys].sort());
     if (fx.expectedCompiled.document !== undefined) expect(compiled.document).toBe(fx.expectedCompiled.document);
+    if (fx.expectedCompiled.historyKeys !== undefined) {
+      expect(chartHistoryRequests(config).map((r) => r.key).sort())
+        .toEqual([...fx.expectedCompiled.historyKeys].sort());
+    }
   });
 
   it("resolves Inline to the expected text", () => {

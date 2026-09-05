@@ -281,6 +281,16 @@ export interface GaugeElement extends ElementBase {
  * Mirrors `CustomComplication.ChartElement` in the app repo. */
 export interface ChartElement extends ElementBase {
   value: Value;
+  /** How far back to read the entity's recorded history, in minutes. 0 draws
+   * `value` as it stands, which is what a forecast sensor wants.
+   *
+   * The knob exists because a plain sensor holds one number, so a chart pointed
+   * at one draws one bar. Nothing in the value can say "and the last six hours",
+   * and no template can say it either: HA's template engine cannot reach the
+   * recorder. The series is a separate request, and this is what asks for it. */
+  historyMinutes: number;
+  /** How many readings to average the history down to. */
+  historyPoints: number;
   style: ChartStyle;
   /** How many readings to draw. 0 means all of them. */
   limit: number;
@@ -304,6 +314,79 @@ export interface ChartElement extends ElementBase {
 
 export const CHART_DEFAULT_HIGH_HEX = "#FF6B35";
 export const CHART_DEFAULT_LOW_HEX = "#32D74B";
+
+/** History spans the editor offers, in minutes. Free entry is deliberately not
+ * offered: every distinct span is another recorder query shape for the server
+ * to answer and for the watch to cache. Mirrors `historySpanChoices` in Swift. */
+export const CHART_HISTORY_SPANS: readonly { minutes: number; label: string }[] = [
+  { minutes: 60, label: "Last hour" },
+  { minutes: 180, label: "Last 3 hours" },
+  { minutes: 360, label: "Last 6 hours" },
+  { minutes: 720, label: "Last 12 hours" },
+  { minutes: 1440, label: "Last 24 hours" },
+  { minutes: 4320, label: "Last 3 days" },
+  { minutes: 10_080, label: "Last 7 days" },
+];
+
+export const CHART_HISTORY_MIN_POINTS = 2;
+export const CHART_HISTORY_MAX_POINTS = 120;
+
+/** Clamped point count. Mirrors `resolvedHistoryPoints` in Swift, and the
+ * server clamps to the same range, so all three agree on the cache key. */
+export function chartHistoryPoints(el: ChartElement): number {
+  const raw = Math.round(el.historyPoints);
+  if (!Number.isFinite(raw)) return 24;
+  return Math.max(CHART_HISTORY_MIN_POINTS, Math.min(CHART_HISTORY_MAX_POINTS, raw));
+}
+
+/** The entity whose history a chart draws, when it draws history at all.
+ *
+ * Only a directly named entity counts. A `.named` reference or a template is
+ * not followed, because the fetch happens in the watch's widget extension long
+ * before any resolver exists to dereference it. Mirrors `usesHistory` and
+ * `historyEntity` in Swift. */
+export function chartHistoryEntity(el: ChartElement): string | undefined {
+  if (el.historyMinutes <= 0) return undefined;
+  return el.value.kind.kind === "entityState" ? el.value.kind.entityId : undefined;
+}
+
+/** The cache key for one chart's recorder query, or undefined when the chart
+ * draws its own value instead.
+ *
+ * Two charts asking the same question share a key and so share one fetch. The
+ * span and the point count are in it because widening a chart's window is a
+ * different question, not a stale answer to the old one.
+ *
+ * Readable rather than hashed. The watch hashes the same three parts into an
+ * `h_...` string because its cache is a flat dictionary shared with the
+ * template values; here it is a plain Map, so there is nothing to avoid
+ * colliding with and every reason to keep it debuggable. */
+export function chartHistoryKey(el: ChartElement): string | undefined {
+  const entityId = chartHistoryEntity(el);
+  if (entityId === undefined) return undefined;
+  return `${entityId}|${Math.round(el.historyMinutes)}|${chartHistoryPoints(el)}`;
+}
+
+/** Every distinct history query a config needs, deduped. What the panel sends
+ * to the `history_series` websocket command. */
+export function chartHistoryRequests(
+  config: CustomComplicationConfig
+): { key: string; entityId: string; minutes: number; points: number }[] {
+  const seen = new Map<string, { key: string; entityId: string; minutes: number; points: number }>();
+  for (const el of config.elements) {
+    if (el.kind !== "chart") continue;
+    const key = chartHistoryKey(el.payload);
+    const entityId = chartHistoryEntity(el.payload);
+    if (key === undefined || entityId === undefined || seen.has(key)) continue;
+    seen.set(key, {
+      key,
+      entityId,
+      minutes: Math.round(el.payload.historyMinutes),
+      points: chartHistoryPoints(el.payload),
+    });
+  }
+  return [...seen.values()];
+}
 
 export interface ShapeElement extends ElementBase {
   kind: ShapeKind;
@@ -798,6 +881,8 @@ function parseElementKind(raw: unknown): Element {
         payload: {
           ...parseElementBase(p, "#FFFFFF"),
           value: isObject(p.value) ? parseValue(p.value) : literal("13,14,16,17,19,22,24,28,30"),
+          historyMinutes: Math.max(0, Math.round(num(p.historyMinutes, 0))),
+          historyPoints: Math.round(num(p.historyPoints, 24)),
           style: (optStr(p.style) as ChartStyle | undefined) ?? "bars",
           limit: Math.max(0, Math.round(num(p.limit, 0))),
           takeFromEnd: p.takeFromEnd === true,
@@ -1174,6 +1259,8 @@ function encodeElementKind(el: Element): J {
         payload: {
           ...base(el.payload),
           value: encodeValue(el.payload.value),
+          historyMinutes: Math.max(0, Math.round(el.payload.historyMinutes)),
+          historyPoints: Math.round(el.payload.historyPoints),
           style: el.payload.style,
           limit: Math.max(0, Math.round(el.payload.limit)),
           takeFromEnd: el.payload.takeFromEnd,
@@ -1435,7 +1522,7 @@ const K = {
   text: ["value", "fontSize", "fontWeight", "countdown"],
   icon: ["symbol", "size"],
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex"],
-  chart: ["value", "style", "limit", "takeFromEnd", "scale", "minValue", "maxValue",
+  chart: ["value", "historyMinutes", "historyPoints", "style", "limit", "takeFromEnd", "scale", "minValue", "maxValue",
     "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker"],
   shape: ["kind", "cornerRadius", "borderColorHex", "borderWidth"],
   // `timestampStyle` is retired (the age style, built and removed 2026-09-04).
@@ -1654,7 +1741,7 @@ export function newElement(kind: Element["kind"]): Element {
     case "text": return { kind, payload: { ...base("#FFFFFF"), value: literal("Text"), fontSize: 14, fontWeight: "regular" } };
     case "icon": return { kind, payload: { ...base("#FFFFFF"), symbol: literal("lightbulb"), size: 14 } };
     case "gauge": return { kind, payload: { ...base("#FFFFFF"), value: literal("50"), minValue: 0, maxValue: 100, style: "arc", lineWidth: 4, trackColorHex: "#FFFFFF40" } };
-    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "pointer" } };
+    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: 0, historyPoints: 24, style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "pointer" } };
     case "shape": return { kind, payload: { ...base("#FFFFFF33"), kind: "roundedRectangle", cornerRadius: 6, borderWidth: 1 } };
     case "image": {
       const { colorSlot: _unused, ...b } = base("#FFFFFF");

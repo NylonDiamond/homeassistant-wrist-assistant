@@ -69,6 +69,11 @@ from homeassistant.helpers.template import Template, TemplateError
 
 from .audio_upload import CLEANUP_AGE_SECONDS, MAX_UPLOAD_SIZE
 from .camera_devices import build_camera_device_groups, resolve_stream_sibling
+from .history_series import (
+    HistorySeriesError,
+    async_history_series,
+    clamp_points,
+)
 from .camera_stream import (
     DEFAULT_FPS,
     DEFAULT_QUALITY,
@@ -737,7 +742,19 @@ async def _op_history(ctx: _OpContext) -> Response:
           "entity_id": "<entity_id>",
           "start_ms": <epoch ms>,
           "end_ms":   <epoch ms>?,   # defaults to now
+          "points":   <int>?,        # see below
         }
+
+    With `points`, the reply is a complication chart's series instead of a
+    state log: the window is cut into that many equal slots, the numeric
+    states in each are averaged, and the result comes back as one string:
+
+        {"entity_id": "<entity_id>", "series": "3068,3070,3071"}
+
+    That form exists because a chart needs about twenty numbers and a busy
+    sensor logs thousands of rows. Bucketing here keeps the difference off
+    the watch's radio. The log form below is unchanged and still serves the
+    watch's own history screen.
 
     Response shape (compact, designed for cheap decode on watch):
         {
@@ -772,6 +789,23 @@ async def _op_history(ctx: _OpContext) -> Response:
             end = datetime.fromtimestamp(end_raw / 1000.0, tz=timezone.utc)
         except (ValueError, OSError, OverflowError):
             return Response(status=400, text="end_ms invalid")
+
+    # Chart form. The window is already known, so the span is derived from it
+    # rather than re-sent, and the shared module does the rest.
+    if ctx.payload.get("points") is not None:
+        window_end = end or datetime.now(timezone.utc)
+        minutes = max(1, int((window_end - start).total_seconds() // 60))
+        try:
+            series = await async_history_series(
+                ctx.hass,
+                entity_id,
+                minutes,
+                clamp_points(ctx.payload.get("points")),
+                now=window_end,
+            )
+        except HistorySeriesError as err:
+            return ctx.signed_json({"ok": False, "error": str(err)}, status=502)
+        return ctx.signed_json({"entity_id": entity_id, "series": series})
 
     try:
         from homeassistant.components.recorder import get_instance

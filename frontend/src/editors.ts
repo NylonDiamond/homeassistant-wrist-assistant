@@ -40,6 +40,10 @@ import {
   type ValueFormat,
   type ValueKind,
   CHART_DEFAULT_HIGH_HEX,
+  CHART_HISTORY_MAX_POINTS,
+  CHART_HISTORY_MIN_POINTS,
+  CHART_HISTORY_SPANS,
+  chartHistoryKey,
   CHART_DEFAULT_LOW_HEX,
   COMPARISON_KINDS,
   DRAWABLE_FAMILIES,
@@ -118,6 +122,9 @@ export interface EditorHost {
   endGesture(): void;
   /** Resolved text for a value, for the "current value" line. */
   resolve(value: Value): string | undefined;
+  /** The fetched recorder series for one chart's history query, by
+   * `chartHistoryKey`. Undefined while the fetch is still out. */
+  historySeries(key: string): string | undefined;
   /** Live result of one rule test. */
   evaluateTest(test: import("./model.js").Test): boolean;
   /** Which branch a rule takes live: a case id, "otherwise", or "none". */
@@ -1415,13 +1422,25 @@ function chartReadout(values: number[]): string {
 }
 
 /** What a layer shows, in a few words, for the Content card's summary line. */
+/** A history span in words. Falls back to a bare minute count for a span the
+ * picker does not list, which an imported document can carry. */
+function historySpanLabel(minutes: number): string {
+  return CHART_HISTORY_SPANS.find((s) => s.minutes === minutes)?.label
+    ?? `Last ${minutes} min`;
+}
+
 function contentSummary(host: EditorHost, el: CElement): string {
   const ctx = describeContext(host);
   switch (el.kind) {
     case "text": return truncate(describeValue(el.payload.value, ctx), 48);
     case "icon": return truncate(describeValue(el.payload.symbol, ctx), 48);
     case "gauge": return truncate(describeValue(el.payload.value, ctx), 48);
-    case "chart": return truncate(describeValue(el.payload.value, ctx), 48);
+    // Charts drawing history say so: the value names the entity either way, so
+    // without the span the two kinds of chart read identically in the list.
+    case "chart": return truncate(
+      `${describeValue(el.payload.value, ctx)}${el.payload.historyMinutes > 0 ? ` · ${historySpanLabel(el.payload.historyMinutes)}` : ""}`,
+      48
+    );
     case "shape": return el.payload.kind === "roundedRectangle" ? "Rounded rectangle" : el.payload.kind;
     case "image": return el.payload.entity.displayName || el.payload.entity.entityId || "No camera yet";
     case "tap": return describeTapAction(el.payload.action);
@@ -1500,29 +1519,81 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
     case "chart": {
       const c = el.payload;
       const setChart = (m: (p: ChartElement) => void, k?: string) => upd((e) => m((e as typeof el).payload), k);
-      const series = chartNumbers(host.resolve(c.value) ?? "");
+
+      // Two ways a chart gets its numbers, and the difference is the single
+      // thing people trip on. A forecast sensor already holds a list, so its
+      // own value is the series. Every ordinary sensor holds one number, and
+      // its chart has to come from the recorder instead.
+      const historyKey = chartHistoryKey(c);
+      const usingHistory = c.historyMinutes > 0;
+      const namesEntity = c.value.kind.kind === "entityState";
+      const historyRaw = historyKey === undefined ? undefined : host.historySeries(historyKey);
+      const raw = usingHistory ? (historyRaw ?? "") : (host.resolve(c.value) ?? "");
+      const series = chartNumbers(raw);
       const shown = c.limit > 0 && series.length > c.limit
         ? (c.takeFromEnd ? series.slice(series.length - c.limit) : series.slice(0, c.limit))
         : series;
+
+      // The nudge that answers "why is my chart one bar?" before it is asked:
+      // a lone number from a plain sensor is exactly the shape that says the
+      // author wanted history and did not know to ask for it.
+      const suggestHistory = !usingHistory && namesEntity && series.length === 1;
+
       content = html`
         ${valueEditor(host, c.value, (v) => setChart((p) => { p.value = v; }, "value"),
           { label: "Readings", key: `${key}-value` })}
-        <div class="hint">Every number in what this resolves to becomes one point, in order.
-          Commas, spaces and square brackets are all just separators, so a text sensor, a list
-          attribute and a template that joins a forecast all work. A dot is a decimal point;
-          a comma never is.</div>
-        ${series.length === 0
+        ${selectField("Draw", usingHistory ? "history" : "value",
+          [["value", "The value itself"], ["history", "Its recorded history"]],
+          (v) => setChart((p) => { p.historyMinutes = v === "history" ? (p.historyMinutes || 360) : 0; }))}
+        ${usingHistory
+          ? html`
+            ${namesEntity ? nothing : html`<div class="hint warn">History needs an entity.
+              A typed-in value, a template or a shared value has no past to read, so this chart
+              stays empty until Readings names an entity.</div>`}
+            <div class="grid2">
+              ${selectField("Span", String(c.historyMinutes),
+                CHART_HISTORY_SPANS.map(({ minutes, label }): [string, string] => [String(minutes), label]),
+                (v) => setChart((p) => { p.historyMinutes = Number(v) || 360; }))}
+              ${numberField("Readings", c.historyPoints,
+                (v) => setChart((p) => { p.historyPoints = Math.round(v ?? 24); }, "hpoints"),
+                { step: 1, min: CHART_HISTORY_MIN_POINTS, max: CHART_HISTORY_MAX_POINTS })}
+            </div>
+            <div class="hint">Home Assistant averages the recorded states into this many equal
+              time slots, oldest first. About 20 readings suits a rectangular complication; more
+              than that draws bars thinner than the screen can show.</div>
+            ${namesEntity && historyRaw === undefined
+              ? html`<div class="hint">Reading the history…</div>`
+              : nothing}
+            ${namesEntity && historyRaw === ""
+              ? html`<div class="hint warn">Nothing recorded for this entity in that span.
+                Either it is excluded from the recorder, or it has no numeric states.</div>`
+              : nothing}`
+          : html`
+            <div class="hint">Every number in what this resolves to becomes one point, in order.
+              Commas, spaces and square brackets are all just separators, so a text sensor, a list
+              attribute and a template that joins a forecast all work. A dot is a decimal point;
+              a comma never is.</div>`}
+        ${series.length === 0 && !(usingHistory && (!namesEntity || historyRaw === undefined || historyRaw === ""))
           ? html`<div class="hint warn">No numbers in this value yet, so the chart draws nothing.</div>`
-          : html`<div class="hint">Reads ${chartReadout(shown)}${series.length === shown.length
+          : nothing}
+        ${series.length > 0
+          ? html`<div class="hint">Reads ${chartReadout(shown)}${series.length === shown.length
               ? html` · ${shown.length} ${shown.length === 1 ? "value" : "values"}`
-              : html` · ${shown.length} of ${series.length}`}</div>`}
+              : html` · ${shown.length} of ${series.length}`}</div>`
+          : nothing}
+        ${suggestHistory
+          ? html`<div class="hint warn">This entity holds one number, so the chart draws one bar.
+              Switch Draw to <b>Its recorded history</b> to plot how it has moved.</div>`
+          : nothing}
         <div class="grid2">
           ${numberField("Use", c.limit, (v) => setChart((p) => { p.limit = Math.max(0, Math.round(v ?? 0)); }, "limit"), { step: 1, min: 0 })}
           ${selectField("From", c.takeFromEnd ? "end" : "start",
             [["start", "The first readings"], ["end", "The last readings"]],
             (v) => setChart((p) => { p.takeFromEnd = v === "end"; }))}
         </div>
-        <div class="hint">A forecast sensor often carries 24 or 48 entries. 0 draws all of them.</div>`;
+        <div class="hint">${usingHistory
+          ? "Trims the series after it arrives, so 0 draws every reading fetched above."
+          : "A forecast sensor often carries 24 or 48 entries. 0 draws all of them."}</div>`;
       look = html`
         ${selectField("Style", c.style, CHART_STYLES, (v) => setChart((p) => { p.style = v; }))}
         <div class="grid2">

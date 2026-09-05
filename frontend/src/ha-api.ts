@@ -183,3 +183,24 @@ export async function renderTemplates(
   }>({ type: `${D}/render_values`, templates });
   return reply.results;
 }
+
+/** One recorder series per request key, for the preview's history charts.
+ *
+ * The browser could read HA's own history API and average the rows itself, but
+ * then the editor's arithmetic and the watch's would be two implementations of
+ * one average, free to drift. This asks the integration to run the module the
+ * watch's signed `op=history` runs, so the preview draws what the wrist draws. */
+export async function fetchHistorySeries(
+  hass: HassLike,
+  requests: Record<string, { entity_id: string; minutes: number; points: number }>,
+): Promise<Record<string, HistorySeriesResult>> {
+  if (Object.keys(requests).length === 0) return {};
+  const reply = await hass.connection.sendMessagePromise<{
+    results: Record<string, HistorySeriesResult>;
+  }>({ type: `${D}/history_series`, requests });
+  return reply.results;
+}
+
+export type HistorySeriesResult =
+  | { ok: true; series: string }
+  | { ok: false; error: string };

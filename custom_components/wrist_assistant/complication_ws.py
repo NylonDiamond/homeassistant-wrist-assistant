@@ -17,6 +17,10 @@ Commands:
     wrist_assistant/complications/move_owner  {source_owner_watch_id,
                                                target_owner_watch_id}
     wrist_assistant/complications/render_values {templates: {key: jinja}}
+    wrist_assistant/complications/history_series
+                                              {requests: {key: {entity_id,
+                                                                minutes,
+                                                                points}}}
 
 ``save`` is all-or-nothing: the browser submits the whole document plus the
 revision it loaded. A mismatch returns error code ``conflict`` with the
@@ -48,6 +52,7 @@ from .complication_store import (
     ComplicationStoreError,
 )
 from .const import COMPLICATION_MAX_SCHEMA_VERSION, DOMAIN
+from .history_series import HistorySeriesError, async_history_series
 from .widget_secret_store import DEVICE_KIND_WATCH
 
 _LOGGER = logging.getLogger(__name__)
@@ -60,6 +65,7 @@ _CMD_DELETE = f"{DOMAIN}/complications/delete"
 _CMD_SUBSCRIBE = f"{DOMAIN}/complications/subscribe"
 _CMD_MOVE_OWNER = f"{DOMAIN}/complications/move_owner"
 _CMD_RENDER = f"{DOMAIN}/complications/render_values"
+_CMD_HISTORY = f"{DOMAIN}/complications/history_series"
 _CMD_NUDGE = f"{DOMAIN}/complications/nudge"
 _CMD_FORGET = f"{DOMAIN}/devices/forget"
 
@@ -101,6 +107,7 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_subscribe)
     websocket_api.async_register_command(hass, ws_move_owner)
     websocket_api.async_register_command(hass, ws_render_values)
+    websocket_api.async_register_command(hass, ws_history_series)
     websocket_api.async_register_command(hass, ws_nudge)
     websocket_api.async_register_command(hass, ws_forget_device)
 
@@ -572,4 +579,50 @@ def ws_render_values(
             results[key] = {"ok": False, "error": str(err)}
             continue
         results[key] = {"ok": True, "value": value}
+    connection.send_result(msg["id"], {"results": results})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_HISTORY,
+        vol.Required("requests"): {
+            str: {
+                vol.Required("entity_id"): str,
+                vol.Required("minutes"): int,
+                vol.Required("points"): int,
+            }
+        },
+    }
+)
+@websocket_api.async_response
+async def ws_history_series(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Recorder history for the preview's chart layers, one series per key.
+
+    The browser cannot answer this from ``hass.states``: a state object knows
+    only the present. It could call HA's own history API and bucket the rows
+    itself, but then the editor's arithmetic and the watch's would be two
+    implementations of the same average, free to drift. This runs the module
+    the watch's signed ``op=history`` runs, so what the preview draws is what
+    the wrist draws.
+
+    Keys are the caller's own; the reply mirrors them. Each resolves
+    independently, so one entity with no recorder coverage does not blank the
+    other charts: ``{key: {ok, series}}`` or ``{key: {ok: false, error}}``.
+    """
+    results: dict[str, dict[str, Any]] = {}
+    for key, request in msg["requests"].items():
+        entity_id = request["entity_id"]
+        if not entity_id:
+            results[key] = {"ok": False, "error": "entity_id required"}
+            continue
+        try:
+            series = await async_history_series(
+                hass, entity_id, request["minutes"], request["points"]
+            )
+        except HistorySeriesError as err:
+            results[key] = {"ok": False, "error": str(err)}
+            continue
+        results[key] = {"ok": True, "series": series}
     connection.send_result(msg["id"], {"results": results})

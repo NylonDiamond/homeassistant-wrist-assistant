@@ -15,6 +15,7 @@ import {
   fetchOwners,
   moveOwner,
   nudgeWatch,
+  fetchHistorySeries,
   renderTemplates,
   saveRecord,
   subscribeChanges,
@@ -43,6 +44,8 @@ import {
   pruneGroups,
   setGroup,
   ungroup,
+  chartHistoryKey,
+  chartHistoryRequests,
   newConfig,
   newElement,
   newId,
@@ -266,6 +269,7 @@ export class WristAssistantPanel extends LitElement {
    * "Open the page" tap-action picker. */
   @state() private pages: { id: string; name: string }[] = [];
   @state() private templateResults = new Map<string, string>();
+  @state() private historySeries = new Map<string, string>();
   @state() private templateError?: string;
   @state() private templateFetchedAt?: number;
   @state() private forced: ForcedBranches = new Map();
@@ -1621,6 +1625,7 @@ export class WristAssistantPanel extends LitElement {
       update: (m, c) => this.mutate(m, c),
       endGesture: () => this.draft?.endGesture(),
       resolve: (v: Value) => resolver.resolve(v),
+      historySeries: (key: string) => this.historySeries.get(key),
       evaluateTest: (t) => resolver.evaluateTest(t),
       liveBranch: (rule) => resolver.liveBranches([rule]).get(rule.id) ?? "none",
       forced: this.forced,
@@ -1842,7 +1847,38 @@ export class WristAssistantPanel extends LitElement {
     this.templateTimer = window.setInterval(() => void this.refreshTemplates(), TEMPLATE_REFRESH_MS);
   }
 
+  /** Recorder series for the chart layers that draw history, by
+   * `chartHistoryKey`. Fetched on the same clock as the templates: a chart of
+   * the last six hours does not change faster than that, and each entry is a
+   * database query rather than a state read. */
+  private async refreshHistorySeries() {
+    const cfg = this.draft?.config;
+    const wanted = cfg ? chartHistoryRequests(cfg) : [];
+    if (wanted.length === 0) {
+      if (this.historySeries.size > 0) this.historySeries = new Map();
+      return;
+    }
+    const requests: Record<string, { entity_id: string; minutes: number; points: number }> = {};
+    for (const r of wanted) {
+      requests[r.key] = { entity_id: r.entityId, minutes: r.minutes, points: r.points };
+    }
+    try {
+      const results = await fetchHistorySeries(this.hass, requests);
+      // Rebuilt rather than merged, so a chart the author retargeted or deleted
+      // stops answering with the entity it used to point at.
+      const next = new Map<string, string>();
+      for (const [key, result] of Object.entries(results)) {
+        if (result.ok) next.set(key, result.series);
+      }
+      this.historySeries = next;
+    } catch {
+      // A failed fetch leaves the last series in place. The preview being one
+      // refresh stale beats it blanking every time the recorder is busy.
+    }
+  }
+
   private async refreshTemplates() {
+    void this.refreshHistorySeries();
     const doc = this.compiled?.document;
     if (!doc) {
       this.templateResults = new Map();
@@ -1906,6 +1942,7 @@ export class WristAssistantPanel extends LitElement {
     return {
       entityStates,
       templateResults: this.templateResults,
+      historySeries: this.historySeries,
       namedValues: this.draft?.config.values ?? [],
       dataAgeSeconds: this.templateFetchedAt === undefined ? undefined : (Date.now() - this.templateFetchedAt) / 1000,
     };
@@ -2756,7 +2793,7 @@ export class WristAssistantPanel extends LitElement {
         ${thumb([id])}
         <span class="name">
           <b>${layerTitle(el, ctx)}</b>
-          <small><span class="kind">${KIND_LABEL[el.kind]}</span> · ${layerMeta(el, resolver)}</small>
+          <small><span class="kind">${KIND_LABEL[el.kind]}</span> · ${layerMeta(el, resolver, this.historySeries)}</small>
         </span>
         <span class="right">
           <span class="badges">
@@ -3509,12 +3546,20 @@ function ownerLabel(o: OwnerSummary): string {
 
 /** The second line of a Layers row: the live reading and the one look fact
  * that tells this layer from its neighbours. */
-function layerMeta(el: CElement, resolver: Resolver): string {
+function layerMeta(el: CElement, resolver: Resolver, historySeries: Map<string, string>): string {
   switch (el.kind) {
     case "text": return `${resolver.resolve(el.payload.value) ?? "--"} · ${el.payload.fontSize} pt`;
     case "icon": return `${el.payload.size} pt · ${colorWords(el.payload.colorSlot.baseColorHex)}`;
     case "gauge": return `${resolver.resolve(el.payload.value) ?? "--"} · ${el.payload.style}`;
-    case "chart": return `${el.payload.style} · ${chartNumbers(resolver.resolve(el.payload.value) ?? "").length} values`;
+    case "chart": {
+      // A history chart's own value is one number; counting that would report
+      // "1 value" on the exact layer the history feature exists to fix.
+      const historyKey = chartHistoryKey(el.payload);
+      const raw = historyKey !== undefined
+        ? (historySeries.get(historyKey) ?? "")
+        : (resolver.resolve(el.payload.value) ?? "");
+      return `${el.payload.style} · ${chartNumbers(raw).length} values`;
+    }
     case "shape": return `${colorWords(el.payload.colorSlot.baseColorHex)}${el.payload.borderColorHex ? " · border" : ""}`;
     case "image": return `${el.payload.contentMode === "fill" ? "fill" : "fit"} · ${el.payload.timestamp ? "time shown" : "no time"}`;
     case "tap": return describeTapAction(el.payload.action);

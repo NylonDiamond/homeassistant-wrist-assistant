@@ -1,6 +1,6 @@
 {
   "name": "Chart series",
-  "description": "Three chart layers over the same electricity-price sensor, pinning the parts the Swift and TypeScript resolvers each compute for themselves: how a string is scanned for numbers, how `limit` trims it, what the auto and zero-baseline scales come out as, and which readings the highlight lands on. The prices layer is the Zonneplan shape a forecast sensor actually has, units and all. The window layer trims 12 readings to the last 4. The negative layer proves a zero baseline stretches the range across zero rather than clipping it.",
+  "description": "Four chart layers, pinning the parts the Swift and TypeScript resolvers each compute for themselves: how a string is scanned for numbers, how `limit` trims it, what the auto and zero-baseline scales come out as, and which readings the highlight lands on. The prices layer is the Zonneplan shape a forecast sensor actually has, units and all. The window layer trims 12 readings to the last 4. The negative layer proves a zero baseline stretches the range across zero rather than clipping it. The history layer draws a recorder series instead of its own value, which is the one case where the entity's own state must be ignored: `sensor.voltage` reads 3068 and the chart must not show that single number.",
   "config": {
     "schemaVersion": 6,
     "id": "AAAAAAAA-0000-4000-8000-0000000000C0",
@@ -14,6 +14,8 @@
         "payload": {
           "id": "EEEEEEEE-0000-4000-8000-0000000000C1",
           "value": {"kind": {"kind": "entityState", "entityId": "sensor.prices", "displayName": "Prices", "domain": "sensor"}},
+          "historyMinutes": 0,
+          "historyPoints": 24,
           "style": "bars",
           "limit": 0,
           "takeFromEnd": false,
@@ -38,6 +40,8 @@
         "payload": {
           "id": "EEEEEEEE-0000-4000-8000-0000000000C2",
           "value": {"kind": {"kind": "entityState", "entityId": "sensor.history", "displayName": "History", "domain": "sensor"}},
+          "historyMinutes": 0,
+          "historyPoints": 24,
           "style": "line",
           "limit": 4,
           "takeFromEnd": true,
@@ -62,6 +66,8 @@
         "payload": {
           "id": "EEEEEEEE-0000-4000-8000-0000000000C3",
           "value": {"kind": {"kind": "entityState", "entityId": "sensor.negative", "displayName": "Negative", "domain": "sensor"}},
+          "historyMinutes": 0,
+          "historyPoints": 24,
           "style": "area",
           "limit": 0,
           "takeFromEnd": false,
@@ -80,6 +86,32 @@
           "frame": {"x": 0, "y": 0.7, "width": 1, "height": 0.3, "rotationDegrees": 0},
           "isHidden": false
         }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000C4",
+          "value": {"kind": {"kind": "entityState", "entityId": "sensor.voltage", "displayName": "Voltage", "domain": "sensor"}},
+          "historyMinutes": 360,
+          "historyPoints": 6,
+          "style": "line",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "both",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "dot",
+          "colorSlot": {"baseColorHex": "#FFFFFF"},
+          "rules": [],
+          "frame": {"x": 0, "y": 0.4, "width": 1, "height": 0.3, "rotationDegrees": 0},
+          "isHidden": false
+        }
       }
     ],
     "perFamily": ["rectangular", {"cornerBodyShape": "wedge", "borderWidth": 2}],
@@ -91,13 +123,18 @@
     "entityStates": {
       "sensor.prices": {"state": "15ct, 13ct, 14ct, 17ct, 19ct, 22ct, 24ct, 28ct, 30ct", "domain": "sensor"},
       "sensor.history": {"state": "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]", "domain": "sensor"},
-      "sensor.negative": {"state": "-4.5 -2 3", "domain": "sensor"}
+      "sensor.negative": {"state": "-4.5 -2 3", "domain": "sensor"},
+      "sensor.voltage": {"state": "3068", "domain": "sensor"}
     },
-    "templateResults": {}
+    "templateResults": {},
+    "historySeries": {
+      "sensor.voltage|360|6": "3068,3071,3069,3075,3063,3070"
+    }
   },
   "expectedCompiled": {
-    "entities": ["sensor.prices", "sensor.history", "sensor.negative"],
-    "expressionKeys": []
+    "entities": ["sensor.prices", "sensor.history", "sensor.negative", "sensor.voltage"],
+    "expressionKeys": [],
+    "historyKeys": ["sensor.voltage|360|6"]
   },
   "expected": {
     "rectangular": {
@@ -137,6 +174,17 @@
           "baseline": "zero",
           "highIndex": null,
           "lowIndex": null
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000C4",
+          "kind": "chart",
+          "values": [3068, 3071, 3069, 3075, 3063, 3070],
+          "style": "line",
+          "domainMin": 3063,
+          "domainMax": 3075,
+          "highIndex": 3,
+          "lowIndex": 4,
+          "marker": "dot"
         }
       ]
     }
