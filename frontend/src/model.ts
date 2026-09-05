@@ -367,6 +367,16 @@ export function chartHistoryKey(el: ChartElement): string | undefined {
   return `${entityId}|${Math.round(el.historyMinutes)}|${chartHistoryPoints(el)}`;
 }
 
+/** One string standing for every history query a config asks for.
+ *
+ * The panel compares this between edits to know when a refetch is owed. It
+ * cannot use the compiled Jinja document for that: a history chart contributes
+ * no Jinja at all, so a document that did not change says nothing about whether
+ * a chart was retargeted or its span widened. */
+export function chartHistorySignature(config: CustomComplicationConfig): string {
+  return chartHistoryRequests(config).map((r) => r.key).sort().join(";");
+}
+
 /** Every distinct history query a config needs, deduped. What the panel sends
  * to the `history_series` websocket command. */
 export function chartHistoryRequests(

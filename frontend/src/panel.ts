@@ -46,6 +46,7 @@ import {
   ungroup,
   chartHistoryKey,
   chartHistoryRequests,
+  chartHistorySignature,
   newConfig,
   newElement,
   newId,
@@ -337,6 +338,8 @@ export class WristAssistantPanel extends LitElement {
 
   private compiled?: Compiled;
   private compiledDocument?: string;
+  /** `chartHistorySignature` as of the last scheduled refresh. */
+  private historySignature = "";
   private icons: IconProvider = makeIconProvider(() => this.requestUpdate());
   /** Natural sizes of the preview's camera pictures, so an image layer can be
    * cropped exactly the way the watch crops it. */
@@ -1450,6 +1453,7 @@ export class WristAssistantPanel extends LitElement {
     this.draft = undefined;
     this.compiled = undefined;
     this.compiledDocument = undefined;
+    this.historySignature = "";
     this.readOnlyReason = undefined;
     this.parseError = undefined;
     this.remoteRevision = undefined;
@@ -1596,8 +1600,14 @@ export class WristAssistantPanel extends LitElement {
       this.compiled = undefined;
     }
     this.lastStatesSnapshot = undefined;
-    if (this.compiled?.document !== this.compiledDocument) {
+    // History has to be watched separately from the document. A chart drawing
+    // history compiles no Jinja, so widening its span or pointing it at another
+    // entity leaves the document byte-identical, and testing the document alone
+    // left the new series waiting for the 30-second heartbeat.
+    const historySignature = chartHistorySignature(this.draft.config);
+    if (this.compiled?.document !== this.compiledDocument || historySignature !== this.historySignature) {
       this.compiledDocument = this.compiled?.document;
+      this.historySignature = historySignature;
       this.scheduleTemplates(TEMPLATE_DEBOUNCE_MS);
     }
   }

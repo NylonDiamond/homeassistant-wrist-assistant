@@ -13,6 +13,7 @@ import {
   chartHistoryKey,
   chartHistoryPoints,
   chartHistoryRequests,
+  chartHistorySignature,
   encodeConfig,
   literal,
   newConfig,
@@ -272,6 +273,46 @@ describe("chart history", () => {
     }).rectangular!;
     expect(chartOf(layout).values).toEqual([1, 2, 3]);
     expect(chartHistoryRequests(cfg)).toEqual([]);
+  });
+
+  // The panel schedules a refetch by comparing this between edits. It used to
+  // compare only the compiled Jinja document, which a history chart never
+  // contributes to, so changing a span left the preview on the old series until
+  // the 30-second heartbeat came round.
+  it("changes its signature whenever the question changes", () => {
+    const { cfg, payload } = historyChart();
+    const before = chartHistorySignature(cfg);
+    expect(before).not.toBe("");
+
+    payload.historyMinutes = 4320;
+    expect(chartHistorySignature(cfg)).not.toBe(before);
+
+    payload.historyMinutes = 360;
+    expect(chartHistorySignature(cfg)).toBe(before);
+
+    payload.historyPoints = 48;
+    expect(chartHistorySignature(cfg)).not.toBe(before);
+
+    payload.historyPoints = 24;
+    payload.value = { kind: { kind: "entityState", entityId: "sensor.other", displayName: "Other", domain: "sensor" } };
+    expect(chartHistorySignature(cfg)).not.toBe(before);
+  });
+
+  it("has an empty signature when nothing draws history", () => {
+    // Compiling this config produces no Jinja document either, which is exactly
+    // why the two have to be watched separately rather than one standing in.
+    const cfg = newConfig("Prices", 0);
+    cfg.elements.push(newElement("chart"));
+    expect(chartHistorySignature(cfg)).toBe("");
+  });
+
+  it("does not change its signature for an edit that asks the same question", () => {
+    const { cfg, payload } = historyChart();
+    const before = chartHistorySignature(cfg);
+    payload.style = "area";
+    payload.highlight = "both";
+    payload.colorSlot.baseColorHex = "#FF0000";
+    expect(chartHistorySignature(cfg)).toBe(before);
   });
 
   it("survives an encode and parse round trip", () => {
