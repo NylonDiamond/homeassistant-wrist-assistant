@@ -35,6 +35,14 @@ import {
   freeSlotFrom,
   isAttachedTap,
   layerEntityUses,
+  type LayerGroup,
+  createGroup,
+  groupMembers,
+  groupOf,
+  packGroups,
+  pruneGroups,
+  setGroup,
+  ungroup,
   newConfig,
   newElement,
   newId,
@@ -69,7 +77,6 @@ import { statesSummary } from "./states.js";
 import { uiIcon } from "./ui-icons.js";
 import { beginGesture, beginPointDrag, beginScaleDrag, type HandleCorner } from "./interact.js";
 import {
-  type DescribeContext,
   type EditorHost,
   ALL_SECTIONS,
   colorWords,
@@ -80,7 +87,9 @@ import {
   entitySearchOpen,
   familyEditor,
   generalEditor,
+  groupEditor,
   layerEditor,
+  layerTitle,
   namedValueEditor,
   newNamedValue,
   setPlacement,
@@ -100,7 +109,8 @@ type Inspect =
   | { kind: "general" }
   | { kind: "family" }
   | { kind: "data"; id: string }
-  | { kind: "layer"; id: string };
+  | { kind: "layer"; id: string }
+  | { kind: "group"; id: string };
 
 /** Identity of a selection, so a re-render can tell "the same thing changed"
  * from "something else is selected now". */
@@ -253,6 +263,10 @@ export class WristAssistantPanel extends LitElement {
   @state() private editingValue?: string;
   /** The layer row being dragged in the Layers list. */
   private dragId?: string;
+  /** Rows picked with shift-click, waiting to be grouped. */
+  @state() private multi: ReadonlySet<string> = new Set();
+  /** Groups folded shut in the Layers list. List state only, never saved. */
+  @state() private collapsed: ReadonlySet<string> = new Set();
   @state() private activeFamily: FamilyKind = "rectangular";
   /** Pick mode: the pointer names the layer under it instead of dragging it,
    * the way a browser inspector picks a node. One click selects and ends it. */
@@ -533,6 +547,24 @@ export class WristAssistantPanel extends LitElement {
       display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 8px; margin-bottom: 6px; border-radius: 8px;
       background: color-mix(in srgb, var(--primary-color) 12%, transparent);
     }
+    .group-cta .spacer { flex: 1; }
+    /* Picked for grouping: an accent ring, since the kind colour is taken. */
+    .layer.multi { border-color: var(--primary-color); box-shadow: inset 0 0 0 1px var(--primary-color); }
+    /* A folder row: the chevron folds it, the lock says whether it moves as
+       one, and its members sit indented under a guide line. */
+    .layer.group .chev {
+      font: inherit; background: transparent; border: 0; color: var(--wa-muted); padding: 0; cursor: pointer;
+      width: 16px; height: 16px; display: grid; place-items: center;
+    }
+    .layer.group .chev svg { width: 14px; height: 14px; transition: transform .15s ease-out; }
+    .layer.group .chev[aria-expanded="false"] svg { transform: rotate(-90deg); }
+    .layer.group .bar { background: repeating-linear-gradient(180deg, var(--k) 0 5px, transparent 5px 8px); }
+    .layer.group.drop-into { box-shadow: inset 0 0 0 2px var(--primary-color); }
+    .layer .lockbtn { width: 24px; height: 24px; opacity: .55; }
+    .layer .lockbtn svg.ui-icon { width: 15px; height: 15px; }
+    .layer .lockbtn.on { opacity: .95; color: var(--k); }
+    .layer:hover .lockbtn, .layer.hl .lockbtn { opacity: 1; }
+    .group-kids { margin: 2px 0 4px 14px; padding-left: 8px; border-left: 2px solid var(--wa-line); display: flex; flex-direction: column; gap: 3px; }
 
     /* The canvas column: one card holding the bar, the big preview and the
        strip of things about the whole complication. */
@@ -1002,12 +1034,12 @@ export class WristAssistantPanel extends LitElement {
   private lastInspectKey?: string;
 
   protected override willUpdate(changed: PropertyValues) {
-    // A different selection starts with its first card open and the rest
-    // shut, whatever the last one had unfolded.
+    // A different selection starts with every card open, whatever the last
+    // one had folded; One at a time is a choice made per selection.
     if (changed.has("inspect")) {
       const before = changed.get("inspect") as Inspect | undefined;
       if (before === undefined || inspectKey(before) !== inspectKey(this.inspect)) {
-        this.openSections = new Set([defaultSection(this.inspect)]);
+        this.openSections = new Set(ALL_SECTIONS);
       }
     }
   }
@@ -1739,6 +1771,14 @@ export class WristAssistantPanel extends LitElement {
     const id = selectableLayerId(this.draft.config, hitId);
     const el = this.draft.config.elements.find((x) => x.payload.id === id);
     if (!id || !el) return;
+    // A locked group moves as one: a press on any member grabs all of them,
+    // and selects the group. Its corners stay with the member selected from
+    // the list, so a handle press still resizes that one layer.
+    const group = groupOf(this.draft.config, id);
+    if (group?.locked && !handle && !onChip) {
+      this.beginGroupGesture(family as DrawableFamily, e, svg, group);
+      return;
+    }
     if (this.inspect.kind !== "layer" || this.inspect.id !== id) {
       this.inspect = { kind: "layer", id };
       if (handle) return;
@@ -1806,6 +1846,42 @@ export class WristAssistantPanel extends LitElement {
     this.cancelGesture = beginGesture(svg, canvas, e, { elementId: id, frame, handle: handle ?? undefined }, {
       onFrame: (elementId: string, f: NormalizedFrame, done: boolean) => {
         this.mutate((c) => setPlacement(c, family, elementId, { frame: f }), `drag-${elementId}-${family}`);
+        if (done) {
+          this.draft?.endGesture();
+          this.cancelGesture = undefined;
+        }
+      },
+    });
+  }
+
+  /**
+   * Drag every member of a group by the same amount. The gesture runs on the
+   * members' bounding box, which is what keeps the whole group on the face,
+   * and each member's placement is set from where it started plus the move.
+   */
+  private beginGroupGesture(family: DrawableFamily, e: PointerEvent, svg: SVGSVGElement, group: LayerGroup) {
+    const cfg = this.draft?.config;
+    if (!cfg) return;
+    const members = groupMembers(cfg, group.id);
+    if (members.length === 0) return;
+    if (this.inspect.kind !== "group" || this.inspect.id !== group.id) this.inspect = { kind: "group", id: group.id };
+    e.preventDefault();
+    const starts = new Map(members.map((m) => [m.payload.id, effectivePlacement(cfg, family, m).frame] as const));
+    const frames = [...starts.values()];
+    const x0 = Math.min(...frames.map((f) => f.x));
+    const y0 = Math.min(...frames.map((f) => f.y));
+    const x1 = Math.max(...frames.map((f) => f.x + f.width));
+    const y1 = Math.max(...frames.map((f) => f.y + f.height));
+    const bounds: NormalizedFrame = { x: x0, y: y0, width: x1 - x0, height: y1 - y0, rotationDegrees: 0 };
+    const round = (n: number) => Math.round(n * 1000) / 1000;
+    this.cancelGesture?.();
+    this.cancelGesture = beginGesture(svg, this.gestureCanvas(family), e, { elementId: group.id, frame: bounds }, {
+      onFrame: (_id, f, done) => {
+        const dx = f.x - bounds.x;
+        const dy = f.y - bounds.y;
+        this.mutate((c) => {
+          for (const [mid, sf] of starts) setPlacement(c, family, mid, { frame: { ...sf, x: round(sf.x + dx), y: round(sf.y + dy) } });
+        }, `drag-group-${group.id}-${family}`);
         if (done) {
           this.draft?.endGesture();
           this.cancelGesture = undefined;
@@ -2077,24 +2153,104 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
   }
 
-  /** Reorder by drag: `id` lands before or after `targetId` in the list as
-   * shown (top drawn last). Attached taps stay out of the rows and follow
-   * their owner, the same as the arrow buttons. */
+  /** Is this id a group's, rather than a layer's. */
+  private isGroupId(id: string): boolean {
+    return this.draft?.config.groups?.some((g) => g.id === id) === true;
+  }
+
+  /**
+   * Reorder by drag. `id` (a layer or a whole group) lands before or after
+   * `targetId` in the list as shown (top drawn last). A layer dropped among a
+   * group's members joins that group; dropped anywhere else it leaves its
+   * group. A group dropped onto another group's member lands beside that
+   * whole group, so blocks never nest. Attached taps stay out of the rows and
+   * follow their owner, the same as the arrow buttons.
+   */
   private reorderLayer(id: string, targetId: string, before: boolean) {
     if (id === targetId) return;
     this.mutate((c) => {
       const rows = c.elements.filter((e) => !isAttachedTap(c, e));
       const taps = c.elements.filter((e) => isAttachedTap(c, e));
-      const shown = [...rows].reverse();
-      const from = shown.findIndex((e) => e.payload.id === id);
-      if (from < 0) return;
-      const [item] = shown.splice(from, 1);
-      let to = shown.findIndex((e) => e.payload.id === targetId);
-      if (to < 0) return;
-      if (!before) to += 1;
-      shown.splice(to, 0, item!);
+      let shown = [...rows].reverse();
+      const target = shown.find((e) => e.payload.id === targetId);
+      if (!target) return;
+      const movingGroup = c.groups?.find((g) => g.id === id);
+      const moving = movingGroup
+        ? shown.filter((e) => e.payload.groupId === movingGroup.id)
+        : shown.filter((e) => e.payload.id === id);
+      if (moving.length === 0 || moving.includes(target)) return;
+      shown = shown.filter((e) => !moving.includes(e));
+      let at: number;
+      if (movingGroup && target.payload.groupId !== undefined) {
+        // Beside the target's whole block, not inside it.
+        const block = shown.filter((e) => e.payload.groupId === target.payload.groupId);
+        at = before ? shown.indexOf(block[0]!) : shown.indexOf(block[block.length - 1]!) + 1;
+      } else {
+        at = shown.indexOf(target) + (before ? 0 : 1);
+      }
+      shown.splice(at, 0, ...moving);
+      if (!movingGroup) {
+        const el = moving[0]!;
+        const gid = target.payload.groupId;
+        if (gid === undefined) delete el.payload.groupId;
+        else el.payload.groupId = gid;
+      }
       c.elements = [...shown.reverse(), ...taps];
+      pruneGroups(c);
+      packGroups(c);
     });
+  }
+
+  /** Drag-and-drop wiring shared by every row in the list. */
+  private rowDrag(id: string, edit: boolean) {
+    return {
+      draggable: edit ? "true" : "false",
+      onStart: (e: DragEvent) => {
+        this.dragId = id;
+        e.dataTransfer?.setData("text/plain", id);
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+        (e.currentTarget as HTMLElement).classList.add("dragging");
+      },
+      onEnd: (e: DragEvent) => { this.dragId = undefined; (e.currentTarget as HTMLElement).classList.remove("dragging"); },
+      onOver: (e: DragEvent) => {
+        if (!this.dragId || this.dragId === id) return;
+        e.preventDefault();
+        const row = e.currentTarget as HTMLElement;
+        const r = row.getBoundingClientRect();
+        const before = e.clientY < r.top + r.height / 2;
+        row.classList.toggle("drop-before", before);
+        row.classList.toggle("drop-after", !before);
+      },
+      onLeave: (e: DragEvent) => { (e.currentTarget as HTMLElement).classList.remove("drop-before", "drop-after"); },
+      onDrop: (e: DragEvent) => {
+        e.preventDefault();
+        const row = e.currentTarget as HTMLElement;
+        const before = row.classList.contains("drop-before");
+        row.classList.remove("drop-before", "drop-after");
+        if (this.dragId) this.reorderLayer(this.dragId, id, before);
+        this.dragId = undefined;
+      },
+    };
+  }
+
+  /** Shift-click picks several rows; a plain click selects one and clears the pick. */
+  private clickRow(id: string, e: MouseEvent) {
+    if (e.shiftKey) {
+      const next = new Set(this.multi);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      this.multi = next;
+      return;
+    }
+    this.multi = new Set();
+    this.inspect = { kind: "layer", id };
+  }
+
+  private groupPicked() {
+    const ids = [...this.multi];
+    let gid: string | undefined;
+    this.mutate((c) => { gid = createGroup(c, ids); });
+    this.multi = new Set();
+    if (gid) this.inspect = { kind: "group", id: gid };
   }
 
   private renderLayers() {
@@ -2109,7 +2265,17 @@ export class WristAssistantPanel extends LitElement {
       const j = i + dir;
       if (i < 0 || j < 0 || j >= rows.length) return;
       [rows[i], rows[j]] = [rows[j]!, rows[i]!];
+      // Stepping past the edge of the block leaves the group; stepping onto a
+      // member of another group joins it.
+      const el = rows[j]!;
+      const neighbour = rows[i]!;
+      if (el.payload.groupId !== neighbour.payload.groupId) {
+        if (neighbour.payload.groupId === undefined) delete el.payload.groupId;
+        else el.payload.groupId = neighbour.payload.groupId;
+      }
       c.elements = [...rows, ...taps];
+      pruneGroups(c);
+      packGroups(c);
     });
     const dup = (id: string) => {
       let copyId: string | undefined;
@@ -2130,65 +2296,118 @@ export class WristAssistantPanel extends LitElement {
     const shapeMeta = this.activeFamily === "inline"
       ? "one line of text"
       : `${layout?.backgroundColorHex ? colorWords(layout.backgroundColorHex) : "transparent"} · ${layout?.borderColorHex ? `${layout.borderWidth} pt border` : "no border"}`;
+    const pickedCount = [...this.multi].filter((id) => cfg.elements.some((e) => e.payload.id === id)).length;
+
+    const layerRow = (el: CElement, inGroup: boolean) => {
+      const id = el.payload.id;
+      const hl = this.inspect.kind === "layer" && this.inspect.id === id;
+      const eff = effectivePlacement(cfg, family, el);
+      const hidden = el.payload.isHidden || eff.isHidden;
+      const tap = attachedTapsOf(cfg, id)[0];
+      const states = statesSummary(el.payload.rules);
+      const pointed = this.picking && this.pickHoverId === id;
+      const d = this.rowDrag(id, edit);
+      return html`<div class="layer ${hl ? "hl" : ""} ${pointed ? "pick" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""}"
+        style=${`--k:${KIND_COLOR[el.kind]}`} tabindex="0" draggable=${d.draggable}
+        @click=${(e: MouseEvent) => this.clickRow(id, e)}
+        @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "layer", id }; }}
+        @dragstart=${d.onStart} @dragend=${d.onEnd} @dragover=${d.onOver} @dragleave=${d.onLeave} @drop=${d.onDrop}>
+        <span class="grip" title="Drag to reorder. Drop on a folder to put it inside.">${uiIcon("grip")}</span>
+        <span class="bar"></span>
+        <span class="name">
+          <b>${layerTitle(el, ctx)}</b>
+          <small><span class="kind">${KIND_LABEL[el.kind]}</span> · ${layerMeta(el, resolver)}</small>
+        </span>
+        <span class="right">
+          <span class="badges">
+            ${tap ? html`<span class="badge tap" title=${`Tappable · ${layerTitle(tap, ctx)}`}>tap</span>` : nothing}
+            ${el.payload.rules.length === 0 ? nothing : html`<span class="badge states" title=${states}>${states.replace(/\.$/, "").toLowerCase()}</span>`}
+            ${hidden ? html`<span class="badge">hidden</span>` : nothing}
+          </span>
+          ${edit ? html`<span class="acts">
+            <button class="icon" title="Bring forward" aria-label="Bring forward" @click=${(e: Event) => { e.stopPropagation(); move(id, 1); }}>${uiIcon("up")}</button>
+            <button class="icon" title="Send back" aria-label="Send back" @click=${(e: Event) => { e.stopPropagation(); move(id, -1); }}>${uiIcon("down")}</button>
+            <button class="icon" title=${eff.isHidden ? `Show in ${familyTitle(family)}` : `Hide in ${familyTitle(family)}`} aria-label=${eff.isHidden ? "Show this layer" : "Hide this layer"} @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => setPlacement(c, family, id, { isHidden: !eff.isHidden })); }}>${uiIcon(eff.isHidden ? "hide" : "show")}</button>
+            <button class="icon" title="Duplicate" aria-label="Duplicate" @click=${(e: Event) => { e.stopPropagation(); dup(id); }}>${uiIcon("duplicate")}</button>
+            <button class="icon danger" title="Delete" aria-label="Delete" @click=${(e: Event) => { e.stopPropagation(); del(id); }}>${uiIcon("delete")}</button>
+          </span>` : nothing}
+        </span>
+      </div>`;
+    };
+
+    const groupRow = (g: LayerGroup, members: CElement[]) => {
+      const hl = this.inspect.kind === "group" && this.inspect.id === g.id;
+      const open = !this.collapsed.has(g.id);
+      const d = this.rowDrag(g.id, edit);
+      // Dropping a layer onto the folder row itself puts it in at the top.
+      const first = members[0];
+      return html`<div class="layer group ${hl ? "hl" : ""}" style=${`--k:${SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
+        @click=${() => { this.multi = new Set(); this.inspect = { kind: "group", id: g.id }; }}
+        @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "group", id: g.id }; }}
+        @dragstart=${d.onStart} @dragend=${d.onEnd}
+        @dragover=${(e: DragEvent) => { if (!this.dragId || this.dragId === g.id) return; e.preventDefault(); (e.currentTarget as HTMLElement).classList.add("drop-into"); }}
+        @dragleave=${(e: DragEvent) => { (e.currentTarget as HTMLElement).classList.remove("drop-into"); }}
+        @drop=${(e: DragEvent) => {
+          e.preventDefault();
+          (e.currentTarget as HTMLElement).classList.remove("drop-into");
+          const id = this.dragId;
+          this.dragId = undefined;
+          if (!id || this.isGroupId(id)) return;
+          if (first) this.reorderLayer(id, first.payload.id, true);
+          this.mutate((c) => setGroup(c, id, g.id));
+        }}>
+        <button class="chev" aria-expanded=${open ? "true" : "false"} title=${open ? "Fold the group" : "Unfold the group"}
+          @click=${(e: Event) => { e.stopPropagation(); const next = new Set(this.collapsed); if (open) next.add(g.id); else next.delete(g.id); this.collapsed = next; }}>${uiIcon("chevron")}</button>
+        <span class="bar"></span>
+        <span class="name">
+          <b>${g.name}</b>
+          <small><span class="kind">Group</span> · ${members.length} layer${members.length === 1 ? "" : "s"} · ${g.locked ? "moves as one" : "unlocked"}</small>
+        </span>
+        <span class="right">
+          ${edit ? html`<span class="acts">
+            <button class="icon" title="Ungroup: keep the layers, drop the folder" aria-label="Ungroup" @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => ungroup(c, g.id)); if (hl) this.inspect = { kind: "general" }; }}>${uiIcon("ungroup")}</button>
+          </span>` : nothing}
+          <button class="icon lockbtn ${g.locked ? "on" : ""}" ?disabled=${!edit}
+            title=${g.locked ? "Locked: drags on the watch move the whole group. Click to unlock." : "Unlocked: each layer moves alone. Click to lock."}
+            aria-label=${g.locked ? "Unlock the group" : "Lock the group"}
+            @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { const x = c.groups?.find((y) => y.id === g.id); if (x) x.locked = !x.locked; }); }}>${uiIcon(g.locked ? "lock" : "unlock")}</button>
+        </span>
+      </div>`;
+    };
+
+    // Walk the stack from the top. A group's members sit together, so the
+    // folder row goes in where its first member is met and the members
+    // follow it, indented.
+    const rows: TemplateResult[] = [];
+    const seen = new Set<string>();
+    for (let i = 0; i < ordered.length; i++) {
+      const el = ordered[i]!;
+      const gid = el.payload.groupId;
+      const g = gid === undefined ? undefined : cfg.groups?.find((x) => x.id === gid);
+      if (!g) {
+        rows.push(layerRow(el, false));
+        continue;
+      }
+      if (seen.has(g.id)) continue;
+      seen.add(g.id);
+      const members = ordered.filter((e) => e.payload.groupId === g.id);
+      rows.push(groupRow(g, members));
+      if (!this.collapsed.has(g.id)) rows.push(html`<div class="group-kids">${members.map((m) => layerRow(m, true))}</div>`);
+    }
+
     return html`<div class="card">
       <h2 class="panel-title">Layers<span class="spacer"></span><span class="mini">top draws last</span>${this.renderPickButton()}</h2>
       ${this.activeFamily === "inline" ? html`<div class="hint">Inline is one line of text and draws no layers. The rows here belong to the ${familyTitle(family)} shape.</div>` : nothing}
+      ${pickedCount >= 2 && edit
+        ? html`<div class="group-cta"><span>${pickedCount} layers picked</span><span class="spacer"></span>
+            <button class="small primary" @click=${() => this.groupPicked()}>Group them</button>
+            <button class="small" @click=${() => { this.multi = new Set(); }}>Clear</button></div>`
+        : cfg.elements.length >= 2 && edit && !cfg.groups?.length
+          ? html`<div class="hint">Shift-click two or more rows to group them, so a finished part moves as one.</div>`
+          : nothing}
       ${cfg.elements.length === 0 ? html`<div class="empty">No layers yet. Add one above.</div>` : nothing}
       <div class="layers">
-      ${ordered.map((el) => {
-        const id = el.payload.id;
-        const hl = this.inspect.kind === "layer" && this.inspect.id === id;
-        const eff = effectivePlacement(cfg, family, el);
-        const hidden = el.payload.isHidden || eff.isHidden;
-        const tap = attachedTapsOf(cfg, id)[0];
-        const states = statesSummary(el.payload.rules);
-        const pointed = this.picking && this.pickHoverId === id;
-        return html`<div class="layer ${hl ? "hl" : ""} ${pointed ? "pick" : ""} ${hidden ? "dim" : ""}" style=${`--k:${KIND_COLOR[el.kind]}`}
-          tabindex="0" draggable=${edit ? "true" : "false"}
-          @click=${() => { this.inspect = { kind: "layer", id }; }}
-          @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "layer", id }; }}
-          @dragstart=${(e: DragEvent) => { this.dragId = id; e.dataTransfer?.setData("text/plain", id); if (e.dataTransfer) e.dataTransfer.effectAllowed = "move"; (e.currentTarget as HTMLElement).classList.add("dragging"); }}
-          @dragend=${(e: DragEvent) => { this.dragId = undefined; (e.currentTarget as HTMLElement).classList.remove("dragging"); }}
-          @dragover=${(e: DragEvent) => {
-            if (!this.dragId || this.dragId === id) return;
-            e.preventDefault();
-            const row = e.currentTarget as HTMLElement;
-            const r = row.getBoundingClientRect();
-            const before = e.clientY < r.top + r.height / 2;
-            row.classList.toggle("drop-before", before);
-            row.classList.toggle("drop-after", !before);
-          }}
-          @dragleave=${(e: DragEvent) => { (e.currentTarget as HTMLElement).classList.remove("drop-before", "drop-after"); }}
-          @drop=${(e: DragEvent) => {
-            e.preventDefault();
-            const row = e.currentTarget as HTMLElement;
-            const before = row.classList.contains("drop-before");
-            row.classList.remove("drop-before", "drop-after");
-            if (this.dragId) this.reorderLayer(this.dragId, id, before);
-            this.dragId = undefined;
-          }}>
-          <span class="grip" title="Drag to reorder">${uiIcon("grip")}</span>
-          <span class="bar"></span>
-          <span class="name">
-            <b>${layerTitle(el, ctx)}</b>
-            <small><span class="kind">${KIND_LABEL[el.kind]}</span> · ${layerMeta(el, resolver)}</small>
-          </span>
-          <span class="right">
-            <span class="badges">
-              ${tap ? html`<span class="badge tap" title=${`Tappable · ${layerTitle(tap, ctx)}`}>tap</span>` : nothing}
-              ${el.payload.rules.length === 0 ? nothing : html`<span class="badge states" title=${states}>${states.replace(/\.$/, "").toLowerCase()}</span>`}
-              ${hidden ? html`<span class="badge">hidden</span>` : nothing}
-            </span>
-            ${edit ? html`<span class="acts">
-              <button class="icon" title="Bring forward" aria-label="Bring forward" @click=${(e: Event) => { e.stopPropagation(); move(id, 1); }}>${uiIcon("up")}</button>
-              <button class="icon" title="Send back" aria-label="Send back" @click=${(e: Event) => { e.stopPropagation(); move(id, -1); }}>${uiIcon("down")}</button>
-              <button class="icon" title=${eff.isHidden ? `Show in ${familyTitle(family)}` : `Hide in ${familyTitle(family)}`} aria-label=${eff.isHidden ? "Show this layer" : "Hide this layer"} @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => setPlacement(c, family, id, { isHidden: !eff.isHidden })); }}>${uiIcon(eff.isHidden ? "hide" : "show")}</button>
-              <button class="icon" title="Duplicate" aria-label="Duplicate" @click=${(e: Event) => { e.stopPropagation(); dup(id); }}>${uiIcon("duplicate")}</button>
-              <button class="icon danger" title="Delete" aria-label="Delete" @click=${(e: Event) => { e.stopPropagation(); del(id); }}>${uiIcon("delete")}</button>
-            </span>` : nothing}
-          </span>
-        </div>`;
-      })}
+      ${rows}
       <div class="layer pinned ${shapeHl ? "hl" : ""}" style=${`--k:${SECTION_COLOR.place}`} tabindex="0" title="The shape is always the bottom layer"
         @click=${() => { this.inspect = { kind: "family" }; }}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "family" }; }}
@@ -2341,6 +2560,12 @@ export class WristAssistantPanel extends LitElement {
     const layout = layouts[family];
     if (!layout) return nothing;
     const highlightId = this.inspect.kind === "layer" ? this.inspect.id : undefined;
+    const cfg = this.draft?.config;
+    // A selected group outlines every member; a selected member of a locked
+    // group outlines the rest of its group too, since a drag moves them all.
+    const gid = this.inspect.kind === "group" ? this.inspect.id : highlightId !== undefined && cfg ? groupOf(cfg, highlightId)?.id : undefined;
+    const groupIds = cfg && gid !== undefined && (this.inspect.kind === "group" || groupOf(cfg, highlightId!)?.locked)
+      ? groupMembers(cfg, gid).map((m) => m.payload.id) : [];
     const slot = watchCase.slots[family];
     // Pick mode drops the resize handles: they are drag affordances, and
     // while picking nothing on the face is dragged. Review mode drops them
@@ -2349,6 +2574,7 @@ export class WristAssistantPanel extends LitElement {
     const opts = {
       icons: this.icons, imageSizes: this.imageSizes, showHidden: true, tapAreas: true, slot,
       highlightId: focus ?? highlightId,
+      ...(groupIds.length > 0 && !this.showTaps ? { highlightIds: groupIds } : {}),
       tapReview: this.showTaps,
       ...(focus !== undefined ? { tapFocusId: focus } : {}),
       handles: this.canEdit && !this.picking && (!this.showTaps || focus !== undefined),
@@ -2376,8 +2602,15 @@ export class WristAssistantPanel extends LitElement {
       tail = "Point at a layer and click it. Escape stops.";
     } else if (family === "inline") {
       tail = "One line of text. Edit it on the right.";
+    } else if (ins.kind === "group") {
+      const g = cfg.groups?.find((x) => x.id === ins.id);
+      const n = g ? groupMembers(cfg, g.id).length : 0;
+      tail = g ? html`editing group <b>${g.name}</b>. ${g.locked ? `Drag to move all ${n} layers.` : "Unlocked: each layer drags alone."}` : "";
     } else if (sel) {
-      tail = html`editing <b>${layerTitle(sel, ctx)}</b>. Drag it, or pull a corner.`;
+      const g = groupOf(cfg, sel.payload.id);
+      tail = g?.locked
+        ? html`editing <b>${layerTitle(sel, ctx)}</b> in <b>${g.name}</b>. A drag moves the whole group; pull a corner to resize this layer.`
+        : html`editing <b>${layerTitle(sel, ctx)}</b>. Drag it, or pull a corner.`;
     } else {
       tail = "click a layer to edit it";
     }
@@ -2556,9 +2789,17 @@ export class WristAssistantPanel extends LitElement {
       ? html`<span class="here" style=${`--k:${SECTION_COLOR.place}`}>${shape} shape</span>`
       : html`<button @click=${() => { this.inspect = { kind: "family" }; }} title="Edit the shape">${shape}</button>`;
     let here: TemplateResult | typeof nothing = nothing;
+    let parent: TemplateResult | typeof nothing = nothing;
     if (ins.kind === "layer") {
       const el = cfg.elements.find((e) => e.payload.id === ins.id);
-      if (el) here = html`<span class="here" style=${`--k:${KIND_COLOR[el.kind]}`}><span class="kchip">${KIND_LABEL[el.kind]}</span>${layerTitle(el, describeContext(this.host()))}</span>`;
+      if (el) {
+        here = html`<span class="here" style=${`--k:${KIND_COLOR[el.kind]}`}><span class="kchip">${KIND_LABEL[el.kind]}</span>${layerTitle(el, describeContext(this.host()))}</span>`;
+        const g = groupOf(cfg, el.payload.id);
+        if (g) parent = html`<span class="sep">›</span><button @click=${() => { this.inspect = { kind: "group", id: g.id }; }} title="Edit the group">${g.name}</button>`;
+      }
+    } else if (ins.kind === "group") {
+      const g = cfg.groups?.find((x) => x.id === ins.id);
+      if (g) here = html`<span class="here" style=${`--k:${SECTION_COLOR.group}`}><span class="kchip">Group</span>${g.name}</span>`;
     } else if (ins.kind === "data") {
       const nv = cfg.values.find((v) => v.id === ins.id);
       if (nv) here = html`<span class="here" style=${`--k:${SECTION_COLOR.complication}`}><span class="kchip">Value</span>${nv.name || "(unnamed)"}</span>`;
@@ -2566,7 +2807,7 @@ export class WristAssistantPanel extends LitElement {
       here = html`<span class="mini">nothing selected</span>`;
     }
     return html`<div class="crumbs">
-      <span>${name}</span><span class="sep">›</span>${shapeCrumb}
+      <span>${name}</span><span class="sep">›</span>${shapeCrumb}${parent}
       ${here === nothing ? nothing : html`<span class="sep">›</span>${here}`}
     </div>`;
   }
@@ -2590,6 +2831,14 @@ export class WristAssistantPanel extends LitElement {
         return nothing;
       }
       body = layerEditor(host, el, this.canvasFamily);
+    } else if (ins.kind === "group") {
+      const g = cfg.groups?.find((x) => x.id === ins.id);
+      if (!g) {
+        this.inspect = { kind: "general" };
+        return nothing;
+      }
+      cards = false;
+      body = groupEditor(host, g);
     } else if (ins.kind === "data") {
       const nv = cfg.values.find((v) => v.id === ins.id);
       if (!nv) {
@@ -2685,30 +2934,6 @@ function layerMeta(el: CElement, resolver: Resolver): string {
     case "shape": return `${colorWords(el.payload.colorSlot.baseColorHex)}${el.payload.borderColorHex ? " · border" : ""}`;
     case "image": return `${el.payload.contentMode === "fill" ? "fill" : "fit"} · ${el.payload.timestamp ? "time shown" : "no time"}`;
     case "tap": return describeTapAction(el.payload.action);
-  }
-}
-
-/** A literal reads as `"lock"` in a rule, where the quotes say it is not an
- * entity; as a row title the name alone is the clearer thing. */
-function unquote(s: string): string {
-  return s.length >= 2 && s.startsWith("\"") && s.endsWith("\"") ? s.slice(1, -1) : s;
-}
-
-function layerTitle(el: CElement, ctx?: DescribeContext): string {
-  switch (el.kind) {
-    case "text": return unquote(describeValue(el.payload.value, ctx));
-    case "icon": return unquote(describeValue(el.payload.symbol, ctx));
-    case "gauge": return describeValue(el.payload.value, ctx);
-    case "shape": return el.payload.kind;
-    case "image": {
-      const e = el.payload.entity;
-      return e.displayName || e.entityId || "camera";
-    }
-    case "tap": {
-      const a = el.payload.action;
-      const target = "entityId" in a ? (a.displayName || a.entityId) : a.type === "openPage" ? (el.payload.openPageName || "") : "";
-      return target ? `${a.type} · ${target}` : a.type;
-    }
   }
 }
 

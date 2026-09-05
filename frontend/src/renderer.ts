@@ -99,6 +99,9 @@ export interface RenderOptions {
   showHidden?: boolean;
   /** Element id to outline. */
   highlightId?: string;
+  /** More elements to outline, without handles: the members of a selected
+   * group, which move together and are not resized together. */
+  highlightIds?: readonly string[];
   /** Editor affordance: the layer the pick-mode pointer is over, filled and
    * outlined the way a browser inspector shades the node under the cursor. */
   hoverId?: string;
@@ -500,7 +503,8 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
   // Review mode pushes the drawing back so the tap boxes are the thing you read.
   const dim = review && (el.kind !== "tap" || (inFocusView && !focused)) ? 0.35 : 1;
   const opacity = Math.min(1, Math.max(0, el.opacity)) * (el.isHidden ? 0.35 : 1) * dim;
-  const selected = options.highlightId === el.id;
+  const primary = options.highlightId === el.id;
+  const selected = primary || options.highlightIds?.includes(el.id) === true;
   // In the focus view only the focused tap is a thing you drag, so only it gets
   // the move cursor and the handles.
   const draggable = options.handles === true && (!inFocusView || focused);
@@ -516,7 +520,7 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
   // An invisible hit box so empty text and thin gauges are still grabbable.
   const hit = svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} fill="transparent" stroke="none" />`;
   const hs = 3;
-  const handles = selected && draggable
+  const handles = primary && draggable
     ? [["nw", box.x, box.y], ["ne", box.x + box.w, box.y], ["sw", box.x, box.y + box.h], ["se", box.x + box.w, box.y + box.h]].map(
         ([corner, x, y]) => svg`<rect data-handle=${corner} x=${(x as number) - hs / 2} y=${(y as number) - hs / 2} width=${hs} height=${hs}
           fill="#FFFFFF" stroke="#0A84FF" stroke-width="0.5" style="cursor:${corner}-resize" />`,

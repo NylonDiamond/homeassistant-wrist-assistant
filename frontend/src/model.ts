@@ -226,6 +226,21 @@ interface ElementBase {
   rules: Rule[];
   frame: NormalizedFrame;
   isHidden: boolean;
+  /** The layer group this belongs to (see `LayerGroup`). Editor-only: the
+   * watch draws the layer exactly as it would without it. */
+  groupId?: string;
+}
+
+/**
+ * A folder in the Layers list. Its members sit together in `elements` (the
+ * group is one block in the draw order) and carry its id. Locked, the group
+ * moves as one on the preview; unlocked, each member moves alone. The watch
+ * never reads this: it is how the editor keeps a finished part together.
+ */
+export interface LayerGroup {
+  id: string;
+  name: string;
+  locked: boolean;
 }
 
 export interface TextElement extends ElementBase {
@@ -457,6 +472,8 @@ export interface CustomComplicationConfig {
   openPageName?: string;
   showSuccessFlash?: boolean;
   successFlashColorHex?: string;
+  /** Layer groups (editor-only). Encoded only when there is at least one. */
+  groups?: LayerGroup[];
 }
 
 // ── parsing ───────────────────────────────────────────────────────────────
@@ -693,6 +710,13 @@ function parseElementBase(p: J, defaultColor: string): ElementBase {
 }
 
 export function parseElement(raw: unknown): Element {
+  const el = parseElementKind(raw);
+  const p = (raw as J).payload as J;
+  if (typeof p.groupId === "string" && p.groupId !== "") el.payload.groupId = p.groupId.toUpperCase();
+  return el;
+}
+
+function parseElementKind(raw: unknown): Element {
   if (!isObject(raw) || !isObject(raw.payload)) throw new ConfigParseError("element must have a payload");
   const p = raw.payload;
   switch (raw.kind) {
@@ -903,6 +927,15 @@ export function parseConfig(raw: unknown): CustomComplicationConfig {
   if (typeof raw.openPageName === "string") cfg.openPageName = raw.openPageName;
   if (typeof raw.showSuccessFlash === "boolean") cfg.showSuccessFlash = raw.showSuccessFlash;
   if (typeof raw.successFlashColorHex === "string") cfg.successFlashColorHex = raw.successFlashColorHex;
+  if (Array.isArray(raw.groups)) {
+    const groups = raw.groups.filter(isObject).filter((g) => typeof g.id === "string").map((g): LayerGroup => ({
+      id: str(g.id).toUpperCase(),
+      name: str(g.name, "Group"),
+      locked: g.locked !== false,
+    }));
+    if (groups.length > 0) cfg.groups = groups;
+  }
+  pruneGroups(cfg);
   return cfg;
 }
 
@@ -1040,6 +1073,12 @@ export function encodeRules(rules: Rule[]): J[] {
 }
 
 function encodeElement(el: Element): J {
+  const o = encodeElementKind(el);
+  if (el.payload.groupId !== undefined) (o.payload as J).groupId = el.payload.groupId;
+  return o;
+}
+
+function encodeElementKind(el: Element): J {
   const base = (p: ElementBase): J => ({
     id: p.id,
     colorSlot: { baseColorHex: p.colorSlot.baseColorHex },
@@ -1195,7 +1234,101 @@ export function encodeConfig(cfg: CustomComplicationConfig): J {
   if (cfg.openPageName !== undefined) o.openPageName = cfg.openPageName;
   if (cfg.showSuccessFlash !== undefined) o.showSuccessFlash = cfg.showSuccessFlash;
   if (cfg.successFlashColorHex !== undefined) o.successFlashColorHex = cfg.successFlashColorHex;
+  if (cfg.groups !== undefined && cfg.groups.length > 0) {
+    o.groups = cfg.groups.map((g) => ({ id: g.id, name: g.name, locked: g.locked }));
+  }
   return o;
+}
+
+// ── layer groups ──────────────────────────────────────────────────────────
+// A group is one block in the draw order: its members sit together in
+// `elements`, so "move the group" is "move the block" and the picture keeps
+// the stacking the author built. Attached taps are not members; they follow
+// their owner as they always have.
+
+export function groupOf(cfg: CustomComplicationConfig, elementId: string): LayerGroup | undefined {
+  const el = cfg.elements.find((e) => e.payload.id === elementId);
+  const gid = el?.payload.groupId;
+  return gid === undefined ? undefined : cfg.groups?.find((g) => g.id === gid);
+}
+
+/** Members in draw order (first drawn first). Attached taps are never members. */
+export function groupMembers(cfg: CustomComplicationConfig, groupId: string): Element[] {
+  return cfg.elements.filter((e) => e.payload.groupId === groupId && !isAttachedTap(cfg, e));
+}
+
+/** Drop a group nothing belongs to any more, and a membership that names no
+ * group, so the two lists never disagree after a delete or an old document. */
+export function pruneGroups(cfg: CustomComplicationConfig): void {
+  const ids = new Set((cfg.groups ?? []).map((g) => g.id));
+  for (const el of cfg.elements) {
+    if (el.payload.groupId !== undefined && !ids.has(el.payload.groupId)) delete el.payload.groupId;
+  }
+  const used = new Set(cfg.elements.map((e) => e.payload.groupId).filter((g): g is string => g !== undefined));
+  const kept = (cfg.groups ?? []).filter((g) => used.has(g.id));
+  if (kept.length === 0) delete cfg.groups;
+  else cfg.groups = kept;
+}
+
+/**
+ * Put the members of every group next to each other, keeping each block where
+ * its topmost member was. Called after any reorder, so a block can never be
+ * split by a layer that is not in it.
+ */
+export function packGroups(cfg: CustomComplicationConfig): void {
+  if (!cfg.groups?.length) return;
+  const rows = cfg.elements.filter((e) => !isAttachedTap(cfg, e));
+  const taps = cfg.elements.filter((e) => isAttachedTap(cfg, e));
+  const out: Element[] = [];
+  const placed = new Set<string>();
+  // Walk from the top of the stack (the end of the array) so a block lands
+  // where its topmost member was.
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const el = rows[i]!;
+    if (placed.has(el.payload.id)) continue;
+    const gid = el.payload.groupId;
+    if (gid === undefined) {
+      out.unshift(el);
+      placed.add(el.payload.id);
+      continue;
+    }
+    const block = rows.filter((e) => e.payload.groupId === gid);
+    for (let j = block.length - 1; j >= 0; j--) {
+      out.unshift(block[j]!);
+      placed.add(block[j]!.payload.id);
+    }
+  }
+  cfg.elements = [...out, ...taps];
+  syncAttachedTaps(cfg);
+}
+
+/** Make a group of these layers. Members already in another group leave it.
+ * Returns the new group's id, or undefined when fewer than two layers qualify. */
+export function createGroup(cfg: CustomComplicationConfig, ids: readonly string[], name = "Group"): string | undefined {
+  const members = cfg.elements.filter((e) => ids.includes(e.payload.id) && !isAttachedTap(cfg, e));
+  if (members.length < 2) return undefined;
+  const group: LayerGroup = { id: newId(), name, locked: true };
+  cfg.groups = [...(cfg.groups ?? []), group];
+  for (const el of members) el.payload.groupId = group.id;
+  pruneGroups(cfg);
+  packGroups(cfg);
+  return group.id;
+}
+
+/** Dissolve a group. Its layers keep their places and their order. */
+export function ungroup(cfg: CustomComplicationConfig, groupId: string): void {
+  for (const el of cfg.elements) if (el.payload.groupId === groupId) delete el.payload.groupId;
+  pruneGroups(cfg);
+}
+
+/** Move one layer into a group (or out of every group with `undefined`). */
+export function setGroup(cfg: CustomComplicationConfig, elementId: string, groupId: string | undefined): void {
+  const el = cfg.elements.find((e) => e.payload.id === elementId);
+  if (!el || isAttachedTap(cfg, el)) return;
+  if (groupId === undefined) delete el.payload.groupId;
+  else el.payload.groupId = groupId;
+  pruneGroups(cfg);
+  packGroups(cfg);
 }
 
 // ── unknown-key audit ─────────────────────────────────────────────────────
@@ -1204,7 +1337,8 @@ export function encodeConfig(cfg: CustomComplicationConfig): J {
 // non-empty and tells the user which paths it does not understand.
 
 const K = {
-  config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "inline", "dataSources", "refreshMinutes", "tapAction", "openPageId", "openPageName", "showSuccessFlash", "successFlashColorHex"],
+  config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "inline", "dataSources", "refreshMinutes", "tapAction", "openPageId", "openPageName", "showSuccessFlash", "successFlashColorHex", "groups"],
+  group: ["id", "name", "locked"],
   inline: ["label", "value", "symbol", "countdown"],
   named: ["id", "name", "value"],
   value: ["kind", "format"],
@@ -1215,7 +1349,7 @@ const K = {
   stateFilter: ["kind", "value"],
   frame: ["x", "y", "width", "height", "rotationDegrees"],
   elementEnvelope: ["kind", "payload"],
-  elementBase: ["id", "colorSlot", "rules", "frame", "isHidden"],
+  elementBase: ["id", "colorSlot", "rules", "frame", "isHidden", "groupId"],
   text: ["value", "fontSize", "fontWeight", "countdown"],
   icon: ["symbol", "size"],
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex"],
@@ -1328,6 +1462,7 @@ export function auditUnknownKeys(raw: unknown): string[] {
   };
   if (!isObject(raw)) return out;
   check(raw, K.config, "$");
+  if (Array.isArray(raw.groups)) raw.groups.forEach((g, i) => check(g, K.group, `$.groups[${i}]`));
   if (Array.isArray(raw.values)) {
     raw.values.forEach((v, i) => {
       check(v, K.named, `$.values[${i}]`);
@@ -1817,6 +1952,7 @@ export function removeElement(cfg: CustomComplicationConfig, id: string): void {
   cfg.elements = cfg.elements.filter((el) => el.payload.id !== id);
   for (const family of DRAWABLE_FAMILIES) delete cfg.perFamily[family]?.placements[id];
   syncAttachedTaps(cfg);
+  pruneGroups(cfg);
 }
 
 /** Copy a layer (and any tap attached to it) directly above the original,

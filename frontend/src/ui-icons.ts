@@ -12,7 +12,8 @@ import { type TemplateResult, html, svg } from "lit";
 export type UiIconName =
   | "up" | "down" | "show" | "hide" | "duplicate" | "delete" | "close" | "reset"
   | "text" | "icon" | "gauge" | "shape" | "image" | "tap"
-  | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "plus";
+  | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "plus"
+  | "lock" | "unlock" | "folder" | "ungroup";
 
 function shape(name: UiIconName) {
   switch (name) {
@@ -48,6 +49,14 @@ function shape(name: UiIconName) {
       return svg`<path d="M6 9L12 15L18 9" />`;
     case "plus":
       return svg`<path d="M12 5V19M5 12H19" />`;
+    case "lock":
+      return svg`<rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7.5a4 4 0 0 1 8 0V11" />`;
+    case "unlock":
+      return svg`<rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7.5a4 4 0 0 1 7.6-1.7" />`;
+    case "folder":
+      return svg`<path d="M3.5 7.5A2 2 0 0 1 5.5 5.5H9.5L11.5 7.5H18.5A2 2 0 0 1 20.5 9.5V17A2 2 0 0 1 18.5 19H5.5A2 2 0 0 1 3.5 17Z" />`;
+    case "ungroup":
+      return svg`<path d="M3.5 7.5A2 2 0 0 1 5.5 5.5H9.5L11.5 7.5H18.5A2 2 0 0 1 20.5 9.5V17A2 2 0 0 1 18.5 19H5.5A2 2 0 0 1 3.5 17Z" /><path d="M9 13.5H15" />`;
     case "up":
       return svg`<path d="M6 14L12 8L18 14" />`;
     case "down":

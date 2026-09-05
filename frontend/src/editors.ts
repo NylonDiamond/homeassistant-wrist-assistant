@@ -17,6 +17,7 @@ import {
   type FontWeight,
   type ImageElement,
   type LayerEntityUse,
+  type LayerGroup,
   type NamedValue,
   type NormalizedFrame,
   type Placement,
@@ -52,7 +53,9 @@ import {
   detachTaps,
   elementEntity,
   formatIsEmpty,
+  groupMembers,
   layerEntityUses,
+  ungroup,
   literal,
   newCase,
   newId,
@@ -1549,6 +1552,55 @@ function tappableSection(host: EditorHost, el: CElement, key: string): TemplateR
         ${tapSizeHint(host, attached.payload.id)}
         <div class="hint">The tap area follows this layer in every shape, so there is nothing to line up. Show it to drag its corners past the layer, so a small layer is still an easy target. Where two tap areas overlap, the one higher in Layers wins.</div>`
       : html`<div class="hint">Tapping this layer runs an action of its own, instead of the complication's tap action. It starts as <b>${describeTapAction(preview)}</b>.</div>`}`;
+}
+
+// ── Layer groups ──────────────────────────────────────────────────────────
+
+/** A literal reads as `"lock"` in a rule, where the quotes say it is not an
+ * entity; as a row title the name alone is the clearer thing. */
+function unquote(s: string): string {
+  return s.length >= 2 && s.startsWith("\"") && s.endsWith("\"") ? s.slice(1, -1) : s;
+}
+
+/** The name a layer goes by in the Layers list and the crumbs. */
+export function layerTitle(el: CElement, ctx?: DescribeContext): string {
+  switch (el.kind) {
+    case "text": return unquote(describeValue(el.payload.value, ctx));
+    case "icon": return unquote(describeValue(el.payload.symbol, ctx));
+    case "gauge": return describeValue(el.payload.value, ctx);
+    case "shape": return el.payload.kind === "roundedRectangle" ? "Rounded rectangle" : el.payload.kind;
+    case "image": {
+      const e = el.payload.entity;
+      return e.displayName || e.entityId || "camera";
+    }
+    case "tap": {
+      const a = el.payload.action;
+      const target = "entityId" in a ? (a.displayName || a.entityId) : a.type === "openPage" ? (el.payload.openPageName || "") : "";
+      return target ? `${a.type} · ${target}` : a.type;
+    }
+  }
+}
+
+/**
+ * A group's own card: its name, whether it moves as one, and what is in it.
+ * The members' own settings stay on the members; a group is a handle on
+ * several layers, not another kind of layer.
+ */
+export function groupEditor(host: EditorHost, group: LayerGroup): TemplateResult {
+  const members = groupMembers(host.config, group.id);
+  const ctx = describeContext(host);
+  const upd = (m: (g: LayerGroup) => void, k?: string) => host.update((c) => { const g = c.groups?.find((x) => x.id === group.id); if (g) m(g); }, k ? `group-${group.id}-${k}` : undefined);
+  return card(host, "content", "Group", html`
+    ${textField("Name", group.name, (v) => upd((g) => { g.name = v; }, "name"))}
+    ${checkField("Move as one on the watch", group.locked, (v) => upd((g) => { g.locked = v; }))}
+    <div class="hint">${group.locked
+      ? "Locked: a drag on any of these layers moves all of them. Unlock to move one at a time."
+      : "Unlocked: each layer moves on its own. Lock it again when the part is the way you want it."}</div>
+    <div class="hint">${members.length} layer${members.length === 1 ? "" : "s"}: ${members.map((m) => layerTitle(m, ctx)).join(", ")}. Click one in the list to edit it.</div>
+    <div class="adders">
+      <button class="small" title="Keep the layers where they are and drop the folder" @click=${() => host.update((c) => ungroup(c, group.id))}>Ungroup</button>
+    </div>`,
+    { color: SECTION_COLOR.group, icon: "folder", summary: `${members.length} layers · ${group.locked ? "moves as one" : "unlocked"}` });
 }
 
 // ── Family layout ─────────────────────────────────────────────────────────

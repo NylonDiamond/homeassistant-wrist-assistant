@@ -37,4 +37,5 @@ export const SECTION_COLOR = {
   tap: KIND_COLOR.tap,
   place: "#78909c",
   complication: "#5c6bc0",
+  group: "#90a4ae",
 } as const;
