@@ -116,6 +116,7 @@ import { CURATED_SYMBOLS, SYMBOL_CATEGORIES, SymbolBrowser, searchSymbols } from
 import { canRemoveFamily } from "./layouts.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import { KIND_COLOR, SECTION_COLOR } from "./kinds.js";
+import { domainIcon, domainLabel, isActiveState } from "./domain-icons.js";
 
 export interface EditorHost {
   hass: HassLike;
@@ -273,23 +274,55 @@ export interface EntityChoice {
   name: string;
   state: string;
   domain: string;
+  /** The room, when the frontend told us one. Shown beside the id and matched
+   * by the search, because "kitchen" is how a room is usually looked for. */
+  area?: string;
 }
 
 /** Everything the search can offer, name first. `domain` restricts the pool to
  * one domain or a list of them (a camera layer only wants `camera.*`, a toggle
  * button wants everything a toggle makes sense for); a name typed by hand is
  * still accepted whatever the restriction. */
-export function entityChoices(states: Record<string, HassEntityState>, domain?: string | readonly string[]): EntityChoice[] {
+export function entityChoices(
+  states: Record<string, HassEntityState>,
+  domain?: string | readonly string[],
+  areaOf?: (entityId: string) => string | undefined,
+): EntityChoice[] {
   const allowed = domain === undefined ? undefined : typeof domain === "string" ? [domain] : domain;
   const out: EntityChoice[] = [];
   for (const [entityId, s] of Object.entries(states)) {
     const dom = entityId.split(".")[0] ?? "";
     if (allowed !== undefined && !allowed.includes(dom)) continue;
     const friendly = typeof s?.attributes?.friendly_name === "string" ? s.attributes.friendly_name.trim() : "";
-    out.push({ entityId, name: friendly || entityId, state: s?.state ?? "", domain: dom });
+    const area = areaOf?.(entityId);
+    out.push({ entityId, name: friendly || entityId, state: s?.state ?? "", domain: dom, ...(area ? { area } : {}) });
   }
   out.sort((a, b) => a.name.localeCompare(b.name) || a.entityId.localeCompare(b.entityId));
   return out;
+}
+
+/**
+ * Where each entity lives, read from the registry snapshots the Home Assistant
+ * frontend already keeps on `hass`. An entity's own area wins; otherwise it
+ * inherits the area of the device it belongs to, which is how Home Assistant
+ * itself resolves it.
+ *
+ * Returns undefined when the frontend has no registries to read, so the search
+ * simply shows no rooms rather than failing.
+ */
+export function areaLookup(hass: HassLike): ((entityId: string) => string | undefined) | undefined {
+  const { entities, devices, areas } = hass;
+  if (!entities || !areas) return undefined;
+  const nameOf = (id: string | null | undefined): string | undefined => {
+    if (!id) return undefined;
+    const n = areas[id]?.name;
+    return typeof n === "string" && n.trim() !== "" ? n.trim() : undefined;
+  };
+  return (entityId) => {
+    const reg = entities[entityId];
+    if (!reg) return undefined;
+    return nameOf(reg.area_id) ?? nameOf(reg.device_id ? devices?.[reg.device_id]?.area_id : undefined);
+  };
 }
 
 export const ENTITY_RESULT_LIMIT = 50;
@@ -330,6 +363,7 @@ export function searchEntities(
   for (const c of choices) {
     const id = c.entityId.toLowerCase();
     const name = c.name.toLowerCase();
+    const area = (c.area ?? "").toLowerCase();
     let rank = -1;
     if (id === q) rank = 0;
     else if (id.startsWith(q)) rank = 1;
@@ -337,6 +371,9 @@ export function searchEntities(
     else if (id.includes(q)) rank = 3;
     else if (name.includes(q)) rank = 4;
     else if (words.length > 1 && words.every((w) => id.includes(w) || name.includes(w))) rank = 5;
+    // The room is the weakest key on purpose: "kitchen" should find the light
+    // called Kitchen before it lists everything that happens to sit in it.
+    else if (area !== "" && (area.includes(q) || (words.length > 1 && words.every((w) => id.includes(w) || name.includes(w) || area.includes(w))))) rank = 6;
     if (rank >= 0) scored.push({ c, rank });
   }
   scored.sort((a, b) => a.rank - b.rank || rate(a.c) - rate(b.c) || a.c.name.localeCompare(b.c.name) || a.c.entityId.localeCompare(b.c.entityId));
@@ -423,7 +460,7 @@ export function entityField(host: EditorHost, label: string, ref: EntityRef, set
   const states = host.hass.states;
   const search = entitySearches.get(key);
   const results = search
-    ? searchEntities(entityChoices(states, opts.domain), search.query, ENTITY_RESULT_LIMIT, opts.preferNumeric ? looksNumeric : undefined)
+    ? searchEntities(entityChoices(states, opts.domain, areaLookup(host.hass)), search.query, ENTITY_RESULT_LIMIT, opts.preferNumeric ? looksNumeric : undefined)
     : [];
   const index = search ? Math.max(0, Math.min(search.index, results.length - 1)) : 0;
   const live = ref.entityId ? states[ref.entityId] : undefined;
@@ -476,32 +513,57 @@ export function entityField(host: EditorHost, label: string, ref: EntityRef, set
     }
   };
 
+  const currentArea = ref.entityId ? areaLookup(host.hass)?.(ref.entityId) : undefined;
   const caption = ref.entityId === ""
-    ? html`<div class="hint">Type part of a name, such as "kitchen".</div>`
+    ? html`<div class="hint">Type part of a name, a room, or an id.</div>`
     : live
-      ? html`<div class="entity-current"><span class="ent-name">${typeof live.attributes.friendly_name === "string" ? live.attributes.friendly_name : ref.entityId}</span><span class="ent-state">${live.state}</span></div>`
+      ? html`<div class="entity-current">
+          <span class="ent-ico ${isActiveState(live.state) ? "on" : ""}">${domainIcon(ref.domain || ref.entityId.split(".")[0] || "")}</span>
+          <span class="ent-name">${typeof live.attributes.friendly_name === "string" ? live.attributes.friendly_name : ref.entityId}</span>
+          ${currentArea ? html`<span class="ent-area">${currentArea}</span>` : nothing}
+          <span class="ent-state">${live.state}</span>
+        </div>`
       : html`<div class="hint warn">Not in Home Assistant right now.</div>`;
 
   return html`<div class="field entity-field">
     <span>${label}</span>
-    <input type="text" class="mono" role="combobox" aria-autocomplete="list" aria-expanded=${search ? "true" : "false"} autocomplete="off" spellcheck="false"
-      .value=${search ? search.query : ref.entityId}
-      placeholder="Search entities, or type an id"
-      @focus=${(e: FocusEvent) => { const el = e.target as HTMLInputElement; open(el, ref.entityId); el.select(); }}
-      @input=${(e: Event) => { const el = e.target as HTMLInputElement; open(el, el.value); }}
-      @keydown=${onKey}
-      @blur=${(e: FocusEvent) => { const el = e.target as HTMLInputElement; if (search) commitText(el.value); close(el); }} />
+    <div class="ent-box ${search ? "open" : ""}">
+      <span class="ent-glass">${uiIcon("search")}</span>
+      <input type="text" class="mono" role="combobox" aria-autocomplete="list" aria-expanded=${search ? "true" : "false"} autocomplete="off" spellcheck="false"
+        .value=${search ? search.query : ref.entityId}
+        placeholder="Search by name, room, or id"
+        @focus=${(e: FocusEvent) => { const el = e.target as HTMLInputElement; open(el, ref.entityId); el.select(); }}
+        @input=${(e: Event) => { const el = e.target as HTMLInputElement; open(el, el.value); }}
+        @keydown=${onKey}
+        @blur=${(e: FocusEvent) => { const el = e.target as HTMLInputElement; if (search) commitText(el.value); close(el); }} />
+      ${(search ? search.query : ref.entityId) === "" ? nothing : html`<button type="button" class="ent-clear" title="Clear" aria-label="Clear"
+        @mousedown=${(e: MouseEvent) => e.preventDefault()}
+        @click=${(e: MouseEvent) => {
+          const el = (e.currentTarget as HTMLElement).closest(".ent-box")?.querySelector("input") ?? null;
+          set({ entityId: "", displayName: "", domain: "" });
+          entitySearches.set(key, { query: "", index: 0 });
+          requestRerender(el);
+          el?.focus();
+        }}>${uiIcon("close")}</button>`}
+    </div>
     ${search
       ? html`<div class="entity-results" role="listbox">
           ${results.length === 0
             ? html`<div class="hint" style="padding:6px 8px">${looksLikeEntityId(search.query) ? "Nothing here has that id. Press Enter to use it anyway." : "Nothing matches that search."}</div>`
             : results.map((c, i) => html`<button type="button" role="option" aria-selected=${i === index ? "true" : "false"} class="ent ${i === index ? "hl" : ""}"
                 @mousedown=${(e: MouseEvent) => e.preventDefault()} @click=${(e: MouseEvent) => pick(c, e.target)}>
+                <span class="ent-ico ${isActiveState(c.state) ? "on" : ""}">${domainIcon(c.domain)}</span>
                 <span class="ent-main">
                   <span class="ent-name">${c.name}</span>
-                  <span class="ent-id mono">${c.entityId}</span>
+                  <span class="ent-sub">
+                    ${c.area ? html`<span class="ent-area">${c.area}</span>` : nothing}
+                    <span class="ent-id mono">${c.entityId}</span>
+                  </span>
                 </span>
-                <span class="ent-state">${c.state}</span>
+                <span class="ent-right">
+                  <span class="ent-type">${domainLabel(c.domain)}</span>
+                  <span class="ent-state">${c.state}</span>
+                </span>
               </button>`)}
         </div>`
       : caption}

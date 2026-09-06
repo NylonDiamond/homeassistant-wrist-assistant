@@ -2,8 +2,8 @@
 // is, how a search over it is ranked, and what a typed line should store.
 
 import { describe, expect, it } from "vitest";
-import { commitTypedEntity, entityChoices, looksLikeEntityId, looksNumeric, searchEntities } from "../src/editors.js";
-import type { HassEntityState } from "../src/ha-api.js";
+import { areaLookup, commitTypedEntity, entityChoices, looksLikeEntityId, looksNumeric, searchEntities } from "../src/editors.js";
+import type { HassEntityState, HassLike } from "../src/ha-api.js";
 import type { EntityRef } from "../src/model.js";
 
 function states(rows: [id: string, friendly: string | undefined, state: string][]): Record<string, HassEntityState> {
@@ -154,5 +154,56 @@ describe("commitTypedEntity", () => {
 
   it("clears the entity when the field is emptied", () => {
     expect(commitTypedEntity("   ", ref, STATES)).toEqual({ entityId: "", displayName: "", domain: "" });
+  });
+});
+
+describe("areaLookup", () => {
+  const hass = {
+    states: STATES,
+    entities: {
+      "light.kitchen": { area_id: "kitchen" },
+      "light.kitchen_counter": { device_id: "dev1" },
+      "switch.kettle": { device_id: "dev_no_area" },
+      "camera.porch": {},
+    },
+    devices: { dev1: { area_id: "kitchen" }, dev_no_area: {} },
+    areas: { kitchen: { name: "Kitchen" } },
+  } as unknown as HassLike;
+
+  it("reads the entity's own area", () => {
+    expect(areaLookup(hass)?.("light.kitchen")).toBe("Kitchen");
+  });
+
+  it("falls back to the area of the entity's device", () => {
+    expect(areaLookup(hass)?.("light.kitchen_counter")).toBe("Kitchen");
+  });
+
+  it("has no area for an entity whose device has none", () => {
+    expect(areaLookup(hass)?.("switch.kettle")).toBeUndefined();
+    expect(areaLookup(hass)?.("camera.porch")).toBeUndefined();
+    expect(areaLookup(hass)?.("sensor.outside_temp")).toBeUndefined();
+  });
+
+  it("is absent when the frontend carries no registries", () => {
+    expect(areaLookup({ states: STATES } as unknown as HassLike)).toBeUndefined();
+  });
+});
+
+describe("searching by room", () => {
+  const inLounge = entityChoices(STATES, undefined, (id) => (id === "sensor.outside_temp" ? "Lounge" : undefined));
+
+  it("finds an entity by the room it sits in", () => {
+    expect(searchEntities(inLounge, "lounge").map((c) => c.entityId)).toEqual(["sensor.outside_temp"]);
+  });
+
+  it("ranks a name match above a room match", () => {
+    const rooms = entityChoices(STATES, undefined, (id) => (id === "camera.garage" ? "Kitchen" : undefined));
+    const ids = searchEntities(rooms, "kitchen").map((c) => c.entityId);
+    expect(ids[ids.length - 1]).toBe("camera.garage");
+    expect(ids).toContain("light.kitchen");
+  });
+
+  it("leaves the choice without an area key when no room is known", () => {
+    expect(entityChoices(STATES)[0]).not.toHaveProperty("area");
   });
 });

@@ -14,7 +14,7 @@ export type UiIconName =
   | "text" | "icon" | "gauge" | "chart" | "shape" | "image" | "tap"
   | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "plus"
   | "lock" | "unlock" | "folder" | "ungroup" | "watch"
-  | "compact" | "expanded";
+  | "compact" | "expanded" | "search";
 
 function shape(name: UiIconName) {
   switch (name) {
@@ -92,6 +92,8 @@ function shape(name: UiIconName) {
     case "reset":
       return svg`<path d="M4.5 12A7.5 7.5 0 1 0 7 6.4" />
         <path d="M4 3.5V7H7.5" />`;
+    case "search":
+      return svg`<circle cx="10.8" cy="10.8" r="6.3" /><path d="M15.4 15.4L20 20" />`;
   }
 }
 

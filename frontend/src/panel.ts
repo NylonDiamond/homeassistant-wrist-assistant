@@ -83,6 +83,7 @@ import { SymbolBrowser } from "./symbols.js";
 import { Draft, draftStatus } from "./draft.js";
 import { statesSummary } from "./states.js";
 import { uiIcon } from "./ui-icons.js";
+import { addPreview } from "./add-previews.js";
 import { NUDGE_COARSE, beginGesture, beginPointDrag, beginScaleDrag, nudgeFrame, nudgePoint, type HandleCorner } from "./interact.js";
 import {
   type EditorHost,
@@ -675,19 +676,39 @@ export class WristAssistantPanel extends LitElement {
     details.foot .foot-body { padding: 0 16px 12px; max-height: 40vh; overflow: auto; }
     details.foot .foot-body .hint { margin: 8px 0; }
 
-    /* Add a layer: six tinted buttons, one per kind, then the presets. It sits
-       above the list so adding a layer never moves the button just pressed. */
+    /* Add a layer: one tinted card per kind, each carrying a sample of what
+       that kind draws, then the presets. It sits above the list so adding a
+       layer never moves the button just pressed.
+
+       The sample sits on the same black well the Layers list uses for its
+       thumbnails, so "what a gauge looks like" is answered by the same picture
+       in both places and the button reads as a watch face rather than a
+       swatch. */
     .add-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
     button.add {
-      display: flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 4px; border-radius: 10px;
+      display: flex; flex-direction: column; align-items: stretch; gap: 7px; padding: 7px 7px 8px; border-radius: 12px;
       font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--wa-ink); white-space: nowrap;
-      background: color-mix(in srgb, var(--k) 14%, var(--wa-card)); border: 1px solid color-mix(in srgb, var(--k) 38%, transparent);
-      transition: background-color .12s ease-out, border-color .12s ease-out, transform .12s ease-out;
+      background: color-mix(in srgb, var(--k) 12%, var(--wa-card)); border: 1px solid color-mix(in srgb, var(--k) 34%, transparent);
+      transition: background-color .12s ease-out, border-color .12s ease-out, transform .12s ease-out, box-shadow .12s ease-out;
     }
-    button.add:hover:not(:disabled) { background: color-mix(in srgb, var(--k) 26%, var(--wa-card)); border-color: color-mix(in srgb, var(--k) 65%, transparent); }
+    button.add:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--k) 22%, var(--wa-card)); border-color: color-mix(in srgb, var(--k) 62%, transparent);
+      box-shadow: 0 4px 14px color-mix(in srgb, var(--k) 20%, transparent);
+    }
     button.add:active:not(:disabled) { transform: translateY(1px); }
     button.add:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--k) 30%, transparent); }
-    button.add svg { color: var(--k); width: 15px; height: 15px; flex: none; }
+    button.add:disabled { opacity: .45; cursor: default; }
+    /* The well is a fixed shape, not a fixed height: the column is whatever a
+       third of the panel happens to be, and the samples are drawn to scale
+       with it. */
+    button.add .well {
+      display: block; width: 100%; aspect-ratio: 120 / 46; border-radius: 7px; overflow: hidden;
+      background: #000; border: 1px solid color-mix(in srgb, var(--k) 30%, var(--wa-line-strong));
+      box-sizing: border-box;
+    }
+    button.add svg.shot { display: block; width: 100%; height: 100%; }
+    button.add .add-name { display: flex; align-items: center; justify-content: center; gap: 6px; }
+    button.add svg.ui-icon { color: var(--k); width: 14px; height: 14px; flex: none; }
     .presets-l { margin: 14px 0 8px; font-size: 12px; color: var(--wa-muted); }
     .presets { display: flex; flex-wrap: wrap; gap: 6px; }
     button.preset {
@@ -1277,23 +1298,69 @@ export class WristAssistantPanel extends LitElement {
     .value-chip-field.compact { margin: 0; }
     .value-chip-field.compact button.value-chip { padding: 3px 8px; font-size: 13px; max-width: 190px; }
 
-    /* Entity search. The friendly name and the entity id both matter and both
-       are long, so they stack on two lines instead of fighting for one. */
+    /* Entity search, laid out the way Home Assistant's own entity list is: a
+       glyph for the domain, the friendly name in full, and the things that
+       tell two similar names apart (the room and the id) on a quieter second
+       line. The type and the live state sit right, where the eye can run down
+       one column instead of hunting.
+
+       The glyph is the panel's own drawing, not Home Assistant's icon set, so
+       a row still has a picture whatever the frontend ships. It only takes the
+       accent colour when the entity is doing something, which is what makes
+       the one light that is on findable in a list of forty. */
     .entity-field { position: relative; }
-    .entity-results { border: 1px solid var(--wa-line); border-radius: 8px; margin-top: 4px; max-height: 300px; overflow: auto; }
-    button.ent {
-      display: flex; align-items: center; gap: 8px; width: 100%;
-      font: inherit; font-size: 13px; text-align: left; padding: 6px 8px;
-      background: none; border: none; color: inherit; cursor: pointer;
+    .ent-box { position: relative; display: flex; align-items: center; }
+    .ent-box input { width: 100%; min-width: 0; padding-left: 32px; padding-right: 30px; }
+    .ent-box .ent-glass { position: absolute; left: 10px; display: grid; place-items: center; color: var(--wa-muted); pointer-events: none; }
+    .ent-box .ent-glass svg { width: 14px; height: 14px; display: block; }
+    .ent-box.open .ent-glass { color: var(--wa-accent); }
+    button.ent-clear {
+      position: absolute; right: 5px; width: 22px; height: 22px; display: grid; place-items: center;
+      padding: 0; border: none; border-radius: 6px; background: none; color: var(--wa-muted); cursor: pointer;
     }
-    button.ent + button.ent { border-top: 1px solid var(--wa-line); }
-    button.ent:hover, button.ent.hl { background: var(--wa-panel); }
+    button.ent-clear:hover { background: var(--wa-panel); color: var(--wa-ink); }
+    button.ent-clear svg { width: 13px; height: 13px; display: block; }
+
+    .entity-results {
+      border: 1px solid var(--wa-line); border-radius: 12px; margin-top: 6px; max-height: 340px; overflow: auto;
+      background: var(--wa-raised); padding: 4px; box-shadow: 0 10px 28px rgba(0,0,0,.22);
+    }
+    button.ent {
+      display: flex; align-items: center; gap: 10px; width: 100%; border-radius: 9px;
+      font: inherit; font-size: 13px; text-align: left; padding: 7px 8px;
+      background: none; border: none; color: inherit; cursor: pointer;
+      transition: background-color .1s ease-out;
+    }
+    button.ent:hover, button.ent.hl { background: color-mix(in srgb, var(--wa-accent) 14%, var(--wa-card)); }
+    button.ent.hl { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-accent) 45%, transparent); }
+    /* The glyph tile. A fixed square keeps every name on the list starting at
+       the same x, which is most of why the list reads as a column. */
+    .ent-ico {
+      flex: none; width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center;
+      background: color-mix(in srgb, var(--wa-ink) 7%, transparent); color: var(--wa-muted);
+    }
+    .ent-ico.on { background: color-mix(in srgb, var(--wa-accent) 20%, transparent); color: var(--wa-accent); }
+    .ent-ico svg { width: 17px; height: 17px; display: block; }
     .ent .ent-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-    .ent .ent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .ent .ent-id { font-size: 11px; opacity: .6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .ent .ent-state { flex: none; font-size: 11px; opacity: .8; max-width: 34%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .entity-current { display: flex; gap: 8px; align-items: baseline; font-size: 12px; opacity: .8; margin-top: 3px; }
+    .ent .ent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+    .ent .ent-sub { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-size: 11px; }
+    .ent .ent-area { flex: none; color: var(--wa-muted); }
+    /* The room and the id are one line, and the id is the half that may be
+       cut: the room is short and the id's tail is the least useful part. */
+    .ent .ent-area + .ent-id::before { content: "·"; margin-right: 6px; opacity: .5; }
+    .ent .ent-id { min-width: 0; opacity: .55; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ent .ent-right { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; max-width: 40%; }
+    .ent .ent-type { font-size: 11px; color: var(--wa-muted); white-space: nowrap; }
+    .ent .ent-state {
+      font-size: 11px; font-weight: 500; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      color: color-mix(in srgb, var(--wa-ink) 70%, transparent);
+    }
+    .entity-current { display: flex; gap: 8px; align-items: center; font-size: 12px; margin-top: 5px; }
+    .entity-current .ent-ico { width: 24px; height: 24px; border-radius: 7px; }
+    .entity-current .ent-ico svg { width: 14px; height: 14px; }
     .entity-current .ent-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .entity-current .ent-area { flex: none; color: var(--wa-muted); }
+    .entity-current .ent-state { flex: none; color: var(--wa-muted); max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     /* Symbol picker */
     .sym-browse { margin: 6px 0; }
@@ -3030,7 +3097,8 @@ export class WristAssistantPanel extends LitElement {
       <h2 class="panel-title"><span class="swatch">${uiIcon("plus")}</span>Add a layer</h2>
       <div class="add-grid">
         ${KIND_ORDER.map((k) => html`<button class="add" style=${`--k:${KIND_COLOR[k]}`} ?disabled=${full} title=${`Add a blank ${KIND_LABEL[k].toLowerCase()} layer`}
-          @click=${() => { const el = newElement(k); this.mutate((c) => { c.elements.push(el); }); this.inspect = { kind: "layer", id: el.payload.id }; }}>${uiIcon(k)}<span>${KIND_LABEL[k]}</span></button>`)}
+          @click=${() => { const el = newElement(k); this.mutate((c) => { c.elements.push(el); }); this.inspect = { kind: "layer", id: el.payload.id }; }}
+          ><span class="well">${addPreview(k)}</span><span class="add-name">${uiIcon(k)}<span>${KIND_LABEL[k]}</span></span></button>`)}
       </div>
       <div class="presets-l">Or start from a preset</div>
       <div class="presets">

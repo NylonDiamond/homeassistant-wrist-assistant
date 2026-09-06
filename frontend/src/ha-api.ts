@@ -19,6 +19,13 @@ export interface HassLike {
     ): Promise<() => Promise<void>>;
   };
   states: Record<string, HassEntityState>;
+  /** The frontend's registry snapshots, which is where an entity's area comes
+      from: the entity carries an area itself, or inherits its device's. All
+      three are optional so the panel still runs against a Home Assistant that
+      does not put them on `hass`, and against the tests, which do not. */
+  entities?: Record<string, { area_id?: string | null; device_id?: string | null }>;
+  devices?: Record<string, { area_id?: string | null; name?: string | null }>;
+  areas?: Record<string, { name?: string | null }>;
   user?: { is_admin?: boolean; name?: string };
   language?: string;
   /** The frontend's theme state; `darkMode` is what the panel's dark skin keys off. */
