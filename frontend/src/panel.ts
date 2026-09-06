@@ -1441,12 +1441,8 @@ export class WristAssistantPanel extends LitElement {
       else if (this.inspect.kind === "layer" || this.inspect.kind === "group") this.inspect = { kind: "general" };
       return;
     }
-    // ? opens the keys-and-mouse help, the way it does in most web apps.
-    if (e.key === "?" && !inField && !dialogOpen) {
-      e.preventDefault();
-      this.helpOpen = true;
-      return;
-    }
+    // No key opens the help: Home Assistant answers ? with its own shortcut
+    // dialog, and two dialogs on one key is worse than a button.
     // Delete and Backspace remove what is selected. Only outside a field, so
     // a Backspace in the name box stays a Backspace.
     if ((e.key === "Delete" || e.key === "Backspace") && !inField && !dialogOpen) {
@@ -2282,6 +2278,8 @@ export class WristAssistantPanel extends LitElement {
    * The keys-and-mouse help: every shortcut the panel answers to and the
    * pointer tricks that otherwise live only in tooltips. One native dialog,
    * so Escape and the backdrop come for free, the same as the zoomed preview.
+   * Opened by the ? button only: the ? key belongs to Home Assistant's own
+   * shortcut dialog, and taking it would stack two dialogs.
    */
   private renderHelpDialog() {
     const m = KEY_MOD;
@@ -2298,7 +2296,6 @@ export class WristAssistantPanel extends LitElement {
       [`${m}] · ${m}[`, "Bring the layer forward · Send it back"],
       [`${s}${m}H`, "Hide or show the selection in the shape being edited"],
       ["Escape", "Drop the pick, then the selection. Also stops Pick layer and closes a dialog"],
-      ["?", "This help"],
     ];
     const mouse: [string, string][] = [
       ["Click", "A layer on the face or in the list: edit it. Drag it to move, pull a corner to resize"],
@@ -2752,7 +2749,7 @@ export class WristAssistantPanel extends LitElement {
           <button @click=${() => this.redo()} ?disabled=${!d?.canRedo} title="Redo (⇧⌘Z)">Redo</button>
         </div>
         <span class="spacer"></span>
-        <button class="help" title="Keys and mouse tips (?)" aria-label="Keys and mouse tips" @click=${() => { this.helpOpen = true; }}>?</button>
+        <button class="help" title="Keys and mouse tips" aria-label="Keys and mouse tips" @click=${() => { this.helpOpen = true; }}>?</button>
         ${this.renderSendButton()}
         <label>Watch
           <select @change=${(e: Event) => void this.selectOwner((e.target as HTMLSelectElement).value)}>
@@ -3261,7 +3258,7 @@ export class WristAssistantPanel extends LitElement {
             <button class="small primary" title=${`Group (${KEY_MOD}G)`} @click=${() => this.groupPicked()}>Group them</button>
             <button class="small" @click=${() => { this.multi = new Set(); }}>Clear</button></div>`
         : cfg.elements.length >= 2 && edit && !cfg.groups?.length
-          ? html`<div class="hint">${MULTI_KEY}-click layers here or on the preview, or shift-click a range of rows, then group them so a finished part moves as one. Press <b>?</b> for every key and mouse trick.</div>`
+          ? html`<div class="hint">${MULTI_KEY}-click layers here or on the preview, or shift-click a range of rows, then group them so a finished part moves as one. The <b>?</b> button in the header lists every key and mouse trick.</div>`
           : nothing}
       ${cfg.elements.length === 0 ? html`<div class="empty">No layers yet. Add one above.</div>` : nothing}
       <div class="layers">
