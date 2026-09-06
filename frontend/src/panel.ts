@@ -767,6 +767,9 @@ export class WristAssistantPanel extends LitElement {
     .canvas-bar { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid var(--wa-line); flex-wrap: wrap; font-size: 13px; }
     .canvas-bar .spacer { flex: 1; min-width: 0; }
     .canvas-bar .hint { margin: 0; }
+    /* The three face toggles wrap as one block, so a narrow bar never leaves
+       one of them stranded on the line above the other two. */
+    .canvas-bar .face-tools { display: inline-flex; gap: 6px; flex: none; }
     .canvas-bar label { display: inline-flex; align-items: center; gap: 8px; color: var(--wa-muted); }
     .canvas-bar label select { color: var(--wa-ink); font-weight: 500; }
     button.pick {
@@ -3148,9 +3151,7 @@ export class WristAssistantPanel extends LitElement {
         </label>
         <span class="hint">Layouts are made in the ${REFERENCE_CASE.label} box. Smaller cases scale it down.</span>
         <span class="spacer"></span>
-        ${this.renderPickButton()}
-        ${this.renderShowTapsButton()}
-        ${this.renderZoomButton()}
+        <span class="face-tools">${this.renderPickButton()}${this.renderShowTapsButton()}${this.renderZoomButton()}</span>
       </div>
       <div class="stage">
         ${family === "inline" ? this.renderInlinePreview(layouts.inline, false) : this.renderBigPreview(family, layouts, watchCase)}
