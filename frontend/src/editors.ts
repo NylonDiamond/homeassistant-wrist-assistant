@@ -1489,7 +1489,7 @@ function historySpanLabel(minutes: number): string {
     ?? `Last ${minutes} min`;
 }
 
-function contentSummary(host: EditorHost, el: CElement): string {
+export function contentSummary(host: EditorHost, el: CElement): string {
   const ctx = describeContext(host);
   switch (el.kind) {
     case "text": return truncate(describeValue(el.payload.value, ctx), 48);
@@ -1507,7 +1507,7 @@ function contentSummary(host: EditorHost, el: CElement): string {
   }
 }
 
-function lookSummary(el: CElement): string | undefined {
+export function lookSummary(el: CElement): string | undefined {
   switch (el.kind) {
     case "text": return `${el.payload.fontSize} pt ${el.payload.fontWeight.toLowerCase()} · ${colorWords(el.payload.colorSlot.baseColorHex)}`;
     case "icon": return `${el.payload.size} pt · ${colorWords(el.payload.colorSlot.baseColorHex)}`;

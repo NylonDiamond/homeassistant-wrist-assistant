@@ -13,7 +13,8 @@ export type UiIconName =
   | "up" | "down" | "show" | "hide" | "duplicate" | "delete" | "close" | "reset"
   | "text" | "icon" | "gauge" | "chart" | "shape" | "image" | "tap"
   | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "plus"
-  | "lock" | "unlock" | "folder" | "ungroup" | "watch";
+  | "lock" | "unlock" | "folder" | "ungroup" | "watch"
+  | "compact" | "expanded";
 
 function shape(name: UiIconName) {
   switch (name) {
@@ -54,6 +55,11 @@ function shape(name: UiIconName) {
     // The app mark in the header: a watch case with its band stubs.
     case "watch":
       return svg`<rect x="6" y="6.5" width="12" height="11" rx="3" /><path d="M9 6.5L9.6 3H14.4L15 6.5M9 17.5L9.6 21H14.4L15 17.5" />`;
+    // The Layers list's row-detail switch: tight lines against taller cards.
+    case "compact":
+      return svg`<path d="M4 6.5H20M4 12H20M4 17.5H20" />`;
+    case "expanded":
+      return svg`<rect x="3.5" y="4" width="17" height="7" rx="1.8" /><rect x="3.5" y="13" width="17" height="7" rx="1.8" /><path d="M6.5 8H13M6.5 17H13" />`;
     case "lock":
       return svg`<rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7.5a4 4 0 0 1 8 0V11" />`;
     case "unlock":

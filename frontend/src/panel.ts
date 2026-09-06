@@ -86,10 +86,12 @@ import { uiIcon } from "./ui-icons.js";
 import { NUDGE_COARSE, beginGesture, beginPointDrag, beginScaleDrag, nudgeFrame, nudgePoint, type HandleCorner } from "./interact.js";
 import {
   type EditorHost,
+  type EffectivePlacement,
   type PickedFlag,
   ALL_SECTIONS,
   colorField,
   colorWords,
+  contentSummary,
   describeContext,
   describeValue,
   effectivePlacement,
@@ -100,6 +102,7 @@ import {
   groupEditor,
   layerEditor,
   layerTitle,
+  lookSummary,
   namedValueEditor,
   newNamedValue,
   pickedCommon,
@@ -163,6 +166,19 @@ const COL_RIGHT_DEFAULT = 400;
 /** Layer-row thumbnail box, CSS px. Wide, because most layers are wider than tall. */
 const THUMB_W = 52;
 const THUMB_H = 36;
+/** The three sizes the row pictures come in, picked in the Layers bar. Small
+ * is the size the list has always used; the other two are for reading a busy
+ * layer without opening the big preview. */
+const THUMB_STEPS = [1, 1.7, 2.6] as const;
+const THUMB_STEP_LABEL = ["S", "M", "L"] as const;
+const THUMB_STEP_TITLE = ["Small", "Medium", "Large"] as const;
+type ThumbStep = 0 | 1 | 2;
+type LayerDetail = "compact" | "expanded";
+/** How the Layers list is shown: picture size and row detail. Per browser,
+ * like the column widths, and never part of the document. */
+const LIST_STORE_KEY = "wrist-assistant-panel.layers.v1";
+/** How tall the slot a dragged row opens is, CSS px. */
+const DROP_GAP = 34;
 const COL_MIN = 200;
 const COL_MAX = 720;
 /** The canvas column never goes below this while three columns are shown. */
@@ -296,6 +312,11 @@ export class WristAssistantPanel extends LitElement {
   @state() private editingValue?: string;
   /** The layer row being dragged in the Layers list. */
   private dragId?: string;
+  /** How big the pictures in the Layers rows are drawn. Index into THUMB_STEPS. */
+  @state() private thumbStep: ThumbStep = 0;
+  /** How much each Layers row says. Expanded adds a third line with the
+   * layer's place on the face and keeps the badges next to the buttons. */
+  @state() private layerDetail: LayerDetail = "compact";
   /** Layers picked with Cmd/Ctrl-click, in the list or on the preview, waiting to be grouped. */
   @state() private multi: ReadonlySet<string> = new Set();
   /** The row a shift-click measures its range from: the last row clicked. */
@@ -676,16 +697,20 @@ export class WristAssistantPanel extends LitElement {
     }
     button.preset:hover:not(:disabled) { color: var(--wa-ink); border-color: var(--wa-line-strong); }
 
-    /* Layers: one row per layer, coloured by kind, the shape pinned last. */
-    .layers { display: flex; flex-direction: column; gap: 6px; }
+    /* Layers: one row per layer, coloured by kind, the shape pinned last.
+       The picture size is a variable on the list, set by the S/M/L control in
+       the card's title bar, so one change resizes every row's picture and the
+       column that holds it. */
+    .layers { display: flex; flex-direction: column; gap: 6px; --thumb-w: ${THUMB_W}px; --thumb-h: ${THUMB_H}px; }
     /* Every row is its own outlined container at rest. The border is what
        tells one row from the next, so nothing here may set it to transparent. */
     .layer {
-      display: grid; grid-template-columns: 16px 4px ${THUMB_W}px minmax(0, 1fr) auto; align-items: center; gap: 8px;
+      display: grid; grid-template-columns: 16px 4px var(--thumb-w) minmax(0, 1fr) auto; align-items: center; gap: 8px;
       padding: 7px 8px 7px 5px; border-radius: var(--wa-r-md);
-      border: 1px solid var(--wa-line); background: var(--wa-raised);
+      border: 1px solid var(--wa-line); background: var(--wa-raised); background-clip: padding-box;
       cursor: pointer; user-select: none; position: relative; font-size: 13px;
-      transition: background-color .12s ease-out, border-color .12s ease-out, box-shadow .12s ease-out;
+      transition: background-color .12s ease-out, border-color .12s ease-out, box-shadow .12s ease-out,
+        border-top-width .1s ease-out, border-bottom-width .1s ease-out;
     }
     /* A group's members keep their own outline, one shade deeper, so they read
        as nested and still separate from each other. */
@@ -707,7 +732,7 @@ export class WristAssistantPanel extends LitElement {
        black well is the picture's frame, so an empty thumb still reads as a
        slot rather than a hole. */
     .layer .thumb {
-      width: ${THUMB_W}px; height: ${THUMB_H}px; border-radius: 8px; overflow: hidden; flex: none;
+      width: var(--thumb-w); height: var(--thumb-h); border-radius: 8px; overflow: hidden; flex: none;
       background: #000; border: 1px solid var(--wa-line-strong); box-sizing: border-box; display: block;
     }
     .layer .thumb svg { display: block; width: 100%; height: 100%; }
@@ -764,10 +789,54 @@ export class WristAssistantPanel extends LitElement {
       margin: 0 0 0 14px; padding-left: 10px; display: flex; flex-direction: column; gap: 6px;
       border-left: 2px solid color-mix(in srgb, var(--wa-line) 60%, transparent);
     }
-    /* Drop targets last, so the bar and the tinted edge beat whatever the row
-       already had on its own border. */
-    .layer.drop-before { border-top-color: var(--wa-accent); box-shadow: 0 -3px 0 0 var(--wa-accent); }
-    .layer.drop-after { border-bottom-color: var(--wa-accent); box-shadow: 0 3px 0 0 var(--wa-accent); }
+    /* Drop targets last, so the slot beats whatever the row already had on its
+       own border.
+
+       The row grows a tall transparent border on the side the dragged layer
+       will land, so every row past it really does step out of the way, and a
+       dashed slot is drawn in the space that opens. The gap belongs to the
+       row's own box, so a pointer resting in it still counts as hovering that
+       row; a gap made of margin would leave the row, close, and flap. */
+    .layer.drop-before, .layer.drop-after { z-index: 1; }
+    .layer.drop-before { border-top: ${DROP_GAP}px solid transparent; }
+    .layer.drop-after { border-bottom: ${DROP_GAP}px solid transparent; }
+    .layer.drop-before::after, .layer.drop-after::after {
+      content: ""; position: absolute; left: 0; right: 0; height: ${DROP_GAP}px; box-sizing: border-box;
+      border: 2px dashed var(--wa-accent); border-radius: var(--wa-r-md); pointer-events: none;
+      background: color-mix(in srgb, var(--wa-accent) 14%, transparent);
+    }
+    .layer.drop-before::after { top: -${DROP_GAP}px; }
+    .layer.drop-after::after { bottom: -${DROP_GAP}px; }
+
+    /* Expanded rows say more: a third line with where the layer sits on the
+       face, its meta free to wrap, and the badges kept beside the buttons
+       rather than swapped for them. */
+    .layer.rich .name small { white-space: normal; overflow: visible; text-overflow: clip; }
+    .layer.rich .facts { display: flex; flex-wrap: wrap; gap: 2px 8px; margin-top: 2px; font-size: 11.5px; color: var(--wa-muted); }
+    .layer.rich .facts .fact { white-space: nowrap; }
+    .layer.rich .facts .fact b { font-weight: 600; color: var(--wa-ink); opacity: .75; }
+    .layer.rich .right { flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+    .layer.rich:hover .badges, .layer.rich.hl .badges, .layer.rich:focus-within .badges { display: inline-flex; }
+
+    /* Two small segmented controls in the Layers title: how big the row
+       pictures are, and how much each row says. */
+    .seg { display: inline-flex; flex: none; border: 1px solid var(--wa-line); border-radius: 999px; overflow: hidden; background: var(--wa-raised); }
+    .seg button {
+      font: inherit; font-size: 11px; font-weight: 600; letter-spacing: .02em; line-height: 1;
+      padding: 4px 8px; min-width: 22px; border: 0; background: transparent; color: var(--wa-muted);
+      cursor: pointer; display: grid; place-items: center;
+      transition: color .12s ease-out, background-color .12s ease-out;
+    }
+    .seg button + button { border-left: 1px solid var(--wa-line); }
+    .seg button:hover { color: var(--wa-ink); background: var(--wa-panel); }
+    .seg button.on { color: var(--wa-ink); background: color-mix(in srgb, var(--wa-accent) 22%, transparent); }
+    .seg button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .seg button svg.ui-icon { width: 14px; height: 14px; }
+    /* The Layers title carries those controls, so it is allowed a second line
+       in a narrow column instead of squeezing them. The auto margin keeps the
+       pair on the right whichever line they land on. */
+    .panel-title.tools { flex-wrap: wrap; row-gap: 8px; }
+    .panel-title .tool-set { display: inline-flex; gap: 6px; margin-left: auto; }
 
     /* The canvas column: one card holding the bar, the big preview and the
        strip of things about the whole complication. */
@@ -1237,6 +1306,7 @@ export class WristAssistantPanel extends LitElement {
   override connectedCallback() {
     super.connectedCallback();
     this.loadColumnWidths();
+    this.loadListView();
     this.sizeObserver.observe(this);
     window.addEventListener("keydown", this.keyHandler);
     window.addEventListener("keyup", this.keyUpHandler);
@@ -1270,6 +1340,28 @@ export class WristAssistantPanel extends LitElement {
       window.localStorage.setItem(COL_STORE_KEY, JSON.stringify({ left: this.colLeft, right: this.colRight }));
     } catch {
       /* Storage off: the widths still work for this visit. */
+    }
+  }
+
+  // ── how the Layers list is shown ──────────────────────────────────────
+
+  private loadListView() {
+    try {
+      const raw = window.localStorage.getItem(LIST_STORE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { thumbStep?: unknown; detail?: unknown };
+      if (saved.thumbStep === 0 || saved.thumbStep === 1 || saved.thumbStep === 2) this.thumbStep = saved.thumbStep;
+      if (saved.detail === "compact" || saved.detail === "expanded") this.layerDetail = saved.detail;
+    } catch {
+      /* A browser with storage off keeps the defaults. */
+    }
+  }
+
+  private saveListView() {
+    try {
+      window.localStorage.setItem(LIST_STORE_KEY, JSON.stringify({ thumbStep: this.thumbStep, detail: this.layerDetail }));
+    } catch {
+      /* Storage off: the choice still holds for this visit. */
     }
   }
 
@@ -2993,6 +3085,29 @@ export class WristAssistantPanel extends LitElement {
     });
   }
 
+  /**
+   * Only one row may hold the slot open at a time. dragover on the next row
+   * can arrive before dragleave on the last one, so every mark comes off
+   * before the new one goes on. Returns false when the row already has the
+   * mark asked for, which is most events: dragover fires many times a second
+   * and the list must not be rewritten on each one.
+   */
+  private markDrop(row: HTMLElement, zone: string): boolean {
+    if (row.classList.contains(zone)) return false;
+    this.clearDropMarks();
+    row.classList.add(zone);
+    return true;
+  }
+
+  /** Take every drop slot back out of the list, and un-fade every row. Rows
+   * are cleared wholesale rather than one by one because a reorder re-renders
+   * the list and a row's DOM node can come back holding another row. */
+  private clearDropMarks() {
+    for (const row of this.renderRoot.querySelectorAll(".layer")) {
+      row.classList.remove("drop-before", "drop-after", "drop-into", "dragging");
+    }
+  }
+
   /** Drag-and-drop wiring shared by every row in the list. */
   private rowDrag(id: string, edit: boolean) {
     return {
@@ -3003,22 +3118,28 @@ export class WristAssistantPanel extends LitElement {
         if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
         (e.currentTarget as HTMLElement).classList.add("dragging");
       },
-      onEnd: (e: DragEvent) => { this.dragId = undefined; (e.currentTarget as HTMLElement).classList.remove("dragging"); },
+      onEnd: () => {
+        this.dragId = undefined;
+        // A drag let go outside every row would otherwise leave a slot open.
+        this.clearDropMarks();
+      },
       onOver: (e: DragEvent) => {
         if (!this.dragId || this.dragId === id) return;
         e.preventDefault();
         const row = e.currentTarget as HTMLElement;
         const r = row.getBoundingClientRect();
-        const before = e.clientY < r.top + r.height / 2;
-        row.classList.toggle("drop-before", before);
-        row.classList.toggle("drop-after", !before);
+        // Measure against the row's own body, not the slot it may already be
+        // holding open: an open slot moves the middle, and a middle that
+        // moves under the pointer makes the answer flip back and forth.
+        const top = r.top + (row.classList.contains("drop-before") ? DROP_GAP : 0);
+        const bottom = r.bottom - (row.classList.contains("drop-after") ? DROP_GAP : 0);
+        this.markDrop(row, e.clientY < (top + bottom) / 2 ? "drop-before" : "drop-after");
       },
-      onLeave: (e: DragEvent) => { (e.currentTarget as HTMLElement).classList.remove("drop-before", "drop-after"); },
       onDrop: (e: DragEvent) => {
         e.preventDefault();
         const row = e.currentTarget as HTMLElement;
         const before = row.classList.contains("drop-before");
-        row.classList.remove("drop-before", "drop-after");
+        this.clearDropMarks();
         if (this.dragId) this.reorderLayer(this.dragId, id, before);
         this.dragId = undefined;
       },
@@ -3118,9 +3239,13 @@ export class WristAssistantPanel extends LitElement {
     // painting app's layer list does. The rows resolve the shape the same way
     // the big preview does, so a forced state shows in both.
     const resolved = resolveAll(cfg, this.buildContext(), this.forced)[family];
+    const scale = THUMB_STEPS[this.thumbStep];
+    const thumbW = Math.round(THUMB_W * scale);
+    const thumbH = Math.round(THUMB_H * scale);
     const thumb = (ids: readonly string[]) => resolved
-      ? html`<span class="thumb">${renderLayerThumb(resolved, ids, { icons: this.icons, imageSizes: this.imageSizes, width: THUMB_W, height: THUMB_H })}</span>`
+      ? html`<span class="thumb">${renderLayerThumb(resolved, ids, { icons: this.icons, imageSizes: this.imageSizes, width: thumbW, height: thumbH })}</span>`
       : html`<span class="thumb"></span>`;
+    const rich = this.layerDetail === "expanded";
 
     const layerRow = (el: CElement, inGroup: boolean) => {
       const id = el.payload.id;
@@ -3131,19 +3256,20 @@ export class WristAssistantPanel extends LitElement {
       const states = statesSummary(el.payload.rules);
       const pointed = this.picking && this.pickHoverId === id;
       const d = this.rowDrag(id, edit);
-      return html`<div class="layer ${hl ? "hl" : ""} ${pointed ? "pick" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""}"
+      return html`<div class="layer ${hl ? "hl" : ""} ${pointed ? "pick" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""} ${rich ? "rich" : ""}"
         style=${`--k:${KIND_COLOR[el.kind]}`} tabindex="0" draggable=${d.draggable}
         @pointerenter=${() => { this.listHoverIds = [id]; }}
         @pointerleave=${() => this.leaveRow([id])}
         @click=${(e: MouseEvent) => this.clickRow(id, e)}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "layer", id }; }}
-        @dragstart=${d.onStart} @dragend=${d.onEnd} @dragover=${d.onOver} @dragleave=${d.onLeave} @drop=${d.onDrop}>
+        @dragstart=${d.onStart} @dragend=${d.onEnd} @dragover=${d.onOver} @drop=${d.onDrop}>
         <span class="grip" title="Drag to reorder. Drop on a folder to put it inside.">${uiIcon("grip")}</span>
         <span class="bar"></span>
         ${thumb([id])}
         <span class="name">
           <b>${layerTitle(el, ctx)}</b>
           <small><span class="kind">${KIND_LABEL[el.kind]}</span> · ${layerMeta(el, resolver, this.historySeries)}</small>
+          ${rich ? html`<span class="facts">${layerFacts(this.host(), family, el, eff).map((f) => html`<span class="fact"><b>${f.label}</b> ${f.value}</span>`)}</span>` : nothing}
         </span>
         <span class="right">
           <span class="badges">
@@ -3173,16 +3299,20 @@ export class WristAssistantPanel extends LitElement {
       // the very top of the list.
       const first = members[0];
       const last = members[members.length - 1];
-      const zones = ["drop-before", "drop-into", "drop-after"];
       const zoneAt = (e: DragEvent): string => {
-        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-        const y = (e.clientY - r.top) / r.height;
+        const row = e.currentTarget as HTMLElement;
+        const r = row.getBoundingClientRect();
+        // Measure the folder's own body, ignoring any slot it is holding
+        // open, so the three zones keep the same edges while the list moves.
+        const top = r.top + (row.classList.contains("drop-before") ? DROP_GAP : 0);
+        const bottom = r.bottom - (row.classList.contains("drop-after") ? DROP_GAP : 0);
+        const y = (e.clientY - top) / Math.max(1, bottom - top);
         if (y < 0.25) return "drop-before";
         if (!open && y > 0.75) return "drop-after";
         return "drop-into";
       };
       const memberIds = members.map((m) => m.payload.id);
-      return html`<div class="layer group ${hl ? "hl" : ""}" style=${`--k:${SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
+      return html`<div class="layer group ${hl ? "hl" : ""} ${rich ? "rich" : ""}" style=${`--k:${SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
         @pointerenter=${() => { this.listHoverIds = memberIds; }}
         @pointerleave=${() => this.leaveRow(memberIds)}
         @click=${() => { this.multi = new Set(); this.inspect = { kind: "group", id: g.id }; }}
@@ -3191,16 +3321,12 @@ export class WristAssistantPanel extends LitElement {
         @dragover=${(e: DragEvent) => {
           if (!this.dragId || this.dragId === g.id) return;
           e.preventDefault();
-          const row = e.currentTarget as HTMLElement;
-          const zone = zoneAt(e);
-          for (const z of zones) row.classList.toggle(z, z === zone);
+          this.markDrop(e.currentTarget as HTMLElement, zoneAt(e));
         }}
-        @dragleave=${(e: DragEvent) => { (e.currentTarget as HTMLElement).classList.remove(...zones); }}
         @drop=${(e: DragEvent) => {
           e.preventDefault();
-          const row = e.currentTarget as HTMLElement;
           const zone = zoneAt(e);
-          row.classList.remove(...zones);
+          this.clearDropMarks();
           const id = this.dragId;
           this.dragId = undefined;
           if (!id || !first || !last) return;
@@ -3217,6 +3343,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="name">
           <b>${g.name}</b>
           <small><span class="kind">Group</span> · ${members.length} layer${members.length === 1 ? "" : "s"} · ${g.locked ? "moves as one" : "unlocked"}</small>
+          ${rich ? html`<span class="facts"><span class="fact"><b>Holds</b> ${members.map((m) => layerTitle(m, ctx)).join(", ")}</span></span>` : nothing}
         </span>
         <span class="right">
           ${edit ? html`<span class="acts">
@@ -3251,7 +3378,23 @@ export class WristAssistantPanel extends LitElement {
     }
 
     return html`<div class="card">
-      <h2 class="panel-title"><span class="swatch">${uiIcon("layers")}</span>Layers<span class="spacer"></span><span class="mini">top draws last</span></h2>
+      <h2 class="panel-title tools"><span class="swatch">${uiIcon("layers")}</span>Layers<span class="spacer"></span>
+        <span class="mini">top draws last</span>
+        <span class="tool-set">
+          <span class="seg" role="group" aria-label="Row detail">
+            ${([["compact", "Compact rows: the name and one line about the layer"],
+                ["expanded", "Expanded rows: what the layer is made of and where it sits"]] as const).map(([mode, tip]) => html`
+              <button class=${this.layerDetail === mode ? "on" : ""} title=${tip} aria-label=${tip} aria-pressed=${this.layerDetail === mode ? "true" : "false"}
+                @click=${() => { this.layerDetail = mode; this.saveListView(); }}>${uiIcon(mode)}</button>`)}
+          </span>
+          <span class="seg" role="group" aria-label="Preview size">
+            ${THUMB_STEP_LABEL.map((label, i) => html`
+              <button class=${this.thumbStep === i ? "on" : ""} title=${`${THUMB_STEP_TITLE[i]} row pictures`}
+                aria-label=${`${THUMB_STEP_TITLE[i]} row pictures`} aria-pressed=${this.thumbStep === i ? "true" : "false"}
+                @click=${() => { this.thumbStep = i as ThumbStep; this.saveListView(); }}>${label}</button>`)}
+          </span>
+        </span>
+      </h2>
       ${this.activeFamily === "inline" ? html`<div class="hint">Inline is one line of text and draws no layers. The rows here belong to the ${familyTitle(family)} shape.</div>` : nothing}
       ${pickedCount >= 2 && edit
         ? html`<div class="group-cta"><span>${pickedCount} layers picked</span><span class="spacer"></span>
@@ -3261,16 +3404,15 @@ export class WristAssistantPanel extends LitElement {
           ? html`<div class="hint">${MULTI_KEY}-click layers here or on the preview, or shift-click a range of rows, then group them so a finished part moves as one. The <b>?</b> button in the header lists every key and mouse trick.</div>`
           : nothing}
       ${cfg.elements.length === 0 ? html`<div class="empty">No layers yet. Add one above.</div>` : nothing}
-      <div class="layers">
+      <div class="layers" style=${`--thumb-w:${thumbW}px;--thumb-h:${thumbH}px`}>
       ${rows}
       <div class="layer pinned ${shapeHl ? "hl" : ""}" style=${`--k:${SECTION_COLOR.place}`} tabindex="0" title="The shape is always the bottom layer"
         @click=${() => { this.inspect = { kind: "family" }; }}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "family" }; }}
-        @dragover=${(e: DragEvent) => { if (!this.dragId) return; e.preventDefault(); (e.currentTarget as HTMLElement).classList.add("drop-before"); }}
-        @dragleave=${(e: DragEvent) => { (e.currentTarget as HTMLElement).classList.remove("drop-before"); }}
+        @dragover=${(e: DragEvent) => { if (!this.dragId) return; e.preventDefault(); this.markDrop(e.currentTarget as HTMLElement, "drop-before"); }}
         @drop=${(e: DragEvent) => {
           e.preventDefault();
-          (e.currentTarget as HTMLElement).classList.remove("drop-before");
+          this.clearDropMarks();
           // The very bottom, outside any group. The anchor is the lowest row
           // that is not part of what is being dragged.
           const id = this.dragId;
@@ -3900,6 +4042,35 @@ function parseDurationSeconds(v: unknown): number | undefined {
 function ownerLabel(o: OwnerSummary): string {
   const name = o.device_name ?? o.owner_watch_id;
   return o.paired_iphone_name ? `${name} (${o.paired_iphone_name})` : name;
+}
+
+/**
+ * The third line of an expanded Layers row: what the layer is made of, rather
+ * than what it happens to read right now. The compact row already carries the
+ * live reading, so these are the settings behind it, plus where the layer sits
+ * on the face in the same design points the Place card writes.
+ */
+export function layerFacts(
+  host: EditorHost,
+  family: DrawableFamily,
+  el: CElement,
+  eff: EffectivePlacement,
+): { label: string; value: string }[] {
+  const box = DESIGN_BOX[family];
+  const f = eff.frame;
+  const pt = (n: number) => Math.round(n);
+  const facts: { label: string; value: string }[] = [
+    { label: "Shows", value: contentSummary(host, el) },
+  ];
+  const look = lookSummary(el);
+  if (look) facts.push({ label: "Looks", value: look });
+  facts.push({ label: "At", value: `${pt(f.x * box.width)}, ${pt(f.y * box.height)} pt` });
+  facts.push({ label: "Size", value: `${pt(f.width * box.width)} x ${pt(f.height * box.height)} pt` });
+  if (f.rotationDegrees !== 0) facts.push({ label: "Turned", value: `${Math.round(f.rotationDegrees)}°` });
+  // Worth saying out loud: a layer with its own placement here has stopped
+  // following the frame the other shapes share.
+  if (eff.fromPlacement) facts.push({ label: "Frame", value: `${familyTitle(family)} only` });
+  return facts;
 }
 
 /** The second line of a Layers row: the live reading and the one look fact
