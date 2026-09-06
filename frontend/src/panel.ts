@@ -926,8 +926,10 @@ export class WristAssistantPanel extends LitElement {
     .field.seg-field { align-items: center; }
     /* Readings: which of two ways to count, then how many when it is a count. */
     .readings-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
-    .readings-row .seg.wide { flex: 1 1 auto; }
-    .readings-row input.short { width: 58px; flex: none; text-align: right; }
+    .readings-row .seg.wide { flex: 1 1 auto; width: auto; }
+    /* Three digits is the most this box ever holds. The type selector is
+       there to outrank the ".field input[type=number]" full-width rule. */
+    .field .readings-row input.short[type=number] { width: 60px; flex: none; text-align: right; }
     .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 8px; }
     .grid3 .field { display: flex; flex-direction: column; align-items: stretch; gap: 3px; }
     .grid3 .field > span { font-size: 12px; }
