@@ -791,6 +791,13 @@ export class WristAssistantPanel extends LitElement {
     }
     .layer:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .layer.pick { box-shadow: inset 0 0 0 2px var(--wa-accent); }
+    /* A member of the selected group: lit in the folder's colour, without
+       the selected row's glow, so the group reads as one block. */
+    .layer.held {
+      border-color: color-mix(in srgb, ${unsafeCSS(SECTION_COLOR.group)} 70%, var(--wa-line));
+      background: color-mix(in srgb, ${unsafeCSS(SECTION_COLOR.group)} 10%, var(--wa-panel));
+    }
+    .layer.held .thumb { border-color: color-mix(in srgb, ${unsafeCSS(SECTION_COLOR.group)} 60%, var(--wa-line)); }
     .layer .grip { color: var(--wa-muted); opacity: .5; display: grid; place-items: center; cursor: grab; }
     .layer:hover .grip { opacity: .9; }
     .layer .grip svg { width: 14px; height: 14px; }
@@ -3631,7 +3638,10 @@ export class WristAssistantPanel extends LitElement {
       : html`<span class="thumb"></span>`;
     const rich = this.layerDetail === "expanded";
 
-    const layerRow = (el: CElement, inGroup: boolean) => {
+    // `held` marks a member of the selected group: the row lights up with
+    // its folder, a step softer than the selected row itself, because a drag
+    // on the face moves all of them and the list should say so.
+    const layerRow = (el: CElement, inGroup: boolean, held = false) => {
       const id = el.payload.id;
       const hl = this.inspect.kind === "layer" && this.inspect.id === id;
       const eff = effectivePlacement(cfg, family, el);
@@ -3640,7 +3650,7 @@ export class WristAssistantPanel extends LitElement {
       const states = statesSummary(el.payload.rules);
       const pointed = this.picking && this.pickHoverId === id;
       const d = this.rowDrag(id, edit);
-      return html`<div class="layer ${hl ? "hl" : ""} ${pointed ? "pick" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""} ${rich ? "rich" : ""}"
+      return html`<div class="layer ${hl ? "hl" : ""} ${held ? "held" : ""} ${pointed ? "pick" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""} ${rich ? "rich" : ""}"
         style=${`--k:${KIND_COLOR[el.kind]}`} tabindex="0" draggable=${d.draggable}
         @pointerenter=${() => { this.listHoverIds = [id]; }}
         @pointerleave=${() => this.leaveRow([id])}
@@ -3758,7 +3768,8 @@ export class WristAssistantPanel extends LitElement {
       seen.add(g.id);
       const members = ordered.filter((e) => e.payload.groupId === g.id);
       rows.push(groupRow(g, members));
-      if (!this.collapsed.has(g.id)) rows.push(html`<div class="group-kids">${members.map((m) => layerRow(m, true))}</div>`);
+      const groupHl = this.inspect.kind === "group" && this.inspect.id === g.id;
+      if (!this.collapsed.has(g.id)) rows.push(html`<div class="group-kids">${members.map((m) => layerRow(m, true, groupHl))}</div>`);
     }
 
     return html`<div class="card">
