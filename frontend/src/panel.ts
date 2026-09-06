@@ -33,6 +33,9 @@ import {
   auditUnknownKeys,
   describeTapAction,
   duplicateElement,
+  copyElements,
+  pasteElements,
+  type LayerClip,
   freeSlotFrom,
   isAttachedTap,
   layerEntityUses,
@@ -181,6 +184,9 @@ const clampColumn = (n: number) => Math.max(COL_MIN, Math.min(COL_MAX, Math.roun
  */
 const isMultiKey = (e: MouseEvent | PointerEvent) => e.metaKey || e.ctrlKey || e.shiftKey;
 const MULTI_KEY = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "Cmd" : "Ctrl";
+/** How a shortcut is written in a tooltip: ⌘D on a Mac, Ctrl+D elsewhere. */
+const KEY_MOD = MULTI_KEY === "Cmd" ? "⌘" : "Ctrl+";
+const KEY_SHIFT = MULTI_KEY === "Cmd" ? "⇧" : "Shift+";
 
 /** How many columns fit, and how wide the side ones may actually be.
  *
@@ -294,6 +300,10 @@ export class WristAssistantPanel extends LitElement {
   @state() private multi: ReadonlySet<string> = new Set();
   /** The row a shift-click measures its range from: the last row clicked. */
   private pickAnchor?: string;
+  /** Layers lifted by ⌘C or ⌘X. Held on the panel, not the system clipboard,
+   * so it works without a permission prompt and pastes into any complication
+   * opened in this tab. */
+  private clipboard?: LayerClip;
   /** Groups folded shut in the Layers list. List state only, never saved. */
   @state() private collapsed: ReadonlySet<string> = new Set();
   @state() private activeFamily: FamilyKind = "rectangular";
@@ -1384,6 +1394,21 @@ export class WristAssistantPanel extends LitElement {
     if (e.key === "Escape") this.timestampActiveId = undefined;
     const focused = e.composedPath()[0] as HTMLElement | undefined;
     const inField = !!focused?.tagName?.match(/INPUT|TEXTAREA|SELECT/) || focused?.isContentEditable === true;
+    const dialogOpen = this.renderRoot.querySelector("dialog[open]") !== null;
+    // With nothing typed into, Escape clears the selection, the way it does in
+    // a drawing app: the pick first, then the selected layer. A dialog keeps
+    // its Escape (the zoomed preview closes on it).
+    if (e.key === "Escape" && !inField && !dialogOpen) {
+      if (this.multi.size > 0) this.multi = new Set();
+      else if (this.inspect.kind === "layer" || this.inspect.kind === "group") this.inspect = { kind: "general" };
+      return;
+    }
+    // Delete and Backspace remove what is selected. Only outside a field, so
+    // a Backspace in the name box stays a Backspace.
+    if ((e.key === "Delete" || e.key === "Backspace") && !inField && !dialogOpen) {
+      if (this.deleteSelection()) e.preventDefault();
+      return;
+    }
     // Arrows nudge what is selected on the preview, but only when they are not
     // a caret key in a field and nothing else has claimed them: ⌘← is history,
     // ⌥→ is a word. Shift is the coarse step, so it is allowed through.
@@ -1408,6 +1433,149 @@ export class WristAssistantPanel extends LitElement {
       e.preventDefault();
       this.redo();
     }
+    // Everything below acts on layers, so a field keeps its own ⌘C, ⌘A and
+    // the rest, and none of it runs while a dialog has the keyboard.
+    if (inField || dialogOpen) return;
+    const key = e.key.toLowerCase();
+    let used = true;
+    if (key === "a") this.selectAll();
+    else if (key === "c") this.copySelection();
+    else if (key === "x") { if (this.copySelection()) this.deleteSelection(); }
+    else if (key === "v") this.pasteClip();
+    else if (key === "d") this.duplicateSelection();
+    else if (key === "g") { if (e.shiftKey) this.ungroupSelection(); else this.groupPicked(); }
+    else if (key === "h" && e.shiftKey) this.toggleHiddenSelection();
+    else if (e.key === "]" || e.key === "[") this.moveSelection(e.key === "]" ? 1 : -1);
+    else used = false;
+    if (used) e.preventDefault();
+  }
+
+  // ── keyboard actions on the selection ─────────────────────────────────
+
+  /** The layers a keyboard action works on: the pick when there is one, else
+   * the selected layer, else the selected group's members. Rows only; an
+   * attached tap goes with its owner. */
+  private selectedIds(): string[] {
+    const cfg = this.draft?.config;
+    if (!cfg) return [];
+    if (this.multi.size > 0) return [...this.multi].filter((id) => cfg.elements.some((el) => el.payload.id === id));
+    const ins = this.inspect;
+    if (ins.kind === "layer") return cfg.elements.some((el) => el.payload.id === ins.id) ? [ins.id] : [];
+    if (ins.kind === "group") return groupMembers(cfg, ins.id).map((m) => m.payload.id);
+    return [];
+  }
+
+  /** Select the pasted or duplicated rows: one as the layer, several as a pick. */
+  private selectRows(ids: string[]) {
+    if (ids.length === 1) {
+      this.multi = new Set();
+      this.inspect = { kind: "layer", id: ids[0]! };
+    } else if (ids.length > 1) {
+      this.multi = new Set(ids);
+    }
+  }
+
+  /** Remove the selection. Returns whether anything went, which is what
+   * decides whether the key was ours. */
+  private deleteSelection(): boolean {
+    const ids = this.selectedIds();
+    if (!this.canEdit || ids.length === 0) return false;
+    this.mutate((c) => { for (const id of ids) removeElement(c, id); });
+    this.multi = new Set();
+    this.inspect = { kind: "general" };
+    return true;
+  }
+
+  private copySelection(): boolean {
+    const cfg = this.draft?.config;
+    const ids = this.selectedIds();
+    if (!cfg || ids.length === 0) return false;
+    this.clipboard = copyElements(cfg, ids);
+    return true;
+  }
+
+  private pasteClip() {
+    if (!this.canEdit || !this.clipboard) return;
+    const clip = this.clipboard;
+    let pasted: string[] = [];
+    this.mutate((c) => { pasted = pasteElements(c, clip); });
+    this.selectRows(pasted);
+  }
+
+  /** ⌘D: a copy of the selection straight into the document, the clipboard
+   * left alone, so a paste later still gives what was copied. */
+  private duplicateSelection() {
+    const cfg = this.draft?.config;
+    const ids = this.selectedIds();
+    if (!cfg || !this.canEdit || ids.length === 0) return;
+    const clip = copyElements(cfg, ids);
+    let pasted: string[] = [];
+    this.mutate((c) => { pasted = pasteElements(c, clip); });
+    this.selectRows(pasted);
+  }
+
+  /** ⌘A: every row into the pick, groups and all. */
+  private selectAll() {
+    const cfg = this.draft?.config;
+    if (!cfg) return;
+    const ids = cfg.elements.filter((el) => !isAttachedTap(cfg, el)).map((el) => el.payload.id);
+    if (ids.length === 0) return;
+    if (ids.length === 1) this.selectRows(ids);
+    else this.multi = new Set(ids);
+  }
+
+  /** ⇧⌘G: dissolve the selected group, or the group the selected layer is in. */
+  private ungroupSelection() {
+    const cfg = this.draft?.config;
+    if (!cfg || !this.canEdit) return;
+    const ins = this.inspect;
+    const gid = ins.kind === "group" ? ins.id : ins.kind === "layer" ? groupOf(cfg, ins.id)?.id : undefined;
+    if (gid === undefined) return;
+    this.mutate((c) => ungroup(c, gid));
+    if (ins.kind === "group") this.inspect = { kind: "general" };
+  }
+
+  /** ⇧⌘H: hide the selection in the shape being edited, or show it again.
+   * One switch for the lot: if any of them is showing, all of them hide. */
+  private toggleHiddenSelection() {
+    const cfg = this.draft?.config;
+    const ids = this.selectedIds();
+    if (!cfg || !this.canEdit || ids.length === 0) return;
+    const family = this.canvasFamily;
+    const els = ids.map((id) => cfg.elements.find((el) => el.payload.id === id)).filter((el): el is CElement => el !== undefined);
+    const hide = els.some((el) => !effectivePlacement(cfg, family, el).isHidden);
+    this.mutate((c) => { for (const id of ids) setPlacement(c, family, id, { isHidden: hide }); });
+  }
+
+  /** ⌘] and ⌘[: one step forward or back for the selected layer. */
+  private moveSelection(dir: -1 | 1) {
+    if (!this.canEdit || this.inspect.kind !== "layer" || this.multi.size > 0) return;
+    this.moveLayer(this.inspect.id, dir);
+  }
+
+  /**
+   * Swap a row with its neighbour in the Layers list. Stepping past the edge
+   * of a group's block leaves the group; stepping onto a member of another
+   * group joins it.
+   */
+  private moveLayer(id: string, dir: -1 | 1) {
+    this.mutate((c) => {
+      const rows = c.elements.filter((e) => !isAttachedTap(c, e));
+      const taps = c.elements.filter((e) => isAttachedTap(c, e));
+      const i = rows.findIndex((e) => e.payload.id === id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= rows.length) return;
+      [rows[i], rows[j]] = [rows[j]!, rows[i]!];
+      const el = rows[j]!;
+      const neighbour = rows[i]!;
+      if (el.payload.groupId !== neighbour.payload.groupId) {
+        if (neighbour.payload.groupId === undefined) delete el.payload.groupId;
+        else el.payload.groupId = neighbour.payload.groupId;
+      }
+      c.elements = [...rows, ...taps];
+      pruneGroups(c);
+      packGroups(c);
+    });
   }
 
   // ── data loading ──────────────────────────────────────────────────────
@@ -2814,6 +2982,9 @@ export class WristAssistantPanel extends LitElement {
 
   private groupPicked() {
     const ids = [...this.multi];
+    // A group needs two; from the keyboard this runs with any pick, so it has
+    // to refuse rather than record an empty edit.
+    if (!this.canEdit || ids.length < 2) return;
     let gid: string | undefined;
     this.mutate((c) => { gid = createGroup(c, ids); });
     this.multi = new Set();
@@ -2825,25 +2996,7 @@ export class WristAssistantPanel extends LitElement {
     if (!cfg) return nothing;
     const edit = this.canEdit;
     const family = this.canvasFamily;
-    const move = (id: string, dir: -1 | 1) => this.mutate((c) => {
-      const rows = c.elements.filter((e) => !isAttachedTap(c, e));
-      const taps = c.elements.filter((e) => isAttachedTap(c, e));
-      const i = rows.findIndex((e) => e.payload.id === id);
-      const j = i + dir;
-      if (i < 0 || j < 0 || j >= rows.length) return;
-      [rows[i], rows[j]] = [rows[j]!, rows[i]!];
-      // Stepping past the edge of the block leaves the group; stepping onto a
-      // member of another group joins it.
-      const el = rows[j]!;
-      const neighbour = rows[i]!;
-      if (el.payload.groupId !== neighbour.payload.groupId) {
-        if (neighbour.payload.groupId === undefined) delete el.payload.groupId;
-        else el.payload.groupId = neighbour.payload.groupId;
-      }
-      c.elements = [...rows, ...taps];
-      pruneGroups(c);
-      packGroups(c);
-    });
+    const move = (id: string, dir: -1 | 1) => this.moveLayer(id, dir);
     const dup = (id: string) => {
       let copyId: string | undefined;
       this.mutate((c) => { copyId = duplicateElement(c, id); });
@@ -2902,11 +3055,11 @@ export class WristAssistantPanel extends LitElement {
             ${hidden ? html`<span class="badge">hidden</span>` : nothing}
           </span>
           ${edit ? html`<span class="acts">
-            <button class="icon" title="Bring forward" aria-label="Bring forward" @click=${(e: Event) => { e.stopPropagation(); move(id, 1); }}>${uiIcon("up")}</button>
-            <button class="icon" title="Send back" aria-label="Send back" @click=${(e: Event) => { e.stopPropagation(); move(id, -1); }}>${uiIcon("down")}</button>
-            <button class="icon" title=${eff.isHidden ? `Show in ${familyTitle(family)}` : `Hide in ${familyTitle(family)}`} aria-label=${eff.isHidden ? "Show this layer" : "Hide this layer"} @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => setPlacement(c, family, id, { isHidden: !eff.isHidden })); }}>${uiIcon(eff.isHidden ? "hide" : "show")}</button>
-            <button class="icon" title="Duplicate" aria-label="Duplicate" @click=${(e: Event) => { e.stopPropagation(); dup(id); }}>${uiIcon("duplicate")}</button>
-            <button class="icon danger" title="Delete" aria-label="Delete" @click=${(e: Event) => { e.stopPropagation(); del(id); }}>${uiIcon("delete")}</button>
+            <button class="icon" title=${`Bring forward (${KEY_MOD}])`} aria-label="Bring forward" @click=${(e: Event) => { e.stopPropagation(); move(id, 1); }}>${uiIcon("up")}</button>
+            <button class="icon" title=${`Send back (${KEY_MOD}[)`} aria-label="Send back" @click=${(e: Event) => { e.stopPropagation(); move(id, -1); }}>${uiIcon("down")}</button>
+            <button class="icon" title=${`${eff.isHidden ? "Show in" : "Hide in"} ${familyTitle(family)} (${KEY_SHIFT}${KEY_MOD}H)`} aria-label=${eff.isHidden ? "Show this layer" : "Hide this layer"} @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => setPlacement(c, family, id, { isHidden: !eff.isHidden })); }}>${uiIcon(eff.isHidden ? "hide" : "show")}</button>
+            <button class="icon" title=${`Duplicate (${KEY_MOD}D)`} aria-label="Duplicate" @click=${(e: Event) => { e.stopPropagation(); dup(id); }}>${uiIcon("duplicate")}</button>
+            <button class="icon danger" title="Delete (Delete)" aria-label="Delete" @click=${(e: Event) => { e.stopPropagation(); del(id); }}>${uiIcon("delete")}</button>
           </span>` : nothing}
         </span>
       </div>`;
@@ -2970,7 +3123,7 @@ export class WristAssistantPanel extends LitElement {
         </span>
         <span class="right">
           ${edit ? html`<span class="acts">
-            <button class="icon" title="Ungroup: keep the layers, drop the folder" aria-label="Ungroup" @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => ungroup(c, g.id)); if (hl) this.inspect = { kind: "general" }; }}>${uiIcon("ungroup")}</button>
+            <button class="icon" title=${`Ungroup: keep the layers, drop the folder (${KEY_SHIFT}${KEY_MOD}G)`} aria-label="Ungroup" @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => ungroup(c, g.id)); if (hl) this.inspect = { kind: "general" }; }}>${uiIcon("ungroup")}</button>
           </span>` : nothing}
           <button class="icon lockbtn ${g.locked ? "on" : ""}" ?disabled=${!edit}
             title=${g.locked ? "Locked: drags on the watch move the whole group. Click to unlock." : "Unlocked: each layer moves alone. Click to lock."}
@@ -3005,10 +3158,10 @@ export class WristAssistantPanel extends LitElement {
       ${this.activeFamily === "inline" ? html`<div class="hint">Inline is one line of text and draws no layers. The rows here belong to the ${familyTitle(family)} shape.</div>` : nothing}
       ${pickedCount >= 2 && edit
         ? html`<div class="group-cta"><span>${pickedCount} layers picked</span><span class="spacer"></span>
-            <button class="small primary" @click=${() => this.groupPicked()}>Group them</button>
+            <button class="small primary" title=${`Group (${KEY_MOD}G)`} @click=${() => this.groupPicked()}>Group them</button>
             <button class="small" @click=${() => { this.multi = new Set(); }}>Clear</button></div>`
         : cfg.elements.length >= 2 && edit && !cfg.groups?.length
-          ? html`<div class="hint">${MULTI_KEY}-click layers here or on the preview, or shift-click a range of rows, then group them so a finished part moves as one.</div>`
+          ? html`<div class="hint">${MULTI_KEY}-click layers here or on the preview, or shift-click a range of rows, then group them so a finished part moves as one. Keys: Delete removes, ${KEY_MOD}D duplicates, ${KEY_MOD}C ${KEY_MOD}X ${KEY_MOD}V copy, cut and paste (into any complication), ${KEY_MOD}A picks all, ${KEY_MOD}G groups, ${KEY_SHIFT}${KEY_MOD}G ungroups, ${KEY_MOD}] and ${KEY_MOD}[ reorder, ${KEY_SHIFT}${KEY_MOD}H hides, Escape deselects.</div>`
           : nothing}
       ${cfg.elements.length === 0 ? html`<div class="empty">No layers yet. Add one above.</div>` : nothing}
       <div class="layers">
@@ -3574,7 +3727,7 @@ export class WristAssistantPanel extends LitElement {
           </div>
           <div class="hint">${MULTI_KEY}-click a layer to add it or take it out. Click one on its own to edit it alone.</div>
           <div class="adders">
-            <button class="small primary" @click=${() => this.groupPicked()}>Group them</button>
+            <button class="small primary" title=${`Group (${KEY_MOD}G)`} @click=${() => this.groupPicked()}>Group them</button>
             <button class="small" @click=${() => { this.multi = new Set(); }}>Clear</button>
           </div>
         </div>

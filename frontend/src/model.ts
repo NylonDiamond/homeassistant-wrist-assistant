@@ -2470,6 +2470,114 @@ export function duplicateElement(cfg: CustomComplicationConfig, id: string): str
   return copyId;
 }
 
+// ── copy and paste ────────────────────────────────────────────────────────
+// What ⌘C lifts out of a document and ⌘V puts back, in this complication or
+// another one. A layer travels with everything a duplicate takes along: its
+// attached tap, a chart's numbers, every shape's placement, and the group it
+// shares with another copied layer.
+
+export interface LayerClip {
+  /** The copied layers in document order, attached taps and chart numbers included. */
+  elements: Element[];
+  /** Each shape's placement for every copied id. */
+  placements: Partial<Record<FamilyKind, Record<string, Placement>>>;
+  /** The groups the copied layers belonged to, so a whole group pastes as one. */
+  groups: LayerGroup[];
+}
+
+export function copyElements(cfg: CustomComplicationConfig, ids: readonly string[]): LayerClip {
+  const wanted = new Set<string>();
+  const take = (id: string) => {
+    wanted.add(id);
+    for (const tap of attachedTapsOf(cfg, id)) wanted.add(tap.payload.id);
+  };
+  for (const id of ids) {
+    take(id);
+    for (const label of chartLabelsOf(cfg, id)) take(label.payload.id);
+  }
+  const elements = cfg.elements.filter((el) => wanted.has(el.payload.id)).map((el) => structuredClone(el));
+  const placements: LayerClip["placements"] = {};
+  for (const family of DRAWABLE_FAMILIES) {
+    const layout = cfg.perFamily[family];
+    if (!layout) continue;
+    const out: Record<string, Placement> = {};
+    for (const el of elements) {
+      const p = layout.placements[el.payload.id];
+      if (p) out[el.payload.id] = structuredClone(p);
+    }
+    if (Object.keys(out).length > 0) placements[family] = out;
+  }
+  const groupIds = new Set(elements.map((el) => el.payload.groupId).filter((g): g is string => g !== undefined));
+  const groups = (cfg.groups ?? []).filter((g) => groupIds.has(g.id)).map((g) => structuredClone(g));
+  return { elements, placements, groups };
+}
+
+/**
+ * Put copied layers into a document on top of the draw order, under fresh ids.
+ * Links between copied layers (a tap's owner, a number's chart, a shared group)
+ * point at the copies. A number whose chart is neither copied nor in this
+ * document is left out, since it could only ever print its placeholder. The
+ * copies are nudged when their originals are still here, so a paste over the
+ * original shows, the way a duplicate does. Returns the ids of the pasted
+ * rows: every copy that is not an attached tap.
+ */
+export function pasteElements(cfg: CustomComplicationConfig, clip: LayerClip): string[] {
+  const idMap = new Map<string, string>();
+  for (const el of clip.elements) idMap.set(el.payload.id, newId());
+  const here = new Set(cfg.elements.map((el) => el.payload.id));
+  const nudge = clip.elements.some((el) => here.has(el.payload.id));
+  const shift = (f: NormalizedFrame): NormalizedFrame => nudge
+    ? { ...f, x: Math.min(0.9, f.x + 0.05), y: Math.min(0.9, f.y + 0.05) }
+    : f;
+  const clones: Element[] = [];
+  for (const src of clip.elements) {
+    const copy = structuredClone(src);
+    copy.payload.id = idMap.get(src.payload.id)!;
+    if (copy.kind === "tap" && copy.payload.attachedTo !== undefined) {
+      const owner = idMap.get(copy.payload.attachedTo);
+      if (owner) copy.payload.attachedTo = owner;
+      else delete copy.payload.attachedTo;
+    }
+    if (copy.kind === "text" && copy.payload.value.kind.kind === "chartStat") {
+      const chart = idMap.get(copy.payload.value.kind.layer);
+      if (chart) copy.payload.value.kind.layer = chart;
+      else if (!here.has(copy.payload.value.kind.layer)) continue;
+    }
+    copy.payload.frame = shift(copy.payload.frame);
+    clones.push(copy);
+  }
+  // A group pastes as a group when at least two of its members came along;
+  // a lone member is just a layer again.
+  const groupMap = new Map<string, string>();
+  for (const g of clip.groups) {
+    const members = clones.filter((el) => el.payload.groupId === g.id && !(el.kind === "tap" && el.payload.attachedTo !== undefined));
+    if (members.length < 2) continue;
+    const gid = newId();
+    groupMap.set(g.id, gid);
+    (cfg.groups ??= []).push({ ...structuredClone(g), id: gid });
+  }
+  for (const el of clones) {
+    if (el.payload.groupId === undefined) continue;
+    const gid = groupMap.get(el.payload.groupId);
+    if (gid) el.payload.groupId = gid;
+    else delete el.payload.groupId;
+  }
+  cfg.elements.push(...clones);
+  for (const family of DRAWABLE_FAMILIES) {
+    const from = clip.placements[family];
+    const layout = cfg.perFamily[family];
+    if (!from || !layout) continue;
+    for (const [oldId, p] of Object.entries(from)) {
+      const id = idMap.get(oldId);
+      if (id && clones.some((el) => el.payload.id === id)) layout.placements[id] = { ...structuredClone(p), frame: shift(p.frame) };
+    }
+  }
+  syncAttachedTaps(cfg);
+  pruneGroups(cfg);
+  packGroups(cfg);
+  return clones.filter((el) => !isAttachedTap(cfg, el)).map((el) => el.payload.id);
+}
+
 // ── layer entity ──────────────────────────────────────────────────────────
 // What a layer is *about* is nowhere in the schema. It is read back from the
 // places the layer already names an entity: its own value or symbol, the tap
