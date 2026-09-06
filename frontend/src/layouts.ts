@@ -12,7 +12,6 @@ import {
   type FamilyKind,
   type FamilyLayout,
   type InlineLayout,
-  type Value,
   DRAWABLE_FAMILIES,
   defaultLayout,
   literal,
@@ -47,13 +46,22 @@ export function canRemoveFamily(cfg: Pick<CustomComplicationConfig, "supportedFa
   return cfg.supportedFamilies.includes(family) && cfg.supportedFamilies.length > 1;
 }
 
-/** The Inline text a new Inline layout starts with: the first text layer's
- * value when the document has one, so a complication that already shows a
- * temperature keeps showing it on the inline line, else a literal. */
-export function seedInline(cfg: Pick<CustomComplicationConfig, "elements">): InlineLayout {
-  const text = cfg.elements.find((e) => e.kind === "text");
-  const value: Value = text && text.kind === "text" ? structuredClone(text.payload.value) : literal("Text");
-  return { value };
+/**
+ * A new Inline layout starts empty.
+ *
+ * It used to copy the first text layer's value, on the theory that a
+ * complication already showing a temperature wants to show it on the inline
+ * line too. It reads as the shape helping itself to something nobody offered
+ * it, and it is the same complaint a canvas shape used to earn by arriving
+ * with every layer already on it. Every shape now starts with nothing, and
+ * the Inline card is the first thing on screen after one is added, so there
+ * is one field to fill in and no guess to undo.
+ *
+ * Empty is also the document's own idea of untouched, so a shape added and
+ * dropped again goes without stopping to ask what it would throw away.
+ */
+export function blankInline(): InlineLayout {
+  return { value: literal("") };
 }
 
 /**
@@ -78,7 +86,7 @@ function blankLayout(cfg: CustomComplicationConfig): FamilyLayout {
 /** Add a shape. A canvas shape starts blank unless a layout is already there
  * (a shape removed and re-added in one session keeps nothing, since removal
  * deletes the layout; a document that arrived with a stray layout keeps it).
- * Inline gets `seedInline`. No-op when already supported. */
+ * Inline starts empty. No-op when already supported. */
 export function addFamily(cfg: CustomComplicationConfig, family: FamilyKind): void {
   if (!cfg.supportedFamilies.includes(family)) {
     cfg.supportedFamilies = ALL_FAMILIES.filter((f) => f === family || cfg.supportedFamilies.includes(f));
@@ -86,7 +94,7 @@ export function addFamily(cfg: CustomComplicationConfig, family: FamilyKind): vo
   if (isDrawable(family)) {
     if (!cfg.perFamily[family]) cfg.perFamily[family] = blankLayout(cfg);
   } else if (!cfg.inline) {
-    cfg.inline = seedInline(cfg);
+    cfg.inline = blankInline();
   }
   cfg.schemaVersion = schemaVersionFor(cfg);
 }

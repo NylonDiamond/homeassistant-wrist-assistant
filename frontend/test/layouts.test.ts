@@ -10,7 +10,7 @@ import {
   firstDrawable,
   missingFamilies,
   removeFamily,
-  seedInline,
+  blankInline,
   supportedFamilies,
 } from "../src/layouts.js";
 
@@ -55,22 +55,30 @@ describe("addFamily", () => {
     expect(cfg.schemaVersion).toBe(4);
   });
 
-  it("seeds Inline from the first text layer's value", () => {
+  // Inline used to copy the first text layer's value. Every shape starts with
+  // nothing on it now, and a shape that helps itself to a layer's content is
+  // the same surprise a canvas shape used to spring by arriving full.
+  it("starts Inline empty, whatever the document already draws", () => {
     const cfg = newConfig("X", 0, ["rectangular"]);
     const icon = newElement("icon");
     const text = newElement("text");
     if (text.kind !== "text") throw new Error("expected a text layer");
-    const value: Value = { kind: { kind: "entityState", entityId: "sensor.t", displayName: "T", domain: "sensor" } };
-    text.payload.value = value;
+    text.payload.value = { kind: { kind: "entityState", entityId: "sensor.t", displayName: "T", domain: "sensor" } };
     cfg.elements = [icon, text];
     addFamily(cfg, "inline");
     expect(cfg.supportedFamilies).toEqual(["rectangular", "inline"]);
-    expect(cfg.inline).toEqual({ value });
-    expect(cfg.inline!.value).not.toBe(value);
+    expect(cfg.inline).toEqual({ value: literal("") });
   });
 
-  it("seeds Inline with a literal when there is no text layer", () => {
-    expect(seedInline({ elements: [newElement("gauge")] })).toEqual({ value: literal("Text") });
+  it("counts an untouched Inline as empty, so dropping it asks nothing", () => {
+    const cfg = newConfig("X", 0, ["rectangular"]);
+    cfg.elements = [newElement("text")];
+    addFamily(cfg, "inline");
+    expect(familyContentSummary(cfg, "inline")).toEqual([]);
+  });
+
+  it("blankInline carries no label and no symbol", () => {
+    expect(blankInline()).toEqual({ value: literal("") });
   });
 
   it("is a no-op for a shape already there and never duplicates it", () => {
@@ -127,7 +135,7 @@ describe("removeFamily", () => {
     const back = parseConfig(encodeConfig(cfg));
     expect(back.supportedFamilies).toEqual(["rectangular", "corner", "inline"]);
     expect(Object.keys(back.perFamily).sort()).toEqual(["corner", "rectangular"]);
-    expect(back.inline).toEqual({ value: literal("Text") });
+    expect(back.inline).toEqual({ value: literal("") });
     expect(back.schemaVersion).toBe(6);
     expect(schemaVersionFor(back)).toBe(6);
   });
