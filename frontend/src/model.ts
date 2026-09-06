@@ -2075,6 +2075,82 @@ export function elementBase(el: Element): Omit<ElementBase, "colorSlot"> {
 }
 
 /** Per-family layer list: shared elements with the family's placements applied. */
+/** The size a layer draws at, for the kinds that have one. A placement's
+ * `size` overrides it for one shape. */
+export function elementSize(el: Element): number | undefined {
+  switch (el.kind) {
+    case "text": return el.payload.fontSize;
+    case "icon": return el.payload.size;
+    case "gauge": return el.payload.lineWidth;
+    case "chart": return el.payload.lineWidth;
+    case "shape": return undefined;
+    case "image": return undefined;
+    case "tap": return undefined;
+  }
+}
+
+/** The shapes whose design box is the square around a circle, so the corners
+ * of a full-width layout are off the face. */
+const ROUND_FAMILIES: FamilyKind[] = ["circular", "corner"];
+
+/** The square that fits inside a circle, as a fraction of the square around
+ * it. A layout pulled onto this cannot be clipped by the rim. */
+const INSCRIBED = Math.SQRT1_2;
+
+/** The smallest each kind of size may be, matching the editor's own fields, so
+ * a refit that scales a long way down still leaves something drawable. */
+function smallestSize(kind: Element["kind"]): number {
+  return kind === "text" || kind === "icon" ? 4 : 0.5;
+}
+
+/**
+ * One shape's placement, refitted for another shape's canvas.
+ *
+ * Frames are fractions, so they carry across on their own. A point is not: 8 pt
+ * text on the 181 pt wide rectangular canvas is a caption, and the same 8 pt on
+ * the 51 pt circular one is a headline. Sizes scale by whichever of the two
+ * canvas ratios is the smaller, which is the one that decides whether the thing
+ * fits at all.
+ *
+ * A round target takes a second step. Its design box is the square around the
+ * circle, so a layout that runs the full width has its ends off the face.
+ * Frames are pulled towards the centre onto the square that fits inside the
+ * circle, and their sizes come down with them. Going the other way undoes it.
+ *
+ * The result is often very small, and that is honest: three lines of
+ * rectangular text do not fit on a 51 pt circle at a readable size. Nothing
+ * goes below the size the editor's own fields allow, so a layout that scaled
+ * to the floor says at a glance that it wants laying out by hand.
+ */
+export function refitPlacement(p: Placement, from: FamilyKind, to: FamilyKind, kind: Element["kind"]): Placement {
+  const next = structuredClone(p);
+  const a = DESIGN_BOX[from as keyof typeof DESIGN_BOX];
+  const b = DESIGN_BOX[to as keyof typeof DESIGN_BOX];
+  if (from === to || !a || !b) return next;
+  const wasRound = ROUND_FAMILIES.includes(from);
+  const isRound = ROUND_FAMILIES.includes(to);
+  const inset = wasRound === isRound ? 1 : isRound ? INSCRIBED : 1 / INSCRIBED;
+  const scale = Math.min(b.width / a.width, b.height / a.height) * inset;
+  if (inset !== 1) {
+    const f = next.frame;
+    // Around the middle of the canvas, so a layout keeps its shape and its
+    // centre rather than sliding towards a corner.
+    const cx = f.x + f.width / 2;
+    const cy = f.y + f.height / 2;
+    next.frame = {
+      ...f,
+      width: f.width * inset,
+      height: f.height * inset,
+      x: 0.5 + (cx - 0.5) * inset - (f.width * inset) / 2,
+      y: 0.5 + (cy - 0.5) * inset - (f.height * inset) / 2,
+    };
+  }
+  if (next.size !== undefined) {
+    next.size = Math.max(smallestSize(kind), Math.round(next.size * scale * 10) / 10);
+  }
+  return next;
+}
+
 export function elementsFor(config: CustomComplicationConfig, family: FamilyKind): Element[] {
   const layout = config.perFamily[family];
   if (!layout || Object.keys(layout.placements).length === 0) return config.elements;
@@ -2547,9 +2623,16 @@ export function placeElements(cfg: CustomComplicationConfig, clip: LayerClip, fa
     const id = src.payload.id;
     if (!here.has(id)) continue;
     const p = from?.[id];
-    layout.placements[id] = p
-      ? { ...structuredClone(p), isHidden: false }
-      : { frame: { ...src.payload.frame }, isHidden: false };
+    // The size travels even when the source shape never set one, so the refit
+    // has something to scale and the layer does not arrive at the size it
+    // happened to be given on a canvas of another width.
+    const size = p?.size ?? elementSize(src);
+    const base: Placement = {
+      frame: { ...(p?.frame ?? src.payload.frame) },
+      isHidden: false,
+      ...(size !== undefined ? { size } : {}),
+    };
+    layout.placements[id] = clip.family === undefined ? base : refitPlacement(base, clip.family, family, src.kind);
     landed.push(id);
   }
   return landed.filter((id) => {

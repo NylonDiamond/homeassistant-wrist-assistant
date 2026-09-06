@@ -109,6 +109,7 @@ import {
   namedValueEditor,
   newNamedValue,
   copyShapeLayout,
+  type DescribeContext,
   pickedCommon,
   setPlacement,
   shownCount,
@@ -1079,6 +1080,32 @@ export class WristAssistantPanel extends LitElement {
     .blank-shape b { font-size: 13px; }
     .blank-shape .hint { margin: 5px 0 0; }
     .blank-shape .adders { margin-top: 9px; }
+
+    /* The layers this complication has that this shape does not draw. Under
+       the list and shut, so the list above stays a reading of the preview
+       beside it, and quiet: these rows are a way back in, not the work. */
+    details.off-shape { margin-top: 10px; border-top: 1px solid var(--wa-line); padding-top: 8px; }
+    details.off-shape > summary {
+      list-style: none; cursor: pointer; font-size: 12px; color: var(--wa-muted);
+      padding: 4px 6px; border-radius: var(--wa-r-sm); display: flex; align-items: center; gap: 6px;
+    }
+    details.off-shape > summary::-webkit-details-marker { display: none; }
+    details.off-shape > summary::before { content: "▸"; font-size: 10px; opacity: .7; }
+    details.off-shape[open] > summary::before { content: "▾"; }
+    details.off-shape > summary:hover { background: var(--wa-panel); color: var(--wa-ink); }
+    .off-rows { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+    .off-row {
+      display: grid; grid-template-columns: 4px minmax(0, 1fr) auto; align-items: center; gap: 8px;
+      padding: 5px 8px; border-radius: var(--wa-r-sm); cursor: pointer; font-size: 13px;
+      border: 1px dashed var(--wa-line); background: transparent; color: var(--wa-muted);
+    }
+    .off-row:hover { border-style: solid; border-color: color-mix(in srgb, var(--k) 45%, var(--wa-line)); color: var(--wa-ink); background: var(--wa-raised); }
+    .off-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .off-row .bar { width: 4px; height: 20px; border-radius: 2px; background: var(--k); opacity: .5; }
+    .off-row:hover .bar { opacity: 1; }
+    .off-row .name { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+    .off-row .name b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .off-row .name small { font-size: 11px; }
 
     /* The inspector: crumbs on top, then one card per section of the thing
        selected, tinted by what it is. */
@@ -2270,6 +2297,12 @@ export class WristAssistantPanel extends LitElement {
    * in one press, or copy the rows you want from another shape and paste them
    * here.
    */
+  /** A shape's canvas in points, for the line that says why the copy shrinks. */
+  private static sizeWords(family: DrawableFamily): string {
+    const box = DESIGN_BOX[family];
+    return `${box.width} × ${box.height} pt`;
+  }
+
   private renderShapeIsBlank(cfg: CustomComplicationConfig, family: DrawableFamily, edit: boolean) {
     if (cfg.elements.length === 0 || !isDrawable(this.activeFamily)) return nothing;
     if (shownCount(cfg, family) > 0) return nothing;
@@ -2278,16 +2311,21 @@ export class WristAssistantPanel extends LitElement {
       .filter((f) => shownCount(cfg, f) > 0);
     return html`<div class="blank-shape">
       <b>Nothing is on the ${familyTitle(family)} shape yet.</b>
-      <div class="hint">Layers belong to the whole complication, so every one of them is in the
-        list below, greyed out. The eye on a row puts that one on this shape. Or copy rows on
-        another shape with ${KEY_MOD}C, come back here and paste them with ${KEY_MOD}V: they land
-        where they sit there, and no second copy of the layer is made.</div>
+      <div class="hint">Layers belong to the whole complication, so the ones on the other shapes
+        are under <b>not on the ${familyTitle(family)} shape</b> at the foot of this card. The eye
+        on one of those rows puts it here. Or copy rows on another shape with ${KEY_MOD}C, come
+        back here and paste them with ${KEY_MOD}V: they land where they sit there, and no second
+        copy of the layer is made.</div>
       ${edit && others.length > 0
         ? html`<div class="adders">
             ${others.map((f) => html`<button class="small primary"
-              title=${`Put every layer on the ${familyTitle(family)} shape where it sits on the ${familyTitle(f)} one`}
+              title=${`Put every layer on the ${familyTitle(family)} shape where it sits on the ${familyTitle(f)} one, scaled to this canvas`}
               @click=${() => this.mutate((c) => copyShapeLayout(c, f, family))}>Copy the ${familyTitle(f)} layout</button>`)}
-          </div>`
+          </div>
+          <div class="hint">Either way the layers are scaled on the way in: a point is a point, and
+            this canvas is ${WristAssistantPanel.sizeWords(family)} against ${WristAssistantPanel.sizeWords(others[0]!)}, so
+            sizes come down to match and a round shape pulls the layout in off its rim. Expect to
+            nudge it by hand afterwards.</div>`
         : nothing}
     </div>`;
   }
@@ -3530,7 +3568,15 @@ export class WristAssistantPanel extends LitElement {
     };
     // Top of the list = drawn last = on top. Attached taps are not rows: they
     // show as a badge on the layer they belong to.
-    const ordered = [...cfg.elements].filter((el) => !isAttachedTap(cfg, el)).reverse();
+    //
+    // The list is this shape's list. A layer belongs to the whole
+    // complication, but a list of ten greyed-out rows is not a picture of
+    // what the shape draws, so the ones that are not on it move to their own
+    // folded block under the list and the rows above are exactly what the
+    // preview shows.
+    const everyRow = [...cfg.elements].filter((el) => !isAttachedTap(cfg, el)).reverse();
+    const ordered = everyRow.filter((el) => !effectivePlacement(cfg, family, el).isHidden);
+    const offShape = everyRow.filter((el) => effectivePlacement(cfg, family, el).isHidden);
     const ctx = describeContext(this.host());
     const resolver = new Resolver(this.buildContext(), this.draft?.config);
     const layout = cfg.perFamily[this.activeFamily];
@@ -3555,7 +3601,7 @@ export class WristAssistantPanel extends LitElement {
       const id = el.payload.id;
       const hl = this.inspect.kind === "layer" && this.inspect.id === id;
       const eff = effectivePlacement(cfg, family, el);
-      const hidden = el.payload.isHidden || eff.isHidden;
+      const hidden = eff.isHidden;
       const tap = attachedTapsOf(cfg, id)[0];
       const states = statesSummary(el.payload.rules);
       const pointed = this.picking && this.pickHoverId === id;
@@ -3735,7 +3781,43 @@ export class WristAssistantPanel extends LitElement {
         <span class="right"><span class="badges"><span class="badge">always bottom</span></span></span>
       </div>
       </div>
+      ${this.renderOffShape(offShape, family, edit, ctx)}
     </div>`;
+  }
+
+  /**
+   * The layers this complication has that this shape does not draw.
+   *
+   * Folded, and under the list rather than in it, because the list above is
+   * meant to be a reading of the preview beside it. They are still one click
+   * from being on the shape, which is the whole reason they are shown at all.
+   */
+  private renderOffShape(
+    offShape: readonly CElement[],
+    family: DrawableFamily,
+    edit: boolean,
+    ctx: DescribeContext,
+  ) {
+    if (offShape.length === 0) return nothing;
+    const n = offShape.length;
+    return html`<details class="off-shape">
+      <summary>${n} layer${n === 1 ? "" : "s"} not on the ${familyTitle(family)} shape</summary>
+      <div class="off-rows">
+        ${offShape.map((el) => html`<div class="off-row" style=${`--k:${KIND_COLOR[el.kind]}`} tabindex="0"
+          title=${`${layerTitle(el, ctx)} is on the complication but not on this shape`}
+          @click=${() => { this.inspect = { kind: "layer", id: el.payload.id }; }}
+          @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "layer", id: el.payload.id }; }}>
+          <span class="bar"></span>
+          <span class="name">
+            <b>${layerTitle(el, ctx)}</b>
+            <small><span class="kind">${KIND_LABEL[el.kind]}</span></small>
+          </span>
+          ${edit ? html`<button class="icon" title=${`Put it on the ${familyTitle(family)} shape`}
+            aria-label=${`Put it on the ${familyTitle(family)} shape`}
+            @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => setPlacement(c, family, el.payload.id, { isHidden: false })); }}>${uiIcon("show")}</button>` : nothing}
+        </div>`)}
+      </div>
+    </details>`;
   }
 
   /**

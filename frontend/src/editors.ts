@@ -58,6 +58,8 @@ import {
   COMPARISON_KINDS,
   DRAWABLE_FAMILIES,
   defaultLayout,
+  elementSize,
+  refitPlacement,
   IMAGE_DEFAULT_CORNER_RADIUS,
   IMAGE_DEFAULT_TIMESTAMP_SIZE,
   ZERO_OUTSET,
@@ -1346,6 +1348,11 @@ export function shapeSizeField(
     { step: opts.step, min: opts.min });
 }
 
+/** `elementSize` lives beside the design boxes now, because the refit that
+ * scales it for another canvas has to read both. Re-exported here so the
+ * inspector's own callers do not have to know that. */
+export { elementSize };
+
 /** Put a layer on one shape only, by hiding it on every other canvas shape
  * the document has. What a layer added while two shapes exist does, so the
  * shape being edited is the one that gets it. */
@@ -1364,11 +1371,15 @@ export function copyShapeLayout(cfg: CustomComplicationConfig, from: FamilyKind,
   const next: Record<string, Placement> = {};
   for (const el of cfg.elements) {
     const src = effectivePlacement(cfg, from, el);
-    next[el.payload.id] = {
+    // The size travels even when the source shape never set one, so the refit
+    // has something to scale down for the smaller canvas.
+    const size = src.size ?? elementSize(el);
+    const base: Placement = {
       frame: { ...src.frame },
       isHidden: src.isHidden,
-      ...(src.size !== undefined ? { size: src.size } : {}),
+      ...(size !== undefined ? { size } : {}),
     };
+    next[el.payload.id] = refitPlacement(base, from, to, el.kind);
   }
   layout.placements = next;
 }
@@ -1379,17 +1390,6 @@ export function shownCount(cfg: CustomComplicationConfig, family: FamilyKind): n
   return cfg.elements.filter((el) => !effectivePlacement(cfg, family, el).isHidden).length;
 }
 
-export function elementSize(el: CElement): number | undefined {
-  switch (el.kind) {
-    case "text": return el.payload.fontSize;
-    case "icon": return el.payload.size;
-    case "gauge": return el.payload.lineWidth;
-    case "chart": return el.payload.lineWidth;
-    case "shape": return undefined;
-    case "image": return undefined;
-    case "tap": return undefined;
-  }
-}
 
 // ── Several layers at once ────────────────────────────────────────────────
 
