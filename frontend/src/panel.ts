@@ -318,6 +318,13 @@ export class WristAssistantPanel extends LitElement {
   /** How much each Layers row says. Expanded adds a third line with the
    * layer's place on the face and keeps the badges next to the buttons. */
   @state() private layerDetail: LayerDetail = "compact";
+  /** Whether the Add a layer card is open. Shut, its title bar is one line and
+   * the Layers list rises to the top of the column, which is where anyone
+   * past their first face wants it. */
+  @state() private addOpen = true;
+  /** How the add buttons are drawn. Expanded carries a sample of what each
+   * kind draws; compact drops the samples for a row of tinted chips. */
+  @state() private addDetail: LayerDetail = "expanded";
   /** Layers picked with Cmd/Ctrl-click, in the list or on the preview, waiting to be grouped. */
   @state() private multi: ReadonlySet<string> = new Set();
   /** The row a shift-click measures its range from: the last row clicked. */
@@ -437,6 +444,17 @@ export class WristAssistantPanel extends LitElement {
       --wa-muted: var(--secondary-text-color, rgba(127,127,127,.9));
       --wa-accent: var(--primary-color, #6d5dfc);
       --wa-accent-ink: var(--wa-accent-ink);
+      /* Two colours for the things that come out of Home Assistant rather
+         than out of this editor: the entity a layer names, and the value it
+         is reading right now. They are the same two colours in the search
+         list, the inspector, the layer rows and the strip at the bottom, so
+         "which words here are my house" is answered by hue alone and a dense
+         card stops being a wall of grey. Nothing else in the sheet may use
+         them. */
+      --wa-ent: #0f766e;
+      --wa-val: #9a5b00;
+      --wa-ent-bg: color-mix(in srgb, var(--wa-ent) 12%, transparent);
+      --wa-val-bg: color-mix(in srgb, var(--wa-val) 14%, transparent);
       --wa-r-sm: 8px;
       --wa-r-md: 12px;
       --wa-r-lg: 16px;
@@ -461,6 +479,10 @@ export class WristAssistantPanel extends LitElement {
       --wa-muted: #8d92a6;
       --wa-accent: #7b6cff;
       --wa-accent-ink: #fff;
+      --wa-ent: #5fd4c4;
+      --wa-val: #ffc45c;
+      --wa-ent-bg: color-mix(in srgb, var(--wa-ent) 14%, transparent);
+      --wa-val-bg: color-mix(in srgb, var(--wa-val) 16%, transparent);
       --wa-shadow: 0 1px 2px rgba(0,0,0,.45), 0 10px 30px rgba(0,0,0,.35);
       --wa-shadow-pop: 0 16px 48px rgba(0,0,0,.6);
       color-scheme: dark;
@@ -684,7 +706,22 @@ export class WristAssistantPanel extends LitElement {
        thumbnails, so "what a gauge looks like" is answered by the same picture
        in both places and the button reads as a watch face rather than a
        swatch. */
+    /* A card whose whole title bar is the fold handle. Shut, the title keeps
+       its own margin off the body it no longer has, so the card is one line. */
+    .card.fold .fold-h { cursor: pointer; border-radius: var(--wa-r-sm); margin: -4px -6px 8px; padding: 4px 6px; user-select: none; }
+    .card.fold[data-open="false"] .fold-h { margin-bottom: -4px; }
+    .card.fold .fold-h:hover { background: var(--wa-panel); }
+    .card.fold .fold-h:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .card.fold .fold-h .chev { color: var(--wa-muted); flex: none; display: grid; place-items: center; transition: transform .15s ease-out; }
+    .card.fold .fold-h .chev svg { width: 16px; height: 16px; }
+    .card.fold[data-open="true"] .fold-h .chev { transform: rotate(180deg); }
+
     .add-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    /* Compact: the samples go and the buttons shrink to tinted name chips, so
+       seven kinds take two short rows instead of three tall ones. */
+    .add-grid.lean { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+    .add-grid.lean button.add { padding: 7px 9px; border-radius: 10px; }
+    .add-grid.lean button.add .add-name { justify-content: flex-start; }
     button.add {
       display: flex; flex-direction: column; align-items: stretch; gap: 7px; padding: 7px 7px 8px; border-radius: 12px;
       font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--wa-ink); white-space: nowrap;
@@ -1010,8 +1047,12 @@ export class WristAssistantPanel extends LitElement {
     .vchip:hover { border-color: var(--wa-accent); }
     .vchip .dom { width: 22px; height: 22px; border-radius: 50%; background: color-mix(in srgb, var(--k) 20%, transparent); color: var(--k); display: grid; place-items: center; flex: none; }
     .vchip .dom svg { width: 13px; height: 13px; }
-    .vchip b { font-weight: 500; }
-    .vchip .val { color: var(--wa-muted); border-bottom: 1px dashed var(--wa-line); }
+    .vchip b { font-weight: 600; color: var(--wa-ent); }
+    .vchip .val {
+      color: var(--wa-val); font-weight: 600;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .95em;
+      border-bottom: 1px dashed color-mix(in srgb, var(--wa-val) 50%, transparent);
+    }
     .vchip.testing { border-color: var(--wa-states); }
     .vchip.testing .val { color: color-mix(in srgb, var(--wa-states) 70%, var(--wa-ink)); border-bottom-color: var(--wa-states); }
     .vchip input { width: 110px; font: inherit; font-size: 13px; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--wa-states); background: var(--wa-card); color: inherit; }
@@ -1057,6 +1098,26 @@ export class WristAssistantPanel extends LitElement {
     .sec-h .chev svg { width: 16px; height: 16px; }
     .sec[data-open="true"] .sec-h .chev { transform: rotate(180deg); }
     .sec-b { padding: 10px 12px 14px; }
+    /* A section is a stack of blocks, not one run of prose. Every control
+       block after the first draws a hairline above itself, and the hint that
+       explains a block stays under it on the same side of the line, so the
+       eye gets "control, then why" in pairs instead of a wall.
+
+       Only direct children are ruled: the fields inside a .grid2 are one
+       block and must not be cut apart from each other. */
+    .sec-b > :is(.field, .grid2, .grid4, .chart-numbers, .adders, .states-switch, .value-editor, details.sub) {
+      margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--wa-line);
+    }
+    .sec-b > :is(.field, .grid2, .grid4, .chart-numbers, .adders, .states-switch, .value-editor, details.sub):first-child {
+      margin-top: 0; padding-top: 0; border-top: 0;
+    }
+    /* A run of band rows is one block: the rule goes above the first of them,
+       and the rest just stack. */
+    .sec-b > .row-inline { margin-top: 6px; }
+    .sec-b > :not(.row-inline) + .row-inline { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--wa-line); }
+    /* A hint belongs to the block above it, so it never carries a rule and it
+       sits tight under what it explains. */
+    .sec-b > .hint { margin: 5px 0 0; }
     /* The picked layers, read only: the Layers list's colour coding without
        its controls, so the eye can check the pick without leaving the form. */
     .picked { display: flex; flex-direction: column; gap: 5px; margin-bottom: 4px; }
@@ -1207,8 +1268,8 @@ export class WristAssistantPanel extends LitElement {
     .grid4 input[type=number] { text-align: right; padding-left: 4px; padding-right: 6px; }
     .row-inline { display: flex; align-items: flex-end; gap: 4px; }
     .row-inline .field { flex: 1; }
-    .hint { font-size: 12px; opacity: .75; margin: 4px 0; }
-    .hint.warn { opacity: 1; }
+    .hint { font-size: 12px; color: var(--wa-muted); margin: 4px 0; }
+    .hint.warn { color: var(--wa-ink); }
     details.sub { margin: 6px 0; }
     details.sub summary { font-size: 12px; opacity: .8; cursor: pointer; }
     .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 8px; border: 1px solid var(--wa-line); border-radius: 999px; }
@@ -1230,7 +1291,11 @@ export class WristAssistantPanel extends LitElement {
     button.value-chip:hover { border-color: var(--wa-accent); }
     button.value-chip:focus-visible { outline: 2px solid var(--wa-accent); outline-offset: 1px; }
     .value-chip .chip-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .value-chip .chip-now { max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .65; }
+    .value-chip .chip-now {
+      max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      color: var(--wa-val); font-weight: 600;
+      padding: 1px 6px; border-radius: 999px; background: var(--wa-val-bg);
+    }
     .value-chip .chip-caret { opacity: .55; font-size: 11px; }
     .value-pop {
       position: fixed; inset: auto; margin: 0; width: min(430px, calc(100vw - 16px));
@@ -1310,7 +1375,7 @@ export class WristAssistantPanel extends LitElement {
        the one light that is on findable in a list of forty. */
     .entity-field { position: relative; }
     .ent-box { position: relative; display: flex; align-items: center; }
-    .ent-box input { width: 100%; min-width: 0; padding-left: 32px; padding-right: 30px; }
+    .ent-box input { width: 100%; min-width: 0; padding-left: 32px; padding-right: 30px; color: var(--wa-ent); font-weight: 500; }
     .ent-box .ent-glass { position: absolute; left: 10px; display: grid; place-items: center; color: var(--wa-muted); pointer-events: none; }
     .ent-box .ent-glass svg { width: 14px; height: 14px; display: block; }
     .ent-box.open .ent-glass { color: var(--wa-accent); }
@@ -1342,25 +1407,42 @@ export class WristAssistantPanel extends LitElement {
     .ent-ico.on { background: color-mix(in srgb, var(--wa-accent) 20%, transparent); color: var(--wa-accent); }
     .ent-ico svg { width: 17px; height: 17px; display: block; }
     .ent .ent-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-    .ent .ent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+    .ent .ent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--wa-ent); }
     .ent .ent-sub { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-size: 11px; }
     .ent .ent-area { flex: none; color: var(--wa-muted); }
     /* The room and the id are one line, and the id is the half that may be
        cut: the room is short and the id's tail is the least useful part. */
     .ent .ent-area + .ent-id::before { content: "·"; margin-right: 6px; opacity: .5; }
-    .ent .ent-id { min-width: 0; opacity: .55; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ent .ent-id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wa-ent); opacity: .8; }
     .ent .ent-right { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; max-width: 40%; }
     .ent .ent-type { font-size: 11px; color: var(--wa-muted); white-space: nowrap; }
     .ent .ent-state {
-      font-size: 11px; font-weight: 500; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-      color: color-mix(in srgb, var(--wa-ink) 70%, transparent);
+      font-size: 11px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      color: var(--wa-val);
     }
-    .entity-current { display: flex; gap: 8px; align-items: center; font-size: 12px; margin-top: 5px; }
-    .entity-current .ent-ico { width: 24px; height: 24px; border-radius: 7px; }
+    /* The line under the search box: which entity this layer holds, and what
+       it says right now. It is the one place both tokens sit side by side, so
+       it is also the key to reading them everywhere else. */
+    .entity-current {
+      display: flex; gap: 8px; align-items: center; font-size: 12px; margin-top: 6px;
+      padding: 6px 8px; border-radius: var(--wa-r-sm);
+      border: 1px solid color-mix(in srgb, var(--wa-ent) 28%, var(--wa-line)); background: var(--wa-ent-bg);
+    }
+    .entity-current .ent-ico { width: 24px; height: 24px; border-radius: 7px; background: color-mix(in srgb, var(--wa-ent) 18%, transparent); color: var(--wa-ent); }
+    .entity-current .ent-ico.on { background: color-mix(in srgb, var(--wa-ent) 28%, transparent); color: var(--wa-ent); }
     .entity-current .ent-ico svg { width: 14px; height: 14px; }
-    .entity-current .ent-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .entity-current .ent-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wa-ent); font-weight: 600; }
     .entity-current .ent-area { flex: none; color: var(--wa-muted); }
-    .entity-current .ent-state { flex: none; color: var(--wa-muted); max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .entity-current .ent-state { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* The two tokens, wherever a run of ordinary prose has to name an entity
+       or print what it reads. Everything that shows a live value ends up
+       here, so the colour never has to be repeated by hand. */
+    .ent-tok { color: var(--wa-ent); font-weight: 600; }
+    .val-tok, .entity-current .ent-state, .vchip .val, .chart-numbers b, .hint .nums {
+      color: var(--wa-val); font-weight: 600;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .95em;
+    }
 
     /* Symbol picker */
     .sym-browse { margin: 6px 0; }
@@ -1427,9 +1509,11 @@ export class WristAssistantPanel extends LitElement {
     try {
       const raw = window.localStorage.getItem(LIST_STORE_KEY);
       if (!raw) return;
-      const saved = JSON.parse(raw) as { thumbStep?: unknown; detail?: unknown };
+      const saved = JSON.parse(raw) as { thumbStep?: unknown; detail?: unknown; addOpen?: unknown; addDetail?: unknown };
       if (saved.thumbStep === 0 || saved.thumbStep === 1 || saved.thumbStep === 2) this.thumbStep = saved.thumbStep;
       if (saved.detail === "compact" || saved.detail === "expanded") this.layerDetail = saved.detail;
+      if (typeof saved.addOpen === "boolean") this.addOpen = saved.addOpen;
+      if (saved.addDetail === "compact" || saved.addDetail === "expanded") this.addDetail = saved.addDetail;
     } catch {
       /* A browser with storage off keeps the defaults. */
     }
@@ -1437,7 +1521,10 @@ export class WristAssistantPanel extends LitElement {
 
   private saveListView() {
     try {
-      window.localStorage.setItem(LIST_STORE_KEY, JSON.stringify({ thumbStep: this.thumbStep, detail: this.layerDetail }));
+      window.localStorage.setItem(LIST_STORE_KEY, JSON.stringify({
+        thumbStep: this.thumbStep, detail: this.layerDetail,
+        addOpen: this.addOpen, addDetail: this.addDetail,
+      }));
     } catch {
       /* Storage off: the choice still holds for this visit. */
     }
@@ -3088,24 +3175,52 @@ export class WristAssistantPanel extends LitElement {
   // ── left column ───────────────────────────────────────────────────────
 
   /** One tinted button per kind, and the presets under them. Above the
-   * list on purpose: adding a layer never moves the button just pressed. */
+   * list on purpose: adding a layer never moves the button just pressed.
+   *
+   * The card folds, and its buttons have the same two densities the Layers
+   * list has. Both choices are remembered per browser, because the person who
+   * has built five faces already knows what a gauge looks like and wants the
+   * room, and the person on their first one does not. */
   private renderAddLayer() {
     const cfg = this.draft?.config;
     if (!cfg || !this.canEdit) return nothing;
     const full = cfg.elements.length >= 64;
-    return html`<div class="card">
-      <h2 class="panel-title"><span class="swatch">${uiIcon("plus")}</span>Add a layer</h2>
-      <div class="add-grid">
-        ${KIND_ORDER.map((k) => html`<button class="add" style=${`--k:${KIND_COLOR[k]}`} ?disabled=${full} title=${`Add a blank ${KIND_LABEL[k].toLowerCase()} layer`}
-          @click=${() => { const el = newElement(k); this.mutate((c) => { c.elements.push(el); }); this.inspect = { kind: "layer", id: el.payload.id }; }}
-          ><span class="well">${addPreview(k)}</span><span class="add-name">${uiIcon(k)}<span>${KIND_LABEL[k]}</span></span></button>`)}
-      </div>
-      <div class="presets-l">Or start from a preset</div>
-      <div class="presets">
-        ${LAYER_PRESETS.map((p) => html`<button class="preset" title=${p.blurb}
-          ?disabled=${cfg.elements.length + p.layerCount > 64}
-          @click=${() => this.openPreset(p.kind)}>${p.title}</button>`)}
-      </div>
+    const open = this.addOpen;
+    const rich = this.addDetail === "expanded";
+    const toggle = () => { this.addOpen = !this.addOpen; this.saveListView(); };
+    return html`<div class="card fold" data-open=${open ? "true" : "false"}>
+      <h2 class="panel-title tools fold-h" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
+        title=${open ? "Hide the add buttons" : "Show the add buttons"}
+        @click=${toggle}
+        @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}>
+        <span class="swatch">${uiIcon("plus")}</span>Add a layer<span class="spacer"></span>
+        ${open ? nothing : html`<span class="mini">${KIND_ORDER.length} kinds · ${LAYER_PRESETS.length} presets</span>`}
+        ${open
+          ? html`<span class="tool-set" @click=${(e: Event) => e.stopPropagation()}>
+              <span class="seg" role="group" aria-label="Button detail">
+                ${([["compact", "Compact buttons: the name of each kind, no sample"],
+                    ["expanded", "Expanded buttons: a sample of what each kind draws"]] as const).map(([mode, tip]) => html`
+                  <button class=${this.addDetail === mode ? "on" : ""} title=${tip} aria-label=${tip} aria-pressed=${this.addDetail === mode ? "true" : "false"}
+                    @click=${() => { this.addDetail = mode; this.saveListView(); }}>${uiIcon(mode)}</button>`)}
+              </span>
+            </span>`
+          : nothing}
+        <span class="chev">${uiIcon("chevron")}</span>
+      </h2>
+      ${open
+        ? html`
+          <div class="add-grid ${rich ? "" : "lean"}">
+            ${KIND_ORDER.map((k) => html`<button class="add" style=${`--k:${KIND_COLOR[k]}`} ?disabled=${full} title=${`Add a blank ${KIND_LABEL[k].toLowerCase()} layer`}
+              @click=${() => { const el = newElement(k); this.mutate((c) => { c.elements.push(el); }); this.inspect = { kind: "layer", id: el.payload.id }; }}
+              >${rich ? html`<span class="well">${addPreview(k)}</span>` : nothing}<span class="add-name">${uiIcon(k)}<span>${KIND_LABEL[k]}</span></span></button>`)}
+          </div>
+          <div class="presets-l">Or start from a preset</div>
+          <div class="presets">
+            ${LAYER_PRESETS.map((p) => html`<button class="preset" title=${p.blurb}
+              ?disabled=${cfg.elements.length + p.layerCount > 64}
+              @click=${() => this.openPreset(p.kind)}>${p.title}</button>`)}
+          </div>`
+        : nothing}
       ${this.renderPresetDialog()}
     </div>`;
   }

@@ -1703,7 +1703,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
           ? html`<div class="hint warn">No numbers in this value yet, so the chart draws nothing.</div>`
           : nothing}
         ${series.length > 0
-          ? html`<div class="hint">Reads ${chartReadout(shown)}${series.length === shown.length
+          ? html`<div class="hint">Reads <span class="nums">${chartReadout(shown)}</span>${series.length === shown.length
               ? html` · ${shown.length} ${shown.length === 1 ? "value" : "values"}`
               : html` · ${shown.length} of ${series.length}`}</div>`
           : nothing}
@@ -1959,7 +1959,7 @@ function chartNumbersSection(host: EditorHost, el: Extract<CElement, { kind: "ch
         <div class="chart-numbers">
           ${labels.map((l) => html`
             <button class="small" title="Edit this number" @click=${() => host.selectLayer(l.payload.id)}>
-              <b>${host.resolve(l.payload.value) ?? "--"}</b> · ${layerTitle(l, ctx)}
+              <b>${host.resolve(l.payload.value) ?? "--"}</b> · <span class="ent-tok">${layerTitle(l, ctx)}</span>
             </button>`)}
         </div>
         <div class="hint">Each number is a text layer in this chart's group. Click one to edit it; drag it on the preview to move it.</div>`}
