@@ -3110,12 +3110,22 @@ export class WristAssistantPanel extends LitElement {
     return true;
   }
 
-  /** Take every drop slot back out of the list, and un-fade every row. Rows
-   * are cleared wholesale rather than one by one because a reorder re-renders
-   * the list and a row's DOM node can come back holding another row. */
+  /** Take every drop slot back out of the list. Runs on each move of the slot,
+   * so it must leave the collapsed row alone: clearing that here put the
+   * dragged row back on screen at the first dragover. Rows are cleared
+   * wholesale rather than one by one because a reorder re-renders the list and
+   * a row's DOM node can come back holding another row. */
   private clearDropMarks() {
+    for (const row of this.renderRoot.querySelectorAll(".layer")) {
+      row.classList.remove("drop-before", "drop-after", "drop-into");
+    }
+  }
+
+  /** The end of a drag: the slot goes, and every collapsed row comes back. */
+  private clearDragMarks() {
+    this.clearDropMarks();
     for (const row of this.renderRoot.querySelectorAll(".layer, .group-kids")) {
-      row.classList.remove("drop-before", "drop-after", "drop-into", "dragging");
+      row.classList.remove("dragging");
     }
   }
 
@@ -3142,8 +3152,9 @@ export class WristAssistantPanel extends LitElement {
       },
       onEnd: () => {
         this.dragId = undefined;
-        // A drag let go outside every row would otherwise leave a slot open.
-        this.clearDropMarks();
+        // A drag let go outside every row would otherwise leave a slot open
+        // and the row it came from collapsed.
+        this.clearDragMarks();
       },
       onOver: (e: DragEvent) => {
         if (!this.dragId || this.dragId === id) return;
@@ -3161,7 +3172,7 @@ export class WristAssistantPanel extends LitElement {
         e.preventDefault();
         const row = e.currentTarget as HTMLElement;
         const before = row.classList.contains("drop-before");
-        this.clearDropMarks();
+        this.clearDragMarks();
         if (this.dragId) this.reorderLayer(this.dragId, id, before);
         this.dragId = undefined;
       },
@@ -3348,7 +3359,7 @@ export class WristAssistantPanel extends LitElement {
         @drop=${(e: DragEvent) => {
           e.preventDefault();
           const zone = zoneAt(e);
-          this.clearDropMarks();
+          this.clearDragMarks();
           const id = this.dragId;
           this.dragId = undefined;
           if (!id || !first || !last) return;
@@ -3434,7 +3445,7 @@ export class WristAssistantPanel extends LitElement {
         @dragover=${(e: DragEvent) => { if (!this.dragId) return; e.preventDefault(); this.markDrop(e.currentTarget as HTMLElement, "drop-before"); }}
         @drop=${(e: DragEvent) => {
           e.preventDefault();
-          this.clearDropMarks();
+          this.clearDragMarks();
           // The very bottom, outside any group. The anchor is the lowest row
           // that is not part of what is being dragged.
           const id = this.dragId;
