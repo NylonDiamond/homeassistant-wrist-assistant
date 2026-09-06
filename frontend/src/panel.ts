@@ -303,6 +303,14 @@ export class WristAssistantPanel extends LitElement {
   /** The layer the pick-mode pointer is over. Shaded in every preview and
    * marked in the Layers card, so the two lists answer each other. */
   @state() private pickHoverId?: string;
+  /** The layers under the pointer in the Layers list: one for a layer row,
+   * every member for a group row. Tinted on the preview, so a row can be
+   * found on the face without selecting it. Selection stays where it was. */
+  @state() private listHoverIds: readonly string[] = [];
+  /** The preview is open full-width in a modal, for fine moves on a small
+   * face. Only the face and its gestures come along; the columns stay under
+   * the backdrop. */
+  @state() private zoomed = false;
   /** Review mode: every tap area on show, labelled, with the drawing dimmed.
    * An attached tap is invisible during normal editing on purpose, which is
    * exactly why "what happens if I tap here?" needed a mode of its own. */
@@ -953,6 +961,33 @@ export class WristAssistantPanel extends LitElement {
       box-shadow: 0 12px 40px rgba(0,0,0,.4);
     }
     dialog.preset-dialog::backdrop { background: rgba(0,0,0,.45); }
+    /* The zoomed preview: the whole window, the face as wide as it will go.
+       The picture keeps its slot's aspect and never runs taller than the room
+       under the bar, so a wide rectangular face on a short window still fits. */
+    dialog.zoom-dialog {
+      width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; margin: 0; padding: 0; border: 0;
+      background: var(--wa-bg, #111); color: var(--wa-ink);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    dialog.zoom-dialog::backdrop { background: rgba(0,0,0,.6); }
+    .zoom-bar {
+      display: flex; align-items: center; gap: 8px; padding: 10px 16px; flex: none;
+      border-bottom: 1px solid var(--wa-line); background: var(--wa-card);
+    }
+    .zoom-bar .under { margin: 0; text-align: left; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .zoom-bar .spacer { flex: 1; min-width: 0; }
+    .zoom-stage {
+      flex: 1 1 auto; min-height: 0; display: grid; place-items: center; padding: 16px;
+      background:
+        radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--wa-accent) 10%, transparent) 0, transparent 65%),
+        radial-gradient(color-mix(in srgb, var(--wa-ink) 9%, transparent) 1px, transparent 1px) 0 0 / 18px 18px;
+    }
+    .zoom-stage .preview svg,
+    .zoom-stage .preview.rectangular svg,
+    .zoom-stage .preview.circular svg,
+    .zoom-stage .preview.corner svg {
+      width: min(100%, calc((100vh - 90px) * var(--wa-ratio, 1))); max-width: none;
+    }
     dialog.preset-dialog h2 { margin: 0 0 4px; font-size: 15px; font-weight: 500; }
     .ok { color: var(--success-color, #43a047); }
     .warn { color: var(--warning-color, #ffa600); }
@@ -1313,6 +1348,12 @@ export class WristAssistantPanel extends LitElement {
     // screen. `nearest` means a row already visible never moves.
     if (changed.has("pickHoverId") && this.pickHoverId !== undefined) {
       this.renderRoot.querySelector<HTMLElement>(".layer.pick")?.scrollIntoView({ block: "nearest" });
+    }
+    // The zoom dialog is only in the tree while open, and a native dialog
+    // needs showModal() for the backdrop and the Escape key.
+    if (changed.has("zoomed") && this.zoomed) {
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.zoom-dialog");
+      if (dialog && !dialog.open) dialog.showModal();
     }
     if (changed.has("hass") && this.draft) {
       const snapshot: Record<string, unknown> = {};
@@ -1964,10 +2005,8 @@ export class WristAssistantPanel extends LitElement {
   // ── preview gestures ──────────────────────────────────────────────────
 
   /**
-   * The pick toggle, drawn over the previews and over the Layers card. Both
-   * buttons are the same switch: picking happens on the face, and the layer it
-   * names is a row in the other card, so either place is a fair place to reach
-   * for it.
+   * The pick toggle, drawn over the preview beside Show taps: picking happens
+   * on the face, so the switch sits with the face.
    */
   private renderPickButton() {
     const on = this.picking;
@@ -1986,6 +2025,42 @@ export class WristAssistantPanel extends LitElement {
       aria-pressed=${on ? "true" : "false"}
       title="Show every tap area, labelled with what it does, over a dimmed face. With a layer selected, only its tap area shows, and you can drag its corners to size it."
       @click=${() => this.setShowTaps(!this.showTaps)}><span class="glyph">☞</span>Show taps</button>`;
+  }
+
+  /** The zoom toggle: open the face full-width in a modal for fine moves.
+   * Inline has no face to zoom, so it has no button. */
+  private renderZoomButton() {
+    const off = !this.draft || this.parseError !== undefined || this.activeFamily === "inline";
+    return html`<button class="pick" ?disabled=${off}
+      title="Open the preview as large as the window allows, for small moves. Drag and arrow keys work there too. Escape closes."
+      @click=${() => { this.zoomed = true; }}><span class="glyph">⤢</span>Expand</button>`;
+  }
+
+  /**
+   * The full-width preview: the same face, the same gestures, drawn as wide as
+   * the window allows. A native dialog brings the backdrop and Escape with it.
+   * The bar keeps the two face toggles and Close; everything else stays under
+   * the backdrop, which is the point.
+   */
+  private renderZoomDialog(family: DrawableFamily, layouts: ResolvedAll, watchCase: WatchCase) {
+    const cfg = this.draft?.config;
+    if (!cfg) return nothing;
+    const slot = watchCase.slots[family];
+    // The picture's own aspect: the slot for rectangular and circular, and the
+    // 104 × 124 screen quadrant the corner preview draws (renderer.ts).
+    const ratio = family === "corner" ? 104 / 124 : slot.width / slot.height;
+    return html`<dialog class="zoom-dialog" @close=${() => { this.zoomed = false; }}>
+      <div class="zoom-bar">
+        ${this.renderUnder(cfg, family)}
+        <span class="spacer"></span>
+        ${this.renderPickButton()}
+        ${this.renderShowTapsButton()}
+        <button class="pick" title="Back to the editor (Escape)" @click=${() => { this.zoomed = false; }}><span class="glyph">⤡</span>Close</button>
+      </div>
+      <div class="zoom-stage" style=${`--wa-ratio:${ratio}`}>
+        ${this.renderBigPreview(family, layouts, watchCase)}
+      </div>
+    </dialog>`;
   }
 
   private setShowTaps(on: boolean) {
@@ -2011,6 +2086,13 @@ export class WristAssistantPanel extends LitElement {
     const target = e.target as Element | null;
     const id = target?.closest?.("[data-element-id]")?.getAttribute("data-element-id");
     return id ? selectableLayerId(cfg, id) : undefined;
+  }
+
+  /** Drop the list tint, but only the one this row put up: the pointer can
+   * enter the next row before this row's leave arrives. */
+  private leaveRow(ids: readonly string[]) {
+    const same = this.listHoverIds.length === ids.length && this.listHoverIds.every((id, i) => ids[i] === id);
+    if (same) this.listHoverIds = [];
   }
 
   private onPickMove(e: PointerEvent) {
@@ -2798,6 +2880,8 @@ export class WristAssistantPanel extends LitElement {
       const d = this.rowDrag(id, edit);
       return html`<div class="layer ${hl ? "hl" : ""} ${pointed ? "pick" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""}"
         style=${`--k:${KIND_COLOR[el.kind]}`} tabindex="0" draggable=${d.draggable}
+        @pointerenter=${() => { this.listHoverIds = [id]; }}
+        @pointerleave=${() => this.leaveRow([id])}
         @click=${(e: MouseEvent) => this.clickRow(id, e)}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "layer", id }; }}
         @dragstart=${d.onStart} @dragend=${d.onEnd} @dragover=${d.onOver} @dragleave=${d.onLeave} @drop=${d.onDrop}>
@@ -2844,7 +2928,10 @@ export class WristAssistantPanel extends LitElement {
         if (!open && y > 0.75) return "drop-after";
         return "drop-into";
       };
+      const memberIds = members.map((m) => m.payload.id);
       return html`<div class="layer group ${hl ? "hl" : ""}" style=${`--k:${SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
+        @pointerenter=${() => { this.listHoverIds = memberIds; }}
+        @pointerleave=${() => this.leaveRow(memberIds)}
         @click=${() => { this.multi = new Set(); this.inspect = { kind: "group", id: g.id }; }}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "group", id: g.id }; }}
         @dragstart=${d.onStart} @dragend=${d.onEnd}
@@ -2911,7 +2998,7 @@ export class WristAssistantPanel extends LitElement {
     }
 
     return html`<div class="card">
-      <h2 class="panel-title"><span class="swatch">${uiIcon("layers")}</span>Layers<span class="spacer"></span><span class="mini">top draws last</span>${this.renderPickButton()}</h2>
+      <h2 class="panel-title"><span class="swatch">${uiIcon("layers")}</span>Layers<span class="spacer"></span><span class="mini">top draws last</span></h2>
       ${this.activeFamily === "inline" ? html`<div class="hint">Inline is one line of text and draws no layers. The rows here belong to the ${familyTitle(family)} shape.</div>` : nothing}
       ${pickedCount >= 2 && edit
         ? html`<div class="group-cta"><span>${pickedCount} layers picked</span><span class="spacer"></span>
@@ -3061,12 +3148,15 @@ export class WristAssistantPanel extends LitElement {
         </label>
         <span class="hint">Layouts are made in the ${REFERENCE_CASE.label} box. Smaller cases scale it down.</span>
         <span class="spacer"></span>
+        ${this.renderPickButton()}
         ${this.renderShowTapsButton()}
+        ${this.renderZoomButton()}
       </div>
       <div class="stage">
         ${family === "inline" ? this.renderInlinePreview(layouts.inline, false) : this.renderBigPreview(family, layouts, watchCase)}
         ${this.renderUnder(cfg, family)}
       </div>
+      ${this.zoomed && family !== "inline" ? this.renderZoomDialog(family, layouts, watchCase) : nothing}
       <div class="strip">
         ${this.renderSettingsRow(cfg)}
         ${this.renderShapesRow(cfg, layouts)}
@@ -3100,7 +3190,11 @@ export class WristAssistantPanel extends LitElement {
       tapReview: this.showTaps,
       ...(focus !== undefined ? { tapFocusId: focus } : {}),
       handles: this.canEdit && !this.picking && (!this.showTaps || focus !== undefined),
-      ...(this.picking && this.pickHoverId !== undefined ? { hoverId: this.pickHoverId } : {}),
+      // Pick mode owns the tint while it is on; otherwise the Layers list
+      // does, so resting on a row shows where that layer sits on the face.
+      ...(this.picking
+        ? (this.pickHoverId !== undefined ? { hoverId: this.pickHoverId } : {})
+        : (this.listHoverIds.length > 0 ? { hoverIds: this.listHoverIds } : {})),
       ...(this.timestampActiveId !== undefined && this.timestampActiveId === highlightId && !this.showTaps && !this.picking
         ? { timestampActiveId: this.timestampActiveId } : {}),
     };

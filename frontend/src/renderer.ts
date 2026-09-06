@@ -115,6 +115,9 @@ export interface RenderOptions {
   /** Editor affordance: the layer the pick-mode pointer is over, filled and
    * outlined the way a browser inspector shades the node under the cursor. */
   hoverId?: string;
+  /** More layers to tint the same way: the members of a group row the pointer
+   * rests on in the Layers list. */
+  hoverIds?: readonly string[];
   /** Draw resize handles on the highlighted element (active family only). */
   handles?: boolean;
   /** Editor affordance: outline tap layers, which the watch never draws. */
@@ -691,7 +694,7 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     : nothing;
   // Solid tint rather than the selection's dashes, so the two never read as the
   // same state when the pointer happens to rest on the selected layer.
-  const hover = options.hoverId === el.id
+  const hover = options.hoverId === el.id || options.hoverIds?.includes(el.id) === true
     ? svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} fill="#0A84FF" fill-opacity="0.22"
         stroke="#0A84FF" stroke-width="1" vector-effect="non-scaling-stroke" pointer-events="none" />`
     : nothing;
