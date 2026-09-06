@@ -30,6 +30,11 @@ _LOGGER = logging.getLogger(__name__)
 # pixel width of a complication; the span is capped at a week because the
 # recorder's default purge keeps ten days and a longer window would quietly
 # return a partial answer.
+#
+# A point count of `EVERY_READING` asks for the recorded states themselves, one
+# reading per state change, instead of an average per time slot. The same cap
+# applies: a chatty sensor keeps its newest `MAX_POINTS` readings.
+EVERY_READING = 0
 MIN_POINTS = 2
 MAX_POINTS = 120
 MIN_MINUTES = 1
@@ -41,11 +46,16 @@ class HistorySeriesError(Exception):
 
 
 def clamp_points(raw: Any, default: int = 24) -> int:
-    """Coerce a caller's point count into range. Junk falls back to the default."""
+    """Coerce a caller's point count into range. Junk falls back to the default.
+
+    Zero (or less) means every reading, and comes back as `EVERY_READING`.
+    """
     try:
         value = int(raw)
     except (TypeError, ValueError):
         return default
+    if value < 1:
+        return EVERY_READING
     return max(MIN_POINTS, min(MAX_POINTS, value))
 
 
@@ -135,6 +145,20 @@ def bucket_series(
     return out
 
 
+def raw_series(samples: list[tuple[datetime, float]], limit: int = MAX_POINTS) -> list[float]:
+    """Every recorded reading as it stands, oldest first, newest `limit` kept.
+
+    The other answer to "how many readings": none of the averaging above, one
+    point per state change. A sensor that reports on change draws its real
+    shape this way, with a step for every report and no quiet slots invented
+    between them. The time axis is no longer even, which is the trade.
+    """
+    if limit < 1:
+        return []
+    values = [value for _, value in samples]
+    return values[-limit:]
+
+
 def series_to_string(values: list[float]) -> str:
     """The wire form: readings joined by commas, oldest first."""
     return ",".join(_format(value) for value in values)
@@ -148,6 +172,9 @@ async def async_history_series(
     now: datetime | None = None,
 ) -> str:
     """Fetch and bucket one entity's recent history. Returns the wire string.
+
+    `points` of `EVERY_READING` skips the bucketing and returns the recorded
+    states themselves, newest `MAX_POINTS` of them.
 
     Raises `HistorySeriesError` when the recorder is missing or the query
     fails. An entity that simply has no recorded history is not an error: it
@@ -205,4 +232,6 @@ async def async_history_series(
             continue
         samples.append((when, value))
 
+    if points == EVERY_READING:
+        return series_to_string(raw_series(samples))
     return series_to_string(bucket_series(samples, start, end, points, anchor))

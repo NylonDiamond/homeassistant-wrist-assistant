@@ -401,9 +401,9 @@ export function chartStatText(value: number, span: number): string {
 }
 
 
-/** History spans the editor offers, in minutes. Free entry is deliberately not
- * offered: every distinct span is another recorder query shape for the server
- * to answer and for the watch to cache. Mirrors `historySpanChoices` in Swift. */
+/** History spans the picker offers, in minutes. A span typed as days, hours
+ * and minutes is also accepted, up to `CHART_HISTORY_MAX_MINUTES`; these are
+ * the ones a click reaches. Mirrors `historySpanChoices` in Swift. */
 export const CHART_HISTORY_SPANS: readonly { minutes: number; label: string }[] = [
   { minutes: 60, label: "Last hour" },
   { minutes: 180, label: "Last 3 hours" },
@@ -414,14 +414,25 @@ export const CHART_HISTORY_SPANS: readonly { minutes: number; label: string }[] 
   { minutes: 10_080, label: "Last 7 days" },
 ];
 
+/** The span a new history chart starts with. */
+export const CHART_HISTORY_DEFAULT_MINUTES = 360;
+/** The longest span the server answers: the recorder's default purge keeps
+ * ten days, and a week stays clear of it. Mirrors `MAX_MINUTES` in Python. */
+export const CHART_HISTORY_MAX_MINUTES = 7 * 24 * 60;
+
 export const CHART_HISTORY_MIN_POINTS = 2;
 export const CHART_HISTORY_MAX_POINTS = 120;
+/** `historyPoints` meaning "every recorded reading, no averaging". The server
+ * returns the states themselves, newest `CHART_HISTORY_MAX_POINTS` kept. */
+export const CHART_HISTORY_EVERY_READING = 0;
 
 /** Clamped point count. Mirrors `resolvedHistoryPoints` in Swift, and the
- * server clamps to the same range, so all three agree on the cache key. */
+ * server clamps to the same range, so all three agree on the cache key. Zero
+ * or less is `CHART_HISTORY_EVERY_READING` and passes through as 0. */
 export function chartHistoryPoints(el: ChartElement): number {
   const raw = Math.round(el.historyPoints);
   if (!Number.isFinite(raw)) return 24;
+  if (raw < 1) return CHART_HISTORY_EVERY_READING;
   return Math.max(CHART_HISTORY_MIN_POINTS, Math.min(CHART_HISTORY_MAX_POINTS, raw));
 }
 
@@ -2038,7 +2049,10 @@ export function newElement(kind: Element["kind"]): Element {
     case "text": return { kind, payload: { ...base("#FFFFFF"), value: literal("Text"), fontSize: 14, fontWeight: "regular" } };
     case "icon": return { kind, payload: { ...base("#FFFFFF"), symbol: literal("lightbulb"), size: 14 } };
     case "gauge": return { kind, payload: { ...base("#FFFFFF"), value: literal("50"), minValue: 0, maxValue: 100, style: "arc", lineWidth: 4, trackColorHex: "#FFFFFF40" } };
-    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: 0, historyPoints: 24, style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "pointer", coloring: "uniform", bands: [], bandAboveColorHex: CHART_DEFAULT_BAND_HIGH_HEX, fillBands: false } };
+    // A new chart is set to draw history: nearly every chart is of a plain
+    // sensor, and a plain sensor's own value is one bar. Until an entity is
+    // named the sample list draws instead, so the layer is never blank.
+    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: CHART_HISTORY_DEFAULT_MINUTES, historyPoints: 24, style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "pointer", coloring: "uniform", bands: [], bandAboveColorHex: CHART_DEFAULT_BAND_HIGH_HEX, fillBands: false } };
     case "shape": return { kind, payload: { ...base("#FFFFFF33"), kind: "roundedRectangle", cornerRadius: 6, borderWidth: 1 } };
     case "image": {
       const { colorSlot: _unused, ...b } = base("#FFFFFF");

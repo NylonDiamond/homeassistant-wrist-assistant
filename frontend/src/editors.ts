@@ -46,6 +46,9 @@ import {
   chartSortedBands,
   CHART_DEFAULT_BAND_LOW_HEX,
   CHART_DEFAULT_HIGH_HEX,
+  CHART_HISTORY_DEFAULT_MINUTES,
+  CHART_HISTORY_EVERY_READING,
+  CHART_HISTORY_MAX_MINUTES,
   CHART_HISTORY_MAX_POINTS,
   CHART_HISTORY_MIN_POINTS,
   CHART_HISTORY_SPANS,
@@ -207,6 +210,22 @@ export function selectField<T extends string>(label: string, value: T, options: 
     <select @change=${onInput((v) => set(v as T))}>
       ${options.map(([v, text]) => html`<option value=${v} ?selected=${v === value}>${text}</option>`)}
     </select></label>`;
+}
+
+/**
+ * A choice of two to four, drawn as a row of buttons with the current one
+ * lit. Every option is on screen at once, so the reader knows what the setting
+ * can be without opening anything. Lists longer than four, or lists that
+ * change length, stay a `selectField`: a row of seven buttons is a menu that
+ * forgot to fold.
+ */
+export function segField<T extends string>(label: string, value: T, options: [T, string][], set: (v: T) => void, opts: { titles?: Partial<Record<T, string>> } = {}) {
+  return html`<div class="field seg-field"><span>${label}</span>
+    <div class="seg wide" role="radiogroup" aria-label=${label}>
+      ${options.map(([v, text]) => html`<button type="button" role="radio" aria-checked=${v === value ? "true" : "false"}
+        class=${v === value ? "on" : ""} title=${opts.titles?.[v] ?? nothing}
+        @click=${() => { if (v !== value) set(v); }}>${text}</button>`)}
+    </div></div>`;
 }
 
 /**
@@ -441,7 +460,8 @@ export interface EntityFieldOptions {
   /** Only offer this domain, or these domains, in the list (the id can still
    * be typed). */
   domain?: string | readonly string[];
-  /** Drop the display-name control, for rows that are already tight. */
+  /** For rows that are already tight. Kept so callers need not change; the
+   * field has no extra controls to drop any more. */
   compact?: boolean;
   /** Float entities whose state reads as a number to the top of the results. */
   preferNumeric?: boolean;
@@ -570,11 +590,6 @@ export function entityField(host: EditorHost, label: string, ref: EntityRef, set
               </button>`)}
         </div>`
       : caption}
-    ${opts.compact ? nothing : html`<details class="sub">
-      <summary>Display name: ${ref.displayName || "(none)"}</summary>
-      ${textField("Display name", ref.displayName, (v) => set({ ...ref, displayName: v }))}
-      <div class="hint">Stored with the entity and used where the watch needs a label for it.</div>
-    </details>`}
   </div>`;
 }
 
@@ -751,7 +766,7 @@ const CHART_STYLES: [ChartStyle, string][] = [
   ["bars", "Bars"], ["line", "Line"], ["area", "Area"],
 ];
 const CHART_SCALES: [ChartScale, string][] = [
-  ["auto", "Auto (fit the readings)"], ["fixed", "Fixed range"],
+  ["auto", "Auto"], ["fixed", "Fixed range"],
 ];
 const CHART_BASELINES: [ChartBaseline, string][] = [
   ["lowest", "Lowest value"], ["zero", "Zero"],
@@ -760,7 +775,7 @@ const CHART_HIGHLIGHTS: [ChartHighlight, string][] = [
   ["none", "None"], ["highest", "Highest"], ["lowest", "Lowest"], ["both", "Both"],
 ];
 const CHART_MARKERS: [ChartMarker, string][] = [
-  ["none", "None"], ["pointer", "Triangle and dot"], ["dot", "Dots"],
+  ["none", "None"], ["pointer", "Triangle & dot"], ["dot", "Dots"],
 ];
 const CHART_COLORINGS: [ChartColoring, string][] = [
   ["uniform", "One colour"], ["bands", "By value"],
@@ -1105,7 +1120,7 @@ function formatEditor(format: ValueFormat | undefined, set: (f: ValueFormat) => 
       ${numberField("Decimals", f.decimals, (v) => upd({ decimals: v }), { step: 1, min: 0, max: 6, optional: true })}
       ${numberField("Multiply", f.multiply, (v) => upd({ multiply: v }), { optional: true })}
       ${numberField("Offset", f.offset, (v) => upd({ offset: v }), { optional: true })}
-      ${selectField("Case", f.textCase ?? "", [["", "As is"], ["upper", "UPPER"], ["lower", "lower"], ["capitalized", "Capitalized"]], (v) => upd({ textCase: (v || undefined) as ValueFormat["textCase"] }))}
+      ${segField("Case", f.textCase ?? "", [["", "As is"], ["upper", "UPPER"], ["lower", "lower"], ["capitalized", "Capitalized"]], (v) => upd({ textCase: (v || undefined) as ValueFormat["textCase"] }))}
       ${textField("Prefix", f.prefix ?? "", (v) => upd({ prefix: v }))}
       ${textField("Suffix", f.suffix ?? "", (v) => upd({ suffix: v }))}
     </div>
@@ -1120,7 +1135,7 @@ function aggregateEditor(host: EditorHost, a: AggregateSpec, set: (a: AggregateS
   const scope = a.scope;
   return html`
     ${selectField("Function", a.function, [["count", "Count"], ["sum", "Sum"], ["average", "Average"], ["min", "Min"], ["max", "Max"]], (v) => set({ ...a, function: v }))}
-    ${selectField("Over", scope.kind, [["filter", "Entities matching a filter"], ["entities", "A fixed entity list"]], (v) =>
+    ${segField("Over", scope.kind, [["filter", "Entities matching a filter"], ["entities", "A fixed list"]], (v) =>
       set({ ...a, scope: v === "entities" ? { kind: "entities", entities: [] } : { kind: "filter", domains: [], areaIds: [], labelIds: [], floorIds: [] } }))}
     ${scope.kind === "filter"
       ? html`<div class="grid2">
@@ -1551,13 +1566,13 @@ function imageTimestampSection(img: ImageElement, upd: (m: (p: ImageElement) => 
   return html`
     ${checkField("Show timestamp", on, (v) => upd((p) => { if (v) p.timestamp = true; else delete p.timestamp; }))}
     ${!on ? nothing : html`
-      ${selectField("Placement", free ? "free" : "corner", [
+      ${segField("Placement", free ? "free" : "corner", [
         ["corner", "A corner"],
         ["free", "Anywhere"],
       ], (v) => setFree(v === "free"))}
       ${free
         ? nothing
-        : selectField("Corner", img.timestampCorner, [
+        : segField("Corner", img.timestampCorner, [
             ["topLeading", "Top left"],
             ["topTrailing", "Top right"],
             ["bottomLeading", "Bottom left"],
@@ -1608,13 +1623,27 @@ function chartReadout(values: number[]): string {
   return `${values.slice(0, 6).map(fmt).join(" ")} … ${values.slice(-3).map(fmt).join(" ")}`;
 }
 
-/** What a layer shows, in a few words, for the Content card's summary line. */
-/** A history span in words. Falls back to a bare minute count for a span the
- * picker does not list, which an imported document can carry. */
+/** A history span in words: a listed span by its label, any other as days,
+ * hours and minutes ("Last 2d 4h"). */
 function historySpanLabel(minutes: number): string {
-  return CHART_HISTORY_SPANS.find((s) => s.minutes === minutes)?.label
-    ?? `Last ${minutes} min`;
+  const listed = CHART_HISTORY_SPANS.find((s) => s.minutes === minutes);
+  if (listed) return listed.label;
+  const d = Math.floor(minutes / 1440);
+  const h = Math.floor((minutes % 1440) / 60);
+  const m = minutes % 60;
+  const parts: string[] = [];
+  if (d > 0) parts.push(`${d}d`);
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0 || parts.length === 0) parts.push(`${m}m`);
+  return `Last ${parts.join(" ")}`;
 }
+
+/** Layers whose Span picker is on "Custom…" right now. Picking Custom is not
+ * a change to the document, so it lives here rather than in the config; a
+ * stored span the picker does not list counts as custom on its own. */
+const customSpans = new Set<string>();
+
+/** What a layer shows, in a few words, for the Content card's summary line. */
 
 export function contentSummary(host: EditorHost, el: CElement): string {
   const ctx = describeContext(host);
@@ -1682,7 +1711,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         ${el.payload.countdown ? html`<div class="hint">Ticks down to the value's target: an active timer's finish, or any future timestamp. A paused timer shows its remaining time.</div>` : nothing}`;
       look = html`<div class="grid2">
           ${shapeSizeField(host, el, family, "Font size", { step: 1, min: 4 })}
-          ${selectField("Weight", el.payload.fontWeight, FONT_WEIGHTS, (v) => upd((e) => { (e as typeof el).payload.fontWeight = v; }))}
+          ${segField("Weight", el.payload.fontWeight, FONT_WEIGHTS, (v) => upd((e) => { (e as typeof el).payload.fontWeight = v; }))}
         </div>`;
       break;
     }
@@ -1701,7 +1730,8 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         </div>`;
       look = html`
         <div class="grid2">
-          ${selectField("Style", el.payload.style, [["arc", "Arc (270°)"], ["ring", "Ring"], ["bar", "Bar"]], (v) => upd((e) => { (e as typeof el).payload.style = v; }))}
+          ${segField("Style", el.payload.style, [["arc", "Arc"], ["ring", "Ring"], ["bar", "Bar"]], (v) => upd((e) => { (e as typeof el).payload.style = v; }),
+            { titles: { arc: "A 270° arc, open at the bottom", ring: "A full circle", bar: "A straight bar" } })}
           ${shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5 })}
         </div>
         ${colorField("Track colour", el.payload.trackColorHex, (v) => upd((e) => { (e as typeof el).payload.trackColorHex = v ?? "#FFFFFF40"; }, "track"))}`;
@@ -1718,7 +1748,18 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       const usingHistory = c.historyMinutes > 0;
       const namesEntity = c.value.kind.kind === "entityState";
       const historyRaw = historyKey === undefined ? undefined : host.historySeries(historyKey);
-      const raw = usingHistory ? (historyRaw ?? "") : (host.resolve(c.value) ?? "");
+      // Set to history but naming no entity yet, the chart draws its own value,
+      // which is what the watch does too (`usesHistory` needs an entity there).
+      const raw = usingHistory && namesEntity ? (historyRaw ?? "") : (host.resolve(c.value) ?? "");
+      const everyReading = c.historyPoints < 1;
+      const listedSpan = CHART_HISTORY_SPANS.some((s) => s.minutes === c.historyMinutes);
+      const customSpan = customSpans.has(id) || !listedSpan;
+      const spanDays = Math.floor(c.historyMinutes / 1440);
+      const spanHours = Math.floor((c.historyMinutes % 1440) / 60);
+      const spanMins = c.historyMinutes % 60;
+      const setSpanParts = (d: number, h: number, m: number) => setChart((p) => {
+        p.historyMinutes = Math.min(CHART_HISTORY_MAX_MINUTES, Math.max(1, Math.round(d) * 1440 + Math.round(h) * 60 + Math.round(m)));
+      }, "span");
       const series = chartNumbers(raw);
       const shown = c.limit > 0 && series.length > c.limit
         ? (c.takeFromEnd ? series.slice(series.length - c.limit) : series.slice(0, c.limit))
@@ -1732,25 +1773,60 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       content = html`
         ${valueEditor(host, c.value, (v) => setChart((p) => { p.value = v; }, "value"),
           { label: "Readings", key: `${key}-value` })}
-        ${selectField("Draw", usingHistory ? "history" : "value",
-          [["value", "The value itself"], ["history", "Its recorded history"]],
-          (v) => setChart((p) => { p.historyMinutes = v === "history" ? (p.historyMinutes || 360) : 0; }))}
+        ${segField("Draw", usingHistory ? "history" : "value",
+          [["history", "Recorded history"], ["value", "The value itself"]],
+          (v) => setChart((p) => { p.historyMinutes = v === "history" ? (p.historyMinutes || CHART_HISTORY_DEFAULT_MINUTES) : 0; }),
+          { titles: { history: "Read the entity's past from the recorder and plot it", value: "Plot the numbers the value holds right now, such as a forecast list" } })}
         ${usingHistory
           ? html`
             ${namesEntity ? nothing : html`<div class="hint warn">History needs an entity.
               A typed-in value, a template or a shared value has no past to read, so this chart
-              stays empty until Readings names an entity.</div>`}
+              draws the value itself until Readings names an entity.</div>`}
             <div class="grid2">
-              ${selectField("Span", String(c.historyMinutes),
-                CHART_HISTORY_SPANS.map(({ minutes, label }): [string, string] => [String(minutes), label]),
-                (v) => setChart((p) => { p.historyMinutes = Number(v) || 360; }))}
-              ${numberField("Readings", c.historyPoints,
-                (v) => setChart((p) => { p.historyPoints = Math.round(v ?? 24); }, "hpoints"),
-                { step: 1, min: CHART_HISTORY_MIN_POINTS, max: CHART_HISTORY_MAX_POINTS })}
+              <label class="field"><span>Span</span>
+                <select @change=${(e: Event) => {
+                  const v = (e.target as HTMLSelectElement).value;
+                  if (v === "custom") {
+                    customSpans.add(id);
+                    requestRerender(e.target);
+                  } else {
+                    customSpans.delete(id);
+                    setChart((p) => { p.historyMinutes = Number(v) || CHART_HISTORY_DEFAULT_MINUTES; });
+                  }
+                }}>
+                  ${CHART_HISTORY_SPANS.map(({ minutes, label }) => html`<option value=${String(minutes)} ?selected=${!customSpan && minutes === c.historyMinutes}>${label}</option>`)}
+                  <option value="custom" ?selected=${customSpan}>Custom…</option>
+                </select></label>
+              <div class="field readings-field"><span>Readings</span>
+                <div class="readings-row">
+                  <div class="seg wide" role="radiogroup" aria-label="Readings">
+                    <button type="button" role="radio" aria-checked=${everyReading ? "false" : "true"} class=${everyReading ? "" : "on"}
+                      title="Average the recorded states into this many equal time slots"
+                      @click=${() => { if (everyReading) setChart((p) => { p.historyPoints = 24; }); }}>Average</button>
+                    <button type="button" role="radio" aria-checked=${everyReading ? "true" : "false"} class=${everyReading ? "on" : ""}
+                      title="Plot every recorded state change, no averaging"
+                      @click=${() => { if (!everyReading) setChart((p) => { p.historyPoints = CHART_HISTORY_EVERY_READING; }); }}>Every one</button>
+                  </div>
+                  ${everyReading ? nothing : html`<input type="number" class="short" aria-label="How many readings" .value=${String(c.historyPoints)}
+                    step="1" min=${CHART_HISTORY_MIN_POINTS} max=${CHART_HISTORY_MAX_POINTS}
+                    @input=${onInput((v) => { const n = Number(v); if (v.trim() !== "" && Number.isFinite(n) && n >= 1) setChart((p) => { p.historyPoints = Math.round(n); }, "hpoints"); })} />`}
+                </div>
+              </div>
             </div>
-            <div class="hint">Home Assistant averages the recorded states into this many equal
-              time slots, oldest first. About 20 readings suits a rectangular complication; more
-              than that draws bars thinner than the screen can show.</div>
+            ${customSpan ? html`<div class="grid3 span-parts">
+                ${numberField("Days", spanDays, (v) => setSpanParts(v ?? 0, spanHours, spanMins), { step: 1, min: 0, max: 7 })}
+                ${numberField("Hours", spanHours, (v) => setSpanParts(spanDays, v ?? 0, spanMins), { step: 1, min: 0, max: 23 })}
+                ${numberField("Minutes", spanMins, (v) => setSpanParts(spanDays, spanHours, v ?? 0), { step: 1, min: 0, max: 59 })}
+              </div>
+              <div class="hint">${historySpanLabel(c.historyMinutes)}, up to 7 days: the recorder keeps
+                ten by default, and a longer span would quietly come back short.</div>` : nothing}
+            <div class="hint">${everyReading
+              ? html`Every state the recorder holds in that span, oldest first, one reading per change,
+                  and a chatty sensor keeps its newest ${CHART_HISTORY_MAX_POINTS}. The time axis follows
+                  the changes, so a quiet hour draws narrower than a busy one.`
+              : html`Home Assistant averages the recorded states into this many equal time slots,
+                  oldest first. About 20 suits a rectangular complication; more than that draws bars
+                  thinner than the screen can show.`}</div>
             ${namesEntity && historyRaw === undefined
               ? html`<div class="hint">Reading the history…</div>`
               : nothing}
@@ -1773,22 +1849,28 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
           : nothing}
         ${suggestHistory
           ? html`<div class="hint warn">This entity holds one number, so the chart draws one bar.
-              Switch Draw to <b>Its recorded history</b> to plot how it has moved.</div>`
+              Switch Draw to <b>Recorded history</b> to plot how it has moved.</div>`
           : nothing}
         <div class="grid2">
           ${numberField("Use", c.limit, (v) => setChart((p) => { p.limit = Math.max(0, Math.round(v ?? 0)); }, "limit"), { step: 1, min: 0 })}
-          ${selectField("From", c.takeFromEnd ? "end" : "start",
-            [["start", "The first readings"], ["end", "The last readings"]],
+          ${segField("From", c.takeFromEnd ? "end" : "start",
+            [["start", "The first"], ["end", "The last"]],
             (v) => setChart((p) => { p.takeFromEnd = v === "end"; }))}
         </div>
         <div class="hint">${usingHistory
           ? "Trims the series after it arrives, so 0 draws every reading fetched above."
           : "A forecast sensor often carries 24 or 48 entries. 0 draws all of them."}</div>`;
       look = html`
-        ${selectField("Style", c.style, CHART_STYLES, (v) => setChart((p) => { p.style = v; }))}
         <div class="grid2">
-          ${selectField("Scale", c.scale, CHART_SCALES, (v) => setChart((p) => { p.scale = v; }))}
-          ${selectField("Baseline", c.baseline, CHART_BASELINES, (v) => setChart((p) => { p.baseline = v; }))}
+          ${segField("Style", c.style, CHART_STYLES, (v) => setChart((p) => { p.style = v; }))}
+          ${c.style === "bars"
+            ? numberField("Bar gap (pt)", c.barGap, (v) => setChart((p) => { p.barGap = Math.max(0, v ?? 0); }, "gap"), { step: 0.5, min: 0 })
+            : shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5 })}
+        </div>
+        <div class="grid2">
+          ${segField("Scale", c.scale, CHART_SCALES, (v) => setChart((p) => { p.scale = v; }),
+            { titles: { auto: "The plot stretches to fit the readings it has", fixed: "The plot always runs from Min to Max" } })}
+          ${segField("Baseline", c.baseline, CHART_BASELINES, (v) => setChart((p) => { p.baseline = v; }))}
         </div>
         ${c.scale === "fixed"
           ? html`<div class="grid2">
@@ -1799,10 +1881,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         <div class="hint">${c.baseline === "zero"
           ? "Bars grow from where zero falls, so a negative reading hangs below the line."
           : "Bars grow from the bottom, and the smallest reading keeps a visible stub. Switch to Zero when the readings can go negative."}</div>
-        ${c.style === "bars"
-          ? numberField("Bar gap (pt)", c.barGap, (v) => setChart((p) => { p.barGap = Math.max(0, v ?? 0); }, "gap"), { step: 0.5, min: 0 })
-          : shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5 })}
-        ${selectField("Colour", c.coloring, CHART_COLORINGS, (v) => setChart((p) => {
+        ${segField("Colour", c.coloring, CHART_COLORINGS, (v) => setChart((p) => {
           p.coloring = v;
           if (v === "bands" && p.bands.length === 0) p.bands = seedBands(shown);
         }))}
@@ -1832,7 +1911,11 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
                 than one band and as noise on one that flickers between them.</div>`
             : nothing}`
           : nothing}
-        ${selectField("Highlight", c.highlight, CHART_HIGHLIGHTS, (v) => setChart((p) => { p.highlight = v; }))}
+        <div class="grid2">
+          ${segField("Highlight", c.highlight, CHART_HIGHLIGHTS, (v) => setChart((p) => { p.highlight = v; }))}
+          ${c.highlight === "none" ? nothing
+            : segField("Marker", c.marker, CHART_MARKERS, (v) => setChart((p) => { p.marker = v; }))}
+        </div>
         ${c.highlight === "none" ? nothing : html`
           <div class="grid2">
             ${c.highlight === "lowest" ? nothing
@@ -1840,14 +1923,14 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
             ${c.highlight === "highest" ? nothing
               : colorField("Lowest colour", c.lowColorHex, (v) => setChart((p) => { p.lowColorHex = v ?? CHART_DEFAULT_LOW_HEX; }, "locol"))}
           </div>
-          ${selectField("Marker", c.marker, CHART_MARKERS, (v) => setChart((p) => { p.marker = v; }))}
-          <div class="hint">Worth keeping on: most watch faces tint a complication into one colour,
+          <div class="hint">A marker is worth keeping on: most watch faces tint a complication into one colour,
             which flattens the two colours into each other, and the marker shape is what survives that.</div>`}`;
       break;
     }
     case "shape":
       content = html`<div class="grid2">
-          ${selectField("Shape", el.payload.kind, [["roundedRectangle", "Rounded rectangle"], ["rectangle", "Rectangle"], ["capsule", "Capsule"], ["circle", "Circle"]], (v) => upd((e) => { (e as typeof el).payload.kind = v; }))}
+          ${segField("Shape", el.payload.kind, [["roundedRectangle", "Rounded"], ["rectangle", "Rectangle"], ["capsule", "Capsule"], ["circle", "Circle"]], (v) => upd((e) => { (e as typeof el).payload.kind = v; }),
+            { titles: { roundedRectangle: "Rounded rectangle" } })}
           ${el.payload.kind === "roundedRectangle" ? numberField("Corner radius (pt)", el.payload.cornerRadius, (v) => upd((e) => { (e as typeof el).payload.cornerRadius = v ?? 6; }, "radius"), { step: 0.5, min: 0 }) : nothing}
         </div>`;
       look = html`
@@ -1864,8 +1947,9 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       // frame has to be aimed, and every control here is about where the
       // picture sits rather than what it is.
       look = html`
-        ${selectField("Picture", img.contentMode, [["fill", "Fill the frame (crop)"], ["fit", "Fit the whole picture"]],
-          (v) => setImage((p) => { p.contentMode = v; }))}
+        ${segField("Picture", img.contentMode, [["fill", "Fill the frame"], ["fit", "Fit inside"]],
+          (v) => setImage((p) => { p.contentMode = v; }),
+          { titles: { fill: "Cover the frame, cropping what does not fit", fit: "Show the whole picture, with space around it" } })}
         ${sliderField("Zoom", img.zoom, (v) => setImage((p) => { p.zoom = v; }, "zoom"),
           { min: MIN_ZOOM, max: 4, step: 0.05, def: 1, format: (v) => `${v.toFixed(2)}x` })}
         ${sliderField("Pan left/right", img.panX, (v) => setImage((p) => { p.panX = v; }, "panx"),
@@ -2205,7 +2289,7 @@ function cornerEditor(
   const mode: "canvas" | "curved" = layout.curvedText ? "curved" : "canvas";
   const bezelKind: "none" | "text" | "gauge" = layout.bezelGauge ? "gauge" : layout.bezelText ? "text" : "none";
   return html`
-    ${selectField("Main content", mode, [["canvas", "Layer canvas (circle)"], ["curved", "Big curved text"]], (v) => upd((l) => {
+    ${segField("Main content", mode, [["canvas", "Layer canvas"], ["curved", "Big curved text"]], (v) => upd((l) => {
       if (v === "curved") { if (!l.curvedText) l.curvedText = literal("Text"); }
       else { delete l.curvedText; delete l.curvedColorHex; }
     }))}
@@ -2214,7 +2298,7 @@ function cornerEditor(
       ${colorField("Curved text colour", layout.curvedColorHex ?? "#FFFFFF", (v) => upd((l) => { if (v === undefined) delete l.curvedColorHex; else l.curvedColorHex = v; }, "curvedcolor"))}
       <div class="hint">Curved text replaces the layer canvas in the corner. The watch draws it big along the corner curve, like the stock Calendar and Weather corners.</div>
     ` : nothing}
-    ${selectField("Bezel", bezelKind, [["none", "None (biggest circle)"], ["text", "Text label"], ["gauge", "Gauge arc"]], (v) => upd((l) => {
+    ${segField("Bezel", bezelKind, [["none", "None"], ["text", "Text label"], ["gauge", "Gauge arc"]], (v) => upd((l) => {
       if (v === "text") { delete l.bezelGauge; if (!l.bezelText) l.bezelText = literal("Label"); }
       else if (v === "gauge") { delete l.bezelText; if (!l.bezelGauge) l.bezelGauge = { value: literal("50"), minValue: 0, maxValue: 100, colorHexes: ["#34C759", "#FFCC00", "#FF3B30"] }; }
       else { delete l.bezelText; delete l.bezelGauge; }
@@ -2436,7 +2520,7 @@ function caseEditor(host: EditorHost, c: RuleCase, ci: number, rule: Rule, targe
       <button class="icon danger" title="Delete case" @click=${() => updRule((r) => { const i = r.cases.findIndex((y) => y.id === c.id); if (i >= 0) r.cases.splice(i, 1); })}>${uiIcon("delete")}</button>
     </div>
     <div class="row-inline">
-      ${selectField("When", c.when.join, [["all", "all of these are true"], ["any", "any of these is true"]], (v) => updCase((x) => { x.when.join = v; }))}
+      ${segField("When", c.when.join, [["all", "All of these are true"], ["any", "Any of these is true"]], (v) => updCase((x) => { x.when.join = v; }))}
     </div>
     ${c.when.tests.length === 0 ? html`<div class="hint">No tests: this case always matches.</div>` : nothing}
     ${c.when.tests.map((t, ti) => testEditor(host, t, ti, (m) => updCase((x) => { const y = x.when.tests.find((z) => z.id === t.id); if (y) m(y); }), () => updCase((x) => { x.when.tests = x.when.tests.filter((z) => z.id !== t.id); }), `${key}-${t.id}`))}
@@ -2535,7 +2619,7 @@ function changeBody(host: EditorHost, ch: StyleChange, upd: (m: (c: StyleChange)
     const opts = ch.kind === "setOpacity" ? { step: 0.05, min: 0, max: 1 } : ch.kind === "setRotation" ? { step: 1 } : { step: 0.5, min: 0 };
     body = numberField(ch.kind === "setOpacity" ? "Opacity (0 to 1)" : ch.kind === "setRotation" ? "Degrees" : ch.kind === "setFontSize" ? "Points" : "Value", ch.number ?? 0, (n) => upd((c) => { c.number = n ?? 0; }, "number"), opts);
   } else if (payload === "weight") {
-    body = selectField("Weight", ch.weight ?? "regular", FONT_WEIGHTS, (w) => upd((c) => { c.weight = w; }));
+    body = segField("Weight", ch.weight ?? "regular", FONT_WEIGHTS, (w) => upd((c) => { c.weight = w; }));
   }
   return body;
 }
@@ -2827,7 +2911,7 @@ function statesCell(
       </div>
       ${openedPopovers.has(id)
         ? html`${property === "visibility"
-            ? selectField("This state", ch.kind === "hide" ? "hide" : "show", [["show", "Shown"], ["hide", "Hidden"]], (v) => upd((c) => { c.kind = v as StyleChangeKind; }))
+            ? segField("This state", ch.kind === "hide" ? "hide" : "show", [["show", "Shown"], ["hide", "Hidden"]], (v) => upd((c) => { c.kind = v as StyleChangeKind; }))
             : changeBody(host, ch, upd, key)}
           <button class="link" @click=${(e: Event) => {
             // Closed first: emptying the cell takes this popover's own button

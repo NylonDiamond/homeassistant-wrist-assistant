@@ -479,6 +479,9 @@ export function addSensorGauge(cfg: CustomComplicationConfig, ref: EntityRef, en
 export function addForecastChart(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
   const el = layerOf("chart");
   el.payload.value = { kind: { kind: "entityState", ...withDomain(ref) } };
+  // The value itself, not history: a new chart starts on history, and this
+  // preset exists for the one kind of entity that already holds the list.
+  el.payload.historyMinutes = 0;
   el.payload.highlight = "both";
   el.payload.marker = "pointer";
   placeLayer(cfg, el, env.family, chartGeometry);

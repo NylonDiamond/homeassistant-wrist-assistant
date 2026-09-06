@@ -28,6 +28,7 @@ history_series = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(history_series)
 
 bucket_series = history_series.bucket_series
+raw_series = history_series.raw_series
 series_to_string = history_series.series_to_string
 clamp_points = history_series.clamp_points
 clamp_minutes = history_series.clamp_minutes
@@ -98,10 +99,29 @@ def test_readings_are_written_as_short_as_they_can_be():
 
 def test_point_counts_are_clamped_and_junk_falls_back():
     assert clamp_points(5000) == 120
-    assert clamp_points(0) == 2
+    assert clamp_points(1) == 2
     assert clamp_points(24) == 24
     assert clamp_points("nonsense") == 24
     assert clamp_points(None) == 24
+
+
+def test_zero_points_means_every_reading():
+    assert clamp_points(0) == history_series.EVERY_READING
+    assert clamp_points(-3) == history_series.EVERY_READING
+
+
+def test_every_reading_keeps_each_state_change_in_order():
+    samples = [(at(5), 1.0), (at(6), 3.0), (at(200), 2.0)]
+    assert raw_series(samples) == [1.0, 3.0, 2.0]
+    assert raw_series([]) == []
+
+
+def test_every_reading_keeps_only_the_newest_when_capped():
+    samples = [(at(i), float(i)) for i in range(150)]
+    kept = raw_series(samples)
+    assert len(kept) == 120
+    assert kept[0] == 30.0
+    assert kept[-1] == 149.0
 
 
 def test_spans_are_clamped_and_junk_falls_back():

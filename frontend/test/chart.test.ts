@@ -121,6 +121,9 @@ function chartConfig(state: string, tweak: (p: ChartElement) => void = () => {})
   const el = newElement("chart") as Extract<Element, { kind: "chart" }>;
   el.payload.frame = { x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 };
   el.payload.value = { kind: { kind: "entityState", entityId: "sensor.prices", displayName: "Prices", domain: "sensor" } };
+  // These charts draw the sensor's own list of numbers. A new chart starts on
+  // history, which would ask the recorder instead and draw nothing here.
+  el.payload.historyMinutes = 0;
   tweak(el.payload);
   cfg.elements.push(el);
   return { cfg, id: el.payload.id, state };
@@ -215,10 +218,14 @@ describe("chart history", () => {
   it("clamps the point count the same way the watch and the server do", () => {
     const { payload } = historyChart((p) => { p.historyPoints = 5000; });
     expect(chartHistoryPoints(payload)).toBe(120);
-    payload.historyPoints = 0;
+    payload.historyPoints = 1;
     expect(chartHistoryPoints(payload)).toBe(2);
     // The clamp is in the key, so the panel asks for what it will draw.
     expect(chartHistoryKey(payload)).toBe("sensor.voltage|360|2");
+    // Zero is a different question, not too few: every recorded reading.
+    payload.historyPoints = 0;
+    expect(chartHistoryPoints(payload)).toBe(0);
+    expect(chartHistoryKey(payload)).toBe("sensor.voltage|360|0");
   });
 
   it("collects one request per distinct question", () => {

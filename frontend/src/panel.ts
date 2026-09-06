@@ -911,6 +911,26 @@ export class WristAssistantPanel extends LitElement {
     .seg button.on { color: var(--wa-ink); background: color-mix(in srgb, var(--wa-accent) 22%, transparent); }
     .seg button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .seg button svg.ui-icon { width: 14px; height: 14px; }
+    /* The form-sized segmented control: a setting with two to four choices
+       shows them all, the way a dropdown never can. Buttons share the width
+       evenly and clip a label rather than wrap it, so a row never grows a
+       second line, and the tint takes the section's colour where there is one. */
+    .seg.wide { display: flex; width: 100%; min-width: 0; border-radius: 8px; background: var(--wa-raised); }
+    .seg.wide button {
+      flex: 1 1 0; min-width: 0; padding: 5px 8px; min-height: 28px;
+      font-size: 12px; font-weight: 500; letter-spacing: 0; line-height: 1.2;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; text-align: center;
+    }
+    .seg.wide button.on { color: var(--wa-ink); background: color-mix(in srgb, var(--c, var(--wa-accent)) 24%, transparent); font-weight: 600; }
+    .seg.wide button:focus-visible { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--c, var(--wa-accent)) 60%, transparent); }
+    .field.seg-field { align-items: center; }
+    /* Readings: which of two ways to count, then how many when it is a count. */
+    .readings-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .readings-row .seg.wide { flex: 1 1 auto; }
+    .readings-row input.short { width: 58px; flex: none; text-align: right; }
+    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 8px; }
+    .grid3 .field { display: flex; flex-direction: column; align-items: stretch; gap: 3px; }
+    .grid3 .field > span { font-size: 12px; }
     /* The Layers title carries those controls, so it is allowed a second line
        in a narrow column instead of squeezing them. The auto margin keeps the
        pair on the right whichever line they land on. */
@@ -1152,12 +1172,15 @@ export class WristAssistantPanel extends LitElement {
 
        Only direct children are ruled: the fields inside a .grid2 are one
        block and must not be cut apart from each other. */
-    .sec-b > :is(.field, .grid2, .grid4, .chart-numbers, .adders, .states-switch, .value-editor, details.sub) {
+    .sec-b > :is(.field, .grid2, .grid3, .grid4, .chart-numbers, .adders, .states-switch, .value-editor, details.sub) {
       margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--wa-line);
     }
-    .sec-b > :is(.field, .grid2, .grid4, .chart-numbers, .adders, .states-switch, .value-editor, details.sub):first-child {
+    .sec-b > :is(.field, .grid2, .grid3, .grid4, .chart-numbers, .adders, .states-switch, .value-editor, details.sub):first-child {
       margin-top: 0; padding-top: 0; border-top: 0;
     }
+    /* The custom span's day/hour/minute row belongs to the Span picker above
+       it, so it tucks under without a rule of its own. */
+    .sec-b > .grid3.span-parts { margin-top: 4px; padding-top: 0; border-top: 0; }
     /* A run of band rows is one block: the rule goes above the first of them,
        and the rest just stack. */
     .sec-b > .row-inline { margin-top: 6px; }
