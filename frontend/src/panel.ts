@@ -34,7 +34,9 @@ import {
   describeTapAction,
   duplicateElement,
   copyElements,
+  DRAWABLE_FAMILIES,
   pasteElements,
+  placeElements,
   type LayerClip,
   freeSlotFrom,
   isAttachedTap,
@@ -106,8 +108,11 @@ import {
   lookSummary,
   namedValueEditor,
   newNamedValue,
+  copyShapeLayout,
   pickedCommon,
   setPlacement,
+  shownCount,
+  showOnlyOn,
 } from "./editors.js";
 import { type PresetEnv, type PresetKind, LAYER_PRESETS, applyPreset, presetSpec } from "./presets.js";
 
@@ -1063,6 +1068,17 @@ export class WristAssistantPanel extends LitElement {
     .testing-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; text-transform: none; letter-spacing: 0; color: color-mix(in srgb, var(--wa-states) 70%, var(--wa-ink)); }
     .testing-pill button { font: inherit; font-size: 12px; font-weight: 500; background: var(--wa-states); color: #1a1600; border: 0; border-radius: 999px; padding: 2px 9px; cursor: pointer; }
     .empty { opacity: .6; padding: 24px; text-align: center; }
+    /* A shape that draws nothing yet. Tinted in the placement colour rather
+       than the accent: it is a statement about where you are, not a thing to
+       press, and the buttons inside it carry the press. */
+    .blank-shape {
+      margin: 10px 0; padding: 10px 12px; border-radius: var(--wa-r-md);
+      border: 1px solid color-mix(in srgb, var(--wa-place) 40%, var(--wa-line));
+      background: color-mix(in srgb, var(--wa-place) 10%, transparent);
+    }
+    .blank-shape b { font-size: 13px; }
+    .blank-shape .hint { margin: 5px 0 0; }
+    .blank-shape .adders { margin-top: 9px; }
 
     /* The inspector: crumbs on top, then one card per section of the thing
        selected, tinted by what it is. */
@@ -1791,16 +1807,34 @@ export class WristAssistantPanel extends LitElement {
     const cfg = this.draft?.config;
     const ids = this.selectedIds();
     if (!cfg || ids.length === 0) return false;
-    this.clipboard = copyElements(cfg, ids);
+    this.clipboard = copyElements(cfg, ids, this.canvasFamily);
     return true;
   }
 
+  /**
+   * ⌘V. Two different jobs behind one key, decided by where the copy came
+   * from.
+   *
+   * Copied on one shape and pasted on another of the same document, the
+   * layers already exist and every shape may draw them, so the paste puts
+   * them on this shape at the frames they have on the other one. Anywhere
+   * else, including a paste into a different complication, it makes copies
+   * the way it always has.
+   */
   private pasteClip() {
     if (!this.canEdit || !this.clipboard) return;
+    const cfg = this.draft?.config;
     const clip = this.clipboard;
-    let pasted: string[] = [];
-    this.mutate((c) => { pasted = pasteElements(c, clip); });
-    this.selectRows(pasted);
+    const family = this.canvasFamily;
+    const here = new Set(cfg?.elements.map((el) => el.payload.id) ?? []);
+    const acrossShapes = cfg !== undefined
+      && clip.family !== undefined
+      && clip.family !== family
+      && clip.elements.length > 0
+      && clip.elements.every((el) => here.has(el.payload.id));
+    let landed: string[] = [];
+    this.mutate((c) => { landed = acrossShapes ? placeElements(c, clip, family) : pasteElements(c, clip); });
+    this.selectRows(landed);
   }
 
   /** ⌘D: a copy of the selection straight into the document, the clipboard
@@ -2206,6 +2240,56 @@ export class WristAssistantPanel extends LitElement {
     const cfg = this.draft?.config;
     if (!cfg || cfg.supportedFamilies.includes(this.activeFamily)) return;
     this.activeFamily = supportedFamilies(cfg)[0] ?? "rectangular";
+  }
+
+  /**
+   * Run a change that adds layers, then keep whatever it added on the shape
+   * being edited.
+   *
+   * A layer belongs to the document and every shape may draw it, which read
+   * as "adding a layer to the Circular face also drops it on the Rectangular
+   * one". A document with one shape is unchanged: there is nowhere else for
+   * the layer to land.
+   */
+  private addHere(change: (c: CustomComplicationConfig) => void) {
+    const before = new Set(this.draft?.config.elements.map((el) => el.payload.id) ?? []);
+    const family = this.canvasFamily;
+    this.mutate((c) => {
+      change(c);
+      if (c.supportedFamilies.filter((f) => isDrawable(f)).length < 2) return;
+      for (const el of c.elements) if (!before.has(el.payload.id)) showOnlyOn(c, el.payload.id, family);
+    });
+  }
+
+  /**
+   * What the Layers card says on a shape that draws nothing.
+   *
+   * A shape starts blank, so this is the first thing anyone sees after adding
+   * one. It says where the layers went, since the rows below are all here and
+   * all dimmed, and offers the two ways out: take a whole shape's arrangement
+   * in one press, or copy the rows you want from another shape and paste them
+   * here.
+   */
+  private renderShapeIsBlank(cfg: CustomComplicationConfig, family: DrawableFamily, edit: boolean) {
+    if (cfg.elements.length === 0 || !isDrawable(this.activeFamily)) return nothing;
+    if (shownCount(cfg, family) > 0) return nothing;
+    const others = DRAWABLE_FAMILIES
+      .filter((f): f is DrawableFamily => f !== family && cfg.supportedFamilies.includes(f))
+      .filter((f) => shownCount(cfg, f) > 0);
+    return html`<div class="blank-shape">
+      <b>Nothing is on the ${familyTitle(family)} shape yet.</b>
+      <div class="hint">Layers belong to the whole complication, so every one of them is in the
+        list below, greyed out. The eye on a row puts that one on this shape. Or copy rows on
+        another shape with ${KEY_MOD}C, come back here and paste them with ${KEY_MOD}V: they land
+        where they sit there, and no second copy of the layer is made.</div>
+      ${edit && others.length > 0
+        ? html`<div class="adders">
+            ${others.map((f) => html`<button class="small primary"
+              title=${`Put every layer on the ${familyTitle(family)} shape where it sits on the ${familyTitle(f)} one`}
+              @click=${() => this.mutate((c) => copyShapeLayout(c, f, family))}>Copy the ${familyTitle(f)} layout</button>`)}
+          </div>`
+        : nothing}
+    </div>`;
   }
 
   private addShape(family: FamilyKind) {
@@ -3215,7 +3299,7 @@ export class WristAssistantPanel extends LitElement {
         ? html`
           <div class="add-grid ${rich ? "" : "lean"}">
             ${KIND_ORDER.map((k) => html`<button class="add" style=${`--k:${KIND_COLOR[k]}`} ?disabled=${full} title=${`Add a blank ${KIND_LABEL[k].toLowerCase()} layer`}
-              @click=${() => { const el = newElement(k); this.mutate((c) => { c.elements.push(el); }); this.inspect = { kind: "layer", id: el.payload.id }; }}
+              @click=${() => { const el = newElement(k); this.addHere((c) => { c.elements.push(el); }); this.inspect = { kind: "layer", id: el.payload.id }; }}
               >${rich ? html`<span class="well">${addPreview(k)}</span>` : nothing}<span class="add-name">${uiIcon(k)}<span>${KIND_LABEL[k]}</span></span></button>`)}
           </div>
           <div class="presets-l">Or start from a preset</div>
@@ -3624,6 +3708,7 @@ export class WristAssistantPanel extends LitElement {
           ? html`<div class="hint">${MULTI_KEY}-click layers here or on the preview, or shift-click a range of rows, then group them so a finished part moves as one. The <b>?</b> button in the header lists every key and mouse trick.</div>`
           : nothing}
       ${cfg.elements.length === 0 ? html`<div class="empty">No layers yet. Add one above.</div>` : nothing}
+      ${this.renderShapeIsBlank(cfg, family, edit)}
       <div class="layers" style=${`--thumb-w:${thumbW}px;--thumb-h:${thumbH}px`}>
       ${rows}
       <div class="layer pinned ${shapeHl ? "hl" : ""}" style=${`--k:${SECTION_COLOR.place}`} tabindex="0" title="The shape is always the bottom layer"
@@ -3734,7 +3819,7 @@ export class WristAssistantPanel extends LitElement {
     const state = this.hass.states[ref.entityId];
     if (state) env.state = state;
     let created: string | undefined;
-    this.mutate((c) => { created = applyPreset(c, kind, ref, env); });
+    this.addHere((c) => { created = applyPreset(c, kind, ref, env); });
     this.closePresetDialog();
     if (created) this.inspect = { kind: "layer", id: created };
   }

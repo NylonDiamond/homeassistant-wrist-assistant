@@ -10,6 +10,7 @@
 import {
   type CustomComplicationConfig,
   type FamilyKind,
+  type FamilyLayout,
   type InlineLayout,
   type Value,
   DRAWABLE_FAMILIES,
@@ -55,16 +56,35 @@ export function seedInline(cfg: Pick<CustomComplicationConfig, "elements">): Inl
   return { value };
 }
 
-/** Add a shape. A canvas shape gets `defaultLayout()` unless a layout is
- * already there (a shape removed and re-added in one session keeps nothing,
- * since removal deletes the layout; a document that arrived with a stray
- * layout keeps it). Inline gets `seedInline`. No-op when already supported. */
+/**
+ * A new canvas shape starts blank.
+ *
+ * Layers belong to the document rather than to one shape, so a shape added to
+ * a complication that is already drawn used to arrive carrying every layer on
+ * it, at frames chosen for a canvas of another size. Blank is the honest
+ * start: every layer is still there to be put on the shape, one eye at a time
+ * or a whole shape's arrangement at once, and none of them lands somewhere
+ * nobody chose. Each layer keeps its own frame under the hidden placement, so
+ * showing one puts it where it sits elsewhere rather than in a corner.
+ */
+function blankLayout(cfg: CustomComplicationConfig): FamilyLayout {
+  const layout = defaultLayout();
+  for (const el of cfg.elements) {
+    layout.placements[el.payload.id] = { frame: { ...el.payload.frame }, isHidden: true };
+  }
+  return layout;
+}
+
+/** Add a shape. A canvas shape starts blank unless a layout is already there
+ * (a shape removed and re-added in one session keeps nothing, since removal
+ * deletes the layout; a document that arrived with a stray layout keeps it).
+ * Inline gets `seedInline`. No-op when already supported. */
 export function addFamily(cfg: CustomComplicationConfig, family: FamilyKind): void {
   if (!cfg.supportedFamilies.includes(family)) {
     cfg.supportedFamilies = ALL_FAMILIES.filter((f) => f === family || cfg.supportedFamilies.includes(f));
   }
   if (isDrawable(family)) {
-    if (!cfg.perFamily[family]) cfg.perFamily[family] = defaultLayout();
+    if (!cfg.perFamily[family]) cfg.perFamily[family] = blankLayout(cfg);
   } else if (!cfg.inline) {
     cfg.inline = seedInline(cfg);
   }
@@ -95,8 +115,8 @@ export function familyContentSummary(cfg: CustomComplicationConfig, family: Fami
   }
   const layout = cfg.perFamily[family];
   if (!layout) return out;
-  const placed = Object.keys(layout.placements).length;
-  if (placed > 0) out.push(`${placed} placement${placed === 1 ? "" : "s"}`);
+  const placed = Object.values(layout.placements).filter((p) => !p.isHidden).length;
+  if (placed > 0) out.push(`${placed} placed layer${placed === 1 ? "" : "s"}`);
   if (layout.rules.length > 0) out.push(`${layout.rules.length} rule${layout.rules.length === 1 ? "" : "s"}`);
   if (layout.bezelText || layout.bezelGauge) out.push("the bezel");
   if (layout.curvedText) out.push("the curved text");

@@ -2483,9 +2483,13 @@ export interface LayerClip {
   placements: Partial<Record<FamilyKind, Record<string, Placement>>>;
   /** The groups the copied layers belonged to, so a whole group pastes as one. */
   groups: LayerGroup[];
+  /** The shape the copy was taken on, when there was one. A paste on a
+   * different shape of the same document means "put these here", not "make
+   * second copies of them", and this is how the paste can tell. */
+  family?: FamilyKind;
 }
 
-export function copyElements(cfg: CustomComplicationConfig, ids: readonly string[]): LayerClip {
+export function copyElements(cfg: CustomComplicationConfig, ids: readonly string[], from?: FamilyKind): LayerClip {
   const wanted = new Set<string>();
   const take = (id: string) => {
     wanted.add(id);
@@ -2509,7 +2513,49 @@ export function copyElements(cfg: CustomComplicationConfig, ids: readonly string
   }
   const groupIds = new Set(elements.map((el) => el.payload.groupId).filter((g): g is string => g !== undefined));
   const groups = (cfg.groups ?? []).filter((g) => groupIds.has(g.id)).map((g) => structuredClone(g));
-  return { elements, placements, groups };
+  return { elements, placements, groups, ...(from !== undefined ? { family: from } : {}) };
+}
+
+/**
+ * Put copied layers on one shape, without copying the layers themselves.
+ *
+ * A layer belongs to the document and every shape may draw it, so a copy
+ * taken on one shape and pasted on another is not a duplicate: it is "show
+ * these here, laid out the way they are there". Ids the document no longer
+ * holds are skipped. Returns the rows that landed, attached taps left out the
+ * same way a paste leaves them out.
+ */
+export function placeElements(cfg: CustomComplicationConfig, clip: LayerClip, family: FamilyKind): string[] {
+  if (!DRAWABLE_FAMILIES.includes(family)) return [];
+  let layout = cfg.perFamily[family];
+  if (!layout) {
+    layout = defaultLayout();
+    cfg.perFamily[family] = layout;
+  }
+  // The first placement in a shape freezes every other layer where it already
+  // is, the same as the first drag does, so the layers not being copied do
+  // not silently start following someone else's frames.
+  if (Object.keys(layout.placements).length === 0) {
+    for (const el of cfg.elements) {
+      layout.placements[el.payload.id] = { frame: { ...el.payload.frame }, isHidden: el.payload.isHidden };
+    }
+  }
+  const here = new Set(cfg.elements.map((el) => el.payload.id));
+  const from = clip.family === undefined ? undefined : clip.placements[clip.family];
+  const landed: string[] = [];
+  for (const src of clip.elements) {
+    const id = src.payload.id;
+    if (!here.has(id)) continue;
+    const p = from?.[id];
+    layout.placements[id] = p
+      ? { ...structuredClone(p), isHidden: false }
+      : { frame: { ...src.payload.frame }, isHidden: false };
+    landed.push(id);
+  }
+  return landed.filter((id) => {
+    const el = cfg.elements.find((e) => e.payload.id === id);
+    return el !== undefined && !isAttachedTap(cfg, el);
+  });
 }
 
 /**

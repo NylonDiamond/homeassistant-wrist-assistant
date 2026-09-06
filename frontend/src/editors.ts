@@ -57,6 +57,7 @@ import {
   CHART_DEFAULT_LOW_HEX,
   COMPARISON_KINDS,
   DRAWABLE_FAMILIES,
+  defaultLayout,
   IMAGE_DEFAULT_CORNER_RADIUS,
   IMAGE_DEFAULT_TIMESTAMP_SIZE,
   ZERO_OUTSET,
@@ -1345,6 +1346,39 @@ export function shapeSizeField(
     { step: opts.step, min: opts.min });
 }
 
+/** Put a layer on one shape only, by hiding it on every other canvas shape
+ * the document has. What a layer added while two shapes exist does, so the
+ * shape being edited is the one that gets it. */
+export function showOnlyOn(cfg: CustomComplicationConfig, id: string, family: FamilyKind): void {
+  for (const other of DRAWABLE_FAMILIES) {
+    if (other === family || !cfg.supportedFamilies.includes(other)) continue;
+    setPlacement(cfg, other, id, { isHidden: true });
+  }
+}
+
+/** Copy one shape's whole arrangement onto another: every layer's frame, its
+ * size and whether it shows there. What "copy the Rectangular layout" does to
+ * a shape that is still blank. */
+export function copyShapeLayout(cfg: CustomComplicationConfig, from: FamilyKind, to: FamilyKind): void {
+  const layout = cfg.perFamily[to] ?? (cfg.perFamily[to] = defaultLayout());
+  const next: Record<string, Placement> = {};
+  for (const el of cfg.elements) {
+    const src = effectivePlacement(cfg, from, el);
+    next[el.payload.id] = {
+      frame: { ...src.frame },
+      isHidden: src.isHidden,
+      ...(src.size !== undefined ? { size: src.size } : {}),
+    };
+  }
+  layout.placements = next;
+}
+
+/** How many layers a shape actually draws: what the Layers card counts to
+ * decide whether the shape is still blank. */
+export function shownCount(cfg: CustomComplicationConfig, family: FamilyKind): number {
+  return cfg.elements.filter((el) => !effectivePlacement(cfg, family, el).isHidden).length;
+}
+
 export function elementSize(el: CElement): number | undefined {
   switch (el.kind) {
     case "text": return el.payload.fontSize;
@@ -2092,7 +2126,7 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
       ${removeLayoutRow(host, family)}`;
   }
   const upd = (mutate: (l: FamilyLayout) => void, k?: string) => host.update((c) => mutate(c.perFamily[family]!), k ? `fam-${family}-${k}` : undefined);
-  const placed = Object.keys(layout.placements).length;
+  const placed = shownCount(host.config, family);
   // Same sections as a layer, in the same order and for the same reason: a
   // shape is another object in the one inspector, not another tab.
   const bg = layout.backgroundColorHex ? colorWords(layout.backgroundColorHex) : "transparent";
@@ -2108,9 +2142,14 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
     ${card(host, "states", "Shape states", statesEditor(host, layout.rules, "layout", (c) => c.perFamily[family]?.rules, `rules-${family}`),
       { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(layout.rules).replace(/\.$/, "") })}
     ${card(host, "placements", "Placements", html`
-      <div class="hint">${placed === 0 ? "Layers use their shared frames here." : `${placed} layer${placed === 1 ? " has" : "s have"} a ${familyTitle(family)} placement.`}</div>
-      ${placed > 0 ? html`<button class="small" @click=${() => upd((l) => { l.placements = {}; })}>Reset placements to the shared frames</button>` : nothing}`,
-      { color: SECTION_COLOR.place, icon: "place", summary: placed === 0 ? "Shared frames" : `${placed} own placement${placed === 1 ? "" : "s"}` })}
+      <div class="hint">${placed === 0
+        ? `Nothing is on the ${familyTitle(family)} shape. The Layers card offers to copy another shape's whole arrangement onto it.`
+        : `${placed} layer${placed === 1 ? " is" : "s are"} on the ${familyTitle(family)} shape, each with its own frame and size here.`}</div>
+      <div class="adders">
+        <button class="small" title=${`Put every layer on the ${familyTitle(family)} shape at the frame the layer itself carries`}
+          @click=${() => upd((l) => { l.placements = {}; })}>Show every layer at its own frame</button>
+      </div>`,
+      { color: SECTION_COLOR.place, icon: "place", summary: placed === 0 ? "Nothing placed" : `${placed} layer${placed === 1 ? "" : "s"} placed` })}
     ${removeLayoutRow(host, family)}`;
 }
 
