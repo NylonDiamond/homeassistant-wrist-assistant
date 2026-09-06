@@ -3310,6 +3310,9 @@ export class WristAssistantPanel extends LitElement {
   private renderAddLayer() {
     const cfg = this.draft?.config;
     if (!cfg || !this.canEdit) return nothing;
+    // Nothing to add to a shape with no canvas. Left up, the buttons would
+    // quietly put the layer on whichever canvas shape happens to be first.
+    if (this.activeFamily === "inline") return nothing;
     const full = cfg.elements.length >= 64;
     const open = this.addOpen;
     const rich = this.addDetail === "expanded";
@@ -3554,6 +3557,11 @@ export class WristAssistantPanel extends LitElement {
   private renderLayers() {
     const cfg = this.draft?.config;
     if (!cfg) return nothing;
+    // Inline is one line of text with no canvas, so it has no layers to list.
+    // The card used to fall back to the first canvas shape and show that
+    // shape's rows under a line of small print, which reads as "here are the
+    // Inline layers" however the print is worded.
+    if (this.activeFamily === "inline") return this.renderInlineHasNoLayers();
     const edit = this.canEdit;
     const family = this.canvasFamily;
     const move = (id: string, dir: -1 | 1) => this.moveLayer(id, dir);
@@ -3581,9 +3589,7 @@ export class WristAssistantPanel extends LitElement {
     const resolver = new Resolver(this.buildContext(), this.draft?.config);
     const layout = cfg.perFamily[this.activeFamily];
     const shapeHl = this.inspect.kind === "family";
-    const shapeMeta = this.activeFamily === "inline"
-      ? "one line of text"
-      : `${layout?.backgroundColorHex ? colorWords(layout.backgroundColorHex) : "transparent"} · ${layout?.borderColorHex ? `${layout.borderWidth} pt border` : "no border"}`;
+    const shapeMeta = `${layout?.backgroundColorHex ? colorWords(layout.backgroundColorHex) : "transparent"} · ${layout?.borderColorHex ? `${layout.borderWidth} pt border` : "no border"}`;
     const pickedCount = [...this.multi].filter((id) => cfg.elements.some((e) => e.payload.id === id)).length;
     // Each row carries a picture of its own layer, drawn alone, the way a
     // painting app's layer list does. The rows resolve the shape the same way
@@ -3745,7 +3751,6 @@ export class WristAssistantPanel extends LitElement {
           </span>
         </span>
       </h2>
-      ${this.activeFamily === "inline" ? html`<div class="hint">Inline is one line of text and draws no layers. The rows here belong to the ${familyTitle(family)} shape.</div>` : nothing}
       ${pickedCount >= 2 && edit
         ? html`<div class="group-cta"><span>${pickedCount} layers picked</span><span class="spacer"></span>
             <button class="small primary" title=${`Group (${KEY_MOD}G)`} @click=${() => this.groupPicked()}>Group them</button>
@@ -3775,13 +3780,23 @@ export class WristAssistantPanel extends LitElement {
         <span class="bar"></span>
         ${thumb([])}
         <span class="name">
-          <b>${this.activeFamily === "inline" ? "Inline text" : `${familyTitle(this.activeFamily)} shape`}</b>
-          <small><span class="kind">${this.activeFamily === "inline" ? "Inline" : "Background"}</span> · ${shapeMeta}</small>
+          <b>${familyTitle(this.activeFamily)} shape</b>
+          <small><span class="kind">Background</span> · ${shapeMeta}</small>
         </span>
         <span class="right"><span class="badges"><span class="badge">always bottom</span></span></span>
       </div>
       </div>
       ${this.renderOffShape(offShape, family, edit, ctx)}
+    </div>`;
+  }
+
+  /** The Layers card while Inline is the shape being edited: there is nothing
+   * to list, and saying so beats listing another shape's rows. */
+  private renderInlineHasNoLayers() {
+    return html`<div class="card">
+      <h2 class="panel-title"><span class="swatch">${uiIcon("layers")}</span>Layers</h2>
+      <div class="empty">Inline is one line of text and draws no layers.
+        Its text is on the right. Pick a canvas shape above to work on layers.</div>
     </div>`;
   }
 
