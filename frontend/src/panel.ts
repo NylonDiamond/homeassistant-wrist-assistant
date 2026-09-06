@@ -1169,6 +1169,19 @@ export class WristAssistantPanel extends LitElement {
     .sec-h .swatch svg { width: 15px; height: 15px; }
     .sec-h .tt { display: flex; flex-direction: column; min-width: 0; flex: 1; }
     .sec-h h4 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -.01em; }
+    /* The changed dot: a card holding a value away from its default carries a
+       small dot in its own colour after the title, the way an unsaved
+       document does in a tab. */
+    .sec-h h4 .dot {
+      display: inline-block; width: 7px; height: 7px; border-radius: 50%; vertical-align: middle;
+      margin-left: 2px; position: relative; top: -1px;
+      background: var(--c); box-shadow: 0 0 5px color-mix(in srgb, var(--c) 70%, transparent);
+    }
+    /* A number box or colour row with a reset button beside it. */
+    .reset-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .reset-row input { flex: 1; min-width: 0; }
+    button.icon.reset { flex: none; }
+    button.icon.reset:disabled { opacity: .3; }
     .sec-h .sum { color: var(--wa-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .sec-h .chev { color: var(--wa-muted); opacity: .7; flex: none; transition: transform .15s ease-out; }
     .sec-h .chev svg { width: 16px; height: 16px; }

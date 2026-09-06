@@ -85,7 +85,9 @@ import {
   layerEntityUses,
   ungroup,
   literal,
+  CENTERED_FRAME,
   newCase,
+  newElement,
   newId,
   newRule,
   newStyleChange,
@@ -191,10 +193,11 @@ export function textArea(label: string, value: string, set: (v: string) => void,
     <textarea rows=${rows} .value=${value} class="mono" @input=${onInput(set)}></textarea></label>`;
 }
 
-export function numberField(label: string, value: number | undefined, set: (v: number | undefined) => void, opts: { step?: number; min?: number; max?: number; optional?: boolean } = {}) {
+/** `def` adds a reset button beside the box, lit only while the value is
+ * away from that default. */
+export function numberField(label: string, value: number | undefined, set: (v: number | undefined) => void, opts: { step?: number; min?: number; max?: number; optional?: boolean; def?: number } = {}) {
   const shown = value === undefined || Number.isNaN(value) ? "" : String(value);
-  return html`<label class="field"><span>${label}</span>
-    <input type="number" .value=${shown} step=${opts.step ?? "any"} min=${opts.min ?? nothing} max=${opts.max ?? nothing}
+  const input = html`<input type="number" .value=${shown} step=${opts.step ?? "any"} min=${opts.min ?? nothing} max=${opts.max ?? nothing}
       @input=${onInput((v) => {
         if (v.trim() === "") {
           if (opts.optional) set(undefined);
@@ -202,7 +205,19 @@ export function numberField(label: string, value: number | undefined, set: (v: n
         }
         const n = Number(v);
         if (!Number.isNaN(n)) set(n);
-      })} /></label>`;
+      })} />`;
+  if (opts.def === undefined) return html`<label class="field"><span>${label}</span>${input}</label>`;
+  const def = opts.def;
+  return html`<label class="field"><span>${label}</span>
+    <div class="reset-row">${input}${resetButton(value === def, `Back to ${def}`, () => set(def))}</div></label>`;
+}
+
+/** The one reset control every field with a default shares. Disabled, not
+ * hidden, when there is nothing to reset: the row keeps its width and the
+ * eye learns where the button lives. */
+function resetButton(atDefault: boolean, title: string, reset: () => void) {
+  return html`<button type="button" class="icon reset" title=${title} aria-label="Reset" ?disabled=${atDefault}
+    @click=${(e: Event) => { e.preventDefault(); reset(); }}>${uiIcon("reset")}</button>`;
 }
 
 export function selectField<T extends string>(label: string, value: T, options: [T, string][], set: (v: T) => void) {
@@ -245,8 +260,7 @@ export function sliderField(
       <input type="range" min=${opts.min} max=${opts.max} step=${opts.step} .value=${String(value)}
         @input=${onInput((v) => { const n = Number(v); if (!Number.isNaN(n)) set(n); })} />
       <span class="slider-value mono">${show(value)}</span>
-      <button class="icon" title=${`Back to ${show(opts.def)}`} aria-label="Reset" ?disabled=${value === opts.def}
-        @click=${() => set(opts.def)}>${uiIcon("reset")}</button>
+      ${resetButton(value === opts.def, `Back to ${show(opts.def)}`, () => set(opts.def))}
     </div></div>`;
 }
 
@@ -254,8 +268,10 @@ export function checkField(label: string, value: boolean, set: (v: boolean) => v
   return html`<label class="field check"><input type="checkbox" .checked=${value} @change=${(e: Event) => set((e.target as HTMLInputElement).checked)} /><span>${label}</span></label>`;
 }
 
-/** `#RRGGBB` or `#RRGGBBAA`. The native picker handles RGB; alpha is a slider. */
-export function colorField(label: string, value: string | undefined, set: (v: string | undefined) => void, optional = false) {
+/** `#RRGGBB` or `#RRGGBBAA`. The native picker handles RGB; alpha is a slider.
+ * `def` adds a reset button back to that colour (or, for an optional colour,
+ * `undefined` clears it). */
+export function colorField(label: string, value: string | undefined, set: (v: string | undefined) => void, optional = false, def?: string | null) {
   const h = (value ?? "").replace(/^#/, "");
   const valid = /^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(h);
   const rgb = valid ? `#${h.slice(0, 6)}` : "#ffffff";
@@ -271,7 +287,17 @@ export function colorField(label: string, value: string | undefined, set: (v: st
       <input type="range" min="0" max="100" .value=${String(alpha)} title="Opacity" ?disabled=${optional && value === undefined} @input=${onInput((v) => set(compose(rgb, Number(v))))} />
       <input type="text" class="mono hex" .value=${value ?? ""} placeholder="#RRGGBB" ?disabled=${optional && value === undefined}
         @input=${onInput((v) => { const t = v.trim(); if (/^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(t)) set(t.startsWith("#") ? t.toUpperCase() : `#${t.toUpperCase()}`); })} />
+      ${def === undefined ? nothing : resetButton(
+        sameColor(value, def ?? undefined),
+        def === null ? "Back to none" : `Back to ${def}`,
+        () => set(def ?? undefined),
+      )}
     </div></div>`;
+}
+
+function sameColor(a: string | undefined, b: string | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return a.replace(/^#/, "").toUpperCase() === b.replace(/^#/, "").toUpperCase();
 }
 
 // ── entity helpers ────────────────────────────────────────────────────────
@@ -1350,7 +1376,7 @@ export function shapeSizeField(
   el: CElement,
   family: FamilyKind,
   label: string,
-  opts: { step: number; min: number },
+  opts: { step: number; min: number; def?: number },
 ): TemplateResult {
   const id = el.payload.id;
   const shared = elementSize(el) ?? opts.min;
@@ -1360,7 +1386,7 @@ export function shapeSizeField(
       (c) => setPlacement(c, family, id, { size: Math.max(opts.min, v ?? shared) }),
       `el-${id}-size-${family}`,
     ),
-    { step: opts.step, min: opts.min });
+    { step: opts.step, min: opts.min, ...(opts.def === undefined ? {} : { def: opts.def }) });
 }
 
 /** `elementSize` lives beside the design boxes now, because the refit that
@@ -1578,7 +1604,7 @@ function imageTimestampSection(img: ImageElement, upd: (m: (p: ImageElement) => 
             ["bottomLeading", "Bottom left"],
             ["bottomTrailing", "Bottom right"],
           ], (v) => upd((p) => { p.timestampCorner = v; }))}
-      ${numberField("Text size (pt)", img.timestampSize, (v) => upd((p) => { p.timestampSize = Math.min(40, Math.max(4, v ?? IMAGE_DEFAULT_TIMESTAMP_SIZE)); }, "tssize"), { step: 1, min: 4, max: 40 })}
+      ${numberField("Text size (pt)", img.timestampSize, (v) => upd((p) => { p.timestampSize = Math.min(40, Math.max(4, v ?? IMAGE_DEFAULT_TIMESTAMP_SIZE)); }, "tssize"), { step: 1, min: 4, max: 40, def: IMAGE_DEFAULT_TIMESTAMP_SIZE })}
       <div class="hint">Click the chip in the preview to select it. Drag it to move it (it stays inside the picture), or drag a corner to change the text size.</div>
       <div class="hint">The time the snapshot was fetched, not the time now. A frame that stops updating keeps its old time.</div>`}`;
 }
@@ -1591,6 +1617,29 @@ interface CardOptions {
   /** One line under the title saying what the card holds, so a shut card
    * still answers most questions. */
   summary?: string;
+  /** Whether anything in the card is away from its default. Shown as a dot
+   * by the title, so a shut card says "someone set something here". */
+  changed?: boolean;
+}
+
+/** Structural equality for the plain data the config is made of: objects,
+ * arrays, strings, numbers, booleans. Key order does not matter, which is
+ * what makes a decoded document comparable to a freshly built default. */
+function same(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== typeof b || a === null || b === null || typeof a !== "object") return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) return a.length === (b as unknown[]).length && a.every((v, i) => same(v, (b as unknown[])[i]));
+  const ka = Object.keys(a as object).filter((k) => (a as Record<string, unknown>)[k] !== undefined);
+  const kb = Object.keys(b as object).filter((k) => (b as Record<string, unknown>)[k] !== undefined);
+  if (ka.length !== kb.length) return false;
+  return ka.every((k) => same((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
+}
+
+/** True when any of `keys` differs between a payload and the default one of
+ * its kind. */
+function anyDiffers(actual: object, base: object, keys: readonly string[]): boolean {
+  return keys.some((k) => !same((actual as Record<string, unknown>)[k], (base as Record<string, unknown>)[k]));
 }
 
 /**
@@ -1606,7 +1655,7 @@ function card(host: EditorHost, id: string, title: string, body: unknown, opts: 
     <div class="sec-h" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"} @click=${toggle}
       @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}>
       <span class="swatch">${uiIcon(opts.icon ?? "content")}</span>
-      <span class="tt"><h4>${title}</h4>${opts.summary ? html`<span class="sum">${opts.summary}</span>` : nothing}</span>
+      <span class="tt"><h4>${title}${opts.changed ? html` <span class="dot" title="Something here is set away from its default"></span>` : nothing}</h4>${opts.summary ? html`<span class="sum">${opts.summary}</span>` : nothing}</span>
       <span class="chev">${uiIcon("chevron")}</span>
     </div>
     ${open ? html`<div class="sec-b">${body}</div>` : nothing}
@@ -1691,6 +1740,11 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
   const eff = effectivePlacement(host.config, family, el);
   const f = eff.frame;
   const setFrame = (patch: Partial<NormalizedFrame>, k: string) => host.update((c) => setPlacement(c, family, id, { frame: { ...f, ...patch } }), `${key}-${k}-${family}`);
+  // What a fresh layer of this kind holds: the reset buttons go back to it,
+  // and the changed dots compare against it.
+  const base = newElement(el.kind).payload as unknown as Record<string, unknown>;
+  const baseColor = (base.colorSlot as { baseColorHex: string } | undefined)?.baseColorHex ?? "#FFFFFF";
+  const baseSize = (key: "fontSize" | "size" | "lineWidth") => base[key] as number;
 
   // Content is what the layer shows; look is how it is drawn. Splitting them
   // per kind is the whole difference between a form and a page a person can
@@ -1710,7 +1764,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         }))}
         ${el.payload.countdown ? html`<div class="hint">Ticks down to the value's target: an active timer's finish, or any future timestamp. A paused timer shows its remaining time.</div>` : nothing}`;
       look = html`<div class="grid2">
-          ${shapeSizeField(host, el, family, "Font size", { step: 1, min: 4 })}
+          ${shapeSizeField(host, el, family, "Font size", { step: 1, min: 4, def: baseSize("fontSize") })}
           ${segField("Weight", el.payload.fontWeight, FONT_WEIGHTS, (v) => upd((e) => { (e as typeof el).payload.fontWeight = v; }))}
         </div>`;
       break;
@@ -1719,7 +1773,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       content = html`
         ${valueEditor(host, el.payload.symbol, (v) => upd((e) => { (e as typeof el).payload.symbol = v; }, "symbol"), { noFormat: true, showResolved: true, symbol: true, label: "Symbol", key: `${key}-symbol` })}
         <div class="hint">An entity source draws that entity's own icon instead.</div>`;
-      look = shapeSizeField(host, el, family, "Icon size", { step: 1, min: 4 });
+      look = shapeSizeField(host, el, family, "Icon size", { step: 1, min: 4, def: baseSize("size") });
       break;
     case "gauge":
       content = html`
@@ -1732,9 +1786,9 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         <div class="grid2">
           ${segField("Style", el.payload.style, [["arc", "Arc"], ["ring", "Ring"], ["bar", "Bar"]], (v) => upd((e) => { (e as typeof el).payload.style = v; }),
             { titles: { arc: "A 270° arc, open at the bottom", ring: "A full circle", bar: "A straight bar" } })}
-          ${shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5 })}
+          ${shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5, def: baseSize("lineWidth") })}
         </div>
-        ${colorField("Track colour", el.payload.trackColorHex, (v) => upd((e) => { (e as typeof el).payload.trackColorHex = v ?? "#FFFFFF40"; }, "track"))}`;
+        ${colorField("Track colour", el.payload.trackColorHex, (v) => upd((e) => { (e as typeof el).payload.trackColorHex = v ?? "#FFFFFF40"; }, "track"), false, base.trackColorHex as string)}`;
       break;
     case "chart": {
       const c = el.payload;
@@ -1864,8 +1918,8 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         <div class="grid2">
           ${segField("Style", c.style, CHART_STYLES, (v) => setChart((p) => { p.style = v; }))}
           ${c.style === "bars"
-            ? numberField("Bar gap (pt)", c.barGap, (v) => setChart((p) => { p.barGap = Math.max(0, v ?? 0); }, "gap"), { step: 0.5, min: 0 })
-            : shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5 })}
+            ? numberField("Bar gap (pt)", c.barGap, (v) => setChart((p) => { p.barGap = Math.max(0, v ?? 0); }, "gap"), { step: 0.5, min: 0, def: base.barGap as number })
+            : shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5, def: baseSize("lineWidth") })}
         </div>
         <div class="grid2">
           ${segField("Scale", c.scale, CHART_SCALES, (v) => setChart((p) => { p.scale = v; }),
@@ -1931,11 +1985,11 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       content = html`<div class="grid2">
           ${segField("Shape", el.payload.kind, [["roundedRectangle", "Rounded"], ["rectangle", "Rectangle"], ["capsule", "Capsule"], ["circle", "Circle"]], (v) => upd((e) => { (e as typeof el).payload.kind = v; }),
             { titles: { roundedRectangle: "Rounded rectangle" } })}
-          ${el.payload.kind === "roundedRectangle" ? numberField("Corner radius (pt)", el.payload.cornerRadius, (v) => upd((e) => { (e as typeof el).payload.cornerRadius = v ?? 6; }, "radius"), { step: 0.5, min: 0 }) : nothing}
+          ${el.payload.kind === "roundedRectangle" ? numberField("Corner radius (pt)", el.payload.cornerRadius, (v) => upd((e) => { (e as typeof el).payload.cornerRadius = v ?? 6; }, "radius"), { step: 0.5, min: 0, def: base.cornerRadius as number }) : nothing}
         </div>`;
       look = html`
-        ${colorField("Border colour", el.payload.borderColorHex, (v) => upd((e) => { if (v === undefined) delete (e as typeof el).payload.borderColorHex; else (e as typeof el).payload.borderColorHex = v; }, "border"), true)}
-        ${el.payload.borderColorHex !== undefined ? numberField("Border width (pt)", el.payload.borderWidth, (v) => upd((e) => { (e as typeof el).payload.borderWidth = v ?? 1; }, "bw"), { step: 0.5, min: 0 }) : nothing}`;
+        ${colorField("Border colour", el.payload.borderColorHex, (v) => upd((e) => { if (v === undefined) delete (e as typeof el).payload.borderColorHex; else (e as typeof el).payload.borderColorHex = v; }, "border"), true, null)}
+        ${el.payload.borderColorHex !== undefined ? numberField("Border width (pt)", el.payload.borderWidth, (v) => upd((e) => { (e as typeof el).payload.borderWidth = v ?? 1; }, "bw"), { step: 0.5, min: 0, def: base.borderWidth as number }) : nothing}`;
       break;
     case "image": {
       const img = el.payload;
@@ -1957,7 +2011,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         ${sliderField("Pan up/down", img.panY, (v) => setImage((p) => { p.panY = v; }, "pany"),
           { min: -1, max: 1, step: 0.02, def: 0 })}
         <div class="hint">${imagePanHint(img)}</div>
-        ${numberField("Corner radius (pt)", img.cornerRadius, (v) => setImage((p) => { p.cornerRadius = Math.max(0, v ?? IMAGE_DEFAULT_CORNER_RADIUS); }, "imgradius"), { step: 1, min: 0 })}`;
+        ${numberField("Corner radius (pt)", img.cornerRadius, (v) => setImage((p) => { p.cornerRadius = Math.max(0, v ?? IMAGE_DEFAULT_CORNER_RADIUS); }, "imgradius"), { step: 1, min: 0, def: IMAGE_DEFAULT_CORNER_RADIUS })}`;
       break;
     }
     case "tap": {
@@ -1971,7 +2025,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
 
   const colour = el.kind === "image" || el.kind === "tap"
     ? undefined
-    : colorField(el.kind === "shape" ? "Fill colour" : "Colour", el.payload.colorSlot.baseColorHex, (v) => upd((e) => { if (e.kind !== "image" && e.kind !== "tap") e.payload.colorSlot.baseColorHex = v ?? "#FFFFFF"; }, "color"));
+    : colorField(el.kind === "shape" ? "Fill colour" : "Colour", el.payload.colorSlot.baseColorHex, (v) => upd((e) => { if (e.kind !== "image" && e.kind !== "tap") e.payload.colorSlot.baseColorHex = v ?? "#FFFFFF"; }, "color"), false, baseColor);
 
   // A layer already bound to an entity is what a new states table tests, so the
   // entity is asked for once at the top of this editor and never again.
@@ -1981,21 +2035,32 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
   const attached = el.kind === "tap" ? undefined : attachedTapsOf(host.config, id)[0];
   const stamp = el.kind === "image" ? el.payload.timestamp === true : false;
 
+  // Which fields each card owns, for its changed dot. Content is what the
+  // layer says; look is how it is drawn. Per-shape size overrides count as
+  // look too, since that is the box they are typed into.
+  const contentKeys = CONTENT_KEYS[el.kind];
+  const lookKeys = LOOK_KEYS[el.kind];
+  const contentChanged = anyDiffers(el.payload, base, contentKeys);
+  const sizeKey = el.kind === "text" ? "fontSize" : el.kind === "icon" ? "size" : el.kind === "gauge" || el.kind === "chart" ? "lineWidth" : undefined;
+  const lookChanged = anyDiffers(el.payload, base, lookKeys)
+    || (sizeKey !== undefined && eff.size !== undefined && eff.size !== base[sizeKey]);
+  const placeChanged = !same(f, CENTERED_FRAME) || eff.isHidden;
+
   return html`
     ${card(host, "content", "Content", html`${el.kind === "tap" ? nothing : layerEntityField(host, el, key)}${content}`,
-      { color: kindColor, icon: "content", summary: contentSummary(host, el) })}
+      { color: kindColor, icon: "content", summary: contentSummary(host, el), changed: contentChanged })}
     ${look === undefined && colour === undefined ? nothing
       : card(host, "look", el.kind === "image" ? "Picture" : "Look", html`${look ?? nothing}${colour ?? nothing}`,
-        { color: kindColor, icon: el.kind === "image" ? "image" : "look", ...(lookSummary(el) ? { summary: lookSummary(el)! } : {}) })}
+        { color: kindColor, icon: el.kind === "image" ? "image" : "look", ...(lookSummary(el) ? { summary: lookSummary(el)! } : {}), changed: lookChanged })}
     ${el.kind === "chart" ? card(host, "numbers", "Numbers", chartNumbersSection(host, el),
-      { color: KIND_COLOR.text, icon: "text", summary: chartNumbersSummary(host, el) }) : nothing}
+      { color: KIND_COLOR.text, icon: "text", summary: chartNumbersSummary(host, el), changed: chartLabelsOf(host.config, id).length > 0 }) : nothing}
     ${el.kind === "image" ? card(host, "timestamp", "Timestamp", imageTimestampSection(el.payload, (m, k) => upd((e) => m((e as typeof el).payload), k)),
-      { color: kindColor, icon: "clock", summary: stamp ? `Shown · ${el.payload.timestampSize} pt` : "Hidden" }) : nothing}
+      { color: kindColor, icon: "clock", summary: stamp ? `Shown · ${el.payload.timestampSize} pt` : "Hidden", changed: stamp }) : nothing}
     ${el.kind === "tap" ? nothing : card(host, "tappable", "Tap", tappableSection(host, el, key),
-      { color: SECTION_COLOR.tap, icon: "tap", summary: attached ? describeTapAction((attached.payload as TapElement).action) : "Not tappable" })}
+      { color: SECTION_COLOR.tap, icon: "tap", summary: attached ? describeTapAction((attached.payload as TapElement).action) : "Not tappable", changed: attached !== undefined })}
     ${card(host, "states", "States", statesEditor(host, el.payload.rules, el.kind,
       (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`, tested),
-      { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(el.payload.rules).replace(/\.$/, "") })}
+      { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(el.payload.rules).replace(/\.$/, ""), changed: el.payload.rules.length > 0 })}
     ${card(host, "placement", "Place", html`
       ${sliderField("Rotation", f.rotationDegrees, (v) => setFrame({ rotationDegrees: v }, "rot"),
         { min: -180, max: 180, step: 1, def: 0, format: (v) => `${Math.round(v)}°` })}
@@ -2005,8 +2070,30 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       <div class="hint">Everything about where this layer sits, how big it is drawn and whether it
         shows belongs to the ${familyTitle(family)} shape alone. Pick another shape above to place
         the same layer differently there.</div>`,
-      { color: SECTION_COLOR.place, icon: "place", summary: `${Math.round(f.width * 100)}% wide · ${familyTitle(family)}${eff.fromPlacement ? "" : " · shared frame"}` })}`;
+      { color: SECTION_COLOR.place, icon: "place", summary: `${Math.round(f.width * 100)}% wide · ${familyTitle(family)}${eff.fromPlacement ? "" : " · shared frame"}`, changed: placeChanged })}`;
 }
+
+/** The payload fields the Content card owns, per kind. */
+const CONTENT_KEYS: Record<CElement["kind"], readonly string[]> = {
+  text: ["value", "countdown"],
+  icon: ["symbol"],
+  gauge: ["value", "minValue", "maxValue"],
+  chart: ["value", "historyMinutes", "historyPoints", "limit", "takeFromEnd"],
+  shape: ["kind", "cornerRadius"],
+  image: ["entity"],
+  tap: ["action", "openPageName"],
+};
+
+/** The payload fields the Look card owns, per kind. */
+const LOOK_KEYS: Record<CElement["kind"], readonly string[]> = {
+  text: ["fontSize", "fontWeight", "colorSlot"],
+  icon: ["size", "colorSlot"],
+  gauge: ["style", "lineWidth", "trackColorHex", "colorSlot"],
+  chart: ["style", "scale", "minValue", "maxValue", "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker", "coloring", "bands", "bandAboveColorHex", "fillBands", "colorSlot"],
+  shape: ["colorSlot", "borderColorHex", "borderWidth"],
+  image: ["contentMode", "zoom", "panX", "panY", "cornerRadius"],
+  tap: [],
+};
 
 // ── Tappable ──────────────────────────────────────────────────────────────
 
@@ -2215,14 +2302,16 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
   const border = layout.borderColorHex ? `${layout.borderWidth} pt ${colorWords(layout.borderColorHex)} border` : "no border";
   return html`
     ${card(host, "look", `${familyTitle(family)} shape`, html`
-      ${colorField("Background (blank = transparent)", layout.backgroundColorHex, (v) => upd((l) => { if (v === undefined) delete l.backgroundColorHex; else l.backgroundColorHex = v; }, "bg"), true)}
-      ${colorField("Border colour", layout.borderColorHex, (v) => upd((l) => { if (v === undefined) delete l.borderColorHex; else l.borderColorHex = v; }, "border"), true)}
-      ${numberField("Border width (pt)", layout.borderWidth, (v) => upd((l) => { l.borderWidth = v ?? 2; }, "bw"), { step: 0.5, min: 0 })}`,
-      { color: SECTION_COLOR.place, icon: "shape", summary: `${bg} · ${border}` })}
+      ${colorField("Background (blank = transparent)", layout.backgroundColorHex, (v) => upd((l) => { if (v === undefined) delete l.backgroundColorHex; else l.backgroundColorHex = v; }, "bg"), true, null)}
+      ${colorField("Border colour", layout.borderColorHex, (v) => upd((l) => { if (v === undefined) delete l.borderColorHex; else l.borderColorHex = v; }, "border"), true, null)}
+      ${numberField("Border width (pt)", layout.borderWidth, (v) => upd((l) => { l.borderWidth = v ?? 2; }, "bw"), { step: 0.5, min: 0, def: 2 })}`,
+      { color: SECTION_COLOR.place, icon: "shape", summary: `${bg} · ${border}`,
+        changed: layout.backgroundColorHex !== undefined || layout.borderColorHex !== undefined || layout.borderWidth !== 2 })}
     ${family === "corner" ? card(host, "corner", "Corner content", cornerEditor(host, layout, upd),
-      { color: SECTION_COLOR.place, icon: "content", summary: layout.curvedText ? "Big curved text" : "Layer canvas" }) : nothing}
+      { color: SECTION_COLOR.place, icon: "content", summary: layout.curvedText ? "Big curved text" : "Layer canvas",
+        changed: layout.curvedText !== undefined || layout.bezelText !== undefined || layout.bezelGauge !== undefined }) : nothing}
     ${card(host, "states", "Shape states", statesEditor(host, layout.rules, "layout", (c) => c.perFamily[family]?.rules, `rules-${family}`),
-      { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(layout.rules).replace(/\.$/, "") })}
+      { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(layout.rules).replace(/\.$/, ""), changed: layout.rules.length > 0 })}
     ${card(host, "placements", "Placements", html`
       <div class="hint">${placed === 0
         ? `Nothing is on the ${familyTitle(family)} shape. The Layers card offers to copy another shape's whole arrangement onto it.`
