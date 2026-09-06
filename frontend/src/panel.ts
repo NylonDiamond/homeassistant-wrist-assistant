@@ -3618,7 +3618,7 @@ export class WristAssistantPanel extends LitElement {
         ${thumb([id])}
         <span class="name">
           <b>${layerTitle(el, ctx)}</b>
-          <small><span class="kind">${KIND_LABEL[el.kind]}</span> · ${layerMeta(el, resolver, this.historySeries)}</small>
+          <small><span class="kind">${KIND_LABEL[el.kind]}</span> · ${layerMeta(el, resolver, this.historySeries, eff.size)}</small>
           ${rich ? html`<span class="facts">${layerFacts(this.host(), family, el, eff).map((f) => html`<span class="fact"><b>${f.label}</b> ${f.value}</span>`)}</span>` : nothing}
         </span>
         <span class="right">
@@ -3964,7 +3964,7 @@ export class WristAssistantPanel extends LitElement {
     // too, except on the one tap box it is narrowed to.
     const focus = this.focusTapId();
     const opts = {
-      icons: this.icons, imageSizes: this.imageSizes, showHidden: true, tapAreas: true, slot,
+      icons: this.icons, imageSizes: this.imageSizes, tapAreas: true, slot,
       highlightId: focus ?? highlightId,
       ...(outlineIds.length > 0 && !this.showTaps ? { highlightIds: outlineIds } : {}),
       tapReview: this.showTaps,
@@ -4456,14 +4456,14 @@ export function layerFacts(
 
 /** The second line of a Layers row: the live reading and the one look fact
  * that tells this layer from its neighbours. */
-function layerMeta(el: CElement, resolver: Resolver, historySeries: Map<string, string>): unknown {
+function layerMeta(el: CElement, resolver: Resolver, historySeries: Map<string, string>, size?: number): unknown {
   // What the layer reads right now takes the live-value colour here too, so a
   // row in the list and the card on the right agree about which half of the
   // line is the house talking.
   const now = (v: string | undefined) => html`<span class="val-tok">${v ?? "--"}</span>`;
   switch (el.kind) {
-    case "text": return html`${now(resolver.resolve(el.payload.value))} · ${el.payload.fontSize} pt`;
-    case "icon": return `${el.payload.size} pt · ${colorWords(el.payload.colorSlot.baseColorHex)}`;
+    case "text": return html`${now(resolver.resolve(el.payload.value))} · ${size ?? el.payload.fontSize} pt`;
+    case "icon": return `${size ?? el.payload.size} pt · ${colorWords(el.payload.colorSlot.baseColorHex)}`;
     case "gauge": return html`${now(resolver.resolve(el.payload.value))} · ${el.payload.style}`;
     case "chart": {
       // A history chart's own value is one number; counting that would report
