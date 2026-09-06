@@ -1,6 +1,6 @@
 {
   "name": "Chart series",
-  "description": "Four chart layers, pinning the parts the Swift and TypeScript resolvers each compute for themselves: how a string is scanned for numbers, how `limit` trims it, what the auto and zero-baseline scales come out as, and which readings the highlight lands on. The prices layer is the Zonneplan shape a forecast sensor actually has, units and all. The window layer trims 12 readings to the last 4. The negative layer proves a zero baseline stretches the range across zero rather than clipping it. The history layer draws a recorder series instead of its own value, which is the one case where the entity's own state must be ignored: `sensor.voltage` reads 3068 and the chart must not show that single number. The prices layer also pins the two colour and label features: its readings are banded on their own values through a three-step colour table and both ends of its scale are printed. The window layer pins the decimal rule, which reads the span rather than the number: a spread of 3 prints one decimal, so its top reads 12.0 while the voltage layer's spread of 12 prints 3075 flat. The voltage layer prints its newest reading and lets its scale labels sit over the marks rather than beside them, so the plot keeps its full width. Every printed number carries its own size, colour and optional plate; a label reads as `text@size` in the expectations, with `+pill` when it has one.",
+  "description": "Four chart layers and the text layers that print their numbers, pinning the parts the Swift and TypeScript resolvers each compute for themselves: how a string is scanned for numbers, how `limit` trims it, what the auto and zero-baseline scales come out as, and which readings the highlight lands on. The prices layer is the Zonneplan shape a forecast sensor actually has, units and all, and its readings are banded on their own values through a three-step colour table. The window layer trims 12 readings to the last 4. The negative layer proves a zero baseline stretches the range across zero rather than clipping it. The history layer draws a recorder series instead of its own value, which is the one case where the entity's own state must be ignored: `sensor.voltage` reads 3068 and the chart must not show that single number. A chart's numbers are ordinary text layers whose value is a `chartStat` naming the chart: the prices chart has its top and bottom printed, the window chart its highest and average, the negative chart its lowest, and the voltage chart its newest reading with the entity's unit appended. Every stat reads the series the chart draws (so the window's highest is 12.0, not the raw 12 of a 12-reading series) and prints with the chart's span-derived decimals: a spread of 3 prints one decimal, a spread of 12 prints 3070 flat. The last text layer names a chart the document does not have and must print the placeholder. The two `groups` and the `groupId` keys are editor-only: the panel keeps a chart and its numbers in one folder, and the watch ignores both.",
   "config": {
     "schemaVersion": 6,
     "id": "AAAAAAAA-0000-4000-8000-0000000000C0",
@@ -53,23 +53,6 @@
           ],
           "bandAboveColorHex": "#FF453A",
           "fillBands": false,
-          "scaleLabels": "range",
-          "scaleLabelPlacement": "gutter",
-          "topLabelStyle": {
-            "fontSize": 11,
-            "colorHex": "#FFFFFF",
-            "pillColorHex": "#000000AA"
-          },
-          "bottomLabelStyle": {
-            "fontSize": 6,
-            "colorHex": "#FFFFFF80"
-          },
-          "latestLabelStyle": {
-            "fontSize": 8,
-            "colorHex": "#FFFFFF99"
-          },
-          "latestLabelFollowsBand": true,
-          "latestLabel": "none",
           "colorSlot": {
             "baseColorHex": "#9A6BFF"
           },
@@ -81,7 +64,64 @@
             "height": 0.42,
             "rotationDegrees": 0
           },
-          "isHidden": false
+          "isHidden": false,
+          "groupId": "99999999-0000-4000-8000-000000000001"
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D1",
+          "value": {
+            "kind": {
+              "kind": "chartStat",
+              "layer": "EEEEEEEE-0000-4000-8000-0000000000C1",
+              "stat": "top"
+            }
+          },
+          "fontSize": 11,
+          "fontWeight": "medium",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.34,
+            "width": 0.15,
+            "height": 0.12,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "groupId": "99999999-0000-4000-8000-000000000001"
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D2",
+          "value": {
+            "kind": {
+              "kind": "chartStat",
+              "layer": "EEEEEEEE-0000-4000-8000-0000000000C1",
+              "stat": "bottom"
+            }
+          },
+          "fontSize": 6,
+          "fontWeight": "medium",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF80"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.66,
+            "width": 0.15,
+            "height": 0.1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "groupId": "99999999-0000-4000-8000-000000000001"
         }
       },
       {
@@ -115,22 +155,6 @@
           "bands": [],
           "bandAboveColorHex": "#FF453A",
           "fillBands": false,
-          "scaleLabels": "top",
-          "scaleLabelPlacement": "gutter",
-          "topLabelStyle": {
-            "fontSize": 8,
-            "colorHex": "#FFFFFF99"
-          },
-          "bottomLabelStyle": {
-            "fontSize": 8,
-            "colorHex": "#FFFFFF99"
-          },
-          "latestLabelStyle": {
-            "fontSize": 8,
-            "colorHex": "#FFFFFF99"
-          },
-          "latestLabelFollowsBand": true,
-          "latestLabel": "none",
           "colorSlot": {
             "baseColorHex": "#FFFFFF"
           },
@@ -140,6 +164,60 @@
             "y": 0,
             "width": 1,
             "height": 0.3,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D3",
+          "value": {
+            "kind": {
+              "kind": "chartStat",
+              "layer": "EEEEEEEE-0000-4000-8000-0000000000C2",
+              "stat": "highest"
+            }
+          },
+          "fontSize": 8,
+          "fontWeight": "medium",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF99"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 0.2,
+            "height": 0.1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D4",
+          "value": {
+            "kind": {
+              "kind": "chartStat",
+              "layer": "EEEEEEEE-0000-4000-8000-0000000000C2",
+              "stat": "average"
+            }
+          },
+          "fontSize": 8,
+          "fontWeight": "medium",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF99"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.8,
+            "y": 0,
+            "width": 0.2,
+            "height": 0.1,
             "rotationDegrees": 0
           },
           "isHidden": false
@@ -176,22 +254,6 @@
           "bands": [],
           "bandAboveColorHex": "#FF453A",
           "fillBands": false,
-          "scaleLabels": "none",
-          "scaleLabelPlacement": "gutter",
-          "topLabelStyle": {
-            "fontSize": 8,
-            "colorHex": "#FFFFFF99"
-          },
-          "bottomLabelStyle": {
-            "fontSize": 8,
-            "colorHex": "#FFFFFF99"
-          },
-          "latestLabelStyle": {
-            "fontSize": 8,
-            "colorHex": "#FFFFFF99"
-          },
-          "latestLabelFollowsBand": true,
-          "latestLabel": "none",
           "colorSlot": {
             "baseColorHex": "#FFFFFF"
           },
@@ -201,6 +263,33 @@
             "y": 0.7,
             "width": 1,
             "height": 0.3,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D6",
+          "value": {
+            "kind": {
+              "kind": "chartStat",
+              "layer": "EEEEEEEE-0000-4000-8000-0000000000C3",
+              "stat": "lowest"
+            }
+          },
+          "fontSize": 8,
+          "fontWeight": "medium",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF99"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0.9,
+            "width": 0.2,
+            "height": 0.1,
             "rotationDegrees": 0
           },
           "isHidden": false
@@ -237,23 +326,6 @@
           "bands": [],
           "bandAboveColorHex": "#FF453A",
           "fillBands": false,
-          "scaleLabels": "range",
-          "scaleLabelPlacement": "overlay",
-          "topLabelStyle": {
-            "fontSize": 8,
-            "colorHex": "#FFFFFF99"
-          },
-          "bottomLabelStyle": {
-            "fontSize": 8,
-            "colorHex": "#FFFFFF99"
-          },
-          "latestLabelStyle": {
-            "fontSize": 10,
-            "colorHex": "#FFFFFF",
-            "pillColorHex": "#0A84FF66"
-          },
-          "latestLabelFollowsBand": true,
-          "latestLabel": "end",
           "colorSlot": {
             "baseColorHex": "#FFFFFF"
           },
@@ -263,6 +335,65 @@
             "y": 0.4,
             "width": 1,
             "height": 0.3,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "groupId": "99999999-0000-4000-8000-000000000004"
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D5",
+          "value": {
+            "kind": {
+              "kind": "chartStat",
+              "layer": "EEEEEEEE-0000-4000-8000-0000000000C4",
+              "stat": "latest"
+            },
+            "format": {
+              "useEntityUnit": true
+            }
+          },
+          "fontSize": 10,
+          "fontWeight": "medium",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.7,
+            "y": 0.4,
+            "width": 0.3,
+            "height": 0.12,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "groupId": "99999999-0000-4000-8000-000000000004"
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D7",
+          "value": {
+            "kind": {
+              "kind": "chartStat",
+              "layer": "EEEEEEEE-0000-4000-8000-0000000000FF",
+              "stat": "latest"
+            }
+          },
+          "fontSize": 8,
+          "fontWeight": "medium",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0.5,
+            "width": 0.2,
+            "height": 0.1,
             "rotationDegrees": 0
           },
           "isHidden": false
@@ -280,7 +411,19 @@
     "refreshMinutes": 15,
     "tapAction": {
       "type": "refresh"
-    }
+    },
+    "groups": [
+      {
+        "id": "99999999-0000-4000-8000-000000000001",
+        "name": "Prices",
+        "locked": true
+      },
+      {
+        "id": "99999999-0000-4000-8000-000000000004",
+        "name": "Voltage",
+        "locked": true
+      }
+    ]
   },
   "inputs": {
     "entityStates": {
@@ -298,7 +441,8 @@
       },
       "sensor.voltage": {
         "state": "3068",
-        "domain": "sensor"
+        "domain": "sensor",
+        "unitOfMeasurement": "mV"
       }
     },
     "templateResults": {},
@@ -354,9 +498,19 @@
             "#FF453A",
             "#FF453A",
             "#FF453A"
-          ],
-          "topLabel": "30@11+pill",
-          "bottomLabel": "13@6"
+          ]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D1",
+          "kind": "text",
+          "text": "30",
+          "isHidden": false
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D2",
+          "kind": "text",
+          "text": "13",
+          "isHidden": false
         },
         {
           "id": "EEEEEEEE-0000-4000-8000-0000000000C2",
@@ -373,8 +527,19 @@
           "highIndex": 3,
           "lowIndex": null,
           "marker": "dot",
-          "pointColorHexes": [],
-          "topLabel": "12.0@8"
+          "pointColorHexes": []
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D3",
+          "kind": "text",
+          "text": "12.0",
+          "isHidden": false
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D4",
+          "kind": "text",
+          "text": "10.5",
+          "isHidden": false
         },
         {
           "id": "EEEEEEEE-0000-4000-8000-0000000000C3",
@@ -393,6 +558,12 @@
           "pointColorHexes": []
         },
         {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D6",
+          "kind": "text",
+          "text": "-4.5",
+          "isHidden": false
+        },
+        {
           "id": "EEEEEEEE-0000-4000-8000-0000000000C4",
           "kind": "chart",
           "values": [
@@ -408,10 +579,19 @@
           "domainMax": 3075,
           "highIndex": 3,
           "lowIndex": 4,
-          "marker": "dot",
-          "topLabel": "3075@8",
-          "bottomLabel": "3063@8",
-          "latestLabel": "3070@10+pill"
+          "marker": "dot"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D5",
+          "kind": "text",
+          "text": "3070 mV",
+          "isHidden": false
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D7",
+          "kind": "text",
+          "text": "--",
+          "isHidden": false
         }
       ]
     }

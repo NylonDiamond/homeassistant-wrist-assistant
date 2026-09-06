@@ -58,22 +58,6 @@ function contextFor(fx: Fixture): ResolveContext {
 }
 
 /** Compare only the keys the fixture names; null in the fixture means "absent". */
-/** A chart's resolved labels, flattened to `<text>@<size>` (plus `+pill` when
- * there is one).
- *
- * A fixture is read by people, and one short string pins the digits, the size
- * and the plate in a form a human can check. `CustomComplicationFixtureTests`
- * writes the same shape on the Swift side. */
-function flattenChartLabels(el: Record<string, unknown>): Record<string, unknown> {
-  if (el.kind !== "chart") return el;
-  const out = { ...el };
-  for (const key of ["topLabel", "bottomLabel", "latestLabel"] as const) {
-    const l = el[key] as { text: string; fontSize: number; pillColorHex?: string } | undefined;
-    if (l) out[key] = `${l.text}@${l.fontSize}${l.pillColorHex !== undefined ? "+pill" : ""}`;
-  }
-  return out;
-}
-
 function expectSubset(actual: Record<string, unknown>, expected: Record<string, unknown>, path: string) {
   for (const [key, want] of Object.entries(expected)) {
     if (key === "elements") continue;
@@ -147,7 +131,7 @@ describe.each(files)("fixture %s", (file) => {
           if (shapeKind) expect((gotEl as { shapeKind?: string }).shapeKind).toBe(shapeKind);
           expectSubset(gotEl, rest, `${family}.elements[${i}]`);
         } else {
-          expectSubset(flattenChartLabels(gotEl), wantEl, `${family}.elements[${i}]`);
+          expectSubset(gotEl, wantEl, `${family}.elements[${i}]`);
         }
       });
     }

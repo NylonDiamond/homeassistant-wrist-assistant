@@ -80,9 +80,20 @@ export type ChartBaseline = "lowest" | "zero";
 export type ChartHighlight = "none" | "highest" | "lowest" | "both";
 export type ChartMarker = "none" | "dot" | "pointer";
 export type ChartColoring = "uniform" | "bands";
-export type ChartScaleLabels = "none" | "top" | "range";
-export type ChartLabelPlacement = "gutter" | "overlay";
-export type ChartLatestLabel = "none" | "corner" | "end";
+/** Which number of a chart layer a `chartStat` value reads. The stats read the
+ * series the chart draws, after `limit` has trimmed it; `top` and `bottom` are
+ * the ends of the plot's range, which on a Fixed chart differ from the readings.
+ * Mirrors `ChartStatSpec.Stat` in the app repo. */
+export type ChartStat = "latest" | "highest" | "lowest" | "average" | "top" | "bottom";
+
+export const CHART_STATS: readonly [ChartStat, string][] = [
+  ["latest", "Newest reading"],
+  ["highest", "Highest reading"],
+  ["lowest", "Lowest reading"],
+  ["average", "Average reading"],
+  ["top", "Top of the scale"],
+  ["bottom", "Bottom of the scale"],
+];
 export type ShapeKind = "rectangle" | "roundedRectangle" | "capsule" | "circle";
 export type CornerBodyShape = "circle" | "wedge";
 export type AggregateFunction = "count" | "sum" | "average" | "min" | "max";
@@ -131,7 +142,12 @@ export type ValueKind =
   | { kind: "time"; timeField: TimeField }
   | { kind: "dataAge" }
   | { kind: "jinja"; value: string }
-  | { kind: "named"; id: string };
+  | { kind: "named"; id: string }
+  /** One number read off a chart layer in the same document, by the chart's
+   * id. Local: the resolver settles the chart first and reads the number back.
+   * This is how a chart's numbers are ordinary text layers rather than a
+   * feature of the chart, so they sit anywhere and take every text style. */
+  | { kind: "chartStat"; layer: string; stat: ChartStat };
 
 export interface Value {
   kind: ValueKind;
@@ -326,39 +342,10 @@ export interface ChartElement extends ElementBase {
   bandAboveColorHex: string;
   /** Whether an area chart's fill follows the bands too. */
   fillBands: boolean;
-  /** Which end of the plot's range is printed as a number beside it. Without
-   * this a chart is a shape with no units: a reader can see that the line went
-   * up but not what it went up to. */
-  scaleLabels: ChartScaleLabels;
-  /** Whether the scale labels take a strip of their own or sit over the marks. */
-  scaleLabelPlacement: ChartLabelPlacement;
-  /** How each printed number looks. Three separate styles rather than one
-   * shared one: the top of a range and the reading happening right now are
-   * different statements, and a chart that wants the newest number loud and the
-   * scale quiet is the normal case rather than the odd one. */
-  topLabelStyle: ChartLabelStyle;
-  bottomLabelStyle: ChartLabelStyle;
-  latestLabelStyle: ChartLabelStyle;
-  /** Whether the newest reading's number takes its own band colour instead of
-   * `latestLabelStyle`'s. On by default, so a banded chart's number and the mark
-   * it names agree without anyone setting two colours to match. */
-  latestLabelFollowsBand: boolean;
-  /** Where the newest reading is printed, if at all. The scale says what the
-   * chart covers; this says where the entity is right now. */
-  latestLabel: ChartLatestLabel;
-}
-
-/** How one of a chart's printed numbers looks.
- *
- * The pill is an optional colour rather than a flag plus a colour: a pill with
- * no colour is not a thing, and one field cannot get into a state the other
- * contradicts. Mirrors `ChartElement.ChartLabelStyle` in the app repo. */
-export interface ChartLabelStyle {
-  fontSize: number;
-  colorHex: string;
-  /** Fill of the rounded plate behind the text. Absent draws the number
-   * straight onto whatever is behind it. */
-  pillColorHex?: string;
+  /* The chart draws marks and nothing else. Its numbers (the newest reading,
+   * the ends of its range) are text layers with a `chartStat` value, kept in
+   * the chart's layer group; see `addChartLabel`. The plot fills the whole
+   * frame, and the author makes room for a number by resizing the chart. */
 }
 
 /** One step of a chart's colour table.
@@ -378,41 +365,6 @@ export const CHART_DEFAULT_HIGH_HEX = "#FF6B35";
 export const CHART_DEFAULT_LOW_HEX = "#32D74B";
 export const CHART_DEFAULT_BAND_LOW_HEX = "#32D74B";
 export const CHART_DEFAULT_BAND_HIGH_HEX = "#FF453A";
-export const CHART_DEFAULT_SCALE_LABEL_HEX = "#FFFFFF99";
-
-/** Point size a chart's numbers start at, and the range they may be set to.
- * Mirrors `defaultLabelFontSize` and friends in Swift. */
-export const CHART_LABEL_SIZE = 8;
-export const CHART_LABEL_MIN_SIZE = 5;
-export const CHART_LABEL_MAX_SIZE = 24;
-
-/** Padding between a label's text and the edge of its pill, in design-box
- * points. Shared with the app so both reserve the same room. */
-export const CHART_LABEL_PILL_PAD_X = 2.5;
-export const CHART_LABEL_PILL_PAD_Y = 1.5;
-
-/** Point size actually drawn. Below the floor a number stops being readable on
- * the wrist; above the ceiling one label eats a tile 65 points tall. */
-export function chartLabelFontSize(style: ChartLabelStyle): number {
-  const raw = Number(style.fontSize);
-  if (!Number.isFinite(raw)) return CHART_LABEL_SIZE;
-  return Math.min(CHART_LABEL_MAX_SIZE, Math.max(CHART_LABEL_MIN_SIZE, raw));
-}
-
-/** How wide one printed number is, in design-box points.
- *
- * Estimated from the character count rather than measured, because the widget,
- * the watch and this panel all have to reserve the same room and only one of
- * them can measure text. Mirrors `labelWidth` in Swift. */
-export function chartLabelWidth(text: string, fontSize: number, pill: boolean): number {
-  if (text.length === 0) return 0;
-  return text.length * fontSize * 0.62 + (pill ? CHART_LABEL_PILL_PAD_X * 2 : 2);
-}
-
-/** How tall one printed number is, pill included. Mirrors `labelHeight`. */
-export function chartLabelHeight(fontSize: number, pill: boolean): number {
-  return fontSize + (pill ? CHART_LABEL_PILL_PAD_Y * 2 : 0);
-}
 
 /** The colour table in reading order, whatever order the author typed it in.
  * Mirrors `sortedBands` in Swift. */
@@ -435,13 +387,14 @@ export function chartBandColor(value: number, sorted: readonly ChartBand[], abov
   return above;
 }
 
-/** How one end of the scale reads.
+/** How one of a chart's numbers reads before any format is applied.
  *
- * Decimal places come from the span, not from the number, so both ends carry
- * the same shape: a half-degree spread printing "21" twice would look broken,
- * and a 3000 mV reading with two decimals would not fit. Mirrors
- * `scaleLabelText` in Swift. */
-export function chartScaleLabelText(value: number, span: number): string {
+ * Decimal places come from the span of the plot, not from the number, so every
+ * number read off one chart carries the same shape: a half-degree spread
+ * printing "21" twice would look broken, and a 3000 mV reading with two
+ * decimals would not fit. A `decimals` format on the text layer overrides it.
+ * Mirrors `ChartElement.statText` in Swift. */
+export function chartStatText(value: number, span: number): string {
   const magnitude = Math.abs(span);
   const places = magnitude >= 10 ? 0 : magnitude >= 1 ? 1 : 2;
   return value.toFixed(places);
@@ -856,6 +809,12 @@ function parseValueKind(o: J): ValueKind {
       return { kind: "jinja", value: str(o.value) };
     case "named":
       return { kind: "named", id: str(o.id).toUpperCase() };
+    case "chartStat":
+      return {
+        kind: "chartStat",
+        layer: str(o.layer).toUpperCase(),
+        stat: CHART_STATS.some(([s]) => s === o.stat) ? (o.stat as ChartStat) : "latest",
+      };
     default:
       throw new ConfigParseError(`unknown value kind ${String(o.kind)}`);
   }
@@ -964,20 +923,6 @@ function parseColorSlot(o: unknown, fallback: string): ColorSlot {
   return { baseColorHex: isObject(o) ? str(o.baseColorHex, fallback) : fallback };
 }
 
-/** One label's look, falling back to the single colour the first cut of scale
- * labels wrote (2026-09-05) when the payload has no style of its own. Nothing
- * back then had a size or a plate to lose, so both start at the default. */
-function parseChartLabelStyle(raw: unknown, payload: J): ChartLabelStyle {
-  const inherited = str(payload.scaleLabelColorHex, CHART_DEFAULT_SCALE_LABEL_HEX);
-  if (!isObject(raw)) return { fontSize: CHART_LABEL_SIZE, colorHex: inherited };
-  const out: ChartLabelStyle = {
-    fontSize: num(raw.fontSize, CHART_LABEL_SIZE),
-    colorHex: str(raw.colorHex, inherited),
-  };
-  if (typeof raw.pillColorHex === "string") out.pillColorHex = raw.pillColorHex;
-  return out;
-}
-
 /** A chart's colour table, reading the two-bound shape forward when that is all
  * the payload has.
  *
@@ -1081,13 +1026,6 @@ function parseElementKind(raw: unknown): Element {
           bands: parseChartBands(p),
           bandAboveColorHex: str(p.bandHighColorHex, str(p.bandAboveColorHex, CHART_DEFAULT_BAND_HIGH_HEX)),
           fillBands: p.fillBands === true,
-          scaleLabels: (optStr(p.scaleLabels) as ChartScaleLabels | undefined) ?? "none",
-          scaleLabelPlacement: (optStr(p.scaleLabelPlacement) as ChartLabelPlacement | undefined) ?? "gutter",
-          topLabelStyle: parseChartLabelStyle(p.topLabelStyle, p),
-          bottomLabelStyle: parseChartLabelStyle(p.bottomLabelStyle, p),
-          latestLabelStyle: parseChartLabelStyle(p.latestLabelStyle, p),
-          latestLabelFollowsBand: p.latestLabelFollowsBand !== false,
-          latestLabel: (optStr(p.latestLabel) as ChartLatestLabel | undefined) ?? "none",
         },
       };
     case "shape": {
@@ -1273,8 +1211,160 @@ export function parseConfig(raw: unknown): CustomComplicationConfig {
     }));
     if (groups.length > 0) cfg.groups = groups;
   }
+  migrateChartLabels(cfg, Array.isArray(raw.elements) ? raw.elements : []);
   pruneGroups(cfg);
   return cfg;
+}
+
+// ── chart numbers ─────────────────────────────────────────────────────────
+// A chart's numbers are text layers whose value is a `chartStat` naming the
+// chart. They live in the chart's layer group, so the Layers list shows them
+// under the chart and a drag on the chart takes them along.
+
+/** The chart layer a value reads, when it is a `chartStat` and the chart is
+ * still in the document. */
+export function chartOfValue(cfg: CustomComplicationConfig, value: Value | undefined): Extract<Element, { kind: "chart" }> | undefined {
+  const k = value?.kind;
+  if (!k || k.kind !== "chartStat") return undefined;
+  const el = cfg.elements.find((e) => e.payload.id === k.layer);
+  return el?.kind === "chart" ? el : undefined;
+}
+
+/** The text layers that print one chart's numbers, in document order. */
+export function chartLabelsOf(cfg: CustomComplicationConfig, chartId: string): Extract<Element, { kind: "text" }>[] {
+  return cfg.elements.filter((el): el is Extract<Element, { kind: "text" }> =>
+    el.kind === "text" && el.payload.value.kind.kind === "chartStat" && el.payload.value.kind.layer === chartId);
+}
+
+/** What a chart's group is called when one is made for it: the entity's name
+ * when the chart reads one, else plain "Chart". */
+function chartGroupName(cfg: CustomComplicationConfig, chart: Element): string {
+  const ref = valueEntity(cfg, primaryValue(chart))?.ref;
+  return ref?.displayName || ref?.entityId || "Chart";
+}
+
+/** Put a layer into the chart's group, making the group when the chart has
+ * none. A chart and its numbers move as one by default: that is the point of
+ * the group. */
+function joinChartGroup(cfg: CustomComplicationConfig, chart: Element, memberId: string): void {
+  const existing = groupOf(cfg, chart.payload.id);
+  if (existing) {
+    setGroup(cfg, memberId, existing.id);
+    return;
+  }
+  createGroup(cfg, [chart.payload.id, memberId], chartGroupName(cfg, chart));
+}
+
+/** Where a new number sits, as a fraction of the chart's own frame: the ends of
+ * the scale at the left edge, the newest reading at the right, the rest along
+ * the top. A starting place rather than a rule; the author drags it from here. */
+const CHART_LABEL_SEATS: Record<ChartStat, { x: number; y: number }> = {
+  top: { x: 0, y: 0 },
+  highest: { x: 0.35, y: 0 },
+  average: { x: 0.65, y: 0 },
+  latest: { x: 1, y: 0 },
+  bottom: { x: 0, y: 1 },
+  lowest: { x: 0.35, y: 1 },
+};
+
+/** A frame for a number of `fontSize` points, `chars` glyphs wide, seated at a
+ * corner or edge of `chart`'s frame in the rectangular design box and held
+ * inside the face. */
+function chartLabelFrame(chart: NormalizedFrame, seat: { x: number; y: number }, fontSize: number, chars: number): NormalizedFrame {
+  const box = DESIGN_BOX.rectangular;
+  const width = Math.min(1, (chars * fontSize * 0.62 + 4) / box.width);
+  const height = Math.min(1, (fontSize * 1.3) / box.height);
+  const x = chart.x + seat.x * chart.width - seat.x * width;
+  const y = chart.y + seat.y * chart.height - seat.y * height;
+  return {
+    x: Math.max(0, Math.min(1 - width, x)),
+    y: Math.max(0, Math.min(1 - height, y)),
+    width,
+    height,
+    rotationDegrees: 0,
+  };
+}
+
+/** Add a text layer that prints one of the chart's numbers, in the chart's
+ * group, and return its id. The newest reading carries the entity's unit by
+ * default ("119.6 V"), because that is the number a glance wants whole; the
+ * others sit beside a plot that already says what they are. Undefined when
+ * `chartId` is not a chart. */
+export function addChartLabel(cfg: CustomComplicationConfig, chartId: string, stat: ChartStat): string | undefined {
+  const chart = cfg.elements.find((el) => el.payload.id === chartId);
+  if (!chart || chart.kind !== "chart") return undefined;
+  const el = newElement("text") as Extract<Element, { kind: "text" }>;
+  const fontSize = stat === "latest" ? 10 : 8;
+  const value: Value = { kind: { kind: "chartStat", layer: chartId, stat } };
+  if (stat === "latest") value.format = { useEntityUnit: true };
+  el.payload.value = value;
+  el.payload.fontSize = fontSize;
+  el.payload.fontWeight = "medium";
+  el.payload.colorSlot = { baseColorHex: stat === "latest" ? "#FFFFFF" : "#FFFFFF99" };
+  el.payload.frame = chartLabelFrame(chart.payload.frame, CHART_LABEL_SEATS[stat], fontSize, stat === "latest" ? 7 : 4);
+  // Directly above the chart in z-order, so the number sits on the plot.
+  const index = cfg.elements.findIndex((e) => e.payload.id === chartId);
+  cfg.elements.splice(index + 1, 0, el);
+  joinChartGroup(cfg, chart, el.payload.id);
+  return el.payload.id;
+}
+
+/** Read the first cut of a chart's built-in numbers (2026-09-05) forward into
+ * text layers.
+ *
+ * That cut printed the top and bottom of the scale beside the plot and the
+ * newest reading at its right edge, each with a size, a colour and an
+ * optional plate, from keys on the chart itself. A document saved that day
+ * opens with the same numbers as text layers in the chart's group: the plate
+ * becomes a capsule shape under the text. The chart's keys are dropped on the
+ * next save; the watch never read them. */
+function migrateChartLabels(cfg: CustomComplicationConfig, rawElements: unknown[]): void {
+  for (const raw of rawElements) {
+    if (!isObject(raw) || raw.kind !== "chart" || !isObject(raw.payload)) continue;
+    const p = raw.payload;
+    const chartId = str(p.id).toUpperCase();
+    const chart = cfg.elements.find((el) => el.payload.id === chartId);
+    if (!chart || chart.kind !== "chart") continue;
+    const inherited = str(p.scaleLabelColorHex, "#FFFFFF99");
+    const style = (raw: unknown) => {
+      const o = isObject(raw) ? raw : {};
+      return {
+        fontSize: num(o.fontSize, 8),
+        colorHex: str(o.colorHex, inherited),
+        pillColorHex: typeof o.pillColorHex === "string" ? o.pillColorHex : undefined,
+      };
+    };
+    const wanted: [ChartStat, ReturnType<typeof style>][] = [];
+    const scale = optStr(p.scaleLabels);
+    if (scale === "top" || scale === "range") wanted.push(["top", style(p.topLabelStyle)]);
+    if (scale === "range") wanted.push(["bottom", style(p.bottomLabelStyle)]);
+    const latest = optStr(p.latestLabel);
+    if (latest === "corner" || latest === "end") wanted.push(["latest", style(p.latestLabelStyle)]);
+    if (wanted.length === 0) continue;
+
+    let at = cfg.elements.findIndex((el) => el.payload.id === chartId) + 1;
+    for (const [stat, s] of wanted) {
+      const frame = chartLabelFrame(chart.payload.frame, CHART_LABEL_SEATS[stat], s.fontSize, stat === "latest" ? 5 : 4);
+      const added: Element[] = [];
+      if (s.pillColorHex !== undefined) {
+        const pill = newElement("shape") as Extract<Element, { kind: "shape" }>;
+        pill.payload.kind = "capsule";
+        pill.payload.colorSlot = { baseColorHex: s.pillColorHex };
+        pill.payload.frame = { ...frame };
+        added.push(pill);
+      }
+      const text = newElement("text") as Extract<Element, { kind: "text" }>;
+      text.payload.value = { kind: { kind: "chartStat", layer: chartId, stat } };
+      text.payload.fontSize = s.fontSize;
+      text.payload.fontWeight = "medium";
+      text.payload.colorSlot = { baseColorHex: s.colorHex };
+      text.payload.frame = frame;
+      added.push(text);
+      cfg.elements.splice(at, 0, ...added);
+      at += added.length;
+      for (const el of added) joinChartGroup(cfg, chart, el.payload.id);
+    }
+  }
 }
 
 // ── encoding ──────────────────────────────────────────────────────────────
@@ -1325,12 +1415,6 @@ function encodeAggregate(a: AggregateSpec): J {
   return o;
 }
 
-function encodeChartLabelStyle(s: ChartLabelStyle): J {
-  const o: J = { fontSize: encNum(s.fontSize), colorHex: s.colorHex };
-  if (s.pillColorHex !== undefined) o.pillColorHex = s.pillColorHex;
-  return o;
-}
-
 function encodeValueKind(k: ValueKind): J {
   switch (k.kind) {
     case "literal": return { kind: "literal", value: k.value };
@@ -1342,6 +1426,7 @@ function encodeValueKind(k: ValueKind): J {
     case "dataAge": return { kind: "dataAge" };
     case "jinja": return { kind: "jinja", value: k.value };
     case "named": return { kind: "named", id: k.id };
+    case "chartStat": return { kind: "chartStat", layer: k.layer, stat: k.stat };
   }
 }
 
@@ -1476,13 +1561,6 @@ function encodeElementKind(el: Element): J {
           bands: el.payload.bands.map((b) => ({ id: b.id, upTo: encNum(b.upTo), colorHex: b.colorHex })),
           bandAboveColorHex: el.payload.bandAboveColorHex,
           fillBands: el.payload.fillBands,
-          scaleLabels: el.payload.scaleLabels,
-          scaleLabelPlacement: el.payload.scaleLabelPlacement,
-          topLabelStyle: encodeChartLabelStyle(el.payload.topLabelStyle),
-          bottomLabelStyle: encodeChartLabelStyle(el.payload.bottomLabelStyle),
-          latestLabelStyle: encodeChartLabelStyle(el.payload.latestLabelStyle),
-          latestLabelFollowsBand: el.payload.latestLabelFollowsBand,
-          latestLabel: el.payload.latestLabel,
         },
       };
     case "shape": {
@@ -1734,12 +1812,13 @@ const K = {
   chart: ["value", "historyMinutes", "historyPoints", "style", "limit", "takeFromEnd", "scale", "minValue", "maxValue",
     "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker",
     "coloring", "bands", "bandAboveColorHex", "fillBands",
+    // Written only on 2026-09-05. The band bounds are read forward by
+    // `parseChartBands`; the built-in numbers are read forward by
+    // `migrateChartLabels` into text layers. All still listed so a document
+    // saved that day does not read as carrying unknown keys.
+    "bandLowColorHex", "bandHighColorHex", "bandLowerBound", "bandUpperBound",
     "scaleLabels", "scaleLabelPlacement", "latestLabel",
     "topLabelStyle", "bottomLabelStyle", "latestLabelStyle", "latestLabelFollowsBand",
-    // Written only on 2026-09-05 and read forward by `parseChartBands` and
-    // `parseChartLabelStyle`. Still listed so a document saved that morning does
-    // not read as carrying unknown keys.
-    "bandLowColorHex", "bandHighColorHex", "bandLowerBound", "bandUpperBound",
     "scaleLabelColorHex"],
   shape: ["kind", "cornerRadius", "borderColorHex", "borderWidth"],
   // `timestampStyle` is retired (the age style, built and removed 2026-09-04).
@@ -1777,6 +1856,7 @@ const VALUE_KIND_KEYS: Record<string, string[]> = {
   dataAge: ["kind"],
   jinja: ["kind", "value"],
   named: ["kind", "id"],
+  chartStat: ["kind", "layer", "stat"],
 };
 
 export function auditUnknownKeys(raw: unknown): string[] {
@@ -1958,7 +2038,7 @@ export function newElement(kind: Element["kind"]): Element {
     case "text": return { kind, payload: { ...base("#FFFFFF"), value: literal("Text"), fontSize: 14, fontWeight: "regular" } };
     case "icon": return { kind, payload: { ...base("#FFFFFF"), symbol: literal("lightbulb"), size: 14 } };
     case "gauge": return { kind, payload: { ...base("#FFFFFF"), value: literal("50"), minValue: 0, maxValue: 100, style: "arc", lineWidth: 4, trackColorHex: "#FFFFFF40" } };
-    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: 0, historyPoints: 24, style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "pointer", coloring: "uniform", bands: [], bandAboveColorHex: CHART_DEFAULT_BAND_HIGH_HEX, fillBands: false, scaleLabels: "none", scaleLabelPlacement: "gutter", topLabelStyle: { fontSize: CHART_LABEL_SIZE, colorHex: CHART_DEFAULT_SCALE_LABEL_HEX }, bottomLabelStyle: { fontSize: CHART_LABEL_SIZE, colorHex: CHART_DEFAULT_SCALE_LABEL_HEX }, latestLabelStyle: { fontSize: CHART_LABEL_SIZE, colorHex: CHART_DEFAULT_SCALE_LABEL_HEX }, latestLabelFollowsBand: true, latestLabel: "none" } };
+    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: 0, historyPoints: 24, style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "pointer", coloring: "uniform", bands: [], bandAboveColorHex: CHART_DEFAULT_BAND_HIGH_HEX, fillBands: false } };
     case "shape": return { kind, payload: { ...base("#FFFFFF33"), kind: "roundedRectangle", cornerRadius: 6, borderWidth: 1 } };
     case "image": {
       const { colorSlot: _unused, ...b } = base("#FFFFFF");
@@ -2072,6 +2152,11 @@ export function valueEntity(
   let current = value;
   for (let hop = 0; current !== undefined && hop < 4; hop++) {
     const kind = current.kind;
+    // A chart's number is about whatever the chart is about.
+    if (kind.kind === "chartStat") {
+      current = chartOfValue(cfg, current)?.payload.value;
+      continue;
+    }
     if ("entityId" in kind) {
       if (kind.entityId === "") return undefined;
       const ref: EntityRef = { entityId: kind.entityId, displayName: kind.displayName, domain: kind.domain };
@@ -2339,6 +2424,9 @@ export function detachTaps(cfg: CustomComplicationConfig, ownerId: string): void
  * of them had. Deleting an owner takes its tap with it: the tap was never a
  * layer of its own in the editor, so leaving it behind would be a mystery. */
 export function removeElement(cfg: CustomComplicationConfig, id: string): void {
+  // A chart's numbers name it by id, so without the chart they would print the
+  // placeholder forever. They go with it, the way an attached tap does.
+  for (const label of chartLabelsOf(cfg, id)) removeElement(cfg, label.payload.id);
   detachTaps(cfg, id);
   cfg.elements = cfg.elements.filter((el) => el.payload.id !== id);
   for (const family of DRAWABLE_FAMILIES) delete cfg.perFamily[family]?.placements[id];

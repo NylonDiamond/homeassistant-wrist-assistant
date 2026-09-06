@@ -161,6 +161,8 @@ export function compile(config: CustomComplicationConfig): Compiled {
     switch (kind.kind) {
       case "literal":
       case "dataAge":
+      case "chartStat":
+        // A chart stat reads a chart layer that registers its own sources.
         return;
       case "entityState":
         entities.set(kind.entityId, kind);

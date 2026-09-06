@@ -10,14 +10,11 @@ import {
   type ChartBaseline,
   type ChartBand,
   type ChartColoring,
-  type ChartLabelPlacement,
-  type ChartLabelStyle,
-  type ChartLatestLabel,
   type ChartElement,
   type ChartHighlight,
   type ChartMarker,
   type ChartScale,
-  type ChartScaleLabels,
+  type ChartStat,
   type ChartStyle,
   type Comparison,
   type ComparisonKind,
@@ -53,11 +50,11 @@ import {
   CHART_HISTORY_MIN_POINTS,
   CHART_HISTORY_SPANS,
   chartHistoryKey,
+  CHART_STATS,
+  addChartLabel,
+  chartLabelsOf,
+  chartOfValue,
   CHART_DEFAULT_LOW_HEX,
-  CHART_DEFAULT_SCALE_LABEL_HEX,
-  CHART_LABEL_MAX_SIZE,
-  CHART_LABEL_MIN_SIZE,
-  CHART_LABEL_SIZE,
   COMPARISON_KINDS,
   DRAWABLE_FAMILIES,
   IMAGE_DEFAULT_CORNER_RADIUS,
@@ -163,10 +160,12 @@ export interface EditorHost {
    * its one-at-a-time mode and a click on another card swaps to it. */
   openSections: ReadonlySet<string>;
   toggleSection(id: string): void;
+  /** Make a layer the selection, the way a click on its Layers row does. */
+  selectLayer(id: string): void;
 }
 
 /** Every card id the inspector can show, for "Open all". */
-export const ALL_SECTIONS = ["content", "look", "timestamp", "tappable", "states", "placement", "corner", "placements", "shape", "symbol"] as const;
+export const ALL_SECTIONS = ["content", "look", "numbers", "timestamp", "tappable", "states", "placement", "corner", "placements", "shape", "symbol"] as const;
 
 // ── small controls ────────────────────────────────────────────────────────
 
@@ -680,6 +679,7 @@ const VALUE_KINDS: [ValueKind["kind"], string][] = [
   ["dataAge", "Data age (seconds)"],
   ["jinja", "Jinja template"],
   ["named", "Named value"],
+  ["chartStat", "A chart's number"],
 ];
 
 const CHART_STYLES: [ChartStyle, string][] = [
@@ -700,57 +700,6 @@ const CHART_MARKERS: [ChartMarker, string][] = [
 const CHART_COLORINGS: [ChartColoring, string][] = [
   ["uniform", "One colour"], ["bands", "By value"],
 ];
-const CHART_SCALE_LABEL_MODES: [ChartScaleLabels, string][] = [
-  ["none", "None"], ["top", "Top value"], ["range", "Top and bottom"],
-];
-const CHART_LABEL_PLACEMENTS: [ChartLabelPlacement, string][] = [
-  ["gutter", "Beside the chart"], ["overlay", "Over the chart"],
-];
-const CHART_LATEST_LABELS: [ChartLatestLabel, string][] = [
-  ["none", "None"], ["corner", "Top right"], ["end", "Beside the newest reading"],
-];
-
-/** How an edit to the newest-number style lands on the layer.
- *
- * Picking a colour by hand is an unmistakable "I want this one", so it also
- * switches off the band match that would have quietly overridden it. Without
- * this the colour well sits there doing nothing on every banded chart, which is
- * indistinguishable from broken. Size and pill are unaffected: the match is only
- * ever about colour. */
-export function applyLatestLabelStyleEdit(
-  el: ChartElement,
-  mutate: (s: ChartLabelStyle) => void,
-  what: "size" | "colour" | "pill",
-): void {
-  mutate(el.latestLabelStyle);
-  if (what === "colour") el.latestLabelFollowsBand = false;
-}
-
-/** Size, colour and plate for one of a chart's printed numbers.
- *
- * The same three controls for every label, so learning one teaches all of them.
- * The plate is one colour field that can be switched off rather than a checkbox
- * plus a colour, because a plate with no colour is not a thing. */
-function labelStyleFields(
-  title: string,
-  style: ChartLabelStyle,
-  edit: (m: (s: ChartLabelStyle) => void, key: string, what: "size" | "colour" | "pill") => void,
-  key: string,
-) {
-  return html`
-    <div class="hint"><b>${title}</b></div>
-    <div class="grid2">
-      ${numberField("Size (pt)", style.fontSize,
-        (v) => edit((s) => { s.fontSize = v ?? CHART_LABEL_SIZE; }, `${key}-size`, "size"),
-        { step: 0.5, min: CHART_LABEL_MIN_SIZE, max: CHART_LABEL_MAX_SIZE })}
-      ${colorField("Colour", style.colorHex,
-        (v) => edit((s) => { s.colorHex = v ?? CHART_DEFAULT_SCALE_LABEL_HEX; }, `${key}-col`, "colour"))}
-    </div>
-    ${colorField("Pill behind it", style.pillColorHex,
-      (v) => edit((s) => { if (v === undefined) delete s.pillColorHex; else s.pillColorHex = v; }, `${key}-pill`, "pill"),
-      true)}`;
-}
-
 /** The colour table a chart starts with when the author first switches it to
  * banded colour.
  *
@@ -796,6 +745,7 @@ function switchKind(current: ValueKind, kind: ValueKind["kind"]): ValueKind {
     case "dataAge": return { kind };
     case "jinja": return { kind, value: current.kind === "jinja" ? current.value : "{{ states('sensor.example') }}" };
     case "named": return { kind, id: "" };
+    case "chartStat": return { kind, layer: "", stat: "latest" };
   }
 }
 
@@ -862,7 +812,7 @@ function valuePopover(host: EditorHost, id: string, label: string, value: Value,
 /** The named values and live states `describeValue` reads to put names where
  * ids would otherwise be. */
 export function describeContext(host: EditorHost): DescribeContext {
-  return { values: host.config.values, hass: host.hass };
+  return { values: host.config.values, hass: host.hass, elements: host.config.elements };
 }
 
 function popoverId(key: string): string {
@@ -1052,6 +1002,19 @@ function valueForm(host: EditorHost, value: Value, set: (v: Value) => void, opts
         ? html`<div class="hint warn">There are no named values yet. Add one in the Data card first.</div>`
         : selectField("Value", k.id, [["", "(choose)"], ...host.config.values.map((n): [string, string] => [n.id, n.name || n.id.slice(0, 8)])], (v) => setKind({ ...k, id: v }));
       break;
+    case "chartStat": {
+      const ctx = describeContext(host);
+      const charts = host.config.elements.filter((e): e is Extract<CElement, { kind: "chart" }> => e.kind === "chart");
+      body = charts.length === 0
+        ? html`<div class="hint warn">There is no chart layer yet. Add one first, then this can print one of its numbers.</div>`
+        : html`
+          ${selectField("Chart", k.layer, [["", "(choose)"], ...charts.map((c): [string, string] => [c.payload.id, layerTitle(c, ctx)])], (v) => setKind({ ...k, layer: v }))}
+          ${selectField("Number", k.stat, [...CHART_STATS], (v) => setKind({ ...k, stat: v }))}
+          <div class="hint">${k.stat === "top" || k.stat === "bottom"
+            ? "One end of the plot's range: what the tallest or shortest mark means. On a Fixed scale that is the Min or Max the chart was given."
+            : "Read from the readings the chart draws, after any trim. Decimals follow the chart's spread; set Decimals below to override, and Unit to print the entity's unit after it."}</div>`;
+      break;
+    }
   }
   const resolved = opts.showResolved ? host.resolve(value) : undefined;
   return html`
@@ -1400,6 +1363,8 @@ export function layerEntityNote(el: CElement, uses: readonly LayerEntityUse[]): 
     ? ""
     : contentKind === "named"
       ? " Its content comes through a named value, so change that value in the Data card to point it somewhere else."
+      : contentKind === "chartStat"
+        ? " Its number comes from a chart, so point the chart somewhere else to change it."
       : el.kind === "icon" && contentKind === "literal"
         ? " The symbol above is a fixed name and stays as it is."
         : " The value above was written by hand and stays as it is.";
@@ -1578,9 +1543,12 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
   let content: TemplateResult;
   let look: TemplateResult | undefined;
   switch (el.kind) {
-    case "text":
+    case "text": {
+      // A chart's number says which chart it belongs to, one click from it.
+      const owner = chartOfValue(host.config, el.payload.value);
       content = html`
         ${valueEditor(host, el.payload.value, (v) => upd((e) => { (e as typeof el).payload.value = v; }, "value"), { showResolved: true, label: "Text", key: `${key}-value` })}
+        ${owner ? html`<div class="hint">Prints a number from the chart <button type="button" class="link" @click=${() => host.selectLayer(owner.payload.id)}>${layerTitle(owner, describeContext(host))}</button>. It stays in the chart's group and moves with it.</div>` : nothing}
         ${checkField("Live countdown", el.payload.countdown === true, (v) => upd((e) => {
           const p = (e as typeof el).payload;
           if (v) p.countdown = true; else delete p.countdown;
@@ -1591,6 +1559,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
           ${selectField("Weight", el.payload.fontWeight, FONT_WEIGHTS, (v) => upd((e) => { (e as typeof el).payload.fontWeight = v; }))}
         </div>`;
       break;
+    }
     case "icon":
       content = html`
         ${valueEditor(host, el.payload.symbol, (v) => upd((e) => { (e as typeof el).payload.symbol = v; }, "symbol"), { noFormat: true, showResolved: true, symbol: true, label: "Symbol", key: `${key}-symbol` })}
@@ -1707,39 +1676,6 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         ${c.style === "bars"
           ? numberField("Bar gap (pt)", c.barGap, (v) => setChart((p) => { p.barGap = Math.max(0, v ?? 0); }, "gap"), { step: 0.5, min: 0 })
           : numberField("Line width (pt)", c.lineWidth, (v) => setChart((p) => { p.lineWidth = Math.max(0.5, v ?? 2); }, "lw"), { step: 0.5, min: 0.5 })}
-        ${selectField("Scale labels", c.scaleLabels, CHART_SCALE_LABEL_MODES,
-          (v) => setChart((p) => { p.scaleLabels = v; }))}
-        ${c.scaleLabels === "none"
-          ? html`<div class="hint">A chart with no numbers on it shows that a reading moved, not
-              what it moved to. Turn these on and the plot's own top (and bottom) print beside it.</div>`
-          : html`
-            ${selectField("Labels sit", c.scaleLabelPlacement, CHART_LABEL_PLACEMENTS,
-              (v) => setChart((p) => { p.scaleLabelPlacement = v; }))}
-            <div class="hint">The numbers come from the scale, so ${c.scale === "auto"
-              ? "an Auto chart prints the readings it actually fitted, and they move as the data does."
-              : "a Fixed chart always prints the Min and Max above."} ${c.scaleLabelPlacement === "gutter"
-              ? "They sit in a strip down the left, which the plot gives up: a wide chart barely notices, a narrow one does."
-              : "They sit over the marks, so the plot keeps its full width and a busy left edge can end up behind a number."}</div>
-            ${labelStyleFields("Top number", c.topLabelStyle, (m, k) => setChart((p) => m(p.topLabelStyle), k), `${key}-topl`)}
-            ${c.scaleLabels === "range"
-              ? labelStyleFields("Bottom number", c.bottomLabelStyle, (m, k) => setChart((p) => m(p.bottomLabelStyle), k), `${key}-botl`)
-              : nothing}`}
-        ${selectField("Newest reading", c.latestLabel, CHART_LATEST_LABELS,
-          (v) => setChart((p) => { p.latestLabel = v; }))}
-        ${c.latestLabel === "none"
-          ? nothing
-          : html`<div class="hint">Printed at the right-hand edge, ${c.latestLabel === "corner"
-              ? "parked at the top wherever the data happens to be."
-              : "at the height of the last mark, so the number and the end of the line read as one thing."}</div>
-            ${c.coloring === "bands"
-              ? html`${checkField("Match the reading's colour", c.latestLabelFollowsBand,
-                  (v) => setChart((p) => { p.latestLabelFollowsBand = v; }))}
-                <div class="hint">${c.latestLabelFollowsBand
-                  ? "The number takes the band colour of the reading it names, so the two always agree. Picking a colour below turns this off."
-                  : "The number keeps the colour below, whatever band the reading is in."}</div>`
-              : nothing}
-            ${labelStyleFields("Newest number", c.latestLabelStyle,
-              (m, k, what) => setChart((p) => applyLatestLabelStyleEdit(p, m, what), k), `${key}-latl`)}`}
         ${selectField("Colour", c.coloring, CHART_COLORINGS, (v) => setChart((p) => {
           p.coloring = v;
           if (v === "bands" && p.bands.length === 0) p.bands = seedBands(shown);
@@ -1841,6 +1777,8 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
     ${look === undefined && colour === undefined ? nothing
       : card(host, "look", el.kind === "image" ? "Picture" : "Look", html`${look ?? nothing}${colour ?? nothing}`,
         { color: kindColor, icon: el.kind === "image" ? "image" : "look", ...(lookSummary(el) ? { summary: lookSummary(el)! } : {}) })}
+    ${el.kind === "chart" ? card(host, "numbers", "Numbers", chartNumbersSection(host, el),
+      { color: KIND_COLOR.text, icon: "text", summary: chartNumbersSummary(host, el) }) : nothing}
     ${el.kind === "image" ? card(host, "timestamp", "Timestamp", imageTimestampSection(el.payload, (m, k) => upd((e) => m((e as typeof el).payload), k)),
       { color: kindColor, icon: "clock", summary: stamp ? `Shown · ${el.payload.timestampSize} pt` : "Hidden" }) : nothing}
     ${el.kind === "tap" ? nothing : card(host, "tappable", "Tap", tappableSection(host, el, key),
@@ -1927,6 +1865,51 @@ function tapSizeHint(host: EditorHost, tapId: string): TemplateResult | typeof n
  * invisible rectangle by hand; the action editor then sits right here, which
  * is why an attached tap needs no row of its own in the Layers card.
  */
+/** The one-line state of a chart's Numbers card. */
+function chartNumbersSummary(host: EditorHost, el: Extract<CElement, { kind: "chart" }>): string {
+  const labels = chartLabelsOf(host.config, el.payload.id);
+  if (labels.length === 0) return "None yet";
+  return labels.map((l) => {
+    const k = l.payload.value.kind;
+    return k.kind === "chartStat" ? (CHART_STATS.find(([s]) => s === k.stat)?.[1] ?? "number").toLowerCase() : "number";
+  }).join(" · ");
+}
+
+/**
+ * A chart's numbers: the text layers that print one of its readings, and a
+ * row of buttons that add one. Each number is an ordinary text layer in the
+ * chart's group, so it is dragged, sized and coloured like any other layer;
+ * this card only lists them and hands the selection over.
+ */
+function chartNumbersSection(host: EditorHost, el: Extract<CElement, { kind: "chart" }>): TemplateResult {
+  const ctx = describeContext(host);
+  const labels = chartLabelsOf(host.config, el.payload.id);
+  const add = (stat: ChartStat) => {
+    let created: string | undefined;
+    host.update((c) => { created = addChartLabel(c, el.payload.id, stat); });
+    if (created) host.selectLayer(created);
+  };
+  const taken = new Set(labels.map((l) => (l.payload.value.kind.kind === "chartStat" ? l.payload.value.kind.stat : "")));
+  return html`
+    ${labels.length === 0
+      ? html`<div class="hint">A chart with no numbers on it shows that a reading moved, not what it moved to. Add one and it appears as a text layer in this chart's group: drag it anywhere, give it any size or colour, and it prints the live value.</div>`
+      : html`
+        <div class="chart-numbers">
+          ${labels.map((l) => html`
+            <button class="small" title="Edit this number" @click=${() => host.selectLayer(l.payload.id)}>
+              <b>${host.resolve(l.payload.value) ?? "--"}</b> · ${layerTitle(l, ctx)}
+            </button>`)}
+        </div>
+        <div class="hint">Each number is a text layer in this chart's group. Click one to edit it; drag it on the preview to move it.</div>`}
+    <div class="hint"><b>Add</b></div>
+    <div class="adders">
+      ${CHART_STATS.map(([stat, label]) => html`
+        <button class="small" title=${taken.has(stat) ? `Add another ${label.toLowerCase()}` : `Add the ${label.toLowerCase()}`}
+          @click=${() => add(stat)}>${uiIcon("plus")}<span>${label}</span></button>`)}
+    </div>
+    <div class="hint">The newest reading starts with the entity's unit after it. The ends of the scale come from the plot's range, so on a Fixed scale they print the Min and Max above.</div>`;
+}
+
 function tappableSection(host: EditorHost, el: CElement, key: string): TemplateResult | typeof nothing {
   // A tap has no tap, and a free-standing tap layer is edited on its own.
   if (el.kind === "tap") return nothing;
@@ -2184,6 +2167,8 @@ function changeKindsFor(target: RuleTarget): StyleChangeKind[] {
 export interface DescribeContext {
   values?: readonly NamedValue[];
   hass?: HassLike;
+  /** The document's layers, so a chart stat can name its chart. */
+  elements?: readonly CElement[];
 }
 
 const TIME_FIELD_WORDS: Record<TimeField, string> = {
@@ -2240,6 +2225,17 @@ function describeValueBody(v: Value, ctx?: DescribeContext): string {
       if (k.id === "") return "(no value chosen)";
       const named = ctx?.values?.find((n) => n.id === k.id);
       return named?.name?.trim() || `named ${k.id.slice(0, 8)}`;
+    }
+    case "chartStat": {
+      const stat = (CHART_STATS.find(([s]) => s === k.stat)?.[1] ?? k.stat).toLowerCase();
+      if (k.layer === "") return `${stat} (no chart chosen)`;
+      const chart = ctx?.elements?.find((e) => e.kind === "chart" && e.payload.id === k.layer);
+      // The chart's own value names it. No recursion past one hop: a chart's
+      // value is never itself a chart stat in any document the editor writes.
+      const of = chart?.kind === "chart" && chart.payload.value.kind.kind !== "chartStat"
+        ? describeValueBody(chart.payload.value, ctx)
+        : "a missing chart";
+      return `${stat} of ${of}`;
     }
   }
 }

@@ -29,17 +29,14 @@ import {
   type Test,
   type Value,
   type ValueFormat,
-  type ChartLabelPlacement,
-  type ChartLabelStyle,
-  type ChartLatestLabel,
+  type ChartElement,
+  type ChartStat,
   type CornerBodyShape,
+  type EntityRef,
   STYLE_PROPERTY,
   chartBandColor,
   chartHistoryKey,
-  chartLabelFontSize,
-  chartLabelHeight,
-  chartLabelWidth,
-  chartScaleLabelText,
+  chartStatText,
   chartSortedBands,
   chartUsesBands,
   elementsFor,
@@ -133,33 +130,34 @@ export interface ResolvedChart extends ResolvedBase {
   pointColorHexes: string[];
   /** Whether an area's fill follows `pointColorHexes` too. */
   fillBands: boolean;
-  /** The number printed at the top of the plot, absent when the labels are off
-   * or there is nothing to draw. Text and look both settled here rather than in
-   * the renderer, so the panel and the watch print and place the same thing. */
-  topLabel?: ResolvedChartLabel;
-  bottomLabel?: ResolvedChartLabel;
-  scaleLabelPlacement: ChartLabelPlacement;
-  /** The newest reading, formatted the same way, absent when not printed. */
-  latestLabel?: ResolvedChartLabel;
-  latestLabelPlacement: ChartLatestLabel;
 }
 
-/** One number printed on a chart, with the look it is drawn in.
- * Mirrors `CustomComplication.ResolvedChartLabel` in the app repo. */
-export interface ResolvedChartLabel {
-  text: string;
-  fontSize: number;
-  colorHex: string;
-  /** Fill of the plate behind the text, absent for no plate. */
-  pillColorHex?: string;
+/** What a chart settled on before anything is drawn: the series it draws,
+ * trimmed, and the range it is drawn against. A `chartStat` value reads its
+ * number from here, so the number a text layer prints and the mark the chart
+ * draws come from one calculation. Mirrors `CustomComplication.ChartReadings`. */
+export interface ChartReadings {
+  values: number[];
+  domainMin: number;
+  domainMax: number;
+  /** The entity the chart reads, when it names one, so a stat can carry the
+   * entity's unit through `useEntityUnit`. */
+  entity?: EntityRef;
 }
 
-export function resolvedLabelWidth(l: ResolvedChartLabel): number {
-  return chartLabelWidth(l.text, l.fontSize, l.pillColorHex !== undefined);
-}
-
-export function resolvedLabelHeight(l: ResolvedChartLabel): number {
-  return chartLabelHeight(l.fontSize, l.pillColorHex !== undefined);
+/** The number one stat resolves to, or undefined when there is nothing to
+ * read: an empty series has no newest reading and no average. Mirrors
+ * `ChartReadings.value(of:)`. */
+export function chartStatValue(r: ChartReadings, stat: ChartStat): number | undefined {
+  if (r.values.length === 0) return undefined;
+  switch (stat) {
+    case "latest": return r.values[r.values.length - 1];
+    case "highest": return Math.max(...r.values);
+    case "lowest": return Math.min(...r.values);
+    case "average": return r.values.reduce((a, b) => a + b, 0) / r.values.length;
+    case "top": return r.domainMax;
+    case "bottom": return r.domainMin;
+  }
 }
 export interface ResolvedShape extends ResolvedBase {
   kind: "shape";
@@ -405,9 +403,46 @@ export function gaugeFraction(raw: string | undefined, min: number, max: number)
 
 export class Resolver {
   private readonly named: Map<string, Value>;
+  /** Every chart in the document, settled, by layer id. Filled from `config`
+   * when the resolver is built, and again by `resolveLayout`, so a text layer
+   * or a rule that reads a chart's number finds the chart already decided. */
+  private readonly charts = new Map<string, ChartReadings>();
 
-  constructor(private readonly ctx: ResolveContext) {
+  constructor(private readonly ctx: ResolveContext, config?: CustomComplicationConfig) {
     this.named = new Map(ctx.namedValues.map((n) => [n.id.toUpperCase(), n.value]));
+    if (config) this.settleCharts(config);
+  }
+
+  /** The series a chart draws and the range it draws it against. One function
+   * for the chart itself and for the `chartStat` values that read it, so the
+   * two cannot disagree about what "the newest reading" is. Mirrors
+   * `CustomComplication.chartReadings(for:context:)`. */
+  chartReadings(c: ChartElement): ChartReadings {
+    // A history chart never reads its own value: the value only names the
+    // entity, and the readings are whatever the last recorder fetch left
+    // behind. Before that arrives the chart is empty rather than one bar of
+    // the current state, which would draw a lie that looks like real data.
+    const historyKey = chartHistoryKey(c);
+    const raw = historyKey !== undefined
+      ? (this.ctx.historySeries?.get(historyKey) ?? "")
+      : (this.resolve(c.value) ?? "");
+    let values = chartNumbers(raw);
+    if (c.limit > 0 && values.length > c.limit) {
+      values = c.takeFromEnd ? values.slice(values.length - c.limit) : values.slice(0, c.limit);
+    }
+    const domain = chartDomain(values, c);
+    const out: ChartReadings = { values, domainMin: domain.min, domainMax: domain.max };
+    const deref = this.dereference(c.value);
+    if (deref && "entityId" in deref.kind) {
+      out.entity = { entityId: deref.kind.entityId, displayName: deref.kind.displayName, domain: deref.kind.domain };
+    }
+    return out;
+  }
+
+  private settleCharts(config: CustomComplicationConfig): void {
+    for (const el of config.elements) {
+      if (el.kind === "chart") this.charts.set(el.payload.id, this.chartReadings(el.payload));
+    }
   }
 
   private dereference(value: Value): Value | undefined {
@@ -434,6 +469,12 @@ export class Resolver {
     if (k.kind === "entityState" || k.kind === "entityAttribute" || k.kind === "entityAge") {
       return this.ctx.entityStates.get(k.entityId)?.unitOfMeasurement;
     }
+    // A chart's number is in the chart's entity's unit, which is the unit a
+    // reader wants after it ("119.6 V"), so the stat borrows it.
+    if (k.kind === "chartStat") {
+      const entity = this.charts.get(k.layer.toUpperCase())?.entity;
+      return entity ? this.ctx.entityStates.get(entity.entityId)?.unitOfMeasurement : undefined;
+    }
     return undefined;
   }
 
@@ -452,6 +493,15 @@ export class Resolver {
       case "dataAge":
         raw = this.ctx.dataAgeSeconds === undefined ? undefined : String(Math.trunc(this.ctx.dataAgeSeconds));
         break;
+      case "chartStat": {
+        // The chart has already decided its series and its scale; this only
+        // reads the number back and prints it with the chart's own decimals,
+        // so a "top of the scale" label and the tallest bar always agree.
+        const r = this.charts.get(deref.kind.layer.toUpperCase());
+        const n = r ? chartStatValue(r, deref.kind.stat) : undefined;
+        raw = r && n !== undefined ? chartStatText(n, r.domainMax - r.domainMin) : undefined;
+        break;
+      }
       default: {
         // Keyed off the ORIGINAL (un-dereferenced) value.
         const key = keyFor(value, this.named);
@@ -687,19 +737,9 @@ export class Resolver {
       }
       case "chart": {
         const c = el.payload;
-        // A history chart never reads its own value: the value only names the
-        // entity, and the readings are whatever the last recorder fetch left
-        // behind. Before that arrives the chart is empty rather than one bar of
-        // the current state, which would draw a lie that looks like real data.
-        const historyKey = chartHistoryKey(c);
-        const raw = historyKey !== undefined
-          ? (this.ctx.historySeries?.get(historyKey) ?? "")
-          : (this.resolve(c.value) ?? "");
-        let values = chartNumbers(raw);
-        if (c.limit > 0 && values.length > c.limit) {
-          values = c.takeFromEnd ? values.slice(values.length - c.limit) : values.slice(0, c.limit);
-        }
-        const domain = chartDomain(values, c);
+        const readings = this.charts.get(c.id) ?? this.chartReadings(c);
+        const values = readings.values;
+        const domain = { min: readings.domainMin, max: readings.domainMax };
         const baseColorHex = this.styleColor(style, "color") ?? c.colorSlot.baseColorHex;
         const sortedBands = chartSortedBands(c);
         const pointColorHexes = chartUsesBands(c)
@@ -721,37 +761,7 @@ export class Resolver {
           marker: c.marker,
           pointColorHexes,
           fillBands: c.fillBands,
-          scaleLabelPlacement: c.scaleLabelPlacement,
-          latestLabelPlacement: c.latestLabel,
         };
-        const span = domain.max - domain.min;
-        const label = (text: string, style: ChartLabelStyle, colorHex?: string): ResolvedChartLabel => {
-          const l: ResolvedChartLabel = {
-            text,
-            fontSize: chartLabelFontSize(style),
-            colorHex: colorHex ?? style.colorHex,
-          };
-          if (style.pillColorHex !== undefined) l.pillColorHex = style.pillColorHex;
-          return l;
-        };
-        if (c.scaleLabels !== "none" && values.length > 0) {
-          out.topLabel = label(chartScaleLabelText(domain.max, span), c.topLabelStyle);
-          if (c.scaleLabels === "range") {
-            out.bottomLabel = label(chartScaleLabelText(domain.min, span), c.bottomLabelStyle);
-          }
-        }
-        if (c.latestLabel !== "none" && values.length > 0) {
-          // A banded chart's newest number takes the mark's own colour by default,
-          // so the two agree without anyone setting the same hex twice.
-          const banded = c.latestLabelFollowsBand
-            ? pointColorHexes[pointColorHexes.length - 1]
-            : undefined;
-          out.latestLabel = label(
-            chartScaleLabelText(values[values.length - 1]!, span),
-            c.latestLabelStyle,
-            banded,
-          );
-        }
         if (values.length > 0) {
           const marksHigh = c.highlight === "highest" || c.highlight === "both";
           const marksLow = c.highlight === "lowest" || c.highlight === "both";
@@ -817,6 +827,10 @@ export class Resolver {
 
   resolveLayout(config: CustomComplicationConfig, family: FamilyKind, forced?: ForcedBranches): ResolvedLayout {
     const layout = config.perFamily[family];
+    // Charts go first, in effect: a text layer that prints a chart's newest
+    // reading, or a rule that tests one, needs the chart settled before it
+    // resolves, whatever order the two sit in the layer list.
+    this.settleCharts(config);
     const elements = elementsFor(config, family).map((el) => this.resolveElement(el, forced));
     const style = layout ? this.applyRules(layout.rules, forced) : new Map<StyleProperty, StyleChange>();
     const out: ResolvedLayout = {
@@ -875,8 +889,10 @@ export interface ResolvedInline {
   countdownEnd?: number;
 }
 
-export function resolveInline(inline: InlineLayout, ctx: ResolveContext): ResolvedInline {
-  const r = new Resolver(ctx);
+export function resolveInline(inline: InlineLayout, ctx: ResolveContext, config?: CustomComplicationConfig): ResolvedInline {
+  // Inline text can print a chart's number too, and Inline has no layer list
+  // of its own to settle the charts from, so the document's list stands in.
+  const r = new Resolver(ctx, config);
   const countdownEnd = inline.countdown ? r.countdownEnd(inline.value) : undefined;
   const fallback = inline.countdown ? r.countdownFallbackText(inline.value) : undefined;
   const out: ResolvedInline = { text: fallback ?? r.resolve(inline.value) ?? "--" };
@@ -903,7 +919,7 @@ export function resolveAll(
   for (const family of ["rectangular", "circular", "corner"] as const) {
     if (config.supportedFamilies.includes(family)) out[family] = r.resolveLayout(config, family, forced);
   }
-  if (config.supportedFamilies.includes("inline") && config.inline) out.inline = resolveInline(config.inline, ctx);
+  if (config.supportedFamilies.includes("inline") && config.inline) out.inline = resolveInline(config.inline, ctx, config);
   return out;
 }
 

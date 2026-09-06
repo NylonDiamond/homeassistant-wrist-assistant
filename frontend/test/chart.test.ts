@@ -9,24 +9,31 @@
 import { describe, expect, it } from "vitest";
 import { nothing } from "lit";
 import {
-  CHART_LABEL_MAX_SIZE,
-  CHART_LABEL_MIN_SIZE,
-  CHART_LABEL_SIZE,
+  addChartLabel,
+  auditUnknownKeys,
   chartHistoryEntity,
   chartHistoryKey,
   chartHistoryPoints,
   chartHistoryRequests,
   chartHistorySignature,
+  chartLabelsOf,
   encodeConfig,
+  groupMembers,
+  groupOf,
   literal,
   newConfig,
   newElement,
   parseConfig,
+  removeElement,
   type ChartElement,
+  type ChartStat,
   type CustomComplicationConfig,
   type Element,
+  type Value,
+  type ValueFormat,
 } from "../src/model.js";
-import { applyLatestLabelStyleEdit } from "../src/editors.js";
+import { describeValue } from "../src/editors.js";
+import { compile } from "../src/compiler.js";
 import { renderLayout, type IconProvider } from "../src/renderer.js";
 import { chartDomain, chartNumbers, resolveAll, type EntityState, type ResolvedChart, type ResolvedLayout } from "../src/resolver.js";
 
@@ -544,257 +551,243 @@ describe("colouring a chart by value", () => {
   });
 });
 
-describe("printing the newest reading", () => {
-  it("prints nothing by default", () => {
-    const { cfg, state } = chartConfig("1,2,3");
-    expect(chartOf(rectangular(cfg, state)).latestLabel).toBeUndefined();
-  });
-
-  it("prints the last reading, formatted like the scale", () => {
-    const label = (state: string) =>
-      chartOf(rectangular(chartConfig(state, (p) => { p.latestLabel = "corner"; }).cfg, state)).latestLabel;
-    expect(label("13, 20, 30")?.text).toBe("30");
-    expect(label("9, 11, 12")?.text).toBe("12.0");
-  });
-
-  it("follows the trimmed series, not the raw one", () => {
-    const { cfg, state } = chartConfig("13, 20, 30", (p) => {
-      p.latestLabel = "end";
-      p.limit = 2;
-    });
-    // 20 is the newest thing drawn, and the trim also narrows the span to 7,
-    // which is what puts a decimal on it.
-    expect(chartOf(rectangular(cfg, state)).latestLabel?.text).toBe("20.0");
-  });
-
-  it("takes the newest reading's own band colour", () => {
-    const { cfg, state } = chartConfig("5, 15, 25", (p) => {
-      band(p, [[10, "#00FF00"], [20, "#9A6BFF"]]);
-      p.latestLabel = "corner";
-    });
-    expect(chartOf(rectangular(cfg, state)).latestLabel?.colorHex).toBe("#FF0000");
-
-    // Told not to follow the data, it keeps its own colour even on a banded chart.
-    const pinned = chartConfig("5, 15, 25", (p) => {
-      band(p, [[10, "#00FF00"], [20, "#9A6BFF"]]);
-      p.latestLabel = "corner";
-      p.latestLabelFollowsBand = false;
-      p.latestLabelStyle.colorHex = "#ABCDEF";
-    });
-    expect(chartOf(rectangular(pinned.cfg, pinned.state)).latestLabel?.colorHex).toBe("#ABCDEF");
-
-    const plain = chartConfig("5, 15, 25", (p) => {
-      p.latestLabel = "corner";
-      p.latestLabelStyle.colorHex = "#ABCDEF";
-    });
-    expect(chartOf(rectangular(plain.cfg, plain.state)).latestLabel?.colorHex).toBe("#ABCDEF");
-  });
-
-  it("draws it against the right-hand edge", () => {
-    const { cfg } = chartConfig("13,20,30", (p) => { p.latestLabel = "corner"; });
-    const svg = flatten(renderLayout(rectangular(cfg, "13,20,30"), { icons: noIcons }));
-    expect(svg).toContain(">30<");
-  });
-
-  it("prints nothing when there is nothing to draw", () => {
-    const { cfg, state } = chartConfig("unavailable", (p) => { p.latestLabel = "corner"; });
-    expect(chartOf(rectangular(cfg, state)).latestLabel).toBeUndefined();
-  });
-});
-
-describe("printing a chart's scale", () => {
-  it("prints nothing by default, so an existing chart is untouched", () => {
-    const { cfg, state } = chartConfig("1,2,3");
-    const chart = chartOf(rectangular(cfg, state));
-    expect(chart.topLabel).toBeUndefined();
-    expect(chart.bottomLabel).toBeUndefined();
-  });
-
-  it("prints the top of the range only", () => {
-    const { cfg, state } = chartConfig("13, 20, 30", (p) => { p.scaleLabels = "top"; });
-    const chart = chartOf(rectangular(cfg, state));
-    expect(chart.topLabel?.text).toBe("30");
-    expect(chart.bottomLabel).toBeUndefined();
-  });
-
-  it("prints the domain rather than the readings", () => {
-    const { cfg, state } = chartConfig("13, 20, 30", (p) => {
-      p.scaleLabels = "range";
-      p.scale = "fixed";
-      p.minValue = 0;
-      p.maxValue = 50;
-    });
-    const chart = chartOf(rectangular(cfg, state));
-    expect(chart.topLabel?.text).toBe("50");
-    expect(chart.bottomLabel?.text).toBe("0");
-  });
-
-  it("takes its decimals from the span, so both ends carry one shape", () => {
-    const label = (state: string) =>
-      chartOf(rectangular(chartConfig(state, (p) => { p.scaleLabels = "range"; }).cfg, state));
-    expect(label("13, 30").topLabel?.text).toBe("30");
-    // A spread of 0.4 would otherwise print "21" at both ends.
-    expect(label("21.1, 21.5").topLabel?.text).toBe("21.50");
-    expect(label("21.1, 21.5").bottomLabel?.text).toBe("21.10");
-    expect(label("9, 12").topLabel?.text).toBe("12.0");
-  });
-
-  it("prints no numbers when there is nothing to draw", () => {
-    const { cfg, state } = chartConfig("unavailable", (p) => { p.scaleLabels = "range"; });
-    expect(chartOf(rectangular(cfg, state)).topLabel).toBeUndefined();
-  });
-
-  it("gives the labels a gutter the bars then stay out of", () => {
-    const plain = rects(flatten(renderLayout(
-      rectangular(chartConfig("13,20,30").cfg, "13,20,30"), { icons: noIcons })));
-    const { cfg } = chartConfig("13,20,30", (p) => { p.scaleLabels = "range"; });
-    const svg = flatten(renderLayout(rectangular(cfg, "13,20,30"), { icons: noIcons }));
-    const labelled = rects(svg);
-
-    expect(svg).toContain(">30<");
-    expect(svg).toContain(">13<");
-    // The strip comes out of the plot, so the first bar starts further right and
-    // every bar is narrower than it was without the numbers.
-    expect(labelled[0]!.x).toBeGreaterThan(plain[0]!.x);
-    expect(labelled[0]!.w).toBeLessThan(plain[0]!.w);
-  });
-
-  it("costs the plot nothing when the labels sit over the chart", () => {
-    const plain = rects(flatten(renderLayout(
-      rectangular(chartConfig("13,20,30").cfg, "13,20,30"), { icons: noIcons })));
-    const { cfg } = chartConfig("13,20,30", (p) => {
-      p.scaleLabels = "range";
-      p.scaleLabelPlacement = "overlay";
-    });
-    const svg = flatten(renderLayout(rectangular(cfg, "13,20,30"), { icons: noIcons }));
-    const overlaid = rects(svg);
-
-    // Same numbers, in the same place a gutter would have put them, but the bars
-    // are exactly where they were before the labels existed.
-    expect(svg).toContain(">30<");
-    expect(overlaid[0]!.x).toBeCloseTo(plain[0]!.x, 6);
-    expect(overlaid[0]!.w).toBeCloseTo(plain[0]!.w, 6);
-  });
-});
-
-describe("styling a chart's numbers", () => {
-  it("gives each label its own size, colour and plate", () => {
-    const { cfg, state } = chartConfig("13, 20, 30", (p) => {
-      p.scaleLabels = "range";
-      p.latestLabel = "corner";
-      p.topLabelStyle = { fontSize: 12, colorHex: "#FF0000", pillColorHex: "#000000" };
-      p.bottomLabelStyle = { fontSize: 6, colorHex: "#00FF00" };
-      p.latestLabelStyle = { fontSize: 14, colorHex: "#0000FF" };
-    });
-    const chart = chartOf(rectangular(cfg, state));
-    expect(chart.topLabel).toMatchObject({ fontSize: 12, colorHex: "#FF0000", pillColorHex: "#000000" });
-    expect(chart.bottomLabel).toMatchObject({ fontSize: 6, colorHex: "#00FF00" });
-    // No pill asked for, so none drawn.
-    expect(chart.bottomLabel?.pillColorHex).toBeUndefined();
-    expect(chart.latestLabel).toMatchObject({ fontSize: 14, colorHex: "#0000FF" });
-  });
-
-  it("pulls a size outside the readable range back into it", () => {
-    const size = (n: number) => chartOf(rectangular(
-      chartConfig("1,2,3", (p) => { p.scaleLabels = "top"; p.topLabelStyle.fontSize = n; }).cfg,
-      "1,2,3",
-    )).topLabel?.fontSize;
-    expect(size(400)).toBe(CHART_LABEL_MAX_SIZE);
-    expect(size(0)).toBe(CHART_LABEL_MIN_SIZE);
-  });
-
-  it("widens the gutter for a bigger label", () => {
-    const bars = (n: number) => rects(flatten(renderLayout(rectangular(
-      chartConfig("13,20,30", (p) => { p.scaleLabels = "range"; p.topLabelStyle.fontSize = n; }).cfg,
-      "13,20,30",
-    ), { icons: noIcons })));
-    // A larger number needs a wider strip, so the plot it leaves behind is narrower.
-    expect(bars(16)[0]!.w).toBeLessThan(bars(8)[0]!.w);
-  });
-
-  it("draws a plate behind a label only when one is asked for", () => {
-    const draw = (pill?: string) => flatten(renderLayout(rectangular(
-      chartConfig("13,20,30", (p) => {
-        p.scaleLabels = "top";
-        if (pill !== undefined) p.topLabelStyle.pillColorHex = pill;
-      }).cfg,
-      "13,20,30",
-    ), { icons: noIcons }));
-    // Bars are rects too, so count the plate by its own colour rather than by shape.
-    expect(draw()).not.toContain("#0A84FF");
-    expect(draw("#0A84FF")).toContain("#0A84FF");
-  });
-
-  it("reads the old single label colour forward into all three styles", () => {
-    // What the first cut of scale labels wrote, on the morning of 2026-09-05.
-    const doc = {
-      schemaVersion: 6,
-      id: "AAAAAAAA-0000-4000-8000-0000000000FE",
-      name: "Old",
-      slotIndex: 0,
-      supportedFamilies: ["rectangular"],
-      values: [],
-      elements: [{
-        kind: "chart",
-        payload: {
-          id: "EEEEEEEE-0000-4000-8000-0000000000FE",
-          value: { kind: { kind: "literal", value: "1,2,3" } },
-          scaleLabels: "range",
-          scaleLabelColorHex: "#ABCDEF",
-        },
-      }],
-      perFamily: [],
-      dataSources: [],
-      refreshMinutes: 15,
-      tapAction: { type: "refresh" },
-    };
-    const el = parseConfig(doc).elements[0]!;
-    if (el.kind !== "chart") throw new Error("expected a chart");
-    expect(el.payload.topLabelStyle.colorHex).toBe("#ABCDEF");
-    expect(el.payload.bottomLabelStyle.colorHex).toBe("#ABCDEF");
-    expect(el.payload.latestLabelStyle.colorHex).toBe("#ABCDEF");
-    // Nothing back then had a size or a plate to lose.
-    expect(el.payload.topLabelStyle.fontSize).toBe(CHART_LABEL_SIZE);
-    expect(el.payload.topLabelStyle.pillColorHex).toBeUndefined();
-
-    const encoded = encodeConfig(parseConfig(doc)) as Record<string, unknown>;
-    const payload = (encoded.elements as { payload: Record<string, unknown> }[])[0]!.payload;
-    expect(payload.scaleLabelColorHex).toBeUndefined();
-  });
-});
-
-describe("picking the newest number's colour", () => {
-  function latestChart(tweak: (p: ChartElement) => void = () => {}) {
-    const { cfg } = chartConfig("5, 15, 25", (p) => {
-      band(p, [[10, "#00FF00"], [20, "#9A6BFF"]]);
-      p.latestLabel = "corner";
-      tweak(p);
-    });
-    const el = cfg.elements[0]!;
-    if (el.kind !== "chart") throw new Error("expected a chart");
-    return { cfg, payload: el.payload };
+describe("a chart's numbers", () => {
+  // A text layer beside the chart, printing one of its numbers. The text sits
+  // *below* the chart in the list on purpose: the chart has to be settled
+  // before its readers, whatever order the two are in.
+  function withStat(state: string, stat: ChartStat, tweak: (p: ChartElement) => void = () => {}, format?: ValueFormat) {
+    const { cfg, id } = chartConfig(state, tweak);
+    const text = newElement("text") as Extract<Element, { kind: "text" }>;
+    const value: Value = { kind: { kind: "chartStat", layer: id, stat } };
+    if (format) value.format = format;
+    text.payload.value = value;
+    cfg.elements.unshift(text);
+    return { cfg, state, chartId: id, textId: text.payload.id };
   }
 
-  it("turns off the band match, so the picked colour is the one drawn", () => {
-    const { cfg, payload } = latestChart();
-    expect(payload.latestLabelFollowsBand).toBe(true);
+  function printed(cfg: CustomComplicationConfig, state: string, unit?: string): string {
+    const entityStates = new Map<string, EntityState>([
+      ["sensor.prices", { entityId: "sensor.prices", state, domain: "sensor", iconName: "chart.bar", unitOfMeasurement: unit }],
+    ]);
+    const layout = resolveAll(cfg, { entityStates, templateResults: new Map(), namedValues: cfg.values }).rectangular!;
+    const el = layout.elements.find((e) => e.kind === "text");
+    if (!el || el.kind !== "text") throw new Error("no text layer resolved");
+    return el.text;
+  }
 
-    applyLatestLabelStyleEdit(payload, (s) => { s.colorHex = "#ABCDEF"; }, "colour");
+  const stat = (state: string, s: ChartStat, tweak?: (p: ChartElement) => void, format?: ValueFormat, unit?: string) => {
+    const { cfg } = withStat(state, s, tweak, format);
+    return printed(cfg, state, unit);
+  };
 
-    expect(payload.latestLabelFollowsBand).toBe(false);
-    expect(chartOf(rectangular(cfg, "5, 15, 25")).latestLabel?.colorHex).toBe("#ABCDEF");
+  it("reads every stat off the series the chart draws", () => {
+    expect(stat("13, 20, 30", "latest")).toBe("30");
+    expect(stat("13, 30, 20", "highest")).toBe("30");
+    expect(stat("20, 13, 30", "lowest")).toBe("13");
+    expect(stat("10, 20, 30", "average")).toBe("20");
   });
 
-  it("leaves the match alone for a size or a pill, which it never overrode", () => {
-    const { cfg, payload } = latestChart();
-    applyLatestLabelStyleEdit(payload, (s) => { s.fontSize = 14; }, "size");
-    applyLatestLabelStyleEdit(payload, (s) => { s.pillColorHex = "#000000"; }, "pill");
+  it("prints the ends of the scale from the domain, not the readings", () => {
+    expect(stat("13, 20, 30", "top")).toBe("30");
+    expect(stat("13, 20, 30", "bottom")).toBe("13");
+    const fixed = (p: ChartElement) => { p.scale = "fixed"; p.minValue = 0; p.maxValue = 50; };
+    expect(stat("13, 20, 30", "top", fixed)).toBe("50");
+    expect(stat("13, 20, 30", "bottom", fixed)).toBe("0");
+  });
 
-    expect(payload.latestLabelFollowsBand).toBe(true);
-    const label = chartOf(rectangular(cfg, "5, 15, 25")).latestLabel;
-    expect(label?.fontSize).toBe(14);
-    expect(label?.pillColorHex).toBe("#000000");
-    // 25 is past the last band, so the number stays the "and the rest" colour.
-    expect(label?.colorHex).toBe("#FF0000");
+  it("takes its decimals from the span, so every number off one chart has one shape", () => {
+    expect(stat("13, 30", "top")).toBe("30");
+    // A spread of 0.4 would otherwise print "21" at both ends.
+    expect(stat("21.1, 21.5", "top")).toBe("21.50");
+    expect(stat("21.1, 21.5", "bottom")).toBe("21.10");
+    expect(stat("9, 11, 12", "latest")).toBe("12.0");
+  });
+
+  it("follows the trimmed series, because the number has to name what is on screen", () => {
+    const trim = (p: ChartElement) => { p.limit = 2; p.takeFromEnd = false; };
+    expect(stat("13, 20, 30", "latest", trim)).toBe("20.0");
+    expect(stat("13, 20, 30", "highest", trim)).toBe("20.0");
+  });
+
+  it("prints the placeholder when there is nothing to read", () => {
+    expect(stat("unavailable", "latest")).toBe("--");
+    expect(stat("", "average")).toBe("--");
+    expect(stat("", "top")).toBe("--");
+  });
+
+  it("borrows the chart's entity's unit, and a format can round it", () => {
+    expect(stat("119.2, 119.6", "latest", undefined, { useEntityUnit: true }, "V")).toBe("119.60 V");
+    expect(stat("119.2, 119.6", "latest", undefined, { decimals: 1, useEntityUnit: true }, "V")).toBe("119.6 V");
+  });
+
+  it("prints the placeholder for a chart the document no longer has", () => {
+    const { cfg, chartId } = withStat("1,2,3", "latest");
+    cfg.elements = cfg.elements.filter((e) => e.payload.id !== chartId);
+    expect(printed(cfg, "1,2,3")).toBe("--");
+  });
+
+  it("is local: it compiles to no template and no fetch of its own", () => {
+    const { cfg } = withStat("1,2,3", "latest");
+    const compiled = compile(cfg);
+    expect([...compiled.entities.keys()]).toEqual(["sensor.prices"]);
+    expect(compiled.expressions.size).toBe(0);
+  });
+
+  it("survives an encode and parse round trip in the flat wire shape", () => {
+    const { cfg, chartId } = withStat("1,2,3", "average");
+    const encoded = encodeConfig(cfg) as { elements: { payload: { value: { kind: Record<string, unknown> } } }[] };
+    expect(encoded.elements[0]!.payload.value.kind).toEqual({ kind: "chartStat", layer: chartId, stat: "average" });
+    const back = parseConfig(encodeConfig(cfg)).elements[0]!;
+    if (back.kind !== "text") throw new Error("expected a text layer");
+    expect(back.payload.value.kind).toEqual({ kind: "chartStat", layer: chartId, stat: "average" });
+    expect(auditUnknownKeys(encodeConfig(cfg))).toEqual([]);
+  });
+});
+
+describe("adding a chart's numbers in the editor", () => {
+  it("adds a text layer in the chart's group, directly above the chart", () => {
+    const { cfg, id } = chartConfig("13,20,30");
+    const shape = newElement("shape");
+    cfg.elements.push(shape);
+    const labelId = addChartLabel(cfg, id, "top")!;
+    expect(labelId).toBeDefined();
+    expect(cfg.elements.map((e) => e.payload.id)).toEqual([id, labelId, shape.payload.id]);
+    const label = chartLabelsOf(cfg, id)[0]!;
+    expect(label.payload.value.kind).toEqual({ kind: "chartStat", layer: id, stat: "top" });
+    const group = groupOf(cfg, id);
+    expect(group).toBeDefined();
+    expect(group!.name).toBe("Prices");
+    expect(group!.locked).toBe(true);
+    expect(groupMembers(cfg, group!.id).map((m) => m.payload.id).sort()).toEqual([id, labelId].sort());
+  });
+
+  it("joins the chart's existing group instead of making a second one", () => {
+    const { cfg, id } = chartConfig("13,20,30");
+    const a = addChartLabel(cfg, id, "top")!;
+    const b = addChartLabel(cfg, id, "bottom")!;
+    expect(cfg.groups).toHaveLength(1);
+    expect(groupMembers(cfg, cfg.groups![0]!.id).map((m) => m.payload.id).sort()).toEqual([id, a, b].sort());
+  });
+
+  it("gives the newest reading the entity's unit by default and the rest none", () => {
+    const { cfg, id } = chartConfig("13,20,30");
+    addChartLabel(cfg, id, "latest");
+    addChartLabel(cfg, id, "highest");
+    const byStat = (stat: string) => chartLabelsOf(cfg, id).find((l) => (l.payload.value.kind as { stat?: string }).stat === stat)!;
+    expect(byStat("latest").payload.value.format).toEqual({ useEntityUnit: true });
+    expect(byStat("highest").payload.value.format).toBeUndefined();
+  });
+
+  it("refuses a layer that is not a chart", () => {
+    const cfg = newConfig("Test", 0);
+    const text = newElement("text");
+    cfg.elements.push(text);
+    expect(addChartLabel(cfg, text.payload.id, "latest")).toBeUndefined();
+    expect(cfg.elements).toHaveLength(1);
+  });
+
+  it("goes when its chart goes", () => {
+    const { cfg, id } = chartConfig("13,20,30");
+    const other = newElement("text");
+    cfg.elements.push(other);
+    addChartLabel(cfg, id, "latest");
+    addChartLabel(cfg, id, "top");
+    removeElement(cfg, id);
+    expect(cfg.elements.map((e) => e.payload.id)).toEqual([other.payload.id]);
+    expect(cfg.groups).toBeUndefined();
+  });
+
+  it("names the number after its chart", () => {
+    const { cfg, id } = chartConfig("13,20,30");
+    const labelId = addChartLabel(cfg, id, "latest")!;
+    const label = cfg.elements.find((e) => e.payload.id === labelId)!;
+    if (label.kind !== "text") throw new Error("expected a text layer");
+    expect(describeValue(label.payload.value, { elements: cfg.elements })).toBe("newest reading of Prices (with unit)");
+    expect(describeValue({ kind: { kind: "chartStat", layer: "", stat: "top" } })).toBe("top of the scale (no chart chosen)");
+    expect(describeValue({ kind: { kind: "chartStat", layer: "nope", stat: "average" } }, { elements: cfg.elements })).toBe("average reading of a missing chart");
+  });
+});
+
+describe("reading the built-in numbers forward", () => {
+  // What a chart saved on the afternoon of 2026-09-05 carried: its numbers as
+  // keys on the chart itself.
+  const doc = (payload: Record<string, unknown>) => ({
+    schemaVersion: 6,
+    id: "AAAAAAAA-0000-4000-8000-0000000000FE",
+    name: "Old",
+    slotIndex: 0,
+    supportedFamilies: ["rectangular"],
+    values: [],
+    elements: [{
+      kind: "chart",
+      payload: {
+        id: "EEEEEEEE-0000-4000-8000-0000000000FE",
+        value: { kind: { kind: "entityState", entityId: "sensor.prices", displayName: "Prices", domain: "sensor" } },
+        frame: { x: 0.1, y: 0.2, width: 0.8, height: 0.6, rotationDegrees: 0 },
+        ...payload,
+      },
+    }],
+    perFamily: [],
+    dataSources: [],
+    refreshMinutes: 15,
+    tapAction: { type: "refresh" },
+  });
+
+  it("turns the scale and newest labels into text layers in the chart's group", () => {
+    const cfg = parseConfig(doc({
+      scaleLabels: "range",
+      topLabelStyle: { fontSize: 11, colorHex: "#FF0000" },
+      bottomLabelStyle: { fontSize: 6, colorHex: "#00FF00" },
+      latestLabel: "end",
+      latestLabelStyle: { fontSize: 14, colorHex: "#0000FF" },
+    }));
+    const chartId = "EEEEEEEE-0000-4000-8000-0000000000FE";
+    const labels = chartLabelsOf(cfg, chartId);
+    expect(labels.map((l) => (l.payload.value.kind as { stat: string }).stat)).toEqual(["top", "bottom", "latest"]);
+    expect(labels.map((l) => l.payload.fontSize)).toEqual([11, 6, 14]);
+    expect(labels.map((l) => l.payload.colorSlot.baseColorHex)).toEqual(["#FF0000", "#00FF00", "#0000FF"]);
+    // Every number sits inside the face, beside the chart.
+    for (const l of labels) {
+      expect(l.payload.frame.x).toBeGreaterThanOrEqual(0);
+      expect(l.payload.frame.x + l.payload.frame.width).toBeLessThanOrEqual(1);
+    }
+    const group = groupOf(cfg, chartId)!;
+    expect(group.name).toBe("Prices");
+    expect(groupMembers(cfg, group.id)).toHaveLength(4);
+  });
+
+  it("falls back to the first cut's single colour when a label has no style", () => {
+    const cfg = parseConfig(doc({ scaleLabels: "top", scaleLabelColorHex: "#ABCDEF" }));
+    const [top] = chartLabelsOf(cfg, "EEEEEEEE-0000-4000-8000-0000000000FE");
+    expect(top!.payload.colorSlot.baseColorHex).toBe("#ABCDEF");
+    expect(top!.payload.fontSize).toBe(8);
+  });
+
+  it("puts a capsule under a number that had a plate", () => {
+    const cfg = parseConfig(doc({
+      latestLabel: "corner",
+      latestLabelStyle: { fontSize: 10, colorHex: "#FFFFFF", pillColorHex: "#0A84FF66" },
+    }));
+    const [chart, pill, text] = cfg.elements;
+    expect(chart!.kind).toBe("chart");
+    expect(pill!.kind).toBe("shape");
+    if (pill!.kind !== "shape") throw new Error("unreachable");
+    expect(pill!.payload.kind).toBe("capsule");
+    expect(pill!.payload.colorSlot.baseColorHex).toBe("#0A84FF66");
+    expect(pill!.payload.frame).toEqual(text!.payload.frame);
+    expect(groupMembers(cfg, groupOf(cfg, chart!.payload.id)!.id)).toHaveLength(3);
+  });
+
+  it("leaves a chart that printed nothing alone, and drops the old keys on save", () => {
+    const untouched = parseConfig(doc({ scaleLabels: "none", latestLabel: "none", topLabelStyle: { fontSize: 8, colorHex: "#FFFFFF" } }));
+    expect(untouched.elements).toHaveLength(1);
+    expect(untouched.groups).toBeUndefined();
+    const raw = doc({ scaleLabels: "range", latestLabel: "end" });
+    expect(auditUnknownKeys(raw)).toEqual([]);
+    const encoded = encodeConfig(parseConfig(raw)) as { elements: { payload: Record<string, unknown> }[] };
+    const chart = encoded.elements[0]!.payload;
+    expect(chart.scaleLabels).toBeUndefined();
+    expect(chart.latestLabel).toBeUndefined();
+    expect(chart.topLabelStyle).toBeUndefined();
   });
 });

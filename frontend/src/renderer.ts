@@ -13,10 +13,7 @@ import {
 import type { ImageSizeProvider } from "./image-sizes.js";
 import {
   countdownRemainingString,
-  resolvedLabelHeight,
-  resolvedLabelWidth,
   type ResolvedBezelGauge,
-  type ResolvedChartLabel,
   type ResolvedElement,
   type ResolvedLayout,
 } from "./resolver.js";
@@ -260,16 +257,10 @@ function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box
   // outside a plot sized to the frame. Bars are filled inside theirs.
   const inset = el.style === "bars" ? 0 : el.lineWidth / 2;
 
-  // Scale labels can take a strip down the left, which nothing else may draw in,
-  // or sit over the marks and cost the plot nothing. The strip is the safe
-  // reading; the overlay is the one that keeps a narrow chart wide.
-  const strip = Math.max(
-    el.topLabel ? resolvedLabelWidth(el.topLabel) : 0,
-    el.bottomLabel ? resolvedLabelWidth(el.bottomLabel) : 0,
-  );
-  const gutter = el.scaleLabelPlacement === "gutter" ? strip : 0;
-  const plotX = box.x + gutter;
-  const plotW = Math.max(box.w - gutter, 0);
+  // The plot takes the whole frame. A chart's numbers are text layers of their
+  // own, so nothing here reserves room for them; the author resizes the chart.
+  const plotX = box.x;
+  const plotW = Math.max(box.w, 0);
 
   const top = box.y + band + inset;
   const height = Math.max(box.h - band - inset * 2, 1);
@@ -289,14 +280,6 @@ function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box
   return {
     count: values.length,
     barWidth,
-    labelGutter: gutter,
-    /** Where a scale label is centred, in the same absolute space as everything
-     * else the renderer draws. Overlaid labels still sit where a gutter would
-     * have put them, so switching placement moves the plot rather than the
-     * numbers. */
-    labelCenterX: box.x + strip / 2,
-    /** Right-hand edge of the frame, where the newest reading is anchored. */
-    frameRight: box.x + box.w,
     plotTop: top,
     plotBottom: bottom,
     baselineY: growsFromBottom ? bottom : y(0),
@@ -328,11 +311,6 @@ function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box
     markerCenter(index: number, bars: boolean) {
       const r = bars ? this.barRect(index) : undefined;
       return { x: r ? r.x + r.w / 2 : this.point(index).x, y: box.y + band / 2 };
-    },
-    /** Where a reading's mark sits vertically: the top of its bar, or the point
-     * the line passes through. What anchors a label to the newest reading. */
-    readingTop(index: number, bars: boolean) {
-      return bars ? this.barRect(index).y : this.point(index).y;
     },
   };
 }
@@ -415,44 +393,6 @@ function renderChart(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) 
         : dot(c, high));
     }
     if (el.lowIndex !== undefined) body.push(dot(g.markerCenter(el.lowIndex, bars), low));
-  }
-
-  // The numbers sit in the gutter the geometry reserved, lined up with the top and
-  // bottom of the plot rather than the frame: that is where the domain ends actually
-  // land, so the number a reader sees is the number the tallest bar means.
-  // Each number carries its own size, colour and optional plate. The plate is
-  // drawn first so the digits sit on top of it.
-  const label = (l: ResolvedChartLabel, x: number, y: number) => {
-    const c = colorAttrs(l.colorHex, "fill");
-    const out: TemplateResult[] = [];
-    if (l.pillColorHex !== undefined) {
-      const p = colorAttrs(l.pillColorHex, "fill");
-      const w = resolvedLabelWidth(l);
-      const h = resolvedLabelHeight(l);
-      out.push(svg`<rect x=${x - w / 2} y=${y - h / 2} width=${w} height=${h} rx=${h / 2}
-        fill=${p.fill} fill-opacity=${p["fill-opacity"]} />`);
-    }
-    out.push(svg`<text x=${x} y=${y}
-      text-anchor="middle" dominant-baseline="central" font-size=${l.fontSize}
-      font-family="ui-rounded, system-ui, sans-serif" font-weight="500"
-      fill=${c.fill} fill-opacity=${c["fill-opacity"]}>${l.text}</text>`);
-    return out;
-  };
-  if (el.topLabel !== undefined) {
-    body.push(...label(el.topLabel, g.labelCenterX, g.plotTop + resolvedLabelHeight(el.topLabel) / 2));
-  }
-  if (el.bottomLabel !== undefined) {
-    body.push(...label(el.bottomLabel, g.labelCenterX, g.plotBottom - resolvedLabelHeight(el.bottomLabel) / 2));
-  }
-  // The newest reading, right-aligned against the frame's own edge. "corner" parks
-  // it at the top; "end" follows the last mark's height, clamped so a reading at
-  // either extreme still has the whole number inside the frame.
-  if (el.latestLabel !== undefined) {
-    const half = resolvedLabelHeight(el.latestLabel) / 2;
-    const y = el.latestLabelPlacement === "corner"
-      ? g.plotTop + half
-      : Math.min(Math.max(g.readingTop(g.count - 1, el.style === "bars"), box.y + half), g.plotBottom - half);
-    body.push(...label(el.latestLabel, g.frameRight - resolvedLabelWidth(el.latestLabel) / 2, y));
   }
 
   return svg`${body}`;

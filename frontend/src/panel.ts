@@ -944,6 +944,8 @@ export class WristAssistantPanel extends LitElement {
     .picked .row .glyph svg { width: 16px; height: 16px; display: block; }
     .picked .row .kind { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--k); flex: none; }
     .adders { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+    .chart-numbers { display: flex; flex-direction: column; gap: 4px; }
+    .chart-numbers button { justify-content: flex-start; text-align: left; }
     dialog.preset-dialog {
       width: min(420px, calc(100vw - 32px)); padding: 16px 18px 18px;
       border: 1px solid var(--wa-line); border-radius: 12px;
@@ -1649,6 +1651,7 @@ export class WristAssistantPanel extends LitElement {
       showTapArea: (on) => this.setShowTaps(on),
       openSections: this.openSections,
       toggleSection: (id) => this.toggleSection(id),
+      selectLayer: (id) => { this.multi = new Set(); this.inspect = { kind: "layer", id }; },
     };
   }
 
