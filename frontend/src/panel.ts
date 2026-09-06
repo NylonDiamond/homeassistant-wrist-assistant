@@ -1627,7 +1627,7 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private host(): EditorHost {
-    const resolver = new Resolver(this.buildContext());
+    const resolver = new Resolver(this.buildContext(), this.draft?.config);
     return {
       hass: this.hass,
       config: this.draft!.config,
@@ -2772,7 +2772,7 @@ export class WristAssistantPanel extends LitElement {
     // show as a badge on the layer they belong to.
     const ordered = [...cfg.elements].filter((el) => !isAttachedTap(cfg, el)).reverse();
     const ctx = describeContext(this.host());
-    const resolver = new Resolver(this.buildContext());
+    const resolver = new Resolver(this.buildContext(), this.draft?.config);
     const layout = cfg.perFamily[this.activeFamily];
     const shapeHl = this.inspect.kind === "family";
     const shapeMeta = this.activeFamily === "inline"
@@ -3169,7 +3169,7 @@ export class WristAssistantPanel extends LitElement {
     const owner = this.selectedOwner;
     const mini = [rec ? `Revision ${rec.revision}` : "Not saved yet", owner ? ownerLabel(owner) : undefined].filter(Boolean).join(" · ");
     const values = cfg.values;
-    const resolver = new Resolver(this.buildContext());
+    const resolver = new Resolver(this.buildContext(), this.draft?.config);
     const ctx = describeContext(host);
     return html`<div class="strip-row" style=${`--c:${SECTION_COLOR.complication}`} @change=${() => this.draft?.endGesture()}>
       <h2 class="panel-title"><span class="swatch">${uiIcon("watch")}</span>Complication<span class="spacer"></span><span class="mini">${mini}</span>
@@ -3443,7 +3443,7 @@ export class WristAssistantPanel extends LitElement {
   private multiEditor(cfg: CustomComplicationConfig, picked: readonly CElement[]): TemplateResult {
     const family = this.canvasFamily;
     const ctx = describeContext(this.host());
-    const resolver = new Resolver(this.buildContext());
+    const resolver = new Resolver(this.buildContext(), this.draft?.config);
     const common = pickedCommon(cfg, family, picked);
     const n = picked.length;
     // Top of the list draws last, same as the Layers card, so the two agree.
