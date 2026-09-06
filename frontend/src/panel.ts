@@ -321,6 +321,8 @@ export class WristAssistantPanel extends LitElement {
    * face. Only the face and its gestures come along; the columns stay under
    * the backdrop. */
   @state() private zoomed = false;
+  /** The keys-and-mouse help is open. */
+  @state() private helpOpen = false;
   /** Review mode: every tap area on show, labelled, with the drawing dimmed.
    * An attached tap is invisible during normal editing on purpose, which is
    * exactly why "what happens if I tap here?" needed a mode of its own. */
@@ -974,6 +976,38 @@ export class WristAssistantPanel extends LitElement {
       box-shadow: 0 12px 40px rgba(0,0,0,.4);
     }
     dialog.preset-dialog::backdrop { background: rgba(0,0,0,.45); }
+    /* The keys-and-mouse help: two tables side by side when there is room,
+       one under the other when there is not. */
+    button.help {
+      font: inherit; font-size: 14px; font-weight: 600; width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
+      display: inline-grid; place-items: center; padding: 0;
+      border: 1px solid var(--wa-line); background: var(--wa-raised); color: var(--wa-muted);
+      transition: background-color .12s ease-out, border-color .12s ease-out, color .12s ease-out;
+    }
+    button.help:hover { border-color: var(--wa-line-strong); background: var(--wa-panel); color: var(--wa-ink); }
+    button.help:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    dialog.help-dialog {
+      width: min(880px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0;
+      border: 1px solid var(--wa-line); border-radius: 12px;
+      background: var(--wa-card); color: var(--wa-ink);
+      box-shadow: 0 12px 40px rgba(0,0,0,.4);
+    }
+    dialog.help-dialog::backdrop { background: rgba(0,0,0,.45); }
+    .help-head { display: flex; align-items: center; gap: 8px; padding: 14px 18px; border-bottom: 1px solid var(--wa-line); }
+    .help-head h2 { margin: 0; font-size: 15px; font-weight: 500; }
+    .help-head .spacer { flex: 1; }
+    .help-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 8px 24px; padding: 14px 18px 18px; }
+    .help-body h3 { margin: 0 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--wa-muted); }
+    .help-body table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    .help-body th { text-align: left; font-weight: 500; white-space: nowrap; padding: 5px 12px 5px 0; vertical-align: top; width: 1%; }
+    .help-body td { padding: 5px 0; color: var(--wa-muted); vertical-align: top; border-top: 1px solid var(--wa-line); }
+    .help-body th { border-top: 1px solid var(--wa-line); }
+    .help-body tr:first-child th, .help-body tr:first-child td { border-top: 0; }
+    .help-body kbd {
+      font: inherit; font-size: 12px; padding: 2px 7px; border-radius: 6px;
+      border: 1px solid var(--wa-line); background: var(--wa-raised); color: var(--wa-ink);
+    }
+    .help-body .hint { margin: 8px 0 0; }
     /* The zoomed preview: the whole window, the face as wide as it will go.
        The picture keeps its slot's aspect and never runs taller than the room
        under the bar, so a wide rectangular face on a short window still fits. */
@@ -1368,6 +1402,10 @@ export class WristAssistantPanel extends LitElement {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.zoom-dialog");
       if (dialog && !dialog.open) dialog.showModal();
     }
+    if (changed.has("helpOpen") && this.helpOpen) {
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.help-dialog");
+      if (dialog && !dialog.open) dialog.showModal();
+    }
     if (changed.has("hass") && this.draft) {
       const snapshot: Record<string, unknown> = {};
       for (const id of this.compiled?.entities.keys() ?? []) snapshot[id] = this.hass.states[id]?.last_updated;
@@ -1401,6 +1439,12 @@ export class WristAssistantPanel extends LitElement {
     if (e.key === "Escape" && !inField && !dialogOpen) {
       if (this.multi.size > 0) this.multi = new Set();
       else if (this.inspect.kind === "layer" || this.inspect.kind === "group") this.inspect = { kind: "general" };
+      return;
+    }
+    // ? opens the keys-and-mouse help, the way it does in most web apps.
+    if (e.key === "?" && !inField && !dialogOpen) {
+      e.preventDefault();
+      this.helpOpen = true;
       return;
     }
     // Delete and Backspace remove what is selected. Only outside a field, so
@@ -2234,6 +2278,60 @@ export class WristAssistantPanel extends LitElement {
     </dialog>`;
   }
 
+  /**
+   * The keys-and-mouse help: every shortcut the panel answers to and the
+   * pointer tricks that otherwise live only in tooltips. One native dialog,
+   * so Escape and the backdrop come for free, the same as the zoomed preview.
+   */
+  private renderHelpDialog() {
+    const m = KEY_MOD;
+    const s = KEY_SHIFT;
+    const keys: [string, string][] = [
+      [`${m}S`, "Save"],
+      [`${m}Z · ${s}${m}Z`, "Undo · Redo"],
+      ["Arrows · ⇧ Arrows", "Nudge the selection 1 pt · 10 pt"],
+      ["Delete", "Remove the selected layer, pick or group"],
+      [`${m}C · ${m}X · ${m}V`, "Copy · Cut · Paste layers, into this complication or another one opened in this tab"],
+      [`${m}D`, "Duplicate the selection in place"],
+      [`${m}A`, "Pick every layer"],
+      [`${m}G · ${s}${m}G`, "Group the pick · Ungroup"],
+      [`${m}] · ${m}[`, "Bring the layer forward · Send it back"],
+      [`${s}${m}H`, "Hide or show the selection in the shape being edited"],
+      ["Escape", "Drop the pick, then the selection. Also stops Pick layer and closes a dialog"],
+      ["?", "This help"],
+    ];
+    const mouse: [string, string][] = [
+      ["Click", "A layer on the face or in the list: edit it. Drag it to move, pull a corner to resize"],
+      [`${MULTI_KEY}-click · ⇧-click`, "Add a layer to the pick · Pick a range of rows. Then Group them so a finished part moves as one"],
+      ["Rest on a row", "Tints that layer on the face without selecting it. A group row tints every member"],
+      ["Drag a row", "Reorder the list. Drop it on a folder to put it inside"],
+      ["Pick layer", "Point at the face to find a layer. Click it to select it"],
+      ["Show taps", "Every tap area, labelled. With a layer selected, only its tap shows and its corners drag"],
+      ["Expand", "The face full-window, for small moves. Everything above works there too"],
+      ["Locked group", "Drags as one. Unlock it in its row to move layers alone"],
+      ["Timestamp chip", "On a picture layer: click it to move it, pull a corner for its size"],
+    ];
+    const rows = (list: [string, string][]) => list.map(([k, what]) => html`<tr><th scope="row"><kbd>${k}</kbd></th><td>${what}</td></tr>`);
+    return html`<dialog class="help-dialog" @close=${() => { this.helpOpen = false; }}>
+      <div class="help-head">
+        <h2>Keys and mouse</h2>
+        <span class="spacer"></span>
+        <button class="pick" title="Close (Escape)" @click=${() => { this.helpOpen = false; }}>Close</button>
+      </div>
+      <div class="help-body">
+        <section>
+          <h3>Keys</h3>
+          <table><tbody>${rows(keys)}</tbody></table>
+          <p class="hint">Keys act on layers only while nothing is being typed into. In a field they keep their usual meaning.</p>
+        </section>
+        <section>
+          <h3>Mouse</h3>
+          <table><tbody>${rows(mouse)}</tbody></table>
+        </section>
+      </div>
+    </dialog>`;
+  }
+
   private setShowTaps(on: boolean) {
     this.showTaps = on;
     // Both modes take over the pointer, so only one can be on.
@@ -2654,6 +2752,7 @@ export class WristAssistantPanel extends LitElement {
           <button @click=${() => this.redo()} ?disabled=${!d?.canRedo} title="Redo (⇧⌘Z)">Redo</button>
         </div>
         <span class="spacer"></span>
+        <button class="help" title="Keys and mouse tips (?)" aria-label="Keys and mouse tips" @click=${() => { this.helpOpen = true; }}>?</button>
         ${this.renderSendButton()}
         <label>Watch
           <select @change=${(e: Event) => void this.selectOwner((e.target as HTMLSelectElement).value)}>
@@ -2664,6 +2763,7 @@ export class WristAssistantPanel extends LitElement {
         <button class="primary save ${dirty ? "dirty" : ""}" @click=${() => void this.save()} ?disabled=${!this.canEdit || !dirty || this.saving || !this.slotChosen} title="Save (⌘S)">${this.saving ? "Saving…" : d?.baseRevision === null ? "Save new" : dirty ? "Save" : "Saved"}</button>
       </header>
       ${this.loadError ? html`<div class="card error">${this.loadError}</div>` : nothing}
+      ${this.helpOpen ? this.renderHelpDialog() : nothing}
       ${this.watchSupported
         ? html`<div class="layout cols-${fit.columns}"
               style="--wa-left:${fit.left}px;--wa-right:${fit.right}px">
@@ -3161,7 +3261,7 @@ export class WristAssistantPanel extends LitElement {
             <button class="small primary" title=${`Group (${KEY_MOD}G)`} @click=${() => this.groupPicked()}>Group them</button>
             <button class="small" @click=${() => { this.multi = new Set(); }}>Clear</button></div>`
         : cfg.elements.length >= 2 && edit && !cfg.groups?.length
-          ? html`<div class="hint">${MULTI_KEY}-click layers here or on the preview, or shift-click a range of rows, then group them so a finished part moves as one. Keys: Delete removes, ${KEY_MOD}D duplicates, ${KEY_MOD}C ${KEY_MOD}X ${KEY_MOD}V copy, cut and paste (into any complication), ${KEY_MOD}A picks all, ${KEY_MOD}G groups, ${KEY_SHIFT}${KEY_MOD}G ungroups, ${KEY_MOD}] and ${KEY_MOD}[ reorder, ${KEY_SHIFT}${KEY_MOD}H hides, Escape deselects.</div>`
+          ? html`<div class="hint">${MULTI_KEY}-click layers here or on the preview, or shift-click a range of rows, then group them so a finished part moves as one. Press <b>?</b> for every key and mouse trick.</div>`
           : nothing}
       ${cfg.elements.length === 0 ? html`<div class="empty">No layers yet. Add one above.</div>` : nothing}
       <div class="layers">
