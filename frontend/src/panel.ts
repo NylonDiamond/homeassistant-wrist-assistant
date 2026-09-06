@@ -758,7 +758,18 @@ export class WristAssistantPanel extends LitElement {
     .layer:hover .badges, .layer.hl .badges, .layer:focus-within .badges { display: none; }
     .layer .acts button.icon { width: 24px; height: 24px; }
     .layer .acts svg.ui-icon { width: 15px; height: 15px; }
-    .layer.dragging { opacity: .4; }
+    /* The row being dragged leaves the list. The slot opening under the
+       pointer already says where the layer is going, so a ghost of it left
+       behind in its old place is one thing too many to read.
+
+       Collapsed, not removed: taking the drag source out of the document
+       cancels the drag. The negative margin eats the second of the two 6px
+       gaps a zero-height row would otherwise sit between. */
+    .layer.dragging, .group-kids.dragging {
+      height: 0; min-height: 0; margin-top: -3px; margin-bottom: -3px;
+      padding-top: 0; padding-bottom: 0; border-top-width: 0; border-bottom-width: 0;
+      opacity: 0; overflow: hidden;
+    }
     .layer.pinned { border-style: dashed; }
     .layer.pinned.hl { border-style: solid; }
     .layer.pinned .grip { cursor: default; opacity: .8; }
@@ -3103,7 +3114,7 @@ export class WristAssistantPanel extends LitElement {
    * are cleared wholesale rather than one by one because a reorder re-renders
    * the list and a row's DOM node can come back holding another row. */
   private clearDropMarks() {
-    for (const row of this.renderRoot.querySelectorAll(".layer")) {
+    for (const row of this.renderRoot.querySelectorAll(".layer, .group-kids")) {
       row.classList.remove("drop-before", "drop-after", "drop-into", "dragging");
     }
   }
@@ -3116,7 +3127,18 @@ export class WristAssistantPanel extends LitElement {
         this.dragId = id;
         e.dataTransfer?.setData("text/plain", id);
         if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
-        (e.currentTarget as HTMLElement).classList.add("dragging");
+        const row = e.currentTarget as HTMLElement;
+        // A folder takes its members with it, so the whole block leaves.
+        const kids = row.classList.contains("group") ? row.nextElementSibling : null;
+        // Not this tick: hiding the drag source inside dragstart itself
+        // cancels the drag in some browsers. By the next task the drag image
+        // is taken and the row can go. The guard covers a drag that was over
+        // before the timer ran.
+        window.setTimeout(() => {
+          if (this.dragId !== id) return;
+          row.classList.add("dragging");
+          if (kids?.classList.contains("group-kids")) kids.classList.add("dragging");
+        }, 0);
       },
       onEnd: () => {
         this.dragId = undefined;
