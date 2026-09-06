@@ -404,24 +404,33 @@ function renderShape(el: Extract<ResolvedElement, { kind: "shape" }>, box: Box) 
   const bw = border ? el.borderWidth : 0;
   // strokeBorder draws inside the bounds: inset by half the stroke.
   const inset = bw / 2;
-  const strokeAttrs = border
-    ? { stroke: border.color, "stroke-opacity": border.opacity, "stroke-width": bw }
-    : { stroke: "none", "stroke-opacity": 0, "stroke-width": 0 };
-  const common = svg`fill=${fill.fill} fill-opacity=${fill["fill-opacity"]}
-    stroke=${strokeAttrs.stroke} stroke-opacity=${strokeAttrs["stroke-opacity"]} stroke-width=${strokeAttrs["stroke-width"]}`;
+  const stroke = border ? border.color : "none";
+  const strokeOpacity = border ? border.opacity : 0;
+  // The paint attributes are written out on every element rather than shared
+  // through a nested template: Lit does not splice a template into the middle
+  // of a tag, so a shared fragment silently drops every attribute in it and the
+  // shape draws in SVG's default paint, which is black (seen 2026-09-05).
   switch (el.shapeKind) {
     case "circle": {
       const r = Math.min(box.w, box.h) / 2 - inset;
-      return svg`<circle cx=${box.cx} cy=${box.cy} r=${Math.max(0, r)} ${common} />`;
+      return svg`<circle cx=${box.cx} cy=${box.cy} r=${Math.max(0, r)}
+        fill=${fill.fill} fill-opacity=${fill["fill-opacity"]}
+        stroke=${stroke} stroke-opacity=${strokeOpacity} stroke-width=${bw} />`;
     }
     case "capsule": {
       const r = Math.min(box.w, box.h) / 2;
-      return svg`<rect x=${box.x + inset} y=${box.y + inset} width=${Math.max(0, box.w - bw)} height=${Math.max(0, box.h - bw)} rx=${r} ${common} />`;
+      return svg`<rect x=${box.x + inset} y=${box.y + inset} width=${Math.max(0, box.w - bw)} height=${Math.max(0, box.h - bw)} rx=${r}
+        fill=${fill.fill} fill-opacity=${fill["fill-opacity"]}
+        stroke=${stroke} stroke-opacity=${strokeOpacity} stroke-width=${bw} />`;
     }
     case "roundedRectangle":
-      return svg`<rect x=${box.x + inset} y=${box.y + inset} width=${Math.max(0, box.w - bw)} height=${Math.max(0, box.h - bw)} rx=${el.cornerRadius} ${common} />`;
+      return svg`<rect x=${box.x + inset} y=${box.y + inset} width=${Math.max(0, box.w - bw)} height=${Math.max(0, box.h - bw)} rx=${el.cornerRadius}
+        fill=${fill.fill} fill-opacity=${fill["fill-opacity"]}
+        stroke=${stroke} stroke-opacity=${strokeOpacity} stroke-width=${bw} />`;
     case "rectangle":
-      return svg`<rect x=${box.x + inset} y=${box.y + inset} width=${Math.max(0, box.w - bw)} height=${Math.max(0, box.h - bw)} ${common} />`;
+      return svg`<rect x=${box.x + inset} y=${box.y + inset} width=${Math.max(0, box.w - bw)} height=${Math.max(0, box.h - bw)}
+        fill=${fill.fill} fill-opacity=${fill["fill-opacity"]}
+        stroke=${stroke} stroke-opacity=${strokeOpacity} stroke-width=${bw} />`;
   }
 }
 
