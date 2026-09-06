@@ -1255,15 +1255,18 @@ function chartGroupName(cfg: CustomComplicationConfig, chart: Element): string {
 }
 
 /** Put a layer into the chart's group, making the group when the chart has
- * none. A chart and its numbers move as one by default: that is the point of
- * the group. */
+ * none. The group starts unlocked: a number is added to be dragged into
+ * place, and a locked group would drag the chart along with it. Selecting
+ * the group row moves everything as one whenever that is wanted. */
 function joinChartGroup(cfg: CustomComplicationConfig, chart: Element, memberId: string): void {
   const existing = groupOf(cfg, chart.payload.id);
   if (existing) {
     setGroup(cfg, memberId, existing.id);
     return;
   }
-  createGroup(cfg, [chart.payload.id, memberId], chartGroupName(cfg, chart));
+  const gid = createGroup(cfg, [chart.payload.id, memberId], chartGroupName(cfg, chart));
+  const group = cfg.groups?.find((g) => g.id === gid);
+  if (group) group.locked = false;
 }
 
 /** Where a new number sits, as a fraction of the chart's own frame: the ends of

@@ -2850,9 +2850,12 @@ export class WristAssistantPanel extends LitElement {
     }
     // A locked group moves as one: a press on any member grabs all of them,
     // and selects the group. Its corners stay with the member selected from
-    // the list, so a handle press still resizes that one layer.
+    // the list, so a handle press still resizes that one layer. A group
+    // selected in the list moves as one too, locked or not: selecting the
+    // row is selecting every member at once.
     const group = groupOf(this.draft.config, id);
-    if (group?.locked && !handle && !onChip) {
+    const groupSelected = group !== undefined && this.inspect.kind === "group" && this.inspect.id === group.id;
+    if (group && (group.locked || groupSelected) && !handle && !onChip) {
       this.beginGroupGesture(family as DrawableFamily, e, svg, group);
       return;
     }
@@ -3731,7 +3734,7 @@ export class WristAssistantPanel extends LitElement {
             <button class="icon" title=${`Ungroup: keep the layers, drop the folder (${KEY_SHIFT}${KEY_MOD}G)`} aria-label="Ungroup" @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => ungroup(c, g.id)); if (hl) this.inspect = { kind: "general" }; }}>${uiIcon("ungroup")}</button>
           </span>` : nothing}
           <button class="icon lockbtn ${g.locked ? "on" : ""}" ?disabled=${!edit}
-            title=${g.locked ? "Locked: drags on the watch move the whole group. Click to unlock." : "Unlocked: each layer moves alone. Click to lock."}
+            title=${g.locked ? "Locked: drags on the watch move the whole group. Click to unlock." : "Unlocked: each layer moves alone, unless the group row is selected. Click to lock."}
             aria-label=${g.locked ? "Unlock the group" : "Lock the group"}
             @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { const x = c.groups?.find((y) => y.id === g.id); if (x) x.locked = !x.locked; }); }}>${uiIcon(g.locked ? "lock" : "unlock")}</button>
         </span>
@@ -4041,7 +4044,7 @@ export class WristAssistantPanel extends LitElement {
     } else if (ins.kind === "group") {
       const g = cfg.groups?.find((x) => x.id === ins.id);
       const n = g ? groupMembers(cfg, g.id).length : 0;
-      tail = g ? html`editing group <b>${g.name}</b>. ${g.locked ? `Drag to move all ${n} layers.` : "Unlocked: each layer drags alone."}` : "";
+      tail = g ? html`editing group <b>${g.name}</b>. Drag to move all ${n} layers.${g.locked ? "" : " Click one layer to move it alone."}` : "";
     } else if (sel) {
       const g = groupOf(cfg, sel.payload.id);
       tail = g?.locked

@@ -664,7 +664,9 @@ describe("adding a chart's numbers in the editor", () => {
     const group = groupOf(cfg, id);
     expect(group).toBeDefined();
     expect(group!.name).toBe("Prices");
-    expect(group!.locked).toBe(true);
+    // Unlocked, so the new number can be dragged into place without towing
+    // the chart. Selecting the group row still moves everything together.
+    expect(group!.locked).toBe(false);
     expect(groupMembers(cfg, group!.id).map((m) => m.payload.id).sort()).toEqual([id, labelId].sort());
   });
 

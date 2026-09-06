@@ -2090,11 +2090,9 @@ function chartNumbersSummary(host: EditorHost, el: Extract<CElement, { kind: "ch
 function chartNumbersSection(host: EditorHost, el: Extract<CElement, { kind: "chart" }>): TemplateResult {
   const ctx = describeContext(host);
   const labels = chartLabelsOf(host.config, el.payload.id);
-  const add = (stat: ChartStat) => {
-    let created: string | undefined;
-    host.update((c) => { created = addChartLabel(c, el.payload.id, stat); });
-    if (created) host.selectLayer(created);
-  };
+  // The chart stays selected after an add: the next click is usually another
+  // number, and the new one is one click away in the list above the buttons.
+  const add = (stat: ChartStat) => host.update((c) => { addChartLabel(c, el.payload.id, stat); });
   const taken = new Set(labels.map((l) => (l.payload.value.kind.kind === "chartStat" ? l.payload.value.kind.stat : "")));
   return html`
     ${labels.length === 0
@@ -2191,7 +2189,7 @@ export function groupEditor(host: EditorHost, group: LayerGroup): TemplateResult
     ${checkField("Move as one on the watch", group.locked, (v) => upd((g) => { g.locked = v; }))}
     <div class="hint">${group.locked
       ? "Locked: a drag on any of these layers moves all of them. Unlock to move one at a time."
-      : "Unlocked: each layer moves on its own. Lock it again when the part is the way you want it."}</div>
+      : "Unlocked: each layer moves on its own. With the group selected, a drag still moves all of them. Lock it when the part is the way you want it."}</div>
     <div class="hint">${members.length} layer${members.length === 1 ? "" : "s"}: ${members.map((m) => layerTitle(m, ctx)).join(", ")}. Click one in the list to edit it.</div>
     <div class="adders">
       <button class="small" title="Keep the layers where they are and drop the folder" @click=${() => host.update((c) => ungroup(c, group.id))}>Ungroup</button>
