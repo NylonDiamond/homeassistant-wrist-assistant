@@ -847,10 +847,13 @@ export function valueEditor(host: EditorHost, value: Value, set: (v: Value) => v
   const label = opts.label ?? "Value";
   const resolved = opts.showResolved ? host.resolve(value) : undefined;
   const summary = describeValue(value, describeContext(host));
+  // A chip whose summary is an entity's name says so in the entity colour. A
+  // typed-in number or a template is the author's own words and stays ink.
+  const namesEntity = "entityId" in value.kind;
   return html`<div class="field value-chip-field ${opts.compact ? "compact" : ""}">
     ${opts.compact ? nothing : html`<span>${label}</span>`}
     <button type="button" class="value-chip ${opts.compact ? "chip-cell" : ""}" popovertarget=${id} aria-haspopup="dialog" title=${`${label}: ${summary}. Click to change it.`}>
-      <span class="chip-text">${summary}</span>
+      <span class="chip-text ${namesEntity ? "ent-tok" : ""}">${summary}</span>
       ${resolved === undefined ? nothing : html`<span class="chip-now mono" title="Value right now">${resolved}</span>`}
       <span class="chip-caret" aria-hidden="true">▾</span>
     </button>

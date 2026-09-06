@@ -801,6 +801,7 @@ export class WristAssistantPanel extends LitElement {
     .layer .name .glyph { display: inline-grid; place-items: center; width: 18px; height: 18px; flex: none; }
     .layer .name .glyph svg { width: 16px; height: 16px; display: block; }
     .layer .name small { color: var(--wa-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .layer .name small .val-tok { color: var(--wa-val); }
     .layer .kind { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--k); }
     .layer.dim .name b { opacity: .55; }
     .layer .right { display: flex; align-items: center; gap: 2px; }
@@ -4291,11 +4292,15 @@ export function layerFacts(
 
 /** The second line of a Layers row: the live reading and the one look fact
  * that tells this layer from its neighbours. */
-function layerMeta(el: CElement, resolver: Resolver, historySeries: Map<string, string>): string {
+function layerMeta(el: CElement, resolver: Resolver, historySeries: Map<string, string>): unknown {
+  // What the layer reads right now takes the live-value colour here too, so a
+  // row in the list and the card on the right agree about which half of the
+  // line is the house talking.
+  const now = (v: string | undefined) => html`<span class="val-tok">${v ?? "--"}</span>`;
   switch (el.kind) {
-    case "text": return `${resolver.resolve(el.payload.value) ?? "--"} · ${el.payload.fontSize} pt`;
+    case "text": return html`${now(resolver.resolve(el.payload.value))} · ${el.payload.fontSize} pt`;
     case "icon": return `${el.payload.size} pt · ${colorWords(el.payload.colorSlot.baseColorHex)}`;
-    case "gauge": return `${resolver.resolve(el.payload.value) ?? "--"} · ${el.payload.style}`;
+    case "gauge": return html`${now(resolver.resolve(el.payload.value))} · ${el.payload.style}`;
     case "chart": {
       // A history chart's own value is one number; counting that would report
       // "1 value" on the exact layer the history feature exists to fix.
