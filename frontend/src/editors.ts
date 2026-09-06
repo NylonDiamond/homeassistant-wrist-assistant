@@ -1317,6 +1317,34 @@ export function setPlacement(cfg: CustomComplicationConfig, family: FamilyKind, 
   layout.placements[id] = next;
 }
 
+/**
+ * A layer's size in the shape being edited.
+ *
+ * Size is per shape, the same way a frame is. A 12 pt label on the rectangular
+ * face has no business setting the size of the same layer on a corner one,
+ * where the canvas is a fifth of the width, so this control writes the
+ * placement for the shape on screen and nothing else. A shape that has never
+ * been given a placement falls back to the layer's own value, which is what a
+ * freshly added layer uses everywhere until it is moved or resized.
+ */
+export function shapeSizeField(
+  host: EditorHost,
+  el: CElement,
+  family: FamilyKind,
+  label: string,
+  opts: { step: number; min: number },
+): TemplateResult {
+  const id = el.payload.id;
+  const shared = elementSize(el) ?? opts.min;
+  const value = effectivePlacement(host.config, family, el).size ?? shared;
+  return numberField(`${label} (pt)`, value,
+    (v) => host.update(
+      (c) => setPlacement(c, family, id, { size: Math.max(opts.min, v ?? shared) }),
+      `el-${id}-size-${family}`,
+    ),
+    { step: opts.step, min: opts.min });
+}
+
 export function elementSize(el: CElement): number | undefined {
   switch (el.kind) {
     case "text": return el.payload.fontSize;
@@ -1600,7 +1628,6 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
   const eff = effectivePlacement(host.config, family, el);
   const f = eff.frame;
   const setFrame = (patch: Partial<NormalizedFrame>, k: string) => host.update((c) => setPlacement(c, family, id, { frame: { ...f, ...patch } }), `${key}-${k}-${family}`);
-  const sizeLabel = el.kind === "text" ? "Font size" : el.kind === "icon" ? "Icon size" : "Line width";
 
   // Content is what the layer shows; look is how it is drawn. Splitting them
   // per kind is the whole difference between a form and a page a person can
@@ -1620,7 +1647,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         }))}
         ${el.payload.countdown ? html`<div class="hint">Ticks down to the value's target: an active timer's finish, or any future timestamp. A paused timer shows its remaining time.</div>` : nothing}`;
       look = html`<div class="grid2">
-          ${numberField("Font size (pt)", el.payload.fontSize, (v) => upd((e) => { (e as typeof el).payload.fontSize = v ?? 14; }, "size"), { step: 1, min: 4 })}
+          ${shapeSizeField(host, el, family, "Font size", { step: 1, min: 4 })}
           ${selectField("Weight", el.payload.fontWeight, FONT_WEIGHTS, (v) => upd((e) => { (e as typeof el).payload.fontWeight = v; }))}
         </div>`;
       break;
@@ -1629,7 +1656,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       content = html`
         ${valueEditor(host, el.payload.symbol, (v) => upd((e) => { (e as typeof el).payload.symbol = v; }, "symbol"), { noFormat: true, showResolved: true, symbol: true, label: "Symbol", key: `${key}-symbol` })}
         <div class="hint">An entity source draws that entity's own icon instead.</div>`;
-      look = numberField("Icon size (pt)", el.payload.size, (v) => upd((e) => { (e as typeof el).payload.size = v ?? 14; }, "size"), { step: 1, min: 4 });
+      look = shapeSizeField(host, el, family, "Icon size", { step: 1, min: 4 });
       break;
     case "gauge":
       content = html`
@@ -1641,7 +1668,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       look = html`
         <div class="grid2">
           ${selectField("Style", el.payload.style, [["arc", "Arc (270°)"], ["ring", "Ring"], ["bar", "Bar"]], (v) => upd((e) => { (e as typeof el).payload.style = v; }))}
-          ${numberField("Line width (pt)", el.payload.lineWidth, (v) => upd((e) => { (e as typeof el).payload.lineWidth = v ?? 4; }, "lw"), { step: 0.5, min: 0.5 })}
+          ${shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5 })}
         </div>
         ${colorField("Track colour", el.payload.trackColorHex, (v) => upd((e) => { (e as typeof el).payload.trackColorHex = v ?? "#FFFFFF40"; }, "track"))}`;
       break;
@@ -1740,7 +1767,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
           : "Bars grow from the bottom, and the smallest reading keeps a visible stub. Switch to Zero when the readings can go negative."}</div>
         ${c.style === "bars"
           ? numberField("Bar gap (pt)", c.barGap, (v) => setChart((p) => { p.barGap = Math.max(0, v ?? 0); }, "gap"), { step: 0.5, min: 0 })
-          : numberField("Line width (pt)", c.lineWidth, (v) => setChart((p) => { p.lineWidth = Math.max(0.5, v ?? 2); }, "lw"), { step: 0.5, min: 0.5 })}
+          : shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5 })}
         ${selectField("Colour", c.coloring, CHART_COLORINGS, (v) => setChart((p) => {
           p.coloring = v;
           if (v === "bands" && p.bands.length === 0) p.bands = seedBands(shown);
@@ -1852,18 +1879,14 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`, tested),
       { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(el.payload.rules).replace(/\.$/, "") })}
     ${card(host, "placement", "Place", html`
-      <div class="grid4">
-        ${numberField("X", f.x, (v) => setFrame({ x: v ?? 0 }, "x"), { step: 0.01 })}
-        ${numberField("Y", f.y, (v) => setFrame({ y: v ?? 0 }, "y"), { step: 0.01 })}
-        ${numberField("W", f.width, (v) => setFrame({ width: v ?? 0.5 }, "w"), { step: 0.01, min: 0 })}
-        ${numberField("H", f.height, (v) => setFrame({ height: v ?? 0.5 }, "h"), { step: 0.01, min: 0 })}
-      </div>
-      ${numberField("Rotation (degrees)", f.rotationDegrees, (v) => setFrame({ rotationDegrees: v ?? 0 }, "rot"), { step: 1 })}
-      ${el.kind === "shape" || el.kind === "image" || el.kind === "tap" ? nothing
-        : numberField(`${sizeLabel} in ${familyTitle(family)} (blank = shared ${elementSize(el)})`, eff.size, (v) => host.update((c) => (v === undefined ? setPlacement(c, family, id, {}, true) : setPlacement(c, family, id, { size: v })), `${key}-psize-${family}`), { step: 1, min: 1, optional: true })}
-      ${checkField(`Hidden in ${familyTitle(family)}`, eff.isHidden, (v) => host.update((c) => setPlacement(c, family, id, { isHidden: v })))}
-      ${checkField("Hidden in every shape", el.payload.isHidden, (v) => upd((e) => { e.payload.isHidden = v; }))}
-      <div class="hint">Drag the layer on the ${familyTitle(family)} preview to move it, or pull a corner to resize it. Frames are fractions of the canvas.</div>`,
+      ${sliderField("Rotation", f.rotationDegrees, (v) => setFrame({ rotationDegrees: v }, "rot"),
+        { min: -180, max: 180, step: 1, def: 0, format: (v) => `${Math.round(v)}°` })}
+      <div class="hint">Drag the layer on the ${familyTitle(family)} preview to move it, or pull a
+        corner to resize it. Arrow keys nudge the selection 1 pt, shift-arrows 10 pt. The eye on the
+        layer's row hides it.</div>
+      <div class="hint">Everything about where this layer sits, how big it is drawn and whether it
+        shows belongs to the ${familyTitle(family)} shape alone. Pick another shape above to place
+        the same layer differently there.</div>`,
       { color: SECTION_COLOR.place, icon: "place", summary: `${Math.round(f.width * 100)}% wide · ${familyTitle(family)}${eff.fromPlacement ? "" : " · shared frame"}` })}`;
 }
 

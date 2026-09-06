@@ -716,7 +716,10 @@ export class WristAssistantPanel extends LitElement {
     .card.fold .fold-h .chev svg { width: 16px; height: 16px; }
     .card.fold[data-open="true"] .fold-h .chev { transform: rotate(180deg); }
 
-    .add-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    /* Two across, not three: the sample is the whole point of the expanded
+       buttons, and at a third of the column it was too small to tell a gauge
+       from a chart without reading the name under it. */
+    .add-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
     /* Compact: the samples go and the buttons shrink to tinted name chips, so
        seven kinds take two short rows instead of three tall ones. */
     .add-grid.lean { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
@@ -4155,12 +4158,6 @@ export class WristAssistantPanel extends LitElement {
     const setHiddenHere = (v: boolean) => this.mutate((c) => {
       for (const el of picked) setPlacement(c, family, el.payload.id, { isHidden: v });
     });
-    const setHiddenEverywhere = (v: boolean) => this.mutate((c) => {
-      for (const el of picked) {
-        const t = c.elements.find((e) => e.payload.id === el.payload.id);
-        if (t) t.payload.isHidden = v;
-      }
-    });
     const setColour = (v: string) => this.mutate((c) => {
       for (const el of picked) {
         const t = c.elements.find((e) => e.payload.id === el.payload.id);
@@ -4193,11 +4190,11 @@ export class WristAssistantPanel extends LitElement {
           <span class="tt"><h4>All ${n} at once</h4><span class="sum">The settings every picked layer has</span></span></div>
         <div class="sec-b">
           ${this.triCheck(`Hidden in ${familyTitle(family)}`, common.hiddenHere, setHiddenHere)}
-          ${this.triCheck("Hidden in every shape", common.hiddenEverywhere, setHiddenEverywhere)}
           ${common.colourable
             ? html`${colorField("Colour", common.colour, (v) => { if (v !== undefined) setColour(v); })}
               ${common.colour === undefined ? html`<div class="hint">These layers are different colours. Pick one to give them all the same.</div>` : nothing}`
             : html`<div class="hint">No shared colour: a picture and a tap area have none.</div>`}
+          <div class="hint">Hiding, like size and place, belongs to the ${familyTitle(family)} shape alone.</div>
           <div class="hint">Size, content and states belong to one layer at a time. Click a layer on its own to reach them.</div>
         </div>
       </div>`;
