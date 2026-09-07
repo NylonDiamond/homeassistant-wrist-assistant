@@ -33,6 +33,7 @@ import {
   type ChartStat,
   type CornerBodyShape,
   type EntityRef,
+  GAUGE_MAX_DOTS,
   STYLE_PROPERTY,
   chartBandColor,
   chartHistoryKey,
@@ -106,6 +107,15 @@ export interface ResolvedGauge extends ResolvedBase {
   lineWidth: number;
   colorHex: string;
   trackColorHex: string;
+  /** Where the threshold tick sits, as a 0...1 fraction of the scale. Absent when
+   * there is no threshold or it falls outside the range: a value the gauge cannot
+   * show is not drawn at an edge, where it would read as a threshold already met. */
+  thresholdFraction?: number;
+  thresholdColorHex: string;
+  /** How many dots a `dots` gauge draws, and how many of them are filled. Settled
+   * here so the renderer never parses a value. */
+  dotCount: number;
+  filledCount: number;
 }
 /** A chart with its series already parsed and its scale already decided.
  * Mirrors `CustomComplication.ResolvedChart` in the app repo. */
@@ -130,6 +140,15 @@ export interface ResolvedChart extends ResolvedBase {
   pointColorHexes: string[];
   /** Whether an area's fill follows `pointColorHexes` too. */
   fillBands: boolean;
+  /** Where the threshold line sits, as a fraction of the plot from the bottom.
+   * Absent when the chart has no threshold, or when a fixed scale puts it off
+   * the plot; the renderer then draws no line rather than one on an edge. */
+  thresholdY?: number;
+  thresholdColorHex: string;
+  /** Which reading the "now" line stands on, already rounded and clamped into
+   * `values`. Absent when the chart has no `nowIndex` or nothing resolved. */
+  nowIndex?: number;
+  nowColorHex: string;
 }
 
 /** What a chart settled on before anything is drawn: the series it draws,
@@ -163,6 +182,8 @@ export interface ResolvedShape extends ResolvedBase {
   kind: "shape";
   shapeKind: ShapeKind;
   cornerRadius: number;
+  /** Only read for the `line` kind. */
+  thickness: number;
   fillColorHex: string;
   borderColorHex?: string;
   borderWidth: number;
@@ -271,6 +292,58 @@ function relativeTimeString(seconds: number): string {
   return `${Math.trunc(s / 86400)}d`;
 }
 
+/** Seconds out of whatever a duration value arrives as: a plain number, or the
+ * string Home Assistant prints a `timedelta` as, which is what a timer entity's
+ * `remaining` and `duration` attributes carry ("0:23:15", "2 days, 3:04:05").
+ * Anything else is undefined, and `formatValue` then leaves the string alone
+ * rather than printing a wrong "0s".
+ *
+ * Mirrors `CustomComplication.durationSeconds(from:)` in Swift. `leadingNumber`
+ * is deliberately not used: it would read 0 out of "0:23:15". */
+export function durationSeconds(raw: string): number | undefined {
+  let text = raw.trim();
+  const plain = swiftDouble(text);
+  if (plain !== undefined) return plain;
+
+  let days = 0;
+  const comma = text.indexOf(",");
+  if (comma >= 0) {
+    const words = text.slice(0, comma).trim().split(" ");
+    const count = words.length === 2 ? swiftDouble(words[0]!) : undefined;
+    if (count === undefined || (words[1] !== "day" && words[1] !== "days")) return undefined;
+    days = count;
+    text = text.slice(comma + 1).trim();
+  }
+
+  const parts = text.split(":");
+  if (parts.length !== 2 && parts.length !== 3) return undefined;
+  let seconds = 0;
+  for (let i = 0; i < parts.length; i++) {
+    const n = swiftDouble(parts[i]!);
+    if (n === undefined) return undefined;
+    // The last component is the seconds, the one before it minutes, and so on,
+    // so "23:15" is 23 minutes and 15 seconds.
+    seconds += n * Math.pow(60, parts.length - 1 - i);
+  }
+  return days * 86400 + seconds;
+}
+
+/** A length of time as its two largest non-zero units: "2d 3h", "1h 23m",
+ * "23m 15s", "45s", "0s". Mirrors `CustomComplication.durationString` in Swift,
+ * including its cap: the watch converts to a 32-bit `Int`, so a value that is
+ * really a millisecond timestamp is clamped rather than left to trap. */
+export function durationString(seconds: number): string {
+  const total = Math.trunc(Math.min(Math.max(0, seconds) || 0, 9999 * 86400));
+  const units: [number, string][] = [
+    [Math.trunc(total / 86400), "d"],
+    [Math.trunc((total % 86400) / 3600), "h"],
+    [Math.trunc((total % 3600) / 60), "m"],
+    [total % 60, "s"],
+  ];
+  const parts = units.filter(([v]) => v > 0).slice(0, 2).map(([v, s]) => `${v}${s}`);
+  return parts.length === 0 ? "0s" : parts.join(" ");
+}
+
 function capitalized(s: string): string {
   return s.replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 }
@@ -280,7 +353,10 @@ export function formatValue(raw: string, format: ValueFormat | undefined, unit: 
   const f = format!;
   let text = raw;
   const trimmedNumber = swiftDouble(raw.trim());
-  if (f.relativeTime && trimmedNumber !== undefined) {
+  const durationValue = f.duration ? durationSeconds(raw) : undefined;
+  if (durationValue !== undefined) {
+    text = durationString(durationValue);
+  } else if (f.relativeTime && trimmedNumber !== undefined) {
     text = relativeTimeString(trimmedNumber);
   } else {
     const n = leadingNumber(raw);
@@ -368,7 +444,7 @@ export function chartNumbers(raw: string, limit = 240): number[] {
 /** The value range a chart's plot covers. Mirrors `CustomComplication.chartDomain`. */
 export function chartDomain(
   values: number[],
-  opts: { scale: ChartScale; minValue: number; maxValue: number; baseline: ChartBaseline },
+  opts: { scale: ChartScale; minValue: number; maxValue: number; baseline: ChartBaseline; thresholdValue?: number },
 ): { min: number; max: number } {
   let lo: number;
   let hi: number;
@@ -379,6 +455,13 @@ export function chartDomain(
   } else {
     lo = values.length > 0 ? Math.min(...values) : 0;
     hi = values.length > 0 ? Math.max(...values) : 1;
+    // An auto scale exists to fit what is drawn, and the threshold line is drawn,
+    // so it counts. A fixed scale is a range the author asked for on purpose, and
+    // a threshold outside it draws nothing rather than moving the range.
+    if (opts.thresholdValue !== undefined && Number.isFinite(opts.thresholdValue)) {
+      lo = Math.min(lo, opts.thresholdValue);
+      hi = Math.max(hi, opts.thresholdValue);
+    }
   }
 
   if (opts.baseline === "zero") {
@@ -388,6 +471,32 @@ export function chartDomain(
 
   if (!(hi > lo)) hi = lo + 1;
   return { min: lo, max: hi };
+}
+
+/** Where the threshold line lands, as a fraction of the plot from the bottom,
+ * or undefined when there is no line to draw. A fixed scale that excludes the
+ * threshold is the only way this comes back empty with a threshold set: an auto
+ * scale has already grown to include it. Mirrors
+ * `CustomComplication.chartThresholdFraction`. */
+export function chartThresholdFraction(
+  c: { thresholdValue?: number },
+  lo: number,
+  hi: number,
+): number | undefined {
+  const t = c.thresholdValue;
+  if (t === undefined || !Number.isFinite(t) || !(hi > lo) || t < lo || t > hi) return undefined;
+  return (t - lo) / (hi - lo);
+}
+
+/** A count rounded and held inside `lo...hi`, never NaN. Mirrors the clamping in
+ * Swift's `dotCounts`, which has to do this before an `Int` conversion that would
+ * otherwise trap on a watch. */
+function clampCount(value: number, lo: number, hi: number): number {
+  if (Number.isNaN(value)) return hi;
+  // Half away from zero, the way Swift's `rounded()` does it, so a negative
+  // half-step lands on the same integer on both sides.
+  const rounded = value < 0 ? -Math.round(-value) : Math.round(value);
+  return Math.min(hi, Math.max(lo, rounded));
 }
 
 export function gaugeFraction(raw: string | undefined, min: number, max: number): number {
@@ -418,6 +527,19 @@ export class Resolver {
    * two cannot disagree about what "the newest reading" is. Mirrors
    * `CustomComplication.chartReadings(for:context:)`. */
   chartReadings(c: ChartElement): ChartReadings {
+    const values = this.chartSeries(c);
+    const domain = chartDomain(values, c);
+    const out: ChartReadings = { values, domainMin: domain.min, domainMax: domain.max };
+    const entity = this.chartEntity(c);
+    if (entity) out.entity = entity;
+    return out;
+  }
+
+  /** The numbers a chart draws, trimmed to its `limit`, before anything decides
+   * what range to draw them against. Split out because `scaleFrom` settles the
+   * series of every chart before it settles any range. Mirrors
+   * `CustomComplication.chartSeries`. */
+  private chartSeries(c: ChartElement): number[] {
     // A history chart never reads its own value: the value only names the
     // entity, and the readings are whatever the last recorder fetch left
     // behind. Before that arrives the chart is empty rather than one bar of
@@ -426,22 +548,75 @@ export class Resolver {
     const raw = historyKey !== undefined
       ? (this.ctx.historySeries?.get(historyKey) ?? "")
       : (this.resolve(c.value) ?? "");
-    let values = chartNumbers(raw);
+    const values = chartNumbers(raw);
     if (c.limit > 0 && values.length > c.limit) {
-      values = c.takeFromEnd ? values.slice(values.length - c.limit) : values.slice(0, c.limit);
+      return c.takeFromEnd ? values.slice(values.length - c.limit) : values.slice(0, c.limit);
     }
-    const domain = chartDomain(values, c);
-    const out: ChartReadings = { values, domainMin: domain.min, domainMax: domain.max };
-    const deref = this.dereference(c.value);
-    if (deref && "entityId" in deref.kind) {
-      out.entity = { entityId: deref.kind.entityId, displayName: deref.kind.displayName, domain: deref.kind.domain };
-    }
-    return out;
+    return values;
   }
 
+  private chartEntity(c: ChartElement): EntityRef | undefined {
+    const deref = this.dereference(c.value);
+    if (!deref || !("entityId" in deref.kind)) return undefined;
+    return { entityId: deref.kind.entityId, displayName: deref.kind.displayName, domain: deref.kind.domain };
+  }
+
+  /** Which reading the "now" line stands on. Rounded, then clamped into the
+   * series, so an hour that has run past the end of a forecast marks its last
+   * reading instead of disappearing. Mirrors
+   * `CustomComplication.chartNowIndex`. */
+  private chartNowIndex(c: ChartElement, count: number): number | undefined {
+    if (c.nowIndex === undefined || count === 0) return undefined;
+    const raw = this.resolve(c.nowIndex);
+    if (raw === undefined) return undefined;
+    const n = leadingNumber(raw);
+    if (n === undefined || !Number.isFinite(n)) return undefined;
+    return Math.min(Math.max(Math.round(n), 0), count - 1);
+  }
+
+  /** Every chart in the document settled, in two passes, because `scaleFrom`
+   * lets one chart borrow another's range. The series come first, since nothing
+   * about parsing a chart's own numbers depends on another chart; then the
+   * ranges, following each link and memoising as it goes. A link to a missing
+   * chart, to the chart itself, or one that closes a cycle falls back to that
+   * chart's own scale. Mirrors `ResolveContext.withChartReadings(from:)`. */
   private settleCharts(config: CustomComplicationConfig): void {
+    const charts = new Map<string, ChartElement>();
+    const order: string[] = [];
     for (const el of config.elements) {
-      if (el.kind === "chart") this.charts.set(el.payload.id, this.chartReadings(el.payload));
+      if (el.kind !== "chart" || charts.has(el.payload.id)) continue;
+      charts.set(el.payload.id, el.payload);
+      order.push(el.payload.id);
+    }
+
+    const series = new Map<string, number[]>();
+    for (const id of order) series.set(id, this.chartSeries(charts.get(id)!));
+
+    const domains = new Map<string, { min: number; max: number }>();
+    const domainOf = (id: string, visiting: Set<string>): { min: number; max: number } => {
+      const known = domains.get(id);
+      if (known) return known;
+      const chart = charts.get(id);
+      if (!chart) return { min: 0, max: 1 };
+      const source = chart.scaleFrom;
+      const result = source !== undefined && source !== id && charts.has(source) && !visiting.has(source)
+        ? domainOf(source, new Set([...visiting, source]))
+        : chartDomain(series.get(id) ?? [], chart);
+      domains.set(id, result);
+      return result;
+    };
+
+    for (const id of order) {
+      const chart = charts.get(id)!;
+      const range = domainOf(id, new Set([id]));
+      const out: ChartReadings = {
+        values: series.get(id) ?? [],
+        domainMin: range.min,
+        domainMax: range.max,
+      };
+      const entity = this.chartEntity(chart);
+      if (entity) out.entity = entity;
+      this.charts.set(id, out);
     }
   }
 
@@ -722,18 +897,47 @@ export class Resolver {
         };
       }
       case "gauge": {
-        const raw = this.styleText(style, "gaugeValue") ?? this.resolve(el.payload.value);
-        const min = this.styleNumber(style, "gaugeMin") ?? el.payload.minValue;
-        const max = this.styleNumber(style, "gaugeMax") ?? el.payload.maxValue;
-        return {
+        const g = el.payload;
+        const raw = this.styleText(style, "gaugeValue") ?? this.resolve(g.value);
+        const min = this.styleNumber(style, "gaugeMin") ?? g.minValue;
+        const max = this.styleNumber(style, "gaugeMax") ?? g.maxValue;
+        const reading = raw === undefined ? undefined : leadingNumber(raw);
+
+        // A band names its own colour, so it wins over a rule that recolours the
+        // gauge: the rule says the layer is in an unusual state, the table says
+        // where this reading sits, and the table is the more specific statement.
+        let colorHex = this.styleColor(style, "color") ?? g.colorSlot.baseColorHex;
+        if (g.coloring === "bands" && g.bands.length > 0 && reading !== undefined) {
+          colorHex = chartBandColor(reading, chartSortedBands(g), g.bandAboveColorHex);
+        }
+
+        // How many dots, and how many filled. M is `total` when it resolves to a
+        // number, else the range itself; both are rounded, clamped and capped.
+        let total = max - min;
+        if (g.total) {
+          const n = leadingNumber(this.resolve(g.total) ?? "");
+          if (n !== undefined) total = n;
+        }
+        const dotCount = clampCount(total, 1, GAUGE_MAX_DOTS);
+        const out: ResolvedGauge = {
           kind: "gauge",
           ...base,
           fraction: gaugeFraction(raw, min, max),
-          style: el.payload.style,
-          lineWidth: el.payload.lineWidth,
-          colorHex: this.styleColor(style, "color") ?? el.payload.colorSlot.baseColorHex,
-          trackColorHex: el.payload.trackColorHex,
+          style: g.style,
+          lineWidth: g.lineWidth,
+          colorHex,
+          trackColorHex: g.trackColorHex,
+          thresholdColorHex: g.thresholdColorHex,
+          dotCount,
+          filledCount: clampCount(reading ?? 0, 0, dotCount),
         };
+        // Out of range draws nothing rather than sticking to an end, where it
+        // would read as a threshold the reading had already met.
+        if (g.thresholdValue !== undefined && max !== min) {
+          const placed = (g.thresholdValue - min) / (max - min);
+          if (placed >= 0 && placed <= 1) out.thresholdFraction = placed;
+        }
+        return out;
       }
       case "chart": {
         const c = el.payload;
@@ -761,6 +965,8 @@ export class Resolver {
           marker: c.marker,
           pointColorHexes,
           fillBands: c.fillBands,
+          thresholdColorHex: c.thresholdColorHex,
+          nowColorHex: c.nowColorHex,
         };
         if (values.length > 0) {
           const marksHigh = c.highlight === "highest" || c.highlight === "both";
@@ -771,6 +977,10 @@ export class Resolver {
           // One reading cannot be both ends of the range; highest wins.
           if (low >= 0 && low !== high) out.lowIndex = low;
         }
+        const thresholdY = chartThresholdFraction(c, domain.min, domain.max);
+        if (thresholdY !== undefined) out.thresholdY = thresholdY;
+        const now = this.chartNowIndex(c, values.length);
+        if (now !== undefined) out.nowIndex = now;
         return out;
       }
       case "shape": {
@@ -779,6 +989,7 @@ export class Resolver {
           ...base,
           shapeKind: el.payload.kind,
           cornerRadius: el.payload.cornerRadius,
+          thickness: el.payload.thickness,
           fillColorHex: this.styleColor(style, "color") ?? el.payload.colorSlot.baseColorHex,
           borderWidth: this.styleNumber(style, "borderWidth") ?? el.payload.borderWidth,
         };

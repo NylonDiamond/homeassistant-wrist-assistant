@@ -76,6 +76,43 @@ describe("encodeConfig", () => {
     expect(JSON.stringify(encodeConfig(bare))).not.toContain("countdown");
   });
 
+  it("round-trips a line shape, and thickness stays absent at its default", () => {
+    const cfg = newConfig("X", 0);
+    const el = newElement("shape");
+    if (el.kind === "shape") {
+      el.payload.kind = "line";
+      el.payload.thickness = 2.5;
+    }
+    cfg.elements = [el];
+    const enc = encodeConfig(cfg) as Record<string, unknown>;
+    expect(auditUnknownKeys(enc)).toEqual([]);
+    const back = parseConfig(enc).elements[0];
+    expect(back?.kind === "shape" && back.payload.kind).toBe("line");
+    expect(back?.kind === "shape" && back.payload.thickness).toBe(2.5);
+    expect(encodeConfig(parseConfig(enc))).toEqual(enc);
+
+    // Every other shape writes exactly the bytes it always did.
+    const bare = newConfig("Y", 1);
+    bare.elements = [newElement("shape")];
+    expect(JSON.stringify(encodeConfig(bare))).not.toContain("thickness");
+  });
+
+  it("round-trips a duration format, and the key stays absent when off", () => {
+    const cfg = newConfig("X", 0);
+    const el = newElement("text");
+    if (el.kind === "text") el.payload.value = { kind: { kind: "literal", value: "5015" }, format: { duration: true } };
+    cfg.elements = [el];
+    const enc = encodeConfig(cfg) as Record<string, unknown>;
+    expect(auditUnknownKeys(enc)).toEqual([]);
+    const back = parseConfig(enc).elements[0];
+    expect(back?.kind === "text" && back.payload.value.format?.duration).toBe(true);
+    expect(encodeConfig(parseConfig(enc))).toEqual(enc);
+
+    const bare = newConfig("Y", 1);
+    bare.elements = [newElement("text")];
+    expect(JSON.stringify(encodeConfig(bare))).not.toContain("duration");
+  });
+
   it("round-trips the image element, and the timestamp key stays absent when off", () => {
     const cfg = newConfig("X", 0);
     const el = newElement("image");
@@ -241,6 +278,42 @@ describe("encodeConfig", () => {
     const circular = enc.perFamily[3] as { placements: Record<string, Record<string, unknown>> };
     const p = circular.placements[el.payload.id]!;
     expect(Object.keys(p)).toEqual(["frame"]);
+  });
+
+  it("leaves a plain gauge's colour table, threshold and total off the wire", () => {
+    const cfg = newConfig("X", 0);
+    cfg.elements.push(newElement("gauge"));
+    const enc = encodeConfig(cfg) as { elements: Record<string, unknown>[] };
+    const payload = enc.elements[0]!.payload as Record<string, unknown>;
+    expect(Object.keys(payload).sort()).toEqual(
+      ["colorSlot", "frame", "id", "isHidden", "lineWidth", "maxValue", "minValue", "rules", "style", "trackColorHex", "value"],
+    );
+  });
+
+  it("round-trips a banded gauge with a threshold and a dot total", () => {
+    const cfg = newConfig("X", 0);
+    const el = newElement("gauge");
+    if (el.kind !== "gauge") throw new Error("expected a gauge");
+    el.payload.style = "dots";
+    el.payload.coloring = "bands";
+    el.payload.bands = [{ id: "B1", upTo: 20, colorHex: "#FF453A" }];
+    el.payload.bandAboveColorHex = "#32D74B";
+    el.payload.thresholdValue = 80;
+    el.payload.thresholdColorHex = "#0A84FF";
+    el.payload.total = { kind: { kind: "literal", value: "8" } };
+    cfg.elements.push(el);
+    const enc = encodeConfig(cfg);
+    expect(auditUnknownKeys(enc)).toEqual([]);
+    const back = parseConfig(enc).elements[0]!;
+    expect(back.kind).toBe("gauge");
+    if (back.kind !== "gauge") return;
+    expect(back.payload.style).toBe("dots");
+    expect(back.payload.coloring).toBe("bands");
+    expect(back.payload.bands).toEqual([{ id: "B1", upTo: 20, colorHex: "#FF453A" }]);
+    expect(back.payload.bandAboveColorHex).toBe("#32D74B");
+    expect(back.payload.thresholdValue).toBe(80);
+    expect(back.payload.thresholdColorHex).toBe("#0A84FF");
+    expect(back.payload.total).toEqual({ kind: { kind: "literal", value: "8" } });
   });
 
   it("round-trips the corner curved text and bezel gauge", () => {

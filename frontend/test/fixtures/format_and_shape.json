@@ -1,0 +1,147 @@
+{
+  "name": "Duration format and the line shape",
+  "description": "The `duration` value format and the `line` shape kind, both added 2026-09-06. Duration reads a plain number of seconds, a Home Assistant duration string, and leaves anything else as it is; it also wins over `relativeTime` when a document carries both. The two line layers pin that `thickness` is on the wire only when it is away from 1, so every other shape stays byte-identical.",
+  "config": {
+    "schemaVersion": 4,
+    "id": "AAAAAAAA-0000-4000-8000-00000000000A",
+    "name": "Laundry",
+    "slotIndex": 3,
+    "supportedFamilies": ["rectangular", "circular", "corner"],
+    "values": [],
+    "elements": [
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000A1",
+          "value": {
+            "kind": {"kind": "entityState", "entityId": "sensor.washer_remaining", "displayName": "Washer", "domain": "sensor"},
+            "format": {"duration": true}
+          },
+          "fontSize": 16,
+          "fontWeight": "medium",
+          "colorSlot": {"baseColorHex": "#FFFFFF"},
+          "rules": [],
+          "frame": {"x": 0.05, "y": 0.05, "width": 0.9, "height": 0.25, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000A2",
+          "value": {
+            "kind": {"kind": "entityState", "entityId": "sensor.uptime", "displayName": "Uptime", "domain": "sensor"},
+            "format": {"duration": true, "prefix": "up "}
+          },
+          "fontSize": 12,
+          "fontWeight": "regular",
+          "colorSlot": {"baseColorHex": "#FFFFFF"},
+          "rules": [],
+          "frame": {"x": 0.05, "y": 0.35, "width": 0.9, "height": 0.2, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000A3",
+          "value": {
+            "kind": {"kind": "entityState", "entityId": "sensor.mode", "displayName": "Mode", "domain": "sensor"},
+            "format": {"duration": true}
+          },
+          "fontSize": 12,
+          "fontWeight": "regular",
+          "colorSlot": {"baseColorHex": "#FFFFFF"},
+          "rules": [],
+          "frame": {"x": 0.05, "y": 0.58, "width": 0.4, "height": 0.2, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000A4",
+          "value": {
+            "kind": {"kind": "literal", "value": "5015"},
+            "format": {"relativeTime": true, "duration": true}
+          },
+          "fontSize": 12,
+          "fontWeight": "regular",
+          "colorSlot": {"baseColorHex": "#FFFFFF"},
+          "rules": [],
+          "frame": {"x": 0.55, "y": 0.58, "width": 0.4, "height": 0.2, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "shape",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000A5",
+          "kind": "line",
+          "cornerRadius": 6,
+          "colorSlot": {"baseColorHex": "#FF9F0A"},
+          "borderWidth": 1,
+          "thickness": 2,
+          "rules": [],
+          "frame": {"x": 0.05, "y": 0.32, "width": 0.9, "height": 0.02, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "shape",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000A6",
+          "kind": "line",
+          "cornerRadius": 6,
+          "colorSlot": {"baseColorHex": "#FFFFFF66"},
+          "borderWidth": 1,
+          "rules": [],
+          "frame": {"x": 0.49, "y": 0.56, "width": 0.02, "height": 0.24, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "shape",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000A7",
+          "kind": "roundedRectangle",
+          "cornerRadius": 6,
+          "colorSlot": {"baseColorHex": "#1C1C1E"},
+          "borderWidth": 1,
+          "rules": [],
+          "frame": {"x": 0, "y": 0, "width": 1, "height": 1, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {"type": "refresh"}
+  },
+  "inputs": {
+    "entityStates": {
+      "sensor.washer_remaining": {"state": "0:23:15", "domain": "sensor"},
+      "sensor.uptime": {"state": "183600", "domain": "sensor"},
+      "sensor.mode": {"state": "heat", "domain": "sensor"}
+    },
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": ["sensor.washer_remaining", "sensor.uptime", "sensor.mode"],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {"id": "EEEEEEEE-0000-4000-8000-0000000000A1", "kind": "text", "text": "23m 15s"},
+        {"id": "EEEEEEEE-0000-4000-8000-0000000000A2", "kind": "text", "text": "up 2d 3h"},
+        {"id": "EEEEEEEE-0000-4000-8000-0000000000A3", "kind": "text", "text": "heat"},
+        {"id": "EEEEEEEE-0000-4000-8000-0000000000A4", "kind": "text", "text": "1h 23m"},
+        {"id": "EEEEEEEE-0000-4000-8000-0000000000A5", "kind": "shape", "shapeKind": "line", "thickness": 2, "fillColorHex": "#FF9F0A"},
+        {"id": "EEEEEEEE-0000-4000-8000-0000000000A6", "kind": "shape", "shapeKind": "line", "thickness": 1, "fillColorHex": "#FFFFFF66"},
+        {"id": "EEEEEEEE-0000-4000-8000-0000000000A7", "kind": "shape", "shapeKind": "roundedRectangle", "thickness": 1, "cornerRadius": 6}
+      ]
+    }
+  }
+}

@@ -196,6 +196,14 @@ export function compile(config: CustomComplicationConfig): Compiled {
   for (const el of config.elements) {
     const primary = primaryValue(el);
     if (primary) visit(primary);
+    // A dot gauge's total is an ordinary value, so it is fetched like one. The
+    // usual pairing, a filtered count and the same count unfiltered, dedupes to
+    // two lines of one template document and no extra request.
+    if (el.kind === "gauge" && el.payload.total) visit(el.payload.total);
+    // A chart's "now" marker is an ordinary value, so it is fetched like one.
+    // Usually the built-in Hour, which costs a line of the template document
+    // and no request at all.
+    if (el.kind === "chart" && el.payload.nowIndex) visit(el.payload.nowIndex);
     for (const v of ruleValues(el.payload.rules)) visit(v);
   }
   // Only the shapes the document supports: a layout left behind by a removed

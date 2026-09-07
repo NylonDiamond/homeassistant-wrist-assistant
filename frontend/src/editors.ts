@@ -24,6 +24,8 @@ import {
   type FamilyKind,
   type FamilyLayout,
   type FontWeight,
+  type GaugeElement,
+  type GaugeStyle,
   type ImageElement,
   type LayerEntityUse,
   type LayerGroup,
@@ -43,9 +45,13 @@ import {
   type ValueFormat,
   type ValueKind,
   CHART_DEFAULT_BAND_HIGH_HEX,
+  GAUGE_DEFAULT_THRESHOLD_HEX,
+  GAUGE_MAX_DOTS,
   chartSortedBands,
   CHART_DEFAULT_BAND_LOW_HEX,
   CHART_DEFAULT_HIGH_HEX,
+  CHART_DEFAULT_NOW_HEX,
+  CHART_DEFAULT_THRESHOLD_HEX,
   CHART_HISTORY_DEFAULT_MINUTES,
   CHART_HISTORY_EVERY_READING,
   CHART_HISTORY_MAX_MINUTES,
@@ -55,6 +61,7 @@ import {
   chartHistoryKey,
   CHART_STATS,
   addChartLabel,
+  addChartSeries,
   chartLabelsOf,
   chartOfValue,
   CHART_DEFAULT_LOW_HEX,
@@ -871,14 +878,79 @@ function seedBands(values: readonly number[]): ChartBand[] {
   return colors.map((colorHex, i) => ({ id: newId(), upTo: round(lo + (span * (i + 1)) / 3), colorHex }));
 }
 
+/** Where a threshold line starts when the author first turns one on: the middle
+ * of the readings on screen, for the same reason the band table is seeded. A
+ * line at the top of an empty chart would read as a broken setting. */
+function seedThreshold(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo;
+  return Number(((lo + hi) / 2).toFixed(span >= 10 ? 0 : 2));
+}
+
 /** A new row for the end of an existing table: one step past the last one, in
- * the layer's own colour so it is visible before the author picks one. */
-function nextBand(el: ChartElement): ChartBand {
-  const last = chartSortedBands(el).at(-1);
-  const step = el.bands.length > 1
-    ? Math.abs(chartSortedBands(el)[1]!.upTo - chartSortedBands(el)[0]!.upTo)
-    : 10;
-  return { id: newId(), upTo: (last?.upTo ?? 0) + (step || 10), colorHex: el.colorSlot.baseColorHex };
+ * the layer's own colour so it is visible before the author picks one. Takes the
+ * table rather than a layer, so the chart and the gauge share it. */
+function nextBand(bands: readonly ChartBand[], ownColorHex: string): ChartBand {
+  const sorted = chartSortedBands({ bands });
+  const last = sorted.at(-1);
+  const step = bands.length > 1 ? Math.abs(sorted[1]!.upTo - sorted[0]!.upTo) : 10;
+  return { id: newId(), upTo: (last?.upTo ?? 0) + (step || 10), colorHex: ownColorHex };
+}
+
+/** A layer that carries a colour table: the chart and the gauge. */
+interface BandedLayer {
+  bands: ChartBand[];
+  bandAboveColorHex: string;
+}
+
+/** The rows of a colour table, the button that adds one, and the colour a value
+ * past the last row takes. Shared by the chart's Look card and the gauge's, so a
+ * change to how a table is edited lands in both at once. */
+function bandTableFields(
+  layer: BandedLayer,
+  ownColorHex: string,
+  set: (mutate: (p: BandedLayer) => void, k?: string) => void,
+): TemplateResult {
+  return html`
+    ${layer.bands.map((band, i) => html`
+      <div class="row-inline">
+        ${numberField("Up to", band.upTo,
+          (v) => set((p) => { const b = p.bands[i]; if (b) b.upTo = v ?? 0; }, `bup${band.id}`))}
+        ${colorField("Colour", band.colorHex,
+          (v) => set((p) => { const b = p.bands[i]; if (b) b.colorHex = v ?? "#FFFFFF"; }, `bcol${band.id}`))}
+        <button class="icon" title="Remove this band" aria-label="Remove this band"
+          @click=${() => set((p) => { p.bands = p.bands.filter((_, j) => j !== i); })}>${uiIcon("close")}</button>
+      </div>`)}
+    <button class="small" @click=${() => set((p) => { p.bands = [...p.bands, nextBand(p.bands, ownColorHex)]; })}>Add band</button>
+    ${colorField("And the rest", layer.bandAboveColorHex,
+      (v) => set((p) => { p.bandAboveColorHex = v ?? CHART_DEFAULT_BAND_HIGH_HEX; }, "babove"), false, CHART_DEFAULT_BAND_HIGH_HEX)}`;
+}
+
+const GAUGE_STYLES: [GaugeStyle, string][] = [
+  ["arc", "Arc"], ["ring", "Ring"], ["bar", "Bar"], ["dots", "Dots"],
+];
+const GAUGE_STYLE_TITLES: Record<string, string> = {
+  arc: "A 270° arc, open at the bottom",
+  ring: "A full circle",
+  bar: "A straight bar",
+  dots: "One dot per unit, the first few filled",
+};
+
+/** The Total a dot gauge starts with.
+ *
+ * "3 of 8 lights on" is two counts over one scope, so the useful total is the
+ * reading's own aggregate with its state filter dropped. The compiler dedupes by
+ * expression, so the pair costs one extra line of the template and no extra
+ * request. Anything that is not an aggregate falls back to the range it had. */
+function seedGaugeTotal(g: GaugeElement): Value {
+  const kind = g.value.kind;
+  if (kind.kind === "aggregate") {
+    const { stateFilter: _dropped, ...rest } = kind.aggregate;
+    return { kind: { kind: "aggregate", aggregate: { ...rest, function: "count" } } };
+  }
+  return literal(String(Math.max(1, Math.round(g.maxValue - g.minValue))));
 }
 
 const TIME_FIELDS: [TimeField, string][] = [
@@ -1197,7 +1269,10 @@ function formatEditor(format: ValueFormat | undefined, set: (f: ValueFormat) => 
       ${textField("Suffix", f.suffix ?? "", (v) => upd({ suffix: v }))}
     </div>
     ${checkField("Append the entity's unit", !!f.useEntityUnit, (v) => upd({ useEntityUnit: v }))}
-    ${checkField("Show as relative time (45s, 2m, 3h)", !!f.relativeTime, (v) => upd({ relativeTime: v }))}
+    ${segField("Seconds as", f.duration ? "duration" : f.relativeTime ? "relativeTime" : "",
+      [["", "None"], ["relativeTime", "Time ago"], ["duration", "Duration"]],
+      (v) => upd({ relativeTime: v === "relativeTime", duration: v === "duration" }),
+      { titles: { relativeTime: "45s, 2m, 3h", duration: "1h 23m, 45s" } })}
   </details>`;
 }
 
@@ -1782,9 +1857,15 @@ export function lookSummary(el: CElement): string | undefined {
   switch (el.kind) {
     case "text": return `${el.payload.fontSize} pt ${el.payload.fontWeight.toLowerCase()} · ${colorWords(el.payload.colorSlot.baseColorHex)}`;
     case "icon": return `${el.payload.size} pt · ${colorWords(el.payload.colorSlot.baseColorHex)}`;
-    case "gauge": return `${el.payload.style} · ${el.payload.lineWidth} pt line · ${colorWords(el.payload.colorSlot.baseColorHex)}`;
+    case "gauge": {
+      const g = el.payload;
+      const size = g.style === "dots" ? `${g.bands.length > 0 && g.coloring === "bands" ? "banded" : colorWords(g.colorSlot.baseColorHex)} dots` : `${g.lineWidth} pt line · ${g.coloring === "bands" && g.bands.length > 0 ? `${g.bands.length + 1} colour bands` : colorWords(g.colorSlot.baseColorHex)}`;
+      return `${g.style} · ${size}${g.thresholdValue === undefined ? "" : ` · threshold ${g.thresholdValue}`}`;
+    }
     case "chart": return `${el.payload.style} · ${el.payload.scale === "auto" ? "auto scale" : `${el.payload.minValue} to ${el.payload.maxValue}`}${el.payload.highlight === "none" ? "" : ` · ${CHART_HIGHLIGHTS.find(([v]) => v === el.payload.highlight)?.[1].toLowerCase() ?? ""} marked`}`;
-    case "shape": return `${colorWords(el.payload.colorSlot.baseColorHex)}${el.payload.borderColorHex ? ` · ${el.payload.borderWidth} pt border` : ""}`;
+    case "shape": return el.payload.kind === "line"
+      ? `${colorWords(el.payload.colorSlot.baseColorHex)} · ${el.payload.thickness} pt thick`
+      : `${colorWords(el.payload.colorSlot.baseColorHex)}${el.payload.borderColorHex ? ` · ${el.payload.borderWidth} pt border` : ""}`;
     case "image": return `${el.payload.contentMode === "fill" ? "Fill the frame" : "Fit inside"} · ${el.payload.zoom.toFixed(2)}x · corners ${el.payload.cornerRadius} pt`;
     case "tap": return undefined;
   }
@@ -1842,21 +1923,60 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         <div class="hint">An entity source draws that entity's own icon instead.</div>`;
       look = shapeSizeField(host, el, family, "Icon size", { step: 1, min: 4, def: baseSize("size") });
       break;
-    case "gauge":
+    case "gauge": {
+      const g = el.payload;
+      const setGauge = (m: (p: GaugeElement) => void, k?: string) => upd((e) => m((e as typeof el).payload), k);
+      const dots = g.style === "dots";
       content = html`
-        ${valueEditor(host, el.payload.value, (v) => upd((e) => { (e as typeof el).payload.value = v; }, "value"), { showResolved: true, label: "Reading", key: `${key}-value` })}
-        <div class="grid2">
-          ${numberField("Min", el.payload.minValue, (v) => upd((e) => { (e as typeof el).payload.minValue = v ?? 0; }, "min"), { def: base.minValue as number })}
-          ${numberField("Max", el.payload.maxValue, (v) => upd((e) => { (e as typeof el).payload.maxValue = v ?? 100; }, "max"), { def: base.maxValue as number })}
-        </div>`;
+        ${valueEditor(host, g.value, (v) => setGauge((p) => { p.value = v; }, "value"), { showResolved: true, label: "Reading", key: `${key}-value` })}
+        ${dots
+          ? html`
+            ${valueEditor(host, g.total ?? seedGaugeTotal(g), (v) => setGauge((p) => { p.total = v; }, "total"),
+              { showResolved: true, label: "Total", key: `${key}-total` })}
+            <div class="hint">How many dots to draw. Left as it is, a count of the same
+              entities without the filter, so "3 of 8 lights on" is one reading and one
+              total over one scope. At most ${GAUGE_MAX_DOTS} dots are drawn.</div>`
+          : html`
+            <div class="grid2">
+              ${numberField("Min", g.minValue, (v) => setGauge((p) => { p.minValue = v ?? 0; }, "min"), { def: base.minValue as number })}
+              ${numberField("Max", g.maxValue, (v) => setGauge((p) => { p.maxValue = v ?? 100; }, "max"), { def: base.maxValue as number })}
+            </div>`}`;
       look = html`
         <div class="grid2">
-          ${segField("Style", el.payload.style, [["arc", "Arc"], ["ring", "Ring"], ["bar", "Bar"]], (v) => upd((e) => { (e as typeof el).payload.style = v; }),
-            { titles: { arc: "A 270° arc, open at the bottom", ring: "A full circle", bar: "A straight bar" }, def: base.style as typeof el.payload.style })}
-          ${shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5, def: baseSize("lineWidth") })}
+          ${segField("Style", g.style, GAUGE_STYLES, (v) => setGauge((p) => {
+            // A dot gauge needs a count, and the useful one is nearly always the
+            // reading's own scope without its filter. Seeded on the way in and
+            // dropped on the way out, so a ring never carries a key nothing reads.
+            if (v === "dots" && p.total === undefined) p.total = seedGaugeTotal(p);
+            if (v !== "dots") delete p.total;
+            p.style = v;
+          }), { titles: GAUGE_STYLE_TITLES, def: base.style as typeof g.style })}
+          ${dots ? nothing : shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5, def: baseSize("lineWidth") })}
         </div>
-        ${colorField("Track colour", el.payload.trackColorHex, (v) => upd((e) => { (e as typeof el).payload.trackColorHex = v ?? "#FFFFFF40"; }, "track"), false, base.trackColorHex as string)}`;
+        ${colorField(dots ? "Empty dot colour" : "Track colour", g.trackColorHex, (v) => setGauge((p) => { p.trackColorHex = v ?? "#FFFFFF40"; }, "track"), false, base.trackColorHex as string)}
+        ${segField("Colour", g.coloring, CHART_COLORINGS, (v) => setGauge((p) => {
+          p.coloring = v;
+          if (v === "bands" && p.bands.length === 0) p.bands = seedBands([p.minValue, p.maxValue]);
+        }), { def: base.coloring as typeof g.coloring })}
+        ${g.coloring === "bands" ? html`
+          <div class="hint">Checked lowest first, so each row only says where it ends. The
+            gauge takes the colour of the row its reading falls in, and a reading past the
+            last row takes the colour underneath.</div>
+          ${bandTableFields(g, g.colorSlot.baseColorHex, setGauge)}`
+          : nothing}
+        ${dots ? nothing : html`
+          <div class="grid2">
+            ${numberField("Threshold", g.thresholdValue, (v) => setGauge((p) => {
+              if (v === undefined) delete p.thresholdValue; else p.thresholdValue = v;
+            }, "thr"), { optional: true })}
+            ${g.thresholdValue === undefined ? nothing
+              : colorField("Threshold colour", g.thresholdColorHex, (v) => setGauge((p) => { p.thresholdColorHex = v ?? GAUGE_DEFAULT_THRESHOLD_HEX; }, "thrcol"), false, GAUGE_DEFAULT_THRESHOLD_HEX)}
+          </div>
+          <div class="hint">A short tick on the scale at that value, so the fill reads
+            against a target instead of on its own. A value outside Min to Max draws
+            nothing. Leave it empty for no mark.</div>`}`;
       break;
+    }
     case "chart": {
       const c = el.payload;
       const setChart = (m: (p: ChartElement) => void, k?: string) => upd((e) => m((e as typeof el).payload), k);
@@ -1892,6 +2012,14 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       // a lone number from a plain sensor is exactly the shape that says the
       // author wanted history and did not know to ask for it.
       const suggestHistory = !usingHistory && namesEntity && series.length === 1;
+
+      // Two series on one plot is two chart layers on one frame, the second
+      // borrowing the first's range. So the picker lists the other charts in
+      // the document, and the button below makes one.
+      const otherCharts = host.config.elements.filter(
+        (e): e is Extract<CElement, { kind: "chart" }> => e.kind === "chart" && e.payload.id !== id);
+      const chartCtx = describeContext(host);
+      const borrowed = c.scaleFrom !== undefined && otherCharts.some((e) => e.payload.id === c.scaleFrom);
 
       content = html`
         ${valueEditor(host, c.value, (v) => setChart((p) => { p.value = v; }, "value"),
@@ -2005,7 +2133,15 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
             { titles: { auto: "The plot stretches to fit the readings it has", fixed: "The plot always runs from Min to Max" }, def: base.scale as typeof c.scale })}
           ${segField("Baseline", c.baseline, CHART_BASELINES, (v) => setChart((p) => { p.baseline = v; }), { def: base.baseline as typeof c.baseline })}
         </div>
-        ${c.scale === "fixed"
+        ${otherCharts.length === 0 ? nothing : selectField("Same scale as", borrowed ? c.scaleFrom! : "",
+          [["", "Its own"] as [string, string], ...otherCharts.map((e): [string, string] => [e.payload.id, layerTitle(e, chartCtx)])],
+          (v) => setChart((p) => { if (v) p.scaleFrom = v; else delete p.scaleFrom; }), { def: "" })}
+        ${borrowed
+          ? html`<div class="hint">This chart is drawn against that one's range, so the two read as one
+              plot. Give them the same frame and each keeps its own readings, colour, style and
+              numbers. Scale, Min and Max above are ignored while a chart is picked here.</div>`
+          : nothing}
+        ${!borrowed && c.scale === "fixed"
           ? html`<div class="grid2">
               ${numberField("Min", c.minValue, (v) => setChart((p) => { p.minValue = v ?? 0; }, "cmin"), { def: base.minValue as number })}
               ${numberField("Max", c.maxValue, (v) => setChart((p) => { p.maxValue = v ?? 100; }, "cmax"), { def: base.maxValue as number })}
@@ -2014,6 +2150,13 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         <div class="hint">${c.baseline === "zero"
           ? "Bars grow from where zero falls, so a negative reading hangs below the line."
           : "Bars grow from the bottom, and the smallest reading keeps a visible stub. Switch to Zero when the readings can go negative."}</div>
+        <button class="small" title="Add a second chart layer on this frame, drawn against this chart's range"
+          @click=${() => {
+            let made: string | undefined;
+            host.update((cfg) => { made = addChartSeries(cfg, id); });
+            if (made) host.selectLayer(made);
+          }}>
+          ${uiIcon("plus")}<span>Second series</span></button>
         ${segField("Colour", c.coloring, CHART_COLORINGS, (v) => setChart((p) => {
           p.coloring = v;
           if (v === "bands" && p.bands.length === 0) p.bands = seedBands(shown);
@@ -2024,18 +2167,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
             ${c.style === "bars"
               ? "Each bar is coloured on its own value."
               : "A stroke cannot change colour halfway, so each leg of the line takes the band of the reading it arrives at."}</div>
-          ${c.bands.map((band, i) => html`
-            <div class="row-inline">
-              ${numberField("Up to", band.upTo,
-                (v) => setChart((p) => { const b = p.bands[i]; if (b) b.upTo = v ?? 0; }, `bup${band.id}`))}
-              ${colorField("Colour", band.colorHex,
-                (v) => setChart((p) => { const b = p.bands[i]; if (b) b.colorHex = v ?? "#FFFFFF"; }, `bcol${band.id}`))}
-              <button class="icon" title="Remove this band" aria-label="Remove this band"
-                @click=${() => setChart((p) => { p.bands = p.bands.filter((_, j) => j !== i); })}>${uiIcon("close")}</button>
-            </div>`)}
-          <button class="small" @click=${() => setChart((p) => { p.bands = [...p.bands, nextBand(p)]; })}>Add band</button>
-          ${colorField("And the rest", c.bandAboveColorHex,
-            (v) => setChart((p) => { p.bandAboveColorHex = v ?? CHART_DEFAULT_BAND_HIGH_HEX; }, "babove"), false, CHART_DEFAULT_BAND_HIGH_HEX)}
+          ${bandTableFields(c, c.colorSlot.baseColorHex, setChart)}
           ${c.style === "area"
             ? html`${checkField("Fill follows the bands", c.fillBands,
                 (v) => setChart((p) => { p.fillBands = v; }), base.fillBands as boolean)}
@@ -2057,16 +2189,45 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
               : colorField("Lowest colour", c.lowColorHex, (v) => setChart((p) => { p.lowColorHex = v ?? CHART_DEFAULT_LOW_HEX; }, "locol"), false, CHART_DEFAULT_LOW_HEX)}
           </div>
           <div class="hint">A marker is worth keeping on: most watch faces tint a complication into one colour,
-            which flattens the two colours into each other, and the marker shape is what survives that.</div>`}`;
+            which flattens the two colours into each other, and the marker shape is what survives that.</div>`}
+        ${checkField("Threshold line", c.thresholdValue !== undefined, (v) => setChart((p) => {
+          if (v) p.thresholdValue = seedThreshold(shown);
+          else delete p.thresholdValue;
+        }))}
+        ${c.thresholdValue === undefined ? nothing : html`
+          <div class="grid2">
+            ${numberField("At", c.thresholdValue, (v) => setChart((p) => { p.thresholdValue = v ?? 0; }, "thval"))}
+            ${colorField("Line colour", c.thresholdColorHex,
+              (v) => setChart((p) => { p.thresholdColorHex = v ?? CHART_DEFAULT_THRESHOLD_HEX; }, "thcol"), false, CHART_DEFAULT_THRESHOLD_HEX)}
+          </div>
+          <div class="hint">${c.scale === "fixed"
+            ? "A threshold outside Min and Max draws nothing: the plot keeps the range you asked for."
+            : "The plot stretches to include the line, so a series that never reaches it still shows how far off it is."}</div>`}
+        ${checkField("“Now” marker", c.nowIndex !== undefined, (v) => setChart((p) => {
+          if (v) p.nowIndex = { kind: { kind: "time", timeField: "hour" } };
+          else delete p.nowIndex;
+        }))}
+        ${c.nowIndex === undefined ? nothing : html`
+          ${valueEditor(host, c.nowIndex, (v) => setChart((p) => { p.nowIndex = v; }, "nowidx"),
+            { showResolved: true, label: "Reading number", key: `${key}-nowindex` })}
+          ${colorField("Marker colour", c.nowColorHex,
+            (v) => setChart((p) => { p.nowColorHex = v ?? CHART_DEFAULT_NOW_HEX; }, "nowcol"), false, CHART_DEFAULT_NOW_HEX)}
+          <div class="hint">Counted from 0, so Hour puts the line on reading 14 at 2 pm, which is what a
+            24-reading price or forecast chart wants. Rounded, and clamped to the readings drawn.</div>`}`;
       break;
     }
     case "shape":
       content = html`<div class="grid2">
-          ${segField("Shape", el.payload.kind, [["roundedRectangle", "Rounded"], ["rectangle", "Rectangle"], ["capsule", "Capsule"], ["circle", "Circle"]], (v) => upd((e) => { (e as typeof el).payload.kind = v; }),
-            { titles: { roundedRectangle: "Rounded rectangle" }, def: base.kind as typeof el.payload.kind })}
+          ${segField("Shape", el.payload.kind, [["roundedRectangle", "Rounded"], ["rectangle", "Rectangle"], ["capsule", "Capsule"], ["circle", "Circle"], ["line", "Line"]], (v) => upd((e) => { (e as typeof el).payload.kind = v; }),
+            { titles: { roundedRectangle: "Rounded rectangle", line: "A rule along the frame's long side" }, def: base.kind as typeof el.payload.kind })}
           ${el.payload.kind === "roundedRectangle" ? numberField("Corner radius (pt)", el.payload.cornerRadius, (v) => upd((e) => { (e as typeof el).payload.cornerRadius = v ?? 6; }, "radius"), { step: 0.5, min: 0, def: base.cornerRadius as number }) : nothing}
-        </div>`;
-      look = html`
+        </div>
+        ${el.payload.kind === "line" ? html`<div class="hint">A line runs along the frame's long side. Make the frame taller than it is wide, or rotate it in Place, for a divider standing up.</div>` : nothing}`;
+      // A line has no border and no corners: its colour is the whole drawing, so
+      // the Look card offers its thickness instead.
+      look = el.payload.kind === "line"
+        ? numberField("Thickness (pt)", el.payload.thickness, (v) => upd((e) => { (e as typeof el).payload.thickness = v ?? 1; }, "thick"), { step: 0.5, min: 0.5, def: base.thickness as number })
+        : html`
         ${colorField("Border colour", el.payload.borderColorHex, (v) => upd((e) => { if (v === undefined) delete (e as typeof el).payload.borderColorHex; else (e as typeof el).payload.borderColorHex = v; }, "border"), true, null)}
         ${el.payload.borderColorHex !== undefined ? numberField("Border width (pt)", el.payload.borderWidth, (v) => upd((e) => { (e as typeof el).payload.borderWidth = v ?? 1; }, "bw"), { step: 0.5, min: 0, def: base.borderWidth as number }) : nothing}`;
       break;
@@ -2182,7 +2343,7 @@ const TIMESTAMP_KEYS = ["timestamp", "timestampCorner", "timestampSize"] as cons
 const CONTENT_KEYS: Record<CElement["kind"], readonly string[]> = {
   text: ["value", "countdown"],
   icon: ["symbol"],
-  gauge: ["value", "minValue", "maxValue"],
+  gauge: ["value", "minValue", "maxValue", "total"],
   chart: ["value", "historyMinutes", "historyPoints", "limit", "takeFromEnd"],
   shape: ["kind", "cornerRadius"],
   image: ["entity"],
@@ -2193,9 +2354,9 @@ const CONTENT_KEYS: Record<CElement["kind"], readonly string[]> = {
 const LOOK_KEYS: Record<CElement["kind"], readonly string[]> = {
   text: ["fontSize", "fontWeight", "colorSlot"],
   icon: ["size", "colorSlot"],
-  gauge: ["style", "lineWidth", "trackColorHex", "colorSlot"],
-  chart: ["style", "scale", "minValue", "maxValue", "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker", "coloring", "bands", "bandAboveColorHex", "fillBands", "colorSlot"],
-  shape: ["colorSlot", "borderColorHex", "borderWidth"],
+  gauge: ["style", "lineWidth", "trackColorHex", "colorSlot", "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex"],
+  chart: ["style", "scale", "minValue", "maxValue", "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker", "coloring", "bands", "bandAboveColorHex", "fillBands", "thresholdValue", "thresholdColorHex", "nowIndex", "nowColorHex", "scaleFrom", "colorSlot"],
+  shape: ["colorSlot", "borderColorHex", "borderWidth", "thickness"],
   image: ["contentMode", "zoom", "panX", "panY", "cornerRadius"],
   tap: [],
 };
@@ -2589,6 +2750,7 @@ export function describeFormat(format: ValueFormat | undefined): string {
   if (format.suffix) bits.push(`"${format.suffix}" after`);
   if (format.useEntityUnit) bits.push("with unit");
   if (format.relativeTime) bits.push("as relative time");
+  if (format.duration) bits.push("as a duration");
   if (format.textCase) bits.push(format.textCase === "capitalized" ? "Capitalized" : format.textCase === "upper" ? "UPPER" : "lower");
   return bits.length === 0 ? "" : ` (${bits.join(", ")})`;
 }

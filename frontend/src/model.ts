@@ -73,7 +73,7 @@ export function schemaVersionFor(cfg: Pick<CustomComplicationConfig, "slotIndex"
 export type FontWeight = "regular" | "medium" | "semibold" | "bold";
 export type TextCase = "upper" | "lower" | "capitalized";
 export type TimeField = "now" | "hour" | "minute" | "weekday" | "day" | "month" | "timestamp";
-export type GaugeStyle = "ring" | "arc" | "bar";
+export type GaugeStyle = "ring" | "arc" | "bar" | "dots";
 export type ChartStyle = "bars" | "line" | "area";
 export type ChartScale = "auto" | "fixed";
 export type ChartBaseline = "lowest" | "zero";
@@ -94,7 +94,7 @@ export const CHART_STATS: readonly [ChartStat, string][] = [
   ["top", "Top of the scale"],
   ["bottom", "Bottom of the scale"],
 ];
-export type ShapeKind = "rectangle" | "roundedRectangle" | "capsule" | "circle";
+export type ShapeKind = "rectangle" | "roundedRectangle" | "capsule" | "circle" | "line";
 export type CornerBodyShape = "circle" | "wedge";
 export type AggregateFunction = "count" | "sum" | "average" | "min" | "max";
 
@@ -113,6 +113,10 @@ export interface ValueFormat {
   suffix?: string;
   useEntityUnit?: boolean;
   relativeTime?: boolean;
+  /** Read the value as a length of time and print its two largest non-zero units
+   * ("1h 23m"). Exclusive with `relativeTime`, and applied first if a document
+   * somehow carries both. */
+  duration?: boolean;
   textCase?: TextCase;
 }
 
@@ -289,7 +293,27 @@ export interface GaugeElement extends ElementBase {
   style: GaugeStyle;
   lineWidth: number;
   trackColorHex: string;
+  /** Whether the gauge draws in one colour or takes the colour of the band its
+   * reading falls in. Shares the chart's table type, because a gauge asks the
+   * same question of one reading that a chart asks of each of a hundred. */
+  coloring: ChartColoring;
+  /** The colour table, lowest step first. Empty means there is nothing to say
+   * and the gauge stays one colour. */
+  bands: ChartBand[];
+  /** Colour of a reading past the last band. */
+  bandAboveColorHex: string;
+  /** A value to mark on the scale, or absent for no mark. */
+  thresholdValue?: number;
+  thresholdColorHex: string;
+  /** How many dots a `dots` gauge draws, when the count is not the range itself.
+   * Absent means `maxValue - minValue`. Ignored by every other style. */
+  total?: Value;
 }
+
+export const GAUGE_DEFAULT_THRESHOLD_HEX = "#FFFFFF";
+/** More dots than this stop being countable at complication size. Mirrors
+ * `GaugeElement.maximumDots` in Swift. */
+export const GAUGE_MAX_DOTS = 24;
 
 /** A miniature chart of several readings.
  *
@@ -342,6 +366,26 @@ export interface ChartElement extends ElementBase {
   bandAboveColorHex: string;
   /** Whether an area chart's fill follows the bands too. */
   fillBands: boolean;
+  /** A dashed horizontal line across the plot at this value. Absent draws
+   * nothing. On an auto scale the domain grows to include it, so the line is
+   * always on the plot; on a fixed scale a threshold outside `minValue`…
+   * `maxValue` draws nothing, because that range was asked for on purpose. */
+  thresholdValue?: number;
+  thresholdColorHex: string;
+  /** Which reading "now" sits at, resolved to a number like any other value.
+   * That reading gets a vertical line. The obvious source is the built-in Hour
+   * on a 24-reading price or forecast chart; a Jinja value works for anything
+   * else. Rounded, then clamped into the series. */
+  nowIndex?: Value;
+  nowColorHex: string;
+  /** Another chart layer whose range this one is drawn against, instead of its
+   * own `scale`. Absent is the ordinary case and every chart before this.
+   *
+   * This is how two series share one plot: a second chart layer with the same
+   * frame, its own value, colour, style and bands, borrowing the first one's
+   * scale. A link to a chart that is not in the document, to this chart itself,
+   * or one that closes a cycle falls back to this chart's own scale. */
+  scaleFrom?: string;
   /* The chart draws marks and nothing else. Its numbers (the newest reading,
    * the ends of its range) are text layers with a `chartStat` value, kept in
    * the chart's layer group; see `addChartLabel`. The plot fills the whole
@@ -365,10 +409,15 @@ export const CHART_DEFAULT_HIGH_HEX = "#FF6B35";
 export const CHART_DEFAULT_LOW_HEX = "#32D74B";
 export const CHART_DEFAULT_BAND_LOW_HEX = "#32D74B";
 export const CHART_DEFAULT_BAND_HIGH_HEX = "#FF453A";
+/** Red, the colour a line worth crossing is drawn in everywhere else here. */
+export const CHART_DEFAULT_THRESHOLD_HEX = "#FF453A";
+/** White at 60% opacity: present enough to place "now" on the plot, faint
+ * enough that the readings stay the thing being read. */
+export const CHART_DEFAULT_NOW_HEX = "#FFFFFF99";
 
 /** The colour table in reading order, whatever order the author typed it in.
  * Mirrors `sortedBands` in Swift. */
-export function chartSortedBands(el: ChartElement): ChartBand[] {
+export function chartSortedBands(el: { bands: readonly ChartBand[] }): ChartBand[] {
   return [...el.bands].sort((a, b) => a.upTo - b.upTo);
 }
 
@@ -498,6 +547,9 @@ export function chartHistoryRequests(
 export interface ShapeElement extends ElementBase {
   kind: ShapeKind;
   cornerRadius: number;
+  /** Line thickness in watch points. Only read for the `line` kind, and encoded
+   * only when it is away from 1, so every other shape's bytes are unchanged. */
+  thickness: number;
   borderColorHex?: string;
   borderWidth: number;
 }
@@ -755,6 +807,7 @@ function parseFormat(o: unknown): ValueFormat | undefined {
   if (typeof o.suffix === "string") f.suffix = o.suffix;
   if (o.useEntityUnit === true) f.useEntityUnit = true;
   if (o.relativeTime === true) f.relativeTime = true;
+  if (o.duration === true) f.duration = true;
   if (o.textCase === "upper" || o.textCase === "lower" || o.textCase === "capitalized") f.textCase = o.textCase;
   return formatIsEmpty(f) ? undefined : f;
 }
@@ -769,6 +822,7 @@ export function formatIsEmpty(f: ValueFormat | undefined): boolean {
     !f.suffix &&
     !f.useEntityUnit &&
     !f.relativeTime &&
+    !f.duration &&
     f.textCase === undefined
   );
 }
@@ -942,13 +996,18 @@ function parseColorSlot(o: unknown, fallback: string): ColorSlot {
  * become two rows; "over upper" is what the table falls through to. A reading
  * sitting exactly on the lower bound moves from the middle colour to the low
  * one, which is the single value the two spellings disagree on. */
+function parseColorBands(raw: unknown): ChartBand[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(isObject).map((b) => ({
+    id: str(b.id, newId()),
+    upTo: num(b.upTo, 0),
+    colorHex: str(b.colorHex, "#FFFFFF"),
+  }));
+}
+
 function parseChartBands(p: J): ChartBand[] {
   if (Array.isArray(p.bands)) {
-    return p.bands.filter(isObject).map((b) => ({
-      id: str(b.id, newId()),
-      upTo: num(b.upTo, 0),
-      colorHex: str(b.colorHex, "#FFFFFF"),
-    }));
+    return parseColorBands(p.bands);
   }
   if (typeof p.bandLowerBound !== "number") return [];
   const slot = isObject(p.colorSlot) ? str(p.colorSlot.baseColorHex, "#FFFFFF") : "#FFFFFF";
@@ -999,19 +1058,25 @@ function parseElementKind(raw: unknown): Element {
           size: num(p.size, 14),
         },
       };
-    case "gauge":
-      return {
-        kind: "gauge",
-        payload: {
-          ...parseElementBase(p, "#FFFFFF"),
-          value: isObject(p.value) ? parseValue(p.value) : literal("50"),
-          minValue: num(p.minValue, 0),
-          maxValue: num(p.maxValue, 100),
-          style: (optStr(p.style) as GaugeStyle | undefined) ?? "arc",
-          lineWidth: num(p.lineWidth, 4),
-          trackColorHex: str(p.trackColorHex, "#FFFFFF40"),
-        },
+    case "gauge": {
+      const el: GaugeElement = {
+        ...parseElementBase(p, "#FFFFFF"),
+        value: isObject(p.value) ? parseValue(p.value) : literal("50"),
+        minValue: num(p.minValue, 0),
+        maxValue: num(p.maxValue, 100),
+        style: (optStr(p.style) as GaugeStyle | undefined) ?? "arc",
+        lineWidth: num(p.lineWidth, 4),
+        trackColorHex: str(p.trackColorHex, "#FFFFFF40"),
+        coloring: (optStr(p.coloring) as ChartColoring | undefined) ?? "uniform",
+        bands: parseColorBands(p.bands),
+        bandAboveColorHex: str(p.bandAboveColorHex, CHART_DEFAULT_BAND_HIGH_HEX),
+        thresholdColorHex: str(p.thresholdColorHex, GAUGE_DEFAULT_THRESHOLD_HEX),
       };
+      const threshold = optNum(p.thresholdValue);
+      if (threshold !== undefined) el.thresholdValue = threshold;
+      if (isObject(p.total)) el.total = parseValue(p.total);
+      return { kind: "gauge", payload: el };
+    }
     case "chart":
       return {
         kind: "chart",
@@ -1037,6 +1102,13 @@ function parseElementKind(raw: unknown): Element {
           bands: parseChartBands(p),
           bandAboveColorHex: str(p.bandHighColorHex, str(p.bandAboveColorHex, CHART_DEFAULT_BAND_HIGH_HEX)),
           fillBands: p.fillBands === true,
+          ...(typeof p.thresholdValue === "number" && Number.isFinite(p.thresholdValue)
+            ? { thresholdValue: p.thresholdValue }
+            : {}),
+          thresholdColorHex: str(p.thresholdColorHex, CHART_DEFAULT_THRESHOLD_HEX),
+          ...(isObject(p.nowIndex) ? { nowIndex: parseValue(p.nowIndex) } : {}),
+          nowColorHex: str(p.nowColorHex, CHART_DEFAULT_NOW_HEX),
+          ...(optStr(p.scaleFrom) !== undefined ? { scaleFrom: optStr(p.scaleFrom)! } : {}),
         },
       };
     case "shape": {
@@ -1044,6 +1116,7 @@ function parseElementKind(raw: unknown): Element {
         ...parseElementBase(p, "#FFFFFF33"),
         kind: (optStr(p.kind) as ShapeKind | undefined) ?? "roundedRectangle",
         cornerRadius: num(p.cornerRadius, 6),
+        thickness: num(p.thickness, 1),
         borderWidth: num(p.borderWidth, 1),
       };
       if (typeof p.borderColorHex === "string") el.borderColorHex = p.borderColorHex;
@@ -1410,6 +1483,7 @@ function encodeFormat(f: ValueFormat): J {
   if (f.suffix) o.suffix = f.suffix;
   if (f.useEntityUnit) o.useEntityUnit = true;
   if (f.relativeTime) o.relativeTime = true;
+  if (f.duration) o.duration = true;
   if (f.textCase !== undefined) o.textCase = f.textCase;
   return o;
 }
@@ -1537,49 +1611,68 @@ function encodeElementKind(el: Element): J {
     }
     case "icon":
       return { kind: "icon", payload: { ...base(el.payload), symbol: encodeValue(el.payload.symbol), size: encNum(el.payload.size) } };
-    case "gauge":
-      return {
-        kind: "gauge",
-        payload: {
-          ...base(el.payload),
-          value: encodeValue(el.payload.value),
-          minValue: encNum(el.payload.minValue),
-          maxValue: encNum(el.payload.maxValue),
-          style: el.payload.style,
-          lineWidth: encNum(el.payload.lineWidth),
-          trackColorHex: el.payload.trackColorHex,
-        },
+    case "gauge": {
+      const g = el.payload;
+      const o: J = {
+        ...base(g),
+        value: encodeValue(g.value),
+        minValue: encNum(g.minValue),
+        maxValue: encNum(g.maxValue),
+        style: g.style,
+        lineWidth: encNum(g.lineWidth),
+        trackColorHex: g.trackColorHex,
       };
-    case "chart":
-      return {
-        kind: "chart",
-        payload: {
-          ...base(el.payload),
-          value: encodeValue(el.payload.value),
-          historyMinutes: Math.max(0, Math.round(el.payload.historyMinutes)),
-          historyPoints: Math.round(el.payload.historyPoints),
-          style: el.payload.style,
-          limit: Math.max(0, Math.round(el.payload.limit)),
-          takeFromEnd: el.payload.takeFromEnd,
-          scale: el.payload.scale,
-          minValue: encNum(el.payload.minValue),
-          maxValue: encNum(el.payload.maxValue),
-          baseline: el.payload.baseline,
-          barGap: encNum(el.payload.barGap),
-          lineWidth: encNum(el.payload.lineWidth),
-          highlight: el.payload.highlight,
-          highColorHex: el.payload.highColorHex,
-          lowColorHex: el.payload.lowColorHex,
-          marker: el.payload.marker,
-          coloring: el.payload.coloring,
-          bands: el.payload.bands.map((b) => ({ id: b.id, upTo: encNum(b.upTo), colorHex: b.colorHex })),
-          bandAboveColorHex: el.payload.bandAboveColorHex,
-          fillBands: el.payload.fillBands,
-        },
+      // Same order and same "only when it differs" rule as the app's encoder, so
+      // a gauge authored before the colour table writes the bytes it always did.
+      if (g.coloring !== "uniform") o.coloring = g.coloring;
+      if (g.bands.length > 0) o.bands = g.bands.map((b) => ({ id: b.id, upTo: encNum(b.upTo), colorHex: b.colorHex }));
+      if (g.bandAboveColorHex !== CHART_DEFAULT_BAND_HIGH_HEX) o.bandAboveColorHex = g.bandAboveColorHex;
+      if (g.thresholdValue !== undefined) o.thresholdValue = encNum(g.thresholdValue);
+      if (g.thresholdColorHex !== GAUGE_DEFAULT_THRESHOLD_HEX) o.thresholdColorHex = g.thresholdColorHex;
+      if (g.total !== undefined) o.total = encodeValue(g.total);
+      return { kind: "gauge", payload: o };
+    }
+    case "chart": {
+      const c = el.payload;
+      const o: J = {
+        ...base(c),
+        value: encodeValue(c.value),
+        historyMinutes: Math.max(0, Math.round(c.historyMinutes)),
+        historyPoints: Math.round(c.historyPoints),
+        style: c.style,
+        limit: Math.max(0, Math.round(c.limit)),
+        takeFromEnd: c.takeFromEnd,
+        scale: c.scale,
+        minValue: encNum(c.minValue),
+        maxValue: encNum(c.maxValue),
+        baseline: c.baseline,
+        barGap: encNum(c.barGap),
+        lineWidth: encNum(c.lineWidth),
+        highlight: c.highlight,
+        highColorHex: c.highColorHex,
+        lowColorHex: c.lowColorHex,
+        marker: c.marker,
+        coloring: c.coloring,
+        bands: c.bands.map((b) => ({ id: b.id, upTo: encNum(b.upTo), colorHex: b.colorHex })),
+        bandAboveColorHex: c.bandAboveColorHex,
+        fillBands: c.fillBands,
       };
+      // The marks a chart can add over its plot, all omitted at their defaults so a
+      // document that draws neither line is byte for byte what it always was. Same
+      // order and same rule as the app's encoder.
+      if (c.thresholdValue !== undefined) o.thresholdValue = encNum(c.thresholdValue);
+      if (c.thresholdColorHex !== CHART_DEFAULT_THRESHOLD_HEX) o.thresholdColorHex = c.thresholdColorHex;
+      if (c.nowIndex !== undefined) o.nowIndex = encodeValue(c.nowIndex);
+      if (c.nowColorHex !== CHART_DEFAULT_NOW_HEX) o.nowColorHex = c.nowColorHex;
+      if (c.scaleFrom !== undefined) o.scaleFrom = c.scaleFrom;
+      return { kind: "chart", payload: o };
+    }
     case "shape": {
       const o: J = { ...base(el.payload), kind: el.payload.kind, cornerRadius: encNum(el.payload.cornerRadius), borderWidth: encNum(el.payload.borderWidth) };
       if (el.payload.borderColorHex !== undefined) o.borderColorHex = el.payload.borderColorHex;
+      // Same "only when it differs" rule as the app's encoder, so a shape that is
+      // not a line writes exactly the bytes it always did.
+      if (el.payload.thickness !== 1) o.thickness = encNum(el.payload.thickness);
       return { kind: "shape", payload: o };
     }
     case "image": {
@@ -1812,7 +1905,7 @@ const K = {
   inline: ["label", "value", "symbol", "countdown"],
   named: ["id", "name", "value"],
   value: ["kind", "format"],
-  format: ["decimals", "multiply", "offset", "prefix", "suffix", "useEntityUnit", "relativeTime", "textCase"],
+  format: ["decimals", "multiply", "offset", "prefix", "suffix", "useEntityUnit", "relativeTime", "duration", "textCase"],
   entityRef: ["entityId", "displayName", "domain", "iconName"],
   aggregate: ["function", "scope", "stateFilter", "attribute"],
   scope: ["kind", "entities", "domains", "areaIds", "labelIds", "floorIds"],
@@ -1822,10 +1915,12 @@ const K = {
   elementBase: ["id", "colorSlot", "rules", "frame", "isHidden", "groupId"],
   text: ["value", "fontSize", "fontWeight", "countdown"],
   icon: ["symbol", "size"],
-  gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex"],
+  gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex",
+    "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex", "total"],
   chart: ["value", "historyMinutes", "historyPoints", "style", "limit", "takeFromEnd", "scale", "minValue", "maxValue",
     "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker",
     "coloring", "bands", "bandAboveColorHex", "fillBands",
+    "thresholdValue", "thresholdColorHex", "nowIndex", "nowColorHex", "scaleFrom",
     // Written only on 2026-09-05. The band bounds are read forward by
     // `parseChartBands`; the built-in numbers are read forward by
     // `migrateChartLabels` into text layers. All still listed so a document
@@ -1834,7 +1929,7 @@ const K = {
     "scaleLabels", "scaleLabelPlacement", "latestLabel",
     "topLabelStyle", "bottomLabelStyle", "latestLabelStyle", "latestLabelFollowsBand",
     "scaleLabelColorHex"],
-  shape: ["kind", "cornerRadius", "borderColorHex", "borderWidth"],
+  shape: ["kind", "cornerRadius", "thickness", "borderColorHex", "borderWidth"],
   // `timestampStyle` is retired (the age style, built and removed 2026-09-04).
   // It stays listed so a document saved while it existed does not read as
   // corrupt; nothing decodes it, and it leaves the wire on that document's next
@@ -1962,7 +2057,7 @@ export function auditUnknownKeys(raw: unknown): string[] {
       check(e.payload.colorSlot, K.colorSlot, `${ep}.payload.colorSlot`);
       check(e.payload.frame, K.frame, `${ep}.payload.frame`);
       rules(e.payload.rules, `${ep}.payload.rules`);
-      for (const vk of ["value", "symbol"]) if (vk in e.payload) value(e.payload[vk], `${ep}.payload.${vk}`);
+      for (const vk of ["value", "symbol", "nowIndex", "total"]) if (vk in e.payload) value(e.payload[vk], `${ep}.payload.${vk}`);
       if (kind === "image") check(e.payload.entity, K.entityRef, `${ep}.payload.entity`);
       if (kind === "tap") check(e.payload.action, K.tapAction, `${ep}.payload.action`);
     });
@@ -2051,12 +2146,12 @@ export function newElement(kind: Element["kind"]): Element {
   switch (kind) {
     case "text": return { kind, payload: { ...base("#FFFFFF"), value: literal("Text"), fontSize: 14, fontWeight: "regular" } };
     case "icon": return { kind, payload: { ...base("#FFFFFF"), symbol: literal("lightbulb"), size: 14 } };
-    case "gauge": return { kind, payload: { ...base("#FFFFFF"), value: literal("50"), minValue: 0, maxValue: 100, style: "arc", lineWidth: 4, trackColorHex: "#FFFFFF40" } };
+    case "gauge": return { kind, payload: { ...base("#FFFFFF"), value: literal("50"), minValue: 0, maxValue: 100, style: "arc", lineWidth: 4, trackColorHex: "#FFFFFF40", coloring: "uniform", bands: [], bandAboveColorHex: CHART_DEFAULT_BAND_HIGH_HEX, thresholdColorHex: GAUGE_DEFAULT_THRESHOLD_HEX } };
     // A new chart is set to draw history: nearly every chart is of a plain
     // sensor, and a plain sensor's own value is one bar. Until an entity is
     // named the sample list draws instead, so the layer is never blank.
-    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: CHART_HISTORY_DEFAULT_MINUTES, historyPoints: 24, style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "pointer", coloring: "uniform", bands: [], bandAboveColorHex: CHART_DEFAULT_BAND_HIGH_HEX, fillBands: false } };
-    case "shape": return { kind, payload: { ...base("#FFFFFF33"), kind: "roundedRectangle", cornerRadius: 6, borderWidth: 1 } };
+    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: CHART_HISTORY_DEFAULT_MINUTES, historyPoints: 24, style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "pointer", coloring: "uniform", bands: [], bandAboveColorHex: CHART_DEFAULT_BAND_HIGH_HEX, fillBands: false, thresholdColorHex: CHART_DEFAULT_THRESHOLD_HEX, nowColorHex: CHART_DEFAULT_NOW_HEX } };
+    case "shape": return { kind, payload: { ...base("#FFFFFF33"), kind: "roundedRectangle", cornerRadius: 6, thickness: 1, borderWidth: 1 } };
     case "image": {
       const { colorSlot: _unused, ...b } = base("#FFFFFF");
       return {
@@ -2522,6 +2617,12 @@ export function removeElement(cfg: CustomComplicationConfig, id: string): void {
   for (const label of chartLabelsOf(cfg, id)) removeElement(cfg, label.payload.id);
   detachTaps(cfg, id);
   cfg.elements = cfg.elements.filter((el) => el.payload.id !== id);
+  // A chart that borrowed the deleted one's scale goes back to its own. The
+  // resolver falls back anyway, but a link to nothing left in the document would
+  // sit in the picker as a name nobody can see.
+  for (const el of cfg.elements) {
+    if (el.kind === "chart" && el.payload.scaleFrom === id) delete el.payload.scaleFrom;
+  }
   for (const family of DRAWABLE_FAMILIES) delete cfg.perFamily[family]?.placements[id];
   syncAttachedTaps(cfg);
   pruneGroups(cfg);
@@ -2560,6 +2661,35 @@ export function duplicateElement(cfg: CustomComplicationConfig, id: string): str
     }
   }
   syncAttachedTaps(cfg);
+  return copyId;
+}
+
+/**
+ * A second series over an existing chart: a copy of it directly above, on the
+ * exact same frame and every per-shape placement, drawn against the original's
+ * scale. Returns the copy's id.
+ *
+ * Not `duplicateElement`. A duplicate nudges the copy so it is visible and
+ * keeps its own scale, which is right for every other layer and wrong here:
+ * two series only read as one plot when they sit on the same rectangle and
+ * share one range. The copy keeps its own colour, style, bands and stats, and
+ * its numbers are not copied, because a second set of numbers on the same spot
+ * is noise the author has to move before reading either.
+ */
+export function addChartSeries(cfg: CustomComplicationConfig, chartId: string): string | undefined {
+  const index = cfg.elements.findIndex((el) => el.payload.id === chartId);
+  const src = cfg.elements[index];
+  if (!src || src.kind !== "chart") return undefined;
+  const copyId = newId();
+  const copy = structuredClone(src);
+  copy.payload.id = copyId;
+  copy.payload.scaleFrom = chartId;
+  cfg.elements.splice(index + 1, 0, copy);
+  for (const family of DRAWABLE_FAMILIES) {
+    const layout = cfg.perFamily[family];
+    const p = layout?.placements[chartId];
+    if (layout && p) layout.placements[copyId] = structuredClone(p);
+  }
   return copyId;
 }
 
@@ -2683,6 +2813,14 @@ export function pasteElements(cfg: CustomComplicationConfig, clip: LayerClip): s
       const owner = idMap.get(copy.payload.attachedTo);
       if (owner) copy.payload.attachedTo = owner;
       else delete copy.payload.attachedTo;
+    }
+    // A borrowed scale follows the copy when the chart it borrowed from came
+    // along, stays pointed at the original when that original is still here,
+    // and is dropped when it is neither.
+    if (copy.kind === "chart" && copy.payload.scaleFrom !== undefined) {
+      const source = idMap.get(copy.payload.scaleFrom);
+      if (source) copy.payload.scaleFrom = source;
+      else if (!here.has(copy.payload.scaleFrom)) delete copy.payload.scaleFrom;
     }
     if (copy.kind === "text" && copy.payload.value.kind.kind === "chartStat") {
       const chart = idMap.get(copy.payload.value.kind.layer);

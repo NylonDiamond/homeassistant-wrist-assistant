@@ -94,13 +94,15 @@ function sample(kind: LayerKind): TemplateResult {
           stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
         <circle cx="60" cy="8" r="2.6" fill="var(--k)" />
       </g>`;
-    // The three shapes a shape layer can be, outlined rather than filled so a
-    // border-only shape is as visible here as a solid one.
+    // The shapes a shape layer can be, outlined rather than filled so a
+    // border-only shape is as visible here as a solid one. The bar is the line
+    // kind, which is what a divider between two readings is.
     case "shape":
       return svg`<g fill="none" stroke="var(--k)" stroke-width="2">
-        <rect x="8" y="12" width="26" height="22" rx="6" fill="var(--k)" fill-opacity=".18" />
-        <circle cx="60" cy="23" r="11" />
-        <rect x="80" y="16" width="32" height="14" rx="7" stroke-dasharray="3 3" opacity=".7" />
+        <rect x="6" y="12" width="26" height="22" rx="6" fill="var(--k)" fill-opacity=".18" />
+        <rect x="40" y="11" width="2.5" height="24" fill="var(--k)" stroke="none" />
+        <circle cx="63" cy="23" r="11" />
+        <rect x="83" y="16" width="31" height="14" rx="7" stroke-dasharray="3 3" opacity=".7" />
       </g>`;
     // A framed photo: the sun and the hills say "picture" faster than a frame
     // on its own does.

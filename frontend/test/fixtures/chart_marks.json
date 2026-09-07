@@ -1,0 +1,443 @@
+{
+  "name": "Chart marks",
+  "description": "The two marks a chart draws over its plot rather than on a reading, and the scale one chart borrows from another. The inside layer sets a threshold of 25 above its own readings, so an auto scale grows to 18...25 and the line lands on the top edge; that grown range is what pins the growth. The outside layer draws its own readings against the inside layer's range through `scaleFrom`, which is how two series share one plot, and its own threshold of 20 is placed on the borrowed range rather than on the 3...14 it would have had alone. Its `nowIndex` of 9 is clamped to the last of six readings. The fixed layer's threshold of 50 falls outside the range it asked for, so no line is drawn and `thresholdY` is absent. The last four layers are the ways a link can be wrong: one points at a chart the document does not have, two point at each other, and one points at itself. All four fall back to a chart's own scale, and the cycle pair settles in document order, so the first of the two ends up on the second's range and the second on its own.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-0000000000D0",
+    "name": "Chart marks",
+    "slotIndex": 2,
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D1",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.temp_in",
+              "displayName": "Inside",
+              "domain": "sensor"
+            }
+          },
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "style": "line",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "pointer",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "thresholdValue": 25,
+          "nowIndex": {
+            "kind": {
+              "kind": "literal",
+              "value": "3"
+            }
+          },
+          "colorSlot": {
+            "baseColorHex": "#FF9F0A"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.3,
+            "width": 0.9,
+            "height": 0.5,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D2",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.temp_out",
+              "displayName": "Outside",
+              "domain": "sensor"
+            }
+          },
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "style": "line",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "pointer",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "thresholdValue": 20,
+          "thresholdColorHex": "#5AC8FA",
+          "nowIndex": {
+            "kind": {
+              "kind": "literal",
+              "value": "9"
+            }
+          },
+          "nowColorHex": "#FFFFFF",
+          "scaleFrom": "EEEEEEEE-0000-4000-8000-0000000000D1",
+          "colorSlot": {
+            "baseColorHex": "#64D2FF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.3,
+            "width": 0.9,
+            "height": 0.5,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D3",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "1,2,3"
+            }
+          },
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "style": "bars",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "fixed",
+          "minValue": 0,
+          "maxValue": 10,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "pointer",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "thresholdValue": 50,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.05,
+            "width": 0.4,
+            "height": 0.2,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D4",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "40,60"
+            }
+          },
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "style": "bars",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "pointer",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "scaleFrom": "EEEEEEEE-0000-4000-8000-0000000000DF",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.55,
+            "y": 0.05,
+            "width": 0.4,
+            "height": 0.2,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D5",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "100,200"
+            }
+          },
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "style": "bars",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "pointer",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "scaleFrom": "EEEEEEEE-0000-4000-8000-0000000000D6",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.82,
+            "width": 0.28,
+            "height": 0.16,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D6",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "1,3"
+            }
+          },
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "style": "bars",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "pointer",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "scaleFrom": "EEEEEEEE-0000-4000-8000-0000000000D5",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.36,
+            "y": 0.82,
+            "width": 0.28,
+            "height": 0.16,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D7",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "7,9"
+            }
+          },
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "style": "bars",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "pointer",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "scaleFrom": "EEEEEEEE-0000-4000-8000-0000000000D7",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.67,
+            "y": 0.82,
+            "width": 0.28,
+            "height": 0.16,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "wedge",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {
+      "sensor.temp_in": {
+        "state": "18,19,21,23,22,20",
+        "domain": "sensor"
+      },
+      "sensor.temp_out": {
+        "state": "5,9,14,11,7,3",
+        "domain": "sensor"
+      }
+    },
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": [
+      "sensor.temp_in",
+      "sensor.temp_out"
+    ],
+    "expressionKeys": [],
+    "historyKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D1",
+          "kind": "chart",
+          "values": [18, 19, 21, 23, 22, 20],
+          "domainMin": 18,
+          "domainMax": 25,
+          "thresholdY": 1,
+          "thresholdColorHex": "#FF453A",
+          "nowIndex": 3,
+          "nowColorHex": "#FFFFFF99"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D2",
+          "kind": "chart",
+          "values": [5, 9, 14, 11, 7, 3],
+          "domainMin": 18,
+          "domainMax": 25,
+          "thresholdY": 0.2857142857142857,
+          "thresholdColorHex": "#5AC8FA",
+          "nowIndex": 5,
+          "nowColorHex": "#FFFFFF"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D3",
+          "kind": "chart",
+          "values": [1, 2, 3],
+          "domainMin": 0,
+          "domainMax": 10,
+          "thresholdY": null,
+          "nowIndex": null
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D4",
+          "kind": "chart",
+          "values": [40, 60],
+          "domainMin": 40,
+          "domainMax": 60,
+          "thresholdY": null,
+          "nowIndex": null
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D5",
+          "kind": "chart",
+          "values": [100, 200],
+          "domainMin": 1,
+          "domainMax": 3
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D6",
+          "kind": "chart",
+          "values": [1, 3],
+          "domainMin": 1,
+          "domainMax": 3
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000D7",
+          "kind": "chart",
+          "values": [7, 9],
+          "domainMin": 7,
+          "domainMax": 9
+        }
+      ]
+    }
+  }
+}

@@ -122,6 +122,10 @@ describe("describeFormat", () => {
     expect(describeFormat({ offset: 3 })).toBe(" (+3)");
   });
 
+  it("names a duration format", () => {
+    expect(describeFormat({ duration: true })).toBe(" (as a duration)");
+  });
+
   it("lists every part it was given", () => {
     expect(describeFormat({ decimals: 0, multiply: 2, prefix: "~", useEntityUnit: true, relativeTime: true, textCase: "upper" }))
       .toBe(' (0 dp, ×2, "~" first, with unit, as relative time, UPPER)');

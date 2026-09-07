@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { nothing } from "lit";
 import {
   addChartLabel,
+  addChartSeries,
   auditUnknownKeys,
   chartHistoryEntity,
   chartHistoryKey,
@@ -17,6 +18,7 @@ import {
   chartHistoryRequests,
   chartHistorySignature,
   chartLabelsOf,
+  copyElements,
   encodeConfig,
   groupMembers,
   groupOf,
@@ -24,6 +26,7 @@ import {
   newConfig,
   newElement,
   parseConfig,
+  pasteElements,
   removeElement,
   type ChartElement,
   type ChartStat,
@@ -798,5 +801,181 @@ describe("reading the built-in numbers forward", () => {
     expect(chart.scaleLabels).toBeUndefined();
     expect(chart.latestLabel).toBeUndefined();
     expect(chart.topLabelStyle).toBeUndefined();
+  });
+});
+
+// ── threshold and "now" ───────────────────────────────────────────────────
+//
+// The cases here mirror the "Threshold" and "Now marker" sections of
+// `CustomComplicationChartTests` in the app repo. The shared fixture
+// `chart_marks.json` pins the resolved output on both sides; these cover the
+// decisions around it, the drawing, and the wire.
+
+describe("chart threshold and now marker", () => {
+  it("grows an auto scale to include the threshold", () => {
+    const { cfg, state } = chartConfig("18,19,21,23,22,20", (p) => { p.thresholdValue = 25; });
+    const chart = chartOf(rectangular(cfg, state));
+    expect(chart.domainMax).toBe(25);
+    expect(chart.thresholdY).toBe(1);
+  });
+
+  it("places the line inside a range that already covers it", () => {
+    const { cfg, state } = chartConfig("10,20,30", (p) => { p.thresholdValue = 25; });
+    expect(chartOf(rectangular(cfg, state)).thresholdY).toBeCloseTo(0.75, 9);
+  });
+
+  it("keeps a fixed range and draws nothing outside it", () => {
+    const { cfg, state } = chartConfig("1,2,3", (p) => {
+      p.scale = "fixed";
+      p.minValue = 0;
+      p.maxValue = 10;
+      p.thresholdValue = 50;
+    });
+    const chart = chartOf(rectangular(cfg, state));
+    expect(chart.domainMax).toBe(10);
+    expect(chart.thresholdY).toBeUndefined();
+  });
+
+  it("rounds the now index and clamps it to the readings drawn", () => {
+    const at = (raw: string) => {
+      const { cfg, state } = chartConfig("1,2,3,4", (p) => { p.nowIndex = literal(raw); });
+      return chartOf(rectangular(cfg, state)).nowIndex;
+    };
+    expect(at("2")).toBe(2);
+    expect(at("2.4")).toBe(2);
+    expect(at("2.6")).toBe(3);
+    expect(at("9")).toBe(3);
+    expect(at("-4")).toBe(0);
+    expect(at("nothing numeric")).toBeUndefined();
+  });
+
+  it("has no now marker on an empty series", () => {
+    const { cfg, state } = chartConfig("unavailable", (p) => { p.nowIndex = literal("1"); });
+    expect(chartOf(rectangular(cfg, state)).nowIndex).toBeUndefined();
+  });
+
+  it("fetches the now index like any other value", () => {
+    const { cfg } = chartConfig("1,2,3", (p) => { p.nowIndex = { kind: { kind: "time", timeField: "hour" } }; });
+    expect([...compile(cfg).expressions.values()].some((e) => e.includes("hour"))).toBe(true);
+  });
+
+  it("draws a dashed line across the plot and a full-height line on now", () => {
+    const { cfg, state } = chartConfig("10,20,30", (p) => {
+      p.thresholdValue = 25;
+      p.thresholdColorHex = "#FF453A";
+      p.nowIndex = literal("1");
+      p.nowColorHex = "#FFFFFF";
+    });
+    const svg = flatten(renderLayout(rectangular(cfg, state), { icons: noIcons }));
+    expect(svg).toContain("stroke-dasharray");
+    expect(svg).toContain("#FF453A");
+    expect(svg).toContain("#FFFFFF");
+  });
+
+  it("omits both marks at their defaults and writes them once set", () => {
+    const { cfg } = chartConfig("1,2,3");
+    const bare = (encodeConfig(cfg) as { elements: { payload: Record<string, unknown> }[] }).elements[0]!.payload;
+    for (const key of ["thresholdValue", "thresholdColorHex", "nowIndex", "nowColorHex", "scaleFrom"]) {
+      expect(key in bare, key).toBe(false);
+    }
+
+    const { cfg: marked } = chartConfig("1,2,3", (p) => {
+      p.thresholdValue = 2;
+      p.nowIndex = literal("1");
+      p.nowColorHex = "#0A84FF";
+    });
+    const set = (encodeConfig(marked) as { elements: { payload: Record<string, unknown> }[] }).elements[0]!.payload;
+    expect(set.thresholdValue).toBe(2);
+    expect(set.thresholdColorHex).toBeUndefined();
+    expect(set.nowColorHex).toBe("#0A84FF");
+    expect(parseConfig(encodeConfig(marked)).elements[0]!.payload).toEqual(marked.elements[0]!.payload);
+  });
+});
+
+// ── a borrowed scale ──────────────────────────────────────────────────────
+
+describe("scaleFrom", () => {
+  /** Two chart layers on one frame, the second free to borrow the first. */
+  function twoCharts(a: string, b: string, tweak: (second: ChartElement, firstId: string) => void = () => {}) {
+    const cfg = newConfig("Two series", 0);
+    const ids: string[] = [];
+    for (const value of [a, b]) {
+      const el = newElement("chart") as Extract<Element, { kind: "chart" }>;
+      el.payload.historyMinutes = 0;
+      el.payload.value = literal(value);
+      el.payload.frame = { x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 };
+      cfg.elements.push(el);
+      ids.push(el.payload.id);
+    }
+    tweak((cfg.elements[1] as Extract<Element, { kind: "chart" }>).payload, ids[0]!);
+    return { cfg, first: ids[0]!, second: ids[1]! };
+  }
+
+  function charts(cfg: CustomComplicationConfig): ResolvedChart[] {
+    const layout = resolveAll(cfg, { entityStates: new Map(), templateResults: new Map(), namedValues: cfg.values }).rectangular!;
+    return layout.elements.filter((e): e is ResolvedChart => e.kind === "chart");
+  }
+
+  it("draws its own readings against the other chart's range", () => {
+    const { cfg } = twoCharts("18,23", "5,14", (p, firstId) => { p.scaleFrom = firstId; });
+    const [a, b] = charts(cfg);
+    expect(a!.domainMin).toBe(18);
+    expect(b!.values).toEqual([5, 14]);
+    expect(b!.domainMin).toBe(18);
+    expect(b!.domainMax).toBe(23);
+  });
+
+  it("falls back to its own scale for a link that goes nowhere", () => {
+    const { cfg } = twoCharts("18,23", "5,14", (p) => { p.scaleFrom = "EEEEEEEE-0000-4000-8000-0000000000DF"; });
+    expect(charts(cfg)[1]!.domainMax).toBe(14);
+  });
+
+  it("falls back for a chart that points at itself", () => {
+    const cfg = twoCharts("18,23", "5,14").cfg;
+    const second = cfg.elements[1] as Extract<Element, { kind: "chart" }>;
+    second.payload.scaleFrom = second.payload.id;
+    expect(charts(cfg)[1]!.domainMax).toBe(14);
+  });
+
+  it("breaks a cycle in document order, leaving the later chart on its own scale", () => {
+    const cfg = twoCharts("100,200", "1,3").cfg;
+    const [a, b] = cfg.elements as Extract<Element, { kind: "chart" }>[];
+    a!.payload.scaleFrom = b!.payload.id;
+    b!.payload.scaleFrom = a!.payload.id;
+    const resolved = charts(cfg);
+    expect(resolved[1]!.domainMin).toBe(1);
+    expect(resolved[1]!.domainMax).toBe(3);
+    expect(resolved[0]!.domainMin).toBe(1);
+    expect(resolved[0]!.domainMax).toBe(3);
+  });
+
+  it("clears the link when the chart it borrowed from is deleted", () => {
+    const { cfg, first } = twoCharts("18,23", "5,14");
+    (cfg.elements[1] as Extract<Element, { kind: "chart" }>).payload.scaleFrom = first;
+    removeElement(cfg, first);
+    expect((cfg.elements[0] as Extract<Element, { kind: "chart" }>).payload.scaleFrom).toBeUndefined();
+  });
+
+  it("adds a second series on the same frame, linked to the first", () => {
+    const { cfg, first } = twoCharts("18,23", "5,14");
+    cfg.elements.pop();
+    const copyId = addChartSeries(cfg, first)!;
+    expect(cfg.elements).toHaveLength(2);
+    const copy = cfg.elements[1] as Extract<Element, { kind: "chart" }>;
+    expect(copy.payload.id).toBe(copyId);
+    expect(copy.payload.scaleFrom).toBe(first);
+    expect(copy.payload.frame).toEqual((cfg.elements[0] as Extract<Element, { kind: "chart" }>).payload.frame);
+  });
+
+  it("follows the copy when both charts are pasted, and drops a link to neither", () => {
+    const { cfg, first, second } = twoCharts("18,23", "5,14");
+    (cfg.elements[1] as Extract<Element, { kind: "chart" }>).payload.scaleFrom = first;
+    const both = pasteElements(cfg, copyElements(cfg, [first, second]));
+    const pasted = cfg.elements.filter((e) => both.includes(e.payload.id)) as Extract<Element, { kind: "chart" }>[];
+    expect(pasted[1]!.payload.scaleFrom).toBe(pasted[0]!.payload.id);
+
+    const alone = newConfig("Elsewhere", 1);
+    pasteElements(alone, copyElements(cfg, [second]));
+    expect((alone.elements[0] as Extract<Element, { kind: "chart" }>).payload.scaleFrom).toBeUndefined();
   });
 });

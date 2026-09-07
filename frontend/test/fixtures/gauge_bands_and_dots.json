@@ -1,0 +1,340 @@
+{
+  "name": "gauge_bands_and_dots",
+  "description": "A gauge coloured by value, the threshold tick it draws on its scale, and the dots style. Pins the two decisions the two implementations could disagree about: a band beats a setColor rule while a uniform gauge does not, and a threshold outside the range resolves to nothing rather than to an end of the scale. The dot gauges pin the rounding and the cap.",
+  "config": {
+    "schemaVersion": 4,
+    "id": "3E7A1C55-0000-4000-8000-00000000BEEF",
+    "name": "Gauge bands",
+    "slotIndex": 0,
+    "supportedFamilies": [
+      "rectangular",
+      "circular",
+      "corner"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "gauge",
+        "payload": {
+          "id": "6A0E0001-0000-4000-8000-000000000001",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.battery",
+              "displayName": "Battery",
+              "domain": "sensor"
+            }
+          },
+          "minValue": 0,
+          "maxValue": 100,
+          "style": "arc",
+          "lineWidth": 4,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "trackColorHex": "#FFFFFF40",
+          "coloring": "bands",
+          "bands": [
+            {
+              "id": "6A0E00B1-0000-4000-8000-0000000000B1",
+              "upTo": 20,
+              "colorHex": "#FF453A"
+            },
+            {
+              "id": "6A0E00B2-0000-4000-8000-0000000000B2",
+              "upTo": 50,
+              "colorHex": "#FF9F0A"
+            }
+          ],
+          "bandAboveColorHex": "#32D74B",
+          "thresholdValue": 80,
+          "thresholdColorHex": "#0A84FF",
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 0.25,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "gauge",
+        "payload": {
+          "id": "6A0E0002-0000-4000-8000-000000000002",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.battery",
+              "displayName": "Battery",
+              "domain": "sensor"
+            }
+          },
+          "minValue": 0,
+          "maxValue": 100,
+          "style": "bar",
+          "lineWidth": 4,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "trackColorHex": "#FFFFFF40",
+          "thresholdValue": 150,
+          "rules": [
+            {
+              "id": "6A0E00E1-0000-4000-8000-0000000000E1",
+              "cases": [
+                {
+                  "id": "6A0E00C1-0000-4000-8000-0000000000C1",
+                  "when": {
+                    "join": "all",
+                    "tests": []
+                  },
+                  "then": [
+                    {
+                      "kind": "setColor",
+                      "value": {
+                        "kind": {
+                          "kind": "literal",
+                          "value": "#BF5AF2"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "frame": {
+            "x": 0.25,
+            "y": 0,
+            "width": 0.25,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "gauge",
+        "payload": {
+          "id": "6A0E0003-0000-4000-8000-000000000003",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.battery",
+              "displayName": "Battery",
+              "domain": "sensor"
+            }
+          },
+          "minValue": 0,
+          "maxValue": 100,
+          "style": "ring",
+          "lineWidth": 4,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "trackColorHex": "#FFFFFF40",
+          "coloring": "bands",
+          "bands": [
+            {
+              "id": "6A0E00B3-0000-4000-8000-0000000000B3",
+              "upTo": 20,
+              "colorHex": "#FF453A"
+            },
+            {
+              "id": "6A0E00B4-0000-4000-8000-0000000000B4",
+              "upTo": 50,
+              "colorHex": "#FF9F0A"
+            }
+          ],
+          "bandAboveColorHex": "#32D74B",
+          "rules": [
+            {
+              "id": "6A0E00E2-0000-4000-8000-0000000000E2",
+              "cases": [
+                {
+                  "id": "6A0E00C2-0000-4000-8000-0000000000C2",
+                  "when": {
+                    "join": "all",
+                    "tests": []
+                  },
+                  "then": [
+                    {
+                      "kind": "setColor",
+                      "value": {
+                        "kind": {
+                          "kind": "literal",
+                          "value": "#BF5AF2"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "frame": {
+            "x": 0.5,
+            "y": 0,
+            "width": 0.25,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "gauge",
+        "payload": {
+          "id": "6A0E0004-0000-4000-8000-000000000004",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "2.6"
+            }
+          },
+          "minValue": 0,
+          "maxValue": 100,
+          "style": "dots",
+          "lineWidth": 4,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "trackColorHex": "#FFFFFF40",
+          "total": {
+            "kind": {
+              "kind": "literal",
+              "value": "8"
+            }
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.75,
+            "y": 0,
+            "width": 0.25,
+            "height": 0.5,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "gauge",
+        "payload": {
+          "id": "6A0E0005-0000-4000-8000-000000000005",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "30"
+            }
+          },
+          "minValue": 0,
+          "maxValue": 40,
+          "style": "dots",
+          "lineWidth": 4,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "trackColorHex": "#FFFFFF40",
+          "rules": [],
+          "frame": {
+            "x": 0.75,
+            "y": 0.5,
+            "width": 0.25,
+            "height": 0.5,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      },
+      "circular",
+      {
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      },
+      "corner",
+      {
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 0,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {
+      "sensor.battery": {
+        "state": "62",
+        "domain": "sensor"
+      }
+    },
+    "templateResults": {},
+    "dataAgeSeconds": 0
+  },
+  "expectedCompiled": {
+    "entities": [
+      "sensor.battery"
+    ],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "6A0E0001-0000-4000-8000-000000000001",
+          "kind": "gauge",
+          "style": "arc",
+          "fraction": 0.62,
+          "colorHex": "#32D74B",
+          "thresholdFraction": 0.8,
+          "thresholdColorHex": "#0A84FF",
+          "dotCount": 24,
+          "filledCount": 24
+        },
+        {
+          "id": "6A0E0002-0000-4000-8000-000000000002",
+          "kind": "gauge",
+          "style": "bar",
+          "fraction": 0.62,
+          "colorHex": "#BF5AF2",
+          "thresholdFraction": null,
+          "thresholdColorHex": "#FFFFFF"
+        },
+        {
+          "id": "6A0E0003-0000-4000-8000-000000000003",
+          "kind": "gauge",
+          "style": "ring",
+          "fraction": 0.62,
+          "colorHex": "#32D74B",
+          "thresholdFraction": null
+        },
+        {
+          "id": "6A0E0004-0000-4000-8000-000000000004",
+          "kind": "gauge",
+          "style": "dots",
+          "dotCount": 8,
+          "filledCount": 3
+        },
+        {
+          "id": "6A0E0005-0000-4000-8000-000000000005",
+          "kind": "gauge",
+          "style": "dots",
+          "dotCount": 24,
+          "filledCount": 24
+        }
+      ]
+    }
+  }
+}

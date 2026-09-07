@@ -209,18 +209,47 @@ function renderText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box) {
     fill=${c.fill} fill-opacity=${c["fill-opacity"]}>${text}</text>`;
 }
 
+/** The gap between two dots of a `dots` gauge, in watch points. Mirrors the fixed
+ * gap in `GaugeDotsView` in the app repo. */
+const GAUGE_DOT_GAP = 2;
+
 function renderGauge(el: Extract<ResolvedElement, { kind: "gauge" }>, box: Box) {
   const fill = colorAttrs(el.colorHex, "stroke");
   const track = colorAttrs(el.trackColorHex, "stroke", "#FFFFFF");
+  const tick = colorAttrs(el.thresholdColorHex, "stroke", "#FFFFFF");
   const lw = el.lineWidth;
+  if (el.style === "dots") {
+    // One dot per unit along the long side, the first `filledCount` filled. The
+    // diameter is the smaller of the short side and one dot's share of the long
+    // side, so a wide frame spreads them and a tall one stacks them.
+    const horizontal = box.w >= box.h;
+    const count = Math.max(1, el.dotCount);
+    const long = horizontal ? box.w : box.h;
+    const short = horizontal ? box.h : box.w;
+    const d = Math.max(1, Math.min(short, long / count - GAUGE_DOT_GAP));
+    const span = count * d + (count - 1) * GAUGE_DOT_GAP;
+    const first = (horizontal ? box.cx : box.cy) - span / 2 + d / 2;
+    return svg`${Array.from({ length: count }, (_, i) => {
+      const at = first + i * (d + GAUGE_DOT_GAP);
+      const paint = i < el.filledCount ? fill : track;
+      return svg`<circle cx=${horizontal ? at : box.cx} cy=${horizontal ? box.cy : at} r=${d / 2}
+        fill=${paint.stroke} fill-opacity=${paint["stroke-opacity"]} />`;
+    })}`;
+  }
   if (el.style === "bar") {
     const w = box.w;
     const fillW = Math.max(lw, w * el.fraction);
+    const tickW = 1;
     return svg`
       <rect x=${box.x} y=${box.cy - lw / 2} width=${w} height=${lw} rx=${lw / 2}
         fill=${track.stroke} fill-opacity=${track["stroke-opacity"]} />
       <rect x=${box.x} y=${box.cy - lw / 2} width=${fillW} height=${lw} rx=${lw / 2}
-        fill=${fill.stroke} fill-opacity=${fill["stroke-opacity"]} />`;
+        fill=${fill.stroke} fill-opacity=${fill["stroke-opacity"]} />
+      ${el.thresholdFraction === undefined
+        ? nothing
+        : svg`<rect x=${box.x + Math.min(w - tickW, Math.max(0, w * el.thresholdFraction - tickW / 2))}
+            y=${box.cy - lw / 2} width=${tickW} height=${lw}
+            fill=${tick.stroke} fill-opacity=${tick["stroke-opacity"]} />`}`;
   }
   const side = Math.min(box.w, box.h);
   const r = Math.max(0, side / 2 - lw / 2);
@@ -240,7 +269,22 @@ function renderGauge(el: Extract<ResolvedElement, { kind: "gauge" }>, box: Box) 
             stroke=${fill.stroke} stroke-opacity=${fill["stroke-opacity"]}
             stroke-dasharray="${fillLen} ${circumference}" />`
         : nothing}
+      ${el.thresholdFraction === undefined ? nothing : gaugeTick(box, r, lw, sweep * 360 * el.thresholdFraction, el.thresholdColorHex)}
     </g>`;
+}
+
+/** The mark a ring or arc puts on its scale at the threshold: a short radial line
+ * across the stroke, drawn inside the same rotated group as the track so one
+ * rotation places both. Mirrors `GaugeThresholdTick` in the app repo. */
+function gaugeTick(box: Box, r: number, lw: number, degrees: number, colorHex: string) {
+  const tick = colorAttrs(colorHex, "stroke", "#FFFFFF");
+  const radians = (degrees * Math.PI) / 180;
+  const dx = Math.cos(radians);
+  const dy = Math.sin(radians);
+  const half = lw / 2 + 1;
+  return svg`<line x1=${box.cx + dx * (r - half)} y1=${box.cy + dy * (r - half)}
+    x2=${box.cx + dx * (r + half)} y2=${box.cy + dy * (r + half)}
+    stroke-width="1" stroke=${tick.stroke} stroke-opacity=${tick["stroke-opacity"]} />`;
 }
 
 /** Height of the band a chart reserves along its top for markers, in watch points.
@@ -285,7 +329,15 @@ function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box
     barWidth,
     plotTop: top,
     plotBottom: bottom,
+    plotLeft: plotX,
+    plotRight: plotX + plotW,
     baselineY: growsFromBottom ? bottom : y(0),
+    /** Where a 0…1 fraction of the domain lands, 1 being the top of the plot.
+     * The resolver hands the threshold over as a fraction so the renderer never
+     * has to know what the domain was. */
+    yAtFraction(f: number) {
+      return bottom - Math.min(Math.max(f, 0), 1) * height;
+    },
     barRect(index: number) {
       const x = plotX + index * (barWidth + gap);
       const value = values[index]!;
@@ -398,6 +450,24 @@ function renderChart(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) 
     if (el.lowIndex !== undefined) body.push(dot(g.markerCenter(el.lowIndex, bars), low));
   }
 
+  // The two lines that are about the plot rather than about a reading: a dashed
+  // horizontal one at the threshold, and a vertical one standing on "now". Both
+  // are one point thick, so they read as annotation over the series rather than
+  // as another series.
+  if (el.thresholdY !== undefined) {
+    const y = g.yAtFraction(el.thresholdY);
+    const colour = colorAttrs(el.thresholdColorHex, "fill", el.colorHex);
+    body.push(svg`<path d=${`M${g.plotLeft} ${y} L${g.plotRight} ${y}`} fill="none"
+      stroke=${colour.fill} stroke-opacity=${colour["fill-opacity"]}
+      stroke-width="1" stroke-dasharray="2 2" />`);
+  }
+  if (el.nowIndex !== undefined && el.nowIndex < g.count) {
+    const x = g.markerCenter(el.nowIndex, el.style === "bars").x;
+    const colour = colorAttrs(el.nowColorHex, "fill", el.colorHex);
+    body.push(svg`<path d=${`M${x} ${g.plotTop} L${x} ${g.plotBottom}`} fill="none"
+      stroke=${colour.fill} stroke-opacity=${colour["fill-opacity"]} stroke-width="1" />`);
+  }
+
   return svg`${body}`;
 }
 
@@ -434,6 +504,17 @@ function renderShape(el: Extract<ResolvedElement, { kind: "shape" }>, box: Box) 
       return svg`<rect x=${box.x + inset} y=${box.y + inset} width=${Math.max(0, box.w - bw)} height=${Math.max(0, box.h - bw)}
         fill=${fill.fill} fill-opacity=${fill["fill-opacity"]}
         stroke=${stroke} stroke-opacity=${strokeOpacity} stroke-width=${bw} />`;
+    case "line": {
+      // A bar down the middle of the frame's long side. The border is not drawn:
+      // a line's colour is its fill, and a stroke around a 1 pt bar would only
+      // thicken it. Thicker than the short side is clamped to it, as in Swift.
+      const along = box.w >= box.h;
+      const t = Math.max(0, Math.min(el.thickness, along ? box.h : box.w));
+      const x = along ? box.x : box.cx - t / 2;
+      const y = along ? box.cy - t / 2 : box.y;
+      return svg`<rect x=${x} y=${y} width=${along ? box.w : t} height=${along ? t : box.h}
+        fill=${fill.fill} fill-opacity=${fill["fill-opacity"]} stroke="none" />`;
+    }
   }
 }
 

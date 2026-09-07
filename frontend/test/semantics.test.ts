@@ -55,6 +55,32 @@ describe("formatValue", () => {
   it("leaves non-numeric text alone", () => {
     expect(formatValue("open", { decimals: 1 }, undefined)).toBe("open");
   });
+  it("prints a duration as its two largest non-zero units", () => {
+    expect(formatValue("5015", { duration: true }, undefined)).toBe("1h 23m");
+    expect(formatValue("1395", { duration: true }, undefined)).toBe("23m 15s");
+    expect(formatValue("45", { duration: true }, undefined)).toBe("45s");
+    expect(formatValue("183600", { duration: true }, undefined)).toBe("2d 3h");
+    expect(formatValue("3600", { duration: true }, undefined)).toBe("1h");
+    expect(formatValue("0", { duration: true }, undefined)).toBe("0s");
+    expect(formatValue("-90", { duration: true }, undefined)).toBe("0s");
+  });
+  it("reads the duration strings a timer entity carries", () => {
+    expect(formatValue("0:23:15", { duration: true }, undefined)).toBe("23m 15s");
+    expect(formatValue("1:02:03", { duration: true }, undefined)).toBe("1h 2m");
+    expect(formatValue("2 days, 3:04:05", { duration: true }, undefined)).toBe("2d 3h");
+    expect(formatValue("1 day, 0:00:30", { duration: true }, undefined)).toBe("1d 30s");
+    expect(formatValue("0:01:30.500000", { duration: true }, undefined)).toBe("1m 30s");
+    // Anything that is not a length of time prints as it is.
+    expect(formatValue("heat", { duration: true }, undefined)).toBe("heat");
+    expect(formatValue("2026-09-06", { duration: true }, undefined)).toBe("2026-09-06");
+  });
+  it("puts duration ahead of relative time, and keeps the affixes", () => {
+    expect(formatValue("5015", { duration: true, relativeTime: true }, undefined)).toBe("1h 23m");
+    expect(formatValue("5015", { duration: true, prefix: "in " }, undefined)).toBe("in 1h 23m");
+  });
+  it("clamps a value that is really a timestamp, as the 32-bit watch does", () => {
+    expect(formatValue("1757000000000", { duration: true }, undefined)).toBe("9999d");
+  });
 });
 
 describe("gaugeFraction", () => {

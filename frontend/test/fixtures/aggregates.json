@@ -119,6 +119,27 @@
         }
       },
       {
+        "id": "AAAAAAA6-0000-4000-8000-000000000006",
+        "name": "AllLights",
+        "value": {
+          "kind": {
+            "kind": "aggregate",
+            "aggregate": {
+              "function": "count",
+              "scope": {
+                "kind": "filter",
+                "domains": [
+                  "light"
+                ],
+                "areaIds": [],
+                "labelIds": [],
+                "floorIds": []
+              }
+            }
+          }
+        }
+      },
+      {
         "id": "AAAAAAA5-0000-4000-8000-000000000005",
         "name": "MinTemp",
         "value": {
@@ -168,6 +189,41 @@
           },
           "isHidden": false
         }
+      },
+      {
+        "kind": "gauge",
+        "payload": {
+          "id": "BBBBBBBB-0000-4000-8000-000000000002",
+          "value": {
+            "kind": {
+              "kind": "named",
+              "id": "AAAAAAA2-0000-4000-8000-000000000002"
+            }
+          },
+          "minValue": 0,
+          "maxValue": 100,
+          "style": "dots",
+          "lineWidth": 4,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "trackColorHex": "#FFFFFF40",
+          "total": {
+            "kind": {
+              "kind": "named",
+              "id": "AAAAAAA6-0000-4000-8000-000000000006"
+            }
+          },
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 1,
+            "height": 0.4,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
       }
     ],
     "perFamily": [
@@ -196,7 +252,8 @@
   "inputs": {
     "entityStates": {},
     "templateResults": {
-      "n_aaaaaaa2000040008000000000000002": "3"
+      "n_aaaaaaa2000040008000000000000002": "3",
+      "n_aaaaaaa6000040008000000000000006": "8"
     },
     "dataAgeSeconds": 0
   },
@@ -207,9 +264,10 @@
       "n_aaaaaaa2000040008000000000000002",
       "n_aaaaaaa3000040008000000000000003",
       "n_aaaaaaa4000040008000000000000004",
-      "n_aaaaaaa5000040008000000000000005"
+      "n_aaaaaaa5000040008000000000000005",
+      "n_aaaaaaa6000040008000000000000006"
     ],
-    "document": "{% set v_n_aaaaaaa1000040008000000000000001 = (expand(['light.kitchen', 'light.hall']) | list | count) %}\n{% set v_n_aaaaaaa2000040008000000000000002 = (((states.light | list)) | selectattr('state', 'eq', 'on') | list | count) %}\n{% set v_n_aaaaaaa3000040008000000000000003 = (((states.binary_sensor | list)) | rejectattr('state', 'eq', 'off') | list | count) %}\n{% set v_n_aaaaaaa4000040008000000000000004 = ((expand(area_entities('kitchen')) | selectattr('domain', 'in', ['light'])) | selectattr('state', 'eq', 'on') | map(attribute='attributes.brightness') | map('float', 0) | list | average(0)) %}\n{% set v_n_aaaaaaa5000040008000000000000005 = ((expand(label_entities('cold') + ((floor_areas('upstairs')) | map('area_entities') | sum(start=[])))) | map(attribute='state') | map('float', 0) | list | min(default=0)) %}\n{{ { \"n_aaaaaaa1000040008000000000000001\": v_n_aaaaaaa1000040008000000000000001, \"n_aaaaaaa2000040008000000000000002\": v_n_aaaaaaa2000040008000000000000002, \"n_aaaaaaa3000040008000000000000003\": v_n_aaaaaaa3000040008000000000000003, \"n_aaaaaaa4000040008000000000000004\": v_n_aaaaaaa4000040008000000000000004, \"n_aaaaaaa5000040008000000000000005\": v_n_aaaaaaa5000040008000000000000005 } | to_json }}"
+    "document": "{% set v_n_aaaaaaa1000040008000000000000001 = (expand(['light.kitchen', 'light.hall']) | list | count) %}\n{% set v_n_aaaaaaa2000040008000000000000002 = (((states.light | list)) | selectattr('state', 'eq', 'on') | list | count) %}\n{% set v_n_aaaaaaa3000040008000000000000003 = (((states.binary_sensor | list)) | rejectattr('state', 'eq', 'off') | list | count) %}\n{% set v_n_aaaaaaa4000040008000000000000004 = ((expand(area_entities('kitchen')) | selectattr('domain', 'in', ['light'])) | selectattr('state', 'eq', 'on') | map(attribute='attributes.brightness') | map('float', 0) | list | average(0)) %}\n{% set v_n_aaaaaaa5000040008000000000000005 = ((expand(label_entities('cold') + ((floor_areas('upstairs')) | map('area_entities') | sum(start=[])))) | map(attribute='state') | map('float', 0) | list | min(default=0)) %}\n{% set v_n_aaaaaaa6000040008000000000000006 = (((states.light | list)) | list | count) %}\n{{ { \"n_aaaaaaa1000040008000000000000001\": v_n_aaaaaaa1000040008000000000000001, \"n_aaaaaaa2000040008000000000000002\": v_n_aaaaaaa2000040008000000000000002, \"n_aaaaaaa3000040008000000000000003\": v_n_aaaaaaa3000040008000000000000003, \"n_aaaaaaa4000040008000000000000004\": v_n_aaaaaaa4000040008000000000000004, \"n_aaaaaaa5000040008000000000000005\": v_n_aaaaaaa5000040008000000000000005, \"n_aaaaaaa6000040008000000000000006\": v_n_aaaaaaa6000040008000000000000006 } | to_json }}"
   },
   "expected": {
     "rectangular": {
@@ -227,6 +285,13 @@
           "fontWeight": "regular",
           "colorHex": "#FFFFFF",
           "opacity": 1
+        },
+        {
+          "id": "BBBBBBBB-0000-4000-8000-000000000002",
+          "kind": "gauge",
+          "style": "dots",
+          "dotCount": 8,
+          "filledCount": 3
         }
       ]
     }
