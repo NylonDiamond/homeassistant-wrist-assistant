@@ -47,6 +47,8 @@ function timelineElement(tweak: (p: TimelineElement) => void = () => {}): Extrac
   const el = newElement("timeline") as Extract<Element, { kind: "timeline" }>;
   el.payload.frame = { x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 };
   el.payload.value = { kind: { kind: "entityState", ...DOOR } };
+  // The tests below reason in one hour; a fresh layer starts on a day.
+  el.payload.historyMinutes = 60;
   tweak(el.payload);
   return el;
 }
@@ -270,7 +272,7 @@ describe("the wire format", () => {
     // A fresh layer starts away from two wire defaults on purpose (black for
     // the unnamed colour, 2 pt corners), so those two are written; set them
     // back to the wire defaults and nothing but the value should remain.
-    cfg.elements.push(timelineElement((p) => { p.otherColorHex = TIMELINE_DEFAULT_OTHER_HEX; p.cornerRadius = 1; }));
+    cfg.elements.push(timelineElement((p) => { p.otherColorHex = TIMELINE_DEFAULT_OTHER_HEX; p.cornerRadius = 1; p.historyMinutes = 60; }));
     const payload = (encodeConfig(cfg).elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
     expect(Object.keys(payload).sort()).toEqual(["frame", "id", "isHidden", "rules", "value"]);
   });
@@ -370,7 +372,7 @@ describe("seeded colour tables", () => {
     expect(seedTimelineBands("sensor").map((b) => b.match)).toEqual(["unavailable", "unknown"]);
   });
 
-  it("is written the first time an entity is picked, and never overwritten", () => {
+  it("is written when an entity is picked, and again when a different one is", () => {
     const cfg = newConfig("Timeline", 0);
     const el = newElement("timeline") as Extract<Element, { kind: "timeline" }>;
     cfg.elements.push(el);
@@ -379,9 +381,21 @@ describe("seeded colour tables", () => {
     expect(seeded).toEqual(["on", "off", "unavailable", "unknown"]);
     expect(el.payload.value.kind).toEqual({ kind: "entityState", ...DOOR });
 
+    // Picking the same entity again is not a change, so edits survive it.
     el.payload.bands = [{ id: "MINE", match: "mine", colorHex: "#FFFFFF" }];
-    setLayerEntity(cfg, el.payload.id, { entityId: "cover.garage", displayName: "Garage", domain: "cover" });
+    setLayerEntity(cfg, el.payload.id, DOOR, "window");
     expect(el.payload.bands.map((b) => b.match)).toEqual(["mine"]);
+
+    // A different entity reports different states, so the table starts over.
+    setLayerEntity(cfg, el.payload.id, { entityId: "cover.garage", displayName: "Garage", domain: "cover" });
+    expect(el.payload.bands.map((b) => b.match)).toEqual(["open", "closed", "opening", "closing", "unavailable", "unknown"]);
+  });
+
+  it("starts a new layer on the last 24 hours, and writes it", () => {
+    const cfg = newConfig("Timeline", 0);
+    cfg.elements.push(newElement("timeline"));
+    const payload = (encodeConfig(cfg).elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
+    expect(payload.historyMinutes).toBe(1440);
   });
 });
 

@@ -633,6 +633,8 @@ export const TIMELINE_DEFAULT_CORNER_RADIUS = 1;
  * because they differ from the wire default. */
 export const TIMELINE_NEW_OTHER_HEX = "#000000";
 export const TIMELINE_NEW_CORNER_RADIUS = 2;
+/** A day: long enough that a door opened this morning is still on the strip. */
+export const TIMELINE_NEW_MINUTES = 1440;
 export const TIMELINE_DEFAULT_MINUTES = 60;
 /** The widest gap worth offering: past four points the runs of a busy hour
  * stop touching at all and the strip reads as a dotted line. */
@@ -2500,7 +2502,7 @@ export function newElement(kind: Element["kind"]): Element {
         payload: {
           ...b,
           value: literal(""),
-          historyMinutes: TIMELINE_DEFAULT_MINUTES,
+          historyMinutes: TIMELINE_NEW_MINUTES,
           bands: [],
           otherColorHex: TIMELINE_NEW_OTHER_HEX,
           gap: 0,
@@ -3337,11 +3339,14 @@ export function setLayerEntity(
   if (!el || ref.entityId === "") return;
   const full: EntityRef = { ...ref, domain: ref.domain || ref.entityId.split(".")[0] || "" };
   if (el.kind === "timeline") {
+    const before = el.payload.value.kind.kind === "entityState" ? el.payload.value.kind.entityId : undefined;
     const next = rebindValue(el.payload.value, full, el.kind);
     if (next) el.payload.value = next;
-    // Only while the table is empty: a table the author has edited is theirs,
-    // and retargeting a timeline at a second door should not rewrite it.
-    if (el.payload.bands.length === 0) el.payload.bands = seedTimelineBands(full.domain, deviceClass);
+    // A different entity reports different states, so the colour table is
+    // written fresh for it. Picking the same entity again keeps any edits.
+    if (el.payload.bands.length === 0 || before !== full.entityId) {
+      el.payload.bands = seedTimelineBands(full.domain, deviceClass);
+    }
   } else if (el.kind === "image") {
     el.payload.entity = full;
   } else if (el.kind === "text" || el.kind === "gauge" || el.kind === "chart") {
