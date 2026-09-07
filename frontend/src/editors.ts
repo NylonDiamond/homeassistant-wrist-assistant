@@ -2280,14 +2280,29 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
  * is: the answer is about the face, so it belongs under the face. A tap-area
  * layer has no card here, since the layer is the tap.
  */
-export function tapCard(host: EditorHost, el: CElement, opts: { inline?: boolean } = {}): TemplateResult | typeof nothing {
-  if (el.kind === "tap") return nothing;
-  const id = el.payload.id;
-  const attached = attachedTapsOf(host.config, id)[0];
-  return card(host, "tappable", "Tap", tappableSection(host, el, `el-${id}`),
+export function tapCard(
+  host: EditorHost,
+  el: CElement | undefined,
+  opts: { inline?: boolean; placeholder?: string } = {},
+): TemplateResult | typeof nothing {
+  const placeholder = opts.placeholder;
+  // In the inspector there is simply no card for a tap layer. Under the face
+  // the row holds its place whatever is selected, so it says why instead.
+  if (placeholder === undefined && (el === undefined || el.kind === "tap")) return nothing;
+  const target = el !== undefined && el.kind !== "tap" ? el : undefined;
+  const attached = target ? attachedTapsOf(host.config, target.payload.id)[0] : undefined;
+  // Grey while there is no tap to describe: the row keeps its place, so the
+  // toggle is always where it was, but it stops wearing the tap colour.
+  const muted = attached === undefined;
+  const body = placeholder === undefined && target !== undefined
+    ? tappableSection(host, target, `el-${target.payload.id}`)
+    : html`
+      <label class="field check"><input type="checkbox" disabled .checked=${false} /><span>Tappable</span></label>
+      <div class="hint">${placeholder}</div>`;
+  return card(host, "tappable", "Tap", body,
     { color: SECTION_COLOR.tap, icon: "tap", summary: attached ? describeTapAction((attached.payload as TapElement).action) : "Not tappable",
-      ...(opts.inline ? { alwaysOpen: true, cardClass: "tap-bar", bodyClass: "tap-row" } : {}),
-      ...(attached ? { reset: () => host.update((c) => detachTaps(c, id)) } : {}) });
+      ...(opts.inline ? { alwaysOpen: true, cardClass: `tap-bar${muted ? " muted-bar" : ""}`, bodyClass: "tap-row" } : {}),
+      ...(attached && target ? { reset: () => host.update((c) => detachTaps(c, target.payload.id)) } : {}) });
 }
 
 export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, opts: { placement?: boolean; tap?: boolean } = {}): TemplateResult {

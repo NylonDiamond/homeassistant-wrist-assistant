@@ -1268,6 +1268,17 @@ export class WristAssistantPanel extends LitElement {
     .sec.place-bar .sec-b.place-row, .sec.tap-bar .sec-b.tap-row {
       display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 0 0 10px;
     }
+    /* A bar with nothing to say yet: neutral ground and a neutral mark, with
+       the words at 60%, so it reads as a place a setting will appear rather
+       than as a setting that is on. The toggle itself stays at full strength,
+       since switching it on is the whole point of the row being there. */
+    .sec.muted-bar,
+    .sec.muted-bar[data-open="true"] {
+      background: color-mix(in srgb, var(--wa-muted) 6%, var(--wa-card));
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-muted) 20%, var(--wa-card));
+    }
+    .sec.muted-bar .sec-h .swatch { background: var(--wa-muted); }
+    .sec.muted-bar .sec-h h4, .sec.muted-bar .sec-h .sum, .sec.muted-bar .sec-b .hint { opacity: .6; }
     /* The Tap row: the toggle, then whatever the action needs, all on one line.
        tappableSection puts its fields in a .value-editor block, so that block
        is what has to lie down rather than stack. */
@@ -4462,14 +4473,24 @@ export class WristAssistantPanel extends LitElement {
    * What a tap on the selected layer does, as one row at the foot of the
    * canvas column. Under the two value lists rather than beside them: it is
    * about the layer, not about the complication, so it reads as the last thing
-   * said about the thing selected. A tap-area layer has no bar, because the
-   * layer is already the tap.
+   * said about the thing selected.
+   *
+   * The row never goes away while a complication is open. A control that comes
+   * and goes with the selection is a control nobody learns where to find, so
+   * with nothing to make tappable it greys out and says what to select; a
+   * layer that is simply not tappable yet keeps its live toggle in the same
+   * place, greyed only until it is switched on.
    */
   private renderTapBar(cfg: CustomComplicationConfig) {
     const el = this.barLayer(cfg);
-    if (!el || el.kind === "tap") return nothing;
+    const placeholder = el === undefined
+      ? "Select a layer to make it tappable."
+      : el.kind === "tap"
+        ? "This is a tap area. Select the layer it belongs to."
+        : undefined;
+    const opts = { inline: true, ...(placeholder !== undefined ? { placeholder } : {}) };
     return html`<div class="place-wrap" style=${this.canEdit ? "" : "pointer-events:none;opacity:.6"}
-      @change=${() => this.draft?.endGesture()}>${tapCard(this.host(), el, { inline: true })}</div>`;
+      @change=${() => this.draft?.endGesture()}>${tapCard(this.host(), el, opts)}</div>`;
   }
 
   private renderBigPreview(family: DrawableFamily, layouts: ResolvedAll, watchCase: WatchCase) {
