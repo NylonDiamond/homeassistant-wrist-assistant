@@ -1546,7 +1546,7 @@ export function generalEditor(host: EditorHost): TemplateResult {
         // openPage type; leaving it clears the choice.
         if (v !== "openPage") { delete c.openPageId; delete c.openPageName; }
       }))}
-      <div class="field flash-cell"><span>Flash when a tap works</span>
+      <div class="field flash-cell"><span title="Flash when a tap works">Flash</span>
         <div class="flash-row">
           <input type="checkbox" .checked=${flashOn} title="Flash when a tap works"
             @change=${(e: Event) => host.update((c) => { c.showSuccessFlash = (e.target as HTMLInputElement).checked; })} />
@@ -2756,12 +2756,8 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       </div>
       ${sliderField("Rotation", f.rotationDegrees, (v) => setFrame({ rotationDegrees: v }, "rot"),
         { min: -180, max: 180, step: 1, def: 0, format: (v) => `${Math.round(v)}°` })}
-      <div class="hint">Drag the layer on the ${familyTitle(family)} preview to move it, or pull a
-        corner to resize it, and the four boxes above follow. Arrow keys nudge the selection 1 pt,
-        shift-arrows 10 pt. The eye on the layer's row hides it.</div>
-      <div class="hint">This layer is on the ${familyTitle(family)} shape and on no other, so
-        everything here, and everything else about it, is that shape's alone. Another shape wanting
-        the same thing gets its own copy of it.</div>`,
+      <div class="hint">On the ${familyTitle(family)} shape only. Arrow keys nudge 1 pt, shift for 10,
+        and the eye on the layer's row hides it.</div>`,
       { color: SECTION_COLOR.place, icon: "place", summary: `${Math.round(f.width * 100)}% wide · ${familyTitle(family)}`,
         ...(placeChanged ? {
           resetTitle: `Put this layer back to the middle of the ${familyTitle(family)} face at half size, unrotated and shown`,

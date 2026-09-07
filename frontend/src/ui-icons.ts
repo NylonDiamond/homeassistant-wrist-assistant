@@ -14,7 +14,7 @@ export type UiIconName =
   | "text" | "icon" | "gauge" | "chart" | "timeline" | "shape" | "image" | "tap"
   | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "plus"
   | "lock" | "unlock" | "folder" | "ungroup" | "watch"
-  | "compact" | "expanded" | "search";
+  | "compact" | "expanded" | "search" | "undo" | "redo" | "expand";
 
 function shape(name: UiIconName) {
   switch (name) {
@@ -98,6 +98,14 @@ function shape(name: UiIconName) {
         <path d="M4 3.5V7H7.5" />`;
     case "search":
       return svg`<circle cx="10.8" cy="10.8" r="6.3" /><path d="M15.4 15.4L20 20" />`;
+    // A step back and a step forward: an arrow that turns around, so the pair
+    // reads as one control mirrored rather than two unrelated glyphs.
+    case "undo":
+      return svg`<path d="M9 14L4 9L9 4" /><path d="M4 9H15A5 5 0 0 1 15 19H12" />`;
+    case "redo":
+      return svg`<path d="M15 14L20 9L15 4" /><path d="M20 9H9A5 5 0 0 0 9 19H12" />`;
+    case "expand":
+      return svg`<path d="M15 3H21V9M9 21H3V15M21 3L14 10M3 21L10 14" />`;
   }
 }
 
