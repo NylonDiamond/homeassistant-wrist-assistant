@@ -439,7 +439,12 @@ export class WristAssistantPanel extends LitElement {
          height, rather than being pushed off the bottom of the page. */
       display: flex;
       flex-direction: column;
-      height: 100%;
+      /* Home Assistant's ha-panel-custom is a plain block with no height of
+         its own, so 100% here resolves to auto and the columns collapse to
+         nothing. The panel owns the whole viewport (custom panels draw no
+         HA toolbar), so take it from the viewport instead. */
+      height: 100vh;
+      height: 100dvh;
       font-family: var(--paper-font-body1_-_font-family, -apple-system, BlinkMacSystemFont, "Inter", Roboto, sans-serif);
       font-size: 14px;
       /* Colours the whole editor shares: one per layer kind, one per section
