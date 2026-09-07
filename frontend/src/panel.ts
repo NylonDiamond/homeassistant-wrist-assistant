@@ -112,6 +112,7 @@ import {
   layerEditor,
   layerTitle,
   placementCard,
+  tapCard,
   lookSummary,
   namedValueEditor,
   newNamedValue,
@@ -1261,12 +1262,32 @@ export class WristAssistantPanel extends LitElement {
        column: the same tinted card, laid out as one row so it costs the canvas
        two lines instead of a scroll. */
     .place-wrap { flex: none; }
-    .sec.place-bar { margin: 0; border-radius: var(--wa-r-md); }
-    .sec.place-bar .sec-h { height: 34px; cursor: default; }
-    .sec.place-bar .sec-h:hover { background: transparent; }
-    .sec.place-bar .sec-b.place-row {
+    .sec.place-bar, .sec.tap-bar { margin: 0; border-radius: var(--wa-r-md); }
+    .sec.place-bar .sec-h, .sec.tap-bar .sec-h { height: 34px; cursor: default; }
+    .sec.place-bar .sec-h:hover, .sec.tap-bar .sec-h:hover { background: transparent; }
+    .sec.place-bar .sec-b.place-row, .sec.tap-bar .sec-b.tap-row {
       display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 0 0 10px;
     }
+    /* The Tap row: the toggle, then whatever the action needs, all on one line.
+       tappableSection puts its fields in a .value-editor block, so that block
+       is what has to lie down rather than stack. */
+    .sec-b.tap-row > :is(.field, .value-editor, .hint) { margin-top: 0; padding-top: 0; border-top: 0; }
+    .tap-row .field.check { display: flex; align-items: center; gap: 8px; flex: none; margin: 0; }
+    .tap-row .value-editor {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px;
+      flex: 1 1 320px; min-width: 260px; margin: 0; padding-left: 10px;
+    }
+    .tap-row .value-editor .field { display: flex; align-items: center; gap: 6px; margin: 0; width: auto; min-width: 0; }
+    .tap-row .value-editor .field > span { flex: none; font-size: 12.5px; font-weight: 600; color: var(--wa-muted); white-space: nowrap; }
+    .tap-row .value-editor .field select { width: 150px; }
+    .tap-row .value-editor .field.entity-field { flex: 1 1 200px; max-width: 300px; }
+    .tap-row .value-editor .field.entity-field input { width: 100%; }
+    .tap-row .value-editor .chips { flex: none; }
+    /* The prose, muted, at the end of the line or on a line of its own. */
+    .sec-b.tap-row > .hint { margin: 0; min-width: 0; color: var(--wa-muted); }
+    /* Off, the one short hint sits on the line beside the toggle; on, the long
+       one drops under the fields it explains. */
+    .sec-b.tap-row > .value-editor ~ .hint:last-child { flex-basis: 100%; }
     /* A row, so the hairlines that separate a card's stacked blocks go. */
     .sec-b.place-row > :is(.field, .grid4, .hint) { margin-top: 0; padding-top: 0; border-top: 0; }
     .place-row .grid4 { display: flex; gap: 6px; flex: none; }
@@ -4407,7 +4428,18 @@ export class WristAssistantPanel extends LitElement {
       <div class="under-grid">
         ${this.renderSharedValues(cfg)}
         ${this.renderValuesRow()}
-      </div>`;
+      </div>
+      ${this.renderTapBar(cfg)}`;
+  }
+
+  /** The layer the two bars under the face are about: one selected layer on a
+   * canvas shape, and not a pick of several, which has no frame or tap of its
+   * own to edit. */
+  private barLayer(cfg: CustomComplicationConfig): CElement | undefined {
+    if (this.inspect.kind !== "layer" || this.multi.size >= 2) return undefined;
+    if (this.activeFamily === "inline") return undefined;
+    const id = this.inspect.id;
+    return cfg.elements.find((e) => e.payload.id === id);
   }
 
   /**
@@ -4420,12 +4452,24 @@ export class WristAssistantPanel extends LitElement {
    * no frame of its own to type into.
    */
   private renderPlaceBar(cfg: CustomComplicationConfig) {
-    if (this.inspect.kind !== "layer" || this.multi.size >= 2) return nothing;
-    if (this.activeFamily === "inline") return nothing;
-    const el = cfg.elements.find((e) => e.payload.id === (this.inspect as { id: string }).id);
+    const el = this.barLayer(cfg);
     if (!el) return nothing;
     return html`<div class="place-wrap" style=${this.canEdit ? "" : "pointer-events:none;opacity:.6"}
       @change=${() => this.draft?.endGesture()}>${placementCard(this.host(), el, this.canvasFamily, { inline: true })}</div>`;
+  }
+
+  /**
+   * What a tap on the selected layer does, as one row at the foot of the
+   * canvas column. Under the two value lists rather than beside them: it is
+   * about the layer, not about the complication, so it reads as the last thing
+   * said about the thing selected. A tap-area layer has no bar, because the
+   * layer is already the tap.
+   */
+  private renderTapBar(cfg: CustomComplicationConfig) {
+    const el = this.barLayer(cfg);
+    if (!el || el.kind === "tap") return nothing;
+    return html`<div class="place-wrap" style=${this.canEdit ? "" : "pointer-events:none;opacity:.6"}
+      @change=${() => this.draft?.endGesture()}>${tapCard(this.host(), el, { inline: true })}</div>`;
   }
 
   private renderBigPreview(family: DrawableFamily, layouts: ResolvedAll, watchCase: WatchCase) {
@@ -4756,7 +4800,7 @@ export class WristAssistantPanel extends LitElement {
       }
       // Place lives under the preview, where the numbers are next to the
       // picture they move, so the inspector leaves it out.
-      body = layerEditor(host, el, this.canvasFamily, { placement: false });
+      body = layerEditor(host, el, this.canvasFamily, { placement: false, tap: false });
     } else if (ins.kind === "group") {
       const g = cfg.groups?.find((x) => x.id === ins.id);
       if (!g) {
@@ -4929,7 +4973,7 @@ function ownerLabel(o: OwnerSummary): string {
  * live reading, so these are the settings behind it.
  *
  * The place and the size used to be here too. They are not: the numbers change
- * every time the layer is nudged, they are already on the Place card and on the
+ * every time the layer is nudged, they are already on the Position card and on the
  * face itself, and reading them off a list is not how anyone positions a layer.
  * Two long facts per row also made the line wrap, which is what made the row
  * change height. Rotation stays, because it is rare and easy to miss.

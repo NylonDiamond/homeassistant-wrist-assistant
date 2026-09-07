@@ -33,7 +33,7 @@ export function canvasPoint(svg: SVGSVGElement, ev: PointerEvent): { x: number; 
 }
 
 /**
- * A frame typed into the Place card, held to the rules a gesture already
+ * A frame typed into the Position card, held to the rules a gesture already
  * obeys: no smaller than a corner drag allows, and never pushed so far that
  * nothing is left on the face.
  */

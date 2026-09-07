@@ -336,7 +336,7 @@ export function sliderField(
  * stored 0-1, which reads as nothing on screen, and the card's summary already
  * speaks percent ("23% wide").
  *
- * These boxes exist so the Place card shows what its header reset will take
+ * These boxes exist so the Position card shows what its header reset will take
  * back. Before them the card held only Rotation, so a reset that also re-centred
  * and resized the layer looked like a bug.
  */
@@ -1954,11 +1954,11 @@ interface CardOptions {
    * card reset back in one step. */
   reset?: () => void;
   /** What that button says it will do, when "back to its defaults" is too
-   * vague to be safe. The Place card resets a layer's whole frame, so it says
+   * vague to be safe. The Position card resets a layer's whole frame, so it says
    * so rather than letting the reader find out by watching the layer jump. */
   resetTitle?: string;
   /** Never folds: the body is always drawn and the header is not a control.
-   * For the Place card under the preview, which is not one of the inspector's
+   * For the Position card under the preview, which is not one of the inspector's
    * stack and so has no business reading (or writing) openSections. */
   alwaysOpen?: boolean;
   /** Extra class on the card and on its body, for a card laid out as a row
@@ -2075,7 +2075,7 @@ function lineOrientationField(family: FamilyKind, f: NormalizedFrame, setFrame: 
   return html`<div class="grid2">
     ${segField("Direction", vertical ? "vertical" : "horizontal", [["horizontal", "Horizontal"], ["vertical", "Vertical"]], (v) => {
       // Zero when the frame's own long side already points that way, a quarter
-      // turn when it does not; the Place card's rotation field shows the result.
+      // turn when it does not; the Position card's rotation field shows the result.
       const wantTall = v === "vertical";
       setFrame({ rotationDegrees: wantTall === tall ? 0 : 90 }, "line-dir");
     }, { titles: { horizontal: "Lying along the frame", vertical: "Standing up, as a divider" } })}
@@ -2254,7 +2254,9 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
   const f = eff.frame;
   const setFrame = (patch: Partial<NormalizedFrame>, k: string) => host.update((c) => setPlacement(c, family, id, { frame: typedFrame(f, patch) }), `${key}-${k}-${family}`);
   const placeChanged = !same(f, CENTERED_FRAME) || eff.isHidden;
-  return card(host, "placement", "Place", html`
+  // The section id stays "placement": it is a stored key (openSections, and
+  // the browser's own memory of which cards were open), not a label.
+  return card(host, "placement", "Position", html`
     <div class="grid4">
       ${percentField("Left", f.x, (v) => setFrame({ x: v }, "x"), CENTERED_FRAME.x, -100, 100)}
       ${percentField("Top", f.y, (v) => setFrame({ y: v }, "y"), CENTERED_FRAME.y, -100, 100)}
@@ -2273,7 +2275,22 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
       } : {}) });
 }
 
-export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, opts: { placement?: boolean } = {}): TemplateResult {
+/**
+ * What a tap on this layer does. Its own function for the same reason Position
+ * is: the answer is about the face, so it belongs under the face. A tap-area
+ * layer has no card here, since the layer is the tap.
+ */
+export function tapCard(host: EditorHost, el: CElement, opts: { inline?: boolean } = {}): TemplateResult | typeof nothing {
+  if (el.kind === "tap") return nothing;
+  const id = el.payload.id;
+  const attached = attachedTapsOf(host.config, id)[0];
+  return card(host, "tappable", "Tap", tappableSection(host, el, `el-${id}`),
+    { color: SECTION_COLOR.tap, icon: "tap", summary: attached ? describeTapAction((attached.payload as TapElement).action) : "Not tappable",
+      ...(opts.inline ? { alwaysOpen: true, cardClass: "tap-bar", bodyClass: "tap-row" } : {}),
+      ...(attached ? { reset: () => host.update((c) => detachTaps(c, id)) } : {}) });
+}
+
+export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, opts: { placement?: boolean; tap?: boolean } = {}): TemplateResult {
   const id = el.payload.id;
   const idx = host.config.elements.findIndex((e) => e.payload.id === id);
   const key = `el-${id}`;
@@ -2752,7 +2769,6 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
   const ref = elementEntity(host.config, el);
   const tested: Value | undefined = ref ? { kind: { kind: "entityState", ...ref } } : undefined;
   const kindColor = KIND_COLOR[el.kind];
-  const attached = el.kind === "tap" ? undefined : attachedTapsOf(host.config, id)[0];
   const stamp = el.kind === "image" ? el.payload.timestamp === true : false;
 
   // Which fields each card owns, for its header reset. Content is what the
@@ -2786,9 +2802,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
     ${el.kind === "image" ? card(host, "timestamp", "Timestamp", imageTimestampSection(el.payload, (m, k) => upd((e) => m((e as typeof el).payload), k)),
       { color: kindColor, icon: "clock", summary: stamp ? `Shown · ${el.payload.timestampSize} pt` : "Hidden",
         ...(stamp ? { reset: resetKeys(TIMESTAMP_KEYS, "reset-stamp") } : {}) }) : nothing}
-    ${el.kind === "tap" ? nothing : card(host, "tappable", "Tap", tappableSection(host, el, key),
-      { color: SECTION_COLOR.tap, icon: "tap", summary: attached ? describeTapAction((attached.payload as TapElement).action) : "Not tappable",
-        ...(attached ? { reset: () => host.update((c) => detachTaps(c, id)) } : {}) })}
+    ${opts.tap === false ? nothing : tapCard(host, el)}
     ${card(host, "states", "States", statesEditor(host, el.payload.rules, el.kind,
       (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`, tested),
       { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(el.payload.rules).replace(/\.$/, ""),
