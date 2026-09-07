@@ -317,6 +317,10 @@ export class WristAssistantPanel extends LitElement {
   @state() private openSections: ReadonlySet<string> = new Set(["content"]);
   /** The header's complication menu is open. */
   @state() private pickerOpen = false;
+  /** The shape the picker menu is narrowed to. "all" is the default and the
+   * only state a short list ever has: the filter header only appears once the
+   * list is long enough to be worth narrowing. Per session, never saved. */
+  @state() private pickerFilter: FamilyKind | "all" = "all";
   /** The Shared values list under the complication settings is unfolded. */
   /** Entity states typed in under the preview, standing in for the live ones
    * so the other states can be seen without waiting for the house. Never
@@ -382,9 +386,15 @@ export class WristAssistantPanel extends LitElement {
    * the dialog leaves the document exactly as it was. */
   @state() private presetKind?: PresetKind;
   @state() private presetEntity?: EntityRef;
-  /** The New button's shape picker is open. Only offered when the watch can
-   * take a one-shape document; an older watch gets the three-shape default. */
+  /** The New button's shape chooser is open. The button sits beside the
+   * complication list rather than inside it, so making one is one click from
+   * anywhere instead of a menu row under twenty other rows. */
   @state() private newShapeChooser = false;
+  /** Parsed config per saved record, keyed by id and invalidated by revision.
+   * The picker draws a real preview of every complication, and parsing and
+   * compiling every document on every render of an open menu is the one part
+   * of that worth keeping. */
+  private readonly recordPreviews = new Map<string, { revision: number; config: CustomComplicationConfig; entities: EntityRef[] }>();
   /** Which watch case the previews are drawn in. The reference (46 mm) is scale 1. */
   @state() private previewCase = REFERENCE_CASE.label;
   @state() private loadError?: string;
@@ -624,21 +634,64 @@ export class WristAssistantPanel extends LitElement {
     .picker .pk-rev { color: var(--wa-muted); font-weight: 400; font-size: 12px; white-space: nowrap; }
     .picker > button svg { width: 16px; height: 16px; opacity: .7; }
     .picker .menu {
-      position: absolute; top: calc(100% + 8px); left: 0; z-index: 50; width: 360px; max-height: 60vh; overflow: auto;
+      position: absolute; top: calc(100% + 8px); left: 0; z-index: 50; width: 400px; max-height: 60vh; overflow: auto;
       background: var(--wa-card); color: var(--wa-ink); border: 1px solid var(--wa-line-strong);
       border-radius: var(--wa-r-md); box-shadow: var(--wa-shadow-pop); padding: 6px;
     }
     .picker .menu .row {
       display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; font-size: 13px;
-      background: transparent; border: 0; color: inherit; padding: 8px 10px; border-radius: 8px; cursor: pointer;
+      background: transparent; border: 0; color: inherit; padding: 6px 10px; border-radius: 8px; cursor: pointer;
     }
     .picker .menu .row:hover { background: var(--wa-panel); }
     .picker .menu .row[aria-current="true"] { background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
     .picker .menu .row.locked { opacity: .6; cursor: default; }
     .picker .menu .pk-badge { font-size: 11px; opacity: .7; white-space: nowrap; }
-    .picker .menu .new { margin-top: 6px; border-top: 1px solid var(--wa-line); padding-top: 10px; color: var(--wa-accent); font-weight: 500; }
-    .picker .menu .new-shape { padding: 4px 10px 8px; }
-    .picker .menu .new-shape .hint { margin: 4px 0 8px; }
+    /* The row picture: the complication drawn as the watch draws it, in a
+       fixed box so every name in the list still starts on the same column. */
+    .pk-art { width: 68px; height: 30px; flex: none; display: grid; place-items: center; pointer-events: none; }
+    .pk-art svg { display: block; max-width: 100%; max-height: 30px; width: auto; height: auto; background: #000; border-radius: 4px; }
+    .pk-art.circular svg { border-radius: 50%; }
+    .pk-art.corner svg { background: #2c2c2e; }
+    .pk-art .inline-line {
+      font-size: 9px; padding: 2px 6px; max-width: 100%; min-width: 0; display: inline-flex; align-items: center; gap: 3px;
+      border-radius: 999px; background: #000; color: #fff; overflow: hidden; white-space: nowrap;
+    }
+    .pk-art .inline-line svg { background: transparent; border-radius: 0; }
+    /* Shape filter, only drawn once the list is long. */
+    .pk-filter { display: flex; gap: 4px; flex-wrap: wrap; padding: 4px 6px 8px; border-bottom: 1px solid var(--wa-line); margin-bottom: 6px; }
+    .pk-chip {
+      display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 11.5px; font-weight: 500;
+      padding: 4px 8px; border-radius: 999px; cursor: pointer; color: var(--wa-muted);
+      border: 1px solid var(--wa-line); background: transparent;
+    }
+    .pk-chip:hover:not(:disabled) { border-color: var(--wa-line-strong); color: var(--wa-ink); }
+    .pk-chip:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .pk-chip:disabled { opacity: .35; cursor: default; }
+    .pk-chip.on { border-color: var(--wa-accent); color: var(--wa-ink); background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
+    .pk-count { font-size: 10.5px; opacity: .65; font-weight: 400; }
+
+    /* New complication: its own button beside the list, because making one was
+       a row buried under every complication that already existed. */
+    .newc { position: relative; display: inline-flex; align-items: center; gap: 6px; }
+    .new-btn {
+      display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 13.5px; font-weight: 500;
+      padding: 7px 12px 7px 10px; border-radius: 10px; cursor: pointer;
+      border: 1px solid color-mix(in srgb, var(--wa-accent) 55%, var(--wa-line));
+      background: color-mix(in srgb, var(--wa-accent) 16%, transparent); color: var(--wa-ink);
+      transition: border-color .12s ease-out, background-color .12s ease-out;
+    }
+    .new-btn:hover:not(:disabled) { border-color: var(--wa-accent); background: color-mix(in srgb, var(--wa-accent) 26%, transparent); }
+    .new-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .new-btn:disabled { opacity: .45; cursor: not-allowed; }
+    .new-btn svg { width: 16px; height: 16px; }
+    .newc-full { font-size: 11px; color: var(--wa-muted); white-space: nowrap; }
+    .newc .new-shape {
+      position: absolute; top: calc(100% + 8px); left: 0; z-index: 50; width: 300px;
+      background: var(--wa-card); border: 1px solid var(--wa-line-strong); border-radius: var(--wa-r-md);
+      box-shadow: var(--wa-shadow-pop); padding: 10px 12px 12px;
+    }
+    .newc .new-shape .hint { margin: 0 0 8px; }
+    .newc .new-shape .adders { display: flex; gap: 6px; flex-wrap: wrap; }
     .shape-dots { display: inline-flex; gap: 3px; align-items: center; flex: none; }
     .shape-dot { width: 14px; height: 10px; border-radius: 2px; background: currentColor; opacity: .3; display: inline-block; }
     .shape-dot.circular { width: 10px; border-radius: 50%; }
@@ -2625,37 +2678,49 @@ export class WristAssistantPanel extends LitElement {
 
   // ── resolution ────────────────────────────────────────────────────────
 
+  /**
+   * One entity's live state in the shape the resolver wants. Shared by the
+   * draft's context and by the picker's per-record preview contexts, so a
+   * timer or a camera picture reads the same either way. `useTestValues` is
+   * off for the picker: a value typed in to test the open complication must
+   * not change what another one's thumbnail says.
+   */
+  private entityStateFor(id: string, iconName: string, useTestValues: boolean): EntityState | undefined {
+    const s = this.hass.states[id];
+    if (!s) return undefined;
+    const attrs = s.attributes;
+    const domain = id.split(".")[0] ?? "";
+    const entry: EntityState = {
+      entityId: id,
+      // A typed test value stands in for the live state, and only here: the
+      // document, the templates and the watch never see it.
+      state: (useTestValues ? this.testValues.get(id) : undefined) ?? s.state,
+      unitOfMeasurement: typeof attrs.unit_of_measurement === "string" ? attrs.unit_of_measurement : undefined,
+      iconName,
+      domain,
+    };
+    if (domain === "timer") {
+      // Countdown support: the resolver needs the timer's phase, finish
+      // instant, and paused remaining (HA serializes remaining as "H:MM:SS").
+      entry.timerState = s.state;
+      if (typeof attrs.finishes_at === "string") entry.finishesAt = attrs.finishes_at;
+      const remaining = parseDurationSeconds(attrs.remaining);
+      if (remaining !== undefined) entry.remaining = remaining;
+    }
+    if (typeof attrs.entity_picture === "string") {
+      // Image elements: the preview draws the entity's own picture URL, which is
+      // a camera's tokenized proxy for a camera and the avatar or cover art for
+      // everything else. Any domain can carry one, so nothing is filtered here.
+      entry.entityPicture = attrs.entity_picture;
+    }
+    return entry;
+  }
+
   private buildContext(): ResolveContext {
     const entityStates = new Map<string, EntityState>();
-    for (const id of this.compiled?.entities.keys() ?? []) {
-      const s = this.hass.states[id];
-      if (!s) continue;
-      const attrs = s.attributes;
-      const domain = id.split(".")[0] ?? "";
-      const entry: EntityState = {
-        entityId: id,
-        // A typed test value stands in for the live state, and only here: the
-        // document, the templates and the watch never see it.
-        state: this.testValues.get(id) ?? s.state,
-        unitOfMeasurement: typeof attrs.unit_of_measurement === "string" ? attrs.unit_of_measurement : undefined,
-        iconName: this.compiled?.entities.get(id)?.iconName ?? "",
-        domain,
-      };
-      if (domain === "timer") {
-        // Countdown support: the resolver needs the timer's phase, finish
-        // instant, and paused remaining (HA serializes remaining as "H:MM:SS").
-        entry.timerState = s.state;
-        if (typeof attrs.finishes_at === "string") entry.finishesAt = attrs.finishes_at;
-        const remaining = parseDurationSeconds(attrs.remaining);
-        if (remaining !== undefined) entry.remaining = remaining;
-      }
-      if (typeof attrs.entity_picture === "string") {
-        // Image elements: the preview draws the entity's own picture URL, which is
-        // a camera's tokenized proxy for a camera and the avatar or cover art for
-        // everything else. Any domain can carry one, so nothing is filtered here.
-        entry.entityPicture = attrs.entity_picture;
-      }
-      entityStates.set(id, entry);
+    for (const [id, ref] of this.compiled?.entities ?? []) {
+      const entry = this.entityStateFor(id, ref.iconName ?? "", true);
+      if (entry) entityStates.set(id, entry);
     }
     return {
       entityStates,
@@ -3199,6 +3264,7 @@ export class WristAssistantPanel extends LitElement {
       <header>
         <h1><span class="mark">${uiIcon("watch")}</span>Wrist Assistant</h1>
         ${this.renderPicker()}
+        ${this.renderNewButton()}
         ${dirty ? html`<span class="dirty-dot" title="Unsaved changes"></span>` : nothing}
         <div class="toolbar">
           <button @click=${() => this.undo()} ?disabled=${!d?.canUndo} title="Undo (⌘Z)">Undo</button>
@@ -3266,13 +3332,84 @@ export class WristAssistantPanel extends LitElement {
     return html`<span class="shape-dots">${ALL_FAMILIES.map((f) => html`<span class="shape-dot ${f} ${families.includes(f) ? "on" : ""}" title=${familyTitle(f)}></span>`)}</span>`;
   }
 
+  /** The shape filter appears only past this many rows. Under it the whole
+   * list fits on screen and a filter is one more control for no gain. */
+  private static readonly FILTER_FROM_ROWS = 8;
+
+  /** A saved record's config, parsed once and kept until its revision moves.
+   * Undefined for a document this panel cannot parse, which draws as a blank
+   * picture rather than breaking the row. */
+  private recordPreview(record: ComplicationRecord) {
+    const hit = this.recordPreviews.get(record.id);
+    if (hit && hit.revision === record.revision) return hit;
+    try {
+      const config = parseConfig(record.document);
+      const entry = { revision: record.revision, config, entities: [...compile(config).entities.values()] };
+      this.recordPreviews.set(record.id, entry);
+      return entry;
+    } catch {
+      this.recordPreviews.delete(record.id);
+      return undefined;
+    }
+  }
+
+  /**
+   * One saved complication drawn the way the watch draws it, small enough for
+   * a menu row. Only the open complication has its templates rendered and its
+   * history fetched, so a Jinja layer or a chart in another row draws what the
+   * watch draws before its first sync: the fallback, or nothing. That is worth
+   * it to make the list recognisable at a glance.
+   */
+  private renderRowArt(record: ComplicationRecord): TemplateResult {
+    const entry = this.recordPreview(record);
+    if (!entry) return html`<span class="pk-art"></span>`;
+    const cfg = entry.config;
+    // With a filter on, every row draws the shape being filtered for, so the
+    // pictures answer the question the filter asked.
+    const filtered = this.pickerFilter !== "all" && cfg.supportedFamilies.includes(this.pickerFilter)
+      ? this.pickerFilter
+      : undefined;
+    const family = filtered ?? firstDrawable(cfg) ?? "inline";
+    const entityStates = new Map<string, EntityState>();
+    for (const ref of entry.entities) {
+      const state = this.entityStateFor(ref.entityId, ref.iconName ?? "", false);
+      if (state) entityStates.set(ref.entityId, state);
+    }
+    const layouts = resolveAll(cfg, {
+      entityStates,
+      templateResults: new Map(),
+      namedValues: cfg.values,
+    });
+    if (family === "inline") return html`<span class="pk-art inline">${this.renderInlinePreview(layouts.inline, true)}</span>`;
+    const layout = layouts[family];
+    if (!layout) return html`<span class="pk-art"></span>`;
+    return html`<span class="pk-art ${family}">${renderLayout(layout, { icons: this.icons, imageSizes: this.imageSizes, slot: REFERENCE_CASE.slots[family] })}</span>`;
+  }
+
+  /** The shape chips above the list. Each one carries its own count, so a
+   * shape with nothing in it says so instead of opening an empty list. */
+  private renderPickerFilter(rows: readonly PickerRow[]) {
+    const familiesOfRow = (row: PickerRow) => row.kind === "record" ? familiesOf(row.record) : row.families;
+    const chip = (key: FamilyKind | "all", label: string, count: number) => html`<button
+      class="pk-chip ${this.pickerFilter === key ? "on" : ""}" ?disabled=${count === 0}
+      aria-pressed=${this.pickerFilter === key ? "true" : "false"}
+      @click=${() => { this.pickerFilter = key; }}>${label}<span class="pk-count">${count}</span></button>`;
+    return html`<div class="pk-filter">
+      ${chip("all", "All", rows.length)}
+      ${ALL_FAMILIES.map((f) => chip(f, familyTitle(f), rows.filter((r) => familiesOfRow(r).includes(f)).length))}
+    </div>`;
+  }
+
   private renderPicker() {
     const d = this.draft;
     const rec = this.records.find((r) => r.id === this.selectedId);
     const name = d ? (d.config.name.trim() || "Untitled") : "No complication";
     const families = d ? d.config.supportedFamilies : [];
-    const rows = this.pickerRows();
-    const free = this.freeSlot();
+    const all = this.pickerRows();
+    const filter = this.pickerFilter;
+    const rows = filter === "all"
+      ? all
+      : all.filter((row) => (row.kind === "record" ? familiesOf(row.record) : row.families).includes(filter));
     return html`<div class="picker">
       <button aria-haspopup="listbox" aria-expanded=${this.pickerOpen ? "true" : "false"} title="Choose a complication"
         @click=${() => this.togglePicker()}>
@@ -3282,37 +3419,30 @@ export class WristAssistantPanel extends LitElement {
         ${uiIcon("chevron")}
       </button>
       ${this.pickerOpen ? html`<div class="menu" role="listbox">
-        ${rows.length === 0 && !(d && d.baseRevision === null) ? html`<div class="empty">No complications for this watch yet.</div>` : nothing}
+        ${all.length >= WristAssistantPanel.FILTER_FROM_ROWS ? this.renderPickerFilter(all) : nothing}
+        ${all.length === 0 && !(d && d.baseRevision === null) ? html`<div class="empty">No complications for this watch yet.</div>` : nothing}
+        ${all.length > 0 && rows.length === 0 ? html`<div class="empty">Nothing on this watch has a ${filter === "all" ? "" : familyTitle(filter)} shape.</div>` : nothing}
         ${rows.map((row) => row.kind === "record"
           ? html`<button class="row" role="option" aria-current=${row.record.id === this.selectedId ? "true" : "false"}
               @click=${() => { this.togglePicker(false); this.selectRecord(row.record); }}>
-              ${this.shapeDots(familiesOf(row.record))}
+              ${this.renderRowArt(row.record)}
               <span class="pk-name">${String(row.record.document?.name ?? "Untitled")}</span>
+              ${this.shapeDots(familiesOf(row.record))}
               <span class="pk-badge">r${row.record.revision}</span>
             </button>`
           : html`<div class="row locked" title=${row.title}>
-              ${this.shapeDots(row.families)}
+              <span class="pk-art"></span>
               <span class="pk-name">${row.name}</span>
+              ${this.shapeDots(row.families)}
               <span class="pk-badge">${row.badge}</span>
             </div>`)}
-        ${d && d.baseRevision === null ? html`<div class="row" aria-current="true">${this.shapeDots(families)}<span class="pk-name">${name}</span><span class="pk-badge">unsaved</span></div>` : nothing}
-        ${this.hass.user?.is_admin ? html`
-          <button class="row new" ?disabled=${free < 0} @click=${() => { this.newShapeChooser = !this.newShapeChooser; }}>
-            ${uiIcon("plus")}<span class="pk-name">New complication</span>${free < 0 ? html`<span class="pk-badge">watch is full</span>` : nothing}
-          </button>
-          ${this.newShapeChooser && free >= 0 ? html`<div class="new-shape">
-            <div class="hint">Start with one shape. More can be added under the preview later.</div>
-            <div class="adders">
-              ${ALL_FAMILIES.map((f) => html`<button class="small ${f === "rectangular" ? "primary" : ""}" @click=${() => { this.togglePicker(false); this.createNew(f); }}>${familyTitle(f)}</button>`)}
-            </div>
-          </div>` : nothing}` : nothing}
+        ${d && d.baseRevision === null ? html`<div class="row" aria-current="true"><span class="pk-art"></span><span class="pk-name">${name}</span>${this.shapeDots(families)}<span class="pk-badge">unsaved</span></div>` : nothing}
       </div>` : nothing}
     </div>`;
   }
 
   private togglePicker(next = !this.pickerOpen) {
     this.pickerOpen = next;
-    if (!next) this.newShapeChooser = false;
     if (next) window.addEventListener("pointerdown", this.pickerOutside, { capture: true });
     else window.removeEventListener("pointerdown", this.pickerOutside, { capture: true });
   }
@@ -3320,6 +3450,40 @@ export class WristAssistantPanel extends LitElement {
   private pickerOutside = (e: PointerEvent) => {
     const inside = e.composedPath().some((n) => n instanceof HTMLElement && n.classList.contains("picker"));
     if (!inside) this.togglePicker(false);
+  };
+
+  /**
+   * The New complication button, beside the list rather than inside it. It
+   * opens one small popover asking which shape to start with; the rest of the
+   * shapes are added under the preview later.
+   */
+  private renderNewButton() {
+    if (!this.hass.user?.is_admin) return nothing;
+    const free = this.freeSlot();
+    const full = free < 0;
+    return html`<div class="newc">
+      <button class="new-btn" ?disabled=${full} aria-haspopup="dialog" aria-expanded=${this.newShapeChooser ? "true" : "false"}
+        title=${full ? "This watch has no free slot. Delete a complication first." : "Make a new complication"}
+        @click=${() => this.toggleNewChooser()}>${uiIcon("plus")}<span>New</span></button>
+      ${full ? html`<span class="newc-full">watch is full</span>` : nothing}
+      ${this.newShapeChooser && !full ? html`<div class="new-shape" role="dialog" aria-label="New complication">
+        <div class="hint">Start with one shape. More can be added under the preview later.</div>
+        <div class="adders">
+          ${ALL_FAMILIES.map((f) => html`<button class="small ${f === "rectangular" ? "primary" : ""}" @click=${() => { this.toggleNewChooser(false); this.createNew(f); }}>${familyTitle(f)}</button>`)}
+        </div>
+      </div>` : nothing}
+    </div>`;
+  }
+
+  private toggleNewChooser(next = !this.newShapeChooser) {
+    this.newShapeChooser = next;
+    if (next) window.addEventListener("pointerdown", this.newChooserOutside, { capture: true });
+    else window.removeEventListener("pointerdown", this.newChooserOutside, { capture: true });
+  }
+
+  private newChooserOutside = (e: PointerEvent) => {
+    const inside = e.composedPath().some((n) => n instanceof HTMLElement && n.classList.contains("newc"));
+    if (!inside) this.toggleNewChooser(false);
   };
 
   private renderBanners() {
