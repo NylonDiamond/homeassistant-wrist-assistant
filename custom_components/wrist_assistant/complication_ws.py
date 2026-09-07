@@ -16,6 +16,7 @@ Commands:
     wrist_assistant/complications/subscribe   {owner_watch_id?}
     wrist_assistant/complications/move_owner  {source_owner_watch_id,
                                                target_owner_watch_id}
+    wrist_assistant/complications/watch_status {owner_watch_id}
     wrist_assistant/complications/render_values {templates: {key: jinja}}
     wrist_assistant/complications/history_series
                                               {requests: {key: {entity_id,
@@ -73,6 +74,7 @@ _CMD_MOVE_OWNER = f"{DOMAIN}/complications/move_owner"
 _CMD_RENDER = f"{DOMAIN}/complications/render_values"
 _CMD_HISTORY = f"{DOMAIN}/complications/history_series"
 _CMD_NUDGE = f"{DOMAIN}/complications/nudge"
+_CMD_WATCH_STATUS = f"{DOMAIN}/complications/watch_status"
 _CMD_FORGET = f"{DOMAIN}/devices/forget"
 
 
@@ -115,6 +117,7 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_render_values)
     websocket_api.async_register_command(hass, ws_history_series)
     websocket_api.async_register_command(hass, ws_nudge)
+    websocket_api.async_register_command(hass, ws_watch_status)
     websocket_api.async_register_command(hass, ws_forget_device)
 
 
@@ -318,6 +321,13 @@ def ws_list(
             # which is the only way a save can reach it without the user
             # tapping Sync now on the watch.
             "polling": bool(coordinator and coordinator.is_polling(owner)),
+            # Seconds since the watch last polled, or null when it has not
+            # polled since this server started. "On watch" is true forever
+            # once the tokens match, so this is what stops a green tick from
+            # implying a watch that went flat two hours ago is still listening.
+            "last_poll_seconds": (
+                coordinator.seconds_since_poll(owner) if coordinator else None
+            ),
             "max_schema_version": COMPLICATION_MAX_SCHEMA_VERSION,
             # iPhone presets on this watch (slot + name, its last sync
             # report). The panel's auto-assigner must skip these slots (a
@@ -470,6 +480,42 @@ def ws_subscribe(
     connection.send_result(msg["id"], {"token": store.token})
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_WATCH_STATUS,
+        vol.Required("owner_watch_id"): str,
+    }
+)
+@callback
+def ws_watch_status(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Just the watch's reachability, for the panel's header chip.
+
+    The panel used to learn this only from a list reply, and a list arrives on
+    a change or a save. Nothing fires when a watch simply stops polling or
+    starts again, so a chip opened next to a watch on the wrist kept saying so
+    for as long as the tab stayed open. This is the same three fields without
+    the records, cheap enough to ask for on a timer.
+    """
+    domain_data = hass.data.get(DOMAIN)
+    if domain_data is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    owner = msg["owner_watch_id"]
+    coordinator = domain_data.coordinator
+    store = domain_data.complication_store
+    connection.send_result(
+        msg["id"],
+        {
+            "polling": coordinator.is_polling(owner),
+            "last_poll_seconds": coordinator.seconds_since_poll(owner),
+            "token": store.owner_token(owner),
+            "applied_token": store.applied_token(owner),
+        },
+    )
+
+
 @websocket_api.require_admin
 @websocket_api.websocket_command(
     {
@@ -501,6 +547,7 @@ def ws_nudge(
         msg["id"],
         {
             "polling": polling,
+            "last_poll_seconds": coordinator.seconds_since_poll(owner),
             "token": domain_data.complication_store.owner_token(owner),
             "applied_token": domain_data.complication_store.applied_token(owner),
         },

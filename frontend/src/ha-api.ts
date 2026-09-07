@@ -113,6 +113,9 @@ export async function fetchList(hass: HassLike, owner: string) {
     applied_token?: number;
     /** Whether the watch holds a long-poll on this server right now. */
     polling?: boolean;
+    /** Seconds since the watch last polled. Null when it has not polled since
+     * the server started, absent from integrations older than the field. */
+    last_poll_seconds?: number | null;
     /** Watch-app pages (id + name, watch order), per its last sync report. */
     pages?: { id: string; name: string }[];
     records: ComplicationRecord[];
@@ -124,9 +127,22 @@ export async function fetchList(hass: HassLike, owner: string) {
 export async function nudgeWatch(hass: HassLike, owner: string) {
   return hass.connection.sendMessagePromise<{
     polling: boolean;
+    last_poll_seconds?: number | null;
     token: number;
     applied_token: number;
   }>({ type: `${D}/nudge`, owner_watch_id: owner });
+}
+
+/** Just the watch's reachability, for the header chip. Cheap enough to ask
+ * for on a timer: nothing fires when a watch stops polling or starts again,
+ * so without this the chip is only ever as fresh as the last list. */
+export async function fetchWatchStatus(hass: HassLike, owner: string) {
+  return hass.connection.sendMessagePromise<{
+    polling: boolean;
+    last_poll_seconds?: number | null;
+    token: number;
+    applied_token: number;
+  }>({ type: `${D}/watch_status`, owner_watch_id: owner });
 }
 
 export async function saveRecord(

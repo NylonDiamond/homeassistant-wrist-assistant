@@ -15,6 +15,7 @@ import {
   fetchOwners,
   moveOwner,
   nudgeWatch,
+  fetchWatchStatus,
   fetchHistorySeries,
   type HistorySeriesRequest,
   renderTemplates,
@@ -126,6 +127,10 @@ import { type PresetEnv, type PresetKind, LAYER_PRESETS, applyPreset, presetSpec
 
 const TEMPLATE_REFRESH_MS = 30_000;
 const TEMPLATE_DEBOUNCE_MS = 500;
+/** How often the header chip re-asks whether the watch is listening. Slow on
+ * purpose: it answers "is it there right now", and nobody watches a watch come
+ * and go by the second. */
+const WATCH_STATUS_MS = 30_000;
 
 /** Search key for the preset dialog's entity field. One dialog, one field, so
  * one key; the field's transient search state lives in editors.ts under it. */
@@ -331,6 +336,11 @@ export class WristAssistantPanel extends LitElement {
   @state() private appliedToken?: number;
   /** Whether the watch holds a long-poll on this server right now. */
   @state() private polling = false;
+  /** Seconds since the watch last polled, as of the last list or nudge reply.
+   * Undefined from an integration older than the field, or when nothing has
+   * polled since the server started. Read only while `polling` is false, so a
+   * value that ages between refreshes is never the one on screen for long. */
+  @state() private lastPollSeconds?: number;
   /** A save or a Send tap is waiting for the watch's ack. */
   @state() private sendPending = false;
   private sendTimer?: number;
@@ -1688,6 +1698,10 @@ export class WristAssistantPanel extends LitElement {
     .send.sent { color: var(--wa-ent); }
     .send.sending { opacity: .7; }
     .send.offline { color: var(--warning-color, #ffa600); }
+    /* "last seen 2 h ago" beside a green tick. Muted, because the tick is
+       still true: the change is on the watch, and this only says the watch
+       stopped listening afterwards. */
+    .send-note { font-size: 12px; color: var(--wa-muted); white-space: nowrap; flex: none; }
     ul { list-style: none; margin: 0; padding: 0; }
     .datum { padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px; }
     .datum + .datum { box-shadow: inset 0 1px 0 var(--wa-line); }
@@ -1971,6 +1985,7 @@ export class WristAssistantPanel extends LitElement {
     window.addEventListener("keyup", this.keyUpHandler);
     window.addEventListener("beforeunload", this.beforeUnload);
     void this.loadOwners();
+    this.watchStatusTimer = window.setInterval(() => void this.refreshWatchStatus(), WATCH_STATUS_MS);
   }
 
   /** Watches the panel itself, not the window, so opening or closing the Home
@@ -2097,6 +2112,7 @@ export class WristAssistantPanel extends LitElement {
     if (this.debounceTimer) window.clearTimeout(this.debounceTimer);
     if (this.countdownTimer !== undefined) window.clearInterval(this.countdownTimer);
     if (this.sendTimer !== undefined) window.clearTimeout(this.sendTimer);
+    if (this.watchStatusTimer !== undefined) window.clearInterval(this.watchStatusTimer);
     this.cancelGesture?.();
   }
 
@@ -2461,6 +2477,7 @@ export class WristAssistantPanel extends LitElement {
       this.serverToken = reply.token;
       this.appliedToken = reply.applied_token;
       this.polling = reply.polling ?? false;
+      this.lastPollSeconds = typeof reply.last_poll_seconds === "number" ? reply.last_poll_seconds : undefined;
       if (this.appliedToken === this.serverToken) this.endSendWait();
       const still = this.records.find((r) => r.id === this.selectedId);
       if (still) {
@@ -2562,6 +2579,31 @@ export class WristAssistantPanel extends LitElement {
 
   // ── send to watch ─────────────────────────────────────────────────────
 
+  private watchStatusTimer?: number;
+
+  /**
+   * Re-read whether the watch is listening, on a slow clock.
+   *
+   * The store's change events cover every edit, but a watch that simply stops
+   * polling, or starts again without applying anything new, changes nothing in
+   * the store and fires nothing. Without this the chip is frozen at whatever
+   * the last list said, so a green "On watch" outlived the watch it was about.
+   * Skipped while a send is being waited on, which has its own faster clock.
+   */
+  private async refreshWatchStatus() {
+    if (!this.ownerId || this.sendPending) return;
+    try {
+      const reply = await fetchWatchStatus(this.hass, this.ownerId);
+      this.polling = reply.polling;
+      this.lastPollSeconds = typeof reply.last_poll_seconds === "number" ? reply.last_poll_seconds : undefined;
+      this.serverToken = reply.token;
+      this.appliedToken = reply.applied_token;
+    } catch {
+      // A dropped socket or an integration without the command: the chip keeps
+      // what it had rather than blaming the watch for a panel problem.
+    }
+  }
+
   /** Start (or restart) the wait for the watch's ack. Ends on the ack via
    * the subscription, or on the timeout, whichever comes first. */
   private beginSendWait() {
@@ -2589,6 +2631,7 @@ export class WristAssistantPanel extends LitElement {
     try {
       const reply = await nudgeWatch(this.hass, this.ownerId);
       this.polling = reply.polling;
+      this.lastPollSeconds = typeof reply.last_poll_seconds === "number" ? reply.last_poll_seconds : undefined;
       this.serverToken = reply.token;
       this.appliedToken = reply.applied_token;
       if (reply.applied_token !== reply.token) this.beginSendWait();
@@ -2603,13 +2646,15 @@ export class WristAssistantPanel extends LitElement {
       appliedToken: this.appliedToken,
       polling: this.polling,
       pending: this.sendPending,
+      lastPollSeconds: this.lastPollSeconds,
     });
     if (s.kind === "unsupported") return nothing;
     const d = describeSend(s);
     const resend = d.resend && this.hass.user?.is_admin
       ? html`<button class="ghost" title="Wake the watch again" @click=${() => void this.sendToWatch()}>Resend</button>`
       : nothing;
-    return html`<span class="send ${s.kind}" title=${d.title}>${s.kind === "sent" ? "✓ " : ""}${d.label}</span>${resend}`;
+    return html`<span class="send ${s.kind}" title=${d.title}>${s.kind === "sent" ? "✓ " : ""}${d.label}</span>${
+      d.note ? html`<span class="send-note" title=${d.title}>${d.note}</span>` : nothing}${resend}`;
   }
 
   /** The store refuses a document whose slot is outside 0..MAX_SLOTS-1. */

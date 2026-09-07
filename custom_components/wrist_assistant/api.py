@@ -338,6 +338,22 @@ class DeltaCoordinator:
         last = self._last_poll_at.get(watch_id)
         return last is not None and self.hass.loop.time() - last < POLL_GAP_SECONDS
 
+    def seconds_since_poll(self, watch_id: str) -> float | None:
+        """How long since this watch last polled, or None when it has not
+        polled since this server started.
+
+        Read from `_last_poll_at`, which outlives the watch's session: a
+        session is pruned after five idle minutes, so `last_seen` on it cannot
+        answer "and how long has it been away?". The clock is the loop's
+        monotonic one, so it is a duration and never a wall-clock time, and it
+        is in memory only: after a restart the answer is None until the watch
+        polls again.
+        """
+        last = self._last_poll_at.get(watch_id)
+        if last is None:
+            return None
+        return max(0.0, self.hass.loop.time() - last)
+
     def complications_token(self, watch_id: str) -> int | None:
         """The owner's store token, or None when no store is attached."""
         if self._complication_store is None:
