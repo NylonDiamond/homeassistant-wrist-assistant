@@ -1169,19 +1169,21 @@ export class WristAssistantPanel extends LitElement {
     .sec-h .swatch svg { width: 15px; height: 15px; }
     .sec-h .tt { display: flex; flex-direction: column; min-width: 0; flex: 1; }
     .sec-h h4 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -.01em; }
-    /* The changed dot: a card holding a value away from its default carries a
-       small dot in its own colour after the title, the way an unsaved
-       document does in a tab. */
-    .sec-h h4 .dot {
-      display: inline-block; width: 7px; height: 7px; border-radius: 50%; vertical-align: middle;
-      margin-left: 2px; position: relative; top: -1px;
-      background: var(--c); box-shadow: 0 0 5px color-mix(in srgb, var(--c) 70%, transparent);
-    }
-    /* A number box or colour row with a reset button beside it. */
-    .reset-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
-    .reset-row input { flex: 1; min-width: 0; }
+    /* Reset buttons. One control, two places: beside a setting's title, and in
+       a card's header for everything the card owns. It is drawn only while
+       something is away from its default, so its presence is the "changed"
+       mark, and a card with no buttons in it is a card nobody touched. */
     button.icon.reset { flex: none; }
-    button.icon.reset:disabled { opacity: .3; }
+    .sec-h button.icon.reset { color: var(--c); opacity: .85; }
+    .sec-h button.icon.reset:hover { opacity: 1; background: color-mix(in srgb, var(--c) 22%, transparent); }
+    /* Small enough to sit on a 13px label line without pushing it around. */
+    button.icon.tiny { width: 20px; height: 20px; border-radius: 6px; margin: -4px 0; }
+    button.icon.tiny svg.ui-icon { width: 13px; height: 13px; }
+    /* The button sits snug after the title text rather than at the right end
+       of the label column: half these fields put the label above the control
+       and half beside it, and a right-aligned button lands next to the wrong
+       label in the first kind. The title keeps its place either way. */
+    .field > span.has-reset { display: flex; align-items: center; justify-content: flex-start; gap: 2px; }
     .sec-h .sum { color: var(--wa-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .sec-h .chev { color: var(--wa-muted); opacity: .7; flex: none; transition: transform .15s ease-out; }
     .sec-h .chev svg { width: 16px; height: 16px; }

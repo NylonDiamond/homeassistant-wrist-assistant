@@ -79,6 +79,7 @@ import {
   comparisonOperand,
   defaultAttachedTapAction,
   detachTaps,
+  removeElement,
   elementEntity,
   formatIsEmpty,
   groupMembers,
@@ -182,8 +183,48 @@ function onInput(handler: (v: string) => void) {
   return (e: Event) => handler((e.target as HTMLInputElement).value);
 }
 
-export function textField(label: string, value: string, set: (v: string) => void, opts: { placeholder?: string; list?: string; mono?: boolean } = {}) {
-  return html`<label class="field"><span>${label}</span>
+/**
+ * What a setting needs to offer a way back: whether it is already at the
+ * default, what to call that default, and how to return to it. Field helpers
+ * build one from their `def` option with `backTo`.
+ */
+interface ResetTo {
+  atDefault: boolean;
+  title: string;
+  reset: () => void;
+}
+
+/**
+ * The one reset control every setting shares: a small circular arrow at the
+ * right of the setting's title. It is drawn only while the value is away from
+ * its default, so the buttons down an open card are the list of what someone
+ * changed, and a card with none is a card at its defaults.
+ */
+function resetButton(back: ResetTo | undefined) {
+  if (back === undefined || back.atDefault) return nothing;
+  return html`<button type="button" class="icon tiny reset" title=${back.title} aria-label=${back.title}
+    @click=${(e: Event) => { e.preventDefault(); e.stopPropagation(); back.reset(); }}>${uiIcon("reset")}</button>`;
+}
+
+/** A setting's title, with its reset button when there is something to reset.
+ * Without one the title stays a plain span, so nothing shifts when the button
+ * appears: it takes the space at the right end of the title, not beside it. */
+function fieldLabel(label: string, back?: ResetTo) {
+  const btn = resetButton(back);
+  return btn === nothing ? html`<span>${label}</span>` : html`<span class="has-reset">${label}${btn}</span>`;
+}
+
+/** The reset a field with a plain default offers. `def` left undefined means
+ * the setting has no default worth naming, and no button is drawn. `show`
+ * names the default in the button's tooltip. */
+function backTo<T>(value: T, def: T | undefined, set: (v: T) => void, show: (v: T) => string = (v) => String(v)): ResetTo | undefined {
+  if (def === undefined) return undefined;
+  const d = def;
+  return { atDefault: value === d, title: `Back to ${show(d)}`, reset: () => set(d) };
+}
+
+export function textField(label: string, value: string, set: (v: string) => void, opts: { placeholder?: string; list?: string; mono?: boolean; def?: string } = {}) {
+  return html`<label class="field">${fieldLabel(label, backTo(value, opts.def, set, (v) => (v === "" ? "empty" : v)))}
     <input type="text" .value=${value} placeholder=${opts.placeholder ?? ""} list=${opts.list ?? nothing}
       class=${opts.mono ? "mono" : ""} @input=${onInput(set)} /></label>`;
 }
@@ -193,7 +234,7 @@ export function textArea(label: string, value: string, set: (v: string) => void,
     <textarea rows=${rows} .value=${value} class="mono" @input=${onInput(set)}></textarea></label>`;
 }
 
-/** `def` adds a reset button beside the box, lit only while the value is
+/** `def` adds a reset button beside the title, drawn only while the value is
  * away from that default. */
 export function numberField(label: string, value: number | undefined, set: (v: number | undefined) => void, opts: { step?: number; min?: number; max?: number; optional?: boolean; def?: number } = {}) {
   const shown = value === undefined || Number.isNaN(value) ? "" : String(value);
@@ -206,22 +247,12 @@ export function numberField(label: string, value: number | undefined, set: (v: n
         const n = Number(v);
         if (!Number.isNaN(n)) set(n);
       })} />`;
-  if (opts.def === undefined) return html`<label class="field"><span>${label}</span>${input}</label>`;
-  const def = opts.def;
-  return html`<label class="field"><span>${label}</span>
-    <div class="reset-row">${input}${resetButton(value === def, `Back to ${def}`, () => set(def))}</div></label>`;
+  return html`<label class="field">${fieldLabel(label, backTo<number | undefined>(value, opts.def, set))}${input}</label>`;
 }
 
-/** The one reset control every field with a default shares. Disabled, not
- * hidden, when there is nothing to reset: the row keeps its width and the
- * eye learns where the button lives. */
-function resetButton(atDefault: boolean, title: string, reset: () => void) {
-  return html`<button type="button" class="icon reset" title=${title} aria-label="Reset" ?disabled=${atDefault}
-    @click=${(e: Event) => { e.preventDefault(); reset(); }}>${uiIcon("reset")}</button>`;
-}
-
-export function selectField<T extends string>(label: string, value: T, options: [T, string][], set: (v: T) => void) {
-  return html`<label class="field"><span>${label}</span>
+export function selectField<T extends string>(label: string, value: T, options: [T, string][], set: (v: T) => void, opts: { def?: T } = {}) {
+  const name = (v: T) => options.find(([o]) => o === v)?.[1] ?? v;
+  return html`<label class="field">${fieldLabel(label, backTo(value, opts.def, set, name))}
     <select @change=${onInput((v) => set(v as T))}>
       ${options.map(([v, text]) => html`<option value=${v} ?selected=${v === value}>${text}</option>`)}
     </select></label>`;
@@ -234,8 +265,9 @@ export function selectField<T extends string>(label: string, value: T, options: 
  * change length, stay a `selectField`: a row of seven buttons is a menu that
  * forgot to fold.
  */
-export function segField<T extends string>(label: string, value: T, options: [T, string][], set: (v: T) => void, opts: { titles?: Partial<Record<T, string>> } = {}) {
-  return html`<div class="field seg-field"><span>${label}</span>
+export function segField<T extends string>(label: string, value: T, options: [T, string][], set: (v: T) => void, opts: { titles?: Partial<Record<T, string>>; def?: T } = {}) {
+  const name = (v: T) => options.find(([o]) => o === v)?.[1] ?? v;
+  return html`<div class="field seg-field">${fieldLabel(label, backTo(value, opts.def, set, name))}
     <div class="seg wide" role="radiogroup" aria-label=${label}>
       ${options.map(([v, text]) => html`<button type="button" role="radio" aria-checked=${v === value ? "true" : "false"}
         class=${v === value ? "on" : ""} title=${opts.titles?.[v] ?? nothing}
@@ -255,17 +287,19 @@ export function sliderField(
   opts: { min: number; max: number; step: number; def: number; format?: (v: number) => string },
 ) {
   const show = opts.format ?? ((v: number) => String(Math.round(v * 100) / 100));
-  return html`<div class="field slider"><span>${label}</span>
+  return html`<div class="field slider">${fieldLabel(label, backTo(value, opts.def, set, show))}
     <div class="slider-row">
       <input type="range" min=${opts.min} max=${opts.max} step=${opts.step} .value=${String(value)}
         @input=${onInput((v) => { const n = Number(v); if (!Number.isNaN(n)) set(n); })} />
       <span class="slider-value mono">${show(value)}</span>
-      ${resetButton(value === opts.def, `Back to ${show(opts.def)}`, () => set(opts.def))}
     </div></div>`;
 }
 
-export function checkField(label: string, value: boolean, set: (v: boolean) => void) {
-  return html`<label class="field check"><input type="checkbox" .checked=${value} @change=${(e: Event) => set((e.target as HTMLInputElement).checked)} /><span>${label}</span></label>`;
+/** `def` adds a reset beside the label, drawn only while the box is away from
+ * it. The button sits inside the `<label>`, so its click is stopped there or
+ * the label would forward it to the checkbox and toggle it back. */
+export function checkField(label: string, value: boolean, set: (v: boolean) => void, def?: boolean) {
+  return html`<label class="field check"><input type="checkbox" .checked=${value} @change=${(e: Event) => set((e.target as HTMLInputElement).checked)} />${fieldLabel(label, backTo(value, def, set, (v) => (v ? "on" : "off")))}</label>`;
 }
 
 /** `#RRGGBB` or `#RRGGBBAA`. The native picker handles RGB; alpha is a slider.
@@ -280,18 +314,18 @@ export function colorField(label: string, value: string | undefined, set: (v: st
     const base = rgbHex.replace(/^#/, "").toUpperCase();
     return a >= 100 ? `#${base}` : `#${base}${Math.round((a / 100) * 255).toString(16).padStart(2, "0").toUpperCase()}`;
   };
-  return html`<div class="field color"><span>${label}</span>
+  const back: ResetTo | undefined = def === undefined ? undefined : {
+    atDefault: sameColor(value, def ?? undefined),
+    title: def === null ? "Back to none" : `Back to ${def}`,
+    reset: () => set(def ?? undefined),
+  };
+  return html`<div class="field color">${fieldLabel(label, back)}
     <div class="color-row">
       ${optional ? html`<input type="checkbox" title="Enabled" .checked=${value !== undefined} @change=${(e: Event) => set((e.target as HTMLInputElement).checked ? compose(rgb, alpha) : undefined)} />` : nothing}
       <input type="color" .value=${rgb} ?disabled=${optional && value === undefined} @input=${onInput((v) => set(compose(v, alpha)))} />
       <input type="range" min="0" max="100" .value=${String(alpha)} title="Opacity" ?disabled=${optional && value === undefined} @input=${onInput((v) => set(compose(rgb, Number(v))))} />
       <input type="text" class="mono hex" .value=${value ?? ""} placeholder="#RRGGBB" ?disabled=${optional && value === undefined}
         @input=${onInput((v) => { const t = v.trim(); if (/^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(t)) set(t.startsWith("#") ? t.toUpperCase() : `#${t.toUpperCase()}`); })} />
-      ${def === undefined ? nothing : resetButton(
-        sameColor(value, def ?? undefined),
-        def === null ? "Back to none" : `Back to ${def}`,
-        () => set(def ?? undefined),
-      )}
     </div></div>`;
 }
 
@@ -1590,7 +1624,7 @@ function imageTimestampSection(img: ImageElement, upd: (m: (p: ImageElement) => 
     }
   });
   return html`
-    ${checkField("Show timestamp", on, (v) => upd((p) => { if (v) p.timestamp = true; else delete p.timestamp; }))}
+    ${checkField("Show timestamp", on, (v) => upd((p) => { if (v) p.timestamp = true; else delete p.timestamp; }), false)}
     ${!on ? nothing : html`
       ${segField("Placement", free ? "free" : "corner", [
         ["corner", "A corner"],
@@ -1617,9 +1651,11 @@ interface CardOptions {
   /** One line under the title saying what the card holds, so a shut card
    * still answers most questions. */
   summary?: string;
-  /** Whether anything in the card is away from its default. Shown as a dot
-   * by the title, so a shut card says "someone set something here". */
-  changed?: boolean;
+  /** Put everything the card owns back to its defaults. Supplied only while
+   * something in the card is away from one, so the button in the header is
+   * also what says "someone set something here" on a shut card. Undo takes a
+   * card reset back in one step. */
+  reset?: () => void;
 }
 
 /** Structural equality for the plain data the config is made of: objects,
@@ -1642,6 +1678,19 @@ function anyDiffers(actual: object, base: object, keys: readonly string[]): bool
   return keys.some((k) => !same((actual as Record<string, unknown>)[k], (base as Record<string, unknown>)[k]));
 }
 
+/** Put a payload's `keys` back to what a fresh layer of its kind holds. A key
+ * the default leaves out is deleted rather than set to undefined, so an
+ * optional setting goes back to absent and the saved document stays clean.
+ * The copy is deep, or two layers would end up sharing one colour slot. */
+function restoreKeys(actual: object, base: object, keys: readonly string[]): void {
+  const a = actual as Record<string, unknown>;
+  const b = base as Record<string, unknown>;
+  for (const k of keys) {
+    if (b[k] === undefined) delete a[k];
+    else a[k] = structuredClone(b[k]);
+  }
+}
+
 /**
  * One inspector card. The header is always drawn; the body only while the
  * card is open, so a long States table costs nothing while it is shut. Which
@@ -1655,7 +1704,9 @@ function card(host: EditorHost, id: string, title: string, body: unknown, opts: 
     <div class="sec-h" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"} @click=${toggle}
       @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}>
       <span class="swatch">${uiIcon(opts.icon ?? "content")}</span>
-      <span class="tt"><h4>${title}${opts.changed ? html` <span class="dot" title="Something here is set away from its default"></span>` : nothing}</h4>${opts.summary ? html`<span class="sum">${opts.summary}</span>` : nothing}</span>
+      <span class="tt"><h4>${title}</h4>${opts.summary ? html`<span class="sum">${opts.summary}</span>` : nothing}</span>
+      ${resetButton(opts.reset === undefined ? undefined
+        : { atDefault: false, title: `Put ${title} back to its defaults`, reset: opts.reset })}
       <span class="chev">${uiIcon("chevron")}</span>
     </div>
     ${open ? html`<div class="sec-b">${body}</div>` : nothing}
@@ -1761,11 +1812,12 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         ${checkField("Live countdown", el.payload.countdown === true, (v) => upd((e) => {
           const p = (e as typeof el).payload;
           if (v) p.countdown = true; else delete p.countdown;
-        }))}
+        }), base.countdown === true)}
         ${el.payload.countdown ? html`<div class="hint">Ticks down to the value's target: an active timer's finish, or any future timestamp. A paused timer shows its remaining time.</div>` : nothing}`;
       look = html`<div class="grid2">
           ${shapeSizeField(host, el, family, "Font size", { step: 1, min: 4, def: baseSize("fontSize") })}
-          ${segField("Weight", el.payload.fontWeight, FONT_WEIGHTS, (v) => upd((e) => { (e as typeof el).payload.fontWeight = v; }))}
+          ${segField("Weight", el.payload.fontWeight, FONT_WEIGHTS, (v) => upd((e) => { (e as typeof el).payload.fontWeight = v; }),
+            { def: base.fontWeight as typeof el.payload.fontWeight })}
         </div>`;
       break;
     }
@@ -1779,13 +1831,13 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       content = html`
         ${valueEditor(host, el.payload.value, (v) => upd((e) => { (e as typeof el).payload.value = v; }, "value"), { showResolved: true, label: "Reading", key: `${key}-value` })}
         <div class="grid2">
-          ${numberField("Min", el.payload.minValue, (v) => upd((e) => { (e as typeof el).payload.minValue = v ?? 0; }, "min"))}
-          ${numberField("Max", el.payload.maxValue, (v) => upd((e) => { (e as typeof el).payload.maxValue = v ?? 100; }, "max"))}
+          ${numberField("Min", el.payload.minValue, (v) => upd((e) => { (e as typeof el).payload.minValue = v ?? 0; }, "min"), { def: base.minValue as number })}
+          ${numberField("Max", el.payload.maxValue, (v) => upd((e) => { (e as typeof el).payload.maxValue = v ?? 100; }, "max"), { def: base.maxValue as number })}
         </div>`;
       look = html`
         <div class="grid2">
           ${segField("Style", el.payload.style, [["arc", "Arc"], ["ring", "Ring"], ["bar", "Bar"]], (v) => upd((e) => { (e as typeof el).payload.style = v; }),
-            { titles: { arc: "A 270° arc, open at the bottom", ring: "A full circle", bar: "A straight bar" } })}
+            { titles: { arc: "A 270° arc, open at the bottom", ring: "A full circle", bar: "A straight bar" }, def: base.style as typeof el.payload.style })}
           ${shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5, def: baseSize("lineWidth") })}
         </div>
         ${colorField("Track colour", el.payload.trackColorHex, (v) => upd((e) => { (e as typeof el).payload.trackColorHex = v ?? "#FFFFFF40"; }, "track"), false, base.trackColorHex as string)}`;
@@ -1799,6 +1851,8 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       // own value is the series. Every ordinary sensor holds one number, and
       // its chart has to come from the recorder instead.
       const historyKey = chartHistoryKey(c);
+      const baseMinutes = base.historyMinutes as number;
+      const basePoints = base.historyPoints as number;
       const usingHistory = c.historyMinutes > 0;
       const namesEntity = c.value.kind.kind === "entityState";
       const historyRaw = historyKey === undefined ? undefined : host.historySeries(historyKey);
@@ -1830,14 +1884,19 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         ${segField("Draw", usingHistory ? "history" : "value",
           [["history", "Recorded history"], ["value", "The value itself"]],
           (v) => setChart((p) => { p.historyMinutes = v === "history" ? (p.historyMinutes || CHART_HISTORY_DEFAULT_MINUTES) : 0; }),
-          { titles: { history: "Read the entity's past from the recorder and plot it", value: "Plot the numbers the value holds right now, such as a forecast list" } })}
+          { titles: { history: "Read the entity's past from the recorder and plot it", value: "Plot the numbers the value holds right now, such as a forecast list" },
+            def: (base.historyMinutes as number) > 0 ? "history" : "value" })}
         ${usingHistory
           ? html`
             ${namesEntity ? nothing : html`<div class="hint warn">History needs an entity.
               A typed-in value, a template or a shared value has no past to read, so this chart
               draws the value itself until Readings names an entity.</div>`}
             <div class="grid2">
-              <label class="field"><span>Span</span>
+              <label class="field">${fieldLabel("Span", {
+                atDefault: c.historyMinutes === baseMinutes && !customSpan,
+                title: `Back to ${historySpanLabel(baseMinutes)}`,
+                reset: () => { customSpans.delete(id); setChart((p) => { p.historyMinutes = baseMinutes; }); },
+              })}
                 <select @change=${(e: Event) => {
                   const v = (e.target as HTMLSelectElement).value;
                   if (v === "custom") {
@@ -1851,7 +1910,11 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
                   ${CHART_HISTORY_SPANS.map(({ minutes, label }) => html`<option value=${String(minutes)} ?selected=${!customSpan && minutes === c.historyMinutes}>${label}</option>`)}
                   <option value="custom" ?selected=${customSpan}>Custom…</option>
                 </select></label>
-              <div class="field readings-field"><span>Readings</span>
+              <div class="field readings-field">${fieldLabel("Readings", {
+                atDefault: c.historyPoints === basePoints,
+                title: `Back to ${basePoints < 1 ? "every one" : `${basePoints} averaged`}`,
+                reset: () => setChart((p) => { p.historyPoints = basePoints; }),
+              })}
                 <div class="readings-row">
                   <div class="seg wide" role="radiogroup" aria-label="Readings">
                     <button type="button" role="radio" aria-checked=${everyReading ? "false" : "true"} class=${everyReading ? "" : "on"}
@@ -1906,30 +1969,31 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
               Switch Draw to <b>Recorded history</b> to plot how it has moved.</div>`
           : nothing}
         <div class="grid2">
-          ${numberField("Use", c.limit, (v) => setChart((p) => { p.limit = Math.max(0, Math.round(v ?? 0)); }, "limit"), { step: 1, min: 0 })}
+          ${numberField("Use", c.limit, (v) => setChart((p) => { p.limit = Math.max(0, Math.round(v ?? 0)); }, "limit"), { step: 1, min: 0, def: base.limit as number })}
           ${segField("From", c.takeFromEnd ? "end" : "start",
             [["start", "The first"], ["end", "The last"]],
-            (v) => setChart((p) => { p.takeFromEnd = v === "end"; }))}
+            (v) => setChart((p) => { p.takeFromEnd = v === "end"; }),
+            { def: base.takeFromEnd === true ? "end" : "start" })}
         </div>
         <div class="hint">${usingHistory
           ? "Trims the series after it arrives, so 0 draws every reading fetched above."
           : "A forecast sensor often carries 24 or 48 entries. 0 draws all of them."}</div>`;
       look = html`
         <div class="grid2">
-          ${segField("Style", c.style, CHART_STYLES, (v) => setChart((p) => { p.style = v; }))}
+          ${segField("Style", c.style, CHART_STYLES, (v) => setChart((p) => { p.style = v; }), { def: base.style as typeof c.style })}
           ${c.style === "bars"
             ? numberField("Bar gap (pt)", c.barGap, (v) => setChart((p) => { p.barGap = Math.max(0, v ?? 0); }, "gap"), { step: 0.5, min: 0, def: base.barGap as number })
             : shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5, def: baseSize("lineWidth") })}
         </div>
         <div class="grid2">
           ${segField("Scale", c.scale, CHART_SCALES, (v) => setChart((p) => { p.scale = v; }),
-            { titles: { auto: "The plot stretches to fit the readings it has", fixed: "The plot always runs from Min to Max" } })}
-          ${segField("Baseline", c.baseline, CHART_BASELINES, (v) => setChart((p) => { p.baseline = v; }))}
+            { titles: { auto: "The plot stretches to fit the readings it has", fixed: "The plot always runs from Min to Max" }, def: base.scale as typeof c.scale })}
+          ${segField("Baseline", c.baseline, CHART_BASELINES, (v) => setChart((p) => { p.baseline = v; }), { def: base.baseline as typeof c.baseline })}
         </div>
         ${c.scale === "fixed"
           ? html`<div class="grid2">
-              ${numberField("Min", c.minValue, (v) => setChart((p) => { p.minValue = v ?? 0; }, "cmin"))}
-              ${numberField("Max", c.maxValue, (v) => setChart((p) => { p.maxValue = v ?? 100; }, "cmax"))}
+              ${numberField("Min", c.minValue, (v) => setChart((p) => { p.minValue = v ?? 0; }, "cmin"), { def: base.minValue as number })}
+              ${numberField("Max", c.maxValue, (v) => setChart((p) => { p.maxValue = v ?? 100; }, "cmax"), { def: base.maxValue as number })}
             </div>`
           : nothing}
         <div class="hint">${c.baseline === "zero"
@@ -1938,7 +2002,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         ${segField("Colour", c.coloring, CHART_COLORINGS, (v) => setChart((p) => {
           p.coloring = v;
           if (v === "bands" && p.bands.length === 0) p.bands = seedBands(shown);
-        }))}
+        }), { def: base.coloring as typeof c.coloring })}
         ${c.coloring === "bands" ? html`
           <div class="hint">Checked lowest first, so each row only says where it ends. A reading past
             the last row takes the colour underneath.
@@ -1956,26 +2020,26 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
             </div>`)}
           <button class="small" @click=${() => setChart((p) => { p.bands = [...p.bands, nextBand(p)]; })}>Add band</button>
           ${colorField("And the rest", c.bandAboveColorHex,
-            (v) => setChart((p) => { p.bandAboveColorHex = v ?? CHART_DEFAULT_BAND_HIGH_HEX; }, "babove"))}
+            (v) => setChart((p) => { p.bandAboveColorHex = v ?? CHART_DEFAULT_BAND_HIGH_HEX; }, "babove"), false, CHART_DEFAULT_BAND_HIGH_HEX)}
           ${c.style === "area"
             ? html`${checkField("Fill follows the bands", c.fillBands,
-                (v) => setChart((p) => { p.fillBands = v; }))}
+                (v) => setChart((p) => { p.fillBands = v; }), base.fillBands as boolean)}
               <div class="hint">Off, the wash under the line stays one colour. On, each stretch of
                 fill takes its own band, which reads well on a chart that spends real time in more
                 than one band and as noise on one that flickers between them.</div>`
             : nothing}`
           : nothing}
         <div class="grid2">
-          ${segField("Highlight", c.highlight, CHART_HIGHLIGHTS, (v) => setChart((p) => { p.highlight = v; }))}
+          ${segField("Highlight", c.highlight, CHART_HIGHLIGHTS, (v) => setChart((p) => { p.highlight = v; }), { def: base.highlight as typeof c.highlight })}
           ${c.highlight === "none" ? nothing
-            : segField("Marker", c.marker, CHART_MARKERS, (v) => setChart((p) => { p.marker = v; }))}
+            : segField("Marker", c.marker, CHART_MARKERS, (v) => setChart((p) => { p.marker = v; }), { def: base.marker as typeof c.marker })}
         </div>
         ${c.highlight === "none" ? nothing : html`
           <div class="grid2">
             ${c.highlight === "lowest" ? nothing
-              : colorField("Highest colour", c.highColorHex, (v) => setChart((p) => { p.highColorHex = v ?? CHART_DEFAULT_HIGH_HEX; }, "hicol"))}
+              : colorField("Highest colour", c.highColorHex, (v) => setChart((p) => { p.highColorHex = v ?? CHART_DEFAULT_HIGH_HEX; }, "hicol"), false, CHART_DEFAULT_HIGH_HEX)}
             ${c.highlight === "highest" ? nothing
-              : colorField("Lowest colour", c.lowColorHex, (v) => setChart((p) => { p.lowColorHex = v ?? CHART_DEFAULT_LOW_HEX; }, "locol"))}
+              : colorField("Lowest colour", c.lowColorHex, (v) => setChart((p) => { p.lowColorHex = v ?? CHART_DEFAULT_LOW_HEX; }, "locol"), false, CHART_DEFAULT_LOW_HEX)}
           </div>
           <div class="hint">A marker is worth keeping on: most watch faces tint a complication into one colour,
             which flattens the two colours into each other, and the marker shape is what survives that.</div>`}`;
@@ -1984,7 +2048,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
     case "shape":
       content = html`<div class="grid2">
           ${segField("Shape", el.payload.kind, [["roundedRectangle", "Rounded"], ["rectangle", "Rectangle"], ["capsule", "Capsule"], ["circle", "Circle"]], (v) => upd((e) => { (e as typeof el).payload.kind = v; }),
-            { titles: { roundedRectangle: "Rounded rectangle" } })}
+            { titles: { roundedRectangle: "Rounded rectangle" }, def: base.kind as typeof el.payload.kind })}
           ${el.payload.kind === "roundedRectangle" ? numberField("Corner radius (pt)", el.payload.cornerRadius, (v) => upd((e) => { (e as typeof el).payload.cornerRadius = v ?? 6; }, "radius"), { step: 0.5, min: 0, def: base.cornerRadius as number }) : nothing}
         </div>`;
       look = html`
@@ -2003,7 +2067,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       look = html`
         ${segField("Picture", img.contentMode, [["fill", "Fill the frame"], ["fit", "Fit inside"]],
           (v) => setImage((p) => { p.contentMode = v; }),
-          { titles: { fill: "Cover the frame, cropping what does not fit", fit: "Show the whole picture, with space around it" } })}
+          { titles: { fill: "Cover the frame, cropping what does not fit", fit: "Show the whole picture, with space around it" }, def: base.contentMode as typeof img.contentMode })}
         ${sliderField("Zoom", img.zoom, (v) => setImage((p) => { p.zoom = v; }, "zoom"),
           { min: MIN_ZOOM, max: 4, step: 0.05, def: 1, format: (v) => `${v.toFixed(2)}x` })}
         ${sliderField("Pan left/right", img.panX, (v) => setImage((p) => { p.panX = v; }, "panx"),
@@ -2035,32 +2099,45 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
   const attached = el.kind === "tap" ? undefined : attachedTapsOf(host.config, id)[0];
   const stamp = el.kind === "image" ? el.payload.timestamp === true : false;
 
-  // Which fields each card owns, for its changed dot. Content is what the
+  // Which fields each card owns, for its header reset. Content is what the
   // layer says; look is how it is drawn. Per-shape size overrides count as
   // look too, since that is the box they are typed into.
   const contentKeys = CONTENT_KEYS[el.kind];
   const lookKeys = LOOK_KEYS[el.kind];
   const contentChanged = anyDiffers(el.payload, base, contentKeys);
   const sizeKey = el.kind === "text" ? "fontSize" : el.kind === "icon" ? "size" : el.kind === "gauge" || el.kind === "chart" ? "lineWidth" : undefined;
+  const sizedHere = host.config.perFamily[family]?.placements[id]?.size !== undefined;
   const lookChanged = anyDiffers(el.payload, base, lookKeys)
     || (sizeKey !== undefined && eff.size !== undefined && eff.size !== base[sizeKey]);
   const placeChanged = !same(f, CENTERED_FRAME) || eff.isHidden;
+  const labels = chartLabelsOf(host.config, id);
+  // Every card's reset is one update, so one Undo takes the whole card back.
+  const resetKeys = (keys: readonly string[], k: string) => () => upd((e) => restoreKeys(e.payload, base, keys), k);
 
   return html`
     ${card(host, "content", "Content", html`${el.kind === "tap" ? nothing : layerEntityField(host, el, key)}${content}`,
-      { color: kindColor, icon: "content", summary: contentSummary(host, el), changed: contentChanged })}
+      { color: kindColor, icon: "content", summary: contentSummary(host, el),
+        ...(contentChanged ? { reset: resetKeys(contentKeys, "reset-content") } : {}) })}
     ${look === undefined && colour === undefined ? nothing
       : card(host, "look", el.kind === "image" ? "Picture" : "Look", html`${look ?? nothing}${colour ?? nothing}`,
-        { color: kindColor, icon: el.kind === "image" ? "image" : "look", ...(lookSummary(el) ? { summary: lookSummary(el)! } : {}), changed: lookChanged })}
+        { color: kindColor, icon: el.kind === "image" ? "image" : "look", ...(lookSummary(el) ? { summary: lookSummary(el)! } : {}),
+          ...(lookChanged ? { reset: () => host.update((c) => {
+            restoreKeys(c.elements[idx]!.payload, base, lookKeys);
+            if (sizedHere) setPlacement(c, family, id, {}, true);
+          }) } : {}) })}
     ${el.kind === "chart" ? card(host, "numbers", "Numbers", chartNumbersSection(host, el),
-      { color: KIND_COLOR.text, icon: "text", summary: chartNumbersSummary(host, el), changed: chartLabelsOf(host.config, id).length > 0 }) : nothing}
+      { color: KIND_COLOR.text, icon: "text", summary: chartNumbersSummary(host, el),
+        ...(labels.length > 0 ? { reset: () => host.update((c) => { for (const l of chartLabelsOf(c, id)) removeElement(c, l.payload.id); }) } : {}) }) : nothing}
     ${el.kind === "image" ? card(host, "timestamp", "Timestamp", imageTimestampSection(el.payload, (m, k) => upd((e) => m((e as typeof el).payload), k)),
-      { color: kindColor, icon: "clock", summary: stamp ? `Shown · ${el.payload.timestampSize} pt` : "Hidden", changed: stamp }) : nothing}
+      { color: kindColor, icon: "clock", summary: stamp ? `Shown · ${el.payload.timestampSize} pt` : "Hidden",
+        ...(stamp ? { reset: resetKeys(TIMESTAMP_KEYS, "reset-stamp") } : {}) }) : nothing}
     ${el.kind === "tap" ? nothing : card(host, "tappable", "Tap", tappableSection(host, el, key),
-      { color: SECTION_COLOR.tap, icon: "tap", summary: attached ? describeTapAction((attached.payload as TapElement).action) : "Not tappable", changed: attached !== undefined })}
+      { color: SECTION_COLOR.tap, icon: "tap", summary: attached ? describeTapAction((attached.payload as TapElement).action) : "Not tappable",
+        ...(attached ? { reset: () => host.update((c) => detachTaps(c, id)) } : {}) })}
     ${card(host, "states", "States", statesEditor(host, el.payload.rules, el.kind,
       (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`, tested),
-      { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(el.payload.rules).replace(/\.$/, ""), changed: el.payload.rules.length > 0 })}
+      { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(el.payload.rules).replace(/\.$/, ""),
+        ...(el.payload.rules.length > 0 ? { reset: () => upd((e) => { e.payload.rules = []; }) } : {}) })}
     ${card(host, "placement", "Place", html`
       ${sliderField("Rotation", f.rotationDegrees, (v) => setFrame({ rotationDegrees: v }, "rot"),
         { min: -180, max: 180, step: 1, def: 0, format: (v) => `${Math.round(v)}°` })}
@@ -2070,8 +2147,12 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       <div class="hint">Everything about where this layer sits, how big it is drawn and whether it
         shows belongs to the ${familyTitle(family)} shape alone. Pick another shape above to place
         the same layer differently there.</div>`,
-      { color: SECTION_COLOR.place, icon: "place", summary: `${Math.round(f.width * 100)}% wide · ${familyTitle(family)}${eff.fromPlacement ? "" : " · shared frame"}`, changed: placeChanged })}`;
+      { color: SECTION_COLOR.place, icon: "place", summary: `${Math.round(f.width * 100)}% wide · ${familyTitle(family)}${eff.fromPlacement ? "" : " · shared frame"}`,
+        ...(placeChanged ? { reset: () => host.update((c) => setPlacement(c, family, id, { frame: { ...CENTERED_FRAME }, isHidden: false })) } : {}) })}`;
 }
+
+/** The payload fields the Timestamp card owns. Pictures only. */
+const TIMESTAMP_KEYS = ["timestamp", "timestampCorner", "timestampSize"] as const;
 
 /** The payload fields the Content card owns, per kind. */
 const CONTENT_KEYS: Record<CElement["kind"], readonly string[]> = {
@@ -2306,12 +2387,15 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
       ${colorField("Border colour", layout.borderColorHex, (v) => upd((l) => { if (v === undefined) delete l.borderColorHex; else l.borderColorHex = v; }, "border"), true, null)}
       ${numberField("Border width (pt)", layout.borderWidth, (v) => upd((l) => { l.borderWidth = v ?? 2; }, "bw"), { step: 0.5, min: 0, def: 2 })}`,
       { color: SECTION_COLOR.place, icon: "shape", summary: `${bg} · ${border}`,
-        changed: layout.backgroundColorHex !== undefined || layout.borderColorHex !== undefined || layout.borderWidth !== 2 })}
+        ...(layout.backgroundColorHex !== undefined || layout.borderColorHex !== undefined || layout.borderWidth !== 2
+          ? { reset: () => upd((l) => { delete l.backgroundColorHex; delete l.borderColorHex; l.borderWidth = 2; }, "reset-look") } : {}) })}
     ${family === "corner" ? card(host, "corner", "Corner content", cornerEditor(host, layout, upd),
       { color: SECTION_COLOR.place, icon: "content", summary: layout.curvedText ? "Big curved text" : "Layer canvas",
-        changed: layout.curvedText !== undefined || layout.bezelText !== undefined || layout.bezelGauge !== undefined }) : nothing}
+        ...(layout.curvedText !== undefined || layout.bezelText !== undefined || layout.bezelGauge !== undefined
+          ? { reset: () => upd((l) => { delete l.curvedText; delete l.bezelText; delete l.bezelGauge; }, "reset-corner") } : {}) }) : nothing}
     ${card(host, "states", "Shape states", statesEditor(host, layout.rules, "layout", (c) => c.perFamily[family]?.rules, `rules-${family}`),
-      { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(layout.rules).replace(/\.$/, ""), changed: layout.rules.length > 0 })}
+      { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(layout.rules).replace(/\.$/, ""),
+        ...(layout.rules.length > 0 ? { reset: () => upd((l) => { l.rules = []; }, "reset-states") } : {}) })}
     ${card(host, "placements", "Placements", html`
       <div class="hint">${placed === 0
         ? `Nothing is on the ${familyTitle(family)} shape. The Layers card offers to copy another shape's whole arrangement onto it.`
