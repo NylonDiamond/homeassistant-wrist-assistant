@@ -9,8 +9,12 @@
 import { describe, expect, it } from "vitest";
 import { nothing } from "lit";
 import {
+  TIMELINE_DEFAULT_LABEL_HEX,
+  TIMELINE_DEFAULT_LABEL_SIZE,
   TIMELINE_DEFAULT_OTHER_HEX,
+  TIMELINE_DEFAULT_TIME_LABELS,
   TIMELINE_HISTORY_POINTS,
+  TIMELINE_NEW_TIME_LABELS,
   auditUnknownKeys,
   encodeConfig,
   literal,
@@ -27,7 +31,7 @@ import {
   type TimelineElement,
 } from "../src/model.js";
 import { renderLayout, type IconProvider } from "../src/renderer.js";
-import { resolveAll, timelineRuns, timelineSamples, type ResolvedLayout } from "../src/resolver.js";
+import { resolveAll, timelineLabels, timelineRuns, timelineSamples, type ResolvedLayout } from "../src/resolver.js";
 
 const noIcons: IconProvider = { render: () => undefined, available: () => false, names: () => undefined };
 
@@ -54,7 +58,7 @@ function timelineElement(tweak: (p: TimelineElement) => void = () => {}): Extrac
 }
 
 /** One timeline filling a rectangular face, resolved against one cached series. */
-function timelineLayout(series: string | undefined, tweak: (p: TimelineElement) => void = () => {}): ResolvedLayout {
+function timelineLayout(series: string | undefined, tweak: (p: TimelineElement) => void = () => {}, nowMs?: number): ResolvedLayout {
   const cfg = newConfig("Timeline", 0);
   const el = timelineElement(tweak);
   cfg.elements.push(el);
@@ -66,6 +70,7 @@ function timelineLayout(series: string | undefined, tweak: (p: TimelineElement) 
     templateResults: new Map(),
     historySeries,
     namedValues: cfg.values,
+    ...(nowMs === undefined ? {} : { nowMs }),
   }).rectangular!;
 }
 
@@ -269,10 +274,16 @@ describe("the history request", () => {
 describe("the wire format", () => {
   it("writes nothing it does not have to", () => {
     const cfg = newConfig("Timeline", 0);
-    // A fresh layer starts away from two wire defaults on purpose (black for
-    // the unnamed colour, 2 pt corners), so those two are written; set them
-    // back to the wire defaults and nothing but the value should remain.
-    cfg.elements.push(timelineElement((p) => { p.otherColorHex = TIMELINE_DEFAULT_OTHER_HEX; p.cornerRadius = 1; p.historyMinutes = 60; }));
+    // A fresh layer starts away from three wire defaults on purpose (black for
+    // the unnamed colour, 2 pt corners, four clock times), so those three are
+    // written; set them back to the wire defaults and nothing but the value
+    // should remain.
+    cfg.elements.push(timelineElement((p) => {
+      p.otherColorHex = TIMELINE_DEFAULT_OTHER_HEX;
+      p.cornerRadius = 1;
+      p.historyMinutes = 60;
+      p.timeLabels = TIMELINE_DEFAULT_TIME_LABELS;
+    }));
     const payload = (encodeConfig(cfg).elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
     expect(Object.keys(payload).sort()).toEqual(["frame", "id", "isHidden", "rules", "value"]);
   });
@@ -283,6 +294,83 @@ describe("the wire format", () => {
     const payload = (encodeConfig(cfg).elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
     expect(payload.otherColorHex).toBe("#000000");
     expect(payload.cornerRadius).toBe(2);
+  });
+
+  it("starts a new layer showing its times, and writes only that one key", () => {
+    // The times are the reading this layer was missing, so a fresh one has
+    // them; the other three sit at their wire defaults and stay unwritten.
+    const el = newElement("timeline") as Extract<Element, { kind: "timeline" }>;
+    expect(el.payload.timeLabels).toBe(TIMELINE_NEW_TIME_LABELS);
+    expect(el.payload.timeLabels).toBe("four");
+    expect(el.payload.labelSize).toBe(TIMELINE_DEFAULT_LABEL_SIZE);
+    expect(el.payload.labelColorHex).toBe(TIMELINE_DEFAULT_LABEL_HEX);
+    expect(el.payload.labelsAbove).toBe(false);
+    const cfg = newConfig("Timeline", 0);
+    cfg.elements.push(el);
+    const payload = (encodeConfig(cfg).elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
+    expect(payload.timeLabels).toBe("four");
+    expect(payload.labelSize).toBeUndefined();
+    expect(payload.labelColorHex).toBeUndefined();
+    expect(payload.labelsAbove).toBeUndefined();
+  });
+
+  it("writes each time-label key once it is away from its default", () => {
+    const cfg = newConfig("Timeline", 0);
+    cfg.elements.push(timelineElement((p) => {
+      p.timeLabels = "ends";
+      p.labelSize = 12;
+      p.labelColorHex = "#FF9F0A";
+      p.labelsAbove = true;
+    }));
+    const payload = (encodeConfig(cfg).elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
+    expect(payload.timeLabels).toBe("ends");
+    expect(payload.labelSize).toBe(12);
+    expect(payload.labelColorHex).toBe("#FF9F0A");
+    expect(payload.labelsAbove).toBe(true);
+    // The four sit after the corner radius, in the order the app's encoder
+    // writes them, so a document from either side is byte for byte the same.
+    expect(Object.keys(payload).filter((k) => ["cornerRadius", "timeLabels", "labelSize", "labelColorHex", "labelsAbove"].includes(k)))
+      .toEqual(["cornerRadius", "timeLabels", "labelSize", "labelColorHex", "labelsAbove"]);
+  });
+
+  it("round trips the time labels through parse and encode", () => {
+    const cfg = newConfig("Timeline", 0);
+    cfg.elements.push(timelineElement((p) => {
+      p.timeLabels = "ends";
+      p.labelSize = 11.5;
+      p.labelColorHex = "#FF9F0A";
+      p.labelsAbove = true;
+    }));
+    const encoded = encodeConfig(cfg);
+    expect(encodeConfig(parseConfig(encoded))).toEqual(encoded);
+    const back = parseConfig(encoded).elements[0]!;
+    if (back.kind !== "timeline") throw new Error("unreachable");
+    expect(back.payload.timeLabels).toBe("ends");
+    expect(back.payload.labelSize).toBe(11.5);
+    expect(back.payload.labelColorHex).toBe("#FF9F0A");
+    expect(back.payload.labelsAbove).toBe(true);
+  });
+
+  it("reads a document that predates the keys as no times at all", () => {
+    const cfg = newConfig("Timeline", 0);
+    cfg.elements.push(timelineElement((p) => { p.timeLabels = TIMELINE_DEFAULT_TIME_LABELS; }));
+    const encoded = encodeConfig(cfg);
+    const back = parseConfig(encoded).elements[0]!;
+    if (back.kind !== "timeline") throw new Error("unreachable");
+    expect(back.payload.timeLabels).toBe("none");
+    expect(back.payload.labelSize).toBe(TIMELINE_DEFAULT_LABEL_SIZE);
+    expect(back.payload.labelColorHex).toBe(TIMELINE_DEFAULT_LABEL_HEX);
+    expect(back.payload.labelsAbove).toBe(false);
+  });
+
+  it("takes a timeLabels word it does not know as none rather than refusing", () => {
+    const cfg = newConfig("Timeline", 0);
+    cfg.elements.push(timelineElement((p) => { p.timeLabels = "four"; }));
+    const encoded = encodeConfig(cfg);
+    ((encoded.elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>).timeLabels = "eight";
+    const back = parseConfig(encoded).elements[0]!;
+    if (back.kind !== "timeline") throw new Error("unreachable");
+    expect(back.payload.timeLabels).toBe("none");
   });
 
   it("writes each key once it is away from its default", () => {
@@ -399,6 +487,73 @@ describe("seeded colour tables", () => {
   });
 });
 
+describe("the clock times along the span", () => {
+  // A fixed instant, so every expectation below is arithmetic rather than a
+  // race with the wall clock. The strings are built with the same Intl call the
+  // resolver makes, so a machine on a 24 hour locale passes the same tests.
+  const NOW = Date.UTC(2026, 8, 6, 21, 36, 0);
+  const withMinutes = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+  const hourOnly = new Intl.DateTimeFormat(undefined, { hour: "numeric" });
+  const labelsOf = (tweak: (p: TimelineElement) => void) => timelineLabels(timelineElement(tweak).payload, NOW);
+
+  it("prints the two ends of the window", () => {
+    const labels = labelsOf((p) => { p.timeLabels = "ends"; p.historyMinutes = 60; });
+    expect(labels.map((l) => l.position)).toEqual([0, 1]);
+    expect(labels.map((l) => l.text)).toEqual([
+      withMinutes.format(new Date(NOW - 60 * 60 * 1000)),
+      withMinutes.format(new Date(NOW)),
+    ]);
+  });
+
+  it("prints the ends and the two thirds between them, the watch page's own row", () => {
+    const labels = labelsOf((p) => { p.timeLabels = "four"; p.historyMinutes = 180; });
+    expect(labels.map((l) => l.position)).toEqual([0, 1 / 3, 2 / 3, 1]);
+    const hour = 60 * 60 * 1000;
+    expect(labels.map((l) => l.text)).toEqual([
+      withMinutes.format(new Date(NOW - 3 * hour)),
+      withMinutes.format(new Date(NOW - 2 * hour)),
+      withMinutes.format(new Date(NOW - hour)),
+      withMinutes.format(new Date(NOW)),
+    ]);
+  });
+
+  it("keeps the minute up to three hours", () => {
+    const labels = labelsOf((p) => { p.timeLabels = "four"; p.historyMinutes = 180; });
+    expect(labels[0]!.text).toBe(withMinutes.format(new Date(NOW - 180 * 60 * 1000)));
+  });
+
+  it("drops the minute past three hours, where it is noise", () => {
+    const labels = labelsOf((p) => { p.timeLabels = "four"; p.historyMinutes = 240; });
+    expect(labels.map((l) => l.text)).toEqual([
+      hourOnly.format(new Date(NOW - 240 * 60 * 1000)),
+      hourOnly.format(new Date(NOW - 160 * 60 * 1000)),
+      hourOnly.format(new Date(NOW - 80 * 60 * 1000)),
+      hourOnly.format(new Date(NOW)),
+    ]);
+  });
+
+  it("prints nothing when the layer asks for none", () => {
+    expect(labelsOf((p) => { p.timeLabels = "none"; })).toEqual([]);
+  });
+
+  it("prints nothing when the layer names no entity, because it has no window", () => {
+    expect(labelsOf((p) => { p.timeLabels = "four"; p.value = literal("on"); })).toEqual([]);
+  });
+
+  it("prints its times before the history lands, because the window is already known", () => {
+    // The row is a fact about the span, not about the data, so a strip still
+    // fetching still says what it will cover.
+    const layout = timelineLayout(undefined, (p) => { p.timeLabels = "four"; }, NOW);
+    const el = layout.elements.find((e) => e.kind === "timeline");
+    if (!el || el.kind !== "timeline") throw new Error("no timeline layer resolved");
+    expect(el.runs).toEqual([]);
+    expect(el.labels).toHaveLength(4);
+    expect(el.labelSize).toBe(TIMELINE_DEFAULT_LABEL_SIZE);
+    expect(el.labelColorHex).toBe(TIMELINE_DEFAULT_LABEL_HEX);
+    expect(el.labelsAbove).toBe(false);
+  });
+});
+
 describe("drawing the strip", () => {
   const ON_OFF = [
     { id: "B1", match: "on", colorHex: "#FF453A" },
@@ -429,5 +584,39 @@ describe("drawing the strip", () => {
     expect(rects[1]!.x + rects[1]!.width).toBeCloseTo(181, 5);
     // The gap comes off the right of every run but the last.
     expect(rects[0]!.x + rects[0]!.width).toBeCloseTo(rects[1]!.x - 4, 5);
+  });
+
+  /** One entry per clock time, with the x it sits at and the side it hangs off. */
+  const timeTexts = (svg: string) =>
+    [...svg.matchAll(/<text x=([-\d.]+) y=[-\d.]+ text-anchor=(\w+)/g)]
+      .map((m) => ({ x: Number(m[1]), anchor: m[2]! }));
+
+  it("draws one text per clock time, the ends hung off the edges", () => {
+    const texts = timeTexts(draw("0:on 1800:off", (p) => { p.timeLabels = "four"; p.bands = ON_OFF; }));
+    expect(texts).toHaveLength(4);
+    expect(texts.map((t) => t.anchor)).toEqual(["start", "middle", "middle", "end"]);
+    expect(texts[0]!.x).toBeCloseTo(0, 5);
+    expect(texts[3]!.x).toBeCloseTo(181, 5);
+  });
+
+  it("puts the row under the strip, or over it when asked", () => {
+    const rowY = (svg: string) => Number(/<text x=[-\d.]+ y=([-\d.]+)/.exec(svg)?.[1]);
+    const stripY = (svg: string) => Number(/<rect x=[-\d.]+ y=([-\d.]+) width=[\d.]+ height=[\d.]+ rx=[\d.]+\s+fill=#/.exec(svg)?.[1]);
+    const below = draw("0:on 1800:off", (p) => { p.timeLabels = "four"; p.bands = ON_OFF; });
+    const above = draw("0:on 1800:off", (p) => { p.timeLabels = "four"; p.labelsAbove = true; p.bands = ON_OFF; });
+    expect(rowY(below)).toBeGreaterThan(stripY(below));
+    expect(rowY(above)).toBeLessThan(stripY(above));
+    // The row is 9 * 1.2 points plus a point of clearance, and the strip takes
+    // what is left of the 62 point face.
+    expect(stripY(above) - stripY(below)).toBeCloseTo(9 * 1.2 + 1, 5);
+  });
+
+  it("draws no text when the layer asks for none", () => {
+    expect(timeTexts(draw("0:on 1800:off", (p) => { p.timeLabels = "none"; p.bands = ON_OFF; }))).toEqual([]);
+  });
+
+  it("draws the times over an empty strip while the history is still coming", () => {
+    const texts = timeTexts(draw("", (p) => { p.timeLabels = "four"; p.bands = ON_OFF; }));
+    expect(texts).toHaveLength(4);
   });
 });

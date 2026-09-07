@@ -6,6 +6,8 @@
 import { svg, nothing, type TemplateResult } from "lit";
 import {
   DESIGN_BOX,
+  TIMELINE_MAX_LABEL_SIZE,
+  TIMELINE_MIN_LABEL_SIZE,
   describeTapAction,
   type FamilyKind,
   type ImageContentMode,
@@ -472,6 +474,10 @@ function renderChart(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) 
   return svg`${body}`;
 }
 
+/** The point between the row of times and the strip, so a descender never
+ * touches a run. Mirrors the same spacing in the app repo's timeline view. */
+const TIMELINE_LABEL_ROW_GAP = 1;
+
 /**
  * A strip of coloured runs across the frame, oldest at the left.
  *
@@ -481,21 +487,51 @@ function renderChart(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) 
  * A run narrower than the gap keeps a sliver rather than disappearing: a state
  * that lasted ten seconds in an hour is exactly the thing somebody is looking
  * for when they add one of these.
+ *
+ * A layer asking for clock times gives them a row of their own off the top or
+ * the bottom, and the strip takes what is left. The first time is hung off the
+ * left edge, the last off the right, so the row spans the frame exactly the way
+ * the strip does.
  */
 function renderTimeline(el: Extract<ResolvedElement, { kind: "timeline" }>, box: Box) {
-  if (el.runs.length === 0 || box.w <= 0 || box.h <= 0) return nothing;
+  if ((el.runs.length === 0 && el.labels.length === 0) || box.w <= 0 || box.h <= 0) return nothing;
+  // The clock times take a row of their own off the top or the bottom, so the
+  // strip shrinks rather than being drawn under them. A frame too short to
+  // carry both keeps the strip: the row is the part that can be dropped.
+  const labelSize = Math.max(TIMELINE_MIN_LABEL_SIZE, Math.min(TIMELINE_MAX_LABEL_SIZE, el.labelSize));
+  const rowHeight = labelSize * 1.2;
+  const wantsLabels = el.labels.length > 0 && box.h - rowHeight - TIMELINE_LABEL_ROW_GAP >= 2;
+  const strip: Box = wantsLabels
+    ? {
+      ...box,
+      y: el.labelsAbove ? box.y + rowHeight + TIMELINE_LABEL_ROW_GAP : box.y,
+      h: box.h - rowHeight - TIMELINE_LABEL_ROW_GAP,
+    }
+    : box;
   const gap = Math.max(0, Math.min(el.gap, box.w / Math.max(1, el.runs.length)));
   const body = el.runs.map((run, i) => {
     const x = box.x + run.start * box.w;
     const full = (run.end - run.start) * box.w;
     const last = i === el.runs.length - 1;
     const w = Math.max(last ? full : Math.min(full, 0.5), full - (last ? 0 : gap));
-    const radius = Math.max(0, Math.min(el.cornerRadius, w / 2, box.h / 2));
+    const radius = Math.max(0, Math.min(el.cornerRadius, w / 2, strip.h / 2));
     const colour = colorAttrs(run.colorHex, "fill");
-    return svg`<rect x=${x} y=${box.y} width=${w} height=${box.h} rx=${radius}
+    return svg`<rect x=${x} y=${strip.y} width=${w} height=${strip.h} rx=${radius}
       fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} />`;
   });
-  return svg`${body}`;
+  if (!wantsLabels) return svg`${body}`;
+  const rowY = (el.labelsAbove ? box.y : box.y + box.h - rowHeight) + rowHeight / 2;
+  const colour = colorAttrs(el.labelColorHex, "fill");
+  const times = el.labels.map((label, i) => {
+    const last = i === el.labels.length - 1;
+    const anchor = i === 0 ? "start" : last ? "end" : "middle";
+    const x = box.x + label.position * box.w;
+    return svg`<text x=${x} y=${rowY} text-anchor=${anchor} dominant-baseline="central"
+      font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif"
+      font-size=${labelSize} font-weight="400"
+      fill=${colour.fill} fill-opacity=${colour["fill-opacity"]}>${label.text}</text>`;
+  });
+  return svg`${body}${times}`;
 }
 
 function renderShape(el: Extract<ResolvedElement, { kind: "shape" }>, box: Box) {

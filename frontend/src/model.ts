@@ -606,6 +606,32 @@ export interface TimelineElement extends Omit<ElementBase, "colorSlot"> {
   gap: number;
   /** Corner radius of each run, in points. */
   cornerRadius: number;
+  /** How many clock times to draw along the strip. `ends` is the window's
+   * start and now; `four` is start, one third, two thirds and now, which is
+   * the row the watch's own history page shows. */
+  timeLabels: TimelineTimeLabels;
+  /** Font size of the times, in design-box points. Clamped 5...20 when drawn. */
+  labelSize: number;
+  /** Colour of the times. */
+  labelColorHex: string;
+  /** false puts the row under the strip, true over it. */
+  labelsAbove: boolean;
+}
+
+/** How many clock times a timeline prints along its span. Mirrors
+ * `TimelineElement.TimeLabels` in the app repo. */
+export type TimelineTimeLabels = "none" | "ends" | "four";
+
+export const TIMELINE_TIME_LABELS: [TimelineTimeLabels, string][] = [
+  ["none", "None"],
+  ["ends", "Ends"],
+  ["four", "Four"],
+];
+
+function parseTimeLabels(raw: unknown): TimelineTimeLabels {
+  // An unknown word is the same answer as no word at all: draw the strip
+  // alone rather than refusing the whole document.
+  return raw === "ends" || raw === "four" ? raw : TIMELINE_DEFAULT_TIME_LABELS;
 }
 
 /** One row of a timeline's colour table.
@@ -636,6 +662,18 @@ export const TIMELINE_NEW_CORNER_RADIUS = 2;
 /** A day: long enough that a door opened this morning is still on the strip. */
 export const TIMELINE_NEW_MINUTES = 1440;
 export const TIMELINE_DEFAULT_MINUTES = 60;
+/** The wire defaults for the clock times: a watch that predates the keys draws
+ * the strip alone, so absent has to mean "no times". */
+export const TIMELINE_DEFAULT_TIME_LABELS: TimelineTimeLabels = "none";
+export const TIMELINE_DEFAULT_LABEL_SIZE = 9;
+export const TIMELINE_DEFAULT_LABEL_HEX = "#8E8E93";
+/** A timeline added in the panel starts with the watch history page's own row
+ * of four times, which is the reading this layer was missing. */
+export const TIMELINE_NEW_TIME_LABELS: TimelineTimeLabels = "four";
+/** The times are readable between these two sizes and nowhere else: under 5 pt
+ * nothing resolves on a watch, over 20 pt the row eats the strip. */
+export const TIMELINE_MIN_LABEL_SIZE = 5;
+export const TIMELINE_MAX_LABEL_SIZE = 20;
 /** The widest gap worth offering: past four points the runs of a busy hour
  * stop touching at all and the strip reads as a dotted line. */
 export const TIMELINE_MAX_GAP = 4;
@@ -1401,6 +1439,10 @@ function parseElementKind(raw: unknown): Element {
           otherColorHex: str(p.otherColorHex, TIMELINE_DEFAULT_OTHER_HEX),
           gap: Math.min(TIMELINE_MAX_GAP, Math.max(0, num(p.gap, 0))),
           cornerRadius: Math.max(0, num(p.cornerRadius, TIMELINE_DEFAULT_CORNER_RADIUS)),
+          timeLabels: parseTimeLabels(p.timeLabels),
+          labelSize: num(p.labelSize, TIMELINE_DEFAULT_LABEL_SIZE),
+          labelColorHex: str(p.labelColorHex, TIMELINE_DEFAULT_LABEL_HEX),
+          labelsAbove: p.labelsAbove === true,
         },
       };
     }
@@ -1993,6 +2035,10 @@ function encodeElementKind(el: Element): J {
       if (t.otherColorHex !== TIMELINE_DEFAULT_OTHER_HEX) o.otherColorHex = t.otherColorHex;
       if (t.gap !== 0) o.gap = encNum(t.gap);
       if (t.cornerRadius !== TIMELINE_DEFAULT_CORNER_RADIUS) o.cornerRadius = encNum(t.cornerRadius);
+      if (t.timeLabels !== TIMELINE_DEFAULT_TIME_LABELS) o.timeLabels = t.timeLabels;
+      if (t.labelSize !== TIMELINE_DEFAULT_LABEL_SIZE) o.labelSize = encNum(t.labelSize);
+      if (t.labelColorHex !== TIMELINE_DEFAULT_LABEL_HEX) o.labelColorHex = t.labelColorHex;
+      if (t.labelsAbove) o.labelsAbove = true;
       return { kind: "timeline", payload: o };
     }
     case "shape": {
@@ -2267,7 +2313,7 @@ const K = {
     "scaleLabels", "scaleLabelPlacement", "latestLabel",
     "topLabelStyle", "bottomLabelStyle", "latestLabelStyle", "latestLabelFollowsBand",
     "scaleLabelColorHex"],
-  timeline: ["value", "historyMinutes", "bands", "otherColorHex", "gap", "cornerRadius"],
+  timeline: ["value", "historyMinutes", "bands", "otherColorHex", "gap", "cornerRadius", "timeLabels", "labelSize", "labelColorHex", "labelsAbove"],
   shape: ["kind", "cornerRadius", "thickness", "borderColorHex", "borderWidth"],
   // `timestampStyle` is retired (the age style, built and removed 2026-09-04).
   // It stays listed so a document saved while it existed does not read as
@@ -2508,6 +2554,10 @@ export function newElement(kind: Element["kind"]): Element {
           otherColorHex: TIMELINE_NEW_OTHER_HEX,
           gap: 0,
           cornerRadius: TIMELINE_NEW_CORNER_RADIUS,
+          timeLabels: TIMELINE_NEW_TIME_LABELS,
+          labelSize: TIMELINE_DEFAULT_LABEL_SIZE,
+          labelColorHex: TIMELINE_DEFAULT_LABEL_HEX,
+          labelsAbove: false,
         },
       };
     }

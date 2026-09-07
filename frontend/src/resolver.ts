@@ -32,6 +32,7 @@ import {
   type ValueFormat,
   type ChartElement,
   type ChartStat,
+  type TimelineElement,
   TIMELINE_HISTORY_POINTS,
   timelineBandColor,
   timelineHistoryKey,
@@ -203,6 +204,53 @@ export interface ResolvedTimeline extends ResolvedBase {
    * straight off the payload: no rule changes either. */
   gap: number;
   cornerRadius: number;
+  /** The clock times printed along the span, already formatted. Empty when the
+   * layer asks for none, or when it names no entity and so has no window. */
+  labels: TimelineLabel[];
+  labelSize: number;
+  labelColorHex: string;
+  labelsAbove: boolean;
+}
+
+/** One clock time under (or over) a timeline. `position` is a fraction of the
+ * frame's width, 0 at the window's start and 1 at now. Mirrors
+ * `ResolvedTimeline.Label` in the app repo. */
+export interface TimelineLabel {
+  position: number;
+  text: string;
+}
+
+/** The fractions each setting prints a time at: the two ends, or the ends plus
+ * the two thirds between them, which is the watch history page's own row. */
+const TIMELINE_LABEL_POSITIONS: Record<"ends" | "four", number[]> = {
+  ends: [0, 1],
+  four: [0, 1 / 3, 2 / 3, 1],
+};
+
+/** Up to three hours the minute matters, past that it is noise: an eight hour
+ * strip reading "9 PM, 11 PM, 1 AM, 3 AM" says more than the same row with
+ * ":36" on every one of them. */
+const TIMELINE_LABEL_MINUTES_MAX_SECONDS = 3 * 60 * 60;
+
+/**
+ * The clock times one timeline prints, oldest first.
+ *
+ * Built from the element and the injected clock alone: the row is a fact about
+ * the window, not about the data, so a layer still waiting on its history still
+ * knows what times its strip will cover. A layer naming no entity has no window
+ * at all and prints nothing. Mirrors `timelineLabels` in the app repo.
+ */
+export function timelineLabels(el: TimelineElement, nowMs: number): TimelineLabel[] {
+  if (el.timeLabels === "none") return [];
+  if (timelineHistoryKey(el) === undefined) return [];
+  const spanSeconds = timelineHistoryMinutes(el) * 60;
+  const format = new Intl.DateTimeFormat(undefined, spanSeconds <= TIMELINE_LABEL_MINUTES_MAX_SECONDS
+    ? { hour: "numeric", minute: "2-digit" }
+    : { hour: "numeric" });
+  return TIMELINE_LABEL_POSITIONS[el.timeLabels].map((position) => ({
+    position,
+    text: format.format(new Date(nowMs - spanSeconds * 1000 * (1 - position))),
+  }));
 }
 
 export interface ResolvedShape extends ResolvedBase {
@@ -1110,6 +1158,12 @@ export class Resolver {
           runs,
           gap: t.gap,
           cornerRadius: t.cornerRadius,
+          // The times do not wait on the series: the window is known the moment
+          // the layer names an entity, so a strip still fetching prints them.
+          labels: timelineLabels(t, this.nowMs()),
+          labelSize: t.labelSize,
+          labelColorHex: t.labelColorHex,
+          labelsAbove: t.labelsAbove,
         };
         return out;
       }
