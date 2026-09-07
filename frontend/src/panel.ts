@@ -917,6 +917,9 @@ export class WristAssistantPanel extends LitElement {
     .layer {
       display: grid; grid-template-columns: 16px 3px var(--thumb-w) minmax(0, 1fr) auto; align-items: center; gap: 8px;
       min-height: 46px; padding: 0 6px 0 4px; border-radius: var(--wa-r-sm);
+      /* The list is a scrolling flex column: without this, expanded rows
+         shrink to their minimum and their lines pile on top of each other. */
+      flex: none;
       border: 0 solid transparent; background: transparent; background-clip: padding-box;
       cursor: pointer; user-select: none; position: relative; font-size: 13px;
       transition: background-color .12s ease-out, box-shadow .12s ease-out,
