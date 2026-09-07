@@ -22,6 +22,7 @@ import {
   isAttachedTap,
   newConfig,
   newElement,
+  normalizeOwnership,
   parseConfig,
   removeElement,
   selectableLayerId,
@@ -45,6 +46,17 @@ function withIcon(entityId = "light.kitchen"): { cfg: CustomComplicationConfig; 
   icon.payload.frame = { x: 0.1, y: 0.2, width: 0.3, height: 0.4, rotationDegrees: 0 };
   cfg.elements.push(icon);
   return { cfg, icon };
+}
+
+/** Put a layer on one shape and no other, which is what the draft does after
+ * every edit. Every fixture here needs it, because a layer with no shape of
+ * its own is a layer the editor cannot show. */
+function placeOn(cfg: CustomComplicationConfig, family: "rectangular" | "circular" | "corner", id: string): void {
+  const el = cfg.elements.find((e) => e.payload.id === id)!;
+  el.payload.isHidden = true;
+  setPlacement(cfg, family, id, { isHidden: false });
+  normalizeOwnership(cfg, family);
+  syncAttachedTaps(cfg);
 }
 
 function tapOf(cfg: CustomComplicationConfig, ownerId: string): TapElement {
@@ -195,12 +207,14 @@ describe("syncAttachedTaps", () => {
 // shape. The outset is editor state read back from the frames, so the wire
 // carries nothing new and a round trip through the watch loses nothing.
 describe("outset", () => {
-  /** An icon in the middle, small enough that pushing it out never hits an edge. */
-  function withSmallIcon(): { cfg: CustomComplicationConfig; icon: CElement; tapId: string } {
+  /** An icon in the middle of one shape, small enough that pushing it out
+   * never hits an edge. The shape matters: the same point outset is a
+   * different fraction on each canvas, and the icon is on one of them. */
+  function withSmallIcon(family: "rectangular" | "circular" | "corner" = "rectangular"): { cfg: CustomComplicationConfig; icon: CElement; tapId: string } {
     const { cfg, icon } = withIcon();
     icon.payload.frame = { x: 0.4, y: 0.4, width: 0.2, height: 0.2, rotationDegrees: 0 };
     attachTap(cfg, icon.payload.id);
-    syncAttachedTaps(cfg);
+    placeOn(cfg, family, icon.payload.id);
     return { cfg, icon, tapId: tapOf(cfg, icon.payload.id).id };
   }
 
@@ -210,18 +224,19 @@ describe("outset", () => {
     syncAttachedTaps(cfg);
   }
 
-  it("turns points into the right fraction for each shape", () => {
-    const { cfg, icon, tapId } = withSmallIcon();
-    outsetAll(cfg, icon.payload.id, 8);
-
-    const rect = cfg.perFamily.rectangular!.placements[tapId]!.frame;
+  it("turns points into the right fraction for the shape the layer is on", () => {
+    const wide = withSmallIcon("rectangular");
+    outsetAll(wide.cfg, wide.icon.payload.id, 8);
+    const rect = wide.cfg.perFamily.rectangular!.placements[wide.tapId]!.frame;
     expect(rect.x).toBeCloseTo(0.4 - 8 / 181, 9);
     expect(rect.width).toBeCloseTo(0.2 + 16 / 181, 9);
     expect(rect.y).toBeCloseTo(0.4 - 8 / 65.5, 9);
     expect(rect.height).toBeCloseTo(0.2 + 16 / 65.5, 9);
 
     // A square box grows by the same fraction on both axes.
-    const circ = cfg.perFamily.circular!.placements[tapId]!.frame;
+    const round = withSmallIcon("circular");
+    outsetAll(round.cfg, round.icon.payload.id, 8);
+    const circ = round.cfg.perFamily.circular!.placements[round.tapId]!.frame;
     expect(circ.x).toBeCloseTo(0.4 - 8 / 51, 9);
     expect(circ.y).toBeCloseTo(0.4 - 8 / 51, 9);
     expect(circ.width).toBeCloseTo(0.2 + 16 / 51, 9);
@@ -229,7 +244,7 @@ describe("outset", () => {
   });
 
   it("applies each side on its own", () => {
-    const { cfg, icon, tapId } = withSmallIcon();
+    const { cfg, icon, tapId } = withSmallIcon("circular");
     tapOf(cfg, icon.payload.id).outset = { top: 0, left: 10, bottom: 5, right: 0 };
     syncAttachedTaps(cfg);
     const circ = cfg.perFamily.circular!.placements[tapId]!.frame;
@@ -239,19 +254,19 @@ describe("outset", () => {
     expect(circ.height).toBeCloseTo(0.2 + 5 / 51, 9);
   });
 
-  it("writes a placement in every shape, even where the owner has none", () => {
-    const { cfg, icon, tapId } = withSmallIcon();
-    expect(cfg.perFamily.corner!.placements[tapId], "nothing to override yet").toBeUndefined();
+  it("writes a placement on the owner's shape and on no other", () => {
+    const { cfg, icon, tapId } = withSmallIcon("circular");
     outsetAll(cfg, icon.payload.id, 4);
-    // The shared frame would be pushed out by the rectangular ratio, which is
-    // the wrong size here, so the tap needs its own frame in every shape.
-    for (const family of ["rectangular", "circular", "corner"] as const) {
-      expect(cfg.perFamily[family]!.placements[tapId], family).toBeDefined();
-    }
+    // Pushed out, the tap needs a frame of its own to say the right fraction
+    // for this canvas. It goes on the shape the owner is on: a placement in
+    // another shape would be a second owner, and the layer would be split.
+    expect(cfg.perFamily.circular!.placements[tapId]).toBeDefined();
+    expect(cfg.perFamily.rectangular!.placements[tapId]).toBeUndefined();
+    expect(cfg.perFamily.corner!.placements[tapId]).toBeUndefined();
   });
 
   it("pushes out from the owner's own placement where it has one", () => {
-    const { cfg, icon, tapId } = withSmallIcon();
+    const { cfg, icon, tapId } = withSmallIcon("corner");
     setPlacement(cfg, "corner", icon.payload.id, { frame: { x: 0.3, y: 0.3, width: 0.4, height: 0.4, rotationDegrees: 0 }, isHidden: true });
     outsetAll(cfg, icon.payload.id, 3);
     const p = cfg.perFamily.corner!.placements[tapId]!;
@@ -261,24 +276,25 @@ describe("outset", () => {
   });
 
   it("stops at the edge of the face instead of leaving it", () => {
-    const { cfg, icon, tapId } = withSmallIcon();
+    const { cfg, icon, tapId } = withSmallIcon("corner");
     outsetAll(cfg, icon.payload.id, 20);
     const corner = cfg.perFamily.corner!.placements[tapId]!.frame;
     expect(corner).toEqual({ x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 });
   });
 
   it("keeps the owner's rotation", () => {
-    const { cfg, icon, tapId } = withSmallIcon();
-    icon.payload.frame = { ...icon.payload.frame, rotationDegrees: 30 };
+    const { cfg, icon, tapId } = withSmallIcon("circular");
+    const owner = cfg.perFamily.circular!.placements[icon.payload.id]!;
+    owner.frame = { ...owner.frame, rotationDegrees: 30 };
     outsetAll(cfg, icon.payload.id, 5);
     expect(cfg.perFamily.circular!.placements[tapId]!.frame.rotationDegrees).toBe(30);
   });
 
   it("adds no placements at zero, and never writes a key", () => {
-    const { cfg, icon, tapId } = withSmallIcon();
+    const { cfg, icon, tapId } = withSmallIcon("corner");
     outsetAll(cfg, icon.payload.id, 8);
     outsetAll(cfg, icon.payload.id, 0);
-    expect(cfg.perFamily.corner!.placements[tapId]).toBeUndefined();
+    expect(cfg.perFamily.corner!.placements[tapId]!.frame).toEqual(icon.payload.frame);
     expect(tapOf(cfg, icon.payload.id).frame).toEqual(icon.payload.frame);
     expect(JSON.stringify(encodeConfig(cfg))).not.toContain("outset");
     expect(JSON.stringify(encodeConfig(cfg))).not.toContain("grow");
@@ -311,19 +327,19 @@ describe("outset", () => {
     expect(JSON.stringify(encodeConfig(back))).not.toContain("grow");
   });
 
-  it("takes a dragged frame in one shape and applies the points everywhere", () => {
-    const { cfg, icon, tapId } = withSmallIcon();
+  it("measures a dragged frame in points and puts the frame back", () => {
+    const { cfg, icon, tapId } = withSmallIcon("circular");
     // Dragged out 6 pt on the left and 3 pt below in the circular preview.
     setTapOutsetFromFrame(cfg, tapId, "circular", { x: 0.4 - 6 / 51, y: 0.4, width: 0.2 + 6 / 51, height: 0.2 + 3 / 51, rotationDegrees: 0 });
     expect(tapOf(cfg, icon.payload.id).outset).toEqual({ top: 0, left: 6, bottom: 3, right: 0 });
     syncAttachedTaps(cfg);
-    const rect = cfg.perFamily.rectangular!.placements[tapId]!.frame;
-    expect(rect.x).toBeCloseTo(0.4 - 6 / 181, 9);
-    expect(rect.height).toBeCloseTo(0.2 + 3 / 65.5, 9);
+    const circ = cfg.perFamily.circular!.placements[tapId]!.frame;
+    expect(circ.x).toBeCloseTo(0.4 - 6 / 51, 9);
+    expect(circ.height).toBeCloseTo(0.2 + 3 / 51, 9);
   });
 
   it("holds a dragged frame inside the face before measuring it", () => {
-    const { cfg, icon, tapId } = withSmallIcon();
+    const { cfg, icon, tapId } = withSmallIcon("corner");
     setTapOutsetFromFrame(cfg, tapId, "corner", { x: -0.5, y: 0.4, width: 1.6, height: 0.2, rotationDegrees: 0 });
     // Left edge held at 0: 0.4 of 34 pt. Right edge held at 1: same.
     expect(tapOf(cfg, icon.payload.id).outset).toEqual({ top: 0, left: 13.6, bottom: 0, right: 13.6 });
@@ -338,7 +354,7 @@ describe("outset", () => {
   });
 
   it("reports the tap's real size in points, per shape", () => {
-    const { cfg, icon, tapId } = withSmallIcon();
+    const { cfg, icon, tapId } = withSmallIcon("corner");
     // 0.2 of 181 x 65.5 is a wide, short target; the corner box makes it square.
     expect(tapPointSize(cfg, tapId, "rectangular")!.width).toBeCloseTo(0.2 * 181, 9);
     expect(tapPointSize(cfg, tapId, "corner")!.height).toBeCloseTo(0.2 * 34, 9);
@@ -438,6 +454,8 @@ describe("Draft", () => {
   it("keeps a tap that sits off its owner, as an outset, and still heals its order", () => {
     const { cfg, icon } = withIcon();
     attachTap(cfg, icon.payload.id);
+    cfg.supportedFamilies = ["rectangular"];
+    placeOn(cfg, "rectangular", icon.payload.id);
     const doc = encodeConfig(cfg) as { elements: { kind: string; payload: Record<string, unknown> }[] };
     // A tap bigger than its owner and behind it in z-order. The size is what
     // an author drags out, and the wire carries only the frames, so it has to

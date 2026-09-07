@@ -157,17 +157,16 @@ describe("familyContentSummary", () => {
     corner.rules = [newRule()];
     corner.bezelText = literal("L");
     corner.backgroundColorHex = "#000000";
-    expect(familyContentSummary(cfg, "corner")).toEqual(["1 placed layer", "1 rule", "the bezel", "the background or border"]);
+    expect(familyContentSummary(cfg, "corner")).toEqual(["1 layer", "1 rule", "the bezel", "the background or border"]);
   });
 
-  // A shape starts blank, which is a hidden placement for every layer. That is
-  // nothing anyone typed, so removing a shape they have not laid out yet must
-  // not stop to ask.
-  it("does not count a blank shape's hidden placements", () => {
+  // A shape starts with nothing on it, so removing one the author has not laid
+  // out yet must not stop to ask.
+  it("counts nothing on a shape that has no layers", () => {
     const cfg = newConfig("X", 0, ["rectangular"]);
     cfg.elements = [newElement("text"), newElement("icon")];
     addFamily(cfg, "circular");
-    expect(Object.keys(cfg.perFamily.circular!.placements)).toHaveLength(2);
+    expect(Object.keys(cfg.perFamily.circular!.placements)).toHaveLength(0);
     expect(familyContentSummary(cfg, "circular")).toEqual([]);
   });
 

@@ -4,7 +4,7 @@
 // `baseRevision` and then `commit()`s on success (plan §"Save and conflict
 // rules").
 
-import { type CustomComplicationConfig, encodeConfig, parseConfig, syncAttachedTaps } from "./model.js";
+import { type CustomComplicationConfig, type FamilyKind, encodeConfig, normalizeOwnership, parseConfig, syncAttachedTaps } from "./model.js";
 import { deriveDataSources } from "./compiler.js";
 
 const HISTORY_LIMIT = 100;
@@ -55,9 +55,13 @@ export class Draft {
   constructor(public config: CustomComplicationConfig, baseRevision: number | null) {
     this.baseRevision = baseRevision;
     // A document can arrive with an attached tap whose owner is gone, or out of
-    // step with it, from a hand-edit or an older panel. Heal it here, before
-    // the baseline is taken, so the draft opens clean and the correction rides
-    // along with the next real save instead of nagging about unsaved changes.
+    // step with it, from a hand-edit or an older panel. It can also arrive from
+    // an older panel with one layer drawn by two shapes at once, which this
+    // editor no longer has a way to show. Heal both here, before the baseline
+    // is taken, so the draft opens clean and the corrections ride along with
+    // the next real save instead of nagging about unsaved changes. Neither
+    // changes what the watch draws.
+    normalizeOwnership(config);
     syncAttachedTaps(config);
     this.baseline = JSON.stringify(encodeConfig(config));
   }
@@ -77,8 +81,9 @@ export class Draft {
   }
 
   /** Apply a change. `coalesce` merges rapid edits of the same control (typing,
-   * dragging) into one undo step. */
-  update(mutate: (cfg: CustomComplicationConfig) => void, coalesce?: string): void {
+   * dragging) into one undo step. `home` is the shape being edited, which is
+   * where a layer the change added belongs. */
+  update(mutate: (cfg: CustomComplicationConfig) => void, coalesce?: string, home?: FamilyKind): void {
     const now = Date.now();
     const merge = coalesce !== undefined && coalesce === this.coalesceKey && now < this.coalesceUntil;
     if (!merge) {
@@ -90,8 +95,12 @@ export class Draft {
     this.coalesceUntil = coalesce === undefined ? 0 : now + 800;
     const next = structuredClone(this.config);
     mutate(next);
-    // One place keeps attached taps glued to their owners, so no call site has
-    // to know about them: whatever the edit was, the tap follows.
+    // Two invariants are kept in one place, so no call site has to know about
+    // either. A layer the change added belongs to the shape being edited and
+    // to no other; and whatever the edit was, an attached tap follows its
+    // owner. Ownership settles first, because the tap follows its owner onto
+    // the owner's shape.
+    normalizeOwnership(next, home);
     syncAttachedTaps(next);
     this.config = next;
   }

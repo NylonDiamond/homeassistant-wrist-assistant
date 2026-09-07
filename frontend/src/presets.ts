@@ -24,6 +24,7 @@ import {
   type StyleChange,
   type Value,
   DRAWABLE_FAMILIES,
+  defaultLayout,
   TOGGLEABLE_DOMAINS,
   attachTap,
   literal,
@@ -106,8 +107,7 @@ export function presetSpec(kind: PresetKind): PresetSpec {
 
 /** What a preset knows about the world beyond the entity it was given. */
 export interface PresetEnv {
-  /** The shape being edited. New layers are framed for it (and for every
-   * other shape the document has). */
+  /** The shape being edited. New layers are framed for it and belong to it. */
   family: DrawableFamily;
   /** The chosen entity's live state, when Home Assistant has one. Seeds the
    * gauge range and decides whether the text carries a unit. */
@@ -341,10 +341,12 @@ function applySize(el: Element, size: number | undefined): void {
 }
 
 /**
- * Frame a new layer for the shape being edited, and give every other shape the
- * document has its own frame too. A preset that only fits the shape that
- * happened to be on screen would leave the author dragging the same layer
- * twice more, which is exactly the work presets exist to remove.
+ * Frame a new layer for the shape being edited, and put it on that shape.
+ *
+ * One shape, because that is where a layer lives. It used to fit the same
+ * layer for all three at once, back when one layer was drawn by every shape.
+ * A shape that wants this preset now gets a copy of its own, framed for its
+ * own canvas by this same function.
  */
 function placeLayer(
   cfg: CustomComplicationConfig,
@@ -355,20 +357,12 @@ function placeLayer(
   const here = geometry(active);
   el.payload.frame = here.frame;
   applySize(el, here.size);
-  for (const family of DRAWABLE_FAMILIES) {
-    if (family === active || family === "inline") continue;
-    const layout = cfg.perFamily[family];
-    if (!layout) continue;
-    const there = geometry(family as DrawableFamily);
-    // Identical to the shared frame is not worth a placement: it would only be
-    // one more row for the author to wonder about.
-    if (JSON.stringify(there) === JSON.stringify(here)) continue;
-    layout.placements[el.payload.id] = {
-      frame: there.frame,
-      isHidden: false,
-      ...(there.size !== undefined ? { size: there.size } : {}),
-    };
-  }
+  const layout = cfg.perFamily[active] ?? (cfg.perFamily[active] = defaultLayout());
+  layout.placements[el.payload.id] = {
+    frame: here.frame,
+    isHidden: false,
+    ...(here.size !== undefined ? { size: here.size } : {}),
+  };
 }
 
 // ── the presets ───────────────────────────────────────────────────────────

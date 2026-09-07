@@ -3020,24 +3020,24 @@ export function syncAttachedTaps(cfg: CustomComplicationConfig): void {
       // A hidden layer with a live tap area would be a button nobody can see,
       // so the tap follows the owner's visibility too.
       tap.payload.isHidden = owner.payload.isHidden;
+      // A tap sits on its owner's shape and on no other, so the placement is
+      // written there and cleared everywhere else. Left in another shape it
+      // would be a second owner, and the layer would be split in two.
+      const home = ownerFamily(cfg, ownerId);
       for (const family of DRAWABLE_FAMILIES) {
         const layout = cfg.perFamily[family];
         if (!layout) continue;
         const box = DESIGN_BOX[family as "rectangular" | "circular" | "corner"];
         const p = layout.placements[ownerId];
-        if (pushed) {
-          // Pushed out, the shared frame is inflated by the wrong ratio for
-          // this shape, so the tap needs a placement here even where the owner
-          // has none: it is the only way to say the right fraction.
-          const base = p?.frame ?? owner.payload.frame;
-          const isHidden = p?.isHidden ?? owner.payload.isHidden;
-          layout.placements[tap.payload.id] = { frame: outsetFrame(base, outset, box), isHidden };
-        } else if (p) {
-          layout.placements[tap.payload.id] = { frame: { ...p.frame }, isHidden: p.isHidden };
-        } else {
-          // No placement for the owner means it uses the shared frame here, and
-          // so must the tap: an override left behind would strand it.
+        if (family !== home || !p) {
           delete layout.placements[tap.payload.id];
+        } else if (pushed) {
+          // Pushed out, the shared frame is inflated by the wrong ratio for
+          // this shape, so the tap needs a placement of its own: it is the
+          // only way to say the right fraction.
+          layout.placements[tap.payload.id] = { frame: outsetFrame(p.frame, outset, box), isHidden: p.isHidden };
+        } else {
+          layout.placements[tap.payload.id] = { frame: { ...p.frame }, isHidden: p.isHidden };
         }
       }
     }
@@ -3219,52 +3219,49 @@ export function copyElements(cfg: CustomComplicationConfig, ids: readonly string
 }
 
 /**
- * Put copied layers on one shape, without copying the layers themselves.
+ * Paste copied layers onto one shape.
  *
- * A layer belongs to the document and every shape may draw it, so a copy
- * taken on one shape and pasted on another is not a duplicate: it is "show
- * these here, laid out the way they are there". Ids the document no longer
- * holds are skipped. Returns the rows that landed, attached taps left out the
- * same way a paste leaves them out.
+ * Copies, always. A layer belongs to one shape, so rows copied on the
+ * Rectangular face and pasted on the Circular one become second layers of
+ * their own: editing one of them afterwards leaves the originals alone. They
+ * land where their originals sit, scaled for this canvas when they came off a
+ * shape of another size, and they land on the exact spot rather than nudged,
+ * because "put these here too" is a placement, not a duplicate.
+ *
+ * Returns the rows that landed, attached taps left out the same way a paste
+ * leaves them out.
  */
-export function placeElements(cfg: CustomComplicationConfig, clip: LayerClip, family: FamilyKind): string[] {
-  if (!DRAWABLE_FAMILIES.includes(family)) return [];
-  let layout = cfg.perFamily[family];
-  if (!layout) {
-    layout = defaultLayout();
-    cfg.perFamily[family] = layout;
-  }
-  // The first placement in a shape freezes every other layer where it already
-  // is, the same as the first drag does, so the layers not being copied do
-  // not silently start following someone else's frames.
-  if (Object.keys(layout.placements).length === 0) {
-    for (const el of cfg.elements) {
-      layout.placements[el.payload.id] = { frame: { ...el.payload.frame }, isHidden: el.payload.isHidden };
-    }
-  }
-  const here = new Set(cfg.elements.map((el) => el.payload.id));
-  const from = clip.family === undefined ? undefined : clip.placements[clip.family];
-  const landed: string[] = [];
-  for (const src of clip.elements) {
-    const id = src.payload.id;
-    if (!here.has(id)) continue;
-    const p = from?.[id];
+export function pasteElementsOnto(cfg: CustomComplicationConfig, clip: LayerClip, family: FamilyKind): string[] {
+  const from = clip.family;
+  const across = from !== undefined && from !== family && DRAWABLE_FAMILIES.includes(from);
+  if (!DRAWABLE_FAMILIES.includes(family)) return pasteElements(cfg, clip);
+  const landed = pasteElements(cfg, clip, across ? { nudge: false } : {});
+  const layout = cfg.perFamily[family] ?? (cfg.perFamily[family] = defaultLayout());
+  for (const id of landed) {
+    const el = cfg.elements.find((e) => e.payload.id === id);
+    if (!el) continue;
+    // The copies arrived carrying the placement the originals have on the
+    // shape they were taken from. Move that onto this shape, refitting when
+    // the two canvases differ.
+    const src = (from !== undefined ? cfg.perFamily[from]?.placements[id] : undefined)
+      ?? DRAWABLE_FAMILIES.map((f) => cfg.perFamily[f]?.placements[id]).find((p) => p !== undefined);
     // The size travels even when the source shape never set one, so the refit
     // has something to scale and the layer does not arrive at the size it
     // happened to be given on a canvas of another width.
-    const size = p?.size ?? elementSize(src);
+    const size = src?.size ?? elementSize(el);
     const base: Placement = {
-      frame: { ...(p?.frame ?? src.payload.frame) },
+      frame: { ...(src?.frame ?? el.payload.frame) },
       isHidden: false,
       ...(size !== undefined ? { size } : {}),
     };
-    layout.placements[id] = clip.family === undefined ? base : refitPlacement(base, clip.family, family, src.kind);
-    landed.push(id);
+    // The copies came in carrying the source shape's placement under their new
+    // ids. Left there it would be a second owner, and settling the document
+    // would split each copy in two, so it goes.
+    for (const f of DRAWABLE_FAMILIES) if (f !== family) delete cfg.perFamily[f]?.placements[id];
+    layout.placements[id] = across ? refitPlacement(base, from, family, el.kind) : base;
   }
-  return landed.filter((id) => {
-    const el = cfg.elements.find((e) => e.payload.id === id);
-    return el !== undefined && !isAttachedTap(cfg, el);
-  });
+  normalizeOwnership(cfg, family);
+  return landed;
 }
 
 /**
@@ -3275,12 +3272,16 @@ export function placeElements(cfg: CustomComplicationConfig, clip: LayerClip, fa
  * copies are nudged when their originals are still here, so a paste over the
  * original shows, the way a duplicate does. Returns the ids of the pasted
  * rows: every copy that is not an attached tap.
+ *
+ * `nudge: false` turns that offset off, for the one caller that wants the copy
+ * on the exact same spot: giving a second shape its own set of layers, where
+ * the point is that the picture does not move.
  */
-export function pasteElements(cfg: CustomComplicationConfig, clip: LayerClip): string[] {
+export function pasteElements(cfg: CustomComplicationConfig, clip: LayerClip, opts: { nudge?: boolean } = {}): string[] {
   const idMap = new Map<string, string>();
   for (const el of clip.elements) idMap.set(el.payload.id, newId());
   const here = new Set(cfg.elements.map((el) => el.payload.id));
-  const nudge = clip.elements.some((el) => here.has(el.payload.id));
+  const nudge = opts.nudge !== false && clip.elements.some((el) => here.has(el.payload.id));
   const shift = (f: NormalizedFrame): NormalizedFrame => nudge
     ? { ...f, x: Math.min(0.9, f.x + 0.05), y: Math.min(0.9, f.y + 0.05) }
     : f;
@@ -3339,6 +3340,158 @@ export function pasteElements(cfg: CustomComplicationConfig, clip: LayerClip): s
   pruneGroups(cfg);
   packGroups(cfg);
   return clones.filter((el) => !isAttachedTap(cfg, el)).map((el) => el.payload.id);
+}
+
+// ── which shape a layer belongs to ────────────────────────────────────────
+//
+// Every layer belongs to exactly one shape. Two shapes never point at the
+// same layer, so renaming the text on the circular face cannot reach the
+// rectangular one, and a shape added to a finished complication starts with
+// nothing on it and an empty layer list.
+//
+// Nothing new is stored to say so. Two rules the watch already follows carry
+// it, so no document has to be migrated and no watch has to be updated:
+//
+//   1. Every layer's own `isHidden` is `true`. `elements(for:)` on the watch
+//      falls back to a layer's own drawing whenever the shape has no
+//      placement for it, so this is what keeps a shape from drawing a layer
+//      that is not its own.
+//   2. The one shape that owns the layer holds a placement for it, and no
+//      other shape does. That placement's `isHidden` is the author's own hide
+//      toggle, and its frame and size are the layer's drawing.
+//
+// `normalizeOwnership` puts a document into that form and keeps it there. It
+// runs on open and after every edit, so no other function has to remember the
+// rules: a layer added anywhere lands on the shape being edited, and a
+// document written before this all existed is split on the way in, drawing
+// exactly what it drew before.
+
+/** Whether a shape draws a layer, under whatever rules the document carries.
+ * Same fallback as `elementsFor` and the watch's `elements(for:)`. */
+function drawsElement(cfg: CustomComplicationConfig, family: FamilyKind, el: Element): boolean {
+  const layout = cfg.perFamily[family];
+  const p = layout?.placements[el.payload.id];
+  if (layout && Object.keys(layout.placements).length > 0 && p) return !p.isHidden;
+  return !el.payload.isHidden;
+}
+
+/** The shape a layer belongs to, or undefined for an id the document has lost.
+ * An attached tap reports its owner's shape, since it is not a row of its own. */
+export function ownerFamily(cfg: CustomComplicationConfig, id: string): FamilyKind | undefined {
+  const el = cfg.elements.find((e) => e.payload.id === id);
+  const ownerId = el && el.kind === "tap" ? el.payload.attachedTo : undefined;
+  const key = ownerId ?? id;
+  return DRAWABLE_FAMILIES.find((f) => cfg.supportedFamilies.includes(f) && cfg.perFamily[f]?.placements[key] !== undefined);
+}
+
+/** The layers on one shape, in draw order. What the Layers card lists, and
+ * what a shape's own copy, delete and paste work on. */
+export function ownedElements(cfg: CustomComplicationConfig, family: FamilyKind): Element[] {
+  const layout = cfg.perFamily[family];
+  if (!layout) return [];
+  return cfg.elements.filter((el) => {
+    const ownerId = el.kind === "tap" ? el.payload.attachedTo : undefined;
+    return layout.placements[ownerId ?? el.payload.id] !== undefined;
+  });
+}
+
+/** How many layers a shape draws: its own, minus the ones hidden on it. */
+export function ownedShownCount(cfg: CustomComplicationConfig, family: FamilyKind): number {
+  const layout = cfg.perFamily[family];
+  if (!layout) return 0;
+  return ownedElements(cfg, family).filter((el) => !isAttachedTap(cfg, el) && !layout.placements[el.payload.id]?.isHidden).length;
+}
+
+/**
+ * Put the document into the one-shape-per-layer form and keep it there.
+ *
+ * `home` is the shape being edited. Pass it for an edit: a layer no shape has
+ * a placement for is the layer the edit just added, and it lands there.
+ *
+ * Leave it out for a document being opened, and only then. That is the one
+ * moment a layer can arrive drawn by two shapes at once, from a panel written
+ * before this rule existed, and the only moment splitting one in two is the
+ * right answer. Doing it on an edit as well would turn every layer added to a
+ * three-shape complication into three layers.
+ *
+ * Idempotent. Cheap enough to run after every edit.
+ */
+export function normalizeOwnership(cfg: CustomComplicationConfig, home?: FamilyKind): void {
+  const families = DRAWABLE_FAMILIES.filter((f) => cfg.supportedFamilies.includes(f));
+  if (families.length === 0) return;
+  const fallback = home !== undefined && families.includes(home) ? home : families[0]!;
+  for (const f of families) if (!cfg.perFamily[f]) cfg.perFamily[f] = defaultLayout();
+  // Attached taps are left out throughout: they are not rows, they follow
+  // their owner, and `syncAttachedTaps` puts them right afterwards.
+  const tops = () => cfg.elements.filter((el) => !isAttachedTap(cfg, el));
+
+  const seated = new Map<string, FamilyKind>();
+  const drawnNowhere = new Set<string>();
+  if (home === undefined) {
+    // Opening. Read what each shape draws, then give the first shape that
+    // draws a shared layer the original and every later one its own copy,
+    // taken as a whole set so groups, attached taps and chart links come along.
+    // The copies land on the same spot: splitting must not move anything,
+    // because the complication has to draw exactly what it drew before.
+    const drawnBy = new Map(tops().map((el) => [el.payload.id, families.filter((f) => drawsElement(cfg, f, el))] as const));
+    for (const [id, on] of drawnBy) if (on[0]) seated.set(id, on[0]);
+    // Where each layer sat in the stack, so the copies can be put back in the
+    // same order. A copy is appended, so without this a shape whose first
+    // layer was borrowed would end up drawing it last, on top of everything.
+    const rank = new Map([...tops().entries()].map(([i, el]) => [el.payload.id, i] as const));
+    for (const family of families) {
+      const borrowed = tops()
+        .filter((el) => (drawnBy.get(el.payload.id) ?? []).includes(family) && seated.get(el.payload.id) !== family)
+        .map((el) => el.payload.id);
+      if (borrowed.length === 0) continue;
+      const clip = copyElements(cfg, borrowed, family);
+      const landed = pasteElements(cfg, clip, { nudge: false });
+      landed.forEach((id, i) => {
+        seated.set(id, family);
+        const source = landed.length === borrowed.length ? borrowed[i] : undefined;
+        rank.set(id, source !== undefined ? rank.get(source) ?? 0 : rank.size);
+      });
+    }
+    for (const el of tops()) if (!seated.has(el.payload.id)) drawnNowhere.add(el.payload.id);
+
+    // Restack: each shape's layers back into the order that shape had them in,
+    // its own block. Blocks keep every group's members together, and the order
+    // between blocks does not matter, because no two shapes share a layer.
+    const seat = (id: string) => families.indexOf(seated.get(id) ?? fallback);
+    const sorted = tops().sort((a, b) =>
+      seat(a.payload.id) - seat(b.payload.id)
+      || (rank.get(a.payload.id) ?? 0) - (rank.get(b.payload.id) ?? 0));
+    const restacked: Element[] = [];
+    for (const el of sorted) {
+      restacked.push(el);
+      restacked.push(...attachedTapsOf(cfg, el.payload.id));
+    }
+    cfg.elements = restacked;
+  }
+
+  // Settle every layer on one shape and write the canonical form: the layer's
+  // own `isHidden` true, one placement, on the shape that owns it.
+  for (const el of tops()) {
+    const id = el.payload.id;
+    const keyed = families.filter((f) => cfg.perFamily[f]!.placements[id] !== undefined);
+    const seat = seated.get(id)
+      ?? keyed.find((f) => !cfg.perFamily[f]!.placements[id]!.isHidden)
+      ?? keyed[0]
+      ?? fallback;
+    const src = cfg.perFamily[seat]?.placements[id];
+    const placement: Placement = {
+      frame: { ...(src?.frame ?? el.payload.frame) },
+      isHidden: drawnNowhere.has(id) || src?.isHidden === true,
+      ...(src?.size !== undefined ? { size: src.size } : {}),
+    };
+    el.payload.isHidden = true;
+    for (const f of DRAWABLE_FAMILIES) {
+      const layout = cfg.perFamily[f];
+      if (!layout) continue;
+      if (f === seat) layout.placements[id] = placement;
+      else delete layout.placements[id];
+    }
+  }
 }
 
 // ── layer entity ──────────────────────────────────────────────────────────

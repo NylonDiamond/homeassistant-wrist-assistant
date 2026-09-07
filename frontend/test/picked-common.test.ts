@@ -46,7 +46,6 @@ describe("pickedCommon", () => {
     expect(c.colourable).toBe(true);
     expect(c.colour).toBe("#FFFFFF");
     expect(c.hiddenHere).toBe("none");
-    expect(c.hiddenEverywhere).toBe("none");
   });
 
   it("leaves the colour blank when they differ", () => {
@@ -63,24 +62,15 @@ describe("pickedCommon", () => {
     expect(c.colour).toBeUndefined();
   });
 
-  it("reads hidden per shape, not from the shared flag", () => {
+  // Hidden is written on the placement, which is the shape's own record of the
+  // layer. The layer's own flag is not a setting any more: it is what keeps a
+  // shape from drawing a layer that is not its own.
+  it("reads hidden from the shape's placement", () => {
     const { cfg, els } = config(["text", "icon"]);
     const [text, icon] = els as [CElement, CElement];
     setPlacement(cfg, "rectangular", text.payload.id, { isHidden: true });
     expect(pickedCommon(cfg, "rectangular", els).hiddenHere).toBe("mixed");
     setPlacement(cfg, "rectangular", icon.payload.id, { isHidden: true });
     expect(pickedCommon(cfg, "rectangular", els).hiddenHere).toBe("all");
-    // The per-shape placement never touched the layers' own flag.
-    expect(pickedCommon(cfg, "rectangular", els).hiddenEverywhere).toBe("none");
-    // Another shape has no placements of its own, so it still reads the flag.
-    expect(pickedCommon(cfg, "circular", els).hiddenHere).toBe("none");
-  });
-
-  it("reads the shared flag across every shape", () => {
-    const { cfg, els } = config(["text", "icon"]);
-    els[0]!.payload.isHidden = true;
-    expect(pickedCommon(cfg, "rectangular", els).hiddenEverywhere).toBe("mixed");
-    els[1]!.payload.isHidden = true;
-    expect(pickedCommon(cfg, "rectangular", els).hiddenEverywhere).toBe("all");
   });
 });

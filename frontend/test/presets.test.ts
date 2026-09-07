@@ -178,15 +178,17 @@ describe("the toggle button preset", () => {
     expect(rule.otherwise?.map((c) => c.kind)).toEqual(["setColor"]);
   });
 
-  it("frames the icon and its tap the same in every shape the document has", () => {
+  it("puts the icon and its tap on the shape being edited, and on no other", () => {
     const cfg = config();
-    const id = addToggleButton(cfg, KITCHEN, { family: "rectangular" });
+    const id = addToggleButton(cfg, KITCHEN, { family: "circular" });
     const tapId = attachedTapsOf(cfg, id)[0]!.payload.id;
+    const here = cfg.perFamily.circular!.placements;
+    expect(here[id]).toBeDefined();
+    expect(here[tapId]?.frame).toEqual(here[id]?.frame);
     for (const family of DRAWABLE_FAMILIES) {
-      const placements = cfg.perFamily[family]!.placements;
-      if (family === "rectangular") continue;
-      expect(placements[id], family).toBeDefined();
-      expect(placements[tapId]?.frame, family).toEqual(placements[id]?.frame);
+      if (family === "circular") continue;
+      expect(cfg.perFamily[family]?.placements[id], family).toBeUndefined();
+      expect(cfg.perFamily[family]?.placements[tapId], family).toBeUndefined();
     }
   });
 });

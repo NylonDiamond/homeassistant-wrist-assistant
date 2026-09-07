@@ -472,14 +472,16 @@ describe("Draft", () => {
 });
 
 describe("setPlacement", () => {
-  it("freezes the other layers when a family gets its first placement", () => {
+  // A placement is what says a layer belongs to a shape, so writing one for a
+  // layer the caller did not name would hand that layer a second owner.
+  it("writes a placement for the layer it names and for no other", () => {
     const cfg = newConfig("X", 0);
     const a = newElement("text");
     const b = newElement("shape");
     cfg.elements.push(a, b);
     setPlacement(cfg, "rectangular", a.payload.id, { isHidden: true });
     const layout = cfg.perFamily.rectangular!;
-    expect(Object.keys(layout.placements).sort()).toEqual([a.payload.id, b.payload.id].sort());
+    expect(Object.keys(layout.placements)).toEqual([a.payload.id]);
     expect(effectivePlacement(cfg, "rectangular", a).isHidden).toBe(true);
     expect(effectivePlacement(cfg, "rectangular", b).frame).toEqual(b.payload.frame);
     expect(effectivePlacement(cfg, "circular", a).fromPlacement).toBe(false);

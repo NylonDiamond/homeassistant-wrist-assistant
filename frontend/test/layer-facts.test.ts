@@ -46,12 +46,12 @@ describe("layerFacts", () => {
     expect(fact(facts, "Frame")).toBeUndefined();
   });
 
-  it("says when a layer has stopped following the shared frame", () => {
-    // A layer with its own placement here no longer moves with the other
-    // shapes, which is the one thing a row cannot show by drawing it.
+  // Every layer is on one shape and has its own placement there, so "this one
+  // has its own frame" says nothing any more and the row does not print it.
+  it("never says which shape the frame belongs to", () => {
     const el = textAt(0, 0, 1, 1, 45);
     const facts = layerFacts(HOST, "circular", el, { frame: el.payload.frame, isHidden: false, fromPlacement: true });
     expect(fact(facts, "Turned")).toBe("45°");
-    expect(fact(facts, "Frame")).toBe("Circular only");
+    expect(fact(facts, "Frame")).toBeUndefined();
   });
 });

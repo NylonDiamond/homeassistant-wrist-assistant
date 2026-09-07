@@ -37,7 +37,7 @@ import {
   copyElements,
   DRAWABLE_FAMILIES,
   pasteElements,
-  placeElements,
+  pasteElementsOnto,
   type LayerClip,
   freeSlotFrom,
   isAttachedTap,
@@ -59,6 +59,7 @@ import {
   newElement,
   newId,
   parseConfig,
+  ownedElements,
   removeElement,
   selectableLayerId,
   setTapOutsetFromFrame,
@@ -117,7 +118,6 @@ import {
   pickedCommon,
   setPlacement,
   shownCount,
-  showOnlyOn,
 } from "./editors.js";
 import { type PresetEnv, type PresetKind, LAYER_PRESETS, applyPreset, presetSpec } from "./presets.js";
 
@@ -1907,28 +1907,19 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * ⌘V. Two different jobs behind one key, decided by where the copy came
-   * from.
+   * ⌘V: the copied rows onto the shape being edited, as layers of their own.
    *
-   * Copied on one shape and pasted on another of the same document, the
-   * layers already exist and every shape may draw them, so the paste puts
-   * them on this shape at the frames they have on the other one. Anywhere
-   * else, including a paste into a different complication, it makes copies
-   * the way it always has.
+   * Always copies, because a layer belongs to one shape. Rows copied on the
+   * Rectangular face and pasted on the Circular one arrive scaled for the
+   * round canvas and on the same spot, and are second layers from then on:
+   * editing one of them cannot reach the rows it came from.
    */
   private pasteClip() {
     if (!this.canEdit || !this.clipboard) return;
-    const cfg = this.draft?.config;
     const clip = this.clipboard;
     const family = this.canvasFamily;
-    const here = new Set(cfg?.elements.map((el) => el.payload.id) ?? []);
-    const acrossShapes = cfg !== undefined
-      && clip.family !== undefined
-      && clip.family !== family
-      && clip.elements.length > 0
-      && clip.elements.every((el) => here.has(el.payload.id));
     let landed: string[] = [];
-    this.mutate((c) => { landed = acrossShapes ? placeElements(c, clip, family) : pasteElements(c, clip); });
+    this.mutate((c) => { landed = pasteElementsOnto(c, clip, family); });
     this.selectRows(landed);
   }
 
@@ -1944,11 +1935,12 @@ export class WristAssistantPanel extends LitElement {
     this.selectRows(pasted);
   }
 
-  /** ⌘A: every row into the pick, groups and all. */
+  /** ⌘A: every row on this shape into the pick, groups and all. The list is
+   * this shape's layers, so the select-all is too. */
   private selectAll() {
     const cfg = this.draft?.config;
     if (!cfg) return;
-    const ids = cfg.elements.filter((el) => !isAttachedTap(cfg, el)).map((el) => el.payload.id);
+    const ids = ownedElements(cfg, this.canvasFamily).filter((el) => !isAttachedTap(cfg, el)).map((el) => el.payload.id);
     if (ids.length === 0) return;
     if (ids.length === 1) this.selectRows(ids);
     else this.multi = new Set(ids);
@@ -2226,7 +2218,9 @@ export class WristAssistantPanel extends LitElement {
 
   private mutate(mutateFn: (cfg: CustomComplicationConfig) => void, coalesce?: string) {
     if (!this.draft || !this.canEdit) return;
-    this.draft.update(mutateFn, coalesce);
+    // The shape on screen is where a layer this edit added belongs. The draft
+    // settles that after every change, so no call site has to say so.
+    this.draft.update(mutateFn, coalesce, this.canvasFamily);
     this.afterMutation();
   }
 
@@ -2337,32 +2331,23 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * Run a change that adds layers, then keep whatever it added on the shape
-   * being edited.
+   * Run a change that adds layers. Whatever it adds lands on the shape being
+   * edited, because that is where a layer with no shape of its own goes.
    *
-   * A layer belongs to the document and every shape may draw it, which read
-   * as "adding a layer to the Circular face also drops it on the Rectangular
-   * one". A document with one shape is unchanged: there is nowhere else for
-   * the layer to land.
+   * Kept as its own name so the call sites still read as "add this here",
+   * even though the draft is what settles it now.
    */
   private addHere(change: (c: CustomComplicationConfig) => void) {
-    const before = new Set(this.draft?.config.elements.map((el) => el.payload.id) ?? []);
-    const family = this.canvasFamily;
-    this.mutate((c) => {
-      change(c);
-      if (c.supportedFamilies.filter((f) => isDrawable(f)).length < 2) return;
-      for (const el of c.elements) if (!before.has(el.payload.id)) showOnlyOn(c, el.payload.id, family);
-    });
+    this.mutate(change);
   }
 
   /**
-   * What the Layers card says on a shape that draws nothing.
+   * What the Layers card says on a shape that has nothing on it.
    *
-   * A shape starts blank, so this is the first thing anyone sees after adding
-   * one. It says where the layers went, since the rows below are all here and
-   * all dimmed, and offers the two ways out: take a whole shape's arrangement
-   * in one press, or copy the rows you want from another shape and paste them
-   * here.
+   * A shape starts empty, so this is the first thing anyone sees after adding
+   * one. The list below it is empty too: the other shapes' layers are theirs,
+   * not this one's. It offers the two ways to fill it: take a copy of a whole
+   * shape's arrangement in one press, or add layers here one at a time.
    */
   /** A shape's canvas in points, for the line that says why the copy shrinks. */
   private static sizeWords(family: DrawableFamily): string {
@@ -2371,28 +2356,29 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private renderShapeIsBlank(cfg: CustomComplicationConfig, family: DrawableFamily, edit: boolean) {
+    // Nothing to say on a complication that has no layers at all: the Layers
+    // card's own adders are the whole story there.
     if (cfg.elements.length === 0 || !isDrawable(this.activeFamily)) return nothing;
-    if (shownCount(cfg, family) > 0) return nothing;
+    if (ownedElements(cfg, family).length > 0) return nothing;
     const others = DRAWABLE_FAMILIES
       .filter((f): f is DrawableFamily => f !== family && cfg.supportedFamilies.includes(f))
       .filter((f) => shownCount(cfg, f) > 0);
     return html`<div class="blank-shape">
       <b>Nothing is on the ${familyTitle(family)} shape yet.</b>
-      <div class="hint">Layers belong to the whole complication, so the ones on the other shapes
-        are still listed here, dimmed. The eye on one of those rows puts it on this shape. Or copy
-        rows on another shape with ${KEY_MOD}C, come
-        back here and paste them with ${KEY_MOD}V: they land where they sit there, and no second
-        copy of the layer is made.</div>
+      <div class="hint">Each shape has its own layers. The ones on the other shapes belong to
+        those shapes, so they are not listed here and nothing you do here can reach them. Add
+        layers below, or take a copy of another shape's arrangement.</div>
       ${edit && others.length > 0
         ? html`<div class="adders">
             ${others.map((f) => html`<button class="small primary"
-              title=${`Put every layer on the ${familyTitle(family)} shape where it sits on the ${familyTitle(f)} one, scaled to this canvas`}
+              title=${`Put a copy of every layer on the ${familyTitle(f)} shape here, where it sits there, scaled to this canvas`}
               @click=${() => this.mutate((c) => copyShapeLayout(c, f, family))}>Copy the ${familyTitle(f)} layout</button>`)}
           </div>
-          <div class="hint">Either way the layers are scaled on the way in: a point is a point, and
-            this canvas is ${WristAssistantPanel.sizeWords(family)} against ${WristAssistantPanel.sizeWords(others[0]!)}, so
-            sizes come down to match and a round shape pulls the layout in off its rim. Expect to
-            nudge it by hand afterwards.</div>`
+          <div class="hint">The copies are layers of their own: editing one here changes nothing on
+            the ${familyTitle(others[0]!)} shape. They are scaled on the way in, because a point is a
+            point and this canvas is ${WristAssistantPanel.sizeWords(family)} against
+            ${WristAssistantPanel.sizeWords(others[0]!)}, so sizes come down to match and a round
+            shape pulls the layout in off its rim. Expect to nudge it by hand afterwards.</div>`
         : nothing}
     </div>`;
   }
@@ -2407,7 +2393,7 @@ export class WristAssistantPanel extends LitElement {
     const cfg = this.draft?.config;
     if (!cfg || !canRemoveFamily(cfg, family)) return;
     const lost = familyContentSummary(cfg, family);
-    if (lost.length > 0 && !window.confirm(`Remove the ${familyTitle(family)} layout? This drops ${lost.join(", ")}.`)) return;
+    if (lost.length > 0 && !window.confirm(`Remove the ${familyTitle(family)} shape? This deletes ${lost.join(", ")}. They are on this shape only, so nothing else in the complication loses anything.`)) return;
     this.mutate((c) => removeFamily(c, family));
     this.ensureActiveFamily();
   }
@@ -3656,16 +3642,17 @@ export class WristAssistantPanel extends LitElement {
     // Top of the list = drawn last = on top. Attached taps are not rows: they
     // show as a badge on the layer they belong to.
     //
-    // Every layer stays in the list, hidden or not. Hiding one used to move
-    // its row to a folded block below, which read as a delete: the row the
-    // user had just clicked was gone from where they were looking. A hidden
-    // row is dimmed and carries a "hidden" badge instead, so the list stays a
-    // stable list of the complication's layers and the eye is a toggle rather
-    // than a disappearing act.
+    // Only this shape's layers. Every layer belongs to one shape, so the rows
+    // here are the whole of what this shape draws and nothing on another shape
+    // can be reached from them.
     //
-    // What the eye writes is still this shape's own setting: hiding a layer on
-    // Rectangular leaves Circular alone.
-    const ordered = [...cfg.elements].filter((el) => !isAttachedTap(cfg, el)).reverse();
+    // Every layer of this shape stays in the list, hidden or not. Hiding one
+    // used to move its row to a folded block below, which read as a delete: the
+    // row the user had just clicked was gone from where they were looking. A
+    // hidden row is dimmed and carries a "hidden" badge instead, so the list
+    // stays a stable list of the shape's layers and the eye is a toggle rather
+    // than a disappearing act.
+    const ordered = ownedElements(cfg, family).filter((el) => !isAttachedTap(cfg, el)).reverse();
     const ctx = describeContext(this.host());
     const resolver = new Resolver(this.buildContext(), this.draft?.config);
     const layout = cfg.perFamily[this.activeFamily];
@@ -4169,7 +4156,7 @@ export class WristAssistantPanel extends LitElement {
             const layout = layouts[f];
             art = layout ? renderLayout(layout, { icons: this.icons, imageSizes: this.imageSizes, slot: REFERENCE_CASE.slots[f] }) : nothing;
           }
-          const empty = f !== "inline" && cfg.elements.every((e) => effectivePlacement(cfg, f, e).isHidden || e.payload.isHidden) && cfg.elements.length > 0;
+          const empty = f !== "inline" && shownCount(cfg, f) === 0 && cfg.elements.length > 0;
           const removable = this.canEdit && canRemoveFamily(cfg, f);
           // The remove button sits beside the tile, not inside it: a button
           // inside a button is not valid markup.
@@ -4420,12 +4407,12 @@ export class WristAssistantPanel extends LitElement {
         <div class="sec-h"><span class="swatch">${uiIcon("place")}</span>
           <span class="tt"><h4>All ${n} at once</h4><span class="sum">The settings every picked layer has</span></span></div>
         <div class="sec-b">
-          ${this.triCheck(`Hidden in ${familyTitle(family)}`, common.hiddenHere, setHiddenHere)}
+          ${this.triCheck("Hidden", common.hiddenHere, setHiddenHere)}
           ${common.colourable
             ? html`${colorField("Colour", common.colour, (v) => { if (v !== undefined) setColour(v); })}
               ${common.colour === undefined ? html`<div class="hint">These layers are different colours. Pick one to give them all the same.</div>` : nothing}`
             : html`<div class="hint">No shared colour: a picture and a tap area have none.</div>`}
-          <div class="hint">Hiding, like size and place, belongs to the ${familyTitle(family)} shape alone.</div>
+          <div class="hint">These layers are on the ${familyTitle(family)} shape and on no other, so nothing here reaches another shape.</div>
           <div class="hint">Size, content and states belong to one layer at a time. Click a layer on its own to reach them.</div>
         </div>
       </div>`;
@@ -4512,9 +4499,6 @@ export function layerFacts(
   facts.push({ label: "At", value: `${pt(f.x * box.width)}, ${pt(f.y * box.height)} pt` });
   facts.push({ label: "Size", value: `${pt(f.width * box.width)} x ${pt(f.height * box.height)} pt` });
   if (f.rotationDegrees !== 0) facts.push({ label: "Turned", value: `${Math.round(f.rotationDegrees)}°` });
-  // Worth saying out loud: a layer with its own placement here has stopped
-  // following the frame the other shapes share.
-  if (eff.fromPlacement) facts.push({ label: "Frame", value: `${familyTitle(family)} only` });
   return facts;
 }
 

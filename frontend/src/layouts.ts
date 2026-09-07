@@ -10,11 +10,14 @@
 import {
   type CustomComplicationConfig,
   type FamilyKind,
-  type FamilyLayout,
   type InlineLayout,
   DRAWABLE_FAMILIES,
   defaultLayout,
   literal,
+  ownedElements,
+  isAttachedTap,
+  pruneGroups,
+  removeElement,
   schemaVersionFor,
 } from "./model.js";
 
@@ -65,47 +68,44 @@ export function blankInline(): InlineLayout {
 }
 
 /**
- * A new canvas shape starts blank.
+ * Add a shape. A canvas shape starts with nothing on it: no layers, an empty
+ * Layers card, and the offer to take a copy of another shape's arrangement.
  *
- * Layers belong to the document rather than to one shape, so a shape added to
- * a complication that is already drawn used to arrive carrying every layer on
- * it, at frames chosen for a canvas of another size. Blank is the honest
- * start: every layer is still there to be put on the shape, one eye at a time
- * or a whole shape's arrangement at once, and none of them lands somewhere
- * nobody chose. Each layer keeps its own frame under the hidden placement, so
- * showing one puts it where it sits elsewhere rather than in a corner.
+ * Every layer belongs to one shape, so there is nothing for a new shape to
+ * inherit. It used to arrive carrying every layer in the document, at frames
+ * chosen for a canvas of another size, which read as the shape helping itself
+ * to something nobody offered it.
+ *
+ * A layout already there is kept (a document that arrived with a stray one);
+ * a shape removed and re-added in one session keeps nothing, since removal
+ * deletes the layout. Inline starts empty. No-op when already supported.
  */
-function blankLayout(cfg: CustomComplicationConfig): FamilyLayout {
-  const layout = defaultLayout();
-  for (const el of cfg.elements) {
-    layout.placements[el.payload.id] = { frame: { ...el.payload.frame }, isHidden: true };
-  }
-  return layout;
-}
-
-/** Add a shape. A canvas shape starts blank unless a layout is already there
- * (a shape removed and re-added in one session keeps nothing, since removal
- * deletes the layout; a document that arrived with a stray layout keeps it).
- * Inline starts empty. No-op when already supported. */
 export function addFamily(cfg: CustomComplicationConfig, family: FamilyKind): void {
   if (!cfg.supportedFamilies.includes(family)) {
     cfg.supportedFamilies = ALL_FAMILIES.filter((f) => f === family || cfg.supportedFamilies.includes(f));
   }
   if (isDrawable(family)) {
-    if (!cfg.perFamily[family]) cfg.perFamily[family] = blankLayout(cfg);
+    if (!cfg.perFamily[family]) cfg.perFamily[family] = defaultLayout();
   } else if (!cfg.inline) {
     cfg.inline = blankInline();
   }
   cfg.schemaVersion = schemaVersionFor(cfg);
 }
 
-/** Remove a shape and its layout in one step, so the set and the document
- * never disagree. Refuses to empty the set. */
+/** Remove a shape, its layout and its layers in one step, so the set and the
+ * document never disagree. The layers go with it because they were only ever
+ * on this shape; nothing else in the complication is drawing them. Refuses to
+ * empty the set. */
 export function removeFamily(cfg: CustomComplicationConfig, family: FamilyKind): void {
   if (!canRemoveFamily(cfg, family)) return;
   cfg.supportedFamilies = cfg.supportedFamilies.filter((f) => f !== family);
-  if (isDrawable(family)) delete cfg.perFamily[family];
-  else delete cfg.inline;
+  if (isDrawable(family)) {
+    for (const el of ownedElements(cfg, family)) removeElement(cfg, el.payload.id);
+    delete cfg.perFamily[family];
+    pruneGroups(cfg);
+  } else {
+    delete cfg.inline;
+  }
   cfg.schemaVersion = schemaVersionFor(cfg);
 }
 
@@ -123,8 +123,10 @@ export function familyContentSummary(cfg: CustomComplicationConfig, family: Fami
   }
   const layout = cfg.perFamily[family];
   if (!layout) return out;
-  const placed = Object.values(layout.placements).filter((p) => !p.isHidden).length;
-  if (placed > 0) out.push(`${placed} placed layer${placed === 1 ? "" : "s"}`);
+  // Every layer on the shape, hidden ones included: removing the shape deletes
+  // them now, so a hidden layer is still something the author would lose.
+  const placed = ownedElements(cfg, family).filter((el) => !isAttachedTap(cfg, el)).length;
+  if (placed > 0) out.push(`${placed} layer${placed === 1 ? "" : "s"}`);
   if (layout.rules.length > 0) out.push(`${layout.rules.length} rule${layout.rules.length === 1 ? "" : "s"}`);
   if (layout.bezelText || layout.bezelGauge) out.push("the bezel");
   if (layout.curvedText) out.push("the curved text");

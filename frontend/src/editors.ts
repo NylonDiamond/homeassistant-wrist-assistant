@@ -124,6 +124,12 @@ import {
   setLayerEntity,
   styleChangePayload,
   switchComparison,
+  copyElements,
+  isAttachedTap,
+  normalizeOwnership,
+  ownedElements,
+  ownedShownCount,
+  pasteElements,
 } from "./model.js";
 import {
   type StatesTable,
@@ -1657,15 +1663,10 @@ export function setPlacement(cfg: CustomComplicationConfig, family: FamilyKind, 
   const existing: Placement = layout.placements[id] ?? { frame: { ...eff.frame }, isHidden: eff.isHidden, ...(eff.size !== undefined ? { size: eff.size } : {}) };
   const next: Placement = { ...existing, ...patch };
   if (clearSize) delete next.size;
-  // Creating the first placement in a family freezes every other layer at
-  // its current frame, otherwise they would silently keep following the
-  // shared frame while this one does not.
-  if (Object.keys(layout.placements).length === 0) {
-    for (const other of cfg.elements) {
-      if (other.payload.id === id) continue;
-      layout.placements[other.payload.id] = { frame: { ...other.payload.frame }, isHidden: other.payload.isHidden };
-    }
-  }
+  // No freezing of the other layers here any more. A placement is what says a
+  // layer belongs to this shape, so writing one for a layer the shape does not
+  // own would hand it a second owner. `normalizeOwnership` clears any that
+  // slip through.
   layout.placements[id] = next;
 }
 
@@ -1702,41 +1703,52 @@ export function shapeSizeField(
  * inspector's own callers do not have to know that. */
 export { elementSize };
 
-/** Put a layer on one shape only, by hiding it on every other canvas shape
- * the document has. What a layer added while two shapes exist does, so the
- * shape being edited is the one that gets it. */
-export function showOnlyOn(cfg: CustomComplicationConfig, id: string, family: FamilyKind): void {
-  for (const other of DRAWABLE_FAMILIES) {
-    if (other === family || !cfg.supportedFamilies.includes(other)) continue;
-    setPlacement(cfg, other, id, { isHidden: true });
-  }
-}
-
-/** Copy one shape's whole arrangement onto another: every layer's frame, its
- * size and whether it shows there. What "copy the Rectangular layout" does to
- * a shape that is still blank. */
+/**
+ * Give one shape its own copy of another shape's layers.
+ *
+ * A real copy, not a link: the new shape gets new layers with new ids, so
+ * editing one of them afterwards changes nothing on the shape it came from.
+ * Each one lands where its original sits, scaled for the canvas it arrives on.
+ * What "copy the Rectangular layout" does to a shape that is still blank.
+ */
 export function copyShapeLayout(cfg: CustomComplicationConfig, from: FamilyKind, to: FamilyKind): void {
   const layout = cfg.perFamily[to] ?? (cfg.perFamily[to] = defaultLayout());
-  const next: Record<string, Placement> = {};
-  for (const el of cfg.elements) {
-    const src = effectivePlacement(cfg, from, el);
+  const source = ownedElements(cfg, from).filter((el) => !isAttachedTap(cfg, el));
+  if (source.length === 0) return;
+  const clip = copyElements(cfg, source.map((el) => el.payload.id), from);
+  const landed = pasteElements(cfg, clip, { nudge: false });
+  // Each copy arrives carrying the source shape's own placement. Refit it for
+  // this canvas, hand it to this shape, and take it off the source shape,
+  // which is what makes the copy a layer of its own rather than a second
+  // pointer at the original.
+  const sourceLayout = cfg.perFamily[from];
+  for (const id of landed) {
+    const el = cfg.elements.find((e) => e.payload.id === id);
+    if (!el) continue;
+    const src = sourceLayout?.placements[id];
     // The size travels even when the source shape never set one, so the refit
     // has something to scale down for the smaller canvas.
-    const size = src.size ?? elementSize(el);
+    const size = src?.size ?? elementSize(el);
     const base: Placement = {
-      frame: { ...src.frame },
-      isHidden: src.isHidden,
+      frame: { ...(src?.frame ?? el.payload.frame) },
+      // A layer hidden on the source shape arrives hidden, so the copy is the
+      // arrangement as it stands rather than an arrangement plus whatever was
+      // switched off in it.
+      isHidden: src?.isHidden ?? false,
       ...(size !== undefined ? { size } : {}),
     };
-    next[el.payload.id] = refitPlacement(base, from, to, el.kind);
+    // Left on the source shape the copy would have two owners, and settling
+    // the document would split it in two, so it comes off there.
+    for (const f of DRAWABLE_FAMILIES) if (f !== to) delete cfg.perFamily[f]?.placements[id];
+    layout.placements[id] = refitPlacement(base, from, to, el.kind);
   }
-  layout.placements = next;
+  normalizeOwnership(cfg, to);
 }
 
 /** How many layers a shape actually draws: what the Layers card counts to
  * decide whether the shape is still blank. */
 export function shownCount(cfg: CustomComplicationConfig, family: FamilyKind): number {
-  return cfg.elements.filter((el) => !effectivePlacement(cfg, family, el).isHidden).length;
+  return ownedShownCount(cfg, family);
 }
 
 
@@ -1766,10 +1778,9 @@ export function elementColour(el: CElement): string | undefined {
 }
 
 export interface PickedCommon {
-  /** Hidden in the shape being edited. */
+  /** Hidden on the shape they are on. A layer is on one shape only, so there
+   * is nowhere else for it to be hidden. */
   hiddenHere: PickedFlag;
-  /** Hidden in every shape: each layer's own flag. */
-  hiddenEverywhere: PickedFlag;
   /** Whether every picked layer has a colour to set at all. */
   colourable: boolean;
   /** The colour they already share, or undefined when they differ or one of
@@ -1785,13 +1796,12 @@ export interface PickedCommon {
  */
 export function pickedCommon(cfg: CustomComplicationConfig, family: FamilyKind, els: readonly CElement[]): PickedCommon {
   const hiddenHere = flagAcross(els.map((el) => effectivePlacement(cfg, family, el).isHidden));
-  const hiddenEverywhere = flagAcross(els.map((el) => el.payload.isHidden));
   const colours = els.map(elementColour);
   const colourable = els.length > 0 && colours.every((c) => c !== undefined);
   const first = colours[0];
   const shared = colourable && first !== undefined
     && colours.every((c) => c !== undefined && c.toUpperCase() === first.toUpperCase());
-  return { hiddenHere, hiddenEverywhere, colourable, colour: shared ? first : undefined };
+  return { hiddenHere, colourable, colour: shared ? first : undefined };
 }
 
 const FONT_WEIGHTS: [FontWeight, string][] = [["regular", "Regular"], ["medium", "Medium"], ["semibold", "Semibold"], ["bold", "Bold"]];
@@ -2749,10 +2759,10 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       <div class="hint">Drag the layer on the ${familyTitle(family)} preview to move it, or pull a
         corner to resize it, and the four boxes above follow. Arrow keys nudge the selection 1 pt,
         shift-arrows 10 pt. The eye on the layer's row hides it.</div>
-      <div class="hint">Everything about where this layer sits, how big it is drawn and whether it
-        shows belongs to the ${familyTitle(family)} shape alone. Pick another shape above to place
-        the same layer differently there.</div>`,
-      { color: SECTION_COLOR.place, icon: "place", summary: `${Math.round(f.width * 100)}% wide · ${familyTitle(family)}${eff.fromPlacement ? "" : " · shared frame"}`,
+      <div class="hint">This layer is on the ${familyTitle(family)} shape and on no other, so
+        everything here, and everything else about it, is that shape's alone. Another shape wanting
+        the same thing gets its own copy of it.</div>`,
+      { color: SECTION_COLOR.place, icon: "place", summary: `${Math.round(f.width * 100)}% wide · ${familyTitle(family)}`,
         ...(placeChanged ? {
           resetTitle: `Put this layer back to the middle of the ${familyTitle(family)} face at half size, unrotated and shown`,
           reset: () => host.update((c) => setPlacement(c, family, id, { frame: { ...CENTERED_FRAME }, isHidden: false })),
@@ -3014,11 +3024,11 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
     ${card(host, "states", "Shape states", statesEditor(host, layout.rules, "layout", (c) => c.perFamily[family]?.rules, `rules-${family}`),
       { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(layout.rules).replace(/\.$/, ""),
         ...(layout.rules.length > 0 ? { reset: () => upd((l) => { l.rules = []; }, "reset-states") } : {}) })}
-    ${card(host, "placements", "Placements", html`
+    ${card(host, "placements", "Layers", html`
       <div class="hint">${placed === 0
-        ? `Nothing is on the ${familyTitle(family)} shape. The Layers card offers to copy another shape's whole arrangement onto it.`
-        : `${placed} layer${placed === 1 ? " is" : "s are"} on the ${familyTitle(family)} shape, each with its own frame and size here.`}</div>`,
-      { color: SECTION_COLOR.place, icon: "place", summary: placed === 0 ? "Nothing placed" : `${placed} layer${placed === 1 ? "" : "s"} placed` })}`;
+        ? `Nothing is on the ${familyTitle(family)} shape. The Layers card offers a copy of another shape's whole arrangement, or you can add layers here one at a time.`
+        : `${placed} layer${placed === 1 ? " is" : "s are"} on the ${familyTitle(family)} shape. They belong to this shape alone: no other shape draws them, and editing one here cannot reach another shape.`}</div>`,
+      { color: SECTION_COLOR.place, icon: "place", summary: placed === 0 ? "Nothing on it" : `${placed} layer${placed === 1 ? "" : "s"}` })}`;
 }
 
 /** The Inline shape: one line of text, no canvas. The watch draws
