@@ -34,6 +34,7 @@ import {
   type ChartStat,
   type TimelineElement,
   TIMELINE_HISTORY_POINTS,
+  timeLabelPositions,
   timelineBandColor,
   timelineHistoryKey,
   timelineHistoryMinutes,
@@ -220,17 +221,25 @@ export interface TimelineLabel {
   text: string;
 }
 
-/** The fractions each setting prints a time at: the two ends, or the ends plus
- * the two thirds between them, which is the watch history page's own row. */
-const TIMELINE_LABEL_POSITIONS: Record<"ends" | "four", number[]> = {
-  ends: [0, 1],
-  four: [0, 1 / 3, 2 / 3, 1],
-};
-
 /** Up to three hours the minute matters, past that it is noise: an eight hour
  * strip reading "9 PM, 11 PM, 1 AM, 3 AM" says more than the same row with
- * ":36" on every one of them. */
+ * ":36" on every one of them. What `minutes: "auto"` decides on. */
 const TIMELINE_LABEL_MINUTES_MAX_SECONDS = 3 * 60 * 60;
+
+/** The `Intl` options one timeline's times are formatted with: the hour always,
+ * the minute when the layer asks for it or the span is short enough to want it,
+ * and a forced clock only when the layer names one. Mirrors the format style
+ * `timelineLabels` builds in the app repo. */
+function timelineLabelFormat(el: TimelineElement, spanSeconds: number): Intl.DateTimeFormat {
+  const showsMinutes = el.minutes === "always"
+    || (el.minutes === "auto" && spanSeconds <= TIMELINE_LABEL_MINUTES_MAX_SECONDS);
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    ...(showsMinutes ? { minute: "2-digit" as const } : {}),
+    ...(el.hourCycle === "h12" ? { hourCycle: "h12" as const } : {}),
+    ...(el.hourCycle === "h24" ? { hourCycle: "h23" as const } : {}),
+  });
+}
 
 /**
  * The clock times one timeline prints, oldest first.
@@ -241,13 +250,12 @@ const TIMELINE_LABEL_MINUTES_MAX_SECONDS = 3 * 60 * 60;
  * at all and prints nothing. Mirrors `timelineLabels` in the app repo.
  */
 export function timelineLabels(el: TimelineElement, nowMs: number): TimelineLabel[] {
-  if (el.timeLabels === "none") return [];
   if (timelineHistoryKey(el) === undefined) return [];
+  const positions = timeLabelPositions(el.timeLabelCount);
+  if (positions.length === 0) return [];
   const spanSeconds = timelineHistoryMinutes(el) * 60;
-  const format = new Intl.DateTimeFormat(undefined, spanSeconds <= TIMELINE_LABEL_MINUTES_MAX_SECONDS
-    ? { hour: "numeric", minute: "2-digit" }
-    : { hour: "numeric" });
-  return TIMELINE_LABEL_POSITIONS[el.timeLabels].map((position) => ({
+  const format = timelineLabelFormat(el, spanSeconds);
+  return positions.map((position) => ({
     position,
     text: format.format(new Date(nowMs - spanSeconds * 1000 * (1 - position))),
   }));

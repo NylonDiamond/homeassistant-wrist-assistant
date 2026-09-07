@@ -606,32 +606,78 @@ export interface TimelineElement extends Omit<ElementBase, "colorSlot"> {
   gap: number;
   /** Corner radius of each run, in points. */
   cornerRadius: number;
-  /** How many clock times to draw along the strip. `ends` is the window's
-   * start and now; `four` is start, one third, two thirds and now, which is
-   * the row the watch's own history page shows. */
-  timeLabels: TimelineTimeLabels;
-  /** Font size of the times, in design-box points. Clamped 5...20 when drawn. */
+  /** How many clock times to draw along the strip, 0...12. 0 draws none, 1
+   * draws now alone, 2 the window's start and now, and 4 the watch history
+   * page's own row. `n` times sit at `i / (n - 1)`. */
+  timeLabelCount: number;
+  /** Font size of the times, in design-box points. Clamped 1...20 when drawn. */
   labelSize: number;
   /** Colour of the times. */
   labelColorHex: string;
   /** false puts the row under the strip, true over it. */
   labelsAbove: boolean;
+  /** Whose clock the times are read on: the device's own, or 12 or 24 hours
+   * forced on every device. */
+  hourCycle: TimelineHourCycle;
+  /** Whether the times carry their minutes. `auto` keeps them up to a three
+   * hour span and drops them past it. */
+  minutes: TimelineMinuteStyle;
 }
 
-/** How many clock times a timeline prints along its span. Mirrors
- * `TimelineElement.TimeLabels` in the app repo. */
-export type TimelineTimeLabels = "none" | "ends" | "four";
+/** The clock a timeline's times are printed on. Mirrors
+ * `TimelineElement.HourCycle` in the app repo. */
+export type TimelineHourCycle = "auto" | "h12" | "h24";
+/** Whether a timeline's times carry their minutes. Mirrors
+ * `TimelineElement.MinuteStyle` in the app repo. */
+export type TimelineMinuteStyle = "auto" | "always" | "never";
 
-export const TIMELINE_TIME_LABELS: [TimelineTimeLabels, string][] = [
-  ["none", "None"],
-  ["ends", "Ends"],
-  ["four", "Four"],
+export const TIMELINE_HOUR_CYCLES: [TimelineHourCycle, string][] = [
+  ["auto", "Auto"],
+  ["h12", "12 hour"],
+  ["h24", "24 hour"],
+];
+export const TIMELINE_MINUTE_STYLES: [TimelineMinuteStyle, string][] = [
+  ["auto", "Auto"],
+  ["always", "Always"],
+  ["never", "Never"],
 ];
 
-function parseTimeLabels(raw: unknown): TimelineTimeLabels {
-  // An unknown word is the same answer as no word at all: draw the strip
-  // alone rather than refusing the whole document.
-  return raw === "ends" || raw === "four" ? raw : TIMELINE_DEFAULT_TIME_LABELS;
+function parseHourCycle(raw: unknown): TimelineHourCycle {
+  // An unknown word is the same answer as no word at all: follow the device
+  // rather than refusing the whole document.
+  return raw === "h12" || raw === "h24" ? raw : TIMELINE_DEFAULT_HOUR_CYCLE;
+}
+
+function parseMinuteStyle(raw: unknown): TimelineMinuteStyle {
+  return raw === "always" || raw === "never" ? raw : TIMELINE_DEFAULT_MINUTE_STYLE;
+}
+
+/**
+ * How many times a timeline prints, from either key.
+ *
+ * `timeLabelCount` is the answer when it is there. When it is not, the retired
+ * `timeLabels` word is read in its place: `none`, `ends` and `four` were the
+ * only three this ever offered, and a document saved the evening they existed
+ * still means them. Anything else, in either key, is no times at all.
+ */
+export function parseTimeLabelCount(p: Record<string, unknown>): number {
+  if (p.timeLabelCount !== undefined) {
+    const raw = Number(p.timeLabelCount);
+    if (!Number.isFinite(raw)) return TIMELINE_DEFAULT_LABEL_COUNT;
+    return Math.max(0, Math.min(TIMELINE_MAX_LABEL_COUNT, Math.round(raw)));
+  }
+  if (p.timeLabels === "ends") return 2;
+  if (p.timeLabels === "four") return 4;
+  return TIMELINE_DEFAULT_LABEL_COUNT;
+}
+
+/** The fractions of the frame's width `n` times sit at: evenly spaced from the
+ * window's start to now, and the right edge alone when there is only one, since
+ * the one time worth printing on its own is the newest. */
+export function timeLabelPositions(count: number): number[] {
+  if (count <= 0) return [];
+  if (count === 1) return [1];
+  return Array.from({ length: count }, (_, i) => i / (count - 1));
 }
 
 /** One row of a timeline's colour table.
@@ -664,15 +710,20 @@ export const TIMELINE_NEW_MINUTES = 1440;
 export const TIMELINE_DEFAULT_MINUTES = 60;
 /** The wire defaults for the clock times: a watch that predates the keys draws
  * the strip alone, so absent has to mean "no times". */
-export const TIMELINE_DEFAULT_TIME_LABELS: TimelineTimeLabels = "none";
+export const TIMELINE_DEFAULT_LABEL_COUNT = 0;
 export const TIMELINE_DEFAULT_LABEL_SIZE = 9;
 export const TIMELINE_DEFAULT_LABEL_HEX = "#8E8E93";
+export const TIMELINE_DEFAULT_HOUR_CYCLE: TimelineHourCycle = "auto";
+export const TIMELINE_DEFAULT_MINUTE_STYLE: TimelineMinuteStyle = "auto";
 /** A timeline added in the panel starts with the watch history page's own row
  * of four times, which is the reading this layer was missing. */
-export const TIMELINE_NEW_TIME_LABELS: TimelineTimeLabels = "four";
-/** The times are readable between these two sizes and nowhere else: under 5 pt
- * nothing resolves on a watch, over 20 pt the row eats the strip. */
-export const TIMELINE_MIN_LABEL_SIZE = 5;
+export const TIMELINE_NEW_LABEL_COUNT = 4;
+/** Twelve times is one every fifteen minutes on a three hour strip, and already
+ * more than a 181 point face can print without them touching. */
+export const TIMELINE_MAX_LABEL_COUNT = 12;
+/** The times are readable between these two sizes and nowhere else: a size of
+ * nothing draws nothing, and over 20 pt the row eats the strip. */
+export const TIMELINE_MIN_LABEL_SIZE = 1;
 export const TIMELINE_MAX_LABEL_SIZE = 20;
 /** The widest gap worth offering: past four points the runs of a busy hour
  * stop touching at all and the strip reads as a dotted line. */
@@ -1439,10 +1490,12 @@ function parseElementKind(raw: unknown): Element {
           otherColorHex: str(p.otherColorHex, TIMELINE_DEFAULT_OTHER_HEX),
           gap: Math.min(TIMELINE_MAX_GAP, Math.max(0, num(p.gap, 0))),
           cornerRadius: Math.max(0, num(p.cornerRadius, TIMELINE_DEFAULT_CORNER_RADIUS)),
-          timeLabels: parseTimeLabels(p.timeLabels),
+          timeLabelCount: parseTimeLabelCount(p),
           labelSize: num(p.labelSize, TIMELINE_DEFAULT_LABEL_SIZE),
           labelColorHex: str(p.labelColorHex, TIMELINE_DEFAULT_LABEL_HEX),
           labelsAbove: p.labelsAbove === true,
+          hourCycle: parseHourCycle(p.hourCycle),
+          minutes: parseMinuteStyle(p.minutes),
         },
       };
     }
@@ -2035,10 +2088,17 @@ function encodeElementKind(el: Element): J {
       if (t.otherColorHex !== TIMELINE_DEFAULT_OTHER_HEX) o.otherColorHex = t.otherColorHex;
       if (t.gap !== 0) o.gap = encNum(t.gap);
       if (t.cornerRadius !== TIMELINE_DEFAULT_CORNER_RADIUS) o.cornerRadius = encNum(t.cornerRadius);
-      if (t.timeLabels !== TIMELINE_DEFAULT_TIME_LABELS) o.timeLabels = t.timeLabels;
+      // `timeLabels`, the word this key started as, is never written again: a
+      // document saved that evening still reads, and everything written since
+      // carries the count instead.
       if (t.labelSize !== TIMELINE_DEFAULT_LABEL_SIZE) o.labelSize = encNum(t.labelSize);
       if (t.labelColorHex !== TIMELINE_DEFAULT_LABEL_HEX) o.labelColorHex = t.labelColorHex;
       if (t.labelsAbove) o.labelsAbove = true;
+      if (t.timeLabelCount !== TIMELINE_DEFAULT_LABEL_COUNT) {
+        o.timeLabelCount = Math.max(0, Math.min(TIMELINE_MAX_LABEL_COUNT, Math.round(t.timeLabelCount)));
+      }
+      if (t.hourCycle !== TIMELINE_DEFAULT_HOUR_CYCLE) o.hourCycle = t.hourCycle;
+      if (t.minutes !== TIMELINE_DEFAULT_MINUTE_STYLE) o.minutes = t.minutes;
       return { kind: "timeline", payload: o };
     }
     case "shape": {
@@ -2313,7 +2373,10 @@ const K = {
     "scaleLabels", "scaleLabelPlacement", "latestLabel",
     "topLabelStyle", "bottomLabelStyle", "latestLabelStyle", "latestLabelFollowsBand",
     "scaleLabelColorHex"],
-  timeline: ["value", "historyMinutes", "bands", "otherColorHex", "gap", "cornerRadius", "timeLabels", "labelSize", "labelColorHex", "labelsAbove"],
+  // `timeLabels` is retired and never written, but a document saved the evening
+  // it existed still carries it, and dropping it from this list would make that
+  // document read as carrying a key nothing decodes.
+  timeline: ["value", "historyMinutes", "bands", "otherColorHex", "gap", "cornerRadius", "timeLabels", "labelSize", "labelColorHex", "labelsAbove", "timeLabelCount", "hourCycle", "minutes"],
   shape: ["kind", "cornerRadius", "thickness", "borderColorHex", "borderWidth"],
   // `timestampStyle` is retired (the age style, built and removed 2026-09-04).
   // It stays listed so a document saved while it existed does not read as
@@ -2554,10 +2617,12 @@ export function newElement(kind: Element["kind"]): Element {
           otherColorHex: TIMELINE_NEW_OTHER_HEX,
           gap: 0,
           cornerRadius: TIMELINE_NEW_CORNER_RADIUS,
-          timeLabels: TIMELINE_NEW_TIME_LABELS,
+          timeLabelCount: TIMELINE_NEW_LABEL_COUNT,
           labelSize: TIMELINE_DEFAULT_LABEL_SIZE,
           labelColorHex: TIMELINE_DEFAULT_LABEL_HEX,
           labelsAbove: false,
+          hourCycle: TIMELINE_DEFAULT_HOUR_CYCLE,
+          minutes: TIMELINE_DEFAULT_MINUTE_STYLE,
         },
       };
     }

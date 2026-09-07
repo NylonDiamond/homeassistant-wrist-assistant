@@ -9,12 +9,14 @@
 import { describe, expect, it } from "vitest";
 import { nothing } from "lit";
 import {
+  TIMELINE_DEFAULT_LABEL_COUNT,
   TIMELINE_DEFAULT_LABEL_HEX,
   TIMELINE_DEFAULT_LABEL_SIZE,
   TIMELINE_DEFAULT_OTHER_HEX,
-  TIMELINE_DEFAULT_TIME_LABELS,
   TIMELINE_HISTORY_POINTS,
-  TIMELINE_NEW_TIME_LABELS,
+  TIMELINE_MIN_LABEL_SIZE,
+  TIMELINE_NEW_LABEL_COUNT,
+  timeLabelPositions,
   auditUnknownKeys,
   encodeConfig,
   literal,
@@ -282,7 +284,7 @@ describe("the wire format", () => {
       p.otherColorHex = TIMELINE_DEFAULT_OTHER_HEX;
       p.cornerRadius = 1;
       p.historyMinutes = 60;
-      p.timeLabels = TIMELINE_DEFAULT_TIME_LABELS;
+      p.timeLabelCount = TIMELINE_DEFAULT_LABEL_COUNT;
     }));
     const payload = (encodeConfig(cfg).elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
     expect(Object.keys(payload).sort()).toEqual(["frame", "id", "isHidden", "rules", "value"]);
@@ -296,81 +298,163 @@ describe("the wire format", () => {
     expect(payload.cornerRadius).toBe(2);
   });
 
-  it("starts a new layer showing its times, and writes only that one key", () => {
+  it("starts a new layer showing four times, and writes only that one key", () => {
     // The times are the reading this layer was missing, so a fresh one has
-    // them; the other three sit at their wire defaults and stay unwritten.
+    // them; the rest sit at their wire defaults and stay unwritten.
     const el = newElement("timeline") as Extract<Element, { kind: "timeline" }>;
-    expect(el.payload.timeLabels).toBe(TIMELINE_NEW_TIME_LABELS);
-    expect(el.payload.timeLabels).toBe("four");
+    expect(el.payload.timeLabelCount).toBe(TIMELINE_NEW_LABEL_COUNT);
+    expect(el.payload.timeLabelCount).toBe(4);
     expect(el.payload.labelSize).toBe(TIMELINE_DEFAULT_LABEL_SIZE);
     expect(el.payload.labelColorHex).toBe(TIMELINE_DEFAULT_LABEL_HEX);
     expect(el.payload.labelsAbove).toBe(false);
+    expect(el.payload.hourCycle).toBe("auto");
+    expect(el.payload.minutes).toBe("auto");
     const cfg = newConfig("Timeline", 0);
     cfg.elements.push(el);
     const payload = (encodeConfig(cfg).elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
-    expect(payload.timeLabels).toBe("four");
+    expect(payload.timeLabelCount).toBe(4);
     expect(payload.labelSize).toBeUndefined();
     expect(payload.labelColorHex).toBeUndefined();
     expect(payload.labelsAbove).toBeUndefined();
+    expect(payload.hourCycle).toBeUndefined();
+    expect(payload.minutes).toBeUndefined();
   });
 
   it("writes each time-label key once it is away from its default", () => {
     const cfg = newConfig("Timeline", 0);
     cfg.elements.push(timelineElement((p) => {
-      p.timeLabels = "ends";
+      p.timeLabelCount = 7;
       p.labelSize = 12;
       p.labelColorHex = "#FF9F0A";
       p.labelsAbove = true;
+      p.hourCycle = "h24";
+      p.minutes = "never";
     }));
     const payload = (encodeConfig(cfg).elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
-    expect(payload.timeLabels).toBe("ends");
+    expect(payload.timeLabelCount).toBe(7);
     expect(payload.labelSize).toBe(12);
     expect(payload.labelColorHex).toBe("#FF9F0A");
     expect(payload.labelsAbove).toBe(true);
-    // The four sit after the corner radius, in the order the app's encoder
-    // writes them, so a document from either side is byte for byte the same.
-    expect(Object.keys(payload).filter((k) => ["cornerRadius", "timeLabels", "labelSize", "labelColorHex", "labelsAbove"].includes(k)))
-      .toEqual(["cornerRadius", "timeLabels", "labelSize", "labelColorHex", "labelsAbove"]);
+    expect(payload.hourCycle).toBe("h24");
+    expect(payload.minutes).toBe("never");
+    // They sit after the corner radius, in the order the app's encoder writes
+    // them, so a document from either side is byte for byte the same.
+    const timeKeys = ["cornerRadius", "labelSize", "labelColorHex", "labelsAbove", "timeLabelCount", "hourCycle", "minutes"];
+    expect(Object.keys(payload).filter((k) => timeKeys.includes(k))).toEqual(timeKeys);
+  });
+
+  it("never writes the retired timeLabels word again", () => {
+    const cfg = newConfig("Timeline", 0);
+    cfg.elements.push(timelineElement((p) => { p.timeLabelCount = 4; }));
+    const payload = (encodeConfig(cfg).elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
+    expect(payload.timeLabels).toBeUndefined();
+    expect(payload.timeLabelCount).toBe(4);
   });
 
   it("round trips the time labels through parse and encode", () => {
     const cfg = newConfig("Timeline", 0);
     cfg.elements.push(timelineElement((p) => {
-      p.timeLabels = "ends";
+      p.timeLabelCount = 2;
       p.labelSize = 11.5;
       p.labelColorHex = "#FF9F0A";
       p.labelsAbove = true;
+      p.hourCycle = "h12";
+      p.minutes = "always";
     }));
     const encoded = encodeConfig(cfg);
     expect(encodeConfig(parseConfig(encoded))).toEqual(encoded);
     const back = parseConfig(encoded).elements[0]!;
     if (back.kind !== "timeline") throw new Error("unreachable");
-    expect(back.payload.timeLabels).toBe("ends");
+    expect(back.payload.timeLabelCount).toBe(2);
     expect(back.payload.labelSize).toBe(11.5);
     expect(back.payload.labelColorHex).toBe("#FF9F0A");
     expect(back.payload.labelsAbove).toBe(true);
+    expect(back.payload.hourCycle).toBe("h12");
+    expect(back.payload.minutes).toBe("always");
+  });
+
+  it("keeps a size of 1, the smallest the row is allowed to be", () => {
+    const cfg = newConfig("Timeline", 0);
+    cfg.elements.push(timelineElement((p) => { p.labelSize = TIMELINE_MIN_LABEL_SIZE; }));
+    const encoded = encodeConfig(cfg);
+    expect(((encoded.elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>).labelSize).toBe(1);
+    const back = parseConfig(encoded).elements[0]!;
+    if (back.kind !== "timeline") throw new Error("unreachable");
+    expect(back.payload.labelSize).toBe(1);
   });
 
   it("reads a document that predates the keys as no times at all", () => {
     const cfg = newConfig("Timeline", 0);
-    cfg.elements.push(timelineElement((p) => { p.timeLabels = TIMELINE_DEFAULT_TIME_LABELS; }));
+    cfg.elements.push(timelineElement((p) => { p.timeLabelCount = TIMELINE_DEFAULT_LABEL_COUNT; }));
     const encoded = encodeConfig(cfg);
     const back = parseConfig(encoded).elements[0]!;
     if (back.kind !== "timeline") throw new Error("unreachable");
-    expect(back.payload.timeLabels).toBe("none");
+    expect(back.payload.timeLabelCount).toBe(0);
     expect(back.payload.labelSize).toBe(TIMELINE_DEFAULT_LABEL_SIZE);
     expect(back.payload.labelColorHex).toBe(TIMELINE_DEFAULT_LABEL_HEX);
     expect(back.payload.labelsAbove).toBe(false);
+    expect(back.payload.hourCycle).toBe("auto");
+    expect(back.payload.minutes).toBe("auto");
   });
 
-  it("takes a timeLabels word it does not know as none rather than refusing", () => {
+  it("reads the retired timeLabels word when no count is written", () => {
+    // A document saved the evening the word existed still means what it said.
+    const words: [string, number][] = [["none", 0], ["ends", 2], ["four", 4], ["eight", 0]];
+    for (const [word, count] of words) {
+      const cfg = newConfig("Timeline", 0);
+      cfg.elements.push(timelineElement((p) => { p.timeLabelCount = 0; }));
+      const encoded = encodeConfig(cfg);
+      ((encoded.elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>).timeLabels = word;
+      const back = parseConfig(encoded).elements[0]!;
+      if (back.kind !== "timeline") throw new Error("unreachable");
+      expect(back.payload.timeLabelCount).toBe(count);
+    }
+  });
+
+  it("does not flag the retired word as a key nothing decodes", () => {
+    // It stays in the allow-list for exactly this: a document saved the evening
+    // the word existed must not read as carrying junk.
     const cfg = newConfig("Timeline", 0);
-    cfg.elements.push(timelineElement((p) => { p.timeLabels = "four"; }));
+    cfg.elements.push(timelineElement());
     const encoded = encodeConfig(cfg);
-    ((encoded.elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>).timeLabels = "eight";
+    ((encoded.elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>).timeLabels = "four";
+    expect(auditUnknownKeys(encoded)).toEqual([]);
+  });
+
+  it("lets the count win over the word when a document carries both", () => {
+    const cfg = newConfig("Timeline", 0);
+    cfg.elements.push(timelineElement((p) => { p.timeLabelCount = 7; }));
+    const encoded = encodeConfig(cfg);
+    ((encoded.elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>).timeLabels = "ends";
     const back = parseConfig(encoded).elements[0]!;
     if (back.kind !== "timeline") throw new Error("unreachable");
-    expect(back.payload.timeLabels).toBe("none");
+    expect(back.payload.timeLabelCount).toBe(7);
+  });
+
+  it("clamps a count a hand-edited document put out of range", () => {
+    const cases: [unknown, number][] = [[-3, 0], [99, 12], [4.4, 4], ["nine", 0]];
+    for (const [written, expected] of cases) {
+      const cfg = newConfig("Timeline", 0);
+      cfg.elements.push(timelineElement());
+      const encoded = encodeConfig(cfg);
+      ((encoded.elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>).timeLabelCount = written;
+      const back = parseConfig(encoded).elements[0]!;
+      if (back.kind !== "timeline") throw new Error("unreachable");
+      expect(back.payload.timeLabelCount).toBe(expected);
+    }
+  });
+
+  it("takes a clock or a minutes word it does not know as auto", () => {
+    const cfg = newConfig("Timeline", 0);
+    cfg.elements.push(timelineElement((p) => { p.hourCycle = "h12"; p.minutes = "always"; }));
+    const encoded = encodeConfig(cfg);
+    const payload = (encoded.elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
+    payload.hourCycle = "h13";
+    payload.minutes = "sometimes";
+    const back = parseConfig(encoded).elements[0]!;
+    if (back.kind !== "timeline") throw new Error("unreachable");
+    expect(back.payload.hourCycle).toBe("auto");
+    expect(back.payload.minutes).toBe("auto");
   });
 
   it("writes each key once it is away from its default", () => {
@@ -496,8 +580,27 @@ describe("the clock times along the span", () => {
   const hourOnly = new Intl.DateTimeFormat(undefined, { hour: "numeric" });
   const labelsOf = (tweak: (p: TimelineElement) => void) => timelineLabels(timelineElement(tweak).payload, NOW);
 
+  it("spaces every count evenly from the window's start to now", () => {
+    expect(timeLabelPositions(0)).toEqual([]);
+    expect(timeLabelPositions(2)).toEqual([0, 1]);
+    expect(timeLabelPositions(3)).toEqual([0, 0.5, 1]);
+    expect(timeLabelPositions(4)).toEqual([0, 1 / 3, 2 / 3, 1]);
+    expect(timeLabelPositions(7)).toHaveLength(7);
+    expect(timeLabelPositions(7)[3]).toBeCloseTo(0.5, 12);
+    const twelve = timeLabelPositions(12);
+    expect(twelve).toHaveLength(12);
+    expect(twelve[0]).toBe(0);
+    expect(twelve[11]).toBe(1);
+  });
+
+  it("puts a lone time at now, the one end worth printing on its own", () => {
+    expect(timeLabelPositions(1)).toEqual([1]);
+    const labels = labelsOf((p) => { p.timeLabelCount = 1; p.historyMinutes = 60; });
+    expect(labels).toEqual([{ position: 1, text: withMinutes.format(new Date(NOW)) }]);
+  });
+
   it("prints the two ends of the window", () => {
-    const labels = labelsOf((p) => { p.timeLabels = "ends"; p.historyMinutes = 60; });
+    const labels = labelsOf((p) => { p.timeLabelCount = 2; p.historyMinutes = 60; });
     expect(labels.map((l) => l.position)).toEqual([0, 1]);
     expect(labels.map((l) => l.text)).toEqual([
       withMinutes.format(new Date(NOW - 60 * 60 * 1000)),
@@ -506,7 +609,7 @@ describe("the clock times along the span", () => {
   });
 
   it("prints the ends and the two thirds between them, the watch page's own row", () => {
-    const labels = labelsOf((p) => { p.timeLabels = "four"; p.historyMinutes = 180; });
+    const labels = labelsOf((p) => { p.timeLabelCount = 4; p.historyMinutes = 180; });
     expect(labels.map((l) => l.position)).toEqual([0, 1 / 3, 2 / 3, 1]);
     const hour = 60 * 60 * 1000;
     expect(labels.map((l) => l.text)).toEqual([
@@ -517,13 +620,25 @@ describe("the clock times along the span", () => {
     ]);
   });
 
+  it("prints as many times as the count asks for, up to twelve", () => {
+    expect(labelsOf((p) => { p.timeLabelCount = 7; })).toHaveLength(7);
+    const twelve = labelsOf((p) => { p.timeLabelCount = 12; p.historyMinutes = 180; });
+    expect(twelve).toHaveLength(12);
+    expect(twelve[11]!.text).toBe(withMinutes.format(new Date(NOW)));
+    // Twelve times across three hours are eleven steps of 180/11 minutes, not
+    // twelve of fifteen: the first sits on the window's start, not one step in.
+    const span = 180 * 60 * 1000;
+    expect(twelve[0]!.text).toBe(withMinutes.format(new Date(NOW - span)));
+    expect(twelve[1]!.text).toBe(withMinutes.format(new Date(NOW - span * (10 / 11))));
+  });
+
   it("keeps the minute up to three hours", () => {
-    const labels = labelsOf((p) => { p.timeLabels = "four"; p.historyMinutes = 180; });
+    const labels = labelsOf((p) => { p.timeLabelCount = 4; p.historyMinutes = 180; });
     expect(labels[0]!.text).toBe(withMinutes.format(new Date(NOW - 180 * 60 * 1000)));
   });
 
   it("drops the minute past three hours, where it is noise", () => {
-    const labels = labelsOf((p) => { p.timeLabels = "four"; p.historyMinutes = 240; });
+    const labels = labelsOf((p) => { p.timeLabelCount = 4; p.historyMinutes = 240; });
     expect(labels.map((l) => l.text)).toEqual([
       hourOnly.format(new Date(NOW - 240 * 60 * 1000)),
       hourOnly.format(new Date(NOW - 160 * 60 * 1000)),
@@ -532,18 +647,52 @@ describe("the clock times along the span", () => {
     ]);
   });
 
-  it("prints nothing when the layer asks for none", () => {
-    expect(labelsOf((p) => { p.timeLabels = "none"; })).toEqual([]);
+  it("keeps the minute on a day-long span when the layer asks it to", () => {
+    const labels = labelsOf((p) => { p.timeLabelCount = 2; p.historyMinutes = 1440; p.minutes = "always"; });
+    expect(labels.map((l) => l.text)).toEqual([
+      withMinutes.format(new Date(NOW - 1440 * 60 * 1000)),
+      withMinutes.format(new Date(NOW)),
+    ]);
+  });
+
+  it("drops the minute on an hour-long span when the layer asks it to", () => {
+    const labels = labelsOf((p) => { p.timeLabelCount = 2; p.historyMinutes = 60; p.minutes = "never"; });
+    expect(labels.map((l) => l.text)).toEqual([
+      hourOnly.format(new Date(NOW - 60 * 60 * 1000)),
+      hourOnly.format(new Date(NOW)),
+    ]);
+  });
+
+  it("forces a twelve or twenty-four hour clock, whatever the machine is set to", () => {
+    const h12 = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", hourCycle: "h12" });
+    const h24 = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", hourCycle: "h23" });
+    expect(labelsOf((p) => { p.timeLabelCount = 1; p.hourCycle = "h12"; })[0]!.text)
+      .toBe(h12.format(new Date(NOW)));
+    expect(labelsOf((p) => { p.timeLabelCount = 1; p.hourCycle = "h24"; })[0]!.text)
+      .toBe(h24.format(new Date(NOW)));
+    // The two clocks really do print the same instant differently, so the test
+    // above would pass on a locale-shaped accident otherwise.
+    expect(h12.format(new Date(NOW))).not.toBe(h24.format(new Date(NOW)));
+  });
+
+  it("keeps the forced clock when the minutes are dropped", () => {
+    const h24 = new Intl.DateTimeFormat(undefined, { hour: "numeric", hourCycle: "h23" });
+    const labels = labelsOf((p) => { p.timeLabelCount = 1; p.hourCycle = "h24"; p.minutes = "never"; });
+    expect(labels[0]!.text).toBe(h24.format(new Date(NOW)));
+  });
+
+  it("prints nothing when the count is zero", () => {
+    expect(labelsOf((p) => { p.timeLabelCount = 0; })).toEqual([]);
   });
 
   it("prints nothing when the layer names no entity, because it has no window", () => {
-    expect(labelsOf((p) => { p.timeLabels = "four"; p.value = literal("on"); })).toEqual([]);
+    expect(labelsOf((p) => { p.timeLabelCount = 4; p.value = literal("on"); })).toEqual([]);
   });
 
   it("prints its times before the history lands, because the window is already known", () => {
     // The row is a fact about the span, not about the data, so a strip still
     // fetching still says what it will cover.
-    const layout = timelineLayout(undefined, (p) => { p.timeLabels = "four"; }, NOW);
+    const layout = timelineLayout(undefined, (p) => { p.timeLabelCount = 4; }, NOW);
     const el = layout.elements.find((e) => e.kind === "timeline");
     if (!el || el.kind !== "timeline") throw new Error("no timeline layer resolved");
     expect(el.runs).toEqual([]);
@@ -592,7 +741,7 @@ describe("drawing the strip", () => {
       .map((m) => ({ x: Number(m[1]), anchor: m[2]! }));
 
   it("draws one text per clock time, the ends hung off the edges", () => {
-    const texts = timeTexts(draw("0:on 1800:off", (p) => { p.timeLabels = "four"; p.bands = ON_OFF; }));
+    const texts = timeTexts(draw("0:on 1800:off", (p) => { p.timeLabelCount = 4; p.bands = ON_OFF; }));
     expect(texts).toHaveLength(4);
     expect(texts.map((t) => t.anchor)).toEqual(["start", "middle", "middle", "end"]);
     expect(texts[0]!.x).toBeCloseTo(0, 5);
@@ -602,8 +751,8 @@ describe("drawing the strip", () => {
   it("puts the row under the strip, or over it when asked", () => {
     const rowY = (svg: string) => Number(/<text x=[-\d.]+ y=([-\d.]+)/.exec(svg)?.[1]);
     const stripY = (svg: string) => Number(/<rect x=[-\d.]+ y=([-\d.]+) width=[\d.]+ height=[\d.]+ rx=[\d.]+\s+fill=#/.exec(svg)?.[1]);
-    const below = draw("0:on 1800:off", (p) => { p.timeLabels = "four"; p.bands = ON_OFF; });
-    const above = draw("0:on 1800:off", (p) => { p.timeLabels = "four"; p.labelsAbove = true; p.bands = ON_OFF; });
+    const below = draw("0:on 1800:off", (p) => { p.timeLabelCount = 4; p.bands = ON_OFF; });
+    const above = draw("0:on 1800:off", (p) => { p.timeLabelCount = 4; p.labelsAbove = true; p.bands = ON_OFF; });
     expect(rowY(below)).toBeGreaterThan(stripY(below));
     expect(rowY(above)).toBeLessThan(stripY(above));
     // The row is 9 * 1.2 points plus a point of clearance, and the strip takes
@@ -611,12 +760,24 @@ describe("drawing the strip", () => {
     expect(stripY(above) - stripY(below)).toBeCloseTo(9 * 1.2 + 1, 5);
   });
 
+  it("hangs a lone time off the right edge rather than the left", () => {
+    const texts = timeTexts(draw("0:on 1800:off", (p) => { p.timeLabelCount = 1; p.bands = ON_OFF; }));
+    expect(texts).toHaveLength(1);
+    expect(texts[0]!.anchor).toBe("end");
+    expect(texts[0]!.x).toBeCloseTo(181, 5);
+  });
+
+  it("draws a time per count, up to twelve", () => {
+    expect(timeTexts(draw("0:on", (p) => { p.timeLabelCount = 7; p.bands = ON_OFF; }))).toHaveLength(7);
+    expect(timeTexts(draw("0:on", (p) => { p.timeLabelCount = 12; p.bands = ON_OFF; }))).toHaveLength(12);
+  });
+
   it("draws no text when the layer asks for none", () => {
-    expect(timeTexts(draw("0:on 1800:off", (p) => { p.timeLabels = "none"; p.bands = ON_OFF; }))).toEqual([]);
+    expect(timeTexts(draw("0:on 1800:off", (p) => { p.timeLabelCount = 0; p.bands = ON_OFF; }))).toEqual([]);
   });
 
   it("draws the times over an empty strip while the history is still coming", () => {
-    const texts = timeTexts(draw("", (p) => { p.timeLabels = "four"; p.bands = ON_OFF; }));
+    const texts = timeTexts(draw("", (p) => { p.timeLabelCount = 4; p.bands = ON_OFF; }));
     expect(texts).toHaveLength(4);
   });
 });

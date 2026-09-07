@@ -69,10 +69,13 @@ import {
   TIMELINE_MAX_GAP,
   TIMELINE_DEFAULT_LABEL_HEX,
   TIMELINE_DEFAULT_LABEL_SIZE,
+  TIMELINE_HOUR_CYCLES,
+  TIMELINE_MAX_LABEL_COUNT,
   TIMELINE_MAX_LABEL_SIZE,
   TIMELINE_MIN_LABEL_SIZE,
-  TIMELINE_TIME_LABELS,
-  type TimelineTimeLabels,
+  TIMELINE_MINUTE_STYLES,
+  type TimelineHourCycle,
+  type TimelineMinuteStyle,
   timelineHistoryKey,
   timelineHistoryMinutes,
   CHART_STATS,
@@ -2584,19 +2587,20 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         <div class="hint">A gap is taken off the right of each run, so the strip still ends flush with
           the frame and the newest state keeps the edge. 0 draws one continuous bar, which is what a
           door or a light usually wants.</div>
-        ${segField("Times", t.timeLabels, TIMELINE_TIME_LABELS, (v) => setTimeline((p) => { p.timeLabels = v; }), {
-          titles: {
-            none: "The strip alone",
-            ends: "The start of the span and now",
-            four: "The start, two times between and now",
-          },
-          def: base.timeLabels as TimelineTimeLabels,
+        ${sliderField("Times", t.timeLabelCount, (v) => setTimeline((p) => {
+          p.timeLabelCount = Math.max(0, Math.min(TIMELINE_MAX_LABEL_COUNT, Math.round(v)));
+        }, "tlcount"), {
+          min: 0,
+          max: TIMELINE_MAX_LABEL_COUNT,
+          step: 1,
+          def: base.timeLabelCount as number,
+          format: (v) => (v <= 0 ? "None" : String(Math.round(v))),
         })}
-        ${t.timeLabels === "none" ? nothing : html`
+        ${t.timeLabelCount <= 0 ? nothing : html`
           <div class="grid2">
             ${numberField("Time size (pt)", t.labelSize, (v) => setTimeline((p) => {
               p.labelSize = Math.min(TIMELINE_MAX_LABEL_SIZE, Math.max(TIMELINE_MIN_LABEL_SIZE, v ?? TIMELINE_DEFAULT_LABEL_SIZE));
-            }, "tlsize"), { step: 1, min: TIMELINE_MIN_LABEL_SIZE, max: TIMELINE_MAX_LABEL_SIZE, def: base.labelSize as number })}
+            }, "tlsize"), { step: 0.5, min: TIMELINE_MIN_LABEL_SIZE, max: TIMELINE_MAX_LABEL_SIZE, def: base.labelSize as number })}
             ${colorField("Time colour", t.labelColorHex, (v) => setTimeline((p) => {
               p.labelColorHex = v ?? TIMELINE_DEFAULT_LABEL_HEX;
             }, "tlcolour"), false, base.labelColorHex as string)}
@@ -2604,8 +2608,15 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
           ${segField("Row", t.labelsAbove ? "above" : "below", [["below", "Below"], ["above", "Above"]],
             (v) => setTimeline((p) => { p.labelsAbove = v === "above"; }),
             { def: base.labelsAbove === true ? "above" : "below" })}
-          <div class="hint">Clock times from the start of the span to now, in the watch's own time
-            format. Four is what the history page on the watch shows.</div>`}`;
+          ${segField("Clock", t.hourCycle, TIMELINE_HOUR_CYCLES,
+            (v) => setTimeline((p) => { p.hourCycle = v; }),
+            { titles: { auto: "Whatever clock the watch is set to" }, def: base.hourCycle as TimelineHourCycle })}
+          ${segField("Minutes", t.minutes, TIMELINE_MINUTE_STYLES,
+            (v) => setTimeline((p) => { p.minutes = v; }),
+            { titles: { auto: "Kept up to a three hour span, dropped past it" }, def: base.minutes as TimelineMinuteStyle })}
+          <div class="hint">Clock times from the start of the span to now, evenly spaced. Four is what
+            the history page on the watch shows. Auto follows the watch's own clock and drops the
+            minutes past a three hour span.</div>`}`;
       break;
     }
     case "shape":
@@ -2769,7 +2780,7 @@ const LOOK_KEYS: Record<CElement["kind"], readonly string[]> = {
   icon: ["size", "colorSlot"],
   gauge: ["style", "lineWidth", "trackColorHex", "colorSlot", "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex"],
   chart: ["style", "scale", "minValue", "maxValue", "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker", "coloring", "bands", "bandAboveColorHex", "fillBands", "thresholdValue", "thresholdColorHex", "nowIndex", "nowColorHex", "scaleFrom", "colorSlot"],
-  timeline: ["bands", "otherColorHex", "gap", "cornerRadius", "timeLabels", "labelSize", "labelColorHex", "labelsAbove"],
+  timeline: ["bands", "otherColorHex", "gap", "cornerRadius", "labelSize", "labelColorHex", "labelsAbove", "timeLabelCount", "hourCycle", "minutes"],
   shape: ["colorSlot", "borderColorHex", "borderWidth", "thickness"],
   image: ["contentMode", "zoom", "panX", "panY", "cornerRadius"],
   tap: [],

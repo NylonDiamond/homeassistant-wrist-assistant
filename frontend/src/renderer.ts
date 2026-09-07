@@ -489,9 +489,9 @@ const TIMELINE_LABEL_ROW_GAP = 1;
  * for when they add one of these.
  *
  * A layer asking for clock times gives them a row of their own off the top or
- * the bottom, and the strip takes what is left. The first time is hung off the
- * left edge, the last off the right, so the row spans the frame exactly the way
- * the strip does.
+ * the bottom, and the strip takes what is left. The last time is hung off the
+ * right edge and the first off the left, so the row spans the frame exactly the
+ * way the strip does.
  */
 function renderTimeline(el: Extract<ResolvedElement, { kind: "timeline" }>, box: Box) {
   if ((el.runs.length === 0 && el.labels.length === 0) || box.w <= 0 || box.h <= 0) return nothing;
@@ -523,8 +523,11 @@ function renderTimeline(el: Extract<ResolvedElement, { kind: "timeline" }>, box:
   const rowY = (el.labelsAbove ? box.y : box.y + box.h - rowHeight) + rowHeight / 2;
   const colour = colorAttrs(el.labelColorHex, "fill");
   const times = el.labels.map((label, i) => {
+    // The last one is hung off the right edge before the first is hung off the
+    // left, so a lone time (a count of 1, drawn at now) sits inside the frame
+    // rather than running off it.
     const last = i === el.labels.length - 1;
-    const anchor = i === 0 ? "start" : last ? "end" : "middle";
+    const anchor = last ? "end" : i === 0 ? "start" : "middle";
     const x = box.x + label.position * box.w;
     return svg`<text x=${x} y=${rowY} text-anchor=${anchor} dominant-baseline="central"
       font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif"
