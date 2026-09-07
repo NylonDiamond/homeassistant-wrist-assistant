@@ -679,20 +679,21 @@ export function timelineHistoryKey(el: TimelineElement): string | undefined {
 }
 
 /** The colour a timeline reaches for on its own when a state has a well known
- * name. Active states are bright (amber for on, green for home or playing,
- * red for a door standing open or a lock left open), resting states are dark
- * grey, and the two no-reading states are darker still, so "the recorder had
- * nothing" reads as a gap rather than as another state. A word not in the
- * table gets `TIMELINE_DEFAULT_OTHER_HEX` when a row is added for it. */
+ * name. Every real state gets a real colour: amber for on, blue for off,
+ * green for home, closed, locked or docked, red for a door standing open, a
+ * lock left open or an alarm going off, yellow for a state on its way
+ * somewhere. Only the two no-reading states are grey, so "the recorder had
+ * nothing" reads as a gap and never as a state. A word not in the table gets
+ * `TIMELINE_DEFAULT_OTHER_HEX` when a row is added for it. */
 export const TIMELINE_STATE_COLORS: Record<string, string> = {
-  on: "#FF9F0A", off: "#3A3A3C",
-  open: "#FF453A", closed: "#3A3A3C", opening: "#FFD60A", closing: "#FFD60A",
-  home: "#32D74B", not_home: "#3A3A3C",
-  locked: "#32D74B", unlocked: "#FF453A", jammed: "#FF453A",
-  playing: "#32D74B", paused: "#FF9F0A", idle: "#3A3A3C", standby: "#3A3A3C",
-  heat: "#FF9F0A", cool: "#0A84FF", heat_cool: "#BF5AF2", dry: "#FFD60A", fan_only: "#64D2FF", auto: "#BF5AF2",
-  cleaning: "#32D74B", docked: "#3A3A3C", returning: "#0A84FF", error: "#FF453A",
-  disarmed: "#3A3A3C", armed_home: "#0A84FF", armed_away: "#FF9F0A", armed_night: "#5E5CE6",
+  on: "#FF9F0A", off: "#0A84FF",
+  open: "#FF453A", closed: "#32D74B", opening: "#FFD60A", closing: "#FFD60A",
+  home: "#32D74B", not_home: "#0A84FF",
+  locked: "#32D74B", unlocked: "#FF453A", jammed: "#BF5AF2",
+  playing: "#32D74B", paused: "#FF9F0A", idle: "#0A84FF", standby: "#5E5CE6",
+  heat: "#FF9F0A", cool: "#64D2FF", heat_cool: "#BF5AF2", dry: "#FFD60A", fan_only: "#5E5CE6", auto: "#BF5AF2",
+  cleaning: "#32D74B", docked: "#0A84FF", returning: "#64D2FF", error: "#FF453A",
+  disarmed: "#32D74B", armed_home: "#0A84FF", armed_away: "#FF9F0A", armed_night: "#5E5CE6",
   arming: "#FFD60A", pending: "#FFD60A", triggered: "#FF453A",
   unavailable: "#48484A", unknown: "#48484A",
 };
