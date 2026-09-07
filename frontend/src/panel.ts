@@ -88,6 +88,7 @@ import { makeIconProvider } from "./icons.js";
 import { makeImageSizeProvider } from "./image-sizes.js";
 import { SymbolBrowser } from "./symbols.js";
 import { Draft, draftStatus } from "./draft.js";
+import { ScrollFades } from "./scroll-fade.js";
 import { statesSummary } from "./states.js";
 import { uiIcon } from "./ui-icons.js";
 import { addPreview } from "./add-previews.js";
@@ -110,6 +111,7 @@ import {
   groupEditor,
   layerEditor,
   layerTitle,
+  placementCard,
   lookSummary,
   namedValueEditor,
   newNamedValue,
@@ -781,6 +783,34 @@ export class WristAssistantPanel extends LitElement {
     .layout.cols-1 > .column { grid-column: auto; }
     .layout.cols-1 > .gutter { display: none; }
     .column { min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-gutter: stable; }
+    /* A scroll box says when there is more behind its edges: a short fade in
+       the box's own ground, drawn by a sticky pseudo-element that cancels its
+       own height with a negative margin, so nothing shifts when it appears.
+       The attributes are set by the ScrollFades helper on scroll and on
+       resize; in the stacked modes the boxes never scroll, so they never
+       arrive and the fades never draw. */
+    .column.inspector { --wa-fade: var(--wa-card); --wa-fade-gap: 0px; }
+    .layers { --wa-fade: var(--wa-card); --wa-fade-gap: 2px; }
+    .column.canvas { --wa-fade: var(--wa-bg); --wa-fade-gap: 8px; }
+    .column.inspector::before, .column.inspector::after,
+    .layers::before, .layers::after,
+    .column.canvas::before, .column.canvas::after {
+      content: ""; display: block; flex: none; height: 0; z-index: 4; pointer-events: none;
+    }
+    .column.inspector::before, .layers::before, .column.canvas::before {
+      position: sticky; top: 0; margin-bottom: calc(-1 * var(--wa-fade-gap));
+    }
+    .column.inspector::after, .layers::after, .column.canvas::after {
+      position: sticky; bottom: 0; margin-top: calc(-1 * var(--wa-fade-gap));
+    }
+    [data-more-above]::before {
+      height: 28px; margin-bottom: calc(-28px - var(--wa-fade-gap));
+      background: linear-gradient(to bottom, var(--wa-fade), transparent);
+    }
+    [data-more-below]::after {
+      height: 28px; margin-top: calc(-28px - var(--wa-fade-gap));
+      background: linear-gradient(to top, var(--wa-fade), transparent);
+    }
     /* Stacked, the whole layout scrolls as one page again, so a column that
        owns its own scrollbar in three columns must give it up here. */
     .layout.cols-1 .column.left, .layout.cols-1 .column.canvas, .layout.cols-1 .column.inspector,
@@ -1227,6 +1257,28 @@ export class WristAssistantPanel extends LitElement {
     .under .tail b { font-weight: 700; }
     /* The two lists under the face: what the complication defines for itself,
        and what the house is telling it right now. */
+    /* Where the selected layer sits, under the face rather than in the far
+       column: the same tinted card, laid out as one row so it costs the canvas
+       two lines instead of a scroll. */
+    .place-wrap { flex: none; }
+    .sec.place-bar { margin: 0; border-radius: var(--wa-r-md); }
+    .sec.place-bar .sec-h { height: 34px; cursor: default; }
+    .sec.place-bar .sec-h:hover { background: transparent; }
+    .sec.place-bar .sec-b.place-row {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 0 0 10px;
+    }
+    /* A row, so the hairlines that separate a card's stacked blocks go. */
+    .sec-b.place-row > :is(.field, .grid4, .hint) { margin-top: 0; padding-top: 0; border-top: 0; }
+    .place-row .grid4 { display: flex; gap: 6px; flex: none; }
+    .place-row .grid4 .field { width: 74px; }
+    .place-row .field { margin: 0; }
+    .place-row .field.slider { display: flex; align-items: center; gap: 8px; flex: 1 1 200px; min-width: 170px; }
+    .place-row .field.slider > span { flex: none; }
+    .place-row .field.slider .slider-row { flex: 1; min-width: 0; }
+    .place-row .field.check { display: flex; align-items: center; gap: 8px; flex: none; }
+    /* The one line of prose sits at the far end, or drops under the row when
+       there is no room for it there. */
+    .sec-b.place-row > .hint { margin: 0 0 0 auto; text-align: right; flex: 1 1 220px; min-width: 180px; }
     .under-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; flex: none; }
     .card.tint-values {
       padding: 10px 14px 12px;
@@ -1799,6 +1851,9 @@ export class WristAssistantPanel extends LitElement {
 
   /** Watches the panel itself, not the window, so opening or closing the Home
    * Assistant sidebar re-fits the columns too. */
+  /** Edge fades on the three boxes that scroll on their own. */
+  private fades = new ScrollFades();
+
   private sizeObserver = new ResizeObserver((entries) => {
     const w = entries[0]?.contentRect.width ?? 0;
     if (Math.abs(w - this.panelWidth) >= 1) this.panelWidth = w;
@@ -1909,6 +1964,7 @@ export class WristAssistantPanel extends LitElement {
   override disconnectedCallback() {
     super.disconnectedCallback();
     this.sizeObserver.disconnect();
+    this.fades.disconnect();
     window.removeEventListener("keydown", this.keyHandler);
     window.removeEventListener("keyup", this.keyUpHandler);
     window.removeEventListener("beforeunload", this.beforeUnload);
@@ -1965,6 +2021,13 @@ export class WristAssistantPanel extends LitElement {
   }
 
   protected override updated(changed: PropertyValues) {
+    // Every render can change what is in a scroll box, so the edge fades are
+    // re-measured here rather than only on the first one.
+    this.fades.refresh([
+      this.renderRoot.querySelector<HTMLElement>(".column.inspector"),
+      this.renderRoot.querySelector<HTMLElement>(".layers"),
+      this.renderRoot.querySelector<HTMLElement>(".column.canvas"),
+    ]);
     const key = inspectKey(this.inspect);
     if (key !== this.lastInspectKey) {
       this.lastInspectKey = key;
@@ -4340,10 +4403,29 @@ export class WristAssistantPanel extends LitElement {
         </div>
         ${this.zoomed && family !== "inline" ? this.renderZoomDialog(family, layouts, watchCase) : nothing}
       </div>
+      ${this.renderPlaceBar(cfg)}
       <div class="under-grid">
         ${this.renderSharedValues(cfg)}
         ${this.renderValuesRow()}
       </div>`;
+  }
+
+  /**
+   * Where the selected layer sits, as one row directly under the face.
+   *
+   * The four numbers, the turn and the eye are answers about the picture above
+   * them, so reading them off a card in the far column meant looking away from
+   * the thing being moved. Only for a single selected layer: a group and the
+   * shape keep their own sections in the inspector, and a pick of several has
+   * no frame of its own to type into.
+   */
+  private renderPlaceBar(cfg: CustomComplicationConfig) {
+    if (this.inspect.kind !== "layer" || this.multi.size >= 2) return nothing;
+    if (this.activeFamily === "inline") return nothing;
+    const el = cfg.elements.find((e) => e.payload.id === (this.inspect as { id: string }).id);
+    if (!el) return nothing;
+    return html`<div class="place-wrap" style=${this.canEdit ? "" : "pointer-events:none;opacity:.6"}
+      @change=${() => this.draft?.endGesture()}>${placementCard(this.host(), el, this.canvasFamily, { inline: true })}</div>`;
   }
 
   private renderBigPreview(family: DrawableFamily, layouts: ResolvedAll, watchCase: WatchCase) {
@@ -4672,7 +4754,9 @@ export class WristAssistantPanel extends LitElement {
         this.inspect = { kind: "general" };
         return nothing;
       }
-      body = layerEditor(host, el, this.canvasFamily);
+      // Place lives under the preview, where the numbers are next to the
+      // picture they move, so the inspector leaves it out.
+      body = layerEditor(host, el, this.canvasFamily, { placement: false });
     } else if (ins.kind === "group") {
       const g = cfg.groups?.find((x) => x.id === ins.id);
       if (!g) {

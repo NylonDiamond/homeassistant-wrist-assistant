@@ -1957,6 +1957,14 @@ interface CardOptions {
    * vague to be safe. The Place card resets a layer's whole frame, so it says
    * so rather than letting the reader find out by watching the layer jump. */
   resetTitle?: string;
+  /** Never folds: the body is always drawn and the header is not a control.
+   * For the Place card under the preview, which is not one of the inspector's
+   * stack and so has no business reading (or writing) openSections. */
+  alwaysOpen?: boolean;
+  /** Extra class on the card and on its body, for a card laid out as a row
+   * rather than as a column of fields. */
+  cardClass?: string;
+  bodyClass?: string;
 }
 
 /** Structural equality for the plain data the config is made of: objects,
@@ -1999,17 +2007,21 @@ function restoreKeys(actual: object, base: object, keys: readonly string[]): voi
  * when a different thing is selected.
  */
 function card(host: EditorHost, id: string, title: string, body: unknown, opts: CardOptions = {}): TemplateResult {
-  const open = host.openSections.has(id);
+  const pinned = opts.alwaysOpen === true;
+  const open = pinned || host.openSections.has(id);
   const toggle = () => host.toggleSection(id);
-  return html`<section class="sec" data-open=${open ? "true" : "false"} style=${opts.color ? `--c:${opts.color}` : ""}>
-    <div class="sec-h" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"} @click=${toggle}
-      @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}>
-      <span class="swatch">${uiIcon(opts.icon ?? "content")}</span>
+  const head = html`<span class="swatch">${uiIcon(opts.icon ?? "content")}</span>
       <span class="tt"><h4>${title}${resetButton(opts.reset === undefined ? undefined
-        : { atDefault: false, title: opts.resetTitle ?? `Put ${title} back to its defaults`, reset: opts.reset })}</h4>${opts.summary ? html`<span class="sum">${opts.summary}</span>` : nothing}</span>
-      <span class="chev">${uiIcon("chevron")}</span>
-    </div>
-    ${open ? html`<div class="sec-b">${body}</div>` : nothing}
+        : { atDefault: false, title: opts.resetTitle ?? `Put ${title} back to its defaults`, reset: opts.reset })}</h4>${opts.summary ? html`<span class="sum">${opts.summary}</span>` : nothing}</span>`;
+  return html`<section class="sec ${opts.cardClass ?? ""}" data-open=${open ? "true" : "false"} style=${opts.color ? `--c:${opts.color}` : ""}>
+    ${pinned
+      ? html`<div class="sec-h pinned">${head}</div>`
+      : html`<div class="sec-h" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"} @click=${toggle}
+          @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}>
+          ${head}
+          <span class="chev">${uiIcon("chevron")}</span>
+        </div>`}
+    ${open ? html`<div class="sec-b ${opts.bodyClass ?? ""}">${body}</div>` : nothing}
   </section>`;
 }
 
@@ -2226,7 +2238,42 @@ export function lookSummary(el: CElement): string | undefined {
  * same order, so the second click after selecting a layer lands on the same
  * thing every time, whatever was selected before it.
  */
-export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind): TemplateResult {
+/**
+ * Where one layer sits on one shape: the frame, the turn, and whether it is
+ * drawn at all.
+ *
+ * Its own function because it is the one card in a layer's editor that belongs
+ * beside the picture rather than in the column of forms. `inline` lays it out
+ * as a single row under the preview and pins it open: it is not part of the
+ * inspector's stack, so it must neither read nor write openSections.
+ */
+export function placementCard(host: EditorHost, el: CElement, family: FamilyKind, opts: { inline?: boolean } = {}): TemplateResult {
+  const id = el.payload.id;
+  const key = `el-${id}`;
+  const eff = effectivePlacement(host.config, family, el);
+  const f = eff.frame;
+  const setFrame = (patch: Partial<NormalizedFrame>, k: string) => host.update((c) => setPlacement(c, family, id, { frame: typedFrame(f, patch) }), `${key}-${k}-${family}`);
+  const placeChanged = !same(f, CENTERED_FRAME) || eff.isHidden;
+  return card(host, "placement", "Place", html`
+    <div class="grid4">
+      ${percentField("Left", f.x, (v) => setFrame({ x: v }, "x"), CENTERED_FRAME.x, -100, 100)}
+      ${percentField("Top", f.y, (v) => setFrame({ y: v }, "y"), CENTERED_FRAME.y, -100, 100)}
+      ${percentField("Width", f.width, (v) => setFrame({ width: v }, "w"), CENTERED_FRAME.width, 4, 200)}
+      ${percentField("Height", f.height, (v) => setFrame({ height: v }, "h"), CENTERED_FRAME.height, 4, 200)}
+    </div>
+    ${sliderField("Rotation", f.rotationDegrees, (v) => setFrame({ rotationDegrees: v }, "rot"),
+      { min: -180, max: 180, step: 1, def: 0, format: (v) => `${Math.round(v)}°` })}
+    ${checkField("Hidden", eff.isHidden, (v) => host.update((c) => setPlacement(c, family, id, { isHidden: v })), false)}
+    <div class="hint">On the ${familyTitle(family)} shape only. Arrow keys nudge 1 pt, shift for 10.</div>`,
+    { color: SECTION_COLOR.place, icon: "place", summary: `${Math.round(f.width * 100)}% wide · ${familyTitle(family)}`,
+      ...(opts.inline ? { alwaysOpen: true, cardClass: "place-bar", bodyClass: "place-row" } : {}),
+      ...(placeChanged ? {
+        resetTitle: `Put this layer back to the middle of the ${familyTitle(family)} face at half size, unrotated and shown`,
+        reset: () => host.update((c) => setPlacement(c, family, id, { frame: { ...CENTERED_FRAME }, isHidden: false })),
+      } : {}) });
+}
+
+export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, opts: { placement?: boolean } = {}): TemplateResult {
   const id = el.payload.id;
   const idx = host.config.elements.findIndex((e) => e.payload.id === id);
   const key = `el-${id}`;
@@ -2718,7 +2765,6 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
   const sizedHere = host.config.perFamily[family]?.placements[id]?.size !== undefined;
   const lookChanged = anyDiffers(el.payload, base, lookKeys)
     || (sizeKey !== undefined && eff.size !== undefined && eff.size !== base[sizeKey]);
-  const placeChanged = !same(f, CENTERED_FRAME) || eff.isHidden;
   const labels = chartLabelsOf(host.config, id);
   // Every card's reset is one update, so one Undo takes the whole card back.
   const resetKeys = (keys: readonly string[], k: string) => () => upd((e) => restoreKeys(e.payload, base, keys), k);
@@ -2747,22 +2793,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`, tested),
       { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(el.payload.rules).replace(/\.$/, ""),
         ...(el.payload.rules.length > 0 ? { reset: () => upd((e) => { e.payload.rules = []; }) } : {}) })}
-    ${card(host, "placement", "Place", html`
-      <div class="grid4">
-        ${percentField("Left", f.x, (v) => setFrame({ x: v }, "x"), CENTERED_FRAME.x, -100, 100)}
-        ${percentField("Top", f.y, (v) => setFrame({ y: v }, "y"), CENTERED_FRAME.y, -100, 100)}
-        ${percentField("Width", f.width, (v) => setFrame({ width: v }, "w"), CENTERED_FRAME.width, 4, 200)}
-        ${percentField("Height", f.height, (v) => setFrame({ height: v }, "h"), CENTERED_FRAME.height, 4, 200)}
-      </div>
-      ${sliderField("Rotation", f.rotationDegrees, (v) => setFrame({ rotationDegrees: v }, "rot"),
-        { min: -180, max: 180, step: 1, def: 0, format: (v) => `${Math.round(v)}°` })}
-      <div class="hint">On the ${familyTitle(family)} shape only. Arrow keys nudge 1 pt, shift for 10,
-        and the eye on the layer's row hides it.</div>`,
-      { color: SECTION_COLOR.place, icon: "place", summary: `${Math.round(f.width * 100)}% wide · ${familyTitle(family)}`,
-        ...(placeChanged ? {
-          resetTitle: `Put this layer back to the middle of the ${familyTitle(family)} face at half size, unrotated and shown`,
-          reset: () => host.update((c) => setPlacement(c, family, id, { frame: { ...CENTERED_FRAME }, isHidden: false })),
-        } : {}) })}`;
+    ${opts.placement === false ? nothing : placementCard(host, el, family)}`;
 }
 
 /** The payload fields the Timestamp card owns. Pictures only. */
