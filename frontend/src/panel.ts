@@ -544,8 +544,15 @@ export class WristAssistantPanel extends LitElement {
       color: var(--wa-ink);
       flex-wrap: wrap;
       position: relative;
+      flex: none;
       z-index: 20;
     }
+    /* One hairline between groups of controls, so "watch, complication, edit,
+       state" reads as four things rather than one run of eleven. */
+    header .hsep { width: 1px; height: 20px; background: var(--wa-line); flex: none; margin: 0 8px; }
+    /* The step from the watch to its complications, in place of that hairline. */
+    header .hstep { color: var(--wa-line-strong); display: grid; place-items: center; flex: none; margin: 0 2px; }
+    header .hstep svg { width: 16px; height: 16px; display: block; }
     header .mark {
       width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; flex: none;
       background: var(--wa-ink); color: var(--wa-card);
@@ -742,7 +749,11 @@ export class WristAssistantPanel extends LitElement {
       column-gap: 8px;
       row-gap: 8px;
       padding: 4px 12px 10px;
-      flex: 1 1 auto;
+      /* The editor is exactly one viewport tall: the grid takes whatever the
+         header and the footer leave, and each column scrolls inside it. A long
+         inspector used to stretch the page, which pushed the two lists under
+         the canvas below the fold in every other column. */
+      flex: 1 1 0;
       min-height: 0;
       overflow: hidden;
     }
@@ -764,7 +775,13 @@ export class WristAssistantPanel extends LitElement {
     .layout.cols-1 { grid-template-columns: minmax(0, 1fr); overflow: auto; }
     .layout.cols-1 > .column { grid-column: auto; }
     .layout.cols-1 > .gutter { display: none; }
-    .column { overflow: auto; min-height: 0; }
+    .column { min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-gutter: stable; }
+    /* Stacked, the whole layout scrolls as one page again, so a column that
+       owns its own scrollbar in three columns must give it up here. */
+    .layout.cols-1 .column.left, .layout.cols-1 .column.canvas, .layout.cols-1 .column.inspector,
+    .layout.cols-2 .column.inspector { overflow: visible; min-height: auto; }
+    .layout.cols-1 .column.left .card.layers-card { flex: none; }
+    .layout.cols-1 .layers { overflow: visible; }
     /* One card shape everywhere: white paper, a 12px corner, and a hairline
        drawn as a ring rather than a border, so nothing inside has to account
        for a border box. */
@@ -775,11 +792,15 @@ export class WristAssistantPanel extends LitElement {
       box-shadow: 0 0 0 1px var(--wa-line);
       padding: 10px 12px 12px;
     }
-    .column.left { display: flex; flex-direction: column; gap: 8px; }
+    /* The left column does not scroll: the Add card keeps its natural height
+       and the Layers card takes the rest, scrolling its own rows, so the shape
+       row stays pinned to the foot of the column instead of floating mid-air. */
+    .column.left { display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
     .column.left .card { flex: none; }
-    /* The list fills whatever the Add card leaves, so the shape row stays
-       pinned to the bottom of the column instead of floating mid-air. */
-    .column.left .card.layers-card { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: 10px 8px 8px; }
+    .column.left .card.layers-card {
+      flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: 10px 8px 8px;
+      --thumb-w: ${THUMB_W}px; --thumb-h: ${THUMB_H}px;
+    }
     /* Card titles read as titles: sentence case, a little heavier, the ink
        colour. Their side notes stay small and muted. */
     .panel-title {
@@ -882,7 +903,10 @@ export class WristAssistantPanel extends LitElement {
        The picture size is a variable on the list, set by the S/M/L control in
        the card's title bar, so one change resizes every row's picture and the
        column that holds it. */
-    .layers { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-height: 0; --thumb-w: ${THUMB_W}px; --thumb-h: ${THUMB_H}px; }
+    .layers {
+      display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-height: 0;
+      overflow-y: auto; overflow-x: hidden; scrollbar-width: thin;
+    }
     /* A row is a line of a list, not a card: no outline at rest, and the eye
        finds the selection by its wash rather than by counting borders. */
     .layer {
@@ -961,7 +985,7 @@ export class WristAssistantPanel extends LitElement {
        runs the full width of the card: it is the ground everything else is
        drawn on, not another layer in the stack. */
     .layer.pinned {
-      margin: auto -8px 0; padding: 0 14px 0 12px; min-height: 40px; border-radius: 0;
+      flex: none; margin: 0 -8px; padding: 0 14px 0 12px; min-height: 40px; border-radius: 0;
       border-top: 1px solid var(--wa-line);
     }
     .layer.pinned .grip { cursor: default; }
@@ -1082,7 +1106,12 @@ export class WristAssistantPanel extends LitElement {
     /* The canvas column is three blocks stacked: what the whole complication
        is, the face itself, and the two lists of values under it. */
     .column.canvas { display: flex; flex-direction: column; gap: 8px; }
-    .column.canvas > .card.canvas-card { padding: 0; overflow: hidden; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+    /* The bar and the two lists keep their own height; the face takes what is
+       left, so the lists under it are on screen without scrolling. */
+    .column.canvas > .card.canvas-card {
+      padding: 0; overflow: hidden; flex: 1 1 auto; min-height: 260px;
+      display: flex; flex-direction: column;
+    }
     .banner { padding: 10px 14px; border-radius: 8px; font-size: 13px; background: var(--wa-panel); flex: none; }
     .banner.warn { border-left: 4px solid var(--warning-color, #ffa600); }
     .banner.err { border-left: 4px solid var(--error-color, #db4437); }
@@ -3392,20 +3421,25 @@ export class WristAssistantPanel extends LitElement {
     return html`
       <header>
         <span class="mark" title="Wrist Assistant" aria-label="Wrist Assistant">${uiIcon("watch")}</span>
-        ${this.renderPicker()}
-        ${this.renderNewButton()}
-        <div class="toolbar hbox hist">
-          <button class="icon" @click=${() => this.undo()} ?disabled=${!d?.canUndo} title="Undo (⌘Z)" aria-label="Undo">${uiIcon("undo")}</button>
-          <span class="hdiv"></span>
-          <button class="icon" @click=${() => this.redo()} ?disabled=${!d?.canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">${uiIcon("redo")}</button>
-        </div>
-        <span class="spacer"></span>
         <label>Watch
           <select @change=${(e: Event) => void this.selectOwner((e.target as HTMLSelectElement).value)}>
             ${this.owners.map((o) => html`<option value=${o.owner_watch_id} ?selected=${o.owner_watch_id === this.ownerId}>
               ${ownerLabel(o)} (${o.complication_count})</option>`)}
           </select>
         </label>
+        <span class="hstep" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6" /></svg></span>
+        ${this.renderPicker()}
+        ${this.renderNewButton()}
+        <span class="hsep"></span>
+        <div class="toolbar hbox hist">
+          <button class="icon" @click=${() => this.undo()} ?disabled=${!d?.canUndo} title="Undo (⌘Z)" aria-label="Undo">${uiIcon("undo")}</button>
+          <span class="hdiv"></span>
+          <button class="icon" @click=${() => this.redo()} ?disabled=${!d?.canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">${uiIcon("redo")}</button>
+        </div>
+        <span class="hsep"></span>
+        <span class="spacer"></span>
+        <button class="help" title="Keys and mouse tips" aria-label="Keys and mouse tips" @click=${() => { this.helpOpen = true; }}>?</button>
         <div class="hbox status">
           <span class="dirty-dot ${dirty ? "" : rec ? "clean" : "none"}" title=${dirty ? "Unsaved changes" : rec ? "Saved" : "Not saved yet"}></span>
           <span class="st-text">${statusText}</span>
@@ -3413,7 +3447,6 @@ export class WristAssistantPanel extends LitElement {
           ${this.renderSendButton()}
           <button class="primary save ${dirty ? "dirty" : ""}" @click=${() => void this.save()} ?disabled=${!this.canEdit || !dirty || this.saving || !this.slotChosen} title="Save (⌘S)">${this.saving ? "Saving…" : d?.baseRevision === null ? "Save new" : dirty ? "Save" : "Saved"}</button>
         </div>
-        <button class="help" title="Keys and mouse tips" aria-label="Keys and mouse tips" @click=${() => { this.helpOpen = true; }}>?</button>
       </header>
       ${this.loadError ? html`<div class="card error">${this.loadError}</div>` : nothing}
       ${this.helpOpen ? this.renderHelpDialog() : nothing}
@@ -4112,7 +4145,7 @@ export class WristAssistantPanel extends LitElement {
       if (!this.collapsed.has(g.id)) rows.push(html`<div class="group-kids">${members.map((m) => layerRow(m, true, groupHl))}</div>`);
     }
 
-    return html`<div class="card layers-card">
+    return html`<div class="card layers-card" style=${`--thumb-w:${thumbW}px;--thumb-h:${thumbH}px`}>
       <h2 class="panel-title tools" style=${`--c:${SECTION_COLOR.place}`}><span class="swatch">${uiIcon("layers")}</span>Layers
         <span class="mini">top draws last</span><span class="spacer"></span>
         <span class="tool-set">
@@ -4139,8 +4172,9 @@ export class WristAssistantPanel extends LitElement {
           : nothing}
       ${cfg.elements.length === 0 ? html`<div class="empty">No layers yet. Add one above.</div>` : nothing}
       ${this.renderShapeIsBlank(cfg, family, edit)}
-      <div class="layers" style=${`--thumb-w:${thumbW}px;--thumb-h:${thumbH}px`}>
+      <div class="layers">
       ${rows}
+      </div>
       <div class="layer pinned ${shapeHl ? "hl" : ""}" style=${`--k:${SECTION_COLOR.place}`} tabindex="0" title="The shape is always the bottom layer"
         @click=${() => { this.inspect = { kind: "family" }; }}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "family" }; }}
@@ -4163,7 +4197,6 @@ export class WristAssistantPanel extends LitElement {
           <small><span class="kind">Background</span> · ${shapeMeta}</small>
         </span>
         <span class="right"><span class="badges"><span class="badge">always bottom</span></span></span>
-      </div>
       </div>
     </div>`;
   }
@@ -4412,7 +4445,6 @@ export class WristAssistantPanel extends LitElement {
   private renderComplicationBar() {
     const host = this.host();
     return html`<div class="card comp-bar" style=${`--c:${SECTION_COLOR.complication}`} @change=${() => this.draft?.endGesture()}>
-      <h2 class="panel-title"><span class="swatch">${uiIcon("watch")}</span>Complication</h2>
       <div class="settings inline" style=${this.canEdit ? "" : "pointer-events:none;opacity:.6"}>${generalEditor(host)}</div>
       <span class="spacer"></span>
       <span class="acts">

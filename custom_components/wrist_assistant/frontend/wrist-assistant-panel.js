@@ -980,8 +980,15 @@ var jl=Object.defineProperty;var ql=Object.getOwnPropertyDescriptor;var H=(e,n,t
       color: var(--wa-ink);
       flex-wrap: wrap;
       position: relative;
+      flex: none;
       z-index: 20;
     }
+    /* One hairline between groups of controls, so "watch, complication, edit,
+       state" reads as four things rather than one run of eleven. */
+    header .hsep { width: 1px; height: 20px; background: var(--wa-line); flex: none; margin: 0 8px; }
+    /* The step from the watch to its complications, in place of that hairline. */
+    header .hstep { color: var(--wa-line-strong); display: grid; place-items: center; flex: none; margin: 0 2px; }
+    header .hstep svg { width: 16px; height: 16px; display: block; }
     header .mark {
       width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; flex: none;
       background: var(--wa-ink); color: var(--wa-card);
@@ -1178,7 +1185,11 @@ var jl=Object.defineProperty;var ql=Object.getOwnPropertyDescriptor;var H=(e,n,t
       column-gap: 8px;
       row-gap: 8px;
       padding: 4px 12px 10px;
-      flex: 1 1 auto;
+      /* The editor is exactly one viewport tall: the grid takes whatever the
+         header and the footer leave, and each column scrolls inside it. A long
+         inspector used to stretch the page, which pushed the two lists under
+         the canvas below the fold in every other column. */
+      flex: 1 1 0;
       min-height: 0;
       overflow: hidden;
     }
@@ -1200,7 +1211,13 @@ var jl=Object.defineProperty;var ql=Object.getOwnPropertyDescriptor;var H=(e,n,t
     .layout.cols-1 { grid-template-columns: minmax(0, 1fr); overflow: auto; }
     .layout.cols-1 > .column { grid-column: auto; }
     .layout.cols-1 > .gutter { display: none; }
-    .column { overflow: auto; min-height: 0; }
+    .column { min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-gutter: stable; }
+    /* Stacked, the whole layout scrolls as one page again, so a column that
+       owns its own scrollbar in three columns must give it up here. */
+    .layout.cols-1 .column.left, .layout.cols-1 .column.canvas, .layout.cols-1 .column.inspector,
+    .layout.cols-2 .column.inspector { overflow: visible; min-height: auto; }
+    .layout.cols-1 .column.left .card.layers-card { flex: none; }
+    .layout.cols-1 .layers { overflow: visible; }
     /* One card shape everywhere: white paper, a 12px corner, and a hairline
        drawn as a ring rather than a border, so nothing inside has to account
        for a border box. */
@@ -1211,11 +1228,15 @@ var jl=Object.defineProperty;var ql=Object.getOwnPropertyDescriptor;var H=(e,n,t
       box-shadow: 0 0 0 1px var(--wa-line);
       padding: 10px 12px 12px;
     }
-    .column.left { display: flex; flex-direction: column; gap: 8px; }
+    /* The left column does not scroll: the Add card keeps its natural height
+       and the Layers card takes the rest, scrolling its own rows, so the shape
+       row stays pinned to the foot of the column instead of floating mid-air. */
+    .column.left { display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
     .column.left .card { flex: none; }
-    /* The list fills whatever the Add card leaves, so the shape row stays
-       pinned to the bottom of the column instead of floating mid-air. */
-    .column.left .card.layers-card { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: 10px 8px 8px; }
+    .column.left .card.layers-card {
+      flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: 10px 8px 8px;
+      --thumb-w: ${Pl}px; --thumb-h: ${Ol}px;
+    }
     /* Card titles read as titles: sentence case, a little heavier, the ink
        colour. Their side notes stay small and muted. */
     .panel-title {
@@ -1318,7 +1339,10 @@ var jl=Object.defineProperty;var ql=Object.getOwnPropertyDescriptor;var H=(e,n,t
        The picture size is a variable on the list, set by the S/M/L control in
        the card's title bar, so one change resizes every row's picture and the
        column that holds it. */
-    .layers { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-height: 0; --thumb-w: ${Pl}px; --thumb-h: ${Ol}px; }
+    .layers {
+      display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-height: 0;
+      overflow-y: auto; overflow-x: hidden; scrollbar-width: thin;
+    }
     /* A row is a line of a list, not a card: no outline at rest, and the eye
        finds the selection by its wash rather than by counting borders. */
     .layer {
@@ -1397,7 +1421,7 @@ var jl=Object.defineProperty;var ql=Object.getOwnPropertyDescriptor;var H=(e,n,t
        runs the full width of the card: it is the ground everything else is
        drawn on, not another layer in the stack. */
     .layer.pinned {
-      margin: auto -8px 0; padding: 0 14px 0 12px; min-height: 40px; border-radius: 0;
+      flex: none; margin: 0 -8px; padding: 0 14px 0 12px; min-height: 40px; border-radius: 0;
       border-top: 1px solid var(--wa-line);
     }
     .layer.pinned .grip { cursor: default; }
@@ -1518,7 +1542,12 @@ var jl=Object.defineProperty;var ql=Object.getOwnPropertyDescriptor;var H=(e,n,t
     /* The canvas column is three blocks stacked: what the whole complication
        is, the face itself, and the two lists of values under it. */
     .column.canvas { display: flex; flex-direction: column; gap: 8px; }
-    .column.canvas > .card.canvas-card { padding: 0; overflow: hidden; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+    /* The bar and the two lists keep their own height; the face takes what is
+       left, so the lists under it are on screen without scrolling. */
+    .column.canvas > .card.canvas-card {
+      padding: 0; overflow: hidden; flex: 1 1 auto; min-height: 260px;
+      display: flex; flex-direction: column;
+    }
     .banner { padding: 10px 14px; border-radius: 8px; font-size: 13px; background: var(--wa-panel); flex: none; }
     .banner.warn { border-left: 4px solid var(--warning-color, #ffa600); }
     .banner.err { border-left: 4px solid var(--error-color, #db4437); }
@@ -2238,20 +2267,25 @@ var jl=Object.defineProperty;var ql=Object.getOwnPropertyDescriptor;var H=(e,n,t
     </dialog>`}setShowTaps(t){this.showTaps=t,t&&this.togglePicking(!1)}togglePicking(t=!this.picking){this.picking=t,this.pickHoverId=void 0,t&&(this.showTaps=!1,this.cancelGesture?.())}hitLayerId(t){let i=this.draft?.config;if(!i)return;let r=t.target?.closest?.("[data-element-id]")?.getAttribute("data-element-id");return r?Sa(i,r):void 0}leaveRow(t){this.listHoverIds.length===t.length&&this.listHoverIds.every((a,r)=>t[r]===a)&&(this.listHoverIds=[])}onPickMove(t){this.picking&&(this.pickHoverId=this.hitLayerId(t))}pickAt(t,i){let a=this.hitLayerId(i);this.togglePicking(!1),a&&(t!==this.activeFamily&&(this.activeFamily=t),this.inspect={kind:"layer",id:a})}onPreviewPointerDown(t,i){if(this.picking){i.preventDefault(),this.pickAt(t,i);return}let a=i.target,r=a.closest("[data-handle]")?.getAttribute("data-handle"),o=a.closest("[data-element-id]")?.getAttribute("data-element-id")??void 0,s=a.closest("svg"),l=a.closest("[data-ts-corner]")?.getAttribute("data-ts-corner")??null,d=l!==null||a.closest("[data-ts-handle]")!==null;if(d||(this.timestampActiveId=void 0),this.showTaps){let S=this.focusTapId();if(S!==void 0&&o===S&&s&&this.draft&&this.canEdit){if(t!==this.activeFamily){this.activeFamily=t;return}i.preventDefault(),this.beginTapBoxGesture(t,i,s,S,r??void 0);return}let E=this.hitLayerId(i);E?this.inspect={kind:"layer",id:E}:o===void 0&&(this.inspect={kind:"general"});return}if(!this.draft||!this.canEdit)return;if(t!==this.activeFamily){this.activeFamily=t;return}let c=Gl(i);if(!c&&this.multi.size>0&&(this.multi=new Set),!o||!s)return;let u=Sa(this.draft.config,o),h=this.draft.config.elements.find(S=>S.payload.id===u);if(!u||!h)return;if(c){i.preventDefault(),this.togglePick(u);return}let m=qe(this.draft.config,u),g=m!==void 0&&this.inspect.kind==="group"&&this.inspect.id===m.id;if(m&&(m.locked||g)&&!r&&!d){this.beginGroupGesture(t,i,s,m);return}if((this.inspect.kind!=="layer"||this.inspect.id!==u)&&(this.inspect={kind:"layer",id:u},r))return;i.preventDefault();let v=Re(this.draft.config,t,h).frame,$=this.gestureCanvas(t);if(d&&h.kind==="image"&&h.payload.timestamp===!0){this.timestampActiveId=u;let S=h.payload,E=me[t],w=v.width*E.width,C=v.height*E.height,N={x:0,y:0,w,h:C,cx:w/2,cy:C/2},B=pi(S,N,ui(new Date));if(this.cancelGesture?.(),l){let F=$.width/E.width,V=S.timestampSize;this.cancelGesture=As(s,i,l,{w:B.w*F,h:B.h*F},(P,ce)=>{let y=Math.min(40,Math.max(4,Math.round(V*P)));this.mutate(k=>{let Y=k.elements.find(G=>G.payload.id===u);Y?.kind==="image"&&(Y.payload.timestampSize=y)},`ts-size-${u}`),ce&&(this.draft?.endGesture(),this.cancelGesture=void 0)});return}let q={x:0,y:0,w:v.width*$.width,h:v.height*$.height},de=We(S)?{x:S.timestampX,y:S.timestampY}:{x:(B.x+B.w/2)/N.w,y:(B.y+B.h/2)/N.h},x=!1;this.cancelGesture=Is(s,q,i,de,(F,V,P)=>{P||(x=!0),x&&this.mutate(ce=>{let y=ce.elements.find(k=>k.payload.id===u);y?.kind==="image"&&(y.payload.timestampX=F,y.payload.timestampY=V)},`ts-${u}`),P&&(this.draft?.endGesture(),this.cancelGesture=void 0)});return}this.cancelGesture?.(),this.cancelGesture=ki(s,$,i,{elementId:u,frame:v,handle:r??void 0},{onFrame:(S,E,w)=>{this.mutate(C=>Fe(C,t,S,{frame:E}),`drag-${S}-${t}`),w&&(this.draft?.endGesture(),this.cancelGesture=void 0)}})}beginGroupGesture(t,i,a,r){let o=this.draft?.config;if(!o)return;let s=Ye(o,r.id);if(s.length===0)return;(this.inspect.kind!=="group"||this.inspect.id!==r.id)&&(this.inspect={kind:"group",id:r.id}),i.preventDefault();let l=new Map(s.map($=>[$.payload.id,Re(o,t,$).frame])),d=[...l.values()],c=Math.min(...d.map($=>$.x)),u=Math.min(...d.map($=>$.y)),h=Math.max(...d.map($=>$.x+$.width)),m=Math.max(...d.map($=>$.y+$.height)),g={x:c,y:u,width:h-c,height:m-u,rotationDegrees:0},v=$=>Math.round($*1e3)/1e3;this.cancelGesture?.(),this.cancelGesture=ki(a,this.gestureCanvas(t),i,{elementId:r.id,frame:g},{onFrame:($,S,E)=>{let w=S.x-g.x,C=S.y-g.y;this.mutate(N=>{for(let[B,q]of l)Fe(N,t,B,{frame:{...q,x:v(q.x+w),y:v(q.y+C)}})},`drag-group-${r.id}-${t}`),E&&(this.draft?.endGesture(),this.cancelGesture=void 0)}})}nudge(t,i,a){let r=this.draft?.config;if(!r||!this.canEdit||this.showTaps||this.picking)return!1;let o=a?Ms:1,s=t*o,l=i*o,d=this.canvasFamily,c=me[d];if(this.timestampActiveId!==void 0&&this.nudgeTimestamp(this.timestampActiveId,d,s,l))return!0;if(this.multi.size>=2)return this.nudgeMany([...this.multi],d,c,`nudge-multi-${d}`,s,l);if(this.inspect.kind==="group"){let $=this.inspect.id;return this.nudgeMany(Ye(r,$).map(S=>S.payload.id),d,c,`nudge-group-${$}-${d}`,s,l)}if(this.inspect.kind!=="layer")return!1;let u=this.inspect.id,h=r.elements.find($=>$.payload.id===u);if(!h)return!1;let m=qe(r,u);if(m?.locked)return this.nudgeMany(Ye(r,m.id).map($=>$.payload.id),d,c,`nudge-group-${m.id}-${d}`,s,l);let g=Re(r,d,h).frame,v=Za(g,s,l,c);return(v.x!==g.x||v.y!==g.y)&&this.mutate($=>Fe($,d,u,{frame:v}),`nudge-${u}-${d}`),!0}nudgeMany(t,i,a,r,o,s){let l=this.draft?.config;if(!l)return!1;let d=C=>Math.round(C*1e3)/1e3,c=new Map;for(let C of t){let N=l.elements.find(B=>B.payload.id===C);N&&c.set(C,Re(l,i,N).frame)}if(c.size===0)return!1;let u=[...c.values()],h=Math.min(...u.map(C=>C.x)),m=Math.min(...u.map(C=>C.y)),g=Math.max(...u.map(C=>C.x+C.width)),v=Math.max(...u.map(C=>C.y+C.height)),$={x:h,y:m,width:g-h,height:v-m,rotationDegrees:0},S=Za($,o,s,a),E=S.x-$.x,w=S.y-$.y;return(E!==0||w!==0)&&this.mutate(C=>{for(let[N,B]of c)Fe(C,i,N,{frame:{...B,x:d(B.x+E),y:d(B.y+w)}})},r),!0}nudgeTimestamp(t,i,a,r){let o=this.draft?.config,s=o?.elements.find($=>$.payload.id===t);if(!o||s?.kind!=="image"||s.payload.timestamp!==!0)return!1;let l=s.payload,d=me[i],c=Re(o,i,s).frame,u=c.width*d.width,h=c.height*d.height,m=pi(l,{x:0,y:0,w:u,h,cx:u/2,cy:h/2},ui(new Date)),g=We(l)?{x:l.timestampX,y:l.timestampY}:{x:u>0?(m.x+m.w/2)/u:.5,y:h>0?(m.y+m.h/2)/h:.5},v=Rs(g,a,r,{w:u,h});return(v.x!==g.x||v.y!==g.y)&&this.mutate($=>{let S=$.elements.find(E=>E.payload.id===t);S?.kind==="image"&&(S.payload.timestampX=v.x,S.payload.timestampY=v.y)},`nudge-ts-${t}`),!0}gestureCanvas(t){let i=ci(this.previewSlot(t),t);if(t!=="corner")return{width:i.width,height:i.height};let a=this.draft?.config.perFamily.corner,r=!!a?.bezelText||!!a?.bezelGauge,o=Da(i.scale,r);return{width:o,height:o}}focusTapId(){let t=this.draft?.config;if(!t||!this.showTaps||this.inspect.kind!=="layer")return;let i=this.inspect.id,a=t.elements.find(r=>r.payload.id===i);if(a)return a.kind==="tap"?a.payload.id:Ee(t,i)[0]?.payload.id}beginTapBoxGesture(t,i,a,r,o){let s=this.draft?.config,l=s?.elements.find(u=>u.payload.id===r);if(!s||!l)return;let d=le(s,l),c=Re(s,t,l).frame;this.cancelGesture?.(),this.cancelGesture=ki(a,this.gestureCanvas(t),i,{elementId:r,frame:c,handle:o},{onFrame:(u,h,m)=>{this.mutate(g=>{d?So(g,u,t,h):Fe(g,t,u,{frame:h})},`tap-box-${u}-${t}`),m&&(this.draft?.endGesture(),this.cancelGesture=void 0)}})}render(){let t=this.draft,i=!!t?.dirty,a=this.narrow?{columns:1,left:this.colLeft,right:this.colRight}:Ul(this.panelWidth,this.colLeft,this.colRight),r=this.records.find(s=>s.id===this.selectedId),o=t===void 0?"No complication":r?`Revision ${r.revision} \xB7 ${i?"unsaved changes":"saved"}`:"Not saved yet";return p`
       <header>
         <span class="mark" title="Wrist Assistant" aria-label="Wrist Assistant">${_("watch")}</span>
-        ${this.renderPicker()}
-        ${this.renderNewButton()}
-        <div class="toolbar hbox hist">
-          <button class="icon" @click=${()=>this.undo()} ?disabled=${!t?.canUndo} title="Undo (⌘Z)" aria-label="Undo">${_("undo")}</button>
-          <span class="hdiv"></span>
-          <button class="icon" @click=${()=>this.redo()} ?disabled=${!t?.canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">${_("redo")}</button>
-        </div>
-        <span class="spacer"></span>
         <label>Watch
           <select @change=${s=>{this.selectOwner(s.target.value)}}>
             ${this.owners.map(s=>p`<option value=${s.owner_watch_id} ?selected=${s.owner_watch_id===this.ownerId}>
               ${Kl(s)} (${s.complication_count})</option>`)}
           </select>
         </label>
+        <span class="hstep" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6" /></svg></span>
+        ${this.renderPicker()}
+        ${this.renderNewButton()}
+        <span class="hsep"></span>
+        <div class="toolbar hbox hist">
+          <button class="icon" @click=${()=>this.undo()} ?disabled=${!t?.canUndo} title="Undo (⌘Z)" aria-label="Undo">${_("undo")}</button>
+          <span class="hdiv"></span>
+          <button class="icon" @click=${()=>this.redo()} ?disabled=${!t?.canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">${_("redo")}</button>
+        </div>
+        <span class="hsep"></span>
+        <span class="spacer"></span>
+        <button class="help" title="Keys and mouse tips" aria-label="Keys and mouse tips" @click=${()=>{this.helpOpen=!0}}>?</button>
         <div class="hbox status">
           <span class="dirty-dot ${i?"":r?"clean":"none"}" title=${i?"Unsaved changes":r?"Saved":"Not saved yet"}></span>
           <span class="st-text">${o}</span>
@@ -2259,7 +2293,6 @@ var jl=Object.defineProperty;var ql=Object.getOwnPropertyDescriptor;var H=(e,n,t
           ${this.renderSendButton()}
           <button class="primary save ${i?"dirty":""}" @click=${()=>{this.save()}} ?disabled=${!this.canEdit||!i||this.saving||!this.slotChosen} title="Save (⌘S)">${this.saving?"Saving\u2026":t?.baseRevision===null?"Save new":i?"Save":"Saved"}</button>
         </div>
-        <button class="help" title="Keys and mouse tips" aria-label="Keys and mouse tips" @click=${()=>{this.helpOpen=!0}}>?</button>
       </header>
       ${this.loadError?p`<div class="card error">${this.loadError}</div>`:f}
       ${this.helpOpen?this.renderHelpDialog():f}
@@ -2423,7 +2456,7 @@ var jl=Object.defineProperty;var ql=Object.getOwnPropertyDescriptor;var H=(e,n,t
           <button class="chev" aria-expanded=${P?"true":"false"} title=${P?"Fold the group":"Unfold the group"}
             @click=${L=>{L.stopPropagation();let D=new Set(this.collapsed);P?D.add(x.id):D.delete(x.id),this.collapsed=D}}>${_("chevron")}</button>
         </span>
-      </div>`},q=[],de=new Set;for(let x=0;x<l.length;x++){let F=l[x],V=F.payload.groupId,P=V===void 0?void 0:t.groups?.find(k=>k.id===V);if(!P){q.push(N(F,!1));continue}if(de.has(P.id))continue;de.add(P.id);let ce=l.filter(k=>k.payload.groupId===P.id);q.push(B(P,ce));let y=this.inspect.kind==="group"&&this.inspect.id===P.id;this.collapsed.has(P.id)||q.push(p`<div class="group-kids">${ce.map(k=>N(k,!0,y))}</div>`)}return p`<div class="card layers-card">
+      </div>`},q=[],de=new Set;for(let x=0;x<l.length;x++){let F=l[x],V=F.payload.groupId,P=V===void 0?void 0:t.groups?.find(k=>k.id===V);if(!P){q.push(N(F,!1));continue}if(de.has(P.id))continue;de.add(P.id);let ce=l.filter(k=>k.payload.groupId===P.id);q.push(B(P,ce));let y=this.inspect.kind==="group"&&this.inspect.id===P.id;this.collapsed.has(P.id)||q.push(p`<div class="group-kids">${ce.map(k=>N(k,!0,y))}</div>`)}return p`<div class="card layers-card" style=${`--thumb-w:${S}px;--thumb-h:${E}px`}>
       <h2 class="panel-title tools" style=${`--c:${ee.place}`}><span class="swatch">${_("layers")}</span>Layers
         <span class="mini">top draws last</span><span class="spacer"></span>
         <span class="tool-set">
@@ -2445,8 +2478,9 @@ var jl=Object.defineProperty;var ql=Object.getOwnPropertyDescriptor;var H=(e,n,t
             <button class="small" @click=${()=>{this.multi=new Set}}>Clear</button></div>`:t.elements.length>=2&&i&&!t.groups?.length?p`<div class="hint">${Pn}-click layers here or on the preview, or shift-click a range of rows, then group them so a finished part moves as one. The <b>?</b> button in the header lists every key and mouse trick.</div>`:f}
       ${t.elements.length===0?p`<div class="empty">No layers yet. Add one above.</div>`:f}
       ${this.renderShapeIsBlank(t,a,i)}
-      <div class="layers" style=${`--thumb-w:${S}px;--thumb-h:${E}px`}>
+      <div class="layers">
       ${q}
+      </div>
       <div class="layer pinned ${h?"hl":""}" style=${`--k:${ee.place}`} tabindex="0" title="The shape is always the bottom layer"
         @click=${()=>{this.inspect={kind:"family"}}}
         @keydown=${x=>{x.key==="Enter"&&(this.inspect={kind:"family"})}}
@@ -2460,7 +2494,6 @@ var jl=Object.defineProperty;var ql=Object.getOwnPropertyDescriptor;var H=(e,n,t
           <small><span class="kind">Background</span> · ${m}</small>
         </span>
         <span class="right"><span class="badges"><span class="badge">always bottom</span></span></span>
-      </div>
       </div>
     </div>`}renderInlineHasNoLayers(){return p`<div class="card">
       <h2 class="panel-title"><span class="swatch">${_("layers")}</span>Layers</h2>
@@ -2511,7 +2544,6 @@ var jl=Object.defineProperty;var ql=Object.getOwnPropertyDescriptor;var H=(e,n,t
       <span class="dot">·</span>
       <span class="tail">${s}</span>
     </div>`}renderInlinePreview(t,i){let a;if(!t)a=p`<div class="inline-line missing">No inline text</div>`;else{let r=Date.now(),o=t.countdownEnd!==void 0&&t.countdownEnd>r?Xt((t.countdownEnd-r)/1e3):t.text,s=t.symbol?this.icons.render(t.symbol,i?11:15,"#FFFFFF"):void 0;a=p`<div class="inline-line">${s??f}<span>${t.label?`${t.label}: `:""}${o}</span></div>`}return i?a:p`<div class="preview inline active" @click=${()=>{this.inspect={kind:"family"}}}>${a}</div>`}renderComplicationBar(){let t=this.host();return p`<div class="card comp-bar" style=${`--c:${ee.complication}`} @change=${()=>this.draft?.endGesture()}>
-      <h2 class="panel-title"><span class="swatch">${_("watch")}</span>Complication</h2>
       <div class="settings inline" style=${this.canEdit?"":"pointer-events:none;opacity:.6"}>${hl(t)}</div>
       <span class="spacer"></span>
       <span class="acts">
