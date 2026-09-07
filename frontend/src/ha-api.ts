@@ -199,13 +199,26 @@ export async function renderTemplates(
  * watch's signed `op=history` runs, so the preview draws what the wrist draws. */
 export async function fetchHistorySeries(
   hass: HassLike,
-  requests: Record<string, { entity_id: string; minutes: number; points: number }>,
+  requests: Record<string, HistorySeriesRequest>,
 ): Promise<Record<string, HistorySeriesResult>> {
   if (Object.keys(requests).length === 0) return {};
   const reply = await hass.connection.sendMessagePromise<{
     results: Record<string, HistorySeriesResult>;
   }>({ type: `${D}/history_series`, requests });
   return reply.results;
+}
+
+/** One recorder query.
+ *
+ * `mode` picks what comes back: numbers averaged into `points` slots, or the
+ * states themselves with the second each began. It is left out at `numeric`,
+ * which is what every chart asks for, so a chart's request is byte for byte
+ * what it was before timelines existed. */
+export interface HistorySeriesRequest {
+  entity_id: string;
+  minutes: number;
+  points: number;
+  mode?: "numeric" | "states";
 }
 
 export type HistorySeriesResult =

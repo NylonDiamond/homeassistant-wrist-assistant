@@ -30,9 +30,10 @@ import {
   newElement,
   newRule,
   newStyleChange,
+  seedTimelineBands,
 } from "./model.js";
 
-export type PresetKind = "toggle" | "status" | "gauge" | "camera" | "chart" | "history";
+export type PresetKind = "toggle" | "status" | "gauge" | "camera" | "chart" | "history" | "doorHistory";
 
 export interface PresetSpec {
   kind: PresetKind;
@@ -82,6 +83,13 @@ export const LAYER_PRESETS: readonly PresetSpec[] = [
     blurb: "A line of how the entity has moved over the last six hours, read from Home Assistant's recorder.",
     preferNumeric: true,
     layerCount: 1,
+  },
+  {
+    kind: "doorHistory",
+    title: "Door history",
+    blurb: "A strip of when the entity was open over the last hour, with its name above. For a door, a window or anything else with two states.",
+    domains: ["binary_sensor", "cover"],
+    layerCount: 2,
   },
   {
     kind: "camera",
@@ -295,6 +303,28 @@ function chartGeometry(family: DrawableFamily): PresetGeometry {
       rotationDegrees: 0,
     },
     size: 2,
+  };
+}
+
+/** A strip along the bottom of the face, with room for one line above it. A
+ * timeline is read across, and it needs less height than a chart because there
+ * is nothing to plot: the whole reading is which colour is where. */
+function timelineGeometry(family: DrawableFamily): PresetGeometry {
+  const canvas = CANVAS[family];
+  const height = clamp(Math.round(canvas.height * 0.2), 6, 14);
+  return {
+    frame: { x: 0.06, y: 0.56, width: 0.88, height: round4(height / canvas.height), rotationDegrees: 0 },
+  };
+}
+
+/** The name above the strip: a strip of colour says nothing about what it is
+ * of, and the entity is the one fact a reader needs to make sense of it. */
+function timelineNameGeometry(family: DrawableFamily): PresetGeometry {
+  const canvas = CANVAS[family];
+  const size = clamp(Math.round(Math.min(canvas.width, canvas.height) * 0.26), 8, 15);
+  return {
+    frame: { x: 0.06, y: 0.2, width: 0.88, height: round4(clamp((size * 1.5) / canvas.height, 0, 1)), rotationDegrees: 0 },
+    size,
   };
 }
 
@@ -514,6 +544,32 @@ export function addHistoryChart(cfg: CustomComplicationConfig, ref: EntityRef, e
   return el.payload.id;
 }
 
+/**
+ * When the door was open, as a strip, with its name above it.
+ *
+ * The counterpart to the history chart for everything that holds a word rather
+ * than a number: a chart of a door draws nothing, because "open" is not a
+ * reading. The colour table is seeded from the entity's own domain and device
+ * class, so a door starts red while it is open and a plain switch starts amber
+ * while it is on, and both are one edit away from anything else.
+ */
+export function addDoorHistory(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  const full = withDomain(ref);
+  const name = layerOf("text");
+  name.payload.value = literal(full.displayName || full.entityId);
+  name.payload.colorSlot.baseColorHex = MUTED_HEX;
+  placeLayer(cfg, name, env.family, timelineNameGeometry);
+  cfg.elements.push(name);
+
+  const deviceClass = env.state?.attributes?.device_class;
+  const el = layerOf("timeline");
+  el.payload.value = { kind: { kind: "entityState", ...full } };
+  el.payload.bands = seedTimelineBands(full.domain, typeof deviceClass === "string" ? deviceClass : undefined);
+  placeLayer(cfg, el, env.family, timelineGeometry);
+  cfg.elements.push(el);
+  return el.payload.id;
+}
+
 /** The camera's snapshot, filling the face. */
 export function addCameraLayer(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
   const el = layerOf("image");
@@ -536,6 +592,7 @@ export function applyPreset(
     case "gauge": return addSensorGauge(cfg, ref, env);
     case "chart": return addForecastChart(cfg, ref, env);
     case "history": return addHistoryChart(cfg, ref, env);
+    case "doorHistory": return addDoorHistory(cfg, ref, env);
     case "camera": return addCameraLayer(cfg, ref, env);
   }
 }

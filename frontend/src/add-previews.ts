@@ -94,6 +94,18 @@ function sample(kind: LayerKind): TemplateResult {
           stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
         <circle cx="60" cy="8" r="2.6" fill="var(--k)" />
       </g>`;
+    // A strip of runs in three colours: the picture says "one entity, over
+    // time" in a way the word Timeline on its own does not.
+    case "timeline":
+      return svg`<g>
+        <rect x="6" y="17" width="30" height="12" rx="2.5" fill=${DIM} opacity=".55" />
+        <rect x="37" y="17" width="18" height="12" rx="2.5" fill="var(--k)" />
+        <rect x="56" y="17" width="8" height="12" rx="2.5" fill=${DIM} opacity=".55" />
+        <rect x="65" y="17" width="24" height="12" rx="2.5" fill="var(--k)" />
+        <rect x="90" y="17" width="24" height="12" rx="2.5" fill=${DIM} opacity=".55" />
+        <text x="6" y="39" font-family=${FONT} font-size="7" fill=${DIM}>1h ago</text>
+        <text x="114" y="39" font-family=${FONT} font-size="7" text-anchor="end" fill=${DIM}>now</text>
+      </g>`;
     // The shapes a shape layer can be, outlined rather than filled so a
     // border-only shape is as visible here as a solid one. The bar is the line
     // kind, which is what a divider between two readings is.

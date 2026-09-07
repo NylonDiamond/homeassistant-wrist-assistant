@@ -32,6 +32,9 @@ raw_series = history_series.raw_series
 series_to_string = history_series.series_to_string
 clamp_points = history_series.clamp_points
 clamp_minutes = history_series.clamp_minutes
+state_pairs = history_series.state_pairs
+states_to_string = history_series.states_to_string
+normalize_mode = history_series.normalize_mode
 
 START = datetime(2026, 9, 5, 9, 0, tzinfo=timezone.utc)
 END = START + timedelta(hours=6)
@@ -129,3 +132,81 @@ def test_spans_are_clamped_and_junk_falls_back():
     assert clamp_minutes(0) == 1
     assert clamp_minutes(360) == 360
     assert clamp_minutes(None) == 360
+
+
+# --- States mode: what a state timeline draws -------------------------------
+
+
+def test_modes_fall_back_to_numeric():
+    assert normalize_mode("states") == "states"
+    assert normalize_mode(" States ") == "states"
+    assert normalize_mode("numeric") == "numeric"
+    assert normalize_mode(None) == "numeric"
+    assert normalize_mode("nonsense") == "numeric"
+    assert normalize_mode(7) == "numeric"
+
+
+def test_the_anchor_is_the_offset_zero_pair():
+    # Whatever was in force when the window opened owns the left edge, so the
+    # first run always has a start.
+    changes = [(at(20), "on"), (at(31), "off")]
+    assert state_pairs(changes, START, "off") == [(0, "off"), (1200, "on"), (1860, "off")]
+
+
+def test_without_an_anchor_the_first_change_starts_the_strip():
+    changes = [(at(20), "on"), (at(31), "off")]
+    assert state_pairs(changes, START) == [(1200, "on"), (1860, "off")]
+
+
+def test_a_change_on_the_span_start_replaces_the_anchor():
+    changes = [(START, "on"), (at(10), "off")]
+    assert state_pairs(changes, START, "off") == [(0, "on"), (600, "off")]
+
+
+def test_a_repeated_state_is_not_a_change():
+    changes = [(at(10), "on"), (at(20), "on"), (at(30), "off")]
+    assert state_pairs(changes, START, "on") == [(0, "on"), (1800, "off")]
+
+
+def test_unavailable_is_an_ordinary_state():
+    changes = [(at(10), "unavailable"), (at(40), "on")]
+    assert state_pairs(changes, START, "off") == [
+        (0, "off"),
+        (600, "unavailable"),
+        (2400, "on"),
+    ]
+
+
+def test_nothing_recorded_is_an_empty_strip():
+    assert state_pairs([], START) == []
+    assert states_to_string([]) == ""
+
+
+def test_the_newest_changes_win_when_capped():
+    # 300 changes in the window, and only 120 pairs may go on the wire. The
+    # right edge is the edge someone reads, so the oldest are what go.
+    changes = [(at(i), f"s{i}") for i in range(300)]
+    pairs = state_pairs(changes, START, "old")
+    assert len(pairs) == 120
+    assert pairs[0] == (0, "s180")
+    assert pairs[1] == (181 * 60, "s181")
+    assert pairs[-1] == (299 * 60, "s299")
+
+
+def test_a_cap_that_lands_on_offset_zero_does_not_double_it():
+    # 130 changes all at the same instant, the window's own start. The kept
+    # window already begins at offset 0, so no carried pair is prepended.
+    changes = [(START, f"s{i}") for i in range(130)]
+    pairs = state_pairs(changes, START)
+    assert pairs == [(0, "s129")]
+
+
+def test_states_are_percent_encoded_on_the_wire():
+    pairs = [(0, "not_home"), (60, "Kitchen: back door"), (120, "20°C")]
+    assert states_to_string(pairs) == (
+        "0:not_home 60:Kitchen%3A%20back%20door 120:20%C2%B0C"
+    )
+
+
+def test_unreserved_characters_survive_encoding():
+    assert states_to_string([(0, "a-z_0.9~")]) == "0:a-z_0.9~"

@@ -72,6 +72,29 @@ function expectSubset(actual: Record<string, unknown>, expected: Record<string, 
   }
 }
 
+/**
+ * A resolved element as the fixtures spell it.
+ *
+ * A timeline's runs are fractions of the frame, and an hour cut into sixths is
+ * 0.16666… in both languages but printed differently by each. The fixture
+ * carries them rounded to three decimals, which is finer than a 181 point face
+ * can draw, and both runners round before comparing. Every other key is
+ * compared as it stands.
+ */
+function normalise(el: Record<string, unknown>): Record<string, unknown> {
+  const runs = el.runs;
+  if (!Array.isArray(runs)) return el;
+  const round = (n: unknown) => (typeof n === "number" ? Math.round(n * 1000) / 1000 : n);
+  return {
+    ...el,
+    runs: runs.map((r: Record<string, unknown>) => ({
+      start: round(r.start),
+      end: round(r.end),
+      colorHex: typeof r.colorHex === "string" ? r.colorHex.toUpperCase() : r.colorHex,
+    })),
+  };
+}
+
 /** A UUID-shaped string whose digits are not all hexadecimal. */
 const UUID_SHAPED = /^[0-9A-Za-z]{8}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{12}$/;
 const REAL_UUID = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
@@ -124,7 +147,7 @@ describe.each(files)("fixture %s", (file) => {
       expectSubset(got as unknown as Record<string, unknown>, want, family);
       expect(got!.elements.map((e) => e.id), `${family}.elements order`).toEqual(want.elements.map((e) => e.id));
       want.elements.forEach((wantEl, i) => {
-        const gotEl = got!.elements[i] as ResolvedElement & Record<string, unknown>;
+        const gotEl = normalise(got!.elements[i] as ResolvedElement & Record<string, unknown>);
         if (wantEl.kind === "shape") {
           // The fixture names the shape kind `kind`; the resolver uses shapeKind.
           const { shapeKind, ...rest } = wantEl as { shapeKind?: string };

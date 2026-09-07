@@ -472,6 +472,32 @@ function renderChart(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) 
   return svg`${body}`;
 }
 
+/**
+ * A strip of coloured runs across the frame, oldest at the left.
+ *
+ * Every run is a rounded rectangle as wide as the time it covers. The gap is
+ * taken off the right of each run except the last, so the strip still ends
+ * flush with the frame and the newest state keeps the edge the eye goes to.
+ * A run narrower than the gap keeps a sliver rather than disappearing: a state
+ * that lasted ten seconds in an hour is exactly the thing somebody is looking
+ * for when they add one of these.
+ */
+function renderTimeline(el: Extract<ResolvedElement, { kind: "timeline" }>, box: Box) {
+  if (el.runs.length === 0 || box.w <= 0 || box.h <= 0) return nothing;
+  const gap = Math.max(0, Math.min(el.gap, box.w / Math.max(1, el.runs.length)));
+  const body = el.runs.map((run, i) => {
+    const x = box.x + run.start * box.w;
+    const full = (run.end - run.start) * box.w;
+    const last = i === el.runs.length - 1;
+    const w = Math.max(last ? full : Math.min(full, 0.5), full - (last ? 0 : gap));
+    const radius = Math.max(0, Math.min(el.cornerRadius, w / 2, box.h / 2));
+    const colour = colorAttrs(run.colorHex, "fill");
+    return svg`<rect x=${x} y=${box.y} width=${w} height=${box.h} rx=${radius}
+      fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} />`;
+  });
+  return svg`${body}`;
+}
+
 function renderShape(el: Extract<ResolvedElement, { kind: "shape" }>, box: Box) {
   const fill = colorAttrs(el.fillColorHex, "fill");
   const border = el.borderColorHex ? parseColor(el.borderColorHex) : undefined;
@@ -773,6 +799,7 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     case "icon": body = renderIcon(el, box, options.icons); break;
     case "gauge": body = renderGauge(el, box); break;
     case "chart": body = renderChart(el, box); break;
+    case "timeline": body = renderTimeline(el, box); break;
     case "shape": body = renderShape(el, box); break;
     case "image": body = renderImage(el, box, options); break;
     case "tap": body = renderTap(el, box, options.icons, showTaps, labelled ? describeTapAction(el.action) : undefined); break;

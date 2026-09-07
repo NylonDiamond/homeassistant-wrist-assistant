@@ -52,7 +52,13 @@ from .complication_store import (
     ComplicationStoreError,
 )
 from .const import COMPLICATION_MAX_SCHEMA_VERSION, DOMAIN
-from .history_series import HistorySeriesError, async_history_series
+from .history_series import (
+    MODE_NUMERIC,
+    MODE_STATES,
+    HistorySeriesError,
+    async_history_series,
+    normalize_mode,
+)
 from .widget_secret_store import DEVICE_KIND_WATCH
 
 _LOGGER = logging.getLogger(__name__)
@@ -590,6 +596,9 @@ def ws_render_values(
                 vol.Required("entity_id"): str,
                 vol.Required("minutes"): int,
                 vol.Required("points"): int,
+                # Absent means numeric, which is what every caller before the
+                # state timeline asked for.
+                vol.Optional("mode"): vol.In([MODE_NUMERIC, MODE_STATES]),
             }
         },
     }
@@ -619,7 +628,11 @@ async def ws_history_series(
             continue
         try:
             series = await async_history_series(
-                hass, entity_id, request["minutes"], request["points"]
+                hass,
+                entity_id,
+                request["minutes"],
+                request["points"],
+                mode=normalize_mode(request.get("mode")),
             )
         except HistorySeriesError as err:
             results[key] = {"ok": False, "error": str(err)}

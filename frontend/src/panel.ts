@@ -16,6 +16,7 @@ import {
   moveOwner,
   nudgeWatch,
   fetchHistorySeries,
+  type HistorySeriesRequest,
   renderTemplates,
   saveRecord,
   subscribeChanges,
@@ -52,6 +53,8 @@ import {
   chartHistoryKey,
   chartHistoryRequests,
   chartHistorySignature,
+  timelineHistoryKey,
+  timelineHistoryMinutes,
   newConfig,
   newElement,
   newId,
@@ -72,6 +75,7 @@ import {
   type ResolvedInline,
   Resolver,
   chartNumbers,
+  timelineSamples,
   countdownRemainingString,
   resolveAll,
 } from "./resolver.js";
@@ -2558,10 +2562,10 @@ export class WristAssistantPanel extends LitElement {
     this.templateTimer = window.setInterval(() => void this.refreshTemplates(), TEMPLATE_REFRESH_MS);
   }
 
-  /** Recorder series for the chart layers that draw history, by
-   * `chartHistoryKey`. Fetched on the same clock as the templates: a chart of
-   * the last six hours does not change faster than that, and each entry is a
-   * database query rather than a state read. */
+  /** Recorder series for the chart and timeline layers that draw history, by
+   * `chartHistoryKey` or `timelineHistoryKey`. Fetched on the same clock as the
+   * templates: a chart of the last six hours does not change faster than that,
+   * and each entry is a database query rather than a state read. */
   private async refreshHistorySeries() {
     const cfg = this.draft?.config;
     const wanted = cfg ? chartHistoryRequests(cfg) : [];
@@ -2569,9 +2573,16 @@ export class WristAssistantPanel extends LitElement {
       if (this.historySeries.size > 0) this.historySeries = new Map();
       return;
     }
-    const requests: Record<string, { entity_id: string; minutes: number; points: number }> = {};
+    const requests: Record<string, HistorySeriesRequest> = {};
     for (const r of wanted) {
-      requests[r.key] = { entity_id: r.entityId, minutes: r.minutes, points: r.points };
+      // `mode` is left out at numeric, so a document with no timeline in it
+      // sends exactly the request it always sent.
+      requests[r.key] = {
+        entity_id: r.entityId,
+        minutes: r.minutes,
+        points: r.points,
+        ...(r.mode === "states" ? { mode: "states" as const } : {}),
+      };
     }
     try {
       const results = await fetchHistorySeries(this.hass, requests);
@@ -4381,7 +4392,7 @@ export class WristAssistantPanel extends LitElement {
     const setColour = (v: string) => this.mutate((c) => {
       for (const el of picked) {
         const t = c.elements.find((e) => e.payload.id === el.payload.id);
-        if (t && t.kind !== "image" && t.kind !== "tap") t.payload.colorSlot.baseColorHex = v;
+        if (t && t.kind !== "image" && t.kind !== "tap" && t.kind !== "timeline") t.payload.colorSlot.baseColorHex = v;
       }
     }, "multi-colour");
     return html`
@@ -4507,6 +4518,16 @@ export function layerFacts(
   return facts;
 }
 
+/** A history span in as few characters as the Layers list can spare. Under two
+ * hours stays in minutes, because that is how the short spans are chosen and
+ * "1 h" would read as a different span from the one in the picker. */
+function historySpanWords(minutes: number): string {
+  if (minutes < 120) return `${minutes} min`;
+  if (minutes % 1440 === 0) return `${minutes / 1440} d`;
+  if (minutes % 60 === 0) return `${minutes / 60} h`;
+  return `${minutes} min`;
+}
+
 /** The second line of a Layers row: the live reading and the one look fact
  * that tells this layer from its neighbours. */
 function layerMeta(el: CElement, resolver: Resolver, historySeries: Map<string, string>, size?: number): unknown {
@@ -4526,6 +4547,14 @@ function layerMeta(el: CElement, resolver: Resolver, historySeries: Map<string, 
         ? (historySeries.get(historyKey) ?? "")
         : (resolver.resolve(el.payload.value) ?? "");
       return `${el.payload.style} · ${chartNumbers(raw).length} values`;
+    }
+    case "timeline": {
+      // Changes rather than runs: the strip merges neighbours of one colour, and
+      // "12 changes" is what the recorder actually holds for this entity.
+      const key = timelineHistoryKey(el.payload);
+      const samples = key === undefined ? [] : timelineSamples(historySeries.get(key) ?? "");
+      const changes = Math.max(0, samples.length - 1);
+      return `${historySpanWords(timelineHistoryMinutes(el.payload))} · ${changes} ${changes === 1 ? "change" : "changes"}`;
     }
     case "shape": return `${colorWords(el.payload.colorSlot.baseColorHex)}${el.payload.borderColorHex ? " · border" : ""}`;
     case "image": return `${el.payload.contentMode === "fill" ? "fill" : "fit"} · ${el.payload.timestamp ? "time shown" : "no time"}`;

@@ -42,6 +42,8 @@ import {
   type TapAction,
   type TapElement,
   type TimeField,
+  type TimelineBand,
+  type TimelineElement,
   type Value,
   type ValueFormat,
   type ValueKind,
@@ -60,6 +62,11 @@ import {
   CHART_HISTORY_MIN_POINTS,
   CHART_HISTORY_SPANS,
   chartHistoryKey,
+  TIMELINE_DEFAULT_OTHER_HEX,
+  TIMELINE_HISTORY_POINTS,
+  TIMELINE_MAX_GAP,
+  timelineHistoryKey,
+  timelineHistoryMinutes,
   CHART_STATS,
   addChartLabel,
   addChartSeries,
@@ -128,7 +135,7 @@ import {
   tableShape,
   whenText,
 } from "./states.js";
-import { chartNumbers, type ForcedBranches } from "./resolver.js";
+import { chartNumbers, timelineSamples, type ForcedBranches, type TimelineSample } from "./resolver.js";
 import type { HassEntityState, HassLike } from "./ha-api.js";
 import { MIN_ZOOM, familyTitle, type IconProvider } from "./renderer.js";
 import { CURATED_SYMBOLS, SYMBOL_CATEGORIES, SymbolBrowser, searchSymbols } from "./symbols.js";
@@ -931,6 +938,41 @@ function bandTableFields(
       (v) => set((p) => { p.bandAboveColorHex = v ?? CHART_DEFAULT_BAND_HIGH_HEX; }, "babove"), false, CHART_DEFAULT_BAND_HIGH_HEX)}`;
 }
 
+/** A layer that colours by state rather than by value: the timeline. */
+interface StateBandedLayer {
+  bands: TimelineBand[];
+  otherColorHex: string;
+}
+
+/**
+ * The rows of a timeline's colour table, the button that adds one, and the
+ * colour a state no row named takes.
+ *
+ * A sibling of `bandTableFields` rather than the same function: a chart's row
+ * says where a number stops and a timeline's says which word it is, so the two
+ * share their shape and nothing else.
+ */
+function timelineBandFields(
+  layer: StateBandedLayer,
+  set: (mutate: (p: StateBandedLayer) => void, k?: string) => void,
+): TemplateResult {
+  return html`
+    ${layer.bands.map((band, i) => html`
+      <div class="row-inline">
+        ${textField("State", band.match,
+          (v) => set((p) => { const b = p.bands[i]; if (b) b.match = v; }, `tmatch${band.id}`), { placeholder: "on" })}
+        ${colorField("Colour", band.colorHex,
+          (v) => set((p) => { const b = p.bands[i]; if (b) b.colorHex = v ?? TIMELINE_DEFAULT_OTHER_HEX; }, `tcol${band.id}`))}
+        <button class="icon" title="Remove this state" aria-label="Remove this state"
+          @click=${() => set((p) => { p.bands = p.bands.filter((_, j) => j !== i); })}>${uiIcon("close")}</button>
+      </div>`)}
+    <button class="small" @click=${() => set((p) => {
+      p.bands = [...p.bands, { id: newId(), match: "", colorHex: TIMELINE_DEFAULT_OTHER_HEX }];
+    })}>Add state</button>
+    ${colorField("Otherwise", layer.otherColorHex,
+      (v) => set((p) => { p.otherColorHex = v ?? TIMELINE_DEFAULT_OTHER_HEX; }, "tother"), false, TIMELINE_DEFAULT_OTHER_HEX)}`;
+}
+
 const GAUGE_STYLES: [GaugeStyle, string][] = [
   ["arc", "Arc"], ["ring", "Ring"], ["bar", "Bar"], ["dots", "Dots"],
 ];
@@ -1669,9 +1711,12 @@ export function flagAcross(values: readonly boolean[]): PickedFlag {
 }
 
 /** A layer's own colour, or undefined for the kinds that have none: a picture
- * draws a photo and a tap area draws nothing. */
+ * draws a photo, a tap area draws nothing, and every colour on a timeline
+ * comes out of its own table. */
 export function elementColour(el: CElement): string | undefined {
-  return el.kind === "image" || el.kind === "tap" ? undefined : el.payload.colorSlot.baseColorHex;
+  return el.kind === "image" || el.kind === "tap" || el.kind === "timeline"
+    ? undefined
+    : el.payload.colorSlot.baseColorHex;
 }
 
 export interface PickedCommon {
@@ -1723,15 +1768,21 @@ function layerEntityField(host: EditorHost, el: CElement, key: string): Template
   // picture can come from any domain, so that one is unrestricted.
   const cameraOnly = el.kind === "image" && el.payload.source === "camera";
   const opts: EntityFieldOptions = cameraOnly ? { domain: "camera" } : {};
+  // Only a timeline reads this, to know whether a binary sensor is a door
+  // before it seeds its colour table. Nothing in the document holds it.
+  const deviceClassOf = (entityId: string) => {
+    const dc = host.hass.states[entityId]?.attributes?.device_class;
+    return typeof dc === "string" ? dc : undefined;
+  };
   return html`
     ${entityField(host, cameraOnly ? "Camera" : "Entity", ref,
-      (next) => host.update((c) => setLayerEntity(c, id, next), `${key}-entity`), `${key}-layer-entity`, opts)}
+      (next) => host.update((c) => setLayerEntity(c, id, next, deviceClassOf(next.entityId)), `${key}-entity`), `${key}-layer-entity`, opts)}
     <div class="hint">${layerEntityNote(el, uses)}</div>`;
 }
 
 /** The layer's own content value, which is the part an entity pick may rewrite. */
 function contentValue(el: CElement): Value | undefined {
-  if (el.kind === "text" || el.kind === "gauge" || el.kind === "chart") return el.payload.value;
+  if (el.kind === "text" || el.kind === "gauge" || el.kind === "chart" || el.kind === "timeline") return el.payload.value;
   if (el.kind === "icon") return el.payload.symbol;
   return undefined;
 }
@@ -1749,7 +1800,8 @@ export function layerEntityNote(el: CElement, uses: readonly LayerEntityUse[]): 
   // everywhere else the content is something the author chose, and it stays.
   const contentKept = content !== undefined
     && !("entityId" in content.kind)
-    && !(contentKind === "literal" && (el.kind === "text" || el.kind === "gauge" || el.kind === "chart"));
+    && !(contentKind === "literal"
+      && (el.kind === "text" || el.kind === "gauge" || el.kind === "chart" || el.kind === "timeline"));
   const keptNote = !contentKept
     ? ""
     : contentKind === "named"
@@ -1765,7 +1817,7 @@ export function layerEntityNote(el: CElement, uses: readonly LayerEntityUse[]): 
   }
   const parts: string[] = [];
   const own = uses.find((u) => u.where === "value" || u.where === "symbol" || u.where === "camera");
-  if (own) parts.push(own.where === "symbol" ? "the symbol" : own.where === "camera" ? "the picture" : el.kind === "gauge" ? "the reading" : el.kind === "chart" ? "the readings" : "the text");
+  if (own) parts.push(own.where === "symbol" ? "the symbol" : own.where === "camera" ? "the picture" : el.kind === "gauge" ? "the reading" : el.kind === "chart" ? "the readings" : el.kind === "timeline" ? "the states" : "the text");
   if (uses.some((u) => u.where === "tap")) parts.push("the tap");
   const tests = uses.filter((u) => u.where === "test").length;
   if (tests > 0) parts.push(tests === 1 ? "1 state test" : `${tests} state tests`);
@@ -1915,6 +1967,42 @@ function chartReadout(values: number[]): string {
   return `${values.slice(0, 6).map(fmt).join(" ")} … ${values.slice(-3).map(fmt).join(" ")}`;
 }
 
+/** A length of time in one short token, for a readout that has to fit several
+ * of them on a line. */
+function shortDuration(seconds: number): string {
+  if (seconds < 60) return `${Math.max(0, Math.round(seconds))}s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 90) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
+}
+
+/**
+ * What a timeline has just read, as a line somebody can check against the
+ * house: "off 12m, on 3m, off 45m", oldest first.
+ *
+ * Neighbouring samples of one state are joined, because the recorder writes a
+ * row for an attribute change too and a strip that says "on, on, on" answers
+ * nothing. Only the newest few are printed: the question this line settles is
+ * "is it reading the right entity", not what happened all hour.
+ */
+function timelineReadout(samples: readonly TimelineSample[], spanSeconds: number, limit = 4): string {
+  if (samples.length === 0) return "nothing";
+  const runs: { state: string; seconds: number }[] = [];
+  for (let i = 0; i < samples.length; i++) {
+    const sample = samples[i]!;
+    const end = samples[i + 1]?.offsetSeconds ?? spanSeconds;
+    const seconds = Math.max(0, end - sample.offsetSeconds);
+    const last = runs[runs.length - 1];
+    if (last !== undefined && last.state.trim().toLowerCase() === sample.state.trim().toLowerCase()) last.seconds += seconds;
+    else runs.push({ state: sample.state, seconds });
+  }
+  const shown = runs.slice(-limit);
+  const line = shown.map((r) => `${r.state || "(blank)"} ${shortDuration(r.seconds)}`).join(", ");
+  return runs.length > shown.length ? `… ${line}` : line;
+}
+
 /** A history span in words: a listed span by its label, any other as days,
  * hours and minutes ("Last 2d 4h"). */
 function historySpanLabel(minutes: number): string {
@@ -1935,6 +2023,58 @@ function historySpanLabel(minutes: number): string {
  * stored span the picker does not list counts as custom on its own. */
 const customSpans = new Set<string>();
 
+/** Whether one layer's Span picker is on Custom… right now: either it was
+ * picked, or the stored span is not one the picker lists. */
+function spanIsCustom(layerId: string, minutes: number): boolean {
+  return customSpans.has(layerId) || !CHART_HISTORY_SPANS.some((s) => s.minutes === minutes);
+}
+
+/** The Span picker: every listed span plus Custom…. Shared by the chart and the
+ * timeline, so how far back to read is asked the same way wherever it is
+ * asked. */
+function historySpanPicker(
+  layerId: string,
+  minutes: number,
+  baseMinutes: number,
+  set: (minutes: number) => void,
+): TemplateResult {
+  const custom = spanIsCustom(layerId, minutes);
+  return html`<label class="field">${fieldLabel("Span", {
+      atDefault: minutes === baseMinutes && !custom,
+      title: `Back to ${historySpanLabel(baseMinutes)}`,
+      reset: () => { customSpans.delete(layerId); set(baseMinutes); },
+    })}
+      <select @change=${(e: Event) => {
+        const v = (e.target as HTMLSelectElement).value;
+        if (v === "custom") {
+          customSpans.add(layerId);
+          requestRerender(e.target);
+        } else {
+          customSpans.delete(layerId);
+          set(Number(v) || CHART_HISTORY_DEFAULT_MINUTES);
+        }
+      }}>
+        ${CHART_HISTORY_SPANS.map(({ minutes: listed, label }) => html`<option value=${String(listed)} ?selected=${!custom && listed === minutes}>${label}</option>`)}
+        <option value="custom" ?selected=${custom}>Custom…</option>
+      </select></label>`;
+}
+
+/** The three boxes Custom… reveals, and the line saying what they add up to. */
+function historySpanCustomFields(minutes: number, set: (minutes: number) => void): TemplateResult {
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const mins = minutes % 60;
+  const parts = (d: number, h: number, m: number) =>
+    set(Math.min(CHART_HISTORY_MAX_MINUTES, Math.max(1, Math.round(d) * 1440 + Math.round(h) * 60 + Math.round(m))));
+  return html`<div class="grid3 span-parts">
+      ${numberField("Days", days, (v) => parts(v ?? 0, hours, mins), { step: 1, min: 0, max: 7 })}
+      ${numberField("Hours", hours, (v) => parts(days, v ?? 0, mins), { step: 1, min: 0, max: 23 })}
+      ${numberField("Minutes", mins, (v) => parts(days, hours, v ?? 0), { step: 1, min: 0, max: 59 })}
+    </div>
+    <div class="hint">${historySpanLabel(minutes)}, up to 7 days: the recorder keeps
+      ten by default, and a longer span would quietly come back short.</div>`;
+}
+
 /** What a layer shows, in a few words, for the Content card's summary line. */
 
 export function contentSummary(host: EditorHost, el: CElement): string {
@@ -1949,6 +2089,8 @@ export function contentSummary(host: EditorHost, el: CElement): string {
       `${describeValue(el.payload.value, ctx)}${el.payload.historyMinutes > 0 ? ` · ${historySpanLabel(el.payload.historyMinutes)}` : ""}`,
       48
     );
+    case "timeline": return truncate(
+      `${describeValue(el.payload.value, ctx)} · ${historySpanLabel(timelineHistoryMinutes(el.payload))}`, 48);
     case "shape": return el.payload.kind === "roundedRectangle" ? "Rounded rectangle" : el.payload.kind;
     case "image": return el.payload.entity.displayName || el.payload.entity.entityId
       || (el.payload.source === "camera" ? "No camera yet" : "No entity yet");
@@ -1966,6 +2108,13 @@ export function lookSummary(el: CElement): string | undefined {
       return `${g.style} · ${size}${g.thresholdValue === undefined ? "" : ` · threshold ${g.thresholdValue}`}`;
     }
     case "chart": return `${el.payload.style} · ${el.payload.scale === "auto" ? "auto scale" : `${el.payload.minValue} to ${el.payload.maxValue}`}${el.payload.highlight === "none" ? "" : ` · ${CHART_HIGHLIGHTS.find(([v]) => v === el.payload.highlight)?.[1].toLowerCase() ?? ""} marked`}`;
+    case "timeline": {
+      const t = el.payload;
+      const colours = t.bands.length === 0
+        ? `one colour (${colorWords(t.otherColorHex)})`
+        : `${t.bands.length} ${t.bands.length === 1 ? "state" : "states"} coloured`;
+      return `${colours}${t.gap > 0 ? ` · ${t.gap} pt gap` : ""} · corners ${t.cornerRadius} pt`;
+    }
     case "shape": return el.payload.kind === "line"
       ? `${colorWords(el.payload.colorSlot.baseColorHex)} · ${el.payload.thickness} pt thick`
       : `${colorWords(el.payload.colorSlot.baseColorHex)}${el.payload.borderColorHex ? ` · ${el.payload.borderWidth} pt border` : ""}`;
@@ -2098,14 +2247,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       // which is what the watch does too (`usesHistory` needs an entity there).
       const raw = usingHistory && namesEntity ? (historyRaw ?? "") : (host.resolve(c.value) ?? "");
       const everyReading = c.historyPoints < 1;
-      const listedSpan = CHART_HISTORY_SPANS.some((s) => s.minutes === c.historyMinutes);
-      const customSpan = customSpans.has(id) || !listedSpan;
-      const spanDays = Math.floor(c.historyMinutes / 1440);
-      const spanHours = Math.floor((c.historyMinutes % 1440) / 60);
-      const spanMins = c.historyMinutes % 60;
-      const setSpanParts = (d: number, h: number, m: number) => setChart((p) => {
-        p.historyMinutes = Math.min(CHART_HISTORY_MAX_MINUTES, Math.max(1, Math.round(d) * 1440 + Math.round(h) * 60 + Math.round(m)));
-      }, "span");
+      const customSpan = spanIsCustom(id, c.historyMinutes);
       const series = chartNumbers(raw);
       const shown = c.limit > 0 && series.length > c.limit
         ? (c.takeFromEnd ? series.slice(series.length - c.limit) : series.slice(0, c.limit))
@@ -2138,24 +2280,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
               A typed-in value, a template or a shared value has no past to read, so this chart
               draws the value itself until Readings names an entity.</div>`}
             <div class="grid2">
-              <label class="field">${fieldLabel("Span", {
-                atDefault: c.historyMinutes === baseMinutes && !customSpan,
-                title: `Back to ${historySpanLabel(baseMinutes)}`,
-                reset: () => { customSpans.delete(id); setChart((p) => { p.historyMinutes = baseMinutes; }); },
-              })}
-                <select @change=${(e: Event) => {
-                  const v = (e.target as HTMLSelectElement).value;
-                  if (v === "custom") {
-                    customSpans.add(id);
-                    requestRerender(e.target);
-                  } else {
-                    customSpans.delete(id);
-                    setChart((p) => { p.historyMinutes = Number(v) || CHART_HISTORY_DEFAULT_MINUTES; });
-                  }
-                }}>
-                  ${CHART_HISTORY_SPANS.map(({ minutes, label }) => html`<option value=${String(minutes)} ?selected=${!customSpan && minutes === c.historyMinutes}>${label}</option>`)}
-                  <option value="custom" ?selected=${customSpan}>Custom…</option>
-                </select></label>
+              ${historySpanPicker(id, c.historyMinutes, baseMinutes, (m) => setChart((p) => { p.historyMinutes = m; }))}
               <div class="field readings-field">${fieldLabel("Readings", {
                 atDefault: c.historyPoints === basePoints,
                 title: `Back to ${basePoints < 1 ? "every one" : `${basePoints} averaged`}`,
@@ -2176,13 +2301,9 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
                 </div>
               </div>
             </div>
-            ${customSpan ? html`<div class="grid3 span-parts">
-                ${numberField("Days", spanDays, (v) => setSpanParts(v ?? 0, spanHours, spanMins), { step: 1, min: 0, max: 7 })}
-                ${numberField("Hours", spanHours, (v) => setSpanParts(spanDays, v ?? 0, spanMins), { step: 1, min: 0, max: 23 })}
-                ${numberField("Minutes", spanMins, (v) => setSpanParts(spanDays, spanHours, v ?? 0), { step: 1, min: 0, max: 59 })}
-              </div>
-              <div class="hint">${historySpanLabel(c.historyMinutes)}, up to 7 days: the recorder keeps
-                ten by default, and a longer span would quietly come back short.</div>` : nothing}
+            ${customSpan
+              ? historySpanCustomFields(c.historyMinutes, (m) => setChart((p) => { p.historyMinutes = m; }, "span"))
+              : nothing}
             <div class="hint">${everyReading
               ? html`Every state the recorder holds in that span, oldest first, one reading per change,
                   and a chatty sensor keeps its newest ${CHART_HISTORY_MAX_POINTS}. The time axis follows
@@ -2319,6 +2440,57 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
             24-reading price or forecast chart wants. Rounded, and clamped to the readings drawn.</div>`}`;
       break;
     }
+    case "timeline": {
+      const t = el.payload;
+      const setTimeline = (m: (p: TimelineElement) => void, k?: string) => upd((e) => m((e as typeof el).payload), k);
+      const baseSpan = base.historyMinutes as number;
+      const namesEntity = t.value.kind.kind === "entityState";
+      const historyKey = timelineHistoryKey(t);
+      const raw = historyKey === undefined ? undefined : host.historySeries(historyKey);
+      const spanSeconds = timelineHistoryMinutes(t) * 60;
+      const samples = timelineSamples(raw ?? "", TIMELINE_HISTORY_POINTS);
+      const customSpan = spanIsCustom(id, t.historyMinutes);
+      content = html`
+        ${valueEditor(host, t.value, (v) => setTimeline((p) => { p.value = v; }, "value"),
+          { label: "States", key: `${key}-value` })}
+        ${namesEntity ? nothing : html`<div class="hint warn">A timeline draws an entity's recorded
+          past, so it needs one named above. A typed-in value, a template or a shared value has no
+          past to read, and this layer stays blank until States names an entity.</div>`}
+        ${historySpanPicker(id, t.historyMinutes, baseSpan, (m) => setTimeline((p) => { p.historyMinutes = m; }))}
+        ${customSpan
+          ? historySpanCustomFields(t.historyMinutes, (m) => setTimeline((p) => { p.historyMinutes = m; }, "span"))
+          : nothing}
+        <div class="hint">Every state the recorder holds in that span, oldest at the left, each run as
+          wide as the time it lasted. At most ${TIMELINE_HISTORY_POINTS} changes are drawn, and a
+          busier span keeps its newest.</div>
+        ${namesEntity && raw === undefined
+          ? html`<div class="hint">Reading the history…</div>`
+          : nothing}
+        ${namesEntity && raw === ""
+          ? html`<div class="hint warn">Nothing recorded for this entity in that span. Either it is
+            excluded from the recorder, or it has not been seen in that long.</div>`
+          : nothing}
+        ${samples.length > 0
+          ? html`<div class="hint">Reads <span class="nums">${timelineReadout(samples, spanSeconds)}</span></div>`
+          : nothing}`;
+      look = html`
+        <div class="hint">Each row is a state and the colour its runs draw in, checked top to bottom.
+          Case and surrounding space are ignored, so <code>Home</code> matches <code>home</code>. A
+          state no row names takes the colour underneath.</div>
+        ${timelineBandFields(t, setTimeline)}
+        <div class="grid2">
+          ${numberField("Gap (pt)", t.gap, (v) => setTimeline((p) => {
+            p.gap = Math.min(TIMELINE_MAX_GAP, Math.max(0, v ?? 0));
+          }, "tgap"), { step: 0.5, min: 0, max: TIMELINE_MAX_GAP, def: base.gap as number })}
+          ${numberField("Corner radius (pt)", t.cornerRadius, (v) => setTimeline((p) => {
+            p.cornerRadius = Math.max(0, v ?? 0);
+          }, "tradius"), { step: 0.5, min: 0, def: base.cornerRadius as number })}
+        </div>
+        <div class="hint">A gap is taken off the right of each run, so the strip still ends flush with
+          the frame and the newest state keeps the edge. 0 draws one continuous bar, which is what a
+          door or a light usually wants.</div>`;
+      break;
+    }
     case "shape":
       content = html`<div class="grid2">
           ${segField("Shape", el.payload.kind, [["roundedRectangle", "Rounded"], ["rectangle", "Rectangle"], ["capsule", "Capsule"], ["circle", "Circle"], ["line", "Line"]], (v) => upd((e) => { (e as typeof el).payload.kind = v; }),
@@ -2386,9 +2558,9 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
     }
   }
 
-  const colour = el.kind === "image" || el.kind === "tap"
+  const colour = el.kind === "image" || el.kind === "tap" || el.kind === "timeline"
     ? undefined
-    : colorField(el.kind === "shape" ? "Fill colour" : "Colour", el.payload.colorSlot.baseColorHex, (v) => upd((e) => { if (e.kind !== "image" && e.kind !== "tap") e.payload.colorSlot.baseColorHex = v ?? "#FFFFFF"; }, "color"), false, baseColor);
+    : colorField(el.kind === "shape" ? "Fill colour" : "Colour", el.payload.colorSlot.baseColorHex, (v) => upd((e) => { if (e.kind !== "image" && e.kind !== "tap" && e.kind !== "timeline") e.payload.colorSlot.baseColorHex = v ?? "#FFFFFF"; }, "color"), false, baseColor);
 
   // A layer already bound to an entity is what a new states table tests, so the
   // entity is asked for once at the top of this editor and never again.
@@ -2468,6 +2640,7 @@ const CONTENT_KEYS: Record<CElement["kind"], readonly string[]> = {
   icon: ["symbol"],
   gauge: ["value", "minValue", "maxValue", "total"],
   chart: ["value", "historyMinutes", "historyPoints", "limit", "takeFromEnd"],
+  timeline: ["value", "historyMinutes"],
   shape: ["kind", "cornerRadius"],
   image: ["entity", "source"],
   tap: ["action", "openPageName"],
@@ -2479,6 +2652,7 @@ const LOOK_KEYS: Record<CElement["kind"], readonly string[]> = {
   icon: ["size", "colorSlot"],
   gauge: ["style", "lineWidth", "trackColorHex", "colorSlot", "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex"],
   chart: ["style", "scale", "minValue", "maxValue", "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker", "coloring", "bands", "bandAboveColorHex", "fillBands", "thresholdValue", "thresholdColorHex", "nowIndex", "nowColorHex", "scaleFrom", "colorSlot"],
+  timeline: ["bands", "otherColorHex", "gap", "cornerRadius"],
   shape: ["colorSlot", "borderColorHex", "borderWidth", "thickness"],
   image: ["contentMode", "zoom", "panX", "panY", "cornerRadius"],
   tap: [],
@@ -2642,6 +2816,7 @@ export function layerTitle(el: CElement, ctx?: DescribeContext): string {
     case "icon": return unquote(describeValue(el.payload.symbol, ctx));
     case "gauge": return describeValue(el.payload.value, ctx);
     case "chart": return describeValue(el.payload.value, ctx);
+    case "timeline": return describeValue(el.payload.value, ctx);
     case "shape": return el.payload.kind === "roundedRectangle" ? "Rounded rectangle" : el.payload.kind;
     case "image": {
       const e = el.payload.entity;

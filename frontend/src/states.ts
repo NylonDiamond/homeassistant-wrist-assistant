@@ -454,6 +454,9 @@ export const DEFAULT_COLUMN: Record<string, StyleProperty> = {
   icon: "icon",
   gauge: "color",
   chart: "color",
+  // A timeline reads no colour rule, so the one thing a state can do to it is
+  // take it off the face.
+  timeline: "visibility",
   shape: "color",
   image: "visibility",
   tap: "visibility",

@@ -17,6 +17,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from functools import partial
 from typing import TYPE_CHECKING, Any
+from urllib.parse import quote
 
 # Home Assistant is imported for types only, and the runtime imports live inside
 # `async_history_series`. That keeps this module importable on its own, which is
@@ -39,6 +40,13 @@ MIN_POINTS = 2
 MAX_POINTS = 120
 MIN_MINUTES = 1
 MAX_MINUTES = 7 * 24 * 60
+
+# The two things a caller can ask the recorder for. `numeric` is the chart's
+# question ("what were the numbers"), and everything above serves it. `states`
+# is the state timeline's ("what was it, and when did it change"), which keeps
+# the strings the chart's bucketing throws away.
+MODE_NUMERIC = "numeric"
+MODE_STATES = "states"
 
 
 class HistorySeriesError(Exception):
@@ -164,24 +172,98 @@ def series_to_string(values: list[float]) -> str:
     return ",".join(_format(value) for value in values)
 
 
+def normalize_mode(raw: Any, default: str = MODE_NUMERIC) -> str:
+    """Coerce a caller's mode into one of the two we serve.
+
+    Anything unrecognised, missing or misspelled reads as `numeric`, which is
+    what every caller before the state timeline asked for without saying so.
+    """
+    if isinstance(raw, str) and raw.strip().lower() == MODE_STATES:
+        return MODE_STATES
+    return default
+
+
+def state_pairs(
+    samples: list[tuple[datetime, str]],
+    start: datetime,
+    anchor: str | None = None,
+    limit: int = MAX_POINTS,
+) -> list[tuple[int, str]]:
+    """State changes as `(offset_seconds, state)`, oldest first, offset 0 first.
+
+    `samples` must be oldest-first and inside the window; `anchor` is the state
+    in force when the window opened. The first pair always sits at offset 0 and
+    carries whatever was true then, so a run always has a left edge and the
+    reader never has to guess what came before the first change.
+
+    A change to the state that is already in force is not a change, so runs of
+    one value collapse to one pair. When there are more changes than `limit`,
+    the newest `limit - 1` are kept and the offset-0 pair carries the state in
+    force just before them: the right edge, which is the edge someone looks at,
+    is always true, and the oldest history is what gets dropped.
+    """
+    pairs: list[tuple[int, str]] = []
+    if anchor is not None:
+        pairs.append((0, anchor))
+
+    for when, state in samples:
+        offset = max(0, int((when - start).total_seconds()))
+        if pairs:
+            previous_offset, previous_state = pairs[-1]
+            if previous_state == state:
+                continue
+            if offset <= previous_offset:
+                # Two rows at the same second (or an out-of-order row): the
+                # later state is the one that was in force.
+                pairs[-1] = (previous_offset, state)
+                continue
+        pairs.append((offset, state))
+
+    if limit < 1:
+        return []
+    if len(pairs) > limit:
+        kept = pairs[-(limit - 1):]
+        carried = pairs[-limit][1]
+        pairs = kept if kept and kept[0][0] == 0 else [(0, carried)] + kept
+    return pairs
+
+
+def states_to_string(pairs: list[tuple[int, str]]) -> str:
+    """The wire form: `offset:state` pairs joined by single spaces.
+
+    The state is percent-encoded (RFC 3986 unreserved characters kept), so a
+    state holding a space or a colon cannot be mistaken for a separator and the
+    string still splits with two `split` calls on the watch.
+    """
+    return " ".join(f"{offset}:{quote(state, safe='')}" for offset, state in pairs)
+
+
 async def async_history_series(
     hass: HomeAssistant,
     entity_id: str,
     minutes: int,
     points: int,
     now: datetime | None = None,
+    mode: str = MODE_NUMERIC,
 ) -> str:
-    """Fetch and bucket one entity's recent history. Returns the wire string.
+    """Fetch one entity's recent history. Returns the wire string.
 
-    `points` of `EVERY_READING` skips the bucketing and returns the recorded
-    states themselves, newest `MAX_POINTS` of them.
+    In `numeric` mode the states are read as numbers and bucketed: `points` of
+    `EVERY_READING` skips the bucketing and returns the recorded readings
+    themselves, newest `MAX_POINTS` of them.
+
+    In `states` mode nothing is read as a number and nothing is averaged. The
+    reply is the state changes in the window as `offset:state` pairs, which is
+    what a state timeline draws; `points` is not read, because a run has a
+    length rather than a sample rate.
 
     Raises `HistorySeriesError` when the recorder is missing or the query
     fails. An entity that simply has no recorded history is not an error: it
-    returns an empty string, and the chart draws nothing.
+    returns an empty string, and the layer draws nothing.
     """
     minutes = clamp_minutes(minutes)
     points = clamp_points(points)
+    mode = normalize_mode(mode)
     end = now or datetime.now(timezone.utc)
     start = end - timedelta(minutes=minutes)
 
@@ -215,6 +297,23 @@ async def async_history_series(
         raise HistorySeriesError(str(err)) from err
 
     raw = states_by_entity.get(entity_id, []) or []
+
+    if mode == MODE_STATES:
+        # `unavailable` and `unknown` are ordinary states here: a door sensor
+        # that lost its radio for twenty minutes has a twenty-minute run, and
+        # hiding it would draw the door as whatever it was before the gap.
+        anchor_state: str | None = None
+        changes: list[tuple[datetime, str]] = []
+        for state in raw:
+            when = getattr(state, "last_changed", None)
+            text = getattr(state, "state", None)
+            if when is None or not isinstance(text, str) or not text:
+                continue
+            if when < start:
+                anchor_state = text
+                continue
+            changes.append((when, text))
+        return states_to_string(state_pairs(changes, start, anchor_state))
 
     anchor: float | None = None
     samples: list[tuple[datetime, float]] = []

@@ -73,6 +73,7 @@ from .history_series import (
     HistorySeriesError,
     async_history_series,
     clamp_points,
+    normalize_mode,
 )
 from .camera_stream import (
     DEFAULT_FPS,
@@ -743,6 +744,7 @@ async def _op_history(ctx: _OpContext) -> Response:
           "start_ms": <epoch ms>,
           "end_ms":   <epoch ms>?,   # defaults to now
           "points":   <int>?,        # see below
+          "mode":     "numeric" | "states"?,   # defaults to numeric
         }
 
     With `points`, the reply is a complication chart's series instead of a
@@ -755,6 +757,12 @@ async def _op_history(ctx: _OpContext) -> Response:
     sensor logs thousands of rows. Bucketing here keeps the difference off
     the watch's radio. The log form below is unchanged and still serves the
     watch's own history screen.
+
+    With `mode: "states"` the same request answers a state timeline instead:
+    nothing is read as a number, and the series is `offset:state` pairs, the
+    offsets being seconds since the window opened.
+
+        {"entity_id": "<entity_id>", "series": "0:off 1200:on 1860:off"}
 
     Response shape (compact, designed for cheap decode on watch):
         {
@@ -802,6 +810,7 @@ async def _op_history(ctx: _OpContext) -> Response:
                 minutes,
                 clamp_points(ctx.payload.get("points")),
                 now=window_end,
+                mode=normalize_mode(ctx.payload.get("mode")),
             )
         except HistorySeriesError as err:
             return ctx.signed_json({"ok": False, "error": str(err)}, status=502)

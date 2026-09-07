@@ -11,7 +11,7 @@ import { type TemplateResult, html, svg } from "lit";
 
 export type UiIconName =
   | "up" | "down" | "show" | "hide" | "duplicate" | "delete" | "close" | "reset"
-  | "text" | "icon" | "gauge" | "chart" | "shape" | "image" | "tap"
+  | "text" | "icon" | "gauge" | "chart" | "timeline" | "shape" | "image" | "tap"
   | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "plus"
   | "lock" | "unlock" | "folder" | "ungroup" | "watch"
   | "compact" | "expanded" | "search";
@@ -27,6 +27,10 @@ function shape(name: UiIconName) {
       return svg`<path d="M5 17A8 8 0 1 1 19 17" /><path d="M12 13L15.5 9.5" /><circle cx="12" cy="13" r="1.4" />`;
     case "chart":
       return svg`<path d="M5 19V13" /><path d="M9.7 19V9" /><path d="M14.3 19V15" /><path d="M19 19V5" />`;
+    // A bar cut into three stretches: the one glyph that says "the same thing,
+    // in different states, over time" without drawing a clock.
+    case "timeline":
+      return svg`<rect x="3" y="9" width="6" height="6" rx="1.5" /><rect x="10.5" y="9" width="3.5" height="6" rx="1.5" /><rect x="15.5" y="9" width="5.5" height="6" rx="1.5" />`;
     case "shape":
       return svg`<rect x="4" y="5" width="16" height="14" rx="3" />`;
     case "image":

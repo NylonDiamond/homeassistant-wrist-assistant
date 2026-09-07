@@ -1,0 +1,229 @@
+{
+  "name": "State timeline",
+  "description": "The state timeline layer. The door strip runs an hour: two bands (typed in the wrong case, matched anyway) paint on and off, and the stretch where the sensor went unavailable and then unknown falls to otherColorHex and merges into one grey run, because merging is by colour and not by state. The person strip has no state in force when its window opens, so it starts halfway across rather than inventing a left edge. The literal layer names no entity, so it asks the recorder nothing and draws nothing. The washer layer does ask, but its series has not landed yet, so it draws nothing rather than a full-width run of the state it happens to be in now.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-0000000000E0",
+    "name": "State timeline",
+    "slotIndex": 3,
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "timeline",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000E1",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "binary_sensor.front_door",
+              "displayName": "Front door",
+              "domain": "binary_sensor"
+            }
+          },
+          "bands": [
+            {
+              "id": "BBBBBBBB-0000-4000-8000-0000000000E1",
+              "match": "ON",
+              "colorHex": "#FF453A"
+            },
+            {
+              "id": "BBBBBBBB-0000-4000-8000-0000000000E2",
+              "match": "off",
+              "colorHex": "#32D74B"
+            }
+          ],
+          "gap": 1,
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.2,
+            "width": 0.9,
+            "height": 0.16,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "timeline",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000E2",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "device_tracker.jesse",
+              "displayName": "Jesse",
+              "domain": "device_tracker"
+            }
+          },
+          "historyMinutes": 180,
+          "bands": [
+            {
+              "id": "BBBBBBBB-0000-4000-8000-0000000000E3",
+              "match": "home",
+              "colorHex": "#0A84FF"
+            },
+            {
+              "id": "BBBBBBBB-0000-4000-8000-0000000000E4",
+              "match": "not_home",
+              "colorHex": "#FF9F0A"
+            }
+          ],
+          "cornerRadius": 3,
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.42,
+            "width": 0.9,
+            "height": 0.16,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "timeline",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000E3",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "on"
+            }
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.64,
+            "width": 0.4,
+            "height": 0.16,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "timeline",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000E4",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.washer",
+              "displayName": "Washer",
+              "domain": "sensor"
+            }
+          },
+          "otherColorHex": "#5E5CE6",
+          "rules": [],
+          "frame": {
+            "x": 0.55,
+            "y": 0.64,
+            "width": 0.4,
+            "height": 0.16,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "wedge",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {
+      "binary_sensor.front_door": {
+        "state": "on",
+        "domain": "binary_sensor"
+      },
+      "device_tracker.jesse": {
+        "state": "not_home",
+        "domain": "device_tracker"
+      },
+      "sensor.washer": {
+        "state": "running",
+        "domain": "sensor"
+      }
+    },
+    "templateResults": {},
+    "historySeries": {
+      "binary_sensor.front_door|60|120|states": "0:off 600:on 900:off 1200:unavailable 1800:unknown 2400:off 3000:on",
+      "device_tracker.jesse|180|120|states": "5400:home 9000:not_home"
+    }
+  },
+  "expectedCompiled": {
+    "entities": [
+      "binary_sensor.front_door",
+      "device_tracker.jesse",
+      "sensor.washer"
+    ],
+    "expressionKeys": [],
+    "historyKeys": [
+      "binary_sensor.front_door|60|120|states",
+      "device_tracker.jesse|180|120|states",
+      "sensor.washer|60|120|states"
+    ]
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000E1",
+          "kind": "timeline",
+          "isHidden": false,
+          "opacity": 1,
+          "frame": {
+            "x": 0.05,
+            "y": 0.2,
+            "width": 0.9,
+            "height": 0.16,
+            "rotationDegrees": 0
+          },
+          "runs": [
+            { "start": 0, "end": 0.167, "colorHex": "#32D74B" },
+            { "start": 0.167, "end": 0.25, "colorHex": "#FF453A" },
+            { "start": 0.25, "end": 0.333, "colorHex": "#32D74B" },
+            { "start": 0.333, "end": 0.667, "colorHex": "#8E8E93" },
+            { "start": 0.667, "end": 0.833, "colorHex": "#32D74B" },
+            { "start": 0.833, "end": 1, "colorHex": "#FF453A" }
+          ]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000E2",
+          "kind": "timeline",
+          "isHidden": false,
+          "opacity": 1,
+          "runs": [
+            { "start": 0.5, "end": 0.833, "colorHex": "#0A84FF" },
+            { "start": 0.833, "end": 1, "colorHex": "#FF9F0A" }
+          ]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000E3",
+          "kind": "timeline",
+          "isHidden": false,
+          "runs": []
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000E4",
+          "kind": "timeline",
+          "isHidden": false,
+          "runs": []
+        }
+      ]
+    }
+  }
+}

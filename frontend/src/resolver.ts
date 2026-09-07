@@ -32,6 +32,10 @@ import {
   type ValueFormat,
   type ChartElement,
   type ChartStat,
+  TIMELINE_HISTORY_POINTS,
+  timelineBandColor,
+  timelineHistoryKey,
+  timelineHistoryMinutes,
   type CornerBodyShape,
   type EntityRef,
   GAUGE_MAX_DOTS,
@@ -67,9 +71,10 @@ export interface EntityState {
 export interface ResolveContext {
   entityStates: Map<string, EntityState>;
   templateResults: Map<string, string>;
-  /** Recorder series for the chart layers that draw history, keyed by
-   * `chartHistoryKey`. A missing key draws an empty chart, which is what the
-   * watch does too before its first fetch lands. */
+  /** Recorder series for the layers that draw history, keyed by
+   * `chartHistoryKey` for a chart and `timelineHistoryKey` for a timeline. A
+   * missing key draws an empty layer, which is what the watch does too before
+   * its first fetch lands. */
   historySeries?: Map<string, string>;
   namedValues: NamedValue[];
   /** Seconds since the value cache was written; undefined = never synced. */
@@ -179,6 +184,27 @@ export function chartStatValue(r: ChartReadings, stat: ChartStat): number | unde
     case "bottom": return r.domainMin;
   }
 }
+/** One stretch of a timeline in one colour. `start` and `end` are fractions of
+ * the frame's width, oldest at 0 and newest at 1. Mirrors
+ * `CustomComplication.ResolvedTimeline.Run` in the app repo. */
+export interface TimelineRun {
+  start: number;
+  end: number;
+  colorHex: string;
+}
+
+/** A strip of recorded states, already cut into runs and already merged, so
+ * the renderer draws one rectangle per run and decides nothing. Mirrors
+ * `CustomComplication.ResolvedTimeline`. */
+export interface ResolvedTimeline extends ResolvedBase {
+  kind: "timeline";
+  runs: TimelineRun[];
+  /** Design-box points between runs, and the radius of each one. Carried
+   * straight off the payload: no rule changes either. */
+  gap: number;
+  cornerRadius: number;
+}
+
 export interface ResolvedShape extends ResolvedBase {
   kind: "shape";
   shapeKind: ShapeKind;
@@ -224,7 +250,7 @@ export interface ResolvedTap extends ResolvedBase {
    * preview can leave an attached tap undrawn; the watch ignores it. */
   attachedTo?: string;
 }
-export type ResolvedElement = ResolvedText | ResolvedIcon | ResolvedGauge | ResolvedChart | ResolvedShape | ResolvedImage | ResolvedTap;
+export type ResolvedElement = ResolvedText | ResolvedIcon | ResolvedGauge | ResolvedChart | ResolvedTimeline | ResolvedShape | ResolvedImage | ResolvedTap;
 
 export interface ResolvedBezelGauge {
   value: number;
@@ -490,6 +516,88 @@ export function chartThresholdFraction(
   const t = c.thresholdValue;
   if (t === undefined || !Number.isFinite(t) || !(hi > lo) || t < lo || t > hi) return undefined;
   return (t - lo) / (hi - lo);
+}
+
+/** One state and the instant it began, in seconds after the start of the span.
+ * What one `offset:state` pair on the wire decodes to. */
+export interface TimelineSample {
+  offsetSeconds: number;
+  state: string;
+}
+
+/**
+ * The samples in a states series.
+ *
+ * The wire form is `offset:state` pairs joined by single spaces, oldest first,
+ * the first pair at offset 0 carrying the state in force when the span began.
+ * The state is percent-encoded, so a state holding a space or a colon travels
+ * as one token and the split is unambiguous: the first colon is the separator
+ * and every later one is inside the encoded state.
+ *
+ * Tolerant on the way in, because a series is a cached string that may have
+ * been written by an older server: a pair with no colon, a non-numeric offset
+ * or a negative one is skipped rather than fatal, and anything past the cap is
+ * dropped. Mirrors `CustomComplication.timelineSamples(in:)` in Swift. */
+export function timelineSamples(raw: string, limit = TIMELINE_HISTORY_POINTS): TimelineSample[] {
+  const out: TimelineSample[] = [];
+  for (const token of raw.split(" ")) {
+    if (out.length >= limit) break;
+    if (token === "") continue;
+    const colon = token.indexOf(":");
+    if (colon <= 0) continue;
+    const offset = Number(token.slice(0, colon));
+    if (!Number.isFinite(offset) || offset < 0) continue;
+    out.push({ offsetSeconds: Math.round(offset), state: decodeState(token.slice(colon + 1)) });
+  }
+  return out;
+}
+
+/** A percent-encoded state, decoded. A malformed escape comes back as it was
+ * written rather than throwing: one bad byte in a cached series should cost
+ * that one run its name, not the whole strip. */
+function decodeState(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+/**
+ * The samples cut into coloured runs across the frame.
+ *
+ * Each sample runs until the next one starts, and the last runs to the right
+ * edge, which is now. Neighbours of one colour are merged into a single run:
+ * two states that draw the same colour are one thing to look at, and the watch
+ * has a view budget that a hundred separate rectangles would spend on nothing.
+ *
+ * Offsets past the end of the span are pulled back to it rather than dropped,
+ * so a series that disagrees with the span by a second still ends flush with
+ * the right edge. Mirrors `CustomComplication.timelineRuns` in Swift. */
+export function timelineRuns(
+  samples: readonly TimelineSample[],
+  spanSeconds: number,
+  colorOf: (state: string) => string,
+): TimelineRun[] {
+  if (samples.length === 0 || !(spanSeconds > 0)) return [];
+  const runs: TimelineRun[] = [];
+  for (let i = 0; i < samples.length; i++) {
+    const sample = samples[i]!;
+    const start = Math.min(1, Math.max(0, sample.offsetSeconds / spanSeconds));
+    const next = samples[i + 1];
+    const end = next === undefined ? 1 : Math.min(1, Math.max(start, next.offsetSeconds / spanSeconds));
+    // A pair that repeats the previous offset has no width and nothing to say.
+    if (!(end > start)) continue;
+    const colorHex = colorOf(sample.state);
+    const last = runs[runs.length - 1];
+    if (last !== undefined && last.colorHex === colorHex) last.end = end;
+    else runs.push({ start, end, colorHex });
+  }
+  // The last run always reaches the right edge: the newest state is still in
+  // force, so a strip that stopped short would read as missing data.
+  const last = runs[runs.length - 1];
+  if (last !== undefined) last.end = 1;
+  return runs;
 }
 
 /** A count rounded and held inside `lo...hi`, never NaN. Mirrors the clamping in
@@ -985,6 +1093,24 @@ export class Resolver {
         if (thresholdY !== undefined) out.thresholdY = thresholdY;
         const now = this.chartNowIndex(c, values.length);
         if (now !== undefined) out.nowIndex = now;
+        return out;
+      }
+      case "timeline": {
+        const t = el.payload;
+        // Only a named entity has a past to read. Anything else draws nothing,
+        // which is what the watch does too, rather than a strip of the value.
+        const historyKey = timelineHistoryKey(t);
+        const raw = historyKey === undefined ? "" : (this.ctx.historySeries?.get(historyKey) ?? "");
+        const samples = timelineSamples(raw, TIMELINE_HISTORY_POINTS);
+        const runs = timelineRuns(samples, timelineHistoryMinutes(t) * 60,
+          (state) => timelineBandColor(state, t.bands, t.otherColorHex));
+        const out: ResolvedTimeline = {
+          kind: "timeline",
+          ...base,
+          runs,
+          gap: t.gap,
+          cornerRadius: t.cornerRadius,
+        };
         return out;
       }
       case "shape": {

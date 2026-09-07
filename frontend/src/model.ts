@@ -513,6 +513,11 @@ export function chartHistoryKey(el: ChartElement): string | undefined {
   return `${entityId}|${Math.round(el.historyMinutes)}|${chartHistoryPoints(el)}`;
 }
 
+/** What a recorder query asks for: numbers averaged into slots, or the states
+ * themselves with the instant each one began. A chart asks the first, a
+ * timeline the second. Mirrors `HistorySpec.Mode` in the app repo. */
+export type HistoryMode = "numeric" | "states";
+
 /** One string standing for every history query a config asks for.
  *
  * The panel compares this between edits to know when a refetch is owed. It
@@ -523,25 +528,198 @@ export function chartHistorySignature(config: CustomComplicationConfig): string 
   return chartHistoryRequests(config).map((r) => r.key).sort().join(";");
 }
 
+/** One recorder query, as the panel sends it and as the resolver keys its
+ * answer. `mode` is `numeric` for every chart and `states` for every timeline. */
+export interface HistoryRequest {
+  key: string;
+  entityId: string;
+  minutes: number;
+  points: number;
+  mode: HistoryMode;
+}
+
 /** Every distinct history query a config needs, deduped. What the panel sends
- * to the `history_series` websocket command. */
-export function chartHistoryRequests(
-  config: CustomComplicationConfig
-): { key: string; entityId: string; minutes: number; points: number }[] {
-  const seen = new Map<string, { key: string; entityId: string; minutes: number; points: number }>();
+ * to the `history_series` websocket command.
+ *
+ * Charts and timelines both land here: the two ask the same question of the
+ * same recorder and differ only in what comes back, so one fetch loop and one
+ * cache serve both. The mode is in the key, so a chart and a timeline on one
+ * entity and one span stay two separate answers. */
+export function chartHistoryRequests(config: CustomComplicationConfig): HistoryRequest[] {
+  const seen = new Map<string, HistoryRequest>();
+  const add = (r: HistoryRequest) => {
+    if (!seen.has(r.key)) seen.set(r.key, r);
+  };
   for (const el of config.elements) {
-    if (el.kind !== "chart") continue;
-    const key = chartHistoryKey(el.payload);
-    const entityId = chartHistoryEntity(el.payload);
-    if (key === undefined || entityId === undefined || seen.has(key)) continue;
-    seen.set(key, {
-      key,
-      entityId,
-      minutes: Math.round(el.payload.historyMinutes),
-      points: chartHistoryPoints(el.payload),
-    });
+    if (el.kind === "chart") {
+      const key = chartHistoryKey(el.payload);
+      const entityId = chartHistoryEntity(el.payload);
+      if (key === undefined || entityId === undefined) continue;
+      add({
+        key,
+        entityId,
+        minutes: Math.round(el.payload.historyMinutes),
+        points: chartHistoryPoints(el.payload),
+        mode: "numeric",
+      });
+    } else if (el.kind === "timeline") {
+      const key = timelineHistoryKey(el.payload);
+      const entityId = timelineHistoryEntity(el.payload);
+      if (key === undefined || entityId === undefined) continue;
+      add({
+        key,
+        entityId,
+        minutes: timelineHistoryMinutes(el.payload),
+        points: TIMELINE_HISTORY_POINTS,
+        mode: "states",
+      });
+    }
   }
   return [...seen.values()];
+}
+
+/** A strip of an entity's recorded states, oldest at the left.
+ *
+ * The chart's question is "what number was it"; this one's is "which state was
+ * it in, and for how long". Every run of one state is a coloured rectangle as
+ * wide as the time it lasted, so "was the door open in the last hour" is one
+ * glance rather than a reading to interpret.
+ *
+ * No colorSlot: every colour a timeline draws comes from its table or from
+ * `otherColorHex`, so a layer colour would be a control that changes nothing.
+ * Mirrors `CustomComplication.TimelineElement` in the app repo. */
+export interface TimelineElement extends Omit<ElementBase, "colorSlot"> {
+  /** The entity whose past is drawn. Only a directly named entity yields a
+   * history request, the same rule the chart follows; anything else draws
+   * nothing rather than a made-up strip. */
+  value: Value;
+  /** How far back to read, in minutes. Same choices as a chart's span. */
+  historyMinutes: number;
+  /** The colour table, checked in order. A run takes the colour of the first
+   * row whose `match` equals its state; anything unmatched takes
+   * `otherColorHex`. Empty means every run is that one colour. */
+  bands: TimelineBand[];
+  /** The colour of a run no row named. */
+  otherColorHex: string;
+  /** Space between runs, in design-box points. 0 draws the strip as one
+   * continuous bar, which is what a door or a light usually wants. */
+  gap: number;
+  /** Corner radius of each run, in points. */
+  cornerRadius: number;
+}
+
+/** One row of a timeline's colour table.
+ *
+ * A row names a state rather than a bound, because states are words: "open",
+ * "not_home", "heat". The comparison is case-insensitive and ignores
+ * surrounding space, so a table written in lower case still matches a
+ * `Home`-capitalised integration. Mirrors `TimelineElement.StateBand` in the
+ * app repo. */
+export interface TimelineBand {
+  id: string;
+  /** The state this row is about. */
+  match: string;
+  colorHex: string;
+}
+
+/** Grey: the system's secondary label colour, and what a state nobody named
+ * should look like. */
+export const TIMELINE_DEFAULT_OTHER_HEX = "#8E8E93";
+export const TIMELINE_DEFAULT_CORNER_RADIUS = 1;
+export const TIMELINE_DEFAULT_MINUTES = 60;
+/** The widest gap worth offering: past four points the runs of a busy hour
+ * stop touching at all and the strip reads as a dotted line. */
+export const TIMELINE_MAX_GAP = 4;
+/** How many state changes a timeline asks for. Fixed rather than editable: the
+ * strip is read as a shape, and 120 runs on a 181 point face is already finer
+ * than the screen resolves. Matches `CHART_HISTORY_MAX_POINTS`. */
+export const TIMELINE_HISTORY_POINTS = 120;
+
+/** The colour a run takes, first matching row wins. Case-insensitive after
+ * trimming, so the table matches what a person typed rather than what an
+ * integration capitalised. Mirrors `TimelineElement.colorHex(for:)` in Swift. */
+export function timelineBandColor(state: string, bands: readonly TimelineBand[], other: string): string {
+  const wanted = state.trim().toLowerCase();
+  for (const band of bands) if (band.match.trim().toLowerCase() === wanted) return band.colorHex;
+  return other;
+}
+
+/** The span a timeline reads, clamped the way the chart's is: at least a
+ * minute, never past what the recorder is asked to keep. */
+export function timelineHistoryMinutes(el: TimelineElement): number {
+  const raw = Math.round(el.historyMinutes);
+  if (!Number.isFinite(raw)) return TIMELINE_DEFAULT_MINUTES;
+  return Math.max(1, Math.min(CHART_HISTORY_MAX_MINUTES, raw));
+}
+
+/** The entity whose past a timeline draws, or undefined when it names none.
+ * Same rule as `chartHistoryEntity`: only a directly named entity counts,
+ * because the watch fetches long before any resolver exists to follow a
+ * reference. */
+export function timelineHistoryEntity(el: TimelineElement): string | undefined {
+  return el.value.kind.kind === "entityState" ? el.value.kind.entityId : undefined;
+}
+
+/** The cache key for one timeline's recorder query, or undefined when it names
+ * no entity. `states` is the fourth part, which is what keeps it apart from a
+ * chart asking the same entity for the same span. */
+export function timelineHistoryKey(el: TimelineElement): string | undefined {
+  const entityId = timelineHistoryEntity(el);
+  if (entityId === undefined) return undefined;
+  return `${entityId}|${timelineHistoryMinutes(el)}|${TIMELINE_HISTORY_POINTS}|states`;
+}
+
+/** Amber for a state that is on, dark grey for one that is not, red for a door
+ * standing open, green for someone home: the colours a person would reach for
+ * if they had to pick two, so a fresh timeline already reads correctly. */
+const TIMELINE_ON_HEX = "#FF9F0A";
+const TIMELINE_OFF_HEX = "#3A3A3C";
+const TIMELINE_OPEN_HEX = "#FF453A";
+const TIMELINE_HOME_HEX = "#32D74B";
+/** A shade darker than `otherColorHex`, so "the recorder had nothing" reads as
+ * a gap in the strip rather than as another state. */
+const TIMELINE_UNAVAILABLE_HEX = "#48484A";
+
+/** Device classes whose binary sensor is about something being open. */
+const OPENING_DEVICE_CLASSES = ["door", "garage_door", "window", "opening"];
+
+/**
+ * The table a timeline starts with once its entity is known.
+ *
+ * A colour table with nothing in it is a strip in one colour, which answers
+ * none of the questions a timeline is added to answer. The domain already says
+ * what the two interesting states are called in almost every case, so the rows
+ * are written for the author and left there to edit.
+ *
+ * The words are the ones the recorder actually holds, which is not always the
+ * words the frontend prints: a `cover` really is `open` and `closed`, but a
+ * binary sensor with a door device class is `on` and `off` and only reads as a
+ * door in the UI. A table seeded with `open` on one of those would match
+ * nothing, so a door-shaped binary sensor gets `on` and `off` in the colours a
+ * door wants instead.
+ *
+ * `unavailable` is on every table: a run of it means the entity stopped
+ * reporting, and reading that as "off" is the one wrong answer the strip can
+ * give.
+ */
+export function seedTimelineBands(domain: string, deviceClass?: string): TimelineBand[] {
+  const dc = (deviceClass ?? "").trim().toLowerCase();
+  const unavailable: TimelineBand = { id: newId(), match: "unavailable", colorHex: TIMELINE_UNAVAILABLE_HEX };
+  const pair = (a: string, aHex: string, b: string, bHex: string): TimelineBand[] => [
+    { id: newId(), match: a, colorHex: aHex },
+    { id: newId(), match: b, colorHex: bHex },
+    unavailable,
+  ];
+  if (domain === "cover") return pair("open", TIMELINE_OPEN_HEX, "closed", TIMELINE_OFF_HEX);
+  const openish = domain === "binary_sensor" && OPENING_DEVICE_CLASSES.includes(dc);
+  switch (domain) {
+    case "binary_sensor": case "switch": case "light": case "input_boolean":
+      return pair("on", openish ? TIMELINE_OPEN_HEX : TIMELINE_ON_HEX, "off", TIMELINE_OFF_HEX);
+    case "person": case "device_tracker":
+      return pair("home", TIMELINE_HOME_HEX, "not_home", TIMELINE_OFF_HEX);
+    default:
+      return [unavailable];
+  }
 }
 
 export interface ShapeElement extends ElementBase {
@@ -660,6 +838,7 @@ export type Element =
   | { kind: "icon"; payload: IconElement }
   | { kind: "gauge"; payload: GaugeElement }
   | { kind: "chart"; payload: ChartElement }
+  | { kind: "timeline"; payload: TimelineElement }
   | { kind: "shape"; payload: ShapeElement }
   | { kind: "image"; payload: ImageElement }
   | { kind: "tap"; payload: TapElement };
@@ -1072,6 +1251,18 @@ function parseChartBands(p: J): ChartBand[] {
   ];
 }
 
+/** A timeline's colour table. A row with a blank `match` is kept rather than
+ * dropped: it matches no state a recorder returns, so it draws nothing, and an
+ * author part-way through typing one would be surprised to lose it. */
+function parseTimelineBands(raw: unknown): TimelineBand[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(isObject).map((b) => ({
+    id: str(b.id, newId()).toUpperCase(),
+    match: str(b.match, ""),
+    colorHex: str(b.colorHex, TIMELINE_DEFAULT_OTHER_HEX),
+  }));
+}
+
 function parseElementBase(p: J, defaultColor: string): ElementBase {
   if (typeof p.id !== "string") throw new ConfigParseError("element id is required");
   return {
@@ -1166,6 +1357,21 @@ function parseElementKind(raw: unknown): Element {
           ...(optStr(p.scaleFrom) !== undefined ? { scaleFrom: optStr(p.scaleFrom)! } : {}),
         },
       };
+    case "timeline": {
+      const { colorSlot: _unused, ...base } = parseElementBase(p, "#FFFFFF");
+      return {
+        kind: "timeline",
+        payload: {
+          ...base,
+          value: isObject(p.value) ? parseValue(p.value) : literal(""),
+          historyMinutes: Math.max(1, Math.round(num(p.historyMinutes, TIMELINE_DEFAULT_MINUTES))),
+          bands: parseTimelineBands(p.bands),
+          otherColorHex: str(p.otherColorHex, TIMELINE_DEFAULT_OTHER_HEX),
+          gap: Math.min(TIMELINE_MAX_GAP, Math.max(0, num(p.gap, 0))),
+          cornerRadius: Math.max(0, num(p.cornerRadius, TIMELINE_DEFAULT_CORNER_RADIUS)),
+        },
+      };
+    }
     case "shape": {
       const el: ShapeElement = {
         ...parseElementBase(p, "#FFFFFF33"),
@@ -1739,6 +1945,24 @@ function encodeElementKind(el: Element): J {
       if (c.scaleFrom !== undefined) o.scaleFrom = c.scaleFrom;
       return { kind: "chart", payload: o };
     }
+    case "timeline": {
+      const t = el.payload;
+      const o: J = {
+        id: t.id,
+        rules: encodeRules(t.rules),
+        frame: encodeFrame(t.frame),
+        isHidden: t.isHidden,
+        value: encodeValue(t.value),
+      };
+      // Same order and same "only when it differs" rule as the app's encoder, so
+      // a timeline left as it was created writes the shortest payload it can.
+      if (t.historyMinutes !== TIMELINE_DEFAULT_MINUTES) o.historyMinutes = Math.max(1, Math.round(t.historyMinutes));
+      if (t.bands.length > 0) o.bands = t.bands.map((b) => ({ id: b.id, match: b.match, colorHex: b.colorHex }));
+      if (t.otherColorHex !== TIMELINE_DEFAULT_OTHER_HEX) o.otherColorHex = t.otherColorHex;
+      if (t.gap !== 0) o.gap = encNum(t.gap);
+      if (t.cornerRadius !== TIMELINE_DEFAULT_CORNER_RADIUS) o.cornerRadius = encNum(t.cornerRadius);
+      return { kind: "timeline", payload: o };
+    }
     case "shape": {
       const o: J = { ...base(el.payload), kind: el.payload.kind, cornerRadius: encNum(el.payload.cornerRadius), borderWidth: encNum(el.payload.borderWidth) };
       if (el.payload.borderColorHex !== undefined) o.borderColorHex = el.payload.borderColorHex;
@@ -2011,6 +2235,7 @@ const K = {
     "scaleLabels", "scaleLabelPlacement", "latestLabel",
     "topLabelStyle", "bottomLabelStyle", "latestLabelStyle", "latestLabelFollowsBand",
     "scaleLabelColorHex"],
+  timeline: ["value", "historyMinutes", "bands", "otherColorHex", "gap", "cornerRadius"],
   shape: ["kind", "cornerRadius", "thickness", "borderColorHex", "borderWidth"],
   // `timestampStyle` is retired (the age style, built and removed 2026-09-04).
   // It stays listed so a document saved while it existed does not read as
@@ -2236,6 +2461,24 @@ export function newElement(kind: Element["kind"]): Element {
     // sensor, and a plain sensor's own value is one bar. Until an entity is
     // named the sample list draws instead, so the layer is never blank.
     case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: CHART_HISTORY_DEFAULT_MINUTES, historyPoints: 24, style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "pointer", coloring: "uniform", bands: [], bandAboveColorHex: CHART_DEFAULT_BAND_HIGH_HEX, fillBands: false, thresholdColorHex: CHART_DEFAULT_THRESHOLD_HEX, nowColorHex: CHART_DEFAULT_NOW_HEX } };
+    // No sample states: a timeline of a made-up string would draw a strip that
+    // looks like data. Empty until an entity is picked, which is also when the
+    // colour table can be seeded from its domain.
+    case "timeline": {
+      const { colorSlot: _unused, ...b } = base("#FFFFFF");
+      return {
+        kind,
+        payload: {
+          ...b,
+          value: literal(""),
+          historyMinutes: TIMELINE_DEFAULT_MINUTES,
+          bands: [],
+          otherColorHex: TIMELINE_DEFAULT_OTHER_HEX,
+          gap: 0,
+          cornerRadius: TIMELINE_DEFAULT_CORNER_RADIUS,
+        },
+      };
+    }
     case "shape": return { kind, payload: { ...base("#FFFFFF33"), kind: "roundedRectangle", cornerRadius: 6, thickness: 1, borderWidth: 1 } };
     case "image": {
       const { colorSlot: _unused, ...b } = base("#FFFFFF");
@@ -2281,6 +2524,8 @@ export function elementSize(el: Element): number | undefined {
     case "icon": return el.payload.size;
     case "gauge": return el.payload.lineWidth;
     case "chart": return el.payload.lineWidth;
+    // A timeline's runs fill the frame, so its size is the frame and nothing else.
+    case "timeline": return undefined;
     case "shape": return undefined;
     case "image": return undefined;
     case "tap": return undefined;
@@ -2374,6 +2619,7 @@ export function primaryValue(el: Element): Value | undefined {
     case "icon": return el.payload.symbol;
     case "gauge": return el.payload.value;
     case "chart": return el.payload.value;
+    case "timeline": return el.payload.value;
     case "shape": return undefined;
     case "image": return { kind: { kind: "entityState", ...el.payload.entity } };
     case "tap": return undefined;
@@ -3032,7 +3278,9 @@ function rebindValue(value: Value | undefined, ref: EntityRef, kind: Element["ki
     case "entityAge": return { ...value, kind: { kind: "entityAge", ...ref } };
     case "entityAttribute": return { ...value, kind: { kind: "entityAttribute", ...ref, attribute: k.attribute } };
     case "literal":
-      return kind === "text" || kind === "gauge" || kind === "chart" ? { ...value, kind: { kind: "entityState", ...ref } } : undefined;
+      return kind === "text" || kind === "gauge" || kind === "chart" || kind === "timeline"
+        ? { ...value, kind: { kind: "entityState", ...ref } }
+        : undefined;
     default:
       return undefined;
   }
@@ -3042,15 +3290,30 @@ function rebindValue(value: Value | undefined, ref: EntityRef, kind: Element["ki
  * Point a layer at an entity: its own content where that is safe (see
  * `rebindValue`), and the target of the tap attached to it. Rule tests are
  * deliberately left alone; the states table owns those.
+ *
+ * `deviceClass` is only read by a timeline, whose seeded colour table needs to
+ * know whether a binary sensor is a door before it can name its two states.
+ * The caller has it because it has `hass`; nothing in the document does.
  */
-export function setLayerEntity(cfg: CustomComplicationConfig, layerId: string, ref: EntityRef): void {
+export function setLayerEntity(
+  cfg: CustomComplicationConfig,
+  layerId: string,
+  ref: EntityRef,
+  deviceClass?: string,
+): void {
   const el = cfg.elements.find((e) => e.payload.id === layerId);
   // An empty reference is not an edit. The field is derived, so there is no
   // "no entity" to store: clearing it would only blank the layer's content,
   // and deleting the layer is what someone means by that.
   if (!el || ref.entityId === "") return;
   const full: EntityRef = { ...ref, domain: ref.domain || ref.entityId.split(".")[0] || "" };
-  if (el.kind === "image") {
+  if (el.kind === "timeline") {
+    const next = rebindValue(el.payload.value, full, el.kind);
+    if (next) el.payload.value = next;
+    // Only while the table is empty: a table the author has edited is theirs,
+    // and retargeting a timeline at a second door should not rewrite it.
+    if (el.payload.bands.length === 0) el.payload.bands = seedTimelineBands(full.domain, deviceClass);
+  } else if (el.kind === "image") {
     el.payload.entity = full;
   } else if (el.kind === "text" || el.kind === "gauge" || el.kind === "chart") {
     const next = rebindValue(el.payload.value, full, el.kind);
@@ -3077,6 +3340,9 @@ export const RULE_TARGET_PROPERTIES: Record<RuleTarget, StyleProperty[]> = {
   // No text or size effects: a chart's content is a whole series, and swapping that
   // from a rule would need a second series source.
   chart: ["color", "opacity", "rotation", "visibility"],
+  // No colour either: every colour a timeline draws is in its own table, so a
+  // rule that recoloured the layer would have nothing to recolour.
+  timeline: ["opacity", "rotation", "visibility"],
   shape: ["color", "opacity", "borderColor", "borderWidth", "rotation", "visibility"],
   image: ["opacity", "rotation", "visibility"],
   tap: ["visibility"],

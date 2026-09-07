@@ -15,6 +15,7 @@ export const KIND_COLOR: Record<LayerKind, string> = {
   icon: "#ab47bc",
   gauge: "#fb8c00",
   chart: "#3949ab",
+  timeline: "#00897b",
   shape: "#43a047",
   image: "#00acc1",
   tap: "#ec407a",
@@ -25,13 +26,14 @@ export const KIND_LABEL: Record<LayerKind, string> = {
   icon: "Icon",
   gauge: "Gauge",
   chart: "Chart",
+  timeline: "Timeline",
   shape: "Shape",
   image: "Picture",
   tap: "Tap area",
 };
 
 /** The order the add buttons and the picker show the kinds in. */
-export const KIND_ORDER: readonly LayerKind[] = ["text", "icon", "gauge", "chart", "shape", "image", "tap"];
+export const KIND_ORDER: readonly LayerKind[] = ["text", "icon", "gauge", "chart", "timeline", "shape", "image", "tap"];
 
 /** Sections that are not about one kind of layer keep a colour of their own. */
 export const SECTION_COLOR = {
