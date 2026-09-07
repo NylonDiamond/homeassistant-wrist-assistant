@@ -1753,6 +1753,9 @@ export class WristAssistantPanel extends LitElement {
     .row-inline .field { flex: 1; }
     .hint { font-size: 12px; color: var(--wa-muted); margin: 4px 0; }
     .hint.warn { color: var(--wa-ink); }
+    /* The bare .err rule sits above .hint in this sheet, so a hint that is an
+       error needs both class names to win the colour. */
+    .hint.err { color: var(--error-color, #db4437); }
     details.sub { margin: 6px 0; }
     details.sub summary { font-size: 12px; opacity: .8; cursor: pointer; }
     .chip { display: inline-flex; align-items: center; gap: 6px; height: 24px; font-size: 12px; font-weight: 600; padding: 0 8px; border: 1px solid var(--wa-line); border-radius: 6px; }
