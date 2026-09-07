@@ -1,13 +1,13 @@
-// The third line of an expanded Layers row. It exists so a row can answer
-// "where is this and what is it made of?" without opening the inspector, so
-// the numbers have to be the same design points the Place card writes, not
-// the 0-to-1 fractions the document stores.
+// The third line of an expanded Layers row. It says what the layer is made of.
+// It deliberately does not say where the layer is or how big it is: those
+// numbers live on the Place card, they change on every nudge, and two long
+// facts made the line wrap, which made the row change height on hover.
 
 import { describe, expect, it } from "vitest";
 
 import type { EditorHost } from "../src/editors.js";
 import type { HassLike } from "../src/ha-api.js";
-import { DESIGN_BOX, newConfig, newElement, type Element as CElement } from "../src/model.js";
+import { newConfig, newElement, type Element as CElement } from "../src/model.js";
 import { layerFacts } from "../src/panel.js";
 
 const config = newConfig("Test", 0);
@@ -23,20 +23,18 @@ const fact = (facts: { label: string; value: string }[], label: string) =>
   facts.find((f) => f.label === label)?.value;
 
 describe("layerFacts", () => {
-  it("gives the place and the size in design points", () => {
+  it("says what the layer is made of", () => {
     const el = textAt(0.5, 0.25, 0.25, 0.5);
     const facts = layerFacts(HOST, "rectangular", el, { frame: el.payload.frame, isHidden: false, fromPlacement: false });
-    const box = DESIGN_BOX.rectangular;
-    expect(fact(facts, "At")).toBe(`${Math.round(0.5 * box.width)}, ${Math.round(0.25 * box.height)} pt`);
-    expect(fact(facts, "Size")).toBe(`${Math.round(0.25 * box.width)} x ${Math.round(0.5 * box.height)} pt`);
+    expect(fact(facts, "Shows")).toBeDefined();
+    expect(fact(facts, "Looks")).toBeDefined();
   });
 
-  it("measures against the shape being edited, not always the rectangle", () => {
-    const el = textAt(0.5, 0.5, 0.5, 0.5);
-    const rect = layerFacts(HOST, "rectangular", el, { frame: el.payload.frame, isHidden: false, fromPlacement: false });
-    const corner = layerFacts(HOST, "corner", el, { frame: el.payload.frame, isHidden: false, fromPlacement: false });
-    expect(fact(rect, "Size")).not.toBe(fact(corner, "Size"));
-    expect(fact(corner, "Size")).toBe("17 x 17 pt");
+  it("never gives the place or the size", () => {
+    const el = textAt(0.5, 0.25, 0.25, 0.5);
+    const facts = layerFacts(HOST, "rectangular", el, { frame: el.payload.frame, isHidden: false, fromPlacement: false });
+    expect(fact(facts, "At")).toBeUndefined();
+    expect(fact(facts, "Size")).toBeUndefined();
   });
 
   it("stays quiet about rotation and per-shape frames when there is nothing to say", () => {

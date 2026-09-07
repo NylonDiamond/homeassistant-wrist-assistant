@@ -907,14 +907,22 @@ export class WristAssistantPanel extends LitElement {
     .layer.drop-before::after { top: -${DROP_GAP}px; }
     .layer.drop-after::after { bottom: -${DROP_GAP}px; }
 
-    /* Expanded rows say more: a third line with where the layer sits on the
-       face, its meta free to wrap, and the badges kept beside the buttons
-       rather than swapped for them. */
+    /* Expanded rows say more: a third line about what the layer is made of,
+       its meta free to wrap, and the badges kept beside the buttons rather
+       than swapped for them. */
     .layer.rich .name small { white-space: normal; overflow: visible; text-overflow: clip; }
     .layer.rich .facts { display: flex; flex-wrap: wrap; gap: 2px 8px; margin-top: 2px; font-size: 11.5px; color: var(--wa-muted); }
     .layer.rich .facts .fact { white-space: nowrap; }
     .layer.rich .facts .fact b { font-weight: 600; color: var(--wa-ink); opacity: .75; }
-    .layer.rich .right { flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+    /* An expanded row keeps both the badges and the buttons, so the buttons
+       cannot appear out of nothing the way they do on a compact row: arriving
+       would widen the right end, squeeze the facts, wrap them onto another
+       line and grow the row under the pointer. The buttons hold their place
+       at all times and only turn visible, and the right end never wraps, so
+       hovering changes colour and nothing else. */
+    .layer.rich .right { flex-wrap: nowrap; justify-content: flex-end; gap: 4px; }
+    .layer.rich .acts { display: inline-flex; visibility: hidden; }
+    .layer.rich:hover .acts, .layer.rich.hl .acts, .layer.rich:focus-within .acts { visibility: visible; }
     .layer.rich:hover .badges, .layer.rich.hl .badges, .layer.rich:focus-within .badges { display: inline-flex; }
 
     /* Two small segmented controls in the Layers title: how big the row
@@ -4479,26 +4487,26 @@ function ownerLabel(o: OwnerSummary): string {
 /**
  * The third line of an expanded Layers row: what the layer is made of, rather
  * than what it happens to read right now. The compact row already carries the
- * live reading, so these are the settings behind it, plus where the layer sits
- * on the face in the same design points the Place card writes.
+ * live reading, so these are the settings behind it.
+ *
+ * The place and the size used to be here too. They are not: the numbers change
+ * every time the layer is nudged, they are already on the Place card and on the
+ * face itself, and reading them off a list is not how anyone positions a layer.
+ * Two long facts per row also made the line wrap, which is what made the row
+ * change height. Rotation stays, because it is rare and easy to miss.
  */
 export function layerFacts(
   host: EditorHost,
-  family: DrawableFamily,
+  _family: DrawableFamily,
   el: CElement,
   eff: EffectivePlacement,
 ): { label: string; value: string }[] {
-  const box = DESIGN_BOX[family];
-  const f = eff.frame;
-  const pt = (n: number) => Math.round(n);
   const facts: { label: string; value: string }[] = [
     { label: "Shows", value: contentSummary(host, el) },
   ];
   const look = lookSummary(el);
   if (look) facts.push({ label: "Looks", value: look });
-  facts.push({ label: "At", value: `${pt(f.x * box.width)}, ${pt(f.y * box.height)} pt` });
-  facts.push({ label: "Size", value: `${pt(f.width * box.width)} x ${pt(f.height * box.height)} pt` });
-  if (f.rotationDegrees !== 0) facts.push({ label: "Turned", value: `${Math.round(f.rotationDegrees)}°` });
+  if (eff.frame.rotationDegrees !== 0) facts.push({ label: "Turned", value: `${Math.round(eff.frame.rotationDegrees)}°` });
   return facts;
 }
 
