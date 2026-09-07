@@ -953,23 +953,64 @@ interface StateBandedLayer {
  * says where a number stops and a timeline's says which word it is, so the two
  * share their shape and nothing else.
  */
+/** The states a timeline's colour table can offer instead of a blank box: what
+ * the recorder saw in the span (longest first), the entity's state right now,
+ * then the words its domain is known to report. Case-insensitive, first
+ * spelling wins, and the two no-reading states always come last. */
+function timelineKnownStates(samples: readonly TimelineSample[], spanSeconds: number, live: string | undefined, domain: string | undefined): string[] {
+  const time = new Map<string, number>();
+  const spelling = new Map<string, string>();
+  const note = (state: string, seconds: number) => {
+    const s = state.trim();
+    if (s === "") return;
+    const k = s.toLowerCase();
+    if (!spelling.has(k)) spelling.set(k, s);
+    time.set(k, (time.get(k) ?? 0) + seconds);
+  };
+  samples.forEach((s, i) => {
+    const next = samples[i + 1];
+    const end = next === undefined ? spanSeconds : next.offsetSeconds;
+    note(s.state, Math.max(0, end - s.offsetSeconds));
+  });
+  if (live !== undefined) note(live, 0);
+  const domainWords: Record<string, string[]> = {
+    binary_sensor: ["on", "off"], switch: ["on", "off"], light: ["on", "off"], input_boolean: ["on", "off"],
+    fan: ["on", "off"], cover: ["open", "closed", "opening", "closing"], lock: ["locked", "unlocked"],
+    person: ["home", "not_home"], device_tracker: ["home", "not_home"],
+    media_player: ["playing", "paused", "idle", "off"], climate: ["heat", "cool", "heat_cool", "off"],
+    vacuum: ["cleaning", "docked", "returning", "idle"], alarm_control_panel: ["disarmed", "armed_home", "armed_away", "triggered"],
+  };
+  (domainWords[domain ?? ""] ?? []).forEach((w) => note(w, 0));
+  const noReading = ["unavailable", "unknown"];
+  const seen = [...time.entries()]
+    .filter(([k]) => !noReading.includes(k))
+    .sort((a, b) => b[1] - a[1])
+    .map(([k]) => spelling.get(k) ?? k);
+  return [...seen, ...noReading];
+}
+
 function timelineBandFields(
   layer: StateBandedLayer,
   set: (mutate: (p: StateBandedLayer) => void, k?: string) => void,
+  knownStates: readonly string[] = [],
+  listId = "wa-timeline-states",
 ): TemplateResult {
+  const taken = new Set(layer.bands.map((b) => b.match.trim().toLowerCase()));
+  const nextState = knownStates.find((s) => !taken.has(s.toLowerCase())) ?? "";
   return html`
     ${layer.bands.map((band, i) => html`
       <div class="row-inline">
         ${textField("State", band.match,
-          (v) => set((p) => { const b = p.bands[i]; if (b) b.match = v; }, `tmatch${band.id}`), { placeholder: "on" })}
+          (v) => set((p) => { const b = p.bands[i]; if (b) b.match = v; }, `tmatch${band.id}`), { placeholder: "on", list: listId })}
         ${colorField("Colour", band.colorHex,
           (v) => set((p) => { const b = p.bands[i]; if (b) b.colorHex = v ?? TIMELINE_DEFAULT_OTHER_HEX; }, `tcol${band.id}`))}
         <button class="icon" title="Remove this state" aria-label="Remove this state"
           @click=${() => set((p) => { p.bands = p.bands.filter((_, j) => j !== i); })}>${uiIcon("close")}</button>
       </div>`)}
+    <datalist id=${listId}>${knownStates.map((s) => html`<option value=${s}></option>`)}</datalist>
     <button class="small" @click=${() => set((p) => {
-      p.bands = [...p.bands, { id: newId(), match: "", colorHex: TIMELINE_DEFAULT_OTHER_HEX }];
-    })}>Add state</button>
+      p.bands = [...p.bands, { id: newId(), match: nextState, colorHex: TIMELINE_DEFAULT_OTHER_HEX }];
+    })}>${nextState === "" ? "Add state" : `Add ${nextState}`}</button>
     ${colorField("Otherwise", layer.otherColorHex,
       (v) => set((p) => { p.otherColorHex = v ?? TIMELINE_DEFAULT_OTHER_HEX; }, "tother"), false, TIMELINE_DEFAULT_OTHER_HEX)}`;
 }
@@ -2490,6 +2531,10 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       const spanSeconds = timelineHistoryMinutes(t) * 60;
       const samples = timelineSamples(raw ?? "", TIMELINE_HISTORY_POINTS);
       const customSpan = spanIsCustom(id, t.historyMinutes);
+      const entityId = t.value.kind.kind === "entityState" ? t.value.kind.entityId : undefined;
+      const knownStates = timelineKnownStates(samples, spanSeconds,
+        entityId === undefined ? undefined : host.hass.states[entityId]?.state,
+        entityId?.split(".")[0]);
       content = html`
         ${valueEditor(host, t.value, (v) => setTimeline((p) => { p.value = v; }, "value"),
           { label: "States", key: `${key}-value` })}
@@ -2523,7 +2568,10 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
         <div class="hint">Each row is a state and the colour its runs draw in, checked top to bottom.
           Case and surrounding space are ignored, so <code>Home</code> matches <code>home</code>. A
           state no row names takes the colour underneath.</div>
-        ${timelineBandFields(t, setTimeline)}
+        ${timelineBandFields(t, setTimeline, knownStates, `wa-tl-states-${key.replace(/[^a-z0-9]/gi, "")}`)}
+        ${knownStates.length > 2
+          ? html`<div class="hint">Seen in this span: <span class="nums">${knownStates.filter((s) => s !== "unavailable" && s !== "unknown").join(", ")}</span>. Click into a State box to pick one.</div>`
+          : nothing}
         <div class="grid2">
           ${numberField("Gap (pt)", t.gap, (v) => setTimeline((p) => {
             p.gap = Math.min(TIMELINE_MAX_GAP, Math.max(0, v ?? 0));
