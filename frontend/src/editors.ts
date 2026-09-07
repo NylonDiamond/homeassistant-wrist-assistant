@@ -140,6 +140,7 @@ import type { HassEntityState, HassLike } from "./ha-api.js";
 import { MIN_ZOOM, familyTitle, type IconProvider } from "./renderer.js";
 import { CURATED_SYMBOLS, SYMBOL_CATEGORIES, SymbolBrowser, searchSymbols } from "./symbols.js";
 import { typedFrame } from "./interact.js";
+import { DESIGN_BOX } from "./model.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import { KIND_COLOR, SECTION_COLOR } from "./kinds.js";
 import { domainIcon, domainLabel, isActiveState } from "./domain-icons.js";
@@ -1987,6 +1988,45 @@ function shortDuration(seconds: number): string {
  * nothing. Only the newest few are printed: the question this line settles is
  * "is it reading the right entity", not what happened all hour.
  */
+/** Whether a line drawn along this frame's long side stands up on the watch.
+ * The frame is a fraction of the shape's design box, so a 0.5 by 0.5 frame is
+ * wide on a rectangular face and square on a circular one; the box aspect
+ * decides which side is long, and a quarter turn flips it. */
+function lineIsVertical(family: FamilyKind, f: NormalizedFrame): boolean {
+  const box = DESIGN_BOX[family === "inline" ? "rectangular" : family];
+  const tall = f.height * box.height > f.width * box.width;
+  const turned = Math.round(((f.rotationDegrees % 180) + 180) % 180) === 90;
+  return tall !== turned;
+}
+
+/** Horizontal or Vertical for a line, written as the frame's rotation so the
+ * wire carries nothing new: a quarter turn is the whole difference. */
+function lineOrientationField(family: FamilyKind, f: NormalizedFrame, setFrame: (patch: Partial<NormalizedFrame>, k: string) => void) {
+  const vertical = lineIsVertical(family, f);
+  const box = DESIGN_BOX[family === "inline" ? "rectangular" : family];
+  const tall = f.height * box.height > f.width * box.width;
+  return html`<div class="grid2">
+    ${segField("Direction", vertical ? "vertical" : "horizontal", [["horizontal", "Horizontal"], ["vertical", "Vertical"]], (v) => {
+      // Zero when the frame's own long side already points that way, a quarter
+      // turn when it does not; the Place card's rotation field shows the result.
+      const wantTall = v === "vertical";
+      setFrame({ rotationDegrees: wantTall === tall ? 0 : 90 }, "line-dir");
+    }, { titles: { horizontal: "Lying along the frame", vertical: "Standing up, as a divider" } })}
+  </div>
+  <div class="hint">Direction sets the frame's rotation. A line runs along the frame's long side, so
+    for a thin divider make the frame long in one direction and Direction will follow it.</div>`;
+}
+
+/** True when the recorded states are mostly numbers: a sensor's readings, not
+ * the words a timeline is for. `unavailable` and `unknown` are left out of the
+ * count, so a number sensor that drops out now and then still reads as numeric. */
+function timelineIsNumeric(samples: readonly TimelineSample[]): boolean {
+  const words = samples.filter((s) => s.state !== "unavailable" && s.state !== "unknown");
+  if (words.length === 0) return false;
+  const numeric = words.filter((s) => s.state.trim() !== "" && Number.isFinite(Number(s.state))).length;
+  return numeric * 2 > words.length;
+}
+
 function timelineReadout(samples: readonly TimelineSample[], spanSeconds: number, limit = 4): string {
   if (samples.length === 0) return "nothing";
   const runs: { state: string; seconds: number }[] = [];
@@ -2472,6 +2512,12 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
           : nothing}
         ${samples.length > 0
           ? html`<div class="hint">Reads <span class="nums">${timelineReadout(samples, spanSeconds)}</span></div>`
+          : nothing}
+        ${timelineIsNumeric(samples)
+          ? html`<div class="hint warn">This entity reports numbers, so every reading is its own
+            state and the strip is one colour with a hairline wherever it dropped out. A timeline is
+            for states that are words, like on and off, open and closed, home and away. For a
+            number's past, use a Chart layer instead.</div>`
           : nothing}`;
       look = html`
         <div class="hint">Each row is a state and the colour its runs draw in, checked top to bottom.
@@ -2497,7 +2543,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
             { titles: { roundedRectangle: "Rounded rectangle", line: "A rule along the frame's long side" }, def: base.kind as typeof el.payload.kind })}
           ${el.payload.kind === "roundedRectangle" ? numberField("Corner radius (pt)", el.payload.cornerRadius, (v) => upd((e) => { (e as typeof el).payload.cornerRadius = v ?? 6; }, "radius"), { step: 0.5, min: 0, def: base.cornerRadius as number }) : nothing}
         </div>
-        ${el.payload.kind === "line" ? html`<div class="hint">A line runs along the frame's long side. Make the frame taller than it is wide, or rotate it in Place, for a divider standing up.</div>` : nothing}`;
+        ${el.payload.kind === "line" ? lineOrientationField(family, f, setFrame) : nothing}`;
       // A line has no border and no corners: its colour is the whole drawing, so
       // the Look card offers its thickness instead.
       look = el.payload.kind === "line"

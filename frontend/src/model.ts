@@ -704,11 +704,16 @@ const OPENING_DEVICE_CLASSES = ["door", "garage_door", "window", "opening"];
  */
 export function seedTimelineBands(domain: string, deviceClass?: string): TimelineBand[] {
   const dc = (deviceClass ?? "").trim().toLowerCase();
-  const unavailable: TimelineBand = { id: newId(), match: "unavailable", colorHex: TIMELINE_UNAVAILABLE_HEX };
+  // Both of the states Home Assistant uses for "no reading": a sensor that
+  // drops out reports unavailable, one that has not reported yet says unknown.
+  const unavailable: TimelineBand[] = [
+    { id: newId(), match: "unavailable", colorHex: TIMELINE_UNAVAILABLE_HEX },
+    { id: newId(), match: "unknown", colorHex: TIMELINE_UNAVAILABLE_HEX },
+  ];
   const pair = (a: string, aHex: string, b: string, bHex: string): TimelineBand[] => [
     { id: newId(), match: a, colorHex: aHex },
     { id: newId(), match: b, colorHex: bHex },
-    unavailable,
+    ...unavailable,
   ];
   if (domain === "cover") return pair("open", TIMELINE_OPEN_HEX, "closed", TIMELINE_OFF_HEX);
   const openish = domain === "binary_sensor" && OPENING_DEVICE_CLASSES.includes(dc);
@@ -718,7 +723,7 @@ export function seedTimelineBands(domain: string, deviceClass?: string): Timelin
     case "person": case "device_tracker":
       return pair("home", TIMELINE_HOME_HEX, "not_home", TIMELINE_OFF_HEX);
     default:
-      return [unavailable];
+      return unavailable;
   }
 }
 

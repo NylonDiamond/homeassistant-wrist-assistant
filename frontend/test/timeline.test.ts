@@ -336,27 +336,27 @@ describe("the wire format", () => {
 
 describe("seeded colour tables", () => {
   it("names the two states a switch actually reports", () => {
-    expect(seedTimelineBands("switch").map((b) => b.match)).toEqual(["on", "off", "unavailable"]);
+    expect(seedTimelineBands("switch").map((b) => b.match)).toEqual(["on", "off", "unavailable", "unknown"]);
   });
 
   it("names open and closed for a cover, which really reports those words", () => {
-    expect(seedTimelineBands("cover").map((b) => b.match)).toEqual(["open", "closed", "unavailable"]);
+    expect(seedTimelineBands("cover").map((b) => b.match)).toEqual(["open", "closed", "unavailable", "unknown"]);
   });
 
   it("keeps on and off for a door sensor, because that is what it reports", () => {
     // The device class changes what the frontend prints, not what the recorder
     // holds, so a table of "open" would match nothing at all.
     const door = seedTimelineBands("binary_sensor", "door");
-    expect(door.map((b) => b.match)).toEqual(["on", "off", "unavailable"]);
+    expect(door.map((b) => b.match)).toEqual(["on", "off", "unavailable", "unknown"]);
     expect(door[0]!.colorHex).not.toBe(seedTimelineBands("binary_sensor")[0]!.colorHex);
   });
 
   it("names home and not_home for a person", () => {
-    expect(seedTimelineBands("person").map((b) => b.match)).toEqual(["home", "not_home", "unavailable"]);
+    expect(seedTimelineBands("person").map((b) => b.match)).toEqual(["home", "not_home", "unavailable", "unknown"]);
   });
 
-  it("leaves an unknown domain with only the unavailable row", () => {
-    expect(seedTimelineBands("sensor").map((b) => b.match)).toEqual(["unavailable"]);
+  it("leaves an unknown domain with only the no-reading rows", () => {
+    expect(seedTimelineBands("sensor").map((b) => b.match)).toEqual(["unavailable", "unknown"]);
   });
 
   it("is written the first time an entity is picked, and never overwritten", () => {
@@ -365,7 +365,7 @@ describe("seeded colour tables", () => {
     cfg.elements.push(el);
     setLayerEntity(cfg, el.payload.id, DOOR, "window");
     const seeded = el.payload.bands.map((b) => b.match);
-    expect(seeded).toEqual(["on", "off", "unavailable"]);
+    expect(seeded).toEqual(["on", "off", "unavailable", "unknown"]);
     expect(el.payload.value.kind).toEqual({ kind: "entityState", ...DOOR });
 
     el.payload.bands = [{ id: "MINE", match: "mine", colorHex: "#FFFFFF" }];
