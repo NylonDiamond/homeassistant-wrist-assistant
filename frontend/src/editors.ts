@@ -572,6 +572,11 @@ export interface EntityFieldOptions {
   compact?: boolean;
   /** Float entities whose state reads as a number to the top of the results. */
   preferNumeric?: boolean;
+  /** The layer draws nothing at all until this box holds an entity. The box
+   * takes a ring in the entity colour, and pulses once when it becomes the
+   * thing to fill in, so the answer to "why is my layer blank?" is marked
+   * where the answer gets typed rather than only in a line of prose. */
+  needed?: boolean;
 }
 
 /** Whether a field's result list is open right now. The preset dialog asks so
@@ -657,7 +662,7 @@ export function entityField(host: EditorHost, label: string, ref: EntityRef, set
 
   return html`<div class="field entity-field">
     <span>${label}</span>
-    <div class="ent-box ${search ? "open" : ""}">
+    <div class="ent-box ${search ? "open" : ""} ${opts.needed && ref.entityId === "" ? "needs" : ""}">
       <span class="ent-glass">${uiIcon("search")}</span>
       <input type="text" class="mono" role="combobox" aria-autocomplete="list" aria-expanded=${search ? "true" : "false"} autocomplete="off" spellcheck="false"
         .value=${search ? search.query : ref.entityId}
@@ -1823,7 +1828,7 @@ function layerEntityField(host: EditorHost, el: CElement, key: string): Template
   // A camera layer keeps the camera-only picker it has always had. An entity
   // picture can come from any domain, so that one is unrestricted.
   const cameraOnly = el.kind === "image" && el.payload.source === "camera";
-  const opts: EntityFieldOptions = cameraOnly ? { domain: "camera" } : {};
+  const opts: EntityFieldOptions = { ...(cameraOnly ? { domain: "camera" } : {}), needed: layerNeedsEntity(el) };
   // Only a timeline reads this, to know whether a binary sensor is a door
   // before it seeds its colour table. Nothing in the document holds it.
   const deviceClassOf = (entityId: string) => {
@@ -1833,7 +1838,22 @@ function layerEntityField(host: EditorHost, el: CElement, key: string): Template
   return html`
     ${entityField(host, cameraOnly ? "Camera" : "Entity", ref,
       (next) => host.update((c) => setLayerEntity(c, id, next, deviceClassOf(next.entityId)), `${key}-entity`), `${key}-layer-entity`, opts)}
-    <div class="hint">${layerEntityNote(el, uses)}</div>`;
+    <div class="hint ${layerNeedsEntity(el) ? "warn" : ""}">${layerEntityNote(el, uses)}</div>`;
+}
+
+/**
+ * Whether this layer draws nothing at all until it names an entity.
+ *
+ * Exactly the three cases the content editors already warn about further down
+ * the card: a chart set to recorded history, a timeline (which is only ever
+ * history), and a picture. A tap pointing at something does not count, because
+ * it is the drawing that is blocked, not the tap.
+ */
+function layerNeedsEntity(el: CElement): boolean {
+  if (el.kind === "timeline") return el.payload.value.kind.kind !== "entityState";
+  if (el.kind === "chart") return el.payload.historyMinutes > 0 && el.payload.value.kind.kind !== "entityState";
+  if (el.kind === "image") return el.payload.entity.entityId === "";
+  return false;
 }
 
 /** The layer's own content value, which is the part an entity pick may rewrite. */
@@ -2469,9 +2489,12 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
                       title="Plot every recorded state change, no averaging"
                       @click=${() => { if (!everyReading) setChart((p) => { p.historyPoints = CHART_HISTORY_EVERY_READING; }); }}>Every one</button>
                   </div>
-                  ${everyReading ? nothing : html`<input type="number" class="short" aria-label="How many readings" .value=${String(c.historyPoints)}
-                    step="1" min=${CHART_HISTORY_MIN_POINTS} max=${CHART_HISTORY_MAX_POINTS}
-                    @input=${onInput((v) => { const n = Number(v); if (v.trim() !== "" && Number.isFinite(n) && n >= 1) setChart((p) => { p.historyPoints = Math.round(n); }, "hpoints"); })} />`}
+                  ${everyReading ? nothing : html`<span class="readings-into">into</span>
+                    <input type="number" class="short" aria-label="How many time slots" .value=${String(c.historyPoints)}
+                      title="How many equal time slots the span is averaged into, so how many bars or points get drawn"
+                      step="1" min=${CHART_HISTORY_MIN_POINTS} max=${CHART_HISTORY_MAX_POINTS}
+                      @input=${onInput((v) => { const n = Number(v); if (v.trim() !== "" && Number.isFinite(n) && n >= 1) setChart((p) => { p.historyPoints = Math.round(n); }, "hpoints"); })} />
+                    <span class="readings-unit">slots</span>`}
                 </div>
               </div>
             </div>

@@ -1130,7 +1130,13 @@ export class WristAssistantPanel extends LitElement {
     .readings-row .seg.wide { flex: 1 1 auto; width: auto; }
     /* Three digits is the most this box ever holds. The type selector is
        there to outrank the ".field input[type=number]" full-width rule. */
-    .field .readings-row input.short[type=number] { width: 60px; flex: none; text-align: right; }
+    .field .readings-row input.short[type=number] { width: 56px; flex: none; text-align: right; }
+    /* The count used to sit against the buttons as a bare number, which reads
+       as a setting nobody named. Two quiet words either side make the row a
+       sentence, "Average into 24 slots", and the number stops being a riddle. */
+    .readings-row .readings-into, .readings-row .readings-unit {
+      font-size: 12px; color: var(--wa-muted); flex: none; white-space: nowrap;
+    }
     .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 8px; }
     .grid3 .field { display: flex; flex-direction: column; align-items: stretch; gap: 3px; }
     .grid3 .field > span { font-size: 12px; }
@@ -1786,6 +1792,19 @@ export class WristAssistantPanel extends LitElement {
     .ent-box .ent-glass { position: absolute; left: 10px; display: grid; place-items: center; color: var(--wa-muted); pointer-events: none; }
     .ent-box .ent-glass svg { width: 14px; height: 14px; display: block; }
     .ent-box.open .ent-glass { color: var(--wa-accent); }
+    /* A layer that can draw nothing until it names an entity: a chart on
+       recorded history, a timeline, a picture. The empty box wears a ring in
+       the entity colour and pulses three times as it becomes the thing to fill
+       in, so "why is my layer blank?" is marked where the answer gets typed.
+       Nothing pulses once the box holds an id, and the ring goes with it. */
+    .ent-box.needs { border-radius: 8px; animation: wa-needs-pulse 1.5s ease-out 3; }
+    .ent-box.needs input { border-color: color-mix(in srgb, var(--wa-ent) 60%, var(--wa-line)); }
+    .ent-box.needs .ent-glass { color: var(--wa-ent); }
+    @keyframes wa-needs-pulse {
+      0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--wa-ent) 55%, transparent); }
+      70% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--wa-ent) 0%, transparent); }
+      100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--wa-ent) 0%, transparent); }
+    }
     button.ent-clear {
       position: absolute; right: 5px; width: 22px; height: 22px; display: grid; place-items: center;
       padding: 0; border: none; border-radius: 6px; background: none; color: var(--wa-muted); cursor: pointer;
@@ -1865,7 +1884,7 @@ export class WristAssistantPanel extends LitElement {
     .sym-glyph svg path { fill: currentColor; fill-opacity: 1; }
     .sym-none { font-size: 14px; opacity: .4; }
     .sym-name { font-size: 9px; line-height: 1.1; text-align: center; opacity: .8; overflow-wrap: anywhere; max-height: 22px; overflow: hidden; }
-    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .ent-box.needs { animation: none; } }
   `;
 
   // ── lifecycle ─────────────────────────────────────────────────────────
