@@ -122,7 +122,6 @@ import { chartNumbers, type ForcedBranches } from "./resolver.js";
 import type { HassEntityState, HassLike } from "./ha-api.js";
 import { MIN_ZOOM, familyTitle, type IconProvider } from "./renderer.js";
 import { CURATED_SYMBOLS, SYMBOL_CATEGORIES, SymbolBrowser, searchSymbols } from "./symbols.js";
-import { canRemoveFamily } from "./layouts.js";
 import { typedFrame } from "./interact.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import { KIND_COLOR, SECTION_COLOR } from "./kinds.js";
@@ -157,8 +156,6 @@ export interface EditorHost {
   setActiveFamily(family: FamilyKind): void;
   /** Add a shape and seed its layout. Also makes it the active shape. */
   addFamily(family: FamilyKind): void;
-  /** Remove a shape and its layout, confirming first when it holds content. */
-  removeFamily(family: FamilyKind): void;
   /** The complication's name when this edit session opened, for the rename
    * note. Undefined for a brand-new complication (nothing on the watch yet). */
   savedName?: string;
@@ -2399,12 +2396,11 @@ export function groupEditor(host: EditorHost, group: LayerGroup): TemplateResult
 // ── Family layout ─────────────────────────────────────────────────────────
 
 export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResult {
-  if (family === "inline") return html`${inlineEditor(host)}${removeLayoutRow(host, family)}`;
+  if (family === "inline") return inlineEditor(host);
   const layout = host.config.perFamily[family];
   if (!layout) {
     return html`<div class="hint">No settings stored for ${familyTitle(family)} yet.</div>
-      <button class="small" @click=${() => host.update((c) => { c.perFamily[family] = { placements: {}, cornerBodyShape: "circle", borderWidth: 2, rules: [] }; })}>Add ${familyTitle(family)} settings</button>
-      ${removeLayoutRow(host, family)}`;
+      <button class="small" @click=${() => host.update((c) => { c.perFamily[family] = { placements: {}, cornerBodyShape: "circle", borderWidth: 2, rules: [] }; })}>Add ${familyTitle(family)} settings</button>`;
   }
   const upd = (mutate: (l: FamilyLayout) => void, k?: string) => host.update((c) => mutate(c.perFamily[family]!), k ? `fam-${family}-${k}` : undefined);
   const placed = shownCount(host.config, family);
@@ -2430,29 +2426,8 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
     ${card(host, "placements", "Placements", html`
       <div class="hint">${placed === 0
         ? `Nothing is on the ${familyTitle(family)} shape. The Layers card offers to copy another shape's whole arrangement onto it.`
-        : `${placed} layer${placed === 1 ? " is" : "s are"} on the ${familyTitle(family)} shape, each with its own frame and size here.`}</div>
-      <div class="adders">
-        <button class="small" title=${`Put every layer on the ${familyTitle(family)} shape at the frame the layer itself carries`}
-          @click=${() => upd((l) => { l.placements = {}; })}>Show every layer at its own frame</button>
-      </div>`,
-      { color: SECTION_COLOR.place, icon: "place", summary: placed === 0 ? "Nothing placed" : `${placed} layer${placed === 1 ? "" : "s"} placed` })}
-    ${removeLayoutRow(host, family)}`;
-}
-
-/** "Remove layout" sits in the shape's own selection. Disabled on the last
- * remaining shape (the set is never empty). The host confirms when the
- * layout has content. */
-function removeLayoutRow(host: EditorHost, family: FamilyKind): TemplateResult {
-  const last = !canRemoveFamily(host.config, family);
-  const title = last
-    ? "A complication keeps at least one shape."
-    : `Drop the ${familyTitle(family)} shape. The watch stops listing this complication for ${familyTitle(family)} slots.`;
-  return card(host, "shape", "Remove this shape", html`
-    <div class="adders">
-      <button class="danger small" ?disabled=${last} title=${title} @click=${() => host.removeFamily(family)}>Remove the ${familyTitle(family)} shape</button>
-    </div>
-    ${last ? html`<div class="hint">This is the only shape. Add another before removing it.</div>` : html`<div class="hint">The watch stops listing this complication for ${familyTitle(family)} slots.</div>`}`,
-    { color: SECTION_COLOR.place, icon: "delete", summary: last ? "The only shape" : "Drops its layout" });
+        : `${placed} layer${placed === 1 ? " is" : "s are"} on the ${familyTitle(family)} shape, each with its own frame and size here.`}</div>`,
+      { color: SECTION_COLOR.place, icon: "place", summary: placed === 0 ? "Nothing placed" : `${placed} layer${placed === 1 ? "" : "s"} placed` })}`;
 }
 
 /** The Inline shape: one line of text, no canvas. The watch draws
