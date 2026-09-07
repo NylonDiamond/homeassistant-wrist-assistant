@@ -192,7 +192,7 @@ function headerArrow(): TemplateResult {
  * face answers both at once.
  */
 function familyArt(family: FamilyKind): TemplateResult {
-  const screen = svg`<rect x="3" y="2" width="38" height="48" rx="11" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="1.5" />`;
+  const screen = svg`<rect x="3" y="2" width="38" height="48" rx="11" fill="none" stroke="currentColor" stroke-opacity=".55" stroke-width="1.5" />`;
   const slot = family === "rectangular"
     ? svg`<rect x="8" y="21" width="28" height="10" rx="3" fill="currentColor" />`
     : family === "circular"
@@ -789,8 +789,13 @@ export class WristAssistantPanel extends LitElement {
     .new-head { display: flex; align-items: center; gap: 8px; padding: 12px 12px 12px 18px; border-bottom: 1px solid var(--wa-line); }
     .new-head h2 { margin: 0; font-size: 15px; font-weight: 500; }
     .new-head .spacer { flex: 1; }
+    /* Label over control here, not beside it: the inspector's two-column field
+       gives a third of the row to a one-word label, and four shape cards need
+       every pixel of a 430 px dialog. */
+    .new-body .field { display: flex; flex-direction: column; align-items: stretch; gap: 5px; }
+    .new-body .field > span { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
     .new-body { padding: 14px 18px 4px; }
-    .new-body .field.new-shapes { align-items: stretch; margin-top: 12px; }
+    .new-body .field.new-shapes { margin-top: 14px; }
     .new-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 18px 16px; }
     .shape-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
     /* Not one of them starts picked. A tinted default reads as a
@@ -805,7 +810,7 @@ export class WristAssistantPanel extends LitElement {
     .shape-card:hover { border-color: var(--wa-line-strong); color: var(--wa-ink); }
     .shape-card:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .shape-card.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-ink); }
-    .shape-card .shape-art { width: 30px; height: 36px; display: block; }
+    .shape-card .shape-art { width: 34px; height: 40px; display: block; }
     .shape-card-name { font-weight: 600; }
     .shape-dots { display: inline-flex; gap: 3px; align-items: center; flex: none; }
     .shape-dot { width: 14px; height: 10px; border-radius: 2px; background: currentColor; opacity: .3; display: inline-block; }
