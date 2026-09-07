@@ -626,6 +626,13 @@ export interface TimelineBand {
  * should look like. */
 export const TIMELINE_DEFAULT_OTHER_HEX = "#8E8E93";
 export const TIMELINE_DEFAULT_CORNER_RADIUS = 1;
+/** What a timeline added in the panel starts with, as distinct from the wire
+ * defaults above, which the watch falls back to when a key is absent. Black
+ * for a state nobody named, so on a watch face it reads as nothing rather
+ * than as a grey state, and 2 pt corners. Both are written to the document
+ * because they differ from the wire default. */
+export const TIMELINE_NEW_OTHER_HEX = "#000000";
+export const TIMELINE_NEW_CORNER_RADIUS = 2;
 export const TIMELINE_DEFAULT_MINUTES = 60;
 /** The widest gap worth offering: past four points the runs of a busy hour
  * stop touching at all and the strip reads as a dotted line. */
@@ -669,16 +676,45 @@ export function timelineHistoryKey(el: TimelineElement): string | undefined {
   return `${entityId}|${timelineHistoryMinutes(el)}|${TIMELINE_HISTORY_POINTS}|states`;
 }
 
-/** Amber for a state that is on, dark grey for one that is not, red for a door
- * standing open, green for someone home: the colours a person would reach for
- * if they had to pick two, so a fresh timeline already reads correctly. */
-const TIMELINE_ON_HEX = "#FF9F0A";
-const TIMELINE_OFF_HEX = "#3A3A3C";
-const TIMELINE_OPEN_HEX = "#FF453A";
-const TIMELINE_HOME_HEX = "#32D74B";
-/** A shade darker than `otherColorHex`, so "the recorder had nothing" reads as
- * a gap in the strip rather than as another state. */
-const TIMELINE_UNAVAILABLE_HEX = "#48484A";
+/** The colour a timeline reaches for on its own when a state has a well known
+ * name. Active states are bright (amber for on, green for home or playing,
+ * red for a door standing open or a lock left open), resting states are dark
+ * grey, and the two no-reading states are darker still, so "the recorder had
+ * nothing" reads as a gap rather than as another state. A word not in the
+ * table gets `TIMELINE_DEFAULT_OTHER_HEX` when a row is added for it. */
+export const TIMELINE_STATE_COLORS: Record<string, string> = {
+  on: "#FF9F0A", off: "#3A3A3C",
+  open: "#FF453A", closed: "#3A3A3C", opening: "#FFD60A", closing: "#FFD60A",
+  home: "#32D74B", not_home: "#3A3A3C",
+  locked: "#32D74B", unlocked: "#FF453A", jammed: "#FF453A",
+  playing: "#32D74B", paused: "#FF9F0A", idle: "#3A3A3C", standby: "#3A3A3C",
+  heat: "#FF9F0A", cool: "#0A84FF", heat_cool: "#BF5AF2", dry: "#FFD60A", fan_only: "#64D2FF", auto: "#BF5AF2",
+  cleaning: "#32D74B", docked: "#3A3A3C", returning: "#0A84FF", error: "#FF453A",
+  disarmed: "#3A3A3C", armed_home: "#0A84FF", armed_away: "#FF9F0A", armed_night: "#5E5CE6",
+  arming: "#FFD60A", pending: "#FFD60A", triggered: "#FF453A",
+  unavailable: "#48484A", unknown: "#48484A",
+};
+
+/** The states each domain is known to write to the recorder, in the order a
+ * colour table should list them. These are the recorder's words, not the
+ * frontend's: a binary sensor is `on` and `off` whatever its device class. */
+export const TIMELINE_DOMAIN_STATES: Record<string, string[]> = {
+  binary_sensor: ["on", "off"], switch: ["on", "off"], light: ["on", "off"], input_boolean: ["on", "off"],
+  fan: ["on", "off"], humidifier: ["on", "off"], siren: ["on", "off"],
+  cover: ["open", "closed", "opening", "closing"],
+  lock: ["locked", "unlocked", "jammed"],
+  person: ["home", "not_home"], device_tracker: ["home", "not_home"],
+  media_player: ["playing", "paused", "idle", "off"],
+  climate: ["heat", "cool", "heat_cool", "dry", "fan_only", "auto", "off"],
+  vacuum: ["cleaning", "docked", "returning", "idle", "error"],
+  alarm_control_panel: ["disarmed", "armed_home", "armed_away", "armed_night", "arming", "pending", "triggered"],
+};
+
+/** The colour for a state word, from the table above, else the grey a state
+ * nobody named draws in. Case and surrounding space are ignored. */
+export function timelineStateColor(state: string): string {
+  return TIMELINE_STATE_COLORS[state.trim().toLowerCase()] ?? TIMELINE_DEFAULT_OTHER_HEX;
+}
 
 /** Device classes whose binary sensor is about something being open. */
 const OPENING_DEVICE_CLASSES = ["door", "garage_door", "window", "opening"];
@@ -704,27 +740,15 @@ const OPENING_DEVICE_CLASSES = ["door", "garage_door", "window", "opening"];
  */
 export function seedTimelineBands(domain: string, deviceClass?: string): TimelineBand[] {
   const dc = (deviceClass ?? "").trim().toLowerCase();
-  // Both of the states Home Assistant uses for "no reading": a sensor that
-  // drops out reports unavailable, one that has not reported yet says unknown.
-  const unavailable: TimelineBand[] = [
-    { id: newId(), match: "unavailable", colorHex: TIMELINE_UNAVAILABLE_HEX },
-    { id: newId(), match: "unknown", colorHex: TIMELINE_UNAVAILABLE_HEX },
-  ];
-  const pair = (a: string, aHex: string, b: string, bHex: string): TimelineBand[] => [
-    { id: newId(), match: a, colorHex: aHex },
-    { id: newId(), match: b, colorHex: bHex },
-    ...unavailable,
-  ];
-  if (domain === "cover") return pair("open", TIMELINE_OPEN_HEX, "closed", TIMELINE_OFF_HEX);
+  // A door-shaped binary sensor is "on" while it stands open, so its on row
+  // takes the colour a cover's open row has.
   const openish = domain === "binary_sensor" && OPENING_DEVICE_CLASSES.includes(dc);
-  switch (domain) {
-    case "binary_sensor": case "switch": case "light": case "input_boolean":
-      return pair("on", openish ? TIMELINE_OPEN_HEX : TIMELINE_ON_HEX, "off", TIMELINE_OFF_HEX);
-    case "person": case "device_tracker":
-      return pair("home", TIMELINE_HOME_HEX, "not_home", TIMELINE_OFF_HEX);
-    default:
-      return unavailable;
-  }
+  const colour = (state: string) => (openish && state === "on" ? timelineStateColor("open") : timelineStateColor(state));
+  const words = TIMELINE_DOMAIN_STATES[domain] ?? [];
+  // Both of the states Home Assistant uses for "no reading" come last: a
+  // sensor that drops out reports unavailable, one that has not reported yet
+  // says unknown.
+  return [...words, "unavailable", "unknown"].map((state) => ({ id: newId(), match: state, colorHex: colour(state) }));
 }
 
 export interface ShapeElement extends ElementBase {
@@ -2478,9 +2502,9 @@ export function newElement(kind: Element["kind"]): Element {
           value: literal(""),
           historyMinutes: TIMELINE_DEFAULT_MINUTES,
           bands: [],
-          otherColorHex: TIMELINE_DEFAULT_OTHER_HEX,
+          otherColorHex: TIMELINE_NEW_OTHER_HEX,
           gap: 0,
-          cornerRadius: TIMELINE_DEFAULT_CORNER_RADIUS,
+          cornerRadius: TIMELINE_NEW_CORNER_RADIUS,
         },
       };
     }

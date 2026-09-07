@@ -215,7 +215,7 @@ describe("matching a state to a colour", () => {
   });
 
   it("colours every run one way when the table is empty", () => {
-    const runs = runsOf("0:on 1800:off", (p) => { p.bands = []; });
+    const runs = runsOf("0:on 1800:off", (p) => { p.bands = []; p.otherColorHex = TIMELINE_DEFAULT_OTHER_HEX; });
     expect(runs).toEqual([{ start: 0, end: 1, colorHex: TIMELINE_DEFAULT_OTHER_HEX }]);
   });
 });
@@ -267,9 +267,20 @@ describe("the history request", () => {
 describe("the wire format", () => {
   it("writes nothing it does not have to", () => {
     const cfg = newConfig("Timeline", 0);
-    cfg.elements.push(timelineElement());
+    // A fresh layer starts away from two wire defaults on purpose (black for
+    // the unnamed colour, 2 pt corners), so those two are written; set them
+    // back to the wire defaults and nothing but the value should remain.
+    cfg.elements.push(timelineElement((p) => { p.otherColorHex = TIMELINE_DEFAULT_OTHER_HEX; p.cornerRadius = 1; }));
     const payload = (encodeConfig(cfg).elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
     expect(Object.keys(payload).sort()).toEqual(["frame", "id", "isHidden", "rules", "value"]);
+  });
+
+  it("starts a new layer with black underneath and 2 pt corners, and writes both", () => {
+    const cfg = newConfig("Timeline", 0);
+    cfg.elements.push(timelineElement());
+    const payload = (encodeConfig(cfg).elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
+    expect(payload.otherColorHex).toBe("#000000");
+    expect(payload.cornerRadius).toBe(2);
   });
 
   it("writes each key once it is away from its default", () => {
@@ -340,7 +351,7 @@ describe("seeded colour tables", () => {
   });
 
   it("names open and closed for a cover, which really reports those words", () => {
-    expect(seedTimelineBands("cover").map((b) => b.match)).toEqual(["open", "closed", "unavailable", "unknown"]);
+    expect(seedTimelineBands("cover").map((b) => b.match)).toEqual(["open", "closed", "opening", "closing", "unavailable", "unknown"]);
   });
 
   it("keeps on and off for a door sensor, because that is what it reports", () => {

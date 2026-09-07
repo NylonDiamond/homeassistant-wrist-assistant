@@ -63,6 +63,8 @@ import {
   CHART_HISTORY_SPANS,
   chartHistoryKey,
   TIMELINE_DEFAULT_OTHER_HEX,
+  TIMELINE_DOMAIN_STATES,
+  timelineStateColor,
   TIMELINE_HISTORY_POINTS,
   TIMELINE_MAX_GAP,
   timelineHistoryKey,
@@ -973,14 +975,7 @@ function timelineKnownStates(samples: readonly TimelineSample[], spanSeconds: nu
     note(s.state, Math.max(0, end - s.offsetSeconds));
   });
   if (live !== undefined) note(live, 0);
-  const domainWords: Record<string, string[]> = {
-    binary_sensor: ["on", "off"], switch: ["on", "off"], light: ["on", "off"], input_boolean: ["on", "off"],
-    fan: ["on", "off"], cover: ["open", "closed", "opening", "closing"], lock: ["locked", "unlocked"],
-    person: ["home", "not_home"], device_tracker: ["home", "not_home"],
-    media_player: ["playing", "paused", "idle", "off"], climate: ["heat", "cool", "heat_cool", "off"],
-    vacuum: ["cleaning", "docked", "returning", "idle"], alarm_control_panel: ["disarmed", "armed_home", "armed_away", "triggered"],
-  };
-  (domainWords[domain ?? ""] ?? []).forEach((w) => note(w, 0));
+  (TIMELINE_DOMAIN_STATES[domain ?? ""] ?? []).forEach((w) => note(w, 0));
   const noReading = ["unavailable", "unknown"];
   const seen = [...time.entries()]
     .filter(([k]) => !noReading.includes(k))
@@ -1009,7 +1004,7 @@ function timelineBandFields(
       </div>`)}
     <datalist id=${listId}>${knownStates.map((s) => html`<option value=${s}></option>`)}</datalist>
     <button class="small" @click=${() => set((p) => {
-      p.bands = [...p.bands, { id: newId(), match: nextState, colorHex: TIMELINE_DEFAULT_OTHER_HEX }];
+      p.bands = [...p.bands, { id: newId(), match: nextState, colorHex: timelineStateColor(nextState) }];
     })}>${nextState === "" ? "Add state" : `Add ${nextState}`}</button>
     ${colorField("Otherwise", layer.otherColorHex,
       (v) => set((p) => { p.otherColorHex = v ?? TIMELINE_DEFAULT_OTHER_HEX; }, "tother"), false, TIMELINE_DEFAULT_OTHER_HEX)}`;
