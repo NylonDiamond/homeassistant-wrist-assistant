@@ -32,6 +32,22 @@ export function canvasPoint(svg: SVGSVGElement, ev: PointerEvent): { x: number; 
   return { x: p.x, y: p.y };
 }
 
+/**
+ * A frame typed into the Place card, held to the rules a gesture already
+ * obeys: no smaller than a corner drag allows, and never pushed so far that
+ * nothing is left on the face.
+ */
+export function typedFrame(frame: NormalizedFrame, patch: Partial<NormalizedFrame>): NormalizedFrame {
+  const next = { ...frame, ...patch };
+  return clampFrame({
+    ...next,
+    x: round3(next.x),
+    y: round3(next.y),
+    width: Math.max(MIN_SIZE, round3(next.width)),
+    height: Math.max(MIN_SIZE, round3(next.height)),
+  });
+}
+
 function clampFrame(f: NormalizedFrame): NormalizedFrame {
   const x = Math.min(1 - KEEP_VISIBLE, Math.max(-f.width + KEEP_VISIBLE, f.x));
   const y = Math.min(1 - KEEP_VISIBLE, Math.max(-f.height + KEEP_VISIBLE, f.y));

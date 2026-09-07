@@ -123,6 +123,7 @@ import type { HassEntityState, HassLike } from "./ha-api.js";
 import { MIN_ZOOM, familyTitle, type IconProvider } from "./renderer.js";
 import { CURATED_SYMBOLS, SYMBOL_CATEGORIES, SymbolBrowser, searchSymbols } from "./symbols.js";
 import { canRemoveFamily } from "./layouts.js";
+import { typedFrame } from "./interact.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import { KIND_COLOR, SECTION_COLOR } from "./kinds.js";
 import { domainIcon, domainLabel, isActiveState } from "./domain-icons.js";
@@ -298,6 +299,20 @@ export function sliderField(
 /** `def` adds a reset beside the label, drawn only while the box is away from
  * it. The button sits inside the `<label>`, so its click is stopped there or
  * the label would forward it to the checkbox and toggle it back. */
+/**
+ * One of a frame's four numbers, as a percentage of the face. The frame is
+ * stored 0-1, which reads as nothing on screen, and the card's summary already
+ * speaks percent ("23% wide").
+ *
+ * These boxes exist so the Place card shows what its header reset will take
+ * back. Before them the card held only Rotation, so a reset that also re-centred
+ * and resized the layer looked like a bug.
+ */
+function percentField(label: string, value: number, set: (v: number) => void, def: number, min: number, max: number) {
+  const pct = (n: number) => Math.round(n * 1000) / 10;
+  return numberField(label, pct(value), (v) => set((v ?? 0) / 100), { min, max, step: 0.5, def: pct(def) });
+}
+
 export function checkField(label: string, value: boolean, set: (v: boolean) => void, def?: boolean) {
   return html`<label class="field check"><input type="checkbox" .checked=${value} @change=${(e: Event) => set((e.target as HTMLInputElement).checked)} />${fieldLabel(label, backTo(value, def, set, (v) => (v ? "on" : "off")))}</label>`;
 }
@@ -1656,6 +1671,10 @@ interface CardOptions {
    * also what says "someone set something here" on a shut card. Undo takes a
    * card reset back in one step. */
   reset?: () => void;
+  /** What that button says it will do, when "back to its defaults" is too
+   * vague to be safe. The Place card resets a layer's whole frame, so it says
+   * so rather than letting the reader find out by watching the layer jump. */
+  resetTitle?: string;
 }
 
 /** Structural equality for the plain data the config is made of: objects,
@@ -1705,7 +1724,7 @@ function card(host: EditorHost, id: string, title: string, body: unknown, opts: 
       @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}>
       <span class="swatch">${uiIcon(opts.icon ?? "content")}</span>
       <span class="tt"><h4>${title}${resetButton(opts.reset === undefined ? undefined
-        : { atDefault: false, title: `Put ${title} back to its defaults`, reset: opts.reset })}</h4>${opts.summary ? html`<span class="sum">${opts.summary}</span>` : nothing}</span>
+        : { atDefault: false, title: opts.resetTitle ?? `Put ${title} back to its defaults`, reset: opts.reset })}</h4>${opts.summary ? html`<span class="sum">${opts.summary}</span>` : nothing}</span>
       <span class="chev">${uiIcon("chevron")}</span>
     </div>
     ${open ? html`<div class="sec-b">${body}</div>` : nothing}
@@ -1789,7 +1808,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
   const upd = (mutate: (e: CElement) => void, k?: string) => host.update((c) => mutate(c.elements[idx]!), k ? `${key}-${k}` : undefined);
   const eff = effectivePlacement(host.config, family, el);
   const f = eff.frame;
-  const setFrame = (patch: Partial<NormalizedFrame>, k: string) => host.update((c) => setPlacement(c, family, id, { frame: { ...f, ...patch } }), `${key}-${k}-${family}`);
+  const setFrame = (patch: Partial<NormalizedFrame>, k: string) => host.update((c) => setPlacement(c, family, id, { frame: typedFrame(f, patch) }), `${key}-${k}-${family}`);
   // What a fresh layer of this kind holds: the reset buttons go back to it,
   // and the changed dots compare against it.
   const base = newElement(el.kind).payload as unknown as Record<string, unknown>;
@@ -2138,16 +2157,25 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
       { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(el.payload.rules).replace(/\.$/, ""),
         ...(el.payload.rules.length > 0 ? { reset: () => upd((e) => { e.payload.rules = []; }) } : {}) })}
     ${card(host, "placement", "Place", html`
+      <div class="grid4">
+        ${percentField("Left", f.x, (v) => setFrame({ x: v }, "x"), CENTERED_FRAME.x, -100, 100)}
+        ${percentField("Top", f.y, (v) => setFrame({ y: v }, "y"), CENTERED_FRAME.y, -100, 100)}
+        ${percentField("Width", f.width, (v) => setFrame({ width: v }, "w"), CENTERED_FRAME.width, 4, 200)}
+        ${percentField("Height", f.height, (v) => setFrame({ height: v }, "h"), CENTERED_FRAME.height, 4, 200)}
+      </div>
       ${sliderField("Rotation", f.rotationDegrees, (v) => setFrame({ rotationDegrees: v }, "rot"),
         { min: -180, max: 180, step: 1, def: 0, format: (v) => `${Math.round(v)}°` })}
       <div class="hint">Drag the layer on the ${familyTitle(family)} preview to move it, or pull a
-        corner to resize it. Arrow keys nudge the selection 1 pt, shift-arrows 10 pt. The eye on the
-        layer's row hides it.</div>
+        corner to resize it, and the four boxes above follow. Arrow keys nudge the selection 1 pt,
+        shift-arrows 10 pt. The eye on the layer's row hides it.</div>
       <div class="hint">Everything about where this layer sits, how big it is drawn and whether it
         shows belongs to the ${familyTitle(family)} shape alone. Pick another shape above to place
         the same layer differently there.</div>`,
       { color: SECTION_COLOR.place, icon: "place", summary: `${Math.round(f.width * 100)}% wide · ${familyTitle(family)}${eff.fromPlacement ? "" : " · shared frame"}`,
-        ...(placeChanged ? { reset: () => host.update((c) => setPlacement(c, family, id, { frame: { ...CENTERED_FRAME }, isHidden: false })) } : {}) })}`;
+        ...(placeChanged ? {
+          resetTitle: `Put this layer back to the middle of the ${familyTitle(family)} face at half size, unrotated and shown`,
+          reset: () => host.update((c) => setPlacement(c, family, id, { frame: { ...CENTERED_FRAME }, isHidden: false })),
+        } : {}) })}`;
 }
 
 /** The payload fields the Timestamp card owns. Pictures only. */
