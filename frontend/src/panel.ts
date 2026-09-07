@@ -591,11 +591,8 @@ export class WristAssistantPanel extends LitElement {
       flex: none;
       z-index: 20;
     }
-    /* One hairline between groups of controls, so "watch, complication, edit,
-       state" reads as four things rather than one run of eleven. */
-    header .hsep { width: 1px; height: 20px; background: var(--wa-line); flex: none; margin: 0 8px; }
-    /* The step from one header question to the next, in place of that
-       hairline. The header reads left to right as a route: choose a watch,
+    /* The step from one header question to the next. The header reads left to
+       right as a route: choose a watch,
        then choose a complication, or make one. The arrows carry that, so they
        are drawn in ink rather than in the hairline grey they used to wear,
        where they were all but invisible against the bar. */
@@ -614,9 +611,8 @@ export class WristAssistantPanel extends LitElement {
       border-radius: 9px; background: var(--wa-card); box-shadow: 0 0 0 1px var(--wa-line);
     }
     .hbox.hist { gap: 2px; padding: 0 3px; }
-    .hbox.status { padding: 0 3px 0 12px; gap: 10px; max-width: 100%; }
+    .hbox.status { padding: 0 3px 0 10px; gap: 10px; max-width: 100%; }
     .hbox .hdiv { width: 1px; height: 18px; background: var(--wa-line); flex: none; }
-    .hbox .st-text { font-size: 12.5px; font-weight: 600; color: var(--wa-ink); white-space: nowrap; }
     .hbox button.icon { width: 28px; height: 28px; }
     /* Buttons: one quiet shape everywhere, the accent fill kept for the single
        action that matters, and a soft ring on focus instead of a hard outline. */
@@ -3613,15 +3609,10 @@ export class WristAssistantPanel extends LitElement {
     const fit = this.narrow
       ? { columns: 1 as const, left: this.colLeft, right: this.colRight }
       : columnFit(this.panelWidth, this.colLeft, this.colRight);
-    // The header's one line of status: which revision is open, and whether
-    // what is on screen has reached it. The footer says the same thing at
-    // length; this is the glance.
+    // The header used to spell the revision and whether it was saved. The
+    // footer already says exactly that, at length, so the bar keeps only the
+    // dot: colour for the glance, the same words in its tooltip.
     const rec = this.records.find((r) => r.id === this.selectedId);
-    const statusText = d === undefined
-      ? "No complication"
-      : rec
-        ? `Revision ${rec.revision} · ${dirty ? "unsaved changes" : "saved"}`
-        : "Not saved yet";
     return html`
       <header>
         <label>Choose watch
@@ -3635,19 +3626,15 @@ export class WristAssistantPanel extends LitElement {
         ${this.renderPicker()}
         ${this.hass.user?.is_admin ? html`<span class="hor" aria-hidden="true">or</span>${headerArrow()}` : nothing}
         ${this.renderNewButton()}
-        <span class="hsep"></span>
+        <span class="spacer"></span>
+        <button class="help" title="Keys and mouse tips" aria-label="Keys and mouse tips" @click=${() => { this.helpOpen = true; }}>?</button>
         <div class="toolbar hbox hist">
           <button class="icon" @click=${() => this.undo()} ?disabled=${!d?.canUndo} title="Undo (⌘Z)" aria-label="Undo">${uiIcon("undo")}</button>
           <span class="hdiv"></span>
           <button class="icon" @click=${() => this.redo()} ?disabled=${!d?.canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">${uiIcon("redo")}</button>
         </div>
-        <span class="hsep"></span>
-        <span class="spacer"></span>
-        <button class="help" title="Keys and mouse tips" aria-label="Keys and mouse tips" @click=${() => { this.helpOpen = true; }}>?</button>
         <div class="hbox status">
           <span class="dirty-dot ${dirty ? "" : rec ? "clean" : "none"}" title=${dirty ? "Unsaved changes" : rec ? "Saved" : "Not saved yet"}></span>
-          <span class="st-text">${statusText}</span>
-          <span class="hdiv"></span>
           ${this.renderSendButton()}
           <button class="primary save ${dirty ? "dirty" : ""}" @click=${() => void this.save()} ?disabled=${!this.canEdit || !dirty || this.saving || !this.slotChosen} title="Save (⌘S)">${this.saving ? "Saving…" : d?.baseRevision === null ? "Save new" : dirty ? "Save" : "Saved"}</button>
         </div>
