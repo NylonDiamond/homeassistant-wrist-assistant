@@ -4,7 +4,7 @@
 // a concurrent edit is caught instead of overwritten (plan §"Save and
 // conflict rules"). Rules are edited in the inspector's States section.
 
-import { LitElement, html, css, nothing, unsafeCSS, type PropertyValues, type TemplateResult } from "lit";
+import { LitElement, html, svg, css, nothing, unsafeCSS, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
 import {
   type ComplicationRecord,
@@ -173,6 +173,35 @@ type PickerRow =
 function familiesOf(record: ComplicationRecord): string[] {
   const raw = record.document?.supportedFamilies;
   return Array.isArray(raw) ? raw.filter((f): f is string => typeof f === "string") : [];
+}
+
+/** The step from one header question to the next. Drawn rather than typed so
+ * it can carry a stroke thick enough to read as a route, which a text chevron
+ * at 12 px never did. */
+function headerArrow(): TemplateResult {
+  return html`<span class="hstep" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h13" /><path d="M12 6l6 6-6 6" /></svg></span>`;
+}
+
+/**
+ * A shape drawn where it sits on the watch: the screen as a rounded outline,
+ * the slot filled inside it.
+ *
+ * The four names alone say nothing to anyone who has not already learned them,
+ * and "Corner" in particular is a place rather than a shape. A picture of the
+ * face answers both at once.
+ */
+function familyArt(family: FamilyKind): TemplateResult {
+  const screen = svg`<rect x="3" y="2" width="38" height="48" rx="11" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="1.5" />`;
+  const slot = family === "rectangular"
+    ? svg`<rect x="8" y="21" width="28" height="10" rx="3" fill="currentColor" />`
+    : family === "circular"
+      ? svg`<circle cx="22" cy="26" r="8" fill="currentColor" />`
+      : family === "corner"
+        ? svg`<path d="M9 18a9 9 0 0 1 9-9" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+              <circle cx="11.5" cy="11.5" r="3" fill="currentColor" />`
+        : svg`<rect x="10" y="7" width="24" height="5" rx="2.5" fill="currentColor" />`;
+  return html`<svg class="shape-art" viewBox="0 0 44 52" aria-hidden="true">${screen}${slot}</svg>`;
 }
 
 const COL_LEFT_DEFAULT = 300;
@@ -389,10 +418,17 @@ export class WristAssistantPanel extends LitElement {
    * the dialog leaves the document exactly as it was. */
   @state() private presetKind?: PresetKind;
   @state() private presetEntity?: EntityRef;
-  /** The New button's shape chooser is open. The button sits beside the
-   * complication list rather than inside it, so making one is one click from
-   * anywhere instead of a menu row under twenty other rows. */
-  @state() private newShapeChooser = false;
+  /** The New complication dialog is open, and what has been answered in it.
+   *
+   * It used to be a popover offering four shape buttons, one of them tinted as
+   * though it were the answer, and a click on any of them made a complication
+   * called "New complication" straight away. Two things went wrong with that:
+   * the tint chose for the author, and a watch quietly filled with documents
+   * sharing one name. The dialog asks for both, and creates nothing until a
+   * name nothing else on this watch uses sits beside a shape someone picked. */
+  @state() private newOpen = false;
+  @state() private newName = "";
+  @state() private newFamily?: FamilyKind;
   /** Parsed config per saved record, keyed by id and invalidated by revision.
    * The picker draws a real preview of every complication, and parsing and
    * compiling every document on every render of an open menu is the one part
@@ -558,16 +594,17 @@ export class WristAssistantPanel extends LitElement {
     /* One hairline between groups of controls, so "watch, complication, edit,
        state" reads as four things rather than one run of eleven. */
     header .hsep { width: 1px; height: 20px; background: var(--wa-line); flex: none; margin: 0 8px; }
-    /* The step from the watch to its complications, in place of that hairline. */
-    header .hstep { color: var(--wa-line-strong); display: grid; place-items: center; flex: none; margin: 0 2px; }
-    header .hstep svg { width: 16px; height: 16px; display: block; }
-    header .mark {
-      width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; flex: none;
-      background: var(--wa-ink); color: var(--wa-card);
-    }
-    header .mark svg { width: 14px; height: 14px; }
+    /* The step from one header question to the next, in place of that
+       hairline. The header reads left to right as a route: choose a watch,
+       then choose a complication, or make one. The arrows carry that, so they
+       are drawn in ink rather than in the hairline grey they used to wear,
+       where they were all but invisible against the bar. */
+    header .hstep { color: var(--wa-muted); display: grid; place-items: center; flex: none; margin: 0 2px; }
+    header .hstep svg { width: 20px; height: 20px; display: block; }
+    header .hor { font-size: 12px; color: var(--wa-muted); flex: none; margin: 0 2px; }
     header .spacer { flex: 1; }
     header label { font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; color: var(--wa-muted); }
+    header label.pick-label { margin-right: -2px; }
     header label select { max-width: 220px; }
     .toolbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
     /* Two boxes, one shape: a white pill with a hairline ring, holding a run of
@@ -728,18 +765,48 @@ export class WristAssistantPanel extends LitElement {
       border: 1px solid var(--wa-line); background: var(--wa-card); color: var(--wa-ink);
       transition: border-color .12s ease-out, background-color .12s ease-out;
     }
+    /* The one way to start something from an empty panel, so it is filled
+       rather than outlined: the header's other controls are all about a
+       complication that already exists. */
+    .new-btn.primary { border-color: transparent; background: var(--wa-primary-bg); color: var(--wa-primary-ink); }
+    .new-btn.primary:hover:not(:disabled) { border-color: transparent; filter: brightness(1.1); }
     .new-btn:hover:not(:disabled) { border-color: var(--wa-line-strong); background: var(--wa-panel); }
     .new-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .new-btn:disabled { opacity: .45; cursor: not-allowed; }
     .new-btn svg { width: 16px; height: 16px; }
     .newc-full { font-size: 11px; color: var(--wa-muted); white-space: nowrap; }
-    .newc .new-shape {
-      position: absolute; top: calc(100% + 8px); left: 0; z-index: 50; width: 300px;
-      background: var(--wa-card); border: 1px solid var(--wa-line-strong); border-radius: var(--wa-r-md);
-      box-shadow: var(--wa-shadow-pop); padding: 10px 12px 12px;
+
+    /* The New complication dialog: name, shape, Create. In the middle of the
+       window rather than hanging off the button, because it asks two questions
+       and refuses until both are answered. */
+    dialog.new-dialog {
+      width: min(430px, calc(100vw - 32px)); padding: 0;
+      border: 1px solid var(--wa-line); border-radius: 12px;
+      background: var(--wa-card); color: var(--wa-ink);
+      box-shadow: 0 12px 40px rgba(0,0,0,.4);
     }
-    .newc .new-shape .hint { margin: 0 0 8px; }
-    .newc .new-shape .adders { display: flex; gap: 6px; flex-wrap: wrap; }
+    dialog.new-dialog::backdrop { background: rgba(0,0,0,.45); }
+    .new-head { display: flex; align-items: center; gap: 8px; padding: 12px 12px 12px 18px; border-bottom: 1px solid var(--wa-line); }
+    .new-head h2 { margin: 0; font-size: 15px; font-weight: 500; }
+    .new-head .spacer { flex: 1; }
+    .new-body { padding: 14px 18px 4px; }
+    .new-body .field.new-shapes { align-items: stretch; margin-top: 12px; }
+    .new-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 18px 16px; }
+    .shape-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    /* Not one of them starts picked. A tinted default reads as a
+       recommendation, and the shape is the one thing about a complication
+       that cannot be changed later without moving every layer. */
+    .shape-card {
+      display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer;
+      font: inherit; font-size: 11.5px; padding: 10px 4px 8px; color: var(--wa-muted);
+      border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-raised);
+      transition: border-color .12s ease-out, background-color .12s ease-out, color .12s ease-out;
+    }
+    .shape-card:hover { border-color: var(--wa-line-strong); color: var(--wa-ink); }
+    .shape-card:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .shape-card.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-ink); }
+    .shape-card .shape-art { width: 30px; height: 36px; display: block; }
+    .shape-card-name { font-weight: 600; }
     .shape-dots { display: inline-flex; gap: 3px; align-items: center; flex: none; }
     .shape-dot { width: 14px; height: 10px; border-radius: 2px; background: currentColor; opacity: .3; display: inline-block; }
     .shape-dot.circular { width: 10px; border-radius: 50%; }
@@ -1794,10 +1861,12 @@ export class WristAssistantPanel extends LitElement {
     .ent-box.open .ent-glass { color: var(--wa-accent); }
     /* A layer that can draw nothing until it names an entity: a chart on
        recorded history, a timeline, a picture. The empty box wears a ring in
-       the entity colour and pulses three times as it becomes the thing to fill
-       in, so "why is my layer blank?" is marked where the answer gets typed.
-       Nothing pulses once the box holds an id, and the ring goes with it. */
-    .ent-box.needs { border-radius: 8px; animation: wa-needs-pulse 1.5s ease-out 3; }
+       the entity colour and keeps pulsing, so "why is my layer blank?" is
+       marked where the answer gets typed. It runs without end on purpose: a
+       finite pulse fires once on the first paint and never again, so anyone
+       who looked away, opened another layer and came back found a plain box
+       and no answer. The ring and the pulse both go the moment an id lands. */
+    .ent-box.needs { border-radius: 8px; animation: wa-needs-pulse 1.8s ease-out infinite; }
     .ent-box.needs input { border-color: color-mix(in srgb, var(--wa-ent) 60%, var(--wa-line)); }
     .ent-box.needs .ent-glass { color: var(--wa-ent); }
     @keyframes wa-needs-pulse {
@@ -2730,9 +2799,14 @@ export class WristAssistantPanel extends LitElement {
     this.ensureActiveFamily();
   }
 
-  private createNew(family: FamilyKind) {
-    this.newShapeChooser = false;
-    this.startNew(newConfig("New complication", this.freeSlot(), [family]));
+  /** Answered entirely by the New dialog, which is what stops a watch filling
+   * with documents that all read "New complication" on the wrist. */
+  private createNew() {
+    const family = this.newFamily;
+    const name = this.newName.trim();
+    if (!family || name === "" || this.newNameProblem() !== undefined) return;
+    this.closeNewDialog();
+    this.startNew(newConfig(name, this.freeSlot(), [family]));
   }
 
   private setForced(ruleId: string, branch: { caseId: string } | "otherwise" | "live") {
@@ -3542,16 +3616,16 @@ export class WristAssistantPanel extends LitElement {
         : "Not saved yet";
     return html`
       <header>
-        <span class="mark" title="Wrist Assistant" aria-label="Wrist Assistant">${uiIcon("watch")}</span>
-        <label>Watch
+        <label>Choose watch
           <select @change=${(e: Event) => void this.selectOwner((e.target as HTMLSelectElement).value)}>
             ${this.owners.map((o) => html`<option value=${o.owner_watch_id} ?selected=${o.owner_watch_id === this.ownerId}>
               ${ownerLabel(o)} (${o.complication_count})</option>`)}
           </select>
         </label>
-        <span class="hstep" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6" /></svg></span>
+        ${headerArrow()}
+        <label class="pick-label" for="wa-picker">Choose complication</label>
         ${this.renderPicker()}
+        ${this.hass.user?.is_admin ? html`<span class="hor" aria-hidden="true">or</span>${headerArrow()}` : nothing}
         ${this.renderNewButton()}
         <span class="hsep"></span>
         <div class="toolbar hbox hist">
@@ -3572,6 +3646,7 @@ export class WristAssistantPanel extends LitElement {
       </header>
       ${this.loadError ? html`<div class="card error">${this.loadError}</div>` : nothing}
       ${this.helpOpen ? this.renderHelpDialog() : nothing}
+      ${this.newOpen ? this.renderNewDialog() : nothing}
       ${this.watchSupported
         ? html`<div class="layout cols-${fit.columns}"
               style="--wa-left:${fit.left}px;--wa-right:${fit.right}px">
@@ -3700,7 +3775,7 @@ export class WristAssistantPanel extends LitElement {
       ? all
       : all.filter((row) => (row.kind === "record" ? familiesOf(row.record) : row.families).includes(filter));
     return html`<div class="picker">
-      <button aria-haspopup="listbox" aria-expanded=${this.pickerOpen ? "true" : "false"} title="Choose a complication"
+      <button id="wa-picker" aria-haspopup="listbox" aria-expanded=${this.pickerOpen ? "true" : "false"} title="Choose a complication"
         @click=${() => this.togglePicker()}>
         ${this.shapeDots(families)}
         <span class="pk-name">${name}</span>
@@ -3743,36 +3818,114 @@ export class WristAssistantPanel extends LitElement {
 
   /**
    * The New complication button, beside the list rather than inside it. It
-   * opens one small popover asking which shape to start with; the rest of the
-   * shapes are added under the preview later.
+   * opens the dialog below; nothing is made until that dialog is answered.
    */
   private renderNewButton() {
     if (!this.hass.user?.is_admin) return nothing;
-    const free = this.freeSlot();
-    const full = free < 0;
+    const full = this.freeSlot() < 0;
     return html`<div class="newc">
-      <button class="new-btn" ?disabled=${full} aria-haspopup="dialog" aria-expanded=${this.newShapeChooser ? "true" : "false"}
+      <button class="new-btn primary" ?disabled=${full} aria-haspopup="dialog" aria-expanded=${this.newOpen ? "true" : "false"}
         title=${full ? "This watch has no free slot. Delete a complication first." : "Make a new complication"}
-        @click=${() => this.toggleNewChooser()}>${uiIcon("plus")}<span>New</span></button>
+        @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New</span></button>
       ${full ? html`<span class="newc-full">watch is full</span>` : nothing}
-      ${this.newShapeChooser && !full ? html`<div class="new-shape" role="dialog" aria-label="New complication">
-        <div class="hint">Start with one shape. More can be added under the preview later.</div>
-        <div class="adders">
-          ${ALL_FAMILIES.map((f) => html`<button class="small ${f === "rectangular" ? "primary" : ""}" @click=${() => { this.toggleNewChooser(false); this.createNew(f); }}>${familyTitle(f)}</button>`)}
-        </div>
-      </div>` : nothing}
     </div>`;
   }
 
-  private toggleNewChooser(next = !this.newShapeChooser) {
-    this.newShapeChooser = next;
-    if (next) window.addEventListener("pointerdown", this.newChooserOutside, { capture: true });
-    else window.removeEventListener("pointerdown", this.newChooserOutside, { capture: true });
+  /** Names already on this watch, lower-cased, so the dialog can refuse one
+   * twice. Locked rows count: an iPhone preset the panel cannot edit is still
+   * a name the author will read on the wrist. */
+  private takenNames(): Set<string> {
+    const names = [
+      ...this.records.map((r) => String(r.document?.name ?? "")),
+      ...this.occupied.map((o) => ("name" in o && typeof o.name === "string" ? o.name : "")),
+    ];
+    return new Set(names.map((n) => n.trim().toLowerCase()).filter((n) => n !== ""));
   }
 
-  private newChooserOutside = (e: PointerEvent) => {
-    const inside = e.composedPath().some((n) => n instanceof HTMLElement && n.classList.contains("newc"));
-    if (!inside) this.toggleNewChooser(false);
+  /** What is still missing before Create can do anything, in words, or
+   * undefined when nothing is. */
+  private newNameProblem(): string | undefined {
+    const name = this.newName.trim();
+    if (name === "") return undefined; // Not an error yet, just unanswered.
+    if (this.takenNames().has(name.toLowerCase())) return "A complication on this watch already has that name.";
+    return undefined;
+  }
+
+  /**
+   * The New complication dialog: a name, then a shape, then Create.
+   *
+   * Nothing is preselected. The old popover tinted Rectangular as though it
+   * were the answer, which is a choice made for the author by a button that
+   * looked like a recommendation, and it named every complication the same
+   * thing. Create stays dead until both questions have real answers.
+   */
+  private renderNewDialog() {
+    const nameProblem = this.newNameProblem();
+    const named = this.newName.trim() !== "";
+    const ready = named && nameProblem === undefined && this.newFamily !== undefined;
+    return html`<dialog class="new-dialog" @keydown=${this.newKeys} @close=${() => { this.newOpen = false; }}>
+      <div class="new-head">
+        <h2>New complication</h2>
+        <span class="spacer"></span>
+        <button class="icon" title="Cancel" aria-label="Cancel" @click=${() => this.closeNewDialog()}>${uiIcon("close")}</button>
+      </div>
+      <div class="new-body">
+        <div class="field">
+          <span>Name</span>
+          <input type="text" .value=${this.newName} placeholder="Kitchen at a glance" maxlength="60"
+            aria-label="Complication name" aria-invalid=${nameProblem ? "true" : "false"}
+            @input=${(e: Event) => { this.newName = (e.target as HTMLInputElement).value; }} />
+        </div>
+        ${nameProblem
+          ? html`<div class="hint err">${nameProblem}</div>`
+          : html`<div class="hint">This is what the name shows on the watch face picker, so make it one you will recognise there.</div>`}
+        <div class="field new-shapes">
+          <span>Shape</span>
+          <div class="shape-cards" role="radiogroup" aria-label="Shape">
+            ${ALL_FAMILIES.map((f) => html`<button type="button" role="radio" class="shape-card ${this.newFamily === f ? "on" : ""}"
+              aria-checked=${this.newFamily === f ? "true" : "false"}
+              @click=${() => { this.newFamily = f; }}>
+              ${familyArt(f)}
+              <span class="shape-card-name">${familyTitle(f)}</span>
+            </button>`)}
+          </div>
+        </div>
+        <div class="hint">Start with one shape. More can be added under the preview later.</div>
+      </div>
+      <div class="new-foot">
+        <button class="small" @click=${() => this.closeNewDialog()}>Cancel</button>
+        <button class="primary" ?disabled=${!ready}
+          title=${ready ? "Make it" : !named ? "Give it a name first" : nameProblem ? nameProblem : "Pick a shape first"}
+          @click=${() => this.createNew()}>Create</button>
+      </div>
+    </dialog>`;
+  }
+
+  private openNewDialog() {
+    if (this.freeSlot() < 0) return;
+    this.newOpen = true;
+    this.newName = "";
+    this.newFamily = undefined;
+    void this.updateComplete.then(() => {
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.new-dialog");
+      if (!dialog) return;
+      if (!dialog.open) dialog.showModal();
+      dialog.querySelector<HTMLInputElement>("input[type=text]")?.focus();
+    });
+  }
+
+  private closeNewDialog() {
+    const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.new-dialog");
+    if (dialog?.open) dialog.close();
+    else this.newOpen = false;
+  }
+
+  /** Enter creates, once both questions have been answered. */
+  private newKeys = (e: KeyboardEvent) => {
+    if (e.key !== "Enter") return;
+    if (this.newName.trim() === "" || this.newFamily === undefined || this.newNameProblem() !== undefined) return;
+    e.preventDefault();
+    this.createNew();
   };
 
   private renderBanners() {
