@@ -554,9 +554,13 @@ export interface ShapeElement extends ElementBase {
   borderWidth: number;
 }
 
-/** A camera snapshot, aspect-filled into its frame. No colorSlot: photos have no
- * tint. The watch fetches the pixels through op=snapshot; the panel previews the
- * camera's own entity_picture URL. */
+/** A picture, aspect-filled into its frame. No colorSlot: photos have no tint.
+ * The watch fetches the pixels through op=snapshot or op=entity_picture; the
+ * panel previews the entity's own entity_picture URL either way. */
+/** Where an image layer's pixels come from. `camera` is a `camera.*` entity
+ * grabbed through op=snapshot; `entityPicture` is any entity that carries an
+ * `entity_picture` attribute (a person's avatar, a media player's cover art). */
+export type ImageSource = "camera" | "entityPicture";
 /** How a snapshot meets its frame: `fill` crops it, `fit` shows all of it. */
 export type ImageContentMode = "fill" | "fit";
 export type ImageTimestampCorner = "topLeading" | "topTrailing" | "bottomLeading" | "bottomTrailing";
@@ -567,6 +571,9 @@ export const IMAGE_TIMESTAMP_CORNERS: ImageTimestampCorner[] = ["topLeading", "t
 
 export interface ImageElement extends Omit<ElementBase, "colorSlot"> {
   entity: EntityRef;
+  /** Where the pixels come from. Encoded only when it is not `camera`, so a
+   * document written before the key existed keeps its exact bytes. */
+  source: ImageSource;
   /** Draw the fetched-at time in the picture's corner. Encoded only when true. */
   timestamp?: boolean;
   /** Every field below matches `CustomComplication.ImageElement` in the app and
@@ -693,9 +700,50 @@ export interface FamilyLayout {
   rules: Rule[];
 }
 
+/** A raw service call: `domain.service`, an optional target entity, and service
+ * data as the string the author typed. The target is nested rather than spread
+ * flat like the entity actions, so nothing that asks `"entityId" in action`
+ * mistakes an optional target for a required one; `encodeTapAction` flattens it
+ * onto the wire, where it uses the same four keys as every other action. */
+export interface CallServiceAction {
+  type: "callService";
+  serviceDomain: string;
+  serviceName: string;
+  /** Raw JSON object string. Omitted when blank; the watch parses it at fire
+   * time and refuses to fire when it is not an object. */
+  serviceDataJSON?: string;
+  target?: EntityRef;
+}
+
 export type TapAction =
   | { type: "none" | "refresh" | "openApp" | "openPage" | "openRoomPage" | "timerStartPause" | "timerCancel" }
-  | ({ type: "toggleEntity" | "runScene" | "runScript" | "addTodo" | "runHTTPAction" } & EntityRef);
+  | ({ type: "toggleEntity" | "runScene" | "runScript" | "addTodo" | "runHTTPAction" } & EntityRef)
+  | CallServiceAction;
+
+/** The actions that cannot be finished without an entity, so the editor shows a
+ * picker the moment one is chosen. `callService` is deliberately absent: its
+ * target is optional, because a service can address an area, a device or
+ * nothing at all. Shared by the document's tap picker and every layer's. */
+const ENTITY_TAP_TYPES: readonly string[] =
+  ["toggleEntity", "runScene", "runScript", "addTodo", "runHTTPAction"];
+
+export function tapNeedsEntity(t: TapAction["type"]): boolean {
+  return ENTITY_TAP_TYPES.includes(t);
+}
+
+/** Whether a service data string is usable: blank counts as "no data", and
+ * anything that is not a JSON object is a mistake worth showing. Mirrors
+ * `CallServiceSpec.parseData` in the app. */
+export function serviceDataIsValid(json: string | undefined): boolean {
+  const trimmed = (json ?? "").trim();
+  if (trimmed === "") return true;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed);
+  } catch {
+    return false;
+  }
+}
 
 /** The human name of every tap action, in the order the pickers offer them.
  * It lives here rather than beside the picker because the preview labels tap
@@ -705,12 +753,19 @@ export const TAP_ACTION_LABELS: [TapAction["type"], string][] = [
   ["refresh", "Refresh"], ["none", "Nothing"], ["openApp", "Open the app"], ["openPage", "Open the page"], ["openRoomPage", "Open the room page"],
   ["timerStartPause", "Timer start / pause"], ["timerCancel", "Timer cancel"],
   ["toggleEntity", "Toggle an entity"], ["runScene", "Run a scene"], ["runScript", "Run a script"], ["addTodo", "Add a to-do"], ["runHTTPAction", "Run an HTTP action"],
+  ["callService", "Call a service"],
 ];
 
 /** One-line description of a tap action, for hints and for the review-mode
  * labels in the preview. */
 export function describeTapAction(action: TapAction): string {
   const label = TAP_ACTION_LABELS.find(([t]) => t === action.type)?.[1] ?? action.type;
+  if (action.type === "callService") {
+    // The service is the subject; the target entity is not, because most of these
+    // calls carry their meaning in the service name alone.
+    const call = [action.serviceDomain, action.serviceName].filter((s) => s !== "").join(".");
+    return call === "" ? label : `${label}: ${call}`;
+  }
   if (!("entityId" in action)) return label;
   const target = action.displayName || action.entityId;
   return target ? `${label}: ${target}` : label;
@@ -1127,6 +1182,7 @@ function parseElementKind(raw: unknown): Element {
       const el: ImageElement = {
         ...base,
         entity: parseEntityRef(isObject(p.entity) ? p.entity : {}),
+        source: p.source === "entityPicture" ? "entityPicture" : "camera",
         contentMode: p.contentMode === "fit" ? "fit" : "fill",
         zoom: num(p.zoom, 1),
         panX: num(p.panX, 0),
@@ -1243,6 +1299,22 @@ function parseTapAction(raw: unknown): TapAction {
       return { type: raw.type };
     case "toggleEntity": case "runScene": case "runScript": case "addTodo": case "runHTTPAction":
       return { type: raw.type, ...parseEntityRef(raw) };
+    case "callService": {
+      // Every field is optional, so a document saved while the form was half
+      // filled in still opens instead of reading as corrupt.
+      const out: CallServiceAction = {
+        type: "callService",
+        serviceDomain: typeof raw.serviceDomain === "string" ? raw.serviceDomain : "",
+        serviceName: typeof raw.serviceName === "string" ? raw.serviceName : "",
+      };
+      if (typeof raw.serviceDataJSON === "string" && raw.serviceDataJSON.trim() !== "") {
+        out.serviceDataJSON = raw.serviceDataJSON;
+      }
+      // The target is optional here, so it is read only when it is really there;
+      // `parseEntityRef` refuses a missing `entityId` on purpose everywhere else.
+      if (typeof raw.entityId === "string" && raw.entityId !== "") out.target = parseEntityRef(raw);
+      return out;
+    }
     default:
       return { type: "none" };
   }
@@ -1684,6 +1756,7 @@ function encodeElementKind(el: Element): J {
         frame: encodeFrame(p.frame),
         isHidden: p.isHidden,
       };
+      if (p.source !== "camera") o.source = p.source;
       if (p.timestamp === true) o.timestamp = true;
       // Same order and same "only when it differs" rule as the app's encoder,
       // so the two write the same bytes for the same document.
@@ -1759,6 +1832,15 @@ function encodeLayout(l: FamilyLayout): J {
 }
 
 function encodeTapAction(t: TapAction): J {
+  if (t.type === "callService") {
+    // The target flattens onto the same four keys every other action uses, and
+    // blank data never reaches the wire, so a call without one is byte-identical
+    // to a call that never had one.
+    const o: J = { type: t.type, serviceDomain: t.serviceDomain, serviceName: t.serviceName };
+    if (t.serviceDataJSON !== undefined && t.serviceDataJSON.trim() !== "") o.serviceDataJSON = t.serviceDataJSON;
+    if (t.target !== undefined && t.target.entityId !== "") Object.assign(o, encodeEntityRef(t.target));
+    return o;
+  }
   if ("entityId" in t) return { type: t.type, ...encodeEntityRef(t) };
   return { type: t.type };
 }
@@ -1934,7 +2016,7 @@ const K = {
   // It stays listed so a document saved while it existed does not read as
   // corrupt; nothing decodes it, and it leaves the wire on that document's next
   // save.
-  image: ["entity", "timestamp", "contentMode", "zoom", "panX", "panY", "cornerRadius",
+  image: ["entity", "source", "timestamp", "contentMode", "zoom", "panX", "panY", "cornerRadius",
     "timestampCorner", "timestampSize", "timestampStyle", "timestampX", "timestampY"],
   // `grow` is retired (the uniform tap inflation, replaced by a resizable tap
   // box on 2026-09-04). Listed so a document saved while it existed still
@@ -1951,7 +2033,10 @@ const K = {
   layout: ["placements", "bezelText", "bezelCountdown", "curvedText", "curvedColorHex", "bezelGauge", "backgroundColorHex", "cornerBodyShape", "borderColorHex", "borderWidth", "rules"],
   bezelGauge: ["value", "minValue", "maxValue", "colorHexes", "minLabel", "maxLabel"],
   placement: ["frame", "isHidden", "size"],
-  tapAction: ["type", "entityId", "displayName", "domain", "iconName"],
+  // The last three belong to `callService` only; the entity four are its optional
+  // target, the same keys every entity action uses.
+  tapAction: ["type", "entityId", "displayName", "domain", "iconName",
+    "serviceDomain", "serviceName", "serviceDataJSON"],
   dataSource: ["kind", "entityId", "displayName", "domain", "iconName", "value"],
 };
 
@@ -2159,6 +2244,7 @@ export function newElement(kind: Element["kind"]): Element {
         payload: {
           ...b,
           entity: { entityId: "", displayName: "", domain: "camera" },
+          source: "camera",
           contentMode: "fill",
           zoom: 1,
           panX: 0,

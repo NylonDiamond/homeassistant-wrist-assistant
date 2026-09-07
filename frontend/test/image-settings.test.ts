@@ -67,6 +67,30 @@ describe("image element wire format", () => {
     expect(Object.keys(payloadOf(imageDoc())).sort()).toEqual(["entity", "frame", "id", "isHidden", "rules"]);
   });
 
+  it("writes the source only when the picture is not a camera", () => {
+    expect(payloadOf(imageDoc()).source).toBeUndefined();
+
+    const doc = imageDoc((p) => {
+      p.source = "entityPicture";
+      p.entity = { entityId: "person.jesse", displayName: "Jesse", domain: "person" };
+    });
+    expect(payloadOf(doc).source).toBe("entityPicture");
+
+    const p = parseConfig(doc).elements[0]!.payload as unknown as Record<string, unknown>;
+    expect(p.source).toBe("entityPicture");
+  });
+
+  it("reads a document written before the source key as a camera", () => {
+    const p = parseConfig(imageDoc()).elements[0]!.payload as unknown as Record<string, unknown>;
+    expect(p.source).toBe("camera");
+    // And so is anything unrecognisable: the watch's decoder falls back the
+    // same way, so the two ports cannot disagree about a hand-edited document.
+    const odd = imageDoc();
+    odd.elements[0]!.payload.source = "someFutureSource";
+    const back = parseConfig(odd).elements[0]!.payload as unknown as Record<string, unknown>;
+    expect(back.source).toBe("camera");
+  });
+
   it("writes each setting that differs, and reads it back", () => {
     const doc = imageDoc((p) => {
       p.timestamp = true;

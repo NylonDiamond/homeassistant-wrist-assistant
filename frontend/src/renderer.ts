@@ -9,6 +9,7 @@ import {
   describeTapAction,
   type FamilyKind,
   type ImageContentMode,
+  type ImageSource,
 } from "./model.js";
 import type { ImageSizeProvider } from "./image-sizes.js";
 import {
@@ -640,6 +641,20 @@ export function timestampChipRect(
   };
 }
 
+/** What an unfetched picture stands in as, mirroring `ImageElementView` on the
+ * watch. A camera layer keeps the camera glyph it has always shown; an entity
+ * picture follows the entity's domain, so a person tile reads as a missing
+ * avatar rather than a missing camera. */
+export function imagePlaceholderSymbol(source: ImageSource, entityId: string): string {
+  if (source === "camera") return "camera.fill";
+  switch (entityId.split(".")[0]) {
+    case "camera": return "camera.fill";
+    case "person": return "person.crop.circle";
+    case "media_player": return "music.note";
+    default: return "photo";
+  }
+}
+
 function renderImage(el: Extract<ResolvedElement, { kind: "image" }>, box: Box, options: RenderOptions) {
   const icons = options.icons;
   const clipId = `imgclip-${el.id}`;
@@ -681,7 +696,7 @@ function renderImage(el: Extract<ResolvedElement, { kind: "image" }>, box: Box, 
   } else {
     content = svg`
       <rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} rx=${r} fill="#FFFFFF" fill-opacity="0.18" />
-      <g transform="translate(${box.cx - 7} ${box.cy - 7})">${icons.render("camera.fill", 14, "#FFFFFF99") ?? nothing}</g>`;
+      <g transform="translate(${box.cx - 7} ${box.cy - 7})">${icons.render(imagePlaceholderSymbol(el.source, el.entityId), 14, "#FFFFFF99") ?? nothing}</g>`;
   }
   return svg`
     <defs><clipPath id=${clipId}><rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} rx=${r} /></clipPath></defs>

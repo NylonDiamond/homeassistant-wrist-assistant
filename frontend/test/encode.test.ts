@@ -137,6 +137,25 @@ describe("encodeConfig", () => {
     const bareJson = JSON.stringify(encodeConfig(bare));
     expect(bareJson).not.toContain("timestamp");
     expect(bareJson).not.toContain("colorSlot");
+    expect(bareJson).not.toContain("source");
+  });
+
+  it("round-trips an entity picture, and the source key is an audited one", () => {
+    const cfg = newConfig("X", 0);
+    const el = newElement("image");
+    if (el.kind === "image") {
+      el.payload.entity = { entityId: "person.jesse", displayName: "Jesse", domain: "person" };
+      el.payload.source = "entityPicture";
+    }
+    cfg.elements = [el];
+    const enc = encodeConfig(cfg) as Record<string, unknown>;
+    expect(auditUnknownKeys(enc)).toEqual([]);
+    const back = parseConfig(enc).elements[0];
+    if (back?.kind === "image") {
+      expect(back.payload.source).toBe("entityPicture");
+      expect(back.payload.entity.entityId).toBe("person.jesse");
+    }
+    expect(encodeConfig(parseConfig(enc))).toEqual(enc);
   });
 
   it("round-trips the tap element, and the page pair stays absent when unset", () => {
@@ -176,6 +195,59 @@ describe("encodeConfig", () => {
     delete raw.elements[0]!.payload.action;
     const parsed = parseConfig(raw).elements[0];
     expect(parsed?.kind === "tap" && parsed.payload.action.type).toBe("refresh");
+  });
+
+  it("round-trips a call-service tap, flattening its optional target onto the wire", () => {
+    const cfg = newConfig("X", 0);
+    cfg.tapAction = {
+      type: "callService",
+      serviceDomain: "cover",
+      serviceName: "set_cover_position",
+      serviceDataJSON: '{"position": 40}',
+      target: { entityId: "cover.garage", displayName: "Garage", domain: "cover" },
+    };
+    const enc = encodeConfig(cfg) as Record<string, unknown>;
+    expect(auditUnknownKeys(enc)).toEqual([]);
+    // The target uses the same four keys every other action uses, so the watch
+    // reads it with the decoder it already had.
+    expect(enc.tapAction).toEqual({
+      type: "callService",
+      serviceDomain: "cover",
+      serviceName: "set_cover_position",
+      serviceDataJSON: '{"position": 40}',
+      entityId: "cover.garage",
+      displayName: "Garage",
+      domain: "cover",
+    });
+    expect(parseConfig(enc).tapAction).toEqual(cfg.tapAction);
+    expect(encodeConfig(parseConfig(enc))).toEqual(enc);
+  });
+
+  it("leaves a call service's target and data off the wire when it has neither", () => {
+    const cfg = newConfig("X", 0);
+    const el = newElement("tap");
+    if (el.kind === "tap") {
+      el.payload.action = { type: "callService", serviceDomain: "script", serviceName: "turn_on", serviceDataJSON: "  " };
+    }
+    cfg.elements = [el];
+    const json = JSON.stringify(encodeConfig(cfg));
+    expect(json).toContain('"serviceName":"turn_on"');
+    expect(json).not.toContain("entityId");
+    expect(json).not.toContain("serviceDataJSON");
+
+    const back = parseConfig(encodeConfig(cfg)).elements[0];
+    expect(back?.kind === "tap" && back.payload.action).toEqual({
+      type: "callService", serviceDomain: "script", serviceName: "turn_on",
+    });
+  });
+
+  it("reads a half-written call service rather than refusing the document", () => {
+    const cfg = newConfig("X", 0);
+    cfg.tapAction = { type: "callService", serviceDomain: "", serviceName: "" };
+    const enc = encodeConfig(cfg) as Record<string, unknown>;
+    enc.tapAction = { type: "callService" };
+    expect(auditUnknownKeys(enc)).toEqual([]);
+    expect(parseConfig(enc).tapAction).toEqual({ type: "callService", serviceDomain: "", serviceName: "" });
   });
 
   it("round-trips every comparison kind and style change kind", () => {

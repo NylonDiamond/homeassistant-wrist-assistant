@@ -2644,8 +2644,10 @@ export class WristAssistantPanel extends LitElement {
         const remaining = parseDurationSeconds(attrs.remaining);
         if (remaining !== undefined) entry.remaining = remaining;
       }
-      if (domain === "camera" && typeof attrs.entity_picture === "string") {
-        // Image elements: the preview draws the camera's own tokenized proxy URL.
+      if (typeof attrs.entity_picture === "string") {
+        // Image elements: the preview draws the entity's own picture URL, which is
+        // a camera's tokenized proxy for a camera and the avatar or cover art for
+        // everything else. Any domain can carry one, so nothing is filtered here.
         entry.entityPicture = attrs.entity_picture;
       }
       entityStates.set(id, entry);

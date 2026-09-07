@@ -6,11 +6,15 @@ import { describe, expect, it } from "vitest";
 import {
   type CustomComplicationConfig,
   type Element as CElement,
+  type TapAction,
   type TapElement,
   attachTap,
   attachedTapsOf,
   auditUnknownKeys,
   defaultAttachedTapAction,
+  describeTapAction,
+  serviceDataIsValid,
+  tapNeedsEntity,
   detachTaps,
   duplicateElement,
   elementEntity,
@@ -25,7 +29,7 @@ import {
   setTapOutsetFromFrame,
   tapPointSize,
 } from "../src/model.js";
-import { setPlacement } from "../src/editors.js";
+import { setPlacement, tapActionForType } from "../src/editors.js";
 import { Draft } from "../src/draft.js";
 import { nothing } from "lit";
 import { renderLayout, type IconProvider, type RenderOptions } from "../src/renderer.js";
@@ -612,6 +616,51 @@ describe("tap focus view", () => {
     const out = draw(cfg, { tapReview: true });
     expect(out).toContain(a);
     expect(out).toContain(b);
+  });
+});
+
+describe("call a service", () => {
+  it("keeps the target when the type changes, in both directions", () => {
+    const toggle: TapAction = { type: "toggleEntity", entityId: "light.kitchen", displayName: "Kitchen", domain: "light" };
+    const call = tapActionForType("callService", toggle);
+    expect(call).toEqual({
+      type: "callService", serviceDomain: "", serviceName: "",
+      target: { entityId: "light.kitchen", displayName: "Kitchen", domain: "light" },
+    });
+    // And back: the entity the service was aimed at becomes the toggle's target.
+    expect(tapActionForType("toggleEntity", call)).toEqual(toggle);
+  });
+
+  it("keeps the service and its data when the type comes back to it", () => {
+    const call: TapAction = { type: "callService", serviceDomain: "light", serviceName: "turn_on", serviceDataJSON: '{"brightness_pct": 50}' };
+    const refresh = tapActionForType("refresh", call);
+    expect(refresh).toEqual({ type: "refresh" });
+    // A round trip through another type loses the service, which is the same
+    // thing that happens to an entity: the picker holds one action at a time.
+    expect(tapActionForType("callService", refresh)).toEqual({ type: "callService", serviceDomain: "", serviceName: "" });
+    // Choosing it while it is already chosen keeps everything.
+    expect(tapActionForType("callService", call)).toEqual(call);
+  });
+
+  it("has no required entity, unlike every other targeting action", () => {
+    expect(tapNeedsEntity("callService")).toBe(false);
+    expect(tapNeedsEntity("toggleEntity")).toBe(true);
+  });
+
+  it("describes itself by the service, not the entity", () => {
+    expect(describeTapAction({ type: "callService", serviceDomain: "light", serviceName: "turn_on" }))
+      .toBe("Call a service: light.turn_on");
+    // Half written, so there is nothing to name yet.
+    expect(describeTapAction({ type: "callService", serviceDomain: "", serviceName: "" })).toBe("Call a service");
+  });
+
+  it("accepts only a JSON object as service data", () => {
+    expect(serviceDataIsValid(undefined)).toBe(true);
+    expect(serviceDataIsValid("   ")).toBe(true);
+    expect(serviceDataIsValid('{"brightness_pct": 50}')).toBe(true);
+    expect(serviceDataIsValid("[1, 2]")).toBe(false);
+    expect(serviceDataIsValid("42")).toBe(false);
+    expect(serviceDataIsValid("{brightness_pct: 50}")).toBe(false);
   });
 });
 

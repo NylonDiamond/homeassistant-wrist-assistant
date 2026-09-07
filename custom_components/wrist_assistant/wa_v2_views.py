@@ -1951,26 +1951,30 @@ async def _op_entity_image(ctx: _OpContext) -> Response:
     )
 
 
-async def _op_person_picture(ctx: _OpContext) -> Response:
-    """Return the profile-picture bytes for a `person.*` entity.
+async def _op_entity_picture(ctx: _OpContext) -> Response:
+    """Return the `entity_picture` bytes for any entity that carries one.
 
-    The watch renders a person's HA `entity_picture` as its tile icon. That
-    attribute is a path on this HA instance (e.g. `/api/image/serve/<id>/512x512`
-    for a UI-uploaded photo, or a `/local/...` static file). We fetch it
-    server-side over the instance's own URL and sign the bytes, so the watch
-    never needs a bearer token — the same trust model as `entity_image`.
+    A person's profile photo, a media player's cover art, a weather icon: they
+    are all the same attribute, and it is a path on this HA instance (e.g.
+    `/api/image/serve/<id>/512x512` for a UI-uploaded photo, `/local/...` for a
+    static file, `/api/media_player_proxy/...` for cover art). We fetch it
+    server-side over the instance's own URL and sign the bytes, so neither the
+    watch nor the widget needs a bearer token, the same trust model as
+    `entity_image`.
 
     Only relative paths are fetched. An absolute `http(s)://` entity_picture
-    (a gravatar or other external avatar) is refused rather than proxied, so
-    this op can't be turned into an open relay against arbitrary hosts.
-    Body: {"entity_id": "person.X"}
+    (a gravatar, or Spotify's art) is refused rather than proxied, so this op
+    can't be turned into an open relay against arbitrary hosts. That refusal is
+    a signed 400 carrying `reason: "external"`, which is what lets the caller
+    tell "hosted somewhere else" apart from "the fetch failed".
+
+    Registered twice: as `entity_picture`, and as `person_picture`, the name it
+    was born under and the one the watch app's person tiles still send.
+    Body: {"entity_id": "<any entity id>"}
     """
     entity_id = ctx.payload.get("entity_id")
     if not isinstance(entity_id, str) or not entity_id:
         return Response(status=400, text="entity_id required")
-
-    if not entity_id.startswith("person."):
-        return Response(status=400, text="entity_id must be person.*")
 
     state = ctx.hass.states.get(entity_id)
     if state is None:
@@ -1983,7 +1987,7 @@ async def _op_person_picture(ctx: _OpContext) -> Response:
     # Only fetch paths on this instance. Reject absolute/external URLs and any
     # non-path value (e.g. a `data:` URI) — see the anti-amplification note above.
     if "://" in picture or not picture.startswith("/"):
-        return Response(status=422, text="External entity_picture not fetched")
+        return ctx.signed_json({"ok": False, "reason": "external"}, status=400)
 
     import aiohttp
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -2001,17 +2005,41 @@ async def _op_person_picture(ctx: _OpContext) -> Response:
         ) as resp:
             if resp.status != 200:
                 _LOGGER.debug(
-                    "person_picture: %s -> HTTP %s", entity_id, resp.status
+                    "entity_picture: %s -> HTTP %s", entity_id, resp.status
                 )
                 return Response(status=503, text="Picture unavailable")
             data = await resp.read()
             content_type = resp.headers.get("Content-Type", "image/jpeg")
     except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-        _LOGGER.debug("person_picture: %s fetch failed: %s", entity_id, err)
+        _LOGGER.debug("entity_picture: %s fetch failed: %s", entity_id, err)
         return Response(status=503, text="Picture fetch failed")
 
     if not data:
         return Response(status=503, text="Empty picture")
+
+    # A 1500 px album cover would blow the widget's 100 KB per-image budget on
+    # its way to the watch, so anything over that budget goes through the same
+    # crop-free downscale a complication snapshot gets. Under it the bytes are
+    # passed through untouched: re-encoding a small avatar would only flatten
+    # its transparency onto black and cost a JPEG generation for nothing.
+    if len(data) > SNAPSHOT_MAX_BYTES:
+        try:
+            processed = await ctx.hass.async_add_executor_job(
+                _process_snapshot,
+                data,
+                ViewportState(),
+                SNAPSHOT_MAX_WIDTH,
+                SNAPSHOT_MAX_HEIGHT,
+                SNAPSHOT_DEFAULT_QUALITY,
+                SNAPSHOT_MAX_BYTES,
+            )
+        except Exception as err:  # noqa: BLE001 (a picture Pillow cannot read)
+            _LOGGER.debug("entity_picture: %s downscale failed: %s", entity_id, err)
+            processed = None
+        if processed is None:
+            return Response(status=503, text="Picture exceeds size budget")
+        data = processed
+        content_type = "image/jpeg"
 
     return ctx.signed_bytes(data, content_type=content_type or "image/jpeg")
 
@@ -3062,7 +3090,10 @@ _OP_HANDLERS: dict[str, Any] = {
     "snapshots_open": _op_snapshots_open,
     "camera_devices": _op_camera_devices,
     "entity_image": _op_entity_image,
-    "person_picture": _op_person_picture,
+    "entity_picture": _op_entity_picture,
+    # The name the op was born under. Kept registered because the watch app's
+    # person tiles still send it, and an older watch never learns the new one.
+    "person_picture": _op_entity_picture,
     "stream_open": _op_stream_open,
     "stream_update": _op_stream_update,
     "stream_close": _op_stream_close,

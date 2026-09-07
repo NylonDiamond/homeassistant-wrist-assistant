@@ -1,0 +1,124 @@
+{
+  "name": "Picture source",
+  "description": "Two picture layers with different sources. The first is a camera and carries no `source` key at all, because `camera` is the default and both encoders leave a default off the wire; it must still resolve as a camera. The second takes a person's `entity_picture`, which is any entity that has one rather than a camera snapshot, and carries `source` explicitly. Both resolvers have to read the key the same way, and a document written before the key existed has to keep drawing what it always drew.",
+  "config": {
+    "schemaVersion": 4,
+    "id": "AAAAAAAA-0000-4000-8000-000000000091",
+    "name": "Who is home",
+    "values": [],
+    "slotIndex": 3,
+    "elements": [
+      {
+        "kind": "image",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000091",
+          "entity": {
+            "entityId": "camera.front_door",
+            "displayName": "Front door",
+            "domain": "camera"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 0.5,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "image",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000092",
+          "entity": {
+            "entityId": "person.jesse",
+            "displayName": "Jesse",
+            "domain": "person"
+          },
+          "source": "entityPicture",
+          "cornerRadius": 24,
+          "rules": [],
+          "frame": {
+            "x": 0.5,
+            "y": 0,
+            "width": 0.5,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "supportedFamilies": [
+      "rectangular",
+      "circular",
+      "corner"
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      },
+      "circular",
+      {
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      },
+      "corner",
+      {
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "tapAction": {
+      "type": "refresh"
+    },
+    "refreshMinutes": 15
+  },
+  "inputs": {
+    "entityStates": {
+      "camera.front_door": {
+        "state": "idle",
+        "domain": "camera"
+      },
+      "person.jesse": {
+        "state": "home",
+        "domain": "person"
+      }
+    },
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": [
+      "camera.front_door",
+      "person.jesse"
+    ],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000091",
+          "kind": "image",
+          "entityId": "camera.front_door",
+          "source": "camera",
+          "showTimestamp": false,
+          "isHidden": false
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000092",
+          "kind": "image",
+          "entityId": "person.jesse",
+          "source": "entityPicture",
+          "showTimestamp": false,
+          "isHidden": false
+        }
+      ]
+    }
+  }
+}

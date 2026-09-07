@@ -7,6 +7,7 @@ import { html, nothing, type TemplateResult } from "lit";
 import {
   type AggregateSpec,
   type BezelGauge,
+  type CallServiceAction,
   type ChartBaseline,
   type ChartBand,
   type ChartColoring,
@@ -80,6 +81,8 @@ import {
   STYLE_PROPERTY,
   TAP_ACTION_LABELS,
   describeTapAction,
+  serviceDataIsValid,
+  tapNeedsEntity,
   tapPointSize,
   attachTap,
   attachedTapsOf,
@@ -1316,6 +1319,100 @@ const TAP_TYPES = TAP_ACTION_LABELS;
  * deleting the layer does. */
 const LAYER_TAP_TYPES: [TapAction["type"], string][] = TAP_TYPES.filter(([t]) => t !== "none");
 
+/** The entity a tap action is aimed at, wherever it keeps it: spread flat on an
+ * entity action, nested on a service call. */
+function tapTarget(action: TapAction): EntityRef | undefined {
+  if ("entityId" in action) return { entityId: action.entityId, displayName: action.displayName, domain: action.domain };
+  if (action.type === "callService") return action.target;
+  return undefined;
+}
+
+/**
+ * What a tap picker stores when the type changes. Whatever entity the previous
+ * action was aimed at carries over, so switching between a toggle, a scene and a
+ * service call never makes the author pick the same entity twice, and switching
+ * back to a service call keeps the domain, service and data it already had.
+ *
+ * One function for both pickers: the document's tap and every layer's used to
+ * hold their own copies of this and of the "does this type need an entity"
+ * predicate.
+ */
+export function tapActionForType(type: TapAction["type"], current: TapAction): TapAction {
+  const ref = tapTarget(current) ?? { entityId: "", displayName: "", domain: "" };
+  if (type === "callService") {
+    const out: CallServiceAction = current.type === "callService"
+      ? { ...current }
+      : { type: "callService", serviceDomain: "", serviceName: "" };
+    if (ref.entityId !== "") out.target = ref;
+    return out;
+  }
+  if (tapNeedsEntity(type)) return { type: type as "toggleEntity", ...ref };
+  return { type: type as "refresh" };
+}
+
+/** Domain, service and data for the common calls, so the usual ones are one
+ * click rather than two fields of typing. The list mirrors the app's control
+ * action catalogue: the same services the Control a Device step offers. */
+const SERVICE_QUICK_PICKS: [label: string, domain: string, service: string, data: string][] = [
+  ["Open a cover", "cover", "open_cover", ""],
+  ["Close a cover", "cover", "close_cover", ""],
+  ["Stop a cover", "cover", "stop_cover", ""],
+  ["Lock", "lock", "lock", ""],
+  ["Unlock", "lock", "unlock", ""],
+  ["Light brightness", "light", "turn_on", `{"brightness_pct": 50}`],
+  ["Climate target", "climate", "set_temperature", `{"temperature": 21}`],
+  ["Play / pause", "media_player", "media_play_pause", ""],
+  ["Start a vacuum", "vacuum", "start", ""],
+  ["Send a vacuum home", "vacuum", "return_to_base", ""],
+];
+
+/**
+ * The form behind "Call a service": the service to call, the entity to call it
+ * on (optional, any domain), and the data as JSON. Shared by the document's tap
+ * card and every tap layer's.
+ *
+ * The data is stored as the string the author typed, so a half-written object
+ * survives a redraw; it is checked here and again on the watch, which drops the
+ * tap rather than sending something Home Assistant would reject.
+ */
+function callServiceFields(
+  host: EditorHost,
+  action: CallServiceAction,
+  set: (next: CallServiceAction, k?: string) => void,
+  key: string,
+): TemplateResult {
+  const data = action.serviceDataJSON ?? "";
+  const dataOK = serviceDataIsValid(data);
+  const target = action.target ?? { entityId: "", displayName: "", domain: "" };
+  return html`
+    <div class="gen-row">
+      ${textField("Domain", action.serviceDomain, (v) => set({ ...action, serviceDomain: v.trim() }, "svc-domain"), { placeholder: "light" })}
+      ${textField("Service", action.serviceName, (v) => set({ ...action, serviceName: v.trim() }, "svc-name"), { placeholder: "turn_on" })}
+    </div>
+    <div class="chips">
+      ${SERVICE_QUICK_PICKS.map(([label, domain, service, seed]) => html`
+        <button class="small" title=${`Fill in ${domain}.${service}`}
+          @click=${() => {
+            const next: CallServiceAction = { ...action, serviceDomain: domain, serviceName: service };
+            if (seed === "") delete next.serviceDataJSON; else next.serviceDataJSON = seed;
+            set(next);
+          }}>${label}</button>`)}
+    </div>
+    ${entityField(host, "Target entity (optional)", target, (ref) => {
+      const next: CallServiceAction = { ...action };
+      if (ref.entityId === "") delete next.target; else next.target = ref;
+      set(next, "svc-entity");
+    }, `${key}-svc-entity`)}
+    ${textArea("Data (JSON)", data, (v) => {
+      const next: CallServiceAction = { ...action };
+      if (v.trim() === "") delete next.serviceDataJSON; else next.serviceDataJSON = v;
+      set(next, "svc-data");
+    }, 3)}
+    ${dataOK
+      ? html`<div class="hint">Leave the data empty for a service that needs nothing else. Anything here must be a JSON object, like <code>{"brightness_pct": 50}</code>. Templates are not run.</div>`
+      : html`<div class="hint warn">That is not a JSON object, so the watch will refuse the tap. It has to look like <code>{"brightness_pct": 50}</code>.</div>`}`;
+}
+
 // There is no slot picker. The slot index is plumbing: the panel assigns the
 // first free one at create/duplicate time and it never changes afterwards,
 // because moving a complication to another slot blanks its placement on the
@@ -1332,7 +1429,6 @@ export function nameChangedFromWatch(savedName: string | undefined, name: string
 export function generalEditor(host: EditorHost): TemplateResult {
   const cfg = host.config;
   const tap = cfg.tapAction;
-  const needsEntity = (t: TapAction["type"]) => ["toggleEntity", "runScene", "runScript", "addTodo", "runHTTPAction"].includes(t);
   // The watch face picker caches each complication's name per widget kind and
   // does not refresh it after a rename. Warn once the name actually differs
   // from what the watch last had, so the user knows to re-pick it there.
@@ -1351,7 +1447,7 @@ export function generalEditor(host: EditorHost): TemplateResult {
       ${textField("Name", cfg.name, (v) => host.update((c) => { c.name = v; }, "name"))}
       ${selectField("Refresh", String(refresh), refreshOptions, (v) => host.update((c) => { c.refreshMinutes = Number(v) || 0; }, "refresh"))}
       ${selectField("Tap action", tap.type, TAP_TYPES, (v) => host.update((c) => {
-        c.tapAction = needsEntity(v) ? { type: v as "toggleEntity", ...("entityId" in c.tapAction ? { entityId: c.tapAction.entityId, displayName: c.tapAction.displayName, domain: c.tapAction.domain } : { entityId: "", displayName: "", domain: "" }) } : { type: v as "refresh" };
+        c.tapAction = tapActionForType(v, c.tapAction);
         // Mirrors the iPhone preset editor: the chosen page belongs to the
         // openPage type; leaving it clears the choice.
         if (v !== "openPage") { delete c.openPageId; delete c.openPageName; }
@@ -1369,6 +1465,9 @@ export function generalEditor(host: EditorHost): TemplateResult {
     </div>
     ${renamed ? html`<div class="hint warn">After you change a complication name, let the change sync to the watch, then re-select the complication in the watch's complication picker. Otherwise the list starts to look wrong.</div>` : nothing}
     ${"entityId" in tap ? entityField(host, "Target", tap, (ref) => host.update((c) => { c.tapAction = { type: tap.type, ...ref }; }, "tap-entity"), "general-tap") : nothing}
+    ${tap.type === "callService"
+      ? callServiceFields(host, tap, (next, k) => host.update((c) => { c.tapAction = next; }, k), "general-tap")
+      : nothing}
     ${tap.type === "openPage" ? openPageField(host) : nothing}`;
 }
 
@@ -1620,9 +1719,12 @@ function layerEntityField(host: EditorHost, el: CElement, key: string): Template
   const id = el.payload.id;
   const uses = layerEntityUses(host.config, id);
   const ref = uses[0]?.ref ?? { entityId: "", displayName: "", domain: "" };
-  const opts: EntityFieldOptions = el.kind === "image" ? { domain: "camera" } : {};
+  // A camera layer keeps the camera-only picker it has always had. An entity
+  // picture can come from any domain, so that one is unrestricted.
+  const cameraOnly = el.kind === "image" && el.payload.source === "camera";
+  const opts: EntityFieldOptions = cameraOnly ? { domain: "camera" } : {};
   return html`
-    ${entityField(host, el.kind === "image" ? "Camera" : "Entity", ref,
+    ${entityField(host, cameraOnly ? "Camera" : "Entity", ref,
       (next) => host.update((c) => setLayerEntity(c, id, next), `${key}-entity`), `${key}-layer-entity`, opts)}
     <div class="hint">${layerEntityNote(el, uses)}</div>`;
 }
@@ -1848,7 +1950,8 @@ export function contentSummary(host: EditorHost, el: CElement): string {
       48
     );
     case "shape": return el.payload.kind === "roundedRectangle" ? "Rounded rectangle" : el.payload.kind;
-    case "image": return el.payload.entity.displayName || el.payload.entity.entityId || "No camera yet";
+    case "image": return el.payload.entity.displayName || el.payload.entity.entityId
+      || (el.payload.source === "camera" ? "No camera yet" : "No entity yet");
     case "tap": return describeTapAction(el.payload.action);
   }
 }
@@ -2234,9 +2337,29 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind):
     case "image": {
       const img = el.payload;
       const setImage = (m: (p: ImageElement) => void, k?: string) => upd((e) => m((e as typeof el).payload), k);
+      // The entity's own picture, as Home Assistant reports it right now. A path
+      // on this instance is what the watch can fetch; anything absolute is hosted
+      // somewhere else and the integration refuses to proxy it.
+      const livePicture = img.entity.entityId
+        ? host.hass.states[img.entity.entityId]?.attributes?.entity_picture
+        : undefined;
+      const picturePath = typeof livePicture === "string" ? livePicture : undefined;
+      const externalPicture = picturePath !== undefined && !picturePath.startsWith("/");
       content = html`
-        ${img.entity.entityId && !img.entity.entityId.startsWith("camera.") ? html`<div class="hint warn">Only camera entities have snapshots, so this layer stays blank until the entity is a camera.</div>` : nothing}
-        <div class="hint">The watch fetches a snapshot on refresh and shows the cached frame in between. This preview shows the camera live.</div>`;
+        ${segField("Source", img.source, [["camera", "Camera"], ["entityPicture", "Entity picture"]],
+          (v) => setImage((p) => { p.source = v; }),
+          { titles: {
+              camera: "A snapshot from a camera entity",
+              entityPicture: "The picture an entity already carries: a person's photo, cover art, a weather icon",
+            }, def: base.source as typeof img.source })}
+        ${img.source === "camera"
+          ? html`
+            ${img.entity.entityId && !img.entity.entityId.startsWith("camera.") ? html`<div class="hint warn">Only camera entities have snapshots, so this layer stays blank until the entity is a camera. Switch the source to Entity picture to use this entity's own photo.</div>` : nothing}
+            <div class="hint">The watch fetches a snapshot on refresh and shows the cached frame in between. This preview shows the camera live.</div>`
+          : html`
+            ${img.entity.entityId && picturePath === undefined ? html`<div class="hint warn">This entity has no picture right now, so the layer stays blank. Anything with an <code>entity_picture</code> works: a person, a media player playing something with cover art, a weather entity.</div>` : nothing}
+            ${externalPicture ? html`<div class="hint warn">This picture is hosted outside Home Assistant, so the watch cannot fetch it.</div>` : nothing}
+            <div class="hint">The watch fetches the entity's own picture on refresh and shows the cached copy in between. This preview shows it live.</div>`}`;
       // The crop, its own section: a picture that is the wrong shape for its
       // frame has to be aimed, and every control here is about where the
       // picture sits rather than what it is.
@@ -2346,7 +2469,7 @@ const CONTENT_KEYS: Record<CElement["kind"], readonly string[]> = {
   gauge: ["value", "minValue", "maxValue", "total"],
   chart: ["value", "historyMinutes", "historyPoints", "limit", "takeFromEnd"],
   shape: ["kind", "cornerRadius"],
-  image: ["entity"],
+  image: ["entity", "source"],
   tap: ["action", "openPageName"],
 };
 
@@ -2375,15 +2498,15 @@ export function tapActionEditor(
   key: string,
 ): TemplateResult {
   const action = tap.action;
-  const needsEntity = (t: TapAction["type"]) => ["toggleEntity", "runScene", "runScript", "addTodo", "runHTTPAction"].includes(t);
   return html`
     ${selectField("Tap action", action.type, LAYER_TAP_TYPES, (v) => upd((p) => {
-      p.action = needsEntity(v)
-        ? { type: v as "toggleEntity", ...("entityId" in p.action ? { entityId: p.action.entityId, displayName: p.action.displayName, domain: p.action.domain } : { entityId: "", displayName: "", domain: "" }) }
-        : { type: v as "refresh" };
+      p.action = tapActionForType(v, p.action);
       if (v !== "openPage") { delete p.openPageId; delete p.openPageName; }
     }))}
     ${"entityId" in action ? entityField(host, "Target", action, (ref) => upd((p) => { p.action = { type: action.type, ...ref }; }, "tap-entity"), `${key}-tap`) : nothing}
+    ${action.type === "callService"
+      ? callServiceFields(host, action, (next, k) => upd((p) => { p.action = next; }, k), `${key}-tap`)
+      : nothing}
     ${action.type === "openPage" ? pageChoiceField(host, tap.openPageId, tap.openPageName, (pid, name) => upd((p) => {
       if (pid === undefined) { delete p.openPageId; delete p.openPageName; return; }
       p.openPageId = pid;
@@ -2522,11 +2645,15 @@ export function layerTitle(el: CElement, ctx?: DescribeContext): string {
     case "shape": return el.payload.kind === "roundedRectangle" ? "Rounded rectangle" : el.payload.kind;
     case "image": {
       const e = el.payload.entity;
-      return e.displayName || e.entityId || "camera";
+      return e.displayName || e.entityId || (el.payload.source === "camera" ? "camera" : "picture");
     }
     case "tap": {
       const a = el.payload.action;
-      const target = "entityId" in a ? (a.displayName || a.entityId) : a.type === "openPage" ? (el.payload.openPageName || "") : "";
+      const target = "entityId" in a
+        ? (a.displayName || a.entityId)
+        : a.type === "callService"
+          ? [a.serviceDomain, a.serviceName].filter((s) => s !== "").join(".")
+          : a.type === "openPage" ? (el.payload.openPageName || "") : "";
       return target ? `${a.type} · ${target}` : a.type;
     }
   }

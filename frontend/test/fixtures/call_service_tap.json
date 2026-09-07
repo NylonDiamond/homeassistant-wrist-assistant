@@ -1,0 +1,131 @@
+{
+  "name": "Call a service tap",
+  "description": "A bolt icon whose tap calls `cover.set_cover_position` on the garage door with `{\"position\": 40}`, over a document whose own tap calls `script.turn_on` with no target and no data. The two shapes of the action are both here: with a target and data, and with neither. Nothing about a service call reaches the resolver, so the expectations only pin that both sides read the layer and place it; the wire format itself is pinned by the encode tests on each side.",
+  "config": {
+    "schemaVersion": 4,
+    "id": "AAAAAAAA-0000-4000-8000-000000000081",
+    "name": "Garage",
+    "values": [],
+    "slotIndex": 4,
+    "elements": [
+      {
+        "kind": "icon",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000081",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.4,
+            "y": 0.15,
+            "width": 0.2,
+            "height": 0.7,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "symbol": {
+            "kind": {
+              "kind": "literal",
+              "value": "bolt.fill"
+            }
+          },
+          "size": 22
+        }
+      },
+      {
+        "kind": "tap",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000082",
+          "action": {
+            "type": "callService",
+            "serviceDomain": "cover",
+            "serviceName": "set_cover_position",
+            "serviceDataJSON": "{\"position\": 40}",
+            "entityId": "cover.garage",
+            "displayName": "Garage door",
+            "domain": "cover"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.35,
+            "y": 0.1,
+            "width": 0.3,
+            "height": 0.8,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "supportedFamilies": [
+      "rectangular",
+      "circular",
+      "corner"
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      },
+      "circular",
+      {
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      },
+      "corner",
+      {
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "tapAction": {
+      "type": "callService",
+      "serviceDomain": "script",
+      "serviceName": "turn_on"
+    },
+    "refreshMinutes": 15
+  },
+  "inputs": {
+    "entityStates": {
+      "cover.garage": {
+        "state": "closed",
+        "domain": "cover"
+      }
+    },
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": [],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000081",
+          "kind": "icon",
+          "symbol": "bolt.fill",
+          "colorHex": "#FFFFFF",
+          "size": 22,
+          "isHidden": false
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000082",
+          "kind": "tap",
+          "isHidden": false,
+          "opacity": 1,
+          "frame": {
+            "x": 0.35,
+            "y": 0.1,
+            "width": 0.3,
+            "height": 0.8,
+            "rotationDegrees": 0
+          }
+        }
+      ]
+    }
+  }
+}

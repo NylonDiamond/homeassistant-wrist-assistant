@@ -17,6 +17,7 @@ import {
   type ChartStyle,
   type GaugeStyle,
   type ImageContentMode,
+  type ImageSource,
   type ImageTimestampCorner,
   type InlineLayout,
   type NamedValue,
@@ -191,7 +192,10 @@ export interface ResolvedShape extends ResolvedBase {
 export interface ResolvedImage extends ResolvedBase {
   kind: "image";
   entityId: string;
-  /** Preview URL (HA's entity_picture). Absent = draw the camera placeholder. */
+  /** Where the pixels come from, so the placeholder can name the right kind of
+   * missing picture. */
+  source: ImageSource;
+  /** Preview URL (HA's entity_picture). Absent = draw the placeholder. */
   url?: string;
   /** Whether the watch draws the fetched-at overlay. */
   showTimestamp: boolean;
@@ -1002,6 +1006,7 @@ export class Resolver {
           kind: "image",
           ...base,
           entityId: el.payload.entity.entityId,
+          source: el.payload.source,
           showTimestamp: el.payload.timestamp === true,
           contentMode: el.payload.contentMode,
           zoom: el.payload.zoom,
