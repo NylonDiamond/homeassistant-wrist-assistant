@@ -44,7 +44,9 @@ from homeassistant.components import websocket_api
 from homeassistant.components.websocket_api import ActiveConnection
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.template import Template, TemplateError
+from homeassistant.util import dt as dt_util
 
 from .complication_store import (
     ComplicationChange,
@@ -83,6 +85,32 @@ def _store(hass: HomeAssistant) -> ComplicationStore | None:
     if domain_data is None:
         return None
     return domain_data.complication_store
+
+
+def _seconds_since_poll(hass: HomeAssistant, coordinator: Any, owner: str) -> float | None:
+    """How long since this watch last polled, in seconds, or None.
+
+    The coordinator's own clock is the live answer, but it lives in memory, so
+    a restart wipes it and the chip would fall back to the very claim this is
+    here to stop: a green "On watch" about a watch nobody has heard from. The
+    watch's Last activity sensor is a RestoreSensor holding the same moment
+    across restarts, so it answers for the gap until the watch polls again.
+    """
+    live = coordinator.seconds_since_poll(owner) if coordinator else None
+    if live is not None:
+        return live
+    entity_id = er.async_get(hass).async_get_entity_id(
+        "sensor", DOMAIN, f"wrist_assistant_{owner}_last_activity"
+    )
+    if entity_id is None:
+        return None
+    state = hass.states.get(entity_id)
+    if state is None:
+        return None
+    seen = dt_util.parse_datetime(state.state)
+    if seen is None:
+        return None
+    return max(0.0, (dt_util.utcnow() - seen).total_seconds())
 
 
 def _send_store_error(
@@ -325,9 +353,7 @@ def ws_list(
             # polled since this server started. "On watch" is true forever
             # once the tokens match, so this is what stops a green tick from
             # implying a watch that went flat two hours ago is still listening.
-            "last_poll_seconds": (
-                coordinator.seconds_since_poll(owner) if coordinator else None
-            ),
+            "last_poll_seconds": _seconds_since_poll(hass, coordinator, owner),
             "max_schema_version": COMPLICATION_MAX_SCHEMA_VERSION,
             # iPhone presets on this watch (slot + name, its last sync
             # report). The panel's auto-assigner must skip these slots (a
@@ -509,7 +535,7 @@ def ws_watch_status(
         msg["id"],
         {
             "polling": coordinator.is_polling(owner),
-            "last_poll_seconds": coordinator.seconds_since_poll(owner),
+            "last_poll_seconds": _seconds_since_poll(hass, coordinator, owner),
             "token": store.owner_token(owner),
             "applied_token": store.applied_token(owner),
         },
@@ -547,7 +573,7 @@ def ws_nudge(
         msg["id"],
         {
             "polling": polling,
-            "last_poll_seconds": coordinator.seconds_since_poll(owner),
+            "last_poll_seconds": _seconds_since_poll(hass, coordinator, owner),
             "token": domain_data.complication_store.owner_token(owner),
             "applied_token": domain_data.complication_store.applied_token(owner),
         },
