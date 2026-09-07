@@ -206,6 +206,9 @@ const clampColumn = (n: number) => Math.max(COL_MIN, Math.min(COL_MAX, Math.roun
  * Ctrl everywhere else. Shift keeps working too, since it did before.
  */
 const isMultiKey = (e: MouseEvent | PointerEvent) => e.metaKey || e.ctrlKey || e.shiftKey;
+/** Input types that hold no text, so nothing is lost by letting the panel's
+ * own shortcuts through while one of them has the focus. */
+const NON_TEXT_INPUTS = /^(range|checkbox|radio|color|button|submit|reset|file|image)$/;
 const MULTI_KEY = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "Cmd" : "Ctrl";
 /** How a shortcut is written in a tooltip: ⌘D on a Mac, Ctrl+D elsewhere. */
 const KEY_MOD = MULTI_KEY === "Cmd" ? "⌘" : "Ctrl+";
@@ -1802,6 +1805,14 @@ export class WristAssistantPanel extends LitElement {
     if (e.key === "Escape") this.timestampActiveId = undefined;
     const focused = e.composedPath()[0] as HTMLElement | undefined;
     const inField = !!focused?.tagName?.match(/INPUT|TEXTAREA|SELECT/) || focused?.isContentEditable === true;
+    // A slider, a checkbox or a select keeps the focus after it is used, so
+    // "inField" alone made every editing shortcut dead until the user clicked
+    // somewhere blank: drag a rotation slider, press undo, nothing happens.
+    // Only somewhere text is typed needs to keep its own keys.
+    const inTextField =
+      inField &&
+      focused?.tagName !== "SELECT" &&
+      !NON_TEXT_INPUTS.test((focused as HTMLInputElement | undefined)?.type ?? "");
     const dialogOpen = this.renderRoot.querySelector("dialog[open]") !== null;
     // With nothing typed into, Escape clears the selection, the way it does in
     // a drawing app: the pick first, then the selected layer. A dialog keeps
@@ -1835,17 +1846,19 @@ export class WristAssistantPanel extends LitElement {
     if (e.key === "s") {
       e.preventDefault();
       void this.save();
-    } else if (e.key === "z" && !inField) {
+    } else if (e.key === "z" && !inTextField) {
       e.preventDefault();
       if (e.shiftKey) this.redo();
       else this.undo();
-    } else if (e.key === "y" && !inField) {
+    } else if (e.key === "y" && !inTextField) {
       e.preventDefault();
       this.redo();
     }
-    // Everything below acts on layers, so a field keeps its own ⌘C, ⌘A and
-    // the rest, and none of it runs while a dialog has the keyboard.
-    if (inField || dialogOpen) return;
+    // Everything below acts on layers, so a text field keeps its own ⌘C, ⌘A
+    // and the rest, and none of it runs while a dialog has the keyboard. A
+    // slider or a checkbox has no use for those keys, so it does not block
+    // them just because it still holds the focus.
+    if (inTextField || dialogOpen) return;
     const key = e.key.toLowerCase();
     let used = true;
     if (key === "a") this.selectAll();
