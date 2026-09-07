@@ -1122,28 +1122,13 @@ export class WristAssistantPanel extends LitElement {
     /* The layers this complication has that this shape does not draw. Under
        the list and shut, so the list above stays a reading of the preview
        beside it, and quiet: these rows are a way back in, not the work. */
-    details.off-shape { margin-top: 10px; border-top: 1px solid var(--wa-line); padding-top: 8px; }
-    details.off-shape > summary {
       list-style: none; cursor: pointer; font-size: 12px; color: var(--wa-muted);
       padding: 4px 6px; border-radius: var(--wa-r-sm); display: flex; align-items: center; gap: 6px;
     }
-    details.off-shape > summary::-webkit-details-marker { display: none; }
-    details.off-shape > summary::before { content: "▸"; font-size: 10px; opacity: .7; }
-    details.off-shape[open] > summary::before { content: "▾"; }
-    details.off-shape > summary:hover { background: var(--wa-panel); color: var(--wa-ink); }
-    .off-rows { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
-    .off-row {
       display: grid; grid-template-columns: 4px minmax(0, 1fr) auto; align-items: center; gap: 8px;
       padding: 5px 8px; border-radius: var(--wa-r-sm); cursor: pointer; font-size: 13px;
       border: 1px dashed var(--wa-line); background: transparent; color: var(--wa-muted);
     }
-    .off-row:hover { border-style: solid; border-color: color-mix(in srgb, var(--k) 45%, var(--wa-line)); color: var(--wa-ink); background: var(--wa-raised); }
-    .off-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .off-row .bar { width: 4px; height: 20px; border-radius: 2px; background: var(--k); opacity: .5; }
-    .off-row:hover .bar { opacity: 1; }
-    .off-row .name { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-    .off-row .name b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .off-row .name small { font-size: 11px; }
 
     /* The inspector: crumbs on top, then one card per section of the thing
        selected, tinted by what it is. */
@@ -2391,8 +2376,8 @@ export class WristAssistantPanel extends LitElement {
     return html`<div class="blank-shape">
       <b>Nothing is on the ${familyTitle(family)} shape yet.</b>
       <div class="hint">Layers belong to the whole complication, so the ones on the other shapes
-        are under <b>not on the ${familyTitle(family)} shape</b> at the foot of this card. The eye
-        on one of those rows puts it here. Or copy rows on another shape with ${KEY_MOD}C, come
+        are still listed here, dimmed. The eye on one of those rows puts it on this shape. Or copy
+        rows on another shape with ${KEY_MOD}C, come
         back here and paste them with ${KEY_MOD}V: they land where they sit there, and no second
         copy of the layer is made.</div>
       ${edit && others.length > 0
@@ -3659,14 +3644,16 @@ export class WristAssistantPanel extends LitElement {
     // Top of the list = drawn last = on top. Attached taps are not rows: they
     // show as a badge on the layer they belong to.
     //
-    // The list is this shape's list. A layer belongs to the whole
-    // complication, but a list of ten greyed-out rows is not a picture of
-    // what the shape draws, so the ones that are not on it move to their own
-    // folded block under the list and the rows above are exactly what the
-    // preview shows.
-    const everyRow = [...cfg.elements].filter((el) => !isAttachedTap(cfg, el)).reverse();
-    const ordered = everyRow.filter((el) => !effectivePlacement(cfg, family, el).isHidden);
-    const offShape = everyRow.filter((el) => effectivePlacement(cfg, family, el).isHidden);
+    // Every layer stays in the list, hidden or not. Hiding one used to move
+    // its row to a folded block below, which read as a delete: the row the
+    // user had just clicked was gone from where they were looking. A hidden
+    // row is dimmed and carries a "hidden" badge instead, so the list stays a
+    // stable list of the complication's layers and the eye is a toggle rather
+    // than a disappearing act.
+    //
+    // What the eye writes is still this shape's own setting: hiding a layer on
+    // Rectangular leaves Circular alone.
+    const ordered = [...cfg.elements].filter((el) => !isAttachedTap(cfg, el)).reverse();
     const ctx = describeContext(this.host());
     const resolver = new Resolver(this.buildContext(), this.draft?.config);
     const layout = cfg.perFamily[this.activeFamily];
@@ -3721,7 +3708,7 @@ export class WristAssistantPanel extends LitElement {
           ${edit ? html`<span class="acts">
             <button class="icon" title=${`Bring forward (${KEY_MOD}])`} aria-label="Bring forward" @click=${(e: Event) => { e.stopPropagation(); move(id, 1); }}>${uiIcon("up")}</button>
             <button class="icon" title=${`Send back (${KEY_MOD}[)`} aria-label="Send back" @click=${(e: Event) => { e.stopPropagation(); move(id, -1); }}>${uiIcon("down")}</button>
-            <button class="icon" title=${`${eff.isHidden ? "Show in" : "Hide in"} ${familyTitle(family)} (${KEY_SHIFT}${KEY_MOD}H)`} aria-label=${eff.isHidden ? "Show this layer" : "Hide this layer"} @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => setPlacement(c, family, id, { isHidden: !eff.isHidden })); }}>${uiIcon(eff.isHidden ? "hide" : "show")}</button>
+            <button class="icon" title=${`${eff.isHidden ? "Show" : "Hide"} (${KEY_SHIFT}${KEY_MOD}H)`} aria-label=${eff.isHidden ? "Show this layer" : "Hide this layer"} @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => setPlacement(c, family, id, { isHidden: !eff.isHidden })); }}>${uiIcon(eff.isHidden ? "hide" : "show")}</button>
             <button class="icon" title=${`Duplicate (${KEY_MOD}D)`} aria-label="Duplicate" @click=${(e: Event) => { e.stopPropagation(); dup(id); }}>${uiIcon("duplicate")}</button>
             <button class="icon danger" title="Delete (Delete)" aria-label="Delete" @click=${(e: Event) => { e.stopPropagation(); del(id); }}>${uiIcon("delete")}</button>
           </span>` : nothing}
@@ -3872,7 +3859,6 @@ export class WristAssistantPanel extends LitElement {
         <span class="right"><span class="badges"><span class="badge">always bottom</span></span></span>
       </div>
       </div>
-      ${this.renderOffShape(offShape, family, edit, ctx)}
     </div>`;
   }
 
@@ -3884,41 +3870,6 @@ export class WristAssistantPanel extends LitElement {
       <div class="empty">Inline is one line of text and draws no layers.
         Its text is on the right. Pick a canvas shape above to work on layers.</div>
     </div>`;
-  }
-
-  /**
-   * The layers this complication has that this shape does not draw.
-   *
-   * Folded, and under the list rather than in it, because the list above is
-   * meant to be a reading of the preview beside it. They are still one click
-   * from being on the shape, which is the whole reason they are shown at all.
-   */
-  private renderOffShape(
-    offShape: readonly CElement[],
-    family: DrawableFamily,
-    edit: boolean,
-    ctx: DescribeContext,
-  ) {
-    if (offShape.length === 0) return nothing;
-    const n = offShape.length;
-    return html`<details class="off-shape">
-      <summary>${n} layer${n === 1 ? "" : "s"} not on the ${familyTitle(family)} shape</summary>
-      <div class="off-rows">
-        ${offShape.map((el) => html`<div class="off-row" style=${`--k:${KIND_COLOR[el.kind]}`} tabindex="0"
-          title=${`${layerTitle(el, ctx)} is on the complication but not on this shape`}
-          @click=${() => { this.inspect = { kind: "layer", id: el.payload.id }; }}
-          @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "layer", id: el.payload.id }; }}>
-          <span class="bar"></span>
-          <span class="name">
-            <b>${layerTitle(el, ctx)}</b>
-            <small><span class="kind">${KIND_LABEL[el.kind]}</span></small>
-          </span>
-          ${edit ? html`<button class="icon" title=${`Put it on the ${familyTitle(family)} shape`}
-            aria-label=${`Put it on the ${familyTitle(family)} shape`}
-            @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => setPlacement(c, family, el.payload.id, { isHidden: false })); }}>${uiIcon("show")}</button>` : nothing}
-        </div>`)}
-      </div>
-    </details>`;
   }
 
   /**
