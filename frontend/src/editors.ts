@@ -1704,9 +1704,8 @@ function card(host: EditorHost, id: string, title: string, body: unknown, opts: 
     <div class="sec-h" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"} @click=${toggle}
       @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}>
       <span class="swatch">${uiIcon(opts.icon ?? "content")}</span>
-      <span class="tt"><h4>${title}</h4>${opts.summary ? html`<span class="sum">${opts.summary}</span>` : nothing}</span>
-      ${resetButton(opts.reset === undefined ? undefined
-        : { atDefault: false, title: `Put ${title} back to its defaults`, reset: opts.reset })}
+      <span class="tt"><h4>${title}${resetButton(opts.reset === undefined ? undefined
+        : { atDefault: false, title: `Put ${title} back to its defaults`, reset: opts.reset })}</h4>${opts.summary ? html`<span class="sum">${opts.summary}</span>` : nothing}</span>
       <span class="chev">${uiIcon("chevron")}</span>
     </div>
     ${open ? html`<div class="sec-b">${body}</div>` : nothing}
@@ -2268,11 +2267,15 @@ function chartNumbersSection(host: EditorHost, el: Extract<CElement, { kind: "ch
       : html`
         <div class="chart-numbers">
           ${labels.map((l) => html`
-            <button class="small" title="Edit this number" @click=${() => host.selectLayer(l.payload.id)}>
-              <b>${host.resolve(l.payload.value) ?? "--"}</b> · <span class="ent-tok">${layerTitle(l, ctx)}</span>
-            </button>`)}
+            <div class="num-row">
+              <button class="small" title="Edit this number" @click=${() => host.selectLayer(l.payload.id)}>
+                <b>${host.resolve(l.payload.value) ?? "--"}</b> · <span class="ent-tok">${layerTitle(l, ctx)}</span>
+              </button>
+              <button class="icon danger" title="Delete this number" aria-label="Delete this number"
+                @click=${() => host.update((c) => removeElement(c, l.payload.id))}>${uiIcon("close")}</button>
+            </div>`)}
         </div>
-        <div class="hint">Each number is a text layer in this chart's group. Click one to edit it; drag it on the preview to move it.</div>`}
+        <div class="hint">Each number is a text layer in this chart's group. Click one to edit it; drag it on the preview to move it. The × deletes it, and Undo brings it back.</div>`}
     <div class="hint"><b>Add</b></div>
     <div class="adders">
       ${CHART_STATS.map(([stat, label]) => html`

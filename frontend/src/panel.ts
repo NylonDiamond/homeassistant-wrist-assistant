@@ -1174,7 +1174,10 @@ export class WristAssistantPanel extends LitElement {
     .sec-h .swatch { width: 28px; height: 28px; border-radius: 8px; background: color-mix(in srgb, var(--c) 20%, transparent); border: 1px solid color-mix(in srgb, var(--c) 35%, transparent); color: var(--c); flex: none; display: grid; place-items: center; }
     .sec-h .swatch svg { width: 15px; height: 15px; }
     .sec-h .tt { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-    .sec-h h4 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -.01em; }
+    /* A row, so a card's reset button sits against its title rather than out
+       at the far edge beside the chevron, which reads as a header action for
+       the card as a whole instead of a way back for what is in it. */
+    .sec-h h4 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -.01em; display: flex; align-items: center; gap: 2px; }
     /* Reset buttons. One control, two places: beside a setting's title, and in
        a card's header for everything the card owns. It is drawn only while
        something is away from its default, so its presence is the "changed"
@@ -1234,8 +1237,13 @@ export class WristAssistantPanel extends LitElement {
     .picked .row .glyph svg { width: 16px; height: 16px; display: block; }
     .picked .row .kind { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--k); flex: none; }
     .adders { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+    /* One row per number: the whole label opens that text layer, and the ×
+       at the end deletes it. Two buttons, because one cannot sit inside the
+       other. */
     .chart-numbers { display: flex; flex-direction: column; gap: 4px; }
-    .chart-numbers button { justify-content: flex-start; text-align: left; }
+    .chart-numbers .num-row { display: flex; align-items: center; gap: 4px; }
+    .chart-numbers .num-row > button.small { flex: 1; min-width: 0; justify-content: flex-start; text-align: left; }
+    .chart-numbers .num-row > button.icon { flex: none; }
     dialog.preset-dialog {
       width: min(420px, calc(100vw - 32px)); padding: 16px 18px 18px;
       border: 1px solid var(--wa-line); border-radius: 12px;
