@@ -769,6 +769,11 @@ var nl=Object.defineProperty;var il=Object.getOwnPropertyDescriptor;var A=(e,n,t
       --wa-muted: var(--secondary-text-color, rgba(127,127,127,.9));
       --wa-accent: var(--primary-color, #6d5dfc);
       --wa-accent-ink: var(--wa-accent-ink);
+      /* Reset buttons, in one colour of their own. Pinned rather than taken
+         from the theme's warning colour, which is orange or red in plenty of
+         themes: these mark a setting someone changed, not a problem. Darker
+         on a light card, where a bright yellow all but disappears. */
+      --wa-reset: #B07D00;
       /* Two colours for the things that come out of Home Assistant rather
          than out of this editor: the entity a layer names, and the value it
          is reading right now. They are the same two colours in the search
@@ -804,6 +809,7 @@ var nl=Object.defineProperty;var il=Object.getOwnPropertyDescriptor;var A=(e,n,t
       --wa-muted: #8d92a6;
       --wa-accent: #7b6cff;
       --wa-accent-ink: #fff;
+      --wa-reset: #FFD60A;
       --wa-ent: #5fd4c4;
       --wa-val: #ffc45c;
       --wa-ent-bg: color-mix(in srgb, var(--wa-ent) 14%, transparent);
@@ -1492,9 +1498,14 @@ var nl=Object.defineProperty;var il=Object.getOwnPropertyDescriptor;var A=(e,n,t
        a card's header for everything the card owns. It is drawn only while
        something is away from its default, so its presence is the "changed"
        mark, and a card with no buttons in it is a card nobody touched. */
-    button.icon.reset { flex: none; }
-    .sec-h button.icon.reset { color: var(--c); opacity: .85; }
-    .sec-h button.icon.reset:hover { opacity: 1; background: color-mix(in srgb, var(--c) 22%, transparent); }
+    /* Yellow, and a heavier stroke than the other glyphs: at 13px the shared
+       1.7 reads as a hairline, and this one has to be spotted rather than
+       looked for. Same colour in a card header as beside a setting, so the
+       two are obviously the same control at two scopes. */
+    button.icon.reset { flex: none; color: var(--wa-reset); opacity: .9; }
+    button.icon.reset svg.ui-icon { stroke-width: 2.6; }
+    button.icon.reset:hover:not(:disabled) { opacity: 1; background: color-mix(in srgb, var(--wa-reset) 20%, transparent); }
+    button.icon.reset:focus-visible { box-shadow: 0 0 0 3px color-mix(in srgb, var(--wa-reset) 40%, transparent); }
     /* Small enough to sit on a 13px label line without pushing it around. */
     button.icon.tiny { width: 20px; height: 20px; border-radius: 6px; margin: -4px 0; }
     button.icon.tiny svg.ui-icon { width: 13px; height: 13px; }
