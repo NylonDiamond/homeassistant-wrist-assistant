@@ -25,6 +25,11 @@ Commands:
                                               {requests: {key: {entity_id,
                                                                 minutes,
                                                                 points}}}
+    wrist_assistant/complications/statistics_series
+                                              {requests: {key: {entity_id,
+                                                                minutes,
+                                                                period,
+                                                                type}}}
 
 ``save`` is all-or-nothing: the browser submits the whole document plus the
 revision it loaded. A mismatch returns error code ``conflict`` with the
@@ -66,6 +71,12 @@ from .history_series import (
     async_history_series,
     normalize_mode,
 )
+from .statistics_series import (
+    PERIODS,
+    STAT_TYPES,
+    StatisticsSeriesError,
+    async_statistics_series,
+)
 from .widget_secret_store import DEVICE_KIND_WATCH
 
 _LOGGER = logging.getLogger(__name__)
@@ -79,6 +90,7 @@ _CMD_SUBSCRIBE = f"{DOMAIN}/complications/subscribe"
 _CMD_MOVE_OWNER = f"{DOMAIN}/complications/move_owner"
 _CMD_RENDER = f"{DOMAIN}/complications/render_values"
 _CMD_HISTORY = f"{DOMAIN}/complications/history_series"
+_CMD_STATISTICS = f"{DOMAIN}/complications/statistics_series"
 _CMD_NUDGE = f"{DOMAIN}/complications/nudge"
 _CMD_WATCH_STATUS = f"{DOMAIN}/complications/watch_status"
 _CMD_FORGET = f"{DOMAIN}/devices/forget"
@@ -179,6 +191,7 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_move_owner)
     websocket_api.async_register_command(hass, ws_render_values)
     websocket_api.async_register_command(hass, ws_history_series)
+    websocket_api.async_register_command(hass, ws_statistics_series)
     websocket_api.async_register_command(hass, ws_nudge)
     websocket_api.async_register_command(hass, ws_watch_status)
     websocket_api.async_register_command(hass, ws_forget_device)
@@ -767,6 +780,61 @@ async def ws_history_series(
                 mode=normalize_mode(request.get("mode")),
             )
         except HistorySeriesError as err:
+            results[key] = {"ok": False, "error": str(err)}
+            continue
+        results[key] = {"ok": True, "series": series}
+    connection.send_result(msg["id"], {"results": results})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_STATISTICS,
+        vol.Required("requests"): {
+            str: {
+                vol.Required("entity_id"): str,
+                vol.Required("minutes"): int,
+                vol.Required("period"): vol.In(list(PERIODS)),
+                vol.Required("type"): vol.In(list(STAT_TYPES)),
+            }
+        },
+    }
+)
+@websocket_api.async_response
+async def ws_statistics_series(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Long-term statistics for the preview's chart layers, one series per key.
+
+    The sibling of ``history_series`` and the same bargain: the browser runs
+    the module the watch's signed ``op=statistics`` runs, so the editor's
+    hourly energy bars and the wrist's are one implementation rather than two
+    that are free to drift.
+
+    ``period`` and ``type`` are validated here rather than normalised,
+    because the panel writes them from its own fixed pickers; a spelling this
+    module does not serve is a panel bug worth seeing. The watch's op is the
+    forgiving side, since it replays whatever a stored document holds.
+
+    Keys are the caller's own; the reply mirrors them. Each resolves
+    independently, so one entity with no statistics does not blank the other
+    charts: ``{key: {ok, series}}`` or ``{key: {ok: false, error}}``.
+    """
+    results: dict[str, dict[str, Any]] = {}
+    for key, request in msg["requests"].items():
+        entity_id = request["entity_id"]
+        if not entity_id:
+            results[key] = {"ok": False, "error": "entity_id required"}
+            continue
+        try:
+            series = await async_statistics_series(
+                hass,
+                entity_id,
+                request["minutes"],
+                request["period"],
+                request["type"],
+            )
+        except StatisticsSeriesError as err:
             results[key] = {"ok": False, "error": str(err)}
             continue
         results[key] = {"ok": True, "series": series}
