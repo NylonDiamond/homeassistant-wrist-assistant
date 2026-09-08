@@ -1247,7 +1247,14 @@ async def _op_get_stream_entity(ctx: _OpContext) -> Response:
 
 
 async def _op_template(ctx: _OpContext) -> Response:
-    """Render a Jinja template. Body: {template, variables?}."""
+    """Render a Jinja template. Body: {template, variables?}.
+
+    Renders with `parse_result` left on, so `result` can be a number, a bool
+    or an object rather than a string; the client flattens it to text
+    (`CodingUtilities.homeAssistantTemplateResult`). The panel's
+    `render_values` command renders the same way and flattens it server-side,
+    so the editor preview reads the string the watch reads.
+    """
     template_str = ctx.payload.get("template")
     variables = ctx.payload.get("variables")
     if not isinstance(template_str, str) or not template_str:

@@ -352,12 +352,12 @@ class DeltaCoordinator:
         """How long since this watch last polled, or None when it has not
         polled since this server started.
 
-        Read from `_last_poll_at`, which outlives the watch's session: a
-        session is pruned after five idle minutes, so `last_seen` on it cannot
-        answer "and how long has it been away?". The clock is the loop's
-        monotonic one, so it is a duration and never a wall-clock time, and it
-        is in memory only: after a restart the answer is None until the watch
-        polls again.
+        Read from `_last_poll_at`, which is pruned alongside the watch's
+        session once both are five minutes stale, and in memory only. So the
+        answer is None after a restart, and None again once a watch has been
+        away long enough for the number to matter. The panel's chip reads the
+        watch's Last activity sensor when this returns None, which is a
+        RestoreSensor holding the same moment across both gaps.
         """
         last = self._last_poll_at.get(watch_id)
         if last is None:
@@ -1282,15 +1282,32 @@ class DeltaCoordinator:
         return results
 
     def _prune_sessions(self) -> None:
-        """Drop idle watch sessions."""
+        """Drop idle watch sessions, and the per-watch bookkeeping beside them.
+
+        ``_sessions`` was the only thing pruned here, so ``_token_notified``
+        and ``_last_poll_at`` grew for the lifetime of the process, one entry
+        per watch id ever seen. Real households have a handful; a dev box
+        running the HTTP suite provisions a throwaway id on every run.
+        """
         cutoff = dt_util.utcnow() - SESSION_TTL
         expired = [
             watch_id
             for watch_id, session in self._sessions.items()
             if session.last_seen < cutoff
         ]
+        stale_poll = self.hass.loop.time() - SESSION_TTL.total_seconds()
         for watch_id in expired:
             self._sessions.pop(watch_id, None)
+            # Forgetting this only costs the watch one extra "you are behind"
+            # reply, which is what a watch back after five idle minutes wants.
+            self._token_notified.pop(watch_id, None)
+            # `handle_poll` stamps `_last_poll_at` before this runs, so a watch
+            # polling again after a long idle arrives with a fresh stamp and a
+            # session that is about to expire. Drop the stamp only when it is
+            # itself stale, or that watch would read as never having polled.
+            last = self._last_poll_at.get(watch_id)
+            if last is None or last <= stale_poll:
+                self._last_poll_at.pop(watch_id, None)
             waiter = self._waiters.pop(watch_id, None)
             if waiter is not None:
                 waiter.set()  # parked poll re-checks ownership and exits

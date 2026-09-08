@@ -39,6 +39,7 @@ and the way to prune it stay in one file.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -114,6 +115,37 @@ def _seconds_since_poll(hass: HomeAssistant, coordinator: Any, owner: str) -> fl
     if seen is None:
         return None
     return max(0.0, (dt_util.utcnow() - seen).total_seconds())
+
+
+def _template_text(value: Any) -> str:
+    """One rendered template as the watch reads it.
+
+    The watch's signed ``template`` op renders with ``parse_result=True``, so
+    what leaves the server is native JSON: a number, a bool, an object. Swift
+    flattens that back to text in ``CodingUtilities.homeAssistantTemplateResult``
+    before anything looks at it, and this is the same arithmetic, so the
+    preview shows the string the wrist shows. Rendering with
+    ``parse_result=False`` instead was a second implementation of "what does
+    this template say", and it disagreed: `21.50` stayed "21.50" in the
+    browser and became "21.5" on the wrist.
+
+    A float that lands on a whole number is written without its ``.0``, which
+    is what ``NSNumber.stringValue`` does with the same JSON on the watch.
+    """
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    if isinstance(value, (int, float)):
+        return str(value)
+    try:
+        return json.dumps(value, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError):
+        return str(value)
 
 
 def _send_store_error(
@@ -667,8 +699,11 @@ def ws_render_values(
     Jinja needs the server, because the browser must not reimplement Home
     Assistant's template engine. Each key resolves independently so one bad
     template does not blank the whole preview: ``{key: {ok, value}}`` or
-    ``{key: {ok: false, error}}``. Renders with the same ``Template`` path the
-    watch's signed ``template`` op uses, so the panel and the watch agree.
+    ``{key: {ok: false, error}}``. Renders exactly as the watch's signed
+    ``template`` op does, ``parse_result`` included, and flattens the native
+    result to text the way the watch's decoder does (``_template_text``), so
+    the browser and the wrist read one string rather than two formattings of
+    one render.
     """
     results: dict[str, dict[str, Any]] = {}
     for key, template_str in msg["templates"].items():
@@ -676,11 +711,11 @@ def ws_render_values(
             results[key] = {"ok": False, "error": "empty template"}
             continue
         try:
-            value = Template(template_str, hass).async_render(parse_result=False)
+            value = Template(template_str, hass).async_render(parse_result=True)
         except TemplateError as err:
             results[key] = {"ok": False, "error": str(err)}
             continue
-        results[key] = {"ok": True, "value": value}
+        results[key] = {"ok": True, "value": _template_text(value)}
     connection.send_result(msg["id"], {"results": results})
 
 

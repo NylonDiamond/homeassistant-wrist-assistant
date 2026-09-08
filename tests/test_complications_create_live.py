@@ -481,6 +481,64 @@ def test_poll_carries_the_token_and_the_ack_turns_green(
     assert reply["result"]["applied_token"] == new_token
 
 
+def _watch_text(result: Any) -> str:
+    """A signed `template` reply as the watch's decoder reads it.
+
+    Mirrors `CodingUtilities.homeAssistantTemplateResult`: the op renders with
+    `parse_result` on, so the reply carries native JSON and Swift flattens it
+    to text before anything looks at it.
+    """
+    if isinstance(result, bool):
+        return "true" if result else "false"
+    if result is None:
+        return ""
+    if isinstance(result, float) and result.is_integer():
+        return str(int(result))
+    if isinstance(result, (int, float)):
+        return str(result)
+    if isinstance(result, str):
+        return result.strip()
+    return json.dumps(result, sort_keys=True, separators=(",", ":"))
+
+
+def test_the_preview_renders_what_the_wrist_renders(
+    base_url: str, token: str, owner: tuple[str, bytes]
+) -> None:
+    """One template, two callers, one string.
+
+    The panel's `render_values` and the watch's signed `template` op are the
+    only two readers of a complication's Jinja, and they used to disagree on
+    the parse: `{{ 1 == 1 }}` read "True" in the browser and "true" on the
+    wrist, and a quoted "21.50" kept its trailing zero in one and lost it in
+    the other. A preview that is not the wrist is worth nothing.
+    """
+    watch_id, secret = owner
+    templates = {
+        "boolean": "{{ 1 == 1 }}",
+        "quoted_number": "{{ '21.50' }}",
+        "object": '{{ {"b": 2, "a": 1} | tojson }}',
+        "plain_text": "  hello  ",
+    }
+    reply = _ws_admin_commands(
+        base_url,
+        token,
+        [
+            {
+                "type": "wrist_assistant/complications/render_values",
+                "templates": templates,
+            }
+        ],
+    )[0]
+    assert reply["success"], reply
+    panel = reply["result"]["results"]
+
+    for key, template in templates.items():
+        r = _post_op(base_url, secret, watch_id, "template", {"template": template})
+        assert r.status_code == 200, r.text
+        assert panel[key]["ok"] is True, panel[key]
+        assert panel[key]["value"] == _watch_text(r.json()["result"]), key
+
+
 def test_forgetting_a_watch_purges_everything_it_owned(
     base_url: str, token: str, register_secret: Callable[..., bytes]
 ) -> None:
