@@ -32,6 +32,7 @@ import {
   parseConfig,
   replaceQuotedEntityIds,
 } from "./model.js";
+import { supportedFamilies } from "./layouts.js";
 
 // ── placeholders ──────────────────────────────────────────────────────────
 
@@ -381,4 +382,71 @@ export function remapEntities(
   for (const [from, to] of map) ids.set(from, to.entityId);
   mapFreeText(next, (text) => replaceQuotedEntityIds(text, ids));
   return next;
+}
+
+// ── what the import dialog works out ──────────────────────────────────────
+//
+// The three questions the dialog asks that are arithmetic rather than markup:
+// what to call the copy, what the pasted text turned out to be, and whether
+// Import can do anything yet. They live here so the dialog is only markup and
+// so all three can be tested without a browser.
+
+/**
+ * A name for the imported copy that this watch does not already use.
+ *
+ * The sender's own name arrives with the document and is nearly always the
+ * right one, so it is offered first and numbered only when it has to be. The
+ * alternative, refusing on arrival, makes the reader answer a question before
+ * they have read anything else in the dialog.
+ */
+export function suggestImportName(name: string, taken: ReadonlySet<string>): string {
+  const base = name.trim();
+  if (base === "") return "";
+  const has = (n: string) => taken.has(n.toLowerCase());
+  if (!has(base)) return base;
+  for (let n = 2; n <= 99; n += 1) {
+    const next = `${base} ${n}`;
+    if (!has(next)) return next;
+  }
+  return base;
+}
+
+function joinWords(words: readonly string[]): string {
+  if (words.length <= 1) return words[0] ?? "";
+  return `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]!}`;
+}
+
+/**
+ * One line saying what the pasted text turned out to be: how many layers, and
+ * which shapes. Enough to catch "that is not the one I copied" before any
+ * entity has been picked.
+ */
+export function importSummary(cfg: CustomComplicationConfig): string {
+  const layers = cfg.elements.length;
+  const count = layers === 1 ? "1 layer" : `${layers} layers`;
+  const families = supportedFamilies(cfg);
+  return families.length === 0 ? count : `${count}, ${joinWords(families)}`;
+}
+
+/** Everything the Import button waits on, in the order the reader meets it. */
+export interface ImportReadiness {
+  /** True once the text parsed into a document. */
+  parsed: boolean;
+  name: string;
+  /** Names already on this watch, lower-cased. */
+  taken: ReadonlySet<string>;
+  /** Required rows with nothing picked yet. */
+  unchosen: number;
+}
+
+/** What still stands between the pasted text and the editor, in words for the
+ * disabled button's tooltip, or undefined when nothing does. */
+export function importProblem(state: ImportReadiness): string | undefined {
+  if (!state.parsed) return "Paste a complication first.";
+  const name = state.name.trim();
+  if (name === "") return "Give it a name first.";
+  if (state.taken.has(name.toLowerCase())) return "A complication on this watch already has that name.";
+  if (state.unchosen === 1) return "One entity still needs choosing.";
+  if (state.unchosen > 1) return `${state.unchosen} entities still need choosing.`;
+  return undefined;
 }

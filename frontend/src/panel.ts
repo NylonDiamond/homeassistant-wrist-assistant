@@ -64,6 +64,7 @@ import {
   newElement,
   newId,
   parseConfig,
+  schemaVersionFor,
   ownedElements,
   removeElement,
   selectableLayerId,
@@ -110,6 +111,7 @@ import {
   describeValue,
   effectivePlacement,
   entityField,
+  entityRefFrom,
   entitySearchOpen,
   familyEditor,
   generalEditor,
@@ -128,6 +130,21 @@ import {
   shownCount,
 } from "./editors.js";
 import { type PresetEnv, type PresetKind, LAYER_PRESETS, applyPreset, presetSpec } from "./presets.js";
+import {
+  type ImportParse,
+  type ShareSlot,
+  type UnresolvedEntity,
+  exportFileName,
+  exportText,
+  hasInstanceFilters,
+  importProblem,
+  importSummary,
+  parseImportText,
+  remapEntities,
+  shareSlots,
+  suggestImportName,
+  unresolvedEntities,
+} from "./transfer.js";
 
 const TEMPLATE_REFRESH_MS = 30_000;
 const TEMPLATE_DEBOUNCE_MS = 500;
@@ -139,6 +156,16 @@ const WATCH_STATUS_MS = 30_000;
 /** Search key for the preset dialog's entity field. One dialog, one field, so
  * one key; the field's transient search state lives in editors.ts under it. */
 const PRESET_ENTITY_KEY = "preset-entity";
+
+/** Search key for one row of the import dialog's entity table. Keyed by the id
+ * being replaced rather than by row number, so a row keeps its own open search
+ * when the text above it is edited and the table is rebuilt. */
+function importEntityKey(entityId: string): string {
+  return `import-entity-${entityId}`;
+}
+
+/** The empty reference an unanswered import row shows. */
+const NO_ENTITY: EntityRef = { entityId: "", displayName: "", domain: "" };
 
 /** Which way each arrow key moves the selection, in design points. Screen
  * coordinates, so Down is +y. */
@@ -448,6 +475,23 @@ export class WristAssistantPanel extends LitElement {
   @state() private newOpen = false;
   @state() private newName = "";
   @state() private newFamily?: FamilyKind;
+  /** The Share dialog is open, which mode it is in, and the labels the author
+   * has renamed. Labels are keyed by placeholder id and only hold the edited
+   * ones, so the defaults follow the document as it is edited underneath. */
+  @state() private shareOpen = false;
+  @state() private shareMode: "share" | "backup" = "share";
+  @state() private shareLabels: ReadonlyMap<string, string> = new Map();
+  /** What the Share dialog's footer last had to say. Empty most of the time:
+   * it speaks when a copy or a download landed, and when this browser has no
+   * clipboard to write to and the text has been selected instead. */
+  @state() private shareNote = "";
+  /** The Import dialog: the pasted text, what it parsed into, the name the
+   * copy will take, and one chosen entity per slot the design asks about. */
+  @state() private importOpen = false;
+  @state() private importText = "";
+  @state() private importParse?: ImportParse;
+  @state() private importName = "";
+  @state() private importMap: ReadonlyMap<string, EntityRef> = new Map();
   /** Parsed config per saved record, keyed by id and invalidated by revision.
    * The picker draws a real preview of every complication, and parsing and
    * compiling every document on every render of an open menu is the one part
@@ -833,6 +877,54 @@ export class WristAssistantPanel extends LitElement {
     .shape-dot.corner { width: 10px; border-radius: 0 6px 0 0; }
     .shape-dot.inline { width: 16px; height: 4px; }
     .shape-dot.on { opacity: 1; }
+
+    /* Share and Import. Both are wider than New: one holds a whole document as
+       text, the other a row for every entity the design reads. Both scroll
+       inside themselves, so a design with twenty slots still has its buttons
+       on screen. */
+    dialog.share-dialog, dialog.import-dialog {
+      width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 40px); padding: 0;
+      border: 1px solid var(--wa-line); border-radius: 12px;
+      background: var(--wa-card); color: var(--wa-ink);
+      box-shadow: 0 12px 40px rgba(0,0,0,.4);
+      display: flex; flex-direction: column;
+    }
+    dialog.share-dialog::backdrop, dialog.import-dialog::backdrop { background: rgba(0,0,0,.45); }
+    .xfer-body { padding: 14px 18px 4px; overflow: auto; flex: 1 1 auto; min-height: 0; }
+    .xfer-body .field { display: flex; flex-direction: column; align-items: stretch; gap: 5px; }
+    .xfer-body .field > span { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+    .xfer-body .field + .field { margin-top: 14px; }
+    .xfer-modes { display: flex; flex-direction: column; gap: 8px; }
+    .xfer-mode { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; cursor: pointer; }
+    .xfer-mode input { flex: none; margin: 3px 0 0; accent-color: var(--wa-accent); }
+    .xfer-mode b { font-weight: 600; }
+    .xfer-mode .hint { display: block; margin: 1px 0 0; }
+    /* The document itself. Monospace and never wrapped: a wrapped line reads as
+       a line break that is not in the text, and this text gets pasted. */
+    .xfer-text {
+      width: 100%; box-sizing: border-box; resize: vertical; white-space: pre; overflow: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.45;
+    }
+    /* One slot per row: the id the reader will see, the label they will read
+       beside it, and underneath, every place in the design that uses it. */
+    .xfer-slot { padding: 8px 0; border-top: 1px solid var(--wa-line); }
+    .xfer-slot:first-child { border-top: 0; }
+    .xfer-slot .srow { display: flex; align-items: center; gap: 10px; }
+    .xfer-slot .sid {
+      flex: none; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+      color: var(--wa-ent); min-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .xfer-slot .srow input[type=text] { flex: 1 1 auto; min-width: 0; }
+    .xfer-slot .hint { margin: 3px 0 0; }
+    .xfer-file { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .xfer-file .hint { margin: 0; }
+    .xfer-file input[type=file] { font: inherit; font-size: 12px; color: var(--wa-muted); min-width: 0; }
+    .xfer-ent { padding: 10px 0; border-top: 1px solid var(--wa-line); }
+    .xfer-ent:first-child { border-top: 0; padding-top: 2px; }
+    .xfer-ent .hint { margin: 4px 0 0; }
+    .xfer-foot { display: flex; align-items: center; gap: 8px; padding: 14px 18px 16px; border-top: 1px solid var(--wa-line); flex: none; }
+    .xfer-foot .spacer { flex: 1; }
+    .xfer-foot .note { font-size: 12px; color: var(--wa-muted); }
 
     /* Three columns with a draggable gutter between each pair. The side widths
        come in as custom properties already fitted to the measured panel width
@@ -2572,8 +2664,11 @@ export class WristAssistantPanel extends LitElement {
     this.scheduleTemplates(0);
   }
 
-  private startNew(config: CustomComplicationConfig) {
-    if (this.draft?.dirty && !this.confirmDiscard()) return;
+  /** Open a document that is not on the server yet. False when the user was
+   * asked to discard unsaved work and said no, so a caller with a dialog full
+   * of answers (Import) can leave it standing rather than throwing it away. */
+  private startNew(config: CustomComplicationConfig): boolean {
+    if (this.draft?.dirty && !this.confirmDiscard()) return false;
     this.selectedId = config.id;
     this.clearDraft();
     this.forced = new Map();
@@ -2583,6 +2678,7 @@ export class WristAssistantPanel extends LitElement {
     this.recompile();
     this.ensureActiveFamily();
     this.scheduleTemplates(0);
+    return true;
   }
 
   /** First slot neither a stored record nor an occupied entry (a preset, or
@@ -3261,6 +3357,7 @@ export class WristAssistantPanel extends LitElement {
       ["Expand", "The face full-window, for small moves. Everything above works there too"],
       ["Locked group", "Drags as one. Unlock it in its row to move layers alone"],
       ["Timestamp chip", "On a picture layer: click it to move it, pull a corner for its size"],
+      ["Share · Import", "Share turns this complication into text you can post anywhere, with your entity ids replaced by numbered slots. Import pastes that text back and asks which of your entities each slot means"],
     ];
     const rows = (list: [string, string][]) => list.map(([k, what]) => html`<tr><th scope="row"><kbd>${k}</kbd></th><td>${what}</td></tr>`);
     return html`<dialog class="help-dialog" @close=${() => { this.helpOpen = false; }}>
@@ -3729,6 +3826,8 @@ export class WristAssistantPanel extends LitElement {
       ${this.loadError ? html`<div class="card error">${this.loadError}</div>` : nothing}
       ${this.helpOpen ? this.renderHelpDialog() : nothing}
       ${this.newOpen ? this.renderNewDialog() : nothing}
+      ${this.shareOpen ? this.renderShareDialog() : nothing}
+      ${this.importOpen ? this.renderImportDialog() : nothing}
       ${this.watchSupported
         ? html`<div class="layout cols-${fit.columns}"
               style="--wa-left:${fit.left}px;--wa-right:${fit.right}px">
@@ -3901,6 +4000,10 @@ export class WristAssistantPanel extends LitElement {
   /**
    * The New complication button, beside the list rather than inside it. It
    * opens the dialog below; nothing is made until that dialog is answered.
+   *
+   * Import sits next to it because it answers the same question from the other
+   * end: this is the second way a complication appears on a watch, and it needs
+   * the same free slot New does.
    */
   private renderNewButton() {
     if (!this.hass.user?.is_admin) return nothing;
@@ -3909,6 +4012,9 @@ export class WristAssistantPanel extends LitElement {
       <button class="new-btn primary" ?disabled=${full} aria-haspopup="dialog" aria-expanded=${this.newOpen ? "true" : "false"}
         title=${full ? "This watch has no free slot. Delete a complication first." : "Make a new complication"}
         @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New</span></button>
+      <button class="new-btn" ?disabled=${full} aria-haspopup="dialog" aria-expanded=${this.importOpen ? "true" : "false"}
+        title=${full ? "This watch has no free slot. Delete a complication first." : "Paste a complication somebody shared"}
+        @click=${() => this.openImportDialog()}><span>Import</span></button>
       ${full ? html`<span class="newc-full">watch is full</span>` : nothing}
     </div>`;
   }
@@ -4009,6 +4115,395 @@ export class WristAssistantPanel extends LitElement {
     e.preventDefault();
     this.createNew();
   };
+
+  // ── share and import ──────────────────────────────────────────────────
+  //
+  // Two dialogs over transfer.ts: one turns the open complication into text
+  // anyone can post, the other turns that text back into a complication on this
+  // watch. Every decision either of them makes is a pure function over there.
+  // What is left here is markup, plus the three things a pure function cannot
+  // do: reach the clipboard, start a download, and read a chosen file.
+
+  /** The domains this house has. It is what decides whether a quoted id inside
+   * a template is an entity or a number that happens to have a dot in it. */
+  private knownDomains(): Set<string> {
+    const out = new Set<string>();
+    for (const id of Object.keys(this.hass.states)) {
+      const domain = id.split(".")[0] ?? "";
+      if (domain !== "") out.add(domain);
+    }
+    return out;
+  }
+
+  /** The open document's slots, with whatever the author has renamed applied.
+   * Only the edited labels are held, so the rest follow the document. */
+  private currentShareSlots(): ShareSlot[] {
+    const cfg = this.draft?.config;
+    if (!cfg) return [];
+    return shareSlots(cfg, this.knownDomains()).map((slot) => {
+      const label = this.shareLabels.get(slot.placeholderId);
+      return label === undefined ? slot : { ...slot, label };
+    });
+  }
+
+  /**
+   * The Share dialog: pick what to share, name the slots, take the text.
+   *
+   * The text is recomputed on every render rather than held in state, so a
+   * label typed in the table shows up in the box it is about immediately.
+   * There is no Save here and nothing is stored: this dialog only reads.
+   */
+  private renderShareDialog() {
+    const cfg = this.draft?.config;
+    if (!cfg) return nothing;
+    const slots = this.currentShareSlots();
+    const text = exportText(cfg, this.shareMode, slots);
+    const mode = (value: "share" | "backup", title: string, blurb: string) => html`<label class="xfer-mode">
+      <input type="radio" name="wa-share-mode" .checked=${this.shareMode === value}
+        @change=${() => { this.shareMode = value; this.shareNote = ""; }} />
+      <span><b>${title}</b><span class="hint">${blurb}</span></span>
+    </label>`;
+    return html`<dialog class="share-dialog" @close=${() => { this.shareOpen = false; }}>
+      <div class="new-head">
+        <h2>Share this complication</h2>
+        <span class="spacer"></span>
+        <button class="icon" title="Close" aria-label="Close" @click=${() => this.closeShareDialog()}>${uiIcon("close")}</button>
+      </div>
+      <div class="xfer-body">
+        <div class="field">
+          <span>What to share</span>
+          <div class="xfer-modes">
+            ${mode("share", "Share", "Entity ids and friendly names are replaced by numbered slots, so nothing about your home travels with it. Whoever imports it picks their own entities.")}
+            ${mode("backup", "Backup", "An exact copy, your entity ids and names included. For your own records, or another watch in this home.")}
+          </div>
+        </div>
+        ${this.shareMode === "share" ? this.renderShareSlots(slots) : nothing}
+        <div class="field">
+          <span>Text</span>
+          <textarea class="xfer-text" rows="14" readonly aria-label="The text to share" .value=${text}></textarea>
+        </div>
+      </div>
+      <div class="xfer-foot">
+        ${this.shareNote === "" ? nothing : html`<span class="note">${this.shareNote}</span>`}
+        <span class="spacer"></span>
+        <button class="small" @click=${() => this.closeShareDialog()}>Close</button>
+        <button class="small" @click=${() => this.downloadShareText(text)}>Download</button>
+        <button class="primary" @click=${() => void this.copyShareText(text)}>Copy</button>
+      </div>
+    </dialog>`;
+  }
+
+  /**
+   * One row per entity the design reads: the id the other side will see, the
+   * label it will read beside it, and every place in this design that uses it.
+   *
+   * The label is the only editable thing here, and it is the only thing the
+   * reader has to go on when they choose what to point it at, so "Sensor 1" is
+   * worth replacing with "the one on the porch".
+   */
+  private renderShareSlots(slots: readonly ShareSlot[]) {
+    if (slots.length === 0) {
+      return html`<div class="hint">This design reads no entities, so there is nothing to replace.</div>`;
+    }
+    return html`<div class="field">
+      <span>Slots</span>
+      <div>
+        ${slots.map((slot) => html`<div class="xfer-slot">
+          <div class="srow">
+            <span class="sid" title=${slot.placeholderId}>${slot.placeholderId}</span>
+            <input type="text" maxlength="40" aria-label=${`Label for ${slot.placeholderId}`} .value=${slot.label}
+              @input=${(e: Event) => this.setShareLabel(slot.placeholderId, (e.target as HTMLInputElement).value)} />
+          </div>
+          <div class="hint">${slot.where.join(", ")}</div>
+        </div>`)}
+      </div>
+      <div class="hint">These names are all the other side has while it picks its own entities, so say what each one is for.</div>
+    </div>`;
+  }
+
+  private setShareLabel(placeholderId: string, label: string) {
+    const next = new Map(this.shareLabels);
+    next.set(placeholderId, label);
+    this.shareLabels = next;
+  }
+
+  private openShareDialog() {
+    if (!this.draft) return;
+    this.shareOpen = true;
+    this.shareMode = "share";
+    this.shareLabels = new Map();
+    this.shareNote = "";
+    void this.updateComplete.then(() => {
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.share-dialog");
+      if (dialog && !dialog.open) dialog.showModal();
+    });
+  }
+
+  private closeShareDialog() {
+    const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.share-dialog");
+    if (dialog?.open) dialog.close();
+    else this.shareOpen = false;
+  }
+
+  /**
+   * Copy the text, or say how to.
+   *
+   * Home Assistant reached over plain http has no `navigator.clipboard` at all,
+   * and a browser can refuse the write where it does have one, so the fallback
+   * is not a rare branch: select the text and name the keys, which works
+   * everywhere a page can be read.
+   */
+  private async copyShareText(text: string) {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        this.shareNote = "Copied.";
+        return;
+      }
+    } catch {
+      // Refused or unavailable; the selection below works either way.
+    }
+    const area = this.renderRoot.querySelector<HTMLTextAreaElement>("dialog.share-dialog textarea");
+    area?.focus();
+    area?.select();
+    this.shareNote = "Press Cmd+C or Ctrl+C to copy.";
+  }
+
+  /** Save the text as a file: a Blob and one click on a link nobody sees. The
+   * panel has no download route on the server and needs none. */
+  private downloadShareText(text: string) {
+    const cfg = this.draft?.config;
+    if (!cfg) return;
+    const name = exportFileName(cfg);
+    const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    link.click();
+    // Freed on the next turn: revoking in this one can beat the download to it.
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    this.shareNote = `Saved as ${name}.`;
+  }
+
+  /**
+   * The Import dialog: paste, name it, say which of your entities it means.
+   *
+   * The parse runs on every keystroke because it is cheap and because an error
+   * that appears while you are still pasting is easier to act on than one that
+   * waits for a button. Nothing is created until Import, and Import only opens
+   * a draft: the watch learns about it at the first Save.
+   */
+  private renderImportDialog() {
+    const parse = this.importParse;
+    const cfg = parse?.ok ? parse.config : undefined;
+    const rows = cfg ? unresolvedEntities(cfg, this.hass.states) : [];
+    const problem = importProblem({
+      parsed: cfg !== undefined,
+      name: this.importName,
+      taken: this.takenNames(),
+      unchosen: this.unchosenCount(rows),
+    });
+    return html`<dialog class="import-dialog" @keydown=${this.importKeys} @close=${() => { this.importOpen = false; }}>
+      <div class="new-head">
+        <h2>Import a complication</h2>
+        <span class="spacer"></span>
+        <button class="icon" title="Cancel" aria-label="Cancel" @click=${() => this.closeImportDialog()}>${uiIcon("close")}</button>
+      </div>
+      <div class="xfer-body">
+        <div class="field">
+          <span>Shared text</span>
+          <textarea class="xfer-text" rows="8" placeholder="Paste the shared complication here"
+            aria-label="Shared complication text" .value=${this.importText}
+            @input=${(e: Event) => this.setImportText((e.target as HTMLTextAreaElement).value)}></textarea>
+          <div class="xfer-file">
+            <span class="hint">Or read it from a file:</span>
+            <input type="file" accept=".json,application/json" aria-label="Read it from a file instead"
+              @change=${(e: Event) => void this.readImportFile(e)} />
+          </div>
+        </div>
+        ${parse && !parse.ok ? html`<div class="hint err">${parse.error}</div>` : nothing}
+        ${cfg ? this.renderImportDetails(cfg, rows) : nothing}
+      </div>
+      <div class="xfer-foot">
+        <span class="spacer"></span>
+        <button class="small" @click=${() => this.closeImportDialog()}>Cancel</button>
+        <button class="primary" ?disabled=${problem !== undefined}
+          title=${problem ?? "Open it in the editor"} @click=${() => this.doImport()}>Import</button>
+      </div>
+    </dialog>`;
+  }
+
+  /** Required rows nobody has answered yet. */
+  private unchosenCount(rows: readonly UnresolvedEntity[]): number {
+    return rows.filter((r) => r.required && !this.importMap.has(r.entityId)).length;
+  }
+
+  /** Everything below the paste box, once the text has turned into a document:
+   * what to call it, what it turned out to be, and its entities. */
+  private renderImportDetails(cfg: CustomComplicationConfig, rows: readonly UnresolvedEntity[]) {
+    const name = this.importName.trim();
+    const taken = name !== "" && this.takenNames().has(name.toLowerCase());
+    return html`
+      <div class="field">
+        <span>Name</span>
+        <input type="text" maxlength="60" aria-label="Complication name" aria-invalid=${taken ? "true" : "false"}
+          .value=${this.importName}
+          @input=${(e: Event) => { this.importName = (e.target as HTMLInputElement).value; }} />
+      </div>
+      ${taken
+        ? html`<div class="hint err">A complication on this watch already has that name.</div>`
+        : html`<div class="hint">${importSummary(cfg)}. It opens in the editor and reaches the watch at the first Save.</div>`}
+      ${rows.length === 0
+        ? html`<div class="hint">Every entity this design reads is already in your Home Assistant.</div>`
+        : html`<div class="field">
+            <span>Entities</span>
+            <div>${rows.map((row) => this.renderImportRow(row))}</div>
+          </div>`}
+      ${hasInstanceFilters(cfg)
+        ? html`<div class="hint warn">This design filters by areas, labels or floors from the sender's home. Check its aggregate layers after import.</div>`
+        : nothing}`;
+  }
+
+  /** One entity the design asks about. A slot has to be answered; a real id
+   * this house happens not to have right now does not, because the entity may
+   * be back tomorrow and blanking it helps nobody. */
+  private renderImportRow(row: UnresolvedEntity) {
+    const chosen = this.importMap.get(row.entityId);
+    return html`<div class="xfer-ent">
+      ${entityField({ hass: this.hass }, row.label, chosen ?? NO_ENTITY,
+        (ref) => this.setImportEntity(row.entityId, ref),
+        importEntityKey(row.entityId),
+        { compact: true, domain: row.domain, needed: row.required && chosen === undefined })}
+      <div class="hint">${row.where.join(", ")}</div>
+      <div class="hint">${row.required
+        ? "Choose the entity this design should read."
+        : "Not in your Home Assistant right now; leave it to keep the id."}</div>
+    </div>`;
+  }
+
+  private setImportEntity(entityId: string, ref: EntityRef) {
+    const next = new Map(this.importMap);
+    if (ref.entityId === "") next.delete(entityId);
+    // Read the whole reference back out of Home Assistant rather than trusting
+    // the one the field built: the name saved beside the id is what the next
+    // save copies into dataSources.
+    else next.set(entityId, entityRefFrom(this.hass.states, ref.entityId));
+    this.importMap = next;
+  }
+
+  /**
+   * Re-read the pasted text.
+   *
+   * Re-typing the same document is not a new one, so a change that leaves the
+   * parsed document identical keeps the name and the entities already picked.
+   * A change that does not, drops them: they were answers about a different
+   * design.
+   */
+  private setImportText(text: string) {
+    this.importText = text;
+    const before = this.importParse?.ok ? JSON.stringify(this.importParse.config) : undefined;
+    const parse = text.trim() === "" ? undefined : parseImportText(text, this.maxSchemaVersion);
+    this.importParse = parse;
+    if (!parse?.ok) {
+      this.importMap = new Map();
+      this.importName = "";
+      return;
+    }
+    if (JSON.stringify(parse.config) === before) return;
+    this.importMap = new Map();
+    this.importName = suggestImportName(parse.config.name, this.takenNames());
+  }
+
+  /** A chosen file lands in the paste box, so there is one place the document
+   * is read from and one place an error about it appears. */
+  private async readImportFile(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      this.setImportText(await file.text());
+    } catch (err) {
+      this.importParse = { ok: false, error: `That file could not be read: ${errText(err)}` };
+    }
+    // Cleared so choosing the same file twice still counts as a change.
+    input.value = "";
+  }
+
+  /**
+   * Enter imports, once the dialog has everything it needs.
+   *
+   * Capture phase, and it stands back for the entity search the same way the
+   * preset dialog does: Enter there takes the highlighted row. It also stands
+   * back inside the paste box, where Enter is a line of the document.
+   */
+  private importKeys = {
+    handleEvent: (e: Event) => {
+      if ((e as KeyboardEvent).key !== "Enter") return;
+      if (e.target instanceof HTMLTextAreaElement) return;
+      const parse = this.importParse;
+      const cfg = parse?.ok ? parse.config : undefined;
+      if (!cfg) return;
+      const rows = unresolvedEntities(cfg, this.hass.states);
+      if (rows.some((row) => entitySearchOpen(importEntityKey(row.entityId)))) return;
+      const problem = importProblem({
+        parsed: true,
+        name: this.importName,
+        taken: this.takenNames(),
+        unchosen: this.unchosenCount(rows),
+      });
+      if (problem !== undefined) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.doImport();
+    },
+    capture: true,
+  };
+
+  /**
+   * Take the document into the editor.
+   *
+   * Identity is always this watch's: a fresh id, the first free slot, and no
+   * `dataSources`, which the first save derives. The dialog stays open when
+   * `startNew` is declined, because the answer to "discard your unsaved work?"
+   * being no should not also throw away a table of entities somebody just
+   * filled in.
+   */
+  private doImport() {
+    const parse = this.importParse;
+    if (!parse?.ok) return;
+    const cfg = remapEntities(parse.config, this.importMap);
+    cfg.id = newId();
+    cfg.name = this.importName.trim();
+    cfg.slotIndex = this.freeSlot();
+    cfg.dataSources = [];
+    cfg.schemaVersion = schemaVersionFor(cfg);
+    if (!this.startNew(cfg)) return;
+    // A pasted document is unsaved work from the moment it lands: nothing about
+    // it is on the server, so Save has to be live before the first edit.
+    this.draft?.markDirty();
+    this.closeImportDialog();
+  }
+
+  private openImportDialog() {
+    if (!this.hass.user?.is_admin || this.freeSlot() < 0) return;
+    this.importOpen = true;
+    this.importText = "";
+    this.importParse = undefined;
+    this.importName = "";
+    this.importMap = new Map();
+    void this.updateComplete.then(() => {
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.import-dialog");
+      if (!dialog) return;
+      if (!dialog.open) dialog.showModal();
+      dialog.querySelector<HTMLTextAreaElement>("textarea")?.focus();
+    });
+  }
+
+  private closeImportDialog() {
+    const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.import-dialog");
+    if (dialog?.open) dialog.close();
+    else this.importOpen = false;
+  }
 
   private renderBanners() {
     const out: TemplateResult[] = [];
@@ -4858,6 +5353,7 @@ export class WristAssistantPanel extends LitElement {
       <span class="spacer"></span>
       <span class="acts">
         <button class="ghost" @click=${() => this.openRaw()}>Raw JSON</button>
+        <button class="ghost" @click=${() => this.openShareDialog()}>Share</button>
         ${this.canEdit ? html`
           <button class="ghost" @click=${() => this.duplicate()}>Duplicate</button>
           ${this.confirmDelete

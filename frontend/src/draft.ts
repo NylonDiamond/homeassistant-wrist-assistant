@@ -105,6 +105,20 @@ export class Draft {
     this.config = next;
   }
 
+  /**
+   * Count a brand-new draft as unsaved work straight away.
+   *
+   * A draft opens clean, because its baseline is the document it was built
+   * from. That is right for a record loaded off the server and wrong for one
+   * that arrived by paste: none of it is stored anywhere yet, so Save has to be
+   * live before the first edit rather than after it. Clearing the baseline is
+   * the whole of it, since no encoded document is the empty string, and the
+   * undo and redo stacks are untouched.
+   */
+  markDirty(): void {
+    this.baseline = "";
+  }
+
   /** Close the current coalescing window (pointer up, blur). */
   endGesture(): void {
     this.coalesceKey = undefined;
