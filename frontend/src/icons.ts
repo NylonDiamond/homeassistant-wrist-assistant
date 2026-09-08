@@ -1,18 +1,25 @@
-// SF Symbol providers behind one interface so the development and release
+// Icon providers behind one interface so the development and release
 // providers can differ without touching the saved document format.
 //
-// `BundledIconProvider` reads the gzipped symbol file the integration ships
-// beside the panel bundle, so pictures work with nothing else installed.
-// `CupertinoIconProvider` uses the icon set the Home Assistant Cupertino
-// Icons frontend registers on `window.customIcons.ios` (names like
-// `lightbulb-fill` for `lightbulb.fill`); it stays as a fallback for anyone
-// who already has that integration. `PlaceholderIconProvider` draws nothing
-// and lets the renderer show its dashed "?" box.
+// `BundledIconProvider` reads a gzipped icon file the integration ships beside
+// the panel bundle, so pictures work with nothing else installed. There are two
+// such files: SF Symbols, and Material Design. `CupertinoIconProvider` uses the
+// icon set the Home Assistant Cupertino Icons frontend registers on
+// `window.customIcons.ios` (names like `lightbulb-fill` for `lightbulb.fill`);
+// it stays as a fallback for anyone who already has that integration.
+// `PlaceholderIconProvider` draws nothing and lets the renderer show its dashed
+// "?" box. `SplitIconProvider` puts an SF provider and the Material Design file
+// behind one object, routing on the `mdi:` prefix.
 
 import { svg, type TemplateResult } from "lit";
 import type { IconProvider } from "./renderer.js";
 import { parseColor } from "./renderer.js";
 import { SYMBOL_DIGEST } from "./symbol-digest.js";
+import { MDI_DIGEST } from "./mdi-digest.js";
+
+/** What a Material Design icon name starts with, everywhere: in `symbol`, in
+ * the bundled catalogue's keys, and in the picker. */
+export const MDI_PREFIX = "mdi:";
 
 interface CustomIconResult {
   path?: string;
@@ -152,7 +159,21 @@ export class BundledIconProvider implements IconProvider {
   private icons = new Map<string, BundledIcon>();
   private state: "idle" | "loading" | "loaded" = "idle";
 
-  constructor(private readonly onReady: () => void) {}
+  /** `file` and `digest` are arguments because two of these exist: the SF
+   * Symbol catalogue every panel loads at once, and the much larger Material
+   * Design one that waits until somebody opens its tab. */
+  constructor(
+    private readonly onReady: () => void,
+    private readonly file: string = "symbol-icons.json.gz",
+    private readonly digest: string = SYMBOL_DIGEST
+  ) {}
+
+  /** The `d` string for one name, or undefined when it is unknown or the file
+   * has not arrived. Asking starts the load, like `names()` does. */
+  path(symbol: string): string | undefined {
+    this.load();
+    return this.icons.get(symbol.trim())?.[0];
+  }
 
   /** True once anything has been loaded. Before that the picker cannot tell
    * this apart from a missing file, which is why nothing warns until the
@@ -182,10 +203,10 @@ export class BundledIconProvider implements IconProvider {
     // code works under a subpath or a reverse proxy. The digest is in the query
     // because Home Assistant serves this route with a month of cache, and a
     // rebuilt symbol file would otherwise stay invisible for that long.
-    const url = new URL(`symbol-icons.json.gz?v=${SYMBOL_DIGEST}`, import.meta.url);
+    const url = new URL(`${this.file}?v=${this.digest}`, import.meta.url);
     fetch(url)
       .then((res) => {
-        if (!res.ok || !res.body) throw new Error(`symbol file: ${res.status}`);
+        if (!res.ok || !res.body) throw new Error(`${this.file}: ${res.status}`);
         return new Response(res.body.pipeThrough(new DecompressionStream("gzip"))).json();
       })
       .then((data: unknown) => {
@@ -208,7 +229,52 @@ export class BundledIconProvider implements IconProvider {
   }
 }
 
+/**
+ * SF Symbols and Material Design icons behind one provider, routed on the
+ * `mdi:` prefix a document carries in `symbol`.
+ *
+ * The two catalogues are separate files on purpose. Every panel loads the SF
+ * one straight away because most documents need it; the MDI one is half a
+ * megabyte and only somebody browsing the MDI tab has any use for it, so
+ * nothing fetches it until `mdiNames` or `mdiPath` is asked a question.
+ */
+export class SplitIconProvider implements IconProvider {
+  private readonly mdi: BundledIconProvider;
+
+  constructor(
+    private readonly sf: IconProvider,
+    onReady: () => void
+  ) {
+    this.mdi = new BundledIconProvider(onReady, "mdi-icons.json.gz", MDI_DIGEST);
+  }
+
+  render(symbol: string, size: number, colorHex: string): TemplateResult | undefined {
+    const provider = symbol.trim().startsWith(MDI_PREFIX) ? this.mdi : this.sf;
+    return provider.render(symbol, size, colorHex);
+  }
+
+  /** The SF side answers this: it is what the symbol picker's default tab and
+   * the "missing symbol" warning are about. */
+  available(): boolean {
+    return this.sf.available();
+  }
+
+  names(): string[] | undefined {
+    return this.sf.names();
+  }
+
+  mdiNames(): string[] | undefined {
+    return this.mdi.names();
+  }
+
+  mdiPath(name: string): string | undefined {
+    return this.mdi.path(name);
+  }
+}
+
 export function makeIconProvider(onReady: () => void): IconProvider {
-  if (CupertinoIconProvider.available()) return new CupertinoIconProvider(onReady);
-  return new BundledIconProvider(onReady);
+  const sf = CupertinoIconProvider.available()
+    ? new CupertinoIconProvider(onReady)
+    : new BundledIconProvider(onReady);
+  return new SplitIconProvider(sf, onReady);
 }

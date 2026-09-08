@@ -113,6 +113,11 @@ export interface ResolvedText extends ResolvedBase {
 export interface ResolvedIcon extends ResolvedBase {
   kind: "icon";
   symbol: string;
+  /** The SVG `d` to draw instead of an SF Symbol, when the layer's symbol is a
+   * Material Design icon the author picked by hand. Absent for everything else,
+   * including a symbol an entity or a rule supplied: those name SF Symbols, and
+   * the layer's stored path describes a glyph that is no longer shown. */
+  path?: string;
   size: number;
   colorHex: string;
 }
@@ -1088,13 +1093,26 @@ export class Resolver {
       }
       case "icon": {
         const baseSymbol = this.entityIcon(el.payload.symbol) ?? this.resolve(el.payload.symbol) ?? "questionmark.circle";
-        return {
+        const override = this.styleText(style, "icon");
+        // The stored path belongs to the symbol the author picked, so it
+        // survives only while that symbol is what gets drawn.
+        const literalSymbol = el.payload.symbol.kind.kind === "literal";
+        const path = override === undefined && literalSymbol && el.payload.path !== ""
+          ? el.payload.path
+          : undefined;
+        let symbol = override ?? baseSymbol;
+        // A hand-typed `mdi:` name with no path is a name nothing can draw. The
+        // placeholder makes the mistake visible; blank would read as a bug.
+        if (path === undefined && symbol.startsWith("mdi:")) symbol = "questionmark.circle";
+        const out: ResolvedIcon = {
           kind: "icon",
           ...base,
-          symbol: this.styleText(style, "icon") ?? baseSymbol,
+          symbol,
           size: this.styleNumber(style, "fontSize") ?? el.payload.size,
           colorHex: this.styleColor(style, "color") ?? el.payload.colorSlot.baseColorHex,
         };
+        if (path !== undefined) out.path = path;
+        return out;
       }
       case "gauge": {
         const g = el.payload;

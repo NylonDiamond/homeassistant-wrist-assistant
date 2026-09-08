@@ -2,7 +2,7 @@
 // names the grid offers, and what the line under it claims about them.
 
 import { describe, expect, it } from "vitest";
-import { drawableCount, reachableCount, symbolChoices, symbolCount, symbolPool } from "../src/editors.js";
+import { drawableCount, reachableCount, symbolChoices, symbolCount, symbolIsMissing, symbolPool } from "../src/editors.js";
 import { CURATED_SYMBOLS, SYMBOL_CATEGORIES } from "../src/symbols.js";
 
 const CATEGORY = SYMBOL_CATEGORIES[0]!;
@@ -66,6 +66,27 @@ describe("drawableCount", () => {
   it("counts only what the pack can draw", () => {
     const known = new Set(CURATED_SYMBOLS.slice(0, 4));
     expect(drawableCount(CURATED_SYMBOLS, known)).toBe(4);
+  });
+});
+
+describe("symbolIsMissing", () => {
+  const known = new Set(PACK);
+
+  it("warns about an SF name the installed pack does not have", () => {
+    expect(symbolIsMissing("not.a.symbol", known)).toBe(true);
+    expect(symbolIsMissing(PACK[0]!, known)).toBe(false);
+  });
+
+  it("never warns about a Material Design name", () => {
+    // MDI names are not in the SF pack and never will be, so the pack's silence
+    // about one says nothing at all.
+    expect(symbolIsMissing("mdi:flash", known)).toBe(false);
+    expect(symbolIsMissing("mdi:not-a-real-icon", known)).toBe(false);
+  });
+
+  it("stays quiet with no pack installed and for an unfinished name", () => {
+    expect(symbolIsMissing("not.a.symbol", new Set())).toBe(false);
+    expect(symbolIsMissing("", known)).toBe(false);
   });
 });
 

@@ -239,7 +239,13 @@ export function searchSymbols(names: readonly string[], query: string): string[]
 interface BrowseState {
   query: string;
   category: string;
+  /** Which catalogue the grid is showing, once the user has said. Unset means
+   * nobody has chosen and the field picks from the name it already holds. */
+  pack?: SymbolPack;
 }
+
+/** The two catalogues a symbol field can browse. */
+export type SymbolPack = "sf" | "mdi";
 
 export class SymbolBrowser {
   /**
@@ -279,13 +285,26 @@ export class SymbolBrowser {
     return this.browsing.get(key)?.category ?? "";
   }
 
+  /** Undefined until the user picks a catalogue, so the caller can default from
+   * whatever name the field already holds. */
+  pack(key: string): SymbolPack | undefined {
+    return this.browsing.get(key)?.pack;
+  }
+
   setQuery(key: string, query: string) {
-    this.browsing.set(key, { category: this.category(key), query });
+    this.browsing.set(key, { category: this.category(key), query, pack: this.pack(key) });
     this.onChange();
   }
 
   setCategory(key: string, category: string) {
-    this.browsing.set(key, { query: this.query(key), category });
+    this.browsing.set(key, { query: this.query(key), category, pack: this.pack(key) });
+    this.onChange();
+  }
+
+  /** Switching catalogues clears the search: the two name sets share no
+   * spelling, so a query typed for one matches nothing in the other. */
+  setPack(key: string, pack: SymbolPack) {
+    this.browsing.set(key, { query: "", category: this.category(key), pack });
     this.onChange();
   }
 

@@ -138,6 +138,26 @@ describe("encodeConfig", () => {
     expect(back?.kind === "text" && back.payload.lineLimit).toBe(2);
   });
 
+  it("round-trips an icon path, and the key stays absent for an SF Symbol", () => {
+    const cfg = newConfig("X", 0);
+    const el = newElement("icon");
+    if (el.kind === "icon") {
+      el.payload.symbol = { kind: { kind: "literal", value: "mdi:flash" } };
+      el.payload.path = "M7 2v11h3v9l7-12h-4l4-8z";
+    }
+    cfg.elements = [el];
+    const enc = encodeConfig(cfg) as Record<string, unknown>;
+    expect(auditUnknownKeys(enc)).toEqual([]);
+    const back = parseConfig(enc).elements[0];
+    expect(back?.kind === "icon" && back.payload.path).toBe("M7 2v11h3v9l7-12h-4l4-8z");
+    expect(encodeConfig(parseConfig(enc))).toEqual(enc);
+
+    // Every SF Symbol layer writes exactly the bytes it always did.
+    const bare = newConfig("Y", 1);
+    bare.elements = [newElement("icon")];
+    expect(JSON.stringify(encodeConfig(bare))).not.toContain("path");
+  });
+
   it("round-trips a line shape, and thickness stays absent at its default", () => {
     const cfg = newConfig("X", 0);
     const el = newElement("shape");

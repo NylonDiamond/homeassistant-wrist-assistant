@@ -1,0 +1,111 @@
+{
+  "name": "Icon path",
+  "description": "Material Design icons on an icon layer. The document carries the glyph's SVG path, so the watch draws MDI without a catalogue. The path belongs to the symbol the author picked: a rule that swaps the icon, or an entity that supplies its own, names an SF Symbol and the path must not be drawn over it.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-000000000012",
+    "name": "Icon path",
+    "slotIndex": 1,
+    "supportedFamilies": ["rectangular"],
+    "values": [],
+    "elements": [
+      {
+        "kind": "icon",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000121",
+          "symbol": {"kind": {"kind": "literal", "value": "mdi:flash"}},
+          "path": "M7 2v11h3v9l7-12h-4l4-8z",
+          "size": 16,
+          "colorSlot": {"baseColorHex": "#FFD60A"},
+          "rules": [],
+          "frame": {"x": 0.05, "y": 0.1, "width": 0.25, "height": 0.8, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "icon",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000122",
+          "symbol": {"kind": {"kind": "literal", "value": "mdi:flash"}},
+          "path": "M7 2v11h3v9l7-12h-4l4-8z",
+          "size": 16,
+          "colorSlot": {"baseColorHex": "#FFD60A"},
+          "rules": [
+            {
+              "id": "DDDDDDDD-0000-4000-8000-000000000121",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000121",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "BBBBBBBB-0000-4000-8000-000000000121",
+                        "value": {"kind": {"kind": "entityState", "entityId": "switch.charger", "displayName": "Charger", "domain": "switch"}},
+                        "comparison": {"kind": "isOff"}
+                      }
+                    ]
+                  },
+                  "then": [{"kind": "setIcon", "value": {"kind": {"kind": "literal", "value": "bolt.slash"}}}]
+                }
+              ]
+            }
+          ],
+          "frame": {"x": 0.375, "y": 0.1, "width": 0.25, "height": 0.8, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "icon",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000123",
+          "symbol": {"kind": {"kind": "entityState", "entityId": "switch.charger", "displayName": "Charger", "domain": "switch", "iconName": "powerplug"}},
+          "path": "M7 2v11h3v9l7-12h-4l4-8z",
+          "size": 16,
+          "colorSlot": {"baseColorHex": "#FFFFFF"},
+          "rules": [],
+          "frame": {"x": 0.7, "y": 0.1, "width": 0.25, "height": 0.8, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {"type": "refresh"}
+  },
+  "inputs": {
+    "entityStates": {
+      "switch.charger": {"state": "off", "domain": "switch", "iconName": "powerplug"}
+    },
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": ["switch.charger"],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000121",
+          "kind": "icon",
+          "symbol": "mdi:flash",
+          "path": "M7 2v11h3v9l7-12h-4l4-8z"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000122",
+          "kind": "icon",
+          "symbol": "bolt.slash",
+          "path": null
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000123",
+          "kind": "icon",
+          "symbol": "powerplug",
+          "path": null
+        }
+      ]
+    }
+  }
+}
