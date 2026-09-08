@@ -307,6 +307,16 @@ class DeltaCoordinator:
         self._capabilities.add(cap)
         self._sorted_capabilities = sorted(self._capabilities)
 
+    @property
+    def capabilities(self) -> list[str]:
+        """Every registered capability, sorted.
+
+        The same list the delta reply carries. The unauthenticated version
+        probe serves it too, because an app has to know what this server can
+        do before it has a signed identity to ask with.
+        """
+        return list(self._sorted_capabilities)
+
     # ── custom complications on the poll ──────────────────────────────
 
     @callback

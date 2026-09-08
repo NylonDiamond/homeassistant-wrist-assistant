@@ -2803,6 +2803,9 @@ class WAVersionView(HomeAssistantView):
     * `min_supported_app_protocol_version` — the oldest app proto we'll talk
       to. Apps below it should surface an "update Wrist Assistant" banner.
     * `app_update_message` — optional override copy for that banner.
+    * `capabilities` — the sorted capability list the delta reply also carries,
+      so an app can check for a server feature (`custom_complications`) before
+      it has a signed identity to ask with.
 
     Unauthenticated because the bearer may not be configured yet when iOS first
     checks, and the response carries no secrets.
@@ -2845,11 +2848,21 @@ class WAVersionView(HomeAssistantView):
             instance_uuid = await ha_instance_id.async_get(self._hass)
         except Exception:  # noqa: BLE001
             instance_uuid = None
+        # What this server can do, the same sorted list every delta reply
+        # carries. The app needs some of these before it has anything to sign
+        # with: the custom-complication move wizard is only offered for a home
+        # whose integration reports `custom_complications`, and until now the
+        # only way to learn that was a signed poll. Empty while the entry is
+        # still loading, which reads as "no extras" rather than as a lie.
+        domain_data = self._hass.data.get(DOMAIN)
+        coordinator = getattr(domain_data, "coordinator", None)
+        capabilities = coordinator.capabilities if coordinator is not None else []
         payload = {
             "integration_version": integration_version,
             "wa_protocol_version": WA_PROTOCOL_VERSION,
             "min_supported_app_protocol_version": MIN_SUPPORTED_APP_PROTOCOL_VERSION,
             "app_update_message": APP_UPDATE_MESSAGE,
+            "capabilities": capabilities,
         }
         if instance_uuid:
             payload["instance_id"] = instance_uuid
