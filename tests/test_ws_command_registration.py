@@ -42,6 +42,7 @@ _ADMIN_ONLY = {
     "ws_move_owner",
     "ws_render_values",
     "ws_history_series",
+    "ws_statistics_series",
 }
 
 

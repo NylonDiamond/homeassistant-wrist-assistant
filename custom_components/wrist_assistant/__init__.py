@@ -726,6 +726,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # via /v2/stream/<token> handshake) are available before sending
     # bearer-free requests.
     coordinator.register_capability("watch_hmac_v2")
+    # Long-term statistics as a chart source (op=statistics). Cheap to
+    # advertise, and it lets iOS hide the control on a box whose integration
+    # predates it rather than letting the watch ask and get nothing back.
+    coordinator.register_capability("statistics_series")
 
     runtime_data = WristAssistantData(
         coordinator=coordinator,

@@ -75,6 +75,11 @@ from .history_series import (
     clamp_points,
     normalize_mode,
 )
+from .statistics_series import (
+    RECORDER_UNAVAILABLE,
+    StatisticsSeriesError,
+    async_statistics_series,
+)
 from .camera_stream import (
     DEFAULT_FPS,
     DEFAULT_QUALITY,
@@ -866,6 +871,48 @@ async def _op_history(ctx: _OpContext) -> Response:
         )
 
     return ctx.signed_json({"entity_id": entity_id, "entries": entries})
+
+
+async def _op_statistics(ctx: _OpContext) -> Response:
+    """Long-term statistics for a complication chart, as one series string.
+
+    Payload shape:
+        {
+          "entity_id": "<entity_id>",
+          "minutes":   <int>?,    # span, rolling back from now
+          "period":    "5minute" | "hour" | "day" | "week" | "month"?,
+          "type":      "mean" | "min" | "max" | "change" | "sum"?,
+        }
+
+    Reply:
+        {"entity_id": "<entity_id>", "series": "0.42,0.51,0.38"}
+
+    A separate op rather than a mode on ``history``: ``_op_history`` already
+    multiplexes two reply shapes on whether ``points`` is present, and the
+    two questions share no parameters beyond the entity. The reply shape is
+    the chart series form on purpose, so the watch's draw path does not care
+    which of the two produced it.
+
+    Unlike history, the span is not derived from a window the caller sends.
+    Statistics are never purged, so there is no "start of what we still have"
+    for the caller to compute; it asks for a span and the module clamps it.
+    """
+    entity_id = ctx.payload.get("entity_id")
+    if not isinstance(entity_id, str) or not entity_id:
+        return Response(status=400, text="entity_id required")
+
+    try:
+        series = await async_statistics_series(
+            ctx.hass,
+            entity_id,
+            ctx.payload.get("minutes"),
+            ctx.payload.get("period"),
+            ctx.payload.get("type"),
+        )
+    except StatisticsSeriesError as err:
+        status = 503 if str(err) == RECORDER_UNAVAILABLE else 502
+        return ctx.signed_json({"ok": False, "error": str(err)}, status=status)
+    return ctx.signed_json({"entity_id": entity_id, "series": series})
 
 
 async def _op_states_batch(ctx: _OpContext) -> Response:
@@ -3091,6 +3138,7 @@ _OP_HANDLERS: dict[str, Any] = {
     "service": _op_service,
     "state": _op_state,
     "history": _op_history,
+    "statistics": _op_statistics,
     "states_batch": _op_states_batch,
     "info": _op_info,
     "snapshot": _op_snapshot,
