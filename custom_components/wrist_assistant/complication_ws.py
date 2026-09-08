@@ -2,8 +2,11 @@
 
 The HA frontend panel is the only editor of custom complications. It talks to
 this module over the authenticated WebSocket the frontend already holds; every
-mutation requires an HA administrator. The watch never uses these commands;
-it pulls over the HMAC-signed ``/v2/action`` ops in ``wa_v2_views.py``.
+command requires an HA administrator, reads included. The panel itself is
+admin-only, and the reads carry the whole slot pool of every watch in the
+house plus rendered templates, so a non-admin household member has no reason
+to reach them. The watch never uses these commands; it pulls over the
+HMAC-signed ``/v2/action`` ops in ``wa_v2_views.py``.
 
 Commands:
 
@@ -149,6 +152,7 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_forget_device)
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command({vol.Required("type"): _CMD_OWNERS})
 @callback
 def ws_owners(
@@ -318,6 +322,7 @@ def ws_forget_device(
     )
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_LIST,
@@ -376,6 +381,7 @@ def ws_list(
     )
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_GET,
@@ -462,6 +468,7 @@ def ws_delete(
     connection.send_result(msg["id"], {"ok": True, "record": record.as_dict()})
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_SUBSCRIBE,
@@ -506,6 +513,7 @@ def ws_subscribe(
     connection.send_result(msg["id"], {"token": store.token})
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_WATCH_STATUS,
@@ -628,6 +636,7 @@ def ws_move_owner(
     )
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_RENDER,
@@ -661,6 +670,7 @@ def ws_render_values(
     connection.send_result(msg["id"], {"results": results})
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_HISTORY,
