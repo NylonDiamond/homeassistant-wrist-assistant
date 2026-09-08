@@ -18,6 +18,8 @@ import {
   fetchWatchStatus,
   fetchHistorySeries,
   type HistorySeriesRequest,
+  fetchStatisticsSeries,
+  type StatisticsSeriesRequest,
   renderTemplates,
   saveRecord,
   subscribeChanges,
@@ -52,7 +54,9 @@ import {
   setGroup,
   ungroup,
   chartHistoryKey,
+  chartStatisticsKey,
   chartHistoryRequests,
+  chartStatisticsRequests,
   chartHistorySignature,
   timelineHistoryKey,
   timelineHistoryMinutes,
@@ -3031,7 +3035,8 @@ export class WristAssistantPanel extends LitElement {
   private async refreshHistorySeries() {
     const cfg = this.draft?.config;
     const wanted = cfg ? chartHistoryRequests(cfg) : [];
-    if (wanted.length === 0) {
+    const wantedStats = cfg ? chartStatisticsRequests(cfg) : [];
+    if (wanted.length === 0 && wantedStats.length === 0) {
       if (this.historySeries.size > 0) this.historySeries = new Map();
       return;
     }
@@ -3046,12 +3051,28 @@ export class WristAssistantPanel extends LitElement {
         ...(r.mode === "states" ? { mode: "states" as const } : {}),
       };
     }
+    const statRequests: Record<string, StatisticsSeriesRequest> = {};
+    for (const r of wantedStats) {
+      statRequests[r.key] = {
+        entity_id: r.entityId,
+        minutes: r.minutes,
+        period: r.period,
+        type: r.type,
+      };
+    }
     try {
-      const results = await fetchHistorySeries(this.hass, requests);
+      // Two commands, one Map. The two stores answer different questions but in
+      // the same shape, and the keys cannot collide, so the resolver has one
+      // place to look. Issued together so a slow recorder costs one wait rather
+      // than two, and one command failing does not blank the other's charts.
+      const [results, statResults] = await Promise.all([
+        fetchHistorySeries(this.hass, requests),
+        fetchStatisticsSeries(this.hass, statRequests).catch(() => ({})),
+      ]);
       // Rebuilt rather than merged, so a chart the author retargeted or deleted
       // stops answering with the entity it used to point at.
       const next = new Map<string, string>();
-      for (const [key, result] of Object.entries(results)) {
+      for (const [key, result] of Object.entries({ ...results, ...statResults })) {
         if (result.ok) next.set(key, result.series);
       }
       this.historySeries = next;
@@ -5269,11 +5290,11 @@ function layerMeta(el: CElement, resolver: Resolver, historySeries: Map<string, 
     case "icon": return `${size ?? el.payload.size} pt · ${colorWords(el.payload.colorSlot.baseColorHex)}`;
     case "gauge": return html`${now(resolver.resolve(el.payload.value))} · ${el.payload.style}`;
     case "chart": {
-      // A history chart's own value is one number; counting that would report
+      // A recorder chart's own value is one number; counting that would report
       // "1 value" on the exact layer the history feature exists to fix.
-      const historyKey = chartHistoryKey(el.payload);
-      const raw = historyKey !== undefined
-        ? (historySeries.get(historyKey) ?? "")
+      const seriesKey = chartHistoryKey(el.payload) ?? chartStatisticsKey(el.payload);
+      const raw = seriesKey !== undefined
+        ? (historySeries.get(seriesKey) ?? "")
         : (resolver.resolve(el.payload.value) ?? "");
       return `${el.payload.style} · ${chartNumbers(raw).length} values`;
     }

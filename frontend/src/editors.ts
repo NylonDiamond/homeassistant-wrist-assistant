@@ -62,7 +62,14 @@ import {
   CHART_HISTORY_MAX_POINTS,
   CHART_HISTORY_MIN_POINTS,
   CHART_HISTORY_SPANS,
+  CHART_STATISTICS_MAX_MINUTES,
+  CHART_STATISTICS_SPANS,
+  CHART_DEFAULT_STAT_PERIOD,
+  CHART_DEFAULT_STAT_TYPE,
+  STAT_PERIODS,
+  STAT_TYPES,
   chartHistoryKey,
+  chartStatisticsKey,
   chartShowsTimeLabels,
   TIMELINE_DEFAULT_OTHER_HEX,
   TIMELINE_DOMAIN_STATES,
@@ -2254,8 +2261,11 @@ function timelineReadout(samples: readonly TimelineSample[], spanSeconds: number
 
 /** A history span in words: a listed span by its label, any other as days,
  * hours and minutes ("Last 2d 4h"). */
-function historySpanLabel(minutes: number): string {
-  const listed = CHART_HISTORY_SPANS.find((s) => s.minutes === minutes);
+function historySpanLabel(
+  minutes: number,
+  spans: readonly { minutes: number; label: string }[] = CHART_HISTORY_SPANS,
+): string {
+  const listed = spans.find((s) => s.minutes === minutes);
   if (listed) return listed.label;
   const d = Math.floor(minutes / 1440);
   const h = Math.floor((minutes % 1440) / 60);
@@ -2274,8 +2284,12 @@ const customSpans = new Set<string>();
 
 /** Whether one layer's Span picker is on Custom… right now: either it was
  * picked, or the stored span is not one the picker lists. */
-function spanIsCustom(layerId: string, minutes: number): boolean {
-  return customSpans.has(layerId) || !CHART_HISTORY_SPANS.some((s) => s.minutes === minutes);
+function spanIsCustom(
+  layerId: string,
+  minutes: number,
+  spans: readonly { minutes: number; label: string }[] = CHART_HISTORY_SPANS,
+): boolean {
+  return customSpans.has(layerId) || !spans.some((s) => s.minutes === minutes);
 }
 
 /** The Span picker: every listed span plus Custom…. Shared by the chart and the
@@ -2286,11 +2300,12 @@ function historySpanPicker(
   minutes: number,
   baseMinutes: number,
   set: (minutes: number) => void,
+  spans: readonly { minutes: number; label: string }[] = CHART_HISTORY_SPANS,
 ): TemplateResult {
-  const custom = spanIsCustom(layerId, minutes);
+  const custom = spanIsCustom(layerId, minutes, spans);
   return html`<label class="field">${fieldLabel("Span", {
       atDefault: minutes === baseMinutes && !custom,
-      title: `Back to ${historySpanLabel(baseMinutes)}`,
+      title: `Back to ${historySpanLabel(baseMinutes, spans)}`,
       reset: () => { customSpans.delete(layerId); set(baseMinutes); },
     })}
       <select @change=${(e: Event) => {
@@ -2303,25 +2318,49 @@ function historySpanPicker(
           set(Number(v) || CHART_HISTORY_DEFAULT_MINUTES);
         }
       }}>
-        ${CHART_HISTORY_SPANS.map(({ minutes: listed, label }) => html`<option value=${String(listed)} ?selected=${!custom && listed === minutes}>${label}</option>`)}
+        ${spans.map(({ minutes: listed, label }) => html`<option value=${String(listed)} ?selected=${!custom && listed === minutes}>${label}</option>`)}
         <option value="custom" ?selected=${custom}>Custom…</option>
       </select></label>`;
 }
 
-/** The three boxes Custom… reveals, and the line saying what they add up to. */
-function historySpanCustomFields(minutes: number, set: (minutes: number) => void): TemplateResult {
+/** The three boxes Custom… reveals, and the line saying what they add up to.
+ *
+ * `statistics` swaps in the other store's ceiling and its own explanation: a
+ * year is a fair ask of rows that are never purged. */
+function historySpanCustomFields(
+  minutes: number,
+  set: (minutes: number) => void,
+  statistics = false,
+): TemplateResult {
+  const maxMinutes = statistics ? CHART_STATISTICS_MAX_MINUTES : CHART_HISTORY_MAX_MINUTES;
+  const maxDays = Math.floor(maxMinutes / 1440);
+  const spans = statistics ? CHART_STATISTICS_SPANS : CHART_HISTORY_SPANS;
   const days = Math.floor(minutes / 1440);
   const hours = Math.floor((minutes % 1440) / 60);
   const mins = minutes % 60;
   const parts = (d: number, h: number, m: number) =>
-    set(Math.min(CHART_HISTORY_MAX_MINUTES, Math.max(1, Math.round(d) * 1440 + Math.round(h) * 60 + Math.round(m))));
+    set(Math.min(maxMinutes, Math.max(1, Math.round(d) * 1440 + Math.round(h) * 60 + Math.round(m))));
   return html`<div class="grid3 span-parts">
-      ${numberField("Days", days, (v) => parts(v ?? 0, hours, mins), { step: 1, min: 0, max: 7 })}
+      ${numberField("Days", days, (v) => parts(v ?? 0, hours, mins), { step: 1, min: 0, max: maxDays })}
       ${numberField("Hours", hours, (v) => parts(days, v ?? 0, mins), { step: 1, min: 0, max: 23 })}
       ${numberField("Minutes", mins, (v) => parts(days, hours, v ?? 0), { step: 1, min: 0, max: 59 })}
     </div>
-    <div class="hint">${historySpanLabel(minutes)}, up to 7 days: the recorder keeps
-      ten by default, and a longer span would quietly come back short.</div>`;
+    <div class="hint">${statistics
+      ? html`${historySpanLabel(minutes, spans)}, up to 366 days. Statistics rows are never
+          purged, so the limit is about what fits on a complication rather than about what
+          the recorder still holds.`
+      : html`${historySpanLabel(minutes, spans)}, up to 7 days: the recorder keeps
+          ten by default, and a longer span would quietly come back short.`}</div>`;
+}
+
+/** The span half of a chart's summary line: nothing when it draws its own
+ * value, the span alone for history, and the span plus what one row covers for
+ * statistics ("Last 24 hours · per hour"). */
+function chartSpanSummary(c: ChartElement): string {
+  if (c.historyMinutes <= 0) return "";
+  if (c.source !== "statistics") return ` · ${historySpanLabel(c.historyMinutes)}`;
+  const period = STAT_PERIODS.find(([value]) => value === c.statPeriod)?.[1] ?? c.statPeriod;
+  return ` · ${historySpanLabel(c.historyMinutes, CHART_STATISTICS_SPANS)} · per ${period.toLowerCase()}`;
 }
 
 /** What a layer shows, in a few words, for the Content card's summary line. */
@@ -2332,10 +2371,12 @@ export function contentSummary(host: EditorHost, el: CElement): string {
     case "text": return truncate(describeValue(el.payload.value, ctx), 48);
     case "icon": return truncate(describeValue(el.payload.symbol, ctx), 48);
     case "gauge": return truncate(describeValue(el.payload.value, ctx), 48);
-    // Charts drawing history say so: the value names the entity either way, so
-    // without the span the two kinds of chart read identically in the list.
+    // Charts drawing a past say so: the value names the entity either way, so
+    // without the span the kinds of chart read identically in the list. A
+    // statistics chart adds what one bar covers, because a day of hourly rows
+    // and a day of daily ones are the same span and different plots.
     case "chart": return truncate(
-      `${describeValue(el.payload.value, ctx)}${el.payload.historyMinutes > 0 ? ` · ${historySpanLabel(el.payload.historyMinutes)}` : ""}`,
+      `${describeValue(el.payload.value, ctx)}${chartSpanSummary(el.payload)}`,
       48
     );
     case "timeline": return truncate(
@@ -2626,21 +2667,26 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
       const c = el.payload;
       const setChart = (m: (p: ChartElement) => void, k?: string) => upd((e) => m((e as typeof el).payload), k);
 
-      // Two ways a chart gets its numbers, and the difference is the single
+      // Three ways a chart gets its numbers, and the difference is the single
       // thing people trip on. A forecast sensor already holds a list, so its
-      // own value is the series. Every ordinary sensor holds one number, and
-      // its chart has to come from the recorder instead.
-      const historyKey = chartHistoryKey(c);
+      // own value is the series. Every ordinary sensor holds one number, so its
+      // chart comes from the recorder instead: either the state history, which
+      // is purged after ten days, or the long-term statistics, which are not.
       const baseMinutes = base.historyMinutes as number;
       const basePoints = base.historyPoints as number;
-      const usingHistory = c.historyMinutes > 0;
+      const usingRecorder = c.historyMinutes > 0;
+      const usingStatistics = usingRecorder && c.source === "statistics";
+      const usingHistory = usingRecorder && !usingStatistics;
+      const drawMode = usingRecorder ? (usingStatistics ? "statistics" : "history") : "value";
+      const spans = usingStatistics ? CHART_STATISTICS_SPANS : CHART_HISTORY_SPANS;
+      const seriesKey = chartHistoryKey(c) ?? chartStatisticsKey(c);
       const namesEntity = c.value.kind.kind === "entityState";
-      const historyRaw = historyKey === undefined ? undefined : host.historySeries(historyKey);
-      // Set to history but naming no entity yet, the chart draws its own value,
-      // which is what the watch does too (`usesHistory` needs an entity there).
-      const raw = usingHistory && namesEntity ? (historyRaw ?? "") : (host.resolve(c.value) ?? "");
+      const historyRaw = seriesKey === undefined ? undefined : host.historySeries(seriesKey);
+      // Set to a recorder source but naming no entity yet, the chart draws its
+      // own value, which is what the watch does too (both gates need an entity).
+      const raw = usingRecorder && namesEntity ? (historyRaw ?? "") : (host.resolve(c.value) ?? "");
       const everyReading = c.historyPoints < 1;
-      const customSpan = spanIsCustom(id, c.historyMinutes);
+      const customSpan = spanIsCustom(id, c.historyMinutes, spans);
       const series = chartNumbers(raw);
       const shown = c.limit > 0 && series.length > c.limit
         ? (c.takeFromEnd ? series.slice(series.length - c.limit) : series.slice(0, c.limit))
@@ -2649,7 +2695,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
       // The nudge that answers "why is my chart one bar?" before it is asked:
       // a lone number from a plain sensor is exactly the shape that says the
       // author wanted history and did not know to ask for it.
-      const suggestHistory = !usingHistory && namesEntity && series.length === 1;
+      const suggestHistory = !usingRecorder && namesEntity && series.length === 1;
 
       // Two series on one plot is two chart layers on one frame, the second
       // borrowing the first's range. So the picker lists the other charts in
@@ -2662,11 +2708,58 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
       content = html`
         ${valueEditor(host, c.value, (v) => setChart((p) => { p.value = v; }, "value"),
           { label: "Readings", key: `${key}-value` })}
-        ${segField("Draw", usingHistory ? "history" : "value",
-          [["history", "Recorded history"], ["value", "The value itself"]],
-          (v) => setChart((p) => { p.historyMinutes = v === "history" ? (p.historyMinutes || CHART_HISTORY_DEFAULT_MINUTES) : 0; }),
-          { titles: { history: "Read the entity's past from the recorder and plot it", value: "Plot the numbers the value holds right now, such as a forecast list" },
+        ${segField("Draw", drawMode,
+          [["history", "Recorded history"], ["statistics", "Long-term statistics"], ["value", "The value itself"]],
+          (v) => setChart((p) => {
+            if (v === "value") { p.historyMinutes = 0; return; }
+            p.source = v === "statistics" ? "statistics" : "history";
+            const kept = p.historyMinutes || CHART_HISTORY_DEFAULT_MINUTES;
+            // Coming back from a year of statistics, the span has to fit inside
+            // what the state history can answer, or the request comes back short
+            // with nothing to say why.
+            p.historyMinutes = v === "statistics"
+              ? Math.min(kept, CHART_STATISTICS_MAX_MINUTES)
+              : Math.min(kept, CHART_HISTORY_MAX_MINUTES);
+          }),
+          { titles: {
+              history: "Read the entity's recorded states from the recorder and plot them",
+              statistics: "Plot the recorder's pre-aggregated rows, which reach back a year",
+              value: "Plot the numbers the value holds right now, such as a forecast list",
+            },
             def: (base.historyMinutes as number) > 0 ? "history" : "value" })}
+        ${usingStatistics
+          ? html`
+            ${namesEntity ? nothing : html`<div class="hint warn">Statistics need an entity.
+              A typed-in value, a template or a shared value has no rows to read, so this chart
+              draws the value itself until Readings names an entity.</div>`}
+            <div class="grid2">
+              ${historySpanPicker(id, c.historyMinutes, baseMinutes,
+                (m) => setChart((p) => { p.historyMinutes = m; }), CHART_STATISTICS_SPANS)}
+              ${segField("Per", c.statPeriod, STAT_PERIODS,
+                (v) => setChart((p) => { p.statPeriod = v; }),
+                { def: CHART_DEFAULT_STAT_PERIOD })}
+            </div>
+            ${customSpan
+              ? historySpanCustomFields(c.historyMinutes, (m) => setChart((p) => { p.historyMinutes = m; }, "span"), true)
+              : nothing}
+            ${segField("Read", c.statType, STAT_TYPES,
+              (v) => setChart((p) => { p.statType = v; }),
+              { def: CHART_DEFAULT_STAT_TYPE })}
+            <div class="hint">One bar per period, oldest first, newest ${CHART_HISTORY_MAX_POINTS} kept.
+              Change suits energy (kWh per hour), Mean suits temperature.</div>
+            ${c.statPeriod === "5minute"
+              ? html`<div class="hint warn">Five-minute rows are compacted into hourly ones after
+                about ten days, so a longer span here comes back with only its recent tail.</div>`
+              : nothing}
+            ${namesEntity && historyRaw === undefined
+              ? html`<div class="hint">Reading the statistics…</div>`
+              : nothing}
+            ${namesEntity && historyRaw === ""
+              ? html`<div class="hint warn">No long-term statistics for this entity in that span.
+                Only an entity with a state class (measurement, total or total_increasing) gets
+                them, and a brand new one has none yet.</div>`
+              : nothing}`
+          : nothing}
         ${usingHistory
           ? html`
             ${namesEntity ? nothing : html`<div class="hint warn">History needs an entity.
@@ -2714,12 +2807,15 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               ? html`<div class="hint warn">Nothing recorded for this entity in that span.
                 Either it is excluded from the recorder, or it has no numeric states.</div>`
               : nothing}`
+          : nothing}
+        ${usingRecorder
+          ? nothing
           : html`
             <div class="hint">Every number in what this resolves to becomes one point, in order.
               Commas, spaces and square brackets are all just separators, so a text sensor, a list
               attribute and a template that joins a forecast all work. A dot is a decimal point;
               a comma never is.</div>`}
-        ${series.length === 0 && !(usingHistory && (!namesEntity || historyRaw === undefined || historyRaw === ""))
+        ${series.length === 0 && !(usingRecorder && (!namesEntity || historyRaw === undefined || historyRaw === ""))
           ? html`<div class="hint warn">No numbers in this value yet, so the chart draws nothing.</div>`
           : nothing}
         ${series.length > 0
@@ -2738,7 +2834,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             (v) => setChart((p) => { p.takeFromEnd = v === "end"; }),
             { def: base.takeFromEnd === true ? "end" : "start" })}
         </div>
-        <div class="hint">${usingHistory
+        <div class="hint">${usingRecorder
           ? "Trims the series after it arrives, so 0 draws every reading fetched above."
           : "A forecast sensor often carries 24 or 48 entries. 0 draws all of them."}</div>`;
       look = html`
@@ -3039,7 +3135,7 @@ const CONTENT_KEYS: Record<CElement["kind"], readonly string[]> = {
   text: ["value", "countdown"],
   icon: ["symbol", "path"],
   gauge: ["value", "minValue", "maxValue", "total"],
-  chart: ["value", "historyMinutes", "historyPoints", "limit", "takeFromEnd"],
+  chart: ["value", "historyMinutes", "historyPoints", "source", "statPeriod", "statType", "limit", "takeFromEnd"],
   timeline: ["value", "historyMinutes"],
   shape: ["kind", "cornerRadius"],
   image: ["entity", "source"],

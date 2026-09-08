@@ -17,6 +17,9 @@ import {
   chartHistoryPoints,
   chartHistoryRequests,
   chartHistorySignature,
+  chartStatisticsEntity,
+  chartStatisticsKey,
+  chartStatisticsRequests,
   chartLabelsOf,
   chartShowsTimeLabels,
   copyElements,
@@ -1163,5 +1166,165 @@ describe("a chart's clock times", () => {
     expect(parsed.payload.labelSize).toBe(TIMELINE_DEFAULT_LABEL_SIZE);
     expect(parsed.payload.labelColorHex).toBe(TIMELINE_DEFAULT_LABEL_HEX);
     expect(parsed.payload.labelsAbove).toBe(false);
+  });
+});
+
+describe("long-term statistics", () => {
+  function statisticsChart(tweak: (p: ChartElement) => void = () => {}) {
+    const cfg = newConfig("Energy", 0);
+    const el = newElement("chart") as Extract<Element, { kind: "chart" }>;
+    el.payload.value = { kind: { kind: "entityState", entityId: "sensor.energy", displayName: "Energy", domain: "sensor" } };
+    el.payload.source = "statistics";
+    el.payload.historyMinutes = 1440;
+    el.payload.statPeriod = "hour";
+    el.payload.statType = "change";
+    tweak(el.payload);
+    cfg.elements.push(el);
+    return { cfg, payload: el.payload };
+  }
+
+  it("reads exactly one of the two stores", () => {
+    const { payload } = statisticsChart();
+    expect(chartStatisticsEntity(payload)).toBe("sensor.energy");
+    expect(chartHistoryEntity(payload)).toBeUndefined();
+    expect(chartHistoryKey(payload)).toBeUndefined();
+    expect(chartStatisticsKey(payload)).toBe("sensor.energy|1440|hour|change");
+
+    payload.source = "history";
+    expect(chartStatisticsKey(payload)).toBeUndefined();
+    expect(chartHistoryKey(payload)).toBe("sensor.energy|1440|24");
+  });
+
+  it("needs a span and an entity, like history does", () => {
+    const { payload } = statisticsChart();
+    payload.historyMinutes = 0;
+    expect(chartStatisticsKey(payload)).toBeUndefined();
+
+    const typed = newElement("chart") as Extract<Element, { kind: "chart" }>;
+    typed.payload.source = "statistics";
+    typed.payload.historyMinutes = 1440;
+    expect(chartStatisticsKey(typed.payload)).toBeUndefined();
+  });
+
+  it("makes every parameter part of the question", () => {
+    const { payload } = statisticsChart();
+    const base = chartStatisticsKey(payload);
+    payload.historyMinutes = 10_080;
+    expect(chartStatisticsKey(payload)).not.toBe(base);
+    payload.historyMinutes = 1440;
+    payload.statPeriod = "day";
+    expect(chartStatisticsKey(payload)).not.toBe(base);
+    payload.statPeriod = "hour";
+    payload.statType = "mean";
+    expect(chartStatisticsKey(payload)).not.toBe(base);
+  });
+
+  it("collects one request per distinct question, and none from history charts", () => {
+    const { cfg } = statisticsChart();
+    const twin = newElement("chart") as Extract<Element, { kind: "chart" }>;
+    twin.payload.value = { kind: { kind: "entityState", entityId: "sensor.energy", displayName: "Energy", domain: "sensor" } };
+    twin.payload.source = "statistics";
+    twin.payload.historyMinutes = 1440;
+    twin.payload.statPeriod = "hour";
+    twin.payload.statType = "change";
+    twin.payload.style = "line";
+    cfg.elements.push(twin);
+
+    const daily = newElement("chart") as Extract<Element, { kind: "chart" }>;
+    daily.payload.value = { kind: { kind: "entityState", entityId: "sensor.energy", displayName: "Energy", domain: "sensor" } };
+    daily.payload.source = "statistics";
+    daily.payload.historyMinutes = 10_080;
+    daily.payload.statPeriod = "day";
+    daily.payload.statType = "mean";
+    cfg.elements.push(daily);
+
+    const history = newElement("chart") as Extract<Element, { kind: "chart" }>;
+    history.payload.value = { kind: { kind: "entityState", entityId: "sensor.voltage", displayName: "Voltage", domain: "sensor" } };
+    history.payload.historyMinutes = 360;
+    cfg.elements.push(history);
+
+    const requests = chartStatisticsRequests(cfg);
+    expect(requests.map((r) => r.key).sort())
+      .toEqual(["sensor.energy|10080|day|mean", "sensor.energy|1440|hour|change"]);
+    expect(requests[0]).toMatchObject({
+      entityId: "sensor.energy", minutes: 1440, period: "hour", type: "change",
+    });
+    expect(chartHistoryRequests(cfg).map((r) => r.key)).toEqual(["sensor.voltage|360|24"]);
+    // Both stores are in the signature, so retargeting either owes a refetch.
+    const signature = chartHistorySignature(cfg);
+    expect(signature).toContain("sensor.energy|1440|hour|change");
+    expect(signature).toContain("sensor.voltage|360|24");
+  });
+
+  it("draws the series cached under its own key, never the entity's state", () => {
+    const { cfg, payload } = statisticsChart();
+    const key = chartStatisticsKey(payload)!;
+    const entityStates = new Map<string, EntityState>([
+      ["sensor.energy", { entityId: "sensor.energy", state: "0.5", domain: "sensor", iconName: "bolt" }],
+    ]);
+    const drawn = chartOf(resolveAll(cfg, {
+      entityStates,
+      templateResults: new Map(),
+      historySeries: new Map([[key, "0.4,1.1,0.7"]]),
+      namedValues: cfg.values,
+    }).rectangular!);
+    expect(drawn.values).toEqual([0.4, 1.1, 0.7]);
+
+    // Nothing under that key draws nothing, rather than one bar of the state.
+    const empty = chartOf(resolveAll(cfg, {
+      entityStates,
+      templateResults: new Map(),
+      historySeries: new Map(),
+      namedValues: cfg.values,
+    }).rectangular!);
+    expect(empty.values).toEqual([]);
+  });
+
+  it("always has a window, so it can draw times", () => {
+    const { payload } = statisticsChart();
+    expect(chartShowsTimeLabels(payload)).toBe(true);
+    // The points count is history's knob and means nothing here.
+    payload.historyPoints = 0;
+    expect(chartShowsTimeLabels(payload)).toBe(true);
+    payload.historyMinutes = 0;
+    expect(chartShowsTimeLabels(payload)).toBe(false);
+  });
+
+  it("writes none of the three keys until the chart asks for statistics", () => {
+    const cfg = newConfig("Volts", 0);
+    cfg.elements.push(newElement("chart"));
+    const payload = (encodeConfig(cfg).elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
+    for (const key of ["source", "statPeriod", "statType"]) {
+      expect(payload[key], key).toBeUndefined();
+    }
+
+    const el = cfg.elements[0] as Extract<Element, { kind: "chart" }>;
+    el.payload.source = "statistics";
+    el.payload.statType = "change";
+    const written = (encodeConfig(cfg).elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
+    expect(written.source).toBe("statistics");
+    // `hour` is the default period, so asking for it is still silence.
+    expect(written.statPeriod).toBeUndefined();
+    expect(written.statType).toBe("change");
+    expect(auditUnknownKeys(encodeConfig(cfg))).toEqual([]);
+  });
+
+  it("reads a missing key and an unreadable one as the same fallback", () => {
+    const cfg = newConfig("Volts", 0);
+    cfg.elements.push(newElement("chart"));
+    const doc = encodeConfig(cfg) as { elements: Record<string, unknown>[] };
+    const bare = parseConfig(doc).elements[0] as Extract<Element, { kind: "chart" }>;
+    expect(bare.payload.source).toBe("history");
+    expect(bare.payload.statPeriod).toBe("hour");
+    expect(bare.payload.statType).toBe("mean");
+
+    const payload = doc.elements[0]!.payload as Record<string, unknown>;
+    payload.source = "forecast";
+    payload.statPeriod = "fortnight";
+    payload.statType = "median";
+    const parsed = parseConfig(doc).elements[0] as Extract<Element, { kind: "chart" }>;
+    expect(parsed.payload.source).toBe("history");
+    expect(parsed.payload.statPeriod).toBe("hour");
+    expect(parsed.payload.statType).toBe("mean");
   });
 });

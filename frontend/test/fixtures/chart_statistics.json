@@ -1,0 +1,308 @@
+{
+  "name": "Long-term statistics charts",
+  "description": "Charts drawn from the recorder's long-term statistics rather than from state history. The energy layer asks for a day of hourly change, which is the amount used in each hour, and its number reads off the same series the bars do. The temperature layer asks for a week of daily means and prints three clock times under the plot, which a statistics chart can always do: its span is known and one row per period is evenly spaced. The water layer names a period and a type but no span, so it asks the recorder nothing and draws its own value, exactly as a history chart with no span does. Neither statistics layer produces a history query, and each arrives under its own key, so a chart switched from mean to change is a new question rather than a stale answer to the old one.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-0000000000F0",
+    "name": "Long-term statistics",
+    "slotIndex": 2,
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000F1",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.energy",
+              "displayName": "Energy",
+              "domain": "sensor"
+            }
+          },
+          "source": "statistics",
+          "historyMinutes": 1440,
+          "historyPoints": 24,
+          "statType": "change",
+          "style": "bars",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "zero",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "highest",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "dot",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "colorSlot": {
+            "baseColorHex": "#9A6BFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.06,
+            "width": 0.9,
+            "height": 0.36,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000F2",
+          "value": {
+            "kind": {
+              "kind": "chartStat",
+              "layer": "EEEEEEEE-0000-4000-8000-0000000000F1",
+              "stat": "latest"
+            }
+          },
+          "fontSize": 11,
+          "fontWeight": "medium",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.44,
+            "width": 0.3,
+            "height": 0.12,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000F3",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.outdoor_temperature",
+              "displayName": "Outdoor temperature",
+              "domain": "sensor"
+            }
+          },
+          "source": "statistics",
+          "historyMinutes": 10080,
+          "historyPoints": 24,
+          "statPeriod": "day",
+          "style": "line",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "timeLabelCount": 3,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.58,
+            "width": 0.9,
+            "height": 0.36,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000F4",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.water",
+              "displayName": "Water",
+              "domain": "sensor"
+            }
+          },
+          "source": "statistics",
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "statPeriod": "day",
+          "statType": "sum",
+          "style": "bars",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.94,
+            "width": 0.9,
+            "height": 0.06,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "circle",
+        "borderWidth": 0
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 30,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {
+      "sensor.energy": {
+        "state": "0.5",
+        "domain": "sensor",
+        "unitOfMeasurement": "kWh"
+      },
+      "sensor.outdoor_temperature": {
+        "state": "9.6",
+        "domain": "sensor",
+        "unitOfMeasurement": "°C"
+      },
+      "sensor.water": {
+        "state": "3,4,5",
+        "domain": "sensor"
+      }
+    },
+    "templateResults": {},
+    "historySeries": {
+      "sensor.energy|1440|hour|change": "0.31,0.28,0.44,1.02,0.87,0.55,0.4,0.36,0.62,1.4,0.95,0.5",
+      "sensor.outdoor_temperature|10080|day|mean": "8.2,9.1,7.4,6.8,10.3,11.1,9.6"
+    }
+  },
+  "expectedCompiled": {
+    "entities": [
+      "sensor.energy",
+      "sensor.outdoor_temperature",
+      "sensor.water"
+    ],
+    "expressionKeys": [],
+    "historyKeys": [],
+    "statisticsKeys": [
+      "sensor.energy|1440|hour|change",
+      "sensor.outdoor_temperature|10080|day|mean"
+    ]
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000F1",
+          "kind": "chart",
+          "values": [
+            0.31,
+            0.28,
+            0.44,
+            1.02,
+            0.87,
+            0.55,
+            0.4,
+            0.36,
+            0.62,
+            1.4,
+            0.95,
+            0.5
+          ],
+          "style": "bars",
+          "domainMin": 0,
+          "domainMax": 1.4,
+          "baseline": "zero",
+          "highIndex": 9,
+          "colorHex": "#9A6BFF",
+          "labels": [],
+          "isHidden": false
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000F2",
+          "kind": "text",
+          "text": "0.5",
+          "isHidden": false
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000F3",
+          "kind": "chart",
+          "values": [
+            8.2,
+            9.1,
+            7.4,
+            6.8,
+            10.3,
+            11.1,
+            9.6
+          ],
+          "style": "line",
+          "domainMin": 6.8,
+          "domainMax": 11.1,
+          "labels": [
+            0,
+            0.5,
+            1
+          ],
+          "isHidden": false
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000F4",
+          "kind": "chart",
+          "values": [
+            3,
+            4,
+            5
+          ],
+          "style": "bars",
+          "domainMin": 3,
+          "domainMax": 5,
+          "labels": [],
+          "isHidden": false
+        }
+      ]
+    }
+  }
+}

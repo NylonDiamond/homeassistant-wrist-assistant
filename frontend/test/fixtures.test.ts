@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { chartHistoryRequests, parseConfig } from "../src/model.js";
+import { chartHistoryRequests, chartStatisticsRequests, parseConfig } from "../src/model.js";
 import { compile } from "../src/compiler.js";
 import { resolveAll, type EntityState, type ForcedBranches, type ResolveContext, type ResolvedElement } from "../src/resolver.js";
 
@@ -19,7 +19,10 @@ interface Fixture {
   inputs: {
     entityStates: Record<string, { state: string; unitOfMeasurement?: string; iconName?: string; domain?: string }>;
     templateResults: Record<string, string>;
-    /** Recorder series, keyed `entity|minutes|points` (see `chartHistoryKey`). */
+    /** Recorder series, keyed `entity|minutes|points` (see `chartHistoryKey`),
+     * or `entity|minutes|period|type` for a long-term statistics series (see
+     * `chartStatisticsKey`). Both land in the one Map, exactly as the panel
+     * folds the two websocket replies into one. */
     historySeries?: Record<string, string>;
     dataAgeSeconds?: number;
   };
@@ -29,6 +32,8 @@ interface Fixture {
     document?: string;
     /** Same `entity|minutes|points` keys the config should ask the recorder for. */
     historyKeys?: string[];
+    /** The `entity|minutes|period|type` keys it should ask for statistics. */
+    statisticsKeys?: string[];
   };
   expected: Record<string, { bezelText?: string | null; elements: Record<string, unknown>[] } & Record<string, unknown>> & {
     /** The Inline shape (schema 6). null for a key means "absent", as elsewhere. */
@@ -134,6 +139,10 @@ describe.each(files)("fixture %s", (file) => {
     if (fx.expectedCompiled.historyKeys !== undefined) {
       expect(chartHistoryRequests(config).map((r) => r.key).sort())
         .toEqual([...fx.expectedCompiled.historyKeys].sort());
+    }
+    if (fx.expectedCompiled.statisticsKeys !== undefined) {
+      expect(chartStatisticsRequests(config).map((r) => r.key).sort())
+        .toEqual([...fx.expectedCompiled.statisticsKeys].sort());
     }
   });
 

@@ -245,3 +245,29 @@ export interface HistorySeriesRequest {
 export type HistorySeriesResult =
   | { ok: true; series: string }
   | { ok: false; error: string };
+
+/** One long-term statistics series per request key, for the preview's charts.
+ *
+ * The sibling of `fetchHistorySeries` and the same bargain: the browser runs
+ * the module the watch's signed `op=statistics` runs, so the editor's hourly
+ * energy bars and the wrist's are one implementation. The reply shape is the
+ * history command's, so both fold into the one series Map. */
+export async function fetchStatisticsSeries(
+  hass: HassLike,
+  requests: Record<string, StatisticsSeriesRequest>,
+): Promise<Record<string, HistorySeriesResult>> {
+  if (Object.keys(requests).length === 0) return {};
+  const reply = await hass.connection.sendMessagePromise<{
+    results: Record<string, HistorySeriesResult>;
+  }>({ type: `${D}/statistics_series`, requests });
+  return reply.results;
+}
+
+/** One statistics query. No point count: the period already decides how many
+ * rows a span holds. */
+export interface StatisticsSeriesRequest {
+  entity_id: string;
+  minutes: number;
+  period: string;
+  type: string;
+}
