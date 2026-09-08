@@ -3917,6 +3917,322 @@ export function setLayerEntity(
   }
 }
 
+// ── document-wide walks ───────────────────────────────────────────────────
+// Two narrower walks already exist. `compile()` visits the values a supported
+// shape draws, and `layerEntityUses` visits one layer. Sharing a document needs
+// the widest one: every `Value`, every `EntityRef` and every piece of free text
+// anywhere in the document, including the parts nothing draws today. A layout
+// left behind by a removed shape still names the author's entities, and a share
+// that skipped it would post them in public.
+//
+// One walker underneath, three public shapes on top, so a new `Value` slot has
+// to be added in exactly one place.
+
+/** Which slot inside its owner a value or reference sits in, for the owners
+ * that hold more than one. */
+export type SitePart =
+  | "total" | "nowIndex"
+  | "bezelText" | "curvedText" | "bezelGauge" | "bezelGaugeMin" | "bezelGaugeMax"
+  | "template" | "serviceData";
+
+/** Where in the document a `Value` sits, in enough detail to name it in words. */
+export interface ValueSite {
+  kind: "named" | "layer" | "rule" | "layout" | "inline";
+  /** Named value, for kind "named". */
+  valueId?: string;
+  valueName?: string;
+  layerId?: string;
+  layerKind?: Element["kind"];
+  /** What the layer goes by: its entity's name, its literal, or its shape. */
+  layerName?: string;
+  family?: FamilyKind;
+  part?: SitePart;
+}
+
+/** Where an `EntityRef` sits: every `ValueSite`, plus the three places that
+ * hold a bare reference rather than one wrapped in a `Value`. */
+export interface EntitySite extends Omit<ValueSite, "kind"> {
+  kind: ValueSite["kind"] | "image" | "tap" | "documentTap";
+}
+
+const SITE_KIND_WORD: Record<Element["kind"], string> = {
+  text: "text",
+  icon: "icon",
+  gauge: "gauge",
+  chart: "chart",
+  timeline: "timeline",
+  shape: "shape",
+  image: "picture",
+  tap: "tap area",
+};
+
+function upperFirst(s: string): string {
+  return s.length === 0 ? s : s[0]!.toUpperCase() + s.slice(1);
+}
+
+/** One site as a short phrase, for the share and import tables. */
+export function describeSite(site: EntitySite): string {
+  if (site.part === "template") return "Template text";
+  if (site.part === "serviceData") return "Service data";
+  const word = site.layerKind === undefined ? "" : SITE_KIND_WORD[site.layerKind];
+  const named = site.layerName ? `${word} "${site.layerName}"` : word;
+  switch (site.kind) {
+    case "named":
+      return site.valueName ? `Shared value "${site.valueName}"` : "Shared value";
+    case "layer":
+    case "image":
+      if (site.part === "total") return `Total on ${named}`;
+      if (site.part === "nowIndex") return `Now marker on ${named}`;
+      return `${upperFirst(word)} layer${site.layerName ? ` "${site.layerName}"` : ""}`;
+    case "tap":
+      return "Tap area";
+    case "documentTap":
+      return "Tap action";
+    case "rule":
+      return named === "" ? `Rule on the ${site.family ?? "shared"} shape` : `Rule on ${named}`;
+    case "layout": {
+      const family = upperFirst(site.family ?? "");
+      switch (site.part) {
+        case "curvedText": return `${family} curved text`;
+        case "bezelGauge": return `${family} bezel gauge`;
+        case "bezelGaugeMin": return `${family} bezel gauge low label`;
+        case "bezelGaugeMax": return `${family} bezel gauge high label`;
+        default: return `${family} bezel`;
+      }
+    }
+    case "inline":
+      return "Inline";
+  }
+}
+
+/** A quoted entity id in free text: `'sensor.energy'` or `"sensor.energy"`.
+ *
+ * Free text is substituted rather than parsed, because a Jinja template is a
+ * program and rewriting one properly would mean shipping a parser. Quotes are
+ * what separates an id from the rest: `states('sensor.energy')` is a reference
+ * and `value.attr` is not. The caller still decides which hits count, because
+ * `'3.5'` fits this shape too. */
+const QUOTED_ENTITY_RE = /(['"])([a-z0-9_]+\.[a-z0-9_]+)\1/g;
+
+/** Every quoted entity id in one string, in order, with repeats kept. */
+export function quotedEntityIds(text: string): string[] {
+  const out: string[] = [];
+  for (const m of text.matchAll(QUOTED_ENTITY_RE)) if (m[2] !== undefined) out.push(m[2]);
+  return out;
+}
+
+/** Rewrite the quoted ids the map names, leaving the quotes and everything
+ * else exactly as they were. */
+export function replaceQuotedEntityIds(text: string, map: ReadonlyMap<string, string>): string {
+  if (map.size === 0) return text;
+  return text.replace(QUOTED_ENTITY_RE, (whole, quote: string, id: string) => {
+    const next = map.get(id);
+    return next === undefined ? whole : `${quote}${next}${quote}`;
+  });
+}
+
+function entityRefCopy(r: EntityRef): EntityRef {
+  const out: EntityRef = { entityId: r.entityId, displayName: r.displayName, domain: r.domain };
+  if (r.iconName !== undefined) out.iconName = r.iconName;
+  return out;
+}
+
+/** What a layer goes by in a site description. Derived, like `layerTitle` in
+ * the editors, but without the describe machinery: this one only has to be
+ * recognisable in a table of entity slots. */
+function layerNameOf(cfg: CustomComplicationConfig, el: Element): string {
+  if (el.kind === "shape") return el.payload.kind === "roundedRectangle" ? "rounded rectangle" : el.payload.kind;
+  if (el.kind === "tap") return "";
+  if (el.kind === "image") return el.payload.entity.displayName || el.payload.entity.entityId;
+  const kind = primaryValue(el)?.kind;
+  if (kind === undefined) return "";
+  if (kind.kind === "literal") return kind.value;
+  if ("entityId" in kind) return kind.displayName || kind.entityId;
+  if (kind.kind === "named") {
+    const id = kind.id.toUpperCase();
+    return cfg.values.find((n) => n.id.toUpperCase() === id)?.name ?? "";
+  }
+  return "";
+}
+
+interface DocumentVisitor {
+  value?: (v: Value, site: ValueSite) => void;
+  /** Return a reference to replace this one whole, or undefined to leave it. */
+  ref?: (ref: EntityRef, site: EntitySite) => EntityRef | undefined;
+  text?: (text: string, site: EntitySite) => string;
+}
+
+function walkDocument(cfg: CustomComplicationConfig, visit: DocumentVisitor): void {
+  const onValue = (v: Value, site: ValueSite): void => {
+    visit.value?.(v, site);
+    const k = v.kind;
+    if (k.kind === "jinja") {
+      if (visit.text) {
+        const next = visit.text(k.value, { ...site, part: "template" });
+        if (next !== k.value) k.value = next;
+      }
+      return;
+    }
+    if (k.kind === "aggregate") {
+      const scope = k.aggregate.scope;
+      if (visit.ref && scope.kind === "entities") {
+        for (let i = 0; i < scope.entities.length; i++) {
+          const next = visit.ref(entityRefCopy(scope.entities[i]!), site);
+          if (next) scope.entities[i] = next;
+        }
+      }
+      return;
+    }
+    if (!visit.ref || !("entityId" in k)) return;
+    const next = visit.ref(entityRefCopy(k), site);
+    if (!next) return;
+    if (k.kind === "entityAttribute") v.kind = { kind: "entityAttribute", ...next, attribute: k.attribute };
+    else if (k.kind === "entityState") v.kind = { kind: "entityState", ...next };
+    else v.kind = { kind: "entityAge", ...next };
+  };
+
+  const onTapAction = (action: TapAction, site: EntitySite, set: (a: TapAction) => void): void => {
+    if (action.type === "callService") {
+      if (visit.ref && action.target !== undefined && action.target.entityId !== "") {
+        const next = visit.ref(entityRefCopy(action.target), site);
+        if (next) action.target = next;
+      }
+      if (visit.text && action.serviceDataJSON !== undefined) {
+        const next = visit.text(action.serviceDataJSON, { ...site, part: "serviceData" });
+        if (next !== action.serviceDataJSON) action.serviceDataJSON = next;
+      }
+      return;
+    }
+    if (!visit.ref || !("entityId" in action) || action.entityId === "") return;
+    const next = visit.ref(entityRefCopy(action), site);
+    if (next) set({ type: action.type, ...next });
+  };
+
+  for (const named of cfg.values) {
+    onValue(named.value, { kind: "named", valueId: named.id, valueName: named.name });
+  }
+
+  for (const el of cfg.elements) {
+    const base: ValueSite = {
+      kind: "layer",
+      layerId: el.payload.id,
+      layerKind: el.kind,
+      layerName: layerNameOf(cfg, el),
+    };
+    if (el.kind === "image") {
+      if (visit.ref) {
+        const next = visit.ref(entityRefCopy(el.payload.entity), { ...base, kind: "image" });
+        if (next) el.payload.entity = next;
+      }
+    } else if (el.kind === "tap") {
+      const tap = el.payload;
+      onTapAction(tap.action, { ...base, kind: "tap" }, (a) => { tap.action = a; });
+    } else {
+      const primary = primaryValue(el);
+      if (primary) onValue(primary, base);
+      if (el.kind === "gauge" && el.payload.total) onValue(el.payload.total, { ...base, part: "total" });
+      if (el.kind === "chart" && el.payload.nowIndex) onValue(el.payload.nowIndex, { ...base, part: "nowIndex" });
+    }
+    const ruleSite: ValueSite = { ...base, kind: "rule" };
+    for (const v of ruleValues(el.payload.rules)) onValue(v, ruleSite);
+  }
+
+  // Every layout, not only the supported ones. `compile()` skips a layout whose
+  // shape was removed because nothing draws it; a share has to visit it anyway,
+  // because the entity ids in it are still on the wire.
+  const families = (Object.keys(cfg.perFamily) as FamilyKind[]).sort((a, b) => {
+    const ia = ALL_FAMILY_ORDER.indexOf(a);
+    const ib = ALL_FAMILY_ORDER.indexOf(b);
+    return (ia < 0 ? ALL_FAMILY_ORDER.length : ia) - (ib < 0 ? ALL_FAMILY_ORDER.length : ib);
+  });
+  for (const family of families) {
+    const layout = cfg.perFamily[family];
+    if (!layout) continue;
+    const site: ValueSite = { kind: "layout", family };
+    if (layout.bezelText) onValue(layout.bezelText, { ...site, part: "bezelText" });
+    if (layout.curvedText) onValue(layout.curvedText, { ...site, part: "curvedText" });
+    const gauge = layout.bezelGauge;
+    if (gauge) {
+      onValue(gauge.value, { ...site, part: "bezelGauge" });
+      if (gauge.minLabel) onValue(gauge.minLabel, { ...site, part: "bezelGaugeMin" });
+      if (gauge.maxLabel) onValue(gauge.maxLabel, { ...site, part: "bezelGaugeMax" });
+    }
+    const ruleSite: ValueSite = { kind: "rule", family };
+    for (const v of ruleValues(layout.rules)) onValue(v, ruleSite);
+  }
+
+  if (cfg.inline) onValue(cfg.inline.value, { kind: "inline" });
+  onTapAction(cfg.tapAction, { kind: "documentTap" }, (a) => { cfg.tapAction = a; });
+}
+
+/** Every `Value` in the document, in walk order. */
+export function forEachValue(cfg: CustomComplicationConfig, fn: (v: Value, site: ValueSite) => void): void {
+  walkDocument(cfg, { value: fn });
+}
+
+/**
+ * Every `EntityRef` in the document, rewritten in place.
+ *
+ * Return a reference to replace the one you were given, whole: the kind, the
+ * attribute and the action type are kept, everything else comes from the new
+ * reference. Returning undefined leaves it alone. Replacing whole rather than
+ * by id is deliberate, because `deriveDataSources` copies `displayName` off the
+ * document, so a swapped id with the old name attached leaks that name straight
+ * back into the next save.
+ */
+export function mapEntityRefs(
+  cfg: CustomComplicationConfig,
+  fn: (ref: EntityRef, site: EntitySite) => EntityRef | undefined,
+): void {
+  walkDocument(cfg, { ref: fn });
+}
+
+/** Every piece of author-written free text: Jinja values and service data. */
+export function mapFreeText(cfg: CustomComplicationConfig, fn: (text: string, site: EntitySite) => string): void {
+  walkDocument(cfg, { text: fn });
+}
+
+/** One place the document names an entity. */
+export interface EntityUse {
+  entityId: string;
+  ref: EntityRef;
+  /** The site in words, for a table the user reads. */
+  where: string;
+}
+
+/**
+ * Every entity the document names, in first-use order, one entry per use.
+ *
+ * `freeTextId` decides whether a quoted id inside a template or a service-data
+ * blob counts. Leave it out to walk references only; pass a predicate to
+ * include free text, which the caller gates by domain so that `'3.5'` is not
+ * read as an entity.
+ */
+export function documentEntityUses(
+  cfg: CustomComplicationConfig,
+  freeTextId?: (entityId: string, domain: string) => boolean,
+): EntityUse[] {
+  const out: EntityUse[] = [];
+  const visitor: DocumentVisitor = {
+    ref: (ref, site) => {
+      if (ref.entityId !== "") out.push({ entityId: ref.entityId, ref, where: describeSite(site) });
+      return undefined;
+    },
+  };
+  if (freeTextId) {
+    visitor.text = (text, site) => {
+      for (const id of quotedEntityIds(text)) {
+        const domain = id.split(".")[0] ?? "";
+        if (!freeTextId(id, domain)) continue;
+        out.push({ entityId: id, ref: { entityId: id, displayName: "", domain }, where: describeSite(site) });
+      }
+      return text;
+    };
+  }
+  walkDocument(cfg, visitor);
+  return out;
+}
+
 // ── rule construction ─────────────────────────────────────────────────────
 
 export type RuleTarget = Element["kind"] | "layout";
