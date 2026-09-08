@@ -2982,7 +2982,7 @@ function chartNumbersSection(host: EditorHost, el: Extract<CElement, { kind: "ch
         <button class="small" title=${taken.has(stat) ? `Add another ${label.toLowerCase()}` : `Add the ${label.toLowerCase()}`}
           @click=${() => add(stat)}>${uiIcon("plus")}<span>${label}</span></button>`)}
     </div>
-    <div class="hint">The newest reading starts with the entity's unit after it. The ends of the scale come from the plot's range, so on a Fixed scale they print the Min and Max above.</div>`;
+    <div class="hint">The newest reading, the change and the total start with the entity's unit after them. The change is the newest reading minus the first, and the trend arrow is that change as ↑, ↓ or →, flat when it is too small for the chart to print. The ends of the scale come from the plot's range, so on a Fixed scale they print the Min and Max above.</div>`;
 }
 
 function tappableSection(host: EditorHost, el: CElement, key: string): TemplateResult | typeof nothing {
