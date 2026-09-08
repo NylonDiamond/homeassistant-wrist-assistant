@@ -407,6 +407,22 @@ export interface ChartElement extends ElementBase {
    * scale. A link to a chart that is not in the document, to this chart itself,
    * or one that closes a cycle falls back to this chart's own scale. */
   scaleFrom?: string;
+  /** How many clock times to draw beside the plot, 0…12. 0 draws none. The same
+   * row a timeline draws, on the same keys and with the same defaults, because
+   * it answers the same question: a plot with no times cannot say whether its
+   * left edge is an hour ago or a day ago. Only a chart with a known span and
+   * evenly spaced slots can carry them; see `chartShowsTimeLabels`. */
+  timeLabelCount: number;
+  /** Font size of the times, in design-box points. Clamped 1…20 when drawn. */
+  labelSize: number;
+  /** Colour of the times. */
+  labelColorHex: string;
+  /** false puts the row under the plot, true over it. */
+  labelsAbove: boolean;
+  /** Whose clock the times are read on. */
+  hourCycle: TimelineHourCycle;
+  /** Whether the times carry their minutes. */
+  minutes: TimelineMinuteStyle;
   /* The chart draws marks and nothing else. Its numbers (the newest reading,
    * the ends of its range) are text layers with a `chartStat` value, kept in
    * the chart's layer group; see `addChartLabel`. The plot fills the whole
@@ -514,6 +530,18 @@ export function chartHistoryPoints(el: ChartElement): number {
   if (!Number.isFinite(raw)) return 24;
   if (raw < 1) return CHART_HISTORY_EVERY_READING;
   return Math.max(CHART_HISTORY_MIN_POINTS, Math.min(CHART_HISTORY_MAX_POINTS, raw));
+}
+
+/** True when a chart's clock times mean anything.
+ *
+ * Two conditions, both about the x axis. The chart needs a known span, which is
+ * what a history query gives it, and its readings have to be evenly spaced
+ * across that span, which averaged slots give and "every one" does not: one
+ * reading per recorded change puts a quiet hour and a busy one side by side at
+ * the same width, so a clock printed under them would be wrong everywhere but
+ * the edges. Mirrors `showsTimeLabels` in the app repo. */
+export function chartShowsTimeLabels(el: ChartElement): boolean {
+  return chartHistoryEntity(el) !== undefined && chartHistoryPoints(el) > 0;
 }
 
 /** The entity whose history a chart draws, when it draws history at all.
@@ -692,14 +720,21 @@ function parseMinuteStyle(raw: unknown): TimelineMinuteStyle {
  * still means them. Anything else, in either key, is no times at all.
  */
 export function parseTimeLabelCount(p: Record<string, unknown>): number {
-  if (p.timeLabelCount !== undefined) {
-    const raw = Number(p.timeLabelCount);
-    if (!Number.isFinite(raw)) return TIMELINE_DEFAULT_LABEL_COUNT;
-    return Math.max(0, Math.min(TIMELINE_MAX_LABEL_COUNT, Math.round(raw)));
-  }
+  if (p.timeLabelCount !== undefined) return clampTimeLabelCount(p.timeLabelCount);
   if (p.timeLabels === "ends") return 2;
   if (p.timeLabels === "four") return 4;
   return TIMELINE_DEFAULT_LABEL_COUNT;
+}
+
+/** One `timeLabelCount` value squeezed into the range the editor offers, with
+ * anything unreadable reading as no times at all. A chart reads its count with
+ * this rather than through `parseTimeLabelCount`: the retired `timeLabels` word
+ * is a timeline key, and a chart carrying one would mean two different counts
+ * on the two sides. */
+export function clampTimeLabelCount(raw: unknown): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return TIMELINE_DEFAULT_LABEL_COUNT;
+  return Math.max(0, Math.min(TIMELINE_MAX_LABEL_COUNT, Math.round(n)));
 }
 
 /** The fractions of the frame's width `n` times sit at: evenly spaced from the
@@ -1516,6 +1551,15 @@ function parseElementKind(raw: unknown): Element {
           ...(isObject(p.nowIndex) ? { nowIndex: parseValue(p.nowIndex) } : {}),
           nowColorHex: str(p.nowColorHex, CHART_DEFAULT_NOW_HEX),
           ...(optStr(p.scaleFrom) !== undefined ? { scaleFrom: optStr(p.scaleFrom)! } : {}),
+          // The clock times, read exactly the way a timeline reads them: same
+          // keys, same defaults, same forgiveness for a word this build does
+          // not know.
+          timeLabelCount: clampTimeLabelCount(p.timeLabelCount),
+          labelSize: num(p.labelSize, TIMELINE_DEFAULT_LABEL_SIZE),
+          labelColorHex: str(p.labelColorHex, TIMELINE_DEFAULT_LABEL_HEX),
+          labelsAbove: p.labelsAbove === true,
+          hourCycle: parseHourCycle(p.hourCycle),
+          minutes: parseMinuteStyle(p.minutes),
         },
       };
     case "timeline": {
@@ -2131,6 +2175,16 @@ function encodeElementKind(el: Element): J {
       if (c.nowIndex !== undefined) o.nowIndex = encodeValue(c.nowIndex);
       if (c.nowColorHex !== CHART_DEFAULT_NOW_HEX) o.nowColorHex = c.nowColorHex;
       if (c.scaleFrom !== undefined) o.scaleFrom = c.scaleFrom;
+      // The clock times, in the order and on the rule the app's encoder uses, so
+      // a chart drawing none writes exactly the bytes it always did.
+      if (c.labelSize !== TIMELINE_DEFAULT_LABEL_SIZE) o.labelSize = encNum(c.labelSize);
+      if (c.labelColorHex !== TIMELINE_DEFAULT_LABEL_HEX) o.labelColorHex = c.labelColorHex;
+      if (c.labelsAbove) o.labelsAbove = true;
+      if (c.timeLabelCount !== TIMELINE_DEFAULT_LABEL_COUNT) {
+        o.timeLabelCount = clampTimeLabelCount(c.timeLabelCount);
+      }
+      if (c.hourCycle !== TIMELINE_DEFAULT_HOUR_CYCLE) o.hourCycle = c.hourCycle;
+      if (c.minutes !== TIMELINE_DEFAULT_MINUTE_STYLE) o.minutes = c.minutes;
       return { kind: "chart", payload: o };
     }
     case "timeline": {
@@ -2426,6 +2480,7 @@ const K = {
     "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker",
     "coloring", "bands", "bandAboveColorHex", "fillBands",
     "thresholdValue", "thresholdColorHex", "nowIndex", "nowColorHex", "scaleFrom",
+    "timeLabelCount", "labelSize", "labelColorHex", "labelsAbove", "hourCycle", "minutes",
     // Written only on 2026-09-05. The band bounds are read forward by
     // `parseChartBands`; the built-in numbers are read forward by
     // `migrateChartLabels` into text layers. All still listed so a document
@@ -2669,7 +2724,7 @@ export function newElement(kind: Element["kind"]): Element {
     // A new chart is set to draw history: nearly every chart is of a plain
     // sensor, and a plain sensor's own value is one bar. Until an entity is
     // named the sample list draws instead, so the layer is never blank.
-    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: CHART_HISTORY_DEFAULT_MINUTES, historyPoints: 24, style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "pointer", coloring: "uniform", bands: [], bandAboveColorHex: CHART_DEFAULT_BAND_HIGH_HEX, fillBands: false, thresholdColorHex: CHART_DEFAULT_THRESHOLD_HEX, nowColorHex: CHART_DEFAULT_NOW_HEX } };
+    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: CHART_HISTORY_DEFAULT_MINUTES, historyPoints: 24, style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "pointer", coloring: "uniform", bands: [], bandAboveColorHex: CHART_DEFAULT_BAND_HIGH_HEX, fillBands: false, thresholdColorHex: CHART_DEFAULT_THRESHOLD_HEX, nowColorHex: CHART_DEFAULT_NOW_HEX, timeLabelCount: TIMELINE_DEFAULT_LABEL_COUNT, labelSize: TIMELINE_DEFAULT_LABEL_SIZE, labelColorHex: TIMELINE_DEFAULT_LABEL_HEX, labelsAbove: false, hourCycle: TIMELINE_DEFAULT_HOUR_CYCLE, minutes: TIMELINE_DEFAULT_MINUTE_STYLE } };
     // No sample states: a timeline of a made-up string would draw a strip that
     // looks like data. Empty until an entity is picked, which is also when the
     // colour table can be seeded from its domain.

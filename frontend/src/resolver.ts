@@ -34,6 +34,8 @@ import {
   type ChartElement,
   type ChartStat,
   type TimelineElement,
+  type TimelineHourCycle,
+  type TimelineMinuteStyle,
   TIMELINE_HISTORY_POINTS,
   timeLabelPositions,
   timelineBandColor,
@@ -45,6 +47,8 @@ import {
   STYLE_PROPERTY,
   chartBandColor,
   chartHistoryKey,
+  chartShowsTimeLabels,
+  clampTimeLabelCount,
   chartStatText,
   chartTrendGlyph,
   chartSortedBands,
@@ -170,6 +174,14 @@ export interface ResolvedChart extends ResolvedBase {
    * `values`. Absent when the chart has no `nowIndex` or nothing resolved. */
   nowIndex?: number;
   nowColorHex: string;
+  /** The clock times printed along the span, already formatted: the timeline's
+   * own row, drawn beside the plot. Empty when the layer asks for none, and
+   * when the plot has no window to label or no evenly spaced slots to label it
+   * against (`chartShowsTimeLabels`). */
+  labels: TimelineLabel[];
+  labelSize: number;
+  labelColorHex: string;
+  labelsAbove: boolean;
 }
 
 /** What a chart settled on before anything is drawn: the series it draws,
@@ -253,39 +265,81 @@ export interface TimelineLabel {
  * ":36" on every one of them. What `minutes: "auto"` decides on. */
 const TIMELINE_LABEL_MINUTES_MAX_SECONDS = 3 * 60 * 60;
 
-/** The `Intl` options one timeline's times are formatted with: the hour always,
- * the minute when the layer asks for it or the span is short enough to want it,
- * and a forced clock only when the layer names one. Mirrors the format style
- * `timelineLabels` builds in the app repo. */
-function timelineLabelFormat(el: TimelineElement, spanSeconds: number): Intl.DateTimeFormat {
-  const showsMinutes = el.minutes === "always"
-    || (el.minutes === "auto" && spanSeconds <= TIMELINE_LABEL_MINUTES_MAX_SECONDS);
+/** The `Intl` options a row of times is formatted with: the hour always, the
+ * minute when the layer asks for it or the span is short enough to want it, and
+ * a forced clock only when the layer names one. Mirrors the format style
+ * `timelineLabelFormat` builds in the app repo. */
+function timeLabelFormat(
+  hourCycle: TimelineHourCycle,
+  minutes: TimelineMinuteStyle,
+  spanSeconds: number,
+): Intl.DateTimeFormat {
+  const showsMinutes = minutes === "always"
+    || (minutes === "auto" && spanSeconds <= TIMELINE_LABEL_MINUTES_MAX_SECONDS);
   return new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
     ...(showsMinutes ? { minute: "2-digit" as const } : {}),
-    ...(el.hourCycle === "h12" ? { hourCycle: "h12" as const } : {}),
-    ...(el.hourCycle === "h24" ? { hourCycle: "h23" as const } : {}),
+    ...(hourCycle === "h12" ? { hourCycle: "h12" as const } : {}),
+    ...(hourCycle === "h24" ? { hourCycle: "h23" as const } : {}),
   });
 }
 
 /**
- * The clock times one timeline prints, oldest first.
+ * One row of clock times, oldest first: a position and the time that falls
+ * there.
  *
- * Built from the element and the injected clock alone: the row is a fact about
- * the window, not about the data, so a layer still waiting on its history still
- * knows what times its strip will cover. A layer naming no entity has no window
- * at all and prints nothing. Mirrors `timelineLabels` in the app repo.
+ * Built from the window and the clock alone, never from the data, so a layer
+ * still waiting on its history still knows what times it will cover. The right
+ * edge is always now and the left edge is `now - span`, whichever layer asked.
+ * Shared by the timeline and the chart, and mirrors `timeLabels` in the app
+ * repo.
  */
-export function timelineLabels(el: TimelineElement, nowMs: number): TimelineLabel[] {
-  if (timelineHistoryKey(el) === undefined) return [];
-  const positions = timeLabelPositions(el.timeLabelCount);
-  if (positions.length === 0) return [];
-  const spanSeconds = timelineHistoryMinutes(el) * 60;
-  const format = timelineLabelFormat(el, spanSeconds);
+export function timeLabels(
+  spanSeconds: number,
+  positions: number[],
+  hourCycle: TimelineHourCycle,
+  minutes: TimelineMinuteStyle,
+  nowMs: number,
+): TimelineLabel[] {
+  if (spanSeconds <= 0 || positions.length === 0) return [];
+  const format = timeLabelFormat(hourCycle, minutes, spanSeconds);
   return positions.map((position) => ({
     position,
     text: format.format(new Date(nowMs - spanSeconds * 1000 * (1 - position))),
   }));
+}
+
+/** The clock times one timeline prints. A layer naming no entity has no window
+ * at all and prints nothing. Mirrors `timelineLabels` in the app repo. */
+export function timelineLabels(el: TimelineElement, nowMs: number): TimelineLabel[] {
+  if (timelineHistoryKey(el) === undefined) return [];
+  return timeLabels(
+    timelineHistoryMinutes(el) * 60,
+    timeLabelPositions(el.timeLabelCount),
+    el.hourCycle,
+    el.minutes,
+    nowMs,
+  );
+}
+
+/** The clock times one chart prints.
+ *
+ * Nothing outside history: a chart drawing the value it holds has no time axis
+ * at all, and one asking for every recorded reading has an axis that jumps, so
+ * the times would be right at the two edges and wrong everywhere between them.
+ * Mirrors `chartLabels` in the app repo. */
+export function chartLabels(el: ChartElement, nowMs: number): TimelineLabel[] {
+  if (!chartShowsTimeLabels(el)) return [];
+  // Clamped here as well as on the way in and out of the document, because a
+  // count is also a number somebody can type: the watch clamps it where it
+  // draws, so the preview has to draw the same row.
+  return timeLabels(
+    Math.round(el.historyMinutes) * 60,
+    timeLabelPositions(clampTimeLabelCount(el.timeLabelCount)),
+    el.hourCycle,
+    el.minutes,
+    nowMs,
+  );
 }
 
 export interface ResolvedShape extends ResolvedBase {
@@ -1185,6 +1239,14 @@ export class Resolver {
           fillBands: c.fillBands,
           thresholdColorHex: c.thresholdColorHex,
           nowColorHex: c.nowColorHex,
+          // The times do not wait on the series: the window is known the moment
+          // the layer names an entity and a span, so a plot still fetching
+          // prints them. The size is carried as written and clamped where it is
+          // drawn, exactly as the timeline carries its own.
+          labels: chartLabels(c, this.nowMs()),
+          labelSize: c.labelSize,
+          labelColorHex: c.labelColorHex,
+          labelsAbove: c.labelsAbove,
         };
         if (values.length > 0) {
           const marksHigh = c.highlight === "highest" || c.highlight === "both";

@@ -19,6 +19,7 @@ import {
   type ResolvedBezelGauge,
   type ResolvedElement,
   type ResolvedLayout,
+  type TimelineLabel,
 } from "./resolver.js";
 
 export interface CanvasSize {
@@ -448,8 +449,23 @@ function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box
   };
 }
 
+/**
+ * A chart's marks, and the row of clock times when the layer asks for one.
+ *
+ * The times take a row of their own off the top or the bottom and the plot
+ * takes what is left, the same split a timeline makes. A chart still waiting on
+ * its history draws the row alone: the times are a fact about the window, not
+ * about the readings.
+ */
 function renderChart(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) {
-  if (el.values.length === 0) return nothing;
+  const { labelSize, rowHeight, body: plot, showsLabels } = timeLabelRowSplit(el, box);
+  const times = showsLabels ? renderTimeLabelRow(el, box, labelSize, rowHeight) : undefined;
+  if (el.values.length === 0) return times === undefined ? nothing : svg`${times}`;
+  const marks = renderChartMarks(el, plot);
+  return times === undefined ? marks : svg`${marks}${times}`;
+}
+
+function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) {
   const g = chartGeometry(el, box);
   const base = colorAttrs(el.colorHex, "fill");
   const high = colorAttrs(el.highColorHex, "fill", el.colorHex);
@@ -549,9 +565,60 @@ function renderChart(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) 
   return svg`${body}`;
 }
 
-/** The point between the row of times and the strip, so a descender never
- * touches a run. Mirrors the same spacing in the app repo's timeline view. */
+/** The point between the row of times and the drawing beside it, so a descender
+ * never touches a run or a bar. Mirrors the same spacing in the app repo's
+ * timeline and chart views. */
 const TIMELINE_LABEL_ROW_GAP = 1;
+
+/** How a layer's frame splits between its drawing and its row of times.
+ *
+ * A frame too short to carry both keeps the drawing whole: half a strip and
+ * half a time reads as neither, and the drawing is the thing the layer is for.
+ * Mirrors `TimelineBodyView` and `ChartBodyView` in the app repo. */
+function timeLabelRowSplit(
+  el: { labels: TimelineLabel[]; labelSize: number; labelsAbove: boolean },
+  box: Box,
+): { labelSize: number; rowHeight: number; body: Box; showsLabels: boolean } {
+  const labelSize = Math.max(TIMELINE_MIN_LABEL_SIZE, Math.min(TIMELINE_MAX_LABEL_SIZE, el.labelSize));
+  const rowHeight = labelSize * 1.2;
+  const showsLabels = el.labels.length > 0 && box.h - rowHeight - TIMELINE_LABEL_ROW_GAP >= 2;
+  const body: Box = showsLabels
+    ? {
+      ...box,
+      y: el.labelsAbove ? box.y + rowHeight + TIMELINE_LABEL_ROW_GAP : box.y,
+      h: box.h - rowHeight - TIMELINE_LABEL_ROW_GAP,
+      cy: (el.labelsAbove ? box.y + rowHeight + TIMELINE_LABEL_ROW_GAP : box.y)
+        + (box.h - rowHeight - TIMELINE_LABEL_ROW_GAP) / 2,
+    }
+    : box;
+  return { labelSize, rowHeight, body, showsLabels };
+}
+
+/** The row of clock times itself: the last hung off the right edge, the first
+ * off the left, the rest centred on their own fraction of the frame. Drawn the
+ * same way for a timeline and for a chart, so two layers on one face put their
+ * times in the same places. */
+function renderTimeLabelRow(
+  el: { labels: TimelineLabel[]; labelColorHex: string; labelsAbove: boolean },
+  box: Box,
+  labelSize: number,
+  rowHeight: number,
+) {
+  const rowY = (el.labelsAbove ? box.y : box.y + box.h - rowHeight) + rowHeight / 2;
+  const colour = colorAttrs(el.labelColorHex, "fill");
+  return el.labels.map((label, i) => {
+    // The last one is hung off the right edge before the first is hung off the
+    // left, so a lone time (a count of 1, drawn at now) sits inside the frame
+    // rather than running off it.
+    const last = i === el.labels.length - 1;
+    const anchor = last ? "end" : i === 0 ? "start" : "middle";
+    const x = box.x + label.position * box.w;
+    return svg`<text x=${x} y=${rowY} text-anchor=${anchor} dominant-baseline="central"
+      font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif"
+      font-size=${labelSize} font-weight="400"
+      fill=${colour.fill} fill-opacity=${colour["fill-opacity"]}>${label.text}</text>`;
+  });
+}
 
 /**
  * A strip of coloured runs across the frame, oldest at the left.
@@ -571,18 +638,8 @@ const TIMELINE_LABEL_ROW_GAP = 1;
 function renderTimeline(el: Extract<ResolvedElement, { kind: "timeline" }>, box: Box) {
   if ((el.runs.length === 0 && el.labels.length === 0) || box.w <= 0 || box.h <= 0) return nothing;
   // The clock times take a row of their own off the top or the bottom, so the
-  // strip shrinks rather than being drawn under them. A frame too short to
-  // carry both keeps the strip: the row is the part that can be dropped.
-  const labelSize = Math.max(TIMELINE_MIN_LABEL_SIZE, Math.min(TIMELINE_MAX_LABEL_SIZE, el.labelSize));
-  const rowHeight = labelSize * 1.2;
-  const wantsLabels = el.labels.length > 0 && box.h - rowHeight - TIMELINE_LABEL_ROW_GAP >= 2;
-  const strip: Box = wantsLabels
-    ? {
-      ...box,
-      y: el.labelsAbove ? box.y + rowHeight + TIMELINE_LABEL_ROW_GAP : box.y,
-      h: box.h - rowHeight - TIMELINE_LABEL_ROW_GAP,
-    }
-    : box;
+  // strip shrinks rather than being drawn under them.
+  const { labelSize, rowHeight, body: strip, showsLabels } = timeLabelRowSplit(el, box);
   const gap = Math.max(0, Math.min(el.gap, box.w / Math.max(1, el.runs.length)));
   const body = el.runs.map((run, i) => {
     const x = box.x + run.start * box.w;
@@ -594,22 +651,8 @@ function renderTimeline(el: Extract<ResolvedElement, { kind: "timeline" }>, box:
     return svg`<rect x=${x} y=${strip.y} width=${w} height=${strip.h} rx=${radius}
       fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} />`;
   });
-  if (!wantsLabels) return svg`${body}`;
-  const rowY = (el.labelsAbove ? box.y : box.y + box.h - rowHeight) + rowHeight / 2;
-  const colour = colorAttrs(el.labelColorHex, "fill");
-  const times = el.labels.map((label, i) => {
-    // The last one is hung off the right edge before the first is hung off the
-    // left, so a lone time (a count of 1, drawn at now) sits inside the frame
-    // rather than running off it.
-    const last = i === el.labels.length - 1;
-    const anchor = last ? "end" : i === 0 ? "start" : "middle";
-    const x = box.x + label.position * box.w;
-    return svg`<text x=${x} y=${rowY} text-anchor=${anchor} dominant-baseline="central"
-      font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif"
-      font-size=${labelSize} font-weight="400"
-      fill=${colour.fill} fill-opacity=${colour["fill-opacity"]}>${label.text}</text>`;
-  });
-  return svg`${body}${times}`;
+  if (!showsLabels) return svg`${body}`;
+  return svg`${body}${renderTimeLabelRow(el, box, labelSize, rowHeight)}`;
 }
 
 function renderShape(el: Extract<ResolvedElement, { kind: "shape" }>, box: Box) {
