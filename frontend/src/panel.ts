@@ -3839,7 +3839,7 @@ export class WristAssistantPanel extends LitElement {
           </div>
           ${this.renderFooter()}`
         : html`<div class="card">
-            <div class="banner warn"><b>Update the watch app first.</b> ${updateWatchMessage(this.selectedOwner?.app_version)}</div>
+            <div class="banner warn"><b>Watch app update coming soon.</b> ${updateWatchMessage(this.selectedOwner?.app_version)}</div>
             <div class="hint">Nothing on this watch is changed or lost. Its ${this.selectedOwner?.complication_count ?? 0} complication${this.selectedOwner?.complication_count === 1 ? "" : "s"} stay in Home Assistant and can be edited once the watch is updated.</div>
           </div>`}`;
   }
