@@ -9,8 +9,21 @@ const inputs = (over: Partial<SendInputs> = {}): SendInputs =>
   ({ token: 5, appliedToken: 5, polling: true, pending: false, ...over });
 
 describe("sendState", () => {
-  it("offers nothing on an integration without the ack", () => {
-    expect(sendState(inputs({ appliedToken: undefined })).kind).toBe("unsupported");
+  // A watch that has never acked is not behind, it is unreachable: the chip
+  // says so and offers no Resend, because there is nothing there to wake.
+  it("reads a watch that has never acked as unsupported", () => {
+    const s = sendState(inputs({ appliedToken: undefined }));
+    expect(s.kind).toBe("unsupported");
+    const d = describeSend(s);
+    expect(d.label).toBe("Update the watch app");
+    expect(d.note).toBe("to receive this");
+    expect(d.resend).toBe(false);
+  });
+
+  it("keeps an ack of zero apart from never having acked", () => {
+    // An empty store acked is "On watch"; the two used to be the same number.
+    expect(sendState(inputs({ token: 0, appliedToken: 0 })).kind).toBe("sent");
+    expect(sendState(inputs({ token: 0, appliedToken: undefined })).kind).toBe("unsupported");
   });
 
   it("is plain On watch while the watch is listening", () => {

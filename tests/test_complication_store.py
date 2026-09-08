@@ -892,21 +892,35 @@ def test_applied_token_round_trip_notifies_and_survives_restart(mod):
     store = _new(mod)
     seen = []
     store.async_add_listener(seen.append)
-    assert store.applied_token(OWNER) == 0
-    assert store.set_applied_token(OWNER, 0) is False  # already the default
+    assert store.applied_token(OWNER) is None
     store.save(OWNER, _doc(), base_revision=None, updated_by="t")
     assert store.set_applied_token(OWNER, 1) is True
     assert store.set_applied_token(OWNER, 1) is False
     assert store.set_applied_token(OWNER, True) is False
     assert store.set_applied_token(OWNER, -1) is False
     assert store.applied_token(OWNER) == 1
-    assert store.applied_token(OTHER) == 0
+    assert store.applied_token(OTHER) is None
     # One record commit, one ack: the ack carries no record.
     assert [c.record is None for c in seen] == [False, True]
     assert seen[1].applied_token == 1 and seen[1].token == 1
 
     reloaded = _new(mod)
     assert reloaded.applied_token(OWNER) == 1
+
+
+def test_never_acked_is_none_and_an_ack_of_zero_is_a_number(mod):
+    """The two used to be one value, and the panel could not tell them apart.
+
+    A watch app that predates custom complications sends no token at all; a
+    current one that has applied an empty store sends 0. Reporting 0 for both
+    made the panel offer a Resend to a watch with nothing listening for it.
+    """
+    store = _new(mod)
+    assert store.applied_token(OWNER) is None
+    assert store.set_applied_token(OWNER, 0) is True
+    assert store.applied_token(OWNER) == 0
+    assert store.set_applied_token(OWNER, 0) is False
+    assert _new(mod).applied_token(OWNER) == 0
 
 
 def test_every_commit_wakes_the_owner(mod):

@@ -46,6 +46,9 @@ export interface OwnerSummary {
   screen_size: string | null;
   complication_count: number;
   token: number;
+  /** The store token this watch last said it applied, null when it never has.
+      Absent from integrations older than the field. */
+  applied_token?: number | null;
   /** No device is registered under this id any more, but it still owns
       records: a reinstall gave the watch a new id. Offer the Move action. */
   is_orphan: boolean;
@@ -107,10 +110,10 @@ export async function fetchList(hass: HassLike, owner: string) {
      * presets above plus customs on another home. Absent from integrations
      * older than the field; the panel then builds it from `presets`. */
     occupied?: OccupiedSlot[];
-    /** The store token the watch last said it applied (0 = never). Equal to
-     * `token` means everything here is on the wrist. Absent from older
-     * integrations, where "Send to watch" is not offered. */
-    applied_token?: number;
+    /** The store token the watch last said it applied. Equal to `token` means
+     * everything here is on the wrist. Null when the watch has never acked at
+     * all, which is not the same as 0: nothing saved here reaches it. */
+    applied_token?: number | null;
     /** Whether the watch holds a long-poll on this server right now. */
     polling?: boolean;
     /** Seconds since the watch last polled. Null when it has not polled since
@@ -129,7 +132,8 @@ export async function nudgeWatch(hass: HassLike, owner: string) {
     polling: boolean;
     last_poll_seconds?: number | null;
     token: number;
-    applied_token: number;
+    /** Null when the watch has never acked; see `fetchList`. */
+    applied_token: number | null;
   }>({ type: `${D}/nudge`, owner_watch_id: owner });
 }
 
@@ -141,7 +145,8 @@ export async function fetchWatchStatus(hass: HassLike, owner: string) {
     polling: boolean;
     last_poll_seconds?: number | null;
     token: number;
-    applied_token: number;
+    /** Null when the watch has never acked; see `fetchList`. */
+    applied_token: number | null;
   }>({ type: `${D}/watch_status`, owner_watch_id: owner });
 }
 

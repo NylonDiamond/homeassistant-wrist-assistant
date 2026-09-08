@@ -330,10 +330,15 @@ export class WristAssistantPanel extends LitElement {
    * predates the field. */
   @state() private occupied: OccupiedSlot[] = [];
   /** The store token for the selected watch and the one it last confirmed.
-   * Equal means everything here is on the wrist. `appliedToken` stays
-   * undefined on integrations without the ack, which hides the button. */
+   * Equal means everything here is on the wrist. `appliedToken` is undefined
+   * when the watch has never acked at all, which is what the chip's "Update
+   * the watch app" branch reports; null on the wire means the same thing. */
   @state() private serverToken = 0;
   @state() private appliedToken?: number;
+  /** Whether a list or status reply has landed for the selected watch. The
+   * chip claims nothing before one does: "Update the watch app" next to a
+   * watch nobody has asked about yet is a guess, not a fact. */
+  @state() private sendStatusKnown = false;
   /** Whether the watch holds a long-poll on this server right now. */
   @state() private polling = false;
   /** Seconds since the watch last polled, as of the last list or nudge reply.
@@ -1698,6 +1703,7 @@ export class WristAssistantPanel extends LitElement {
     .send.sent { color: var(--wa-ent); }
     .send.sending { opacity: .7; }
     .send.offline { color: var(--warning-color, #ffa600); }
+    .send.unsupported { color: var(--warning-color, #ffa600); }
     /* "last seen 2 h ago" beside a green tick. Muted, because the tick is
        still true: the change is on the watch, and this only says the watch
        stopped listening afterwards. */
@@ -2451,6 +2457,9 @@ export class WristAssistantPanel extends LitElement {
     this.selectedId = undefined;
     this.moveTarget = undefined;
     this.moveError = undefined;
+    // Nothing is known about the new watch until its list reply lands, and the
+    // previous watch's status must not be shown beside it in the meantime.
+    this.sendStatusKnown = false;
     // Default the preview to this watch's own case when the app reported one.
     // A manual dropdown pick survives record switches but re-defaults when a
     // different watch is selected — that's the watch being previewed now.
@@ -2475,7 +2484,8 @@ export class WristAssistantPanel extends LitElement {
         ?? this.presets.map((p): OccupiedSlot => ({ slot: p.slot, name: p.name, kind: "preset", home: "" }));
       this.pages = reply.pages ?? [];
       this.serverToken = reply.token;
-      this.appliedToken = reply.applied_token;
+      this.appliedToken = reply.applied_token ?? undefined;
+      this.sendStatusKnown = true;
       this.polling = reply.polling ?? false;
       this.lastPollSeconds = typeof reply.last_poll_seconds === "number" ? reply.last_poll_seconds : undefined;
       if (this.appliedToken === this.serverToken) this.endSendWait();
@@ -2597,7 +2607,8 @@ export class WristAssistantPanel extends LitElement {
       this.polling = reply.polling;
       this.lastPollSeconds = typeof reply.last_poll_seconds === "number" ? reply.last_poll_seconds : undefined;
       this.serverToken = reply.token;
-      this.appliedToken = reply.applied_token;
+      this.appliedToken = reply.applied_token ?? undefined;
+      this.sendStatusKnown = true;
     } catch {
       // A dropped socket or an integration without the command: the chip keeps
       // what it had rather than blaming the watch for a panel problem.
@@ -2633,8 +2644,13 @@ export class WristAssistantPanel extends LitElement {
       this.polling = reply.polling;
       this.lastPollSeconds = typeof reply.last_poll_seconds === "number" ? reply.last_poll_seconds : undefined;
       this.serverToken = reply.token;
-      this.appliedToken = reply.applied_token;
-      if (reply.applied_token !== reply.token) this.beginSendWait();
+      this.appliedToken = reply.applied_token ?? undefined;
+      this.sendStatusKnown = true;
+      // A watch that has never acked is not behind, it is not listening.
+      // Waiting for an ack it cannot send would only spin the chip.
+      if (typeof reply.applied_token === "number" && reply.applied_token !== reply.token) {
+        this.beginSendWait();
+      }
     } catch (err) {
       this.saveError = errText(err);
     }
@@ -2648,7 +2664,9 @@ export class WristAssistantPanel extends LitElement {
       pending: this.sendPending,
       lastPollSeconds: this.lastPollSeconds,
     });
-    if (s.kind === "unsupported") return nothing;
+    // Before the first reply nothing is known about this watch, and the chip
+    // would otherwise report the unsupported state as if it were an answer.
+    if (s.kind === "unsupported" && !this.sendStatusKnown) return nothing;
     const d = describeSend(s);
     const resend = d.resend && this.hass.user?.is_admin
       ? html`<button class="ghost" title="Wake the watch again" @click=${() => void this.sendToWatch()}>Resend</button>`

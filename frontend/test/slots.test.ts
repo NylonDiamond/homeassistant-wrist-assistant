@@ -33,9 +33,10 @@ describe("freeSlotFrom", () => {
 });
 
 describe("sendState", () => {
-  it("is not offered when the integration has no ack", () => {
+  it("says to update the watch app when nothing has ever acked", () => {
     expect(sendState({ token: 3, appliedToken: undefined, polling: true, pending: true }).kind).toBe("unsupported");
-    expect(describeSend({ kind: "unsupported" }).label).toBe("");
+    expect(describeSend({ kind: "unsupported" }).label).toBe("Update the watch app");
+    expect(describeSend({ kind: "unsupported" }).resend).toBe(false);
   });
 
   it("is green only when the applied token equals the store token", () => {

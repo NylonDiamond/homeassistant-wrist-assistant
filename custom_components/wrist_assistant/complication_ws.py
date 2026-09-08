@@ -211,6 +211,10 @@ def ws_owners(
                 "screen_size": entry.screen_size,
                 "complication_count": len(store.list(device_id)),
                 "token": store.owner_token(device_id),
+                # Null when this watch has never reported an applied token:
+                # its app predates custom complications, or it has not opened
+                # this home yet. Either way nothing sent here reaches it.
+                "applied_token": store.applied_token(device_id),
                 "is_orphan": False,
             }
         )
@@ -230,6 +234,7 @@ def ws_owners(
                 "screen_size": None,
                 "complication_count": len(store.list(owner)),
                 "token": store.owner_token(owner),
+                "applied_token": store.applied_token(owner),
                 "is_orphan": True,
             }
         )
@@ -348,7 +353,8 @@ def ws_list(
             "token": store.owner_token(owner),
             # The token the watch last said it applied. Equal to `token`
             # means everything here is on the wrist ("Send to watch" is
-            # green); anything else means not yet.
+            # green); a lower number means not yet; null means this watch has
+            # never acked at all, so there is nothing here to wake.
             "applied_token": store.applied_token(owner),
             # Whether this watch holds a long-poll on this server right now,
             # which is the only way a save can reach it without the user

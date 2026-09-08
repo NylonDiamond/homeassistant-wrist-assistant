@@ -410,8 +410,10 @@ class _FakeComplicationStore:
     def owner_token(self, owner: str) -> int:
         return self.tokens.get(owner, 0)
 
-    def applied_token(self, owner: str) -> int:
-        return self.applied.get(owner, 0)
+    def applied_token(self, owner: str) -> int | None:
+        # None, not 0: a watch that has never acked is not a watch that acked
+        # an empty store. Mirrors ComplicationStore.applied_token.
+        return self.applied.get(owner)
 
     def set_applied_token(self, owner: str, token: int) -> bool:
         if self.applied.get(owner) == token:

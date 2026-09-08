@@ -12,8 +12,9 @@
 export interface SendInputs {
   /** The owner's store token on the server. */
   token: number;
-  /** The token the watch last reported it applied; undefined when the
-   * integration predates the ack (the button is then not offered). */
+  /** The token the watch last reported it applied. Undefined when it never
+   * has: its watch app predates custom complications, or it has not opened
+   * this home yet. Not the same as 0, which is a real ack of an empty store. */
   appliedToken: number | undefined;
   /** Whether the watch holds a long-poll on this server right now. */
   polling: boolean;
@@ -26,6 +27,8 @@ export interface SendInputs {
 }
 
 export type SendState =
+  /** The watch has never told this server which changes it applied, so
+   * nothing here can be sent to it and no Resend would help. */
   | { kind: "unsupported" }
   /** `awaySeconds` is set only when the tokens match and the watch is not
    * listening now: "On watch" is true forever once it has pulled, so without
@@ -74,7 +77,13 @@ export function agoWords(seconds: number): string {
 export function describeSend(s: SendState): { label: string; note?: string; title: string; resend: boolean } {
   switch (s.kind) {
     case "unsupported":
-      return { label: "", title: "", resend: false };
+      return {
+        label: "Update the watch app",
+        note: "to receive this",
+        title:
+          "This watch has never reported which changes it applied, so nothing saved here can reach it. Its Wrist Assistant app is older than custom complications, or it has not been opened on this home yet.",
+        resend: false,
+      };
     case "sent":
       return s.awaySeconds === undefined
         ? { label: "On watch", title: "The watch has applied every change here.", resend: false }

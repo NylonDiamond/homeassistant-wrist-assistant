@@ -688,9 +688,16 @@ class ComplicationStore:
         self._schedule_save()
         return True
 
-    def applied_token(self, owner_watch_id: str) -> int:
-        """The store token the watch last reported it had applied (0 = never)."""
-        return self._applied.get(owner_watch_id, 0)
+    def applied_token(self, owner_watch_id: str) -> int | None:
+        """The store token the watch last reported it had applied.
+
+        ``None`` when it never has, which is not the same as 0. A watch app
+        that predates the ack sends no token at all, and reporting 0 for it
+        made it indistinguishable from a watch that acked an empty store: the
+        panel showed "Not on watch yet" and a Resend that could not work,
+        because nothing on that watch was listening for the answer.
+        """
+        return self._applied.get(owner_watch_id)
 
     def set_applied_token(self, owner_watch_id: str, token: int) -> bool:
         """Record the watch's ack. Returns whether it changed.
