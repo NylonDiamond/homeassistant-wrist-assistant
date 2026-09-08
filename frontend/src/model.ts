@@ -80,6 +80,51 @@ export type ChartBaseline = "lowest" | "zero";
 export type ChartHighlight = "none" | "highest" | "lowest" | "both";
 export type ChartMarker = "none" | "dot" | "pointer";
 export type ChartColoring = "uniform" | "bands";
+/** Where a chart's past comes from.
+ *
+ * The recorder keeps two different things. State history is every reported
+ * reading and it is purged (ten days by default), which is why a history chart
+ * stops at a week. Long-term statistics are the rows the recorder
+ * pre-aggregates per period and never purges, so a year of hourly energy is one
+ * cheap query. Both arrive as the same comma-joined series, so nothing after
+ * the fetch knows which one produced it.
+ *
+ * Mirrors `ChartElement.ChartSource` in the app repo. */
+export type ChartSource = "history" | "statistics";
+/** How long one statistics row covers. The recorder's own set, which is what
+ * makes the query cheap: it reads rows it already wrote. "5minute" rows are
+ * compacted into hourly ones after about ten days, so a long span asked for in
+ * five-minute steps quietly returns only its recent tail. */
+export type StatPeriod = "5minute" | "hour" | "day" | "week" | "month";
+/** Which column of a statistics row is drawn. "change" is the amount used
+ * during the period, which is the energy question; "sum" is the running total
+ * the meter reads. */
+export type StatType = "mean" | "min" | "max" | "change" | "sum";
+
+export const CHART_SOURCES: [ChartSource, string][] = [
+  ["history", "Recorded history"],
+  ["statistics", "Long-term statistics"],
+];
+
+export const STAT_PERIODS: [StatPeriod, string][] = [
+  ["5minute", "5 min"],
+  ["hour", "Hour"],
+  ["day", "Day"],
+  ["week", "Week"],
+  ["month", "Month"],
+];
+
+export const STAT_TYPES: [StatType, string][] = [
+  ["mean", "Mean"],
+  ["min", "Min"],
+  ["max", "Max"],
+  ["change", "Change"],
+  ["sum", "Total"],
+];
+
+export const CHART_DEFAULT_SOURCE: ChartSource = "history";
+export const CHART_DEFAULT_STAT_PERIOD: StatPeriod = "hour";
+export const CHART_DEFAULT_STAT_TYPE: StatType = "mean";
 /** Which number of a chart layer a `chartStat` value reads. The stats read the
  * series the chart draws, after `limit` has trimmed it; `top` and `bottom` are
  * the ends of the plot's range, which on a Fixed chart differ from the readings.
@@ -346,6 +391,16 @@ export const GAUGE_MAX_DOTS = 24;
  * Mirrors `CustomComplication.ChartElement` in the app repo. */
 export interface ChartElement extends ElementBase {
   value: Value;
+  /** Which of the recorder's two stores the past comes from. Only read when
+   * `historyMinutes` is non-zero: a chart drawing its own value asks the
+   * recorder nothing at all. */
+  source: ChartSource;
+  /** How long one statistics row covers. Ignored unless `source` is
+   * "statistics". */
+  statPeriod: StatPeriod;
+  /** Which of a statistics row's columns is drawn. Ignored unless `source` is
+   * "statistics". */
+  statType: StatType;
   /** How far back to read the entity's recorded history, in minutes. 0 draws
    * `value` as it stands, which is what a forecast sensor wants.
    *
@@ -516,6 +571,20 @@ export const CHART_HISTORY_DEFAULT_MINUTES = 360;
  * ten days, and a week stays clear of it. Mirrors `MAX_MINUTES` in Python. */
 export const CHART_HISTORY_MAX_MINUTES = 7 * 24 * 60;
 
+/** The spans a statistics chart offers: the history list plus a month, a
+ * quarter and a year, which only the never-purged store can answer. */
+export const CHART_STATISTICS_SPANS: readonly { minutes: number; label: string }[] = [
+  ...CHART_HISTORY_SPANS,
+  { minutes: 43_200, label: "Last 30 days" },
+  { minutes: 129_600, label: "Last 90 days" },
+  { minutes: 527_040, label: "Last year" },
+];
+
+/** The longest statistics span the server answers: 366 days. Statistics are
+ * never purged, so the cap is about what a complication can usefully draw.
+ * Mirrors `MAX_MINUTES` in `statistics_series.py`. */
+export const CHART_STATISTICS_MAX_MINUTES = 366 * 24 * 60;
+
 export const CHART_HISTORY_MIN_POINTS = 2;
 export const CHART_HISTORY_MAX_POINTS = 120;
 /** `historyPoints` meaning "every recorded reading, no averaging". The server
@@ -541,6 +610,7 @@ export function chartHistoryPoints(el: ChartElement): number {
  * the same width, so a clock printed under them would be wrong everywhere but
  * the edges. Mirrors `showsTimeLabels` in the app repo. */
 export function chartShowsTimeLabels(el: ChartElement): boolean {
+  if (chartStatisticsEntity(el) !== undefined) return true;
   return chartHistoryEntity(el) !== undefined && chartHistoryPoints(el) > 0;
 }
 
@@ -551,6 +621,21 @@ export function chartShowsTimeLabels(el: ChartElement): boolean {
  * before any resolver exists to dereference it. Mirrors `usesHistory` and
  * `historyEntity` in Swift. */
 export function chartHistoryEntity(el: ChartElement): string | undefined {
+  if (el.source !== "history") return undefined;
+  return chartRecorderEntity(el);
+}
+
+/** The entity whose long-term statistics a chart draws, when it draws them.
+ *
+ * The other side of `source`, on the same rule as `chartHistoryEntity`, so
+ * exactly one of the two ever answers. Mirrors `usesStatistics` in Swift. */
+export function chartStatisticsEntity(el: ChartElement): string | undefined {
+  if (el.source !== "statistics") return undefined;
+  return chartRecorderEntity(el);
+}
+
+/** The gate both stores share: a span, and an entity named directly. */
+function chartRecorderEntity(el: ChartElement): string | undefined {
   if (el.historyMinutes <= 0) return undefined;
   return el.value.kind.kind === "entityState" ? el.value.kind.entityId : undefined;
 }
@@ -572,6 +657,19 @@ export function chartHistoryKey(el: ChartElement): string | undefined {
   return `${entityId}|${Math.round(el.historyMinutes)}|${chartHistoryPoints(el)}`;
 }
 
+/** The cache key for one chart's long-term statistics query, or undefined when
+ * the chart reads history or its own value instead.
+ *
+ * Every parameter that changes the answer is in it, so a chart switched from
+ * mean to change is a new question rather than a stale answer to the old one.
+ * Readable here and hashed into an `s_...` string on the watch, exactly as the
+ * history key is; the fixtures write this form. */
+export function chartStatisticsKey(el: ChartElement): string | undefined {
+  const entityId = chartStatisticsEntity(el);
+  if (entityId === undefined) return undefined;
+  return `${entityId}|${Math.round(el.historyMinutes)}|${el.statPeriod}|${el.statType}`;
+}
+
 /** What a recorder query asks for: numbers averaged into slots, or the states
  * themselves with the instant each one began. A chart asks the first, a
  * timeline the second. Mirrors `HistorySpec.Mode` in the app repo. */
@@ -584,7 +682,11 @@ export type HistoryMode = "numeric" | "states";
  * no Jinja at all, so a document that did not change says nothing about whether
  * a chart was retargeted or its span widened. */
 export function chartHistorySignature(config: CustomComplicationConfig): string {
-  return chartHistoryRequests(config).map((r) => r.key).sort().join(";");
+  const keys = [
+    ...chartHistoryRequests(config).map((r) => r.key),
+    ...chartStatisticsRequests(config).map((r) => r.key),
+  ];
+  return keys.sort().join(";");
 }
 
 /** One recorder query, as the panel sends it and as the resolver keys its
@@ -633,6 +735,41 @@ export function chartHistoryRequests(config: CustomComplicationConfig): HistoryR
         mode: "states",
       });
     }
+  }
+  return [...seen.values()];
+}
+
+/** One long-term statistics query, as the panel sends it and as the resolver
+ * keys its answer. */
+export interface StatisticsRequest {
+  key: string;
+  entityId: string;
+  minutes: number;
+  period: StatPeriod;
+  type: StatType;
+}
+
+/** Every distinct statistics query a config needs, deduped. What the panel
+ * sends to the `statistics_series` websocket command.
+ *
+ * Separate from `chartHistoryRequests` because it is a separate command with
+ * different parameters, even though both answers land in the same Map: the
+ * keys cannot collide, since a period is never a point count. */
+export function chartStatisticsRequests(config: CustomComplicationConfig): StatisticsRequest[] {
+  const seen = new Map<string, StatisticsRequest>();
+  for (const el of config.elements) {
+    if (el.kind !== "chart") continue;
+    const key = chartStatisticsKey(el.payload);
+    const entityId = chartStatisticsEntity(el.payload);
+    if (key === undefined || entityId === undefined) continue;
+    if (seen.has(key)) continue;
+    seen.set(key, {
+      key,
+      entityId,
+      minutes: Math.round(el.payload.historyMinutes),
+      period: el.payload.statPeriod,
+      type: el.payload.statType,
+    });
   }
   return [...seen.values()];
 }
@@ -1208,6 +1345,19 @@ function optNum(v: unknown): number | undefined {
 function optStr(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
+/** One spelling out of a label table, or the fallback when it is not in it.
+ *
+ * The rest of this parser casts a string straight to its union and trusts the
+ * document, which is fine for the enums that have never grown. These three are
+ * expected to grow, so a value a newer panel wrote has to read as the default
+ * here rather than becoming a request the server cannot serve. */
+function pickEnum<T extends string>(
+  raw: string | undefined,
+  table: readonly (readonly [T, string])[],
+  fallback: T,
+): T {
+  return table.some(([value]) => value === raw) ? (raw as T) : fallback;
+}
 
 export class ConfigParseError extends Error {}
 
@@ -1527,6 +1677,12 @@ function parseElementKind(raw: unknown): Element {
           value: isObject(p.value) ? parseValue(p.value) : literal("13,14,16,17,19,22,24,28,30"),
           historyMinutes: Math.max(0, Math.round(num(p.historyMinutes, 0))),
           historyPoints: Math.round(num(p.historyPoints, 24)),
+          // A source, period or type this build does not serve reads as the
+          // default rather than failing the layer, the same forgiving rule the
+          // app's decoder applies with `try?`.
+          source: pickEnum(optStr(p.source), CHART_SOURCES, CHART_DEFAULT_SOURCE),
+          statPeriod: pickEnum(optStr(p.statPeriod), STAT_PERIODS, CHART_DEFAULT_STAT_PERIOD),
+          statType: pickEnum(optStr(p.statType), STAT_TYPES, CHART_DEFAULT_STAT_TYPE),
           style: (optStr(p.style) as ChartStyle | undefined) ?? "bars",
           limit: Math.max(0, Math.round(num(p.limit, 0))),
           takeFromEnd: p.takeFromEnd === true,
@@ -2167,6 +2323,12 @@ function encodeElementKind(el: Element): J {
         bandAboveColorHex: c.bandAboveColorHex,
         fillBands: c.fillBands,
       };
+      // Where the past comes from, and how a statistics row is read. All three
+      // omitted at their defaults, so a history chart is byte for byte what it
+      // always was, and a statistics chart writes only what it actually asks for.
+      if (c.source !== CHART_DEFAULT_SOURCE) o.source = c.source;
+      if (c.statPeriod !== CHART_DEFAULT_STAT_PERIOD) o.statPeriod = c.statPeriod;
+      if (c.statType !== CHART_DEFAULT_STAT_TYPE) o.statType = c.statType;
       // The marks a chart can add over its plot, all omitted at their defaults so a
       // document that draws neither line is byte for byte what it always was. Same
       // order and same rule as the app's encoder.
@@ -2476,7 +2638,8 @@ const K = {
   icon: ["symbol", "path", "size"],
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex",
     "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex", "total"],
-  chart: ["value", "historyMinutes", "historyPoints", "style", "limit", "takeFromEnd", "scale", "minValue", "maxValue",
+  chart: ["value", "historyMinutes", "historyPoints", "source", "statPeriod", "statType",
+    "style", "limit", "takeFromEnd", "scale", "minValue", "maxValue",
     "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker",
     "coloring", "bands", "bandAboveColorHex", "fillBands",
     "thresholdValue", "thresholdColorHex", "nowIndex", "nowColorHex", "scaleFrom",
@@ -2724,7 +2887,7 @@ export function newElement(kind: Element["kind"]): Element {
     // A new chart is set to draw history: nearly every chart is of a plain
     // sensor, and a plain sensor's own value is one bar. Until an entity is
     // named the sample list draws instead, so the layer is never blank.
-    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: CHART_HISTORY_DEFAULT_MINUTES, historyPoints: 24, style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "pointer", coloring: "uniform", bands: [], bandAboveColorHex: CHART_DEFAULT_BAND_HIGH_HEX, fillBands: false, thresholdColorHex: CHART_DEFAULT_THRESHOLD_HEX, nowColorHex: CHART_DEFAULT_NOW_HEX, timeLabelCount: TIMELINE_DEFAULT_LABEL_COUNT, labelSize: TIMELINE_DEFAULT_LABEL_SIZE, labelColorHex: TIMELINE_DEFAULT_LABEL_HEX, labelsAbove: false, hourCycle: TIMELINE_DEFAULT_HOUR_CYCLE, minutes: TIMELINE_DEFAULT_MINUTE_STYLE } };
+    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: CHART_HISTORY_DEFAULT_MINUTES, historyPoints: 24, source: CHART_DEFAULT_SOURCE, statPeriod: CHART_DEFAULT_STAT_PERIOD, statType: CHART_DEFAULT_STAT_TYPE, style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "pointer", coloring: "uniform", bands: [], bandAboveColorHex: CHART_DEFAULT_BAND_HIGH_HEX, fillBands: false, thresholdColorHex: CHART_DEFAULT_THRESHOLD_HEX, nowColorHex: CHART_DEFAULT_NOW_HEX, timeLabelCount: TIMELINE_DEFAULT_LABEL_COUNT, labelSize: TIMELINE_DEFAULT_LABEL_SIZE, labelColorHex: TIMELINE_DEFAULT_LABEL_HEX, labelsAbove: false, hourCycle: TIMELINE_DEFAULT_HOUR_CYCLE, minutes: TIMELINE_DEFAULT_MINUTE_STYLE } };
     // No sample states: a timeline of a made-up string would draw a strip that
     // looks like data. Empty until an entity is picked, which is also when the
     // colour table can be seeded from its domain.

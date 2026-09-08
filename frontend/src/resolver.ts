@@ -47,6 +47,7 @@ import {
   STYLE_PROPERTY,
   chartBandColor,
   chartHistoryKey,
+  chartStatisticsKey,
   chartShowsTimeLabels,
   clampTimeLabelCount,
   chartStatText,
@@ -793,10 +794,19 @@ export class Resolver {
     // entity, and the readings are whatever the last recorder fetch left
     // behind. Before that arrives the chart is empty rather than one bar of
     // the current state, which would draw a lie that looks like real data.
+    // Long-term statistics are read out of the same Map under their own key.
+    // The series arrives in the same shape, so everything below this is the
+    // code a history chart has always run.
     const historyKey = chartHistoryKey(c);
-    const raw = historyKey !== undefined
-      ? (this.ctx.historySeries?.get(historyKey) ?? "")
-      : (this.resolve(c.value) ?? "");
+    const statisticsKey = chartStatisticsKey(c);
+    let raw: string;
+    if (historyKey !== undefined) {
+      raw = this.ctx.historySeries?.get(historyKey) ?? "";
+    } else if (statisticsKey !== undefined) {
+      raw = this.ctx.historySeries?.get(statisticsKey) ?? "";
+    } else {
+      raw = this.resolve(c.value) ?? "";
+    }
     const values = chartNumbers(raw);
     if (c.limit > 0 && values.length > c.limit) {
       return c.takeFromEnd ? values.slice(values.length - c.limit) : values.slice(0, c.limit);
