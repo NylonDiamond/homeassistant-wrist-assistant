@@ -184,8 +184,12 @@ def _clean_occupied_entries(entries: list[Any]) -> list[dict[str, Any]]:
         name = entry.get("name", "")
         if not isinstance(name, str):
             name = ""
+        # A watch could report anything here. `in` on a frozenset raises
+        # TypeError for an unhashable value (a list, a dict), and the report
+        # is advisory: an unrecognisable kind reads as "preset" like a missing
+        # one, it never takes the sync call down.
         kind = entry.get("kind", "preset")
-        if kind not in _OCCUPIED_KINDS:
+        if not isinstance(kind, str) or kind not in _OCCUPIED_KINDS:
             kind = "preset"
         home = entry.get("home", "")
         if not isinstance(home, str):
@@ -375,7 +379,12 @@ def validate_document(document: Any) -> dict[str, Any]:
         )
 
     families = document["supportedFamilies"]
-    if not families or any(f not in _FAMILY_KINDS for f in families):
+    # `f not in _FAMILY_KINDS` raises TypeError for an unhashable entry (a
+    # nested list from a hand-written document), and a validator must answer
+    # "invalid", never blow up with a 500 the panel cannot render.
+    if not families or any(
+        not isinstance(f, str) or f not in _FAMILY_KINDS for f in families
+    ):
         raise ComplicationValidationError(
             "document.supportedFamilies must be a non-empty list of "
             "rectangular, circular, corner, inline"
@@ -470,7 +479,19 @@ class ComplicationStore:
     # ── persistence ────────────────────────────────────────────────────
 
     async def async_load(self) -> None:
-        data = await self._store.async_load()
+        try:
+            data = await self._store.async_load()
+        except Exception:
+            # A corrupt or unreadable storage file must not fail
+            # `async_setup_entry`: that takes the whole integration down, so
+            # the watch loses notifications and cameras over a complication
+            # file. Start empty and say so; the panel shows nothing, which is
+            # visible, and the next save rewrites the file.
+            _LOGGER.exception(
+                "Could not read %s; starting with no complications",
+                COMPLICATION_STORAGE_KEY,
+            )
+            return
         if not data or not isinstance(data, dict):
             return
         try:
@@ -555,6 +576,45 @@ class ComplicationStore:
 
     def _schedule_save(self) -> None:
         self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+
+    @callback
+    def forget_owner(self, owner_watch_id: str) -> bool:
+        """Erase everything this store holds for one watch. Returns whether
+        anything was there.
+
+        Called when the device itself is forgotten, from the panel's Forget
+        action or from removing the device in HA's UI. Every other delete path
+        writes a tombstone, because a replica that has not yet seen the delete
+        must never be able to resurrect the record. That reasoning ends here:
+        the device is gone, it will not poll again under this id, and there is
+        no replica left to tell. Tombstones kept for a watch nobody can reach
+        are a file that only grows, and they keep the id showing up in
+        ``owners()`` as an orphan the user cannot get rid of.
+
+        Listeners hear a record-less change so an open panel reloads rather
+        than keeping rows for a watch that no longer exists.
+        """
+        touched = any(
+            owner_watch_id in bucket
+            for bucket in (
+                self._records,
+                self._presets,
+                self._pages,
+                self._occupied,
+                self._applied,
+            )
+        )
+        if not touched:
+            return False
+        self._records.pop(owner_watch_id, None)
+        self._presets.pop(owner_watch_id, None)
+        self._pages.pop(owner_watch_id, None)
+        self._occupied.pop(owner_watch_id, None)
+        self._applied.pop(owner_watch_id, None)
+        self._schedule_save()
+        _LOGGER.info("Purged complication records for owner %s", owner_watch_id)
+        self._notify(ComplicationChange(owner_watch_id=owner_watch_id, token=0))
+        return True
 
     async def async_remove(self) -> None:
         self._records.clear()

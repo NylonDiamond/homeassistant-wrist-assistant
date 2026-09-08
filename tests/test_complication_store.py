@@ -529,6 +529,11 @@ def test_pages_drop_junk_and_clear_on_empty(mod):
         lambda d: d.update(slotIndex=True),
         lambda d: d.update(supportedFamilies=[]),
         lambda d: d.update(supportedFamilies=["square"]),
+        # A nested list is unhashable, so the membership test used to raise
+        # TypeError straight out of the validator instead of "invalid".
+        lambda d: d.update(supportedFamilies=[["rectangular"]]),
+        lambda d: d.update(supportedFamilies=[{"a": 1}]),
+        lambda d: d.update(supportedFamilies=["rectangular", "circular", "corner", 7]),
         # One shape or Inline needs the schema-6 marker (an old app would draw
         # the missing shapes from the shared layers, or "Custom" for Inline).
         lambda d: d.update(supportedFamilies=["rectangular"]),
@@ -948,3 +953,99 @@ def test_wake_callback_failure_does_not_break_the_commit(mod):
     record = store.save(OWNER, _doc(), base_revision=None, updated_by="t")
     assert record.revision == 1
     assert store.list(OWNER)[0].id == record.id
+
+
+# ── robustness ───────────────────────────────────────────────────────────
+
+
+def test_an_unreadable_storage_file_starts_empty_instead_of_raising(mod):
+    """A corrupt file must not fail `async_setup_entry`.
+
+    Raising out of `async_load` takes the whole integration down with it, so
+    the watch loses notifications, cameras and the delta poll over one
+    complication file. Starting empty is visible in the panel and the next
+    save rewrites the file.
+    """
+    store = mod.ComplicationStore(object())
+
+    class _Unreadable:
+        async def async_load(self):
+            raise ValueError("not JSON")
+
+    store._store = _Unreadable()
+    asyncio.run(store.async_load())
+    assert store.owners() == []
+    assert store.token == 0
+
+
+def test_an_occupied_report_with_an_unhashable_kind_is_cleaned_not_fatal(mod):
+    # `kind not in frozenset(...)` raises TypeError on a list. The report is
+    # advisory and comes straight off the wire, so it reads as "preset".
+    store = _new(mod)
+    assert store.set_occupied(
+        OWNER,
+        [
+            {"slot": 1, "name": "A", "kind": ["custom"], "home": "H"},
+            {"slot": 2, "name": "B", "kind": {"custom": True}, "home": "H"},
+        ],
+    ) is True
+    assert [e["kind"] for e in store.occupied(OWNER)] == ["preset", "preset"]
+
+
+# ── forgetting a watch ───────────────────────────────────────────────────
+
+
+def test_forget_owner_erases_every_trace_of_one_watch(mod):
+    store = _new(mod)
+    doc = _doc()
+    store.save(OWNER, doc, base_revision=None, updated_by="t")
+    store.delete(OWNER, doc["id"], base_revision=1, updated_by="t")  # a tombstone too
+    store.save(OWNER, _doc(slotIndex=2), base_revision=None, updated_by="t")
+    store.set_occupied(OWNER, [{"slot": 5, "name": "P", "kind": "preset", "home": "H"}])
+    store.set_pages(OWNER, [{"id": str(uuid.uuid4()), "name": "Home"}])
+    store.set_applied_token(OWNER, 1)
+    store.save(OTHER, _doc(slotIndex=3), base_revision=None, updated_by="t")
+
+    seen = []
+    store.async_add_listener(seen.append)
+    assert store.forget_owner(OWNER) is True
+
+    assert store.owners() == [OTHER]
+    assert store.list(OWNER, include_deleted=True) == []
+    assert store.presets(OWNER) == []
+    assert store.pages(OWNER) == []
+    assert store.occupied(OWNER) == []
+    assert store.applied_token(OWNER) is None
+    assert store.is_empty(OWNER) is True
+    # The panel hears about it, so an open tab reloads instead of showing rows
+    # for a watch that no longer exists.
+    assert [c.owner_watch_id for c in seen] == [OWNER]
+    assert seen[0].record is None
+    # The other watch is untouched, and so is the collection token.
+    assert len(store.list(OTHER)) == 1
+    assert store.token == 4
+
+    # It survives a restart: the purge was written, not just forgotten in RAM.
+    reloaded = _new(mod)
+    assert reloaded.owners() == [OTHER]
+    assert reloaded.applied_token(OWNER) is None
+
+
+def test_forget_owner_on_a_watch_with_nothing_stored_is_a_no_op(mod):
+    store = _new(mod)
+    seen = []
+    store.async_add_listener(seen.append)
+    assert store.forget_owner("watch-never-seen") is False
+    assert seen == []
+
+
+def test_async_remove_wipes_the_store_and_its_file(mod):
+    store = _new(mod)
+    store.save(OWNER, _doc(), base_revision=None, updated_by="t")
+    store.set_applied_token(OWNER, 1)
+    asyncio.run(store.async_remove())
+    assert store.owners() == []
+    assert store.token == 0
+    assert store.applied_token(OWNER) is None
+    # Uninstall is clean: a re-added integration comes back with nothing.
+    assert _new(mod).owners() == []

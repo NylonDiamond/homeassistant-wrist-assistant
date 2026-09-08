@@ -273,7 +273,9 @@ def ws_forget_device(
     A device that still holds a push token or a live complication is refused
     with ``in_use`` unless ``force`` is set, so a mistyped id cannot silently
     unregister somebody's watch. Removal is not reversible: the device has to
-    re-provision, which the app does on its next foreground identity check.
+    re-provision, which the app does on its next foreground identity check,
+    and everything the complication store held for it is erased rather than
+    tombstoned (see ``ComplicationStore.forget_owner``).
     """
     domain_data = hass.data.get(DOMAIN)
     if domain_data is None:
@@ -304,6 +306,11 @@ def ws_forget_device(
 
     domain_data.widget_secret_store.remove(watch_id)
     domain_data.notification_store.remove(watch_id)
+    # Its complications go too: records, presets, pages, occupied slots and
+    # the applied token. Leaving them behind is what made a forgotten watch
+    # come back as an orphan owner on the next `owners` call, holding rows
+    # nothing could ever deliver.
+    purged = domain_data.complication_store.forget_owner(watch_id)
 
     # Removing the store entry strips the device's entities on the next
     # listener pass, but the device registry record itself would linger as an
@@ -323,6 +330,7 @@ def ws_forget_device(
             "ok": True,
             "watch_id": watch_id,
             "device_removed": device is not None,
+            "complications_removed": purged,
         },
     )
 

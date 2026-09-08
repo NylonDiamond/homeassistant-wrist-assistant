@@ -48,3 +48,28 @@ def test_class_only_decorators_sit_on_classes(path: Path) -> None:
 @pytest.mark.parametrize("path", _MODULES, ids=[p.name for p in _MODULES])
 def test_module_parses(path: Path) -> None:
     ast.parse(path.read_text(), filename=str(path))
+
+
+def test_uninstall_removes_every_store_the_integration_writes() -> None:
+    """`async_remove_entry` must wipe the complication store too.
+
+    Nothing can check this against a live box, because the test would have to
+    uninstall the integration, and the failure is silent when it happens: a
+    re-added integration comes back holding complications for watch ids that
+    no longer pair with anything. So it is asserted here, statically.
+    """
+    source = (_PKG / "__init__.py").read_text()
+    tree = ast.parse(source, filename="__init__.py")
+    removers = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "async_remove_entry"
+    ]
+    assert len(removers) == 1, "async_remove_entry is missing or defined twice"
+    body = ast.get_source_segment(source, removers[0]) or ""
+    for expected in (
+        "WIDGET_SECRET_STORAGE_KEY",
+        "NOTIFICATION_TOKEN_STORAGE_KEY",
+        "ComplicationStore(hass).async_remove()",
+    ):
+        assert expected in body, f"async_remove_entry no longer removes {expected}"

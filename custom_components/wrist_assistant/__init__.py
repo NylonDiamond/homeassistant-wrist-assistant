@@ -1004,6 +1004,11 @@ async def async_remove_config_entry_device(
         watch_id = ident[len("watch_"):]
         domain_data.widget_secret_store.remove(watch_id)
         domain_data.notification_store.remove(watch_id)
+        # Same teardown the panel's Forget action performs. Without it a
+        # watch removed from the UI keeps its complications forever: it
+        # reappears in the panel's owner list as an orphan, and no path in
+        # the UI can reach the rows to delete them.
+        domain_data.complication_store.forget_owner(watch_id)
 
     return True
 
@@ -1017,12 +1022,20 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     has long since uninstalled. The iOS app's foreground identity check
     surfaces a re-pair banner and rotates the secret in place, so a still-
     paired phone recovers without user-visible sign-in.
+
+    The complication store is a third file and goes the same way: a re-added
+    integration would otherwise come back holding every complication the user
+    thought they had removed with it, under watch ids that no longer pair.
     """
     for key, version in (
         (WIDGET_SECRET_STORAGE_KEY, WIDGET_SECRET_STORAGE_VERSION),
         (NOTIFICATION_TOKEN_STORAGE_KEY, NOTIFICATION_TOKEN_STORAGE_VERSION),
     ):
         await Store(hass, version, key).async_remove()
+    # Through the store's own method rather than a bare `Store(...)`: the entry
+    # is already unloaded, so this instance owns nothing, but keeping the one
+    # removal path means the storage key and version cannot drift from it.
+    await ComplicationStore(hass).async_remove()
 
 
 async def _create_apns_client(hass: HomeAssistant) -> APNsClient | None:
