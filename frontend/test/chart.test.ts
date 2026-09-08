@@ -18,6 +18,7 @@ import {
   chartHistoryRequests,
   chartHistorySignature,
   chartLabelsOf,
+  chartShowsTimeLabels,
   copyElements,
   encodeConfig,
   groupMembers,
@@ -27,6 +28,8 @@ import {
   newElement,
   parseConfig,
   pasteElements,
+  TIMELINE_DEFAULT_LABEL_HEX,
+  TIMELINE_DEFAULT_LABEL_SIZE,
   removeElement,
   type ChartElement,
   type ChartStat,
@@ -38,7 +41,7 @@ import {
 import { describeValue } from "../src/editors.js";
 import { compile } from "../src/compiler.js";
 import { renderLayout, type IconProvider } from "../src/renderer.js";
-import { chartDomain, chartNumbers, resolveAll, type EntityState, type ResolvedChart, type ResolvedLayout } from "../src/resolver.js";
+import { chartDomain, chartLabels, chartNumbers, resolveAll, type EntityState, type ResolvedChart, type ResolvedLayout } from "../src/resolver.js";
 
 const noIcons: IconProvider = { render: () => undefined, available: () => false, names: () => undefined };
 
@@ -977,5 +980,140 @@ describe("scaleFrom", () => {
     const alone = newConfig("Elsewhere", 1);
     pasteElements(alone, copyElements(cfg, [second]));
     expect((alone.elements[0] as Extract<Element, { kind: "chart" }>).payload.scaleFrom).toBeUndefined();
+  });
+});
+
+// ── the clock times along the span ────────────────────────────────────────
+//
+// The same row a timeline draws, on the same six keys. The cases here mirror
+// the "Time labels" section of `CustomComplicationChartTests` in the app repo;
+// `test/timeline.test.ts` covers how one time reads, since both layers print
+// through the same `timeLabels`.
+
+describe("a chart's clock times", () => {
+  // A fixed instant, so every expectation is arithmetic rather than a race with
+  // the wall clock.
+  const NOW = Date.UTC(2026, 8, 6, 21, 36, 0);
+  const withMinutes = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+  const hourOnly = new Intl.DateTimeFormat(undefined, { hour: "numeric" });
+
+  function labelled(tweak: (p: ChartElement) => void = () => {}): ChartElement {
+    const el = newElement("chart") as Extract<Element, { kind: "chart" }>;
+    el.payload.value = { kind: { kind: "entityState", entityId: "sensor.voltage", displayName: "Voltage", domain: "sensor" } };
+    el.payload.historyMinutes = 60;
+    el.payload.historyPoints = 12;
+    el.payload.timeLabelCount = 4;
+    tweak(el.payload);
+    return el.payload;
+  }
+
+  const labelsOf = (tweak: (p: ChartElement) => void = () => {}) => chartLabels(labelled(tweak), NOW);
+
+  it("spaces the times evenly from the start of the window to now", () => {
+    expect(labelsOf((p) => { p.timeLabelCount = 0; })).toEqual([]);
+    expect(labelsOf((p) => { p.timeLabelCount = 1; }).map((l) => l.position)).toEqual([1]);
+    expect(labelsOf((p) => { p.timeLabelCount = 2; }).map((l) => l.position)).toEqual([0, 1]);
+
+    const four = labelsOf();
+    expect(four.map((l) => l.position)).toEqual([0, 1 / 3, 2 / 3, 1]);
+    expect(four.map((l) => l.text)).toEqual([
+      withMinutes.format(new Date(NOW - 60 * 60 * 1000)),
+      withMinutes.format(new Date(NOW - 40 * 60 * 1000)),
+      withMinutes.format(new Date(NOW - 20 * 60 * 1000)),
+      withMinutes.format(new Date(NOW)),
+    ]);
+  });
+
+  it("clamps a hand-edited count to the range the editor offers", () => {
+    expect(labelsOf((p) => { p.timeLabelCount = 40; })).toHaveLength(12);
+    expect(labelsOf((p) => { p.timeLabelCount = -3; })).toEqual([]);
+  });
+
+  it("prints nothing for a chart drawing its own value, which has no window", () => {
+    expect(labelsOf((p) => { p.value = literal("1,2,3"); })).toEqual([]);
+    expect(labelsOf((p) => { p.historyMinutes = 0; })).toEqual([]);
+  });
+
+  it("prints nothing for every recorded reading, where the points are uneven", () => {
+    const every = labelled((p) => { p.historyPoints = 0; });
+    expect(chartHistoryKey(every)).toBe("sensor.voltage|60|0");
+    expect(chartShowsTimeLabels(every)).toBe(false);
+    expect(chartLabels(every, NOW)).toEqual([]);
+
+    // Averaged slots are evenly spaced, so the same chart does print them.
+    every.historyPoints = 6;
+    expect(chartShowsTimeLabels(every)).toBe(true);
+    expect(chartLabels(every, NOW)).toHaveLength(4);
+  });
+
+  it("follows the span for the minute, and the layer when it says so", () => {
+    expect(labelsOf((p) => { p.historyMinutes = 240; })[3]!.text).toBe(hourOnly.format(new Date(NOW)));
+    expect(labelsOf((p) => { p.historyMinutes = 240; p.minutes = "always"; })[3]!.text)
+      .toBe(withMinutes.format(new Date(NOW)));
+    expect(labelsOf((p) => { p.minutes = "never"; })[3]!.text).toBe(hourOnly.format(new Date(NOW)));
+  });
+
+  it("prints its times before the history lands, because the window is known", () => {
+    const cfg = newConfig("Volts", 0);
+    const el = newElement("chart") as Extract<Element, { kind: "chart" }>;
+    el.payload.value = { kind: { kind: "entityState", entityId: "sensor.voltage", displayName: "Voltage", domain: "sensor" } };
+    el.payload.historyMinutes = 60;
+    el.payload.historyPoints = 12;
+    el.payload.timeLabelCount = 2;
+    cfg.elements.push(el);
+    const layout = resolveAll(cfg, {
+      entityStates: new Map(),
+      templateResults: new Map(),
+      namedValues: cfg.values,
+      nowMs: NOW,
+    }).rectangular!;
+    const chart = chartOf(layout);
+    expect(chart.values).toEqual([]);
+    expect(chart.labels).toHaveLength(2);
+    expect(chart.labelSize).toBe(TIMELINE_DEFAULT_LABEL_SIZE);
+    expect(chart.labelColorHex).toBe(TIMELINE_DEFAULT_LABEL_HEX);
+    expect(chart.labelsAbove).toBe(false);
+  });
+
+  it("writes none of the six keys until the chart draws times", () => {
+    const cfg = newConfig("Volts", 0);
+    cfg.elements.push(newElement("chart"));
+    const payload = (encodeConfig(cfg).elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
+    for (const key of ["timeLabelCount", "labelSize", "labelColorHex", "labelsAbove", "hourCycle", "minutes"]) {
+      expect(payload[key], key).toBeUndefined();
+    }
+
+    const el = cfg.elements[0] as Extract<Element, { kind: "chart" }>;
+    el.payload.timeLabelCount = 4;
+    el.payload.labelsAbove = true;
+    el.payload.hourCycle = "h24";
+    el.payload.minutes = "never";
+    el.payload.labelSize = 7;
+    const written = (encodeConfig(cfg).elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
+    expect(written.timeLabelCount).toBe(4);
+    expect(written.labelsAbove).toBe(true);
+    expect(written.hourCycle).toBe("h24");
+    expect(written.minutes).toBe("never");
+    expect(written.labelSize).toBe(7);
+    // And the six keys are ones the audit knows, so a document carrying them is
+    // not read as corrupt.
+    expect(auditUnknownKeys(encodeConfig(cfg))).toEqual([]);
+  });
+
+  it("reads a missing key and an unreadable one as the same fallback", () => {
+    const cfg = newConfig("Volts", 0);
+    cfg.elements.push(newElement("chart"));
+    const doc = encodeConfig(cfg) as { elements: Record<string, unknown>[] };
+    const payload = doc.elements[0]!.payload as Record<string, unknown>;
+    payload.hourCycle = "h36";
+    payload.minutes = "sometimes";
+    payload.timeLabelCount = 99;
+    const parsed = parseConfig(doc).elements[0] as Extract<Element, { kind: "chart" }>;
+    expect(parsed.payload.hourCycle).toBe("auto");
+    expect(parsed.payload.minutes).toBe("auto");
+    expect(parsed.payload.timeLabelCount).toBe(12);
+    expect(parsed.payload.labelSize).toBe(TIMELINE_DEFAULT_LABEL_SIZE);
+    expect(parsed.payload.labelColorHex).toBe(TIMELINE_DEFAULT_LABEL_HEX);
+    expect(parsed.payload.labelsAbove).toBe(false);
   });
 });

@@ -82,17 +82,25 @@ function expectSubset(actual: Record<string, unknown>, expected: Record<string, 
  * compared as it stands.
  */
 function normalise(el: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...el };
   const runs = el.runs;
-  if (!Array.isArray(runs)) return el;
-  const round = (n: unknown) => (typeof n === "number" ? Math.round(n * 1000) / 1000 : n);
-  return {
-    ...el,
-    runs: runs.map((r: Record<string, unknown>) => ({
+  if (Array.isArray(runs)) {
+    const round = (n: unknown) => (typeof n === "number" ? Math.round(n * 1000) / 1000 : n);
+    out.runs = runs.map((r: Record<string, unknown>) => ({
       start: round(r.start),
       end: round(r.end),
       colorHex: typeof r.colorHex === "string" ? r.colorHex.toUpperCase() : r.colorHex,
-    })),
-  };
+    }));
+  }
+  // A row of clock times is compared by where its times land, not by what they
+  // read: a printed time carries the machine's own zone and locale, so a fixture
+  // pinning one would pass on the Mac that wrote it and nowhere else. How a time
+  // reads is pinned in each side's own unit tests.
+  const labels = el.labels;
+  if (Array.isArray(labels)) {
+    out.labels = labels.map((l: Record<string, unknown>) => l.position);
+  }
+  return out;
 }
 
 /** A UUID-shaped string whose digits are not all hexadecimal. */
