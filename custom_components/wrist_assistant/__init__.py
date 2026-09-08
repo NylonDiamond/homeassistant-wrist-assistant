@@ -795,8 +795,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
 
         hass.data[f"{DOMAIN}_views_registered"] = True
 
-    # The sidebar panel is re-registered on every setup (panel_custom
-    # replaces an existing entry) and removed on unload.
+    # The sidebar panel is re-registered on every setup and removed on unload.
+    # `panel_custom` does not replace an existing entry, it refuses one, so
+    # `async_register_panel` drops the old registration first and swallows a
+    # refusal either way (see complication_panel.py).
     integration = await loader.async_get_integration(hass, DOMAIN)
     await async_register_panel(hass, str(integration.version))
 
