@@ -1,0 +1,305 @@
+{
+  "dataSources": [],
+  "elements": [
+    {
+      "kind": "shape",
+      "payload": {
+        "borderWidth": 1,
+        "colorSlot": {
+          "baseColorHex": "#1C1C1E"
+        },
+        "cornerRadius": 10,
+        "frame": {
+          "height": 1,
+          "rotationDegrees": 0,
+          "width": 1,
+          "x": 0,
+          "y": 0
+        },
+        "id": "E1E1E1E1-0000-4000-8000-000000000001",
+        "isHidden": false,
+        "kind": "roundedRectangle",
+        "rules": []
+      }
+    },
+    {
+      "kind": "text",
+      "payload": {
+        "colorSlot": {
+          "baseColorHex": "#FFFFFF"
+        },
+        "fontSize": 22,
+        "fontWeight": "bold",
+        "frame": {
+          "height": 0.5,
+          "rotationDegrees": 0,
+          "width": 0.6,
+          "x": 0.05,
+          "y": 0.1
+        },
+        "id": "E2E2E2E2-0000-4000-8000-000000000002",
+        "isHidden": false,
+        "rules": [
+          {
+            "cases": [
+              {
+                "id": "C1C1C1C1-0000-4000-8000-000000000001",
+                "then": [
+                  {
+                    "kind": "setColor",
+                    "value": {
+                      "kind": {
+                        "kind": "literal",
+                        "value": "#FF453A"
+                      }
+                    }
+                  }
+                ],
+                "when": {
+                  "join": "all",
+                  "tests": [
+                    {
+                      "comparison": {
+                        "kind": "greaterThan",
+                        "value": {
+                          "kind": {
+                            "kind": "literal",
+                            "value": "80"
+                          }
+                        }
+                      },
+                      "id": "B1B1B1B1-0000-4000-8000-000000000001",
+                      "value": {
+                        "kind": {
+                          "id": "11111111-1111-4111-8111-111111111111",
+                          "kind": "named"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "id": "D1D1D1D1-0000-4000-8000-000000000001",
+            "otherwise": [
+              {
+                "kind": "setColor",
+                "value": {
+                  "kind": {
+                    "kind": "literal",
+                    "value": "#30D158"
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "value": {
+          "kind": {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "kind": "named"
+          }
+        }
+      }
+    },
+    {
+      "kind": "icon",
+      "payload": {
+        "colorSlot": {
+          "baseColorHex": "#FF9F0A"
+        },
+        "frame": {
+          "height": 0.5,
+          "rotationDegrees": 0,
+          "width": 0.25,
+          "x": 0.7,
+          "y": 0.1
+        },
+        "id": "E3E3E3E3-0000-4000-8000-000000000003",
+        "isHidden": false,
+        "rules": [],
+        "size": 16,
+        "symbol": {
+          "kind": {
+            "kind": "literal",
+            "value": "thermometer.medium"
+          }
+        }
+      }
+    },
+    {
+      "kind": "gauge",
+      "payload": {
+        "colorSlot": {
+          "baseColorHex": "#0A84FF"
+        },
+        "frame": {
+          "height": 0.2,
+          "rotationDegrees": 0,
+          "width": 0.9,
+          "x": 0.05,
+          "y": 0.7
+        },
+        "id": "E4E4E4E4-0000-4000-8000-000000000004",
+        "isHidden": false,
+        "lineWidth": 6,
+        "maxValue": 100,
+        "minValue": 0,
+        "rules": [],
+        "style": "bar",
+        "trackColorHex": "#FFFFFF40",
+        "value": {
+          "kind": {
+            "id": "22222222-2222-4222-8222-222222222222",
+            "kind": "named"
+          }
+        }
+      }
+    }
+  ],
+  "name": "Living Room",
+  "perFamily": [
+    "rectangular",
+    {
+      "borderWidth": 2,
+      "cornerBodyShape": "wedge"
+    },
+    "circular",
+    {
+      "borderWidth": 2,
+      "cornerBodyShape": "wedge",
+      "placements": {
+        "E1E1E1E1-0000-4000-8000-000000000001": {
+          "frame": {
+            "height": 1,
+            "rotationDegrees": 0,
+            "width": 1,
+            "x": 0,
+            "y": 0
+          },
+          "isHidden": true
+        },
+        "E2E2E2E2-0000-4000-8000-000000000002": {
+          "frame": {
+            "height": 0.44,
+            "rotationDegrees": 0,
+            "width": 0.8,
+            "x": 0.1,
+            "y": 0.28
+          },
+          "size": 14
+        },
+        "E3E3E3E3-0000-4000-8000-000000000003": {
+          "frame": {
+            "height": 0.5,
+            "rotationDegrees": 0,
+            "width": 0.5,
+            "x": 0.25,
+            "y": 0.25
+          },
+          "isHidden": true
+        },
+        "E4E4E4E4-0000-4000-8000-000000000004": {
+          "frame": {
+            "height": 0.8,
+            "rotationDegrees": 0,
+            "width": 0.8,
+            "x": 0.1,
+            "y": 0.1
+          }
+        }
+      }
+    },
+    "corner",
+    {
+      "bezelText": {
+        "kind": {
+          "id": "11111111-1111-4111-8111-111111111111",
+          "kind": "named"
+        }
+      },
+      "borderWidth": 2,
+      "cornerBodyShape": "wedge",
+      "placements": {
+        "E1E1E1E1-0000-4000-8000-000000000001": {
+          "frame": {
+            "height": 1,
+            "rotationDegrees": 0,
+            "width": 1,
+            "x": 0,
+            "y": 0
+          },
+          "isHidden": true
+        },
+        "E2E2E2E2-0000-4000-8000-000000000002": {
+          "frame": {
+            "height": 0.5,
+            "rotationDegrees": 0,
+            "width": 0.6,
+            "x": 0.2,
+            "y": 0.35
+          },
+          "isHidden": true,
+          "size": 12
+        },
+        "E3E3E3E3-0000-4000-8000-000000000003": {
+          "frame": {
+            "height": 0.4,
+            "rotationDegrees": 0,
+            "width": 0.267,
+            "x": 0.687,
+            "y": 0.54
+          }
+        },
+        "E4E4E4E4-0000-4000-8000-000000000004": {
+          "frame": {
+            "height": 0.5,
+            "rotationDegrees": 0,
+            "width": 0.5,
+            "x": 0.25,
+            "y": 0.25
+          },
+          "isHidden": true
+        }
+      }
+    }
+  ],
+  "refreshMinutes": 15,
+  "schemaVersion": 4,
+  "supportedFamilies": [
+    "rectangular",
+    "circular",
+    "corner"
+  ],
+  "tapAction": {
+    "type": "refresh"
+  },
+  "values": [
+    {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "name": "Temp",
+      "value": {
+        "format": {
+          "decimals": 0,
+          "useEntityUnit": true
+        },
+        "kind": {
+          "displayName": "Living Room Temperature",
+          "domain": "sensor",
+          "entityId": "sensor.living_room_temperature",
+          "kind": "entityState"
+        }
+      }
+    },
+    {
+      "id": "22222222-2222-4222-8222-222222222222",
+      "name": "Battery",
+      "value": {
+        "kind": {
+          "kind": "jinja",
+          "value": "{{ states('sensor.bilresa_dual_button_battery') | int(0) }}"
+        }
+      }
+    }
+  ]
+}

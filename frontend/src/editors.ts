@@ -610,8 +610,12 @@ export function entitySearchOpen(key: string): boolean {
  * id, arrow keys to move, Enter to take the highlighted row. Picking writes the
  * id, the friendly name and the domain together, which is what every caller
  * used to have to get right by hand.
+ *
+ * It reads nothing but `hass`, and says so in its type, because the import
+ * dialog asks for entities while no complication is open and so has no draft
+ * to build a whole host from.
  */
-export function entityField(host: EditorHost, label: string, ref: EntityRef, set: (ref: EntityRef) => void, key: string, opts: EntityFieldOptions = {}): TemplateResult {
+export function entityField(host: Pick<EditorHost, "hass">, label: string, ref: EntityRef, set: (ref: EntityRef) => void, key: string, opts: EntityFieldOptions = {}): TemplateResult {
   const states = host.hass.states;
   const search = entitySearches.get(key);
   const results = search
