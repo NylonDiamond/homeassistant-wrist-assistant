@@ -2403,7 +2403,8 @@ const K = {
   // target, the same keys every entity action uses.
   tapAction: ["type", "entityId", "displayName", "domain", "iconName",
     "serviceDomain", "serviceName", "serviceDataJSON"],
-  dataSource: ["kind", "entityId", "displayName", "domain", "iconName", "value"],
+  // No `dataSource` list: `auditUnknownKeys` deliberately does not look at
+  // `dataSources` at all. See the note at the end of that function.
 };
 
 const VALUE_KIND_KEYS: Record<string, string[]> = {
@@ -2544,7 +2545,13 @@ export function auditUnknownKeys(raw: unknown): string[] {
     check(raw.inline, K.inline, "$.inline");
     value(raw.inline.value, "$.inline.value");
   }
-  if (Array.isArray(raw.dataSources)) raw.dataSources.forEach((d, i) => check(d, K.dataSource, `$.dataSources[${i}]`));
+  // `dataSources` is deliberately not audited. It is the one derived part of
+  // the document: `Draft.encoded()` throws away whatever was there and
+  // recomputes it from the layers on every save, so an unfamiliar key in it
+  // cannot be lost by saving, which is the only thing this audit is for.
+  // Auditing it was actively wrong: Swift writes `minutes`, `points` and
+  // `mode` on a history source, the panel never derives one, and so every
+  // document with a chart or a timeline on it opened read-only.
   check(raw.tapAction, K.tapAction, "$.tapAction");
   return out;
 }

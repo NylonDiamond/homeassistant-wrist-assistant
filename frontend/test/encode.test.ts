@@ -32,6 +32,30 @@ describe("encodeConfig", () => {
     expect(auditUnknownKeys(fx.config)).toEqual([]);
   });
 
+  it("does not audit dataSources, so a history source cannot lock a document", () => {
+    // Swift's `DataSource.history` writes minutes, points and mode; the panel
+    // only ever derives entity and template sources, so a document holding a
+    // chart or a timeline used to read as carrying unknown keys and open
+    // read-only. It cannot lose them either way: `Draft.encoded()` recomputes
+    // the whole array on every save.
+    const cfg = newConfig("X", 0);
+    const enc = encodeConfig(cfg) as Record<string, unknown>;
+    enc.dataSources = [
+      { kind: "entity", entityId: "sensor.a", displayName: "A", domain: "sensor" },
+      {
+        kind: "history",
+        entityId: "sensor.a",
+        displayName: "A",
+        domain: "sensor",
+        minutes: 360,
+        points: 24,
+        mode: "states",
+      },
+      { kind: "future_kind_nobody_has_written_yet", whatever: 1 },
+    ];
+    expect(auditUnknownKeys(enc)).toEqual([]);
+  });
+
   it("round-trips the openPage fields", () => {
     const cfg = newConfig("X", 0);
     cfg.tapAction = { type: "openPage" };
