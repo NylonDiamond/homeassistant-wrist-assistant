@@ -18,6 +18,32 @@ describe("transferred preset documents", () => {
     expect(files.length).toBeGreaterThan(0);
   });
 
+  // No preset converts to a Material Design icon, so no fixture above carries a
+  // `path`. The audit still has to accept one, because a document the panel
+  // itself wrote comes back through the same door.
+  it("accepts an icon layer carrying a Material Design path", () => {
+    const raw = JSON.parse(readFileSync(join(dir, files[0]!), "utf8")) as Record<string, unknown>;
+    const doc = {
+      ...raw,
+      elements: [
+        {
+          kind: "icon",
+          payload: {
+            id: "EEEEEEEE-0000-4000-8000-0000000001FF",
+            symbol: { kind: { kind: "literal", value: "mdi:flash" } },
+            path: "M7 2v11h3v9l7-12h-4l4-8z",
+            size: 16,
+            colorSlot: { baseColorHex: "#FFFFFF" },
+            rules: [],
+            frame: { x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 },
+            isHidden: false,
+          },
+        },
+      ],
+    };
+    expect(auditUnknownKeys(doc)).toEqual([]);
+  });
+
   for (const file of files) {
     const raw = JSON.parse(readFileSync(join(dir, file), "utf8"));
 

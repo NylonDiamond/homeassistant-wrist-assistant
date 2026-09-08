@@ -104,6 +104,17 @@ export interface IconProvider {
    * can draw perfectly well and still decline to enumerate itself.
    */
   names(): string[] | undefined;
+  /**
+   * Every Material Design icon name this provider carries, prefix included
+   * (`mdi:flash`), or `undefined` while the catalogue is still loading. Absent
+   * on a provider that has no MDI at all, so call sites go through `?.()`.
+   * Asking is what starts the load: the MDI file is big and only the picker's
+   * MDI tab needs it.
+   */
+  mdiNames?(): string[] | undefined;
+  /** The SVG `d` of one MDI name, or undefined when it is unknown or the
+   * catalogue has not arrived yet. This is what the editor writes onto a layer. */
+  mdiPath?(name: string): string | undefined;
 }
 
 export interface RenderOptions {
@@ -153,6 +164,17 @@ export interface RenderOptions {
 }
 
 const FONT_WEIGHT: Record<string, number> = { regular: 400, medium: 500, semibold: 600, bold: 700 };
+
+/**
+ * How much bigger than its nominal size a Material Design icon is drawn.
+ *
+ * An SF Symbol's `size` is a font size and its glyph is drawn larger than that
+ * number in every direction; MDI's is the side of a box the glyph sits inside
+ * with a margin. Drawing both at the same number leaves MDI visibly the smaller,
+ * so the box gets multiplied. Visual calibration, not arithmetic, and pinned to
+ * `IconElementView.mdiSizeFactor` in the app.
+ */
+const MDI_SIZE_FACTOR = 1.15;
 
 /** `#RRGGBB` or `#RRGGBBAA` (leading # optional) to an SVG colour + opacity. */
 export function parseColor(hex: string | undefined): { color: string; opacity: number } | undefined {
@@ -585,6 +607,15 @@ function renderShape(el: Extract<ResolvedElement, { kind: "shape" }>, box: Box) 
 }
 
 function renderIcon(el: Extract<ResolvedElement, { kind: "icon" }>, box: Box, icons: IconProvider) {
+  // A Material Design icon travels as its own outline, so the preview draws
+  // exactly what the document carries, the way the watch does. MDI's box is
+  // always 24 units, hence the fixed divisor.
+  if (el.path !== undefined && el.path !== "") {
+    const c = colorAttrs(el.colorHex, "fill");
+    const s = el.size * MDI_SIZE_FACTOR;
+    return svg`<g transform="translate(${box.cx - s / 2} ${box.cy - s / 2}) scale(${s / 24})">
+      <path d=${el.path} fill=${c.fill} fill-opacity=${c["fill-opacity"]} /></g>`;
+  }
   const glyph = icons.render(el.symbol, el.size, el.colorHex);
   if (glyph) return svg`<g transform="translate(${box.cx - el.size / 2} ${box.cy - el.size / 2})">${glyph}</g>`;
   // Missing-symbol placeholder: a dashed box with the name, so the layer is

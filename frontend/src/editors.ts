@@ -155,7 +155,8 @@ import {
 import { chartNumbers, timelineSamples, type ForcedBranches, type TimelineSample } from "./resolver.js";
 import type { HassEntityState, HassLike } from "./ha-api.js";
 import { MIN_ZOOM, familyTitle, type IconProvider } from "./renderer.js";
-import { CURATED_SYMBOLS, SYMBOL_CATEGORIES, SymbolBrowser, searchSymbols } from "./symbols.js";
+import { CURATED_SYMBOLS, SYMBOL_CATEGORIES, SymbolBrowser, searchSymbols, type SymbolPack } from "./symbols.js";
+import { MDI_PREFIX } from "./icons.js";
 import { typedFrame } from "./interact.js";
 import { DESIGN_BOX } from "./model.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
@@ -798,9 +799,23 @@ function symbolTile(host: EditorHost, name: string, selected: boolean, pick: (n:
   </button>`;
 }
 
-/** A name field plus a searchable grid of glyphs. Stores the canonical Apple
- * name, never the Home Assistant asset name. */
-function symbolField(host: EditorHost, symbol: string, set: (v: string) => void, key: string): TemplateResult {
+/**
+ * A name field plus a searchable grid of glyphs. Stores the canonical Apple
+ * name, never the Home Assistant asset name.
+ *
+ * With `setPath` given, the field also offers Material Design icons. Those are
+ * stored as the literal name `mdi:flash` in the symbol, and the glyph's own SVG
+ * path alongside it, because the watch has no MDI catalogue to look a name up
+ * in. Only the icon layer takes one: a rule's `setIcon` and the inline symbol
+ * have nowhere to keep a path, so they stay SF Symbols.
+ */
+function symbolField(
+  host: EditorHost,
+  symbol: string,
+  set: (v: string) => void,
+  key: string,
+  setPath?: (d: string | undefined) => void
+): TemplateResult {
   const browser = host.symbols;
   const open = browser.isOpen(key);
   const query = browser.query(key);
@@ -808,20 +823,60 @@ function symbolField(host: EditorHost, symbol: string, set: (v: string) => void,
   const pack = listed ?? [];
   const known = new Set(pack);
   const current = symbol.trim();
-  const missing = current !== "" && known.size > 0 && !known.has(current);
+  const isMdiName = current.startsWith(MDI_PREFIX);
+  const offersMdi = setPath !== undefined;
+  const showing: SymbolPack = offersMdi ? (browser.pack(key) ?? (isMdiName ? "mdi" : "sf")) : "sf";
+  const missing = symbolIsMissing(current, known);
   const pick = (name: string) => {
     set(name);
+    // A picked SF Symbol drops any path the layer was carrying; a picked MDI
+    // icon brings its own. Same undo key as the symbol itself, so the pair is
+    // one step.
+    setPath?.(name.startsWith(MDI_PREFIX) ? host.icons.mdiPath?.(name) : undefined);
     browser.noteUsed(name);
+  };
+  // A name typed by hand: an `mdi:` one gets its path filled in when the
+  // catalogue knows it, and is left without one when it does not, which the
+  // resolver draws as a question mark rather than as nothing.
+  const typed = (v: string) => {
+    set(v);
+    if (!offersMdi) return;
+    const name = v.trim();
+    setPath?.(name.startsWith(MDI_PREFIX) ? host.icons.mdiPath?.(name) : undefined);
   };
 
   let browsePane: TemplateResult | typeof nothing = nothing;
-  if (open) {
+  if (open && showing === "mdi") {
+    const names = host.icons.mdiNames?.();
+    const matches = searchMdi(names ?? [], query);
+    const shown = matches.slice(0, SYMBOL_GRID_LIMIT);
+    const recent = browser.recent.filter((s) => s.startsWith(MDI_PREFIX));
+    browsePane = html`<div class="sym-browse">
+      ${packToggle(browser, key, showing)}
+      <div class="sym-controls">
+        <input type="search" placeholder="Search Material Design icons" .value=${query} @input=${onInput((v) => browser.setQuery(key, v))} />
+      </div>
+      ${recent.length === 0 ? nothing : html`<div class="hint">Recent</div>
+        <div class="sym-grid one-row">${recent.map((n) => symbolTile(host, n, n === current, pick))}</div>`}
+      <div class="sym-grid">${shown.map((n) => symbolTile(host, n, n === current, pick))}</div>
+      ${names === undefined
+        ? html`<div class="hint">Loading the Material Design catalogue.</div>`
+        : matches.length === 0
+          ? html`<div class="hint">Nothing matches that search. Any <code>mdi:</code> name can still be typed above.</div>`
+          : html`<div class="hint">${symbolCount(shown.length, matches.length, query.trim() !== "", names.length)}</div>`}
+      ${names !== undefined && isMdiName && !names.includes(current)
+        ? html`<div class="hint warn">There is no <code>${current}</code> in this build's Material Design set, so the watch draws a question mark.</div>`
+        : nothing}
+    </div>`;
+  } else if (open) {
     const category = browser.category(key);
     const pool = symbolPool(category, query, pack, known);
     const matches = searchSymbols(pool.names, query);
     const shown = pool.fromPack ? matches.slice(0, SYMBOL_GRID_LIMIT) : matches;
-    const recent = known.size === 0 ? browser.recent : browser.recent.filter((s) => known.has(s));
+    const sfRecent = browser.recent.filter((s) => !s.startsWith(MDI_PREFIX));
+    const recent = known.size === 0 ? sfRecent : sfRecent.filter((s) => known.has(s));
     browsePane = html`<div class="sym-browse">
+      ${offersMdi ? packToggle(browser, key, showing) : nothing}
       <div class="sym-controls">
         <input type="search" placeholder="Search symbols" .value=${query} @input=${onInput((v) => browser.setQuery(key, v))} />
         <select @change=${onInput((v) => browser.setCategory(key, v))}>
@@ -849,14 +904,56 @@ function symbolField(host: EditorHost, symbol: string, set: (v: string) => void,
   return html`
     <label class="field"><span>Symbol</span>
       <input type="text" class="mono" .value=${symbol} placeholder="lightbulb.fill"
-        @input=${onInput(set)} @change=${onInput((v) => {
+        @input=${onInput(typed)} @change=${onInput((v) => {
           // A typed name only joins the recents list once it is known to be
           // real, so a half finished name never sticks around as a tile.
-          if (known.size === 0 || known.has(v.trim())) browser.noteUsed(v);
+          const name = v.trim();
+          if (name.startsWith(MDI_PREFIX)) {
+            if (host.icons.mdiPath?.(name) !== undefined) browser.noteUsed(v);
+          } else if (known.size === 0 || known.has(name)) {
+            browser.noteUsed(v);
+          }
         })} /></label>
     ${missing ? html`<div class="hint warn">The installed icon pack has no <code>${current}</code>, so the preview shows a placeholder. The watch still draws it if the name is a real SF Symbol.</div>` : nothing}
     <button type="button" class="link" @click=${() => browser.toggle(key)}>${open ? "Hide symbols" : "Browse symbols"}</button>
     ${browsePane}`;
+}
+
+/**
+ * Whether to warn that the installed icon pack has no such symbol.
+ *
+ * A Material Design name is not in the SF pack and never will be, so the pack's
+ * silence about one says nothing. An empty pack has not loaded yet, and an
+ * empty name is not a mistake, only an unfinished one.
+ */
+export function symbolIsMissing(symbol: string, known: ReadonlySet<string>): boolean {
+  const name = symbol.trim();
+  return name !== "" && !name.startsWith(MDI_PREFIX) && known.size > 0 && !known.has(name);
+}
+
+/**
+ * The Material Design names matching a search, best first.
+ *
+ * The `mdi:` prefix is on every name, so searching for it would match
+ * everything and rank nothing. It comes off both sides, `searchSymbols` does
+ * the work it does for SF Symbols, and it goes back on the way out so callers
+ * only ever handle names as a document spells them.
+ */
+export function searchMdi(names: readonly string[], query: string): string[] {
+  const q = query.trim();
+  const bare = q.startsWith(MDI_PREFIX) ? q.slice(MDI_PREFIX.length) : q;
+  const stripped = names.map((n) => (n.startsWith(MDI_PREFIX) ? n.slice(MDI_PREFIX.length) : n));
+  return searchSymbols(stripped, bare).map((n) => MDI_PREFIX + n);
+}
+
+/** Which of the two catalogues the grid below is showing. */
+function packToggle(browser: EditorHost["symbols"], key: string, showing: SymbolPack): TemplateResult {
+  const options: [SymbolPack, string][] = [["sf", "SF Symbols"], ["mdi", "Material Design Icons"]];
+  return html`<div class="seg wide" role="radiogroup" aria-label="Icon set">
+    ${options.map(([v, text]) => html`<button type="button" role="radio" aria-checked=${v === showing ? "true" : "false"}
+      class=${v === showing ? "on" : ""}
+      @click=${() => { if (v !== showing) browser.setPack(key, v); }}>${text}</button>`)}
+  </div>`;
 }
 
 // ── Value editor ──────────────────────────────────────────────────────────
@@ -1084,6 +1181,10 @@ export interface ValueEditorOptions {
   showResolved?: boolean;
   /** Fixed text is an SF Symbol name, so offer the picker instead of a plain field. */
   symbol?: boolean;
+  /** Where the picker puts a Material Design icon's SVG path, and undefined
+   * when the pick was an SF Symbol. Given only by the icon layer: it is the one
+   * place with a `path` key to write. Without it the picker stays SF-only. */
+  setSymbolPath?: (d: string | undefined) => void;
   /** Undo coalescing key prefix. */
   key: string;
   /** What this value is for, shown beside the chip. */
@@ -1298,7 +1399,7 @@ function valueForm(host: EditorHost, value: Value, set: (v: Value) => void, opts
   switch (k.kind) {
     case "literal":
       body = opts.symbol
-        ? symbolField(host, k.value, (v) => setKind({ ...k, value: v }), key)
+        ? symbolField(host, k.value, (v) => setKind({ ...k, value: v }), key, opts.setSymbolPath)
         : textField("Text", k.value, (v) => setKind({ ...k, value: v }));
       break;
     case "entityState":
@@ -2365,8 +2466,14 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
     }
     case "icon":
       content = html`
-        ${valueEditor(host, el.payload.symbol, (v) => upd((e) => { (e as typeof el).payload.symbol = v; }, "symbol"), { noFormat: true, showResolved: true, symbol: true, label: "Symbol", key: `${key}-symbol` })}
-        <div class="hint">An entity source draws that entity's own icon instead.</div>`;
+        ${valueEditor(host, el.payload.symbol, (v) => upd((e) => { (e as typeof el).payload.symbol = v; }, "symbol"), {
+          noFormat: true, showResolved: true, symbol: true, label: "Symbol", key: `${key}-symbol`,
+          setSymbolPath: (d) => upd((e) => {
+            const p = (e as typeof el).payload;
+            if (d) p.path = d; else delete p.path;
+          }, "symbol"),
+        })}
+        <div class="hint">An entity source draws that entity's own icon instead. A Material Design icon travels with the document, so a rule that swaps the icon goes back to SF Symbols.</div>`;
       look = shapeSizeField(host, el, family, "Icon size", { step: 1, min: 4, def: baseSize("size") });
       break;
     case "gauge": {
@@ -2854,7 +2961,7 @@ const TIMESTAMP_KEYS = ["timestamp", "timestampCorner", "timestampSize"] as cons
 /** The payload fields the Content card owns, per kind. */
 const CONTENT_KEYS: Record<CElement["kind"], readonly string[]> = {
   text: ["value", "countdown"],
-  icon: ["symbol"],
+  icon: ["symbol", "path"],
   gauge: ["value", "minValue", "maxValue", "total"],
   chart: ["value", "historyMinutes", "historyPoints", "limit", "takeFromEnd"],
   timeline: ["value", "historyMinutes"],

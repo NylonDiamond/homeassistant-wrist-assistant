@@ -283,6 +283,11 @@ export interface TextElement extends ElementBase {
 
 export interface IconElement extends ElementBase {
   symbol: Value;
+  /** The SVG `d` string of a Material Design icon, against MDI's invariant
+   * 24x24 viewBox. Set only when `symbol` is the literal name of an MDI icon
+   * (`mdi:flash`), and carried in the document so the watch draws MDI without
+   * shipping a catalogue. Absent means the layer draws an SF Symbol. */
+  path?: string;
   size: number;
 }
 
@@ -1416,15 +1421,16 @@ function parseElementKind(raw: unknown): Element {
       if (p.countdown === true) payload.countdown = true;
       return { kind: "text", payload };
     }
-    case "icon":
-      return {
-        kind: "icon",
-        payload: {
-          ...parseElementBase(p, "#FFFFFF"),
-          symbol: isObject(p.symbol) ? parseValue(p.symbol) : literal("lightbulb"),
-          size: num(p.size, 14),
-        },
+    case "icon": {
+      const payload: IconElement = {
+        ...parseElementBase(p, "#FFFFFF"),
+        symbol: isObject(p.symbol) ? parseValue(p.symbol) : literal("lightbulb"),
+        size: num(p.size, 14),
       };
+      const path = optStr(p.path);
+      if (path !== undefined && path !== "") payload.path = path;
+      return { kind: "icon", payload };
+    }
     case "gauge": {
       const el: GaugeElement = {
         ...parseElementBase(p, "#FFFFFF"),
@@ -2014,8 +2020,14 @@ function encodeElementKind(el: Element): J {
       if (el.payload.countdown === true) o.countdown = true;
       return { kind: "text", payload: o };
     }
-    case "icon":
-      return { kind: "icon", payload: { ...base(el.payload), symbol: encodeValue(el.payload.symbol), size: encNum(el.payload.size) } };
+    case "icon": {
+      const o: J = { ...base(el.payload), symbol: encodeValue(el.payload.symbol) };
+      // Between `symbol` and `size`, matching the app's encoder, and only when
+      // set: an SF Symbol layer writes the bytes it always did.
+      if (el.payload.path !== undefined && el.payload.path !== "") o.path = el.payload.path;
+      o.size = encNum(el.payload.size);
+      return { kind: "icon", payload: o };
+    }
     case "gauge": {
       const g = el.payload;
       const o: J = {
@@ -2358,7 +2370,7 @@ const K = {
   elementEnvelope: ["kind", "payload"],
   elementBase: ["id", "colorSlot", "rules", "frame", "isHidden", "groupId"],
   text: ["value", "fontSize", "fontWeight", "countdown"],
-  icon: ["symbol", "size"],
+  icon: ["symbol", "path", "size"],
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex",
     "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex", "total"],
   chart: ["value", "historyMinutes", "historyPoints", "style", "limit", "takeFromEnd", "scale", "minValue", "maxValue",
