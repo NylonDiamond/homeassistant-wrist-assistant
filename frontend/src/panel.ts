@@ -4250,8 +4250,10 @@ export class WristAssistantPanel extends LitElement {
    *
    * Home Assistant reached over plain http has no `navigator.clipboard` at all,
    * and a browser can refuse the write where it does have one, so the fallback
-   * is not a rare branch: select the text and name the keys, which works
-   * everywhere a page can be read.
+   * is not a rare branch. The old `execCommand("copy")` still copies a selection
+   * on plain http when a click triggered it, in every browser that matters, so
+   * it goes second. Only when that fails too does the user get the keys named:
+   * the text stays selected, so one shortcut finishes the job.
    */
   private async copyShareText(text: string) {
     try {
@@ -4266,7 +4268,13 @@ export class WristAssistantPanel extends LitElement {
     const area = this.renderRoot.querySelector<HTMLTextAreaElement>("dialog.share-dialog textarea");
     area?.focus();
     area?.select();
-    this.shareNote = "Press Cmd+C or Ctrl+C to copy.";
+    let copied = false;
+    try {
+      copied = document.execCommand("copy");
+    } catch {
+      copied = false;
+    }
+    this.shareNote = copied ? "Copied." : "Press Cmd+C or Ctrl+C to copy.";
   }
 
   /** Save the text as a file: a Blob and one click on a link nobody sees. The
