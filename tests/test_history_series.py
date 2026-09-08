@@ -127,6 +127,23 @@ def test_every_reading_keeps_only_the_newest_when_capped():
     assert kept[-1] == 149.0
 
 
+def test_every_reading_keeps_the_anchor_as_its_oldest_point():
+    # Same rule as bucket_series: the value in force when the window opened is
+    # a reading. A quiet sensor has no samples at all, and an empty series does
+    # not blank a complication, it leaves the stale drawing on the wrist.
+    assert raw_series([], anchor=2.5) == [2.5]
+    assert raw_series([(at(30), 9.0)], anchor=2.5) == [2.5, 9.0]
+    assert raw_series([], anchor=None) == []
+
+
+def test_every_reading_sheds_the_anchor_first_when_capped():
+    samples = [(at(i), float(i)) for i in range(120)]
+    kept = raw_series(samples, anchor=-1.0)
+    assert len(kept) == 120
+    assert kept[0] == 0.0  # the anchor went, every real reading stayed
+    assert kept[-1] == 119.0
+
+
 def test_spans_are_clamped_and_junk_falls_back():
     assert clamp_minutes(999_999) == 7 * 24 * 60
     assert clamp_minutes(0) == 1

@@ -153,17 +153,30 @@ def bucket_series(
     return out
 
 
-def raw_series(samples: list[tuple[datetime, float]], limit: int = MAX_POINTS) -> list[float]:
+def raw_series(
+    samples: list[tuple[datetime, float]],
+    limit: int = MAX_POINTS,
+    anchor: float | None = None,
+) -> list[float]:
     """Every recorded reading as it stands, oldest first, newest `limit` kept.
 
     The other answer to "how many readings": none of the averaging above, one
     point per state change. A sensor that reports on change draws its real
     shape this way, with a step for every report and no quiet slots invented
     between them. The time axis is no longer even, which is the trade.
+
+    `anchor` is the entity's value immediately before the window, exactly as
+    in `bucket_series`, and it counts as the oldest reading. A sensor that did
+    not change inside the window has no samples at all, and without the anchor
+    it would come back empty; an empty series does not blank a complication,
+    it leaves the stale drawing on the wrist. Being the oldest, it is also the
+    first thing the `limit` sheds.
     """
     if limit < 1:
         return []
     values = [value for _, value in samples]
+    if anchor is not None:
+        values.insert(0, anchor)
     return values[-limit:]
 
 
@@ -250,7 +263,9 @@ async def async_history_series(
 
     In `numeric` mode the states are read as numbers and bucketed: `points` of
     `EVERY_READING` skips the bucketing and returns the recorded readings
-    themselves, newest `MAX_POINTS` of them.
+    themselves, newest `MAX_POINTS` of them. Both paths keep the pre-window
+    anchor reading, so a sensor that did not change inside the window still
+    draws a line rather than nothing.
 
     In `states` mode nothing is read as a number and nothing is averaged. The
     reply is the state changes in the window as `offset:state` pairs, which is
@@ -332,5 +347,5 @@ async def async_history_series(
         samples.append((when, value))
 
     if points == EVERY_READING:
-        return series_to_string(raw_series(samples))
+        return series_to_string(raw_series(samples, anchor=anchor))
     return series_to_string(bucket_series(samples, start, end, points, anchor))
