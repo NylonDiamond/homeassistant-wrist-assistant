@@ -279,7 +279,17 @@ export interface TextElement extends ElementBase {
   /** Live countdown mode: the watch ticks toward the value's target instant (an
    * active HA timer's finishes_at, or any future ISO/unix timestamp). */
   countdown?: boolean;
+  /** Fixed-width digits, so a number that ticks does not shuffle the characters
+   * beside it. Absent means off. */
+  monospacedDigits?: boolean;
+  /** How many lines the text may wrap onto, 1 or 2. Absent means 1. */
+  lineLimit?: number;
+  /** Which edge of the layer box the text sits against. Absent means center. */
+  alignment?: TextAlignment;
 }
+
+/** Horizontal placement inside a text layer's box. */
+export type TextAlignment = "leading" | "center" | "trailing";
 
 export interface IconElement extends ElementBase {
   symbol: Value;
@@ -1414,6 +1424,14 @@ function parseElementKind(raw: unknown): Element {
         fontWeight: (optStr(p.fontWeight) as FontWeight | undefined) ?? "regular",
       };
       if (p.countdown === true) payload.countdown = true;
+      if (p.monospacedDigits === true) payload.monospacedDigits = true;
+      // Clamped, not rejected: a count outside 1...2 is a document asking for a
+      // look this build does not have, not a document this build cannot read.
+      const lines = typeof p.lineLimit === "number" ? Math.round(p.lineLimit) : 1;
+      if (Math.min(2, Math.max(1, lines)) === 2) payload.lineLimit = 2;
+      // An unknown spelling falls back to center, matching the Swift decoder.
+      const align = optStr(p.alignment);
+      if (align === "leading" || align === "trailing") payload.alignment = align;
       return { kind: "text", payload };
     }
     case "icon":
@@ -2012,6 +2030,9 @@ function encodeElementKind(el: Element): J {
     case "text": {
       const o: J = { ...base(el.payload), value: encodeValue(el.payload.value), fontSize: encNum(el.payload.fontSize), fontWeight: el.payload.fontWeight };
       if (el.payload.countdown === true) o.countdown = true;
+      if (el.payload.monospacedDigits === true) o.monospacedDigits = true;
+      if (el.payload.lineLimit === 2) o.lineLimit = 2;
+      if (el.payload.alignment !== undefined && el.payload.alignment !== "center") o.alignment = el.payload.alignment;
       return { kind: "text", payload: o };
     }
     case "icon":
@@ -2357,7 +2378,7 @@ const K = {
   frame: ["x", "y", "width", "height", "rotationDegrees"],
   elementEnvelope: ["kind", "payload"],
   elementBase: ["id", "colorSlot", "rules", "frame", "isHidden", "groupId"],
-  text: ["value", "fontSize", "fontWeight", "countdown"],
+  text: ["value", "fontSize", "fontWeight", "countdown", "monospacedDigits", "lineLimit", "alignment"],
   icon: ["symbol", "size"],
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex",
     "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex", "total"],

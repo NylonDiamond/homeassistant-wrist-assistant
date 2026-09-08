@@ -100,6 +100,44 @@ describe("encodeConfig", () => {
     expect(JSON.stringify(encodeConfig(bare))).not.toContain("countdown");
   });
 
+  it("round-trips the text look fields, and defaults stay off the wire", () => {
+    const cfg = newConfig("X", 0);
+    const el = newElement("text");
+    if (el.kind === "text") {
+      el.payload.monospacedDigits = true;
+      el.payload.lineLimit = 2;
+      el.payload.alignment = "trailing";
+    }
+    cfg.elements = [el];
+    const enc = encodeConfig(cfg) as Record<string, unknown>;
+    const back = parseConfig(enc).elements[0];
+    expect(back?.kind === "text" && back.payload.monospacedDigits).toBe(true);
+    expect(back?.kind === "text" && back.payload.lineLimit).toBe(2);
+    expect(back?.kind === "text" && back.payload.alignment).toBe("trailing");
+    expect(auditUnknownKeys(enc)).toEqual([]);
+
+    const bare = newConfig("Y", 1);
+    bare.elements = [newElement("text")];
+    const bareJson = JSON.stringify(encodeConfig(bare));
+    expect(bareJson).not.toContain("monospacedDigits");
+    expect(bareJson).not.toContain("lineLimit");
+    expect(bareJson).not.toContain("alignment");
+  });
+
+  it("falls back to the defaults when the text look keys are junk or missing", () => {
+    const cfg = newConfig("X", 0);
+    cfg.elements = [newElement("text")];
+    const enc = encodeConfig(cfg) as Record<string, unknown>;
+    const payload = (enc.elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
+    payload.alignment = "justified";
+    payload.lineLimit = 7;
+    const back = parseConfig(enc).elements[0];
+    // An alignment this build does not know is a look the document asks for,
+    // not a document this build cannot read, so it centres instead of failing.
+    expect(back?.kind === "text" && back.payload.alignment).toBeUndefined();
+    expect(back?.kind === "text" && back.payload.lineLimit).toBe(2);
+  });
+
   it("round-trips a line shape, and thickness stays absent at its default", () => {
     const cfg = newConfig("X", 0);
     const el = newElement("shape");
@@ -453,9 +491,9 @@ describe("auditUnknownKeys", () => {
   it("names every unknown path", () => {
     const doc = structuredClone(fixture.config) as Record<string, unknown>;
     doc.futureFlag = true;
-    ((doc.elements as Record<string, unknown>[])[1]!.payload as Record<string, unknown>).alignment = "left";
+    ((doc.elements as Record<string, unknown>[])[1]!.payload as Record<string, unknown>).tracking = "tight";
     ((doc.perFamily as unknown[])[5] as Record<string, unknown>).glow = 1;
-    expect(auditUnknownKeys(doc)).toEqual(["$.futureFlag", "$.elements[1].payload.alignment", "$.perFamily.corner.glow"]);
+    expect(auditUnknownKeys(doc)).toEqual(["$.futureFlag", "$.elements[1].payload.tracking", "$.perFamily.corner.glow"]);
   });
 });
 
