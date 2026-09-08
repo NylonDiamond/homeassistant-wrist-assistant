@@ -1,13 +1,15 @@
-// SF Symbol providers behind one interface so the development and release
+// Icon providers behind one interface so the development and release
 // providers can differ without touching the saved document format.
 //
-// `BundledIconProvider` reads the gzipped symbol file the integration ships
-// beside the panel bundle, so pictures work with nothing else installed.
-// `CupertinoIconProvider` uses the icon set the Home Assistant Cupertino
-// Icons frontend registers on `window.customIcons.ios` (names like
-// `lightbulb-fill` for `lightbulb.fill`); it stays as a fallback for anyone
-// who already has that integration. `PlaceholderIconProvider` draws nothing
-// and lets the renderer show its dashed "?" box.
+// `BundledIconProvider` reads a gzipped icon file the integration ships beside
+// the panel bundle, so pictures work with nothing else installed. There are two
+// such files: SF Symbols, and Material Design. `CupertinoIconProvider` uses the
+// icon set the Home Assistant Cupertino Icons frontend registers on
+// `window.customIcons.ios` (names like `lightbulb-fill` for `lightbulb.fill`);
+// it stays as a fallback for anyone who already has that integration.
+// `PlaceholderIconProvider` draws nothing and lets the renderer show its dashed
+// "?" box. `SplitIconProvider` puts an SF provider and the Material Design file
+// behind one object, routing on the `mdi:` prefix.
 
 import { svg, type TemplateResult } from "lit";
 import type { IconProvider } from "./renderer.js";

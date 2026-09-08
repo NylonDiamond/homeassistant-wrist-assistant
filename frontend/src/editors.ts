@@ -863,7 +863,10 @@ function symbolField(
         ? html`<div class="hint">Loading the Material Design catalogue.</div>`
         : matches.length === 0
           ? html`<div class="hint">Nothing matches that search. Any <code>mdi:</code> name can still be typed above.</div>`
-          : html`<div class="hint">${symbolCount(shown.length, matches.length, query.trim() !== "", names.length)}</div>`}
+          // Always the searching wording: the MDI set is thousands of names
+          // deep and the grid never shows all of them, so "N available" would
+          // claim more than is on screen even with the box empty.
+          : html`<div class="hint">${symbolCount(shown.length, matches.length, true, names.length)}</div>`}
       ${names !== undefined && isMdiName && !names.includes(current)
         ? html`<div class="hint warn">There is no <code>${current}</code> in this build's Material Design set, so the watch draws a question mark.</div>`
         : nothing}
