@@ -1734,6 +1734,9 @@ export class WristAssistantPanel extends LitElement {
     .ok { color: var(--success-color, #43a047); font-size: 12px; }
     .no { color: var(--error-color, #db4437); font-size: 12px; }
     select.adder { font: inherit; font-size: 12px; padding: 3px 6px; margin-top: 4px; }
+    /* Inside a row of adders the top margin would push it off the buttons'
+       baseline; the row already spaces itself. */
+    .adders select.adder { margin-top: 0; }
 
     /* Form controls: label on the left, control on the right, the way a
        settings page reads. Fields that carry their own machinery (the entity

@@ -53,6 +53,7 @@ import {
   chartTrendGlyph,
   chartSortedBands,
   chartUsesBands,
+  clockTime,
   elementsFor,
   formatIsEmpty,
   hasFreeTimestamp,
@@ -1039,6 +1040,20 @@ export class Resolver {
         if (lhsNumber === undefined || lo === undefined || hi === undefined) return false;
         const [a, b] = lo <= hi ? [lo, hi] : [hi, lo];
         return lhsNumber >= a && lhsNumber <= b;
+      }
+      case "timeBetween": {
+        const now = clockTime(lhs);
+        const startRaw = rhsString();
+        const endRaw = this.resolve(c.upper);
+        const from = startRaw === undefined ? undefined : clockTime(startRaw);
+        const to = endRaw === undefined ? undefined : clockTime(endRaw);
+        if (now === undefined || from === undefined || to === undefined) return false;
+        // Deliberately not sorted: the order the author wrote is the window. Equal
+        // bounds are an empty window rather than a whole day, so a half-typed pair
+        // never lights the rule up.
+        if (from === to) return false;
+        if (from < to) return now >= from && now < to;
+        return now >= from || now < to;
       }
       case "contains": {
         const r = rhsString();
