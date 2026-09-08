@@ -46,6 +46,7 @@ import {
   chartBandColor,
   chartHistoryKey,
   chartStatText,
+  chartTrendGlyph,
   chartSortedBands,
   chartUsesBands,
   elementsFor,
@@ -191,6 +192,20 @@ export function chartStatValue(r: ChartReadings, stat: ChartStat): number | unde
     case "average": return r.values.reduce((a, b) => a + b, 0) / r.values.length;
     case "top": return r.domainMax;
     case "bottom": return r.domainMin;
+    case "first": return r.values[0];
+    case "delta": return r.values[r.values.length - 1]! - r.values[0]!;
+    case "sum": return r.values.reduce((a, b) => a + b, 0);
+    case "trend": {
+      // The sign of the change, but only after the change has been rounded the
+      // way every other number off this chart is rounded. Without that deadband
+      // a series that wobbled in the last decimal place the chart does not even
+      // print would still read as rising.
+      const change = r.values[r.values.length - 1]! - r.values[0]!;
+      const rounded = Number(chartStatText(change, r.domainMax - r.domainMin));
+      if (rounded > 0) return 1;
+      if (rounded < 0) return -1;
+      return 0;
+    }
   }
 }
 /** One stretch of a timeline in one colour. `start` and `end` are fractions of
@@ -822,6 +837,9 @@ export class Resolver {
     // A chart's number is in the chart's entity's unit, which is the unit a
     // reader wants after it ("119.6 V"), so the stat borrows it.
     if (k.kind === "chartStat") {
+      // A trend reads as an arrow, and "↑ V" is nonsense, so the glyph never
+      // borrows a unit however the layer is formatted.
+      if (k.stat === "trend") return undefined;
       const entity = this.charts.get(k.layer.toUpperCase())?.entity;
       return entity ? this.ctx.entityStates.get(entity.entityId)?.unitOfMeasurement : undefined;
     }
@@ -849,7 +867,11 @@ export class Resolver {
         // so a "top of the scale" label and the tallest bar always agree.
         const r = this.charts.get(deref.kind.layer.toUpperCase());
         const n = r ? chartStatValue(r, deref.kind.stat) : undefined;
-        raw = r && n !== undefined ? chartStatText(n, r.domainMax - r.domainMin) : undefined;
+        if (r && n !== undefined) {
+          raw = deref.kind.stat === "trend"
+            ? chartTrendGlyph(n)
+            : chartStatText(n, r.domainMax - r.domainMin);
+        }
         break;
       }
       default: {

@@ -84,13 +84,19 @@ export type ChartColoring = "uniform" | "bands";
  * series the chart draws, after `limit` has trimmed it; `top` and `bottom` are
  * the ends of the plot's range, which on a Fixed chart differ from the readings.
  * Mirrors `ChartStatSpec.Stat` in the app repo. */
-export type ChartStat = "latest" | "highest" | "lowest" | "average" | "top" | "bottom";
+export type ChartStat =
+  | "latest" | "highest" | "lowest" | "average" | "top" | "bottom"
+  | "first" | "delta" | "sum" | "trend";
 
 export const CHART_STATS: readonly [ChartStat, string][] = [
   ["latest", "Newest reading"],
+  ["first", "First reading"],
   ["highest", "Highest reading"],
   ["lowest", "Lowest reading"],
   ["average", "Average reading"],
+  ["delta", "Change"],
+  ["sum", "Total"],
+  ["trend", "Trend arrow"],
   ["top", "Top of the scale"],
   ["bottom", "Bottom of the scale"],
 ];
@@ -457,6 +463,16 @@ export function chartStatText(value: number, span: number): string {
   const magnitude = Math.abs(span);
   const places = magnitude >= 10 ? 0 : magnitude >= 1 ? 1 : 2;
   return value.toFixed(places);
+}
+
+/** The arrow a `trend` stat prints, from the sign the readings settled on. A
+ * glyph rather than a number, so it never goes through the number formatting:
+ * rounding or a unit on an arrow means nothing. Mirrors
+ * `ChartElement.trendGlyph` in Swift. */
+export function chartTrendGlyph(sign: number): string {
+  if (sign > 0) return "↑";
+  if (sign < 0) return "↓";
+  return "→";
 }
 
 
@@ -1775,6 +1791,13 @@ const CHART_LABEL_SEATS: Record<ChartStat, { x: number; y: number }> = {
   latest: { x: 1, y: 0 },
   bottom: { x: 0, y: 1 },
   lowest: { x: 0.35, y: 1 },
+  // The arrow reads as a suffix to the newest reading, so it seats beside it.
+  trend: { x: 0.85, y: 0 },
+  // The change and the total belong with the numbers along the top; the first
+  // reading is the oldest, so it sits at the left where the series starts.
+  delta: { x: 0.5, y: 0 },
+  sum: { x: 0.2, y: 0 },
+  first: { x: 0.65, y: 1 },
 };
 
 /** A frame for a number of `fontSize` points, `chars` glyphs wide, seated at a
@@ -1797,21 +1820,26 @@ function chartLabelFrame(chart: NormalizedFrame, seat: { x: number; y: number },
 
 /** Add a text layer that prints one of the chart's numbers, in the chart's
  * group, and return its id. The newest reading carries the entity's unit by
- * default ("119.6 V"), because that is the number a glance wants whole; the
- * others sit beside a plot that already says what they are. Undefined when
- * `chartId` is not a chart. */
+ * default ("119.6 V"), because that is the number a glance wants whole, and so
+ * do the change and the total, which are quantities in their own right rather
+ * than a reading off a plot that already says what it is. The trend is an
+ * arrow, so it takes no unit whatever the format says. Undefined when `chartId`
+ * is not a chart. */
 export function addChartLabel(cfg: CustomComplicationConfig, chartId: string, stat: ChartStat): string | undefined {
   const chart = cfg.elements.find((el) => el.payload.id === chartId);
   if (!chart || chart.kind !== "chart") return undefined;
   const el = newElement("text") as Extract<Element, { kind: "text" }>;
   const fontSize = stat === "latest" ? 10 : 8;
   const value: Value = { kind: { kind: "chartStat", layer: chartId, stat } };
-  if (stat === "latest") value.format = { useEntityUnit: true };
+  if (stat === "latest" || stat === "delta" || stat === "sum") value.format = { useEntityUnit: true };
   el.payload.value = value;
   el.payload.fontSize = fontSize;
   el.payload.fontWeight = "medium";
   el.payload.colorSlot = { baseColorHex: stat === "latest" ? "#FFFFFF" : "#FFFFFF99" };
-  el.payload.frame = chartLabelFrame(chart.payload.frame, CHART_LABEL_SEATS[stat], fontSize, stat === "latest" ? 7 : 4);
+  // Width is a seat, not a rule: the arrow needs room for one glyph, a number
+  // carrying a unit needs room for the unit.
+  const chars = stat === "trend" ? 2 : value.format?.useEntityUnit ? 7 : 4;
+  el.payload.frame = chartLabelFrame(chart.payload.frame, CHART_LABEL_SEATS[stat], fontSize, chars);
   // Directly above the chart in z-order, so the number sits on the plot.
   const index = cfg.elements.findIndex((e) => e.payload.id === chartId);
   cfg.elements.splice(index + 1, 0, el);

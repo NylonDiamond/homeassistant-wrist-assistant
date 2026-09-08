@@ -630,6 +630,54 @@ describe("a chart's numbers", () => {
     expect(stat("119.2, 119.6", "latest", undefined, { decimals: 1, useEntityUnit: true }, "V")).toBe("119.6 V");
   });
 
+  it("reads the first, the change and the total off the same trimmed series", () => {
+    expect(stat("13, 20, 30", "first")).toBe("13");
+    expect(stat("13, 20, 30", "delta")).toBe("17");
+    expect(stat("13, 20, 30", "sum")).toBe("63");
+    expect(stat("30, 20, 13", "delta")).toBe("-17");
+    const trim = (p: ChartElement) => { p.limit = 2; p.takeFromEnd = false; };
+    expect(stat("13, 20, 30", "first", trim)).toBe("13.0");
+    expect(stat("13, 20, 30", "sum", trim)).toBe("33.0");
+  });
+
+  it("prints the trend as an arrow rather than a number", () => {
+    expect(stat("13, 20, 30", "trend")).toBe("↑");
+    expect(stat("30, 20, 13", "trend")).toBe("↓");
+    expect(stat("20, 30, 20", "trend")).toBe("→");
+  });
+
+  it("reads a change too small for the chart to print as flat, not as a rise", () => {
+    // Span 0.004, so the chart prints two decimals and a change of 0.004
+    // rounds to "0.00". An arrow off a wobble in a digit nobody sees is a lie.
+    expect(stat("21.100, 21.104", "trend")).toBe("→");
+    expect(stat("21.10, 21.14", "trend")).toBe("↑");
+  });
+
+  it("never puts a unit or a rounding on the arrow, whatever the format says", () => {
+    expect(stat("13, 30", "trend", undefined, { decimals: 2, useEntityUnit: true }, "V")).toBe("↑");
+  });
+
+  it("prints the placeholder for the newer stats when there is nothing to read", () => {
+    expect(stat("", "first")).toBe("--");
+    expect(stat("unavailable", "delta")).toBe("--");
+    expect(stat("", "sum")).toBe("--");
+    expect(stat("", "trend")).toBe("--");
+  });
+
+  it("lets a decimals format round the change and the total", () => {
+    expect(stat("13, 20, 30", "delta", undefined, { decimals: 2 })).toBe("17.00");
+    expect(stat("13, 20, 30", "sum", undefined, { decimals: 1, useEntityUnit: true }, "V")).toBe("63.0 V");
+  });
+
+  it("falls back to the newest reading when the stat spelling is not one it knows", () => {
+    const { cfg, chartId } = withStat("13, 20, 30", "latest");
+    const encoded = encodeConfig(cfg) as { elements: { payload: { value: { kind: Record<string, unknown> } } }[] };
+    encoded.elements[0]!.payload.value.kind = { kind: "chartStat", layer: chartId, stat: "medianOfTomorrow" };
+    const back = parseConfig(encoded).elements[0]!;
+    if (back.kind !== "text") throw new Error("expected a text layer");
+    expect(back.payload.value.kind).toEqual({ kind: "chartStat", layer: chartId, stat: "latest" });
+  });
+
   it("prints the placeholder for a chart the document no longer has", () => {
     const { cfg, chartId } = withStat("1,2,3", "latest");
     cfg.elements = cfg.elements.filter((e) => e.payload.id !== chartId);
