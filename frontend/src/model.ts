@@ -180,7 +180,7 @@ export interface ColorSlot {
 
 export type ComparisonKind =
   | "equals" | "notEquals" | "isOn" | "isOff" | "isUnavailable" | "isStale" | "isEmpty"
-  | "greaterThan" | "greaterOrEqual" | "lessThan" | "lessOrEqual" | "between"
+  | "greaterThan" | "greaterOrEqual" | "lessThan" | "lessOrEqual" | "between" | "timeBetween"
   | "contains" | "startsWith" | "endsWith" | "matchesRegex" | "isOneOf";
 
 export interface Comparison {
@@ -1275,7 +1275,7 @@ function parseComparison(o: unknown): Comparison {
     case "lessThan": case "lessOrEqual": case "contains": case "startsWith": case "endsWith":
       c.value = isObject(o.value) ? parseValue(o.value) : literal("");
       break;
-    case "between":
+    case "between": case "timeBetween":
       c.value = isObject(o.value) ? parseValue(o.value) : literal("");
       c.upper = isObject(o.upper) ? parseValue(o.upper) : literal("");
       break;
@@ -1940,7 +1940,7 @@ function encodeComparison(c: Comparison): J {
     case "lessThan": case "lessOrEqual": case "contains": case "startsWith": case "endsWith":
       o.value = encodeValue(c.value ?? literal(""));
       break;
-    case "between":
+    case "between": case "timeBetween":
       o.value = encodeValue(c.value ?? literal(""));
       o.upper = encodeValue(c.upper ?? literal(""));
       break;
@@ -3661,14 +3661,29 @@ export const RULE_TARGET_PROPERTIES: Record<RuleTarget, StyleProperty[]> = {
 
 export const COMPARISON_KINDS: ComparisonKind[] = [
   "isOn", "isOff", "equals", "notEquals", "isUnavailable", "isStale", "isEmpty",
-  "greaterThan", "greaterOrEqual", "lessThan", "lessOrEqual", "between",
+  "greaterThan", "greaterOrEqual", "lessThan", "lessOrEqual", "between", "timeBetween",
   "contains", "startsWith", "endsWith", "matchesRegex", "isOneOf",
 ];
 
-export function comparisonOperand(kind: ComparisonKind): "none" | "value" | "between" | "pattern" | "options" {
+/**
+ * A zero-padded 24-hour `HH:MM`, or undefined for anything else. Mirrors
+ * `CustomComplication.clockTime` in the app.
+ *
+ * Strict on purpose. `time(now)` compiles to `now().strftime('%H:%M')`, so the left side
+ * of a `timeBetween` is always this shape; a bound typed as "7:00" is a mistake, and a
+ * false test is a clearer answer than a guess. The padding is what lets the comparison
+ * itself be plain string ordering.
+ */
+export function clockTime(raw: string): string | undefined {
+  const s = raw.trim();
+  return /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(s) ? s : undefined;
+}
+
+export function comparisonOperand(kind: ComparisonKind): "none" | "value" | "between" | "times" | "pattern" | "options" {
   switch (kind) {
     case "isOn": case "isOff": case "isUnavailable": case "isStale": case "isEmpty": return "none";
     case "between": return "between";
+    case "timeBetween": return "times";
     case "matchesRegex": return "pattern";
     case "isOneOf": return "options";
     default: return "value";
@@ -3696,12 +3711,21 @@ export function newRule(): Rule {
   return { id: newId(), cases: [newCase()] };
 }
 
+/** The value when it already reads as a clock time, else a literal fallback. */
+function keptClock(v: Value | undefined, fallback: string): Value {
+  if (v && (v.kind.kind !== "literal" || clockTime(v.kind.value) !== undefined)) return v;
+  return literal(fallback);
+}
+
 /** Change the comparison kind, keeping an operand the new kind can still use. */
 export function switchComparison(c: Comparison, kind: ComparisonKind): Comparison {
   const next: Comparison = { kind };
   switch (comparisonOperand(kind)) {
     case "value": next.value = c.value ?? literal(""); break;
     case "between": next.value = c.value ?? literal(""); next.upper = c.upper ?? literal(""); break;
+    // A bound carried over from a numeric comparison ("20") is not a time, so the
+    // window starts at the usual night hours rather than at something unreadable.
+    case "times": next.value = keptClock(c.value, "22:00"); next.upper = keptClock(c.upper, "06:00"); break;
     case "pattern": next.pattern = c.pattern ?? ""; break;
     case "options": next.options = c.options ?? []; break;
     case "none": break;

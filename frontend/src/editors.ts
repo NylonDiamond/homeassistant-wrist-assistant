@@ -104,6 +104,7 @@ import {
   tapPointSize,
   attachTap,
   attachedTapsOf,
+  clockTime,
   comparisonOperand,
   defaultAttachedTapAction,
   detachTaps,
@@ -152,6 +153,15 @@ import {
   tableShape,
   whenText,
 } from "./states.js";
+import {
+  type RulePresetKind,
+  RULE_PRESETS,
+  WEEKDAY_LABELS,
+  rulePresetTests,
+  sunRef,
+  weekdayNumbers,
+  weekdayOptions,
+} from "./rule-presets.js";
 import { chartNumbers, timelineSamples, type ForcedBranches, type TimelineSample } from "./resolver.js";
 import type { HassEntityState, HassLike } from "./ha-api.js";
 import { MIN_ZOOM, familyTitle, type IconProvider } from "./renderer.js";
@@ -3382,7 +3392,20 @@ function caseEditor(host: EditorHost, c: RuleCase, ci: number, rule: Rule, targe
     </div>
     ${c.when.tests.length === 0 ? html`<div class="hint">No tests: this case always matches.</div>` : nothing}
     ${c.when.tests.map((t, ti) => testEditor(host, t, ti, (m) => updCase((x) => { const y = x.when.tests.find((z) => z.id === t.id); if (y) m(y); }), () => updCase((x) => { x.when.tests = x.when.tests.filter((z) => z.id !== t.id); }), `${key}-${t.id}`))}
-    <div class="adders"><button class="small" @click=${() => updCase((x) => { x.when.tests.push(newTest()); })}>+ test</button></div>
+    <div class="adders">
+      <button class="small" @click=${() => updCase((x) => { x.when.tests.push(newTest()); })}>+ test</button>
+      <select class="adder" @change=${(e: Event) => {
+        const sel = e.target as HTMLSelectElement;
+        const kind = sel.value as RulePresetKind | "";
+        sel.value = "";
+        if (!kind) return;
+        const tests = rulePresetTests(kind, sunRef(host.hass?.states));
+        updCase((x) => { x.when.tests.push(...tests); });
+      }}>
+        <option value="">+ preset…</option>
+        ${RULE_PRESETS.map((p) => html`<option value=${p.kind} title=${p.hint}>${p.label}</option>`)}
+      </select>
+    </div>
     <div class="hint" style="margin-top:8px">Then:</div>
     ${changesEditor(host, c.then, target, (m) => updCase((x) => m(x.then)), `${key}-then`)}
   </div>`;
@@ -3406,8 +3429,17 @@ function testEditor(host: EditorHost, t: import("./model.js").Test, ti: number, 
       extra = html`${textField("Pattern", c.pattern ?? "", (v) => upd((x) => { x.comparison.pattern = v; }, "pattern"), { mono: true, placeholder: "^on$" })}
         ${c.pattern && !regexOk(c.pattern) ? html`<div class="hint warn">This pattern does not compile. The test fails until it does.</div>` : nothing}`;
       break;
+    case "times":
+      extra = html`<div class="row-inline">
+          ${clockOperand(host, "From", c.value ?? literal("22:00"), (v) => upd((x) => { x.comparison.value = v; }, "rhs"), `${key}-rhs`)}
+          ${clockOperand(host, "To", c.upper ?? literal("06:00"), (v) => upd((x) => { x.comparison.upper = v; }, "upper"), `${key}-upper`)}
+        </div>
+        <div class="hint">The start is included and the end is not. An end earlier than the start wraps midnight, so 22:00 to 06:00 is the night. Equal times match nothing.</div>`;
+      break;
     case "options":
-      extra = textField("Options (comma separated)", (c.options ?? []).join(", "), (v) => upd((x) => { x.comparison.options = v.split(",").map((s) => s.trim()).filter(Boolean); }, "options"));
+      extra = isWeekdayValue(t.value)
+        ? weekdayRow(c.options ?? [], (days) => upd((x) => { x.comparison.options = weekdayOptions(days); }, "options"))
+        : textField("Options (comma separated)", (c.options ?? []).join(", "), (v) => upd((x) => { x.comparison.options = v.split(",").map((s) => s.trim()).filter(Boolean); }, "options"));
       break;
     case "none":
       break;
@@ -3428,6 +3460,44 @@ function testEditor(host: EditorHost, t: import("./model.js").Test, ti: number, 
 
 function regexOk(pattern: string): boolean {
   try { new RegExp(pattern); return true; } catch { return false; }
+}
+
+/**
+ * One end of a `timeBetween` window.
+ *
+ * A literal gets the browser's own time control, which is already zero-padded
+ * `HH:MM` and already knows what a clock looks like. Anything else (an entity
+ * or a template, only reachable from a hand-written document) keeps the full
+ * value editor rather than being silently flattened to a time.
+ */
+function clockOperand(host: EditorHost, label: string, v: Value, set: (v: Value) => void, key: string): TemplateResult {
+  if (v.kind.kind !== "literal") {
+    return valueEditor(host, v, set, { showResolved: true, label, key });
+  }
+  const stored = v.kind.value;
+  const shown = clockTime(stored) ?? "";
+  return html`<label class="field"><span>${label}</span>
+    <input type="time" .value=${shown}
+      @input=${onInput((val) => set({ ...v, kind: { kind: "literal", value: val } }))} />
+    ${stored !== "" && shown === "" ? html`<div class="hint warn">"${stored}" is not a 24-hour HH:MM time. The test stays false until it is.</div>` : nothing}</label>`;
+}
+
+/** True when a test reads the weekday, which is what turns its options list
+ * into a row of days instead of a comma-separated list of numbers. */
+function isWeekdayValue(v: Value): boolean {
+  return v.kind.kind === "time" && v.kind.timeField === "weekday";
+}
+
+/** Mon..Sun as checkboxes over Jinja's 0..6. The stored options are those
+ * numbers, which read as nothing in a text box. */
+function weekdayRow(options: string[], set: (days: number[]) => void): TemplateResult {
+  const days = weekdayNumbers(options);
+  const toggle = (d: number) => set(days.includes(d) ? days.filter((x) => x !== d) : [...days, d]);
+  return html`<div class="field seg-field"><span>Days</span>
+    <div class="seg wide" role="group" aria-label="Days">
+      ${WEEKDAY_LABELS.map((name, d) => html`<button type="button" role="checkbox" aria-checked=${days.includes(d) ? "true" : "false"}
+        class=${days.includes(d) ? "on" : ""} @click=${() => toggle(d)}>${name}</button>`)}
+    </div></div>`;
 }
 
 function changesEditor(host: EditorHost, changes: StyleChange[], target: RuleTarget, updList: (m: (list: StyleChange[]) => void, k?: string) => void, key: string): TemplateResult {

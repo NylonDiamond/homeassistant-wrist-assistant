@@ -32,7 +32,8 @@ export const COMPARISON_LABELS: Record<ComparisonKind, string> = {
   isOn: "is on", isOff: "is off", equals: "equals", notEquals: "does not equal",
   isUnavailable: "is unavailable or unknown", isStale: "data is stale", isEmpty: "is empty",
   greaterThan: "is greater than", greaterOrEqual: "is at least", lessThan: "is less than", lessOrEqual: "is at most",
-  between: "is between", contains: "contains", startsWith: "starts with", endsWith: "ends with",
+  between: "is between", timeBetween: "is between times",
+  contains: "contains", startsWith: "starts with", endsWith: "ends with",
   matchesRegex: "matches regex", isOneOf: "is one of",
 };
 
@@ -406,6 +407,7 @@ export function whenText(c: Comparison, describe: (v: Value) => string = plainVa
     case "greaterThan": return `above ${lhs()}`;
     case "greaterOrEqual": return `${lhs()} or above`;
     case "between": return `${lhs()} to ${describe(c.upper ?? literal(""))}`;
+    case "timeBetween": return `${lhs()} to ${describe(c.upper ?? literal(""))}`;
     case "matchesRegex": return `matches ${c.pattern || "?"}`;
     case "isOneOf": return `is one of ${(c.options ?? []).join(", ") || "?"}`;
     default:

@@ -1,6 +1,6 @@
 {
   "name": "Rules",
-  "description": "Every comparison kind and style change kind, rule precedence, forced branches, and layout rules. The Swift side must produce the same resolved output.",
+  "description": "Every comparison kind and style change kind, rule precedence, forced branches, and layout rules. The clock layer pins timeBetween on both sides of midnight and a weekday isOneOf, with the rendered time and weekday fed in as template results. The Swift side must produce the same resolved output.",
   "config": {
     "schemaVersion": 4,
     "id": "AAAAAAAA-0000-4000-8000-000000000001",
@@ -11,7 +11,28 @@
       "circular",
       "corner"
     ],
-    "values": [],
+    "values": [
+      {
+        "id": "AAAAAAA7-0000-4000-8000-000000000007",
+        "name": "Clock",
+        "value": {
+          "kind": {
+            "kind": "time",
+            "timeField": "now"
+          }
+        }
+      },
+      {
+        "id": "AAAAAAA8-0000-4000-8000-000000000008",
+        "name": "Weekday",
+        "value": {
+          "kind": {
+            "kind": "time",
+            "timeField": "weekday"
+          }
+        }
+      }
+    ],
     "elements": [
       {
         "kind": "text",
@@ -647,6 +668,189 @@
           },
           "isHidden": false
         }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000039",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "clock"
+            }
+          },
+          "fontSize": 12,
+          "fontWeight": "regular",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [
+            {
+              "id": "DDDDDDDD-0000-4000-8000-000000000042",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000041",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "BBBBBBBB-0000-4000-8000-000000000040",
+                        "value": {
+                          "kind": {
+                            "kind": "named",
+                            "id": "AAAAAAA7-0000-4000-8000-000000000007"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "timeBetween",
+                          "value": {
+                            "kind": {
+                              "kind": "literal",
+                              "value": "08:00"
+                            }
+                          },
+                          "upper": {
+                            "kind": {
+                              "kind": "literal",
+                              "value": "17:00"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    {
+                      "kind": "setText",
+                      "value": {
+                        "kind": {
+                          "kind": "literal",
+                          "value": "office hours"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ],
+              "otherwise": [
+                {
+                  "kind": "setText",
+                  "value": {
+                    "kind": {
+                      "kind": "literal",
+                      "value": "after hours"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "id": "DDDDDDDD-0000-4000-8000-000000000045",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000044",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "BBBBBBBB-0000-4000-8000-000000000043",
+                        "value": {
+                          "kind": {
+                            "kind": "named",
+                            "id": "AAAAAAA7-0000-4000-8000-000000000007"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "timeBetween",
+                          "value": {
+                            "kind": {
+                              "kind": "literal",
+                              "value": "22:00"
+                            }
+                          },
+                          "upper": {
+                            "kind": {
+                              "kind": "literal",
+                              "value": "06:00"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    {
+                      "kind": "setColor",
+                      "value": {
+                        "kind": {
+                          "kind": "literal",
+                          "value": "#0A84FF"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ],
+              "otherwise": [
+                {
+                  "kind": "setColor",
+                  "value": {
+                    "kind": {
+                      "kind": "literal",
+                      "value": "#FF453A"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "id": "DDDDDDDD-0000-4000-8000-000000000048",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000047",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "BBBBBBBB-0000-4000-8000-000000000046",
+                        "value": {
+                          "kind": {
+                            "kind": "named",
+                            "id": "AAAAAAA8-0000-4000-8000-000000000008"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "isOneOf",
+                          "options": [
+                            "0",
+                            "1",
+                            "2",
+                            "3",
+                            "4"
+                          ]
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    {
+                      "kind": "setFontWeight",
+                      "weight": "bold"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "frame": {
+            "x": 0.1,
+            "y": 0.6,
+            "width": 0.5,
+            "height": 0.3,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
       }
     ],
     "perFamily": [
@@ -815,7 +1019,10 @@
         "domain": "sensor"
       }
     },
-    "templateResults": {},
+    "templateResults": {
+      "n_aaaaaaa7000040008000000000000007": "23:30",
+      "n_aaaaaaa8000040008000000000000008": "2"
+    },
     "dataAgeSeconds": 30
   },
   "expectedCompiled": {
@@ -827,7 +1034,10 @@
       "sensor.mode",
       "sensor.temp"
     ],
-    "expressionKeys": []
+    "expressionKeys": [
+      "n_aaaaaaa7000040008000000000000007",
+      "n_aaaaaaa8000040008000000000000008"
+    ]
   },
   "expected": {
     "rectangular": {
@@ -878,6 +1088,16 @@
           "fraction": 0.5,
           "colorHex": "#0A84FF",
           "opacity": 0.25
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000039",
+          "kind": "text",
+          "isHidden": false,
+          "text": "after hours",
+          "fontSize": 12,
+          "fontWeight": "bold",
+          "colorHex": "#0A84FF",
+          "opacity": 1
         }
       ]
     },
@@ -904,6 +1124,10 @@
         {
           "id": "EEEEEEEE-0000-4000-8000-000000000004",
           "kind": "gauge"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000039",
+          "kind": "text"
         }
       ]
     },
@@ -926,6 +1150,10 @@
         {
           "id": "EEEEEEEE-0000-4000-8000-000000000004",
           "kind": "gauge"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000039",
+          "kind": "text"
         }
       ]
     },
