@@ -27,6 +27,7 @@ import {
   type StyleChange,
   type StyleProperty,
   type TapAction,
+  type TextAlignment,
   type Test,
   type Value,
   type ValueFormat,
@@ -101,6 +102,12 @@ export interface ResolvedText extends ResolvedBase {
   /** Live-countdown target (epoch ms). When set, the watch ticks toward it;
    * `text` is the static fallback the preview may also show. */
   countdownEnd?: number;
+  /** Fixed-width digits, straight off the element. No rule changes it. */
+  monospacedDigits: boolean;
+  /** 1 or 2. Straight off the element. */
+  lineLimit: number;
+  /** Which edge of the layer box the text sits against. Straight off the element. */
+  alignment: TextAlignment;
 }
 export interface ResolvedIcon extends ResolvedBase {
   kind: "icon";
@@ -1050,6 +1057,9 @@ export class Resolver {
           fontSize: this.styleNumber(style, "fontSize") ?? el.payload.fontSize,
           fontWeight: style.get("fontWeight")?.weight ?? el.payload.fontWeight,
           colorHex: this.styleColor(style, "color") ?? el.payload.colorSlot.baseColorHex,
+          monospacedDigits: el.payload.monospacedDigits === true,
+          lineLimit: el.payload.lineLimit === 2 ? 2 : 1,
+          alignment: el.payload.alignment ?? "center",
         };
         if (countdownEnd !== undefined) out.countdownEnd = countdownEnd;
         return out;

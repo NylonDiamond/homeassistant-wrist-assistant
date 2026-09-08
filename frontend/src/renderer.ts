@@ -185,6 +185,55 @@ function frameBox(el: ResolvedElement, canvas: CanvasSize): Box {
   return { x: cx - w / 2, y: cy - h / 2, w, h, cx, cy };
 }
 
+/** Approximate glyph width, in points, at a given font size. The 0.55 em figure
+ * is the heuristic the shrink step has always used; every width decision below
+ * goes through it so one number governs wrapping, shrinking and truncation. */
+const textCharWidth = (size: number) => size * 0.55;
+
+/** The anchor and the x a text layer draws from, per alignment. Mirrors the
+ * app's `.frame(maxWidth: .infinity, alignment:)`: the box is the width, and
+ * the text sits against one of its edges. */
+function textAnchor(alignment: "leading" | "center" | "trailing", box: Box): { anchor: string; x: number } {
+  switch (alignment) {
+    case "leading":  return { anchor: "start", x: box.x };
+    case "trailing": return { anchor: "end", x: box.x + box.w };
+    default:         return { anchor: "middle", x: box.cx };
+  }
+}
+
+/**
+ * Greedy wrap onto at most two lines, the way SwiftUI breaks lines: fill the
+ * first line with whole words while they fit, and the rest goes on the second.
+ * Returns a single line when there is no word boundary to break on, so a long
+ * unbroken string shrinks instead of splitting mid-word.
+ */
+function wrapToTwoLines(text: string, budgetChars: number): string[] {
+  const words = text.split(/\s+/).filter((w) => w !== "");
+  if (words.length < 2) return [text];
+  let first = "";
+  let taken = 0;
+  // Stop one short of the end so the second line is never empty.
+  for (let i = 0; i < words.length - 1; i++) {
+    const next = first === "" ? words[i]! : `${first} ${words[i]!}`;
+    if (first !== "" && next.length > budgetChars) break;
+    first = next;
+    taken = i + 1;
+  }
+  if (taken === 0) {
+    first = words[0]!;
+    taken = 1;
+  }
+  return [first, words.slice(taken).join(" ")];
+}
+
+/** Truncate one line with a tail ellipsis when it still overflows the box. */
+function truncateToBox(line: string, fontSize: number, boxWidth: number): string {
+  if (boxWidth <= 0 || line.length * textCharWidth(fontSize) <= boxWidth) return line;
+  const budget = boxWidth - 0.8 * fontSize; // ellipsis width
+  const keep = Math.max(1, Math.floor(budget / textCharWidth(fontSize)));
+  return `${line.slice(0, keep).replace(/\s+$/, "")}…`;
+}
+
 function renderText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box) {
   const c = colorAttrs(el.colorHex, "fill");
   // Live countdown: the preview shows the remaining time at render; the panel
@@ -192,24 +241,28 @@ function renderText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box) {
   if (el.countdownEnd !== undefined && el.countdownEnd > Date.now()) {
     el = { ...el, text: countdownRemainingString((el.countdownEnd - Date.now()) / 1000) };
   }
-  // lineLimit(1) + minimumScaleFactor(0.5): shrink to fit the box width down
-  // to half size; when the half-size floor still overflows, SwiftUI truncates
-  // the tail with an ellipsis, so emulate that too instead of overflowing the
-  // box. 0.55 em per glyph is the same heuristic the shrink step always used.
-  const charW = (size: number) => size * 0.55;
-  const approxWidth = el.text.length * charW(el.fontSize);
-  const scale = approxWidth > box.w && box.w > 0 ? Math.max(0.5, box.w / approxWidth) : 1;
+  // lineLimit + minimumScaleFactor(0.5): wrap first when the layer allows two
+  // lines, then shrink what is still too wide down to half size, then truncate
+  // the tail with an ellipsis the way SwiftUI does instead of overflowing.
+  const lines = el.lineLimit === 2 && box.w > 0
+    ? wrapToTwoLines(el.text, box.w / textCharWidth(el.fontSize))
+    : [el.text];
+  const widest = Math.max(...lines.map((l) => l.length)) * textCharWidth(el.fontSize);
+  const scale = widest > box.w && box.w > 0 ? Math.max(0.5, box.w / widest) : 1;
   const fontSize = el.fontSize * scale;
-  let text = el.text;
-  if (box.w > 0 && text.length * charW(fontSize) > box.w) {
-    const budget = box.w - 0.8 * fontSize; // ellipsis width
-    const keep = Math.max(1, Math.floor(budget / charW(fontSize)));
-    text = `${text.slice(0, keep).replace(/\s+$/, "")}…`;
-  }
-  return svg`<text x=${box.cx} y=${box.cy} text-anchor="middle" dominant-baseline="central"
+  const drawn = lines.map((l) => truncateToBox(l, fontSize, box.w));
+  const { anchor, x } = textAnchor(el.alignment, box);
+  // Two lines sit either side of the box centre, one line height apart, so the
+  // block stays centred on the frame the way a SwiftUI text does.
+  const step = fontSize * 1.15;
+  const body = drawn.length > 1
+    ? svg`${drawn.map((line, i) => svg`<tspan x=${x} y=${box.cy + (i - (drawn.length - 1) / 2) * step}>${line}</tspan>`)}`
+    : drawn[0]!;
+  return svg`<text x=${x} y=${box.cy} text-anchor=${anchor} dominant-baseline="central"
     font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif"
     font-size=${fontSize} font-weight=${FONT_WEIGHT[el.fontWeight] ?? 400}
-    fill=${c.fill} fill-opacity=${c["fill-opacity"]}>${text}</text>`;
+    style=${el.monospacedDigits ? "font-variant-numeric: tabular-nums" : nothing}
+    fill=${c.fill} fill-opacity=${c["fill-opacity"]}>${body}</text>`;
 }
 
 /** The gap between two dots of a `dots` gauge, in watch points. Mirrors the fixed

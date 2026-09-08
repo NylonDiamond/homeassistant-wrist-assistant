@@ -1,6 +1,6 @@
 {
   "name": "Duration format and the line shape",
-  "description": "The `duration` value format and the `line` shape kind, both added 2026-09-06. Duration reads a plain number of seconds, a Home Assistant duration string, and leaves anything else as it is; it also wins over `relativeTime` when a document carries both. The two line layers pin that `thickness` is on the wire only when it is away from 1, so every other shape stays byte-identical.",
+  "description": "The `duration` value format and the `line` shape kind, both added 2026-09-06. Duration reads a plain number of seconds, a Home Assistant duration string, and leaves anything else as it is; it also wins over `relativeTime` when a document carries both. The two line layers pin that `thickness` is on the wire only when it is away from 1, so every other shape stays byte-identical. The last two text layers cover the look fields added 2026-09-08: `monospacedDigits`, `lineLimit` and `alignment` resolve straight through, and the first text layer pins the defaults a document without them decodes to.",
   "config": {
     "schemaVersion": 4,
     "id": "AAAAAAAA-0000-4000-8000-00000000000A",
@@ -112,6 +112,36 @@
           "frame": {"x": 0, "y": 0, "width": 1, "height": 1, "rotationDegrees": 0},
           "isHidden": false
         }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000A8",
+          "value": {"kind": {"kind": "literal", "value": "Second bathroom humidity"}},
+          "fontSize": 11,
+          "fontWeight": "regular",
+          "colorSlot": {"baseColorHex": "#FFFFFF"},
+          "monospacedDigits": true,
+          "lineLimit": 2,
+          "alignment": "trailing",
+          "rules": [],
+          "frame": {"x": 0.05, "y": 0.82, "width": 0.9, "height": 0.16, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000A9",
+          "value": {"kind": {"kind": "literal", "value": "left"}},
+          "fontSize": 11,
+          "fontWeight": "regular",
+          "colorSlot": {"baseColorHex": "#FFFFFF"},
+          "alignment": "leading",
+          "rules": [],
+          "frame": {"x": 0.05, "y": 0.78, "width": 0.4, "height": 0.1, "rotationDegrees": 0},
+          "isHidden": false
+        }
       }
     ],
     "perFamily": [],
@@ -134,13 +164,15 @@
   "expected": {
     "rectangular": {
       "elements": [
-        {"id": "EEEEEEEE-0000-4000-8000-0000000000A1", "kind": "text", "text": "23m 15s"},
+        {"id": "EEEEEEEE-0000-4000-8000-0000000000A1", "kind": "text", "text": "23m 15s", "monospacedDigits": false, "lineLimit": 1, "alignment": "center"},
         {"id": "EEEEEEEE-0000-4000-8000-0000000000A2", "kind": "text", "text": "up 2d 3h"},
         {"id": "EEEEEEEE-0000-4000-8000-0000000000A3", "kind": "text", "text": "heat"},
         {"id": "EEEEEEEE-0000-4000-8000-0000000000A4", "kind": "text", "text": "1h 23m"},
         {"id": "EEEEEEEE-0000-4000-8000-0000000000A5", "kind": "shape", "shapeKind": "line", "thickness": 2, "fillColorHex": "#FF9F0A"},
         {"id": "EEEEEEEE-0000-4000-8000-0000000000A6", "kind": "shape", "shapeKind": "line", "thickness": 1, "fillColorHex": "#FFFFFF66"},
-        {"id": "EEEEEEEE-0000-4000-8000-0000000000A7", "kind": "shape", "shapeKind": "roundedRectangle", "thickness": 1, "cornerRadius": 6}
+        {"id": "EEEEEEEE-0000-4000-8000-0000000000A7", "kind": "shape", "shapeKind": "roundedRectangle", "thickness": 1, "cornerRadius": 6},
+        {"id": "EEEEEEEE-0000-4000-8000-0000000000A8", "kind": "text", "text": "Second bathroom humidity", "monospacedDigits": true, "lineLimit": 2, "alignment": "trailing"},
+        {"id": "EEEEEEEE-0000-4000-8000-0000000000A9", "kind": "text", "text": "left", "monospacedDigits": false, "lineLimit": 1, "alignment": "leading"}
       ]
     }
   }

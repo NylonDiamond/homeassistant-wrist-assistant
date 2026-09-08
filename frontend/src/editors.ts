@@ -25,6 +25,7 @@ import {
   type FamilyKind,
   type FamilyLayout,
   type FontWeight,
+  type TextAlignment,
   type GaugeElement,
   type GaugeStyle,
   type ImageElement,
@@ -1811,6 +1812,12 @@ export function pickedCommon(cfg: CustomComplicationConfig, family: FamilyKind, 
 
 const FONT_WEIGHTS: [FontWeight, string][] = [["regular", "Regular"], ["medium", "Medium"], ["semibold", "Semibold"], ["bold", "Bold"]];
 
+const TEXT_ALIGNMENTS: [TextAlignment, string][] = [["leading", "Left"], ["center", "Center"], ["trailing", "Right"]];
+
+/** The line counts a text layer offers. Kept as strings because the segmented
+ * control is a string control; the payload stores the number. */
+const TEXT_LINE_LIMITS: ["1" | "2", string][] = [["1", "1"], ["2", "2"]];
+
 /**
  * The one Entity field at the top of a drawing layer.
  *
@@ -2360,7 +2367,20 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           ${shapeSizeField(host, el, family, "Font size", { step: 1, min: 4, def: baseSize("fontSize") })}
           ${segField("Weight", el.payload.fontWeight, FONT_WEIGHTS, (v) => upd((e) => { (e as typeof el).payload.fontWeight = v; }),
             { def: base.fontWeight as typeof el.payload.fontWeight })}
-        </div>`;
+          ${segField("Align", el.payload.alignment ?? "center", TEXT_ALIGNMENTS, (v) => upd((e) => {
+            const p = (e as typeof el).payload;
+            if (v === "center") delete p.alignment; else p.alignment = v;
+          }), { def: "center" })}
+          ${segField("Lines", el.payload.lineLimit === 2 ? "2" : "1", TEXT_LINE_LIMITS, (v) => upd((e) => {
+            const p = (e as typeof el).payload;
+            if (v === "2") p.lineLimit = 2; else delete p.lineLimit;
+          }), { def: "1" })}
+        </div>
+        ${checkField("Monospaced digits", el.payload.monospacedDigits === true, (v) => upd((e) => {
+          const p = (e as typeof el).payload;
+          if (v) p.monospacedDigits = true; else delete p.monospacedDigits;
+        }), base.monospacedDigits === true)}
+        ${el.payload.monospacedDigits ? html`<div class="hint">Digits take the same width, so a number that ticks does not shuffle what sits beside it.</div>` : nothing}`;
       break;
     }
     case "icon":
@@ -2865,7 +2885,7 @@ const CONTENT_KEYS: Record<CElement["kind"], readonly string[]> = {
 
 /** The payload fields the Look card owns, per kind. */
 const LOOK_KEYS: Record<CElement["kind"], readonly string[]> = {
-  text: ["fontSize", "fontWeight", "colorSlot"],
+  text: ["fontSize", "fontWeight", "colorSlot", "alignment", "lineLimit", "monospacedDigits"],
   icon: ["size", "colorSlot"],
   gauge: ["style", "lineWidth", "trackColorHex", "colorSlot", "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex"],
   chart: ["style", "scale", "minValue", "maxValue", "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker", "coloring", "bands", "bandAboveColorHex", "fillBands", "thresholdValue", "thresholdColorHex", "nowIndex", "nowColorHex", "scaleFrom", "colorSlot"],
