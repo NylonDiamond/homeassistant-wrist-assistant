@@ -1771,14 +1771,10 @@ ${Vm(u)}`}}let l=ki(a);if(l.length>0){let d=l.slice(0,3).join(", "),u=l.length>3
       width: min(600px, 100%);
       background: var(--wa-card);
       border-radius: var(--wa-r-lg);
-      box-shadow: 0 0 0 1px var(--wa-line), 0 24px 60px -30px color-mix(in srgb, var(--wa-accent) 45%, transparent);
+      box-shadow: 0 0 0 1px var(--wa-line);
       padding: 36px 40px 32px;
       display: flex; flex-direction: column; align-items: flex-start; gap: 0;
       position: relative; overflow: hidden;
-    }
-    .gate-card::before {
-      content: ""; position: absolute; inset: 0 0 auto 0; height: 180px; pointer-events: none;
-      background: radial-gradient(120% 100% at 15% 0%, color-mix(in srgb, var(--wa-accent) 16%, transparent), transparent 70%);
     }
     .gate-glyph {
       position: relative; width: 52px; height: 52px; border-radius: 16px;
