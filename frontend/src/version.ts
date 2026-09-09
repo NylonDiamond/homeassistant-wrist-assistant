@@ -47,11 +47,12 @@ export function watchSupportsShapes(appVersion: string | null | undefined, minim
   return compareVersions(have, need) >= 0;
 }
 
-/** The whole-panel block, worded for what the watch reported. */
+/** The lead line of the whole-panel gate, worded for what the watch reported.
+ * The steps that follow it live in the panel's gate screen. */
 export function updateWatchMessage(appVersion: string | null | undefined, minimum = MIN_WATCH_VERSION_FOR_SHAPES): string {
   const have = parseVersion(appVersion);
   const reported = have
     ? `This watch runs Wrist Assistant ${appVersion}.`
     : "This watch has not reported its Wrist Assistant version yet.";
-  return `${reported} The complication editor needs ${minimum} or newer, coming soon to the App Store. Once the watch has the update, open Wrist Assistant on it so it reports its version, then reload this page.`;
+  return `${reported} The complication editor needs ${minimum} or newer, and that update is coming soon to the App Store.`;
 }

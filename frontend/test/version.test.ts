@@ -6,7 +6,7 @@ import { MIN_WATCH_VERSION_FOR_SHAPES, compareVersions, parseVersion, updateWatc
 describe("updateWatchMessage", () => {
   it("names the reported version and the minimum", () => {
     expect(updateWatchMessage("2.7.2", "2.8.0")).toBe(
-      "This watch runs Wrist Assistant 2.7.2. The complication editor needs 2.8.0 or newer, coming soon to the App Store. Once the watch has the update, open Wrist Assistant on it so it reports its version, then reload this page.",
+      "This watch runs Wrist Assistant 2.7.2. The complication editor needs 2.8.0 or newer, and that update is coming soon to the App Store.",
     );
   });
 

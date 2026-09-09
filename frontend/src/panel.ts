@@ -1340,6 +1340,66 @@ export class WristAssistantPanel extends LitElement {
     .banner.warn { border-left: 4px solid var(--warning-color, #ffa600); }
     .banner.err { border-left: 4px solid var(--error-color, #db4437); }
     .banner .acts { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+
+    /* The watch gate: the one screen a too-old watch gets instead of the
+       editor. Centred like a welcome page, with the accent reserved for the
+       glyph and the step numbers, so it reads as a considered pause rather
+       than an error strip. */
+    .gate {
+      flex: 1 1 auto; min-height: 0; overflow: auto;
+      display: flex; align-items: flex-start; justify-content: center;
+      padding: clamp(24px, 8vh, 72px) 24px 40px;
+    }
+    .gate-card {
+      width: min(600px, 100%);
+      background: var(--wa-card);
+      border-radius: var(--wa-r-lg);
+      box-shadow: 0 0 0 1px var(--wa-line), 0 24px 60px -30px color-mix(in srgb, var(--wa-accent) 45%, transparent);
+      padding: 36px 40px 32px;
+      display: flex; flex-direction: column; align-items: flex-start; gap: 0;
+      position: relative; overflow: hidden;
+    }
+    .gate-card::before {
+      content: ""; position: absolute; inset: 0 0 auto 0; height: 180px; pointer-events: none;
+      background: radial-gradient(120% 100% at 15% 0%, color-mix(in srgb, var(--wa-accent) 16%, transparent), transparent 70%);
+    }
+    .gate-glyph {
+      position: relative; width: 52px; height: 52px; border-radius: 16px;
+      display: grid; place-items: center; color: var(--wa-accent);
+      background: color-mix(in srgb, var(--wa-accent) 14%, var(--wa-card));
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-accent) 30%, transparent);
+      margin-bottom: 22px;
+    }
+    .gate-glyph svg { width: 28px; height: 28px; }
+    .gate-eyebrow {
+      position: relative; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+      color: var(--wa-accent); margin-bottom: 10px;
+    }
+    .gate-title {
+      position: relative; margin: 0 0 10px; font-size: 24px; line-height: 1.2; font-weight: 700;
+      letter-spacing: -.015em; color: var(--wa-ink); text-wrap: balance;
+    }
+    .gate-lead { position: relative; margin: 0 0 26px; font-size: 14.5px; line-height: 1.55; color: var(--wa-muted); max-width: 52ch; }
+    .gate-steps { position: relative; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0; width: 100%; }
+    .gate-steps li {
+      display: grid; grid-template-columns: 30px 1fr; gap: 14px; align-items: start;
+      padding: 14px 0; border-top: 1px solid var(--wa-line);
+    }
+    .gate-steps li:last-child { border-bottom: 1px solid var(--wa-line); }
+    .gate-n {
+      width: 30px; height: 30px; border-radius: 999px; display: grid; place-items: center;
+      font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+      color: var(--wa-accent); background: color-mix(in srgb, var(--wa-accent) 12%, transparent);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-accent) 28%, transparent);
+    }
+    .gate-steps b { display: block; font-size: 14.5px; font-weight: 650; color: var(--wa-ink); margin: 5px 0 3px; }
+    .gate-steps span:not(.gate-n) { display: block; font-size: 13.5px; line-height: 1.5; color: var(--wa-muted); }
+    .gate-foot { position: relative; margin-top: 18px; font-size: 13px; color: var(--wa-muted); }
+    @media (max-width: 640px) {
+      .gate { padding: 16px 12px 28px; }
+      .gate-card { padding: 26px 22px 24px; }
+      .gate-title { font-size: 21px; }
+    }
     /* The complication bar: one line saying what this whole face is, tinted in
        the complication's own colour so it never reads as part of the canvas. */
     .card.comp-bar {
@@ -3838,10 +3898,45 @@ export class WristAssistantPanel extends LitElement {
             <div class="column inspector card">${this.renderInspector()}</div>
           </div>
           ${this.renderFooter()}`
-        : html`<div class="card">
-            <div class="banner warn"><b>Watch app update coming soon.</b> ${updateWatchMessage(this.selectedOwner?.app_version)}</div>
-            <div class="hint">Nothing on this watch is changed or lost. Its ${this.selectedOwner?.complication_count ?? 0} complication${this.selectedOwner?.complication_count === 1 ? "" : "s"} stay in Home Assistant and can be edited once the watch is updated.</div>
-          </div>`}`;
+        : this.renderWatchGate()}`;
+  }
+
+  /** The whole-panel screen for a watch whose app predates the editor.
+   *
+   * Everything the editor would show is held back on purpose (see version.ts),
+   * so this screen has to do the editor's job of telling the owner what comes
+   * next: the app update, the one-time move of the complications the iPhone
+   * still holds, and the reload. The count line is the reassurance that the
+   * gate cost them nothing. */
+  private renderWatchGate(): TemplateResult {
+    const owner = this.selectedOwner;
+    const count = owner?.complication_count ?? 0;
+    const kept = count === 0
+      ? "Nothing on this watch changes in the meantime."
+      : `${count} complication${count === 1 ? "" : "s"} for this watch ${count === 1 ? "stays" : "stay"} in Home Assistant, untouched, until the editor opens.`;
+    return html`<div class="gate">
+      <div class="gate-card">
+        <div class="gate-glyph">${uiIcon("watch")}</div>
+        <div class="gate-eyebrow">Watch app update coming soon</div>
+        <h2 class="gate-title">The editor opens as soon as this watch has the new app.</h2>
+        <p class="gate-lead">${updateWatchMessage(owner?.app_version)}</p>
+        <ol class="gate-steps">
+          <li>
+            <span class="gate-n">1</span>
+            <div><b>Update Wrist Assistant on your iPhone</b><span>The watch app updates with it. Open the watch app once so it reports its version here.</span></div>
+          </li>
+          <li>
+            <span class="gate-n">2</span>
+            <div><b>Move the complications your iPhone holds</b><span>Open Wrist Assistant on the iPhone. It offers to send them to Home Assistant, and the Widgets tab has the same button. They keep working from the watch until you do.</span></div>
+          </li>
+          <li>
+            <span class="gate-n">3</span>
+            <div><b>Reload this page</b><span>The editor opens for this watch, with everything Home Assistant holds ready to edit.</span></div>
+          </li>
+        </ol>
+        <div class="gate-foot">${kept}</div>
+      </div>
+    </div>`;
   }
 
   // ── header picker ─────────────────────────────────────────────────────
