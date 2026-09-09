@@ -1,7 +1,19 @@
 // The watch-version gate for one-shape and Inline documents (rule 8).
 
 import { describe, expect, it } from "vitest";
-import { MIN_WATCH_VERSION_FOR_SHAPES, compareVersions, parseVersion, updateWatchMessage, watchSupportsShapes } from "../src/version.js";
+import {
+  MIN_IPHONE_VERSION_FOR_LOCK_SCREEN,
+  MIN_WATCH_VERSION_FOR_SHAPES,
+  compareVersions,
+  deviceKindOf,
+  deviceNoun,
+  deviceSupportsShapes,
+  parseVersion,
+  updateDeviceMessage,
+  updateIPhoneMessage,
+  updateWatchMessage,
+  watchSupportsShapes,
+} from "../src/version.js";
 
 describe("updateWatchMessage", () => {
   it("names the reported version and the minimum", () => {
@@ -57,5 +69,58 @@ describe("watchSupportsShapes", () => {
     expect(watchSupportsShapes(null)).toBe(false);
     expect(watchSupportsShapes(undefined)).toBe(false);
     expect(watchSupportsShapes("beta")).toBe(false);
+  });
+});
+
+describe("deviceKindOf", () => {
+  it("reads a missing or null kind as a watch", () => {
+    expect(deviceKindOf({})).toBe("watch");
+    expect(deviceKindOf({ device_kind: null })).toBe("watch");
+    expect(deviceKindOf(undefined)).toBe("watch");
+    expect(deviceKindOf({ device_kind: "watch" })).toBe("watch");
+    expect(deviceKindOf({ device_kind: "iphone" })).toBe("iphone");
+  });
+
+  it("gives copy the word for the device", () => {
+    expect(deviceNoun({ device_kind: "iphone" })).toBe("iPhone");
+    expect(deviceNoun({})).toBe("watch");
+  });
+});
+
+describe("deviceSupportsShapes", () => {
+  it("holds a watch to the per-shape release", () => {
+    expect(deviceSupportsShapes({ app_version: MIN_WATCH_VERSION_FOR_SHAPES })).toBe(true);
+    expect(deviceSupportsShapes({ app_version: "2.7.9", device_kind: "watch" })).toBe(false);
+  });
+
+  it("holds a phone to the lock screen release", () => {
+    expect(deviceSupportsShapes({ app_version: MIN_IPHONE_VERSION_FOR_LOCK_SCREEN, device_kind: "iphone" })).toBe(true);
+    expect(deviceSupportsShapes({ app_version: "2.9.0", device_kind: "iphone" })).toBe(true);
+    expect(deviceSupportsShapes({ app_version: "2.7.9", device_kind: "iphone" })).toBe(false);
+  });
+
+  it("refuses a device that has reported nothing, whichever kind it is", () => {
+    expect(deviceSupportsShapes({ app_version: null, device_kind: "iphone" })).toBe(false);
+    expect(deviceSupportsShapes({ app_version: null })).toBe(false);
+    expect(deviceSupportsShapes(undefined)).toBe(false);
+  });
+});
+
+describe("updateIPhoneMessage", () => {
+  // The phone is missing a lock screen widget, not a watch app, so the
+  // sentence is its own rather than the watch's with a word swapped.
+  it("names the reported version and the minimum", () => {
+    expect(updateIPhoneMessage("2.7.2", "2.8.0")).toBe(
+      "This iPhone runs Wrist Assistant 2.7.2. Lock screen complications need 2.8.0, coming soon to the App Store.",
+    );
+  });
+
+  it("says so when the iPhone never reported a version", () => {
+    expect(updateIPhoneMessage(null, "2.8.0")).toMatch(/^This iPhone has not reported its Wrist Assistant version yet\./);
+  });
+
+  it("is what the gate uses for a phone owner, and never for a watch", () => {
+    expect(updateDeviceMessage({ app_version: "2.7.2", device_kind: "iphone" })).toBe(updateIPhoneMessage("2.7.2"));
+    expect(updateDeviceMessage({ app_version: "2.7.2" })).toBe(updateWatchMessage("2.7.2"));
   });
 });

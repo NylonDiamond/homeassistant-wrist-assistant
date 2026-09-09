@@ -50,6 +50,44 @@ def test_module_parses(path: Path) -> None:
     ast.parse(path.read_text(), filename=str(path))
 
 
+def _function_source(module: str, name: str) -> str:
+    source = (_PKG / module).read_text()
+    tree = ast.parse(source, filename=module)
+    found = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name
+    ]
+    assert len(found) == 1, f"{module}: {name} is missing or defined twice"
+    return ast.get_source_segment(source, found[0]) or ""
+
+
+def test_the_sync_op_records_the_caller_s_ack_and_stamps_the_pull() -> None:
+    """Both are wire contract, and neither can be checked without a real box.
+
+    ``applied_token`` on the pull is the only way an iPhone owner's panel row
+    ever goes green: the phone holds no long-poll, so it never gets the
+    request the watch acks on. ``set_last_sync`` is what makes
+    ``watch_status.last_sync_seconds`` a number rather than null. Dropping
+    either fails nothing at import time and nothing on the watch, which is why
+    it is asserted here.
+    """
+    body = _function_source("wa_v2_views.py", "_op_complications_sync")
+    for expected in ("applied_token", "set_applied_token", "set_last_sync"):
+        assert expected in body, f"_op_complications_sync no longer calls {expected}"
+
+
+def test_the_iphone_complication_capability_is_advertised() -> None:
+    """The app pulls its lock screen records only when it sees this.
+
+    Registered unconditionally at setup, like ``custom_complications``, so a
+    loaded integration always reports it and the app never has to guess from a
+    version number.
+    """
+    source = (_PKG / "__init__.py").read_text()
+    assert 'register_capability("custom_complications_iphone")' in source
+
+
 def test_uninstall_removes_every_store_the_integration_writes() -> None:
     """`async_remove_entry` must wipe the complication store too.
 

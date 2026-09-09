@@ -8,6 +8,14 @@
 // Equal means on the wrist. A save wakes the parked poll, so while the watch
 // app is open on this home a save lands by itself; this status makes that
 // visible, and the Resend link re-wakes a watch that missed the first wake.
+//
+// An iPhone owner has none of that. There is no long poll to the phone, so
+// there is nothing to wake: it pulls when the app is opened, when Sync now is
+// tapped, or on its widget's own refresh. A phone is therefore only ever in
+// one of two states here, and neither offers Resend: what it holds matches,
+// or someone has to open the app.
+
+import type { DeviceKind } from "./version.js";
 
 export interface SendInputs {
   /** The owner's store token on the server. */
@@ -24,6 +32,13 @@ export interface SendInputs {
    * from an integration that predates the field, and null when nothing has
    * polled since the server started. */
   lastPollSeconds?: number | null;
+  /** Which device owns these records. Absent means a watch, which is what
+   * every owner was before phones could own any. */
+  deviceKind?: DeviceKind | null;
+  /** Seconds since a phone owner last ran a sync, when the server knows.
+   * Null when it never has, undefined from an integration that predates the
+   * field. Watches report `lastPollSeconds` instead. */
+  lastSyncSeconds?: number | null;
 }
 
 export type SendState =
@@ -35,15 +50,19 @@ export type SendState =
    * the age a green tick claims a watch that went flat hours ago is still
    * there. Undefined while it is connected, and while the server has no age
    * to give. */
-  | { kind: "sent"; awaySeconds?: number }
+  | { kind: "sent"; awaySeconds?: number; device?: DeviceKind }
   | { kind: "sending" }
   | { kind: "waiting" }
+  /** A phone owner holding something older than the store. Nothing here can
+   * push it, so the only true thing to say is what makes it arrive. */
+  | { kind: "openApp" }
   | { kind: "offline" };
 
 /** How long a save or a tap waits for the watch's ack before giving up. */
 export const SEND_WAIT_MS = 10_000;
 
 export function sendState(i: SendInputs): SendState {
+  if (i.deviceKind === "iphone") return iphoneSendState(i);
   if (i.appliedToken === undefined) return { kind: "unsupported" };
   if (i.token === i.appliedToken) {
     const away = !i.polling && typeof i.lastPollSeconds === "number" ? i.lastPollSeconds : undefined;
@@ -52,6 +71,26 @@ export function sendState(i: SendInputs): SendState {
   if (i.pending && i.polling) return { kind: "sending" };
   if (i.polling) return { kind: "waiting" };
   return { kind: "offline" };
+}
+
+/**
+ * A phone, which either has it or has not been opened since.
+ *
+ * "Never acked" is not its own state here. On a watch that means an app older
+ * than custom complications, and no Resend would help; on a phone it means
+ * only that it has not synced yet, which opening the app fixes. So it reads
+ * the same as being behind.
+ *
+ * `pending` and `polling` are ignored on purpose: a save cannot start a wait
+ * for something with nothing listening, and a spinner that never resolves is
+ * worse than a sentence saying what to do.
+ */
+function iphoneSendState(i: SendInputs): SendState {
+  if (i.appliedToken === undefined || i.token !== i.appliedToken) return { kind: "openApp" };
+  const since = typeof i.lastSyncSeconds === "number" ? i.lastSyncSeconds : undefined;
+  return since === undefined
+    ? { kind: "sent", device: "iphone" }
+    : { kind: "sent", awaySeconds: since, device: "iphone" };
 }
 
 /**
@@ -85,6 +124,17 @@ export function describeSend(s: SendState): { label: string; note?: string; titl
         resend: false,
       };
     case "sent":
+      if (s.device === "iphone") {
+        return s.awaySeconds === undefined
+          ? { label: "On iPhone", title: "This iPhone has applied every change here.", resend: false }
+          : {
+              label: "On iPhone",
+              note: `last sync ${agoWords(s.awaySeconds)}`,
+              title:
+                "This iPhone has applied every change here, as of its last sync. A save made after this reaches the lock screen when the app is opened, or on the widget's own refresh.",
+              resend: false,
+            };
+      }
       return s.awaySeconds === undefined
         ? { label: "On watch", title: "The watch has applied every change here.", resend: false }
         : {
@@ -94,6 +144,13 @@ export function describeSend(s: SendState): { label: string; note?: string; titl
               "The watch has applied every change here, but it is not listening now. A save made after this will not reach it until the watch app is open on this home again.",
             resend: false,
           };
+    case "openApp":
+      return {
+        label: "Open Wrist Assistant on your iPhone to sync",
+        title:
+          "Nothing here can be pushed to an iPhone. It pulls when the app is opened, when Sync now is tapped in the app, and on the lock screen widget's own refresh.",
+        resend: false,
+      };
     case "sending":
       return { label: "Sending…", title: "Waiting for the watch to pull and confirm.", resend: false };
     case "waiting":

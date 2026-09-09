@@ -33,10 +33,18 @@ export interface HassLike {
 }
 
 import type { OccupiedSlot } from "./model.js";
+import type { DeviceKind } from "./version.js";
 
 export interface OwnerSummary {
   owner_watch_id: string;
   device_name: string | null;
+  /** Which device owns these records. Absent from integrations older than the
+      field, and absent means a watch: every owner was one until iPhones could
+      own records of their own. Null on an orphan, which has no registered
+      device left to ask. A phone row carries `app_version` and `device_name`,
+      with `screen_size` and `paired_iphone_name` null and `polling` never
+      true: there is no long poll to a phone. */
+  device_kind?: DeviceKind | null;
   /** Name of the iPhone this watch is paired to. Both real watches report
       themselves as "Apple Watch", so this is what tells them apart. */
   paired_iphone_name: string | null;
@@ -144,6 +152,10 @@ export async function fetchWatchStatus(hass: HassLike, owner: string) {
   return hass.connection.sendMessagePromise<{
     polling: boolean;
     last_poll_seconds?: number | null;
+    /** Seconds since this owner last ran a sync, which is what a phone has
+     * instead of a poll: its `last_poll_seconds` is always null. Null when it
+     * has never synced, absent from integrations older than the field. */
+    last_sync_seconds?: number | null;
     token: number;
     /** Null when the watch has never acked; see `fetchList`. */
     applied_token: number | null;

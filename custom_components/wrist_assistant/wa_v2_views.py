@@ -2935,8 +2935,16 @@ async def _op_complications_sync(ctx: _OpContext) -> Response:
     possible.
 
     Body: {"since_token": <int>,   # 0 or absent = full collection incl. tombstones
-           "presets": [{"slot": <int>, "name": <str>}, ...]}  # optional
+           "presets": [{"slot": <int>, "name": <str>}, ...],  # optional
+           "applied_token": <int>}  # optional
     Reply: {"token", "since_token", "max_schema_version", "records": [...]}
+
+    ``applied_token`` is the caller saying which store token it has finished
+    applying. The watch reports the same thing on every long-poll request, so
+    it never needs this; the iPhone holds no poll, and without it a phone
+    owner's panel row could never go green. Advisory like the reports below: a
+    value that is not a non-negative integer is ignored rather than refused,
+    because the pull itself is what the caller came for.
 
     ``presets`` is the watch reporting the iPhone presets it renders: which
     slots they occupy and the names the user gave them. The panel cannot see
@@ -2968,6 +2976,17 @@ async def _op_complications_sync(ctx: _OpContext) -> Response:
     raw_pages = ctx.payload.get("pages")
     if isinstance(raw_pages, list):
         store.set_pages(ctx.watch_id, raw_pages)
+    raw_applied = ctx.payload.get("applied_token")
+    if (
+        not isinstance(raw_applied, bool)
+        and isinstance(raw_applied, int)
+        and raw_applied >= 0
+    ):
+        store.set_applied_token(ctx.watch_id, raw_applied)
+    # Stamp the pull itself, whatever it carried. This is what
+    # `watch_status.last_sync_seconds` reports, and for a phone owner it is
+    # the only sign of life the panel gets.
+    store.set_last_sync(ctx.watch_id)
     records = store.changes_since(ctx.watch_id, raw_since)
     return ctx.signed_json(
         {

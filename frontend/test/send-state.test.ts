@@ -56,6 +56,56 @@ describe("sendState", () => {
   });
 });
 
+// An iPhone owner has no long poll, so it is never "sending" and never
+// "waiting": either what it holds matches, or someone opens the app.
+describe("sendState on an iPhone", () => {
+  const phone = (over: Partial<SendInputs> = {}): SendInputs =>
+    inputs({ deviceKind: "iphone", polling: false, ...over });
+
+  it("is On iPhone once the tokens match", () => {
+    const s = sendState(phone());
+    expect(s).toEqual({ kind: "sent", device: "iphone" });
+    const d = describeSend(s);
+    expect(d.label).toBe("On iPhone");
+    expect(d.resend).toBe(false);
+  });
+
+  it("ages On iPhone by the last sync, since a phone never polls", () => {
+    const s = sendState(phone({ lastSyncSeconds: 3600, lastPollSeconds: null }));
+    expect(s).toEqual({ kind: "sent", awaySeconds: 3600, device: "iphone" });
+    expect(describeSend(s).note).toBe("last sync 1 h ago");
+  });
+
+  it("asks for the app when the phone is behind, with no Resend", () => {
+    const s = sendState(phone({ token: 6, appliedToken: 5 }));
+    expect(s).toEqual({ kind: "openApp" });
+    const d = describeSend(s);
+    expect(d.label).toBe("Open Wrist Assistant on your iPhone to sync");
+    expect(d.resend).toBe(false);
+    expect(d.note).toBeUndefined();
+  });
+
+  // On a watch this reads as an app too old to receive anything. On a phone it
+  // only means it has not synced yet, which opening the app fixes.
+  it("reads a phone that has never acked as one to open, not as unsupported", () => {
+    expect(sendState(phone({ appliedToken: undefined }))).toEqual({ kind: "openApp" });
+  });
+
+  it("never sends or waits, whatever the poll flags say", () => {
+    const behind = phone({ token: 6, appliedToken: 5, pending: true, polling: true });
+    expect(sendState(behind)).toEqual({ kind: "openApp" });
+  });
+
+  it("leaves a watch exactly as it was", () => {
+    // The same inputs with the kind spelled out, and with it absent.
+    for (const kind of ["watch", null, undefined] as const) {
+      expect(sendState(inputs({ deviceKind: kind, lastSyncSeconds: 99 }))).toEqual({ kind: "sent" });
+      expect(sendState(inputs({ deviceKind: kind, token: 6, appliedToken: 5, polling: true }))).toEqual({ kind: "waiting" });
+      expect(sendState(inputs({ deviceKind: kind, appliedToken: undefined }))).toEqual({ kind: "unsupported" });
+    }
+  });
+});
+
 describe("agoWords", () => {
   it("rounds down to one unit, and calls anything under a minute just now", () => {
     expect(agoWords(0)).toBe("just now");

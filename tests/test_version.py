@@ -35,6 +35,8 @@ def test_version_endpoint_lists_capabilities(base_url: str) -> None:
     assert all(isinstance(c, str) for c in caps), caps
     assert caps == sorted(caps), caps
     assert "custom_complications" in caps, caps
+    # The iPhone pulls its own lock screen records only when it sees this one.
+    assert "custom_complications_iphone" in caps, caps
 
 
 def test_version_endpoint_exposes_instance_id(base_url: str) -> None:

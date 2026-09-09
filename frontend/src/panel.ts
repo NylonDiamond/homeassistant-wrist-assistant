@@ -87,9 +87,9 @@ import {
   resolveAll,
 } from "./resolver.js";
 import { CASES, REFERENCE_CASE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, renderLayerThumb, renderLayout, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type WatchCase } from "./renderer.js";
-import { ALL_FAMILIES, addFamily, canRemoveFamily, familyContentSummary, firstDrawable, isDrawable, removeFamily, supportedFamilies } from "./layouts.js";
+import { addFamily, canRemoveFamily, familiesFor, familyContentSummary, firstDrawable, isDrawable, removeFamily, supportedFamilies } from "./layouts.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
-import { updateWatchMessage, watchSupportsShapes } from "./version.js";
+import { deviceKindOf, deviceNoun, deviceSupportsShapes, updateDeviceMessage } from "./version.js";
 import { makeIconProvider } from "./icons.js";
 import { makeImageSizeProvider } from "./image-sizes.js";
 import { SymbolBrowser } from "./symbols.js";
@@ -377,6 +377,10 @@ export class WristAssistantPanel extends LitElement {
    * polled since the server started. Read only while `polling` is false, so a
    * value that ages between refreshes is never the one on screen for long. */
   @state() private lastPollSeconds?: number;
+  /** Seconds since a phone owner last ran a sync. A phone never polls, so
+   * this is what its header chip ages itself against. Undefined from an
+   * integration older than the field, or when it has never synced. */
+  @state() private lastSyncSeconds?: number;
   /** A save or a Send tap is waiting for the watch's ack. */
   @state() private sendPending = false;
   private sendTimer?: number;
@@ -1856,6 +1860,9 @@ export class WristAssistantPanel extends LitElement {
     .send.sending { opacity: .7; }
     .send.offline { color: var(--warning-color, #ffa600); }
     .send.unsupported { color: var(--warning-color, #ffa600); }
+    /* A phone that has not pulled yet reads the same as a watch that is not
+       listening: something to do, not something wrong. */
+    .send.openApp { color: var(--warning-color, #ffa600); }
     /* "last seen 2 h ago" beside a green tick. Muted, because the tick is
        still true: the change is on the watch, and this only says the watch
        stopped listening afterwards. */
@@ -2615,6 +2622,7 @@ export class WristAssistantPanel extends LitElement {
     // Nothing is known about the new watch until its list reply lands, and the
     // previous watch's status must not be shown beside it in the meantime.
     this.sendStatusKnown = false;
+    this.lastSyncSeconds = undefined;
     // Default the preview to this watch's own case when the app reported one.
     // A manual dropdown pick survives record switches but re-defaults when a
     // different watch is selected — that's the watch being previewed now.
@@ -2765,6 +2773,7 @@ export class WristAssistantPanel extends LitElement {
       const reply = await fetchWatchStatus(this.hass, this.ownerId);
       this.polling = reply.polling;
       this.lastPollSeconds = typeof reply.last_poll_seconds === "number" ? reply.last_poll_seconds : undefined;
+      this.lastSyncSeconds = typeof reply.last_sync_seconds === "number" ? reply.last_sync_seconds : undefined;
       this.serverToken = reply.token;
       this.appliedToken = reply.applied_token ?? undefined;
       this.sendStatusKnown = true;
@@ -2822,10 +2831,12 @@ export class WristAssistantPanel extends LitElement {
       polling: this.polling,
       pending: this.sendPending,
       lastPollSeconds: this.lastPollSeconds,
+      deviceKind: this.selectedOwner?.device_kind,
+      lastSyncSeconds: this.lastSyncSeconds,
     });
-    // Before the first reply nothing is known about this watch, and the chip
-    // would otherwise report the unsupported state as if it were an answer.
-    if (s.kind === "unsupported" && !this.sendStatusKnown) return nothing;
+    // Before the first reply nothing is known about this device, and the chip
+    // would otherwise report the never-acked state as if it were an answer.
+    if ((s.kind === "unsupported" || s.kind === "openApp") && !this.sendStatusKnown) return nothing;
     const d = describeSend(s);
     const resend = d.resend && this.hass.user?.is_admin
       ? html`<button class="ghost" title="Wake the watch again" @click=${() => void this.sendToWatch()}>Resend</button>`
@@ -2929,14 +2940,28 @@ export class WristAssistantPanel extends LitElement {
 
   // ── shapes ────────────────────────────────────────────────────────────
 
-  /** Rule 8: the panel works only with a watch at or above the per-shape
-   * release. Below it the editor is replaced by an update message, so every
-   * document authored here is one the wrist can draw. An orphaned owner has
+  /** Rule 8: the panel works only with a device at or above the release that
+   * draws these documents, the per-shape watch app or the lock screen iPhone
+   * app. Below it the editor is replaced by an update message, so every
+   * document authored here is one the device can draw. An orphaned owner has
    * no device to report a version and is exempt: its only action is Move. */
   private get watchSupported(): boolean {
     const owner = this.selectedOwner;
     if (!owner) return true;
-    return owner.is_orphan || watchSupportsShapes(owner.app_version);
+    return owner.is_orphan || deviceSupportsShapes(owner);
+  }
+
+  /** The shapes this owner's device can draw, which is every place the panel
+   * lists shapes for the owner rather than for a document. */
+  private get ownerFamilies(): FamilyKind[] {
+    return familiesFor(this.selectedOwner);
+  }
+
+  /** What to call the selected owner in copy: "watch" or "iPhone". Only for
+   * lines both kinds of owner read; a line about the long poll or the watch
+   * face keeps its own words, because only a watch ever sees it. */
+  private get deviceWord(): string {
+    return deviceNoun(this.selectedOwner);
   }
 
 
@@ -2949,12 +2974,16 @@ export class WristAssistantPanel extends LitElement {
     return (cfg && firstDrawable(cfg)) ?? "rectangular";
   }
 
-  /** Keep the active shape one the document has: after opening a document
-   * that lacks the previous one, and after a shape is removed. */
+  /** Keep the active shape one the document has and this device offers: after
+   * opening a document that lacks the previous one, after a shape is removed,
+   * and on a document carrying a shape the owner has no tab for (a corner
+   * layout moved onto a phone). */
   private ensureActiveFamily() {
     const cfg = this.draft?.config;
-    if (!cfg || cfg.supportedFamilies.includes(this.activeFamily)) return;
-    this.activeFamily = supportedFamilies(cfg)[0] ?? "rectangular";
+    if (!cfg) return;
+    const offered = this.ownerFamilies;
+    if (cfg.supportedFamilies.includes(this.activeFamily) && offered.includes(this.activeFamily)) return;
+    this.activeFamily = supportedFamilies(cfg).find((f) => offered.includes(f)) ?? offered[0] ?? "rectangular";
   }
 
   /**
@@ -3011,6 +3040,9 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private addShape(family: FamilyKind) {
+    // The tabs and the New dialog already list only what this device draws;
+    // this is the one gate every other way in goes through.
+    if (!this.ownerFamilies.includes(family)) return;
     this.mutate((c) => addFamily(c, family));
     this.activeFamily = family;
     this.inspect = { kind: "family" };
@@ -3855,9 +3887,9 @@ export class WristAssistantPanel extends LitElement {
     const rec = this.records.find((r) => r.id === this.selectedId);
     return html`
       <header>
-        <label>Choose watch
+        <label>${this.owners.some((o) => deviceKindOf(o) === "iphone") ? "Choose device" : "Choose watch"}
           <select @change=${(e: Event) => void this.selectOwner((e.target as HTMLSelectElement).value)}>
-            ${this.owners.map((o) => html`<option value=${o.owner_watch_id} ?selected=${o.owner_watch_id === this.ownerId}>
+            ${ownersByKind(this.owners).map((o) => html`<option value=${o.owner_watch_id} ?selected=${o.owner_watch_id === this.ownerId}>
               ${ownerLabel(o)} (${o.complication_count})</option>`)}
           </select>
         </label>
@@ -3897,7 +3929,8 @@ export class WristAssistantPanel extends LitElement {
         : this.renderWatchGate()}`;
   }
 
-  /** The whole-panel screen for a watch whose app predates the editor.
+  /** The whole-panel screen for a device whose app predates the editor: a
+   * watch below the per-shape release, or an iPhone below the lock screen one.
    *
    * Everything the editor would show is held back on purpose (see version.ts),
    * so this screen has to do the editor's job of telling the owner what comes
@@ -3906,18 +3939,25 @@ export class WristAssistantPanel extends LitElement {
    * gate cost them nothing. */
   private renderWatchGate(): TemplateResult {
     const owner = this.selectedOwner;
+    const phone = deviceKindOf(owner) === "iphone";
     const count = owner?.complication_count ?? 0;
     const kept = count === 0
-      ? "Nothing on this watch changes until then."
+      ? `Nothing on this ${deviceNoun(owner)} changes until then.`
       : `Your ${count} complication${count === 1 ? "" : "s"} keep${count === 1 ? "s" : ""} working until then.`;
-    return html`<div class="gate">
-      <div class="gate-card">
-        <div class="gate-glyph">${uiIcon("watch")}</div>
-        <div class="gate-eyebrow">Watch app update coming soon</div>
-        <h2 class="gate-title">This watch needs the new app.</h2>
-        <p class="gate-lead">${updateWatchMessage(owner?.app_version)}</p>
-        <ol class="gate-steps">
+    const steps = phone
+      ? html`<li>
+            <span class="gate-n">1</span>
+            <div><b>Update Wrist Assistant on your iPhone</b><span>Lock screen complications come with it.</span></div>
+          </li>
           <li>
+            <span class="gate-n">2</span>
+            <div><b>Open the app</b><span>The iPhone reports its new version here.</span></div>
+          </li>
+          <li>
+            <span class="gate-n">3</span>
+            <div><b>Reload this page</b><span>The editor opens, and what you save here shows up on the Lock Screen customise screen.</span></div>
+          </li>`
+      : html`<li>
             <span class="gate-n">1</span>
             <div><b>Update Wrist Assistant on your iPhone</b><span>The watch app updates with it.</span></div>
           </li>
@@ -3928,7 +3968,15 @@ export class WristAssistantPanel extends LitElement {
           <li>
             <span class="gate-n">3</span>
             <div><b>Reload this page</b><span>The editor opens. Complications your iPhone still holds show as locked slots until you move or delete them in the iPhone app.</span></div>
-          </li>
+          </li>`;
+    return html`<div class="gate">
+      <div class="gate-card">
+        <div class="gate-glyph">${uiIcon("watch")}</div>
+        <div class="gate-eyebrow">${phone ? "iPhone app update coming soon" : "Watch app update coming soon"}</div>
+        <h2 class="gate-title">${phone ? "This iPhone needs the new app." : "This watch needs the new app."}</h2>
+        <p class="gate-lead">${updateDeviceMessage(owner)}</p>
+        <ol class="gate-steps">
+          ${steps}
         </ol>
         <div class="gate-foot">${kept}</div>
       </div>
@@ -3965,7 +4013,7 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private shapeDots(families: readonly string[]) {
-    return html`<span class="shape-dots">${ALL_FAMILIES.map((f) => html`<span class="shape-dot ${f} ${families.includes(f) ? "on" : ""}" title=${familyTitle(f)}></span>`)}</span>`;
+    return html`<span class="shape-dots">${this.ownerFamilies.map((f) => html`<span class="shape-dot ${f} ${families.includes(f) ? "on" : ""}" title=${familyTitle(f)}></span>`)}</span>`;
   }
 
   /** The shape filter appears only past this many rows. Under it the whole
@@ -4032,7 +4080,7 @@ export class WristAssistantPanel extends LitElement {
       @click=${() => { this.pickerFilter = key; }}>${label}<span class="pk-count">${count}</span></button>`;
     return html`<div class="pk-filter">
       ${chip("all", "All", rows.length)}
-      ${ALL_FAMILIES.map((f) => chip(f, familyTitle(f), rows.filter((r) => familiesOfRow(r).includes(f)).length))}
+      ${this.ownerFamilies.map((f) => chip(f, familyTitle(f), rows.filter((r) => familiesOfRow(r).includes(f)).length))}
     </div>`;
   }
 
@@ -4056,8 +4104,8 @@ export class WristAssistantPanel extends LitElement {
       </button>
       ${this.pickerOpen ? html`<div class="menu" role="listbox">
         ${all.length >= WristAssistantPanel.FILTER_FROM_ROWS ? this.renderPickerFilter(all) : nothing}
-        ${all.length === 0 && !(d && d.baseRevision === null) ? html`<div class="empty">No complications for this watch yet.</div>` : nothing}
-        ${all.length > 0 && rows.length === 0 ? html`<div class="empty">Nothing on this watch has a ${filter === "all" ? "" : familyTitle(filter)} shape.</div>` : nothing}
+        ${all.length === 0 && !(d && d.baseRevision === null) ? html`<div class="empty">No complications for this ${this.deviceWord} yet.</div>` : nothing}
+        ${all.length > 0 && rows.length === 0 ? html`<div class="empty">Nothing on this ${this.deviceWord} has a ${filter === "all" ? "" : familyTitle(filter)} shape.</div>` : nothing}
         ${rows.map((row) => row.kind === "record"
           ? html`<button class="row" role="option" aria-current=${row.record.id === this.selectedId ? "true" : "false"}
               @click=${() => { this.togglePicker(false); this.selectRecord(row.record); }}>
@@ -4101,12 +4149,12 @@ export class WristAssistantPanel extends LitElement {
     const full = this.freeSlot() < 0;
     return html`<div class="newc">
       <button class="new-btn primary" ?disabled=${full} aria-haspopup="dialog" aria-expanded=${this.newOpen ? "true" : "false"}
-        title=${full ? "This watch has no free slot. Delete a complication first." : "Make a new complication"}
+        title=${full ? `This ${this.deviceWord} has no free slot. Delete a complication first.` : "Make a new complication"}
         @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New</span></button>
       <button class="new-btn" ?disabled=${full} aria-haspopup="dialog" aria-expanded=${this.importOpen ? "true" : "false"}
-        title=${full ? "This watch has no free slot. Delete a complication first." : "Paste a complication somebody shared"}
+        title=${full ? `This ${this.deviceWord} has no free slot. Delete a complication first.` : "Paste a complication somebody shared"}
         @click=${() => this.openImportDialog()}><span>Import</span></button>
-      ${full ? html`<span class="newc-full">watch is full</span>` : nothing}
+      ${full ? html`<span class="newc-full">${this.deviceWord} is full</span>` : nothing}
     </div>`;
   }
 
@@ -4126,7 +4174,7 @@ export class WristAssistantPanel extends LitElement {
   private newNameProblem(): string | undefined {
     const name = this.newName.trim();
     if (name === "") return undefined; // Not an error yet, just unanswered.
-    if (this.takenNames().has(name.toLowerCase())) return "A complication on this watch already has that name.";
+    if (this.takenNames().has(name.toLowerCase())) return `A complication on this ${this.deviceWord} already has that name.`;
     return undefined;
   }
 
@@ -4157,11 +4205,13 @@ export class WristAssistantPanel extends LitElement {
         </div>
         ${nameProblem
           ? html`<div class="hint err">${nameProblem}</div>`
-          : html`<div class="hint">This is what the name shows on the watch face picker, so make it one you will recognise there.</div>`}
+          : html`<div class="hint">${deviceKindOf(this.selectedOwner) === "iphone"
+            ? "This is the name the Lock Screen customise screen shows, so make it one you will recognise there."
+            : "This is what the name shows on the watch face picker, so make it one you will recognise there."}</div>`}
         <div class="field new-shapes">
           <span>Shape</span>
           <div class="shape-cards" role="radiogroup" aria-label="Shape">
-            ${ALL_FAMILIES.map((f) => html`<button type="button" role="radio" class="shape-card ${this.newFamily === f ? "on" : ""}"
+            ${this.ownerFamilies.map((f) => html`<button type="button" role="radio" class="shape-card ${this.newFamily === f ? "on" : ""}"
               aria-checked=${this.newFamily === f ? "true" : "false"}
               @click=${() => { this.newFamily = f; }}>
               ${familyArt(f)}
@@ -4450,8 +4500,10 @@ export class WristAssistantPanel extends LitElement {
           @input=${(e: Event) => { this.importName = (e.target as HTMLInputElement).value; }} />
       </div>
       ${taken
-        ? html`<div class="hint err">A complication on this watch already has that name.</div>`
-        : html`<div class="hint">${importSummary(cfg)}. It opens in the editor and reaches the watch at the first Save.</div>`}
+        ? html`<div class="hint err">A complication on this ${this.deviceWord} already has that name.</div>`
+        : html`<div class="hint">${importSummary(cfg)}. ${deviceKindOf(this.selectedOwner) === "iphone"
+            ? "It opens in the editor, and reaches your iPhone at its next sync after the first Save."
+            : "It opens in the editor and reaches the watch at the first Save."}</div>`}
       ${rows.length === 0
         ? html`<div class="hint">Every entity this design reads is already in your Home Assistant.</div>`
         : html`<div class="field">
@@ -5505,7 +5557,10 @@ export class WristAssistantPanel extends LitElement {
    */
   private renderShapeTabs(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
     const have = cfg.supportedFamilies;
-    return ALL_FAMILIES.map((f) => {
+    // A shape this device cannot draw gets no tab, even when the document
+    // carries a layout for it: a corner layout moved onto a phone stays in
+    // the file untouched, there is simply nowhere here to edit it.
+    return this.ownerFamilies.map((f) => {
       if (!have.includes(f)) {
         return html`<button class="tab off ${f}" ?disabled=${!this.canEdit} title=${`Add the ${familyTitle(f)} shape`} @click=${() => this.addShape(f)}>
           ${uiIcon("plus")}${familyTitle(f)}
@@ -5548,7 +5603,7 @@ export class WristAssistantPanel extends LitElement {
     const ids = [...(this.compiled?.entities.keys() ?? [])];
     const testing = this.testValues.size > 0;
     return html`<div class="card tint-states" style=${`--c:${SECTION_COLOR.states}`}>
-      <h2 class="panel-title"><span class="swatch">${uiIcon("states")}</span>Values on the watch
+      <h2 class="panel-title"><span class="swatch">${uiIcon("states")}</span>Values on the ${this.deviceWord}
         <span class="mini">live · click one to try another</span><span class="spacer"></span>
         ${testing ? html`<span class="testing-pill">Testing with your values <button @click=${() => { this.testValues = new Map(); this.editingValue = undefined; }}>Back to live</button></span>` : nothing}
       </h2>
@@ -5695,7 +5750,7 @@ export class WristAssistantPanel extends LitElement {
     } else {
       cards = false;
       body = html`<div class="empty-insp">${uiIcon("layers")}<b>Nothing selected</b>
-        <span>Click a layer on the watch or in the list to edit it.<br />The shape's own background and border are the bottom row of the list.</span></div>`;
+        <span>Click a layer ${deviceKindOf(this.selectedOwner) === "iphone" ? "on the preview" : "on the watch"} or in the list to edit it.<br />The shape's own background and border are the bottom row of the list.</span></div>`;
     }
     const all = this.openSections.size > 1;
     return html`
@@ -5809,7 +5864,7 @@ export class WristAssistantPanel extends LitElement {
           <dt>Templates</dt><dd class=${this.templateError ? "err" : "ok"}>${this.templateError ?? (this.compiled?.document ? "rendered" : "none")}</dd>
           <dt>Entities</dt><dd>${this.compiled?.entities.size ?? 0}</dd>
         </dl>
-        <p class="hint">Save writes to Home Assistant. Open Wrist Assistant on the watch to pull it down.</p>
+        <p class="hint">Save writes to Home Assistant. Open Wrist Assistant on the ${this.deviceWord} to pull it down.</p>
         <button class="link" @click=${() => (this.showRaw = !this.showRaw)}>${this.showRaw ? "Hide the raw configuration" : "Show the raw configuration"}</button>
         ${this.showRaw ? html`<pre>${JSON.stringify(d.encoded(), null, 2)}</pre>` : nothing}
       </div>
@@ -5832,9 +5887,30 @@ function parseDurationSeconds(v: unknown): number | undefined {
   return parts.reduce((acc, n) => acc * 60 + n, 0);
 }
 
-function ownerLabel(o: OwnerSummary): string {
+/**
+ * One owner's name in the device list.
+ *
+ * A watch takes the paired phone's name as its disambiguator, because both
+ * real watches report themselves as "Apple Watch". A phone owner takes a kind
+ * badge instead, so a list holding both says which is which; a phone whose
+ * name already reads as an iPhone ("Jesse's iPhone") is left alone rather than
+ * told twice.
+ */
+export function ownerLabel(o: OwnerSummary): string {
   const name = o.device_name ?? o.owner_watch_id;
+  if (deviceKindOf(o) === "iphone") return /iphone/i.test(name) ? name : `${name} (iPhone)`;
   return o.paired_iphone_name ? `${name} (${o.paired_iphone_name})` : name;
+}
+
+/** Owners in the order the picker lists them: watches first, then phones,
+ * each group left in the order the server gave. The server sorts them this
+ * way too; doing it here as well means a mixed reply still reads as two
+ * groups rather than an interleaved list. */
+export function ownersByKind(owners: readonly OwnerSummary[]): OwnerSummary[] {
+  return [
+    ...owners.filter((o) => deviceKindOf(o) !== "iphone"),
+    ...owners.filter((o) => deviceKindOf(o) === "iphone"),
+  ];
 }
 
 /**

@@ -6,6 +6,7 @@ import {
   ALL_FAMILIES,
   addFamily,
   canRemoveFamily,
+  familiesFor,
   familyContentSummary,
   firstDrawable,
   missingFamilies,
@@ -13,6 +14,29 @@ import {
   blankInline,
   supportedFamilies,
 } from "../src/layouts.js";
+
+describe("familiesFor", () => {
+  it("offers every shape to a watch", () => {
+    expect(familiesFor({ device_kind: "watch" })).toEqual(ALL_FAMILIES);
+  });
+
+  it("treats an absent or null kind as a watch, which is what every owner used to be", () => {
+    expect(familiesFor({})).toEqual(ALL_FAMILIES);
+    expect(familiesFor({ device_kind: null })).toEqual(ALL_FAMILIES);
+    expect(familiesFor(undefined)).toEqual(ALL_FAMILIES);
+  });
+
+  // Corner is a watch face slot and nothing else: the iPhone lock screen has
+  // circular, rectangular and inline.
+  it("hides corner from a phone and keeps the other three in order", () => {
+    expect(familiesFor({ device_kind: "iphone" })).toEqual(["rectangular", "circular", "inline"]);
+  });
+
+  it("does not change the shared list it filters", () => {
+    familiesFor({ device_kind: "iphone" });
+    expect(ALL_FAMILIES).toEqual(["rectangular", "circular", "corner", "inline"]);
+  });
+});
 
 describe("newConfig", () => {
   it("keeps the three canvas shapes by default, which is what an old watch needs", () => {

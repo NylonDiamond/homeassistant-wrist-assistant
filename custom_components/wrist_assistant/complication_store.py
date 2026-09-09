@@ -469,6 +469,14 @@ class ComplicationStore:
         # Sent on every long-poll request; the panel's "Send to watch" is
         # green exactly when it equals owner_token().
         self._applied: dict[str, int] = {}
+        # owner_watch_id → ISO-8601 UTC of that owner's last
+        # ``complications_sync`` pull. The watch's reachability is answered by
+        # the coordinator's poll clock, which lives in memory; an iPhone owner
+        # holds no long-poll at all, so this stamp is the only evidence the
+        # panel has that a phone ever came and collected its records. Persisted
+        # for the same reason the applied token is: a restart must not turn
+        # "synced ten minutes ago" into "never".
+        self._last_sync: dict[str, str] = {}
         self._token = 0
         self._listeners: list[ChangeListener] = []
         self._wake: WakeCallback | None = None
@@ -530,6 +538,11 @@ class ComplicationStore:
             for owner, value in raw_applied.items():
                 if isinstance(owner, str) and isinstance(value, int) and not isinstance(value, bool) and value >= 0:
                     self._applied[owner] = value
+        raw_last_sync = data.get("last_sync", {})
+        if isinstance(raw_last_sync, dict):
+            for owner, value in raw_last_sync.items():
+                if isinstance(owner, str) and isinstance(value, str) and value:
+                    self._last_sync[owner] = value
         raw_records = data.get("records", [])
         if not isinstance(raw_records, list):
             return
@@ -567,6 +580,7 @@ class ComplicationStore:
                 for owner, entries in self._occupied.items()
             },
             "applied": dict(self._applied),
+            "last_sync": dict(self._last_sync),
             "records": [
                 record.as_dict()
                 for by_id in self._records.values()
@@ -602,6 +616,7 @@ class ComplicationStore:
                 self._pages,
                 self._occupied,
                 self._applied,
+                self._last_sync,
             )
         )
         if not touched:
@@ -611,6 +626,7 @@ class ComplicationStore:
         self._pages.pop(owner_watch_id, None)
         self._occupied.pop(owner_watch_id, None)
         self._applied.pop(owner_watch_id, None)
+        self._last_sync.pop(owner_watch_id, None)
         self._schedule_save()
         _LOGGER.info("Purged complication records for owner %s", owner_watch_id)
         self._notify(ComplicationChange(owner_watch_id=owner_watch_id, token=0))
@@ -622,6 +638,7 @@ class ComplicationStore:
         self._pages.clear()
         self._occupied.clear()
         self._applied.clear()
+        self._last_sync.clear()
         self._token = 0
         await self._store.async_remove()
 
@@ -779,6 +796,39 @@ class ComplicationStore:
             )
         )
         return True
+
+    def last_sync_at(self, owner_watch_id: str) -> str | None:
+        """ISO-8601 UTC of this owner's last pull, ``None`` when it never has."""
+        return self._last_sync.get(owner_watch_id)
+
+    def seconds_since_sync(self, owner_watch_id: str) -> float | None:
+        """How long since this owner last pulled, in seconds, or ``None``.
+
+        The arithmetic lives here rather than in the WebSocket layer because
+        the stamp does, and because a stored string that will not parse (a
+        hand-edited storage file) must read as "never" rather than raise in
+        the middle of a status reply.
+        """
+        raw = self._last_sync.get(owner_watch_id)
+        if raw is None:
+            return None
+        try:
+            seen = datetime.fromisoformat(raw)
+        except ValueError:
+            return None
+        if seen.tzinfo is None:
+            seen = seen.replace(tzinfo=UTC)
+        return max(0.0, (datetime.now(UTC) - seen).total_seconds())
+
+    def set_last_sync(self, owner_watch_id: str) -> None:
+        """Stamp now as this owner's last ``complications_sync`` pull.
+
+        Not a notification: nothing in the panel redraws on a pull that
+        changed nothing, and the ack that does redraw travels as its own
+        change. The save is the debounced one every other report uses.
+        """
+        self._last_sync[owner_watch_id] = _now_iso()
+        self._schedule_save()
 
     def set_pages(self, owner_watch_id: str, entries: list[Any]) -> bool:
         """Record the watch's page report. Returns whether it changed.

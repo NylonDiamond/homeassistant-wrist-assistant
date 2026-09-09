@@ -77,7 +77,7 @@ from .statistics_series import (
     StatisticsSeriesError,
     async_statistics_series,
 )
-from .widget_secret_store import DEVICE_KIND_WATCH
+from .widget_secret_store import DEVICE_KIND_IPHONE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -203,19 +203,28 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
 def ws_owners(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Every provisioned watch, with how many live complications it owns.
+    """Every provisioned device, with how many live complications it owns.
 
-    Owners come from the widget secret store (a watch self-provisions under
+    Owners come from the widget secret store (a device self-provisions under
     its own id), not from the complication store, so a watch with nothing
     saved yet still shows up as a target for the first complication.
 
+    iPhones are owners too, because the phone draws its own complications on
+    the lock screen rather than mirroring the watch's. ``device_kind`` says
+    which is which, and is null on an orphan row, where no store entry is left
+    to ask. The panel reads it to decide which shapes to offer (no corner on a
+    phone) and what the send state can say (a phone holds no long-poll, so
+    nothing can be pushed to it). Watches sort first so the list a household
+    with one phone and one watch sees does not reorder itself.
+
     Names come from HA's device registry first and the secret store second.
-    The store holds what the watch reported at provision time, which on
+    The store holds what the device reported at provision time, which on
     current watchOS is the plain model name rather than anything per-device,
     so two watches in one household can arrive with the same one. The
     registry holds whatever the user renamed the device to, and
     ``paired_iphone_name`` tells apart the two that are still called the
-    same thing.
+    same thing. One lookup serves both kinds: ``build_device_info`` registers
+    an iPhone under the same ``watch_<id>`` identifier a watch gets.
     """
     domain_data = hass.data.get(DOMAIN)
     if domain_data is None:
@@ -237,8 +246,6 @@ def ws_owners(
     owners: list[dict[str, Any]] = []
     seen: set[str] = set()
     for device_id, entry in secret_store.all_entries.items():
-        if entry.device_kind != DEVICE_KIND_WATCH:
-            continue
         seen.add(device_id)
         paired_id = entry.owner_iphone_id
         paired_name: str | None = None
@@ -250,6 +257,7 @@ def ws_owners(
         owners.append(
             {
                 "owner_watch_id": device_id,
+                "device_kind": entry.device_kind,
                 "device_name": registry_name(device_id) or entry.device_name,
                 "paired_iphone_name": paired_name,
                 "app_version": entry.app_version,
@@ -273,6 +281,10 @@ def ws_owners(
         owners.append(
             {
                 "owner_watch_id": owner,
+                # Null rather than "watch": the entry that would have said is
+                # the one that went missing, and a guess here would send the
+                # panel's shape list and gate down the wrong branch.
+                "device_kind": None,
                 "device_name": None,
                 "paired_iphone_name": None,
                 "app_version": None,
@@ -283,7 +295,16 @@ def ws_owners(
                 "is_orphan": True,
             }
         )
-    owners.sort(key=lambda o: (o["device_name"] or "", o["owner_watch_id"]))
+    # Watches first, then phones, each block by name. An orphan sorts with the
+    # watches, which is where it has always sorted; its records were a watch's
+    # until the entry disappeared.
+    owners.sort(
+        key=lambda o: (
+            o["device_kind"] == DEVICE_KIND_IPHONE,
+            o["device_name"] or "",
+            o["owner_watch_id"],
+        )
+    )
     connection.send_result(
         msg["id"],
         {
@@ -583,13 +604,18 @@ def ws_subscribe(
 def ws_watch_status(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Just the watch's reachability, for the panel's header chip.
+    """Just the owner's reachability, for the panel's header chip.
 
     The panel used to learn this only from a list reply, and a list arrives on
     a change or a save. Nothing fires when a watch simply stops polling or
     starts again, so a chip opened next to a watch on the wrist kept saying so
-    for as long as the tab stayed open. This is the same three fields without
+    for as long as the tab stayed open. This is the same few fields without
     the records, cheap enough to ask for on a timer.
+
+    ``last_sync_seconds`` is the phone's answer to ``last_poll_seconds``. An
+    iPhone owner holds no long-poll, so ``polling`` is always false and
+    ``last_poll_seconds`` always null for one; the pull it makes when the app
+    is opened is the only thing it does that the panel can see.
     """
     domain_data = hass.data.get(DOMAIN)
     if domain_data is None:
@@ -603,6 +629,7 @@ def ws_watch_status(
         {
             "polling": coordinator.is_polling(owner),
             "last_poll_seconds": _seconds_since_poll(hass, coordinator, owner),
+            "last_sync_seconds": store.seconds_since_sync(owner),
             "token": store.owner_token(owner),
             "applied_token": store.applied_token(owner),
         },
@@ -627,6 +654,12 @@ def ws_nudge(
     token gets nothing from it; the ack that turns the button green arrives
     on the watch's next poll request either way. ``polling`` in the reply is
     whether there was a poll to wake at all.
+
+    An owner with no parked poll is answered, not refused: false in
+    ``polling`` and nothing woken. That covers a watch that is out of range
+    and every iPhone owner, which never parks a poll at all. The panel hides
+    Resend for a phone, but a stale tab that still shows it must get an answer
+    rather than an error dialog.
     """
     domain_data = hass.data.get(DOMAIN)
     if domain_data is None:

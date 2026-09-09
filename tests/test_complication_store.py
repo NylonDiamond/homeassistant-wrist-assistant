@@ -928,6 +928,41 @@ def test_never_acked_is_none_and_an_ack_of_zero_is_a_number(mod):
     assert _new(mod).applied_token(OWNER) == 0
 
 
+def test_last_sync_is_stamped_notifies_nobody_and_survives_restart(mod):
+    """The phone's only sign of life, so it has to outlive a restart.
+
+    A watch answers "is it listening" through the coordinator's poll clock,
+    which is in memory. An iPhone owner never parks a poll, so its pull is all
+    the panel ever sees; a restart that reset this would report a phone synced
+    a minute ago as one that never synced at all.
+    """
+    store = _new(mod)
+    seen = []
+    store.async_add_listener(seen.append)
+    assert store.last_sync_at(OWNER) is None
+    assert store.seconds_since_sync(OWNER) is None
+
+    store.set_last_sync(OWNER)
+    stamped = store.last_sync_at(OWNER)
+    assert isinstance(stamped, str) and stamped.endswith("Z")
+    assert 0 <= store.seconds_since_sync(OWNER) < 60
+    assert store.last_sync_at(OTHER) is None
+    # A pull that changed nothing must not make the panel redraw.
+    assert seen == []
+
+    reloaded = _new(mod)
+    assert reloaded.last_sync_at(OWNER) == stamped
+    assert 0 <= reloaded.seconds_since_sync(OWNER) < 60
+    assert reloaded.seconds_since_sync(OTHER) is None
+
+
+def test_an_unparseable_last_sync_reads_as_never(mod):
+    """A hand-edited storage file must not raise inside a status reply."""
+    store = _new(mod)
+    store._last_sync[OWNER] = "not a timestamp"
+    assert store.seconds_since_sync(OWNER) is None
+
+
 def test_every_commit_wakes_the_owner(mod):
     store = _new(mod)
     woken = []
@@ -1004,6 +1039,7 @@ def test_forget_owner_erases_every_trace_of_one_watch(mod):
     store.set_occupied(OWNER, [{"slot": 5, "name": "P", "kind": "preset", "home": "H"}])
     store.set_pages(OWNER, [{"id": str(uuid.uuid4()), "name": "Home"}])
     store.set_applied_token(OWNER, 1)
+    store.set_last_sync(OWNER)
     store.save(OTHER, _doc(slotIndex=3), base_revision=None, updated_by="t")
 
     seen = []
@@ -1016,6 +1052,7 @@ def test_forget_owner_erases_every_trace_of_one_watch(mod):
     assert store.pages(OWNER) == []
     assert store.occupied(OWNER) == []
     assert store.applied_token(OWNER) is None
+    assert store.last_sync_at(OWNER) is None
     assert store.is_empty(OWNER) is True
     # The panel hears about it, so an open tab reloads instead of showing rows
     # for a watch that no longer exists.
@@ -1029,6 +1066,7 @@ def test_forget_owner_erases_every_trace_of_one_watch(mod):
     reloaded = _new(mod)
     assert reloaded.owners() == [OTHER]
     assert reloaded.applied_token(OWNER) is None
+    assert reloaded.last_sync_at(OWNER) is None
 
 
 def test_forget_owner_on_a_watch_with_nothing_stored_is_a_no_op(mod):
@@ -1043,9 +1081,11 @@ def test_async_remove_wipes_the_store_and_its_file(mod):
     store = _new(mod)
     store.save(OWNER, _doc(), base_revision=None, updated_by="t")
     store.set_applied_token(OWNER, 1)
+    store.set_last_sync(OWNER)
     asyncio.run(store.async_remove())
     assert store.owners() == []
     assert store.token == 0
     assert store.applied_token(OWNER) is None
+    assert store.last_sync_at(OWNER) is None
     # Uninstall is clean: a re-added integration comes back with nothing.
     assert _new(mod).owners() == []
