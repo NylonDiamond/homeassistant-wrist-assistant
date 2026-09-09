@@ -54,5 +54,5 @@ export function updateWatchMessage(appVersion: string | null | undefined, minimu
   const reported = have
     ? `This watch runs Wrist Assistant ${appVersion}.`
     : "This watch has not reported its Wrist Assistant version yet.";
-  return `${reported} The complication editor needs ${minimum} or newer, and that update is coming soon to the App Store.`;
+  return `${reported} The editor needs ${minimum}, coming soon to the App Store.`;
 }

@@ -3912,26 +3912,26 @@ export class WristAssistantPanel extends LitElement {
     const owner = this.selectedOwner;
     const count = owner?.complication_count ?? 0;
     const kept = count === 0
-      ? "Nothing on this watch changes in the meantime."
-      : `${count} complication${count === 1 ? "" : "s"} for this watch ${count === 1 ? "stays" : "stay"} in Home Assistant, untouched, until the editor opens.`;
+      ? "Nothing on this watch changes until then."
+      : `Your ${count} complication${count === 1 ? "" : "s"} keep${count === 1 ? "s" : ""} working until then.`;
     return html`<div class="gate">
       <div class="gate-card">
         <div class="gate-glyph">${uiIcon("watch")}</div>
         <div class="gate-eyebrow">Watch app update coming soon</div>
-        <h2 class="gate-title">The editor opens as soon as this watch has the new app.</h2>
+        <h2 class="gate-title">This watch needs the new app.</h2>
         <p class="gate-lead">${updateWatchMessage(owner?.app_version)}</p>
         <ol class="gate-steps">
           <li>
             <span class="gate-n">1</span>
-            <div><b>Update Wrist Assistant on your iPhone</b><span>The watch app updates with it. Open the watch app once so it reports its version here.</span></div>
+            <div><b>Update Wrist Assistant on your iPhone</b><span>The watch app updates with it.</span></div>
           </li>
           <li>
             <span class="gate-n">2</span>
-            <div><b>Move the complications your iPhone holds</b><span>Open Wrist Assistant on the iPhone. It offers to send them to Home Assistant, and the Widgets tab has the same button. They keep working from the watch until you do.</span></div>
+            <div><b>Open the app on your iPhone and on your watch</b><span>The iPhone asks to move your complications to Home Assistant. Say yes.</span></div>
           </li>
           <li>
             <span class="gate-n">3</span>
-            <div><b>Reload this page</b><span>The editor opens for this watch, with everything Home Assistant holds ready to edit.</span></div>
+            <div><b>Reload this page</b><span>The editor opens.</span></div>
           </li>
         </ol>
         <div class="gate-foot">${kept}</div>
