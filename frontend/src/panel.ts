@@ -3927,11 +3927,11 @@ export class WristAssistantPanel extends LitElement {
           </li>
           <li>
             <span class="gate-n">2</span>
-            <div><b>Open the app on your iPhone and on your watch</b><span>The iPhone asks to move your complications to Home Assistant. Say yes.</span></div>
+            <div><b>Open the app on your iPhone and on your watch</b><span>The watch reports its new version here.</span></div>
           </li>
           <li>
             <span class="gate-n">3</span>
-            <div><b>Reload this page</b><span>The editor opens.</span></div>
+            <div><b>Reload this page</b><span>The editor opens. Complications your iPhone still holds show as locked slots until you move or delete them in the iPhone app.</span></div>
           </li>
         </ol>
         <div class="gate-foot">${kept}</div>
