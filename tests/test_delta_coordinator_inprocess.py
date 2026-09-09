@@ -269,6 +269,24 @@ def test_prune_releases_parked_poll(coordinator) -> None:
     asyncio.run(run())
 
 
+def test_waking_an_owner_with_no_parked_poll_is_a_no_op(coordinator) -> None:
+    """What the panel's Resend does to an iPhone owner, and to an absent watch.
+
+    An iPhone is a complication owner in its own right but holds no long-poll
+    on this server, so there is never a waiter to release. The command answers
+    with `polling: false` rather than an error, which only works because this
+    raises nothing on an id the coordinator has never seen.
+    """
+    _module, _hass, coord = coordinator
+
+    async def run() -> None:
+        coord.wake_watch("iphone:never-polled", renotify=True)
+        assert coord.is_polling("iphone:never-polled") is False
+        assert coord.seconds_since_poll("iphone:never-polled") is None
+
+    asyncio.run(run())
+
+
 def test_session_listener_exception_does_not_break_poll(coordinator) -> None:
     module, hass, coord = coordinator
     ent = "wrist_assistant.t5"

@@ -481,6 +481,78 @@ def test_poll_carries_the_token_and_the_ack_turns_green(
     assert reply["result"]["applied_token"] == new_token
 
 
+def test_an_ack_on_the_sync_pull_turns_a_phone_owner_green(
+    base_url: str, token: str, owner: tuple[str, bytes]
+) -> None:
+    """The iPhone's ack path, since it has no long-poll to carry one.
+
+    A watch reports its applied token on every delta request. The phone never
+    sends one, so ``complications_sync`` takes the ack on the pull instead, and
+    the pull is also what stamps ``last_sync_seconds``: the only evidence the
+    panel gets that a phone came and collected its records.
+    """
+    watch_id, secret = owner
+
+    def status() -> dict[str, Any]:
+        reply = _ws_admin_commands(
+            base_url,
+            token,
+            [
+                {
+                    "type": "wrist_assistant/complications/watch_status",
+                    "owner_watch_id": watch_id,
+                }
+            ],
+        )[0]
+        assert reply["success"], reply
+        return reply["result"]
+
+    assert status()["last_sync_seconds"] is None
+
+    r = _create(base_url, owner, [_document(_cid(), "Lock screen", 2)])
+    assert r.status_code == 200, r.text
+    new_token = r.json()["token"]
+    assert new_token > 0
+
+    r = _post_op(
+        base_url,
+        secret,
+        watch_id,
+        "complications_sync",
+        {"since_token": 0, "occupied": []},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["token"] == new_token
+    pulled = status()
+    # The pull alone stamps the sync; the ack is a separate claim.
+    assert pulled["last_sync_seconds"] is not None
+    assert pulled["last_sync_seconds"] < 60
+    assert pulled["applied_token"] is None
+
+    r = _post_op(
+        base_url,
+        secret,
+        watch_id,
+        "complications_sync",
+        {"since_token": new_token, "occupied": [], "applied_token": new_token},
+    )
+    assert r.status_code == 200, r.text
+    assert status()["applied_token"] == new_token
+
+    # Junk is ignored rather than refused: the pull is what the caller came
+    # for, and the ack is advisory like every other report on this op.
+    for junk in (True, -1, "3", None):
+        r = _post_op(
+            base_url,
+            secret,
+            watch_id,
+            "complications_sync",
+            {"since_token": new_token, "occupied": [], "applied_token": junk},
+        )
+        assert r.status_code == 200, r.text
+        assert status()["applied_token"] == new_token, junk
+
+
 def _watch_text(result: Any) -> str:
     """A signed `template` reply as the watch's decoder reads it.
 

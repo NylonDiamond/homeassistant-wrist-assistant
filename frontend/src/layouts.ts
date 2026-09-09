@@ -20,9 +20,25 @@ import {
   removeElement,
   schemaVersionFor,
 } from "./model.js";
+import { type DeviceOwnerLike, deviceKindOf } from "./version.js";
 
 /** Every shape, in the order the schema, the pickers and the panel list them. */
 export const ALL_FAMILIES: FamilyKind[] = ["rectangular", "circular", "corner", "inline"];
+
+/** The shapes the panel offers for one owner.
+ *
+ * Corner is a watch face slot and nothing else: the iPhone lock screen has
+ * circular, rectangular and inline, so a phone owner is never offered one.
+ * A document that already carries a corner layout keeps it (it was moved or
+ * imported from a watch), it simply has no tab here, the same way the panel
+ * treats any family a device cannot draw.
+ *
+ * Everywhere the panel lists shapes for the selected owner goes through this,
+ * so the picker, the filter, the tabs and the New dialog can never disagree
+ * about which shapes exist. */
+export function familiesFor(owner: DeviceOwnerLike | null | undefined): FamilyKind[] {
+  return deviceKindOf(owner) === "iphone" ? ALL_FAMILIES.filter((f) => f !== "corner") : ALL_FAMILIES;
+}
 
 export function isDrawable(family: FamilyKind): family is "rectangular" | "circular" | "corner" {
   return DRAWABLE_FAMILIES.includes(family);

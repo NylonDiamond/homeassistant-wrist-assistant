@@ -713,6 +713,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # HA-owned custom complications: iOS checks this before offering the
     # read-only replica screen and the complications_sync / restore ops.
     coordinator.register_capability("custom_complications")
+    # The iPhone is a complication owner in its own right: the app checks this
+    # before pulling its own records for the lock screen widgets.
+    coordinator.register_capability("custom_complications_iphone")
     coordinator.register_capability("gzip")
     coordinator.register_capability("slim_payloads")
     coordinator.register_capability("camera_batch")
