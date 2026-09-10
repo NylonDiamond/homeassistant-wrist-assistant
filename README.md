@@ -49,6 +49,42 @@ Wrist Assistant connects your Apple Watch to Home Assistant with fast setup, rea
 2. Restart Home Assistant.
 3. Add the `Wrist Assistant` integration from `Settings` -> `Devices & Services`.
 
+## Beta versions
+
+Beta builds are published as GitHub pre-releases. Home Assistant hides them unless you
+opt in, so nothing changes until you turn this on. Betas pair with the TestFlight beta
+of the iPhone app, and some features need both.
+
+### With HACS
+
+HACS creates a `Pre-release` switch for each downloaded repository, and ships it
+disabled so nobody lands on a beta by accident. Turning it on is a one-time job.
+
+1. Go to `Settings` -> `Devices & Services` -> `HACS` and open its devices list.
+2. Open the `Wrist Assistant` device.
+3. On the Diagnostic card, click `+1 disabled entity`, then click `Pre-release`.
+4. Open the settings gear and press `Enable`. Wait about 30 seconds.
+5. Turn the `Pre-release` switch on.
+
+Beta versions now appear in `Settings` -> `Updates` like any other update, with release
+notes. Install one, then restart Home Assistant yourself.
+
+Leave the switch on until the next stable release is out. If you turn it off while
+running a beta, Home Assistant offers you the newest stable version, which may be older
+than what you have, and presents it as an update.
+
+### Without HACS
+
+Download `Source code (zip)` from the newest release marked `Pre-release` on the
+[releases page](https://github.com/NylonDiamond/homeassistant-wrist-assistant/releases),
+replace `custom_components/wrist_assistant` with the copy from the zip, and restart
+Home Assistant. There is no update notice this way.
+
+### Going back to stable
+
+Turn the `Pre-release` switch off after the stable release ships, then use HACS
+`Redownload` and pick the stable version if you are still on a beta.
+
 ## Watch notifications
 
 ### `wrist_assistant.send_notification`
