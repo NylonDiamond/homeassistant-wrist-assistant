@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { nothing } from "lit";
 import { GAUGE_MAX_DOTS, literal, newConfig, newElement, type Element, type GaugeElement, type Value } from "../src/model.js";
 import { deriveDataSources } from "../src/compiler.js";
+import { gaugeEndMode, setGaugeEndMode } from "../src/editors.js";
 import { renderLayout, type IconProvider } from "../src/renderer.js";
 import { resolveAll, type EntityState, type ResolvedLayout } from "../src/resolver.js";
 
@@ -209,6 +210,45 @@ describe("a gauge whose range follows entities", () => {
     cfg.elements.push(el);
     const ids = deriveDataSources(cfg).flatMap((d) => (d.kind === "entity" ? [d.entityId] : []));
     expect(ids).toEqual(["sensor.g", "sensor.high", "sensor.low"]);
+  });
+});
+
+describe("switching a gauge end between a number and an entity", () => {
+  const gauge = () => (newElement("gauge") as Extract<Element, { kind: "gauge" }>).payload;
+  const sensor = (entityId: string): Value => ({ kind: { kind: "entityState", entityId, displayName: entityId, domain: "sensor" } });
+
+  it("reads each end's mode from whether that end has a source", () => {
+    const g = gauge();
+    expect(gaugeEndMode(g, "min")).toBe("number");
+    expect(gaugeEndMode(g, "max")).toBe("number");
+    g.maxSource = sensor("sensor.high");
+    expect(gaugeEndMode(g, "min")).toBe("number");
+    expect(gaugeEndMode(g, "max")).toBe("entity");
+  });
+
+  it("adds an empty entity source and leaves the number alone", () => {
+    const g = gauge();
+    g.minValue = 5;
+    setGaugeEndMode(g, "min", "entity");
+    expect(g.minSource).toEqual({ kind: { kind: "entityState", entityId: "", displayName: "", domain: "" } });
+    expect(g.minValue).toBe(5);
+    expect(g.maxSource).toBeUndefined();
+  });
+
+  it("drops the source on the way back, so the old number is what the gauge uses again", () => {
+    const g = gauge();
+    g.maxValue = 250;
+    g.maxSource = sensor("sensor.high");
+    setGaugeEndMode(g, "max", "number");
+    expect("maxSource" in g).toBe(false);
+    expect(g.maxValue).toBe(250);
+  });
+
+  it("keeps an entity the end already reads when Entity is picked again", () => {
+    const g = gauge();
+    g.minSource = sensor("sensor.low");
+    setGaugeEndMode(g, "min", "entity");
+    expect(g.minSource).toEqual(sensor("sensor.low"));
   });
 });
 

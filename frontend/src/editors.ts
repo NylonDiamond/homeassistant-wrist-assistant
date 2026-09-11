@@ -294,9 +294,17 @@ export function textArea(label: string, value: string, set: (v: string) => void,
 
 /** `def` adds a reset button beside the title, drawn only while the value is
  * away from that default. */
-export function numberField(label: string, value: number | undefined, set: (v: number | undefined) => void, opts: { step?: number; min?: number; max?: number; optional?: boolean; def?: number } = {}) {
+export function numberField(label: string, value: number | undefined, set: (v: number | undefined) => void, opts: NumberInputOptions & { def?: number } = {}) {
+  return html`<label class="field">${fieldLabel(label, backTo<number | undefined>(value, opts.def, set))}${numberInput(value, set, opts)}</label>`;
+}
+
+interface NumberInputOptions { step?: number; min?: number; max?: number; optional?: boolean; ariaLabel?: string }
+
+/** The input half of `numberField`, for a field that draws its own title line. */
+function numberInput(value: number | undefined, set: (v: number | undefined) => void, opts: NumberInputOptions) {
   const shown = value === undefined || Number.isNaN(value) ? "" : String(value);
-  const input = html`<input type="number" .value=${shown} step=${opts.step ?? "any"} min=${opts.min ?? nothing} max=${opts.max ?? nothing}
+  return html`<input type="number" .value=${shown} step=${opts.step ?? "any"} min=${opts.min ?? nothing} max=${opts.max ?? nothing}
+      aria-label=${opts.ariaLabel ?? nothing}
       @input=${onInput((v) => {
         if (v.trim() === "") {
           if (opts.optional) set(undefined);
@@ -305,7 +313,6 @@ export function numberField(label: string, value: number | undefined, set: (v: n
         const n = Number(v);
         if (!Number.isNaN(n)) set(n);
       })} />`;
-  return html`<label class="field">${fieldLabel(label, backTo<number | undefined>(value, opts.def, set))}${input}</label>`;
 }
 
 export function selectField<T extends string>(label: string, value: T, options: [T, string][], set: (v: T) => void, opts: { def?: T } = {}) {
@@ -1226,6 +1233,9 @@ export interface ValueEditorOptions {
   /** Drop the label line and tighten the chip, for a states table cell where
    * the column heading has already said what the value is for. */
   compact?: boolean;
+  /** Drop the label line but keep the full-size chip, for a field whose own
+   * title line already names the value. The label still titles the popover. */
+  noLabel?: boolean;
 }
 
 /**
@@ -1247,7 +1257,7 @@ export function valueEditor(host: EditorHost, value: Value, set: (v: Value) => v
   // typed-in number or a template is the author's own words and stays ink.
   const namesEntity = "entityId" in value.kind;
   return html`<div class="field value-chip-field ${opts.compact ? "compact" : ""}">
-    ${opts.compact ? nothing : html`<span>${label}</span>`}
+    ${opts.compact || opts.noLabel ? nothing : html`<span>${label}</span>`}
     <button type="button" class="value-chip ${opts.compact ? "chip-cell" : ""}" popovertarget=${id} aria-haspopup="dialog" title=${`${label}: ${summary}. Click to change it.`}>
       <span class="chip-text ${namesEntity ? "ent-tok" : ""}">${summary}</span>
       ${resolved === undefined ? nothing : html`<span class="chip-now mono" title="Value right now">${resolved}</span>`}
@@ -2555,6 +2565,81 @@ function timeLabelFields<T extends TimeLabelled>(
       ${hint}`}`;
 }
 
+/** One end of a gauge's range. */
+export type GaugeEnd = "min" | "max";
+export type GaugeEndMode = "number" | "entity";
+
+const GAUGE_END_MODES: [GaugeEndMode, string][] = [["number", "Number"], ["entity", "Entity"]];
+
+/** What one end of a gauge's range reads, as the stored layer says: an end with
+ * a source is an entity end, and any other end is its number. */
+export function gaugeEndMode(g: GaugeElement, end: GaugeEnd): GaugeEndMode {
+  return (end === "min" ? g.minSource : g.maxSource) === undefined ? "number" : "entity";
+}
+
+/**
+ * Switch one end between its number and an entity. Only the source key moves:
+ * the number stays stored, as the entity's fallback, so switching back to
+ * Number brings the old number back.
+ */
+export function setGaugeEndMode(p: GaugeElement, end: GaugeEnd, mode: GaugeEndMode): void {
+  const key = end === "min" ? "minSource" : "maxSource";
+  if (mode === "number") delete p[key];
+  else if (p[key] === undefined) p[key] = { kind: { kind: "entityState", entityId: "", displayName: "", domain: "" } };
+}
+
+/**
+ * A gauge's Min and Max. Each end is a fixed number or an entity, and only
+ * that one control is on screen: the Number and Entity switch on the title
+ * line picks it. An entity end still keeps its number for when the entity has
+ * no number to give, and the hint under the picker names it, so there is no
+ * second box to explain.
+ *
+ * Two number ends share a row as they always have. An entity picker needs the
+ * width for its name and live value, so once either end is an entity both
+ * ends stack.
+ */
+function gaugeRangeFields(
+  host: EditorHost,
+  g: GaugeElement,
+  defaults: Record<GaugeEnd, number>,
+  key: string,
+  setGauge: (mutate: (p: GaugeElement) => void, k?: string) => void,
+): TemplateResult {
+  const end = (which: GaugeEnd) => {
+    const isMin = which === "min";
+    const label = isMin ? "Min" : "Max";
+    const mode = gaugeEndMode(g, which);
+    const stored = isMin ? g.minValue : g.maxValue;
+    const setNumber = (v: number | undefined) => setGauge((p) => {
+      if (isMin) p.minValue = v ?? 0; else p.maxValue = v ?? 100;
+    }, which);
+    const titles: Record<GaugeEndMode, string> = {
+      number: `${label} is a fixed number`,
+      entity: `${label} reads a number from an entity`,
+    };
+    const head = html`<div class="gauge-end-head">
+      ${fieldLabel(label, mode === "number" ? backTo<number | undefined>(stored, defaults[which], setNumber) : undefined)}
+      <span class="seg" role="radiogroup" aria-label=${`${label} comes from`}>
+        ${GAUGE_END_MODES.map(([m, text]) => html`<button type="button" role="radio" aria-checked=${m === mode ? "true" : "false"}
+          class=${m === mode ? "on" : ""} title=${titles[m]}
+          @click=${() => { if (m !== mode) setGauge((p) => setGaugeEndMode(p, which, m)); }}>${text}</button>`)}
+      </span>
+    </div>`;
+    const source = isMin ? g.minSource : g.maxSource;
+    if (mode === "number" || source === undefined) {
+      return html`<div class="field gauge-end">${head}${numberInput(stored, setNumber, { ariaLabel: label })}</div>`;
+    }
+    return html`<div class="field gauge-end">${head}${valueEditor(host, source, (v) => setGauge((p) => {
+        if (isMin) p.minSource = v; else p.maxSource = v;
+      }, `${which}src`), { showResolved: true, noLabel: true, label, key: `${key}-${which}source` })}</div>
+      <div class="hint">If the entity has no number, the gauge uses ${String(stored)}.</div>`;
+  };
+  return g.minSource === undefined && g.maxSource === undefined
+    ? html`<div class="grid2 gauge-ends">${end("min")}${end("max")}</div>`
+    : html`${end("min")}${end("max")}`;
+}
+
 /**
  * A text layer's colour by value: the chart's Colour and Highlight fields, read
  * against the numbers in the text instead of a series. Every key is optional on
@@ -2685,28 +2770,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             <div class="hint">How many dots to draw. Left as it is, a count of the same
               entities without the filter, so "3 of 8 lights on" is one reading and one
               total over one scope. At most ${GAUGE_MAX_DOTS} dots are drawn.</div>`
-          : html`
-            <div class="grid2">
-              ${numberField("Min", g.minValue, (v) => setGauge((p) => { p.minValue = v ?? 0; }, "min"), { def: base.minValue as number })}
-              ${numberField("Max", g.maxValue, (v) => setGauge((p) => { p.maxValue = v ?? 100; }, "max"), { def: base.maxValue as number })}
-            </div>
-            ${checkField("Min from an entity", g.minSource !== undefined, (v) => setGauge((p) => {
-              if (v) p.minSource = { kind: { kind: "entityState", entityId: "", displayName: "", domain: "" } };
-              else delete p.minSource;
-            }))}
-            ${g.minSource === undefined ? nothing
-              : valueEditor(host, g.minSource, (v) => setGauge((p) => { p.minSource = v; }, "minsrc"),
-                { showResolved: true, label: "Min from", key: `${key}-minsource` })}
-            ${checkField("Max from an entity", g.maxSource !== undefined, (v) => setGauge((p) => {
-              if (v) p.maxSource = { kind: { kind: "entityState", entityId: "", displayName: "", domain: "" } };
-              else delete p.maxSource;
-            }))}
-            ${g.maxSource === undefined ? nothing
-              : valueEditor(host, g.maxSource, (v) => setGauge((p) => { p.maxSource = v; }, "maxsrc"),
-                { showResolved: true, label: "Max from", key: `${key}-maxsource` })}
-            ${g.minSource === undefined && g.maxSource === undefined ? nothing
-              : html`<div class="hint">The gauge's range follows the entity. When the entity has
-                no number, the fixed Min or Max above is used instead.</div>`}`}`;
+          : gaugeRangeFields(host, g, { min: base.minValue as number, max: base.maxValue as number }, key, setGauge)}`;
       look = html`
         <div class="grid2">
           ${segField("Style", g.style, GAUGE_STYLES, (v) => setGauge((p) => {

@@ -1924,6 +1924,18 @@ export class WristAssistantPanel extends LitElement {
     .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0 6px; }
     .grid2 .field, .grid4 .field { display: flex; flex-direction: column; align-items: stretch; gap: 3px; }
     .grid2 .field > span, .grid4 .field > span { font-size: 12px; }
+    /* A gauge's Min or Max: the label and a Number or Entity switch share the
+       title line, and the one control the switch picks sits under it. The
+       switch is pulled into the line's height so a pair of these lines up
+       with any other field title. Two number ends share a row while each
+       half still fits its label, reset and switch, and stack below that. */
+    .grid2.gauge-ends { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 4px 10px; }
+    .field.gauge-end { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+    .gauge-end-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .gauge-end-head > span:first-child { flex: 1 1 auto; min-width: 0; color: var(--wa-muted); font-size: 12px; line-height: 1.25; }
+    .gauge-end-head > span.has-reset { display: flex; align-items: center; justify-content: flex-start; gap: 2px; }
+    .gauge-end-head > .seg { height: 22px; margin: -3px 0; }
+    .gauge-end > .field { margin: 0; }
     .grid4 input[type=number] { text-align: right; padding-left: 4px; padding-right: 6px; }
     .row-inline { display: flex; align-items: flex-end; gap: 4px; }
     .row-inline .field { flex: 1; }
