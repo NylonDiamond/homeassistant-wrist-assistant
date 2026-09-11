@@ -1,0 +1,433 @@
+{
+  "name": "Text colour by value",
+  "description": "A text layer colours the numbers inside its text by value, with the chart's band table and highlight. The price line uses bands (typed out of order, so sorting counts) and highlight both: 32 is the lowest, 70 the highest, 66 is past the table. The tie reads 5 9 2 9 2, so the first 9 and the first 2 are marked and the rest keep the layer colour. A single number is both ends and the highest wins. Mixed text colours only its numbers and the units keep the layer colour. The signed line pins a negative, a decimal, and a hyphen after a digit that is not a sign. Highlight on its own leaves the other numbers in the layer colour, merged into the text around them. A rule that rewrites the text and recolours the layer is what the numbers are read from and what the rest of the text keeps. A countdown ignores the keys, a layer with no keys draws one colour, and a layer with a table but One colour draws one colour too. A trailing full stop is read as part of the number but keeps the layer colour, while the dot inside 5.5 stays coloured. Text with no numbers still carries spans, one run in the layer colour, and empty text carries an empty list of spans rather than none.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-0000000002A0",
+    "name": "Text colour by value",
+    "slotIndex": 2,
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002B1",
+          "value": { "kind": { "kind": "literal", "value": "32 36 43 70 66 44 40 37 35" } },
+          "fontSize": 12,
+          "fontWeight": "regular",
+          "coloring": "bands",
+          "bands": [
+            { "id": "B0000000-0000-4000-8000-0000000002D2", "upTo": 45, "colorHex": "#FFD60A" },
+            { "id": "B0000000-0000-4000-8000-0000000002D1", "upTo": 35, "colorHex": "#32D74B" }
+          ],
+          "bandAboveColorHex": "#FF9F0A",
+          "highlight": "both",
+          "highColorHex": "#FF3B30",
+          "lowColorHex": "#34FF6A",
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [],
+          "frame": { "x": 0, "y": 0, "width": 1, "height": 0.1, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002B2",
+          "value": { "kind": { "kind": "literal", "value": "5 9 2 9 2" } },
+          "fontSize": 12,
+          "fontWeight": "regular",
+          "highlight": "both",
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [],
+          "frame": { "x": 0, "y": 0.1, "width": 1, "height": 0.1, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002B3",
+          "value": { "kind": { "kind": "literal", "value": "42 kWh" } },
+          "fontSize": 12,
+          "fontWeight": "regular",
+          "highlight": "both",
+          "highColorHex": "#FF3B30",
+          "lowColorHex": "#34FF6A",
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [],
+          "frame": { "x": 0, "y": 0.2, "width": 1, "height": 0.1, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002B4",
+          "value": { "kind": { "kind": "literal", "value": "Now 32 ct, next 36 ct" } },
+          "fontSize": 12,
+          "fontWeight": "regular",
+          "coloring": "bands",
+          "bands": [
+            { "id": "B0000000-0000-4000-8000-0000000002D3", "upTo": 35, "colorHex": "#32D74B" },
+            { "id": "B0000000-0000-4000-8000-0000000002D4", "upTo": 45, "colorHex": "#FFD60A" }
+          ],
+          "bandAboveColorHex": "#FF9F0A",
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [],
+          "frame": { "x": 0, "y": 0.3, "width": 1, "height": 0.1, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002B5",
+          "value": { "kind": { "kind": "literal", "value": "-3.5 to 12.25, 5-2" } },
+          "fontSize": 12,
+          "fontWeight": "regular",
+          "coloring": "bands",
+          "bands": [
+            { "id": "B0000000-0000-4000-8000-0000000002D5", "upTo": 0, "colorHex": "#0A84FF" },
+            { "id": "B0000000-0000-4000-8000-0000000002D6", "upTo": 10, "colorHex": "#32D74B" }
+          ],
+          "bandAboveColorHex": "#FF9F0A",
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [],
+          "frame": { "x": 0, "y": 0.4, "width": 1, "height": 0.1, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002B6",
+          "value": { "kind": { "kind": "literal", "value": "Now 32 ct, next 36 ct" } },
+          "fontSize": 12,
+          "fontWeight": "regular",
+          "highlight": "highest",
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [],
+          "frame": { "x": 0, "y": 0.5, "width": 1, "height": 0.1, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002B7",
+          "value": { "kind": { "kind": "literal", "value": "Now 32 ct, next 36 ct" } },
+          "fontSize": 12,
+          "fontWeight": "regular",
+          "coloring": "bands",
+          "bands": [
+            { "id": "B0000000-0000-4000-8000-0000000002D7", "upTo": 35, "colorHex": "#32D74B" },
+            { "id": "B0000000-0000-4000-8000-0000000002D8", "upTo": 45, "colorHex": "#FFD60A" }
+          ],
+          "bandAboveColorHex": "#FF9F0A",
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [
+            {
+              "id": "DDDDDDDD-0000-4000-8000-0000000002C1",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-0000000002C2",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "BBBBBBBB-0000-4000-8000-0000000002C3",
+                        "value": { "kind": { "kind": "literal", "value": "50" } },
+                        "comparison": {
+                          "kind": "greaterThan",
+                          "value": { "kind": { "kind": "literal", "value": "40" } }
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    {
+                      "kind": "setText",
+                      "value": { "kind": { "kind": "literal", "value": "Now 30 ct, next 50 ct" } }
+                    },
+                    {
+                      "kind": "setColor",
+                      "value": { "kind": { "kind": "literal", "value": "#8E8E93" } }
+                    }
+                  ]
+                }
+              ],
+              "otherwise": []
+            }
+          ],
+          "frame": { "x": 0, "y": 0.6, "width": 1, "height": 0.1, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002B8",
+          "value": { "kind": { "kind": "literal", "value": "12 34" } },
+          "fontSize": 12,
+          "fontWeight": "regular",
+          "countdown": true,
+          "coloring": "bands",
+          "bands": [
+            { "id": "B0000000-0000-4000-8000-0000000002D9", "upTo": 20, "colorHex": "#32D74B" }
+          ],
+          "highlight": "both",
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [],
+          "frame": { "x": 0, "y": 0.7, "width": 1, "height": 0.1, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002B9",
+          "value": { "kind": { "kind": "literal", "value": "32 36 43" } },
+          "fontSize": 12,
+          "fontWeight": "regular",
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [],
+          "frame": { "x": 0, "y": 0.8, "width": 1, "height": 0.1, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002BA",
+          "value": { "kind": { "kind": "literal", "value": "32 36 43" } },
+          "fontSize": 12,
+          "fontWeight": "regular",
+          "bands": [
+            { "id": "B0000000-0000-4000-8000-0000000002DA", "upTo": 35, "colorHex": "#32D74B" }
+          ],
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [],
+          "frame": { "x": 0, "y": 0.9, "width": 1, "height": 0.1, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002BB",
+          "value": { "kind": { "kind": "literal", "value": "costs 5., was 5.5" } },
+          "fontSize": 12,
+          "fontWeight": "regular",
+          "coloring": "bands",
+          "bands": [
+            { "id": "B0000000-0000-4000-8000-0000000002DB", "upTo": 35, "colorHex": "#32D74B" }
+          ],
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [],
+          "frame": { "x": 0, "y": 0.9, "width": 0.33, "height": 0.1, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002BC",
+          "value": { "kind": { "kind": "literal", "value": "Off" } },
+          "fontSize": 12,
+          "fontWeight": "regular",
+          "highlight": "both",
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [],
+          "frame": { "x": 0.33, "y": 0.9, "width": 0.33, "height": 0.1, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002BD",
+          "value": { "kind": { "kind": "literal", "value": "" } },
+          "fontSize": 12,
+          "fontWeight": "regular",
+          "coloring": "bands",
+          "bands": [
+            { "id": "B0000000-0000-4000-8000-0000000002DC", "upTo": 35, "colorHex": "#32D74B" }
+          ],
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [],
+          "frame": { "x": 0.66, "y": 0.9, "width": 0.34, "height": 0.1, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "wedge",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {},
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": [],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002B1",
+          "kind": "text",
+          "text": "32 36 43 70 66 44 40 37 35",
+          "colorHex": "#FFFFFF",
+          "spans": [
+            { "text": "32", "colorHex": "#34FF6A" },
+            { "text": " ", "colorHex": "#FFFFFF" },
+            { "text": "36", "colorHex": "#FFD60A" },
+            { "text": " ", "colorHex": "#FFFFFF" },
+            { "text": "43", "colorHex": "#FFD60A" },
+            { "text": " ", "colorHex": "#FFFFFF" },
+            { "text": "70", "colorHex": "#FF3B30" },
+            { "text": " ", "colorHex": "#FFFFFF" },
+            { "text": "66", "colorHex": "#FF9F0A" },
+            { "text": " ", "colorHex": "#FFFFFF" },
+            { "text": "44", "colorHex": "#FFD60A" },
+            { "text": " ", "colorHex": "#FFFFFF" },
+            { "text": "40", "colorHex": "#FFD60A" },
+            { "text": " ", "colorHex": "#FFFFFF" },
+            { "text": "37", "colorHex": "#FFD60A" },
+            { "text": " ", "colorHex": "#FFFFFF" },
+            { "text": "35", "colorHex": "#32D74B" }
+          ]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002B2",
+          "kind": "text",
+          "text": "5 9 2 9 2",
+          "spans": [
+            { "text": "5 ", "colorHex": "#FFFFFF" },
+            { "text": "9", "colorHex": "#FF6B35" },
+            { "text": " ", "colorHex": "#FFFFFF" },
+            { "text": "2", "colorHex": "#32D74B" },
+            { "text": " 9 2", "colorHex": "#FFFFFF" }
+          ]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002B3",
+          "kind": "text",
+          "text": "42 kWh",
+          "spans": [
+            { "text": "42", "colorHex": "#FF3B30" },
+            { "text": " kWh", "colorHex": "#FFFFFF" }
+          ]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002B4",
+          "kind": "text",
+          "text": "Now 32 ct, next 36 ct",
+          "spans": [
+            { "text": "Now ", "colorHex": "#FFFFFF" },
+            { "text": "32", "colorHex": "#32D74B" },
+            { "text": " ct, next ", "colorHex": "#FFFFFF" },
+            { "text": "36", "colorHex": "#FFD60A" },
+            { "text": " ct", "colorHex": "#FFFFFF" }
+          ]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002B5",
+          "kind": "text",
+          "text": "-3.5 to 12.25, 5-2",
+          "spans": [
+            { "text": "-3.5", "colorHex": "#0A84FF" },
+            { "text": " to ", "colorHex": "#FFFFFF" },
+            { "text": "12.25", "colorHex": "#FF9F0A" },
+            { "text": ", ", "colorHex": "#FFFFFF" },
+            { "text": "5", "colorHex": "#32D74B" },
+            { "text": "-", "colorHex": "#FFFFFF" },
+            { "text": "2", "colorHex": "#32D74B" }
+          ]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002B6",
+          "kind": "text",
+          "text": "Now 32 ct, next 36 ct",
+          "spans": [
+            { "text": "Now 32 ct, next ", "colorHex": "#FFFFFF" },
+            { "text": "36", "colorHex": "#FF6B35" },
+            { "text": " ct", "colorHex": "#FFFFFF" }
+          ]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002B7",
+          "kind": "text",
+          "text": "Now 30 ct, next 50 ct",
+          "colorHex": "#8E8E93",
+          "spans": [
+            { "text": "Now ", "colorHex": "#8E8E93" },
+            { "text": "30", "colorHex": "#32D74B" },
+            { "text": " ct, next ", "colorHex": "#8E8E93" },
+            { "text": "50", "colorHex": "#FF9F0A" },
+            { "text": " ct", "colorHex": "#8E8E93" }
+          ]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002B8",
+          "kind": "text",
+          "spans": null
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002B9",
+          "kind": "text",
+          "text": "32 36 43",
+          "colorHex": "#FFFFFF",
+          "spans": null
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002BA",
+          "kind": "text",
+          "text": "32 36 43",
+          "colorHex": "#FFFFFF",
+          "spans": null
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002BB",
+          "kind": "text",
+          "text": "costs 5., was 5.5",
+          "spans": [
+            { "text": "costs ", "colorHex": "#FFFFFF" },
+            { "text": "5", "colorHex": "#32D74B" },
+            { "text": "., was ", "colorHex": "#FFFFFF" },
+            { "text": "5.5", "colorHex": "#32D74B" }
+          ]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002BC",
+          "kind": "text",
+          "text": "Off",
+          "spans": [
+            { "text": "Off", "colorHex": "#FFFFFF" }
+          ]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002BD",
+          "kind": "text",
+          "text": "",
+          "spans": []
+        }
+      ]
+    }
+  }
+}

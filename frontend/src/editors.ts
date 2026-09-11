@@ -13,7 +13,11 @@ import {
   type ChartColoring,
   type ChartElement,
   type ChartHighlight,
+  type ChartEndMarker,
   type ChartMarker,
+  chartEndMarkers,
+  chartMarkersFromLegacy,
+  setChartEndMarkers,
   type ChartScale,
   type ChartStat,
   type ChartStyle,
@@ -42,6 +46,7 @@ import {
   type StyleProperty,
   type TapAction,
   type TapElement,
+  type TextElement,
   type TimeField,
   type TimelineBand,
   type TimelineElement,
@@ -1009,8 +1014,8 @@ const CHART_BASELINES: [ChartBaseline, string][] = [
 const CHART_HIGHLIGHTS: [ChartHighlight, string][] = [
   ["none", "None"], ["highest", "Highest"], ["lowest", "Lowest"], ["both", "Both"],
 ];
-const CHART_MARKERS: [ChartMarker, string][] = [
-  ["none", "None"], ["pointer", "Triangle & dot"], ["dot", "Dots"],
+const CHART_END_MARKER_CHOICES: [ChartEndMarker, string][] = [
+  ["none", "None"], ["dot", "Dot"], ["triangle", "Triangle"],
 ];
 const CHART_COLORINGS: [ChartColoring, string][] = [
   ["uniform", "One colour"], ["bands", "By value"],
@@ -2550,6 +2555,59 @@ function timeLabelFields<T extends TimeLabelled>(
       ${hint}`}`;
 }
 
+/**
+ * A text layer's colour by value: the chart's Colour and Highlight fields, read
+ * against the numbers in the text instead of a series. Every key is optional on
+ * a text layer, so each field deletes its key when it goes back to the default
+ * and a layer that tried the feature and turned it off saves as it did before.
+ */
+function textValueColourFields(
+  host: EditorHost,
+  t: TextElement,
+  set: (mutate: (p: TextElement) => void, k?: string) => void,
+): TemplateResult {
+  const coloring = t.coloring ?? "uniform";
+  const highlight = t.highlight ?? "none";
+  // The shared table editor wants a table that is always there; this one holds
+  // the text layer's optional keys for the length of one edit.
+  const setBands = (mutate: (p: BandedLayer) => void, k?: string) => set((p) => {
+    const table: BandedLayer = { bands: p.bands ?? [], bandAboveColorHex: p.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX };
+    mutate(table);
+    if (table.bands.length > 0) p.bands = table.bands; else delete p.bands;
+    if (table.bandAboveColorHex !== CHART_DEFAULT_BAND_HIGH_HEX) p.bandAboveColorHex = table.bandAboveColorHex;
+    else delete p.bandAboveColorHex;
+  }, k);
+  const setHex = (key: "highColorHex" | "lowColorHex", def: string, v: string | undefined) => set((p) => {
+    if (v === undefined || v === def) delete p[key]; else p[key] = v;
+  }, key);
+  const highlightHint = highlight === "highest" ? "The highest number takes its own colour"
+    : highlight === "lowest" ? "The lowest number takes its own colour"
+    : "The highest and lowest numbers take their own colours";
+  return html`
+    ${segField("Colour", coloring, CHART_COLORINGS, (v) => set((p) => {
+      if (v === "uniform") { delete p.coloring; return; }
+      p.coloring = v;
+      // Seeded from the numbers the text shows right now, as a chart seeds from
+      // its readings, so the switch paints something the moment it is flipped.
+      if ((p.bands?.length ?? 0) === 0) p.bands = seedBands(chartNumbers(host.resolve(p.value) ?? ""));
+    }), { def: "uniform" })}
+    ${coloring === "bands" ? html`
+      <div class="hint">Each number in the text takes the colour of the band it falls in, and other text keeps the layer colour.</div>
+      ${bandTableFields({ bands: t.bands ?? [], bandAboveColorHex: t.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX }, t.colorSlot.baseColorHex, setBands)}`
+      : nothing}
+    ${segField("Highlight", highlight, CHART_HIGHLIGHTS, (v) => set((p) => {
+      if (v === "none") delete p.highlight; else p.highlight = v;
+    }), { def: "none" })}
+    ${highlight === "none" ? nothing : html`
+      <div class="grid2">
+        ${highlight === "lowest" ? nothing
+          : colorField("Highest colour", t.highColorHex ?? CHART_DEFAULT_HIGH_HEX, (v) => setHex("highColorHex", CHART_DEFAULT_HIGH_HEX, v), false, CHART_DEFAULT_HIGH_HEX)}
+        ${highlight === "highest" ? nothing
+          : colorField("Lowest colour", t.lowColorHex ?? CHART_DEFAULT_LOW_HEX, (v) => setHex("lowColorHex", CHART_DEFAULT_LOW_HEX, v), false, CHART_DEFAULT_LOW_HEX)}
+      </div>
+      ${coloring === "bands" ? nothing : html`<div class="hint">${highlightHint}, and other text keeps the layer colour.</div>`}`}`;
+}
+
 export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, opts: { placement?: boolean; tap?: boolean } = {}): TemplateResult {
   const id = el.payload.id;
   const idx = host.config.elements.findIndex((e) => e.payload.id === id);
@@ -2598,7 +2656,8 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           const p = (e as typeof el).payload;
           if (v) p.monospacedDigits = true; else delete p.monospacedDigits;
         }), base.monospacedDigits === true)}
-        ${el.payload.monospacedDigits ? html`<div class="hint">Digits take the same width, so a number that ticks does not shuffle what sits beside it.</div>` : nothing}`;
+        ${el.payload.monospacedDigits ? html`<div class="hint">Digits take the same width, so a number that ticks does not shuffle what sits beside it.</div>` : nothing}
+        ${el.payload.countdown ? nothing : textValueColourFields(host, el.payload, (mutate, k) => upd((e) => mutate((e as typeof el).payload), k))}`;
       break;
     }
     case "icon":
@@ -2630,7 +2689,24 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             <div class="grid2">
               ${numberField("Min", g.minValue, (v) => setGauge((p) => { p.minValue = v ?? 0; }, "min"), { def: base.minValue as number })}
               ${numberField("Max", g.maxValue, (v) => setGauge((p) => { p.maxValue = v ?? 100; }, "max"), { def: base.maxValue as number })}
-            </div>`}`;
+            </div>
+            ${checkField("Min from an entity", g.minSource !== undefined, (v) => setGauge((p) => {
+              if (v) p.minSource = { kind: { kind: "entityState", entityId: "", displayName: "", domain: "" } };
+              else delete p.minSource;
+            }))}
+            ${g.minSource === undefined ? nothing
+              : valueEditor(host, g.minSource, (v) => setGauge((p) => { p.minSource = v; }, "minsrc"),
+                { showResolved: true, label: "Min from", key: `${key}-minsource` })}
+            ${checkField("Max from an entity", g.maxSource !== undefined, (v) => setGauge((p) => {
+              if (v) p.maxSource = { kind: { kind: "entityState", entityId: "", displayName: "", domain: "" } };
+              else delete p.maxSource;
+            }))}
+            ${g.maxSource === undefined ? nothing
+              : valueEditor(host, g.maxSource, (v) => setGauge((p) => { p.maxSource = v; }, "maxsrc"),
+                { showResolved: true, label: "Max from", key: `${key}-maxsource` })}
+            ${g.minSource === undefined && g.maxSource === undefined ? nothing
+              : html`<div class="hint">The gauge's range follows the entity. When the entity has
+                no number, the fixed Min or Max above is used instead.</div>`}`}`;
       look = html`
         <div class="grid2">
           ${segField("Style", g.style, GAUGE_STYLES, (v) => setGauge((p) => {
@@ -2670,6 +2746,8 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
     case "chart": {
       const c = el.payload;
       const setChart = (m: (p: ChartElement) => void, k?: string) => upd((e) => m((e as typeof el).payload), k);
+      const markers = chartEndMarkers(c);
+      const baseMarkers = chartMarkersFromLegacy(base.marker as ChartMarker);
 
       // Three ways a chart gets its numbers, and the difference is the single
       // thing people trip on. A forecast sensor already holds a list, so its
@@ -2896,12 +2974,16 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
                 than one band and as noise on one that flickers between them.</div>`
             : nothing}`
           : nothing}
-        <div class="grid2">
-          ${segField("Highlight", c.highlight, CHART_HIGHLIGHTS, (v) => setChart((p) => { p.highlight = v; }), { def: base.highlight as typeof c.highlight })}
-          ${c.highlight === "none" ? nothing
-            : segField("Marker", c.marker, CHART_MARKERS, (v) => setChart((p) => { p.marker = v; }), { def: base.marker as typeof c.marker })}
-        </div>
+        ${segField("Highlight", c.highlight, CHART_HIGHLIGHTS, (v) => setChart((p) => { p.highlight = v; }), { def: base.highlight as typeof c.highlight })}
         ${c.highlight === "none" ? nothing : html`
+          <div class="grid2">
+            ${c.highlight === "lowest" ? nothing
+              : segField("Highest marker", markers.high, CHART_END_MARKER_CHOICES,
+                (v) => setChart((p) => { setChartEndMarkers(p, { ...chartEndMarkers(p), high: v }); }), { def: baseMarkers.high })}
+            ${c.highlight === "highest" ? nothing
+              : segField("Lowest marker", markers.low, CHART_END_MARKER_CHOICES,
+                (v) => setChart((p) => { setChartEndMarkers(p, { ...chartEndMarkers(p), low: v }); }), { def: baseMarkers.low })}
+          </div>
           <div class="grid2">
             ${c.highlight === "lowest" ? nothing
               : colorField("Highest colour", c.highColorHex, (v) => setChart((p) => { p.highColorHex = v ?? CHART_DEFAULT_HIGH_HEX; }, "hicol"), false, CHART_DEFAULT_HIGH_HEX)}
@@ -3138,7 +3220,7 @@ const TIMESTAMP_KEYS = ["timestamp", "timestampCorner", "timestampSize"] as cons
 const CONTENT_KEYS: Record<CElement["kind"], readonly string[]> = {
   text: ["value", "countdown"],
   icon: ["symbol", "path"],
-  gauge: ["value", "minValue", "maxValue", "total"],
+  gauge: ["value", "minValue", "maxValue", "total", "minSource", "maxSource"],
   chart: ["value", "historyMinutes", "historyPoints", "source", "statPeriod", "statType", "limit", "takeFromEnd"],
   timeline: ["value", "historyMinutes"],
   shape: ["kind", "cornerRadius"],
@@ -3148,10 +3230,11 @@ const CONTENT_KEYS: Record<CElement["kind"], readonly string[]> = {
 
 /** The payload fields the Look card owns, per kind. */
 const LOOK_KEYS: Record<CElement["kind"], readonly string[]> = {
-  text: ["fontSize", "fontWeight", "colorSlot", "alignment", "lineLimit", "monospacedDigits"],
+  text: ["fontSize", "fontWeight", "colorSlot", "alignment", "lineLimit", "monospacedDigits",
+    "coloring", "bands", "bandAboveColorHex", "highlight", "highColorHex", "lowColorHex"],
   icon: ["size", "colorSlot"],
   gauge: ["style", "lineWidth", "trackColorHex", "colorSlot", "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex"],
-  chart: ["style", "scale", "minValue", "maxValue", "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker", "coloring", "bands", "bandAboveColorHex", "fillBands", "thresholdValue", "thresholdColorHex", "nowIndex", "nowColorHex", "scaleFrom", "colorSlot", "timeLabelCount", "labelSize", "labelColorHex", "labelsAbove", "hourCycle", "minutes"],
+  chart: ["style", "scale", "minValue", "maxValue", "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker", "highMarker", "lowMarker", "coloring", "bands", "bandAboveColorHex", "fillBands", "thresholdValue", "thresholdColorHex", "nowIndex", "nowColorHex", "scaleFrom", "colorSlot", "timeLabelCount", "labelSize", "labelColorHex", "labelsAbove", "hourCycle", "minutes"],
   timeline: ["bands", "otherColorHex", "gap", "cornerRadius", "labelSize", "labelColorHex", "labelsAbove", "timeLabelCount", "hourCycle", "minutes"],
   shape: ["colorSlot", "borderColorHex", "borderWidth", "thickness"],
   image: ["contentMode", "zoom", "panX", "panY", "cornerRadius"],

@@ -88,6 +88,9 @@ export type ChartScale = "auto" | "fixed";
 export type ChartBaseline = "lowest" | "zero";
 export type ChartHighlight = "none" | "highest" | "lowest" | "both";
 export type ChartMarker = "none" | "dot" | "pointer";
+/** The mark over one highlighted end of a chart. */
+export type ChartEndMarker = "none" | "dot" | "triangle";
+export const CHART_END_MARKERS: readonly ChartEndMarker[] = ["none", "dot", "triangle"];
 export type ChartColoring = "uniform" | "bands";
 /** Where a chart's past comes from.
  *
@@ -346,6 +349,29 @@ export interface TextElement extends ElementBase {
   lineLimit?: number;
   /** Which edge of the layer box the text sits against. Absent means center. */
   alignment?: TextAlignment;
+  /** Whether the numbers inside the text take the colour of the band they fall
+   * in. Absent means one colour. Same table, same defaults and same lookup as a
+   * chart's, so a price line under a banded chart can match it number for number. */
+  coloring?: ChartColoring;
+  /** The colour table, checked lowest first. Absent means empty. */
+  bands?: ChartBand[];
+  /** Colour of a number past the last band. Absent means the chart's default. */
+  bandAboveColorHex?: string;
+  /** Which end of the numbers in the text takes its own colour. Absent means none. */
+  highlight?: ChartHighlight;
+  /** Absent means the chart's default highest colour. */
+  highColorHex?: string;
+  /** Absent means the chart's default lowest colour. */
+  lowColorHex?: string;
+}
+
+/** True when a text layer colours its numbers one by one: a non-empty band
+ * table or a highlight, and not a countdown, whose text ticks on the watch and
+ * has no numbers to colour until it is drawn. */
+export function textColorsByValue(el: TextElement): boolean {
+  if (el.countdown === true) return false;
+  const banded = el.coloring === "bands" && (el.bands?.length ?? 0) > 0;
+  return banded || (el.highlight !== undefined && el.highlight !== "none");
 }
 
 /** Horizontal placement inside a text layer's box. */
@@ -381,11 +407,72 @@ export interface GaugeElement extends ElementBase {
   thresholdValue?: number;
   thresholdColorHex: string;
   /** How many dots a `dots` gauge draws, when the count is not the range itself.
-   * Absent means `maxValue - minValue`. Ignored by every other style. */
+   * Absent means the range, max minus min as resolved. Ignored by every other
+   * style. */
   total?: Value;
+  /** Where the low end of the scale comes from when it follows an entity
+   * instead of the typed-in `minValue`. A rule's `setGaugeMin` still wins, and
+   * a source that resolves to no number falls back to `minValue`. Absent means
+   * the typed-in number, and is left off the wire. */
+  minSource?: Value;
+  /** The high end of the scale, read the same way as `minSource`, with
+   * `setGaugeMax` and `maxValue` on either side of it. */
+  maxSource?: Value;
 }
 
 export const GAUGE_DEFAULT_THRESHOLD_HEX = "#FFFFFF";
+
+export function isChartEndMarker(raw: unknown): raw is ChartEndMarker {
+  return typeof raw === "string" && (CHART_END_MARKERS as readonly string[]).includes(raw);
+}
+
+/** The marker each end of a chart draws. */
+export interface ChartEndMarkers {
+  high: ChartEndMarker;
+  low: ChartEndMarker;
+}
+
+/** What the one shared `marker` draws at each end. The old "pointer" was a
+ * triangle over the highest and a dot under the lowest. */
+export function chartMarkersFromLegacy(marker: ChartMarker): ChartEndMarkers {
+  if (marker === "none") return { high: "none", low: "none" };
+  if (marker === "pointer") return { high: "triangle", low: "dot" };
+  return { high: "dot", low: "dot" };
+}
+
+/** Each end's marker: its own key when it has one, else what `marker` implies. */
+export function chartEndMarkers(c: Pick<ChartElement, "marker" | "highMarker" | "lowMarker">): ChartEndMarkers {
+  const derived = chartMarkersFromLegacy(c.marker);
+  return { high: c.highMarker ?? derived.high, low: c.lowMarker ?? derived.low };
+}
+
+/** The single `marker` nearest a pair, for a watch that reads nothing else: a
+ * triangle over the highest keeps the pointer, any other mark keeps a dot. */
+export function chartLegacyMarker(m: ChartEndMarkers): ChartMarker {
+  if (m.high === "triangle") return "pointer";
+  if (m.high !== "none" || m.low !== "none") return "dot";
+  return "none";
+}
+
+/** Whether `marker` alone says this pair, so the two per-end keys stay off. */
+export function chartMarkersAreLegacy(m: ChartEndMarkers): boolean {
+  return (m.high === "none" && m.low === "none")
+    || (m.high === "dot" && m.low === "dot")
+    || (m.high === "triangle" && m.low === "dot");
+}
+
+/** Store a pair the way it is written: `marker` always, the two keys only when
+ * `marker` cannot say the pair by itself. */
+export function setChartEndMarkers(c: ChartElement, m: ChartEndMarkers): void {
+  c.marker = chartLegacyMarker(m);
+  if (chartMarkersAreLegacy(m)) {
+    delete c.highMarker;
+    delete c.lowMarker;
+  } else {
+    c.highMarker = m.high;
+    c.lowMarker = m.low;
+  }
+}
 /** More dots than this stop being countable at complication size. Mirrors
  * `GaugeElement.maximumDots` in Swift. */
 export const GAUGE_MAX_DOTS = 24;
@@ -438,7 +525,15 @@ export interface ChartElement extends ElementBase {
   highlight: ChartHighlight;
   highColorHex: string;
   lowColorHex: string;
+  /** The one marker setting both ends shared before each end had its own, and
+   * the one an older watch still reads. Written as the nearest single setting
+   * to the pair (`chartLegacyMarker`). */
   marker: ChartMarker;
+  /** The mark over the highest reading, set only when the pair is one `marker`
+   * cannot say on its own. Absent means `chartEndMarkers` derives it. */
+  highMarker?: ChartEndMarker;
+  /** The mark over the lowest reading, on the same rule as `highMarker`. */
+  lowMarker?: ChartEndMarker;
   /** Whether every reading shares one colour or takes the colour of the band it
    * falls in. */
   coloring: ChartColoring;
@@ -1647,6 +1742,19 @@ function parseElementKind(raw: unknown): Element {
       // An unknown spelling falls back to center, matching the Swift decoder.
       const align = optStr(p.alignment);
       if (align === "leading" || align === "trailing") payload.alignment = align;
+      // Colour by value. Each key is kept only when it says something other
+      // than its default, so a layer that never used it round-trips unchanged.
+      if (optStr(p.coloring) === "bands") payload.coloring = "bands";
+      const bands = parseColorBands(p.bands);
+      if (bands.length > 0) payload.bands = bands;
+      const above = str(p.bandAboveColorHex, CHART_DEFAULT_BAND_HIGH_HEX);
+      if (above !== CHART_DEFAULT_BAND_HIGH_HEX) payload.bandAboveColorHex = above;
+      const highlight = optStr(p.highlight);
+      if (highlight === "highest" || highlight === "lowest" || highlight === "both") payload.highlight = highlight;
+      const high = str(p.highColorHex, CHART_DEFAULT_HIGH_HEX);
+      if (high !== CHART_DEFAULT_HIGH_HEX) payload.highColorHex = high;
+      const low = str(p.lowColorHex, CHART_DEFAULT_LOW_HEX);
+      if (low !== CHART_DEFAULT_LOW_HEX) payload.lowColorHex = low;
       return { kind: "text", payload };
     }
     case "icon": {
@@ -1676,6 +1784,8 @@ function parseElementKind(raw: unknown): Element {
       const threshold = optNum(p.thresholdValue);
       if (threshold !== undefined) el.thresholdValue = threshold;
       if (isObject(p.total)) el.total = parseValue(p.total);
+      if (isObject(p.minSource)) el.minSource = parseValue(p.minSource);
+      if (isObject(p.maxSource)) el.maxSource = parseValue(p.maxSource);
       return { kind: "gauge", payload: el };
     }
     case "chart":
@@ -1705,6 +1815,10 @@ function parseElementKind(raw: unknown): Element {
           highColorHex: str(p.highColorHex, CHART_DEFAULT_HIGH_HEX),
           lowColorHex: str(p.lowColorHex, CHART_DEFAULT_LOW_HEX),
           marker: (optStr(p.marker) as ChartMarker | undefined) ?? "pointer",
+          // A word this build does not know is left off, so that end reads as
+          // whatever `marker` implies.
+          ...(isChartEndMarker(p.highMarker) ? { highMarker: p.highMarker } : {}),
+          ...(isChartEndMarker(p.lowMarker) ? { lowMarker: p.lowMarker } : {}),
           coloring: (optStr(p.coloring) as ChartColoring | undefined) ?? "uniform",
           bands: parseChartBands(p),
           bandAboveColorHex: str(p.bandHighColorHex, str(p.bandAboveColorHex, CHART_DEFAULT_BAND_HIGH_HEX)),
@@ -2276,6 +2390,15 @@ function encodeElementKind(el: Element): J {
       if (el.payload.monospacedDigits === true) o.monospacedDigits = true;
       if (el.payload.lineLimit === 2) o.lineLimit = 2;
       if (el.payload.alignment !== undefined && el.payload.alignment !== "center") o.alignment = el.payload.alignment;
+      // After `alignment`, in the key table's order, and only when away from the
+      // default, so a text layer without colour by value writes what it always did.
+      const t = el.payload;
+      if (t.coloring !== undefined && t.coloring !== "uniform") o.coloring = t.coloring;
+      if (t.bands !== undefined && t.bands.length > 0) o.bands = t.bands.map((b) => ({ id: b.id, upTo: encNum(b.upTo), colorHex: b.colorHex }));
+      if (t.bandAboveColorHex !== undefined && t.bandAboveColorHex !== CHART_DEFAULT_BAND_HIGH_HEX) o.bandAboveColorHex = t.bandAboveColorHex;
+      if (t.highlight !== undefined && t.highlight !== "none") o.highlight = t.highlight;
+      if (t.highColorHex !== undefined && t.highColorHex !== CHART_DEFAULT_HIGH_HEX) o.highColorHex = t.highColorHex;
+      if (t.lowColorHex !== undefined && t.lowColorHex !== CHART_DEFAULT_LOW_HEX) o.lowColorHex = t.lowColorHex;
       return { kind: "text", payload: o };
     }
     case "icon": {
@@ -2305,6 +2428,8 @@ function encodeElementKind(el: Element): J {
       if (g.thresholdValue !== undefined) o.thresholdValue = encNum(g.thresholdValue);
       if (g.thresholdColorHex !== GAUGE_DEFAULT_THRESHOLD_HEX) o.thresholdColorHex = g.thresholdColorHex;
       if (g.total !== undefined) o.total = encodeValue(g.total);
+      if (g.minSource !== undefined) o.minSource = encodeValue(g.minSource);
+      if (g.maxSource !== undefined) o.maxSource = encodeValue(g.maxSource);
       return { kind: "gauge", payload: o };
     }
     case "chart": {
@@ -2326,7 +2451,7 @@ function encodeElementKind(el: Element): J {
         highlight: c.highlight,
         highColorHex: c.highColorHex,
         lowColorHex: c.lowColorHex,
-        marker: c.marker,
+        marker: chartLegacyMarker(chartEndMarkers(c)),
         coloring: c.coloring,
         bands: c.bands.map((b) => ({ id: b.id, upTo: encNum(b.upTo), colorHex: b.colorHex })),
         bandAboveColorHex: c.bandAboveColorHex,
@@ -2356,6 +2481,14 @@ function encodeElementKind(el: Element): J {
       }
       if (c.hourCycle !== TIMELINE_DEFAULT_HOUR_CYCLE) o.hourCycle = c.hourCycle;
       if (c.minutes !== TIMELINE_DEFAULT_MINUTE_STYLE) o.minutes = c.minutes;
+      // Each end's own marker, written only when `marker` above cannot say the
+      // pair by itself, so every chart the one setting could draw writes the
+      // bytes it always did.
+      const markers = chartEndMarkers(c);
+      if (!chartMarkersAreLegacy(markers)) {
+        o.highMarker = markers.high;
+        o.lowMarker = markers.low;
+      }
       return { kind: "chart", payload: o };
     }
     case "timeline": {
@@ -2643,16 +2776,18 @@ const K = {
   frame: ["x", "y", "width", "height", "rotationDegrees"],
   elementEnvelope: ["kind", "payload"],
   elementBase: ["id", "colorSlot", "rules", "frame", "isHidden", "groupId"],
-  text: ["value", "fontSize", "fontWeight", "countdown", "monospacedDigits", "lineLimit", "alignment"],
+  text: ["value", "fontSize", "fontWeight", "countdown", "monospacedDigits", "lineLimit", "alignment",
+    "coloring", "bands", "bandAboveColorHex", "highlight", "highColorHex", "lowColorHex"],
   icon: ["symbol", "path", "size"],
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex",
-    "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex", "total"],
+    "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex", "total", "minSource", "maxSource"],
   chart: ["value", "historyMinutes", "historyPoints", "source", "statPeriod", "statType",
     "style", "limit", "takeFromEnd", "scale", "minValue", "maxValue",
     "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker",
     "coloring", "bands", "bandAboveColorHex", "fillBands",
     "thresholdValue", "thresholdColorHex", "nowIndex", "nowColorHex", "scaleFrom",
     "timeLabelCount", "labelSize", "labelColorHex", "labelsAbove", "hourCycle", "minutes",
+    "highMarker", "lowMarker",
     // Written only on 2026-09-05. The band bounds are read forward by
     // `parseChartBands`; the built-in numbers are read forward by
     // `migrateChartLabels` into text layers. All still listed so a document
@@ -2797,7 +2932,7 @@ export function auditUnknownKeys(raw: unknown): string[] {
       check(e.payload.colorSlot, K.colorSlot, `${ep}.payload.colorSlot`);
       check(e.payload.frame, K.frame, `${ep}.payload.frame`);
       rules(e.payload.rules, `${ep}.payload.rules`);
-      for (const vk of ["value", "symbol", "nowIndex", "total"]) if (vk in e.payload) value(e.payload[vk], `${ep}.payload.${vk}`);
+      for (const vk of ["value", "symbol", "nowIndex", "total", "minSource", "maxSource"]) if (vk in e.payload) value(e.payload[vk], `${ep}.payload.${vk}`);
       if (kind === "image") check(e.payload.entity, K.entityRef, `${ep}.payload.entity`);
       if (kind === "tap") check(e.payload.action, K.tapAction, `${ep}.payload.action`);
     });
@@ -3940,7 +4075,7 @@ export function setLayerEntity(
 /** Which slot inside its owner a value or reference sits in, for the owners
  * that hold more than one. */
 export type SitePart =
-  | "total" | "nowIndex"
+  | "total" | "nowIndex" | "gaugeMin" | "gaugeMax"
   | "bezelText" | "curvedText" | "bezelGauge" | "bezelGaugeMin" | "bezelGaugeMax"
   | "template" | "serviceData";
 
@@ -3991,6 +4126,8 @@ export function describeSite(site: EntitySite): string {
     case "layer":
     case "image":
       if (site.part === "total") return `Total on ${named}`;
+      if (site.part === "gaugeMin") return `Min on ${named}`;
+      if (site.part === "gaugeMax") return `Max on ${named}`;
       if (site.part === "nowIndex") return `Now marker on ${named}`;
       return `${upperFirst(word)} layer${site.layerName ? ` "${site.layerName}"` : ""}`;
     case "tap":
@@ -4140,6 +4277,8 @@ function walkDocument(cfg: CustomComplicationConfig, visit: DocumentVisitor): vo
       const primary = primaryValue(el);
       if (primary) onValue(primary, base);
       if (el.kind === "gauge" && el.payload.total) onValue(el.payload.total, { ...base, part: "total" });
+      if (el.kind === "gauge" && el.payload.minSource) onValue(el.payload.minSource, { ...base, part: "gaugeMin" });
+      if (el.kind === "gauge" && el.payload.maxSource) onValue(el.payload.maxSource, { ...base, part: "gaugeMax" });
       if (el.kind === "chart" && el.payload.nowIndex) onValue(el.payload.nowIndex, { ...base, part: "nowIndex" });
     }
     const ruleSite: ValueSite = { ...base, kind: "rule" };

@@ -1,0 +1,367 @@
+{
+  "name": "gauge_range_sources",
+  "description": "A gauge whose Min and Max follow entities. Pins the order each end is read in: a setGaugeMin or setGaugeMax rule first, then the entity when it holds a number, then the typed-in minValue or maxValue. The first gauge reads both ends from sensors; the second is a car battery against its charge limit, with a threshold that falls off the resolved scale though it sits inside the typed-in one; the third has a source that is unavailable and falls back to the typed-in number; the fourth has a rule that beats its maxSource; the dot gauge counts the resolved range. Every source entity is fetched, so it is in the compiled entities.",
+  "config": {
+    "schemaVersion": 4,
+    "id": "3E7A1C55-0000-4000-8000-00000000CAFE",
+    "name": "Gauge range sources",
+    "slotIndex": 0,
+    "supportedFamilies": [
+      "rectangular",
+      "circular",
+      "corner"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "gauge",
+        "payload": {
+          "id": "6A0E0101-0000-4000-8000-000000000101",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.outdoor_temp",
+              "displayName": "Outdoor temperature",
+              "domain": "sensor"
+            }
+          },
+          "minValue": 0,
+          "maxValue": 100,
+          "style": "arc",
+          "lineWidth": 4,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "trackColorHex": "#FFFFFF40",
+          "thresholdValue": 23,
+          "minSource": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.outdoor_temp_low",
+              "displayName": "Outdoor low",
+              "domain": "sensor"
+            }
+          },
+          "maxSource": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.outdoor_temp_high",
+              "displayName": "Outdoor high",
+              "domain": "sensor"
+            }
+          },
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 0.2,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "gauge",
+        "payload": {
+          "id": "6A0E0102-0000-4000-8000-000000000102",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.car_battery",
+              "displayName": "Car battery",
+              "domain": "sensor"
+            }
+          },
+          "minValue": 0,
+          "maxValue": 100,
+          "style": "bar",
+          "lineWidth": 4,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "trackColorHex": "#FFFFFF40",
+          "thresholdValue": 90,
+          "maxSource": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "number.car_charge_limit",
+              "displayName": "Charge limit",
+              "domain": "number"
+            }
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.2,
+            "y": 0,
+            "width": 0.2,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "gauge",
+        "payload": {
+          "id": "6A0E0103-0000-4000-8000-000000000103",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.outdoor_temp",
+              "displayName": "Outdoor temperature",
+              "domain": "sensor"
+            }
+          },
+          "minValue": -12,
+          "maxValue": 100,
+          "style": "ring",
+          "lineWidth": 4,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "trackColorHex": "#FFFFFF40",
+          "thresholdValue": 3,
+          "minSource": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.forecast_low",
+              "displayName": "Forecast low",
+              "domain": "sensor"
+            }
+          },
+          "maxSource": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.outdoor_temp_high",
+              "displayName": "Outdoor high",
+              "domain": "sensor"
+            }
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.4,
+            "y": 0,
+            "width": 0.2,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "gauge",
+        "payload": {
+          "id": "6A0E0104-0000-4000-8000-000000000104",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.outdoor_temp",
+              "displayName": "Outdoor temperature",
+              "domain": "sensor"
+            }
+          },
+          "minValue": 0,
+          "maxValue": 100,
+          "style": "arc",
+          "lineWidth": 4,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "trackColorHex": "#FFFFFF40",
+          "thresholdValue": 38,
+          "minSource": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.outdoor_temp_low",
+              "displayName": "Outdoor low",
+              "domain": "sensor"
+            }
+          },
+          "maxSource": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.outdoor_temp_high",
+              "displayName": "Outdoor high",
+              "domain": "sensor"
+            }
+          },
+          "rules": [
+            {
+              "id": "6A0E01E1-0000-4000-8000-0000000001E1",
+              "cases": [
+                {
+                  "id": "6A0E01C1-0000-4000-8000-0000000001C1",
+                  "when": {
+                    "join": "all",
+                    "tests": []
+                  },
+                  "then": [
+                    {
+                      "kind": "setGaugeMax",
+                      "number": 48
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "frame": {
+            "x": 0.6,
+            "y": 0,
+            "width": 0.2,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "gauge",
+        "payload": {
+          "id": "6A0E0105-0000-4000-8000-000000000105",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "2"
+            }
+          },
+          "minValue": 0,
+          "maxValue": 100,
+          "style": "dots",
+          "lineWidth": 4,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "trackColorHex": "#FFFFFF40",
+          "maxSource": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.seats_total",
+              "displayName": "Seats",
+              "domain": "sensor"
+            }
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.8,
+            "y": 0,
+            "width": 0.2,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      },
+      "circular",
+      {
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      },
+      "corner",
+      {
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 0,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {
+      "sensor.outdoor_temp": {
+        "state": "18",
+        "domain": "sensor"
+      },
+      "sensor.outdoor_temp_low": {
+        "state": "8",
+        "domain": "sensor"
+      },
+      "sensor.outdoor_temp_high": {
+        "state": "28",
+        "domain": "sensor"
+      },
+      "sensor.forecast_low": {
+        "state": "unavailable",
+        "domain": "sensor"
+      },
+      "sensor.car_battery": {
+        "state": "60",
+        "domain": "sensor"
+      },
+      "number.car_charge_limit": {
+        "state": "80",
+        "domain": "number"
+      },
+      "sensor.seats_total": {
+        "state": "6",
+        "domain": "sensor"
+      }
+    },
+    "templateResults": {},
+    "dataAgeSeconds": 0
+  },
+  "expectedCompiled": {
+    "entities": [
+      "number.car_charge_limit",
+      "sensor.car_battery",
+      "sensor.forecast_low",
+      "sensor.outdoor_temp",
+      "sensor.outdoor_temp_high",
+      "sensor.outdoor_temp_low",
+      "sensor.seats_total"
+    ],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "6A0E0101-0000-4000-8000-000000000101",
+          "kind": "gauge",
+          "style": "arc",
+          "fraction": 0.5,
+          "thresholdFraction": 0.75
+        },
+        {
+          "id": "6A0E0102-0000-4000-8000-000000000102",
+          "kind": "gauge",
+          "style": "bar",
+          "fraction": 0.75,
+          "thresholdFraction": null
+        },
+        {
+          "id": "6A0E0103-0000-4000-8000-000000000103",
+          "kind": "gauge",
+          "style": "ring",
+          "fraction": 0.75,
+          "thresholdFraction": 0.375
+        },
+        {
+          "id": "6A0E0104-0000-4000-8000-000000000104",
+          "kind": "gauge",
+          "style": "arc",
+          "fraction": 0.25,
+          "thresholdFraction": 0.75
+        },
+        {
+          "id": "6A0E0105-0000-4000-8000-000000000105",
+          "kind": "gauge",
+          "style": "dots",
+          "dotCount": 6,
+          "filledCount": 2
+        }
+      ]
+    }
+  }
+}

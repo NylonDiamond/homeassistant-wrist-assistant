@@ -12,6 +12,11 @@ import {
   addChartLabel,
   addChartSeries,
   auditUnknownKeys,
+  CHART_END_MARKERS,
+  chartEndMarkers,
+  setChartEndMarkers,
+  type ChartEndMarkers,
+  type ChartMarker,
   chartHistoryEntity,
   chartHistoryKey,
   chartHistoryPoints,
@@ -353,6 +358,71 @@ describe("chart history", () => {
   });
 });
 
+describe("each end's own marker", () => {
+  const pairs: [string, ChartEndMarkers][] = CHART_END_MARKERS.flatMap((high) =>
+    CHART_END_MARKERS.map((low): [string, ChartEndMarkers] => [`${high} over the highest, ${low} under the lowest`, { high, low }]));
+
+  /** The shared marker each pair writes, and whether it needs the two keys. */
+  const written: Record<string, [ChartMarker, boolean]> = {
+    "none/none": ["none", false],
+    "none/dot": ["dot", true],
+    "none/triangle": ["dot", true],
+    "dot/none": ["dot", true],
+    "dot/dot": ["dot", false],
+    "dot/triangle": ["dot", true],
+    "triangle/none": ["pointer", true],
+    "triangle/dot": ["pointer", false],
+    "triangle/triangle": ["pointer", true],
+  };
+
+  function encodedPayload(cfg: CustomComplicationConfig): Record<string, unknown> {
+    return (encodeConfig(cfg) as { elements: { payload: Record<string, unknown> }[] }).elements[0]!.payload;
+  }
+
+  it.each(pairs)("writes %s the way an older watch can read, and reads it back", (_name, pair) => {
+    const { cfg } = chartConfig("1,2,3", (p) => { p.highlight = "both"; setChartEndMarkers(p, pair); });
+    const [marker, keys] = written[`${pair.high}/${pair.low}`]!;
+    const payload = encodedPayload(cfg);
+    expect(payload.marker).toBe(marker);
+    expect("highMarker" in payload).toBe(keys);
+    expect("lowMarker" in payload).toBe(keys);
+    if (keys) expect([payload.highMarker, payload.lowMarker]).toEqual([pair.high, pair.low]);
+    const enc = encodeConfig(cfg);
+    expect(auditUnknownKeys(enc)).toEqual([]);
+    const back = parseConfig(enc).elements[0]!;
+    if (back.kind !== "chart") throw new Error("expected a chart");
+    expect(chartEndMarkers(back.payload)).toEqual(pair);
+    expect(encodeConfig(parseConfig(enc))).toEqual(enc);
+  });
+
+  it("derives both ends from the shared marker when neither key is stored", () => {
+    const derive = (marker: ChartMarker) => chartEndMarkers({ marker });
+    expect(derive("none")).toEqual({ high: "none", low: "none" });
+    expect(derive("dot")).toEqual({ high: "dot", low: "dot" });
+    expect(derive("pointer")).toEqual({ high: "triangle", low: "dot" });
+  });
+
+  it("reads a marker word it does not know as what the shared marker implies", () => {
+    const { cfg } = chartConfig("1,2,3");
+    const raw = encodeConfig(cfg) as { elements: { payload: Record<string, unknown> }[] };
+    Object.assign(raw.elements[0]!.payload, { marker: "pointer", highMarker: "star", lowMarker: 5 });
+    const back = parseConfig(raw).elements[0]!;
+    if (back.kind !== "chart") throw new Error("expected a chart");
+    expect(chartEndMarkers(back.payload)).toEqual({ high: "triangle", low: "dot" });
+    expect("highMarker" in encodedPayload(parseConfig(raw))).toBe(false);
+  });
+
+  it("resolves an end the highlight does not cover to no marker", () => {
+    const stored = (p: ChartElement) => setChartEndMarkers(p, { high: "dot", low: "triangle" });
+    const highest = chartOf(rectangular(chartConfig("3,9,1,5", (p) => { stored(p); p.highlight = "highest"; }).cfg, "3,9,1,5"));
+    expect([highest.highMarker, highest.lowMarker]).toEqual(["dot", "none"]);
+    const lowest = chartOf(rectangular(chartConfig("3,9,1,5", (p) => { stored(p); p.highlight = "lowest"; }).cfg, "3,9,1,5"));
+    expect([lowest.highMarker, lowest.lowMarker]).toEqual(["none", "triangle"]);
+    const none = chartOf(rectangular(chartConfig("3,9,1,5", stored).cfg, "3,9,1,5"));
+    expect([none.highMarker, none.lowMarker]).toEqual(["none", "none"]);
+  });
+});
+
 describe("drawing a chart", () => {
   const prices = "15,13,14,17,19,22,24,28,30";
 
@@ -399,6 +469,34 @@ describe("drawing a chart", () => {
     const svg = draw(prices, (p) => { p.highlight = "both"; p.marker = "pointer"; });
     expect(svg).toMatch(/<path d=M[\d.]+ [\d.]+ L/); // the triangle
     expect(svg).toContain("<circle");
+  });
+
+  /** Every filled triangle the layout drew. */
+  const triangles = (svg: string) => svg.match(/<path d=M[-\d.]+ [-\d.]+ L[-\d.]+ [-\d.]+ L[-\d.]+ [-\d.]+ Z/g)?.length ?? 0;
+  const circleCount = (svg: string) => svg.match(/<circle/g)?.length ?? 0;
+
+  it("paints the highest with no marker and puts a dot under the lowest", () => {
+    const svg = draw(prices, (p) => { p.highlight = "both"; setChartEndMarkers(p, { high: "none", low: "dot" }); });
+    expect(triangles(svg)).toBe(0);
+    expect(circleCount(svg)).toBe(1);
+    // The colour is the highlight's, marker or not.
+    expect(svg).toContain(HIGH);
+    expect(svg).toContain(LOW);
+  });
+
+  it("draws a triangle at both ends when each asks for one", () => {
+    const svg = draw(prices, (p) => { p.highlight = "both"; setChartEndMarkers(p, { high: "triangle", low: "triangle" }); });
+    expect(triangles(svg)).toBe(2);
+    expect(circleCount(svg)).toBe(0);
+  });
+
+  it("keeps room along the top only when a highlighted end draws a marker", () => {
+    const tops = (tweak: (p: ChartElement) => void) => rects(draw(prices, tweak)).map((b) => b.y);
+    const plain = tops(() => {});
+    // Highest highlighted with no marker: the lowest's stored triangle is not drawn and takes no room.
+    expect(tops((p) => { p.highlight = "highest"; setChartEndMarkers(p, { high: "none", low: "triangle" }); })).toEqual(plain);
+    const marked = tops((p) => { p.highlight = "both"; setChartEndMarkers(p, { high: "none", low: "dot" }); });
+    expect(marked[8]!).toBeGreaterThan(plain[8]!);
   });
 
   it("draws no marker when nothing is highlighted", () => {

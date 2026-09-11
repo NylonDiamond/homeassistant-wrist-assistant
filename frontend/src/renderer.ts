@@ -19,6 +19,7 @@ import {
   type ResolvedBezelGauge,
   type ResolvedElement,
   type ResolvedLayout,
+  type TextSpan,
   type TimelineLabel,
 } from "./resolver.js";
 
@@ -257,6 +258,55 @@ function truncateToBox(line: string, fontSize: number, boxWidth: number): string
   return `${line.slice(0, keep).replace(/\s+$/, "")}…`;
 }
 
+/** The colour of each code unit of `text`, from its spans. Undefined when the
+ * layer draws in one colour, and when the spans no longer spell the text (a
+ * countdown the preview has ticked), which then draws in the layer colour. */
+function spanColours(text: string, spans: readonly TextSpan[] | undefined): string[] | undefined {
+  if (!spans || spans.map((s) => s.text).join("") !== text) return undefined;
+  const out: string[] = [];
+  for (const s of spans) for (let i = 0; i < s.text.length; i++) out.push(s.colorHex);
+  return out;
+}
+
+/** Where each drawn line starts in `text`. One line is the text itself; two are
+ * whole words joined by single spaces (`wrapToTwoLines`), so the second starts at
+ * the first word the first line did not take. */
+function lineStarts(text: string, lines: readonly string[]): number[] {
+  if (lines.length < 2) return [0];
+  const words = [...text.matchAll(/\S+/g)].map((m) => m.index);
+  return [words[0] ?? 0, words[lines[0]!.split(" ").length] ?? text.length];
+}
+
+/** One drawn line as runs of one colour. The line is the text from `from` with
+ * its whitespace folded and perhaps cut short with an ellipsis, so each character
+ * is matched back in order: a character still there takes its own colour, folded
+ * whitespace takes the colour of the whitespace it stands for, and anything the
+ * text does not have (the ellipsis) takes the colour of the character before it. */
+function paintLine(line: string, from: number, text: string, colours: readonly string[], fallback: string): TextSpan[] {
+  const runs: TextSpan[] = [];
+  let at = from;
+  let previous = fallback;
+  const blank = (i: number) => i < text.length && /\s/.test(text[i]!);
+  for (const ch of line) {
+    let hex = previous;
+    if (/\s/.test(ch)) {
+      if (blank(at)) hex = colours[at]!;
+      while (blank(at)) at++;
+    } else {
+      while (blank(at)) at++;
+      if (text.startsWith(ch, at)) {
+        hex = colours[at]!;
+        at += ch.length;
+      }
+    }
+    previous = hex;
+    const last = runs.at(-1);
+    if (last && last.colorHex === hex) last.text += ch;
+    else runs.push({ text: ch, colorHex: hex });
+  }
+  return runs;
+}
+
 function renderText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box) {
   const c = colorAttrs(el.colorHex, "fill");
   // Live countdown: the preview shows the remaining time at render; the panel
@@ -275,12 +325,22 @@ function renderText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box) {
   const fontSize = el.fontSize * scale;
   const drawn = lines.map((l) => truncateToBox(l, fontSize, box.w));
   const { anchor, x } = textAnchor(el.alignment, box);
+  // Colour by value paints runs inside each drawn line. Every width decision
+  // above is made on the plain text, so the runs change colour and nothing else.
+  const colours = spanColours(el.text, el.spans);
+  const starts = colours ? lineStarts(el.text, lines) : [];
+  const lineBody = (line: string, i: number) => colours
+    ? paintLine(line, starts[i] ?? 0, el.text, colours, el.colorHex).map((run) => {
+      const a = colorAttrs(run.colorHex, "fill");
+      return svg`<tspan fill=${a.fill} fill-opacity=${a["fill-opacity"]}>${run.text}</tspan>`;
+    })
+    : line;
   // Two lines sit either side of the box centre, one line height apart, so the
   // block stays centred on the frame the way a SwiftUI text does.
   const step = fontSize * 1.15;
   const body = drawn.length > 1
-    ? svg`${drawn.map((line, i) => svg`<tspan x=${x} y=${box.cy + (i - (drawn.length - 1) / 2) * step}>${line}</tspan>`)}`
-    : drawn[0]!;
+    ? svg`${drawn.map((line, i) => svg`<tspan x=${x} y=${box.cy + (i - (drawn.length - 1) / 2) * step}>${lineBody(line, i)}</tspan>`)}`
+    : lineBody(drawn[0]!, 0);
   return svg`<text x=${x} y=${box.cy} text-anchor=${anchor} dominant-baseline="central"
     font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif"
     font-size=${fontSize} font-weight=${FONT_WEIGHT[el.fontWeight] ?? 400}
@@ -377,8 +437,10 @@ const CHART_MARKER_BAND = 5;
 function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) {
   const values = el.values;
   const n = Math.max(values.length, 1);
-  const marks = el.highIndex !== undefined || el.lowIndex !== undefined;
-  const band = el.marker === "none" || !marks ? 0 : CHART_MARKER_BAND;
+  // Room along the top only when a highlighted end actually draws a mark there.
+  const marks = (el.highIndex !== undefined && el.highMarker !== "none")
+    || (el.lowIndex !== undefined && el.lowMarker !== "none");
+  const band = marks ? CHART_MARKER_BAND : 0;
   // Line and area are stroked on the value itself, so half the stroke would fall
   // outside a plot sized to the frame. Bars are filled inside theirs.
   const inset = el.style === "bars" ? 0 : el.lineWidth / 2;
@@ -532,17 +594,18 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
     if (el.lowIndex !== undefined) body.push(dot(points[el.lowIndex]!, low));
   }
 
-  if (el.marker !== "none") {
-    const bars = el.style === "bars";
-    if (el.highIndex !== undefined) {
-      const c = g.markerCenter(el.highIndex, bars);
-      body.push(el.marker === "pointer"
-        ? svg`<path d=${`M${c.x} ${c.y - 1.8} L${c.x + 2.2} ${c.y + 1.8} L${c.x - 2.2} ${c.y + 1.8} Z`}
-            fill=${high.fill} fill-opacity=${high["fill-opacity"]} />`
-        : dot(c, high));
-    }
-    if (el.lowIndex !== undefined) body.push(dot(g.markerCenter(el.lowIndex, bars), low));
-  }
+  // Each end draws its own mark in its own colour. The colour is the
+  // highlight's either way, so an end with no mark is still painted.
+  const endMark = (index: number | undefined, marker: typeof el.highMarker, colour: typeof high) => {
+    if (index === undefined || marker === "none") return;
+    const c = g.markerCenter(index, el.style === "bars");
+    body.push(marker === "triangle"
+      ? svg`<path d=${`M${c.x} ${c.y - 1.8} L${c.x + 2.2} ${c.y + 1.8} L${c.x - 2.2} ${c.y + 1.8} Z`}
+          fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} />`
+      : dot(c, colour));
+  };
+  endMark(el.highIndex, el.highMarker, high);
+  endMark(el.lowIndex, el.lowMarker, low);
 
   // The two lines that are about the plot rather than about a reading: a dashed
   // horizontal one at the threshold, and a vertical one standing on "now". Both

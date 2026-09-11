@@ -163,6 +163,15 @@ describe.each(files)("fixture %s", (file) => {
       expect(got, `${family} is resolved because the document supports it`).toBeDefined();
       expectSubset(got as unknown as Record<string, unknown>, want, family);
       expect(got!.elements.map((e) => e.id), `${family}.elements order`).toEqual(want.elements.map((e) => e.id));
+      // A text layer's `spans` are compared like any other key the fixture
+      // names (null pins them absent). Whatever a fixture names, runs that do
+      // not spell the text exactly are a resolver bug.
+      for (const el of got!.elements) {
+        if (el.kind === "text" && el.spans !== undefined) {
+          expect(el.spans.map((s) => s.text).join(""), `${family} ${el.id} spans spell the text`).toBe(el.text);
+          expect(el.spans.every((s) => s.text !== ""), `${family} ${el.id} has no empty span`).toBe(true);
+        }
+      }
       want.elements.forEach((wantEl, i) => {
         const gotEl = normalise(got!.elements[i] as ResolvedElement & Record<string, unknown>);
         if (wantEl.kind === "shape") {

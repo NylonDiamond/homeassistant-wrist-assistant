@@ -434,7 +434,7 @@ describe("encodeConfig", () => {
     expect(Object.keys(p)).toEqual(["frame"]);
   });
 
-  it("leaves a plain gauge's colour table, threshold and total off the wire", () => {
+  it("leaves a plain gauge's colour table, threshold, total and range sources off the wire", () => {
     const cfg = newConfig("X", 0);
     cfg.elements.push(newElement("gauge"));
     const enc = encodeConfig(cfg) as { elements: Record<string, unknown>[] };
@@ -468,6 +468,38 @@ describe("encodeConfig", () => {
     expect(back.payload.thresholdValue).toBe(80);
     expect(back.payload.thresholdColorHex).toBe("#0A84FF");
     expect(back.payload.total).toEqual({ kind: { kind: "literal", value: "8" } });
+  });
+
+  it("round-trips a gauge whose range follows entities, writing the sources after total", () => {
+    const cfg = newConfig("X", 0);
+    const el = newElement("gauge");
+    if (el.kind !== "gauge") throw new Error("expected a gauge");
+    el.payload.style = "dots";
+    el.payload.total = { kind: { kind: "literal", value: "8" } };
+    el.payload.minSource = { kind: { kind: "entityState", entityId: "sensor.low", displayName: "Low", domain: "sensor" } };
+    el.payload.maxSource = { kind: { kind: "entityAttribute", entityId: "sensor.car", displayName: "Car", domain: "sensor", attribute: "charge_limit" } };
+    cfg.elements.push(el);
+    const enc = encodeConfig(cfg) as { elements: { payload: Record<string, unknown> }[] };
+    const payload = enc.elements[0]!.payload;
+    expect(auditUnknownKeys(enc)).toEqual([]);
+    const keys = Object.keys(payload);
+    expect(keys.slice(keys.indexOf("total"), keys.indexOf("total") + 3)).toEqual(["total", "minSource", "maxSource"]);
+    const back = parseConfig(enc).elements[0]!;
+    if (back.kind !== "gauge") throw new Error("expected a gauge");
+    expect(back.payload.minSource).toEqual(el.payload.minSource);
+    expect(back.payload.maxSource).toEqual(el.payload.maxSource);
+    expect(encodeConfig(parseConfig(enc))).toEqual(enc);
+  });
+
+  it("writes only the range source that is set", () => {
+    const cfg = newConfig("X", 0);
+    const el = newElement("gauge");
+    if (el.kind !== "gauge") throw new Error("expected a gauge");
+    el.payload.maxSource = { kind: { kind: "entityState", entityId: "number.limit", displayName: "Limit", domain: "number" } };
+    cfg.elements.push(el);
+    const payload = (encodeConfig(cfg) as { elements: { payload: Record<string, unknown> }[] }).elements[0]!.payload;
+    expect("minSource" in payload).toBe(false);
+    expect(payload.maxSource).toEqual({ kind: { kind: "entityState", entityId: "number.limit", displayName: "Limit", domain: "number" } });
   });
 
   it("round-trips the corner curved text and bezel gauge", () => {
@@ -505,6 +537,24 @@ describe("encodeConfig", () => {
 });
 
 describe("auditUnknownKeys", () => {
+  it("knows a gauge's range sources and audits inside them like any other value", () => {
+    const cfg = newConfig("X", 0);
+    const el = newElement("gauge");
+    if (el.kind !== "gauge") throw new Error("expected a gauge");
+    el.payload.minSource = { kind: { kind: "entityState", entityId: "sensor.low", displayName: "Low", domain: "sensor" } };
+    el.payload.maxSource = { kind: { kind: "literal", value: "80" } };
+    cfg.elements.push(el);
+    const raw = encodeConfig(cfg) as { elements: { payload: Record<string, Record<string, unknown>> }[] };
+    expect(auditUnknownKeys(raw)).toEqual([]);
+    const payload = raw.elements[0]!.payload;
+    payload.minSource!.bogus = 1;
+    (payload.maxSource!.kind as Record<string, unknown>).bogus = 2;
+    expect(auditUnknownKeys(raw)).toEqual([
+      "$.elements[0].payload.minSource.bogus",
+      "$.elements[0].payload.maxSource.kind.bogus",
+    ]);
+  });
+
   it("is empty for the fixture", () => {
     expect(auditUnknownKeys(fixture.config)).toEqual([]);
   });

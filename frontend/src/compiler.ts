@@ -200,6 +200,10 @@ export function compile(config: CustomComplicationConfig): Compiled {
     // usual pairing, a filtered count and the same count unfiltered, dedupes to
     // two lines of one template document and no extra request.
     if (el.kind === "gauge" && el.payload.total) visit(el.payload.total);
+    // The ends of a gauge's range can follow entities too, and the watch only
+    // fetches what lands here, so they are visited like the reading.
+    if (el.kind === "gauge" && el.payload.minSource) visit(el.payload.minSource);
+    if (el.kind === "gauge" && el.payload.maxSource) visit(el.payload.maxSource);
     // A chart's "now" marker is an ordinary value, so it is fetched like one.
     // Usually the built-in Hour, which costs a line of the template document
     // and no request at all.

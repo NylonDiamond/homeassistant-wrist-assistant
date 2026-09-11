@@ -212,6 +212,8 @@ function documentWithEveryEntitySite(): Leak {
   const gauge = newElement("gauge");
   (gauge.payload as { value: Value; total?: Value }).value = stateValue(leak);
   (gauge.payload as { value: Value; total?: Value }).total = stateValue(leak);
+  (gauge.payload as { minSource?: Value }).minSource = stateValue(leak);
+  (gauge.payload as { maxSource?: Value }).maxSource = attributeValue(leak);
 
   const chart = newElement("chart");
   (chart.payload as { value: Value; nowIndex?: Value }).value = stateValue(leak);
@@ -320,6 +322,23 @@ describe("scrubbing a document that names an entity everywhere", () => {
     const scrubbed = scrubForShare(leak.config, slots);
     const restored = remapEntities(scrubbed, originalRefs(leak.config, slots));
     expect(withoutIdentity(restored)).toEqual(withoutIdentity(withoutPages(leak.config)));
+  });
+});
+
+describe("a gauge's range sources", () => {
+  it("are named as their own sites on the gauge", () => {
+    const cfg = newConfig("Range", 0, ["rectangular"]);
+    const gauge = newElement("gauge");
+    const p = gauge.payload as { value: Value; minSource?: Value; maxSource?: Value };
+    p.value = { kind: { kind: "entityState", entityId: "sensor.car_battery", displayName: "Car battery", domain: "sensor" } };
+    p.minSource = { kind: { kind: "entityState", entityId: "sensor.floor", displayName: "Floor", domain: "sensor" } };
+    p.maxSource = { kind: { kind: "entityState", entityId: "number.car_charge_limit", displayName: "Charge limit", domain: "number" } };
+    cfg.elements = [gauge];
+    expect(documentEntityUses(cfg).map((u) => [u.entityId, u.where])).toEqual([
+      ["sensor.car_battery", "Gauge layer \"Car battery\""],
+      ["sensor.floor", "Min on gauge \"Car battery\""],
+      ["number.car_charge_limit", "Max on gauge \"Car battery\""],
+    ]);
   });
 });
 

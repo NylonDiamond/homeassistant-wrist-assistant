@@ -8,7 +8,8 @@
 
 import { describe, expect, it } from "vitest";
 import { nothing } from "lit";
-import { GAUGE_MAX_DOTS, literal, newConfig, newElement, type Element, type GaugeElement } from "../src/model.js";
+import { GAUGE_MAX_DOTS, literal, newConfig, newElement, type Element, type GaugeElement, type Value } from "../src/model.js";
+import { deriveDataSources } from "../src/compiler.js";
 import { renderLayout, type IconProvider } from "../src/renderer.js";
 import { resolveAll, type EntityState, type ResolvedLayout } from "../src/resolver.js";
 
@@ -24,8 +25,9 @@ function flatten(node: unknown): string {
   return String(node);
 }
 
-/** One gauge filling a rectangular face, resolved against a single sensor. */
-function gaugeLayout(state: string, tweak: (p: GaugeElement) => void = () => {}): ResolvedLayout {
+/** One gauge filling a rectangular face, resolved against `sensor.g` and any
+ * other sensors the test names. */
+function gaugeLayout(state: string, tweak: (p: GaugeElement) => void = () => {}, others: Record<string, string> = {}): ResolvedLayout {
   const cfg = newConfig("Gauge", 0);
   const el = newElement("gauge") as Extract<Element, { kind: "gauge" }>;
   el.payload.frame = { x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 };
@@ -35,11 +37,12 @@ function gaugeLayout(state: string, tweak: (p: GaugeElement) => void = () => {})
   const entityStates = new Map<string, EntityState>([
     ["sensor.g", { entityId: "sensor.g", state, domain: "sensor", iconName: "gauge" }],
   ]);
+  for (const [id, s] of Object.entries(others)) entityStates.set(id, { entityId: id, state: s, domain: "sensor", iconName: "gauge" });
   return resolveAll(cfg, { entityStates, templateResults: new Map(), namedValues: cfg.values }).rectangular!;
 }
 
-function gaugeOf(state: string, tweak: (p: GaugeElement) => void = () => {}) {
-  const el = gaugeLayout(state, tweak).elements.find((e) => e.kind === "gauge");
+function gaugeOf(state: string, tweak: (p: GaugeElement) => void = () => {}, others: Record<string, string> = {}) {
+  const el = gaugeLayout(state, tweak, others).elements.find((e) => e.kind === "gauge");
   if (!el || el.kind !== "gauge") throw new Error("no gauge layer resolved");
   return el;
 }
@@ -150,6 +153,62 @@ describe("a gauge drawn as dots", () => {
     const g = gaugeOf("2", (p) => { p.style = "dots"; p.minValue = 0; p.maxValue = 5; p.total = literal("lots"); });
     expect(g.dotCount).toBe(5);
     expect(g.filledCount).toBe(2);
+  });
+});
+
+describe("a gauge whose range follows entities", () => {
+  const sensor = (entityId: string): Value => ({ kind: { kind: "entityState", entityId, displayName: entityId, domain: "sensor" } });
+  const ends = { "sensor.low": "10", "sensor.high": "30" };
+  const bothEnds = (p: GaugeElement) => { p.minSource = sensor("sensor.low"); p.maxSource = sensor("sensor.high"); };
+
+  it("reads both ends from the entities instead of the typed-in numbers", () => {
+    expect(gaugeOf("20", bothEnds, ends).fraction).toBe(0.5);
+  });
+
+  it("places the threshold against the resolved range", () => {
+    expect(gaugeOf("20", (p) => { bothEnds(p); p.thresholdValue = 25; }, ends).thresholdFraction).toBe(0.75);
+    // Inside the typed-in 0 to 100, but past the resolved end, so no tick.
+    expect(gaugeOf("20", (p) => { bothEnds(p); p.thresholdValue = 50; }, ends).thresholdFraction).toBeUndefined();
+  });
+
+  it("falls back to the typed-in number, one end at a time, when a source has no number", () => {
+    const g = gaugeOf("20", (p) => { bothEnds(p); p.minValue = -10; }, { "sensor.low": "unavailable", "sensor.high": "30" });
+    expect(g.fraction).toBe(0.75);
+    const missing = gaugeOf("50", (p) => { p.maxSource = sensor("sensor.nowhere"); });
+    expect(missing.fraction).toBe(0.5);
+  });
+
+  it("reads a number with a unit after it", () => {
+    expect(gaugeOf("40", (p) => { p.maxSource = sensor("sensor.limit"); }, { "sensor.limit": "80 %" }).fraction).toBe(0.5);
+  });
+
+  it("lets a rule beat the entity", () => {
+    const g = gaugeOf("20", (p) => {
+      bothEnds(p);
+      p.rules = [{
+        id: "R1",
+        cases: [{ id: "C1", when: { join: "all", tests: [] }, then: [{ kind: "setGaugeMax", number: 60 }] }],
+      }];
+    }, ends);
+    expect(g.fraction).toBe(0.2);
+  });
+
+  it("counts the resolved range as the dots when there is no total", () => {
+    const g = gaugeOf("2", (p) => { p.style = "dots"; p.maxSource = sensor("sensor.seats"); }, { "sensor.seats": "6" });
+    expect(g.dotCount).toBe(6);
+    expect(g.filledCount).toBe(2);
+    const counted = gaugeOf("2", (p) => { p.style = "dots"; p.maxSource = sensor("sensor.seats"); p.total = literal("4"); }, { "sensor.seats": "6" });
+    expect(counted.dotCount).toBe(4);
+  });
+
+  it("puts the source entities in the data sources, so the watch fetches them", () => {
+    const cfg = newConfig("Gauge", 0);
+    const el = newElement("gauge") as Extract<Element, { kind: "gauge" }>;
+    el.payload.value = sensor("sensor.g");
+    bothEnds(el.payload);
+    cfg.elements.push(el);
+    const ids = deriveDataSources(cfg).flatMap((d) => (d.kind === "entity" ? [d.entityId] : []));
+    expect(ids).toEqual(["sensor.g", "sensor.high", "sensor.low"]);
   });
 });
 

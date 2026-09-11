@@ -12,6 +12,8 @@ import {
   type FamilyKind,
   type FontWeight,
   type ChartBaseline,
+  chartEndMarkers,
+  type ChartEndMarker,
   type ChartMarker,
   type ChartScale,
   type ChartStyle,
@@ -54,6 +56,11 @@ import {
   chartTrendGlyph,
   chartSortedBands,
   chartUsesBands,
+  CHART_DEFAULT_BAND_HIGH_HEX,
+  CHART_DEFAULT_HIGH_HEX,
+  CHART_DEFAULT_LOW_HEX,
+  type TextElement,
+  textColorsByValue,
   clockTime,
   elementsFor,
   formatIsEmpty,
@@ -115,6 +122,16 @@ export interface ResolvedText extends ResolvedBase {
   lineLimit: number;
   /** Which edge of the layer box the text sits against. Straight off the element. */
   alignment: TextAlignment;
+  /** The text cut into runs of one colour, when the layer colours its numbers by
+   * value (`textColorsByValue`). Joined, the runs spell `text` exactly. Absent
+   * when the whole text is `colorHex`, which is every layer that does not ask. */
+  spans?: TextSpan[];
+}
+/** One run of a text layer drawn in one colour. Mirrors `ResolvedText.Span` in
+ * the app repo. */
+export interface TextSpan {
+  text: string;
+  colorHex: string;
 }
 export interface ResolvedIcon extends ResolvedBase {
   kind: "icon";
@@ -161,7 +178,14 @@ export interface ResolvedChart extends ResolvedBase {
   lowIndex?: number;
   highColorHex: string;
   lowColorHex: string;
+  /** The shared marker as stored. Nothing draws from it any more; it is kept
+   * because the shared fixtures pin it. */
   marker: ChartMarker;
+  /** The mark each end draws. "none" for an end the highlight does not cover,
+   * whatever the layer stores for it, so a marker never shows without its
+   * highlight. */
+  highMarker: ChartEndMarker;
+  lowMarker: ChartEndMarker;
   /** One colour per reading, parallel to `values`. Empty when the whole series
    * is one colour, which keeps the common case free of a second array. */
   pointColorHexes: string[];
@@ -574,14 +598,34 @@ export function countdownRemainingString(seconds: number): string {
  * Mirrors `CustomComplication.numbers(in:)` in Swift; the two are held together
  * by `CustomComplicationChartTests`. */
 export function chartNumbers(raw: string, limit = 240): number[] {
-  const out: number[] = [];
+  return numberTokens(raw, limit).map((t) => t.value);
+}
+
+/** One number read out of a string, and where it sits. `start` and `end` are
+ * offsets into the string (UTF-16 code units, `end` exclusive), so
+ * `raw.slice(start, end)` is the characters the number was read from. */
+export interface NumberToken {
+  value: number;
+  start: number;
+  end: number;
+}
+
+/** Every number in a string with its place in the string. The one tokenizer
+ * behind both `chartNumbers` and a text layer's colour by value, so a chart and
+ * the text printed under it can never disagree about what counts as a number. */
+export function numberTokens(raw: string, limit = 240): NumberToken[] {
+  const out: NumberToken[] = [];
   let token = "";
+  let start = 0;
   let previousWasNumeric = false;
+  let at = 0;
 
   const flush = () => {
     if (token !== "") {
       const parsed = Number(token);
-      if (Number.isFinite(parsed)) out.push(parsed);
+      // Every character a token can hold is one code unit, so its length is
+      // its width in the string.
+      if (Number.isFinite(parsed)) out.push({ value: parsed, start, end: start + token.length });
     }
     token = "";
   };
@@ -589,25 +633,87 @@ export function chartNumbers(raw: string, limit = 240): number[] {
   for (const ch of raw) {
     if (out.length >= limit) break;
     if (ch >= "0" && ch <= "9") {
+      if (token === "") start = at;
       token += ch;
       previousWasNumeric = true;
     } else if (ch === ".") {
       // A second dot ends the reading rather than making it unparseable.
       if (token.includes(".")) flush();
+      if (token === "") start = at;
       token += ".";
       previousWasNumeric = true;
     } else if (ch === "-" || ch === "+") {
       const isSign = !previousWasNumeric;
       flush();
-      if (isSign) token += ch;
+      if (isSign) {
+        start = at;
+        token = ch;
+      }
       previousWasNumeric = false;
     } else {
       flush();
       previousWasNumeric = false;
     }
+    at += ch.length;
   }
   if (out.length < limit) flush();
   return out;
+}
+
+/**
+ * A text layer's colour by value: the text cut into runs of one colour.
+ *
+ * Numbers are read with `numberTokens`, exactly as a chart reads its series.
+ * The highlight picks one number per end the way a chart picks its highIndex
+ * and lowIndex: the first occurrence of the largest and of the smallest, and
+ * when that is the same number the highest wins. A number then takes the
+ * highest colour, else the lowest colour, else its band when the table is in
+ * use, else the layer colour. Everything that is not a number keeps the layer
+ * colour, a trailing dot included. Neighbouring runs of the same colour are one
+ * run, and no run is empty: text with no numbers is one run in the layer colour,
+ * and empty text is no runs at all.
+ *
+ * Mirrors `CustomComplication.textSpans` in Swift.
+ */
+export function textValueSpans(text: string, colorHex: string, el: TextElement): TextSpan[] {
+  const tokens = numberTokens(text);
+  const values = tokens.map((t) => t.value);
+  const highlight = el.highlight ?? "none";
+  let high = -1;
+  let low = -1;
+  if (values.length > 0) {
+    if (highlight === "highest" || highlight === "both") high = values.indexOf(Math.max(...values));
+    if (highlight === "lowest" || highlight === "both") low = values.indexOf(Math.min(...values));
+    if (low === high) low = -1;
+  }
+  const bands = el.coloring === "bands" ? chartSortedBands({ bands: el.bands ?? [] }) : [];
+  const above = el.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX;
+  const highHex = el.highColorHex ?? CHART_DEFAULT_HIGH_HEX;
+  const lowHex = el.lowColorHex ?? CHART_DEFAULT_LOW_HEX;
+
+  const spans: TextSpan[] = [];
+  const push = (part: string, hex: string) => {
+    if (part === "") return;
+    const last = spans.at(-1);
+    if (last && last.colorHex === hex) last.text += part;
+    else spans.push({ text: part, colorHex: hex });
+  };
+  let at = 0;
+  tokens.forEach((t, i) => {
+    push(text.slice(at, t.start), colorHex);
+    const hex = i === high ? highHex
+      : i === low ? lowHex
+      : bands.length > 0 ? chartBandColor(t.value, bands, above)
+      : colorHex;
+    // "costs 5." reads 5 with the full stop in its token, but the full stop is
+    // punctuation, so the coloured run ends at the last digit. A dot inside a
+    // number ("5.5") is not trailing and stays in it.
+    const end = text[t.end - 1] === "." ? t.end - 1 : t.end;
+    push(text.slice(t.start, end), hex);
+    at = end;
+  });
+  push(text.slice(at), colorHex);
+  return spans;
 }
 
 /** The value range a chart's plot covers. Mirrors `CustomComplication.chartDomain`. */
@@ -1168,6 +1274,10 @@ export class Resolver {
           alignment: el.payload.alignment ?? "center",
         };
         if (countdownEnd !== undefined) out.countdownEnd = countdownEnd;
+        // Read off the final text and colour, so a rule that rewrites the text
+        // or recolours the layer is what the numbers are read from and what the
+        // rest of the text keeps.
+        if (textColorsByValue(el.payload)) out.spans = textValueSpans(out.text, out.colorHex, el.payload);
         return out;
       }
       case "icon": {
@@ -1196,8 +1306,13 @@ export class Resolver {
       case "gauge": {
         const g = el.payload;
         const raw = this.styleText(style, "gaugeValue") ?? this.resolve(g.value);
-        const min = this.styleNumber(style, "gaugeMin") ?? g.minValue;
-        const max = this.styleNumber(style, "gaugeMax") ?? g.maxValue;
+        // Each end of the range, first match wins: a rule, then the entity that
+        // end follows when it holds a number, then the typed-in number. The
+        // fill, the threshold tick and the dot count all read the result.
+        const bound = (ruled: number | undefined, source: typeof g.minSource, fixed: number): number =>
+          ruled ?? (source ? leadingNumber(this.resolve(source) ?? "") : undefined) ?? fixed;
+        const min = bound(this.styleNumber(style, "gaugeMin"), g.minSource, g.minValue);
+        const max = bound(this.styleNumber(style, "gaugeMax"), g.maxSource, g.maxValue);
         const reading = raw === undefined ? undefined : leadingNumber(raw);
 
         // A band names its own colour, so it wins over a rule that recolours the
@@ -1246,6 +1361,9 @@ export class Resolver {
         const pointColorHexes = chartUsesBands(c)
           ? values.map((v) => chartBandColor(v, sortedBands, c.bandAboveColorHex))
           : [];
+        const marksHigh = c.highlight === "highest" || c.highlight === "both";
+        const marksLow = c.highlight === "lowest" || c.highlight === "both";
+        const markers = chartEndMarkers(c);
         const out: ResolvedChart = {
           kind: "chart",
           ...base,
@@ -1260,6 +1378,8 @@ export class Resolver {
           highColorHex: c.highColorHex,
           lowColorHex: c.lowColorHex,
           marker: c.marker,
+          highMarker: marksHigh ? markers.high : "none",
+          lowMarker: marksLow ? markers.low : "none",
           pointColorHexes,
           fillBands: c.fillBands,
           thresholdColorHex: c.thresholdColorHex,
@@ -1274,8 +1394,6 @@ export class Resolver {
           labelsAbove: c.labelsAbove,
         };
         if (values.length > 0) {
-          const marksHigh = c.highlight === "highest" || c.highlight === "both";
-          const marksLow = c.highlight === "lowest" || c.highlight === "both";
           const high = marksHigh ? values.indexOf(Math.max(...values)) : -1;
           const low = marksLow ? values.indexOf(Math.min(...values)) : -1;
           if (high >= 0) out.highIndex = high;
