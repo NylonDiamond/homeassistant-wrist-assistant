@@ -253,6 +253,65 @@ const THUMB_H = 22;
 const THUMB_STEPS = [1, 1.7, 2.6] as const;
 const THUMB_STEP_LABEL = ["S", "M", "L"] as const;
 const THUMB_STEP_TITLE = ["Small", "Medium", "Large"] as const;
+
+/**
+ * How the Layers rows fold as the card gets narrow, one pair of container
+ * queries per picture size, since a bigger picture needs the room sooner.
+ *
+ * On one line a selected row gives its five buttons about 120px, and in a
+ * 300px column that left the name no room at all. So the row folds twice.
+ * First the badges and buttons drop to a second line under the picture and
+ * the name. Then, narrower still, the name drops under the picture too, and
+ * the picture shrinks if even that is too wide.
+ *
+ * On a folded row the buttons show only on the selected row, not on hover,
+ * so the row never grows a line under the pointer. The badges stay put
+ * beside them.
+ */
+function layerRowFolds(): string {
+  return THUMB_STEPS.map((scale, i) => {
+    const w = Math.round(THUMB_W * scale);
+    const h = Math.round(THUMB_H * scale);
+    const p = `.layers-card.s${i}`;
+    return `
+    @container layers (max-width: ${w + 299}px) {
+      ${p} .layer {
+        grid-template-columns: 16px 3px var(--thumb-w) minmax(0, 1fr);
+        grid-template-areas: "grip bar thumb name" "grip bar right right";
+        row-gap: 0; padding-top: 5px; padding-bottom: 5px;
+      }
+      ${p} .layer.dragging { padding-top: 0; padding-bottom: 0; }
+      ${p} .layer > .grip { grid-area: grip; }
+      ${p} .layer > .bar { grid-area: bar; }
+      ${p} .layer > .thumb, ${p} .layer > .folder { grid-area: thumb; }
+      ${p} .layer > .name { grid-area: name; }
+      ${p} .layer > .right { grid-area: right; min-width: 0; flex-wrap: wrap; justify-content: flex-start; gap: 0 4px; }
+      ${p} .layer:not(.group) .badge, ${p} .layer:not(.group) .acts { margin-top: 4px; }
+      ${p} .layer:not(.group):hover .badges, ${p} .layer.hl .badges, ${p} .layer:focus-within .badges { display: inline-flex; }
+      ${p} .layer:not(.group):not(.rich):not(.hl):not(:focus-within):hover .acts { display: none; }
+      ${p} .layer.pinned .badges { display: none; }
+      ${p} .layer.group { grid-template-areas: "grip bar thumb name" "grip bar thumb right"; }
+      ${p} .layer.group > .right { justify-content: flex-end; gap: 2px; }
+      ${p} .group-kids { margin-left: 6px; padding-left: 6px; }
+      ${p} .group-cta { flex-wrap: wrap; }
+    }
+    @container layers (max-width: ${w + 149}px) {
+      ${p} .layer {
+        grid-template-columns: 16px 3px minmax(0, 1fr);
+        grid-template-areas: "grip bar thumb" "grip bar name" "grip bar right";
+      }
+      ${p} .layer > .thumb { justify-self: start; width: min(var(--thumb-w), 100%); height: auto; aspect-ratio: ${w} / ${h}; }
+      ${p} .layer > .name { padding-top: 4px; }
+      ${p} .layer.group {
+        grid-template-columns: 16px 3px minmax(0, 1fr) auto;
+        grid-template-areas: "grip bar thumb right" "grip bar name name";
+      }
+      ${p} .layer.group > .folder { justify-self: start; width: auto; }
+      ${p} .layer.group > .name { padding-top: 2px; }
+      ${p} .group-kids { margin-left: 2px; padding-left: 4px; }
+    }`;
+  }).join("\n");
+}
 type ThumbStep = 0 | 1 | 2;
 type LayerDetail = "compact" | "expanded";
 /** How the Layers list is shown: picture size and row detail. Per browser,
@@ -1037,6 +1096,7 @@ export class WristAssistantPanel extends LitElement {
     .column.left .card.layers-card {
       flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: 10px 8px 8px;
       --thumb-w: ${THUMB_W}px; --thumb-h: ${THUMB_H}px;
+      container: layers / inline-size;
     }
     /* Card titles read as titles: sentence case, a little heavier, the ink
        colour. Their side notes stay small and muted. */
@@ -1296,6 +1356,7 @@ export class WristAssistantPanel extends LitElement {
     .layer.rich .acts { display: inline-flex; visibility: hidden; }
     .layer.rich:hover .acts, .layer.rich.hl .acts, .layer.rich:focus-within .acts { visibility: visible; }
     .layer.rich:hover .badges, .layer.rich.hl .badges, .layer.rich:focus-within .badges { display: inline-flex; }
+    ${unsafeCSS(layerRowFolds())}
 
     /* Two small segmented controls in the Layers title: how big the row
        pictures are, and how much each row says. */
@@ -5326,7 +5387,7 @@ export class WristAssistantPanel extends LitElement {
       if (!this.collapsed.has(g.id)) rows.push(html`<div class="group-kids">${members.map((m) => layerRow(m, true, groupHl))}</div>`);
     }
 
-    return html`<div class="card layers-card" style=${`--thumb-w:${thumbW}px;--thumb-h:${thumbH}px`}>
+    return html`<div class="card layers-card s${this.thumbStep}" style=${`--thumb-w:${thumbW}px;--thumb-h:${thumbH}px`}>
       <h2 class="panel-title tools" style=${`--c:${SECTION_COLOR.place}`}><span class="swatch">${uiIcon("layers")}</span>Layers
         <span class="mini">top draws last</span><span class="spacer"></span>
         <span class="tool-set">
