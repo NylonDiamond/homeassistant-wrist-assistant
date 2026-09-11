@@ -2471,8 +2471,11 @@ export class WristAssistantPanel extends LitElement {
     window.addEventListener("keydown", this.keyHandler);
     window.addEventListener("keyup", this.keyUpHandler);
     window.addEventListener("beforeunload", this.beforeUnload);
-    window.addEventListener("pointerdown", this.sharedValueOutside, { capture: true });
-    window.addEventListener("focusin", this.sharedValueOutside);
+    window.addEventListener("pointerdown", this.pressStart, { capture: true });
+    window.addEventListener("pointerup", this.pressEnd, { capture: true });
+    window.addEventListener("pointercancel", this.pressEnd, { capture: true });
+    window.addEventListener("click", this.sharedValueOutside, { capture: true });
+    window.addEventListener("focusin", this.sharedValueFocus);
     this.addEventListener(SCRUB_START, this.scrubStart);
     this.addEventListener(SCRUB_END, this.scrubEnd);
     void this.loadOwners();
@@ -2598,8 +2601,11 @@ export class WristAssistantPanel extends LitElement {
     window.removeEventListener("keydown", this.keyHandler);
     window.removeEventListener("keyup", this.keyUpHandler);
     window.removeEventListener("beforeunload", this.beforeUnload);
-    window.removeEventListener("pointerdown", this.sharedValueOutside, { capture: true });
-    window.removeEventListener("focusin", this.sharedValueOutside);
+    window.removeEventListener("pointerdown", this.pressStart, { capture: true });
+    window.removeEventListener("pointerup", this.pressEnd, { capture: true });
+    window.removeEventListener("pointercancel", this.pressEnd, { capture: true });
+    window.removeEventListener("click", this.sharedValueOutside, { capture: true });
+    window.removeEventListener("focusin", this.sharedValueFocus);
     this.removeEventListener(SCRUB_START, this.scrubStart);
     this.removeEventListener(SCRUB_END, this.scrubEnd);
     void this.unsubscribe?.();
@@ -5783,7 +5789,7 @@ export class WristAssistantPanel extends LitElement {
       ${values.map((v) => {
         const r = resolver.resolve({ kind: { kind: "named", id: v.id } });
         const open = this.openValue === v.id;
-        const toggle = () => { this.openValue = open ? undefined : v.id; };
+        const toggle = () => { this.setOpenValue(open ? undefined : v.id); };
         return html`<div class="vitem ${open ? "open" : ""}"><div class="datum vrow ${open ? "hl" : ""}" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
             title=${open ? "Close" : "Edit this shared value"}
             @click=${toggle}
@@ -5799,12 +5805,29 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
   }
 
+  /** A pointer is held down, so a focus change is part of a click that
+   * `sharedValueOutside` will judge once it lands. */
+  private pressing = false;
+  private pressStart = () => { this.pressing = true; };
+  /** Cleared after the click that follows pointerup has been dispatched. */
+  private pressEnd = () => { window.setTimeout(() => { this.pressing = false; }); };
+
+  /** Tabbing away closes the open value. A focus change made by a mouse press
+   * waits for the click instead. */
+  private sharedValueFocus = (e: FocusEvent) => {
+    if (!this.pressing) this.sharedValueOutside(e);
+  };
+
   /**
-   * Close the open shared value once the pointer or the keyboard moves
-   * somewhere else. The row and its editor are one `.vitem`; anything inside
-   * it (a field, a popover the form opened, the row itself, which toggles on
-   * its own click) keeps it open. A press on the card's own scrollbar lands on
-   * the card itself and is not a move away.
+   * Close the open shared value once a click or the keyboard lands somewhere
+   * else. The row and its editor are one `.vitem`; anything inside it (a
+   * field, a popover the form opened, the row itself, which toggles on its own
+   * click) keeps it open. A click on the card's own scrollbar lands on the
+   * card itself and is not a move away.
+   *
+   * On the click, never the press: closing folds the editor away and the rows
+   * under it move up, so closing on press would send the click that follows
+   * to whatever row slid under the pointer.
    */
   private sharedValueOutside = (e: Event) => {
     if (this.openValue === undefined) return;
@@ -5812,8 +5835,22 @@ export class WristAssistantPanel extends LitElement {
     const first = path[0];
     if (first instanceof HTMLElement && first.classList.contains("values-list")) return;
     const inside = path.some((n) => n instanceof HTMLElement && n.classList.contains("vitem") && n.classList.contains("open"));
-    if (!inside) this.openValue = undefined;
+    if (!inside) this.setOpenValue(undefined);
   };
+
+  /**
+   * Open a shared value, or close the open one with undefined. A value closed
+   * while its name is still blank was never really made, so it is removed
+   * rather than left in the list as "(unnamed)". A layer already reading it
+   * keeps its own copy, the same as a delete.
+   */
+  private setOpenValue(id: string | undefined) {
+    const left = this.openValue;
+    this.openValue = id;
+    if (left === undefined || left === id) return;
+    const value = this.draft?.config.values.find((v) => v.id === left);
+    if (value && value.name.trim() === "") this.mutate((c) => { deleteSharedValue(c, left); });
+  }
 
   /** Open one shared value in its card and bring it into view. A value popover
    * that asked for this is closed first, or it would float over the page with
@@ -5821,7 +5858,7 @@ export class WristAssistantPanel extends LitElement {
    * caret in its Name box, since naming it is the first thing to do. */
   private openSharedValue(id: string) {
     this.renderRoot.querySelectorAll<HTMLElement>(":popover-open").forEach((p) => p.hidePopover());
-    this.openValue = id;
+    this.setOpenValue(id);
     const unnamed = this.draft?.config.values.find((v) => v.id === id)?.name.trim() === "";
     void this.updateComplete.then(() => {
       this.renderRoot.querySelector(".values-list .datum.hl")?.scrollIntoView({ block: "start", behavior: "smooth" });
