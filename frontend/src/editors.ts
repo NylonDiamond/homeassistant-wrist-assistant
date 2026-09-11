@@ -2899,6 +2899,7 @@ function textValueColourFields(
   host: EditorHost,
   t: TextElement,
   set: (mutate: (p: TextElement) => void, k?: string) => void,
+  colourRow: unknown,
 ): TemplateResult {
   const coloring = t.coloring ?? "uniform";
   const highlight = t.highlight ?? "none";
@@ -2927,6 +2928,7 @@ function textValueColourFields(
       // its readings, so the switch paints something the moment it is flipped.
       if ((p.bands?.length ?? 0) === 0) p.bands = seedBands(chartNumbers(host.resolve(p.value) ?? ""));
     }), { def: "uniform" })}
+    ${colourRow}
     ${coloring === "bands" ? html`
       <div class="hint">Each number in the text takes the colour of the band it falls in, and other text keeps the layer colour.</div>
       ${bandTableFields({ bands: t.bands ?? [], bandAboveColorHex: t.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX }, t.colorSlot.baseColorHex, setBands,
@@ -3360,6 +3362,13 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
   const base = newElement(el.kind).payload as unknown as Record<string, unknown>;
   const baseColor = (base.colorSlot as { baseColorHex: string } | undefined)?.baseColorHex ?? "#FFFFFF";
   const baseSize = (key: "fontSize" | "size" | "lineWidth") => base[key] as number;
+  // The layer's own colour. Where a Colour choice picks between one colour and
+  // colour by value, the colour sits right under that choice; anywhere else it
+  // closes the Look card.
+  let colourPlaced = false;
+  const colourRow = (label: string) => el.kind === "image" || el.kind === "tap" || el.kind === "timeline"
+    ? nothing
+    : colorField(label, el.payload.colorSlot.baseColorHex, (v) => upd((e) => { if (e.kind !== "image" && e.kind !== "tap" && e.kind !== "timeline") e.payload.colorSlot.baseColorHex = v ?? "#FFFFFF"; }, "color"), false, baseColor);
 
   // Content is what the layer shows; look is how it is drawn. Splitting them
   // per kind is the whole difference between a form and a page a person can
@@ -3370,6 +3379,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
     case "text": {
       const setText = (mutate: (p: TextElement) => void, k?: string) => upd((e) => mutate((e as typeof el).payload), k);
       content = textContentFields(host, el, family, setText, key);
+      colourPlaced = !el.payload.countdown && !textUsesParts(el.payload);
       look = html`
         ${shapeSizeField(host, el, family, "Font size", { step: 1, min: 4, def: baseSize("fontSize") })}
         ${segField("Weight", el.payload.fontWeight, FONT_WEIGHTS, (v) => upd((e) => { (e as typeof el).payload.fontWeight = v; }),
@@ -3388,7 +3398,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           if (v) p.monospacedDigits = true; else delete p.monospacedDigits;
         }), base.monospacedDigits === true)}
         ${el.payload.monospacedDigits ? html`<div class="hint">Digits take the same width, so a number that ticks does not shuffle what sits beside it.</div>` : nothing}
-        ${el.payload.countdown || textUsesParts(el.payload) ? nothing : textValueColourFields(host, el.payload, setText)}`;
+        ${colourPlaced ? textValueColourFields(host, el.payload, setText, colourRow("Main colour")) : nothing}`;
       break;
     }
     case "icon":
@@ -3417,6 +3427,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               entities without the filter, so "3 of 8 lights on" is one reading and one
               total over one scope. At most ${GAUGE_MAX_DOTS} dots are drawn.</div>`
           : gaugeRangeFields(host, g, { min: base.minValue as number, max: base.maxValue as number }, key, setGauge)}`;
+      colourPlaced = true;
       look = html`
         <div class="grid2">
           ${segField("Style", g.style, GAUGE_STYLES, (v) => setGauge((p) => {
@@ -3434,6 +3445,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           p.coloring = v;
           if (v === "bands" && p.bands.length === 0) p.bands = seedBands([p.minValue, p.maxValue]);
         }), { def: base.coloring as typeof g.coloring })}
+        ${colourRow("Main colour")}
         ${g.coloring === "bands" ? html`
           <div class="hint">Checked lowest first, so each row only says where it ends. The
             gauge takes the colour of the row its reading falls in, and a reading past the
@@ -3559,13 +3571,13 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               draws the value itself until Readings names an entity.</div>`}
             <div class="grid2">
               ${historySpanPicker(id, c.historyMinutes, baseMinutes, (m) => setChart((p) => { p.historyMinutes = m; }))}
-              <div class="field readings-field">${fieldLabel("Readings", {
+              <div class="field readings-field">${fieldLabel("Points", {
                 atDefault: c.historyPoints === basePoints,
                 title: `Back to ${basePoints < 1 ? "every one" : `${basePoints} averaged`}`,
                 reset: () => setChart((p) => { p.historyPoints = basePoints; }),
               })}
                 <div class="readings-row">
-                  <div class="seg wide" role="radiogroup" aria-label="Readings">
+                  <div class="seg wide" role="radiogroup" aria-label="Points">
                     <button type="button" role="radio" aria-checked=${everyReading ? "false" : "true"} class=${everyReading ? "" : "on"}
                       title="Average the recorded states into this many equal time slots"
                       @click=${() => { if (everyReading) setChart((p) => { p.historyPoints = 24; }); }}>Average</button>
@@ -3611,9 +3623,10 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           ? html`<div class="hint warn">No numbers in this value yet, so the chart draws nothing.</div>`
           : nothing}
         ${series.length > 0
-          ? html`<div class="hint keep">Reads <span class="nums">${chartReadout(shown)}</span>${series.length === shown.length
+          ? html`<div class="field readout"><span>Reads</span>
+              <span class="readout-v"><span class="nums">${chartReadout(shown)}</span>${series.length === shown.length
               ? html` · ${shown.length} ${shown.length === 1 ? "value" : "values"}`
-              : html` · ${shown.length} of ${series.length}`}</div>`
+              : html` · ${shown.length} of ${series.length}`}</span></div>`
           : nothing}
         ${suggestHistory
           ? html`<div class="hint warn">This entity holds one number, so the chart draws one bar.
@@ -3629,6 +3642,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         <div class="hint">${usingRecorder
           ? "Trims the series after it arrives, so 0 draws every reading fetched above."
           : "A forecast sensor often carries 24 or 48 entries. 0 draws all of them."}</div>`;
+      colourPlaced = true;
       look = html`
         <div class="grid2">
           ${segField("Style", c.style, CHART_STYLES, (v) => setChart((p) => { p.style = v; }), { def: base.style as typeof c.style })}
@@ -3658,17 +3672,21 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         <div class="hint">${c.baseline === "zero"
           ? "Bars grow from where zero falls, so a negative reading hangs below the line."
           : "Bars grow from the bottom, and the smallest reading keeps a visible stub. Switch to Zero when the readings can go negative."}</div>
-        <button class="small" title="Add a second chart layer on this frame, drawn against this chart's range"
-          @click=${() => {
-            let made: string | undefined;
-            host.update((cfg) => { made = addChartSeries(cfg, id); });
-            if (made) host.selectLayer(made);
-          }}>
-          ${uiIcon("plus")}<span>Second series</span></button>
+        <div class="field"><span>Series</span>
+          <div class="row-acts">
+            <button class="small" title="Add a second chart layer on this frame, drawn against this chart's range"
+              @click=${() => {
+                let made: string | undefined;
+                host.update((cfg) => { made = addChartSeries(cfg, id); });
+                if (made) host.selectLayer(made);
+              }}>${uiIcon("plus")}<span>Add a second series</span></button>
+          </div>
+        </div>
         ${segField("Colour", c.coloring, CHART_COLORINGS, (v) => setChart((p) => {
           p.coloring = v;
           if (v === "bands" && p.bands.length === 0) p.bands = seedBands(shown);
         }), { def: base.coloring as typeof c.coloring })}
+        ${colourRow("Main colour")}
         ${c.coloring === "bands" ? html`
           <div class="hint">Checked lowest first, so each row only says where it ends. A reading past
             the last row takes the colour underneath.
@@ -3732,9 +3750,9 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               their own. The right edge is now and the left edge is the start of the span, so a slot
               the recorder had nothing for shifts the earlier times a little.</div>`)
           : everyReading && usingHistory
-            ? html`<div class="hint keep">Clock times needevenly spaced readings, so they are offered when
-              Readings is Average rather than Every one.</div>`
-            : html`<div class="hint keep">Clock times needa recorded span, so they are offered when Draw is
+            ? html`<div class="hint keep">Clock times need evenly spaced readings, so they are offered when
+              Points is Average rather than Every one.</div>`
+            : html`<div class="hint keep">Clock times need a recorded span, so they are offered when Draw is
               Recorded history.</div>`}`;
       break;
     }
@@ -3773,7 +3791,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             excluded from the recorder, or it has not been seen in that long.</div>`
           : nothing}
         ${samples.length > 0
-          ? html`<div class="hint keep">Reads <span class="nums">${timelineReadout(samples, spanSeconds)}</span></div>`
+          ? html`<div class="field readout"><span>Reads</span><span class="readout-v"><span class="nums">${timelineReadout(samples, spanSeconds)}</span></span></div>`
           : nothing}
         ${timelineIsNumeric(samples)
           ? html`<div class="hint warn">This entity reports numbers, so every reading is its own
@@ -3873,9 +3891,9 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
     }
   }
 
-  const colour = el.kind === "image" || el.kind === "tap" || el.kind === "timeline"
+  const colour = colourPlaced || el.kind === "image" || el.kind === "tap" || el.kind === "timeline"
     ? undefined
-    : colorField(el.kind === "shape" ? "Fill colour" : el.kind === "text" && textUsesParts(el.payload) ? "Colour (parts set to Layer)" : "Colour", el.payload.colorSlot.baseColorHex, (v) => upd((e) => { if (e.kind !== "image" && e.kind !== "tap" && e.kind !== "timeline") e.payload.colorSlot.baseColorHex = v ?? "#FFFFFF"; }, "color"), false, baseColor);
+    : colourRow(el.kind === "shape" ? "Fill colour" : el.kind === "text" && textUsesParts(el.payload) ? "Layer colour" : "Colour");
 
   // A layer already bound to an entity is what a new states table tests, so the
   // entity is asked for once at the top of this editor and never again.
@@ -4009,8 +4027,8 @@ function tapSizeHint(host: EditorHost, tapId: string): TemplateResult | typeof n
   }
   if (parts.length === 0) return nothing;
   const small = smallest < SMALL_TAP_POINTS;
-  return html`<div class=${small ? "hint warn" : "hint keep"}>${parts.join(" · ")}${
-    small ? html`<br />That is small for a wrist. Show the tap area and drag its corners out.` : nothing}</div>`;
+  return html`<div class="field readout"><span>Tap size</span><span class="readout-v">${parts.join(" · ")}</span></div>
+    ${small ? html`<div class="hint warn">That is small for a wrist. Show the tap area and drag its corners out.</div>` : nothing}`;
 }
 
 /**
@@ -4046,22 +4064,25 @@ function chartNumbersSection(host: EditorHost, el: Extract<CElement, { kind: "ch
     ${labels.length === 0
       ? html`<div class="hint keep">A chart with no numbers on it shows that a reading moved, not what it moved to. Add one and it appears as a text layer in this chart's group: drag it anywhere, give it any size or colour, and it prints the live value.</div>`
       : html`
-        <div class="chart-numbers">
-          ${labels.map((l) => html`
-            <div class="num-row">
-              <button class="small" title="Edit this number" @click=${() => host.selectLayer(l.payload.id)}>
-                <b>${host.resolve(l.payload.value) ?? "--"}</b> · <span class="ent-tok">${layerTitle(l, ctx)}</span>
-              </button>
-              <button class="icon danger" title="Delete this number" aria-label="Delete this number"
-                @click=${() => host.update((c) => removeElement(c, l.payload.id))}>${uiIcon("close")}</button>
-            </div>`)}
+        <div class="field list-field"><span>Shown</span>
+          <div class="chart-numbers">
+            ${labels.map((l) => html`
+              <div class="num-row">
+                <button class="small" title="Edit this number" @click=${() => host.selectLayer(l.payload.id)}>
+                  <b>${host.resolve(l.payload.value) ?? "--"}</b> · <span class="ent-tok">${layerTitle(l, ctx)}</span>
+                </button>
+                <button class="icon danger" title="Delete this number" aria-label="Delete this number"
+                  @click=${() => host.update((c) => removeElement(c, l.payload.id))}>${uiIcon("close")}</button>
+              </div>`)}
+          </div>
         </div>
         <div class="hint">Each number is a text layer in this chart's group. Click one to edit it; drag it on the preview to move it. The × deletes it, and Undo brings it back.</div>`}
-    <div class="hint keep"><b>Add</b></div>
-    <div class="adders">
-      ${CHART_STATS.map(([stat, label]) => html`
-        <button class="small" title=${taken.has(stat) ? `Add another ${label.toLowerCase()}` : `Add the ${label.toLowerCase()}`}
-          @click=${() => add(stat)}>${uiIcon("plus")}<span>${label}</span></button>`)}
+    <div class="field list-field"><span>Add</span>
+      <div class="adders">
+        ${CHART_STATS.map(([stat, label]) => html`
+          <button class="small" title=${taken.has(stat) ? `Add another ${label.toLowerCase()}` : `Add the ${label.toLowerCase()}`}
+            @click=${() => add(stat)}>${uiIcon("plus")}<span>${label}</span></button>`)}
+      </div>
     </div>
     <div class="hint">The newest reading, the change and the total start with the entity's unit after them. The change is the newest reading minus the first, and the trend arrow is that change as ↑, ↓ or →, flat when it is too small for the chart to print. The ends of the scale come from the plot's range, so on a Fixed scale they print the Min and Max above.</div>`;
 }
@@ -4084,14 +4105,16 @@ function tappableSection(host: EditorHost, el: CElement, key: string): TemplateR
     ${attached
       ? html`<div class="value-editor">
           ${tapActionEditor(host, attached.payload as TapElement, updTap, `${key}-attached`)}
-          <div class="chips">
-            <button class="pick ${host.tapAreaShown ? "on" : ""}" aria-pressed=${host.tapAreaShown ? "true" : "false"}
-              title=${host.tapAreaShown ? "Back to the normal face" : "Dim the face and show only this layer's tap area, with corners to drag"}
-              @click=${() => host.showTapArea(!host.tapAreaShown)}><span class="glyph">☞</span>${host.tapAreaShown ? "Hide tap area" : "Show tap area"}</button>
-            ${!isZeroOutset((attached.payload as TapElement).outset)
-              ? html`<button class="icon" title="Fit the tap area to the layer again" aria-label="Fit the tap area to the layer again"
-                  @click=${() => updTap((p) => { p.outset = { ...ZERO_OUTSET }; })}>${uiIcon("reset")}</button>`
-              : nothing}
+          <div class="field"><span>Tap area</span>
+            <div class="chips">
+              <button class="pick ${host.tapAreaShown ? "on" : ""}" aria-pressed=${host.tapAreaShown ? "true" : "false"}
+                title=${host.tapAreaShown ? "Back to the normal face" : "Dim the face and show only this layer's tap area, with corners to drag"}
+                @click=${() => host.showTapArea(!host.tapAreaShown)}><span class="glyph">☞</span>${host.tapAreaShown ? "Hide" : "Show"}</button>
+              ${!isZeroOutset((attached.payload as TapElement).outset)
+                ? html`<button class="icon" title="Fit the tap area to the layer again" aria-label="Fit the tap area to the layer again"
+                    @click=${() => updTap((p) => { p.outset = { ...ZERO_OUTSET }; })}>${uiIcon("reset")}</button>`
+                : nothing}
+            </div>
           </div>
         </div>
         ${tapSizeHint(host, attached.payload.id)}
@@ -4147,10 +4170,13 @@ export function groupEditor(host: EditorHost, group: LayerGroup): TemplateResult
     <div class="hint">${group.locked
       ? "Locked: a drag on any of these layers moves all of them. Unlock to move one at a time."
       : "Unlocked: each layer moves on its own. With the group selected, a drag still moves all of them. Lock it when the part is the way you want it."}</div>
-    <div class="hint keep">${members.length} layer${members.length === 1 ? "" : "s"}: ${members.map((m) => layerTitle(m, ctx)).join(", ")}. Click one in the list to edit it.</div>
-    <div class="adders">
-      <button class="small" title="Keep the layers where they are and drop the folder" @click=${() => host.update((c) => ungroup(c, group.id))}>Ungroup</button>
-    </div>`,
+    <div class="field list-field"><span>Layers</span>
+      <span class="readout-v">${members.map((m) => layerTitle(m, ctx)).join(", ")}</span>
+      <div class="row-acts">
+        <button class="small" title="Keep the layers where they are and drop the folder" @click=${() => host.update((c) => ungroup(c, group.id))}>Ungroup</button>
+      </div>
+    </div>
+    <div class="hint">Click a layer in the list to edit it.</div>`,
     { color: SECTION_COLOR.group, icon: "folder", summary: `${members.length} layers · ${group.locked ? "moves as one" : "unlocked"}` });
 }
 
@@ -4213,7 +4239,7 @@ function inlineEditor(host: EditorHost): TemplateResult {
     ${card(host, "symbol", "Symbol", html`
       ${symbolField(host, inline.symbol ?? "", (v) => upd((i) => { if (v) i.symbol = v; else delete i.symbol; }, "symbol"), "inline-symbol")}
       <div class="hint">Drawn before the text. Leave it blank for text only.</div>
-      <div class="hint keep">On the face: ${inline.symbol ? `${inline.symbol} ` : ""}${inline.label ? `${inline.label}: ` : ""}${host.resolve(inline.value) ?? "--"}</div>`,
+      <div class="field readout"><span>On the face</span><span class="readout-v">${inline.symbol ? `${inline.symbol} ` : ""}${inline.label ? `${inline.label}: ` : ""}${host.resolve(inline.value) ?? "--"}</span></div>`,
       { color: KIND_COLOR.icon, icon: "icon", summary: inline.symbol || "None" })}`;
 }
 
@@ -4454,11 +4480,12 @@ function ruleEditor(host: EditorHost, rule: Rule, ri: number, count: number, tar
     ${parts === undefined ? nothing : partTargetField(parts, rule.partId, describeContext(host), (id) => updRule((r) => {
       if (id) r.partId = id; else delete r.partId;
     }))}
-    <div class="branches">
-      <span class="hint keep" style="margin:0 4px 0 0">Preview:</span>
-      <button class=${isActive("live") ? "active" : ""} @click=${() => host.setForced(rule.id, "live")}>Live</button>
-      ${rule.cases.map((c, i) => html`<button class="${isActive(c.id) ? "active" : ""} ${live === c.id ? "live-match" : ""}" @click=${() => host.setForced(rule.id, { caseId: c.id })}>Case ${i + 1}</button>`)}
-      ${rule.otherwise ? html`<button class="${isActive("otherwise") ? "active" : ""} ${live === "otherwise" ? "live-match" : ""}" @click=${() => host.setForced(rule.id, "otherwise")}>Otherwise</button>` : nothing}
+    <div class="field"><span>Preview</span>
+      <div class="branches">
+        <button class=${isActive("live") ? "active" : ""} @click=${() => host.setForced(rule.id, "live")}>Live</button>
+        ${rule.cases.map((c, i) => html`<button class="${isActive(c.id) ? "active" : ""} ${live === c.id ? "live-match" : ""}" @click=${() => host.setForced(rule.id, { caseId: c.id })}>Case ${i + 1}</button>`)}
+        ${rule.otherwise ? html`<button class="${isActive("otherwise") ? "active" : ""} ${live === "otherwise" ? "live-match" : ""}" @click=${() => host.setForced(rule.id, "otherwise")}>Otherwise</button>` : nothing}
+      </div>
     </div>
     ${rule.cases.map((c, ci) => caseEditor(host, c, ci, rule, target, updRule, `${key}-${c.id}`, forPart))}
     <div class="adders"><button class="small" @click=${() => updRule((r) => { r.cases.push(newCase()); })}>+ case</button></div>
@@ -4860,27 +4887,30 @@ function statesTable(
         }}>Remove</button>
         <button class="small" @click=${(e: Event) => { pendingColumnRemoval.delete(key); requestRerender(e.target); }}>Cancel</button>
       </div>`}
-      <div class="states-foot">
-        <button class="small" @click=${addRow}>+ state</button>
-        ${table.otherwise === undefined
-          ? html`<button class="small" title="What this layer looks like when no state above matches" @click=${() => upd((rs) => setOtherwise(rs, true))}>+ otherwise</button>`
-          : nothing}
-        <span class="spacer"></span>
-        ${forced === "live" ? nothing : html`<button class="small" @click=${() => rule && host.setForced(rule.id, "live")}>Back to live</button>`}
-        ${spare.length === 0 ? nothing : html`<select class="chip-add" title="Add a column" @change=${(e: Event) => {
-          const sel = e.target as HTMLSelectElement;
-          const p = sel.value as StyleProperty | "";
-          sel.value = "";
-          if (!p) return;
-          const set = pickedColumns.get(key) ?? new Set<StyleProperty>();
-          set.add(p);
-          pickedColumns.set(key, set);
-          requestRerender(sel);
-        }}>
-          <option value="" selected>+ column…</option>
-          ${spare.map((p) => html`<option value=${p}>${PROPERTY_LABELS[p]}</option>`)}
-        </select>`}
+      <div class="field list-field"><span>Add</span>
+        <div class="states-foot">
+          <button class="small" title="Add a row: a value to match and what the layer looks like then" @click=${addRow}>${uiIcon("plus")}<span>State</span></button>
+          ${table.otherwise === undefined
+            ? html`<button class="small" title="What this layer looks like when no state above matches" @click=${() => upd((rs) => setOtherwise(rs, true))}>${uiIcon("plus")}<span>Otherwise</span></button>`
+            : nothing}
+          ${spare.length === 0 ? nothing : html`<select class="chip-add" title="Add a column" aria-label="Add a column" @change=${(e: Event) => {
+            const sel = e.target as HTMLSelectElement;
+            const p = sel.value as StyleProperty | "";
+            sel.value = "";
+            if (!p) return;
+            const set = pickedColumns.get(key) ?? new Set<StyleProperty>();
+            set.add(p);
+            pickedColumns.set(key, set);
+            requestRerender(sel);
+          }}>
+            <option value="" selected>+ Column…</option>
+            ${spare.map((p) => html`<option value=${p}>${PROPERTY_LABELS[p]}</option>`)}
+          </select>`}
+        </div>
       </div>
+      ${forced === "live" ? nothing : html`<div class="field"><span>Preview</span>
+        <div class="row-acts"><button class="small" @click=${() => rule && host.setForced(rule.id, "live")}>Back to live</button></div>
+      </div>`}
       <div class="hint">${numberMode
         ? "States are checked top to bottom and the first match wins, so each band only has to say where it starts."
         : "States are checked top to bottom and the first match wins. Otherwise applies when none of them do."}</div>

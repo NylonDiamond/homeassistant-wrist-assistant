@@ -722,6 +722,10 @@ export class WristAssistantPanel extends LitElement {
     button.danger { color: var(--error-color, #e5484d); border-color: color-mix(in srgb, var(--error-color, #e5484d) 45%, transparent); background: color-mix(in srgb, var(--error-color, #e5484d) 8%, transparent); }
     button.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--error-color, #e5484d) 16%, transparent); border-color: var(--error-color, #e5484d); }
     button.small { padding: 0 9px; font-size: 12px; min-height: 26px; border-radius: 8px; }
+    /* An icon and its words on one line. Without this the icon, drawn as a
+       block, sits on a line of its own above the words. */
+    button.small:has(> svg.ui-icon) { display: inline-flex; align-items: center; gap: 5px; }
+    button.small > svg.ui-icon { width: 13px; height: 13px; flex: none; }
     button.icon {
       font: inherit; border: none; background: none; cursor: pointer; color: var(--wa-muted);
       display: inline-flex; align-items: center; justify-content: center;
@@ -1656,6 +1660,26 @@ export class WristAssistantPanel extends LitElement {
     .sec-b > .hint { margin: 2px 0 6px; }
     .sec-b > :is(.adders, .chart-numbers, .states-switch, details.sub) { margin-top: 6px; }
     .sec-b > :is(button.small, button.link) { margin: 4px 0; }
+    /* Anything in a card that is not a row (help, a note, a strip of buttons)
+       starts where the controls start, so the titles keep one clean edge down
+       the left. Boxes that hold rows of their own keep the full width. */
+    :is(.sec-b, .sec-b :is(.grid2, .grid4, .value-editor, .states, .rich-parts, .part-editor, .rule-box, .case-box, .test-box, .change-box))
+      > :is(.hint, .rich-note, .rich-confirm, .adders, .chips, .states-foot, .states-switch, .span-parts, button.small, button.link, select.adder, details.sub):not(.value-pop *) {
+      margin-left: calc(var(--wa-lab) + 8px);
+    }
+    /* A row whose control is a list or a strip of buttons that can wrap: the
+       title stays level with the first line. */
+    .field.list-field { align-items: start; }
+    .field.list-field > span:first-child { padding-top: 6px; }
+    .field.list-field > :not(:first-child) { grid-column: 2; }
+    .field.list-field > :is(.adders, .chart-numbers, .states-foot) { margin: 0; }
+    .row-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+    /* A line to read rather than change, with a title like any other row:
+       what a chart reads, how big a tap is, which layers a group holds. */
+    .field.readout { align-items: start; }
+    .field.readout > span:first-child { padding-top: 6px; }
+    .readout-v { min-width: 0; padding: 6px 0 5px; font-size: 11.5px; line-height: 1.4; color: var(--wa-muted); overflow-wrap: anywhere; }
+    .field.list-field > .readout-v { padding-bottom: 2px; }
     /* The reset dot. One control, two places: in the gutter left of a changed
        setting's title, and beside a card's title for everything the card owns.
        It is drawn only while something is away from its default, so the dots
@@ -2006,7 +2030,7 @@ export class WristAssistantPanel extends LitElement {
     /* Value chip: one line saying what a value is, with the full form behind it.
        The form lives in a popover, which the browser draws in the top layer, so
        a scrolling card cannot clip it. Its position is set in editors.ts. */
-    .value-chip-field { gap: 4px; }
+    .value-chip-field { gap: 4px 8px; }
     button.value-chip {
       display: flex; align-items: center; gap: 8px; width: 100%;
       font: inherit; font-size: 13px; text-align: left; padding: 6px 10px; border-radius: 8px;
@@ -2022,6 +2046,13 @@ export class WristAssistantPanel extends LitElement {
       padding: 1px 6px; border-radius: 999px; background: var(--wa-val-bg);
     }
     .value-chip .chip-caret { opacity: .55; font-size: 11px; }
+    /* In an inspector row the chip is a control like the boxes above and
+       below it: 26px, 12px text and the same soft fill. */
+    .sec-b .field.value-chip-field:not(.compact) > button.value-chip {
+      min-height: 26px; padding: 2px 8px; font-size: 12px; border-radius: 6px;
+      border-color: transparent; background: var(--wa-field);
+    }
+    .sec-b .field.value-chip-field:not(.compact) > button.value-chip:hover { border-color: var(--wa-line-strong); }
     .value-pop {
       position: fixed; inset: auto; margin: 0; width: min(430px, calc(100vw - 16px));
       max-height: 70vh; overflow: auto; padding: 10px 14px 14px;
@@ -2041,7 +2072,11 @@ export class WristAssistantPanel extends LitElement {
       text-align: left; font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
       opacity: .6; padding: 2px 6px; border-bottom: 1px solid var(--wa-line); white-space: nowrap;
     }
-    .states-table th button.icon { opacity: 0; }
+    .states-table th button.icon { opacity: 0; width: 18px; height: 18px; }
+    /* A title with its remove button beside it sits on the same line as a
+       title alone, so the header reads as one row. */
+    .states-table th { height: 24px; vertical-align: middle; }
+    .states-table th > :is(span, button) { vertical-align: middle; }
     .states-table th:hover button.icon, .states-table th button.icon:focus-visible { opacity: .7; }
     .states-table th.acts { width: 1%; }
     .states-table td { padding: 3px 6px; border-bottom: 1px solid var(--wa-line); vertical-align: middle; }
@@ -2080,7 +2115,10 @@ export class WristAssistantPanel extends LitElement {
     .swatch { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--wa-line); flex: none; }
     button.cell svg { display: block; }
     .states-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
-    .states-foot .spacer { flex: 1; }
+    .sec-b .field .states-foot select.chip-add {
+      width: auto; flex: none; height: 26px; min-height: 26px; padding: 0 22px 0 9px; border-radius: 8px;
+      border: 1px dashed var(--wa-line-strong); background-color: transparent; font-size: 12px; font-weight: 600;
+    }
     .states-switch { display: flex; align-items: baseline; gap: 8px; margin-top: 8px; }
     .states-switch .hint { margin: 0; }
     .confirm-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -2245,7 +2283,7 @@ export class WristAssistantPanel extends LitElement {
        or print what it reads. Everything that shows a live value ends up
        here, so the colour never has to be repeated by hand. */
     .ent-tok { color: var(--wa-ent); font-weight: 600; }
-    .val-tok, .entity-current .ent-state, .vchip .val, .chart-numbers b, .hint .nums {
+    .val-tok, .entity-current .ent-state, .vchip .val, .chart-numbers b, .hint .nums, .readout-v .nums {
       color: var(--wa-val); font-weight: 600;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .95em;
     }
