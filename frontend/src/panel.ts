@@ -3076,6 +3076,7 @@ export class WristAssistantPanel extends LitElement {
       update: (m, c) => this.mutate(m, c),
       endGesture: () => this.draft?.endGesture(),
       resolve: (v: Value) => resolver.resolve(v),
+      canCountDown: (v: Value) => resolver.canCountDown(v),
       historySeries: (key: string) => this.historySeries.get(key),
       evaluateTest: (t) => resolver.evaluateTest(t),
       liveBranch: (rule) => resolver.liveBranches([rule]).get(rule.id) ?? "none",

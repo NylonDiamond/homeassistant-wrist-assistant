@@ -1118,6 +1118,20 @@ export class Resolver {
     return Number.isFinite(t) && t > this.nowMs() ? t : undefined;
   }
 
+  /** Whether a countdown on this value has anything to count down to: a timer
+   * entity in any state (idle now, running later), or a value that reads as a
+   * future time right now. The editor offers its Count down switch only then,
+   * since on any other value a countdown draws the plain text. */
+  canCountDown(value: Value | undefined): boolean {
+    if (!value) return false;
+    const deref = this.dereference(value);
+    if (deref?.kind.kind === "entityState") {
+      const id = deref.kind.entityId;
+      if (id.startsWith("timer.") || this.ctx.entityStates.get(id)?.timerState !== undefined) return true;
+    }
+    return this.countdownEnd(value) !== undefined;
+  }
+
   /** Static stand-in behind a countdown when the source is a timer entity:
    * paused shows the remaining time, everything else "Idle" (the preset's
    * wording). Undefined for non-timer sources. */

@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import { compile, fnv1a64Hex, normaliseScalar, parseValueDocument } from "../src/compiler.js";
-import { countdownRemainingString, formatValue, gaugeFraction, leadingNumber, resolveAll, type EntityState } from "../src/resolver.js";
+import { countdownRemainingString, formatValue, gaugeFraction, leadingNumber, resolveAll, Resolver, type EntityState } from "../src/resolver.js";
 import { newConfig, newElement, parseValue } from "../src/model.js";
 
 describe("fnv1a64Hex", () => {
@@ -168,6 +168,29 @@ describe("countdown resolution", () => {
     const expired = resolveCountdownText(timerEntity("active", { finishesAt: "2023-11-14T22:13:10+00:00" }));
     expect(expired?.countdownEnd).toBeUndefined();
     expect(expired?.text).toBe("Idle");
+  });
+
+  it("offers a countdown only on a timer or a future time", () => {
+    const sensor = (entityId: string, state: string): EntityState => ({ entityId, state, iconName: "", domain: "sensor" });
+    const resolver = new Resolver({
+      entityStates: new Map([
+        ["timer.laundry", timerEntity("idle")],
+        ["sensor.next_alarm", sensor("sensor.next_alarm", "2023-11-14T23:00:00+00:00")],
+        ["sensor.last_boot", sensor("sensor.last_boot", "2023-11-14T20:00:00+00:00")],
+        ["sensor.voltage", sensor("sensor.voltage", "121.3")],
+      ]),
+      templateResults: new Map(),
+      namedValues: [],
+      nowMs,
+    });
+    const entity = (entityId: string) => ({ kind: { kind: "entityState" as const, entityId, displayName: entityId, domain: entityId.split(".")[0]! } });
+    // An idle timer counts down once it starts, so it is offered already.
+    expect(resolver.canCountDown(entity("timer.laundry"))).toBe(true);
+    expect(resolver.canCountDown(entity("sensor.next_alarm"))).toBe(true);
+    expect(resolver.canCountDown(entity("sensor.last_boot"))).toBe(false);
+    expect(resolver.canCountDown(entity("sensor.voltage"))).toBe(false);
+    expect(resolver.canCountDown({ kind: { kind: "literal", value: "Hello" } })).toBe(false);
+    expect(resolver.canCountDown(undefined)).toBe(false);
   });
 
   it("countdownRemainingString matches the Swift formatting", () => {

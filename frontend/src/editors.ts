@@ -214,6 +214,8 @@ export interface EditorHost {
   endGesture(): void;
   /** Resolved text for a value, for the "current value" line. */
   resolve(value: Value): string | undefined;
+  /** Whether a countdown on this value would tick: a timer, or a future time. */
+  canCountDown(value: Value): boolean;
   /** The fetched recorder series for one chart's history query, by
    * `chartHistoryKey`. Undefined while the fetch is still out. */
   historySeries(key: string): string | undefined;
@@ -2982,12 +2984,26 @@ const PART_COLOURS: [PartColourMode, string][] = [["layer", "Layer"], ["pick", "
 /** What a text layer draws, as its Type row names it. */
 export type TextType = "plain" | "rich" | "countdown";
 
-const TEXT_TYPES: [TextType, string][] = [["plain", "Plain"], ["rich", "Rich"], ["countdown", "Countdown"]];
-const TEXT_TYPE_TITLES: Record<TextType, string> = {
+/** Countdown is not on the Type row: few layers need it, so it is a switch
+ * under the value, offered only when the value is a timer or a future time. */
+const TEXT_TYPES: [TextType, string][] = [["plain", "Plain"], ["rich", "Rich"]];
+const TEXT_TYPE_TITLES: Partial<Record<TextType, string>> = {
   plain: "One line: typed words, a live value or a template",
   rich: "Parts, each with its own colour, weight and size",
-  countdown: "Ticks down to a time",
 };
+
+/** The Count down switch and its notes, for any value a countdown can sit
+ * on: a text layer, the Inline text and a corner's bezel label. Hidden while
+ * off on a value with no time in it, so it only shows where it can work; kept
+ * while on, with a warning, so a countdown that stopped working can be
+ * turned off. */
+function countdownFields(host: EditorHost, on: boolean, value: Value | undefined, set: (on: boolean) => void): unknown {
+  const works = value !== undefined && host.canCountDown(value);
+  if (!on && !works) return nothing;
+  return html`${checkField("Count down", on, set)}
+    <div class="hint">Ticks down to the value's time on the watch, once a second: an active timer's finish, or any future timestamp. A paused timer shows its remaining time.</div>
+    ${on && !works ? html`<div class="hint warn">This value is not a timer or a future time, so nothing counts down. The watch shows it as plain text.</div>` : nothing}`;
+}
 
 /** A text layer's Type. A countdown wins over parts, because the watch never
  * draws the parts of a countdown. */
@@ -3077,8 +3093,9 @@ export function richTextOffNote(result: { joined: false; moved: readonly RichTex
 
 /**
  * A text layer's Content card: the Type row, then what that type needs. Plain
- * and Countdown edit the layer's value; Rich replaces it with the parts and the
- * editor for the one picked.
+ * edits the layer's value, with the Count down switch under it when the value
+ * holds a time; Rich replaces it with the parts and the editor for the one
+ * picked.
  *
  * Leaving Rich takes one road whichever type it leaves for. One part hands its
  * styles to Look and goes straight through. Two or more join into one line,
@@ -3168,8 +3185,8 @@ function textContentFields(
 
   const confirmTitle = confirmTo === "countdown" ? "Switch to Countdown?" : "Switch to Plain?";
   return html`
-    ${segField("Type", type, TEXT_TYPES, setType, { titles: TEXT_TYPE_TITLES })}
-    <div class="hint">Plain shows one line: typed words, a live value or a template. Rich splits the text into parts, and each part has its own colour, weight and size. Countdown ticks down to the value's target: an active timer's finish, or any future timestamp. A paused timer shows its remaining time.</div>
+    ${segField("Type", type === "rich" ? "rich" : "plain", TEXT_TYPES, setType, { titles: TEXT_TYPE_TITLES })}
+    <div class="hint">Plain shows one line: typed words, a live value or a template. Rich splits the text into parts, and each part has its own colour, weight and size.</div>
     ${confirmTo === undefined ? nothing : html`<div class="rich-confirm" role="alertdialog" aria-label=${confirmTitle}>
         <b>${confirmTitle}</b>
         <div>The parts join into one line, so every word and value stays. The part styles go away. Undo brings them back.${t.rules.some((r) => r.partId !== undefined) ? " States that change one part will change the whole text." : ""}</div>
@@ -3189,6 +3206,7 @@ function textContentFields(
       : html`
         ${layerEntityField(host, el, key)}
         ${valueEditor(host, t.value, (v) => upd((p) => { p.value = v; }, "value"), { showResolved: true, label: type === "countdown" ? "Until" : "Text", key: `${key}-value` })}
+        ${countdownFields(host, type === "countdown", t.value, (on) => setType(on ? "countdown" : "plain", null))}
         ${owner ? html`<div class="hint keep">Prints a number from the chart <button type="button" class="link" @click=${() => host.selectLayer(owner.payload.id)}>${layerTitle(owner, describeContext(host))}</button>. It stays in the chart's group and moves with it.</div>` : nothing}`}`;
 }
 
@@ -4232,8 +4250,7 @@ function inlineEditor(host: EditorHost): TemplateResult {
     ${card(host, "content", "Inline text", html`
       ${textField("Label (blank = value only)", inline.label ?? "", (v) => upd((i) => { if (v) i.label = v; else delete i.label; }, "label"))}
       ${valueEditor(host, inline.value, (v) => upd((i) => { i.value = v; }, "value"), { showResolved: true, label: "Text", key: "inline-value" })}
-      ${checkField("Countdown",inline.countdown === true, (v) => upd((i) => { if (v) i.countdown = true; else delete i.countdown; }))}
-      ${inline.countdown ? html`<div class="hint">Ticks down to the value's target: an active timer's finish, or any future timestamp. A paused timer shows its remaining time.</div>` : nothing}`,
+      ${countdownFields(host, inline.countdown === true, inline.value, (v) => upd((i) => { if (v) i.countdown = true; else delete i.countdown; }))}`,
       { color: SECTION_COLOR.content, icon: "text", summary: truncate(`${inline.label ? `${inline.label}: ` : ""}${describeValue(inline.value, ctx)}`, 48) })}
     ${card(host, "symbol", "Symbol", html`
       ${symbolField(host, inline.symbol ?? "", (v) => upd((i) => { if (v) i.symbol = v; else delete i.symbol; }, "symbol"), "inline-symbol")}
@@ -4268,7 +4285,7 @@ function cornerEditor(
     }))}
     ${bezelKind === "text" && layout.bezelText ? html`
       ${valueEditor(host, layout.bezelText, (val) => upd((l) => { l.bezelText = val; }, "bezel"), { showResolved: true, label: "Bezel label", key: "fam-corner-bezel" })}
-      ${checkField("Countdown",layout.bezelCountdown === true, (v) => upd((l) => {
+      ${countdownFields(host, layout.bezelCountdown === true, layout.bezelText, (v) => upd((l) => {
         if (v) l.bezelCountdown = true; else delete l.bezelCountdown;
       }))}` : nothing}
     ${bezelKind === "gauge" && layout.bezelGauge ? bezelGaugeEditor(host, layout.bezelGauge, upd) : nothing}`;
