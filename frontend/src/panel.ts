@@ -1617,20 +1617,22 @@ export class WristAssistantPanel extends LitElement {
     .comp-acts { display: flex; align-items: center; gap: 0; margin-left: auto; flex: none; }
     .comp-acts button.ghost { font-size: 12px; padding: 0 6px; min-height: 24px; border-radius: 6px; }
     .insp-note { margin: 12px 0 0; font-size: 12px; line-height: 1.45; color: var(--wa-muted); }
-    /* One flat section per subject: a hairline above, a 36px header with a
-       small mark in the section's colour, and a body of label-left rows. No
-       box inside the inspector's own card, so nothing is framed twice. The
-       negative margin runs the hairline and the header's hover to the
-       column's edges while the rows keep the column's padding. */
+    /* One tinted box per subject, in the section's colour, so each card reads
+       as its own thing: a 36px header with a small mark, then a body of
+       label-left rows. The header's hover runs to the box's edges while the
+       rows keep the box's padding. */
     .sec {
       --c: var(--wa-accent);
-      margin: 0 -12px; padding: 0 12px; border-top: 1px solid var(--wa-line);
+      margin: 6px 0 0; padding: 0 12px; border-radius: 9px; overflow: hidden;
+      background: color-mix(in srgb, var(--c) 7%, var(--wa-card));
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 24%, var(--wa-card));
     }
+    .sec[data-open="true"] { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 40%, var(--wa-card)); }
     .sec-h {
       display: flex; align-items: center; gap: 8px; height: 36px; margin: 0 -12px; padding: 0 6px 0 12px;
       cursor: pointer; user-select: none; transition: background-color .12s ease-out;
     }
-    .sec-h:hover { background: color-mix(in srgb, var(--wa-ink) 4.5%, transparent); }
+    .sec-h:hover { background: color-mix(in srgb, var(--c) 10%, transparent); }
     .sec-h.pinned { cursor: default; }
     .sec-h.pinned:hover { background: transparent; }
     .sec-h:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--c); }
@@ -1868,9 +1870,10 @@ export class WristAssistantPanel extends LitElement {
     .field.slider input[type=range] { flex: 1; min-width: 50px; height: 16px; margin: 0; }
     .field.slider .slider-row > :is(.num-box, input[type=number]) { flex: none; width: 66px; }
     .field.slider .slider-row > :is(.num-box, input[type=number]):only-child { flex: 1; width: auto; }
-    /* A switch sits in the control column, its title after it. */
-    .field.check { grid-template-columns: auto minmax(0, 1fr); gap: 8px; padding-left: calc(var(--wa-lab) + 8px); cursor: pointer; }
-    .field.check > span { color: var(--wa-ink); }
+    /* A switch is a row like any other: title left, switch at the start of
+       the control column. */
+    .field.check { cursor: pointer; }
+    .field.check > input[type=checkbox] { justify-self: start; }
     .field.check .mixed { color: var(--wa-muted); font-size: 12px; }
     /* The entity search and the value chip are rows like any other. The line
        under the search box stays in the control column; the result list takes
@@ -1901,9 +1904,21 @@ export class WristAssistantPanel extends LitElement {
     :is(.color-row, .band-row) .color-box .alpha { flex: none; width: 50px; border-left: 1px solid var(--wa-line); }
     :is(.color-row, .band-row) .color-box .alpha input { width: 100%; padding: 0 18px 0 4px; text-align: right; }
     :is(.color-row, .band-row) .color-box :is(input.hex, .alpha input):focus-visible { box-shadow: none; outline: none; }
+    /* Outside a .field row the browser's own spin arrows would eat the
+       opacity box and clip "100" to "10". */
+    .color-box .alpha input { -moz-appearance: textfield; appearance: textfield; }
+    .color-box .alpha input::-webkit-inner-spin-button,
+    .color-box .alpha input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     /* A colour table: a thin bar of the bands to scale with a mark at the
-       current value, then one compact row per band, lowest first. */
-    .bands { display: grid; gap: 3px; margin: 2px 0 6px; }
+       current value, then one compact row per band, lowest first. It sits in
+       the control column, under the Colour row it belongs to. It is its own
+       size container so a narrow inspector can drop the opacity box, which
+       the eight-digit hex still carries. */
+    .bands { display: grid; gap: 3px; margin: 2px 0 6px calc(var(--wa-lab) + 8px); container-type: inline-size; }
+    @container (max-width: 240px) {
+      .band-row .color-box .alpha { display: none; }
+      .band-row .color-box { padding-right: 6px; }
+    }
     .band-bar { position: relative; height: 8px; margin: 4px 0 6px; }
     .band-bar .bb { display: flex; height: 100%; border-radius: 4px; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(128,128,128,.25); }
     .band-bar .bb i { display: block; flex: none; height: 100%; }
@@ -1911,7 +1926,7 @@ export class WristAssistantPanel extends LitElement {
       position: absolute; top: -4px; width: 2px; height: 16px; margin-left: -1px; border-radius: 1px;
       background: var(--wa-ink); box-shadow: 0 0 0 1.5px var(--wa-card);
     }
-    .band-row { position: relative; display: grid; grid-template-columns: 14px 58px minmax(0, 1fr) 24px; gap: 4px; align-items: center; min-height: 28px; }
+    .band-row { position: relative; display: grid; grid-template-columns: 12px 54px minmax(0, 1fr) 22px; gap: 4px; align-items: center; min-height: 28px; }
     .band-row .le { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--wa-muted); text-align: center; }
     .band-row .else { font-size: 12px; color: var(--wa-muted); padding-left: 2px; }
     .band-row.hit .le, .band-row.hit .else { color: var(--wa-val); font-weight: 700; }
@@ -1930,7 +1945,7 @@ export class WristAssistantPanel extends LitElement {
     .bands button.link.add-band { justify-self: start; margin-top: 2px; font-size: 12px; font-weight: 500; }
     /* The Position card's four numbers: a 2x2 grid of boxes, each with its
        letter inside at the front. The letter drags the number. */
-    .xy { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 8px; margin: 2px 0 4px; }
+    .xy { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 6px; min-width: 0; }
     label.pf {
       position: relative; display: flex; align-items: center; height: 26px; min-width: 0;
       border-radius: 6px; border: 1px solid transparent; background: var(--wa-field);
@@ -1943,7 +1958,9 @@ export class WristAssistantPanel extends LitElement {
       cursor: ew-resize; user-select: none; -webkit-user-select: none; touch-action: none;
     }
     label.pf .pl:hover { color: var(--wa-accent); }
-    label.pf input[type=number] {
+    /* Scoped under .xy so it outranks the inspector's own row input style,
+       now that the boxes sit inside a .field row. */
+    .xy label.pf input[type=number] {
       flex: 1; min-width: 0; height: 100%; min-height: 0; padding: 0 24px 0 0; margin: 0;
       border: 0; border-radius: 0; background: transparent; box-shadow: none; color: var(--wa-ink);
       font-size: 12px; font-variant-numeric: tabular-nums; -moz-appearance: textfield; appearance: textfield;
@@ -2070,18 +2087,26 @@ export class WristAssistantPanel extends LitElement {
     .value-chip-field.compact { margin: 0; }
     .value-chip-field.compact button.value-chip { padding: 3px 8px; font-size: 13px; max-width: 190px; }
 
-    /* Rich text: a text layer's parts as chips in one tinted box with the two
-       add buttons at its end, then the part picked in the one light box the
+    /* Rich text: a Parts row holding the chips in one filled box, with the
+       two add buttons under it, then the part picked in the one light box the
        inspector still draws. A chip keeps the value chip's colours (entity
        teal, reading amber), so a part reads the way the same value reads
        anywhere else in the inspector. */
-    .part-row {
-      display: flex; align-items: flex-start; gap: 4px; min-height: 34px; margin: 2px 0 6px; padding: 4px;
+    .field.parts-field { align-items: start; margin: 2px 0 6px; }
+    .field.parts-field > span:first-child { padding-top: 9px; }
+    .part-chips {
+      min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 34px; padding: 4px;
       border-radius: 8px; background: var(--wa-field);
     }
-    .part-chips { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 26px; }
-    .part-add { flex: none; display: flex; align-items: center; gap: 1px; min-height: 26px; }
-    .part-add button.icon svg.ui-icon { width: 14px; height: 14px; }
+    .part-adds { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px; }
+    .part-adds button.small {
+      display: inline-flex; align-items: center; gap: 5px; min-height: 26px; padding: 0 10px 0 8px;
+      font-weight: 600; color: var(--c, var(--wa-accent));
+      border: 1px solid color-mix(in srgb, var(--c, var(--wa-accent)) 45%, transparent);
+      background: color-mix(in srgb, var(--c, var(--wa-accent)) 12%, transparent);
+    }
+    .part-adds button.small:hover { background: color-mix(in srgb, var(--c, var(--wa-accent)) 22%, transparent); }
+    .part-adds button.small svg.ui-icon { width: 13px; height: 13px; }
     button.part-chip {
       display: inline-flex; align-items: center; gap: 5px; max-width: 100%; height: 24px; margin: 1px 0; padding: 0 7px 0 6px;
       font: inherit; font-size: 12px; color: var(--wa-ink); cursor: pointer;
@@ -2120,9 +2145,6 @@ export class WristAssistantPanel extends LitElement {
     .part-head .part-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .part-head b { color: var(--wa-ink); font-weight: 600; }
     .part-head .spacer { flex: 1; }
-    /* A row that belongs to the one above it, such as the colour Pick opens:
-       its control sits in the control column, under that row's control. */
-    .sub-field > .field > span:first-child { visibility: hidden; }
     .field.check:has(> input:disabled) { cursor: default; }
     .field.check:has(> input:disabled) > span { color: var(--wa-muted); }
     .rich-note {
@@ -5787,9 +5809,9 @@ export class WristAssistantPanel extends LitElement {
    */
   private triCheck(label: string, state: PickedFlag, set: (v: boolean) => void) {
     return html`<label class="field check">
+      <span>${label}${state === "mixed" ? html` <span class="mixed">(mixed)</span>` : nothing}</span>
       <input type="checkbox" .checked=${state === "all"} .indeterminate=${state === "mixed"}
-        @change=${(e: Event) => set((e.target as HTMLInputElement).checked)} />
-      <span>${label}${state === "mixed" ? html` <span class="mixed">(mixed)</span>` : nothing}</span></label>`;
+        @change=${(e: Event) => set((e.target as HTMLInputElement).checked)} /></label>`;
   }
 
   /**

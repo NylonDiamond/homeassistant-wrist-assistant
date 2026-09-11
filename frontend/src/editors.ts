@@ -495,12 +495,14 @@ export function sliderField(
     </div></div>`;
 }
 
-/** `def` adds a reset beside the label, drawn only while the box is away from
- * it. The button sits inside the `<label>`, so its click is stopped there or
- * the label would forward it to the checkbox and toggle it back. `disabled`
- * greys the switch out, for a setting another setting rules out. */
+/** A switch as a row like any other: its title in the label column, the switch
+ * in the control column. `def` adds a reset beside the title, drawn only while
+ * the box is away from it. The button sits inside the `<label>`, so its click
+ * is stopped there or the label would forward it to the checkbox and toggle it
+ * back. `disabled` greys the switch out, for a setting another setting rules
+ * out. */
 export function checkField(label: string, value: boolean, set: (v: boolean) => void, def?: boolean, opts: { disabled?: boolean } = {}) {
-  return html`<label class="field check"><input type="checkbox" .checked=${value} ?disabled=${opts.disabled === true} @change=${(e: Event) => set((e.target as HTMLInputElement).checked)} />${fieldLabel(label, backTo(value, def, set, (v) => (v ? "on" : "off")))}</label>`;
+  return html`<label class="field check">${fieldLabel(label, backTo(value, def, set, (v) => (v ? "on" : "off")))}<input type="checkbox" .checked=${value} ?disabled=${opts.disabled === true} @change=${(e: Event) => set((e.target as HTMLInputElement).checked)} /></label>`;
 }
 
 /** `#RRGGBB` or `#RRGGBBAA`, as one row: a swatch that opens the system picker,
@@ -1745,7 +1747,7 @@ function formatEditor(format: ValueFormat | undefined, set: (f: ValueFormat) => 
       ${textField("Prefix", f.prefix ?? "", (v) => upd({ prefix: v }))}
       ${textField("Suffix", f.suffix ?? "", (v) => upd({ suffix: v }))}
     </div>
-    ${checkField("Append the entity's unit", !!f.useEntityUnit, (v) => upd({ useEntityUnit: v }))}
+    ${checkField("Add unit", !!f.useEntityUnit, (v) => upd({ useEntityUnit: v }))}
     ${segField("Seconds as", f.duration ? "duration" : f.relativeTime ? "relativeTime" : "",
       [["", "None"], ["relativeTime", "Time ago"], ["duration", "Duration"]],
       (v) => upd({ relativeTime: v === "relativeTime", duration: v === "duration" }),
@@ -2321,7 +2323,7 @@ function imageTimestampSection(img: ImageElement, upd: (m: (p: ImageElement) => 
     }
   });
   return html`
-    ${checkField("Show timestamp", on, (v) => upd((p) => { if (v) p.timestamp = true; else delete p.timestamp; }), false)}
+    ${checkField("Timestamp", on, (v) => upd((p) => { if (v) p.timestamp = true; else delete p.timestamp; }), false)}
     ${!on ? nothing : html`
       ${segField("Placement", free ? "free" : "corner", [
         ["corner", "A corner"],
@@ -2719,11 +2721,17 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
   // The section id stays "placement": it is a stored key (openSections, and
   // the browser's own memory of which cards were open), not a label.
   return card(host, "placement", "Position", html`
-    <div class="xy">
-      ${frameLetterField("X", "Left", f.x, (v) => setFrame({ x: v }, "x"), -100, 100)}
-      ${frameLetterField("Y", "Top", f.y, (v) => setFrame({ y: v }, "y"), -100, 100)}
-      ${frameLetterField("W", "Width", f.width, (v) => setFrame({ width: v }, "w"), 4, 200)}
-      ${frameLetterField("H", "Height", f.height, (v) => setFrame({ height: v }, "h"), 4, 200)}
+    <div class="field xy-field"><span>Position</span>
+      <div class="xy">
+        ${frameLetterField("X", "Left", f.x, (v) => setFrame({ x: v }, "x"), -100, 100)}
+        ${frameLetterField("Y", "Top", f.y, (v) => setFrame({ y: v }, "y"), -100, 100)}
+      </div>
+    </div>
+    <div class="field xy-field"><span>Size</span>
+      <div class="xy">
+        ${frameLetterField("W", "Width", f.width, (v) => setFrame({ width: v }, "w"), 4, 200)}
+        ${frameLetterField("H", "Height", f.height, (v) => setFrame({ height: v }, "h"), 4, 200)}
+      </div>
     </div>
     ${sliderField("Rotation", f.rotationDegrees, (v) => setFrame({ rotationDegrees: v }, "rot"),
       { min: -180, max: 180, step: 1, def: 0, format: (v) => `${Math.round(v)}°`, unit: "°", range: false })}
@@ -3134,8 +3142,9 @@ function textContentFields(
       // come back as they were rather than being rebuilt from the value.
       const partId = t.parts?.[0]?.id ?? newId();
       selectedParts.set(layerId, partId);
-      if (hasParts) richTextNotes.delete(layerId);
-      else richTextNotes.set(layerId, { text: "Your text is now Part 1. Add more with the buttons after the chips.", rich: true });
+      // No note on the way in: a line pushed in under the Type row would move
+      // the parts away from where the eye is, and the Add buttons say it.
+      richTextNotes.delete(layerId);
       upd((p) => {
         delete p.countdown;
         turnOnRichText(p, partId);
@@ -3169,8 +3178,14 @@ function textContentFields(
       </div>`}
     ${note ? html`<div class=${note.warn ? "hint warn" : "rich-note"}>${note.text}</div>` : nothing}
     ${type === "rich"
+      // A rich text layer's value is only what older watches show for its
+      // parts, rewritten from them on every edit, so an Entity field would
+      // write into something that does not last. Each part picks its own. The
+      // Entity row sits under Type, not over it, so the Type row stays put when
+      // the type changes.
       ? richPartsEditor(host, el, family, upd, key)
       : html`
+        ${layerEntityField(host, el, key)}
         ${valueEditor(host, t.value, (v) => upd((p) => { p.value = v; }, "value"), { showResolved: true, label: type === "countdown" ? "Until" : "Text", key: `${key}-value` })}
         ${owner ? html`<div class="hint keep">Prints a number from the chart <button type="button" class="link" @click=${() => host.selectLayer(owner.payload.id)}>${layerTitle(owner, describeContext(host))}</button>. It stays in the chart's group and moves with it.</div>` : nothing}`}`;
 }
@@ -3275,14 +3290,14 @@ function richPartsEditor(
   }, k);
 
   return html`<div class="rich-parts">
-    <div class="part-row">
+    <div class="field parts-field"><span>Parts</span>
       <div class="part-chips" role="listbox" aria-label="Parts">${chips}</div>
-      <span class="part-add">
-        <button type="button" class="icon" title="Add text" aria-label="Add text"
-          @click=${(e: Event) => add(literal(""), e.currentTarget)}>${uiIcon("text")}</button>
-        <button type="button" class="icon" title="Add a value" aria-label="Add a value"
-          @click=${(e: Event) => add({ kind: { kind: "entityState", entityId: "", displayName: "", domain: "" } }, e.currentTarget)}>${uiIcon("braces")}</button>
-      </span>
+      <div class="part-adds">
+        <button type="button" class="small" title="Add a part of typed words"
+          @click=${(e: Event) => add(literal(""), e.currentTarget)}>${uiIcon("text")}<span>Add text</span></button>
+        <button type="button" class="small" title="Add a part that shows a live value"
+          @click=${(e: Event) => add({ kind: { kind: "entityState", entityId: "", displayName: "", domain: "" } }, e.currentTarget)}>${uiIcon("braces")}<span>Add value</span></button>
+      </div>
     </div>
     <div class="part-editor">
       <div class="part-head">
@@ -3306,7 +3321,7 @@ function richPartsEditor(
         // table is, so By value paints something the moment it is picked.
         if ((x.bands?.length ?? 0) === 0) x.bands = seedBands(chartNumbers(host.resolve(x.value) ?? ""));
       }), { def: "layer", titles: colourTitles, ...(literalPart && mode !== "bands" ? { disabled: { bands: true } } : {}) })}
-      ${mode === "pick" ? html`<div class="sub-field">${colorField("Part colour", part.colorHex, (v) => updPart((x) => { x.colorHex = v ?? layerHex; }, "color"))}</div>` : nothing}
+      ${mode === "pick" ? colorField("Part colour", part.colorHex, (v) => updPart((x) => { x.colorHex = v ?? layerHex; }, "color")) : nothing}
       ${mode === "bands" ? html`
         ${bandTableFields({ bands: part.bands ?? [], bandAboveColorHex: part.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX }, part.colorHex ?? layerHex, setBands,
           numbers.length === 1 ? numbers[0] : undefined)}
@@ -3368,7 +3383,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             const p = (e as typeof el).payload;
             if (v === "2") p.lineLimit = 2; else delete p.lineLimit;
           }) })}
-        ${checkField("Monospaced digits", el.payload.monospacedDigits === true, (v) => upd((e) => {
+        ${checkField("Mono digits", el.payload.monospacedDigits === true, (v) => upd((e) => {
           const p = (e as typeof el).payload;
           if (v) p.monospacedDigits = true; else delete p.monospacedDigits;
         }), base.monospacedDigits === true)}
@@ -3662,7 +3677,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               : "A stroke cannot change colour halfway, so each leg of the line takes the band of the reading it arrives at."}</div>
           ${bandTableFields(c, c.colorSlot.baseColorHex, setChart)}
           ${c.style === "area"
-            ? html`${checkField("Fill follows the bands", c.fillBands,
+            ? html`${checkField("Band fill",c.fillBands,
                 (v) => setChart((p) => { p.fillBands = v; }), base.fillBands as boolean)}
               <div class="hint">Off, the wash under the line stays one colour. On, each stretch of
                 fill takes its own band, which reads well on a chart that spends real time in more
@@ -3687,7 +3702,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           </div>
           <div class="hint">A marker is worth keeping on: most watch faces tint a complication into one colour,
             which flattens the two colours into each other, and the marker shape is what survives that.</div>`}
-        ${checkField("Threshold line", c.thresholdValue !== undefined, (v) => setChart((p) => {
+        ${checkField("Threshold",c.thresholdValue !== undefined, (v) => setChart((p) => {
           if (v) p.thresholdValue = seedThreshold(shown);
           else delete p.thresholdValue;
         }))}
@@ -3700,7 +3715,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           <div class="hint">${c.scale === "fixed"
             ? "A threshold outside Min and Max draws nothing: the plot keeps the range you asked for."
             : "The plot stretches to include the line, so a series that never reaches it still shows how far off it is."}</div>`}
-        ${checkField("“Now” marker", c.nowIndex !== undefined, (v) => setChart((p) => {
+        ${checkField("Now marker",c.nowIndex !== undefined, (v) => setChart((p) => {
           if (v) p.nowIndex = { kind: { kind: "time", timeField: "hour" } };
           else delete p.nowIndex;
         }))}
@@ -3868,10 +3883,6 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
   const tested: Value | undefined = ref ? { kind: { kind: "entityState", ...ref } } : undefined;
   const kindColor = KIND_COLOR[el.kind];
   const stamp = el.kind === "image" ? el.payload.timestamp === true : false;
-  // A rich text layer's value is only what older watches show for its parts,
-  // rewritten from them on every edit, so the Entity field would write into
-  // something that does not last. Each part picks its own entity instead.
-  const richText = el.kind === "text" && textUsesParts(el.payload);
   const textParts = el.kind === "text" && (el.payload.parts?.length ?? 0) > 0 ? el.payload.parts : undefined;
 
   // Which fields each card owns, for its header reset. Content is what the
@@ -3889,7 +3900,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
   const resetKeys = (keys: readonly string[], k: string) => () => upd((e) => restoreKeys(e.payload, base, keys), k);
 
   return html`
-    ${card(host, "content", "Content", html`${el.kind === "tap" || richText ? nothing : layerEntityField(host, el, key)}${content}`,
+    ${card(host, "content", "Content", html`${el.kind === "tap" || el.kind === "text" ? nothing : layerEntityField(host, el, key)}${content}`,
       { color: kindColor, icon: "content", summary: contentSummary(host, el),
         ...(contentChanged ? { reset: () => upd((e) => {
           restoreKeys(e.payload, base, contentKeys);
@@ -4132,7 +4143,7 @@ export function groupEditor(host: EditorHost, group: LayerGroup): TemplateResult
   const upd = (m: (g: LayerGroup) => void, k?: string) => host.update((c) => { const g = c.groups?.find((x) => x.id === group.id); if (g) m(g); }, k ? `group-${group.id}-${k}` : undefined);
   return card(host, "content", "Group", html`
     ${textField("Name", group.name, (v) => upd((g) => { g.name = v; }, "name"))}
-    ${checkField("Move as one on the watch", group.locked, (v) => upd((g) => { g.locked = v; }))}
+    ${checkField("Move as one",group.locked, (v) => upd((g) => { g.locked = v; }))}
     <div class="hint">${group.locked
       ? "Locked: a drag on any of these layers moves all of them. Unlock to move one at a time."
       : "Unlocked: each layer moves on its own. With the group selected, a drag still moves all of them. Lock it when the part is the way you want it."}</div>
@@ -4196,7 +4207,7 @@ function inlineEditor(host: EditorHost): TemplateResult {
     ${card(host, "content", "Inline text", html`
       ${textField("Label (blank = value only)", inline.label ?? "", (v) => upd((i) => { if (v) i.label = v; else delete i.label; }, "label"))}
       ${valueEditor(host, inline.value, (v) => upd((i) => { i.value = v; }, "value"), { showResolved: true, label: "Text", key: "inline-value" })}
-      ${checkField("Live countdown", inline.countdown === true, (v) => upd((i) => { if (v) i.countdown = true; else delete i.countdown; }))}
+      ${checkField("Countdown",inline.countdown === true, (v) => upd((i) => { if (v) i.countdown = true; else delete i.countdown; }))}
       ${inline.countdown ? html`<div class="hint">Ticks down to the value's target: an active timer's finish, or any future timestamp. A paused timer shows its remaining time.</div>` : nothing}`,
       { color: KIND_COLOR.text, icon: "text", summary: truncate(`${inline.label ? `${inline.label}: ` : ""}${describeValue(inline.value, ctx)}`, 48) })}
     ${card(host, "symbol", "Symbol", html`
@@ -4232,7 +4243,7 @@ function cornerEditor(
     }))}
     ${bezelKind === "text" && layout.bezelText ? html`
       ${valueEditor(host, layout.bezelText, (val) => upd((l) => { l.bezelText = val; }, "bezel"), { showResolved: true, label: "Bezel label", key: "fam-corner-bezel" })}
-      ${checkField("Live countdown", layout.bezelCountdown === true, (v) => upd((l) => {
+      ${checkField("Countdown",layout.bezelCountdown === true, (v) => upd((l) => {
         if (v) l.bezelCountdown = true; else delete l.bezelCountdown;
       }))}` : nothing}
     ${bezelKind === "gauge" && layout.bezelGauge ? bezelGaugeEditor(host, layout.bezelGauge, upd) : nothing}`;
@@ -4262,7 +4273,7 @@ function bezelGaugeEditor(
     ${colorField("Arc colour (min end)", stops[0], setStop(0))}
     ${colorField("Arc colour (middle)", stops[1], setStop(1))}
     ${colorField("Arc colour (max end)", stops[2], setStop(2))}
-    ${checkField("End number labels", !!(g.minLabel || g.maxLabel), (v) => upd((l) => {
+    ${checkField("End labels",!!(g.minLabel || g.maxLabel), (v) => upd((l) => {
       const gauge = l.bezelGauge!;
       if (v) { gauge.minLabel = literal(String(gauge.minValue)); gauge.maxLabel = literal(String(gauge.maxValue)); }
       else { delete gauge.minLabel; delete gauge.maxLabel; }
@@ -4451,7 +4462,7 @@ function ruleEditor(host: EditorHost, rule: Rule, ri: number, count: number, tar
     </div>
     ${rule.cases.map((c, ci) => caseEditor(host, c, ci, rule, target, updRule, `${key}-${c.id}`, forPart))}
     <div class="adders"><button class="small" @click=${() => updRule((r) => { r.cases.push(newCase()); })}>+ case</button></div>
-    ${checkField("Otherwise (when no case matches)", rule.otherwise !== undefined, (v) => updRule((r) => { if (v) r.otherwise = r.otherwise ?? []; else delete r.otherwise; }))}
+    ${checkField("Otherwise",rule.otherwise !== undefined, (v) => updRule((r) => { if (v) r.otherwise = r.otherwise ?? []; else delete r.otherwise; }))}
     ${rule.otherwise
       ? html`<div class="case-box otherwise">
           <div class="hint keep">${live === "otherwise" ? html`<b>Active now.</b> ` : nothing}Changes when no case matches:</div>
