@@ -240,6 +240,10 @@ export interface EditorHost {
    * its one-at-a-time mode and a click on another card swaps to it. */
   openSections: ReadonlySet<string>;
   toggleSection(id: string): void;
+  /** The cards whose "?" is on. A card's plain hints are hidden until then;
+   * warnings, errors, empty states and hints marked `keep` always show. */
+  helpSections: ReadonlySet<string>;
+  toggleHelp(id: string): void;
   /** Make a layer the selection, the way a click on its Layers row does. */
   selectLayer(id: string): void;
 }
@@ -265,23 +269,83 @@ interface ResetTo {
 }
 
 /**
- * The one reset control every setting shares: a small circular arrow at the
- * right of the setting's title. It is drawn only while the value is away from
- * its default, so the buttons down an open card are the list of what someone
- * changed, and a card with none is a card at its defaults.
+ * The one reset control every setting shares: a small accent dot in the
+ * gutter at the left of the setting's row. It is drawn only while the value is
+ * away from its default, so the dots down an open card are the list of what
+ * someone changed, and a card with none is a card at its defaults. The dot is
+ * placed by CSS, so nothing in the row shifts when it appears.
  */
 function resetButton(back: ResetTo | undefined) {
   if (back === undefined || back.atDefault) return nothing;
-  return html`<button type="button" class="icon tiny reset" title=${back.title} aria-label=${back.title}
-    @click=${(e: Event) => { e.preventDefault(); e.stopPropagation(); back.reset(); }}>${uiIcon("reset")}</button>`;
+  const label = `Changed. Click to reset. ${back.title.replace(/\.$/, "")}.`;
+  return html`<button type="button" class="reset-dot" title=${label} aria-label=${label}
+    @pointerdown=${(e: Event) => e.stopPropagation()}
+    @click=${(e: Event) => { e.preventDefault(); e.stopPropagation(); back.reset(); }}></button>`;
 }
 
-/** A setting's title, with its reset button when there is something to reset.
- * Without one the title stays a plain span, so nothing shifts when the button
- * appears: it takes the space at the right end of the title, not beside it. */
-function fieldLabel(label: string, back?: ResetTo) {
+/** A setting's title, with its reset dot when there is something to reset. A
+ * changed title reads in ink rather than muted. `scrub` makes the title a drag
+ * handle for a number (see `scrubber`). */
+function fieldLabel(label: string, back?: ResetTo, scrub?: (e: PointerEvent) => void) {
   const btn = resetButton(back);
-  return btn === nothing ? html`<span>${label}</span>` : html`<span class="has-reset">${label}${btn}</span>`;
+  const cls = [btn === nothing ? "" : "changed", scrub ? "scrub" : ""].filter((c) => c !== "").join(" ");
+  return html`<span class=${cls === "" ? nothing : cls} title=${scrub ? "Drag left or right to change" : nothing}
+    @pointerdown=${scrub ?? nothing}>${label}${btn}</span>`;
+}
+
+/** Sent by a number field's title as a drag starts and ends, so the panel can
+ * hold the whole drag as one undo step however many edits it makes. */
+export const SCRUB_START = "wa-scrub-start";
+export const SCRUB_END = "wa-scrub-end";
+
+/**
+ * Drag a number's title left or right to change it: one step every 3px,
+ * clamped to the field's range. The step is the field's own, else 1, or 0.1
+ * for a number that already has decimals. A press that never moves is left to
+ * the label, which focuses the box as it always did.
+ */
+function scrubber(value: number | undefined, set: (v: number) => void, opts: { step?: number; min?: number; max?: number }) {
+  return (e: PointerEvent) => {
+    if (e.button !== 0 || !e.isPrimary) return;
+    const handle = e.currentTarget as HTMLElement;
+    if (handle.closest(".field")?.querySelector<HTMLInputElement>("input[type=number]")?.disabled) return;
+    // Keeps the press from selecting the title's text. The click after a press
+    // that did not move still reaches the label and focuses the box.
+    e.preventDefault();
+    const start = value !== undefined && Number.isFinite(value) ? value : Math.max(0, opts.min ?? 0);
+    const step = opts.step ?? (Number.isInteger(start) ? 1 : 0.1);
+    const places = (String(step).split(".")[1] ?? "").length;
+    const x0 = e.clientX;
+    let moved = false;
+    let last = start;
+    const move = (ev: PointerEvent) => {
+      const dx = ev.clientX - x0;
+      if (!moved && Math.abs(dx) < 3) return;
+      moved = true;
+      let v = start + Math.round(dx / 3) * step;
+      if (opts.min !== undefined) v = Math.max(opts.min, v);
+      if (opts.max !== undefined) v = Math.min(opts.max, v);
+      v = Number(v.toFixed(places));
+      if (v !== last) { last = v; set(v); }
+    };
+    const end = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", end);
+      handle.removeEventListener("pointercancel", end);
+      handle.dispatchEvent(new CustomEvent(SCRUB_END, { bubbles: true, composed: true }));
+      if (!moved) return;
+      // A drag is not a click: without this the label would pass the release
+      // on to its box and focus it.
+      const swallow = (c: Event) => { c.preventDefault(); c.stopPropagation(); };
+      handle.addEventListener("click", swallow, { capture: true, once: true });
+      setTimeout(() => handle.removeEventListener("click", swallow, { capture: true }), 0);
+    };
+    handle.setPointerCapture(e.pointerId);
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+    handle.dispatchEvent(new CustomEvent(SCRUB_START, { bubbles: true, composed: true }));
+  };
 }
 
 /** The reset a field with a plain default offers. `def` left undefined means
@@ -304,19 +368,33 @@ export function textArea(label: string, value: string, set: (v: string) => void,
     <textarea rows=${rows} .value=${value} class="mono" @input=${onInput(set)}></textarea></label>`;
 }
 
-/** `def` adds a reset button beside the title, drawn only while the value is
- * away from that default. */
+/** `def` adds a reset dot, drawn only while the value is away from that
+ * default. The title doubles as a handle that drags the number. */
 export function numberField(label: string, value: number | undefined, set: (v: number | undefined) => void, opts: NumberInputOptions & { def?: number } = {}) {
-  return html`<label class="field">${fieldLabel(label, backTo<number | undefined>(value, opts.def, set))}${numberInput(value, set, opts)}</label>`;
+  return html`<label class="field num">${fieldLabel(label, backTo<number | undefined>(value, opts.def, set), scrubber(value, set, opts))}${numberInput(value, set, opts)}</label>`;
 }
 
-interface NumberInputOptions { step?: number; min?: number; max?: number; optional?: boolean; ariaLabel?: string }
+interface NumberInputOptions {
+  step?: number;
+  min?: number;
+  max?: number;
+  optional?: boolean;
+  ariaLabel?: string;
+  /** A short unit drawn faint inside the box after the number, such as "pt",
+   * "%" or "°", so the title does not have to carry it. */
+  unit?: string;
+  /** Faint text while the box is empty. */
+  placeholder?: string;
+  /** A small glyph inside the box before the number, such as the link that
+   * says a part's size still follows the layer. */
+  lead?: TemplateResult;
+}
 
 /** The input half of `numberField`, for a field that draws its own title line. */
 function numberInput(value: number | undefined, set: (v: number | undefined) => void, opts: NumberInputOptions) {
   const shown = value === undefined || Number.isNaN(value) ? "" : String(value);
-  return html`<input type="number" .value=${shown} step=${opts.step ?? "any"} min=${opts.min ?? nothing} max=${opts.max ?? nothing}
-      aria-label=${opts.ariaLabel ?? nothing}
+  const input = html`<input type="number" .value=${shown} step=${opts.step ?? "any"} min=${opts.min ?? nothing} max=${opts.max ?? nothing}
+      aria-label=${opts.ariaLabel ?? nothing} placeholder=${opts.placeholder ?? nothing}
       @input=${onInput((v) => {
         if (v.trim() === "") {
           if (opts.optional) set(undefined);
@@ -325,6 +403,12 @@ function numberInput(value: number | undefined, set: (v: number | undefined) => 
         const n = Number(v);
         if (!Number.isNaN(n)) set(n);
       })} />`;
+  if (opts.unit === undefined && opts.lead === undefined) return input;
+  return html`<span class=${opts.lead === undefined ? "num-box" : "num-box lead"} style=${`--wa-unit:${opts.unit?.length ?? 0}`}>${opts.lead === undefined
+    ? nothing
+    : html`<span class="lead" aria-hidden="true">${opts.lead}</span>`}${input}${opts.unit === undefined
+    ? nothing
+    : html`<span class="unit" aria-hidden="true">${opts.unit}</span>`}</span>`;
 }
 
 export function selectField<T extends string>(label: string, value: T, options: [T, string][], set: (v: T) => void, opts: { def?: T } = {}) {
@@ -342,83 +426,137 @@ export function selectField<T extends string>(label: string, value: T, options: 
  * change length, stay a `selectField`: a row of seven buttons is a menu that
  * forgot to fold.
  */
-export function segField<T extends string>(label: string, value: T, options: [T, string][], set: (v: T) => void, opts: { titles?: Partial<Record<T, string>>; def?: T; disabled?: Partial<Record<T, boolean>> } = {}) {
+export function segField<T extends string>(label: string, value: T, options: [T, string][], set: (v: T, node: EventTarget | null) => void, opts: { titles?: Partial<Record<T, string>>; def?: T; disabled?: Partial<Record<T, boolean>> } = {}) {
   const name = (v: T) => options.find(([o]) => o === v)?.[1] ?? v;
-  return html`<div class="field seg-field">${fieldLabel(label, backTo(value, opts.def, set, name))}
-    <div class="seg wide" role="radiogroup" aria-label=${label}>
-      ${options.map(([v, text]) => html`<button type="button" role="radio" aria-checked=${v === value ? "true" : "false"}
-        class=${v === value ? "on" : ""} title=${opts.titles?.[v] ?? nothing} ?disabled=${opts.disabled?.[v] === true}
-        @click=${() => { if (v !== value) set(v); }}>${text}</button>`)}
+  return html`<div class="field seg-field">${fieldLabel(label, backTo(value, opts.def, (v) => set(v, null), name))}
+    ${segButtons(label, value, options, set, opts)}</div>`;
+}
+
+/** The row of buttons of a `segField`, without its title. `set` also gets the
+ * button pressed, for a choice that may ask before it changes anything. With
+ * no value picked, `inherited` is the choice the setting falls back to: it is
+ * drawn with a dashed outline, and pressing it sets it for real. */
+function segButtons<T extends string>(label: string, value: T | undefined, options: [T, string][], set: (v: T, node: EventTarget | null) => void, opts: { titles?: Partial<Record<T, string>>; disabled?: Partial<Record<T, boolean>>; inherited?: T } = {}) {
+  return html`<div class="seg wide" role="radiogroup" aria-label=${label}>
+      ${options.map(([v, text]) => {
+        const inherited = value === undefined && v === opts.inherited;
+        const title = inherited ? `${opts.titles?.[v] ?? text} (from the layer)` : opts.titles?.[v];
+        return html`<button type="button" role="radio" aria-checked=${v === value ? "true" : "false"}
+        class=${v === value ? "on" : inherited ? "inh" : ""} title=${title ?? nothing} ?disabled=${opts.disabled?.[v] === true}
+        @click=${(e: Event) => { if (v !== value) set(v, e.currentTarget); }}>${text}</button>`;
+      })}
+    </div>`;
+}
+
+/** One of the two choices a `segPairField` puts on a row. */
+interface SegChoice<T extends string> {
+  label: string;
+  value: T;
+  options: [T, string][];
+  set: (v: T) => void;
+  def?: T;
+  titles?: Partial<Record<T, string>>;
+}
+
+/** Two short choices on one row, the second titled in line: for a pair whose
+ * controls are only a few buttons each, such as Align and Lines. Each keeps
+ * its own reset dot. */
+function segPairField<A extends string, B extends string>(a: SegChoice<A>, b: SegChoice<B>) {
+  const back = <T extends string>(c: SegChoice<T>) =>
+    backTo(c.value, c.def, c.set, (v) => c.options.find(([o]) => o === v)?.[1] ?? v);
+  return html`<div class="field seg-field pair">${fieldLabel(a.label, back(a))}
+    <div class="pair-row">
+      ${segButtons(a.label, a.value, a.options, a.set, a)}
+      ${fieldLabel(b.label, back(b))}
+      ${segButtons(b.label, b.value, b.options, b.set, b)}
     </div></div>`;
 }
 
 /**
- * A number that is better dragged than typed: a slider with the value beside
- * it and a reset button back to the default. Used for the picture crop, where
- * the answer is found by eye and no one knows the number they want.
+ * A bounded number found by eye rather than typed: the number box with its
+ * unit, a title that drags it, and a slim slider in front where the slider is
+ * the quicker control (a turn, a crop). `range: false` leaves the slider out.
+ * A typed number outside the range is ignored rather than clamped, so typing
+ * 12 can pass through 1 without the box jumping.
  */
 export function sliderField(
   label: string,
   value: number,
   set: (v: number) => void,
-  opts: { min: number; max: number; step: number; def: number; format?: (v: number) => string },
+  opts: { min: number; max: number; step: number; def: number; format?: (v: number) => string; unit?: string; range?: boolean },
 ) {
   const show = opts.format ?? ((v: number) => String(Math.round(v * 100) / 100));
-  return html`<div class="field slider">${fieldLabel(label, backTo(value, opts.def, set, show))}
+  const typed = (n: number | undefined) => { if (n !== undefined && n >= opts.min && n <= opts.max) set(n); };
+  return html`<div class="field slider num">${fieldLabel(label, backTo(value, opts.def, set, show), scrubber(value, set, opts))}
     <div class="slider-row">
-      <input type="range" min=${opts.min} max=${opts.max} step=${opts.step} .value=${String(value)}
-        @input=${onInput((v) => { const n = Number(v); if (!Number.isNaN(n)) set(n); })} />
-      <span class="slider-value mono">${show(value)}</span>
+      ${opts.range === false ? nothing : html`<input type="range" min=${opts.min} max=${opts.max} step=${opts.step} .value=${String(value)} aria-label=${label}
+        @input=${onInput((v) => { const n = Number(v); if (!Number.isNaN(n)) set(n); })} />`}
+      ${numberInput(value, typed, { step: opts.step, min: opts.min, max: opts.max, ariaLabel: label, ...(opts.unit === undefined ? {} : { unit: opts.unit }) })}
     </div></div>`;
 }
 
 /** `def` adds a reset beside the label, drawn only while the box is away from
  * it. The button sits inside the `<label>`, so its click is stopped there or
- * the label would forward it to the checkbox and toggle it back. */
-/**
- * One of a frame's four numbers, as a percentage of the face. The frame is
- * stored 0-1, which reads as nothing on screen, and the card's summary already
- * speaks percent ("23% wide").
- *
- * These boxes exist so the Position card shows what its header reset will take
- * back. Before them the card held only Rotation, so a reset that also re-centred
- * and resized the layer looked like a bug.
- */
-function percentField(label: string, value: number, set: (v: number) => void, def: number, min: number, max: number) {
-  const pct = (n: number) => Math.round(n * 1000) / 10;
-  return numberField(label, pct(value), (v) => set((v ?? 0) / 100), { min, max, step: 0.5, def: pct(def) });
-}
-
-/** `disabled` greys the switch out, for a setting another setting rules out. */
+ * the label would forward it to the checkbox and toggle it back. `disabled`
+ * greys the switch out, for a setting another setting rules out. */
 export function checkField(label: string, value: boolean, set: (v: boolean) => void, def?: boolean, opts: { disabled?: boolean } = {}) {
   return html`<label class="field check"><input type="checkbox" .checked=${value} ?disabled=${opts.disabled === true} @change=${(e: Event) => set((e.target as HTMLInputElement).checked)} />${fieldLabel(label, backTo(value, def, set, (v) => (v ? "on" : "off")))}</label>`;
 }
 
-/** `#RRGGBB` or `#RRGGBBAA`. The native picker handles RGB; alpha is a slider.
- * `def` adds a reset button back to that colour (or, for an optional colour,
- * `undefined` clears it). */
+/** `#RRGGBB` or `#RRGGBBAA`, as one row: a swatch that opens the system picker,
+ * the hex, and the opacity in percent. The hex box takes eight digits too, so
+ * alpha can be typed either way. `def` adds a reset dot back to that colour
+ * (or, for an optional colour, `null` clears it). */
 export function colorField(label: string, value: string | undefined, set: (v: string | undefined) => void, optional = false, def?: string | null) {
-  const h = (value ?? "").replace(/^#/, "");
-  const valid = /^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(h);
-  const rgb = valid ? `#${h.slice(0, 6)}` : "#ffffff";
-  const alpha = valid && h.length === 8 ? Math.round((parseInt(h.slice(6, 8), 16) / 255) * 100) : 100;
-  const compose = (rgbHex: string, a: number) => {
-    const base = rgbHex.replace(/^#/, "").toUpperCase();
-    return a >= 100 ? `#${base}` : `#${base}${Math.round((a / 100) * 255).toString(16).padStart(2, "0").toUpperCase()}`;
-  };
+  const { rgb, alpha } = colorParts(value);
   const back: ResetTo | undefined = def === undefined ? undefined : {
     atDefault: sameColor(value, def ?? undefined),
     title: def === null ? "Back to none" : `Back to ${def}`,
     reset: () => set(def ?? undefined),
   };
+  const off = optional && value === undefined;
   return html`<div class="field color">${fieldLabel(label, back)}
     <div class="color-row">
-      ${optional ? html`<input type="checkbox" title="Enabled" .checked=${value !== undefined} @change=${(e: Event) => set((e.target as HTMLInputElement).checked ? compose(rgb, alpha) : undefined)} />` : nothing}
-      <input type="color" .value=${rgb} ?disabled=${optional && value === undefined} @input=${onInput((v) => set(compose(v, alpha)))} />
-      <input type="range" min="0" max="100" .value=${String(alpha)} title="Opacity" ?disabled=${optional && value === undefined} @input=${onInput((v) => set(compose(rgb, Number(v))))} />
-      <input type="text" class="mono hex" .value=${value ?? ""} placeholder="#RRGGBB" ?disabled=${optional && value === undefined}
-        @input=${onInput((v) => { const t = v.trim(); if (/^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(t)) set(t.startsWith("#") ? t.toUpperCase() : `#${t.toUpperCase()}`); })} />
+      ${optional ? html`<input type="checkbox" title="Enabled" aria-label=${`${label} on`} .checked=${value !== undefined} @change=${(e: Event) => set((e.target as HTMLInputElement).checked ? composeColor(rgb, alpha) : undefined)} />` : nothing}
+      ${colorBox(label, value, set, off)}
     </div></div>`;
+}
+
+/** A stored colour as its controls show it: the swatch, the six digits the
+ * system picker takes, and the opacity in percent. */
+function colorParts(value: string | undefined): { valid: boolean; swatch: string; rgb: string; alpha: number } {
+  const h = (value ?? "").replace(/^#/, "");
+  const valid = /^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(h);
+  return {
+    valid,
+    swatch: valid ? `#${h}` : "transparent",
+    rgb: valid ? `#${h.slice(0, 6)}` : "#ffffff",
+    alpha: valid && h.length === 8 ? Math.round((parseInt(h.slice(6, 8), 16) / 255) * 100) : 100,
+  };
+}
+
+/** Six hex digits and an opacity in percent, back as `#RRGGBB` or `#RRGGBBAA`. */
+function composeColor(rgbHex: string, alpha: number): string {
+  const base = rgbHex.replace(/^#/, "").toUpperCase();
+  return alpha >= 100 ? `#${base}` : `#${base}${Math.round((alpha / 100) * 255).toString(16).padStart(2, "0").toUpperCase()}`;
+}
+
+/** The box of a `colorField` without its title: swatch, hex and opacity. For
+ * a row that names its colour some other way, such as a band table's. */
+function colorBox(label: string, value: string | undefined, set: (v: string | undefined) => void, off = false): TemplateResult {
+  const { valid, swatch, rgb, alpha } = colorParts(value);
+  return html`<span class="color-box">
+      <span class="color-swatch" style=${`--sw:${off || !valid ? "transparent" : swatch}`} title="Pick a colour">
+        <input type="color" .value=${rgb} ?disabled=${off} aria-label=${`${label}: pick a colour`} @input=${onInput((v) => set(composeColor(v, alpha)))} />
+      </span>
+      <input type="text" class="mono hex" .value=${value ?? ""} placeholder="#RRGGBB" spellcheck="false" aria-label=${`${label}: hex`} ?disabled=${off}
+        @input=${onInput((v) => { const t = v.trim(); if (/^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(t)) set(t.startsWith("#") ? t.toUpperCase() : `#${t.toUpperCase()}`); })} />
+      <span class="num-box alpha" style="--wa-unit:1">
+        <input type="number" min="0" max="100" step="1" .value=${String(alpha)} title="Opacity" aria-label=${`${label}: opacity`} ?disabled=${off}
+          @input=${onInput((v) => { const n = Number(v); if (v.trim() !== "" && n >= 0 && n <= 100) set(composeColor(rgb, Math.round(n))); })} />
+        <span class="unit" aria-hidden="true">%</span>
+      </span>
+    </span>`;
 }
 
 function sameColor(a: string | undefined, b: string | undefined): boolean {
@@ -733,7 +871,7 @@ export function entityField(host: Pick<EditorHost, "hass">, label: string, ref: 
     ${search
       ? html`<div class="entity-results" role="listbox">
           ${results.length === 0
-            ? html`<div class="hint" style="padding:6px 8px">${looksLikeEntityId(search.query) ? "Nothing here has that id. Press Enter to use it anyway." : "Nothing matches that search."}</div>`
+            ? html`<div class="hint keep" style="padding:6px 8px">${looksLikeEntityId(search.query) ? "Nothing here has that id. Press Enter to use it anyway." : "Nothing matches that search."}</div>`
             : results.map((c, i) => html`<button type="button" role="option" aria-selected=${i === index ? "true" : "false"} class="ent ${i === index ? "hl" : ""}"
                 @mousedown=${(e: MouseEvent) => e.preventDefault()} @click=${(e: MouseEvent) => pick(c, e.target)}>
                 <span class="ent-ico ${isActiveState(c.state) ? "on" : ""}">${domainIcon(c.domain)}</span>
@@ -904,17 +1042,17 @@ function symbolField(
       <div class="sym-controls">
         <input type="search" placeholder="Search Material Design icons" .value=${query} @input=${onInput((v) => browser.setQuery(key, v))} />
       </div>
-      ${recent.length === 0 ? nothing : html`<div class="hint">Recent</div>
+      ${recent.length === 0 ? nothing : html`<div class="hint keep">Recent</div>
         <div class="sym-grid one-row">${recent.map((n) => symbolTile(host, n, n === current, pick))}</div>`}
       <div class="sym-grid">${shown.map((n) => symbolTile(host, n, n === current, pick))}</div>
       ${names === undefined
-        ? html`<div class="hint">Loading the Material Design catalogue.</div>`
+        ? html`<div class="hint keep">Loading the Material Design catalogue.</div>`
         : matches.length === 0
-          ? html`<div class="hint">Nothing matches that search. Any <code>mdi:</code> name can still be typed above.</div>`
+          ? html`<div class="hint keep">Nothing matches that search. Any<code>mdi:</code> name can still be typed above.</div>`
           // Always the searching wording: the MDI set is thousands of names
           // deep and the grid never shows all of them, so "N available" would
           // claim more than is on screen even with the box empty.
-          : html`<div class="hint">${symbolCount(shown.length, matches.length, true, names.length)}</div>`}
+          : html`<div class="hint keep">${symbolCount(shown.length, matches.length, true, names.length)}</div>`}
       ${names !== undefined && isMdiName && !names.includes(current)
         ? html`<div class="hint warn">There is no <code>${current}</code> in this build's Material Design set, so the watch draws a question mark.</div>`
         : nothing}
@@ -936,18 +1074,18 @@ function symbolField(
           )}
         </select>
       </div>
-      ${recent.length === 0 ? nothing : html`<div class="hint">Recent</div>
+      ${recent.length === 0 ? nothing : html`<div class="hint keep">Recent</div>
         <div class="sym-grid one-row">${recent.map((n) => symbolTile(host, n, n === current, pick))}</div>`}
       <div class="sym-grid">${shown.map((n) => symbolTile(host, n, n === current, pick))}</div>
       ${matches.length === 0
-        ? html`<div class="hint">Nothing matches that search. Any name can still be typed above.</div>`
-        : html`<div class="hint">
+        ? html`<div class="hint keep">Nothing matches that search. Anyname can still be typed above.</div>`
+        : html`<div class="hint keep">
             ${symbolCount(shown.length, matches.length, query.trim() !== "", reachableCount(pack))}
           </div>`}
       ${!host.icons.available()
         ? html`<div class="hint warn">No icon pack is installed, so the list shows names without pictures. Install the Cupertino Icons frontend to see them.</div>`
         : listed !== undefined && listed.length === 0
-          ? html`<div class="hint">The icon pack does not list its symbols, so search covers the built-in set only. Any other name can still be typed above.</div>`
+          ? html`<div class="hint keep">The icon pack does not list its symbols, so search covers the built-in set only. Any other name can still be typed above.</div>`
           : nothing}
     </div>`;
   }
@@ -1086,27 +1224,99 @@ interface BandedLayer {
   bandAboveColorHex: string;
 }
 
-/** The rows of a colour table, the button that adds one, and the colour a value
- * past the last row takes. Shared by the chart's Look card and the gauge's, so a
- * change to how a table is edited lands in both at once. */
+/** Where a band table's colour bar starts and ends: a typical band's width
+ * before the first row and past the last, stretched to take in the current
+ * value when there is one. */
+export function bandScale(upTos: readonly number[], value?: number): { lo: number; hi: number } {
+  const sorted = [...upTos].sort((a, b) => a - b);
+  const first = sorted[0];
+  const last = sorted.at(-1);
+  const now = value !== undefined && Number.isFinite(value) ? value : undefined;
+  let lo = (now ?? 0) - 1;
+  let hi = (now ?? 0) + 1;
+  if (first !== undefined && last !== undefined) {
+    const gap = (sorted.length > 1 ? (last - first) / (sorted.length - 1) : Math.abs(first) / 2) || 1;
+    lo = first - gap;
+    hi = last + gap;
+  }
+  if (now !== undefined) {
+    lo = Math.min(lo, now);
+    hi = Math.max(hi, now);
+  }
+  return { lo, hi };
+}
+
+/** The thin bar over a band table: each band's colour as wide as the stretch
+ * of numbers it covers, and a mark where the current value falls. */
+function bandBar(sorted: readonly ChartBand[], aboveHex: string, value: number | undefined): TemplateResult {
+  const { lo, hi } = bandScale(sorted.map((b) => b.upTo), value);
+  const at = (n: number) => Math.max(0, Math.min(100, ((n - lo) / (hi - lo)) * 100));
+  let prev = lo;
+  const pieces = sorted.map((b) => {
+    const width = Math.max(0, at(b.upTo) - at(prev));
+    prev = Math.max(prev, b.upTo);
+    return html`<i style=${`width:${width}%;background:${b.colorHex}`}></i>`;
+  });
+  return html`<div class="band-bar">
+    <div class="bb" aria-hidden="true">${pieces}<i style=${`flex:1 1 auto;background:${aboveHex}`}></i></div>
+    ${value === undefined ? nothing : html`<span class="now" style=${`left:${at(value)}%`} title=${`Now ${value}`}></span>`}
+  </div>`;
+}
+
+/**
+ * A colour table as compact rows, lowest first the way they are checked: up to
+ * which number, in which colour, then the colour for anything above the last
+ * row, then the button that adds a row. Shared by the gauge's and the chart's
+ * Look cards, a text layer's colour by value and a rich text part, so a change
+ * to how a table is edited lands in all of them at once.
+ *
+ * `value` is what the layer reads right now, when there is one number to name:
+ * the bar marks it and its row lights up. A row's number is committed when the
+ * box is left, not on every key, because the rows re-sort by it and a row that
+ * moved under the caret mid-number would take the typing somewhere else.
+ */
 function bandTableFields(
   layer: BandedLayer,
   ownColorHex: string,
   set: (mutate: (p: BandedLayer) => void, k?: string) => void,
+  value?: number,
 ): TemplateResult {
-  return html`
-    ${layer.bands.map((band, i) => html`
-      <div class="row-inline">
-        ${numberField("Up to", band.upTo,
-          (v) => set((p) => { const b = p.bands[i]; if (b) b.upTo = v ?? 0; }, `bup${band.id}`))}
-        ${colorField("Colour", band.colorHex,
-          (v) => set((p) => { const b = p.bands[i]; if (b) b.colorHex = v ?? "#FFFFFF"; }, `bcol${band.id}`))}
-        <button class="icon" title="Remove this band" aria-label="Remove this band"
-          @click=${() => set((p) => { p.bands = p.bands.filter((_, j) => j !== i); })}>${uiIcon("close")}</button>
+  const sorted = chartSortedBands({ bands: layer.bands });
+  const now = value !== undefined && Number.isFinite(value) ? value : undefined;
+  const hit = now === undefined ? undefined : (sorted.find((b) => now <= b.upTo)?.id ?? "above");
+  const band = (id: string, mutate: (b: ChartBand) => void) => (p: BandedLayer) => {
+    const b = p.bands.find((x) => x.id === id);
+    if (b) mutate(b);
+  };
+  const above = layer.bandAboveColorHex;
+  const aboveBack: ResetTo = {
+    atDefault: sameColor(above, CHART_DEFAULT_BAND_HIGH_HEX),
+    title: `Back to ${CHART_DEFAULT_BAND_HIGH_HEX}`,
+    reset: () => set((p) => { p.bandAboveColorHex = CHART_DEFAULT_BAND_HIGH_HEX; }),
+  };
+  return html`<div class="bands">
+    ${bandBar(sorted, above, now)}
+    ${sorted.map((b) => html`
+      <div class="band-row ${hit === b.id ? "hit" : ""}">
+        <span class="le" aria-hidden="true">≤</span>
+        <input type="number" class="band-up" step="any" .value=${String(b.upTo)} aria-label="Up to"
+          title="This colour runs up to and including this number"
+          @change=${onInput((v) => {
+            const n = Number(v);
+            if (v.trim() !== "" && Number.isFinite(n)) set(band(b.id, (x) => { x.upTo = n; }));
+          })} />
+        ${colorBox(`Up to ${b.upTo}`, b.colorHex, (v) => set(band(b.id, (x) => { x.colorHex = v ?? "#FFFFFF"; }), `bcol${b.id}`))}
+        <button type="button" class="icon" title="Remove this band" aria-label="Remove this band"
+          @click=${() => set((p) => { p.bands = p.bands.filter((x) => x.id !== b.id); })}>${uiIcon("close")}</button>
       </div>`)}
-    <button class="small" @click=${() => set((p) => { p.bands = [...p.bands, nextBand(p.bands, ownColorHex)]; })}>Add band</button>
-    ${colorField("And the rest", layer.bandAboveColorHex,
-      (v) => set((p) => { p.bandAboveColorHex = v ?? CHART_DEFAULT_BAND_HIGH_HEX; }, "babove"), false, CHART_DEFAULT_BAND_HIGH_HEX)}`;
+    <div class="band-row ${hit === "above" ? "hit" : ""}">${resetButton(aboveBack)}
+      <span class="le" aria-hidden="true">&gt;</span>
+      <span class="else">Above</span>
+      ${colorBox("Above the last band", above, (v) => set((p) => { p.bandAboveColorHex = v ?? CHART_DEFAULT_BAND_HIGH_HEX; }, "babove"))}
+      <span></span>
+    </div>
+    <button type="button" class="link add-band" @click=${() => set((p) => { p.bands = [...p.bands, nextBand(p.bands, ownColorHex)]; })}>+ Band</button>
+  </div>`;
 }
 
 /** A layer that colours by state rather than by value: the timeline. */
@@ -1515,7 +1725,7 @@ function valueForm(host: EditorHost, value: Value, set: (v: Value) => void, opts
     ${selectField("Source", k.kind, kinds, (kind) => setKind(switchKind(k, kind)))}
     ${body}
     ${opts.noFormat ? nothing : formatEditor(value.format, (f) => set(formatIsEmpty(f) ? { kind: value.kind } : { ...value, format: f }))}
-    ${opts.showResolved ? html`<div class="hint">Now: ${resolved === undefined ? html`<span class="warn">unresolved</span>` : html`<code>${resolved}</code>`}</div>` : nothing}`;
+    ${opts.showResolved ? html`<div class="hint keep">Now:${resolved === undefined ? html`<span class="warn">unresolved</span>` : html`<code>${resolved}</code>`}</div>` : nothing}`;
 }
 
 function formatEditor(format: ValueFormat | undefined, set: (f: ValueFormat) => void) {
@@ -1703,9 +1913,8 @@ export function generalEditor(host: EditorHost): TemplateResult {
   // opening the editor never silently changes it.
   if (!REFRESH_CHOICES.includes(refresh)) refreshOptions.push([String(refresh), refreshLabel(refresh)]);
   const flashOn = cfg.showSuccessFlash ?? true;
-  // The main settings sit on one line: name, refresh, tap action, flash.
-  // Anything a tap action needs beyond its type (an entity, a page) goes on
-  // the line under it, full width.
+  // One row each: name, refresh, tap action, flash. Anything a tap action
+  // needs beyond its type (an entity, a page, a service) follows the tap row.
   return html`
     <div class="gen-row">
       ${textField("Name", cfg.name, (v) => host.update((c) => { c.name = v; }, "name"))}
@@ -1773,13 +1982,13 @@ function pageChoiceField(host: EditorHost, pageId: string | undefined, pageName:
   }
   if (!current) options.unshift(["", "Choose a page…"]);
   if (options.length <= 1 && !current) {
-    return html`<div class="hint">No pages reported yet. Open the watch app once so it can send its page list.</div>`;
+    return html`<div class="hint keep">No pages reported yet. Open the watch app once so it can send its page list.</div>`;
   }
   return html`${selectField("Page", current, options, (v) => {
     if (!v) { set(undefined, undefined); return; }
     set(v, host.pages.find((p) => p.id === v)?.name);
   })}
-  ${current ? nothing : html`<div class="hint">Without a page the tap falls back to the complication list.</div>`}`;
+  ${current ? nothing : html`<div class="hint keep">Without a page the tap falls back to the complication list.</div>`}`;
 }
 
 // ── Data (named values) ───────────────────────────────────────────────────
@@ -1790,7 +1999,7 @@ export function namedValueEditor(host: EditorHost, nv: NamedValue): TemplateResu
   return html`
     ${textField("Name", nv.name, (v) => host.update((c) => { c.values[idx]!.name = v; }, `${key}-name`))}
     ${valueEditor(host, nv.value, (v) => host.update((c) => { c.values[idx]!.value = v; }, key), { allowNamed: false, showResolved: true, inline: true, key })}
-    <div class="hint">Used by ${countNamedUses(host.config, nv.id)} layer${countNamedUses(host.config, nv.id) === 1 ? "" : "s"}.</div>`;
+    <div class="hint keep">Used by ${countNamedUses(host.config, nv.id)} layer${countNamedUses(host.config, nv.id) === 1 ? "" : "s"}.</div>`;
 }
 
 function countNamedUses(cfg: CustomComplicationConfig, id: string): number {
@@ -1860,12 +2069,12 @@ export function shapeSizeField(
   const id = el.payload.id;
   const shared = elementSize(el) ?? opts.min;
   const value = effectivePlacement(host.config, family, el).size ?? shared;
-  return numberField(`${label} (pt)`, value,
+  return numberField(label, value,
     (v) => host.update(
       (c) => setPlacement(c, family, id, { size: Math.max(opts.min, v ?? shared) }),
       `el-${id}-size-${family}`,
     ),
-    { step: opts.step, min: opts.min, ...(opts.def === undefined ? {} : { def: opts.def }) });
+    { step: opts.step, min: opts.min, unit: "pt", ...(opts.def === undefined ? {} : { def: opts.def }) });
 }
 
 /** `elementSize` lives beside the design boxes now, because the refit that
@@ -2126,7 +2335,7 @@ function imageTimestampSection(img: ImageElement, upd: (m: (p: ImageElement) => 
             ["bottomLeading", "Bottom left"],
             ["bottomTrailing", "Bottom right"],
           ], (v) => upd((p) => { p.timestampCorner = v; }))}
-      ${numberField("Text size (pt)", img.timestampSize, (v) => upd((p) => { p.timestampSize = Math.min(40, Math.max(4, v ?? IMAGE_DEFAULT_TIMESTAMP_SIZE)); }, "tssize"), { step: 1, min: 4, max: 40, def: IMAGE_DEFAULT_TIMESTAMP_SIZE })}
+      ${numberField("Text size", img.timestampSize, (v) => upd((p) => { p.timestampSize = Math.min(40, Math.max(4, v ?? IMAGE_DEFAULT_TIMESTAMP_SIZE)); }, "tssize"), { step: 1, min: 4, max: 40, def: IMAGE_DEFAULT_TIMESTAMP_SIZE, unit: "pt" })}
       <div class="hint">Click the chip in the preview to select it. Drag it to move it (it stays inside the picture), or drag a corner to change the text size.</div>
       <div class="hint">The time the snapshot was fetched, not the time now. A frame that stops updating keeps its old time.</div>`}`;
 }
@@ -2149,13 +2358,9 @@ interface CardOptions {
    * so rather than letting the reader find out by watching the layer jump. */
   resetTitle?: string;
   /** Never folds: the body is always drawn and the header is not a control.
-   * For the Position card under the preview, which is not one of the inspector's
-   * stack and so has no business reading (or writing) openSections. */
+   * For a card that is the inspector's only one, such as the complication's or
+   * a shared value's, which has no business reading (or writing) openSections. */
   alwaysOpen?: boolean;
-  /** Extra class on the card and on its body, for a card laid out as a row
-   * rather than as a column of fields. */
-  cardClass?: string;
-  bodyClass?: string;
 }
 
 /** Structural equality for the plain data the config is made of: objects,
@@ -2196,23 +2401,42 @@ function restoreKeys(actual: object, base: object, keys: readonly string[]): voi
  * card is open, so a long States table costs nothing while it is shut. Which
  * cards are open belongs to the panel (host.openSections), because it resets
  * when a different thing is selected.
+ *
+ * The "?" in the header shows the card's help. Plain hints in the body stay
+ * hidden until it is on (the CSS keys off `data-help`); a hint that reports a
+ * problem, a status or a required action carries `warn`, `err` or `keep` and
+ * always shows.
  */
-function card(host: EditorHost, id: string, title: string, body: unknown, opts: CardOptions = {}): TemplateResult {
+export function card(host: EditorHost, id: string, title: string, body: unknown, opts: CardOptions = {}): TemplateResult {
   const pinned = opts.alwaysOpen === true;
   const open = pinned || host.openSections.has(id);
+  const help = host.helpSections.has(id);
   const toggle = () => host.toggleSection(id);
+  // Help lives in the body, so asking for it opens a shut card. A pinned card
+  // is always open and has no place in openSections.
+  const toggleHelp = () => {
+    if (!help && !open) host.toggleSection(id);
+    host.toggleHelp(id);
+  };
+  const helpLabel = help ? `Hide the help in ${title}` : `Show help for ${title}`;
   const head = html`<span class="swatch">${uiIcon(opts.icon ?? "content")}</span>
       <span class="tt"><h4>${title}${resetButton(opts.reset === undefined ? undefined
-        : { atDefault: false, title: opts.resetTitle ?? `Put ${title} back to its defaults`, reset: opts.reset })}</h4>${opts.summary ? html`<span class="sum">${opts.summary}</span>` : nothing}</span>`;
-  return html`<section class="sec ${opts.cardClass ?? ""}" data-open=${open ? "true" : "false"} style=${opts.color ? `--c:${opts.color}` : ""}>
+        : { atDefault: false, title: opts.resetTitle ?? `Put ${title} back to its defaults`, reset: opts.reset })}</h4>${opts.summary ? html`<span class="sum">${opts.summary}</span>` : nothing}</span>
+      <button type="button" class="sec-help ${help ? "on" : ""}" aria-pressed=${help ? "true" : "false"} title=${helpLabel} aria-label=${helpLabel}
+        @click=${(e: Event) => { e.stopPropagation(); toggleHelp(); }}>?</button>`;
+  return html`<section class="sec" data-open=${open ? "true" : "false"} data-help=${help ? "on" : "off"} style=${opts.color ? `--c:${opts.color}` : ""}>
     ${pinned
       ? html`<div class="sec-h pinned">${head}</div>`
       : html`<div class="sec-h" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"} @click=${toggle}
-          @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}>
+          @keydown=${(e: KeyboardEvent) => {
+            // Keys pressed on the reset dot or the "?" are theirs, not the header's.
+            if (e.target !== e.currentTarget) return;
+            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+          }}>
           ${head}
           <span class="chev">${uiIcon("chevron")}</span>
         </div>`}
-    ${open ? html`<div class="sec-b ${opts.bodyClass ?? ""}">${body}</div>` : nothing}
+    ${open ? html`<div class="sec-b">${body}</div>` : nothing}
   </section>`;
 }
 
@@ -2462,23 +2686,30 @@ export function lookSummary(el: CElement): string | undefined {
 }
 
 /**
- * Everything about one layer, as one scroll: what it shows, how it looks,
- * whether it is tappable, what it does in other states, and where it sits.
- *
- * There are no tabs. A layer is one object and the sections are always in the
- * same order, so the second click after selecting a layer lands on the same
- * thing every time, whatever was selected before it.
+ * One of a frame's four numbers, as a compact box with a letter in front: X,
+ * Y, W or H, as a percentage of the face. The frame is stored 0-1, which reads
+ * as nothing on screen, and the card's summary already speaks percent ("23%
+ * wide"). The letter drags the number, the way a number row's title does.
  */
+function frameLetterField(letter: string, name: string, value: number, set: (v: number) => void, min: number, max: number): TemplateResult {
+  const pct = Math.round(value * 1000) / 10;
+  const setPct = (n: number) => set(n / 100);
+  return html`<label class="pf">
+    <span class="pl" title=${`${name}. Drag left or right to change it.`}
+      @pointerdown=${scrubber(pct, setPct, { step: 0.5, min, max })}>${letter}</span>
+    <input type="number" step="0.5" min=${min} max=${max} .value=${String(pct)} aria-label=${`${name} in percent`}
+      @input=${onInput((v) => { const n = Number(v); if (v.trim() !== "" && Number.isFinite(n)) setPct(n); })} />
+    <span class="unit" aria-hidden="true">%</span>
+  </label>`;
+}
+
 /**
  * Where one layer sits on one shape: the frame, the turn, and whether it is
- * drawn at all.
- *
- * Its own function because it is the one card in a layer's editor that belongs
- * beside the picture rather than in the column of forms. `inline` lays it out
- * as a single row under the preview and pins it open: it is not part of the
- * inspector's stack, so it must neither read nor write openSections.
+ * drawn at all. The four numbers are there so the card shows what its header
+ * reset will take back; a reset that also re-centred and resized the layer
+ * looked like a bug while the card held only Rotation.
  */
-export function placementCard(host: EditorHost, el: CElement, family: FamilyKind, opts: { inline?: boolean } = {}): TemplateResult {
+export function placementCard(host: EditorHost, el: CElement, family: FamilyKind): TemplateResult {
   const id = el.payload.id;
   const key = `el-${id}`;
   const eff = effectivePlacement(host.config, family, el);
@@ -2488,52 +2719,32 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
   // The section id stays "placement": it is a stored key (openSections, and
   // the browser's own memory of which cards were open), not a label.
   return card(host, "placement", "Position", html`
-    <div class="grid4">
-      ${percentField("Left", f.x, (v) => setFrame({ x: v }, "x"), CENTERED_FRAME.x, -100, 100)}
-      ${percentField("Top", f.y, (v) => setFrame({ y: v }, "y"), CENTERED_FRAME.y, -100, 100)}
-      ${percentField("Width", f.width, (v) => setFrame({ width: v }, "w"), CENTERED_FRAME.width, 4, 200)}
-      ${percentField("Height", f.height, (v) => setFrame({ height: v }, "h"), CENTERED_FRAME.height, 4, 200)}
+    <div class="xy">
+      ${frameLetterField("X", "Left", f.x, (v) => setFrame({ x: v }, "x"), -100, 100)}
+      ${frameLetterField("Y", "Top", f.y, (v) => setFrame({ y: v }, "y"), -100, 100)}
+      ${frameLetterField("W", "Width", f.width, (v) => setFrame({ width: v }, "w"), 4, 200)}
+      ${frameLetterField("H", "Height", f.height, (v) => setFrame({ height: v }, "h"), 4, 200)}
     </div>
     ${sliderField("Rotation", f.rotationDegrees, (v) => setFrame({ rotationDegrees: v }, "rot"),
-      { min: -180, max: 180, step: 1, def: 0, format: (v) => `${Math.round(v)}°` })}
+      { min: -180, max: 180, step: 1, def: 0, format: (v) => `${Math.round(v)}°`, unit: "°", range: false })}
     ${checkField("Hidden", eff.isHidden, (v) => host.update((c) => setPlacement(c, family, id, { isHidden: v })), false)}
-    <div class="hint">On the ${familyTitle(family)} shape only. Arrow keys nudge 1 pt, shift for 10.</div>`,
+    <div class="hint">X, Y, W and H are a percent of the face, on the ${familyTitle(family)} shape only. Drag a letter left or right to change its number. Arrow keys nudge 1 pt, shift for 10.</div>`,
     { color: SECTION_COLOR.place, icon: "place", summary: `${Math.round(f.width * 100)}% wide · ${familyTitle(family)}`,
-      ...(opts.inline ? { alwaysOpen: true, cardClass: "place-bar", bodyClass: "place-row" } : {}),
       ...(placeChanged ? {
         resetTitle: `Put this layer back to the middle of the ${familyTitle(family)} face at half size, unrotated and shown`,
         reset: () => host.update((c) => setPlacement(c, family, id, { frame: { ...CENTERED_FRAME }, isHidden: false })),
       } : {}) });
 }
 
-/**
- * What a tap on this layer does. Its own function for the same reason Position
- * is: the answer is about the face, so it belongs under the face. A tap-area
- * layer has no card here, since the layer is the tap.
- */
-export function tapCard(
-  host: EditorHost,
-  el: CElement | undefined,
-  opts: { inline?: boolean; placeholder?: string } = {},
-): TemplateResult | typeof nothing {
-  const placeholder = opts.placeholder;
-  // In the inspector there is simply no card for a tap layer. Under the face
-  // the row holds its place whatever is selected, so it says why instead.
-  if (placeholder === undefined && (el === undefined || el.kind === "tap")) return nothing;
-  const target = el !== undefined && el.kind !== "tap" ? el : undefined;
-  const attached = target ? attachedTapsOf(host.config, target.payload.id)[0] : undefined;
-  // Grey while there is no tap to describe: the row keeps its place, so the
-  // toggle is always where it was, but it stops wearing the tap colour.
-  const muted = attached === undefined;
-  const body = placeholder === undefined && target !== undefined
-    ? tappableSection(host, target, `el-${target.payload.id}`)
-    : html`
-      <label class="field check"><input type="checkbox" disabled .checked=${false} /><span>Tappable</span></label>
-      <div class="hint">${placeholder}</div>`;
-  return card(host, "tappable", "Tap", body,
+/** What a tap on this layer does. A tap-area layer has no card, since the
+ * layer is the tap. */
+export function tapCard(host: EditorHost, el: CElement): TemplateResult | typeof nothing {
+  if (el.kind === "tap") return nothing;
+  const id = el.payload.id;
+  const attached = attachedTapsOf(host.config, id)[0];
+  return card(host, "tappable", "Tap", tappableSection(host, el, `el-${id}`),
     { color: SECTION_COLOR.tap, icon: "tap", summary: attached ? describeTapAction((attached.payload as TapElement).action) : "Not tappable",
-      ...(opts.inline ? { alwaysOpen: true, cardClass: `tap-bar${muted ? " muted-bar" : ""}`, bodyClass: "tap-row" } : {}),
-      ...(attached && target ? { reset: () => host.update((c) => detachTaps(c, target.payload.id)) } : {}) });
+      ...(attached ? { reset: () => host.update((c) => detachTaps(c, id)) } : {}) });
 }
 
 /** What a layer needs to draw a row of clock times. Both the timeline and the
@@ -2572,12 +2783,13 @@ function timeLabelFields<T extends TimeLabelled>(
       step: 1,
       def: base.timeLabelCount as number,
       format: (v) => (v <= 0 ? "None" : String(Math.round(v))),
+      range: false,
     })}
     ${el.timeLabelCount <= 0 ? nothing : html`
       <div class="grid2">
-        ${numberField("Time size (pt)", el.labelSize, (v) => set((p) => {
+        ${numberField("Time size", el.labelSize, (v) => set((p) => {
           p.labelSize = Math.min(TIMELINE_MAX_LABEL_SIZE, Math.max(TIMELINE_MIN_LABEL_SIZE, v ?? TIMELINE_DEFAULT_LABEL_SIZE));
-        }, `${keyPrefix}size`), { step: 0.5, min: TIMELINE_MIN_LABEL_SIZE, max: TIMELINE_MAX_LABEL_SIZE, def: base.labelSize as number })}
+        }, `${keyPrefix}size`), { step: 0.5, min: TIMELINE_MIN_LABEL_SIZE, max: TIMELINE_MAX_LABEL_SIZE, def: base.labelSize as number, unit: "pt" })}
         ${colorField("Time colour", el.labelColorHex, (v) => set((p) => {
           p.labelColorHex = v ?? TIMELINE_DEFAULT_LABEL_HEX;
         }, `${keyPrefix}colour`), false, base.labelColorHex as string)}
@@ -2697,6 +2909,8 @@ function textValueColourFields(
   const highlightHint = highlight === "highest" ? "The highest number takes its own colour"
     : highlight === "lowest" ? "The lowest number takes its own colour"
     : "The highest and lowest numbers take their own colours";
+  // The table marks the number the text reads, when it reads exactly one.
+  const numbers = coloring === "bands" ? chartNumbers(host.resolve(t.value) ?? "") : [];
   return html`
     ${segField("Colour", coloring, CHART_COLORINGS, (v) => set((p) => {
       if (v === "uniform") { delete p.coloring; return; }
@@ -2707,7 +2921,8 @@ function textValueColourFields(
     }), { def: "uniform" })}
     ${coloring === "bands" ? html`
       <div class="hint">Each number in the text takes the colour of the band it falls in, and other text keeps the layer colour.</div>
-      ${bandTableFields({ bands: t.bands ?? [], bandAboveColorHex: t.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX }, t.colorSlot.baseColorHex, setBands)}`
+      ${bandTableFields({ bands: t.bands ?? [], bandAboveColorHex: t.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX }, t.colorSlot.baseColorHex, setBands,
+        numbers.length === 1 ? numbers[0] : undefined)}`
       : nothing}
     ${segField("Highlight", highlight, CHART_HIGHLIGHTS, (v) => set((p) => {
       if (v === "none") delete p.highlight; else p.highlight = v;
@@ -2734,17 +2949,18 @@ type TextLayer = Extract<CElement, { kind: "text" }>;
  * like `advancedRules`: which part is open is not part of the document and
  * does not belong in undo. An id whose part has gone falls back to part 1. */
 const selectedParts = new Map<string, string>();
-/** Layers showing the "Turn off Rich text?" question under the switch. */
-const pendingRichTextOff = new Set<string>();
-/** The note under a layer's Rich text switch, with whether the layer had parts
- * when it was written. An undo can flip the switch back under a note, and a
- * note about the other state is then no longer shown. */
+/** Layers asking whether to leave Rich under the Type row, with the type that
+ * was picked. */
+const pendingRichTextOff = new Map<string, "plain" | "countdown">();
+/** The note under a layer's Type row, with whether the layer had parts when it
+ * was written. An undo can flip the type back under a note, and a note about
+ * the other state is then no longer shown. */
 const richTextNotes = new Map<string, { text: string; rich: boolean; warn?: boolean }>();
 /** A states table's part before its first row exists. As with
  * `pendingTestValues`, there is no rule yet to carry it. */
 const pendingPartTargets = new Map<string, string>();
 
-/** The range a part's own font size field and slider offer. */
+/** The range a part's own font size field offers. */
 const PART_SIZE_MIN = 4;
 const PART_SIZE_MAX = 40;
 
@@ -2752,7 +2968,23 @@ const PART_SIZE_MAX = 40;
 export type PartColourMode = "layer" | "pick" | "bands";
 
 const PART_COLOURS: [PartColourMode, string][] = [["layer", "Layer"], ["pick", "Pick"], ["bands", "By value"]];
-const PART_WEIGHTS: [FontWeight | "layer", string][] = [["layer", "Layer"], ...FONT_WEIGHTS];
+
+/** What a text layer draws, as its Type row names it. */
+export type TextType = "plain" | "rich" | "countdown";
+
+const TEXT_TYPES: [TextType, string][] = [["plain", "Plain"], ["rich", "Rich"], ["countdown", "Countdown"]];
+const TEXT_TYPE_TITLES: Record<TextType, string> = {
+  plain: "One line: typed words, a live value or a template",
+  rich: "Parts, each with its own colour, weight and size",
+  countdown: "Ticks down to a time",
+};
+
+/** A text layer's Type. A countdown wins over parts, because the watch never
+ * draws the parts of a countdown. */
+export function textType(t: Pick<TextElement, "parts" | "countdown">): TextType {
+  if (t.countdown === true) return "countdown";
+  return textUsesParts(t) ? "rich" : "plain";
+}
 
 /** A typed part's text as words and runs of spaces, so its chip can draw each
  * space as a faint dot. A space at either end is the gap to the next part, and
@@ -2806,20 +3038,6 @@ export function partDotBackground(part: TextPart, layerHex: string): string {
   return part.colorHex ?? layerHex;
 }
 
-/** One sentence under the part editor saying what the part does, so nobody
- * has to add up four controls to know. */
-export function partSentence(part: TextPart, layer: { fontSize: number; fontWeight: FontWeight }, ctx?: DescribeContext): string {
-  const chip = partChip(part.value, ctx);
-  const weightWord = (w: FontWeight) => (FONT_WEIGHTS.find(([x]) => x === w)?.[1] ?? w).toLowerCase();
-  const lead = chip.kind === "text" ? (chip.label === "" ? "This empty part shows" : `"${chip.label}" shows`)
-    : chip.kind === "template" ? "The template shows" : `Shows ${chip.label}`;
-  const colour = partColourMode(part) === "bands" && (part.bands?.length ?? 0) > 0 ? "in the colour of its own bands"
-    : part.colorHex !== undefined ? "in its own colour" : "in the layer colour";
-  const weight = part.fontWeight === undefined ? `${weightWord(layer.fontWeight)} (from the layer)` : weightWord(part.fontWeight);
-  const size = part.fontSize === undefined ? `at ${layer.fontSize} pt (from the layer)` : `at ${part.fontSize} pt`;
-  return `${lead} ${colour}, ${weight}, ${size}.`;
-}
-
 /** Why rich text cannot turn off yet, naming every part in the way. */
 export function richTextBlockedHint(blocked: readonly RichTextBlocked[]): string {
   const named = (list: readonly RichTextBlocked[]) => (list.length === 1
@@ -2848,9 +3066,14 @@ export function richTextOffNote(result: { joined: false; moved: readonly RichTex
 }
 
 /**
- * A text layer's Content card: the text and Live countdown as they always
- * were, then the Rich text switch. With rich text on, the text is replaced by
- * the parts and the editor for the one picked.
+ * A text layer's Content card: the Type row, then what that type needs. Plain
+ * and Countdown edit the layer's value; Rich replaces it with the parts and the
+ * editor for the one picked.
+ *
+ * Leaving Rich takes one road whichever type it leaves for. One part hands its
+ * styles to Look and goes straight through. Two or more join into one line,
+ * which undo can take back but a reader may not expect, so the row asks first;
+ * a part that would block the join is named instead of asking at all.
  */
 function textContentFields(
   host: EditorHost,
@@ -2858,19 +3081,18 @@ function textContentFields(
   family: FamilyKind,
   upd: (mutate: (p: TextElement) => void, k?: string) => void,
   key: string,
-  countdownDefault: boolean,
 ): TemplateResult {
   const t = el.payload;
   const layerId = t.id;
+  const type = textType(t);
   const hasParts = (t.parts?.length ?? 0) > 0;
-  const countdown = t.countdown === true;
   // A chart's number says which chart it belongs to, one click from it.
   const owner = chartOfValue(host.config, t.value);
   const stored = richTextNotes.get(layerId);
   const note = stored && stored.rich === hasParts ? stored : undefined;
-  const confirming = pendingRichTextOff.has(layerId) && (t.parts?.length ?? 0) >= 2;
+  const confirmTo = type === "rich" && (t.parts?.length ?? 0) >= 2 ? pendingRichTextOff.get(layerId) : undefined;
 
-  const turnOff = (node: EventTarget | null) => {
+  const leaveRich = (to: "plain" | "countdown", node: EventTarget | null) => {
     const template = !(t.parts ?? []).every((p) => p.value.kind.kind === "literal");
     // Tried on a copy first: every update is an undo step, and a join that a
     // part blocks must not leave one behind that did nothing.
@@ -2882,70 +3104,82 @@ function textContentFields(
       return;
     }
     richTextNotes.set(layerId, { text: richTextOffNote(result.joined ? { joined: true, template } : result), rich: false });
-    upd((p) => { turnOffRichText(p, host.config.values); });
+    upd((p) => {
+      turnOffRichText(p, host.config.values);
+      if (to === "countdown") p.countdown = true;
+    });
   };
 
-  const setRich = (on: boolean, input: HTMLInputElement) => {
+  const setType = (to: TextType, node: EventTarget | null) => {
     pendingRichTextOff.delete(layerId);
-    if (on) {
-      const partId = newId();
+    if (type === "rich") {
+      const leaveTo = to === "countdown" ? "countdown" : "plain";
+      const parts = t.parts ?? [];
+      if (parts.length < 2) {
+        leaveRich(leaveTo, node);
+        return;
+      }
+      const join = joinTextParts(parts, host.config.values);
+      if (join.ok) {
+        richTextNotes.delete(layerId);
+        pendingRichTextOff.set(layerId, leaveTo);
+      } else {
+        richTextNotes.set(layerId, { text: richTextBlockedHint(join.blocked), rich: true, warn: true });
+      }
+      requestRerender(node);
+      return;
+    }
+    if (to === "rich") {
+      // A countdown can still hold parts from before it counted down. They
+      // come back as they were rather than being rebuilt from the value.
+      const partId = t.parts?.[0]?.id ?? newId();
       selectedParts.set(layerId, partId);
-      richTextNotes.set(layerId, { text: "Your text is now Part 1. Add more parts with + Text or + Value.", rich: true });
-      upd((p) => { turnOnRichText(p, partId); });
+      if (hasParts) richTextNotes.delete(layerId);
+      else richTextNotes.set(layerId, { text: "Your text is now Part 1. Add more with the buttons after the chips.", rich: true });
+      upd((p) => {
+        delete p.countdown;
+        turnOnRichText(p, partId);
+      });
       return;
     }
-    const parts = t.parts ?? [];
-    if (parts.length < 2 || countdown) {
-      turnOff(input);
-      return;
-    }
-    // Two or more parts join into one line, which undo can take back but a
-    // reader may not expect, so the switch stays on and asks first. A part
-    // that would block the join is named instead of asking at all.
-    input.checked = true;
-    const join = joinTextParts(parts, host.config.values);
-    if (join.ok) {
-      richTextNotes.delete(layerId);
-      pendingRichTextOff.add(layerId);
-    } else {
-      richTextNotes.set(layerId, { text: richTextBlockedHint(join.blocked), rich: true, warn: true });
-    }
-    requestRerender(input);
+    richTextNotes.delete(layerId);
+    upd((p) => {
+      if (to === "countdown") {
+        p.countdown = true;
+        return;
+      }
+      // Parts left under a countdown were never drawn, and would make the
+      // layer Rich the moment it stopped counting, so they go with it.
+      if ((p.parts?.length ?? 0) > 0) turnOffRichText(p, host.config.values);
+      delete p.countdown;
+    });
   };
 
-  const richHint = countdown && !hasParts ? "Turn off Live countdown to use Rich text."
-    : hasParts ? "Each part has its own colour, weight and font size. Parts can be typed words or live values."
-    : "Give some words their own colour, weight or size, or mix typed words with live values.";
-
+  const confirmTitle = confirmTo === "countdown" ? "Switch to Countdown?" : "Switch to Plain?";
   return html`
-    ${textUsesParts(t)
-      ? richPartsEditor(host, el, family, upd, key)
-      : html`
-        ${valueEditor(host, t.value, (v) => upd((p) => { p.value = v; }, "value"), { showResolved: true, label: "Text", key: `${key}-value` })}
-        ${owner ? html`<div class="hint">Prints a number from the chart <button type="button" class="link" @click=${() => host.selectLayer(owner.payload.id)}>${layerTitle(owner, describeContext(host))}</button>. It stays in the chart's group and moves with it.</div>` : nothing}`}
-    ${checkField("Live countdown", countdown, (v) => upd((p) => {
-      if (v) p.countdown = true; else delete p.countdown;
-    }), countdownDefault, { disabled: hasParts && !countdown })}
-    ${countdown ? html`<div class="hint">Ticks down to the value's target: an active timer's finish, or any future timestamp. A paused timer shows its remaining time.</div>` : nothing}
-    ${hasParts && !countdown ? html`<div class="hint">Works on plain text only. Turn off Rich text to use it.</div>` : nothing}
-    <label class="field check"><input type="checkbox" .checked=${hasParts} ?disabled=${countdown && !hasParts}
-      @change=${(e: Event) => { const input = e.target as HTMLInputElement; setRich(input.checked, input); }} /><span>Rich text <span class="badge new">New</span></span></label>
-    <div class="hint">${richHint}</div>
-    ${confirming ? html`<div class="rich-confirm" role="alertdialog" aria-label="Turn off Rich text?">
-        <b>Turn off Rich text?</b>
+    ${segField("Type", type, TEXT_TYPES, setType, { titles: TEXT_TYPE_TITLES })}
+    <div class="hint">Plain shows one line: typed words, a live value or a template. Rich splits the text into parts, and each part has its own colour, weight and size. Countdown ticks down to the value's target: an active timer's finish, or any future timestamp. A paused timer shows its remaining time.</div>
+    ${confirmTo === undefined ? nothing : html`<div class="rich-confirm" role="alertdialog" aria-label=${confirmTitle}>
+        <b>${confirmTitle}</b>
         <div>The parts join into one line, so every word and value stays. The part styles go away. Undo brings them back.${t.rules.some((r) => r.partId !== undefined) ? " States that change one part will change the whole text." : ""}</div>
         <div class="acts">
-          <button class="small primary" @click=${(e: Event) => turnOff(e.currentTarget)}>Turn off</button>
-          <button class="small" @click=${(e: Event) => { pendingRichTextOff.delete(layerId); requestRerender(e.currentTarget); }}>Keep it on</button>
+          <button class="small primary" @click=${(e: Event) => leaveRich(confirmTo, e.currentTarget)}>Switch</button>
+          <button class="small" @click=${(e: Event) => { pendingRichTextOff.delete(layerId); requestRerender(e.currentTarget); }}>Keep Rich</button>
         </div>
-      </div>` : nothing}
-    ${note ? html`<div class=${note.warn ? "hint warn" : "rich-note"}>${note.text}</div>` : nothing}`;
+      </div>`}
+    ${note ? html`<div class=${note.warn ? "hint warn" : "rich-note"}>${note.text}</div>` : nothing}
+    ${type === "rich"
+      ? richPartsEditor(host, el, family, upd, key)
+      : html`
+        ${valueEditor(host, t.value, (v) => upd((p) => { p.value = v; }, "value"), { showResolved: true, label: type === "countdown" ? "Until" : "Text", key: `${key}-value` })}
+        ${owner ? html`<div class="hint keep">Prints a number from the chart <button type="button" class="link" @click=${() => host.selectLayer(owner.payload.id)}>${layerTitle(owner, describeContext(host))}</button>. It stays in the chart's group and moves with it.</div>` : nothing}`}`;
 }
 
 /**
- * The parts of a rich text layer as a row of chips, the + Text and + Value
- * buttons, and the editor for the part picked: what it shows, its colour,
- * weight and size, and a sentence saying all four at once.
+ * The parts of a rich text layer as a row of chips with the two add buttons at
+ * its end, then the editor for the part picked: what it shows, its colour,
+ * weight and size. A weight or size the part does not set shows the layer's,
+ * outlined or faint, so what the part inherits is on screen without a sentence.
  */
 function richPartsEditor(
   host: EditorHost,
@@ -3018,11 +3252,17 @@ function richPartsEditor(
   const literalPart = part.value.kind.kind === "literal";
   const mode = partColourMode(part);
   const ownSize = part.fontSize !== undefined;
-  const size = part.fontSize ?? layerSize;
+  const layerWeight = FONT_WEIGHTS.find(([w]) => w === t.fontWeight)?.[1] ?? t.fontWeight;
   // Out of range is left alone rather than clamped, so typing 12 can pass
   // through 1 without the box jumping to 4 under the caret.
   const setSize = (n: number) => {
     if (n >= PART_SIZE_MIN && n <= PART_SIZE_MAX) updPart((x) => { x.fontSize = n; }, "size");
+  };
+  // The band table marks the number the part reads, when it reads exactly one.
+  const numbers = mode === "bands" ? chartNumbers(host.resolve(part.value) ?? "") : [];
+  const colourTitles: Partial<Record<PartColourMode, string>> = {
+    layer: "Use the layer colour",
+    ...(literalPart && mode !== "bands" ? { bands: "By value needs a live value" } : {}),
   };
   // The shared table editor wants a table that is always there; this one holds
   // the part's optional keys for the length of one edit.
@@ -3035,25 +3275,27 @@ function richPartsEditor(
   }, k);
 
   return html`<div class="rich-parts">
-    <div class="field parts-field"><span>Parts</span>
+    <div class="part-row">
       <div class="part-chips" role="listbox" aria-label="Parts">${chips}</div>
-    </div>
-    <div class="adders">
-      <button class="small" @click=${(e: Event) => add(literal(""), e.currentTarget)}>+ Text</button>
-      <button class="small" @click=${(e: Event) => add({ kind: { kind: "entityState", entityId: "", displayName: "", domain: "" } }, e.currentTarget)}>+ Value</button>
+      <span class="part-add">
+        <button type="button" class="icon" title="Add text" aria-label="Add text"
+          @click=${(e: Event) => add(literal(""), e.currentTarget)}>${uiIcon("text")}</button>
+        <button type="button" class="icon" title="Add a value" aria-label="Add a value"
+          @click=${(e: Event) => add({ kind: { kind: "entityState", entityId: "", displayName: "", domain: "" } }, e.currentTarget)}>${uiIcon("braces")}</button>
+      </span>
     </div>
     <div class="part-editor">
       <div class="part-head">
-        <b>Part ${index + 1} of ${count}</b>
+        <span class="part-title"><b>Part ${index + 1}</b> of ${count} · ${literalPart ? "Text" : "Value"}</span>
         <span class="spacer"></span>
-        <button class="icon" title="Move left" aria-label="Move left" ?disabled=${index === 0} @click=${() => move(index - 1)}>${uiIcon("left")}</button>
-        <button class="icon" title="Move right" aria-label="Move right" ?disabled=${index === count - 1} @click=${() => move(index + 1)}>${uiIcon("right")}</button>
-        <button class="ghost danger" ?disabled=${count === 1 || targeted}
+        <button type="button" class="icon" title="Move left" aria-label="Move left" ?disabled=${index === 0} @click=${() => move(index - 1)}>${uiIcon("left")}</button>
+        <button type="button" class="icon" title="Move right" aria-label="Move right" ?disabled=${index === count - 1} @click=${() => move(index + 1)}>${uiIcon("right")}</button>
+        <button type="button" class="icon danger" aria-label="Remove this part" ?disabled=${count === 1 || targeted}
           title=${count === 1 ? "A rich text layer keeps at least one part" : targeted ? "A state changes this part" : "Remove this part"}
-          @click=${remove}>Remove</button>
+          @click=${remove}>${uiIcon("delete")}</button>
       </div>
-      ${targeted && count > 1 ? html`<div class="hint">A state changes this part. Change or delete that state first.</div>` : nothing}
-      ${valueEditor(host, part.value, (v) => updPart((x) => { x.value = v; }, "value"), { showResolved: true, label: "Shows", key: `${key}-part-${part.id}` })}
+      ${targeted && count > 1 ? html`<div class="hint keep">A state changes this part. Change or delete that state first.</div>` : nothing}
+      ${valueEditor(host, part.value, (v) => updPart((x) => { x.value = v; }, "value"), { showResolved: true, label: literalPart ? "Text" : "Shows", key: `${key}-part-${part.id}` })}
       ${literalPart ? html`<div class="hint">Spaces count, and show as dots in the parts list. Type one at the start or end when this part needs a gap.</div>` : nothing}
       ${segField("Colour", mode, PART_COLOURS, (v) => updPart((x) => {
         if (v === "layer") { delete x.colorHex; delete x.coloring; return; }
@@ -3063,27 +3305,29 @@ function richPartsEditor(
         // Seeded from the numbers the part shows right now, as the layer's own
         // table is, so By value paints something the moment it is picked.
         if ((x.bands?.length ?? 0) === 0) x.bands = seedBands(chartNumbers(host.resolve(x.value) ?? ""));
-      }), literalPart && mode !== "bands" ? { disabled: { bands: true }, titles: { bands: "By value needs a live value" } } : {})}
-      ${mode === "pick" ? colorField("Part colour", part.colorHex, (v) => updPart((x) => { x.colorHex = v ?? layerHex; }, "color")) : nothing}
-      ${mode === "bands" ? html`<div class="part-bands">
-          ${bandTableFields({ bands: part.bands ?? [], bandAboveColorHex: part.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX }, part.colorHex ?? layerHex, setBands)}
-          <div class="hint">These bands belong to this part. Another value in the same layer keeps its own.</div>
-        </div>` : nothing}
-      ${segField("Weight", part.fontWeight ?? "layer", PART_WEIGHTS, (v) => updPart((x) => {
-        if (v === "layer") delete x.fontWeight; else x.fontWeight = v;
-      }))}
-      <div class="field part-size">${fieldLabel("Font size", ownSize
-        ? { atDefault: false, title: `Back to the layer size (${layerSize} pt)`, reset: () => updPart((x) => { delete x.fontSize; }) }
-        : undefined)}
-        <div class="size-row">
-          ${numberInput(size, (n) => { if (n !== undefined) setSize(n); }, { step: 1, min: PART_SIZE_MIN, max: PART_SIZE_MAX, ariaLabel: "Part font size" })}
-          <span class="unit">pt</span>
-          <input type="range" min=${PART_SIZE_MIN} max=${PART_SIZE_MAX} step="1" .value=${String(size)} aria-label="Part font size slider"
-            @input=${onInput((v) => setSize(Number(v)))} />
-          <span class="from">${ownSize ? "Own size" : "From layer"}</span>
-        </div>
+      }), { def: "layer", titles: colourTitles, ...(literalPart && mode !== "bands" ? { disabled: { bands: true } } : {}) })}
+      ${mode === "pick" ? html`<div class="sub-field">${colorField("Part colour", part.colorHex, (v) => updPart((x) => { x.colorHex = v ?? layerHex; }, "color"))}</div>` : nothing}
+      ${mode === "bands" ? html`
+        ${bandTableFields({ bands: part.bands ?? [], bandAboveColorHex: part.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX }, part.colorHex ?? layerHex, setBands,
+          numbers.length === 1 ? numbers[0] : undefined)}
+        <div class="hint">These bands belong to this part. Another value in the same layer keeps its own.</div>` : nothing}
+      <div class="field seg-field">${fieldLabel("Weight", part.fontWeight === undefined ? undefined
+          : { atDefault: false, title: `Back to the layer weight (${layerWeight})`, reset: () => updPart((x) => { delete x.fontWeight; }) })}
+        ${segButtons("Weight", part.fontWeight, FONT_WEIGHTS, (v) => updPart((x) => { x.fontWeight = v; }), { inherited: t.fontWeight })}
       </div>
-      <div class="hint say">${partSentence(part, { fontSize: layerSize, fontWeight: t.fontWeight }, ctx)}</div>
+      <label class="field num part-size">${fieldLabel("Font size", ownSize
+          ? { atDefault: false, title: `Back to the layer size (${layerSize} pt)`, reset: () => updPart((x) => { delete x.fontSize; }) }
+          : undefined,
+        scrubber(part.fontSize ?? layerSize, setSize, { step: 1, min: PART_SIZE_MIN, max: PART_SIZE_MAX }))}
+        ${numberInput(part.fontSize, (n) => {
+          if (n === undefined) updPart((x) => { delete x.fontSize; }, "size");
+          else setSize(n);
+        }, {
+          step: 1, min: PART_SIZE_MIN, max: PART_SIZE_MAX, optional: true, unit: "pt", placeholder: String(layerSize),
+          ariaLabel: ownSize ? "Part font size" : `Part font size, ${layerSize} pt from the layer`,
+          ...(ownSize ? {} : { lead: uiIcon("link") }),
+        })}
+      </label>
     </div>
   </div>`;
 }
@@ -3110,20 +3354,20 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
   switch (el.kind) {
     case "text": {
       const setText = (mutate: (p: TextElement) => void, k?: string) => upd((e) => mutate((e as typeof el).payload), k);
-      content = textContentFields(host, el, family, setText, key, base.countdown === true);
-      look = html`<div class="grid2">
-          ${shapeSizeField(host, el, family, "Font size", { step: 1, min: 4, def: baseSize("fontSize") })}
-          ${segField("Weight", el.payload.fontWeight, FONT_WEIGHTS, (v) => upd((e) => { (e as typeof el).payload.fontWeight = v; }),
-            { def: base.fontWeight as typeof el.payload.fontWeight })}
-          ${segField("Align", el.payload.alignment ?? "center", TEXT_ALIGNMENTS, (v) => upd((e) => {
+      content = textContentFields(host, el, family, setText, key);
+      look = html`
+        ${shapeSizeField(host, el, family, "Font size", { step: 1, min: 4, def: baseSize("fontSize") })}
+        ${segField("Weight", el.payload.fontWeight, FONT_WEIGHTS, (v) => upd((e) => { (e as typeof el).payload.fontWeight = v; }),
+          { def: base.fontWeight as typeof el.payload.fontWeight })}
+        ${segPairField(
+          { label: "Align", value: el.payload.alignment ?? "center", options: TEXT_ALIGNMENTS, def: "center", set: (v) => upd((e) => {
             const p = (e as typeof el).payload;
             if (v === "center") delete p.alignment; else p.alignment = v;
-          }), { def: "center" })}
-          ${segField("Lines", el.payload.lineLimit === 2 ? "2" : "1", TEXT_LINE_LIMITS, (v) => upd((e) => {
+          }) },
+          { label: "Lines", value: el.payload.lineLimit === 2 ? "2" : "1", options: TEXT_LINE_LIMITS, def: "1", set: (v) => upd((e) => {
             const p = (e as typeof el).payload;
             if (v === "2") p.lineLimit = 2; else delete p.lineLimit;
-          }), { def: "1" })}
-        </div>
+          }) })}
         ${checkField("Monospaced digits", el.payload.monospacedDigits === true, (v) => upd((e) => {
           const p = (e as typeof el).payload;
           if (v) p.monospacedDigits = true; else delete p.monospacedDigits;
@@ -3179,7 +3423,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           <div class="hint">Checked lowest first, so each row only says where it ends. The
             gauge takes the colour of the row its reading falls in, and a reading past the
             last row takes the colour underneath.</div>
-          ${bandTableFields(g, g.colorSlot.baseColorHex, setGauge)}`
+          ${bandTableFields(g, g.colorSlot.baseColorHex, setGauge, chartNumbers(host.resolve(g.value) ?? "")[0])}`
           : nothing}
         ${dots ? nothing : html`
           <div class="grid2">
@@ -3285,7 +3529,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
                 about ten days, so a longer span here comes back with only its recent tail.</div>`
               : nothing}
             ${namesEntity && historyRaw === undefined
-              ? html`<div class="hint">Reading the statistics…</div>`
+              ? html`<div class="hint keep">Reading the statistics…</div>`
               : nothing}
             ${namesEntity && historyRaw === ""
               ? html`<div class="hint warn">No long-term statistics for this entity in that span.
@@ -3334,7 +3578,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
                   oldest first. About 20 suits a rectangular complication; more than that draws bars
                   thinner than the screen can show.`}</div>
             ${namesEntity && historyRaw === undefined
-              ? html`<div class="hint">Reading the history…</div>`
+              ? html`<div class="hint keep">Reading the history…</div>`
               : nothing}
             ${namesEntity && historyRaw === ""
               ? html`<div class="hint warn">Nothing recorded for this entity in that span.
@@ -3352,7 +3596,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           ? html`<div class="hint warn">No numbers in this value yet, so the chart draws nothing.</div>`
           : nothing}
         ${series.length > 0
-          ? html`<div class="hint">Reads <span class="nums">${chartReadout(shown)}</span>${series.length === shown.length
+          ? html`<div class="hint keep">Reads <span class="nums">${chartReadout(shown)}</span>${series.length === shown.length
               ? html` · ${shown.length} ${shown.length === 1 ? "value" : "values"}`
               : html` · ${shown.length} of ${series.length}`}</div>`
           : nothing}
@@ -3374,7 +3618,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         <div class="grid2">
           ${segField("Style", c.style, CHART_STYLES, (v) => setChart((p) => { p.style = v; }), { def: base.style as typeof c.style })}
           ${c.style === "bars"
-            ? numberField("Bar gap (pt)", c.barGap, (v) => setChart((p) => { p.barGap = Math.max(0, v ?? 0); }, "gap"), { step: 0.5, min: 0, def: base.barGap as number })
+            ? numberField("Bar gap", c.barGap, (v) => setChart((p) => { p.barGap = Math.max(0, v ?? 0); }, "gap"), { step: 0.5, min: 0, def: base.barGap as number, unit: "pt" })
             : shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5, def: baseSize("lineWidth") })}
         </div>
         <div class="grid2">
@@ -3386,7 +3630,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           [["", "Its own"] as [string, string], ...otherCharts.map((e): [string, string] => [e.payload.id, layerTitle(e, chartCtx)])],
           (v) => setChart((p) => { if (v) p.scaleFrom = v; else delete p.scaleFrom; }), { def: "" })}
         ${borrowed
-          ? html`<div class="hint">This chart is drawn against that one's range, so the two read as one
+          ? html`<div class="hint keep">This chart is drawn against that one's range, so the two read as one
               plot. Give them the same frame and each keeps its own readings, colour, style and
               numbers. Scale, Min and Max above are ignored while a chart is picked here.</div>`
           : nothing}
@@ -3473,9 +3717,9 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               their own. The right edge is now and the left edge is the start of the span, so a slot
               the recorder had nothing for shifts the earlier times a little.</div>`)
           : everyReading && usingHistory
-            ? html`<div class="hint">Clock times need evenly spaced readings, so they are offered when
+            ? html`<div class="hint keep">Clock times needevenly spaced readings, so they are offered when
               Readings is Average rather than Every one.</div>`
-            : html`<div class="hint">Clock times need a recorded span, so they are offered when Draw is
+            : html`<div class="hint keep">Clock times needa recorded span, so they are offered when Draw is
               Recorded history.</div>`}`;
       break;
     }
@@ -3507,14 +3751,14 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           wide as the time it lasted. At most ${TIMELINE_HISTORY_POINTS} changes are drawn, and a
           busier span keeps its newest.</div>
         ${namesEntity && raw === undefined
-          ? html`<div class="hint">Reading the history…</div>`
+          ? html`<div class="hint keep">Reading the history…</div>`
           : nothing}
         ${namesEntity && raw === ""
           ? html`<div class="hint warn">Nothing recorded for this entity in that span. Either it is
             excluded from the recorder, or it has not been seen in that long.</div>`
           : nothing}
         ${samples.length > 0
-          ? html`<div class="hint">Reads <span class="nums">${timelineReadout(samples, spanSeconds)}</span></div>`
+          ? html`<div class="hint keep">Reads <span class="nums">${timelineReadout(samples, spanSeconds)}</span></div>`
           : nothing}
         ${timelineIsNumeric(samples)
           ? html`<div class="hint warn">This entity reports numbers, so every reading is its own
@@ -3528,15 +3772,15 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           state no row names takes the colour underneath.</div>
         ${timelineBandFields(t, setTimeline, knownStates, `wa-tl-states-${key.replace(/[^a-z0-9]/gi, "")}`)}
         ${knownStates.length > 2
-          ? html`<div class="hint">Seen in this span: <span class="nums">${knownStates.filter((s) => s !== "unavailable" && s !== "unknown").join(", ")}</span>. Click into a State box to pick one.</div>`
+          ? html`<div class="hint keep">Seen in this span: <span class="nums">${knownStates.filter((s) => s !== "unavailable" && s !== "unknown").join(", ")}</span>. Click into a State box to pick one.</div>`
           : nothing}
         <div class="grid2">
-          ${numberField("Gap (pt)", t.gap, (v) => setTimeline((p) => {
+          ${numberField("Gap", t.gap, (v) => setTimeline((p) => {
             p.gap = Math.min(TIMELINE_MAX_GAP, Math.max(0, v ?? 0));
-          }, "tgap"), { step: 0.5, min: 0, max: TIMELINE_MAX_GAP, def: base.gap as number })}
-          ${numberField("Corner radius (pt)", t.cornerRadius, (v) => setTimeline((p) => {
+          }, "tgap"), { step: 0.5, min: 0, max: TIMELINE_MAX_GAP, def: base.gap as number, unit: "pt" })}
+          ${numberField("Corner radius", t.cornerRadius, (v) => setTimeline((p) => {
             p.cornerRadius = Math.max(0, v ?? 0);
-          }, "tradius"), { step: 0.5, min: 0, def: base.cornerRadius as number })}
+          }, "tradius"), { step: 0.5, min: 0, def: base.cornerRadius as number, unit: "pt" })}
         </div>
         <div class="hint">A gap is taken off the right of each run, so the strip still ends flush with
           the frame and the newest state keeps the edge. 0 draws one continuous bar, which is what a
@@ -3551,16 +3795,16 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
       content = html`<div class="grid2">
           ${segField("Shape", el.payload.kind, [["roundedRectangle", "Rounded"], ["rectangle", "Rectangle"], ["capsule", "Capsule"], ["circle", "Circle"], ["line", "Line"]], (v) => upd((e) => { (e as typeof el).payload.kind = v; }),
             { titles: { roundedRectangle: "Rounded rectangle", line: "A rule along the frame's long side" }, def: base.kind as typeof el.payload.kind })}
-          ${el.payload.kind === "roundedRectangle" ? numberField("Corner radius (pt)", el.payload.cornerRadius, (v) => upd((e) => { (e as typeof el).payload.cornerRadius = v ?? 6; }, "radius"), { step: 0.5, min: 0, def: base.cornerRadius as number }) : nothing}
+          ${el.payload.kind === "roundedRectangle" ? numberField("Corner radius", el.payload.cornerRadius, (v) => upd((e) => { (e as typeof el).payload.cornerRadius = v ?? 6; }, "radius"), { step: 0.5, min: 0, def: base.cornerRadius as number, unit: "pt" }) : nothing}
         </div>
         ${el.payload.kind === "line" ? lineOrientationField(family, f, setFrame) : nothing}`;
       // A line has no border and no corners: its colour is the whole drawing, so
       // the Look card offers its thickness instead.
       look = el.payload.kind === "line"
-        ? numberField("Thickness (pt)", el.payload.thickness, (v) => upd((e) => { (e as typeof el).payload.thickness = v ?? 1; }, "thick"), { step: 0.5, min: 0.5, def: base.thickness as number })
+        ? numberField("Thickness", el.payload.thickness, (v) => upd((e) => { (e as typeof el).payload.thickness = v ?? 1; }, "thick"), { step: 0.5, min: 0.5, def: base.thickness as number, unit: "pt" })
         : html`
         ${colorField("Border colour", el.payload.borderColorHex, (v) => upd((e) => { if (v === undefined) delete (e as typeof el).payload.borderColorHex; else (e as typeof el).payload.borderColorHex = v; }, "border"), true, null)}
-        ${el.payload.borderColorHex !== undefined ? numberField("Border width (pt)", el.payload.borderWidth, (v) => upd((e) => { (e as typeof el).payload.borderWidth = v ?? 1; }, "bw"), { step: 0.5, min: 0, def: base.borderWidth as number }) : nothing}`;
+        ${el.payload.borderColorHex !== undefined ? numberField("Border width", el.payload.borderWidth, (v) => upd((e) => { (e as typeof el).payload.borderWidth = v ?? 1; }, "bw"), { step: 0.5, min: 0, def: base.borderWidth as number, unit: "pt" }) : nothing}`;
       break;
     case "image": {
       const img = el.payload;
@@ -3596,13 +3840,13 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           (v) => setImage((p) => { p.contentMode = v; }),
           { titles: { fill: "Cover the frame, cropping what does not fit", fit: "Show the whole picture, with space around it" }, def: base.contentMode as typeof img.contentMode })}
         ${sliderField("Zoom", img.zoom, (v) => setImage((p) => { p.zoom = v; }, "zoom"),
-          { min: MIN_ZOOM, max: 4, step: 0.05, def: 1, format: (v) => `${v.toFixed(2)}x` })}
+          { min: MIN_ZOOM, max: 4, step: 0.05, def: 1, format: (v) => `${v.toFixed(2)}x`, unit: "x" })}
         ${sliderField("Pan left/right", img.panX, (v) => setImage((p) => { p.panX = v; }, "panx"),
           { min: -1, max: 1, step: 0.02, def: 0 })}
         ${sliderField("Pan up/down", img.panY, (v) => setImage((p) => { p.panY = v; }, "pany"),
           { min: -1, max: 1, step: 0.02, def: 0 })}
-        <div class="hint">${imagePanHint(img)}</div>
-        ${numberField("Corner radius (pt)", img.cornerRadius, (v) => setImage((p) => { p.cornerRadius = Math.max(0, v ?? IMAGE_DEFAULT_CORNER_RADIUS); }, "imgradius"), { step: 1, min: 0, def: IMAGE_DEFAULT_CORNER_RADIUS })}`;
+        <div class=${img.contentMode === "fit" && img.zoom === 1 ? "hint keep" : "hint"}>${imagePanHint(img)}</div>
+        ${numberField("Corner radius", img.cornerRadius, (v) => setImage((p) => { p.cornerRadius = Math.max(0, v ?? IMAGE_DEFAULT_CORNER_RADIUS); }, "imgradius"), { step: 1, min: 0, def: IMAGE_DEFAULT_CORNER_RADIUS, unit: "pt" })}`;
       break;
     }
     case "tap": {
@@ -3665,12 +3909,12 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
     ${el.kind === "image" ? card(host, "timestamp", "Timestamp", imageTimestampSection(el.payload, (m, k) => upd((e) => m((e as typeof el).payload), k)),
       { color: kindColor, icon: "clock", summary: stamp ? `Shown · ${el.payload.timestampSize} pt` : "Hidden",
         ...(stamp ? { reset: resetKeys(TIMESTAMP_KEYS, "reset-stamp") } : {}) }) : nothing}
-    ${opts.tap === false ? nothing : tapCard(host, el)}
     ${card(host, "states", "States", statesEditor(host, el.payload.rules, el.kind,
       (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`, tested, textParts),
       { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(el.payload.rules).replace(/\.$/, ""),
         ...(el.payload.rules.length > 0 ? { reset: () => upd((e) => { e.payload.rules = []; }) } : {}) })}
-    ${opts.placement === false ? nothing : placementCard(host, el, family)}`;
+    ${opts.placement === false ? nothing : placementCard(host, el, family)}
+    ${opts.tap === false ? nothing : tapCard(host, el)}`;
 }
 
 /** The payload fields the Timestamp card owns. Pictures only. */
@@ -3754,7 +3998,7 @@ function tapSizeHint(host: EditorHost, tapId: string): TemplateResult | typeof n
   }
   if (parts.length === 0) return nothing;
   const small = smallest < SMALL_TAP_POINTS;
-  return html`<div class=${small ? "hint warn" : "hint"}>${parts.join(" · ")}${
+  return html`<div class=${small ? "hint warn" : "hint keep"}>${parts.join(" · ")}${
     small ? html`<br />That is small for a wrist. Show the tap area and drag its corners out.` : nothing}</div>`;
 }
 
@@ -3789,7 +4033,7 @@ function chartNumbersSection(host: EditorHost, el: Extract<CElement, { kind: "ch
   const taken = new Set(labels.map((l) => (l.payload.value.kind.kind === "chartStat" ? l.payload.value.kind.stat : "")));
   return html`
     ${labels.length === 0
-      ? html`<div class="hint">A chart with no numbers on it shows that a reading moved, not what it moved to. Add one and it appears as a text layer in this chart's group: drag it anywhere, give it any size or colour, and it prints the live value.</div>`
+      ? html`<div class="hint keep">A chart with no numbers on it shows that a reading moved, not what it moved to. Add one and it appears as a text layer in this chart's group: drag it anywhere, give it any size or colour, and it prints the live value.</div>`
       : html`
         <div class="chart-numbers">
           ${labels.map((l) => html`
@@ -3802,7 +4046,7 @@ function chartNumbersSection(host: EditorHost, el: Extract<CElement, { kind: "ch
             </div>`)}
         </div>
         <div class="hint">Each number is a text layer in this chart's group. Click one to edit it; drag it on the preview to move it. The × deletes it, and Undo brings it back.</div>`}
-    <div class="hint"><b>Add</b></div>
+    <div class="hint keep"><b>Add</b></div>
     <div class="adders">
       ${CHART_STATS.map(([stat, label]) => html`
         <button class="small" title=${taken.has(stat) ? `Add another ${label.toLowerCase()}` : `Add the ${label.toLowerCase()}`}
@@ -3892,7 +4136,7 @@ export function groupEditor(host: EditorHost, group: LayerGroup): TemplateResult
     <div class="hint">${group.locked
       ? "Locked: a drag on any of these layers moves all of them. Unlock to move one at a time."
       : "Unlocked: each layer moves on its own. With the group selected, a drag still moves all of them. Lock it when the part is the way you want it."}</div>
-    <div class="hint">${members.length} layer${members.length === 1 ? "" : "s"}: ${members.map((m) => layerTitle(m, ctx)).join(", ")}. Click one in the list to edit it.</div>
+    <div class="hint keep">${members.length} layer${members.length === 1 ? "" : "s"}: ${members.map((m) => layerTitle(m, ctx)).join(", ")}. Click one in the list to edit it.</div>
     <div class="adders">
       <button class="small" title="Keep the layers where they are and drop the folder" @click=${() => host.update((c) => ungroup(c, group.id))}>Ungroup</button>
     </div>`,
@@ -3918,7 +4162,7 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
     ${card(host, "look", `${familyTitle(family)} shape`, html`
       ${colorField("Background (blank = transparent)", layout.backgroundColorHex, (v) => upd((l) => { if (v === undefined) delete l.backgroundColorHex; else l.backgroundColorHex = v; }, "bg"), true, null)}
       ${colorField("Border colour", layout.borderColorHex, (v) => upd((l) => { if (v === undefined) delete l.borderColorHex; else l.borderColorHex = v; }, "border"), true, null)}
-      ${numberField("Border width (pt)", layout.borderWidth, (v) => upd((l) => { l.borderWidth = v ?? 2; }, "bw"), { step: 0.5, min: 0, def: 2 })}`,
+      ${numberField("Border width", layout.borderWidth, (v) => upd((l) => { l.borderWidth = v ?? 2; }, "bw"), { step: 0.5, min: 0, def: 2, unit: "pt" })}`,
       { color: SECTION_COLOR.place, icon: "shape", summary: `${bg} · ${border}`,
         ...(layout.backgroundColorHex !== undefined || layout.borderColorHex !== undefined || layout.borderWidth !== 2
           ? { reset: () => upd((l) => { delete l.backgroundColorHex; delete l.borderColorHex; l.borderWidth = 2; }, "reset-look") } : {}) })}
@@ -3930,7 +4174,7 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
       { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(layout.rules).replace(/\.$/, ""),
         ...(layout.rules.length > 0 ? { reset: () => upd((l) => { l.rules = []; }, "reset-states") } : {}) })}
     ${card(host, "placements", "Layers", html`
-      <div class="hint">${placed === 0
+      <div class="hint keep">${placed === 0
         ? `Nothing is on the ${familyTitle(family)} shape. The Layers card offers a copy of another shape's whole arrangement, or you can add layers here one at a time.`
         : `${placed} layer${placed === 1 ? " is" : "s are"} on the ${familyTitle(family)} shape. They belong to this shape alone: no other shape draws them, and editing one here cannot reach another shape.`}</div>`,
       { color: SECTION_COLOR.place, icon: "place", summary: placed === 0 ? "Nothing on it" : `${placed} layer${placed === 1 ? "" : "s"}` })}`;
@@ -3958,7 +4202,7 @@ function inlineEditor(host: EditorHost): TemplateResult {
     ${card(host, "symbol", "Symbol", html`
       ${symbolField(host, inline.symbol ?? "", (v) => upd((i) => { if (v) i.symbol = v; else delete i.symbol; }, "symbol"), "inline-symbol")}
       <div class="hint">Drawn before the text. Leave it blank for text only.</div>
-      <div class="hint">On the face: ${inline.symbol ? `${inline.symbol} ` : ""}${inline.label ? `${inline.label}: ` : ""}${host.resolve(inline.value) ?? "--"}</div>`,
+      <div class="hint keep">On the face: ${inline.symbol ? `${inline.symbol} ` : ""}${inline.label ? `${inline.label}: ` : ""}${host.resolve(inline.value) ?? "--"}</div>`,
       { color: KIND_COLOR.icon, icon: "icon", summary: inline.symbol || "None" })}`;
 }
 
@@ -4176,7 +4420,7 @@ function moveItem<T>(list: T[], from: number, to: number): void {
 export function rulesEditor(host: EditorHost, rules: Rule[], target: RuleTarget, locate: (cfg: CustomComplicationConfig) => Rule[] | undefined, key: string, parts?: readonly TextPart[]): TemplateResult {
   const upd = (mutate: (rules: Rule[]) => void, k?: string) => host.update((c) => { const r = locate(c); if (r) mutate(r); }, k ? `${key}-${k}` : undefined);
   return html`
-    ${rules.length === 0 ? html`<div class="hint">No rules yet. A rule checks values and changes how this ${target === "layout" ? "family" : "layer"} looks.</div>` : nothing}
+    ${rules.length === 0 ? html`<div class="hint keep">No rules yet. A rule checks values and changes how this ${target === "layout" ? "family" : "layer"} looks.</div>` : nothing}
     ${rules.map((rule, ri) => ruleEditor(host, rule, ri, rules.length, target, upd, `${key}-${rule.id}`, parts))}
     <div class="adders"><button class="small" @click=${() => upd((r) => { r.push(newRule()); })}>+ rule</button></div>
     <div class="hint">Inside a rule the first matching case wins. Across rules the later rule wins for the same property. Different properties add up.</div>`;
@@ -4200,7 +4444,7 @@ function ruleEditor(host: EditorHost, rule: Rule, ri: number, count: number, tar
       if (id) r.partId = id; else delete r.partId;
     }))}
     <div class="branches">
-      <span class="hint" style="margin:0 4px 0 0">Preview:</span>
+      <span class="hint keep" style="margin:0 4px 0 0">Preview:</span>
       <button class=${isActive("live") ? "active" : ""} @click=${() => host.setForced(rule.id, "live")}>Live</button>
       ${rule.cases.map((c, i) => html`<button class="${isActive(c.id) ? "active" : ""} ${live === c.id ? "live-match" : ""}" @click=${() => host.setForced(rule.id, { caseId: c.id })}>Case ${i + 1}</button>`)}
       ${rule.otherwise ? html`<button class="${isActive("otherwise") ? "active" : ""} ${live === "otherwise" ? "live-match" : ""}" @click=${() => host.setForced(rule.id, "otherwise")}>Otherwise</button>` : nothing}
@@ -4210,7 +4454,7 @@ function ruleEditor(host: EditorHost, rule: Rule, ri: number, count: number, tar
     ${checkField("Otherwise (when no case matches)", rule.otherwise !== undefined, (v) => updRule((r) => { if (v) r.otherwise = r.otherwise ?? []; else delete r.otherwise; }))}
     ${rule.otherwise
       ? html`<div class="case-box otherwise">
-          <div class="hint">${live === "otherwise" ? html`<b>Active now.</b> ` : nothing}Changes when no case matches:</div>
+          <div class="hint keep">${live === "otherwise" ? html`<b>Active now.</b> ` : nothing}Changes when no case matches:</div>
           ${changesEditor(host, rule.otherwise, target, (m) => updRule((r) => { if (r.otherwise) m(r.otherwise); }), `${key}-otherwise`, forPart)}
         </div>`
       : nothing}
@@ -4231,7 +4475,7 @@ function caseEditor(host: EditorHost, c: RuleCase, ci: number, rule: Rule, targe
     <div class="row-inline">
       ${segField("When", c.when.join, [["all", "All of these are true"], ["any", "Any of these is true"]], (v) => updCase((x) => { x.when.join = v; }))}
     </div>
-    ${c.when.tests.length === 0 ? html`<div class="hint">No tests: this case always matches.</div>` : nothing}
+    ${c.when.tests.length === 0 ? html`<div class="hint keep">No tests: this case always matches.</div>` : nothing}
     ${c.when.tests.map((t, ti) => testEditor(host, t, ti, (m) => updCase((x) => { const y = x.when.tests.find((z) => z.id === t.id); if (y) m(y); }), () => updCase((x) => { x.when.tests = x.when.tests.filter((z) => z.id !== t.id); }), `${key}-${t.id}`))}
     <div class="adders">
       <button class="small" @click=${() => updCase((x) => { x.when.tests.push(newTest()); })}>+ test</button>
@@ -4247,7 +4491,7 @@ function caseEditor(host: EditorHost, c: RuleCase, ci: number, rule: Rule, targe
         ${RULE_PRESETS.map((p) => html`<option value=${p.kind} title=${p.hint}>${p.label}</option>`)}
       </select>
     </div>
-    <div class="hint" style="margin-top:8px">Then:</div>
+    <div class="hint keep" style="margin-top:8px">Then:</div>
     ${changesEditor(host, c.then, target, (m) => updCase((x) => m(x.then)), `${key}-then`, forPart)}
   </div>`;
 }
@@ -4292,7 +4536,7 @@ function testEditor(host: EditorHost, t: import("./model.js").Test, ti: number, 
       <button class="icon danger" title="Delete test" @click=${remove}>${uiIcon("delete")}</button>
     </div>
     ${c.kind === "isStale"
-      ? html`<div class="hint">True when the watch's cached values are older than the staleness limit. The value below is not read.</div>`
+      ? html`<div class="hint keep">True when the watch's cached values are older than the staleness limit. The value below is not read.</div>`
       : valueEditor(host, t.value, (v) => upd((x) => { x.value = v; }, "lhs"), { showResolved: true, label: "Value", key: `${key}-lhs` })}
     ${selectField("Comparison", c.kind, COMPARISON_KINDS.map((k): [ComparisonKind, string] => [k, COMPARISON_LABELS[k]]), (v) => upd((x) => { x.comparison = switchComparison(x.comparison, v); }))}
     ${extra}
@@ -4344,7 +4588,7 @@ function weekdayRow(options: string[], set: (days: number[]) => void): TemplateR
 function changesEditor(host: EditorHost, changes: StyleChange[], target: RuleTarget, updList: (m: (list: StyleChange[]) => void, k?: string) => void, key: string, forPart = false): TemplateResult {
   const allowed = changeKindsFor(target, forPart);
   return html`
-    ${changes.length === 0 ? html`<div class="hint">No changes.</div>` : nothing}
+    ${changes.length === 0 ? html`<div class="hint keep">No changes.</div>` : nothing}
     ${changes.map((ch, i) => changeEditor(host, ch, i, target, (m, k) => updList((list) => { if (list[i]) m(list[i]!); }, k ? `${key}-${i}-${k}` : undefined), () => updList((list) => { list.splice(i, 1); }), `${key}-${i}`, forPart))}
     <select class="adder" @change=${(e: Event) => { const sel = e.target as HTMLSelectElement; const kind = sel.value as StyleChangeKind; sel.value = ""; if (kind) updList((list) => { list.push(newStyleChange(kind)); }); }}>
       <option value="">+ change…</option>
@@ -4365,7 +4609,7 @@ function changeEditor(host: EditorHost, ch: StyleChange, i: number, target: Rule
       <span class="spacer"></span>
       <button class="icon danger" title="Delete change" @click=${remove}>${uiIcon("delete")}</button>
     </div>
-    ${partIgnores ? html`<div class="hint">A part only takes colour, text, size, weight, hide and show. Pick Whole text to use this change.</div>` : nothing}
+    ${partIgnores ? html`<div class="hint keep">A part only takes colour, text, size, weight, hide and show. Pick Whole text to use this change.</div>` : nothing}
     ${changeBody(host, ch, upd, key)}
   </div>`;
 }
@@ -4389,8 +4633,16 @@ function changeBody(host: EditorHost, ch: StyleChange, upd: (m: (c: StyleChange)
       body = valueEditor(host, v, (nv) => upd((c) => { c.value = nv; }, "value"), { noFormat: ch.kind === "setIcon", symbol: ch.kind === "setIcon", showResolved: true, label: ch.kind === "setIcon" ? "Symbol" : "To", key: `${key}-value` });
     }
   } else if (payload === "number") {
-    const opts = ch.kind === "setOpacity" ? { step: 0.05, min: 0, max: 1 } : ch.kind === "setRotation" ? { step: 1 } : { step: 0.5, min: 0 };
-    body = numberField(ch.kind === "setOpacity" ? "Opacity (0 to 1)" : ch.kind === "setRotation" ? "Degrees" : ch.kind === "setFontSize" ? "Points" : "Value", ch.number ?? 0, (n) => upd((c) => { c.number = n ?? 0; }, "number"), opts);
+    const opts = ch.kind === "setOpacity" ? { step: 0.05, min: 0, max: 1 }
+      : ch.kind === "setRotation" ? { step: 1, unit: "°" }
+      : ch.kind === "setFontSize" || ch.kind === "setBorderWidth" ? { step: 0.5, min: 0, unit: "pt" }
+      : { step: 0.5, min: 0 };
+    const label = ch.kind === "setOpacity" ? "Opacity (0 to 1)"
+      : ch.kind === "setRotation" ? "Angle"
+      : ch.kind === "setFontSize" ? "Size"
+      : ch.kind === "setBorderWidth" ? "Width"
+      : "Value";
+    body = numberField(label, ch.number ?? 0, (n) => upd((c) => { c.number = n ?? 0; }, "number"), opts);
   } else if (payload === "weight") {
     body = segField("Weight", ch.weight ?? "regular", FONT_WEIGHTS, (w) => upd((c) => { c.weight = w; }));
   }
@@ -4443,7 +4695,7 @@ export function statesEditor(
       <div class="states-switch">
         <button class="link" ?disabled=${!shape.ok} title=${shape.ok ? "Go back to the table" : "These rules cannot be shown as a table"}
           @click=${(e: Event) => { advancedRules.delete(key); requestRerender(e.target); }}>Show as table</button>
-        ${shape.ok ? nothing : html`<span class="hint">${shape.reason}</span>`}
+        ${shape.ok ? nothing : html`<span class="hint keep">${shape.reason}</span>`}
       </div>
       ${rulesEditor(host, rules, target, locate, key, parts)}`;
   }
@@ -4564,7 +4816,7 @@ function statesTable(
   return html`
     <div class="states">
       ${valueEditor(host, tested ?? literal(""), setTested, { label: "Testing", showResolved: true, key: `${key}-lhs` })}
-      ${tested === undefined ? html`<div class="hint">Choose what these states look at.</div>` : nothing}
+      ${tested === undefined ? html`<div class="hint keep">Choose what these states look at.</div>` : nothing}
       ${parts === undefined ? nothing : partTargetField(parts, partId, describeContext(host), setPart)}
       <table class="states-table">
         <thead>

@@ -594,6 +594,21 @@ describe("Draft", () => {
     expect(d.config.name).toBe("AB");
   });
 
+  it("holds a gesture open as one undo step, whatever keys its edits carry", () => {
+    const d = Draft.fromDocument(fixture.config, 2);
+    d.beginGesture();
+    d.update((c) => { c.name = "A"; });
+    d.update((c) => { c.name = "AB"; }, "one");
+    d.update((c) => { c.name = "ABC"; }, "two");
+    d.endGesture();
+    d.update((c) => { c.name = "ABCD"; });
+    d.undo();
+    expect(d.config.name).toBe("ABC");
+    d.undo();
+    expect(d.config.name).toBe("Living Room");
+    expect(d.canUndo).toBe(false);
+  });
+
   it("re-derives dataSources in the encoded document", () => {
     const d = Draft.fromDocument(fixture.config, 2);
     const enc = d.encoded() as { dataSources: unknown[] };

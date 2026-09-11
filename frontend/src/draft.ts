@@ -51,6 +51,10 @@ export class Draft {
   private future: CustomComplicationConfig[] = [];
   private coalesceKey?: string;
   private coalesceUntil = 0;
+  /** A gesture held open by `beginGesture`: every update until `endGesture`
+   * is one undo step, whatever coalescing key each one carries. */
+  private held = false;
+  private heldStepTaken = false;
 
   constructor(public config: CustomComplicationConfig, baseRevision: number | null) {
     this.baseRevision = baseRevision;
@@ -85,12 +89,15 @@ export class Draft {
    * where a layer the change added belongs. */
   update(mutate: (cfg: CustomComplicationConfig) => void, coalesce?: string, home?: FamilyKind): void {
     const now = Date.now();
-    const merge = coalesce !== undefined && coalesce === this.coalesceKey && now < this.coalesceUntil;
+    const merge = this.held
+      ? this.heldStepTaken
+      : coalesce !== undefined && coalesce === this.coalesceKey && now < this.coalesceUntil;
     if (!merge) {
       this.past.push(structuredClone(this.config));
       if (this.past.length > HISTORY_LIMIT) this.past.shift();
       this.future = [];
     }
+    this.heldStepTaken = this.held;
     this.coalesceKey = coalesce;
     this.coalesceUntil = coalesce === undefined ? 0 : now + 800;
     const next = structuredClone(this.config);
@@ -119,10 +126,21 @@ export class Draft {
     this.baseline = "";
   }
 
-  /** Close the current coalescing window (pointer up, blur). */
+  /** Hold one gesture open, such as a drag on a number's title: every update
+   * until `endGesture` lands in a single undo step, even when the edits carry
+   * no coalescing key or different ones. */
+  beginGesture(): void {
+    this.endGesture();
+    this.held = true;
+  }
+
+  /** Close the current coalescing window (pointer up, blur), and any held
+   * gesture. */
   endGesture(): void {
     this.coalesceKey = undefined;
     this.coalesceUntil = 0;
+    this.held = false;
+    this.heldStepTaken = false;
   }
 
   undo(): void {

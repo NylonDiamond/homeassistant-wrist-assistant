@@ -14,7 +14,8 @@ export type UiIconName =
   | "text" | "icon" | "gauge" | "chart" | "timeline" | "shape" | "image" | "tap"
   | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "plus"
   | "lock" | "unlock" | "folder" | "ungroup" | "watch"
-  | "compact" | "expanded" | "search" | "undo" | "redo" | "expand" | "left" | "right";
+  | "compact" | "expanded" | "search" | "undo" | "redo" | "expand" | "left" | "right"
+  | "braces" | "link";
 
 function shape(name: UiIconName) {
   switch (name) {
@@ -56,6 +57,13 @@ function shape(name: UiIconName) {
       return svg`<path d="M6 9L12 15L18 9" />`;
     case "plus":
       return svg`<path d="M12 5V19M5 12H19" />`;
+    // A live value, the way a template writes one: the Parts row's "Add a
+    // value" beside its "T" for typed text.
+    case "braces":
+      return svg`<path d="M9 4.5C6.9 4.5 6.3 5.55 6.3 7.5v2.4c0 1.2-.75 2.1-2.1 2.1 1.35 0 2.1.9 2.1 2.1v2.4c0 1.95.6 3 2.7 3" /><path d="M15 4.5c2.1 0 2.7 1.05 2.7 3v2.4c0 1.2.75 2.1 2.1 2.1-1.35 0-2.1.9-2.1 2.1v2.4c0 1.95-.6 3-2.7 3" />`;
+    // A setting that follows another one until it is given its own value.
+    case "link":
+      return svg`<path d="M10.2 13.8L13.8 10.2" /><path d="M10.8 6.9l1.35-1.35a3.6 3.6 0 0 1 5.1 5.1l-1.35 1.35" /><path d="M13.2 17.1l-1.35 1.35a3.6 3.6 0 0 1-5.1-5.1l1.35-1.35" />`;
     // The app mark in the header: a watch case with its band stubs.
     case "watch":
       return svg`<rect x="6" y="6.5" width="12" height="11" rx="3" /><path d="M9 6.5L9.6 3H14.4L15 6.5M9 17.5L9.6 21H14.4L15 17.5" />`;

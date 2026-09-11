@@ -105,6 +105,9 @@ import {
   type EffectivePlacement,
   type PickedFlag,
   ALL_SECTIONS,
+  SCRUB_END,
+  SCRUB_START,
+  card,
   colorField,
   colorWords,
   contentSummary,
@@ -119,8 +122,6 @@ import {
   groupEditor,
   layerEditor,
   layerTitle,
-  placementCard,
-  tapCard,
   lookSummary,
   namedValueEditor,
   newNamedValue,
@@ -269,8 +270,9 @@ const CANVAS_MIN = 320;
 const CHROME_3 = 32 + 4 * 8 + 2 * 8;
 const CHROME_2 = 32 + 2 * 8 + 8;
 /** Versioned: widths dragged for the old three-list layout gave the preview
- * the narrowest column of the three, so they start over here. */
-const COL_STORE_KEY = "wrist-assistant-panel.columns.v2";
+ * the narrowest column of the three, and the inspector was dragged wide while
+ * its rows stacked their titles over their controls, so both start over. */
+const COL_STORE_KEY = "wrist-assistant-panel.columns.v3";
 
 const clampColumn = (n: number) => Math.max(COL_MIN, Math.min(COL_MAX, Math.round(n)));
 
@@ -394,6 +396,12 @@ export class WristAssistantPanel extends LitElement {
   /** The inspector cards that are open. One entry means one at a time. Reset
    * to the first card whenever something else is selected (willUpdate). */
   @state() private openSections: ReadonlySet<string> = new Set(["content"]);
+  /** The inspector cards showing their help text, by card id. Not stored:
+   * help is something asked for now, not a setting. */
+  @state() private helpSections: ReadonlySet<string> = new Set();
+  /** A drag on a number's title is one undo step, however many edits it makes. */
+  private readonly scrubStart = () => this.draft?.beginGesture();
+  private readonly scrubEnd = () => this.draft?.endGesture();
   /** The header's complication menu is open. */
   @state() private pickerOpen = false;
   /** The shape the picker menu is narrowed to. "all" is the default and the
@@ -587,11 +595,13 @@ export class WristAssistantPanel extends LitElement {
          eight kinds still has one obvious "you are here". */
       --wa-sel-bg: #edf0fb;
       --wa-sel-ring: #c5cef2;
-      /* Reset buttons, in one colour of their own. Pinned rather than taken
-         from the theme's warning colour, which is orange or red in plenty of
-         themes: these mark a setting someone changed, not a problem. Darker
-         on a light card, where a bright yellow all but disappears. */
-      --wa-reset: #B07D00;
+      /* Inspector rows: a fixed title column, so every control starts at the
+         same x, and one soft fill for the boxes in them. The fill is ink at
+         low strength, so it suits both skins without a second value. The lit
+         button of a segmented control sits a step above that fill. */
+      --wa-lab: 88px;
+      --wa-field: color-mix(in srgb, var(--wa-ink) 5.5%, transparent);
+      --wa-seg-on: var(--wa-card);
       /* Two colours for the things that come out of Home Assistant rather
          than out of this editor: the entity a layer names, and the value it
          is reading right now. They are the same two colours in the search
@@ -630,7 +640,7 @@ export class WristAssistantPanel extends LitElement {
       --wa-primary-ink: var(--wa-accent-ink);
       --wa-sel-bg: color-mix(in srgb, var(--wa-accent) 18%, var(--wa-card));
       --wa-sel-ring: color-mix(in srgb, var(--wa-accent) 45%, transparent);
-      --wa-reset: #FFD60A;
+      --wa-seg-on: #2b2f3d;
       --wa-ent: #5fd4c4;
       --wa-val: #ffc45c;
       --wa-ent-bg: color-mix(in srgb, var(--wa-ent) 14%, transparent);
@@ -1300,13 +1310,15 @@ export class WristAssistantPanel extends LitElement {
        shows them all, the way a dropdown never can. Buttons share the width
        evenly and clip a label rather than wrap it, so a row never grows a
        second line, and the tint takes the section's colour where there is one. */
-    .seg.wide { display: flex; width: 100%; min-width: 0; height: 28px; border-radius: 7px; background: var(--wa-panel); }
+    .seg.wide { display: flex; width: 100%; min-width: 0; height: 24px; border-radius: 6px; background: var(--wa-field); box-shadow: none; }
     .seg.wide button {
-      flex: 1 1 0; min-width: 0; padding: 0 8px;
-      font-size: 12px; font-weight: 600; letter-spacing: 0; line-height: 24px;
+      flex: 1 1 0; min-width: 0; padding: 0 4px; border-radius: 4px;
+      font-size: 11.5px; font-weight: 500; letter-spacing: 0; line-height: 20px;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; text-align: center;
     }
-    .seg.wide button.on { color: var(--wa-ink); background: var(--wa-card); box-shadow: 0 1px 2px rgba(0,0,0,.08); font-weight: 600; }
+    .seg.wide button.on { color: var(--wa-ink); background: var(--wa-seg-on); box-shadow: 0 1px 1.5px rgba(0,0,0,.22); }
+    /* The choice a setting falls back to while it has none of its own. */
+    .seg.wide button.inh { color: var(--wa-ink); outline: 1px dashed var(--wa-muted); outline-offset: -3px; }
     .seg.wide button:focus-visible { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--c, var(--wa-accent)) 60%, transparent); }
     .seg.wide button:disabled, .seg.wide button:disabled:hover { color: var(--wa-muted); opacity: .38; cursor: not-allowed; }
     .field.seg-field { align-items: center; }
@@ -1315,7 +1327,7 @@ export class WristAssistantPanel extends LitElement {
     .readings-row .seg.wide { flex: 1 1 auto; width: auto; }
     /* Three digits is the most this box ever holds. The type selector is
        there to outrank the ".field input[type=number]" full-width rule. */
-    .field .readings-row input.short[type=number] { width: 56px; flex: none; text-align: right; }
+    .field .readings-row input.short[type=number] { width: 46px; flex: none; text-align: right; }
     /* The count used to sit against the buttons as a bare number, which reads
        as a setting nobody named. Two quiet words either side make the row a
        sentence, "Average into 24 slots", and the number stops being a riddle. */
@@ -1402,17 +1414,6 @@ export class WristAssistantPanel extends LitElement {
       .gate-card { padding: 26px 22px 24px; }
       .gate-title { font-size: 21px; }
     }
-    /* The complication bar: one line saying what this whole face is, tinted in
-       the complication's own colour so it never reads as part of the canvas. */
-    .card.comp-bar {
-      display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; flex: none;
-      background: color-mix(in srgb, ${unsafeCSS(SECTION_COLOR.complication)} 8%, var(--wa-card));
-      box-shadow: 0 0 0 1px color-mix(in srgb, ${unsafeCSS(SECTION_COLOR.complication)} 25%, var(--wa-card));
-    }
-    .card.comp-bar .panel-title { margin: 0; flex: none; }
-    .card.comp-bar .spacer { flex: 1; min-width: 0; }
-    .card.comp-bar .settings { flex: 1 1 auto; min-width: 0; max-width: none; }
-    .card.comp-bar .acts { display: flex; align-items: center; gap: 2px; flex: none; }
     .canvas-bar {
       display: flex; align-items: center; gap: 4px; padding: 8px 10px; flex-wrap: wrap; font-size: 13px; flex: none;
       border-bottom: 1px solid var(--wa-line); background: var(--wa-raised);
@@ -1505,59 +1506,6 @@ export class WristAssistantPanel extends LitElement {
     .under .tail b { font-weight: 700; }
     /* The two lists under the face: what the complication defines for itself,
        and what the house is telling it right now. */
-    /* Where the selected layer sits, under the face rather than in the far
-       column: the same tinted card, laid out as one row so it costs the canvas
-       two lines instead of a scroll. */
-    .place-wrap { flex: none; }
-    .sec.place-bar, .sec.tap-bar { margin: 0; border-radius: var(--wa-r-md); }
-    .sec.place-bar .sec-h, .sec.tap-bar .sec-h { height: 34px; cursor: default; }
-    .sec.place-bar .sec-h:hover, .sec.tap-bar .sec-h:hover { background: transparent; }
-    .sec.place-bar .sec-b.place-row, .sec.tap-bar .sec-b.tap-row {
-      display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 0 0 10px;
-    }
-    /* A bar with nothing to say yet: neutral ground and a neutral mark, with
-       the words at 60%, so it reads as a place a setting will appear rather
-       than as a setting that is on. The toggle itself stays at full strength,
-       since switching it on is the whole point of the row being there. */
-    .sec.muted-bar,
-    .sec.muted-bar[data-open="true"] {
-      background: color-mix(in srgb, var(--wa-muted) 6%, var(--wa-card));
-      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-muted) 20%, var(--wa-card));
-    }
-    .sec.muted-bar .sec-h .swatch { background: var(--wa-muted); }
-    .sec.muted-bar .sec-h h4, .sec.muted-bar .sec-h .sum, .sec.muted-bar .sec-b .hint { opacity: .6; }
-    /* The Tap row: the toggle, then whatever the action needs, all on one line.
-       tappableSection puts its fields in a .value-editor block, so that block
-       is what has to lie down rather than stack. */
-    .sec-b.tap-row > :is(.field, .value-editor, .hint) { margin-top: 0; padding-top: 0; border-top: 0; }
-    .tap-row .field.check { display: flex; align-items: center; gap: 8px; flex: none; margin: 0; }
-    .tap-row .value-editor {
-      display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px;
-      flex: 1 1 320px; min-width: 260px; margin: 0; padding-left: 10px;
-    }
-    .tap-row .value-editor .field { display: flex; align-items: center; gap: 6px; margin: 0; width: auto; min-width: 0; }
-    .tap-row .value-editor .field > span { flex: none; font-size: 12.5px; font-weight: 600; color: var(--wa-muted); white-space: nowrap; }
-    .tap-row .value-editor .field select { width: 150px; }
-    .tap-row .value-editor .field.entity-field { flex: 1 1 200px; max-width: 300px; }
-    .tap-row .value-editor .field.entity-field input { width: 100%; }
-    .tap-row .value-editor .chips { flex: none; }
-    /* The prose, muted, at the end of the line or on a line of its own. */
-    .sec-b.tap-row > .hint { margin: 0; min-width: 0; color: var(--wa-muted); }
-    /* Off, the one short hint sits on the line beside the toggle; on, the long
-       one drops under the fields it explains. */
-    .sec-b.tap-row > .value-editor ~ .hint:last-child { flex-basis: 100%; }
-    /* A row, so the hairlines that separate a card's stacked blocks go. */
-    .sec-b.place-row > :is(.field, .grid4, .hint) { margin-top: 0; padding-top: 0; border-top: 0; }
-    .place-row .grid4 { display: flex; gap: 6px; flex: none; }
-    .place-row .grid4 .field { width: 74px; }
-    .place-row .field { margin: 0; }
-    .place-row .field.slider { display: flex; align-items: center; gap: 8px; flex: 1 1 200px; min-width: 170px; }
-    .place-row .field.slider > span { flex: none; }
-    .place-row .field.slider .slider-row { flex: 1; min-width: 0; }
-    .place-row .field.check { display: flex; align-items: center; gap: 8px; flex: none; }
-    /* The one line of prose sits at the far end, or drops under the row when
-       there is no room for it there. */
-    .sec-b.place-row > .hint { margin: 0 0 0 auto; text-align: right; flex: 1 1 220px; min-width: 180px; }
     .under-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; flex: none; }
     .card.tint-values {
       padding: 10px 14px 12px;
@@ -1585,30 +1533,11 @@ export class WristAssistantPanel extends LitElement {
       background: var(--c, var(--wa-accent)); border: 0; color: #fff;
     }
     .panel-title .swatch svg { width: 13px; height: 13px; stroke-width: 2.4; }
-    .settings { max-width: 1100px; }
-    .settings .gen-row { display: grid; grid-template-columns: minmax(160px, 1.3fr) minmax(130px, .8fr) minmax(150px, 1fr) minmax(220px, 1.4fr); gap: 4px 18px; align-items: start; }
-    .settings .gen-row .field { display: flex; flex-direction: column; align-items: stretch; gap: 5px; margin: 4px 0; min-width: 0; }
-    .settings .gen-row .field > span { font-size: 12px; }
-    .settings .flash-row { display: flex; align-items: center; gap: 10px; min-height: 32px; min-width: 0; }
-    .settings .flash-row input.flash-color { width: 36px; height: 28px; padding: 2px; }
-    .settings .flash-row .muted { color: var(--wa-muted); font-size: 13px; }
-    .settings .entity-field, .settings .hint { max-width: 800px; }
-    /* generalEditor draws stacked label-over-control rows everywhere else; on
-       the complication bar the same fields lie down in one line, label beside
-       control. The row's own box drops out of the layout so its fields join
-       the bar's flex line directly, and whatever a tap action needs lands
-       beside them instead of under them. */
-    .settings.inline { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
-    .settings.inline .gen-row { display: contents; }
-    .settings.inline .field { flex-direction: row; align-items: center; gap: 6px; margin: 0; width: auto; min-width: 0; }
-    .settings.inline .field > span { flex: none; font-size: 12.5px; font-weight: 600; color: var(--wa-muted); white-space: nowrap; }
-    .settings.inline .field input[type=text] { width: 150px; }
-    .settings.inline .field select { width: 150px; }
-    .settings.inline .field.flash-cell .flash-row { min-height: 0; }
-    .settings.inline .field.entity-field, .settings.inline .field.value-chip-field { flex: 1 1 200px; max-width: 300px; }
-    .settings.inline .field.entity-field input { width: 100%; }
-    /* The rename warning is a second line under the row, not a cell in it. */
-    .settings.inline .hint { flex-basis: 100%; margin: 2px 0 0; max-width: none; }
+    /* The complication card's Flash row: the switch, then the colour it
+       flashes, or the word Off. */
+    .flash-row { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 26px; }
+    .flash-row input.flash-color { width: 34px; height: 22px; padding: 1px 2px; border-radius: 5px; }
+    .flash-row .muted { color: var(--wa-muted); font-size: 12px; }
     /* Shared values: a chip per named value, laid out as a titled sub-section
        of the settings rather than a loose row of boxes. The whole chip opens
        the editor, so it carries the hover and selected states a row would, and
@@ -1661,20 +1590,9 @@ export class WristAssistantPanel extends LitElement {
     .blank-shape .hint { margin: 5px 0 0; }
     .blank-shape .adders { margin-top: 9px; }
 
-    /* The layers this complication has that this shape does not draw. Under
-       the list and shut, so the list above stays a reading of the preview
-       beside it, and quiet: these rows are a way back in, not the work. */
-      list-style: none; cursor: pointer; font-size: 12px; color: var(--wa-muted);
-      padding: 4px 6px; border-radius: var(--wa-r-sm); display: flex; align-items: center; gap: 6px;
-    }
-      display: grid; grid-template-columns: 4px minmax(0, 1fr) auto; align-items: center; gap: 8px;
-      padding: 5px 8px; border-radius: var(--wa-r-sm); cursor: pointer; font-size: 13px;
-      border: 1px dashed var(--wa-line); background: transparent; color: var(--wa-muted);
-    }
-
     /* The inspector: crumbs on top, then one card per section of the thing
        selected, tinted by what it is. */
-    .column.inspector { padding: 10px 16px 12px; }
+    .column.inspector { padding: 10px 12px 12px; }
     .insp-head { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0; position: sticky; top: 0; background: var(--wa-card); z-index: 5; }
     .crumbs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12.5px; font-weight: 600; color: var(--wa-muted); }
     .crumbs button { font: inherit; font-size: 12.5px; font-weight: 600; background: transparent; border: 0; padding: 3px 6px; border-radius: 5px; color: var(--wa-muted); cursor: pointer; }
@@ -1692,80 +1610,85 @@ export class WristAssistantPanel extends LitElement {
     }
     .insp-head .expand:hover { background: var(--wa-panel); color: var(--wa-ink); }
     .insp-body { padding: 0 0 24px; }
-    .empty-insp { padding: 40px 20px; text-align: center; color: var(--wa-muted); display: flex; flex-direction: column; gap: 10px; align-items: center; font-size: 13px; }
-    .empty-insp svg { width: 40px; height: 40px; opacity: .5; }
-    .empty-insp b { color: var(--wa-ink); font-weight: 500; font-size: 14px; }
-    /* One card per section, washed in that section's colour: the ring and the
-       ground are the same hue at two strengths, so a stack of five cards reads
-       as five subjects without a single border between them. */
+    /* With no layer selected the inspector is the complication: its name, then
+       its four actions, which wrap under the name when the column is narrow. */
+    .insp-head.comp-head { height: auto; min-height: 34px; flex-wrap: wrap; row-gap: 0; }
+    .comp-head .crumbs { flex: 1 1 100px; }
+    .comp-acts { display: flex; align-items: center; gap: 0; margin-left: auto; flex: none; }
+    .comp-acts button.ghost { font-size: 12px; padding: 0 6px; min-height: 24px; border-radius: 6px; }
+    .insp-note { margin: 12px 0 0; font-size: 12px; line-height: 1.45; color: var(--wa-muted); }
+    /* One flat section per subject: a hairline above, a 36px header with a
+       small mark in the section's colour, and a body of label-left rows. No
+       box inside the inspector's own card, so nothing is framed twice. The
+       negative margin runs the hairline and the header's hover to the
+       column's edges while the rows keep the column's padding. */
     .sec {
       --c: var(--wa-accent);
-      border: 0; border-radius: 9px; padding: 0 12px; margin: 6px 0 0; overflow: hidden;
-      background: color-mix(in srgb, var(--c) 8%, var(--wa-card));
-      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 28%, var(--wa-card));
-      transition: box-shadow .12s ease-out;
+      margin: 0 -12px; padding: 0 12px; border-top: 1px solid var(--wa-line);
     }
-    .sec[data-open="true"] { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, var(--wa-card)); }
-    .sec-h { display: flex; align-items: center; gap: 8px; height: 42px; margin: 0 -12px; padding: 0 12px; cursor: pointer; transition: background-color .12s ease-out; }
-    .sec-h:hover { background: color-mix(in srgb, var(--c) 10%, transparent); }
+    .sec-h {
+      display: flex; align-items: center; gap: 8px; height: 36px; margin: 0 -12px; padding: 0 6px 0 12px;
+      cursor: pointer; user-select: none; transition: background-color .12s ease-out;
+    }
+    .sec-h:hover { background: color-mix(in srgb, var(--wa-ink) 4.5%, transparent); }
+    .sec-h.pinned { cursor: default; }
+    .sec-h.pinned:hover { background: transparent; }
     .sec-h:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--c); }
-    .sec-h .swatch { width: 20px; height: 20px; border-radius: 5px; background: var(--c); border: 0; color: #fff; flex: none; display: grid; place-items: center; }
-    .sec-h .swatch svg { width: 12px; height: 12px; stroke-width: 2.4; }
+    .sec-h .swatch {
+      width: 18px; height: 18px; border-radius: 5px; border: 0; flex: none; display: grid; place-items: center;
+      background: color-mix(in srgb, var(--c) 22%, transparent); color: var(--c);
+    }
+    .sec-h .swatch svg { width: 11px; height: 11px; stroke-width: 2.2; }
     /* Title and summary on one line: the summary is what the card says while
        it is shut, so it belongs beside the title, not under it. */
     .sec-h .tt { display: flex; flex-direction: row; align-items: center; gap: 8px; min-width: 0; flex: 1; }
-    /* A row, so a card's reset button sits against its title rather than out
-       at the far edge beside the chevron, which reads as a header action for
-       the card as a whole instead of a way back for what is in it. */
-    .sec-h h4 { margin: 0; flex: none; font-size: 13.5px; font-weight: 700; letter-spacing: 0; display: flex; align-items: center; gap: 2px; white-space: nowrap; }
-    /* Reset buttons. One control, two places: beside a setting's title, and in
-       a card's header for everything the card owns. It is drawn only while
-       something is away from its default, so its presence is the "changed"
-       mark, and a card with no buttons in it is a card nobody touched. */
-    /* Yellow, and a heavier stroke than the other glyphs: at 13px the shared
-       1.7 reads as a hairline, and this one has to be spotted rather than
-       looked for. Same colour in a card header as beside a setting, so the
-       two are obviously the same control at two scopes. */
-    button.icon.reset { flex: none; color: var(--wa-reset); opacity: .9; }
-    button.icon.reset svg.ui-icon { stroke-width: 2.6; }
-    button.icon.reset:hover:not(:disabled) { opacity: 1; background: color-mix(in srgb, var(--wa-reset) 20%, transparent); }
-    button.icon.reset:focus-visible { box-shadow: 0 0 0 3px color-mix(in srgb, var(--wa-reset) 40%, transparent); }
-    /* Small enough to sit on a 13px label line without pushing it around. */
-    button.icon.tiny { width: 20px; height: 20px; border-radius: 6px; margin: -4px 0; }
-    button.icon.tiny svg.ui-icon { width: 13px; height: 13px; }
-    /* The button sits snug after the title text rather than at the right end
-       of the label column: half these fields put the label above the control
-       and half beside it, and a right-aligned button lands next to the wrong
-       label in the first kind. The title keeps its place either way. */
-    .field > span.has-reset { display: flex; align-items: center; justify-content: flex-start; gap: 2px; }
-    .sec-h .sum { margin-left: auto; max-width: 150px; color: var(--wa-muted); font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .sec-h .chev { color: var(--wa-line-strong); flex: none; transition: transform .15s ease-out; }
-    .sec-h .chev svg { width: 15px; height: 15px; }
+    .sec-h h4 { margin: 0; flex: none; font-size: 12.5px; font-weight: 650; letter-spacing: 0; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .sec-h .sum { margin-left: auto; min-width: 0; color: var(--wa-muted); font-size: 11.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* An open card shows its rows, so the summary would only repeat them. A
+       pinned card is always open and keeps its summary as a subtitle. */
+    .sec[data-open="true"] .sec-h:not(.pinned) .sum { display: none; }
+    .sec-h .chev { color: var(--wa-muted); opacity: .6; flex: none; transition: transform .15s ease-out; }
+    .sec-h .chev svg { width: 14px; height: 14px; }
     .sec[data-open="true"] .sec-h .chev { transform: rotate(180deg); }
-    .sec-b { padding: 2px 0 14px; }
-    /* A section is a stack of blocks, not one run of prose. Every control
-       block after the first draws a hairline above itself, and the hint that
-       explains a block stays under it on the same side of the line, so the
-       eye gets "control, then why" in pairs instead of a wall.
-
-       Only direct children are ruled: the fields inside a .grid2 are one
-       block and must not be cut apart from each other. */
-    .sec-b > :is(.field, .grid2, .grid3, .grid4, .chart-numbers, .adders, .states-switch, .value-editor, details.sub, .rich-parts) {
-      margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--wa-line);
+    .sec-b { padding: 0 0 10px; }
+    .sec-b > .hint { margin: 2px 0 6px; }
+    .sec-b > :is(.adders, .chart-numbers, .states-switch, details.sub) { margin-top: 6px; }
+    .sec-b > :is(button.small, button.link) { margin: 4px 0; }
+    /* The reset dot. One control, two places: in the gutter left of a changed
+       setting's title, and beside a card's title for everything the card owns.
+       It is drawn only while something is away from its default, so the dots
+       are the list of what someone changed. The pseudo-element widens the hit
+       area without widening the dot. */
+    button.reset-dot {
+      position: absolute; left: -9px; top: 12px; width: 6px; height: 6px; margin: 0; padding: 0;
+      border: 0; border-radius: 50%; background: var(--wa-accent); cursor: pointer; flex: none;
     }
-    .sec-b > :is(.field, .grid2, .grid3, .grid4, .chart-numbers, .adders, .states-switch, .value-editor, details.sub, .rich-parts):first-child {
-      margin-top: 0; padding-top: 0; border-top: 0;
+    button.reset-dot::after { content: ""; position: absolute; inset: -7px; }
+    button.reset-dot:hover, button.reset-dot:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--wa-accent) 32%, transparent); }
+    .sec-h h4 button.reset-dot { position: relative; left: auto; top: auto; }
+    /* Each card's "?": quiet until the header is hovered, lit while its help
+       is showing. A touch screen has no hover, so there it always shows. */
+    button.sec-help {
+      flex: none; width: 20px; height: 20px; padding: 0; border-radius: 50%; cursor: pointer;
+      font: inherit; font-size: 11px; font-weight: 700; line-height: 1; display: grid; place-items: center;
+      border: 1px solid var(--wa-line-strong); background: transparent; color: var(--wa-muted);
+      opacity: 0; transition: opacity .12s ease-out, color .12s ease-out, border-color .12s ease-out;
     }
-    /* The custom span's day/hour/minute row belongs to the Span picker above
-       it, so it tucks under without a rule of its own. */
-    .sec-b > .grid3.span-parts { margin-top: 4px; padding-top: 0; border-top: 0; }
-    /* A run of band rows is one block: the rule goes above the first of them,
-       and the rest just stack. */
-    .sec-b > .row-inline { margin-top: 6px; }
-    .sec-b > :not(.row-inline) + .row-inline { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--wa-line); }
-    /* A hint belongs to the block above it, so it never carries a rule and it
-       sits tight under what it explains. */
-    .sec-b > .hint { margin: 5px 0 0; }
+    .sec-h:hover button.sec-help, button.sec-help:focus-visible, button.sec-help.on { opacity: 1; }
+    button.sec-help:hover { color: var(--wa-ink); border-color: var(--wa-muted); }
+    button.sec-help:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    button.sec-help.on { color: var(--wa-accent-ink); background: var(--wa-accent); border-color: transparent; }
+    @media (hover: none) { button.sec-help { opacity: 1; } }
+    /* Help text waits behind that "?". A plain hint shows only while its
+       card's help is on; a warning, an error, or a hint marked keep (a status,
+       an empty state, a step that is required) always shows. A value popover
+       keeps its hints, since it has no "?" of its own to ask with. */
+    .sec[data-help="off"] > .sec-b .hint:not(.warn):not(.err):not(.keep):not(.value-pop .hint) { display: none; }
+    .sec[data-help="on"] > .sec-b .hint:not(.warn):not(.err):not(.keep):not(.value-pop .hint) {
+      padding: 6px 9px; border-radius: 7px; background: var(--wa-field); color: var(--wa-ink);
+    }
+    /* An open card with no help text in it has nothing for its "?" to show. */
+    .sec[data-open="true"][data-help="off"]:not(:has(> .sec-b .hint:not(.warn):not(.err):not(.keep):not(.value-pop .hint))) button.sec-help { display: none; }
     /* The picked layers, read only: the Layers list's colour coding without
        its controls, so the eye can check the pick without leaving the form. */
     .picked { display: flex; flex-direction: column; gap: 5px; margin-bottom: 4px; }
@@ -1791,6 +1714,8 @@ export class WristAssistantPanel extends LitElement {
       box-shadow: 0 12px 40px rgba(0,0,0,.4);
     }
     dialog.preset-dialog::backdrop { background: rgba(0,0,0,.45); }
+    /* The dialog's one question keeps its title above the search box. */
+    dialog.preset-dialog .field.entity-field { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin: 8px 0; }
     /* The keys-and-mouse help: two tables side by side when there is room,
        one under the other when there is not. */
     button.help {
@@ -1896,51 +1821,157 @@ export class WristAssistantPanel extends LitElement {
        baseline; the row already spaces itself. */
     .adders select.adder { margin-top: 0; }
 
-    /* Form controls: label on the left, control on the right, the way a
-       settings page reads. Fields that carry their own machinery (the entity
-       search, the value chip) keep the label above, so nothing inside them
-       has to fit a half-width column. */
+    /* Form rows, the way a property sheet reads: the title in a fixed column
+       on the left, the control on the right, one row per setting and every
+       row at least 30px, so a card reads as an even list rather than a form.
+       Contexts that lay fields out another way (the dialogs, the bars under
+       the preview) set their own display over this. */
     .field {
-      display: grid; grid-template-columns: minmax(84px, 32%) minmax(0, 1fr); align-items: center;
-      gap: 4px 10px; margin: 6px 0; font-size: 13px;
+      position: relative; display: grid; grid-template-columns: var(--wa-lab) minmax(0, 1fr); align-items: center;
+      gap: 4px 8px; min-height: 30px; margin: 0; font-size: 12px;
     }
-    .field > span { color: var(--wa-muted); font-size: 13px; line-height: 1.25; }
+    .field > span { color: var(--wa-muted); font-size: 12px; line-height: 1.25; min-width: 0; overflow-wrap: break-word; }
+    .field > span.changed { color: var(--wa-ink); }
+    /* A number's title drags the number. */
+    .field > span.scrub { cursor: ew-resize; user-select: none; -webkit-user-select: none; touch-action: none; }
+    .field > span.scrub:hover { color: var(--wa-accent); }
     .field input[type=text], .field input[type=number], .field select, .field textarea { width: 100%; min-width: 0; }
+    /* The controls in an inspector row: 26px, 12px text, a soft fill and no
+       ring until hovered, so a card of twenty rows is not twenty boxes. */
+    :is(.sec-b, .value-pop) .field :is(input[type=text], input[type=number], input[type=time], select) {
+      height: 26px; min-height: 26px; padding: 0 8px; font-size: 12px; border-radius: 6px;
+      border-color: transparent; background-color: var(--wa-field);
+    }
+    :is(.sec-b, .value-pop) .field select { padding-right: 22px; background-position: right 6px center; background-size: 12px; }
+    :is(.sec-b, .value-pop) .field textarea { font-size: 12px; padding: 5px 8px; border-radius: 6px; border-color: transparent; background: var(--wa-field); }
+    :is(.sec-b, .value-pop) .field input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+    :is(.sec-b, .value-pop) .field input[type=number]::-webkit-inner-spin-button,
+    :is(.sec-b, .value-pop) .field input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    :is(.sec-b, .value-pop) .field .ent-box input { padding-left: 28px; padding-right: 26px; }
     /* Inside a tinted section the focus ring takes the section's colour. */
     .field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible { border-color: var(--c, var(--wa-accent)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c, var(--wa-accent)) 28%, transparent); }
+    .field:has(> textarea) { align-items: start; }
+    .field:has(> textarea) > span { padding-top: 6px; }
     .field .mono, code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    /* A unit drawn faint inside the number box, after the number. */
+    .num-box { position: relative; display: flex; align-items: center; min-width: 0; }
+    .num-box input[type=number] { flex: 1; font-variant-numeric: tabular-nums; }
+    .num-box input[type=number],
+    :is(.sec-b, .value-pop) .field .num-box input[type=number] { padding-right: calc(10px + var(--wa-unit, 1) * 7px); }
+    .num-box .unit { position: absolute; right: 8px; font-size: 11px; color: var(--wa-muted); opacity: .8; pointer-events: none; }
+    /* A glyph before the number, such as the link on a size a part inherits. */
+    .num-box .lead { position: absolute; left: 7px; display: grid; place-items: center; color: var(--wa-muted); pointer-events: none; }
+    .num-box .lead svg.ui-icon { width: 12px; height: 12px; }
+    .num-box.lead input[type=number],
+    :is(.sec-b, .value-pop) .field .num-box.lead input[type=number] { padding-left: 24px; }
     .field.slider .slider-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
-    .field.slider input[type=range] { flex: 1; min-width: 60px; }
-    .field.slider .slider-value { min-width: 44px; text-align: right; opacity: .85; }
-    .field.check { grid-template-columns: auto minmax(0, 1fr); gap: 10px; }
-    .field.check > span { color: inherit; }
+    .field.slider input[type=range] { flex: 1; min-width: 50px; height: 16px; margin: 0; }
+    .field.slider .slider-row > :is(.num-box, input[type=number]) { flex: none; width: 66px; }
+    .field.slider .slider-row > :is(.num-box, input[type=number]):only-child { flex: 1; width: auto; }
+    /* A switch sits in the control column, its title after it. */
+    .field.check { grid-template-columns: auto minmax(0, 1fr); gap: 8px; padding-left: calc(var(--wa-lab) + 8px); cursor: pointer; }
+    .field.check > span { color: var(--wa-ink); }
     .field.check .mixed { color: var(--wa-muted); font-size: 12px; }
-    .field.entity-field, .field.value-chip-field { display: flex; flex-direction: column; gap: 4px; align-items: stretch; }
-    .field.entity-field > span, .field.value-chip-field > span { font-size: 12px; }
+    /* The entity search and the value chip are rows like any other. The line
+       under the search box stays in the control column; the result list takes
+       the whole width, since its rows carry a name, a room and a state. */
+    .field.entity-field > :not(:first-child) { grid-column: 2; }
+    .field.entity-field > .entity-results { grid-column: 1 / -1; }
+    .field.value-chip-field > button.value-chip:first-child { grid-column: 1 / -1; }
+    /* A colour is one box: swatch, hex, and opacity in percent. */
     .color-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
-    .color-row input[type=color] { width: 34px; height: 28px; }
-    .color-row input[type=range] { flex: 1; min-width: 40px; }
-    .color-row input.hex { width: 90px; flex: none; }
-    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
-    .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0 6px; }
-    .grid2 .field, .grid4 .field { display: flex; flex-direction: column; align-items: stretch; gap: 3px; }
-    .grid2 .field > span, .grid4 .field > span { font-size: 12px; }
-    /* A gauge's Min or Max: the label and a Number or Entity switch share the
-       title line, and the one control the switch picks sits under it. The
-       switch is pulled into the line's height so a pair of these lines up
-       with any other field title. Two number ends share a row while each
-       half still fits its label, reset and switch, and stack below that. */
-    .grid2.gauge-ends { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 4px 10px; }
-    .field.gauge-end { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
-    .gauge-end-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
-    .gauge-end-head > span:first-child { flex: 1 1 auto; min-width: 0; color: var(--wa-muted); font-size: 12px; line-height: 1.25; }
-    .gauge-end-head > span.has-reset { display: flex; align-items: center; justify-content: flex-start; gap: 2px; }
-    .gauge-end-head > .seg { height: 22px; margin: -3px 0; }
-    .gauge-end > .field { margin: 0; }
-    .grid4 input[type=number] { text-align: right; padding-left: 4px; padding-right: 6px; }
-    .row-inline { display: flex; align-items: flex-end; gap: 4px; }
-    .row-inline .field { flex: 1; }
-    .hint { font-size: 12px; color: var(--wa-muted); margin: 4px 0; }
+    .color-box {
+      flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 0 0 5px;
+      border-radius: 6px; border: 1px solid transparent; background: var(--wa-field);
+    }
+    .color-box:hover { border-color: var(--wa-line-strong); }
+    .color-box:focus-within { border-color: var(--c, var(--wa-accent)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c, var(--wa-accent)) 28%, transparent); }
+    .color-box:has(input:disabled) { opacity: .5; }
+    .color-swatch {
+      position: relative; flex: none; width: 16px; height: 16px; border-radius: 4px; overflow: hidden; cursor: pointer;
+      background: linear-gradient(var(--sw), var(--sw)), repeating-conic-gradient(#c8c8c8 0 25%, #fff 0 50%) 0 0 / 8px 8px;
+      box-shadow: inset 0 0 0 1px rgba(128,128,128,.45);
+    }
+    .color-swatch input[type=color] { position: absolute; inset: -6px; width: auto; height: auto; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+    :is(.color-row, .band-row) .color-box :is(input.hex, .alpha input) {
+      height: 24px; min-height: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; font-size: 12px;
+    }
+    :is(.color-row, .band-row) .color-box input.hex { flex: 1; min-width: 0; padding: 0; text-transform: uppercase; }
+    .band-row .color-box input.hex { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    :is(.color-row, .band-row) .color-box .alpha { flex: none; width: 50px; border-left: 1px solid var(--wa-line); }
+    :is(.color-row, .band-row) .color-box .alpha input { width: 100%; padding: 0 18px 0 4px; text-align: right; }
+    :is(.color-row, .band-row) .color-box :is(input.hex, .alpha input):focus-visible { box-shadow: none; outline: none; }
+    /* A colour table: a thin bar of the bands to scale with a mark at the
+       current value, then one compact row per band, lowest first. */
+    .bands { display: grid; gap: 3px; margin: 2px 0 6px; }
+    .band-bar { position: relative; height: 8px; margin: 4px 0 6px; }
+    .band-bar .bb { display: flex; height: 100%; border-radius: 4px; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(128,128,128,.25); }
+    .band-bar .bb i { display: block; flex: none; height: 100%; }
+    .band-bar .now {
+      position: absolute; top: -4px; width: 2px; height: 16px; margin-left: -1px; border-radius: 1px;
+      background: var(--wa-ink); box-shadow: 0 0 0 1.5px var(--wa-card);
+    }
+    .band-row { position: relative; display: grid; grid-template-columns: 14px 58px minmax(0, 1fr) 24px; gap: 4px; align-items: center; min-height: 28px; }
+    .band-row .le { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--wa-muted); text-align: center; }
+    .band-row .else { font-size: 12px; color: var(--wa-muted); padding-left: 2px; }
+    .band-row.hit .le, .band-row.hit .else { color: var(--wa-val); font-weight: 700; }
+    .band-row input.band-up {
+      width: 100%; min-width: 0; height: 26px; min-height: 26px; padding: 0 6px; border-radius: 6px;
+      border: 1px solid transparent; background-color: var(--wa-field); box-shadow: none;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-variant-numeric: tabular-nums;
+      -moz-appearance: textfield; appearance: textfield;
+    }
+    .band-row input.band-up:hover { border-color: var(--wa-line-strong); }
+    .band-row input.band-up::-webkit-inner-spin-button,
+    .band-row input.band-up::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    .band-row input.band-up:focus-visible { border-color: var(--c, var(--wa-accent)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c, var(--wa-accent)) 28%, transparent); }
+    .band-row.hit input.band-up { color: var(--wa-val); }
+    .band-row button.reset-dot { top: 50%; margin-top: -3px; }
+    .bands button.link.add-band { justify-self: start; margin-top: 2px; font-size: 12px; font-weight: 500; }
+    /* The Position card's four numbers: a 2x2 grid of boxes, each with its
+       letter inside at the front. The letter drags the number. */
+    .xy { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 8px; margin: 2px 0 4px; }
+    label.pf {
+      position: relative; display: flex; align-items: center; height: 26px; min-width: 0;
+      border-radius: 6px; border: 1px solid transparent; background: var(--wa-field);
+    }
+    label.pf:hover { border-color: var(--wa-line-strong); }
+    label.pf:focus-within { border-color: var(--c, var(--wa-accent)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c, var(--wa-accent)) 28%, transparent); }
+    label.pf .pl {
+      flex: none; width: 22px; align-self: stretch; display: grid; place-items: center;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; font-weight: 600; color: var(--wa-muted);
+      cursor: ew-resize; user-select: none; -webkit-user-select: none; touch-action: none;
+    }
+    label.pf .pl:hover { color: var(--wa-accent); }
+    label.pf input[type=number] {
+      flex: 1; min-width: 0; height: 100%; min-height: 0; padding: 0 24px 0 0; margin: 0;
+      border: 0; border-radius: 0; background: transparent; box-shadow: none; color: var(--wa-ink);
+      font-size: 12px; font-variant-numeric: tabular-nums; -moz-appearance: textfield; appearance: textfield;
+    }
+    label.pf input[type=number]::-webkit-inner-spin-button,
+    label.pf input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    label.pf input[type=number]:focus-visible { outline: none; box-shadow: none; border: 0; }
+    label.pf .unit { position: absolute; right: 8px; font-size: 11px; color: var(--wa-muted); opacity: .8; pointer-events: none; }
+    /* Pairs and quads stack: each field is its own label-left row. */
+    .grid2, .grid4 { display: block; }
+    /* Two short choices on one row, the second titled in line. */
+    .pair-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .pair-row > .seg.wide:first-of-type { flex: 1 1 auto; width: auto; }
+    .pair-row > .seg.wide:last-of-type { flex: 0 0 64px; width: 64px; }
+    .pair-row > span { position: relative; flex: none; padding-left: 8px; color: var(--wa-muted); font-size: 12px; }
+    .pair-row > span.changed { color: var(--wa-ink); }
+    .pair-row > span button.reset-dot { left: -2px; top: 50%; margin-top: -3px; }
+    /* A gauge's Min or Max: the title, then the one control the Number or
+       Entity switch picks, then that switch at the end of the same row. */
+    .field.gauge-end { grid-template-columns: var(--wa-lab) minmax(0, 1fr) auto; }
+    .gauge-end-head { display: contents; }
+    .gauge-end-head > .seg { grid-column: 3; grid-row: 1; height: 24px; }
+    .field.gauge-end > :not(.gauge-end-head) { grid-column: 2; grid-row: 1; margin: 0; }
+    /* A table row of fields: short titles in line, no title column. */
+    .row-inline { display: flex; align-items: center; gap: 8px; }
+    .row-inline .field { flex: 1; min-width: 0; grid-template-columns: auto minmax(0, 1fr); gap: 6px; }
+    .row-inline > button.icon { flex: none; }
+    .hint { font-size: 11.5px; line-height: 1.45; color: var(--wa-muted); margin: 4px 0; }
     .hint.warn { color: var(--wa-ink); }
     /* The bare .err rule sits above .hint in this sheet, so a hint that is an
        error needs both class names to win the colour. */
@@ -1953,7 +1984,7 @@ export class WristAssistantPanel extends LitElement {
     button.chip { font: inherit; font-size: 12px; background: transparent; color: inherit; cursor: pointer; }
     button.chip.active { background: var(--wa-accent); color: var(--wa-accent-ink); border-color: transparent; }
     .chip-add { font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px dashed var(--wa-line); background: transparent; color: inherit; cursor: pointer; }
-    .value-editor { border-left: 2px solid var(--wa-line); padding-left: 10px; margin: 4px 0 8px; }
+    .value-editor { margin: 0; }
 
     /* Value chip: one line saying what a value is, with the full form behind it.
        The form lives in a popover, which the browser draws in the top layer, so
@@ -1984,7 +2015,6 @@ export class WristAssistantPanel extends LitElement {
     .value-pop::backdrop { background: transparent; }
     .pop-head { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 2px; position: sticky; top: -10px; background: inherit; padding: 4px 0; }
     .pop-head .spacer { flex: 1; }
-    .value-pop .field { display: flex; flex-direction: column; align-items: stretch; gap: 3px; }
 
     /* States table: one rule as rows. A two-state light is two lines, so the
        row has to stay one line: every control in it is sized to the text it
@@ -2040,65 +2070,61 @@ export class WristAssistantPanel extends LitElement {
     .value-chip-field.compact { margin: 0; }
     .value-chip-field.compact button.value-chip { padding: 3px 8px; font-size: 13px; max-width: 190px; }
 
-    /* Rich text: a text layer's parts as a row of chips, the editor for the
-       part picked, and the switch's note and question. A chip keeps the value
-       chip's colours (entity teal, reading amber), so a part reads the way the
-       same value reads anywhere else in the inspector. */
-    .badge.new {
-      height: 16px; margin-left: 6px; padding: 0 5px; vertical-align: 1px;
-      font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
-      color: #fff; background: var(--c, var(--wa-accent));
+    /* Rich text: a text layer's parts as chips in one tinted box with the two
+       add buttons at its end, then the part picked in the one light box the
+       inspector still draws. A chip keeps the value chip's colours (entity
+       teal, reading amber), so a part reads the way the same value reads
+       anywhere else in the inspector. */
+    .part-row {
+      display: flex; align-items: flex-start; gap: 4px; min-height: 34px; margin: 2px 0 6px; padding: 4px;
+      border-radius: 8px; background: var(--wa-field);
     }
-    .rich-parts > .field.parts-field { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin: 0; }
-    .rich-parts > .field.parts-field > span { font-size: 12px; }
-    .part-chips {
-      display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 48px; padding: 8px;
-      border-radius: 9px; background: var(--wa-input); box-shadow: inset 0 0 0 1px var(--wa-line);
-    }
+    .part-chips { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 26px; }
+    .part-add { flex: none; display: flex; align-items: center; gap: 1px; min-height: 26px; }
+    .part-add button.icon svg.ui-icon { width: 14px; height: 14px; }
     button.part-chip {
-      display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 30px; padding: 0 9px 0 7px;
-      font: inherit; font-size: 13px; color: var(--wa-ink); cursor: pointer;
-      border: 1px solid var(--wa-line); border-radius: 8px; background: var(--wa-card);
-      transition: border-color .12s ease-out, background-color .12s ease-out;
+      display: inline-flex; align-items: center; gap: 5px; max-width: 100%; height: 24px; margin: 1px 0; padding: 0 7px 0 6px;
+      font: inherit; font-size: 12px; color: var(--wa-ink); cursor: pointer;
+      border: 1px solid var(--wa-line); border-radius: 5px; background: var(--wa-card);
+      transition: border-color .12s ease-out, box-shadow .12s ease-out;
     }
     button.part-chip:hover { border-color: var(--wa-line-strong); }
     button.part-chip:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.part-chip.on {
-      border-color: var(--c, var(--wa-accent)); box-shadow: 0 0 0 1px var(--c, var(--wa-accent));
-      background: color-mix(in srgb, var(--c, var(--wa-accent)) 12%, var(--wa-card));
+      border-color: var(--c, var(--wa-accent));
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--c, var(--wa-accent)) 28%, transparent);
     }
-    .part-chip .part-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); }
-    .part-chip .part-txt { min-width: 0; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+    .part-chip .part-dot { width: 8px; height: 8px; border-radius: 2px; flex: none; box-shadow: inset 0 0 0 1px rgba(128,128,128,.35); }
+    .part-chip .part-txt { min-width: 0; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
     .part-chip.value .part-txt { color: var(--wa-ent); font-weight: 600; }
-    .part-chip.template .part-txt { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    .part-chip.template .part-txt { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
     .part-chip .part-sp { color: var(--wa-muted); opacity: .75; }
     .part-chip .part-empty { color: var(--wa-muted); font-style: italic; }
     .part-chip .part-now {
-      max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 1px 6px; border-radius: 999px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; font-weight: 600;
+      max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 5px; border-radius: 999px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; font-weight: 600; line-height: 16px;
       color: var(--wa-val); background: var(--wa-val-bg);
     }
     .part-chip .part-flag {
-      padding: 0 4px; border: 1px solid var(--wa-line-strong); border-radius: 4px; white-space: nowrap;
-      font-size: 10px; font-weight: 700; line-height: 15px; color: var(--wa-muted); font-variant-numeric: tabular-nums;
+      padding: 0 3px; border: 1px solid var(--wa-line-strong); border-radius: 3px; white-space: nowrap;
+      font-size: 9.5px; font-weight: 700; line-height: 13px; color: var(--wa-muted); font-variant-numeric: tabular-nums;
     }
-    .rich-parts .adders button.small { border-style: dashed; }
-    .part-editor { margin-top: 10px; padding: 8px 12px 12px; border-radius: 9px; background: var(--wa-card); box-shadow: 0 0 0 1px var(--wa-line); }
-    /* Titles above the controls inside a part, so a row of five weights gets
-       the editor's whole width instead of what is left beside a label. */
-    .part-editor > .field { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin: 8px 0 0; }
-    .part-editor > .field > span { font-size: 12px; }
+    /* The one box left inside a card: the part being edited. Its header is a
+       strip of its own, so the rows under it line up with the card's. */
+    .part-editor { margin: 0 0 6px; padding: 0 8px 4px; border-radius: 8px; border: 1px solid var(--wa-line); }
+    .part-editor button.reset-dot { left: -6px; }
+    .part-head {
+      display: flex; align-items: center; gap: 2px; height: 30px; margin: 0 -8px 4px; padding: 0 3px 0 9px;
+      border-bottom: 1px solid var(--wa-line); font-size: 11.5px; color: var(--wa-muted);
+    }
+    .part-head .part-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .part-head b { color: var(--wa-ink); font-weight: 600; }
+    .part-head .spacer { flex: 1; }
+    /* A row that belongs to the one above it, such as the colour Pick opens:
+       its control sits in the control column, under that row's control. */
+    .sub-field > .field > span:first-child { visibility: hidden; }
     .field.check:has(> input:disabled) { cursor: default; }
     .field.check:has(> input:disabled) > span { color: var(--wa-muted); }
-    .part-head { display: flex; align-items: center; gap: 2px; min-height: 30px; font-size: 13px; }
-    .part-head .spacer { flex: 1; }
-    .part-bands { margin: 4px 0 6px; padding: 8px 10px; border-radius: 8px; background: var(--wa-panel); }
-    .part-bands .hint { margin: 6px 0 0; }
-    .field.part-size .size-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
-    .field.part-size .size-row input[type=number] { width: 64px; flex: none; text-align: right; font-variant-numeric: tabular-nums; }
-    .field.part-size .size-row input[type=range] { flex: 1; min-width: 60px; }
-    .size-row .unit, .size-row .from { color: var(--wa-muted); font-size: 12px; white-space: nowrap; }
-    .hint.say { margin: 10px 0 0; padding: 7px 9px; border-radius: 7px; color: var(--wa-ink); background: var(--wa-panel); }
     .rich-note {
       margin-top: 8px; padding: 8px 10px; border-radius: 8px; font-size: 12.5px; color: var(--wa-ink);
       background: color-mix(in srgb, var(--c, var(--wa-accent)) 14%, var(--wa-card));
@@ -2182,13 +2208,13 @@ export class WristAssistantPanel extends LitElement {
        it says right now. It is the one place both tokens sit side by side, so
        it is also the key to reading them everywhere else. */
     .entity-current {
-      display: flex; gap: 8px; align-items: center; font-size: 12px; margin-top: 6px;
-      padding: 6px 8px; border-radius: var(--wa-r-sm);
+      display: flex; gap: 6px; align-items: center; font-size: 12px; margin: 0 0 2px;
+      padding: 3px 8px 3px 4px; border-radius: 6px;
       border: 1px solid color-mix(in srgb, var(--wa-ent) 28%, var(--wa-line)); background: var(--wa-ent-bg);
     }
-    .entity-current .ent-ico { width: 24px; height: 24px; border-radius: 7px; background: color-mix(in srgb, var(--wa-ent) 18%, transparent); color: var(--wa-ent); }
+    .entity-current .ent-ico { width: 20px; height: 20px; border-radius: 5px; background: color-mix(in srgb, var(--wa-ent) 18%, transparent); color: var(--wa-ent); }
     .entity-current .ent-ico.on { background: color-mix(in srgb, var(--wa-ent) 28%, transparent); color: var(--wa-ent); }
-    .entity-current .ent-ico svg { width: 14px; height: 14px; }
+    .entity-current .ent-ico svg { width: 12px; height: 12px; }
     .entity-current .ent-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wa-ent); font-weight: 600; }
     .entity-current .ent-area { flex: none; color: var(--wa-muted); }
     .entity-current .ent-state { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2229,6 +2255,8 @@ export class WristAssistantPanel extends LitElement {
     window.addEventListener("keydown", this.keyHandler);
     window.addEventListener("keyup", this.keyUpHandler);
     window.addEventListener("beforeunload", this.beforeUnload);
+    this.addEventListener(SCRUB_START, this.scrubStart);
+    this.addEventListener(SCRUB_END, this.scrubEnd);
     void this.loadOwners();
     this.watchStatusTimer = window.setInterval(() => void this.refreshWatchStatus(), WATCH_STATUS_MS);
   }
@@ -2352,6 +2380,8 @@ export class WristAssistantPanel extends LitElement {
     window.removeEventListener("keydown", this.keyHandler);
     window.removeEventListener("keyup", this.keyUpHandler);
     window.removeEventListener("beforeunload", this.beforeUnload);
+    this.removeEventListener(SCRUB_START, this.scrubStart);
+    this.removeEventListener(SCRUB_END, this.scrubEnd);
     void this.unsubscribe?.();
     if (this.templateTimer) window.clearInterval(this.templateTimer);
     if (this.debounceTimer) window.clearTimeout(this.debounceTimer);
@@ -2997,7 +3027,9 @@ export class WristAssistantPanel extends LitElement {
       showTapArea: (on) => this.setShowTaps(on),
       openSections: this.openSections,
       toggleSection: (id) => this.toggleSection(id),
-      selectLayer: (id) => { this.multi = new Set(); this.inspect = { kind: "layer", id }; },
+      helpSections: this.helpSections,
+      toggleHelp: (id) => this.toggleHelp(id),
+      selectLayer:(id) => { this.multi = new Set(); this.inspect = { kind: "layer", id }; },
     };
   }
 
@@ -3009,6 +3041,14 @@ export class WristAssistantPanel extends LitElement {
     else if (next.size <= 1) { next.clear(); next.add(id); }
     else next.add(id);
     this.openSections = next;
+  }
+
+  /** Show or hide one card's help text, the "?" in its header. */
+  private toggleHelp(id: string) {
+    const next = new Set(this.helpSections);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    this.helpSections = next;
   }
 
   // ── shapes ────────────────────────────────────────────────────────────
@@ -5341,8 +5381,8 @@ export class WristAssistantPanel extends LitElement {
 
   /**
    * The middle column is the whole complication: the shape being edited,
-   * big, then everything that belongs to the complication rather than to one
-   * layer (its settings, its shapes, the live values it reads).
+   * big, then the values the complication defines and the live values it
+   * reads. Its own settings are in the inspector while no layer is selected.
    */
   private renderCanvas() {
     if (this.parseError) return html`<div class="card error">This document cannot be read: ${this.parseError}</div>`;
@@ -5353,7 +5393,6 @@ export class WristAssistantPanel extends LitElement {
     const watchCase = this.currentCase();
     const family = this.activeFamily;
     return html`
-      ${this.renderComplicationBar()}
       <div class="card canvas-card">
         <div class="canvas-bar">
           ${this.renderShapeTabs(cfg, layouts)}
@@ -5372,62 +5411,10 @@ export class WristAssistantPanel extends LitElement {
         </div>
         ${this.zoomed && family !== "inline" ? this.renderZoomDialog(family, layouts, watchCase) : nothing}
       </div>
-      ${this.renderPlaceBar(cfg)}
       <div class="under-grid">
         ${this.renderSharedValues(cfg)}
         ${this.renderValuesRow()}
-      </div>
-      ${this.renderTapBar(cfg)}`;
-  }
-
-  /** The layer the two bars under the face are about: one selected layer on a
-   * canvas shape, and not a pick of several, which has no frame or tap of its
-   * own to edit. */
-  private barLayer(cfg: CustomComplicationConfig): CElement | undefined {
-    if (this.inspect.kind !== "layer" || this.multi.size >= 2) return undefined;
-    if (this.activeFamily === "inline") return undefined;
-    const id = this.inspect.id;
-    return cfg.elements.find((e) => e.payload.id === id);
-  }
-
-  /**
-   * Where the selected layer sits, as one row directly under the face.
-   *
-   * The four numbers, the turn and the eye are answers about the picture above
-   * them, so reading them off a card in the far column meant looking away from
-   * the thing being moved. Only for a single selected layer: a group and the
-   * shape keep their own sections in the inspector, and a pick of several has
-   * no frame of its own to type into.
-   */
-  private renderPlaceBar(cfg: CustomComplicationConfig) {
-    const el = this.barLayer(cfg);
-    if (!el) return nothing;
-    return html`<div class="place-wrap" style=${this.canEdit ? "" : "pointer-events:none;opacity:.6"}
-      @change=${() => this.draft?.endGesture()}>${placementCard(this.host(), el, this.canvasFamily, { inline: true })}</div>`;
-  }
-
-  /**
-   * What a tap on the selected layer does, as one row at the foot of the
-   * canvas column. Under the two value lists rather than beside them: it is
-   * about the layer, not about the complication, so it reads as the last thing
-   * said about the thing selected.
-   *
-   * The row never goes away while a complication is open. A control that comes
-   * and goes with the selection is a control nobody learns where to find, so
-   * with nothing to make tappable it greys out and says what to select; a
-   * layer that is simply not tappable yet keeps its live toggle in the same
-   * place, greyed only until it is switched on.
-   */
-  private renderTapBar(cfg: CustomComplicationConfig) {
-    const el = this.barLayer(cfg);
-    const placeholder = el === undefined
-      ? "Select a layer to make it tappable."
-      : el.kind === "tap"
-        ? "This is a tap area. Select the layer it belongs to."
-        : undefined;
-    const opts = { inline: true, ...(placeholder !== undefined ? { placeholder } : {}) };
-    return html`<div class="place-wrap" style=${this.canEdit ? "" : "pointer-events:none;opacity:.6"}
-      @change=${() => this.draft?.endGesture()}>${tapCard(this.host(), el, opts)}</div>`;
+      </div>`;
   }
 
   private renderBigPreview(family: DrawableFamily, layouts: ResolvedAll, watchCase: WatchCase) {
@@ -5524,31 +5511,6 @@ export class WristAssistantPanel extends LitElement {
     }
     if (small) return line;
     return html`<div class="preview inline active" @click=${() => { this.inspect = { kind: "family" }; }}>${line}</div>`;
-  }
-
-  /**
-   * The complication's own settings, on one line above the face.
-   *
-   * Everything here is about the whole thing rather than about a layer, so it
-   * sits between the header and the canvas: the last row anybody reads before
-   * they start moving pixels, and the first row they come back to when the
-   * name or the tap is wrong.
-   */
-  private renderComplicationBar() {
-    const host = this.host();
-    return html`<div class="card comp-bar" style=${`--c:${SECTION_COLOR.complication}`} @change=${() => this.draft?.endGesture()}>
-      <div class="settings inline" style=${this.canEdit ? "" : "pointer-events:none;opacity:.6"}>${generalEditor(host)}</div>
-      <span class="spacer"></span>
-      <span class="acts">
-        <button class="ghost" @click=${() => this.openRaw()}>Raw JSON</button>
-        <button class="ghost" @click=${() => this.openShareDialog()}>Share</button>
-        ${this.canEdit ? html`
-          <button class="ghost" @click=${() => this.duplicate()}>Duplicate</button>
-          ${this.confirmDelete
-            ? html`<button class="ghost danger" @click=${() => void this.deleteCurrent()}>Really delete</button><button class="ghost" @click=${() => { this.confirmDelete = false; }}>Cancel</button>`
-            : html`<button class="ghost danger" @click=${() => { this.confirmDelete = true; }}>Delete</button>`}` : nothing}
-      </span>
-    </div>`;
   }
 
   /** Values the complication defines once and several layers read. */
@@ -5712,11 +5674,11 @@ export class WristAssistantPanel extends LitElement {
     } else if (ins.kind === "data") {
       const nv = cfg.values.find((v) => v.id === ins.id);
       if (nv) here = html`<span class="here" style=${`--k:${SECTION_COLOR.complication}`}><span class="kchip">Value</span>${nv.name || "(unnamed)"}</span>`;
-    } else if (ins.kind === "general") {
-      here = html`<span class="mini">nothing selected</span>`;
     }
+    // The root deselects, and with nothing selected the inspector is the
+    // complication itself.
     return html`<div class="crumbs">
-      <span>${name}</span><span class="sep">›</span>${shapeCrumb}${parent}
+      <button title="Edit the complication" @click=${() => { this.multi = new Set(); this.inspect = { kind: "general" }; }}>${name}</button><span class="sep">›</span>${shapeCrumb}${parent}
       ${here === nothing ? nothing : html`<span class="sep">›</span>${here}`}
     </div>`;
   }
@@ -5728,9 +5690,30 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The inspector: the thing that was clicked, as a column of cards. The
-   * complication's own settings live under the preview, so with nothing
-   * selected the column says so instead of showing a form.
+   * The inspector's header with no layer selected: the complication's name and
+   * the four things done to the whole complication. Raw JSON and Share only
+   * read, so they stay usable when the document cannot be edited.
+   */
+  private complicationHead(cfg: CustomComplicationConfig) {
+    const name = cfg.name.trim() || "Complication";
+    return html`<div class="insp-head comp-head">
+      <div class="crumbs"><span class="here" style=${`--k:${SECTION_COLOR.complication}`}>${name}</span></div>
+      <span class="comp-acts">
+        <button class="ghost" @click=${() => this.openRaw()}>Raw JSON</button>
+        <button class="ghost" @click=${() => this.openShareDialog()}>Share</button>
+        ${this.canEdit ? html`
+          <button class="ghost" @click=${() => this.duplicate()}>Duplicate</button>
+          ${this.confirmDelete
+            ? html`<button class="ghost danger" @click=${() => void this.deleteCurrent()}>Really delete</button><button class="ghost" @click=${() => { this.confirmDelete = false; }}>Cancel</button>`
+            : html`<button class="ghost danger" @click=${() => { this.confirmDelete = true; }}>Delete</button>`}` : nothing}
+      </span>
+    </div>`;
+  }
+
+  /**
+   * The inspector: the thing that was clicked, as a column of cards. With
+   * nothing selected that thing is the complication: its settings, and the
+   * actions on the whole of it in the header.
    *
    * A pick of two or more layers takes the column over. The one-layer form
    * would still be showing whichever layer was selected first, and every edit
@@ -5749,6 +5732,16 @@ export class WristAssistantPanel extends LitElement {
     }
     const host = this.host();
     const ins = this.inspect;
+    const editable = this.canEdit ? "" : "pointer-events:none;opacity:.6";
+    if (ins.kind === "general") {
+      return html`
+        ${this.complicationHead(cfg)}
+        <div class="insp-body" style=${editable} @change=${() => this.draft?.endGesture()}>
+          ${card(host, "complication", "Complication", generalEditor(host),
+            { color: SECTION_COLOR.complication, icon: "watch", alwaysOpen: true })}
+          <p class="insp-note">Click a layer on the watch or in the list to edit it. The shape's own background and border are the bottom row of the list.</p>
+        </div>`;
+    }
     let body: TemplateResult | typeof nothing = nothing;
     let cards = true;
     if (ins.kind === "layer") {
@@ -5757,9 +5750,7 @@ export class WristAssistantPanel extends LitElement {
         this.inspect = { kind: "general" };
         return nothing;
       }
-      // Place lives under the preview, where the numbers are next to the
-      // picture they move, so the inspector leaves it out.
-      body = layerEditor(host, el, this.canvasFamily, { placement: false, tap: false });
+      body = layerEditor(host, el, this.canvasFamily, { placement: true, tap: true });
     } else if (ins.kind === "group") {
       const g = cfg.groups?.find((x) => x.id === ins.id);
       if (!g) {
@@ -5775,16 +5766,10 @@ export class WristAssistantPanel extends LitElement {
         return nothing;
       }
       cards = false;
-      body = html`<div class="sec" data-open="true" style=${`--c:${SECTION_COLOR.complication}`}>
-        <div class="sec-h"><span class="swatch">${uiIcon("content")}</span><span class="tt"><h4>Shared value</h4><span class="sum">Read by layers whose Source is "Named value"</span></span></div>
-        <div class="sec-b">${namedValueEditor(host, nv)}</div>
-      </div>`;
-    } else if (ins.kind === "family") {
-      body = familyEditor(host, this.activeFamily);
+      body = card(host, "shared-value", "Shared value", namedValueEditor(host, nv),
+        { color: SECTION_COLOR.complication, icon: "content", summary: `Read by layers whose Source is "Named value"`, alwaysOpen: true });
     } else {
-      cards = false;
-      body = html`<div class="empty-insp">${uiIcon("layers")}<b>Nothing selected</b>
-        <span>Click a layer on the watch or in the list to edit it.<br />The shape's own background and border are the bottom row of the list.</span></div>`;
+      body = familyEditor(host, this.activeFamily);
     }
     const all = this.openSections.size > 1;
     return html`
@@ -5792,7 +5777,7 @@ export class WristAssistantPanel extends LitElement {
         ${this.crumbs(cfg)}
         ${cards ? html`<button class="expand" @click=${() => { this.openSections = all ? new Set([defaultSection(ins)]) : new Set(ALL_SECTIONS); }}>${all ? "One at a time" : "Open all"}</button>` : nothing}
       </div>
-      <div class="insp-body" style=${this.canEdit ? "" : "pointer-events:none;opacity:.6"} @change=${() => this.draft?.endGesture()}>${body}</div>`;
+      <div class="insp-body" style=${editable} @change=${() => this.draft?.endGesture()}>${body}</div>`;
   }
 
   /**
@@ -5817,7 +5802,8 @@ export class WristAssistantPanel extends LitElement {
    */
   private multiEditor(cfg: CustomComplicationConfig, picked: readonly CElement[]): TemplateResult {
     const family = this.canvasFamily;
-    const ctx = describeContext(this.host());
+    const host = this.host();
+    const ctx = describeContext(host);
     const resolver = new Resolver(this.buildContext(), this.draft?.config);
     const common = pickedCommon(cfg, family, picked);
     const n = picked.length;
@@ -5833,10 +5819,7 @@ export class WristAssistantPanel extends LitElement {
       }
     }, "multi-colour");
     return html`
-      <div class="sec" data-open="true" style="--c:var(--wa-accent)">
-        <div class="sec-h"><span class="swatch">${uiIcon("layers")}</span>
-          <span class="tt"><h4>${n} layers picked</h4><span class="sum">Edits here land on all ${n}</span></span></div>
-        <div class="sec-b">
+      ${card(host, "picked", `${n} layers picked`, html`
           <div class="picked">
             ${rows.map((el) => html`<div class="row" style=${`--k:${KIND_COLOR[el.kind]}`}>
               <span class="bar"></span>
@@ -5850,22 +5833,17 @@ export class WristAssistantPanel extends LitElement {
           <div class="adders">
             <button class="small primary" title=${`Group (${KEY_MOD}G)`} @click=${() => this.groupPicked()}>Group them</button>
             <button class="small" @click=${() => { this.multi = new Set(); }}>Clear</button>
-          </div>
-        </div>
-      </div>
-      <div class="sec" data-open="true" style=${`--c:${SECTION_COLOR.place}`}>
-        <div class="sec-h"><span class="swatch">${uiIcon("place")}</span>
-          <span class="tt"><h4>All ${n} at once</h4><span class="sum">The settings every picked layer has</span></span></div>
-        <div class="sec-b">
+          </div>`,
+        { color: "var(--wa-accent)", icon: "layers", summary: `Edits here land on all ${n}`, alwaysOpen: true })}
+      ${card(host, "picked-common", `All ${n} at once`, html`
           ${this.triCheck("Hidden", common.hiddenHere, setHiddenHere)}
           ${common.colourable
             ? html`${colorField("Colour", common.colour, (v) => { if (v !== undefined) setColour(v); })}
-              ${common.colour === undefined ? html`<div class="hint">These layers are different colours. Pick one to give them all the same.</div>` : nothing}`
-            : html`<div class="hint">No shared colour: a picture and a tap area have none.</div>`}
+              ${common.colour === undefined ? html`<div class="hint keep">These layers are different colours. Pick one to give them all the same.</div>` : nothing}`
+            : html`<div class="hint keep">No shared colour: a picture and a tap area have none.</div>`}
           <div class="hint">These layers are on the ${familyTitle(family)} shape and on no other, so nothing here reaches another shape.</div>
-          <div class="hint">Size, content and states belong to one layer at a time. Click a layer on its own to reach them.</div>
-        </div>
-      </div>`;
+          <div class="hint">Size, content and states belong to one layer at a time. Click a layer on its own to reach them.</div>`,
+        { color: SECTION_COLOR.place, icon: "place", summary: "The settings every picked layer has", alwaysOpen: true })}`;
   }
 
   /**

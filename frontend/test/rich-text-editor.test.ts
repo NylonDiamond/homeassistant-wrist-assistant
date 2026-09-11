@@ -1,6 +1,6 @@
 // What the Rich text editor says and offers: a part's chip, a rule's Changes
-// menu, the sentence under the part editor, the notes under the switch, and
-// which changes a rule aimed at one part may add. The form itself needs a
+// menu, the Type row, the notes after leaving Rich, a band table's colour bar,
+// and which changes a rule aimed at one part may add. The form itself needs a
 // browser; these words and lists do not.
 
 import { describe, expect, it } from "vitest";
@@ -14,17 +14,18 @@ import {
   type Value,
 } from "../src/model.js";
 import {
+  bandScale,
   changeKindsFor,
   chipRuns,
   contentSummary,
   partChip,
   partColourMode,
   partDotBackground,
-  partSentence,
   richTextBlockedHint,
   richTextOffNote,
   rulePartLabel,
   rulePartOptions,
+  textType,
   type EditorHost,
 } from "../src/editors.js";
 import { turnOffRichText } from "../src/rich-text.js";
@@ -79,21 +80,28 @@ describe("a part's chip", () => {
   });
 });
 
-describe("the sentence under the part editor", () => {
-  const layer = { fontSize: 15, fontWeight: "regular" as const };
+describe("a text layer's Type row", () => {
+  it("reads Countdown over any parts, Rich only with parts, and Plain otherwise", () => {
+    expect(textType({})).toBe("plain");
+    expect(textType({ parts: [] })).toBe("plain");
+    expect(textType({ parts: [part(PART_A, literal("Now"))] })).toBe("rich");
+    expect(textType({ parts: [part(PART_A, literal("Now"))], countdown: true })).toBe("countdown");
+    expect(textType({ countdown: true })).toBe("countdown");
+  });
+});
 
-  it("names what the part inherits from the layer", () => {
-    expect(partSentence(part(PART_A, literal("Now ")), layer)).toBe(`"Now " shows in the layer colour, regular (from the layer), at 15 pt (from the layer).`);
-    expect(partSentence(part(PART_A, literal("")), layer)).toBe("This empty part shows in the layer colour, regular (from the layer), at 15 pt (from the layer).");
+describe("a band table's colour bar", () => {
+  it("runs one typical band past each end of the table", () => {
+    expect(bandScale([20, 10])).toEqual({ lo: 0, hi: 30 });
+    expect(bandScale([4])).toEqual({ lo: 2, hi: 6 });
+    expect(bandScale([0])).toEqual({ lo: -1, hi: 1 });
   });
 
-  it("names what the part sets for itself", () => {
-    const own = part(PART_B, price(), {
-      coloring: "bands", bands: [{ id: BAND_1, upTo: 0.2, colorHex: "#30D158" }], fontWeight: "semibold", fontSize: 21,
-    });
-    expect(partSentence(own, layer)).toBe("Shows Electricity price in the colour of its own bands, semibold, at 21 pt.");
-    expect(partSentence(part(PART_C, { kind: { kind: "jinja", value: "{{ 1 }}" } }, { colorHex: "#64D2FF" }), layer))
-      .toBe("The template shows in its own colour, regular (from the layer), at 15 pt (from the layer).");
+  it("stretches to take in the current value", () => {
+    expect(bandScale([10, 20], 50)).toEqual({ lo: 0, hi: 50 });
+    expect(bandScale([10, 20], -5)).toEqual({ lo: -5, hi: 30 });
+    expect(bandScale([10, 20], 15)).toEqual({ lo: 0, hi: 30 });
+    expect(bandScale([], 7)).toEqual({ lo: 6, hi: 8 });
   });
 });
 
