@@ -4483,6 +4483,80 @@ export function forEachValue(cfg: CustomComplicationConfig, fn: (v: Value, site:
   walkDocument(cfg, { value: fn });
 }
 
+/** Whether a value reads the shared value with this id. */
+function readsShared(v: Value, id: string): boolean {
+  return v.kind.kind === "named" && v.kind.id.toUpperCase() === id.toUpperCase();
+}
+
+/**
+ * How many places read one shared value. A layer counts once however many of
+ * its values do (its text, a state test, a colour); anything else that reads
+ * it, such as a bezel, the inline line or another shared value, counts alone.
+ */
+export function sharedValueUses(cfg: CustomComplicationConfig, id: string): number {
+  const places = new Set<string>();
+  forEachValue(cfg, (v, site) => {
+    if (!readsShared(v, id)) return;
+    places.add(site.layerId ?? `${site.kind}:${site.valueId ?? ""}:${site.family ?? ""}:${site.part ?? ""}`);
+  });
+  return places.size;
+}
+
+/** A name no other shared value in the document has, ignoring case. */
+function freeSharedName(cfg: CustomComplicationConfig, wanted: string): string {
+  const taken = new Set(cfg.values.map((n) => n.name.trim().toLowerCase()));
+  const base = wanted.trim() || "Value";
+  if (!taken.has(base.toLowerCase())) return base;
+  for (let i = 2; ; i++) {
+    const next = `${base} ${i}`;
+    if (!taken.has(next.toLowerCase())) return next;
+  }
+}
+
+/**
+ * Share a value. The new shared value takes over what the value holds, and the
+ * reference that replaces it keeps only the value's format, so a layer that
+ * printed "with unit" still does. Nothing is written: the caller adds `named`
+ * to the document and puts `ref` where the value was.
+ */
+export function shareValue(cfg: CustomComplicationConfig, v: Value, name: string): { named: NamedValue; ref: Value } {
+  const named: NamedValue = { id: newId(), name: freeSharedName(cfg, name), value: { kind: structuredClone(v.kind) } };
+  const ref: Value = { kind: { kind: "named", id: named.id } };
+  if (v.format && !formatIsEmpty(v.format)) ref.format = structuredClone(v.format);
+  return { named, ref };
+}
+
+/**
+ * A reference to a shared value, turned back into its own copy of what that
+ * value holds. The format follows the resolver: the reference's own wins, and
+ * without one the shared value's comes along. Undefined when the value is not a
+ * reference, or names a shared value that is gone.
+ */
+export function unsharedCopy(cfg: CustomComplicationConfig, v: Value): Value | undefined {
+  if (v.kind.kind !== "named") return undefined;
+  const id = v.kind.id;
+  const named = cfg.values.find((n) => n.id.toUpperCase() === id.toUpperCase());
+  if (!named) return undefined;
+  const format = v.format && !formatIsEmpty(v.format) ? v.format : named.value.format;
+  const out: Value = { kind: structuredClone(named.value.kind) };
+  if (format && !formatIsEmpty(format)) out.format = structuredClone(format);
+  return out;
+}
+
+/** Delete a shared value without breaking what read it: every reference is
+ * given its own copy first. */
+export function deleteSharedValue(cfg: CustomComplicationConfig, id: string): void {
+  forEachValue(cfg, (v) => {
+    if (!readsShared(v, id)) return;
+    const copy = unsharedCopy(cfg, v);
+    if (!copy) return;
+    v.kind = copy.kind;
+    if (copy.format) v.format = copy.format;
+    else delete v.format;
+  });
+  cfg.values = cfg.values.filter((n) => n.id.toUpperCase() !== id.toUpperCase());
+}
+
 /**
  * Every `EntityRef` in the document, rewritten in place.
  *

@@ -251,13 +251,13 @@ describe("layerEntityNote", () => {
     expect(layerEntityNote(el, layerEntityUses(cfg, el.payload.id))).toContain("Nothing on this layer reads an entity yet");
   });
 
-  it("sends a named value back to the card that owns it", () => {
+  it("sends a shared value back to the value that owns it", () => {
     const { cfg, el } = withLayer("text");
     if (el.kind !== "text") throw new Error("wrong kind");
     const id = newId();
     cfg.values.push({ id, name: "Kitchen", value: entityState() });
     el.payload.value = { kind: { kind: "named", id } };
-    expect(layerEntityNote(el, layerEntityUses(cfg, el.payload.id))).toContain("Data card");
+    expect(layerEntityNote(el, layerEntityUses(cfg, el.payload.id))).toContain("change that shared value");
   });
 
   it("explains a shape, which has no value of its own", () => {

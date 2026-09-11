@@ -71,6 +71,7 @@ import {
   selectableLayerId,
   setTapOutsetFromFrame,
   hasFreeTimestamp,
+  deleteSharedValue,
   DESIGN_BOX,
 } from "./model.js";
 import { SEND_WAIT_MS, describeSend, sendState } from "./send-state.js";
@@ -183,7 +184,6 @@ const ARROW_STEP: Record<string, { dx: number; dy: number } | undefined> = {
 type Inspect =
   | { kind: "general" }
   | { kind: "family" }
-  | { kind: "data"; id: string }
   | { kind: "layer"; id: string }
   | { kind: "group"; id: string };
 
@@ -470,11 +470,14 @@ export class WristAssistantPanel extends LitElement {
   /** The slot of the locked picker row whose explanation is unfolded. A tap
    * shows it inline because a hover title never appears on a touch screen. */
   @state() private pickerNote?: number;
-  /** The Shared values list under the complication settings is unfolded. */
   /** Entity states typed in under the preview, standing in for the live ones
    * so the other states can be seen without waiting for the house. Never
    * saved; cleared by Back to live. */
   @state() private testValues: ReadonlyMap<string, string> = new Map();
+  /** The shared value open for editing in its card under the preview. It
+   * edits in place rather than in the inspector, so the form opens where it
+   * was clicked and the inspector keeps its selection. */
+  @state() private openValue?: string;
   /** The value chip whose input is showing. */
   @state() private editingValue?: string;
   /** The layer row being dragged in the Layers list. */
@@ -1608,12 +1611,16 @@ export class WristAssistantPanel extends LitElement {
     .flash-row { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 26px; }
     .flash-row input.flash-color { width: 34px; height: 22px; padding: 1px 2px; border-radius: 5px; }
     .flash-row .muted { color: var(--wa-muted); font-size: 12px; }
-    /* Shared values: a chip per named value, laid out as a titled sub-section
-       of the settings rather than a loose row of boxes. The whole chip opens
-       the editor, so it carries the hover and selected states a row would, and
-       the delete button stays out of the way until the pointer is on it. */
-    .values-list .empty { font-size: 12px; color: var(--wa-muted); margin: 0; padding: 4px 0; text-align: left; }
+    /* Shared values: a row per named value. The whole row opens its editor
+       in place, under the row, so it carries the hover and open states a
+       button would, and the delete button stays out of the way until the
+       pointer is on it. */
     .values-list .data { display: flex; flex-direction: column; gap: 6px; }
+    .values-list .value-open {
+      display: flex; flex-direction: column; gap: 4px; margin-top: -2px; padding: 6px 8px 8px;
+      border-radius: 7px; background: color-mix(in srgb, var(--c) 5%, var(--wa-card));
+    }
+    .values-list .value-open .value-editor { display: flex; flex-direction: column; gap: 4px; }
     .values-list .datum {
       padding: 0 8px; border-radius: 7px; gap: 8px;
       transition: box-shadow .12s ease-out, background-color .12s ease-out;
@@ -3192,6 +3199,8 @@ export class WristAssistantPanel extends LitElement {
       helpSections: this.helpSections,
       toggleHelp: (id) => this.toggleHelp(id),
       selectLayer:(id) => { this.multi = new Set(); this.inspect = { kind: "layer", id }; },
+      selectValue: (id) => this.openSharedValue(id),
+      beginGesture: () => this.draft?.beginGesture(),
     };
   }
 
@@ -5675,30 +5684,52 @@ export class WristAssistantPanel extends LitElement {
     return html`<div class="preview inline active" @click=${() => { this.inspect = { kind: "family" }; }}>${line}</div>`;
   }
 
-  /** Values the complication defines once and several layers read. */
+  /**
+   * Values the complication defines once and several layers read. Hidden until
+   * there is one: most complications never need it, and a new one is made from
+   * the value itself (Make shared, or Source "Shared value").
+   */
   private renderSharedValues(cfg: CustomComplicationConfig) {
     const values = cfg.values;
+    if (values.length === 0) return nothing;
+    const host = this.host();
     const resolver = new Resolver(this.buildContext(), this.draft?.config);
-    const ctx = describeContext(this.host());
+    const ctx = describeContext(host);
     return html`<div class="card tint-values values-list" style=${`--c:${SECTION_COLOR.complication}`}>
       <h2 class="panel-title"><span class="swatch">${uiIcon("content")}</span>Shared values
-        <span class="mini" title="A value defined once and read by several layers. Set a layer's Source to &quot;Named value&quot; to use one.">defined once, read by several layers</span>
+        <span class="mini" title="A value defined once and read by several layers. Click Make shared on any value, or set its Source to &quot;Shared value&quot;.">defined once, read by several layers</span>
         <span class="spacer"></span>
-        ${this.canEdit ? html`<button class="small" @click=${() => { const nv = newNamedValue(); this.mutate((c) => { c.values.push(nv); }); this.inspect = { kind: "data", id: nv.id }; }}>Add</button>` : nothing}
+        ${this.canEdit ? html`<button class="small" @click=${() => { const nv = newNamedValue(); this.mutate((c) => { c.values.push(nv); }); this.openValue = nv.id; }}>Add</button>` : nothing}
       </h2>
-      ${values.length === 0 ? html`<p class="empty">No shared values yet.</p>` : html`<div class="data">
+      <div class="data">
       ${values.map((v) => {
         const r = resolver.resolve({ kind: { kind: "named", id: v.id } });
-        const hl = this.inspect.kind === "data" && this.inspect.id === v.id;
-        return html`<div class="datum vrow ${hl ? "hl" : ""}" @click=${() => { this.inspect = { kind: "data", id: v.id }; }}>
+        const open = this.openValue === v.id;
+        const toggle = () => { this.openValue = open ? undefined : v.id; };
+        return html`<div class="datum vrow ${open ? "hl" : ""}" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
+            title=${open ? "Close" : "Edit this shared value"}
+            @click=${toggle}
+            @keydown=${(e: KeyboardEvent) => { if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) { e.preventDefault(); toggle(); } }}>
           <span class="nm">${v.name || "(unnamed)"}</span>
           <span class="spacer"></span>
           <span class="meta ${r === undefined ? "none" : ""}" title=${describeValue(v.value, ctx)}>${r ?? "unresolved"}</span>
-          ${this.canEdit ? html`<button class="icon danger" title="Delete value" aria-label="Delete value" @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { c.values = c.values.filter((x) => x.id !== v.id); }); if (hl) this.inspect = { kind: "general" }; }}>${uiIcon("delete")}</button>` : nothing}
-        </div>`;
+          ${this.canEdit ? html`<button class="icon danger" title="Delete. Layers that read it keep their own copy." aria-label="Delete value" @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { deleteSharedValue(c, v.id); }); if (open) this.openValue = undefined; }}>${uiIcon("delete")}</button>` : nothing}
+        </div>
+        ${open ? html`<div class="value-open">${namedValueEditor(host, v)}</div>` : nothing}`;
       })}
-      </div>`}
+      </div>
     </div>`;
+  }
+
+  /** Open one shared value in its card and bring it into view. A value popover
+   * that asked for this is closed first, or it would float over the page with
+   * its chip scrolled away. */
+  private openSharedValue(id: string) {
+    this.renderRoot.querySelectorAll<HTMLElement>(":popover-open").forEach((p) => p.hidePopover());
+    this.openValue = id;
+    void this.updateComplete.then(() => {
+      this.renderRoot.querySelector(".values-list .datum.hl")?.scrollIntoView({ block: "start", behavior: "smooth" });
+    });
   }
 
   /** Open the footer on its raw document, which is where the JSON lives. */
@@ -5833,9 +5864,6 @@ export class WristAssistantPanel extends LitElement {
     } else if (ins.kind === "group") {
       const g = cfg.groups?.find((x) => x.id === ins.id);
       if (g) here = html`<span class="here" style=${`--k:${SECTION_COLOR.group}`}><span class="kchip">Group</span><span class="nm" title=${g.name}>${g.name}</span></span>`;
-    } else if (ins.kind === "data") {
-      const nv = cfg.values.find((v) => v.id === ins.id);
-      if (nv) here = html`<span class="here" style=${`--k:${SECTION_COLOR.complication}`}><span class="kchip">Value</span><span class="nm">${nv.name || "(unnamed)"}</span></span>`;
     }
     // The root deselects, and with nothing selected the inspector is the
     // complication itself.
@@ -5921,15 +5949,6 @@ export class WristAssistantPanel extends LitElement {
       }
       cards = false;
       body = groupEditor(host, g);
-    } else if (ins.kind === "data") {
-      const nv = cfg.values.find((v) => v.id === ins.id);
-      if (!nv) {
-        this.inspect = { kind: "general" };
-        return nothing;
-      }
-      cards = false;
-      body = card(host, "shared-value", "Shared value", namedValueEditor(host, nv),
-        { color: SECTION_COLOR.complication, icon: "content", summary: `Read by layers whose Source is "Named value"`, alwaysOpen: true });
     } else {
       body = familyEditor(host, this.activeFamily);
     }

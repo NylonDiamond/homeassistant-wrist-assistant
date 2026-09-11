@@ -149,6 +149,9 @@ import {
   ownedElements,
   ownedShownCount,
   pasteElements,
+  shareValue,
+  sharedValueUses,
+  unsharedCopy,
 } from "./model.js";
 import {
   type StatesTable,
@@ -248,6 +251,10 @@ export interface EditorHost {
   toggleHelp(id: string): void;
   /** Make a layer the selection, the way a click on its Layers row does. */
   selectLayer(id: string): void;
+  /** Open one shared value for editing, in its card under the preview. */
+  selectValue(id: string): void;
+  /** Hold every update until `endGesture` in one undo step. */
+  beginGesture(): void;
 }
 
 /** Every card id the inspector can show, for "Open all". */
@@ -1160,7 +1167,7 @@ const VALUE_KINDS: [ValueKind["kind"], string][] = [
   ["time", "Time"],
   ["dataAge", "Data age (seconds)"],
   ["jinja", "Jinja template"],
-  ["named", "Named value"],
+  ["named", "Shared value"],
   ["chartStat", "A chart's number"],
 ];
 
@@ -1440,6 +1447,9 @@ function switchKind(current: ValueKind, kind: ValueKind["kind"]): ValueKind {
 export interface ValueEditorOptions {
   /** Named values are not offered inside a named value (no self reference). */
   allowNamed?: boolean;
+  /** Leave out Make shared, for a value that has to name an entity itself
+   * (a chart's readings, a timeline's states). */
+  noShare?: boolean;
   /** Hide the format section (icon symbols, colours). */
   noFormat?: boolean;
   /** Show the live resolved value. */
@@ -1705,11 +1715,20 @@ function valueForm(host: EditorHost, value: Value, set: (v: Value) => void, opts
       body = html`${textArea("Template", k.value, (v) => setKind({ ...k, value: v }), 4)}
         <div class="hint">Rendered by Home Assistant. The result should be one value, not a whole document.</div>`;
       break;
-    case "named":
+    case "named": {
+      const named = host.config.values.find((n) => n.id === k.id);
+      const uses = named ? sharedValueUses(host.config, named.id) : 0;
       body = host.config.values.length === 0
-        ? html`<div class="hint warn">There are no named values yet. Add one in the Data card first.</div>`
-        : selectField("Value", k.id, [["", "(choose)"], ...host.config.values.map((n): [string, string] => [n.id, n.name || n.id.slice(0, 8)])], (v) => setKind({ ...k, id: v }));
+        ? html`<div class="hint keep">No shared values yet.
+            <button type="button" class="link" @click=${() => startShared(host, value, set)}>Start an empty one</button>,
+            or choose another source and click Make shared.</div>`
+        : html`${selectField("Value", k.id, [["", "(choose)"], ...host.config.values.map((n): [string, string] => [n.id, n.name || n.id.slice(0, 8)])], (v) => setKind({ ...k, id: v }))}
+          ${named ? html`<div class="hint keep">Read by ${uses} ${uses === 1 ? "layer" : "layers"}.
+            <button type="button" class="link" @click=${() => host.selectValue(named.id)}>Edit it</button> to change them all, or
+            <button type="button" class="link" @click=${() => { const copy = unsharedCopy(host.config, value); if (copy) set(copy); }}>stop sharing</button>
+            to give this one its own copy.</div>` : nothing}`;
       break;
+    }
     case "chartStat": {
       const ctx = describeContext(host);
       const charts = host.config.elements.filter((e): e is Extract<CElement, { kind: "chart" }> => e.kind === "chart");
@@ -1728,8 +1747,44 @@ function valueForm(host: EditorHost, value: Value, set: (v: Value) => void, opts
   return html`
     ${selectField("Source", k.kind, kinds, (kind) => setKind(switchKind(k, kind)))}
     ${body}
+    ${canShare(value, opts) ? html`<div class="hint keep">
+      <button type="button" class="link" title="Move this into a shared value that other layers can read too" @click=${() => makeShared(host, value, set)}>Make shared</button>
+      so other layers can read this too.</div>` : nothing}
     ${opts.noFormat ? nothing : formatEditor(value.format, (f) => set(formatIsEmpty(f) ? { kind: value.kind } : { ...value, format: f }))}
     ${opts.showResolved ? html`<div class="hint keep">Now:${resolved === undefined ? html`<span class="warn">unresolved</span>` : html`<code>${resolved}</code>`}</div>` : nothing}`;
+}
+
+/** Whether a value holds something worth sharing: it is not already shared,
+ * sharing is allowed here, and it is not still blank. */
+function canShare(value: Value, opts: ValueEditorOptions): boolean {
+  if (opts.allowNamed === false || opts.noShare) return false;
+  const k = value.kind;
+  if (k.kind === "named") return false;
+  if (k.kind === "literal" || k.kind === "jinja") return k.value.trim() !== "";
+  if ("entityId" in k) return k.entityId !== "";
+  if (k.kind === "chartStat") return k.layer !== "";
+  return true;
+}
+
+/** Move what a value holds into a new shared value named after it, and point
+ * the value there, in one undo step. */
+function makeShared(host: EditorHost, value: Value, set: (v: Value) => void): void {
+  const words = describeValueBody(value, describeContext(host)).replace(/^"(.*)"$/, "$1");
+  const { named, ref } = shareValue(host.config, value, truncate(words, 24));
+  host.beginGesture();
+  host.update((c) => { c.values.push(named); });
+  set(ref);
+  host.endGesture();
+}
+
+/** Point a value at a new, empty shared value and open that value to fill in. */
+function startShared(host: EditorHost, value: Value, set: (v: Value) => void): void {
+  const { named, ref } = shareValue(host.config, { ...value, kind: { kind: "literal", value: "" } }, "Value");
+  host.beginGesture();
+  host.update((c) => { c.values.push(named); });
+  set(ref);
+  host.endGesture();
+  host.selectValue(named.id);
 }
 
 function formatEditor(format: ValueFormat | undefined, set: (f: ValueFormat) => void) {
@@ -1995,19 +2050,16 @@ function pageChoiceField(host: EditorHost, pageId: string | undefined, pageName:
   ${current ? nothing : html`<div class="hint keep">Without a page the tap falls back to the complication list.</div>`}`;
 }
 
-// ── Data (named values) ───────────────────────────────────────────────────
+// ── Shared values (named values in the document) ─────────────────────────
 
 export function namedValueEditor(host: EditorHost, nv: NamedValue): TemplateResult {
   const idx = host.config.values.findIndex((v) => v.id === nv.id);
   const key = `nv-${nv.id}`;
+  const uses = sharedValueUses(host.config, nv.id);
   return html`
     ${textField("Name", nv.name, (v) => host.update((c) => { c.values[idx]!.name = v; }, `${key}-name`))}
     ${valueEditor(host, nv.value, (v) => host.update((c) => { c.values[idx]!.value = v; }, key), { allowNamed: false, showResolved: true, inline: true, key })}
-    <div class="field readout"><span>Used by</span><span class="readout-v">${countNamedUses(host.config, nv.id)} layer${countNamedUses(host.config, nv.id) === 1 ? "" : "s"}</span></div>`;
-}
-
-function countNamedUses(cfg: CustomComplicationConfig, id: string): number {
-  return JSON.stringify(cfg.elements).split(`"${id}"`).length - 1 + JSON.stringify(cfg.perFamily).split(`"${id}"`).length - 1;
+    <div class="field readout"><span>Used by</span><span class="readout-v">${uses} ${uses === 1 ? "layer" : "layers"}</span></div>`;
 }
 
 export function newNamedValue(): NamedValue {
@@ -2265,7 +2317,7 @@ export function layerEntityNote(el: CElement, uses: readonly LayerEntityUse[]): 
   const keptNote = !contentKept
     ? ""
     : contentKind === "named"
-      ? " Its content comes through a named value, so change that value in the Data card to point it somewhere else."
+      ? " Its content comes through a shared value, so change that shared value to point it somewhere else."
       : contentKind === "chartStat"
         ? " Its number comes from a chart, so point the chart somewhere else to change it."
       : el.kind === "icon" && contentKind === "literal"
@@ -3529,7 +3581,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
 
       content = html`
         ${valueEditor(host, c.value, (v) => setChart((p) => { p.value = v; }, "value"),
-          { label: "Readings", key: `${key}-value` })}
+          { label: "Readings", noShare: true, key: `${key}-value` })}
         ${segField("Draw", drawMode,
           [["history", "Recorded history"], ["statistics", "Long-term statistics"], ["value", "The value itself"]],
           (v) => setChart((p) => {
@@ -3790,7 +3842,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         entityId?.split(".")[0]);
       content = html`
         ${valueEditor(host, t.value, (v) => setTimeline((p) => { p.value = v; }, "value"),
-          { label: "States", key: `${key}-value` })}
+          { label: "States", noShare: true, key: `${key}-value` })}
         ${namesEntity ? nothing : html`<div class="hint warn">A timeline draws an entity's recorded
           past, so it needs one named above. A typed-in value, a template or a shared value has no
           past to read, and this layer stays blank until States names an entity.</div>`}
