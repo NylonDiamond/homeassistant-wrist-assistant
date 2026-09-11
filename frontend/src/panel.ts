@@ -479,6 +479,8 @@ export class WristAssistantPanel extends LitElement {
    * edits in place rather than in the inspector, so the form opens where it
    * was clicked and the inspector keeps its selection. */
   @state() private openValue?: string;
+  /** The Shared values card's "?": how shared values work, in four steps. */
+  @state() private sharedHelp = false;
   /** The value chip whose input is showing. */
   @state() private editingValue?: string;
   /** The layer row being dragged in the Layers list. */
@@ -1093,8 +1095,8 @@ export class WristAssistantPanel extends LitElement {
       padding: 10px 12px 12px;
     }
     /* The left column does not scroll: the Add card keeps its natural height
-       and the Layers card takes the rest, scrolling its own rows, so the shape
-       row stays pinned to the foot of the column instead of floating mid-air. */
+       and the Layers card takes the rest, scrolling its own rows. The shape
+       row follows the last layer, and stays in sight once the rows scroll. */
     .column.left { display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
     .column.left .card { flex: none; }
     .column.left .card.layers-card {
@@ -1204,8 +1206,10 @@ export class WristAssistantPanel extends LitElement {
        The picture size is a variable on the list, set by the S/M/L control in
        the card's title bar, so one change resizes every row's picture and the
        column that holds it. */
+    /* Only as tall as its rows, so the shape row sits right under the last
+       layer; it shrinks and scrolls once the card runs out of room. */
     .layers {
-      display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-height: 0;
+      display: flex; flex-direction: column; gap: 2px; flex: 0 1 auto; min-height: 0;
       overflow-y: auto; overflow-x: hidden; scrollbar-width: thin;
     }
     /* A row is a line of a list, not a card: no outline at rest, and the eye
@@ -1285,9 +1289,9 @@ export class WristAssistantPanel extends LitElement {
       padding-top: 0; padding-bottom: 0; border-top-width: 0; border-bottom-width: 0;
       opacity: 0; overflow: hidden;
     }
-    /* The shape row is pinned to the foot of the list, under a hairline that
-       runs the full width of the card: it is the ground everything else is
-       drawn on, not another layer in the stack. */
+    /* The shape row closes the list, under a hairline that runs the full
+       width of the card: it is the ground everything else is drawn on, not
+       another layer in the stack, so nothing can be dropped below it. */
     .layer.pinned {
       flex: none; margin: 0 -8px; padding: 0 14px 0 12px; min-height: 40px; border-radius: 0;
       border-top: 1px solid var(--wa-line);
@@ -1623,6 +1627,25 @@ export class WristAssistantPanel extends LitElement {
     }
     .values-list .value-open .value-editor { display: flex; flex-direction: column; gap: 4px; }
     .values-list.empty-list .panel-title { margin-bottom: 0; }
+    /* The card's "?" always shows: unlike an inspector card, this one has
+       no header to hover first. */
+    .values-list .panel-title button.sec-help { opacity: 1; }
+    .values-list .shared-help {
+      margin: 0 0 8px; padding: 8px 10px; border-radius: 7px; background: var(--wa-card);
+      font-size: 12.5px; line-height: 1.45; color: var(--wa-ink);
+    }
+    .values-list .shared-help p { margin: 0 0 6px; }
+    .values-list .shared-help ol { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+    /* Now: the printed value as a token, spaces kept, so a prefix of "xx "
+       shows its space; or the missing step in muted words. */
+    .field.now-field .now-v { color: var(--wa-ink); }
+    .now-v .now-tok {
+      display: inline-block; max-width: 100%; padding: 1px 6px; border-radius: 5px; white-space: pre-wrap; overflow-wrap: anywhere;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-weight: 600;
+      color: var(--wa-val); background: color-mix(in srgb, var(--wa-val) 12%, transparent);
+    }
+    .now-v.none { font-style: italic; }
+    details.sub.format summary .sum-note { margin-left: 6px; color: var(--wa-muted); font-weight: 400; }
     /* Under Layers, the list takes at most part of the column and scrolls, so
        an open value never pushes the layer rows out of sight. */
     .column.left .card.values-list { max-height: 45%; overflow-y: auto; scrollbar-width: thin; }
@@ -1638,7 +1661,7 @@ export class WristAssistantPanel extends LitElement {
     .values-list .datum .meta {
       flex: none; min-width: 0; max-width: 140px; opacity: 1; color: var(--wa-val); font-weight: 600;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; white-space: pre;
     }
     .values-list .datum .meta.none { font-family: inherit; font-style: italic; color: var(--wa-muted); }
     .values-list .datum button.icon { opacity: 0; pointer-events: none; flex: none; }
@@ -5711,23 +5734,33 @@ export class WristAssistantPanel extends LitElement {
     const add = this.canEdit
       ? html`<button class="small" @click=${() => { const nv = newNamedValue(); this.mutate((c) => { c.values.push(nv); }); this.openSharedValue(nv.id); }}>Add</button>`
       : nothing;
-    const explain = "Like a variable: set it once, and every layer that reads it follows. Click Add, or Make shared on any value.";
+    const explain = "Like a variable: set it once, and every layer that reads it follows.";
+    const title = html`<h2 class="panel-title"><span class="swatch">${uiIcon("content")}</span>Shared values
+        <span class="mini" title=${explain}>set once, used by many layers</span>
+        <button type="button" class="sec-help ${this.sharedHelp ? "on" : ""}" title=${this.sharedHelp ? "Hide how shared values work" : "How shared values work"}
+          aria-label="How shared values work" aria-expanded=${this.sharedHelp ? "true" : "false"}
+          @click=${() => { this.sharedHelp = !this.sharedHelp; }}>?</button>
+        <span class="spacer"></span>${add}
+      </h2>
+      ${this.sharedHelp ? html`<div class="shared-help">
+        <p>${explain} Use one when several layers show the same thing, so a change is made in one place.</p>
+        <ol>
+          <li><b>Add</b> one here. Give it a name and choose its source, like an entity.</li>
+          <li>On a layer, open its value and set <b>Source</b> to <b>Shared value</b>. Or click <b>Make shared</b> on a value that is already set up.</li>
+          <li>Change the shared value here. Every layer that reads it changes too.</li>
+          <li>Each layer can still add its own <b>Format</b>, like a unit or fewer decimals.</li>
+        </ol>
+      </div>` : nothing}`;
     if (values.length === 0) {
-      return html`<div class="card tint-values values-list empty-list" style=${`--c:${SECTION_COLOR.complication}`}>
-        <h2 class="panel-title"><span class="swatch">${uiIcon("content")}</span>Shared values
-          <span class="mini" title=${explain}>set once, used by many layers</span>
-          <span class="spacer"></span>${add}
-        </h2>
+      return html`<div class="card tint-values values-list ${this.sharedHelp ? "" : "empty-list"}" style=${`--c:${SECTION_COLOR.complication}`}>
+        ${title}
       </div>`;
     }
     const host = this.host();
     const resolver = new Resolver(this.buildContext(), this.draft?.config);
     const ctx = describeContext(host);
     return html`<div class="card tint-values values-list" style=${`--c:${SECTION_COLOR.complication}`}>
-      <h2 class="panel-title"><span class="swatch">${uiIcon("content")}</span>Shared values
-        <span class="mini" title=${explain}>set once, used by many layers</span>
-        <span class="spacer"></span>${add}
-      </h2>
+      ${title}
       <div class="data">
       ${values.map((v) => {
         const r = resolver.resolve({ kind: { kind: "named", id: v.id } });
@@ -5750,12 +5783,15 @@ export class WristAssistantPanel extends LitElement {
 
   /** Open one shared value in its card and bring it into view. A value popover
    * that asked for this is closed first, or it would float over the page with
-   * its chip scrolled away. */
+   * its chip scrolled away. A value with no name yet (a new one) also gets the
+   * caret in its Name box, since naming it is the first thing to do. */
   private openSharedValue(id: string) {
     this.renderRoot.querySelectorAll<HTMLElement>(":popover-open").forEach((p) => p.hidePopover());
     this.openValue = id;
+    const unnamed = this.draft?.config.values.find((v) => v.id === id)?.name.trim() === "";
     void this.updateComplete.then(() => {
       this.renderRoot.querySelector(".values-list .datum.hl")?.scrollIntoView({ block: "start", behavior: "smooth" });
+      if (unnamed) this.renderRoot.querySelector<HTMLInputElement>(".values-list .value-open input[type=text]")?.focus({ preventScroll: true });
     });
   }
 

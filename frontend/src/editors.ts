@@ -183,7 +183,7 @@ import {
   weekdayNumbers,
   weekdayOptions,
 } from "./rule-presets.js";
-import { chartNumbers, timelineSamples, type ForcedBranches, type TimelineSample } from "./resolver.js";
+import { chartNumbers, leadingNumber, timelineSamples, type ForcedBranches, type TimelineSample } from "./resolver.js";
 import {
   type RichTextBlocked,
   type RichTextMoved,
@@ -1158,18 +1158,34 @@ function packToggle(browser: EditorHost["symbols"], key: string, showing: Symbol
 
 // ── Value editor ──────────────────────────────────────────────────────────
 
+/** Every source, named for what it gives rather than how it is computed, in
+ * the order people reach for them: a typed value, one entity, several, the
+ * clock, then the specialist ones. */
 const VALUE_KINDS: [ValueKind["kind"], string][] = [
   ["literal", "Fixed text"],
   ["entityState", "Entity state"],
   ["entityAttribute", "Entity attribute"],
-  ["entityAge", "Entity age (seconds)"],
-  ["aggregate", "Aggregate"],
-  ["time", "Time"],
-  ["dataAge", "Data age (seconds)"],
-  ["jinja", "Jinja template"],
+  ["entityAge", "Time since entity changed"],
+  ["aggregate", "Several entities combined"],
+  ["chartStat", "Number from a chart"],
+  ["time", "Clock and date"],
+  ["dataAge", "Time since last refresh"],
+  ["jinja", "Template (Jinja)"],
   ["named", "Shared value"],
-  ["chartStat", "A chart's number"],
 ];
+
+/** One line under Source that says what the chosen source gives. Sources
+ * whose own fields already explain them (a chart's number, a template, a
+ * shared value) are left out. */
+const VALUE_KIND_HINTS: Partial<Record<ValueKind["kind"], string>> = {
+  literal: "Words or a number you type. It never changes.",
+  entityState: "What Home Assistant shows for the entity, like 21.5 or on.",
+  entityAttribute: "One detail the entity carries besides its state, like a light's brightness.",
+  entityAge: "Seconds since the entity's state last changed. Set Seconds as, under Format, to read 5m instead of 300.",
+  aggregate: "Count several entities, or take the sum, average, lowest or highest of their states.",
+  time: "The time or date, read each time the complication refreshes.",
+  dataAge: "Seconds since the watch last fetched values.",
+};
 
 const CHART_STYLES: [ChartStyle, string][] = [
   ["bars", "Bars"], ["line", "Line"], ["area", "Area"],
@@ -1425,7 +1441,7 @@ function seedGaugeTotal(g: GaugeElement): Value {
 }
 
 const TIME_FIELDS: [TimeField, string][] = [
-  ["now", "Now (HH:mm)"], ["hour", "Hour"], ["minute", "Minute"], ["weekday", "Weekday"], ["day", "Day"], ["month", "Month"], ["timestamp", "Unix timestamp"],
+  ["now", "Time (14:05)"], ["hour", "Hour"], ["minute", "Minute"], ["weekday", "Day of the week (0 is Monday)"], ["day", "Day of the month"], ["month", "Month number"], ["timestamp", "Unix timestamp (seconds)"],
 ];
 
 function switchKind(current: ValueKind, kind: ValueKind["kind"]): ValueKind {
@@ -1454,6 +1470,9 @@ export interface ValueEditorOptions {
   noFormat?: boolean;
   /** Show the live resolved value. */
   showResolved?: boolean;
+  /** Resolve this instead of the edited value for Now. A shared value's editor
+   * passes a reference to itself, which is how every layer reads it. */
+  resolveAs?: Value;
   /** Fixed text is an SF Symbol name, so offer the picker instead of a plain field. */
   symbol?: boolean;
   /** Where the picker puts a Material Design icon's SVG path, and undefined
@@ -1709,7 +1728,6 @@ function valueForm(host: EditorHost, value: Value, set: (v: Value) => void, opts
       body = selectField("Field", k.timeField, TIME_FIELDS, (v) => setKind({ ...k, timeField: v }));
       break;
     case "dataAge":
-      body = html`<div class="hint">Seconds since the watch last fetched values.</div>`;
       break;
     case "jinja":
       body = html`${textArea("Template", k.value, (v) => setKind({ ...k, value: v }), 4)}
@@ -1739,19 +1757,114 @@ function valueForm(host: EditorHost, value: Value, set: (v: Value) => void, opts
           ${selectField("Number", k.stat, [...CHART_STATS], (v) => setKind({ ...k, stat: v }))}
           <div class="hint">${k.stat === "top" || k.stat === "bottom"
             ? "One end of the plot's range: what the tallest or shortest mark means. On a Fixed scale that is the Min or Max the chart was given."
-            : "Read from the readings the chart draws, after any trim. Decimals follow the chart's spread; set Decimals below to override, and Unit to print the entity's unit after it."}</div>`;
+            : "Read from the readings the chart draws, after any trim. Decimals follow the chart's spread; set Decimals below to override, and Add unit to print the entity's unit after it."}</div>`;
       break;
     }
   }
-  const resolved = opts.showResolved ? host.resolve(value) : undefined;
+  const kindHint = VALUE_KIND_HINTS[k.kind];
   return html`
     ${selectField("Source", k.kind, kinds, (kind) => setKind(switchKind(k, kind)))}
+    ${kindHint ? html`<div class="hint">${kindHint}</div>` : nothing}
     ${body}
     ${canShare(value, opts) ? html`<div class="hint keep">
       <button type="button" class="link" title="Move this into a shared value that other layers can read too" @click=${() => makeShared(host, value, set)}>Make shared</button>
       so other layers can read this too.</div>` : nothing}
-    ${opts.noFormat ? nothing : formatEditor(value.format, (f) => set(formatIsEmpty(f) ? { kind: value.kind } : { ...value, format: f }))}
-    ${opts.showResolved ? html`<div class="hint keep">Now:${resolved === undefined ? html`<span class="warn">unresolved</span>` : html`<code>${resolved}</code>`}</div>` : nothing}`;
+    ${opts.noFormat ? nothing : formatEditor(value.format, (f) => set(formatIsEmpty(f) ? { kind: value.kind } : { ...value, format: f }), formatFits(sourceKind(host, value)))}
+    ${opts.showResolved ? nowReadout(host, value, host.resolve(opts.resolveAs ?? value)) : nothing}`;
+}
+
+/** The source a value really reads: a shared value's own source, followed
+ * through any chain, or undefined while no shared value is chosen. */
+function sourceKind(host: EditorHost, value: Value): ValueKind | undefined {
+  let kind: ValueKind = value.kind;
+  for (let depth = 0; kind.kind === "named" && depth < 8; depth++) {
+    const id = kind.id.toUpperCase();
+    const target = host.config.values.find((n) => n.id.toUpperCase() === id);
+    if (!target) return undefined;
+    kind = target.value.kind;
+  }
+  return kind.kind === "named" ? undefined : kind;
+}
+
+/** Which format controls mean something for a source. */
+export interface FormatFits {
+  /** Decimals, Multiply and Offset: the source can read as a number. */
+  numbers: boolean;
+  /** Case: the source can read as words. */
+  textCase: boolean;
+  /** Add unit: the source has an entity unit to add. */
+  unit: boolean;
+  /** Seconds as: the source can be a count of seconds or a duration. */
+  seconds: boolean;
+}
+
+/**
+ * The format controls worth showing for a source. Decimals on "ABC" or a unit
+ * on the clock does nothing, and a control that does nothing reads as broken.
+ * Unknown (a shared value not yet chosen) shows everything, and the editor
+ * still shows any control that is already set, so nothing hidden stays on.
+ */
+export function formatFits(kind: ValueKind | undefined): FormatFits {
+  if (!kind) return { numbers: true, textCase: true, unit: true, seconds: true };
+  switch (kind.kind) {
+    case "literal": {
+      const isNumber = leadingNumber(kind.value) !== undefined;
+      return { numbers: isNumber, textCase: !isNumber, unit: false, seconds: isNumber };
+    }
+    case "entityState":
+    case "entityAttribute":
+    case "jinja":
+    case "named":
+      return { numbers: true, textCase: true, unit: kind.kind !== "jinja" && kind.kind !== "named", seconds: true };
+    case "entityAge":
+    case "dataAge":
+      return { numbers: true, textCase: false, unit: false, seconds: true };
+    case "aggregate":
+      return { numbers: true, textCase: false, unit: false, seconds: false };
+    case "chartStat": {
+      const arrow = kind.stat === "trend";
+      return { numbers: !arrow, textCase: false, unit: !arrow, seconds: false };
+    }
+    case "time":
+      return { numbers: kind.timeField !== "now", textCase: false, unit: false, seconds: false };
+  }
+}
+
+/** The Now line: what the value prints right now, spaces and all, or in
+ * plain words why it prints nothing yet. */
+function nowReadout(host: EditorHost, value: Value, resolved: string | undefined): TemplateResult {
+  const body = resolved === undefined
+    ? html`<span class="readout-v now-v none">${whyUnresolved(host, value)}</span>`
+    : resolved.trim() === ""
+      ? html`<span class="readout-v now-v none">Empty</span>`
+      : html`<span class="readout-v now-v"><span class="now-tok">${resolved}</span></span>`;
+  return html`<div class="field readout now-field"><span>Now</span>${body}</div>`;
+}
+
+/** Why a value has no reading, in the words of the step that is missing. */
+export function whyUnresolved(host: EditorHost, value: Value): string {
+  const k = value.kind;
+  switch (k.kind) {
+    case "entityState":
+    case "entityAttribute":
+    case "entityAge":
+      if (k.entityId === "") return "Pick an entity";
+      if (!host.hass.states[k.entityId]) return "No such entity";
+      if (k.kind === "entityAttribute" && k.attribute.trim() === "") return "Pick an attribute";
+      return k.kind === "entityState" ? "No reading" : "Waiting for Home Assistant";
+    case "chartStat":
+      return k.layer === "" ? "Pick a chart" : "The chart has no readings yet";
+    case "named": {
+      if (k.id === "") return "Pick a shared value";
+      const id = k.id.toUpperCase();
+      const target = host.config.values.find((n) => n.id.toUpperCase() === id);
+      return target ? whyUnresolved(host, target.value) : "That shared value is gone";
+    }
+    case "jinja":
+      return k.value.trim() === "" ? "Type a template" : "Waiting for Home Assistant";
+    default:
+      return "Waiting for Home Assistant";
+  }
 }
 
 /** Whether a value holds something worth sharing: it is not already shared,
@@ -1777,9 +1890,11 @@ function makeShared(host: EditorHost, value: Value, set: (v: Value) => void): vo
   host.endGesture();
 }
 
-/** Point a value at a new, empty shared value and open that value to fill in. */
+/** Point a value at a new, empty shared value and open that value to fill in.
+ * It starts without a name, so opening it puts the caret in the Name box. */
 function startShared(host: EditorHost, value: Value, set: (v: Value) => void): void {
-  const { named, ref } = shareValue(host.config, { ...value, kind: { kind: "literal", value: "" } }, "Value");
+  const { named, ref } = shareValue(host.config, { ...value, kind: { kind: "literal", value: "" } }, "");
+  named.name = "";
   host.beginGesture();
   host.update((c) => { c.values.push(named); });
   set(ref);
@@ -1787,28 +1902,45 @@ function startShared(host: EditorHost, value: Value, set: (v: Value) => void): v
   host.selectValue(named.id);
 }
 
-function formatEditor(format: ValueFormat | undefined, set: (f: ValueFormat) => void) {
+/**
+ * How a value is printed. Only the controls that do something for this source
+ * are drawn (see `formatFits`), plus any that are already set, so a format
+ * carried over from another source can still be seen and cleared. The summary
+ * says what is on, so a closed section is not a mystery.
+ */
+function formatEditor(format: ValueFormat | undefined, set: (f: ValueFormat) => void, fits: FormatFits) {
   const f = format ?? {};
   const upd = (patch: Partial<ValueFormat>) => {
     const next: ValueFormat = { ...f, ...patch };
     for (const key of Object.keys(next) as (keyof ValueFormat)[]) if (next[key] === undefined || next[key] === false || next[key] === "") delete next[key];
     set(next);
   };
-  return html`<details class="sub" ?open=${!formatIsEmpty(format)}>
-    <summary>Format${formatIsEmpty(format) ? "" : " (on)"}</summary>
+  const empty = formatIsEmpty(format);
+  const show = {
+    decimals: fits.numbers || f.decimals !== undefined,
+    multiply: fits.numbers || f.multiply !== undefined,
+    offset: fits.numbers || f.offset !== undefined,
+    textCase: fits.textCase || f.textCase !== undefined,
+    unit: fits.unit || !!f.useEntityUnit,
+    seconds: fits.seconds || !!f.relativeTime || !!f.duration,
+  };
+  return html`<details class="sub format" ?open=${!empty}>
+    <summary>Format${empty ? html`<span class="sum-note">as it comes</span>` : html`<span class="sum-note">${describeFormat(format).replace(/^ \((.*)\)$/, "$1")}</span>`}</summary>
     <div class="grid2">
-      ${numberField("Decimals", f.decimals, (v) => upd({ decimals: v }), { step: 1, min: 0, max: 6, optional: true })}
-      ${numberField("Multiply", f.multiply, (v) => upd({ multiply: v }), { optional: true })}
-      ${numberField("Offset", f.offset, (v) => upd({ offset: v }), { optional: true })}
-      ${segField("Case", f.textCase ?? "", [["", "As is"], ["upper", "UPPER"], ["lower", "lower"], ["capitalized", "Capitalized"]], (v) => upd({ textCase: (v || undefined) as ValueFormat["textCase"] }))}
-      ${textField("Prefix", f.prefix ?? "", (v) => upd({ prefix: v }))}
-      ${textField("Suffix", f.suffix ?? "", (v) => upd({ suffix: v }))}
+      ${show.decimals ? numberField("Decimals", f.decimals, (v) => upd({ decimals: v }), { step: 1, min: 0, max: 6, optional: true, placeholder: "as is" }) : nothing}
+      ${show.multiply ? numberField("Multiply", f.multiply, (v) => upd({ multiply: v }), { optional: true, placeholder: "1" }) : nothing}
+      ${show.offset ? numberField("Plus", f.offset, (v) => upd({ offset: v }), { optional: true, placeholder: "0" }) : nothing}
+      ${show.textCase ? segField("Case", f.textCase ?? "", [["", "As is"], ["upper", "ABC"], ["lower", "abc"], ["capitalized", "Abc"]],
+        (v) => upd({ textCase: (v || undefined) as ValueFormat["textCase"] }),
+        { titles: { "": "Leave the letters as they are", upper: "UPPER CASE", lower: "lower case", capitalized: "Capital First Letters" } }) : nothing}
+      ${textField("Before", f.prefix ?? "", (v) => upd({ prefix: v }), { placeholder: "text in front" })}
+      ${textField("After", f.suffix ?? "", (v) => upd({ suffix: v }), { placeholder: "text after" })}
     </div>
-    ${checkField("Add unit", !!f.useEntityUnit, (v) => upd({ useEntityUnit: v }))}
-    ${segField("Seconds as", f.duration ? "duration" : f.relativeTime ? "relativeTime" : "",
-      [["", "None"], ["relativeTime", "Time ago"], ["duration", "Duration"]],
+    ${show.unit ? checkField("Add unit", !!f.useEntityUnit, (v) => upd({ useEntityUnit: v })) : nothing}
+    ${show.seconds ? segField("Seconds as", f.duration ? "duration" : f.relativeTime ? "relativeTime" : "",
+      [["", "Number"], ["relativeTime", "Short"], ["duration", "Duration"]],
       (v) => upd({ relativeTime: v === "relativeTime", duration: v === "duration" }),
-      { titles: { relativeTime: "45s, 2m, 3h", duration: "1h 23m, 45s" } })}
+      { titles: { "": "300", relativeTime: "One unit: 45s, 5m, 3h", duration: "Two units: 1h 23m, 5m 0s" } }) : nothing}
   </details>`;
 }
 
@@ -2056,14 +2188,20 @@ export function namedValueEditor(host: EditorHost, nv: NamedValue): TemplateResu
   const idx = host.config.values.findIndex((v) => v.id === nv.id);
   const key = `nv-${nv.id}`;
   const uses = sharedValueUses(host.config, nv.id);
+  // Now reads the shared value the way a layer does, by reference: Home
+  // Assistant renders a shared template under the shared value's own key, so
+  // asking for the bare source would never find its answer.
+  const asRead: Value = { kind: { kind: "named", id: nv.id } };
   return html`
-    ${textField("Name", nv.name, (v) => host.update((c) => { c.values[idx]!.name = v; }, `${key}-name`))}
-    ${valueEditor(host, nv.value, (v) => host.update((c) => { c.values[idx]!.value = v; }, key), { allowNamed: false, showResolved: true, inline: true, key })}
-    <div class="field readout"><span>Used by</span><span class="readout-v">${uses} ${uses === 1 ? "layer" : "layers"}</span></div>`;
+    ${textField("Name", nv.name, (v) => host.update((c) => { c.values[idx]!.name = v; }, `${key}-name`), { placeholder: "Name it, like Outside temp" })}
+    ${valueEditor(host, nv.value, (v) => host.update((c) => { c.values[idx]!.value = v; }, key), { allowNamed: false, showResolved: true, resolveAs: asRead, inline: true, key })}
+    <div class="field readout"><span>Used by</span><span class="readout-v">${uses === 0 ? "No layers yet" : `${uses} ${uses === 1 ? "layer" : "layers"}`}</span></div>`;
 }
 
+/** A new shared value starts blank, name included: the panel puts the caret
+ * in its Name box, and a placeholder name would only have to be deleted. */
 export function newNamedValue(): NamedValue {
-  return { id: newId(), name: "Value", value: literal("") };
+  return { id: newId(), name: "", value: literal("") };
 }
 
 // ── Layers ────────────────────────────────────────────────────────────────
