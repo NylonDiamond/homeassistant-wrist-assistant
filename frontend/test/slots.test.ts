@@ -1,7 +1,7 @@
 // The auto-assigner and the "Send to watch" button, as pure functions.
 
 import { describe, expect, it } from "vitest";
-import { MAX_SLOTS, freeSlotFrom, type OccupiedSlot } from "../src/model.js";
+import { MAX_SLOTS, freeSlotFrom, lockedOccupied, type OccupiedSlot } from "../src/model.js";
 import { describeSend, sendState } from "../src/send-state.js";
 
 const occ = (slot: number, kind: OccupiedSlot["kind"] = "preset", home = ""): OccupiedSlot => ({
@@ -29,6 +29,25 @@ describe("freeSlotFrom", () => {
     const records = Array.from({ length: MAX_SLOTS / 2 }, (_, i) => i);
     const occupied = Array.from({ length: MAX_SLOTS / 2 }, (_, i) => occ(i + MAX_SLOTS / 2));
     expect(freeSlotFrom(records, occupied)).toBe(-1);
+  });
+});
+
+// The picker's locked rows. A preset that moved into Home Assistant is still
+// reported by the watch until its next sync, so a record on its slot wins.
+describe("lockedOccupied", () => {
+  it("drops a preset whose slot a record now holds", () => {
+    expect(lockedOccupied([1], [occ(1), occ(2)])).toEqual([occ(2)]);
+  });
+
+  it("keeps a custom on another home even when a record shares its slot", () => {
+    const cabin = occ(1, "custom", "Cabin");
+    expect(lockedOccupied([1], [cabin])).toEqual([cabin]);
+  });
+
+  it("keeps every entry when no record holds a slot", () => {
+    const occupied = [occ(0), occ(3, "custom", "Cabin")];
+    expect(lockedOccupied([], occupied)).toEqual(occupied);
+    expect(lockedOccupied([1, 2], occupied)).toEqual(occupied);
   });
 });
 

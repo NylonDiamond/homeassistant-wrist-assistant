@@ -43,6 +43,7 @@ import {
   pasteElementsOnto,
   type LayerClip,
   freeSlotFrom,
+  lockedOccupied,
   isAttachedTap,
   layerEntityUses,
   type LayerGroup,
@@ -399,6 +400,9 @@ export class WristAssistantPanel extends LitElement {
    * only state a short list ever has: the filter header only appears once the
    * list is long enough to be worth narrowing. Per session, never saved. */
   @state() private pickerFilter: FamilyKind | "all" = "all";
+  /** The slot of the locked picker row whose explanation is unfolded. A tap
+   * shows it inline because a hover title never appears on a touch screen. */
+  @state() private pickerNote?: number;
   /** The Shared values list under the complication settings is unfolded. */
   /** Entity states typed in under the preview, standing in for the live ones
    * so the other states can be seen without waiting for the house. Never
@@ -789,7 +793,8 @@ export class WristAssistantPanel extends LitElement {
     }
     .picker .menu .row:hover { background: var(--wa-panel); }
     .picker .menu .row[aria-current="true"] { background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
-    .picker .menu .row.locked { opacity: .6; cursor: default; }
+    .picker .menu .row.locked { opacity: .6; cursor: help; }
+    .picker .menu .pk-note { font-size: 12px; line-height: 1.4; color: var(--wa-muted); padding: 0 10px 8px 88px; }
     .picker .menu .pk-badge { font-size: 11px; opacity: .7; white-space: nowrap; }
     /* The row picture: the complication drawn as the watch draws it, in a
        fixed box so every name in the list still starts on the same column. */
@@ -3927,7 +3932,7 @@ export class WristAssistantPanel extends LitElement {
           </li>
           <li>
             <span class="gate-n">3</span>
-            <div><b>Reload this page</b><span>The editor opens. Complications your iPhone still holds show as locked slots until you move or delete them in the iPhone app.</span></div>
+            <div><b>Reload this page</b><span>The editor opens. Complications still on your iPhone move here by themselves once the watch app is updated.</span></div>
           </li>
         </ol>
         <div class="gate-foot">${kept}</div>
@@ -3939,11 +3944,13 @@ export class WristAssistantPanel extends LitElement {
 
   /** The rows the picker shows, in watch face order (by slot). iPhone presets
    * and customs on another home are locked rows: this panel cannot edit them,
-   * but hiding them is what used to make slots look haunted. */
+   * but hiding them is what used to make slots look haunted. A preset whose
+   * slot a record already holds has moved here and is left out. */
   private pickerRows(): PickerRow[] {
+    const records = this.records.map((r): PickerRow => ({ slot: Number(r.document?.slotIndex ?? 0), kind: "record", record: r }));
     const rows: PickerRow[] = [
-      ...this.records.map((r): PickerRow => ({ slot: Number(r.document?.slotIndex ?? 0), kind: "record", record: r })),
-      ...this.occupied.map((o): PickerRow => o.kind === "custom"
+      ...records,
+      ...lockedOccupied(records.map((r) => r.slot), this.occupied).map((o): PickerRow => o.kind === "custom"
         ? {
           slot: o.slot,
           kind: "locked",
@@ -3957,7 +3964,7 @@ export class WristAssistantPanel extends LitElement {
           kind: "locked",
           name: o.name || "Unnamed preset",
           badge: "iPhone",
-          title: "An iPhone preset complication. Edit it in the Wrist Assistant app on the iPhone.",
+          title: "Still on the iPhone. Open the Wrist Assistant app on the iPhone to move it here.",
           families: [],
         }),
     ];
@@ -4066,12 +4073,14 @@ export class WristAssistantPanel extends LitElement {
               ${this.shapeDots(familiesOf(row.record))}
               <span class="pk-badge">r${row.record.revision}</span>
             </button>`
-          : html`<div class="row locked" title=${row.title}>
+          : html`<button type="button" class="row locked" role="option" aria-disabled="true" title=${row.title}
+              @click=${() => { this.pickerNote = this.pickerNote === row.slot ? undefined : row.slot; }}>
               <span class="pk-art"></span>
               <span class="pk-name">${row.name}</span>
               ${this.shapeDots(row.families)}
               <span class="pk-badge">${row.badge}</span>
-            </div>`)}
+            </button>
+            ${this.pickerNote === row.slot ? html`<div class="pk-note">${row.title}</div>` : nothing}`)}
         ${d && d.baseRevision === null ? html`<div class="row" aria-current="true"><span class="pk-art"></span><span class="pk-name">${name}</span>${this.shapeDots(families)}<span class="pk-badge">unsaved</span></div>` : nothing}
       </div>` : nothing}
     </div>`;
@@ -4079,6 +4088,7 @@ export class WristAssistantPanel extends LitElement {
 
   private togglePicker(next = !this.pickerOpen) {
     this.pickerOpen = next;
+    if (!next) this.pickerNote = undefined;
     if (next) window.addEventListener("pointerdown", this.pickerOutside, { capture: true });
     else window.removeEventListener("pointerdown", this.pickerOutside, { capture: true });
   }

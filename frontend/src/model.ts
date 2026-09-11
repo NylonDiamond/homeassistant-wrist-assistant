@@ -55,6 +55,15 @@ export function freeSlotFrom(recordSlots: Iterable<number>, occupied: Iterable<{
   return -1;
 }
 
+/** The occupied entries the picker still draws as locked rows. A preset whose
+ * slot a stored record now holds has already moved into Home Assistant: the
+ * watch keeps reporting the preset until its next sync, and drawing both would
+ * show one slot twice. Customs on another home always stay. */
+export function lockedOccupied(recordSlots: Iterable<number>, occupied: readonly OccupiedSlot[]): OccupiedSlot[] {
+  const held = new Set<number>(recordSlots);
+  return occupied.filter((o) => o.kind !== "preset" || !held.has(o.slot));
+}
+
 /** The schema a document must carry for its content. Mirrors
  * `CustomComplicationConfig.schemaVersion(for:)` in the app.
  *
