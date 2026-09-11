@@ -1950,7 +1950,7 @@ export class WristAssistantPanel extends LitElement {
       position: absolute; top: -4px; width: 2px; height: 16px; margin-left: -1px; border-radius: 1px;
       background: var(--wa-ink); box-shadow: 0 0 0 1.5px var(--wa-card);
     }
-    .band-row { position: relative; display: grid; grid-template-columns: 12px 54px minmax(0, 1fr) 22px; gap: 4px; align-items: center; min-height: 28px; }
+    .band-row { position: relative; display: grid; grid-template-columns: 12px 64px minmax(0, 1fr) 22px; gap: 4px; align-items: center; min-height: 28px; }
     .band-row .le { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--wa-muted); text-align: center; }
     .band-row .else { font-size: 12px; color: var(--wa-muted); padding-left: 2px; }
     .band-row.hit .le, .band-row.hit .else { color: var(--wa-val); font-weight: 700; }
@@ -5880,20 +5880,22 @@ export class WristAssistantPanel extends LitElement {
     }, "multi-colour");
     return html`
       ${card(host, "picked", `${n} layers picked`, html`
-          <div class="picked">
-            ${rows.map((el) => html`<div class="row" style=${`--k:${KIND_COLOR[el.kind]}`}>
-              <span class="bar"></span>
-              <span class="name">
-                ${el.kind === "icon" ? html`<span class="glyph">${this.icons.render(resolver.resolve(el.payload.symbol) ?? "questionmark", 16, el.payload.colorSlot.baseColorHex) ?? nothing}</span>` : nothing}
-                <b>${layerTitle(el, ctx)}</b><span class="kind">${KIND_LABEL[el.kind]}</span>
-              </span>
-            </div>`)}
+          <div class="field list-field"><span>Layers</span>
+            <div class="picked">
+              ${rows.map((el) => html`<div class="row" style=${`--k:${KIND_COLOR[el.kind]}`}>
+                <span class="bar"></span>
+                <span class="name">
+                  ${el.kind === "icon" ? html`<span class="glyph">${this.icons.render(resolver.resolve(el.payload.symbol) ?? "questionmark", 16, el.payload.colorSlot.baseColorHex) ?? nothing}</span>` : nothing}
+                  <b>${layerTitle(el, ctx)}</b><span class="kind">${KIND_LABEL[el.kind]}</span>
+                </span>
+              </div>`)}
+            </div>
+            <div class="row-acts">
+              <button class="small primary" title=${`Group (${KEY_MOD}G)`} @click=${() => this.groupPicked()}>Group them</button>
+              <button class="small" @click=${() => { this.multi = new Set(); }}>Clear</button>
+            </div>
           </div>
-          <div class="hint">${MULTI_KEY}-click a layer to add it or take it out. Click one on its own to edit it alone.</div>
-          <div class="adders">
-            <button class="small primary" title=${`Group (${KEY_MOD}G)`} @click=${() => this.groupPicked()}>Group them</button>
-            <button class="small" @click=${() => { this.multi = new Set(); }}>Clear</button>
-          </div>`,
+          <div class="hint">${MULTI_KEY}-click a layer to add it or take it out. Click one on its own to edit it alone.</div>`,
         { color: "var(--wa-accent)", icon: "layers", summary: `Edits here land on all ${n}`, alwaysOpen: true })}
       ${card(host, "picked-common", `All ${n} at once`, html`
           ${this.triCheck("Hidden", common.hiddenHere, setHiddenHere)}

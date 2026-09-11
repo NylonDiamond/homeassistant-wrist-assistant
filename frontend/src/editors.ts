@@ -2001,7 +2001,7 @@ export function namedValueEditor(host: EditorHost, nv: NamedValue): TemplateResu
   return html`
     ${textField("Name", nv.name, (v) => host.update((c) => { c.values[idx]!.name = v; }, `${key}-name`))}
     ${valueEditor(host, nv.value, (v) => host.update((c) => { c.values[idx]!.value = v; }, key), { allowNamed: false, showResolved: true, inline: true, key })}
-    <div class="hint keep">Used by ${countNamedUses(host.config, nv.id)} layer${countNamedUses(host.config, nv.id) === 1 ? "" : "s"}.</div>`;
+    <div class="field readout"><span>Used by</span><span class="readout-v">${countNamedUses(host.config, nv.id)} layer${countNamedUses(host.config, nv.id) === 1 ? "" : "s"}</span></div>`;
 }
 
 function countNamedUses(cfg: CustomComplicationConfig, id: string): number {
