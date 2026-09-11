@@ -19,6 +19,7 @@ import {
   type ResolvedBezelGauge,
   type ResolvedElement,
   type ResolvedLayout,
+  type ResolvedTextPart,
   type TextSpan,
   type TimelineLabel,
 } from "./resolver.js";
@@ -277,37 +278,173 @@ function lineStarts(text: string, lines: readonly string[]): number[] {
   return [words[0] ?? 0, words[lines[0]!.split(" ").length] ?? text.length];
 }
 
-/** One drawn line as runs of one colour. The line is the text from `from` with
+/** One drawn line as runs of one look. The line is the text from `from` with
  * its whitespace folded and perhaps cut short with an ellipsis, so each character
- * is matched back in order: a character still there takes its own colour, folded
- * whitespace takes the colour of the whitespace it stands for, and anything the
- * text does not have (the ellipsis) takes the colour of the character before it. */
-function paintLine(line: string, from: number, text: string, colours: readonly string[], fallback: string): TextSpan[] {
-  const runs: TextSpan[] = [];
+ * is matched back in order: a character still there takes its own look, folded
+ * whitespace takes the look of the whitespace it stands for, and anything the
+ * text does not have (the ellipsis) takes the look of the character before it.
+ * A look is a colour for colour by value and a whole part style for rich text;
+ * neighbours merge when they hold the very same look. */
+function paintLine<T>(line: string, from: number, text: string, looks: readonly T[], fallback: T): { text: string; look: T }[] {
+  const runs: { text: string; look: T }[] = [];
   let at = from;
   let previous = fallback;
   const blank = (i: number) => i < text.length && /\s/.test(text[i]!);
   for (const ch of line) {
-    let hex = previous;
+    let look = previous;
     if (/\s/.test(ch)) {
-      if (blank(at)) hex = colours[at]!;
+      if (blank(at)) look = looks[at]!;
       while (blank(at)) at++;
     } else {
       while (blank(at)) at++;
       if (text.startsWith(ch, at)) {
-        hex = colours[at]!;
+        look = looks[at]!;
         at += ch.length;
       }
     }
-    previous = hex;
+    previous = look;
     const last = runs.at(-1);
-    if (last && last.colorHex === hex) last.text += ch;
-    else runs.push({ text: ch, colorHex: hex });
+    if (last && last.look === look) last.text += ch;
+    else runs.push({ text: ch, look });
   }
   return runs;
 }
 
+/** How one character of a rich text layer is drawn. */
+interface PartLook {
+  fontSize: number;
+  fontWeight: string;
+  colorHex: string;
+}
+
+type PartRun = { text: string; look: PartLook };
+
+/** The look of each code unit of the joined parts: the part's size and weight,
+ * and its span's colour when it colours by value. One object per span, so
+ * `paintLine` merges exactly the characters that share a run. */
+function partLooks(parts: readonly ResolvedTextPart[]): PartLook[] {
+  const out: PartLook[] = [];
+  for (const part of parts) {
+    const runs = part.spans !== undefined && part.spans.map((s) => s.text).join("") === part.text
+      ? part.spans
+      : [{ text: part.text, colorHex: part.colorHex }];
+    for (const run of runs) {
+      const look: PartLook = { fontSize: part.fontSize, fontWeight: part.fontWeight, colorHex: run.colorHex };
+      for (let i = 0; i < run.text.length; i++) out.push(look);
+    }
+  }
+  return out;
+}
+
+/** Width of drawn runs at `scale`, each character at its own size. */
+function runsWidth(runs: readonly PartRun[], scale: number): number {
+  return runs.reduce((w, r) => w + r.text.length * textCharWidth(r.look.fontSize * scale), 0);
+}
+
+/** `wrapToTwoLines`, measured character by character, because the parts of one
+ * line do not share a size. The gap a folded break leaves is one space in the
+ * size of the character before the word. */
+function wrapPartsToTwoLines(text: string, looks: readonly PartLook[], boxWidth: number): string[] {
+  const words = [...text.matchAll(/\S+/g)];
+  if (words.length < 2) return [text];
+  const size = (i: number) => looks[i]?.fontSize ?? 0;
+  let used = 0;
+  let taken = 0;
+  // Stop one short of the end so the second line is never empty. The first word
+  // is always taken, so a long unbroken one shrinks instead.
+  for (let i = 0; i < words.length - 1; i++) {
+    const start = words[i]!.index ?? 0;
+    let add = taken === 0 ? 0 : textCharWidth(size(start - 1));
+    for (let j = start; j < start + words[i]![0].length; j++) add += textCharWidth(size(j));
+    if (taken > 0 && used + add > boxWidth) break;
+    used += add;
+    taken = i + 1;
+  }
+  const join = (list: RegExpExecArray[]) => list.map((m) => m[0]).join(" ");
+  return [join(words.slice(0, taken)), join(words.slice(taken))];
+}
+
+/** `truncateToBox` over runs of mixed sizes: keep what fits beside an ellipsis
+ * in the size of the character it follows, at least one character, then trim
+ * trailing whitespace. The ellipsis joins the last run kept. */
+function truncateRuns(runs: readonly PartRun[], scale: number, boxWidth: number): PartRun[] {
+  if (boxWidth <= 0 || runsWidth(runs, scale) <= boxWidth) return [...runs];
+  const out: PartRun[] = [];
+  let used = 0;
+  let kept = 0;
+  cut: for (const run of runs) {
+    const size = run.look.fontSize * scale;
+    const budget = boxWidth - 0.8 * size;
+    let text = "";
+    for (const ch of run.text) {
+      if (kept > 0 && used + ch.length * textCharWidth(size) > budget) {
+        if (text !== "") out.push({ text, look: run.look });
+        break cut;
+      }
+      text += ch;
+      used += ch.length * textCharWidth(size);
+      kept += 1;
+    }
+    out.push({ text, look: run.look });
+  }
+  while (out.length > 0) {
+    const last = out.at(-1)!;
+    last.text = last.text.replace(/\s+$/, "");
+    if (last.text !== "") break;
+    out.pop();
+  }
+  const tail = out.at(-1);
+  if (tail) tail.text += "…";
+  else if (runs[0]) out.push({ text: "…", look: runs[0].look });
+  return out;
+}
+
+/**
+ * A rich text layer: runs drawn as `<tspan>`s, each with its own size, weight
+ * and fill. Wrapping, shrinking and truncation make the same decisions as a
+ * plain layer, measured per character at each run's size, and a shrink scales
+ * every run by the one factor so the parts keep their proportions.
+ */
+function renderTextParts(el: Extract<ResolvedElement, { kind: "text" }>, parts: readonly ResolvedTextPart[], box: Box) {
+  const looks = partLooks(parts);
+  const lines = el.lineLimit === 2 && box.w > 0 ? wrapPartsToTwoLines(el.text, looks, box.w) : [el.text];
+  const starts = lineStarts(el.text, lines);
+  const painted = lines.map((line, i) => paintLine(line, starts[i] ?? 0, el.text, looks, looks[0]!));
+  const widest = Math.max(...painted.map((runs) => runsWidth(runs, 1)));
+  const scale = widest > box.w && box.w > 0 ? Math.max(0.5, box.w / widest) : 1;
+  const drawn = painted.map((runs) => truncateRuns(runs, scale, box.w));
+  const { anchor, x } = textAnchor(el.alignment, box);
+  const tallest = Math.max(0, ...drawn.flat().map((r) => r.look.fontSize)) * scale || el.fontSize * scale;
+  // The runs share the alphabetic baseline, as SwiftUI sets mixed sizes, rather
+  // than each centring on its own size, which would float a small unit halfway
+  // up a big number. Dropping the baseline a third of the tallest size keeps
+  // the block on the frame's centre, as `dominant-baseline="central"` does for
+  // a plain layer.
+  const baseline = 0.35 * tallest;
+  const step = tallest * 1.15;
+  const lineBody = (runs: readonly PartRun[]) => runs.map((run) => {
+    const a = colorAttrs(run.look.colorHex, "fill");
+    return svg`<tspan font-size=${run.look.fontSize * scale} font-weight=${FONT_WEIGHT[run.look.fontWeight] ?? 400} fill=${a.fill} fill-opacity=${a["fill-opacity"]}>${run.text}</tspan>`;
+  });
+  const c = colorAttrs(el.colorHex, "fill");
+  const body = drawn.length > 1
+    ? svg`${drawn.map((runs, i) => svg`<tspan x=${x} y=${box.cy + baseline + (i - (drawn.length - 1) / 2) * step}>${lineBody(runs)}</tspan>`)}`
+    : lineBody(drawn[0]!);
+  return svg`<text x=${x} y=${box.cy + baseline} text-anchor=${anchor}
+    font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif"
+    font-size=${el.fontSize * scale} font-weight=${FONT_WEIGHT[el.fontWeight] ?? 400}
+    style=${el.monospacedDigits ? "font-variant-numeric: tabular-nums" : nothing}
+    fill=${c.fill} fill-opacity=${c["fill-opacity"]}>${body}</text>`;
+}
+
 function renderText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box) {
+  // Rich text, unless a countdown is ticking: the resolver never pairs the two,
+  // and a stale pairing should still tick rather than freeze on its parts. Parts
+  // that no longer spell the text draw as plain text, the way stale spans do.
+  if (el.parts !== undefined && el.countdownEnd === undefined && el.parts.map((p) => p.text).join("") === el.text) {
+    if (el.text === "") return nothing;
+    return renderTextParts(el, el.parts, box);
+  }
   const c = colorAttrs(el.colorHex, "fill");
   // Live countdown: the preview shows the remaining time at render; the panel
   // re-renders once a second while any countdown is live, so it ticks too.
@@ -331,7 +468,7 @@ function renderText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box) {
   const starts = colours ? lineStarts(el.text, lines) : [];
   const lineBody = (line: string, i: number) => colours
     ? paintLine(line, starts[i] ?? 0, el.text, colours, el.colorHex).map((run) => {
-      const a = colorAttrs(run.colorHex, "fill");
+      const a = colorAttrs(run.look, "fill");
       return svg`<tspan fill=${a.fill} fill-opacity=${a["fill-opacity"]}>${run.text}</tspan>`;
     })
     : line;

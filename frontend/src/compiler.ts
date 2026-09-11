@@ -196,6 +196,11 @@ export function compile(config: CustomComplicationConfig): Compiled {
   for (const el of config.elements) {
     const primary = primaryValue(el);
     if (primary) visit(primary);
+    // A rich text layer draws its parts, and its value is only the fallback
+    // an older watch shows, so every part is fetched. Walked even under a
+    // countdown, which ignores parts, so flipping that switch never changes
+    // what the watch is asked to fetch.
+    if (el.kind === "text") for (const part of el.payload.parts ?? []) visit(part.value);
     // A dot gauge's total is an ordinary value, so it is fetched like one. The
     // usual pairing, a filtered count and the same count unfiltered, dedupes to
     // two lines of one template document and no extra request.

@@ -1,0 +1,594 @@
+{
+  "name": "Text parts",
+  "description": "A text layer with parts draws each part in its own colour, weight and size, and each part set to colour by value reads its own band table. The price line takes the layer look for its words, a semibold 21 pt number in its band colour, and a rule aimed at the number makes it bold. The weather line has two numbers with two different band tables, one typed out of order. The car line mixes layer rules and part rules: the layer rule recolours and resizes every part that has no colour or size of its own, a part rule rewrites one part's words, a part rule recolours the number while its band still wins for the digits, a part rule hides the charging part, and a rule aimed at a part id that no part has does nothing. A layer rule that sets the text replaces the parts with that text in the layer look. A countdown ignores parts. A missing entity reads --, an empty part stays empty with no runs, and a part with a table but no colour by value has no runs. When every part is hidden the text is empty and the parts list is empty. Parts are walked by the compiler, so an entity only a part reads is still registered.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-000000000300",
+    "name": "Text parts",
+    "slotIndex": 2,
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000301",
+          "value": {
+            "kind": { "kind": "entityState", "entityId": "sensor.electricity_price", "displayName": "Electricity price", "domain": "sensor" },
+            "format": { "decimals": 2, "prefix": "Now ", "suffix": " €/kWh" }
+          },
+          "fontSize": 15,
+          "fontWeight": "regular",
+          "parts": [
+            {
+              "id": "A0000000-0000-4000-8000-000000000311",
+              "value": { "kind": { "kind": "literal", "value": "Now " } }
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000312",
+              "value": {
+                "kind": { "kind": "entityState", "entityId": "sensor.electricity_price", "displayName": "Electricity price", "domain": "sensor" },
+                "format": { "decimals": 2 }
+              },
+              "fontWeight": "semibold",
+              "fontSize": 21,
+              "coloring": "bands",
+              "bands": [
+                { "id": "B0000000-0000-4000-8000-000000000321", "upTo": 0.2, "colorHex": "#30D158" },
+                { "id": "B0000000-0000-4000-8000-000000000322", "upTo": 0.3, "colorHex": "#FFD60A" }
+              ]
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000313",
+              "value": { "kind": { "kind": "literal", "value": " €/kWh" } },
+              "fontSize": 11
+            }
+          ],
+          "colorSlot": { "baseColorHex": "#8E8E93" },
+          "rules": [
+            {
+              "id": "DDDDDDDD-0000-4000-8000-000000000331",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000332",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "BBBBBBBB-0000-4000-8000-000000000333",
+                        "value": { "kind": { "kind": "entityState", "entityId": "sensor.electricity_price", "displayName": "Electricity price", "domain": "sensor" } },
+                        "comparison": {
+                          "kind": "greaterThan",
+                          "value": { "kind": { "kind": "literal", "value": "0.25" } }
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    { "kind": "setFontWeight", "weight": "bold" }
+                  ]
+                }
+              ],
+              "partId": "A0000000-0000-4000-8000-000000000312"
+            }
+          ],
+          "frame": { "x": 0, "y": 0, "width": 1, "height": 0.14, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000302",
+          "value": {
+            "kind": { "kind": "entityState", "entityId": "sensor.outdoor_temperature", "displayName": "Outdoor temperature", "domain": "sensor" },
+            "format": { "decimals": 1, "suffix": "°C  " }
+          },
+          "fontSize": 15,
+          "fontWeight": "regular",
+          "parts": [
+            {
+              "id": "A0000000-0000-4000-8000-000000000341",
+              "value": {
+                "kind": { "kind": "entityState", "entityId": "sensor.outdoor_temperature", "displayName": "Outdoor temperature", "domain": "sensor" },
+                "format": { "decimals": 1 }
+              },
+              "fontWeight": "semibold",
+              "fontSize": 22,
+              "coloring": "bands",
+              "bands": [
+                { "id": "B0000000-0000-4000-8000-000000000351", "upTo": 10, "colorHex": "#64D2FF" },
+                { "id": "B0000000-0000-4000-8000-000000000352", "upTo": 25, "colorHex": "#30D158" }
+              ],
+              "bandAboveColorHex": "#FF9F0A"
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000342",
+              "value": { "kind": { "kind": "literal", "value": "°C  " } },
+              "colorHex": "#8E8E93",
+              "fontSize": 12
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000343",
+              "value": { "kind": { "kind": "entityState", "entityId": "sensor.outdoor_humidity", "displayName": "Outdoor humidity", "domain": "sensor" } },
+              "fontWeight": "semibold",
+              "coloring": "bands",
+              "bands": [
+                { "id": "B0000000-0000-4000-8000-000000000354", "upTo": 70, "colorHex": "#30D158" },
+                { "id": "B0000000-0000-4000-8000-000000000353", "upTo": 40, "colorHex": "#FFD60A" }
+              ],
+              "bandAboveColorHex": "#64D2FF"
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000344",
+              "value": { "kind": { "kind": "literal", "value": "%" } },
+              "colorHex": "#8E8E93",
+              "fontSize": 12
+            }
+          ],
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [],
+          "frame": { "x": 0, "y": 0.14, "width": 1, "height": 0.14, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000303",
+          "value": {
+            "kind": { "kind": "entityState", "entityId": "sensor.car_battery", "displayName": "Car battery", "domain": "sensor" },
+            "format": { "prefix": "Car ", "suffix": "%  charging" }
+          },
+          "fontSize": 14,
+          "fontWeight": "regular",
+          "parts": [
+            {
+              "id": "A0000000-0000-4000-8000-000000000361",
+              "value": { "kind": { "kind": "literal", "value": "Car " } }
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000362",
+              "value": { "kind": { "kind": "entityState", "entityId": "sensor.car_battery", "displayName": "Car battery", "domain": "sensor" } },
+              "fontWeight": "bold",
+              "coloring": "bands",
+              "bands": [
+                { "id": "B0000000-0000-4000-8000-000000000371", "upTo": 20, "colorHex": "#FF453A" },
+                { "id": "B0000000-0000-4000-8000-000000000372", "upTo": 50, "colorHex": "#FFD60A" }
+              ],
+              "bandAboveColorHex": "#30D158"
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000363",
+              "value": { "kind": { "kind": "literal", "value": "%" } },
+              "fontSize": 11
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000364",
+              "value": { "kind": { "kind": "literal", "value": "  charging" } },
+              "colorHex": "#64D2FF",
+              "fontSize": 11
+            }
+          ],
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [
+            {
+              "id": "DDDDDDDD-0000-4000-8000-000000000381",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000382",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "BBBBBBBB-0000-4000-8000-000000000383",
+                        "value": { "kind": { "kind": "entityState", "entityId": "binary_sensor.car_charging", "displayName": "Car charging", "domain": "binary_sensor" } },
+                        "comparison": { "kind": "isOff" }
+                      }
+                    ]
+                  },
+                  "then": [
+                    { "kind": "hide" }
+                  ]
+                }
+              ],
+              "partId": "A0000000-0000-4000-8000-000000000364"
+            },
+            {
+              "id": "DDDDDDDD-0000-4000-8000-000000000384",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000385",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "BBBBBBBB-0000-4000-8000-000000000386",
+                        "value": { "kind": { "kind": "literal", "value": "a" } },
+                        "comparison": {
+                          "kind": "equals",
+                          "value": { "kind": { "kind": "literal", "value": "a" } }
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    { "kind": "setColor", "value": { "kind": { "kind": "literal", "value": "#AAAAAA" } } },
+                    { "kind": "setFontSize", "number": 16 }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "DDDDDDDD-0000-4000-8000-000000000387",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000388",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "BBBBBBBB-0000-4000-8000-000000000389",
+                        "value": { "kind": { "kind": "literal", "value": "a" } },
+                        "comparison": {
+                          "kind": "equals",
+                          "value": { "kind": { "kind": "literal", "value": "a" } }
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    { "kind": "setColor", "value": { "kind": { "kind": "literal", "value": "#FF00FF" } } }
+                  ]
+                }
+              ],
+              "partId": "A0000000-0000-4000-8000-000000000362"
+            },
+            {
+              "id": "DDDDDDDD-0000-4000-8000-00000000038A",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-00000000038B",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "BBBBBBBB-0000-4000-8000-00000000038C",
+                        "value": { "kind": { "kind": "literal", "value": "a" } },
+                        "comparison": {
+                          "kind": "equals",
+                          "value": { "kind": { "kind": "literal", "value": "a" } }
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    { "kind": "setText", "value": { "kind": { "kind": "literal", "value": "EV " } } }
+                  ]
+                }
+              ],
+              "partId": "A0000000-0000-4000-8000-000000000361"
+            },
+            {
+              "id": "DDDDDDDD-0000-4000-8000-00000000038D",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-00000000038E",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "BBBBBBBB-0000-4000-8000-00000000038F",
+                        "value": { "kind": { "kind": "literal", "value": "a" } },
+                        "comparison": {
+                          "kind": "equals",
+                          "value": { "kind": { "kind": "literal", "value": "a" } }
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    { "kind": "setFontWeight", "weight": "bold" }
+                  ]
+                }
+              ],
+              "partId": "A0000000-0000-4000-8000-00000000DEAD"
+            }
+          ],
+          "frame": { "x": 0, "y": 0.28, "width": 1, "height": 0.14, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000304",
+          "value": { "kind": { "kind": "literal", "value": "AB" } },
+          "fontSize": 14,
+          "fontWeight": "medium",
+          "parts": [
+            {
+              "id": "A0000000-0000-4000-8000-000000000391",
+              "value": { "kind": { "kind": "literal", "value": "A" } },
+              "colorHex": "#FF0000"
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000392",
+              "value": { "kind": { "kind": "literal", "value": "B" } }
+            }
+          ],
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [
+            {
+              "id": "DDDDDDDD-0000-4000-8000-000000000393",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000394",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "BBBBBBBB-0000-4000-8000-000000000395",
+                        "value": { "kind": { "kind": "literal", "value": "a" } },
+                        "comparison": {
+                          "kind": "equals",
+                          "value": { "kind": { "kind": "literal", "value": "a" } }
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    { "kind": "setText", "value": { "kind": { "kind": "literal", "value": "Plain" } } }
+                  ]
+                }
+              ]
+            }
+          ],
+          "frame": { "x": 0, "y": 0.42, "width": 1, "height": 0.14, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000305",
+          "value": { "kind": { "kind": "literal", "value": "12 34" } },
+          "fontSize": 14,
+          "fontWeight": "regular",
+          "countdown": true,
+          "parts": [
+            {
+              "id": "A0000000-0000-4000-8000-0000000003A1",
+              "value": { "kind": { "kind": "literal", "value": "X" } },
+              "colorHex": "#FF0000"
+            }
+          ],
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [],
+          "frame": { "x": 0, "y": 0.56, "width": 1, "height": 0.14, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000306",
+          "value": { "kind": { "kind": "entityState", "entityId": "sensor.missing", "displayName": "Missing", "domain": "sensor" } },
+          "fontSize": 14,
+          "fontWeight": "regular",
+          "parts": [
+            {
+              "id": "A0000000-0000-4000-8000-0000000003B1",
+              "value": { "kind": { "kind": "entityState", "entityId": "sensor.missing", "displayName": "Missing", "domain": "sensor" } }
+            },
+            {
+              "id": "A0000000-0000-4000-8000-0000000003B2",
+              "value": { "kind": { "kind": "literal", "value": "" } },
+              "coloring": "bands",
+              "bands": [
+                { "id": "B0000000-0000-4000-8000-0000000003B4", "upTo": 1, "colorHex": "#30D158" }
+              ]
+            },
+            {
+              "id": "A0000000-0000-4000-8000-0000000003B3",
+              "value": { "kind": { "kind": "entityState", "entityId": "sensor.part_only", "displayName": "Part only", "domain": "sensor" } },
+              "bands": [
+                { "id": "B0000000-0000-4000-8000-0000000003B5", "upTo": 10, "colorHex": "#30D158" }
+              ]
+            }
+          ],
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [],
+          "frame": { "x": 0, "y": 0.7, "width": 1, "height": 0.14, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000307",
+          "value": { "kind": { "kind": "literal", "value": "X" } },
+          "fontSize": 14,
+          "fontWeight": "regular",
+          "parts": [
+            {
+              "id": "A0000000-0000-4000-8000-0000000003C1",
+              "value": { "kind": { "kind": "literal", "value": "X" } }
+            }
+          ],
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [
+            {
+              "id": "DDDDDDDD-0000-4000-8000-0000000003C2",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-0000000003C3",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "BBBBBBBB-0000-4000-8000-0000000003C4",
+                        "value": { "kind": { "kind": "literal", "value": "a" } },
+                        "comparison": {
+                          "kind": "equals",
+                          "value": { "kind": { "kind": "literal", "value": "a" } }
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    { "kind": "hide" }
+                  ]
+                }
+              ],
+              "partId": "A0000000-0000-4000-8000-0000000003C1"
+            }
+          ],
+          "frame": { "x": 0, "y": 0.84, "width": 1, "height": 0.14, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "wedge",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {
+      "sensor.electricity_price": { "state": "0.28" },
+      "sensor.outdoor_temperature": { "state": "18.4" },
+      "sensor.outdoor_humidity": { "state": "64" },
+      "sensor.car_battery": { "state": "76" },
+      "binary_sensor.car_charging": { "state": "off" },
+      "sensor.part_only": { "state": "5" }
+    },
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": [
+      "binary_sensor.car_charging",
+      "sensor.car_battery",
+      "sensor.electricity_price",
+      "sensor.missing",
+      "sensor.outdoor_humidity",
+      "sensor.outdoor_temperature",
+      "sensor.part_only"
+    ],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000301",
+          "kind": "text",
+          "text": "Now 0.28 €/kWh",
+          "fontSize": 15,
+          "fontWeight": "regular",
+          "colorHex": "#8E8E93",
+          "spans": null,
+          "parts": [
+            { "text": "Now ", "fontSize": 15, "fontWeight": "regular", "colorHex": "#8E8E93" },
+            {
+              "text": "0.28", "fontSize": 21, "fontWeight": "bold", "colorHex": "#8E8E93",
+              "spans": [
+                { "text": "0.28", "colorHex": "#FFD60A" }
+              ]
+            },
+            { "text": " €/kWh", "fontSize": 11, "fontWeight": "regular", "colorHex": "#8E8E93" }
+          ]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000302",
+          "kind": "text",
+          "text": "18.4°C  64%",
+          "fontSize": 15,
+          "fontWeight": "regular",
+          "colorHex": "#FFFFFF",
+          "spans": null,
+          "parts": [
+            {
+              "text": "18.4", "fontSize": 22, "fontWeight": "semibold", "colorHex": "#FFFFFF",
+              "spans": [
+                { "text": "18.4", "colorHex": "#30D158" }
+              ]
+            },
+            { "text": "°C  ", "fontSize": 12, "fontWeight": "regular", "colorHex": "#8E8E93" },
+            {
+              "text": "64", "fontSize": 15, "fontWeight": "semibold", "colorHex": "#FFFFFF",
+              "spans": [
+                { "text": "64", "colorHex": "#30D158" }
+              ]
+            },
+            { "text": "%", "fontSize": 12, "fontWeight": "regular", "colorHex": "#8E8E93" }
+          ]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000303",
+          "kind": "text",
+          "text": "EV 76%",
+          "fontSize": 16,
+          "fontWeight": "regular",
+          "colorHex": "#AAAAAA",
+          "spans": null,
+          "parts": [
+            { "text": "EV ", "fontSize": 16, "fontWeight": "regular", "colorHex": "#AAAAAA" },
+            {
+              "text": "76", "fontSize": 16, "fontWeight": "bold", "colorHex": "#FF00FF",
+              "spans": [
+                { "text": "76", "colorHex": "#30D158" }
+              ]
+            },
+            { "text": "%", "fontSize": 11, "fontWeight": "regular", "colorHex": "#AAAAAA" }
+          ]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000304",
+          "kind": "text",
+          "text": "Plain",
+          "fontSize": 14,
+          "fontWeight": "medium",
+          "colorHex": "#FFFFFF",
+          "spans": null,
+          "parts": null
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000305",
+          "kind": "text",
+          "spans": null,
+          "parts": null
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000306",
+          "kind": "text",
+          "text": "--5",
+          "spans": null,
+          "parts": [
+            { "text": "--", "fontSize": 14, "fontWeight": "regular", "colorHex": "#FFFFFF" },
+            { "text": "", "fontSize": 14, "fontWeight": "regular", "colorHex": "#FFFFFF", "spans": [] },
+            { "text": "5", "fontSize": 14, "fontWeight": "regular", "colorHex": "#FFFFFF" }
+          ]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000307",
+          "kind": "text",
+          "text": "",
+          "isHidden": false,
+          "spans": null,
+          "parts": []
+        }
+      ]
+    }
+  }
+}

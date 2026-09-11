@@ -310,6 +310,12 @@ export interface Rule {
   id: string;
   cases: RuleCase[];
   otherwise?: StyleChange[];
+  /** The part of a rich text layer this rule changes, by the part's id. Absent
+   * means the whole layer. On a text layer a rule aimed at a part the layer
+   * does not have does nothing; any other layer, and a shape's own rules, read
+   * the rule as if this were absent. A watch app that predates parts applies it
+   * to the whole layer, which is the closest it can come. */
+  partId?: string;
 }
 
 interface ElementBase {
@@ -363,6 +369,41 @@ export interface TextElement extends ElementBase {
   highColorHex?: string;
   /** Absent means the chart's default lowest colour. */
   lowColorHex?: string;
+  /** Rich text: the text drawn as a row of parts, each in its own look. Absent
+   * or empty means one run of `value`, as a text layer always was. With parts,
+   * `value` is written as `richTextFallback(parts)`, which is what a watch app
+   * that predates parts shows instead. A countdown ignores parts, and so does a
+   * layer rule that sets the text. */
+  parts?: TextPart[];
+}
+
+/**
+ * One part of a rich text layer: a value of its own, and optionally a colour,
+ * weight, size and band table of its own.
+ *
+ * Every style key is absent until the author gives the part its own, and absent
+ * means the layer's resolved look, so a part only says how it differs and a
+ * change to the layer reaches every part that never asked for anything else.
+ * The band table has the layer's shape and the chart's defaults, but belongs to
+ * this part alone: two numbers in one line can read two different tables.
+ * Mirrors `TextElement.Part` in the app repo.
+ */
+export interface TextPart {
+  /** What rules aim at with `Rule.partId`. Uppercase, like every id here. */
+  id: string;
+  value: Value;
+  /** Absent means the layer's resolved colour. */
+  colorHex?: string;
+  /** Absent means the layer's resolved weight. */
+  fontWeight?: FontWeight;
+  /** Absent means the layer's resolved size. */
+  fontSize?: number;
+  /** Absent means one colour. */
+  coloring?: ChartColoring;
+  /** Absent means empty. */
+  bands?: ChartBand[];
+  /** Absent means the chart's default colour past the last band. */
+  bandAboveColorHex?: string;
 }
 
 /** True when a text layer colours its numbers one by one: a non-empty band
@@ -372,6 +413,59 @@ export function textColorsByValue(el: TextElement): boolean {
   if (el.countdown === true) return false;
   const banded = el.coloring === "bands" && (el.bands?.length ?? 0) > 0;
   return banded || (el.highlight !== undefined && el.highlight !== "none");
+}
+
+/** True when a text layer's `value` is the fallback for its parts rather than
+ * something the author picked: it has parts and is not a countdown, whose value
+ * is the instant the watch ticks toward. */
+export function textUsesParts(el: Pick<TextElement, "parts" | "countdown">): boolean {
+  return el.countdown !== true && (el.parts?.length ?? 0) > 0;
+}
+
+/** What typed words contribute when parts are joined: the literal with its own
+ * prefix and suffix. A number format on typed words is not carried, since a
+ * word rarely has one and the join is not the place to evaluate it. */
+export function literalPartText(value: Value): string | undefined {
+  if (value.kind.kind !== "literal") return undefined;
+  return (value.format?.prefix ?? "") + value.kind.value + (value.format?.suffix ?? "");
+}
+
+/**
+ * The single value a watch app that predates parts shows for a rich text layer.
+ *
+ * No template on purpose: it reuses the first live part's own value, so it adds
+ * nothing to the compiled document. Typed words before that part become its
+ * prefix, and typed words after it, up to the next live part, its suffix. Every
+ * later live part is left out, because one value can only show one reading.
+ * With no live part at all it is the typed words joined.
+ */
+export function richTextFallback(parts: readonly TextPart[]): Value {
+  const isLive = (p: TextPart) => p.value.kind.kind !== "literal";
+  const words = (from: number, to: number) =>
+    parts.slice(from, to).map((p) => literalPartText(p.value) ?? "").join("");
+  const first = parts.findIndex(isLive);
+  if (first < 0) return literal(words(0, parts.length));
+  const next = parts.findIndex((p, i) => i > first && isLive(p));
+  const live = parts[first]!.value;
+  const format: ValueFormat = { ...live.format };
+  const prefix = words(0, first) + (format.prefix ?? "");
+  const suffix = (format.suffix ?? "") + words(first + 1, next < 0 ? parts.length : next);
+  delete format.prefix;
+  delete format.suffix;
+  if (prefix !== "") format.prefix = prefix;
+  if (suffix !== "") format.suffix = suffix;
+  // A copy of the kind, never the part's own object: the document walkers
+  // rewrite a template in place, and a shared object would be rewritten twice.
+  const out: Value = { kind: structuredClone(live.kind) };
+  if (!formatIsEmpty(format)) out.format = format;
+  return out;
+}
+
+/** Bring a rich text layer's `value` back in line with its parts, so the draft
+ * in memory says what the encoder will write. Call after every parts edit. A
+ * layer without parts, or a countdown, keeps the value it has. */
+export function syncRichTextFallback(el: TextElement): void {
+  if (textUsesParts(el)) el.value = richTextFallback(el.parts!);
 }
 
 /** Horizontal placement inside a text layer's box. */
@@ -1655,6 +1749,7 @@ function parseRules(raw: unknown): Rule[] {
       }),
     };
     if (Array.isArray(r.otherwise)) rule.otherwise = r.otherwise.map(parseStyleChange);
+    if (typeof r.partId === "string" && r.partId !== "") rule.partId = r.partId.toUpperCase();
     return rule;
   });
 }
@@ -1678,6 +1773,29 @@ function parseColorBands(raw: unknown): ChartBand[] {
     upTo: num(b.upTo, 0),
     colorHex: str(b.colorHex, "#FFFFFF"),
   }));
+}
+
+/** A rich text layer's parts. Each style key is kept only when the document
+ * says something other than its default, and a weight or colouring this build
+ * does not know reads as absent, the way the app's decoder reads them. */
+function parseTextParts(raw: unknown): TextPart[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(isObject).map((o) => {
+    const part: TextPart = {
+      id: str(o.id, newId()).toUpperCase(),
+      value: isObject(o.value) ? parseValue(o.value) : literal(""),
+    };
+    if (typeof o.colorHex === "string") part.colorHex = o.colorHex;
+    const weight = optStr(o.fontWeight);
+    if (weight === "regular" || weight === "medium" || weight === "semibold" || weight === "bold") part.fontWeight = weight;
+    if (typeof o.fontSize === "number") part.fontSize = o.fontSize;
+    if (optStr(o.coloring) === "bands") part.coloring = "bands";
+    const bands = parseColorBands(o.bands);
+    if (bands.length > 0) part.bands = bands;
+    const above = str(o.bandAboveColorHex, CHART_DEFAULT_BAND_HIGH_HEX);
+    if (above !== CHART_DEFAULT_BAND_HIGH_HEX) part.bandAboveColorHex = above;
+    return part;
+  });
 }
 
 function parseChartBands(p: J): ChartBand[] {
@@ -1755,6 +1873,8 @@ function parseElementKind(raw: unknown): Element {
       if (high !== CHART_DEFAULT_HIGH_HEX) payload.highColorHex = high;
       const low = str(p.lowColorHex, CHART_DEFAULT_LOW_HEX);
       if (low !== CHART_DEFAULT_LOW_HEX) payload.lowColorHex = low;
+      const parts = parseTextParts(p.parts);
+      if (parts.length > 0) payload.parts = parts;
       return { kind: "text", payload };
     }
     case "icon": {
@@ -2365,8 +2485,24 @@ export function encodeRules(rules: Rule[]): J[] {
       })),
     };
     if (r.otherwise) o.otherwise = r.otherwise.map(encodeStyleChange);
+    // Last, and only when set, so every rule written before parts existed is
+    // byte for byte what it was.
+    if (r.partId !== undefined) o.partId = r.partId;
     return o;
   });
+}
+
+/** One part of a rich text layer, in the app encoder's key order, each style key
+ * only when set, so a part round-trips exactly as it was written. */
+function encodeTextPart(p: TextPart): J {
+  const o: J = { id: p.id, value: encodeValue(p.value) };
+  if (p.colorHex !== undefined) o.colorHex = p.colorHex;
+  if (p.fontWeight !== undefined) o.fontWeight = p.fontWeight;
+  if (p.fontSize !== undefined) o.fontSize = encNum(p.fontSize);
+  if (p.coloring !== undefined && p.coloring !== "uniform") o.coloring = p.coloring;
+  if (p.bands !== undefined && p.bands.length > 0) o.bands = p.bands.map((b) => ({ id: b.id, upTo: encNum(b.upTo), colorHex: b.colorHex }));
+  if (p.bandAboveColorHex !== undefined && p.bandAboveColorHex !== CHART_DEFAULT_BAND_HIGH_HEX) o.bandAboveColorHex = p.bandAboveColorHex;
+  return o;
 }
 
 function encodeElement(el: Element): J {
@@ -2399,6 +2535,13 @@ function encodeElementKind(el: Element): J {
       if (t.highlight !== undefined && t.highlight !== "none") o.highlight = t.highlight;
       if (t.highColorHex !== undefined && t.highColorHex !== CHART_DEFAULT_HIGH_HEX) o.highColorHex = t.highColorHex;
       if (t.lowColorHex !== undefined && t.lowColorHex !== CHART_DEFAULT_LOW_HEX) o.lowColorHex = t.lowColorHex;
+      // After `lowColorHex`, and only with at least one part. The value is
+      // written from the parts rather than trusted from the draft, so what an
+      // older watch shows can never go stale against them.
+      if (t.parts !== undefined && t.parts.length > 0) {
+        o.parts = t.parts.map(encodeTextPart);
+        if (textUsesParts(t)) o.value = encodeValue(richTextFallback(t.parts));
+      }
       return { kind: "text", payload: o };
     }
     case "icon": {
@@ -2777,7 +2920,8 @@ const K = {
   elementEnvelope: ["kind", "payload"],
   elementBase: ["id", "colorSlot", "rules", "frame", "isHidden", "groupId"],
   text: ["value", "fontSize", "fontWeight", "countdown", "monospacedDigits", "lineLimit", "alignment",
-    "coloring", "bands", "bandAboveColorHex", "highlight", "highColorHex", "lowColorHex"],
+    "coloring", "bands", "bandAboveColorHex", "highlight", "highColorHex", "lowColorHex", "parts"],
+  textPart: ["id", "value", "colorHex", "fontWeight", "fontSize", "coloring", "bands", "bandAboveColorHex"],
   icon: ["symbol", "path", "size"],
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex",
     "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex", "total", "minSource", "maxSource"],
@@ -2813,7 +2957,7 @@ const K = {
   // save. The tap's frames already carry what it did.
   tap: ["action", "openPageId", "openPageName", "attachedTo", "grow"],
   colorSlot: ["baseColorHex"],
-  rule: ["id", "cases", "otherwise"],
+  rule: ["id", "cases", "otherwise", "partId"],
   case: ["id", "when", "then"],
   condition: ["join", "tests"],
   test: ["id", "value", "comparison"],
@@ -2933,6 +3077,12 @@ export function auditUnknownKeys(raw: unknown): string[] {
       check(e.payload.frame, K.frame, `${ep}.payload.frame`);
       rules(e.payload.rules, `${ep}.payload.rules`);
       for (const vk of ["value", "symbol", "nowIndex", "total", "minSource", "maxSource"]) if (vk in e.payload) value(e.payload[vk], `${ep}.payload.${vk}`);
+      if (kind === "text" && Array.isArray(e.payload.parts)) {
+        e.payload.parts.forEach((part, j) => {
+          check(part, K.textPart, `${ep}.payload.parts[${j}]`);
+          if (isObject(part)) value(part.value, `${ep}.payload.parts[${j}].value`);
+        });
+      }
       if (kind === "image") check(e.payload.entity, K.entityRef, `${ep}.payload.entity`);
       if (kind === "tap") check(e.payload.action, K.tapAction, `${ep}.payload.action`);
     });
@@ -3732,6 +3882,16 @@ export function pasteElements(cfg: CustomComplicationConfig, clip: LayerClip, op
       if (source) copy.payload.scaleFrom = source;
       else if (!here.has(copy.payload.scaleFrom)) delete copy.payload.scaleFrom;
     }
+    // A part reading a copied chart reads the copy. One reading a chart that
+    // is not coming along is left pointed where it was: the layer still has
+    // its other parts to show, so it is not dropped the way a lone number is.
+    if (copy.kind === "text") {
+      for (const part of copy.payload.parts ?? []) {
+        const k = part.value.kind;
+        const chart = k.kind === "chartStat" ? idMap.get(k.layer) : undefined;
+        if (k.kind === "chartStat" && chart) k.layer = chart;
+      }
+    }
     if (copy.kind === "text" && copy.payload.value.kind.kind === "chartStat") {
       const chart = idMap.get(copy.payload.value.kind.layer);
       if (chart) copy.payload.value.kind.layer = chart;
@@ -4077,7 +4237,7 @@ export function setLayerEntity(
 export type SitePart =
   | "total" | "nowIndex" | "gaugeMin" | "gaugeMax"
   | "bezelText" | "curvedText" | "bezelGauge" | "bezelGaugeMin" | "bezelGaugeMax"
-  | "template" | "serviceData";
+  | "template" | "serviceData" | "textPart";
 
 /** Where in the document a `Value` sits, in enough detail to name it in words. */
 export interface ValueSite {
@@ -4129,6 +4289,7 @@ export function describeSite(site: EntitySite): string {
       if (site.part === "gaugeMin") return `Min on ${named}`;
       if (site.part === "gaugeMax") return `Max on ${named}`;
       if (site.part === "nowIndex") return `Now marker on ${named}`;
+      if (site.part === "textPart") return `Part of ${named}`;
       return `${upperFirst(word)} layer${site.layerName ? ` "${site.layerName}"` : ""}`;
     case "tap":
       return "Tap area";
@@ -4276,6 +4437,10 @@ function walkDocument(cfg: CustomComplicationConfig, visit: DocumentVisitor): vo
     } else {
       const primary = primaryValue(el);
       if (primary) onValue(primary, base);
+      // A rich text layer's parts, after its value and in order, as the
+      // compiler walks them. The value is only the first live part's fallback,
+      // so an entity a later part reads would otherwise stay in a share.
+      if (el.kind === "text") for (const part of el.payload.parts ?? []) onValue(part.value, { ...base, part: "textPart" });
       if (el.kind === "gauge" && el.payload.total) onValue(el.payload.total, { ...base, part: "total" });
       if (el.kind === "gauge" && el.payload.minSource) onValue(el.payload.minSource, { ...base, part: "gaugeMin" });
       if (el.kind === "gauge" && el.payload.maxSource) onValue(el.payload.maxSource, { ...base, part: "gaugeMax" });

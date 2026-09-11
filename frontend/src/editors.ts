@@ -47,6 +47,7 @@ import {
   type TapAction,
   type TapElement,
   type TextElement,
+  type TextPart,
   type TimeField,
   type TimelineBand,
   type TimelineElement,
@@ -129,6 +130,9 @@ import {
   layerEntityUses,
   ungroup,
   literal,
+  literalPartText,
+  syncRichTextFallback,
+  textUsesParts,
   CENTERED_FRAME,
   newCase,
   newElement,
@@ -177,6 +181,14 @@ import {
   weekdayOptions,
 } from "./rule-presets.js";
 import { chartNumbers, timelineSamples, type ForcedBranches, type TimelineSample } from "./resolver.js";
+import {
+  type RichTextBlocked,
+  type RichTextMoved,
+  dropPartIds,
+  joinTextParts,
+  turnOffRichText,
+  turnOnRichText,
+} from "./rich-text.js";
 import type { HassEntityState, HassLike } from "./ha-api.js";
 import { MIN_ZOOM, familyTitle, type IconProvider } from "./renderer.js";
 import { CURATED_SYMBOLS, SYMBOL_CATEGORIES, SymbolBrowser, searchSymbols, type SymbolPack } from "./symbols.js";
@@ -330,12 +342,12 @@ export function selectField<T extends string>(label: string, value: T, options: 
  * change length, stay a `selectField`: a row of seven buttons is a menu that
  * forgot to fold.
  */
-export function segField<T extends string>(label: string, value: T, options: [T, string][], set: (v: T) => void, opts: { titles?: Partial<Record<T, string>>; def?: T } = {}) {
+export function segField<T extends string>(label: string, value: T, options: [T, string][], set: (v: T) => void, opts: { titles?: Partial<Record<T, string>>; def?: T; disabled?: Partial<Record<T, boolean>> } = {}) {
   const name = (v: T) => options.find(([o]) => o === v)?.[1] ?? v;
   return html`<div class="field seg-field">${fieldLabel(label, backTo(value, opts.def, set, name))}
     <div class="seg wide" role="radiogroup" aria-label=${label}>
       ${options.map(([v, text]) => html`<button type="button" role="radio" aria-checked=${v === value ? "true" : "false"}
-        class=${v === value ? "on" : ""} title=${opts.titles?.[v] ?? nothing}
+        class=${v === value ? "on" : ""} title=${opts.titles?.[v] ?? nothing} ?disabled=${opts.disabled?.[v] === true}
         @click=${() => { if (v !== value) set(v); }}>${text}</button>`)}
     </div></div>`;
 }
@@ -377,8 +389,9 @@ function percentField(label: string, value: number, set: (v: number) => void, de
   return numberField(label, pct(value), (v) => set((v ?? 0) / 100), { min, max, step: 0.5, def: pct(def) });
 }
 
-export function checkField(label: string, value: boolean, set: (v: boolean) => void, def?: boolean) {
-  return html`<label class="field check"><input type="checkbox" .checked=${value} @change=${(e: Event) => set((e.target as HTMLInputElement).checked)} />${fieldLabel(label, backTo(value, def, set, (v) => (v ? "on" : "off")))}</label>`;
+/** `disabled` greys the switch out, for a setting another setting rules out. */
+export function checkField(label: string, value: boolean, set: (v: boolean) => void, def?: boolean, opts: { disabled?: boolean } = {}) {
+  return html`<label class="field check"><input type="checkbox" .checked=${value} ?disabled=${opts.disabled === true} @change=${(e: Event) => set((e.target as HTMLInputElement).checked)} />${fieldLabel(label, backTo(value, def, set, (v) => (v ? "on" : "off")))}</label>`;
 }
 
 /** `#RRGGBB` or `#RRGGBBAA`. The native picker handles RGB; alpha is a slider.
@@ -1336,8 +1349,11 @@ function anchorFor(pop: HTMLElement): HTMLElement | null {
  * causes. Two frames is enough for lit to have rendered it; failing to find it
  * simply leaves the cell filled with its default, which is still a step
  * forward rather than an error.
+ *
+ * `focus` also puts the caret in the form's first text box, for a new rich
+ * text part whose first job is to be typed into or pointed at an entity.
  */
-function openPopoverSoon(node: EventTarget | null, id: string): void {
+function openPopoverSoon(node: EventTarget | null, id: string, focus = false): void {
   const start = node instanceof Node ? node : null;
   if (!start) return;
   const root = start.getRootNode();
@@ -1345,6 +1361,13 @@ function openPopoverSoon(node: EventTarget | null, id: string): void {
   requestAnimationFrame(() => requestAnimationFrame(() => {
     const el = root.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
     if (el && typeof el.showPopover === "function" && !el.matches(":popover-open")) el.showPopover();
+    // The form is only drawn by the redraw that opening the popover causes,
+    // so the box to type into is looked for a little later still.
+    if (el && focus) {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        el.querySelector<HTMLElement>("textarea, input[type=text], input[type=search], input:not([type])")?.focus();
+      }));
+    }
   }));
 }
 
@@ -2387,7 +2410,13 @@ function chartSpanSummary(c: ChartElement): string {
 export function contentSummary(host: EditorHost, el: CElement): string {
   const ctx = describeContext(host);
   switch (el.kind) {
-    case "text": return truncate(describeValue(el.payload.value, ctx), 48);
+    case "text": {
+      // A rich text layer's value is only its fallback, so it would name one
+      // part and hide the rest.
+      const n = el.payload.parts?.length ?? 0;
+      if (textUsesParts(el.payload)) return `Rich text, ${n} part${n === 1 ? "" : "s"}`;
+      return truncate(describeValue(el.payload.value, ctx), 48);
+    }
     case "icon": return truncate(describeValue(el.payload.symbol, ctx), 48);
     case "gauge": return truncate(describeValue(el.payload.value, ctx), 48);
     // Charts drawing a past say so: the value names the entity either way, so
@@ -2693,6 +2722,372 @@ function textValueColourFields(
       ${coloring === "bands" ? nothing : html`<div class="hint">${highlightHint}, and other text keeps the layer colour.</div>`}`}`;
 }
 
+// ── Rich text ─────────────────────────────────────────────────────────────
+// A text layer drawn as a row of parts, each in its own colour, weight and
+// size. Most text layers are a few typed words, so all of it waits behind one
+// switch and the Content card reads as it always did until that is on. The
+// edits themselves are in rich-text.ts; this is the form around them.
+
+type TextLayer = Extract<CElement, { kind: "text" }>;
+
+/** The part each rich text layer has open, by layer id. Transient on purpose,
+ * like `advancedRules`: which part is open is not part of the document and
+ * does not belong in undo. An id whose part has gone falls back to part 1. */
+const selectedParts = new Map<string, string>();
+/** Layers showing the "Turn off Rich text?" question under the switch. */
+const pendingRichTextOff = new Set<string>();
+/** The note under a layer's Rich text switch, with whether the layer had parts
+ * when it was written. An undo can flip the switch back under a note, and a
+ * note about the other state is then no longer shown. */
+const richTextNotes = new Map<string, { text: string; rich: boolean; warn?: boolean }>();
+/** A states table's part before its first row exists. As with
+ * `pendingTestValues`, there is no rule yet to carry it. */
+const pendingPartTargets = new Map<string, string>();
+
+/** The range a part's own font size field and slider offer. */
+const PART_SIZE_MIN = 4;
+const PART_SIZE_MAX = 40;
+
+/** Which of a part's three Colour choices it is on. */
+export type PartColourMode = "layer" | "pick" | "bands";
+
+const PART_COLOURS: [PartColourMode, string][] = [["layer", "Layer"], ["pick", "Pick"], ["bands", "By value"]];
+const PART_WEIGHTS: [FontWeight | "layer", string][] = [["layer", "Layer"], ...FONT_WEIGHTS];
+
+/** A typed part's text as words and runs of spaces, so its chip can draw each
+ * space as a faint dot. A space at either end is the gap to the next part, and
+ * drawn as a space it would not be seen. */
+export function chipRuns(text: string): { text: string; space: boolean }[] {
+  return (text.match(/ +|[^ ]+/g) ?? []).map((run) => ({ text: run, space: run.startsWith(" ") }));
+}
+
+/** What a part's chip says: typed words as typed, a template as its source,
+ * and anything else by the name its value chip gives it. */
+export function partChip(value: Value, ctx?: DescribeContext): { kind: "text" | "value" | "template"; label: string } {
+  const words = literalPartText(value);
+  if (words !== undefined) return { kind: "text", label: words };
+  if (value.kind.kind === "jinja") return { kind: "template", label: truncate(value.kind.value, 40) || "template" };
+  return { kind: "value", label: describeValueBody(value, ctx) };
+}
+
+/** A part as one entry of a rule's Changes menu: its number, then its words
+ * trimmed short or the name of what it reads. */
+export function rulePartLabel(part: TextPart, index: number, ctx?: DescribeContext): string {
+  const words = literalPartText(part.value);
+  const what = words === undefined
+    ? truncate(describeValueBody(part.value, ctx), 28)
+    : words.trim() === "" ? (words === "" ? "empty" : "spaces") : `"${truncate(words, 24)}"`;
+  return `Part ${index + 1}: ${what}`;
+}
+
+/** The Changes menu: the whole text, then every part. A rule aimed at a part
+ * that has since gone keeps an entry of its own, or the menu would claim the
+ * rule changes the whole text when it changes nothing. */
+export function rulePartOptions(parts: readonly TextPart[], partId: string | undefined, ctx?: DescribeContext): [string, string][] {
+  const options: [string, string][] = [["", "Whole text"], ...parts.map((p, i): [string, string] => [p.id, rulePartLabel(p, i, ctx)])];
+  if (partId !== undefined && !parts.some((p) => p.id === partId)) options.push([partId, "A part that is gone"]);
+  return options;
+}
+
+export function partColourMode(part: TextPart): PartColourMode {
+  if (part.coloring === "bands") return "bands";
+  return part.colorHex === undefined ? "layer" : "pick";
+}
+
+/** The dot at the front of a part's chip: the colour it draws in, or a wheel
+ * of its own band colours when it colours by value. */
+export function partDotBackground(part: TextPart, layerHex: string): string {
+  if (partColourMode(part) === "bands" && (part.bands?.length ?? 0) > 0) {
+    const colours = [...chartSortedBands({ bands: part.bands! }).map((b) => b.colorHex), part.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX];
+    const step = 100 / colours.length;
+    const at = (n: number) => `${Math.round(n * 10) / 10}%`;
+    return `conic-gradient(${colours.map((c, i) => `${c} ${at(i * step)} ${at((i + 1) * step)}`).join(", ")})`;
+  }
+  return part.colorHex ?? layerHex;
+}
+
+/** One sentence under the part editor saying what the part does, so nobody
+ * has to add up four controls to know. */
+export function partSentence(part: TextPart, layer: { fontSize: number; fontWeight: FontWeight }, ctx?: DescribeContext): string {
+  const chip = partChip(part.value, ctx);
+  const weightWord = (w: FontWeight) => (FONT_WEIGHTS.find(([x]) => x === w)?.[1] ?? w).toLowerCase();
+  const lead = chip.kind === "text" ? (chip.label === "" ? "This empty part shows" : `"${chip.label}" shows`)
+    : chip.kind === "template" ? "The template shows" : `Shows ${chip.label}`;
+  const colour = partColourMode(part) === "bands" && (part.bands?.length ?? 0) > 0 ? "in the colour of its own bands"
+    : part.colorHex !== undefined ? "in its own colour" : "in the layer colour";
+  const weight = part.fontWeight === undefined ? `${weightWord(layer.fontWeight)} (from the layer)` : weightWord(part.fontWeight);
+  const size = part.fontSize === undefined ? `at ${layer.fontSize} pt (from the layer)` : `at ${part.fontSize} pt`;
+  return `${lead} ${colour}, ${weight}, ${size}.`;
+}
+
+/** Why rich text cannot turn off yet, naming every part in the way. */
+export function richTextBlockedHint(blocked: readonly RichTextBlocked[]): string {
+  const named = (list: readonly RichTextBlocked[]) => (list.length === 1
+    ? `Part ${list[0]!.index + 1}`
+    : `Parts ${joinWords(list.map((b) => String(b.index + 1)))}`);
+  const kinds = blocked.filter((b) => b.reason === "kind");
+  const formats = blocked.filter((b) => b.reason === "format");
+  const said: string[] = [];
+  if (kinds.length > 0) said.push(`${named(kinds)} ${kinds.length === 1 ? "shows" : "show"} a value a template cannot read, such as data age or a chart's number.`);
+  if (formats.length > 0) said.push(`${named(formats)} ${formats.length === 1 ? "uses" : "use"} a relative time or duration format, which a template cannot print.`);
+  return `Rich text stays on, because the parts cannot join into one line. ${said.join(" ")} Change or remove ${blocked.length === 1 ? "that part" : "those parts"} first.`;
+}
+
+const MOVED_WORDS: Record<RichTextMoved, string> = { fontSize: "font size", fontWeight: "weight", color: "colour", bands: "colour bands" };
+
+/** The note once rich text is off: what the one part handed to Look, or how
+ * the parts joined. */
+export function richTextOffNote(result: { joined: false; moved: readonly RichTextMoved[] } | { joined: true; template: boolean }): string {
+  if (result.joined) {
+    return result.template
+      ? "Rich text is off. The parts joined into one template, so the live values still update."
+      : "Rich text is off. The parts joined into one line of text.";
+  }
+  if (result.moved.length === 0) return "Rich text is off.";
+  return `Rich text is off. The part's ${joinWords(result.moved.map((m) => MOVED_WORDS[m]))} moved into Look.`;
+}
+
+/**
+ * A text layer's Content card: the text and Live countdown as they always
+ * were, then the Rich text switch. With rich text on, the text is replaced by
+ * the parts and the editor for the one picked.
+ */
+function textContentFields(
+  host: EditorHost,
+  el: TextLayer,
+  family: FamilyKind,
+  upd: (mutate: (p: TextElement) => void, k?: string) => void,
+  key: string,
+  countdownDefault: boolean,
+): TemplateResult {
+  const t = el.payload;
+  const layerId = t.id;
+  const hasParts = (t.parts?.length ?? 0) > 0;
+  const countdown = t.countdown === true;
+  // A chart's number says which chart it belongs to, one click from it.
+  const owner = chartOfValue(host.config, t.value);
+  const stored = richTextNotes.get(layerId);
+  const note = stored && stored.rich === hasParts ? stored : undefined;
+  const confirming = pendingRichTextOff.has(layerId) && (t.parts?.length ?? 0) >= 2;
+
+  const turnOff = (node: EventTarget | null) => {
+    const template = !(t.parts ?? []).every((p) => p.value.kind.kind === "literal");
+    // Tried on a copy first: every update is an undo step, and a join that a
+    // part blocks must not leave one behind that did nothing.
+    const result = turnOffRichText(structuredClone(t), host.config.values);
+    pendingRichTextOff.delete(layerId);
+    if (!result.ok) {
+      richTextNotes.set(layerId, { text: richTextBlockedHint(result.blocked), rich: true, warn: true });
+      requestRerender(node);
+      return;
+    }
+    richTextNotes.set(layerId, { text: richTextOffNote(result.joined ? { joined: true, template } : result), rich: false });
+    upd((p) => { turnOffRichText(p, host.config.values); });
+  };
+
+  const setRich = (on: boolean, input: HTMLInputElement) => {
+    pendingRichTextOff.delete(layerId);
+    if (on) {
+      const partId = newId();
+      selectedParts.set(layerId, partId);
+      richTextNotes.set(layerId, { text: "Your text is now Part 1. Add more parts with + Text or + Value.", rich: true });
+      upd((p) => { turnOnRichText(p, partId); });
+      return;
+    }
+    const parts = t.parts ?? [];
+    if (parts.length < 2 || countdown) {
+      turnOff(input);
+      return;
+    }
+    // Two or more parts join into one line, which undo can take back but a
+    // reader may not expect, so the switch stays on and asks first. A part
+    // that would block the join is named instead of asking at all.
+    input.checked = true;
+    const join = joinTextParts(parts, host.config.values);
+    if (join.ok) {
+      richTextNotes.delete(layerId);
+      pendingRichTextOff.add(layerId);
+    } else {
+      richTextNotes.set(layerId, { text: richTextBlockedHint(join.blocked), rich: true, warn: true });
+    }
+    requestRerender(input);
+  };
+
+  const richHint = countdown && !hasParts ? "Turn off Live countdown to use Rich text."
+    : hasParts ? "Each part has its own colour, weight and font size. Parts can be typed words or live values."
+    : "Give some words their own colour, weight or size, or mix typed words with live values.";
+
+  return html`
+    ${textUsesParts(t)
+      ? richPartsEditor(host, el, family, upd, key)
+      : html`
+        ${valueEditor(host, t.value, (v) => upd((p) => { p.value = v; }, "value"), { showResolved: true, label: "Text", key: `${key}-value` })}
+        ${owner ? html`<div class="hint">Prints a number from the chart <button type="button" class="link" @click=${() => host.selectLayer(owner.payload.id)}>${layerTitle(owner, describeContext(host))}</button>. It stays in the chart's group and moves with it.</div>` : nothing}`}
+    ${checkField("Live countdown", countdown, (v) => upd((p) => {
+      if (v) p.countdown = true; else delete p.countdown;
+    }), countdownDefault, { disabled: hasParts && !countdown })}
+    ${countdown ? html`<div class="hint">Ticks down to the value's target: an active timer's finish, or any future timestamp. A paused timer shows its remaining time.</div>` : nothing}
+    ${hasParts && !countdown ? html`<div class="hint">Works on plain text only. Turn off Rich text to use it.</div>` : nothing}
+    <label class="field check"><input type="checkbox" .checked=${hasParts} ?disabled=${countdown && !hasParts}
+      @change=${(e: Event) => { const input = e.target as HTMLInputElement; setRich(input.checked, input); }} /><span>Rich text <span class="badge new">New</span></span></label>
+    <div class="hint">${richHint}</div>
+    ${confirming ? html`<div class="rich-confirm" role="alertdialog" aria-label="Turn off Rich text?">
+        <b>Turn off Rich text?</b>
+        <div>The parts join into one line, so every word and value stays. The part styles go away. Undo brings them back.${t.rules.some((r) => r.partId !== undefined) ? " States that change one part will change the whole text." : ""}</div>
+        <div class="acts">
+          <button class="small primary" @click=${(e: Event) => turnOff(e.currentTarget)}>Turn off</button>
+          <button class="small" @click=${(e: Event) => { pendingRichTextOff.delete(layerId); requestRerender(e.currentTarget); }}>Keep it on</button>
+        </div>
+      </div>` : nothing}
+    ${note ? html`<div class=${note.warn ? "hint warn" : "rich-note"}>${note.text}</div>` : nothing}`;
+}
+
+/**
+ * The parts of a rich text layer as a row of chips, the + Text and + Value
+ * buttons, and the editor for the part picked: what it shows, its colour,
+ * weight and size, and a sentence saying all four at once.
+ */
+function richPartsEditor(
+  host: EditorHost,
+  el: TextLayer,
+  family: FamilyKind,
+  upd: (mutate: (p: TextElement) => void, k?: string) => void,
+  key: string,
+): TemplateResult {
+  const t = el.payload;
+  const parts = t.parts ?? [];
+  const layerId = t.id;
+  const ctx = describeContext(host);
+  const index = Math.max(0, parts.findIndex((p) => p.id === selectedParts.get(layerId)));
+  const part = parts[index]!;
+  const count = parts.length;
+  const layerHex = t.colorSlot.baseColorHex;
+  const layerSize = effectivePlacement(host.config, family, el).size ?? t.fontSize;
+
+  // Every parts edit brings the layer's value back in line with the parts, so
+  // the draft says what the encoder will write, and ends the switch's note.
+  const updParts = (mutate: (p: TextElement) => void, k?: string) => {
+    richTextNotes.delete(layerId);
+    upd((p) => { mutate(p); syncRichTextFallback(p); }, k);
+  };
+  const updPart = (mutate: (x: TextPart) => void, k?: string) => updParts((p) => {
+    const x = p.parts?.find((y) => y.id === part.id);
+    if (x) mutate(x);
+  }, k ? `part-${part.id}-${k}` : undefined);
+  const select = (id: string, node: EventTarget | null) => {
+    selectedParts.set(layerId, id);
+    richTextNotes.delete(layerId);
+    requestRerender(node);
+  };
+  const add = (value: Value, node: EventTarget | null) => {
+    const id = newId();
+    selectedParts.set(layerId, id);
+    updParts((p) => { (p.parts ??= []).push({ id, value }); });
+    openPopoverSoon(node, popoverId(`${key}-part-${id}`), true);
+  };
+  // Moving keeps the part's id, so a state aimed at it stays aimed at it.
+  const move = (to: number) => updParts((p) => { if (p.parts) moveItem(p.parts, index, to); });
+  const remove = () => {
+    const next = parts[index + 1] ?? parts[index - 1];
+    if (next) selectedParts.set(layerId, next.id);
+    updParts((p) => { p.parts = (p.parts ?? []).filter((x) => x.id !== part.id); });
+  };
+
+  const chips = parts.map((p, i) => {
+    const chip = partChip(p.value, ctx);
+    const on = p.id === part.id;
+    const mode = partColourMode(p);
+    const now = chip.kind === "value" ? host.resolve(p.value) : undefined;
+    const weight = p.fontWeight === undefined ? undefined : FONT_WEIGHTS.find(([w]) => w === p.fontWeight)?.[1];
+    return html`<button type="button" role="option" aria-selected=${on ? "true" : "false"} class="part-chip ${chip.kind} ${on ? "on" : ""}"
+      aria-label=${rulePartLabel(p, i, ctx)} @click=${(e: Event) => select(p.id, e.currentTarget)}>
+      <span class="part-dot" style=${`background:${partDotBackground(p, layerHex)}`}
+        title=${mode === "bands" ? "By value, with its own bands" : mode === "pick" ? "Its own colour" : "The layer colour"}></span>
+      ${chip.kind === "text"
+        ? html`<span class="part-txt">${chip.label === ""
+          ? html`<span class="part-empty">empty</span>`
+          : chipRuns(chip.label).map((r) => (r.space ? html`<span class="part-sp">${"·".repeat(r.text.length)}</span>` : r.text))}</span>`
+        : html`<span class="part-txt">${chip.label}</span>`}
+      ${now === undefined ? nothing : html`<span class="part-now">${now}</span>`}
+      ${weight === undefined ? nothing : html`<span class="part-flag" title="Its own weight">${weight}</span>`}
+      ${p.fontSize === undefined ? nothing : html`<span class="part-flag" title="Its own font size">${p.fontSize} pt</span>`}
+    </button>`;
+  });
+
+  const targeted = t.rules.some((r) => r.partId === part.id);
+  const literalPart = part.value.kind.kind === "literal";
+  const mode = partColourMode(part);
+  const ownSize = part.fontSize !== undefined;
+  const size = part.fontSize ?? layerSize;
+  // Out of range is left alone rather than clamped, so typing 12 can pass
+  // through 1 without the box jumping to 4 under the caret.
+  const setSize = (n: number) => {
+    if (n >= PART_SIZE_MIN && n <= PART_SIZE_MAX) updPart((x) => { x.fontSize = n; }, "size");
+  };
+  // The shared table editor wants a table that is always there; this one holds
+  // the part's optional keys for the length of one edit.
+  const setBands = (mutate: (b: BandedLayer) => void, k?: string) => updPart((x) => {
+    const table: BandedLayer = { bands: x.bands ?? [], bandAboveColorHex: x.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX };
+    mutate(table);
+    if (table.bands.length > 0) x.bands = table.bands; else delete x.bands;
+    if (table.bandAboveColorHex !== CHART_DEFAULT_BAND_HIGH_HEX) x.bandAboveColorHex = table.bandAboveColorHex;
+    else delete x.bandAboveColorHex;
+  }, k);
+
+  return html`<div class="rich-parts">
+    <div class="field parts-field"><span>Parts</span>
+      <div class="part-chips" role="listbox" aria-label="Parts">${chips}</div>
+    </div>
+    <div class="adders">
+      <button class="small" @click=${(e: Event) => add(literal(""), e.currentTarget)}>+ Text</button>
+      <button class="small" @click=${(e: Event) => add({ kind: { kind: "entityState", entityId: "", displayName: "", domain: "" } }, e.currentTarget)}>+ Value</button>
+    </div>
+    <div class="part-editor">
+      <div class="part-head">
+        <b>Part ${index + 1} of ${count}</b>
+        <span class="spacer"></span>
+        <button class="icon" title="Move left" aria-label="Move left" ?disabled=${index === 0} @click=${() => move(index - 1)}>${uiIcon("left")}</button>
+        <button class="icon" title="Move right" aria-label="Move right" ?disabled=${index === count - 1} @click=${() => move(index + 1)}>${uiIcon("right")}</button>
+        <button class="ghost danger" ?disabled=${count === 1 || targeted}
+          title=${count === 1 ? "A rich text layer keeps at least one part" : targeted ? "A state changes this part" : "Remove this part"}
+          @click=${remove}>Remove</button>
+      </div>
+      ${targeted && count > 1 ? html`<div class="hint">A state changes this part. Change or delete that state first.</div>` : nothing}
+      ${valueEditor(host, part.value, (v) => updPart((x) => { x.value = v; }, "value"), { showResolved: true, label: "Shows", key: `${key}-part-${part.id}` })}
+      ${literalPart ? html`<div class="hint">Spaces count, and show as dots in the parts list. Type one at the start or end when this part needs a gap.</div>` : nothing}
+      ${segField("Colour", mode, PART_COLOURS, (v) => updPart((x) => {
+        if (v === "layer") { delete x.colorHex; delete x.coloring; return; }
+        if (v === "pick") { delete x.coloring; x.colorHex = sameColor(layerHex, "#FFFFFF") ? "#64D2FF" : layerHex; return; }
+        delete x.colorHex;
+        x.coloring = "bands";
+        // Seeded from the numbers the part shows right now, as the layer's own
+        // table is, so By value paints something the moment it is picked.
+        if ((x.bands?.length ?? 0) === 0) x.bands = seedBands(chartNumbers(host.resolve(x.value) ?? ""));
+      }), literalPart && mode !== "bands" ? { disabled: { bands: true }, titles: { bands: "By value needs a live value" } } : {})}
+      ${mode === "pick" ? colorField("Part colour", part.colorHex, (v) => updPart((x) => { x.colorHex = v ?? layerHex; }, "color")) : nothing}
+      ${mode === "bands" ? html`<div class="part-bands">
+          ${bandTableFields({ bands: part.bands ?? [], bandAboveColorHex: part.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX }, part.colorHex ?? layerHex, setBands)}
+          <div class="hint">These bands belong to this part. Another value in the same layer keeps its own.</div>
+        </div>` : nothing}
+      ${segField("Weight", part.fontWeight ?? "layer", PART_WEIGHTS, (v) => updPart((x) => {
+        if (v === "layer") delete x.fontWeight; else x.fontWeight = v;
+      }))}
+      <div class="field part-size">${fieldLabel("Font size", ownSize
+        ? { atDefault: false, title: `Back to the layer size (${layerSize} pt)`, reset: () => updPart((x) => { delete x.fontSize; }) }
+        : undefined)}
+        <div class="size-row">
+          ${numberInput(size, (n) => { if (n !== undefined) setSize(n); }, { step: 1, min: PART_SIZE_MIN, max: PART_SIZE_MAX, ariaLabel: "Part font size" })}
+          <span class="unit">pt</span>
+          <input type="range" min=${PART_SIZE_MIN} max=${PART_SIZE_MAX} step="1" .value=${String(size)} aria-label="Part font size slider"
+            @input=${onInput((v) => setSize(Number(v)))} />
+          <span class="from">${ownSize ? "Own size" : "From layer"}</span>
+        </div>
+      </div>
+      <div class="hint say">${partSentence(part, { fontSize: layerSize, fontWeight: t.fontWeight }, ctx)}</div>
+    </div>
+  </div>`;
+}
+
 export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, opts: { placement?: boolean; tap?: boolean } = {}): TemplateResult {
   const id = el.payload.id;
   const idx = host.config.elements.findIndex((e) => e.payload.id === id);
@@ -2714,16 +3109,8 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
   let look: TemplateResult | undefined;
   switch (el.kind) {
     case "text": {
-      // A chart's number says which chart it belongs to, one click from it.
-      const owner = chartOfValue(host.config, el.payload.value);
-      content = html`
-        ${valueEditor(host, el.payload.value, (v) => upd((e) => { (e as typeof el).payload.value = v; }, "value"), { showResolved: true, label: "Text", key: `${key}-value` })}
-        ${owner ? html`<div class="hint">Prints a number from the chart <button type="button" class="link" @click=${() => host.selectLayer(owner.payload.id)}>${layerTitle(owner, describeContext(host))}</button>. It stays in the chart's group and moves with it.</div>` : nothing}
-        ${checkField("Live countdown", el.payload.countdown === true, (v) => upd((e) => {
-          const p = (e as typeof el).payload;
-          if (v) p.countdown = true; else delete p.countdown;
-        }), base.countdown === true)}
-        ${el.payload.countdown ? html`<div class="hint">Ticks down to the value's target: an active timer's finish, or any future timestamp. A paused timer shows its remaining time.</div>` : nothing}`;
+      const setText = (mutate: (p: TextElement) => void, k?: string) => upd((e) => mutate((e as typeof el).payload), k);
+      content = textContentFields(host, el, family, setText, key, base.countdown === true);
       look = html`<div class="grid2">
           ${shapeSizeField(host, el, family, "Font size", { step: 1, min: 4, def: baseSize("fontSize") })}
           ${segField("Weight", el.payload.fontWeight, FONT_WEIGHTS, (v) => upd((e) => { (e as typeof el).payload.fontWeight = v; }),
@@ -2742,7 +3129,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           if (v) p.monospacedDigits = true; else delete p.monospacedDigits;
         }), base.monospacedDigits === true)}
         ${el.payload.monospacedDigits ? html`<div class="hint">Digits take the same width, so a number that ticks does not shuffle what sits beside it.</div>` : nothing}
-        ${el.payload.countdown ? nothing : textValueColourFields(host, el.payload, (mutate, k) => upd((e) => mutate((e as typeof el).payload), k))}`;
+        ${el.payload.countdown || textUsesParts(el.payload) ? nothing : textValueColourFields(host, el.payload, setText)}`;
       break;
     }
     case "icon":
@@ -3229,7 +3616,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
 
   const colour = el.kind === "image" || el.kind === "tap" || el.kind === "timeline"
     ? undefined
-    : colorField(el.kind === "shape" ? "Fill colour" : "Colour", el.payload.colorSlot.baseColorHex, (v) => upd((e) => { if (e.kind !== "image" && e.kind !== "tap" && e.kind !== "timeline") e.payload.colorSlot.baseColorHex = v ?? "#FFFFFF"; }, "color"), false, baseColor);
+    : colorField(el.kind === "shape" ? "Fill colour" : el.kind === "text" && textUsesParts(el.payload) ? "Colour (parts set to Layer)" : "Colour", el.payload.colorSlot.baseColorHex, (v) => upd((e) => { if (e.kind !== "image" && e.kind !== "tap" && e.kind !== "timeline") e.payload.colorSlot.baseColorHex = v ?? "#FFFFFF"; }, "color"), false, baseColor);
 
   // A layer already bound to an entity is what a new states table tests, so the
   // entity is asked for once at the top of this editor and never again.
@@ -3237,6 +3624,11 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
   const tested: Value | undefined = ref ? { kind: { kind: "entityState", ...ref } } : undefined;
   const kindColor = KIND_COLOR[el.kind];
   const stamp = el.kind === "image" ? el.payload.timestamp === true : false;
+  // A rich text layer's value is only what older watches show for its parts,
+  // rewritten from them on every edit, so the Entity field would write into
+  // something that does not last. Each part picks its own entity instead.
+  const richText = el.kind === "text" && textUsesParts(el.payload);
+  const textParts = el.kind === "text" && (el.payload.parts?.length ?? 0) > 0 ? el.payload.parts : undefined;
 
   // Which fields each card owns, for its header reset. Content is what the
   // layer says; look is how it is drawn. Per-shape size overrides count as
@@ -3253,9 +3645,13 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
   const resetKeys = (keys: readonly string[], k: string) => () => upd((e) => restoreKeys(e.payload, base, keys), k);
 
   return html`
-    ${card(host, "content", "Content", html`${el.kind === "tap" ? nothing : layerEntityField(host, el, key)}${content}`,
+    ${card(host, "content", "Content", html`${el.kind === "tap" || richText ? nothing : layerEntityField(host, el, key)}${content}`,
       { color: kindColor, icon: "content", summary: contentSummary(host, el),
-        ...(contentChanged ? { reset: resetKeys(contentKeys, "reset-content") } : {}) })}
+        ...(contentChanged ? { reset: () => upd((e) => {
+          restoreKeys(e.payload, base, contentKeys);
+          // Parts going with the reset leave no part for a state to aim at.
+          if (e.kind === "text") dropPartIds(e.payload.rules);
+        }, "reset-content") } : {}) })}
     ${look === undefined && colour === undefined ? nothing
       : card(host, "look", el.kind === "image" ? "Picture" : "Look", html`${look ?? nothing}${colour ?? nothing}`,
         { color: kindColor, icon: el.kind === "image" ? "image" : "look", ...(lookSummary(el) ? { summary: lookSummary(el)! } : {}),
@@ -3271,7 +3667,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         ...(stamp ? { reset: resetKeys(TIMESTAMP_KEYS, "reset-stamp") } : {}) }) : nothing}
     ${opts.tap === false ? nothing : tapCard(host, el)}
     ${card(host, "states", "States", statesEditor(host, el.payload.rules, el.kind,
-      (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`, tested),
+      (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`, tested, textParts),
       { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(el.payload.rules).replace(/\.$/, ""),
         ...(el.payload.rules.length > 0 ? { reset: () => upd((e) => { e.payload.rules = []; }) } : {}) })}
     ${opts.placement === false ? nothing : placementCard(host, el, family)}`;
@@ -3282,7 +3678,7 @@ const TIMESTAMP_KEYS = ["timestamp", "timestampCorner", "timestampSize"] as cons
 
 /** The payload fields the Content card owns, per kind. */
 const CONTENT_KEYS: Record<CElement["kind"], readonly string[]> = {
-  text: ["value", "countdown"],
+  text: ["value", "countdown", "parts"],
   icon: ["symbol", "path"],
   gauge: ["value", "minValue", "maxValue", "total", "minSource", "maxSource"],
   chart: ["value", "historyMinutes", "historyPoints", "source", "statPeriod", "statType", "limit", "takeFromEnd"],
@@ -3648,9 +4044,30 @@ const CHANGE_LABELS: Record<StyleChangeKind, string> = {
 
 const CHANGE_KINDS = Object.keys(CHANGE_LABELS) as StyleChangeKind[];
 
-function changeKindsFor(target: RuleTarget): StyleChangeKind[] {
-  const allowed = RULE_TARGET_PROPERTIES[target];
+/** What a rule aimed at one part of a rich text layer can change. Anything
+ * else such a rule sets is ignored, on the watch and in the preview. */
+export const PART_RULE_PROPERTIES: readonly StyleProperty[] = ["color", "text", "fontSize", "fontWeight", "visibility"];
+
+/** The changes a rule can add: those its target reads, narrowed to what a
+ * part reads when the rule is aimed at one. */
+export function changeKindsFor(target: RuleTarget, forPart = false): StyleChangeKind[] {
+  const allowed = RULE_TARGET_PROPERTIES[target].filter((p) => !forPart || PART_RULE_PROPERTIES.includes(p));
   return CHANGE_KINDS.filter((k) => allowed.includes(STYLE_PROPERTY[k]));
+}
+
+/** The Changes menu on a rich text layer's rule: the whole text, or one part. */
+function partTargetField(
+  parts: readonly TextPart[],
+  partId: string | undefined,
+  ctx: DescribeContext,
+  set: (id: string, node: EventTarget | null) => void,
+): TemplateResult {
+  const gone = partId !== undefined && !parts.some((p) => p.id === partId);
+  return html`<label class="field"><span>Changes</span>
+      <select @change=${(e: Event) => set((e.target as HTMLSelectElement).value, e.target)}>
+        ${rulePartOptions(parts, partId, ctx).map(([v, text]) => html`<option value=${v} ?selected=${v === (partId ?? "")}>${text}</option>`)}
+      </select></label>
+    ${gone ? html`<div class="hint warn">The part this changed has been removed, so it changes nothing. Pick another part or Whole text.</div>` : nothing}`;
 }
 
 /**
@@ -3756,20 +4173,21 @@ function moveItem<T>(list: T[], from: number, to: number): void {
  * Rule list editor for one layer or one family layout. `locate` finds the
  * live rule array inside a config so every edit goes through the undo history.
  */
-export function rulesEditor(host: EditorHost, rules: Rule[], target: RuleTarget, locate: (cfg: CustomComplicationConfig) => Rule[] | undefined, key: string): TemplateResult {
+export function rulesEditor(host: EditorHost, rules: Rule[], target: RuleTarget, locate: (cfg: CustomComplicationConfig) => Rule[] | undefined, key: string, parts?: readonly TextPart[]): TemplateResult {
   const upd = (mutate: (rules: Rule[]) => void, k?: string) => host.update((c) => { const r = locate(c); if (r) mutate(r); }, k ? `${key}-${k}` : undefined);
   return html`
     ${rules.length === 0 ? html`<div class="hint">No rules yet. A rule checks values and changes how this ${target === "layout" ? "family" : "layer"} looks.</div>` : nothing}
-    ${rules.map((rule, ri) => ruleEditor(host, rule, ri, rules.length, target, upd, `${key}-${rule.id}`))}
+    ${rules.map((rule, ri) => ruleEditor(host, rule, ri, rules.length, target, upd, `${key}-${rule.id}`, parts))}
     <div class="adders"><button class="small" @click=${() => upd((r) => { r.push(newRule()); })}>+ rule</button></div>
     <div class="hint">Inside a rule the first matching case wins. Across rules the later rule wins for the same property. Different properties add up.</div>`;
 }
 
-function ruleEditor(host: EditorHost, rule: Rule, ri: number, count: number, target: RuleTarget, upd: (m: (rules: Rule[]) => void, k?: string) => void, key: string): TemplateResult {
+function ruleEditor(host: EditorHost, rule: Rule, ri: number, count: number, target: RuleTarget, upd: (m: (rules: Rule[]) => void, k?: string) => void, key: string, parts?: readonly TextPart[]): TemplateResult {
   const live = host.liveBranch(rule);
   const current = host.forced.get(rule.id) ?? "live";
   const isActive = (v: string) => (current === "live" ? v === "live" : current === "otherwise" ? v === "otherwise" : current.caseId === v);
   const updRule = (m: (r: Rule) => void, k?: string) => upd((rs) => { const r = rs.find((x) => x.id === rule.id); if (r) m(r); }, k);
+  const forPart = parts !== undefined && rule.partId !== undefined;
   return html`<div class="rule-box">
     <div class="rule-head">
       <b>Rule ${ri + 1}</b>
@@ -3778,25 +4196,28 @@ function ruleEditor(host: EditorHost, rule: Rule, ri: number, count: number, tar
       <button class="icon" title="Move down" ?disabled=${ri === count - 1} @click=${() => upd((rs) => moveItem(rs, ri, ri + 1))}>${uiIcon("down")}</button>
       <button class="icon danger" title="Delete rule" @click=${() => upd((rs) => { const i = rs.findIndex((x) => x.id === rule.id); if (i >= 0) rs.splice(i, 1); })}>${uiIcon("delete")}</button>
     </div>
+    ${parts === undefined ? nothing : partTargetField(parts, rule.partId, describeContext(host), (id) => updRule((r) => {
+      if (id) r.partId = id; else delete r.partId;
+    }))}
     <div class="branches">
       <span class="hint" style="margin:0 4px 0 0">Preview:</span>
       <button class=${isActive("live") ? "active" : ""} @click=${() => host.setForced(rule.id, "live")}>Live</button>
       ${rule.cases.map((c, i) => html`<button class="${isActive(c.id) ? "active" : ""} ${live === c.id ? "live-match" : ""}" @click=${() => host.setForced(rule.id, { caseId: c.id })}>Case ${i + 1}</button>`)}
       ${rule.otherwise ? html`<button class="${isActive("otherwise") ? "active" : ""} ${live === "otherwise" ? "live-match" : ""}" @click=${() => host.setForced(rule.id, "otherwise")}>Otherwise</button>` : nothing}
     </div>
-    ${rule.cases.map((c, ci) => caseEditor(host, c, ci, rule, target, updRule, `${key}-${c.id}`))}
+    ${rule.cases.map((c, ci) => caseEditor(host, c, ci, rule, target, updRule, `${key}-${c.id}`, forPart))}
     <div class="adders"><button class="small" @click=${() => updRule((r) => { r.cases.push(newCase()); })}>+ case</button></div>
     ${checkField("Otherwise (when no case matches)", rule.otherwise !== undefined, (v) => updRule((r) => { if (v) r.otherwise = r.otherwise ?? []; else delete r.otherwise; }))}
     ${rule.otherwise
       ? html`<div class="case-box otherwise">
           <div class="hint">${live === "otherwise" ? html`<b>Active now.</b> ` : nothing}Changes when no case matches:</div>
-          ${changesEditor(host, rule.otherwise, target, (m) => updRule((r) => { if (r.otherwise) m(r.otherwise); }), `${key}-otherwise`)}
+          ${changesEditor(host, rule.otherwise, target, (m) => updRule((r) => { if (r.otherwise) m(r.otherwise); }), `${key}-otherwise`, forPart)}
         </div>`
       : nothing}
   </div>`;
 }
 
-function caseEditor(host: EditorHost, c: RuleCase, ci: number, rule: Rule, target: RuleTarget, updRule: (m: (r: Rule) => void, k?: string) => void, key: string): TemplateResult {
+function caseEditor(host: EditorHost, c: RuleCase, ci: number, rule: Rule, target: RuleTarget, updRule: (m: (r: Rule) => void, k?: string) => void, key: string, forPart = false): TemplateResult {
   const updCase = (m: (c: RuleCase) => void, k?: string) => updRule((r) => { const x = r.cases.find((y) => y.id === c.id); if (x) m(x); }, k);
   const matches = host.liveBranch(rule) === c.id;
   return html`<div class="case-box ${matches ? "match" : ""}">
@@ -3827,7 +4248,7 @@ function caseEditor(host: EditorHost, c: RuleCase, ci: number, rule: Rule, targe
       </select>
     </div>
     <div class="hint" style="margin-top:8px">Then:</div>
-    ${changesEditor(host, c.then, target, (m) => updCase((x) => m(x.then)), `${key}-then`)}
+    ${changesEditor(host, c.then, target, (m) => updCase((x) => m(x.then)), `${key}-then`, forPart)}
   </div>`;
 }
 
@@ -3920,11 +4341,11 @@ function weekdayRow(options: string[], set: (days: number[]) => void): TemplateR
     </div></div>`;
 }
 
-function changesEditor(host: EditorHost, changes: StyleChange[], target: RuleTarget, updList: (m: (list: StyleChange[]) => void, k?: string) => void, key: string): TemplateResult {
-  const allowed = changeKindsFor(target);
+function changesEditor(host: EditorHost, changes: StyleChange[], target: RuleTarget, updList: (m: (list: StyleChange[]) => void, k?: string) => void, key: string, forPart = false): TemplateResult {
+  const allowed = changeKindsFor(target, forPart);
   return html`
     ${changes.length === 0 ? html`<div class="hint">No changes.</div>` : nothing}
-    ${changes.map((ch, i) => changeEditor(host, ch, i, target, (m, k) => updList((list) => { if (list[i]) m(list[i]!); }, k ? `${key}-${i}-${k}` : undefined), () => updList((list) => { list.splice(i, 1); }), `${key}-${i}`))}
+    ${changes.map((ch, i) => changeEditor(host, ch, i, target, (m, k) => updList((list) => { if (list[i]) m(list[i]!); }, k ? `${key}-${i}-${k}` : undefined), () => updList((list) => { list.splice(i, 1); }), `${key}-${i}`, forPart))}
     <select class="adder" @change=${(e: Event) => { const sel = e.target as HTMLSelectElement; const kind = sel.value as StyleChangeKind; sel.value = ""; if (kind) updList((list) => { list.push(newStyleChange(kind)); }); }}>
       <option value="">+ change…</option>
       ${allowed.map((k) => html`<option value=${k}>${CHANGE_LABELS[k]}</option>`)}
@@ -3933,14 +4354,18 @@ function changesEditor(host: EditorHost, changes: StyleChange[], target: RuleTar
 
 const COLOR_KINDS: StyleChangeKind[] = ["setColor", "setBorderColor", "setBackgroundColor"];
 
-function changeEditor(host: EditorHost, ch: StyleChange, i: number, target: RuleTarget, upd: (m: (c: StyleChange) => void, k?: string) => void, remove: () => void, key: string): TemplateResult {
+function changeEditor(host: EditorHost, ch: StyleChange, i: number, target: RuleTarget, upd: (m: (c: StyleChange) => void, k?: string) => void, remove: () => void, key: string, forPart = false): TemplateResult {
   const ignored = !RULE_TARGET_PROPERTIES[target].includes(STYLE_PROPERTY[ch.kind]);
+  // Aiming a rule at a part keeps the changes it already had, marked, rather
+  // than deleting the ones a part does not read.
+  const partIgnores = forPart && !ignored && !PART_RULE_PROPERTIES.includes(STYLE_PROPERTY[ch.kind]);
   return html`<div class="change-box">
     <div class="rule-head">
-      <span>${CHANGE_LABELS[ch.kind]}${ignored ? html` <span class="no">(ignored by ${target === "layout" ? "layouts" : `${target} layers`})</span>` : nothing}</span>
+      <span>${CHANGE_LABELS[ch.kind]}${ignored ? html` <span class="no">(ignored by ${target === "layout" ? "layouts" : `${target} layers`})</span>` : partIgnores ? html` <span class="no">(ignored by a part)</span>` : nothing}</span>
       <span class="spacer"></span>
       <button class="icon danger" title="Delete change" @click=${remove}>${uiIcon("delete")}</button>
     </div>
+    ${partIgnores ? html`<div class="hint">A part only takes colour, text, size, weight, hide and show. Pick Whole text to use this change.</div>` : nothing}
     ${changeBody(host, ch, upd, key)}
   </div>`;
 }
@@ -3998,6 +4423,9 @@ const pendingTestValues = new Map<string, Value>();
  * `defaultValue` is what a brand-new table tests, which the panel fills in
  * from the layer's own entity: a light layer already knows it is about the
  * light, and asking again would be the duplication this whole slice removes.
+ *
+ * `parts` is a rich text layer's parts: with them, each rule says whether it
+ * changes the whole text or one part.
  */
 export function statesEditor(
   host: EditorHost,
@@ -4006,6 +4434,7 @@ export function statesEditor(
   locate: (cfg: CustomComplicationConfig) => Rule[] | undefined,
   key: string,
   defaultValue?: Value,
+  parts?: readonly TextPart[],
 ): TemplateResult {
   const shape = tableShape(rules);
   const advanced = !shape.ok || advancedRules.has(key);
@@ -4016,9 +4445,9 @@ export function statesEditor(
           @click=${(e: Event) => { advancedRules.delete(key); requestRerender(e.target); }}>Show as table</button>
         ${shape.ok ? nothing : html`<span class="hint">${shape.reason}</span>`}
       </div>
-      ${rulesEditor(host, rules, target, locate, key)}`;
+      ${rulesEditor(host, rules, target, locate, key, parts)}`;
   }
-  return statesTable(host, shape.table, rules[0], target, locate, key, defaultValue);
+  return statesTable(host, shape.table, rules[0], target, locate, key, defaultValue, parts);
 }
 
 function statesTable(
@@ -4029,6 +4458,7 @@ function statesTable(
   locate: (cfg: CustomComplicationConfig) => Rule[] | undefined,
   key: string,
   defaultValue?: Value,
+  parts?: readonly TextPart[],
 ): TemplateResult {
   const upd = (mutate: (rules: Rule[]) => void, k?: string) =>
     host.update((c) => { const r = locate(c); if (r) mutate(r); }, k ? `${key}-${k}` : undefined);
@@ -4048,6 +4478,27 @@ function statesTable(
   const seed = table.columns.length === 0 && picked.size === 0 ? [DEFAULT_COLUMN[target]] : [];
   const columns = shownColumns(table.columns, [...picked, ...seed.filter((p): p is StyleProperty => p !== undefined)], allowed);
 
+  // On a rich text layer the states can aim at one part. A part reads only
+  // some columns, so only those are offered; a column already in the table
+  // stays in view with a hint rather than disappearing with its values.
+  const pendingPart = pendingPartTargets.get(key);
+  const partId = rule ? rule.partId : parts?.some((p) => p.id === pendingPart) ? pendingPart : undefined;
+  const forPart = parts !== undefined && partId !== undefined;
+  const offered = forPart ? allowed.filter((p) => PART_RULE_PROPERTIES.includes(p)) : allowed;
+  const partIgnores = forPart ? columns.filter((p) => !PART_RULE_PROPERTIES.includes(p)) : [];
+  const setPart = (id: string, node: EventTarget | null) => {
+    if (!rule) {
+      if (id) pendingPartTargets.set(key, id); else pendingPartTargets.delete(key);
+      requestRerender(node);
+      return;
+    }
+    upd((rs) => {
+      const r = rs[0];
+      if (!r) return;
+      if (id) r.partId = id; else delete r.partId;
+    });
+  };
+
   const live = rule ? host.liveBranch(rule) : "none";
   const forced = rule ? host.forced.get(rule.id) ?? "live" : "live";
   const isForced = (branch: string) => forced !== "live" && (forced === "otherwise" ? branch === "otherwise" : forced.caseId === branch);
@@ -4062,7 +4513,13 @@ function statesTable(
     upd((rs) => setTestedValue(rs, v), "lhs");
   };
 
-  const addRow = () => upd((rs) => addStateRow(rs, tested ?? literal(""), numberMode));
+  const addRow = () => {
+    pendingPartTargets.delete(key);
+    upd((rs) => {
+      addStateRow(rs, tested ?? literal(""), numberMode);
+      if (partId !== undefined && rs[0] && rs[0].partId === undefined) rs[0].partId = partId;
+    });
+  };
 
   const rows = table.rows.map((row, i) => statesRow(host, {
     key: `${key}-${row.caseId}`,
@@ -4102,12 +4559,13 @@ function statesTable(
   });
 
   const pendingRemoval = pendingColumnRemoval.get(key);
-  const spare = COLUMN_PICKER_ORDER.filter((p) => allowed.includes(p) && !columns.includes(p));
+  const spare = COLUMN_PICKER_ORDER.filter((p) => offered.includes(p) && !columns.includes(p));
 
   return html`
     <div class="states">
       ${valueEditor(host, tested ?? literal(""), setTested, { label: "Testing", showResolved: true, key: `${key}-lhs` })}
       ${tested === undefined ? html`<div class="hint">Choose what these states look at.</div>` : nothing}
+      ${parts === undefined ? nothing : partTargetField(parts, partId, describeContext(host), setPart)}
       <table class="states-table">
         <thead>
           <tr>
@@ -4128,6 +4586,7 @@ function statesTable(
             : nothing}
         </tbody>
       </table>
+      ${partIgnores.length === 0 ? nothing : html`<div class="hint warn">A part ignores ${joinWords(partIgnores.map((p) => PROPERTY_LABELS[p]))}. Pick Whole text to use ${partIgnores.length === 1 ? "it" : "them"}.</div>`}
       ${pendingRemoval === undefined ? nothing : html`<div class="hint warn confirm-row">
         Remove the ${PROPERTY_LABELS[pendingRemoval]} column? Its ${countColumnUses(table, pendingRemoval)} value${countColumnUses(table, pendingRemoval) === 1 ? "" : "s"} are deleted from every state.
         <button class="danger small" @click=${(e: Event) => {

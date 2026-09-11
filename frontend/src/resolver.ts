@@ -60,7 +60,9 @@ import {
   CHART_DEFAULT_HIGH_HEX,
   CHART_DEFAULT_LOW_HEX,
   type TextElement,
+  type TextPart,
   textColorsByValue,
+  textUsesParts,
   clockTime,
   elementsFor,
   formatIsEmpty,
@@ -125,6 +127,23 @@ export interface ResolvedText extends ResolvedBase {
   /** The text cut into runs of one colour, when the layer colours its numbers by
    * value (`textColorsByValue`). Joined, the runs spell `text` exactly. Absent
    * when the whole text is `colorHex`, which is every layer that does not ask. */
+  spans?: TextSpan[];
+  /** Rich text: every visible part, in order, each in its own look. Absent when
+   * the layer is not drawn as parts (it has none, it is a countdown, or a layer
+   * rule set the text); empty when every part is hidden. With parts, `text` is
+   * their texts joined, the layer's size, weight and colour are what a part set
+   * to the layer's look takes, and `spans` is absent. */
+  parts?: ResolvedTextPart[];
+}
+/** One visible part of a rich text layer. Mirrors `ResolvedText.Part` in the
+ * app repo, key for key. */
+export interface ResolvedTextPart {
+  text: string;
+  fontSize: number;
+  fontWeight: FontWeight;
+  colorHex: string;
+  /** The part's text cut into runs by its own band table, with no highlight.
+   * Absent when the part is one colour. */
   spans?: TextSpan[];
 }
 /** One run of a text layer drawn in one colour. Mirrors `ResolvedText.Span` in
@@ -660,6 +679,10 @@ export function numberTokens(raw: string, limit = 240): NumberToken[] {
   return out;
 }
 
+/** The keys a run of text is coloured by value from: a whole text layer's, or
+ * one part's, which carries the table and never a highlight. */
+export type TextValueColoring = Pick<TextElement, "coloring" | "bands" | "bandAboveColorHex" | "highlight" | "highColorHex" | "lowColorHex">;
+
 /**
  * A text layer's colour by value: the text cut into runs of one colour.
  *
@@ -673,9 +696,12 @@ export function numberTokens(raw: string, limit = 240): NumberToken[] {
  * run, and no run is empty: text with no numbers is one run in the layer colour,
  * and empty text is no runs at all.
  *
+ * A part of a rich text layer is read the same way with its own table and no
+ * highlight, since a part has none.
+ *
  * Mirrors `CustomComplication.textSpans` in Swift.
  */
-export function textValueSpans(text: string, colorHex: string, el: TextElement): TextSpan[] {
+export function textValueSpans(text: string, colorHex: string, el: TextValueColoring): TextSpan[] {
   const tokens = numberTokens(text);
   const values = tokens.map((t) => t.value);
   const highlight = el.highlight ?? "none";
@@ -1249,9 +1275,43 @@ export class Resolver {
 
   // ── elements and layouts ──────────────────────────────────────────────
 
+  /**
+   * Every visible part of a rich text layer, in order, against the layer's
+   * already resolved look.
+   *
+   * A part's rules can change only what a part has: its colour, text, size,
+   * weight and whether it shows. Anything else one sets is ignored rather than
+   * leaking onto the layer. Each look falls back rule first, then the part's
+   * own setting, then the layer, so a layer rule that recolours the text
+   * reaches every part that has no colour of its own.
+   */
+  private resolveTextParts(parts: readonly TextPart[], rules: readonly Rule[], layer: ResolvedText, forced?: ForcedBranches): ResolvedTextPart[] {
+    const out: ResolvedTextPart[] = [];
+    for (const part of parts) {
+      const style = this.applyRules(rules.filter((r) => r.partId === part.id), forced);
+      if (style.get("visibility")?.kind === "hide") continue;
+      const resolved: ResolvedTextPart = {
+        text: this.styleText(style, "text") ?? this.resolve(part.value) ?? "--",
+        fontSize: this.styleNumber(style, "fontSize") ?? part.fontSize ?? layer.fontSize,
+        fontWeight: style.get("fontWeight")?.weight ?? part.fontWeight ?? layer.fontWeight,
+        colorHex: this.styleColor(style, "color") ?? part.colorHex ?? layer.colorHex,
+      };
+      if (part.coloring === "bands" && (part.bands?.length ?? 0) > 0) {
+        resolved.spans = textValueSpans(resolved.text, resolved.colorHex, part);
+      }
+      out.push(resolved);
+    }
+    return out;
+  }
+
   resolveElement(el: Element, forced?: ForcedBranches): ResolvedElement {
     const p = el.payload;
-    const style = this.applyRules(p.rules, forced);
+    // On a text layer a rule aimed at a part belongs to that part and never to
+    // the layer, whether or not the layer is drawing parts right now, so a rule
+    // aimed at a part nobody has does nothing. Every other kind has no parts
+    // and reads the rule as if the key were not there, as Swift does.
+    const layerRules = el.kind === "text" ? p.rules.filter((r) => r.partId === undefined) : p.rules;
+    const style = this.applyRules(layerRules, forced);
     const visibility = style.get("visibility");
     const isHidden = visibility ? visibility.kind === "hide" : p.isHidden;
     const rotation = this.styleNumber(style, "rotation");
@@ -1262,10 +1322,13 @@ export class Resolver {
       case "text": {
         const countdownEnd = el.payload.countdown ? this.countdownEnd(el.payload.value) : undefined;
         const fallback = el.payload.countdown ? this.countdownFallbackText(el.payload.value) : undefined;
+        // Drawn as parts unless a layer rule set the text: that rule names the
+        // whole text, so it replaces the parts in the layer's own look.
+        const rich = textUsesParts(el.payload) && !style.has("text");
         const out: ResolvedText = {
           kind: "text",
           ...base,
-          text: this.styleText(style, "text") ?? fallback ?? this.resolve(el.payload.value) ?? "--",
+          text: rich ? "" : this.styleText(style, "text") ?? fallback ?? this.resolve(el.payload.value) ?? "--",
           fontSize: this.styleNumber(style, "fontSize") ?? el.payload.fontSize,
           fontWeight: style.get("fontWeight")?.weight ?? el.payload.fontWeight,
           colorHex: this.styleColor(style, "color") ?? el.payload.colorSlot.baseColorHex,
@@ -1274,6 +1337,13 @@ export class Resolver {
           alignment: el.payload.alignment ?? "center",
         };
         if (countdownEnd !== undefined) out.countdownEnd = countdownEnd;
+        if (rich) {
+          // The layer's own colour by value is ignored: each part carries its
+          // own table, and the layer's would colour numbers across parts.
+          out.parts = this.resolveTextParts(el.payload.parts!, p.rules, out, forced);
+          out.text = out.parts.map((part) => part.text).join("");
+          return out;
+        }
         // Read off the final text and colour, so a rule that rewrites the text
         // or recolours the layer is what the numbers are read from and what the
         // rest of the text keeps.

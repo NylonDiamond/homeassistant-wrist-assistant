@@ -1308,6 +1308,7 @@ export class WristAssistantPanel extends LitElement {
     }
     .seg.wide button.on { color: var(--wa-ink); background: var(--wa-card); box-shadow: 0 1px 2px rgba(0,0,0,.08); font-weight: 600; }
     .seg.wide button:focus-visible { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--c, var(--wa-accent)) 60%, transparent); }
+    .seg.wide button:disabled, .seg.wide button:disabled:hover { color: var(--wa-muted); opacity: .38; cursor: not-allowed; }
     .field.seg-field { align-items: center; }
     /* Readings: which of two ways to count, then how many when it is a count. */
     .readings-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -1749,10 +1750,10 @@ export class WristAssistantPanel extends LitElement {
 
        Only direct children are ruled: the fields inside a .grid2 are one
        block and must not be cut apart from each other. */
-    .sec-b > :is(.field, .grid2, .grid3, .grid4, .chart-numbers, .adders, .states-switch, .value-editor, details.sub) {
+    .sec-b > :is(.field, .grid2, .grid3, .grid4, .chart-numbers, .adders, .states-switch, .value-editor, details.sub, .rich-parts) {
       margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--wa-line);
     }
-    .sec-b > :is(.field, .grid2, .grid3, .grid4, .chart-numbers, .adders, .states-switch, .value-editor, details.sub):first-child {
+    .sec-b > :is(.field, .grid2, .grid3, .grid4, .chart-numbers, .adders, .states-switch, .value-editor, details.sub, .rich-parts):first-child {
       margin-top: 0; padding-top: 0; border-top: 0;
     }
     /* The custom span's day/hour/minute row belongs to the Span picker above
@@ -2038,6 +2039,72 @@ export class WristAssistantPanel extends LitElement {
     .confirm-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .value-chip-field.compact { margin: 0; }
     .value-chip-field.compact button.value-chip { padding: 3px 8px; font-size: 13px; max-width: 190px; }
+
+    /* Rich text: a text layer's parts as a row of chips, the editor for the
+       part picked, and the switch's note and question. A chip keeps the value
+       chip's colours (entity teal, reading amber), so a part reads the way the
+       same value reads anywhere else in the inspector. */
+    .badge.new {
+      height: 16px; margin-left: 6px; padding: 0 5px; vertical-align: 1px;
+      font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+      color: #fff; background: var(--c, var(--wa-accent));
+    }
+    .rich-parts > .field.parts-field { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin: 0; }
+    .rich-parts > .field.parts-field > span { font-size: 12px; }
+    .part-chips {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 48px; padding: 8px;
+      border-radius: 9px; background: var(--wa-input); box-shadow: inset 0 0 0 1px var(--wa-line);
+    }
+    button.part-chip {
+      display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 30px; padding: 0 9px 0 7px;
+      font: inherit; font-size: 13px; color: var(--wa-ink); cursor: pointer;
+      border: 1px solid var(--wa-line); border-radius: 8px; background: var(--wa-card);
+      transition: border-color .12s ease-out, background-color .12s ease-out;
+    }
+    button.part-chip:hover { border-color: var(--wa-line-strong); }
+    button.part-chip:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    button.part-chip.on {
+      border-color: var(--c, var(--wa-accent)); box-shadow: 0 0 0 1px var(--c, var(--wa-accent));
+      background: color-mix(in srgb, var(--c, var(--wa-accent)) 12%, var(--wa-card));
+    }
+    .part-chip .part-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); }
+    .part-chip .part-txt { min-width: 0; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+    .part-chip.value .part-txt { color: var(--wa-ent); font-weight: 600; }
+    .part-chip.template .part-txt { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    .part-chip .part-sp { color: var(--wa-muted); opacity: .75; }
+    .part-chip .part-empty { color: var(--wa-muted); font-style: italic; }
+    .part-chip .part-now {
+      max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 1px 6px; border-radius: 999px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; font-weight: 600;
+      color: var(--wa-val); background: var(--wa-val-bg);
+    }
+    .part-chip .part-flag {
+      padding: 0 4px; border: 1px solid var(--wa-line-strong); border-radius: 4px; white-space: nowrap;
+      font-size: 10px; font-weight: 700; line-height: 15px; color: var(--wa-muted); font-variant-numeric: tabular-nums;
+    }
+    .rich-parts .adders button.small { border-style: dashed; }
+    .part-editor { margin-top: 10px; padding: 8px 12px 12px; border-radius: 9px; background: var(--wa-card); box-shadow: 0 0 0 1px var(--wa-line); }
+    /* Titles above the controls inside a part, so a row of five weights gets
+       the editor's whole width instead of what is left beside a label. */
+    .part-editor > .field { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin: 8px 0 0; }
+    .part-editor > .field > span { font-size: 12px; }
+    .field.check:has(> input:disabled) { cursor: default; }
+    .field.check:has(> input:disabled) > span { color: var(--wa-muted); }
+    .part-head { display: flex; align-items: center; gap: 2px; min-height: 30px; font-size: 13px; }
+    .part-head .spacer { flex: 1; }
+    .part-bands { margin: 4px 0 6px; padding: 8px 10px; border-radius: 8px; background: var(--wa-panel); }
+    .part-bands .hint { margin: 6px 0 0; }
+    .field.part-size .size-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .field.part-size .size-row input[type=number] { width: 64px; flex: none; text-align: right; font-variant-numeric: tabular-nums; }
+    .field.part-size .size-row input[type=range] { flex: 1; min-width: 60px; }
+    .size-row .unit, .size-row .from { color: var(--wa-muted); font-size: 12px; white-space: nowrap; }
+    .hint.say { margin: 10px 0 0; padding: 7px 9px; border-radius: 7px; color: var(--wa-ink); background: var(--wa-panel); }
+    .rich-note {
+      margin-top: 8px; padding: 8px 10px; border-radius: 8px; font-size: 12.5px; color: var(--wa-ink);
+      background: color-mix(in srgb, var(--c, var(--wa-accent)) 14%, var(--wa-card));
+    }
+    .rich-confirm { margin-top: 8px; padding: 10px; border-radius: 8px; font-size: 12.5px; background: var(--wa-card); box-shadow: inset 0 0 0 1px var(--wa-line-strong); }
+    .rich-confirm .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 
     /* Entity search, laid out the way Home Assistant's own entity list is: a
        glyph for the domain, the friendly name in full, and the things that
