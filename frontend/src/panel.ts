@@ -1604,9 +1604,13 @@ export class WristAssistantPanel extends LitElement {
     .column.inspector { padding: 10px 12px 12px; container: insp / inline-size; }
     /* The head grows when a long layer name wraps its crumbs onto a second
        line, rather than spilling over the first card. */
-    .insp-head { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 0; position: sticky; top: 0; background: var(--wa-card); z-index: 5; }
-    .crumbs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12.5px; font-weight: 600; color: var(--wa-muted); }
-    .crumbs button { font: inherit; font-size: 12.5px; font-weight: 600; background: transparent; border: 0; padding: 3px 6px; border-radius: 5px; color: var(--wa-muted); cursor: pointer; }
+    .insp-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; min-height: 34px; padding: 0; position: sticky; top: 0; background: var(--wa-card); z-index: 5; }
+    /* The crumbs keep at least 180px; with less beside it, the One at a time
+       button drops under them rather than squeezing every crumb onto its
+       own line. */
+    .crumbs { flex: 1 1 180px; min-width: 0; display: flex; align-items: center; gap: 2px 6px; flex-wrap: wrap; padding: 4px 0; font-size: 12.5px; font-weight: 600; color: var(--wa-muted); }
+    .crumbs button { font: inherit; font-size: 12.5px; font-weight: 600; background: transparent; border: 0; padding: 3px 6px; border-radius: 5px; color: var(--wa-muted); cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .insp-head .expand { margin-left: auto; }
     .crumbs button:hover { background: var(--wa-panel); color: var(--wa-ink); }
     .crumbs .sep { opacity: .5; }
     .here {
