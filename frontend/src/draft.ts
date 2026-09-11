@@ -43,12 +43,26 @@ export function draftStatus(i: DraftStatusInput): DraftStatus {
   return { tone: "ok", text: `Saved, revision ${i.revision}` };
 }
 
+/** One undo step: the document, and the values typed in to test it. */
+interface Step {
+  config: CustomComplicationConfig;
+  testValues: ReadonlyMap<string, string>;
+}
+
 export class Draft {
   /** Revision the draft was loaded from; null for a brand-new complication. */
   readonly baseRevision: number | null;
+  /**
+   * Values typed or slid in to test the preview, by entity id. Not part of the
+   * document: never saved and never dirty. They live here only so undo and
+   * redo walk them with everything else, since trying a value is an edit to
+   * what the screen shows. Replaced, never changed in place, so a step can keep
+   * the map it saw without copying it.
+   */
+  testValues: ReadonlyMap<string, string> = new Map();
   private baseline: string;
-  private past: CustomComplicationConfig[] = [];
-  private future: CustomComplicationConfig[] = [];
+  private past: Step[] = [];
+  private future: Step[] = [];
   private coalesceKey?: string;
   private coalesceUntil = 0;
   /** A gesture held open by `beginGesture`: every update until `endGesture`
@@ -88,18 +102,7 @@ export class Draft {
    * dragging) into one undo step. `home` is the shape being edited, which is
    * where a layer the change added belongs. */
   update(mutate: (cfg: CustomComplicationConfig) => void, coalesce?: string, home?: FamilyKind): void {
-    const now = Date.now();
-    const merge = this.held
-      ? this.heldStepTaken
-      : coalesce !== undefined && coalesce === this.coalesceKey && now < this.coalesceUntil;
-    if (!merge) {
-      this.past.push(structuredClone(this.config));
-      if (this.past.length > HISTORY_LIMIT) this.past.shift();
-      this.future = [];
-    }
-    this.heldStepTaken = this.held;
-    this.coalesceKey = coalesce;
-    this.coalesceUntil = coalesce === undefined ? 0 : now + 800;
+    this.takeStep(coalesce);
     const next = structuredClone(this.config);
     mutate(next);
     // Two invariants are kept in one place, so no call site has to know about
@@ -110,6 +113,31 @@ export class Draft {
     normalizeOwnership(next, home);
     syncAttachedTaps(next);
     this.config = next;
+  }
+
+  /** Try other values in the preview, as an undo step of its own. `coalesce`
+   * merges a slider's run of values into one step, the way typing is merged. */
+  setTestValues(next: ReadonlyMap<string, string>, coalesce?: string): void {
+    this.takeStep(coalesce);
+    this.testValues = next;
+  }
+
+  /** Save what is about to change for undo, unless this edit continues the
+   * last one: the same control inside its coalescing window, or a held
+   * gesture that has already saved its step. */
+  private takeStep(coalesce: string | undefined): void {
+    const now = Date.now();
+    const merge = this.held
+      ? this.heldStepTaken
+      : coalesce !== undefined && coalesce === this.coalesceKey && now < this.coalesceUntil;
+    if (!merge) {
+      this.past.push({ config: structuredClone(this.config), testValues: this.testValues });
+      if (this.past.length > HISTORY_LIMIT) this.past.shift();
+      this.future = [];
+    }
+    this.heldStepTaken = this.held;
+    this.coalesceKey = coalesce;
+    this.coalesceUntil = coalesce === undefined ? 0 : now + 800;
   }
 
   /**
@@ -146,16 +174,18 @@ export class Draft {
   undo(): void {
     const prev = this.past.pop();
     if (!prev) return;
-    this.future.push(this.config);
-    this.config = prev;
+    this.future.push({ config: this.config, testValues: this.testValues });
+    this.config = prev.config;
+    this.testValues = prev.testValues;
     this.endGesture();
   }
 
   redo(): void {
     const next = this.future.pop();
     if (!next) return;
-    this.past.push(this.config);
-    this.config = next;
+    this.past.push({ config: this.config, testValues: this.testValues });
+    this.config = next.config;
+    this.testValues = next.testValues;
     this.endGesture();
   }
 

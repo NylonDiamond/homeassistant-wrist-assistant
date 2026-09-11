@@ -171,6 +171,9 @@ function importEntityKey(entityId: string): string {
 /** The empty reference an unanswered import row shows. */
 const NO_ENTITY: EntityRef = { entityId: "", displayName: "", domain: "" };
 
+/** The test values while no complication is open. */
+const NO_TEST_VALUES: ReadonlyMap<string, string> = new Map();
+
 /** Which way each arrow key moves the selection, in design points. Screen
  * coordinates, so Down is +y. */
 const ARROW_STEP: Record<string, { dx: number; dy: number } | undefined> = {
@@ -474,7 +477,11 @@ export class WristAssistantPanel extends LitElement {
   /** Entity states typed in under the preview, standing in for the live ones
    * so the other states can be seen without waiting for the house. Never
    * saved; cleared by Back to live. */
-  @state() private testValues: ReadonlyMap<string, string> = new Map();
+  /** Values typed or slid in to test the preview. They live on the draft so
+   * undo walks them too; see `Draft.testValues`. */
+  private get testValues(): ReadonlyMap<string, string> {
+    return this.draft?.testValues ?? NO_TEST_VALUES;
+  }
   /** The shared value open for editing in its card under the preview. It
    * edits in place rather than in the inspector, so the form opens where it
    * was clicked and the inspector keeps its selection. */
@@ -1621,6 +1628,9 @@ export class WristAssistantPanel extends LitElement {
        button would, and the delete button stays out of the way until the
        pointer is on it. */
     .values-list .data { display: flex; flex-direction: column; gap: 6px; }
+    /* A row and its open editor, grouped only so a click can tell whether it
+       landed on the open value; the list lays them out as before. */
+    .values-list .vitem { display: contents; }
     .values-list .value-open {
       display: flex; flex-direction: column; gap: 4px; margin-top: -2px; padding: 6px 8px 8px;
       border-radius: 7px; background: color-mix(in srgb, var(--c) 5%, var(--wa-card));
@@ -2461,6 +2471,8 @@ export class WristAssistantPanel extends LitElement {
     window.addEventListener("keydown", this.keyHandler);
     window.addEventListener("keyup", this.keyUpHandler);
     window.addEventListener("beforeunload", this.beforeUnload);
+    window.addEventListener("pointerdown", this.sharedValueOutside, { capture: true });
+    window.addEventListener("focusin", this.sharedValueOutside);
     this.addEventListener(SCRUB_START, this.scrubStart);
     this.addEventListener(SCRUB_END, this.scrubEnd);
     void this.loadOwners();
@@ -2586,6 +2598,8 @@ export class WristAssistantPanel extends LitElement {
     window.removeEventListener("keydown", this.keyHandler);
     window.removeEventListener("keyup", this.keyUpHandler);
     window.removeEventListener("beforeunload", this.beforeUnload);
+    window.removeEventListener("pointerdown", this.sharedValueOutside, { capture: true });
+    window.removeEventListener("focusin", this.sharedValueOutside);
     this.removeEventListener(SCRUB_START, this.scrubStart);
     this.removeEventListener(SCRUB_END, this.scrubEnd);
     void this.unsubscribe?.();
@@ -3414,7 +3428,10 @@ export class WristAssistantPanel extends LitElement {
       this.conflict = undefined;
       this.remoteRevision = undefined;
       this.selectedId = result.record.id;
+      // Saving starts a fresh history, but the values being tried stay.
+      const tested = this.draft.testValues;
       this.draft = Draft.fromDocument(result.record.document, result.record.revision);
+      this.draft.testValues = tested;
       // The saved name is the new baseline: the rename note clears until the
       // next edit. The watch still caches the picker label, but that is a
       // one-time re-pick on the wrist, not a per-save nag.
@@ -3649,6 +3666,7 @@ export class WristAssistantPanel extends LitElement {
       historySeries: this.historySeries,
       namedValues: this.draft?.config.values ?? [],
       dataAgeSeconds: this.templateFetchedAt === undefined ? undefined : (Date.now() - this.templateFetchedAt) / 1000,
+      testedEntities: new Set(this.testValues.keys()),
     };
   }
 
@@ -5766,7 +5784,7 @@ export class WristAssistantPanel extends LitElement {
         const r = resolver.resolve({ kind: { kind: "named", id: v.id } });
         const open = this.openValue === v.id;
         const toggle = () => { this.openValue = open ? undefined : v.id; };
-        return html`<div class="datum vrow ${open ? "hl" : ""}" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
+        return html`<div class="vitem ${open ? "open" : ""}"><div class="datum vrow ${open ? "hl" : ""}" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
             title=${open ? "Close" : "Edit this shared value"}
             @click=${toggle}
             @keydown=${(e: KeyboardEvent) => { if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) { e.preventDefault(); toggle(); } }}>
@@ -5775,11 +5793,27 @@ export class WristAssistantPanel extends LitElement {
           <span class="meta ${r === undefined ? "none" : ""}" title=${describeValue(v.value, ctx)}>${r ?? "unresolved"}</span>
           ${this.canEdit ? html`<button class="icon danger" title="Delete. Layers that read it keep their own copy." aria-label="Delete value" @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { deleteSharedValue(c, v.id); }); if (open) this.openValue = undefined; }}>${uiIcon("delete")}</button>` : nothing}
         </div>
-        ${open ? html`<div class="value-open">${namedValueEditor(host, v)}</div>` : nothing}`;
+        ${open ? html`<div class="value-open">${namedValueEditor(host, v)}</div>` : nothing}</div>`;
       })}
       </div>
     </div>`;
   }
+
+  /**
+   * Close the open shared value once the pointer or the keyboard moves
+   * somewhere else. The row and its editor are one `.vitem`; anything inside
+   * it (a field, a popover the form opened, the row itself, which toggles on
+   * its own click) keeps it open. A press on the card's own scrollbar lands on
+   * the card itself and is not a move away.
+   */
+  private sharedValueOutside = (e: Event) => {
+    if (this.openValue === undefined) return;
+    const path = e.composedPath();
+    const first = path[0];
+    if (first instanceof HTMLElement && first.classList.contains("values-list")) return;
+    const inside = path.some((n) => n instanceof HTMLElement && n.classList.contains("vitem") && n.classList.contains("open"));
+    if (!inside) this.openValue = undefined;
+  };
 
   /** Open one shared value in its card and bring it into view. A value popover
    * that asked for this is closed first, or it would float over the page with
@@ -5857,7 +5891,7 @@ export class WristAssistantPanel extends LitElement {
     return html`<div class="card tint-states" style=${`--c:${SECTION_COLOR.states}`}>
       <h2 class="panel-title"><span class="swatch">${uiIcon("states")}</span>Values on the watch
         <span class="mini">live · slide, pick or type one to try another</span><span class="spacer"></span>
-        ${testing ? html`<span class="testing-pill">Testing with your values <button @click=${() => { this.testValues = new Map(); this.editingValue = undefined; }}>Back to live</button></span>` : nothing}
+        ${testing ? html`<span class="testing-pill">Testing with your values <button @click=${() => { this.editingValue = undefined; this.applyTestValues(new Map()); }}>Back to live</button></span>` : nothing}
       </h2>
       ${ids.length === 0 ? html`<div class="hint">No entities yet. Give a layer an entity and its live value shows here.</div>` : html`<div class="chips values">
         ${ids.map((id) => {
@@ -5907,7 +5941,8 @@ export class WristAssistantPanel extends LitElement {
     return html`<span class="test-ctl">
       <input type="range" min=${control.min} max=${control.max} step=${control.step} .value=${String(at)}
         aria-label=${`Slide the test value for ${name}`}
-        @input=${(e: Event) => this.setTestValue(id, (e.target as HTMLInputElement).value)} />
+        @input=${(e: Event) => this.setTestValue(id, (e.target as HTMLInputElement).value, `test-${id}`)}
+        @change=${() => this.draft?.endGesture()} />
       ${reading}
     </span>`;
   }
@@ -5918,14 +5953,26 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** Try a value for one entity, or go back to its live state with undefined,
-   * an empty value or the live value itself. */
-  private setTestValue(id: string, raw: string | undefined) {
+   * an empty value or the live value itself. `coalesce` makes one slide one
+   * undo step; the slider's change event closes it on release. */
+  private setTestValue(id: string, raw: string | undefined, coalesce?: string) {
     const v = raw?.trim() ?? "";
     const next = new Map(this.testValues);
     const live = this.hass.states[id]?.state;
     if (v === "" || v === live) next.delete(id);
     else next.set(id, v);
-    this.testValues = next;
+    this.applyTestValues(next, coalesce);
+  }
+
+  /** Every change to the test values goes through the draft, so undo and
+   * redo put them back. A change that changes nothing takes no undo step. */
+  private applyTestValues(next: ReadonlyMap<string, string>, coalesce?: string) {
+    const d = this.draft;
+    if (!d) return;
+    const same = next.size === d.testValues.size && [...next].every(([k, v]) => d.testValues.get(k) === v);
+    if (same) return;
+    d.setTestValues(next, coalesce);
+    this.version++;
   }
 
   private currentCase() {

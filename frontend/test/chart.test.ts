@@ -276,6 +276,25 @@ describe("chart history", () => {
     expect(chartOf(layout).values).toEqual([3068, 3071, 3069, 3075, 3063, 3070]);
   });
 
+  it("ends on a test value in the panel, and only while it is a test", () => {
+    const { cfg } = historyChart((p) => { p.historyPoints = 6; });
+    const entityStates = new Map<string, EntityState>([
+      ["sensor.voltage", { entityId: "sensor.voltage", state: "3100", domain: "sensor", iconName: "bolt" }],
+    ]);
+    const ctx = {
+      entityStates,
+      templateResults: new Map(),
+      historySeries: new Map([["sensor.voltage|360|6", "3068,3071,3069,3075,3063,3070"]]),
+      namedValues: cfg.values,
+    };
+    expect(chartOf(resolveAll(cfg, { ...ctx, testedEntities: new Set(["sensor.voltage"]) }).rectangular!).values)
+      .toEqual([3068, 3071, 3069, 3075, 3063, 3100]);
+    expect(chartOf(resolveAll(cfg, ctx).rectangular!).values).toEqual([3068, 3071, 3069, 3075, 3063, 3070]);
+    // Before the first fetch, the test value is the one reading there is.
+    expect(chartOf(resolveAll(cfg, { ...ctx, historySeries: new Map(), testedEntities: new Set(["sensor.voltage"]) }).rectangular!).values)
+      .toEqual([3100]);
+  });
+
   it("is empty before the first fetch, not one bar of the current state", () => {
     // The behaviour the whole feature exists to replace: a plain sensor reads
     // 3068, and drawing that single number as a chart is the confusing part.

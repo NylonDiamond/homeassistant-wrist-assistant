@@ -101,6 +101,10 @@ export interface ResolveContext {
   stalenessThresholdSeconds?: number;
   /** Injectable clock for countdown resolution (epoch ms); defaults to Date.now(). */
   nowMs?: number;
+  /** Panel only, never the watch: entities whose state in `entityStates` is a
+   * value typed in to test the preview. A history chart of one ends on that
+   * value, so its last bar and every number read from it follow the test. */
+  testedEntities?: ReadonlySet<string>;
 }
 
 export interface ResolvedBase {
@@ -933,18 +937,29 @@ export class Resolver {
     const historyKey = chartHistoryKey(c);
     const statisticsKey = chartStatisticsKey(c);
     let raw: string;
-    if (historyKey !== undefined) {
-      raw = this.ctx.historySeries?.get(historyKey) ?? "";
-    } else if (statisticsKey !== undefined) {
-      raw = this.ctx.historySeries?.get(statisticsKey) ?? "";
+    const fromRecorder = historyKey ?? statisticsKey;
+    if (fromRecorder !== undefined) {
+      raw = this.ctx.historySeries?.get(fromRecorder) ?? "";
     } else {
       raw = this.resolve(c.value) ?? "";
     }
-    const values = chartNumbers(raw);
+    let values = chartNumbers(raw);
+    // A test value stands in for the newest reading, the way it stands in for
+    // the state everywhere else. A chart of its own value already reads it.
+    const tested = fromRecorder === undefined ? undefined : this.testedReading(c);
+    if (tested !== undefined) values = [...values.slice(0, -1), tested];
     if (c.limit > 0 && values.length > c.limit) {
       return c.takeFromEnd ? values.slice(values.length - c.limit) : values.slice(0, c.limit);
     }
     return values;
+  }
+
+  /** The number a chart's entity is being tested at, when it is. */
+  private testedReading(c: ChartElement): number | undefined {
+    const entity = this.chartEntity(c);
+    if (!entity || !this.ctx.testedEntities?.has(entity.entityId)) return undefined;
+    const state = this.ctx.entityStates.get(entity.entityId)?.state;
+    return state === undefined ? undefined : leadingNumber(state);
   }
 
   private chartEntity(c: ChartElement): EntityRef | undefined {
