@@ -4872,7 +4872,7 @@ function statesTable(
       ${valueEditor(host, tested ?? literal(""), setTested, { label: "Testing", showResolved: true, key: `${key}-lhs` })}
       ${tested === undefined ? html`<div class="hint keep">Choose what these states look at.</div>` : nothing}
       ${parts === undefined ? nothing : partTargetField(parts, partId, describeContext(host), setPart)}
-      <table class="states-table">
+      <div class="states-scroll"><table class="states-table">
         <thead>
           <tr>
             <th class="when">When</th>
@@ -4891,7 +4891,7 @@ function statesTable(
             ? html`<tr><td class="empty-row" colspan=${columns.length + 2}>No states yet. Add one to change how this ${target === "layout" ? "shape" : "layer"} looks when a value changes.</td></tr>`
             : nothing}
         </tbody>
-      </table>
+      </table></div>
       ${partIgnores.length === 0 ? nothing : html`<div class="hint warn">A part ignores ${joinWords(partIgnores.map((p) => PROPERTY_LABELS[p]))}. Pick Whole text to use ${partIgnores.length === 1 ? "it" : "them"}.</div>`}
       ${pendingRemoval === undefined ? nothing : html`<div class="hint warn confirm-row">
         Remove the ${PROPERTY_LABELS[pendingRemoval]} column? Its ${countColumnUses(table, pendingRemoval)} value${countColumnUses(table, pendingRemoval) === 1 ? "" : "s"} are deleted from every state.

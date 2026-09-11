@@ -600,6 +600,9 @@ export class WristAssistantPanel extends LitElement {
          low strength, so it suits both skins without a second value. The lit
          button of a segmented control sits a step above that fill. */
       --wa-lab: 88px;
+      /* Where a card's controls start: past the title column. A narrow
+         inspector stacks titles over controls and sets this to 0. */
+      --wa-col: calc(var(--wa-lab) + 8px);
       --wa-field: color-mix(in srgb, var(--wa-ink) 5.5%, transparent);
       --wa-seg-on: var(--wa-card);
       /* Two colours for the things that come out of Home Assistant rather
@@ -1598,8 +1601,10 @@ export class WristAssistantPanel extends LitElement {
 
     /* The inspector: crumbs on top, then one card per section of the thing
        selected, tinted by what it is. */
-    .column.inspector { padding: 10px 12px 12px; }
-    .insp-head { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0; position: sticky; top: 0; background: var(--wa-card); z-index: 5; }
+    .column.inspector { padding: 10px 12px 12px; container: insp / inline-size; }
+    /* The head grows when a long layer name wraps its crumbs onto a second
+       line, rather than spilling over the first card. */
+    .insp-head { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 0; position: sticky; top: 0; background: var(--wa-card); z-index: 5; }
     .crumbs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12.5px; font-weight: 600; color: var(--wa-muted); }
     .crumbs button { font: inherit; font-size: 12.5px; font-weight: 600; background: transparent; border: 0; padding: 3px 6px; border-radius: 5px; color: var(--wa-muted); cursor: pointer; }
     .crumbs button:hover { background: var(--wa-panel); color: var(--wa-ink); }
@@ -1607,8 +1612,10 @@ export class WristAssistantPanel extends LitElement {
     .here {
       display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px 3px 6px; border-radius: 6px;
       background: color-mix(in srgb, var(--k) 14%, transparent); border: 1px solid color-mix(in srgb, var(--k) 40%, transparent);
-      color: var(--wa-ink); font-weight: 500;
+      color: var(--wa-ink); font-weight: 500; min-width: 0; max-width: 100%;
     }
+    .here .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .here .kchip { flex: none; }
     .kchip { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #fff; background: var(--k); padding: 1px 5px; border-radius: 3px; }
     .insp-head .expand {
       flex: none; font: inherit; font-size: 12px; font-weight: 600; color: var(--wa-muted); cursor: pointer;
@@ -1667,7 +1674,7 @@ export class WristAssistantPanel extends LitElement {
        the left. Boxes that hold rows of their own keep the full width. */
     :is(.sec-b, .sec-b :is(.grid2, .grid4, .value-editor, .states, .rich-parts, .part-editor, .rule-box, .case-box, .test-box, .change-box))
       > :is(.hint, .rich-note, .rich-confirm, .adders, .chips, .states-foot, .states-switch, .span-parts, button.small, button.link, select.adder, details.sub):not(.value-pop *) {
-      margin-left: calc(var(--wa-lab) + 8px);
+      margin-left: var(--wa-col);
     }
     /* A row whose control is a list or a strip of buttons that can wrap: the
        title stays level with the first line. */
@@ -1940,7 +1947,7 @@ export class WristAssistantPanel extends LitElement {
        the control column, under the Colour row it belongs to. It is its own
        size container so a narrow inspector can drop the opacity box, which
        the eight-digit hex still carries. */
-    .bands { display: grid; gap: 3px; margin: 2px 0 6px calc(var(--wa-lab) + 8px); container-type: inline-size; }
+    .bands { display: grid; gap: 3px; margin: 2px 0 6px var(--wa-col); container-type: inline-size; }
     @container (max-width: 240px) {
       .band-row .color-box .alpha { display: none; }
       .band-row .color-box { padding-right: 6px; }
@@ -2014,6 +2021,30 @@ export class WristAssistantPanel extends LitElement {
     .row-inline { display: flex; align-items: center; gap: 8px; }
     .row-inline .field { flex: 1; min-width: 0; grid-template-columns: auto minmax(0, 1fr); gap: 6px; }
     .row-inline > button.icon { flex: none; }
+    /* A narrow inspector (a column dragged in, or a small window) stacks each
+       row: the title on its own line and the control under it at full width,
+       instead of squeezing the control into what is left beside an 88px
+       title. A switch needs no width, so it keeps its title beside it. The
+       value popover keeps its own label-left rows. */
+    @container insp (max-width: 360px) {
+      .insp-body { --wa-col: 0px; }
+      .insp-body .value-pop { --wa-col: calc(var(--wa-lab) + 8px); }
+      .sec-b .field:not(.value-pop *, .row-inline *) { grid-template-columns: minmax(0, 1fr); gap: 4px; min-height: 0; padding: 3px 0; }
+      .sec-b .field:not(.value-pop *, .row-inline *) > * { grid-column: 1 / -1; }
+      .sec-b .field:not(.value-pop *, .row-inline *) > span:first-child { padding-top: 0; }
+      .sec-b .field.check:not(.value-pop *, .row-inline *) { grid-template-columns: minmax(0, 1fr) auto; min-height: 30px; padding: 0; }
+      .sec-b .field.check:not(.value-pop *, .row-inline *) > * { grid-column: auto; }
+      .sec-b .field.gauge-end:not(.value-pop *) { grid-template-columns: minmax(0, 1fr) auto; }
+      .sec-b .field.gauge-end:not(.value-pop *) > .gauge-end-head > :first-child { grid-column: 1; grid-row: 1; align-self: center; }
+      .sec-b .field.gauge-end:not(.value-pop *) > .gauge-end-head > .seg { grid-column: 2; grid-row: 1; }
+      .sec-b .field.gauge-end:not(.value-pop *) > :not(.gauge-end-head) { grid-column: 1 / -1; grid-row: 2; }
+      .sec-b .readout-v { padding-top: 0; }
+      /* Choices wrap onto a second line rather than clip to "A…". */
+      .sec-b .seg.wide { height: auto; min-height: 24px; flex-wrap: wrap; }
+      .sec-b .seg.wide button { flex: 1 0 auto; text-overflow: clip; }
+      .sec-b .pair-row { flex-wrap: wrap; row-gap: 4px; }
+      .sec-b .pair-row > .seg.wide:first-of-type { flex: 1 1 100%; }
+    }
     .hint { font-size: 11.5px; line-height: 1.45; color: var(--wa-muted); margin: 4px 0; }
     .hint.warn { color: var(--wa-ink); }
     /* The bare .err rule sits above .hint in this sheet, so a hint that is an
@@ -2069,7 +2100,10 @@ export class WristAssistantPanel extends LitElement {
     /* States table: one rule as rows. A two-state light is two lines, so the
        row has to stay one line: every control in it is sized to the text it
        holds rather than to the column. */
-    .states-table { width: 100%; border-collapse: collapse; margin: 8px 0 4px; font-size: 13px; }
+    /* The table scrolls sideways inside its card when a narrow inspector
+       cannot fit its columns, rather than running past the card's edge. */
+    .states-scroll { overflow-x: auto; margin: 8px 0 4px; }
+    .states-table { width: 100%; border-collapse: collapse; margin: 0; font-size: 13px; }
     .states-table th {
       text-align: left; font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
       opacity: .6; padding: 2px 6px; border-bottom: 1px solid var(--wa-line); white-space: nowrap;
@@ -5723,20 +5757,20 @@ export class WristAssistantPanel extends LitElement {
     // A pick of several layers is what the inspector is about, whatever the
     // one selected layer under it happens to be.
     if (picked !== undefined) {
-      here = html`<span class="here" style="--k:var(--wa-accent)"><span class="kchip">Picked</span>${picked} layers</span>`;
+      here = html`<span class="here" style="--k:var(--wa-accent)"><span class="kchip">Picked</span><span class="nm">${picked} layers</span></span>`;
     } else if (ins.kind === "layer") {
       const el = cfg.elements.find((e) => e.payload.id === ins.id);
       if (el) {
-        here = html`<span class="here" style=${`--k:${KIND_COLOR[el.kind]}`}><span class="kchip">${KIND_LABEL[el.kind]}</span>${layerTitle(el, describeContext(this.host()))}</span>`;
+        here = html`<span class="here" style=${`--k:${KIND_COLOR[el.kind]}`}><span class="kchip">${KIND_LABEL[el.kind]}</span><span class="nm" title=${layerTitle(el, describeContext(this.host()))}>${layerTitle(el, describeContext(this.host()))}</span></span>`;
         const g = groupOf(cfg, el.payload.id);
         if (g) parent = html`<span class="sep">›</span><button @click=${() => { this.inspect = { kind: "group", id: g.id }; }} title="Edit the group">${g.name}</button>`;
       }
     } else if (ins.kind === "group") {
       const g = cfg.groups?.find((x) => x.id === ins.id);
-      if (g) here = html`<span class="here" style=${`--k:${SECTION_COLOR.group}`}><span class="kchip">Group</span>${g.name}</span>`;
+      if (g) here = html`<span class="here" style=${`--k:${SECTION_COLOR.group}`}><span class="kchip">Group</span><span class="nm" title=${g.name}>${g.name}</span></span>`;
     } else if (ins.kind === "data") {
       const nv = cfg.values.find((v) => v.id === ins.id);
-      if (nv) here = html`<span class="here" style=${`--k:${SECTION_COLOR.complication}`}><span class="kchip">Value</span>${nv.name || "(unnamed)"}</span>`;
+      if (nv) here = html`<span class="here" style=${`--k:${SECTION_COLOR.complication}`}><span class="kchip">Value</span><span class="nm">${nv.name || "(unnamed)"}</span></span>`;
     }
     // The root deselects, and with nothing selected the inspector is the
     // complication itself.
