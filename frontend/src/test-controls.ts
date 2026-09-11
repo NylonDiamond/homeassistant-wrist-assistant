@@ -3,7 +3,40 @@
 // Nothing here is saved; it only shapes how a value is tried out.
 
 import type { HassEntityState } from "./ha-api.js";
-import { TIMELINE_DOMAIN_STATES } from "./model.js";
+import { type CustomComplicationConfig, type NamedValue, type Value, TIMELINE_DOMAIN_STATES, sharedValueUses } from "./model.js";
+
+/** Test values are keyed by entity id. A shared value's key carries this
+ * prefix, which no entity id can start with. */
+export const SHARED_TEST_PREFIX = "shared:";
+
+export function sharedTestKey(id: string): string {
+  return SHARED_TEST_PREFIX + id.toUpperCase();
+}
+
+/**
+ * The shared values worth a row under the preview: the ones a layer reads.
+ * A shared value that is one entity's state is left out, because that
+ * entity already has its own row, and testing it there reaches every layer.
+ */
+export function testableSharedValues(cfg: CustomComplicationConfig): NamedValue[] {
+  return cfg.values.filter((n) => n.value.kind.kind !== "entityState" && sharedValueUses(cfg, n.id) > 0);
+}
+
+/**
+ * The shared values with each tested one standing in as fixed text. The
+ * shared value's own format stays, so a test of 66 still prints "66.00" when
+ * the value is set to two decimals, the way its real reading would.
+ */
+export function testedNamedValues(values: NamedValue[], tests: ReadonlyMap<string, string>): NamedValue[] {
+  if (tests.size === 0) return values;
+  return values.map((n) => {
+    const tried = tests.get(sharedTestKey(n.id));
+    if (tried === undefined) return n;
+    const value: Value = { kind: { kind: "literal", value: tried } };
+    if (n.value.format) value.format = n.value.format;
+    return { ...n, value };
+  });
+}
 
 export type TestControl =
   | { kind: "number"; min: number; max: number; step: number }

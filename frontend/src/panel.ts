@@ -74,7 +74,7 @@ import {
   deleteSharedValue,
   DESIGN_BOX,
 } from "./model.js";
-import { testControlFor } from "./test-controls.js";
+import { SHARED_TEST_PREFIX, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues } from "./test-controls.js";
 import { SEND_WAIT_MS, describeSend, sendState } from "./send-state.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
 import {
@@ -1631,6 +1631,12 @@ export class WristAssistantPanel extends LitElement {
     /* A row and its open editor, grouped only so a click can tell whether it
        landed on the open value; the list lays them out as before. */
     .values-list .vitem { display: contents; }
+    /* Marks a shared value's row under the preview, so it is not read as
+       an entity. */
+    .vchip .vtag {
+      flex: none; padding: 0 5px; border-radius: 4px; font-size: 10.5px; font-weight: 600; line-height: 16px;
+      color: var(--wa-muted); background: color-mix(in srgb, var(--wa-ink) 8%, transparent);
+    }
     .values-list .value-open {
       display: flex; flex-direction: column; gap: 4px; margin-top: -2px; padding: 6px 8px 8px;
       border-radius: 7px; background: color-mix(in srgb, var(--c) 5%, var(--wa-card));
@@ -3660,19 +3666,22 @@ export class WristAssistantPanel extends LitElement {
     return entry;
   }
 
-  private buildContext(): ResolveContext {
+  /** The draft's context. `withTests` false reads the house as it really is,
+   * for the live value a test is measured against. */
+  private buildContext(withTests = true): ResolveContext {
     const entityStates = new Map<string, EntityState>();
     for (const [id, ref] of this.compiled?.entities ?? []) {
-      const entry = this.entityStateFor(id, ref.iconName ?? "", true);
+      const entry = this.entityStateFor(id, ref.iconName ?? "", withTests);
       if (entry) entityStates.set(id, entry);
     }
+    const values = this.draft?.config.values ?? [];
     return {
       entityStates,
       templateResults: this.templateResults,
       historySeries: this.historySeries,
-      namedValues: this.draft?.config.values ?? [],
+      namedValues: withTests ? testedNamedValues(values, this.testValues) : values,
       dataAgeSeconds: this.templateFetchedAt === undefined ? undefined : (Date.now() - this.templateFetchedAt) / 1000,
-      testedEntities: new Set(this.testValues.keys()),
+      testedEntities: withTests ? new Set(this.testValues.keys()) : new Set(),
     };
   }
 
@@ -5924,13 +5933,14 @@ export class WristAssistantPanel extends LitElement {
     const cfg = this.draft?.config;
     if (!cfg) return nothing;
     const ids = [...(this.compiled?.entities.keys() ?? [])];
+    const shared = testableSharedValues(cfg);
     const testing = this.testValues.size > 0;
     return html`<div class="card tint-states" style=${`--c:${SECTION_COLOR.states}`}>
       <h2 class="panel-title"><span class="swatch">${uiIcon("states")}</span>Values on the watch
         <span class="mini">live · slide, pick or type one to try another</span><span class="spacer"></span>
         ${testing ? html`<span class="testing-pill">Testing with your values <button @click=${() => { this.editingValue = undefined; this.applyTestValues(new Map()); }}>Back to live</button></span>` : nothing}
       </h2>
-      ${ids.length === 0 ? html`<div class="hint">No entities yet. Give a layer an entity and its live value shows here.</div>` : html`<div class="chips values">
+      ${ids.length === 0 && shared.length === 0 ? html`<div class="hint">No entities yet. Give a layer an entity and its live value shows here.</div>` : html`<div class="chips values">
         ${ids.map((id) => {
           const s = this.hass.states[id];
           const name = typeof s?.attributes.friendly_name === "string" ? s.attributes.friendly_name : id;
@@ -5945,6 +5955,24 @@ export class WristAssistantPanel extends LitElement {
             ${this.renderTestControl(id, name, s, override, unit, live)}
             ${override !== undefined
               ? html`<button type="button" class="small live-reset" title=${`Back to the live value: ${live}`} @click=${() => this.setTestValue(id, undefined)}>Live</button>`
+              : nothing}
+          </div>`;
+        })}
+        ${shared.map((n) => {
+          // A shared value is tried the same way: its reading before its own
+          // format, so a slide from 66 prints "90.00" on a two-decimal value.
+          const key = sharedTestKey(n.id);
+          const raw = this.sharedRaw(n.id) ?? "";
+          const live = raw === "" ? "empty" : raw;
+          const name = n.name || "(unnamed)";
+          const override = this.testValues.get(key);
+          const s = { entity_id: key, state: raw, attributes: {}, last_changed: "", last_updated: "" };
+          return html`<div class="vchip vrow ctl ${override !== undefined ? "testing" : ""}" style=${`--k:${SECTION_COLOR.complication}`}
+            title=${override !== undefined ? `Saved value: ${live}` : ""}>
+            <span class="kbar"></span><b>${name}</b><span class="vtag" title="A shared value. Trying one here is not saved; change it in Shared values to keep it.">shared</span><span class="spacer"></span>
+            ${this.renderTestControl(key, name, s, override, "", live)}
+            ${override !== undefined
+              ? html`<button type="button" class="small live-reset" title=${`Back to the saved value: ${live}`} @click=${() => this.setTestValue(key, undefined)}>Live</button>`
               : nothing}
           </div>`;
         })}
@@ -5995,10 +6023,22 @@ export class WristAssistantPanel extends LitElement {
   private setTestValue(id: string, raw: string | undefined, coalesce?: string) {
     const v = raw?.trim() ?? "";
     const next = new Map(this.testValues);
-    const live = this.hass.states[id]?.state;
+    const live = id.startsWith(SHARED_TEST_PREFIX)
+      ? this.sharedRaw(id.slice(SHARED_TEST_PREFIX.length))
+      : this.hass.states[id]?.state;
     if (v === "" || v === live) next.delete(id);
     else next.set(id, v);
     this.applyTestValues(next, coalesce);
+  }
+
+  /** A shared value's real reading before its own format, with no test in
+   * play: what its row shows as live, and what a test is compared with. */
+  private sharedRaw(id: string): string | undefined {
+    const cfg = this.draft?.config;
+    if (!cfg) return undefined;
+    const ctx = this.buildContext(false);
+    const bare = ctx.namedValues.map((n) => ({ ...n, value: { kind: n.value.kind } }));
+    return new Resolver({ ...ctx, namedValues: bare }, cfg).resolve({ kind: { kind: "named", id } });
   }
 
   /** Every change to the test values goes through the draft, so undo and
