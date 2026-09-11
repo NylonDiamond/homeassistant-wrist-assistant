@@ -74,6 +74,7 @@ import {
   deleteSharedValue,
   DESIGN_BOX,
 } from "./model.js";
+import { testControlFor } from "./test-controls.js";
 import { SEND_WAIT_MS, describeSend, sendState } from "./send-state.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
 import {
@@ -1621,6 +1622,11 @@ export class WristAssistantPanel extends LitElement {
       border-radius: 7px; background: color-mix(in srgb, var(--c) 5%, var(--wa-card));
     }
     .values-list .value-open .value-editor { display: flex; flex-direction: column; gap: 4px; }
+    .values-list.empty-list .panel-title { margin-bottom: 0; }
+    /* Under Layers, the list takes at most part of the column and scrolls, so
+       an open value never pushes the layer rows out of sight. */
+    .column.left .card.values-list { max-height: 45%; overflow-y: auto; scrollbar-width: thin; }
+    .layout.cols-1 .column.left .card.values-list { max-height: none; overflow: visible; }
     .values-list .datum {
       padding: 0 8px; border-radius: 7px; gap: 8px;
       transition: box-shadow .12s ease-out, background-color .12s ease-out;
@@ -1651,7 +1657,16 @@ export class WristAssistantPanel extends LitElement {
     }
     .vchip.testing { box-shadow: inset 0 0 0 1px var(--wa-states); }
     .vchip.testing .val { color: color-mix(in srgb, var(--wa-states) 70%, var(--wa-ink)); }
-    .vchip input { width: 110px; min-height: 24px; font: inherit; font-size: 13px; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--wa-states); background: var(--wa-card); color: inherit; }
+    .vchip input[type=text] { width: 110px; min-height: 24px; font: inherit; font-size: 13px; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--wa-states); background: var(--wa-card); color: inherit; }
+    /* A test value's control sits at the end of its row: a slider and its
+       reading for a number, a picker for known states, the reading alone for
+       text. The row is no longer a button, so it drops the pointer. */
+    .vchip.ctl { cursor: default; }
+    .vchip .test-ctl { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 0 1 50%; min-width: 0; }
+    .vchip .test-ctl input[type=range] { flex: 1 1 auto; min-width: 60px; height: 16px; margin: 0; accent-color: var(--wa-states); cursor: pointer; }
+    .vchip .test-ctl select { min-width: 0; max-width: 100%; font: inherit; font-size: 12px; min-height: 24px; padding: 2px 6px; border-radius: 6px; cursor: pointer; }
+    .vchip button.val { background: none; border: 0; padding: 0; cursor: text; min-width: 56px; text-align: right; }
+    .vchip button.live-reset { flex: none; }
     .testing-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; text-transform: none; letter-spacing: 0; color: color-mix(in srgb, var(--wa-states) 70%, var(--wa-ink)); }
     .testing-pill button { font: inherit; font-size: 12px; font-weight: 500; background: var(--wa-states); color: #1a1600; border: 0; border-radius: 999px; padding: 2px 9px; cursor: pointer; }
     .empty { opacity: .6; padding: 24px; text-align: center; }
@@ -4182,7 +4197,7 @@ export class WristAssistantPanel extends LitElement {
       ${this.watchSupported
         ? html`<div class="layout cols-${fit.columns}"
               style="--wa-left:${fit.left}px;--wa-right:${fit.right}px">
-            <div class="column left">${this.renderAddLayer()}${this.renderLayers()}</div>
+            <div class="column left">${this.renderAddLayer()}${this.renderLayers()}${this.renderSharedValues()}</div>
             ${this.renderGutter("left")}
             <div class="column canvas">${this.renderBanners()}${this.renderCanvas()}</div>
             ${this.renderGutter("right")}
@@ -5583,7 +5598,6 @@ export class WristAssistantPanel extends LitElement {
         ${this.zoomed && family !== "inline" ? this.renderZoomDialog(family, layouts, watchCase) : nothing}
       </div>
       <div class="under-grid">
-        ${this.renderSharedValues(cfg)}
         ${this.renderValuesRow()}
       </div>`;
   }
@@ -5685,21 +5699,34 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * Values the complication defines once and several layers read. Hidden until
-   * there is one: most complications never need it, and a new one is made from
-   * the value itself (Make shared, or Source "Shared value").
+   * Values the complication defines once and several layers read, under the
+   * Layers card because layers are what read them. Always there, so the idea
+   * is findable: a single title row with a line of explanation and Add until
+   * the first one exists, then the list.
    */
-  private renderSharedValues(cfg: CustomComplicationConfig) {
+  private renderSharedValues() {
+    const cfg = this.draft?.config;
+    if (!cfg) return nothing;
     const values = cfg.values;
-    if (values.length === 0) return nothing;
+    const add = this.canEdit
+      ? html`<button class="small" @click=${() => { const nv = newNamedValue(); this.mutate((c) => { c.values.push(nv); }); this.openSharedValue(nv.id); }}>Add</button>`
+      : nothing;
+    const explain = "Like a variable: set it once, and every layer that reads it follows. Click Add, or Make shared on any value.";
+    if (values.length === 0) {
+      return html`<div class="card tint-values values-list empty-list" style=${`--c:${SECTION_COLOR.complication}`}>
+        <h2 class="panel-title"><span class="swatch">${uiIcon("content")}</span>Shared values
+          <span class="mini" title=${explain}>set once, used by many layers</span>
+          <span class="spacer"></span>${add}
+        </h2>
+      </div>`;
+    }
     const host = this.host();
     const resolver = new Resolver(this.buildContext(), this.draft?.config);
     const ctx = describeContext(host);
     return html`<div class="card tint-values values-list" style=${`--c:${SECTION_COLOR.complication}`}>
       <h2 class="panel-title"><span class="swatch">${uiIcon("content")}</span>Shared values
-        <span class="mini" title="A value defined once and read by several layers. Click Make shared on any value, or set its Source to &quot;Shared value&quot;.">defined once, read by several layers</span>
-        <span class="spacer"></span>
-        ${this.canEdit ? html`<button class="small" @click=${() => { const nv = newNamedValue(); this.mutate((c) => { c.values.push(nv); }); this.openValue = nv.id; }}>Add</button>` : nothing}
+        <span class="mini" title=${explain}>set once, used by many layers</span>
+        <span class="spacer"></span>${add}
       </h2>
       <div class="data">
       ${values.map((v) => {
@@ -5793,7 +5820,7 @@ export class WristAssistantPanel extends LitElement {
     const testing = this.testValues.size > 0;
     return html`<div class="card tint-states" style=${`--c:${SECTION_COLOR.states}`}>
       <h2 class="panel-title"><span class="swatch">${uiIcon("states")}</span>Values on the watch
-        <span class="mini">live · click one to try another</span><span class="spacer"></span>
+        <span class="mini">live · slide, pick or type one to try another</span><span class="spacer"></span>
         ${testing ? html`<span class="testing-pill">Testing with your values <button @click=${() => { this.testValues = new Map(); this.editingValue = undefined; }}>Back to live</button></span>` : nothing}
       </h2>
       ${ids.length === 0 ? html`<div class="hint">No entities yet. Give a layer an entity and its live value shows here.</div>` : html`<div class="chips values">
@@ -5805,25 +5832,59 @@ export class WristAssistantPanel extends LitElement {
           const override = this.testValues.get(id);
           const user = cfg.elements.find((e) => layerEntityUses(cfg, e.payload.id).some((u) => u.ref.entityId === id));
           const kind = user?.kind ?? "text";
-          const editing = this.editingValue === id;
-          return html`<button class="vchip vrow ${override !== undefined ? "testing" : ""}" style=${`--k:${KIND_COLOR[kind]}`}
-            title=${override !== undefined ? `Live value: ${live}. Click to change the test value.` : "Click to try a different value"}
-            @click=${(e: Event) => { if ((e.target as HTMLElement).tagName === "INPUT") return; this.editingValue = id; void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLInputElement>(".vchip input")?.focus()); }}>
+          return html`<div class="vchip vrow ctl ${override !== undefined ? "testing" : ""}" style=${`--k:${KIND_COLOR[kind]}`}
+            title=${override !== undefined ? `Live value: ${live}` : ""}>
             <span class="kbar"></span><b>${name}</b><span class="spacer"></span>
-            ${editing
-              ? html`<input type="text" .value=${override ?? s?.state ?? ""} aria-label=${`Test value for ${name}`}
-                  @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { this.editingValue = undefined; } }}
-                  @blur=${(e: FocusEvent) => this.commitTestValue(id, (e.target as HTMLInputElement).value)} />`
-              : html`<span class="val">${override !== undefined ? `${override}${unit}` : live}</span>`}
-          </button>`;
+            ${this.renderTestControl(id, name, s, override, unit, live)}
+            ${override !== undefined
+              ? html`<button type="button" class="small live-reset" title=${`Back to the live value: ${live}`} @click=${() => this.setTestValue(id, undefined)}>Live</button>`
+              : nothing}
+          </div>`;
         })}
       </div>`}
     </div>`;
   }
 
+  /**
+   * The control for one test value. A number slides, so a gauge filling or a
+   * colour changing at a threshold can be watched as it moves rather than
+   * retyped value by value, and its reading still opens a box for an exact
+   * one. A state with a known set of words is a picker. Anything else is typed.
+   */
+  private renderTestControl(id: string, name: string, s: Parameters<typeof testControlFor>[1], override: string | undefined, unit: string, live: string) {
+    const shown = override ?? s?.state ?? "";
+    const control = testControlFor(id, s, override);
+    if (control.kind === "choice") {
+      return html`<span class="test-ctl"><select aria-label=${`Test value for ${name}`} @change=${(e: Event) => this.setTestValue(id, (e.target as HTMLSelectElement).value)}>
+        ${control.options.map((o) => html`<option value=${o} ?selected=${o === shown}>${o}</option>`)}
+      </select></span>`;
+    }
+    const reading = this.editingValue === id
+      ? html`<input type="text" .value=${shown} aria-label=${`Test value for ${name}`}
+          @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { this.editingValue = undefined; } }}
+          @blur=${(e: FocusEvent) => this.commitTestValue(id, (e.target as HTMLInputElement).value)} />`
+      : html`<button type="button" class="val" title="Click to type a value"
+          @click=${() => { this.editingValue = id; void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLInputElement>(".vchip input[type=text]")?.focus()); }}>${override !== undefined ? `${override}${unit}` : live}</button>`;
+    if (control.kind === "text") return html`<span class="test-ctl">${reading}</span>`;
+    const n = Number(shown);
+    const at = shown.trim() !== "" && Number.isFinite(n) ? n : control.min;
+    return html`<span class="test-ctl">
+      <input type="range" min=${control.min} max=${control.max} step=${control.step} .value=${String(at)}
+        aria-label=${`Slide the test value for ${name}`}
+        @input=${(e: Event) => this.setTestValue(id, (e.target as HTMLInputElement).value)} />
+      ${reading}
+    </span>`;
+  }
+
   private commitTestValue(id: string, raw: string) {
     this.editingValue = undefined;
-    const v = raw.trim();
+    this.setTestValue(id, raw);
+  }
+
+  /** Try a value for one entity, or go back to its live state with undefined,
+   * an empty value or the live value itself. */
+  private setTestValue(id: string, raw: string | undefined) {
+    const v = raw?.trim() ?? "";
     const next = new Map(this.testValues);
     const live = this.hass.states[id]?.state;
     if (v === "" || v === live) next.delete(id);
