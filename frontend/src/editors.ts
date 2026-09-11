@@ -196,7 +196,7 @@ import { MDI_PREFIX } from "./icons.js";
 import { typedFrame } from "./interact.js";
 import { DESIGN_BOX } from "./model.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
-import { KIND_COLOR, SECTION_COLOR } from "./kinds.js";
+import { SECTION_COLOR } from "./kinds.js";
 import { domainIcon, domainLabel, isActiveState } from "./domain-icons.js";
 
 export interface EditorHost {
@@ -2343,8 +2343,8 @@ function imageTimestampSection(img: ImageElement, upd: (m: (p: ImageElement) => 
 }
 
 interface CardOptions {
-  /** Tint of the header band and the edge; a layer's kind colour or one of
-   * SECTION_COLOR. */
+  /** Tint of the header band and the edge; one of SECTION_COLOR, so a card
+   * wears the same colour on every kind of layer. */
   color?: string;
   icon?: UiIconName;
   /** One line under the title saying what the card holds, so a shut card
@@ -2737,7 +2737,7 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
       { min: -180, max: 180, step: 1, def: 0, format: (v) => `${Math.round(v)}°`, unit: "°", range: false })}
     ${checkField("Hidden", eff.isHidden, (v) => host.update((c) => setPlacement(c, family, id, { isHidden: v })), false)}
     <div class="hint">X, Y, W and H are a percent of the face, on the ${familyTitle(family)} shape only. Drag a letter left or right to change its number. Arrow keys nudge 1 pt, shift for 10.</div>`,
-    { color: SECTION_COLOR.place, icon: "place", summary: `${Math.round(f.width * 100)}% wide · ${familyTitle(family)}`,
+    { color: SECTION_COLOR.position, icon: "place", summary: `${Math.round(f.width * 100)}% wide · ${familyTitle(family)}`,
       ...(placeChanged ? {
         resetTitle: `Put this layer back to the middle of the ${familyTitle(family)} face at half size, unrotated and shown`,
         reset: () => host.update((c) => setPlacement(c, family, id, { frame: { ...CENTERED_FRAME }, isHidden: false })),
@@ -3899,7 +3899,6 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
   // entity is asked for once at the top of this editor and never again.
   const ref = elementEntity(host.config, el);
   const tested: Value | undefined = ref ? { kind: { kind: "entityState", ...ref } } : undefined;
-  const kindColor = KIND_COLOR[el.kind];
   const stamp = el.kind === "image" ? el.payload.timestamp === true : false;
   const textParts = el.kind === "text" && (el.payload.parts?.length ?? 0) > 0 ? el.payload.parts : undefined;
 
@@ -3919,7 +3918,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
 
   return html`
     ${card(host, "content", "Content", html`${el.kind === "tap" || el.kind === "text" ? nothing : layerEntityField(host, el, key)}${content}`,
-      { color: kindColor, icon: "content", summary: contentSummary(host, el),
+      { color: SECTION_COLOR.content, icon: "content", summary: contentSummary(host, el),
         ...(contentChanged ? { reset: () => upd((e) => {
           restoreKeys(e.payload, base, contentKeys);
           // Parts going with the reset leave no part for a state to aim at.
@@ -3927,16 +3926,16 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         }, "reset-content") } : {}) })}
     ${look === undefined && colour === undefined ? nothing
       : card(host, "look", el.kind === "image" ? "Picture" : "Look", html`${look ?? nothing}${colour ?? nothing}`,
-        { color: kindColor, icon: el.kind === "image" ? "image" : "look", ...(lookSummary(el) ? { summary: lookSummary(el)! } : {}),
+        { color: SECTION_COLOR.look, icon: el.kind === "image" ? "image" : "look", ...(lookSummary(el) ? { summary: lookSummary(el)! } : {}),
           ...(lookChanged ? { reset: () => host.update((c) => {
             restoreKeys(c.elements[idx]!.payload, base, lookKeys);
             if (sizedHere) setPlacement(c, family, id, {}, true);
           }) } : {}) })}
     ${el.kind === "chart" ? card(host, "numbers", "Numbers", chartNumbersSection(host, el),
-      { color: KIND_COLOR.text, icon: "text", summary: chartNumbersSummary(host, el),
+      { color: SECTION_COLOR.numbers, icon: "text", summary: chartNumbersSummary(host, el),
         ...(labels.length > 0 ? { reset: () => host.update((c) => { for (const l of chartLabelsOf(c, id)) removeElement(c, l.payload.id); }) } : {}) }) : nothing}
     ${el.kind === "image" ? card(host, "timestamp", "Timestamp", imageTimestampSection(el.payload, (m, k) => upd((e) => m((e as typeof el).payload), k)),
-      { color: kindColor, icon: "clock", summary: stamp ? `Shown · ${el.payload.timestampSize} pt` : "Hidden",
+      { color: SECTION_COLOR.numbers, icon: "clock", summary: stamp ? `Shown · ${el.payload.timestampSize} pt` : "Hidden",
         ...(stamp ? { reset: resetKeys(TIMESTAMP_KEYS, "reset-stamp") } : {}) }) : nothing}
     ${card(host, "states", "States", statesEditor(host, el.payload.rules, el.kind,
       (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`, tested, textParts),
@@ -4200,11 +4199,11 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
       ${colorField("Background (blank = transparent)", layout.backgroundColorHex, (v) => upd((l) => { if (v === undefined) delete l.backgroundColorHex; else l.backgroundColorHex = v; }, "bg"), true, null)}
       ${colorField("Border colour", layout.borderColorHex, (v) => upd((l) => { if (v === undefined) delete l.borderColorHex; else l.borderColorHex = v; }, "border"), true, null)}
       ${numberField("Border width", layout.borderWidth, (v) => upd((l) => { l.borderWidth = v ?? 2; }, "bw"), { step: 0.5, min: 0, def: 2, unit: "pt" })}`,
-      { color: SECTION_COLOR.place, icon: "shape", summary: `${bg} · ${border}`,
+      { color: SECTION_COLOR.look, icon: "shape", summary: `${bg} · ${border}`,
         ...(layout.backgroundColorHex !== undefined || layout.borderColorHex !== undefined || layout.borderWidth !== 2
           ? { reset: () => upd((l) => { delete l.backgroundColorHex; delete l.borderColorHex; l.borderWidth = 2; }, "reset-look") } : {}) })}
     ${family === "corner" ? card(host, "corner", "Corner content", cornerEditor(host, layout, upd),
-      { color: SECTION_COLOR.place, icon: "content", summary: layout.curvedText ? "Big curved text" : "Layer canvas",
+      { color: SECTION_COLOR.content, icon: "content", summary: layout.curvedText ? "Big curved text" : "Layer canvas",
         ...(layout.curvedText !== undefined || layout.bezelText !== undefined || layout.bezelGauge !== undefined
           ? { reset: () => upd((l) => { delete l.curvedText; delete l.bezelText; delete l.bezelGauge; }, "reset-corner") } : {}) }) : nothing}
     ${card(host, "states", "Shape states", statesEditor(host, layout.rules, "layout", (c) => c.perFamily[family]?.rules, `rules-${family}`),
@@ -4214,7 +4213,7 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
       <div class="hint keep">${placed === 0
         ? `Nothing is on the ${familyTitle(family)} shape. The Layers card offers a copy of another shape's whole arrangement, or you can add layers here one at a time.`
         : `${placed} layer${placed === 1 ? " is" : "s are"} on the ${familyTitle(family)} shape. They belong to this shape alone: no other shape draws them, and editing one here cannot reach another shape.`}</div>`,
-      { color: SECTION_COLOR.place, icon: "place", summary: placed === 0 ? "Nothing on it" : `${placed} layer${placed === 1 ? "" : "s"}` })}`;
+      { color: SECTION_COLOR.position, icon: "place", summary: placed === 0 ? "Nothing on it" : `${placed} layer${placed === 1 ? "" : "s"}` })}`;
 }
 
 /** The Inline shape: one line of text, no canvas. The watch draws
@@ -4235,12 +4234,12 @@ function inlineEditor(host: EditorHost): TemplateResult {
       ${valueEditor(host, inline.value, (v) => upd((i) => { i.value = v; }, "value"), { showResolved: true, label: "Text", key: "inline-value" })}
       ${checkField("Countdown",inline.countdown === true, (v) => upd((i) => { if (v) i.countdown = true; else delete i.countdown; }))}
       ${inline.countdown ? html`<div class="hint">Ticks down to the value's target: an active timer's finish, or any future timestamp. A paused timer shows its remaining time.</div>` : nothing}`,
-      { color: KIND_COLOR.text, icon: "text", summary: truncate(`${inline.label ? `${inline.label}: ` : ""}${describeValue(inline.value, ctx)}`, 48) })}
+      { color: SECTION_COLOR.content, icon: "text", summary: truncate(`${inline.label ? `${inline.label}: ` : ""}${describeValue(inline.value, ctx)}`, 48) })}
     ${card(host, "symbol", "Symbol", html`
       ${symbolField(host, inline.symbol ?? "", (v) => upd((i) => { if (v) i.symbol = v; else delete i.symbol; }, "symbol"), "inline-symbol")}
       <div class="hint">Drawn before the text. Leave it blank for text only.</div>
       <div class="field readout"><span>On the face</span><span class="readout-v">${inline.symbol ? `${inline.symbol} ` : ""}${inline.label ? `${inline.label}: ` : ""}${host.resolve(inline.value) ?? "--"}</span></div>`,
-      { color: KIND_COLOR.icon, icon: "icon", summary: inline.symbol || "None" })}`;
+      { color: SECTION_COLOR.look, icon: "icon", summary: inline.symbol || "None" })}`;
 }
 
 /** Corner-only controls: main content mode (canvas vs big curved text) and the

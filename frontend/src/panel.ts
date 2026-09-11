@@ -1509,8 +1509,10 @@ export class WristAssistantPanel extends LitElement {
     .under .dot { color: var(--wa-line-strong); }
     .under .tail b { font-weight: 700; }
     /* The two lists under the face: what the complication defines for itself,
-       and what the house is telling it right now. */
-    .under-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; flex: none; }
+       and what the house is telling it right now. Stacked, so each title and
+       each value line gets the whole width instead of wrapping into a column
+       half as wide. */
+    .under-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; flex: none; }
     .card.tint-values {
       padding: 10px 14px 12px;
       background: color-mix(in srgb, ${unsafeCSS(SECTION_COLOR.complication)} 8%, var(--wa-card));

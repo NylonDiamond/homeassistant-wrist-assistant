@@ -35,8 +35,19 @@ export const KIND_LABEL: Record<LayerKind, string> = {
 /** The order the add buttons and the picker show the kinds in. */
 export const KIND_ORDER: readonly LayerKind[] = ["text", "icon", "gauge", "chart", "timeline", "shape", "image", "tap"];
 
-/** Sections that are not about one kind of layer keep a colour of their own. */
+/**
+ * One colour per inspector card, the same on every kind of layer, so Content,
+ * Look, Numbers, States, Position and Tap never share a tint. The hues are
+ * spread round the wheel and the order on screen alternates warm and cool, so
+ * two cards next to each other are never neighbours on the wheel. Numbers
+ * (charts only) and Timestamp (pictures only) share teal, since no layer has
+ * both.
+ */
 export const SECTION_COLOR = {
+  content: "#4a7fe8",
+  look: "#a15fe0",
+  numbers: "#26a69a",
+  position: "#66bb6a",
   states: "#f9a825",
   tap: KIND_COLOR.tap,
   place: "#78909c",
