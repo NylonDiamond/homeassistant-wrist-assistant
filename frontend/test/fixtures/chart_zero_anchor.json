@@ -1,0 +1,295 @@
+{
+  "name": "Chart zero anchor",
+  "description": "The zero line as a layer anchored `zero`, `through`. Like the threshold, zero names a height and nothing across. The first chart is a line on a fixed -5 to 5 scale over the left half, 2 points wide, so its plot runs from 1 to 64.5 of the 65.5-point box and zero sits at 32.75: the line runs the plot's full width (x 0, width 0.5) and is centred there, its top at 31.7675 (0.485). The second chart's fixed 0 to 10 scale puts zero on the plot's bottom edge, and the third chart's automatic 3 to 5 scale leaves it out entirely, so the line on the second and the text on the third are hidden.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-000000000230",
+    "name": "Chart zero anchor",
+    "slotIndex": 2,
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000231",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "-2,4,1,3"
+            }
+          },
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "style": "line",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "fixed",
+          "minValue": -5,
+          "maxValue": 5,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 0.5,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "shape",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000232",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF33"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.2,
+            "y": 0,
+            "width": 0.3,
+            "height": 0.03,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "kind": "line",
+          "cornerRadius": 6,
+          "borderWidth": 0,
+          "chartAnchor": {
+            "layer": "EEEEEEEE-0000-4000-8000-000000000231",
+            "at": "zero",
+            "place": "through"
+          }
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000233",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "1,2,3"
+            }
+          },
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "style": "line",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "fixed",
+          "minValue": 0,
+          "maxValue": 10,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.5,
+            "y": 0,
+            "width": 0.5,
+            "height": 0.5,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "shape",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000234",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF33"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.5,
+            "y": 0.2,
+            "width": 0.5,
+            "height": 0.03,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "kind": "line",
+          "cornerRadius": 6,
+          "borderWidth": 0,
+          "chartAnchor": {
+            "layer": "EEEEEEEE-0000-4000-8000-000000000233",
+            "at": "zero",
+            "place": "through"
+          }
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000235",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "3,5,4"
+            }
+          },
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "style": "bars",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.5,
+            "y": 0.5,
+            "width": 0.5,
+            "height": 0.5,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000236",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.6,
+            "y": 0.6,
+            "width": 0.1,
+            "height": 0.16,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "0"
+            }
+          },
+          "fontSize": 7,
+          "fontWeight": "medium",
+          "chartAnchor": {
+            "layer": "EEEEEEEE-0000-4000-8000-000000000235",
+            "at": "zero",
+            "place": "above"
+          }
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "wedge",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {},
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": [],
+    "expressionKeys": [],
+    "historyKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000231",
+          "kind": "chart",
+          "domainMin": -5,
+          "domainMax": 5
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000232",
+          "kind": "shape",
+          "isHidden": false,
+          "frame": {
+            "x": 0,
+            "y": 0.485,
+            "width": 0.5,
+            "height": 0.03,
+            "rotationDegrees": 0
+          }
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000233",
+          "kind": "chart",
+          "domainMin": 0,
+          "domainMax": 10
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000234",
+          "kind": "shape",
+          "isHidden": true
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000235",
+          "kind": "chart",
+          "domainMin": 3,
+          "domainMax": 5
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000236",
+          "kind": "text",
+          "isHidden": true
+        }
+      ]
+    }
+  }
+}

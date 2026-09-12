@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 import { nothing } from "lit";
 import {
+  addChartDots,
   addChartLabel,
   addChartSeries,
   auditUnknownKeys,
@@ -2011,8 +2012,9 @@ describe("chart curve and smoothing keys", () => {
 
 // ── fill, dots and grid ───────────────────────────────────────────────────
 
-describe("chart fill, dots and grid keys", () => {
-  const LOOKS = ["fillStyle", "fillColorHex", "pointDots", "gridLines", "gridColorHex", "zeroLine"];
+describe("chart fill keys", () => {
+  const LOOKS = ["fillStyle", "fillColorHex"];
+  const RETIRED = ["pointDots", "pointDotSize", "pointDotColorHex", "gridLines", "gridColorHex", "zeroLine"];
 
   function payloadWith(extra: Record<string, unknown>) {
     const { cfg } = chartConfig("1,2,3");
@@ -2035,72 +2037,36 @@ describe("chart fill, dots and grid keys", () => {
   });
 
   it("omits every key at its default", () => {
-    const { written } = payloadWith({ fillStyle: "flat", pointDots: "none", gridLines: 0, gridColorHex: "#ffffff33", zeroLine: false });
+    const { written } = payloadWith({ fillStyle: "flat" });
     for (const key of LOOKS) expect(key in written, key).toBe(false);
   });
 
   it("reads a spelling it does not know as the default", () => {
     for (const bad of ["gradient", 3, null]) {
-      const { chart, written } = payloadWith({ fillStyle: bad, pointDots: bad });
+      const { chart, written } = payloadWith({ fillStyle: bad });
       expect(chart.fillStyle ?? "flat").toBe("flat");
-      expect(chart.pointDots ?? "none").toBe("none");
       expect("fillStyle" in written).toBe(false);
-      expect("pointDots" in written).toBe(false);
     }
   });
 
-  it("clamps grid lines into 0 to 4 and keeps a colour that differs", () => {
-    expect(payloadWith({ gridLines: 9 }).written.gridLines).toBe(4);
-    expect("gridLines" in payloadWith({ gridLines: -2 }).written).toBe(false);
-    expect("gridLines" in payloadWith({ gridLines: "3" }).written).toBe(false);
-    expect(payloadWith({ gridLines: 2.4 }).written.gridLines).toBe(2);
-    expect(payloadWith({ gridColorHex: "#FF9F0A66" }).written.gridColorHex).toBe("#FF9F0A66");
-  });
-
-  it("writes the looks keys between curve and smoothing, and reads them back", () => {
-    const { chart, written } = payloadWith({
-      curve: "smooth", smoothing: "light", zeroLine: true, gridColorHex: "#FF000080", gridLines: 3,
-      pointDots: "auto", fillColorHex: "#0A84FF", fillStyle: "fade",
-    });
-    expect(chart).toMatchObject({ fillStyle: "fade", fillColorHex: "#0A84FF", pointDots: "auto", gridLines: 3, gridColorHex: "#FF000080", zeroLine: true });
+  it("writes the fill keys between curve and smoothing, and reads them back", () => {
+    const { chart, written } = payloadWith({ curve: "smooth", smoothing: "light", fillColorHex: "#0A84FF", fillStyle: "fade" });
+    expect(chart).toMatchObject({ fillStyle: "fade", fillColorHex: "#0A84FF" });
     const keys = Object.keys(written);
     const from = keys.indexOf("curve");
-    expect(keys.slice(from, from + 8)).toEqual(["curve", ...LOOKS, "smoothing"]);
-    const dressed = chartConfig("1", (p) => { p.gridLines = 2; p.zeroLine = true; p.pointDots = "all"; p.fillColorHex = "#0A84FF"; });
-    expect(auditUnknownKeys(encodeConfig(dressed.cfg))).toEqual([]);
+    expect(keys.slice(from, from + 4)).toEqual(["curve", ...LOOKS, "smoothing"]);
   });
 
-  it("omits the dot size and colour when absent, and reads a wrong type as absent", () => {
-    const { chart, written } = payloadWith({});
-    expect(chart.pointDotSize).toBeUndefined();
-    expect(chart.pointDotColorHex).toBeUndefined();
-    expect("pointDotSize" in written).toBe(false);
-    expect("pointDotColorHex" in written).toBe(false);
-    for (const bad of ["5", null, Number.NaN, true]) {
-      const odd = payloadWith({ pointDotSize: bad, pointDotColorHex: 7 });
-      expect(odd.chart.pointDotSize).toBeUndefined();
-      expect(odd.chart.pointDotColorHex).toBeUndefined();
-      expect("pointDotSize" in odd.written).toBe(false);
-      expect("pointDotColorHex" in odd.written).toBe(false);
-    }
-  });
-
-  it("clamps the dot size into 1 to 12", () => {
-    expect(payloadWith({ pointDotSize: 40 }).written.pointDotSize).toBe(12);
-    expect(payloadWith({ pointDotSize: 0.2 }).written.pointDotSize).toBe(1);
-    expect(payloadWith({ pointDotSize: 3.5 }).written.pointDotSize).toBe(3.5);
-  });
-
-  it("writes the dot size and colour right after pointDots", () => {
-    const { chart, written } = payloadWith({
-      gridLines: 2, pointDotColorHex: "#FF9F0A", pointDotSize: 5, pointDots: "all", barCorners: "top",
-    });
-    expect(chart).toMatchObject({ pointDotSize: 5, pointDotColorHex: "#FF9F0A" });
-    const keys = Object.keys(written);
-    const from = keys.indexOf("barCorners");
-    expect(keys.slice(from, from + 5)).toEqual(["barCorners", "pointDots", "pointDotSize", "pointDotColorHex", "gridLines"]);
-    const dressed = chartConfig("1", (p) => { p.pointDots = "all"; p.pointDotSize = 5; p.pointDotColorHex = "#FF9F0A"; });
-    expect(auditUnknownKeys(encodeConfig(dressed.cfg))).toEqual([]);
+  it("reads the one-day dot, grid and zero line keys without flagging them, and never writes them", () => {
+    const extra = { pointDots: "all", pointDotSize: 5, pointDotColorHex: "#FF9F0A", gridLines: 2, gridColorHex: "#FF000080", zeroLine: true };
+    const { chart, written } = payloadWith(extra);
+    // Kept on the parsed chart for `liftChartOwnMarks` to turn into layers.
+    expect(chart).toMatchObject(extra);
+    for (const key of RETIRED) expect(key in written, key).toBe(false);
+    const { cfg } = chartConfig("1");
+    const raw = encodeConfig(cfg) as { elements: { payload: Record<string, unknown> }[] };
+    Object.assign(raw.elements[0]!.payload, extra);
+    expect(auditUnknownKeys(raw)).toEqual([]);
   });
 });
 
@@ -2127,9 +2093,15 @@ describe("chart end marker room", () => {
   });
 
   it("changes nothing for a dot that already fits in the stroke or dot inset", () => {
-    const dotted = (p: ChartElement) => { p.style = "line"; p.lineWidth = 2; p.pointDots = "all"; };
-    const plain = geometry("none", "none", dotted);
-    const marked = geometry("dot", "dot", dotted);
+    const state = "1,5,3";
+    const dotted = (high: "none" | "dot", low: "none" | "dot") => {
+      const { cfg, id } = chartConfig(state, (p) => { p.style = "line"; p.lineWidth = 2; p.highlight = "both"; setChartEndMarkers(p, { high, low }); });
+      const dots = cfg.elements.find((e) => e.payload.id === addChartDots(cfg, id));
+      if (dots?.kind === "chartDots") dots.payload.dots = "all";
+      return chartGeometry(chartOf(rectangular(cfg, state)), box);
+    };
+    const plain = dotted("none", "none");
+    const marked = dotted("dot", "dot");
     expect([marked.plotTop, marked.plotBottom]).toEqual([plain.plotTop, plain.plotBottom]);
     expect(plain.plotTop).toBeCloseTo(1.8, 9);
   });
@@ -2144,71 +2116,7 @@ describe("chart end marker room", () => {
   });
 });
 
-describe("chart fill, dots and grid geometry", () => {
-  const box = { x: 0, y: 0, w: 181, h: 60, cx: 90.5, cy: 30 };
-  function geometryOf(state: string, tweak: (p: ChartElement) => void) {
-    const { cfg } = chartConfig(state, tweak);
-    return chartGeometry(chartOf(rectangular(cfg, state)), box);
-  }
-
-  it("spaces grid lines evenly inside the plot, never on its edges", () => {
-    expect(geometryOf("1,2,3", (p) => { p.gridLines = 1; }).gridYs).toEqual([30]);
-    expect(geometryOf("1,2,3", (p) => { p.gridLines = 3; }).gridYs).toEqual([15, 30, 45]);
-    expect(geometryOf("1,2,3", () => {}).gridYs).toEqual([]);
-  });
-
-  it("draws the zero line only where zero falls inside the plot", () => {
-    expect(geometryOf("-2,4,1,6", (p) => { p.baseline = "zero"; p.zeroLine = true; }).zeroY).toBe(45);
-    expect(geometryOf("-2,4,1,6", (p) => { p.baseline = "zero"; }).zeroY).toBeUndefined();
-    expect(geometryOf("1,2,3", (p) => { p.zeroLine = true; }).zeroY).toBeUndefined();
-    // Zero is the bottom of this range, which is the plot's own edge.
-    expect(geometryOf("0,2,3", (p) => { p.baseline = "zero"; p.zeroLine = true; }).zeroY).toBeUndefined();
-  });
-
-  it("draws auto dots only while the readings sit three dots apart", () => {
-    const series = (n: number) => Array.from({ length: n }, (_, i) => (i % 5) + 1).join(",");
-    const dots = (n: number, pointDots: "auto" | "all") =>
-      geometryOf(series(n), (p) => { p.style = "line"; p.lineWidth = 2; p.pointDots = pointDots; });
-    // Dots are 3.6 across at line width 2, so neighbours need 10.8 of room. The
-    // spacing is measured on the plot the stroke leaves (181 less 1 each side):
-    // 17 readings sit 11.19 apart and draw, 18 sit 10.53 apart and do not.
-    const sparse = dots(17, "auto");
-    expect(sparse.drawsDots).toBe(true);
-    expect(sparse.dotDiameter).toBeCloseTo(3.6, 9);
-    // The stroke inset grows to a dot's radius so the edge dots are not clipped.
-    expect(sparse.point(0).x).toBeCloseTo(1.8, 9);
-    expect(dots(18, "auto").drawsDots).toBe(false);
-    expect(dots(24, "auto").drawsDots).toBe(false);
-    const crowded = dots(120, "auto");
-    expect(crowded.drawsDots).toBe(false);
-    expect(crowded.point(0).x).toBeCloseTo(1, 9);
-    expect(dots(120, "all").drawsDots).toBe(true);
-    expect(dots(1, "auto").drawsDots).toBe(true);
-    expect(geometryOf(series(24), (p) => { p.pointDots = "all"; }).drawsDots).toBe(false); // bars
-  });
-
-  it("reads a set dot size for the auto rule and the inset", () => {
-    const series = (n: number) => Array.from({ length: n }, (_, i) => (i % 5) + 1).join(",");
-    const dots = (n: number, pointDots: "auto" | "all", size: number | undefined) =>
-      geometryOf(series(n), (p) => { p.style = "line"; p.lineWidth = 2; p.pointDots = pointDots; if (size !== undefined) p.pointDotSize = size; });
-    // Diameter 6 wants a gap of 18 across 179 points: 10 readings sit 19.89 apart, 11 sit 17.9.
-    expect(dots(10, "auto", 6).drawsDots).toBe(true);
-    expect(dots(11, "auto", 6).drawsDots).toBe(false);
-    // A dot smaller than the automatic 3.6 draws where the automatic one would not.
-    expect(dots(18, "auto", undefined).drawsDots).toBe(false);
-    expect(dots(18, "auto", 3).drawsDots).toBe(true);
-    const big = dots(10, "all", 6);
-    expect(big.dotDiameter).toBe(6);
-    expect(big.point(0).x).toBeCloseTo(3, 9);
-    expect(big.plotTop).toBeCloseTo(3, 9);
-    // A dot narrower than the stroke keeps the stroke inset.
-    expect(dots(10, "all", 1).point(0).x).toBeCloseTo(1, 9);
-    // Clamped on the way through the resolver.
-    expect(dots(3, "all", 30).dotDiameter).toBe(12);
-  });
-});
-
-describe("drawing chart fill, dots and grid", () => {
+describe("drawing chart fill", () => {
   function draw(state: string, tweak: (p: ChartElement) => void): string {
     const { cfg } = chartConfig(state, tweak);
     return flatten(renderLayout(rectangular(cfg, state), { icons: noIcons }));
@@ -2235,39 +2143,10 @@ describe("drawing chart fill, dots and grid", () => {
     expect(flat).toContain("fill=#0A84FF fill-opacity=0.28");
   });
 
-  it("draws every dot of one colour in one path, before the highlight dots", () => {
-    const svg = draw("1,2,5,6", (p) => { p.style = "line"; p.pointDots = "all"; p.highlight = "highest"; p.marker = "none"; });
-    // Four readings, but the highest keeps only its highlight dot, so no ring
-    // of the reading dot shows around it.
-    expect(count(svg, " a1.8 1.8 0 1 0 3.6 0")).toBe(3);
-    expect(svg.indexOf(" a1.8 1.8")).toBeLessThan(svg.indexOf("<circle"));
-  });
-
-  it("draws dots at a set size, in a set colour that beats the bands but not the highlight", () => {
-    const svg = draw("1,2,5,6", (p) => {
-      p.style = "line";
-      p.pointDots = "all";
-      p.pointDotSize = 6;
-      p.pointDotColorHex = "#FF9F0A";
-      p.coloring = "bands";
-      p.bands = [{ id: "B1", upTo: 3, colorHex: "#00FF00" }];
-      p.bandAboveColorHex = "#FF0000";
-      p.highlight = "highest";
-      p.highColorHex = "#123456";
-      p.marker = "none";
-    });
-    expect(count(svg, " a3 3 0 1 0 6 0")).toBe(3);
-    // One path of dots, all in the set colour; no dot in a band colour.
-    expect(count(svg, "fill=#FF9F0A")).toBe(1);
-    expect(svg).not.toContain("fill=#00FF00");
-    expect(svg).not.toContain("fill=#FF0000");
-    expect(svg).toContain("fill=#123456");
-  });
-
-  it("draws grid and zero lines under the series", () => {
-    const svg = draw("-2,4,1,6", (p) => { p.style = "line"; p.baseline = "zero"; p.gridLines = 2; p.zeroLine = true; });
-    expect(count(svg, "stroke-width=\"1\"")).toBe(3);
-    expect(svg.indexOf("stroke-width=\"1\"")).toBeLessThan(svg.indexOf("stroke-linejoin"));
+  it("draws no dots, grid or zero line from the one-day chart keys", () => {
+    const svg = draw("-2,4,1,6", (p) => { p.style = "line"; p.baseline = "zero"; p.pointDots = "all"; p.gridLines = 2; p.zeroLine = true; });
+    expect(count(svg, " a1.8 1.8 0 1 0 3.6 0")).toBe(0);
+    expect(count(svg, "stroke-width=\"1\"")).toBe(0);
   });
 
   it("runs a fade from the plot bottom when the baseline sits at the top", () => {
@@ -2331,12 +2210,13 @@ describe("bar corners", () => {
     expect(written({ barRadius: 3, barCorners: "top" }).chart).toMatchObject({ barRadius: 3, barCorners: "top" });
   });
 
-  it("writes the keys between fillColorHex and pointDots, and gaps after smoothing", () => {
+  it("writes the keys between fillColorHex and smoothing, and gaps after smoothing", () => {
+    // pointDots goes in and does not come out: dots are a layer now.
     const keys = Object.keys(written({
       gaps: true, smoothing: "light", pointDots: "all", barCorners: "top", barRadius: 2, fillColorHex: "#0A84FF", curve: "smooth",
     }).payload);
     const from = keys.indexOf("curve");
-    expect(keys.slice(from)).toEqual(["curve", "fillStyle", "fillColorHex", "barRadius", "barCorners", "pointDots", "smoothing", "gaps"]);
+    expect(keys.slice(from)).toEqual(["curve", "fillStyle", "fillColorHex", "barRadius", "barCorners", "smoothing", "gaps"]);
     const dressed = chartConfig("1", (p) => { p.barRadius = 2; p.barCorners = "top"; p.gaps = true; });
     expect(auditUnknownKeys(encodeConfig(dressed.cfg))).toEqual([]);
   });
@@ -2379,7 +2259,7 @@ describe("gaps for unavailable", () => {
   const F = false;
   const T = true;
 
-  function recorderChart(series: string, tweak: (p: ChartElement) => void = () => {}) {
+  function recorderChart(series: string, tweak: (p: ChartElement) => void = () => {}, layers: (cfg: CustomComplicationConfig, chartId: string) => void = () => {}) {
     const cfg = newConfig("Gaps", 0);
     const el = newElement("chart") as Extract<Element, { kind: "chart" }>;
     el.payload.frame = { x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 };
@@ -2390,6 +2270,7 @@ describe("gaps for unavailable", () => {
     el.payload.gaps = true;
     tweak(el.payload);
     cfg.elements.push(el);
+    layers(cfg, el.payload.id);
     const key = chartHistoryKey(el.payload) ?? chartStatisticsKey(el.payload)!;
     const layout = resolveAll(cfg, {
       entityStates: new Map([["sensor.t", { entityId: "sensor.t", state: "1", domain: "sensor", iconName: "" }]]),
@@ -2536,7 +2417,10 @@ describe("gaps for unavailable", () => {
     it("skips the bar and the reading dot at a hole", () => {
       const bars = recorderChart("1,,3", (p) => { p.style = "bars"; }).svg();
       expect(rects(bars)).toHaveLength(2);
-      const dots = recorderChart("1,,3,4", (p) => { p.style = "line"; p.pointDots = "all"; }).svg();
+      const dots = recorderChart("1,,3,4", (p) => { p.style = "line"; }, (cfg, id) => {
+        const layer = cfg.elements.find((e) => e.payload.id === addChartDots(cfg, id));
+        if (layer?.kind === "chartDots") layer.payload.dots = "all";
+      }).svg();
       expect(dots.split(" a1.8 1.8 0 1 0 3.6 0").length - 1).toBe(3);
     });
   });

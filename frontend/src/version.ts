@@ -24,7 +24,8 @@ export const MIN_WATCH_VERSION_FOR_SHAPES = "2.8.0";
  * release that draws them is cut; set it then, not before. */
 export const MIN_WATCH_VERSION_FOR_CHART_LOOKS: string | null = null;
 
-/** First watch app version that knows the `chartTimes` layer kind. A watch
+/** First watch app version that knows the `chartTimes` layer kind, and with it
+ * the `chartDots` and `chartGrid` kinds and the `zero` chart anchor. A watch
  * that meets a kind it does not know drops the whole document, and since
  * 2026-09-12 a chart's clock times are always that layer (a document where the
  * chart drew its own is converted when opened). So this must not be newer than

@@ -155,10 +155,41 @@ export const CHART_MIN_POINT_DOT_SIZE = 1;
 export const CHART_MAX_POINT_DOT_SIZE = 12;
 
 /** A decoded `pointDotSize`: a finite number clamped into 1…12, anything else
- * absent, which draws the automatic size. */
+ * absent, which draws the automatic size. Also a `chartDots` layer's `size`. */
 export function chartPointDotSize(raw: unknown): number | undefined {
   if (typeof raw !== "number" || !Number.isFinite(raw)) return undefined;
   return Math.max(CHART_MIN_POINT_DOT_SIZE, Math.min(CHART_MAX_POINT_DOT_SIZE, raw));
+}
+
+/** Which readings a `chartDots` layer marks: `all` of them, or `auto`, every one
+ * only while they sit far enough apart to tell the dots apart. */
+export type ChartDotsMode = "all" | "auto";
+
+/** A decoded `chartDots` `dots`: any spelling but `all` reads as auto. */
+export function chartDotsMode(raw: unknown): ChartDotsMode {
+  return raw === "all" ? "all" : "auto";
+}
+
+/** The stroke a grid line is drawn with, in design points, when a `chartGrid`
+ * layer stores no thickness. The same 1 pt the chart's own grid used. */
+export const CHART_GRID_LINE_WIDTH = 1;
+/** How many lines a new `chartGrid` layer draws, and what an absent `lines` reads as. */
+export const CHART_DEFAULT_GRID_LINES = 3;
+export const CHART_MIN_GRID_THICKNESS = 0.25;
+export const CHART_MAX_GRID_THICKNESS = 4;
+
+/** A decoded `chartGrid` `lines`: a finite number rounded and clamped into 1…4,
+ * anything else the default 3. */
+export function chartGridLayerLines(raw: unknown): number {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return CHART_DEFAULT_GRID_LINES;
+  return Math.max(1, Math.min(CHART_MAX_GRID_LINES, Math.round(raw)));
+}
+
+/** A decoded `chartGrid` `thickness`: a finite number clamped into 0.25…4,
+ * anything else the default 1 pt. */
+export function chartGridThickness(raw: unknown): number {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return CHART_GRID_LINE_WIDTH;
+  return Math.max(CHART_MIN_GRID_THICKNESS, Math.min(CHART_MAX_GRID_THICKNESS, raw));
 }
 
 /** Which corners of a bar are rounded: `all` four, or only the `top`, meaning
@@ -346,7 +377,7 @@ export const CENTERED_FRAME: NormalizedFrame = { x: 0.25, y: 0.25, width: 0.5, h
 
 /** Which reading on a chart an anchored layer follows. Mirrors
  * `CustomComplication.ChartAnchor.Point` in the app repo. */
-export type ChartAnchorPoint = "highest" | "lowest" | "now" | "first" | "latest" | "threshold";
+export type ChartAnchorPoint = "highest" | "lowest" | "now" | "first" | "latest" | "threshold" | "zero";
 
 export const CHART_ANCHOR_POINTS: readonly [ChartAnchorPoint, string][] = [
   ["highest", "Highest reading"],
@@ -355,13 +386,14 @@ export const CHART_ANCHOR_POINTS: readonly [ChartAnchorPoint, string][] = [
   ["first", "First reading"],
   ["latest", "Newest reading"],
   ["threshold", "Threshold"],
+  ["zero", "Zero"],
 ];
 
 /** True when the point names a column of readings, which is every point but the
- * threshold. A column anchor owns the layer's x; the threshold owns its y. Mirrors
- * `ChartAnchor.Point.isColumn` in the app repo. */
+ * two heights: the threshold and zero. A column anchor owns the layer's x; a
+ * height owns its y. Mirrors `ChartAnchor.Point.isColumn` in the app repo. */
 export function chartAnchorIsColumn(at: ChartAnchorPoint): boolean {
-  return at !== "threshold";
+  return at !== "threshold" && at !== "zero";
 }
 
 /** Where an anchored layer sits against the reading it follows. Mirrors
@@ -869,20 +901,21 @@ export interface ChartElement extends ElementBase {
   barRadius?: number;
   /** Which corners of a bar are rounded. Absent reads as `all`. Bars only. */
   barCorners?: ChartBarCorners;
-  /** Dots on the readings of a line or area. Absent reads as `none`. */
+  /** Legacy, read only. The six keys below were chart settings for one day
+   * (2026-09-12) and never shipped. They are read so a document saved that day
+   * opens without unknown keys, `liftChartOwnMarks` turns them into a
+   * `chartDots` layer, a `chartGrid` layer and a zero line, and nothing writes
+   * or draws them. Dots on the readings: absent reads as `none`. */
   pointDots?: ChartPointDots;
-  /** A reading dot's diameter in design points, 1…12. Absent draws the automatic
-   * size, `lineWidth * CHART_DOT_SCALE`. */
+  /** Legacy, read only: the reading dot's diameter, 1…12. */
   pointDotSize?: number;
-  /** Every plain reading dot's colour, beating the bands. Absent paints each dot
-   * in the series or its band colour. The high and low dots keep their own. */
+  /** Legacy, read only: every reading dot's colour. */
   pointDotColorHex?: string;
-  /** Horizontal grid lines spaced evenly inside the plot, 0…4. Absent reads as 0. */
+  /** Legacy, read only: grid lines, 0…4. */
   gridLines?: number;
-  /** The grid lines' colour, and the zero line's. Absent reads as
-   * `CHART_DEFAULT_GRID_HEX`, which is also never written. */
+  /** Legacy, read only: the grid and zero line colour. */
   gridColorHex?: string;
-  /** One line where zero falls, while zero is inside the range. Absent reads as false. */
+  /** Legacy, read only: a line where zero falls. */
   zeroLine?: boolean;
   /** How strongly the drawn readings are smoothed: a centred, Gaussian-weighted
    * average whose window scales with the number of readings (see
@@ -1649,6 +1682,37 @@ export interface ChartTimesElement extends Omit<ElementBase, "colorSlot"> {
   minutes: TimelineMinuteStyle;
 }
 
+/** A dot on each reading of a chart, as a layer of its own. It draws in its
+ * chart's box, not its own frame, and puts a dot on every reading the chart
+ * draws, skipping holes and the readings the chart already marks with its own
+ * highlight dot. Nothing on a bars chart or without a chart.
+ *
+ * No colorSlot: `colorHex` is the one colour, and absent paints each dot in the
+ * colour the series has at that reading. Mirrors
+ * `CustomComplication.ChartDotsElement` in the app repo. */
+export interface ChartDotsElement extends Omit<ElementBase, "colorSlot"> {
+  /** The chart layer whose readings get the dots. */
+  chart: string;
+  dots: ChartDotsMode;
+  /** Diameter in design points, 1…12. Absent is the chart's `lineWidth * 1.8`. */
+  size?: number;
+  colorHex?: string;
+}
+
+/** Horizontal grid lines across a chart's plot, as a layer of their own, in
+ * the chart's box. Equal rows, never on the plot's top or bottom edge. The
+ * panel puts it directly below its chart so the lines sit behind the series.
+ * No colorSlot, for `chartDots`' reason. Mirrors
+ * `CustomComplication.ChartGridElement` in the app repo. */
+export interface ChartGridElement extends Omit<ElementBase, "colorSlot"> {
+  chart: string;
+  /** 1…4. */
+  lines: number;
+  colorHex: string;
+  /** Stroke width in design points, 0.25…4. */
+  thickness: number;
+}
+
 export type Element =
   | { kind: "text"; payload: TextElement }
   | { kind: "icon"; payload: IconElement }
@@ -1658,7 +1722,9 @@ export type Element =
   | { kind: "shape"; payload: ShapeElement }
   | { kind: "image"; payload: ImageElement }
   | { kind: "tap"; payload: TapElement }
-  | { kind: "chartTimes"; payload: ChartTimesElement };
+  | { kind: "chartTimes"; payload: ChartTimesElement }
+  | { kind: "chartDots"; payload: ChartDotsElement }
+  | { kind: "chartGrid"; payload: ChartGridElement };
 
 export interface Placement {
   frame: NormalizedFrame;
@@ -2376,6 +2442,33 @@ function parseElementKind(raw: unknown): Element {
         },
       };
     }
+    case "chartDots": {
+      const { colorSlot: _unused, ...base } = parseElementBase(p, "#FFFFFF");
+      const size = chartPointDotSize(p.size);
+      return {
+        kind: "chartDots",
+        payload: {
+          ...base,
+          chart: str(p.chart).toUpperCase(),
+          dots: chartDotsMode(p.dots),
+          ...(size !== undefined ? { size } : {}),
+          ...(typeof p.colorHex === "string" ? { colorHex: p.colorHex } : {}),
+        },
+      };
+    }
+    case "chartGrid": {
+      const { colorSlot: _unused, ...base } = parseElementBase(p, "#FFFFFF");
+      return {
+        kind: "chartGrid",
+        payload: {
+          ...base,
+          chart: str(p.chart).toUpperCase(),
+          lines: chartGridLayerLines(p.lines),
+          colorHex: chartGridColorHex(p.colorHex),
+          thickness: chartGridThickness(p.thickness),
+        },
+      };
+    }
     default:
       throw new ConfigParseError(`unknown element kind ${String(raw.kind)}`);
   }
@@ -2650,6 +2743,7 @@ const CHART_MARKER_SYMBOLS: Record<ChartAnchorPoint, string> = {
   first: "circle.fill",
   latest: "circle.fill",
   threshold: "circle.fill",
+  zero: "circle.fill",
 };
 
 /** The size a new marker starts at, in points. */
@@ -2913,6 +3007,78 @@ export function convertChartTimes(cfg: CustomComplicationConfig, chartId: string
   return el.payload.id;
 }
 
+/** The `chartDots` layers on one chart, in document order. */
+export function chartDotsOf(cfg: CustomComplicationConfig, chartId: string): Extract<Element, { kind: "chartDots" }>[] {
+  return cfg.elements.filter((el): el is Extract<Element, { kind: "chartDots" }> =>
+    el.kind === "chartDots" && el.payload.chart === chartId);
+}
+
+/** The `chartGrid` layers behind one chart, in document order. */
+export function chartGridsOf(cfg: CustomComplicationConfig, chartId: string): Extract<Element, { kind: "chartGrid" }>[] {
+  return cfg.elements.filter((el): el is Extract<Element, { kind: "chartGrid" }> =>
+    el.kind === "chartGrid" && el.payload.chart === chartId);
+}
+
+/** The line shapes anchored at a chart's zero, in document order. */
+export function chartZeroLinesOf(cfg: CustomComplicationConfig, chartId: string): Element[] {
+  return chartMarkersOf(cfg, chartId).filter((m) => m.payload.chartAnchor?.at === "zero");
+}
+
+/** Add a dot on each of a chart's readings, as a layer directly above the chart
+ * in its group, and return its id. Its frame is the chart's, though it always
+ * draws in the chart's box. Auto, unless the chart still carries the one-day
+ * `pointDots: "all"`. Undefined when `chartId` is not a chart. */
+export function addChartDots(cfg: CustomComplicationConfig, chartId: string): string | undefined {
+  const chart = cfg.elements.find((el) => el.payload.id === chartId);
+  if (!chart || chart.kind !== "chart") return undefined;
+  const el = newElement("chartDots") as Extract<Element, { kind: "chartDots" }>;
+  el.payload.chart = chartId;
+  el.payload.dots = chart.payload.pointDots === "all" ? "all" : "auto";
+  el.payload.frame = { ...chart.payload.frame };
+  const index = cfg.elements.findIndex((e) => e.payload.id === chartId);
+  cfg.elements.splice(index + 1, 0, el);
+  joinChartGroup(cfg, chart, el.payload.id);
+  return el.payload.id;
+}
+
+/** Add grid lines to a chart, as a layer directly below the chart in its group,
+ * so the lines sit behind the series, and return its id. Undefined when
+ * `chartId` is not a chart. */
+export function addChartGrid(cfg: CustomComplicationConfig, chartId: string): string | undefined {
+  const chart = cfg.elements.find((el) => el.payload.id === chartId);
+  if (!chart || chart.kind !== "chart") return undefined;
+  const el = newElement("chartGrid") as Extract<Element, { kind: "chartGrid" }>;
+  el.payload.chart = chartId;
+  el.payload.frame = { ...chart.payload.frame };
+  const index = cfg.elements.findIndex((e) => e.payload.id === chartId);
+  cfg.elements.splice(index, 0, el);
+  joinChartGroup(cfg, chart, el.payload.id);
+  return el.payload.id;
+}
+
+/** The colour a new line at zero starts in: white at 40 %. */
+export const CHART_ZERO_LINE_HEX = "#FFFFFF66";
+
+/** Add a line where zero falls on a chart, and return its id. A line shape
+ * anchored `through` at `zero`, one point thick, directly above the chart in its
+ * group. It draws only while zero is strictly inside the chart's range.
+ * Undefined when `chartId` is not a chart. */
+export function addChartZeroLine(cfg: CustomComplicationConfig, chartId: string): string | undefined {
+  const chart = cfg.elements.find((el) => el.payload.id === chartId);
+  if (!chart || chart.kind !== "chart") return undefined;
+  const el = newElement("shape") as Extract<Element, { kind: "shape" }>;
+  el.payload.kind = "line";
+  el.payload.thickness = 1;
+  el.payload.borderWidth = 0;
+  el.payload.colorSlot = { baseColorHex: CHART_ZERO_LINE_HEX };
+  el.payload.frame = chartLineFrame(chart.payload.frame, "threshold");
+  el.payload.chartAnchor = { layer: chartId, at: "zero", place: "through" };
+  const index = cfg.elements.findIndex((e) => e.payload.id === chartId);
+  cfg.elements.splice(index + 1, 0, el);
+  joinChartGroup(cfg, chart, el.payload.id);
+  return el.payload.id;
+}
+
 /** Turn a chart's threshold on at `value`, or off with undefined.
  *
  * On, the chart keeps the number (the scale stretches to it) and a line layer
@@ -3008,6 +3174,40 @@ function liftOneChart(cfg: CustomComplicationConfig, c: ChartElement): void {
     if (c.thresholdValue !== undefined && c.drawsThreshold !== false) addChartLine(cfg, c.id, "threshold");
     if (c.nowIndex !== undefined && c.drawsNowLine !== false) addChartLine(cfg, c.id, "now");
     if (c.drawsTimeLabels !== false && chartShowsTimeLabels(c) && c.timeLabelCount > 0) convertChartTimes(cfg, c.id);
+    // The dots, grid and line at zero, which were chart settings for one day
+    // (2026-09-12) before they became layers too.
+    const pointDots = chartPointDots(c.pointDots);
+    if (pointDots !== "none") {
+      const id = addChartDots(cfg, c.id);
+      const el = cfg.elements.find((e) => e.payload.id === id);
+      if (el?.kind === "chartDots") {
+        el.payload.dots = pointDots;
+        const size = chartPointDotSize(c.pointDotSize);
+        if (size !== undefined) el.payload.size = size;
+        if (typeof c.pointDotColorHex === "string") el.payload.colorHex = c.pointDotColorHex;
+      }
+    }
+    const gridLines = chartGridLines(c.gridLines);
+    if (gridLines > 0) {
+      const id = addChartGrid(cfg, c.id);
+      const el = cfg.elements.find((e) => e.payload.id === id);
+      if (el?.kind === "chartGrid") {
+        el.payload.lines = gridLines;
+        el.payload.colorHex = chartGridColorHex(c.gridColorHex);
+      }
+    }
+    if (c.zeroLine === true) {
+      const id = addChartZeroLine(cfg, c.id);
+      const el = cfg.elements.find((e) => e.payload.id === id);
+      // The chart drew its zero line in the grid colour, so the layer does too.
+      if (el?.kind === "shape") el.payload.colorSlot = { baseColorHex: chartGridColorHex(c.gridColorHex) };
+    }
+    delete c.pointDots;
+    delete c.pointDotSize;
+    delete c.pointDotColorHex;
+    delete c.gridLines;
+    delete c.gridColorHex;
+    delete c.zeroLine;
   }
 }
 
@@ -3371,8 +3571,7 @@ function encodeElementKind(el: Element): J {
       }
       // The chart looks keys, each omitted at its default, in the order both
       // encoders share: curve, fillStyle, fillColorHex, barRadius, barCorners,
-      // pointDots, pointDotSize, pointDotColorHex, gridLines, gridColorHex,
-      // zeroLine, smoothing, gaps.
+      // smoothing, gaps.
       const curve = c.curve ?? "straight";
       if (curve !== "straight") o.curve = curve;
       const fillStyle = chartFillStyle(c.fillStyle);
@@ -3382,16 +3581,7 @@ function encodeElementKind(el: Element): J {
       if (barRadius !== CHART_DEFAULT_BAR_RADIUS) o.barRadius = encNum(barRadius);
       const barCorners = chartBarCorners(c.barCorners);
       if (barCorners !== "all") o.barCorners = barCorners;
-      const pointDots = chartPointDots(c.pointDots);
-      if (pointDots !== "none") o.pointDots = pointDots;
-      const pointDotSize = chartPointDotSize(c.pointDotSize);
-      if (pointDotSize !== undefined) o.pointDotSize = encNum(pointDotSize);
-      if (c.pointDotColorHex !== undefined) o.pointDotColorHex = c.pointDotColorHex;
-      const gridLines = chartGridLines(c.gridLines);
-      if (gridLines !== 0) o.gridLines = gridLines;
-      const gridColorHex = chartGridColorHex(c.gridColorHex);
-      if (!sameHex(gridColorHex, CHART_DEFAULT_GRID_HEX)) o.gridColorHex = gridColorHex;
-      if (c.zeroLine === true) o.zeroLine = true;
+      // The dots, grid and zero line keys are never written: those are layers.
       const smoothing = chartSmoothing(c.smoothing);
       if (smoothing !== undefined) o.smoothing = smoothing;
       if (c.gaps === true) o.gaps = true;
@@ -3495,6 +3685,39 @@ function encodeElementKind(el: Element): J {
       if (t.hourCycle !== TIMELINE_DEFAULT_HOUR_CYCLE) o.hourCycle = t.hourCycle;
       if (t.minutes !== TIMELINE_DEFAULT_MINUTE_STYLE) o.minutes = t.minutes;
       return { kind: "chartTimes", payload: o };
+    }
+    case "chartDots": {
+      const d = el.payload;
+      const o: J = {
+        id: d.id,
+        rules: encodeRules(d.rules),
+        frame: encodeFrame(d.frame),
+        isHidden: d.isHidden,
+        chart: d.chart,
+      };
+      // Same order and "only when it differs" rule as the app's encoder.
+      if (chartDotsMode(d.dots) !== "auto") o.dots = "all";
+      const size = chartPointDotSize(d.size);
+      if (size !== undefined) o.size = encNum(size);
+      if (d.colorHex !== undefined) o.colorHex = d.colorHex;
+      return { kind: "chartDots", payload: o };
+    }
+    case "chartGrid": {
+      const g = el.payload;
+      const o: J = {
+        id: g.id,
+        rules: encodeRules(g.rules),
+        frame: encodeFrame(g.frame),
+        isHidden: g.isHidden,
+        chart: g.chart,
+      };
+      const lines = chartGridLayerLines(g.lines);
+      if (lines !== CHART_DEFAULT_GRID_LINES) o.lines = lines;
+      const colorHex = chartGridColorHex(g.colorHex);
+      if (!sameHex(colorHex, CHART_DEFAULT_GRID_HEX)) o.colorHex = colorHex;
+      const thickness = chartGridThickness(g.thickness);
+      if (thickness !== CHART_GRID_LINE_WIDTH) o.thickness = encNum(thickness);
+      return { kind: "chartGrid", payload: o };
     }
   }
 }
@@ -3717,8 +3940,10 @@ const K = {
     "drawsThreshold", "drawsNowLine", "drawsTimeLabels",
     "timeLabelCount", "labelSize", "labelColorHex", "labelsAbove", "hourCycle", "minutes",
     "highMarker", "lowMarker",
-    "curve", "fillStyle", "fillColorHex", "barRadius", "barCorners", "pointDots", "pointDotSize", "pointDotColorHex",
-    "gridLines", "gridColorHex", "zeroLine", "smoothing", "gaps",
+    "curve", "fillStyle", "fillColorHex", "barRadius", "barCorners", "smoothing", "gaps",
+    // Written only on 2026-09-12, before dots, grid and the zero line became
+    // layers. `liftChartOwnMarks` reads them forward.
+    "pointDots", "pointDotSize", "pointDotColorHex", "gridLines", "gridColorHex", "zeroLine",
     // Written only on 2026-09-05. The band bounds are read forward by
     // `parseChartBands`; the built-in numbers are read forward by
     // `migrateChartLabels` into text layers. All still listed so a document
@@ -3745,6 +3970,8 @@ const K = {
   // save. The tap's frames already carry what it did.
   tap: ["action", "openPageId", "openPageName", "attachedTo", "grow"],
   chartTimes: ["chart", "timeLabelCount", "labelSize", "labelColorHex", "hourCycle", "minutes"],
+  chartDots: ["chart", "dots", "size", "colorHex"],
+  chartGrid: ["chart", "lines", "colorHex", "thickness"],
   colorSlot: ["baseColorHex"],
   rule: ["id", "cases", "otherwise", "partId"],
   case: ["id", "when", "then"],
@@ -4045,6 +4272,19 @@ export function newElement(kind: Element["kind"]): Element {
         },
       };
     }
+    // Linked to no chart, like chart times: `addChartDots` and `addChartGrid`
+    // are the way one is made.
+    case "chartDots": {
+      const { colorSlot: _unused, ...b } = base("#FFFFFF");
+      return { kind, payload: { ...b, chart: "", dots: "auto" } };
+    }
+    case "chartGrid": {
+      const { colorSlot: _unused, ...b } = base("#FFFFFF");
+      return {
+        kind,
+        payload: { ...b, chart: "", lines: CHART_DEFAULT_GRID_LINES, colorHex: CHART_DEFAULT_GRID_HEX, thickness: CHART_GRID_LINE_WIDTH },
+      };
+    }
   }
 }
 
@@ -4073,6 +4313,8 @@ export function elementSize(el: Element): number | undefined {
     case "image": return undefined;
     case "tap": return undefined;
     case "chartTimes": return undefined;
+    case "chartDots": return undefined;
+    case "chartGrid": return undefined;
   }
 }
 
@@ -4168,6 +4410,8 @@ export function primaryValue(el: Element): Value | undefined {
     case "image": return { kind: { kind: "entityState", ...el.payload.entity } };
     case "tap": return undefined;
     case "chartTimes": return undefined;
+    case "chartDots": return undefined;
+    case "chartGrid": return undefined;
   }
 }
 
@@ -4495,6 +4739,10 @@ export function removeElement(cfg: CustomComplicationConfig, id: string): void {
   // A times layer has nothing to read without its chart and would sit in the
   // list drawing nothing, so it goes too.
   for (const times of chartTimesOf(cfg, id)) removeElement(cfg, times.payload.id);
+  // Dots and grid lines draw in their chart's box, so without it they are
+  // nothing at all.
+  for (const dots of chartDotsOf(cfg, id)) removeElement(cfg, dots.payload.id);
+  for (const grid of chartGridsOf(cfg, id)) removeElement(cfg, grid.payload.id);
   // A marker names its chart by id too. Unlike a number it still has something
   // to show, so it stays and goes back to sitting where its frame puts it,
   // rather than disappearing along with a chart the author may be replacing.
@@ -4724,7 +4972,7 @@ export function pasteElements(cfg: CustomComplicationConfig, clip: LayerClip, op
     }
     // A times layer reads its chart the way a number does, and is dropped the
     // same way when it would paste reading nothing.
-    if (copy.kind === "chartTimes") {
+    if (copy.kind === "chartTimes" || copy.kind === "chartDots" || copy.kind === "chartGrid") {
       const chart = idMap.get(copy.payload.chart);
       if (chart) copy.payload.chart = chart;
       else if (!here.has(copy.payload.chart)) continue;
@@ -5110,6 +5358,8 @@ const SITE_KIND_WORD: Record<Element["kind"], string> = {
   image: "picture",
   tap: "tap area",
   chartTimes: "chart times",
+  chartDots: "chart dots",
+  chartGrid: "chart grid",
 };
 
 function upperFirst(s: string): string {
@@ -5482,6 +5732,10 @@ export const RULE_TARGET_PROPERTIES: Record<RuleTarget, StyleProperty[]> = {
   tap: ["visibility"],
   // No colour, for the timeline's reason: the times carry their own.
   chartTimes: ["opacity", "rotation", "visibility"],
+  // No colour and no rotation: the colour is the layer's own, and the layer
+  // draws in its chart's box, turned the way the chart is.
+  chartDots: ["opacity", "visibility"],
+  chartGrid: ["opacity", "visibility"],
   layout: ["backgroundColor", "borderColor", "borderWidth", "text"],
 };
 

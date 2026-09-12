@@ -6254,7 +6254,7 @@ export class WristAssistantPanel extends LitElement {
     const setColour = (v: string) => this.mutate((c) => {
       for (const el of picked) {
         const t = c.elements.find((e) => e.payload.id === el.payload.id);
-        if (t && t.kind !== "image" && t.kind !== "tap" && t.kind !== "timeline" && t.kind !== "chartTimes") t.payload.colorSlot.baseColorHex = v;
+        if (t && t.kind !== "image" && t.kind !== "tap" && t.kind !== "timeline" && t.kind !== "chartTimes" && t.kind !== "chartDots" && t.kind !== "chartGrid") t.payload.colorSlot.baseColorHex = v;
       }
     }, "multi-colour");
     return html`
@@ -6413,6 +6413,8 @@ function layerMeta(el: CElement, resolver: Resolver, historySeries: Map<string, 
     case "image": return `${el.payload.contentMode === "fill" ? "fill" : "fit"} · ${el.payload.timestamp ? "time shown" : "no time"}`;
     case "tap": return describeTapAction(el.payload.action);
     case "chartTimes": return `${el.payload.timeLabelCount} times · ${el.payload.labelSize} pt`;
+    case "chartDots": return `${el.payload.dots === "all" ? "every reading" : "auto"}${el.payload.size === undefined ? "" : ` · ${el.payload.size} pt`}`;
+    case "chartGrid": return `${el.payload.lines} ${el.payload.lines === 1 ? "line" : "lines"} · ${el.payload.thickness} pt`;
   }
 }
 

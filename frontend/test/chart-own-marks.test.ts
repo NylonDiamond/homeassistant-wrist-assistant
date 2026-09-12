@@ -5,8 +5,11 @@
 import { describe, expect, it } from "vitest";
 import { Draft } from "../src/draft.js";
 import {
+  chartDotsOf,
+  chartGridsOf,
   chartMarkersOf,
   chartTimesOf,
+  chartZeroLinesOf,
   convertChartTimes,
   encodeConfig,
   liftChartOwnMarks,
@@ -108,6 +111,64 @@ describe("liftChartOwnMarks", () => {
     expect(symbolAt("highest")).toContain("arrowtriangle.up.fill");
     expect(symbolAt("lowest")).toContain("circle.fill");
     expect(chartTimesOf(cfg, chart.payload.id)[0]?.payload.timeLabelCount).toBe(3);
+  });
+
+  it("turns the one-day dots, grid and zero line keys into layers and drops the keys", () => {
+    const { cfg, chart } = historyChart((c) => {
+      c.payload.style = "line";
+      c.payload.pointDots = "all";
+      c.payload.pointDotSize = 5;
+      c.payload.pointDotColorHex = "#FF9F0A";
+      c.payload.gridLines = 2;
+      c.payload.gridColorHex = "#FF000080";
+      c.payload.zeroLine = true;
+    });
+    liftChartOwnMarks(cfg);
+    const id = chart.payload.id;
+    const c = chartOf(cfg, id).payload;
+    for (const key of ["pointDots", "pointDotSize", "pointDotColorHex", "gridLines", "gridColorHex", "zeroLine"]) {
+      expect(key in c, key).toBe(false);
+    }
+    expect(chartDotsOf(cfg, id).map((d) => d.payload)).toMatchObject([{ dots: "all", size: 5, colorHex: "#FF9F0A" }]);
+    expect(chartGridsOf(cfg, id).map((g) => g.payload)).toMatchObject([{ lines: 2, colorHex: "#FF000080" }]);
+    const zero = chartZeroLinesOf(cfg, id);
+    expect(zero).toHaveLength(1);
+    // The chart drew its zero line in the grid colour.
+    expect(zero[0]!.kind === "shape" && zero[0]!.payload.colorSlot.baseColorHex).toBe("#FF000080");
+    // Grid behind the chart, dots in front of it.
+    const at = (layerId: string) => cfg.elements.findIndex((e) => e.payload.id === layerId);
+    expect(at(chartGridsOf(cfg, id)[0]!.payload.id)).toBeLessThan(at(id));
+    expect(at(chartDotsOf(cfg, id)[0]!.payload.id)).toBeGreaterThan(at(id));
+  });
+
+  it("makes no layer for dots off, no grid lines and no zero line", () => {
+    const { cfg, chart } = historyChart((c) => { c.payload.pointDots = "none"; c.payload.gridLines = 0; c.payload.zeroLine = false; });
+    liftChartOwnMarks(cfg);
+    const id = chart.payload.id;
+    expect(chartDotsOf(cfg, id)).toHaveLength(0);
+    expect(chartGridsOf(cfg, id)).toHaveLength(0);
+    expect(chartZeroLinesOf(cfg, id)).toHaveLength(0);
+    expect("pointDots" in chartOf(cfg, id).payload).toBe(false);
+  });
+
+  it("opens a document saved with the one-day keys converted, clean and seated on the chart's shape", () => {
+    const { cfg, chart } = historyChart((c) => { c.payload.style = "line"; });
+    const raw = JSON.parse(JSON.stringify(encodeConfig(cfg)));
+    const payload = raw.elements.find((e: { payload: { id: string } }) => e.payload.id === chart.payload.id).payload;
+    Object.assign(payload, { pointDots: "auto", gridLines: 3, zeroLine: true });
+    const draft = Draft.fromDocument(raw, 1);
+    expect(draft.dirty).toBe(false);
+    const opened = draft.config;
+    const id = chart.payload.id;
+    const added = [...chartDotsOf(opened, id), ...chartGridsOf(opened, id), ...chartZeroLinesOf(opened, id)];
+    expect(added).toHaveLength(3);
+    const seat = Object.entries(opened.perFamily).find(([, l]) => l?.placements[id] !== undefined)?.[0];
+    expect(seat).toBeDefined();
+    for (const layer of added) {
+      expect(opened.perFamily[seat as keyof typeof opened.perFamily]?.placements[layer.payload.id]?.isHidden).toBe(false);
+    }
+    const saved = JSON.stringify(encodeConfig(opened));
+    for (const key of ["\"pointDots\"", "\"gridLines\"", "\"zeroLine\""]) expect(saved).not.toContain(key);
   });
 
   it("leaves a chart with nothing of its own alone", () => {

@@ -1,0 +1,479 @@
+{
+  "name": "Chart dots layer",
+  "description": "Reading dots as `chartDots` layers. Every dots layer draws in its chart's frame, not its own, so each resolves to the chart's frame. `indices` lists the readings that get a dot (holes and the chart's own highlight dots left out), empty when the layer draws nothing; `diameter` is the effective dot size in design points (`size`, else the chart's lineWidth times 1.8), 0 when the chart is missing; `size` and `colorHex` are absent when the layer stores none. Chart A (line 1,6,2,4, half the width) carries three dots layers: one on every reading at size 5 in orange, one automatic at the automatic 3.6 (29.5 points apart, room for 10.8), and a hidden one at size 12. The largest visible drawing layer is 5, so the chart's stroke inset grows to 2.5: a line anchored `highest`, `through` stands at x 31 of the 90.5-point plot (30.5 without the dots) and runs from 2.5 to 63 down the 65.5-point box. The hidden layer does not widen it. Chart B has ten readings and an automatic layer at size 4, 9.83 points apart where 12 are needed, so it draws none. Chart C is bars, which never carry dots. Chart E highlights both ends, so its all-dots layer skips readings 1 and 2, where the chart draws its own dots. The last layer links to a chart the document does not have and keeps its own frame.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-0000000001F0",
+    "name": "Chart dots layer",
+    "slotIndex": 2,
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F1",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "1,6,2,4"
+            }
+          },
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "style": "line",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 0.5,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chartDots",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F2",
+          "rules": [],
+          "frame": {
+            "x": 0.6,
+            "y": 0.6,
+            "width": 0.2,
+            "height": 0.2,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "chart": "EEEEEEEE-0000-4000-8000-0000000001F1",
+          "dots": "all",
+          "size": 5,
+          "colorHex": "#FF9F0A"
+        }
+      },
+      {
+        "kind": "chartDots",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F3",
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 0.5,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "chart": "EEEEEEEE-0000-4000-8000-0000000001F1"
+        }
+      },
+      {
+        "kind": "chartDots",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F4",
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 0.5,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": true,
+          "chart": "EEEEEEEE-0000-4000-8000-0000000001F1",
+          "dots": "all",
+          "size": 12
+        }
+      },
+      {
+        "kind": "shape",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F5",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 0.01,
+            "height": 0.2,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "kind": "line",
+          "cornerRadius": 6,
+          "borderWidth": 0,
+          "chartAnchor": {
+            "layer": "EEEEEEEE-0000-4000-8000-0000000001F1",
+            "at": "highest",
+            "place": "through"
+          }
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F6",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "1,2,3,4,5,6,7,8,9,10"
+            }
+          },
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "style": "line",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.5,
+            "y": 0,
+            "width": 0.5,
+            "height": 0.5,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chartDots",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F7",
+          "rules": [],
+          "frame": {
+            "x": 0.5,
+            "y": 0,
+            "width": 0.5,
+            "height": 0.5,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "chart": "EEEEEEEE-0000-4000-8000-0000000001F6",
+          "size": 4
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F8",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "3,5,4"
+            }
+          },
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "style": "bars",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.5,
+            "y": 0.5,
+            "width": 0.25,
+            "height": 0.5,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chartDots",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F9",
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 0.1,
+            "height": 0.1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "chart": "EEEEEEEE-0000-4000-8000-0000000001F8",
+          "dots": "all"
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001FA",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "3,9,1,5"
+            }
+          },
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "style": "line",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "both",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.75,
+            "y": 0.5,
+            "width": 0.25,
+            "height": 0.5,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chartDots",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001FB",
+          "rules": [],
+          "frame": {
+            "x": 0.75,
+            "y": 0.5,
+            "width": 0.25,
+            "height": 0.5,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "chart": "EEEEEEEE-0000-4000-8000-0000000001FA",
+          "dots": "all"
+        }
+      },
+      {
+        "kind": "chartDots",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001FC",
+          "rules": [],
+          "frame": {
+            "x": 0.1,
+            "y": 0.1,
+            "width": 0.1,
+            "height": 0.1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "chart": "EEEEEEEE-0000-4000-8000-0000000001FF",
+          "dots": "all"
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "wedge",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {},
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": [],
+    "expressionKeys": [],
+    "historyKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F1",
+          "kind": "chart",
+          "values": [1, 6, 2, 4]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F2",
+          "kind": "chartDots",
+          "dots": "all",
+          "size": 5,
+          "diameter": 5,
+          "colorHex": "#FF9F0A",
+          "indices": [0, 1, 2, 3],
+          "isHidden": false,
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 0.5,
+            "height": 1,
+            "rotationDegrees": 0
+          }
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F3",
+          "kind": "chartDots",
+          "dots": "auto",
+          "size": null,
+          "diameter": 3.6,
+          "colorHex": null,
+          "indices": [0, 1, 2, 3]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F4",
+          "kind": "chartDots",
+          "dots": "all",
+          "size": 12,
+          "diameter": 12,
+          "indices": [0, 1, 2, 3],
+          "isHidden": true
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F5",
+          "kind": "shape",
+          "frame": {
+            "x": 0.16627071823204420,
+            "y": 0.03816793893129771,
+            "width": 0.01,
+            "height": 0.9236641221374046,
+            "rotationDegrees": 0
+          }
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F6",
+          "kind": "chart",
+          "values": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F7",
+          "kind": "chartDots",
+          "dots": "auto",
+          "size": 4,
+          "diameter": 4,
+          "indices": [],
+          "frame": {
+            "x": 0.5,
+            "y": 0,
+            "width": 0.5,
+            "height": 0.5,
+            "rotationDegrees": 0
+          }
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F8",
+          "kind": "chart",
+          "style": "bars"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F9",
+          "kind": "chartDots",
+          "dots": "all",
+          "diameter": 3.6,
+          "indices": [],
+          "frame": {
+            "x": 0.5,
+            "y": 0.5,
+            "width": 0.25,
+            "height": 0.5,
+            "rotationDegrees": 0
+          }
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001FA",
+          "kind": "chart",
+          "highIndex": 1,
+          "lowIndex": 2
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001FB",
+          "kind": "chartDots",
+          "dots": "all",
+          "diameter": 3.6,
+          "indices": [0, 3]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001FC",
+          "kind": "chartDots",
+          "dots": "all",
+          "diameter": 0,
+          "indices": [],
+          "frame": {
+            "x": 0.1,
+            "y": 0.1,
+            "width": 0.1,
+            "height": 0.1,
+            "rotationDegrees": 0
+          }
+        }
+      ]
+    }
+  }
+}

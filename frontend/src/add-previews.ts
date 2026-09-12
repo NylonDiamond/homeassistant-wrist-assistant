@@ -146,6 +146,15 @@ function sample(kind: LayerKind): TemplateResult {
         <text x="60" y="27" text-anchor="middle">1 PM</text>
         <text x="114" y="27" text-anchor="end">5 PM</text>
       </g>`;
+    // Dots on readings, and grid rules. Never add buttons either.
+    case "chartDots":
+      return svg`<g fill="var(--k)">
+        <circle cx="20" cy="30" r="3" /><circle cx="45" cy="18" r="3" /><circle cx="70" cy="24" r="3" /><circle cx="95" cy="12" r="3" />
+      </g>`;
+    case "chartGrid":
+      return svg`<g stroke="var(--k)" stroke-width="1.4" opacity=".7">
+        <path d="M10 12H110M10 23H110M10 34H110" />
+      </g>`;
   }
 }
 

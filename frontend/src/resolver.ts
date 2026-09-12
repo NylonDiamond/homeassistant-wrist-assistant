@@ -79,17 +79,18 @@ import {
   chartBarCorners,
   chartBarRadius,
   type ChartBarCorners,
+  type ChartDotsMode,
+  chartDotsMode,
   chartFillStyle,
   chartGridColorHex,
+  chartGridLayerLines,
+  chartGridThickness,
   chartPointDotSize,
-  chartGridLines,
-  chartPointDots,
   chartSmoothing,
   chartSmoothingWindowSize,
   type ChartSmoothing,
   type ChartCurve,
   type ChartFillStyle,
-  type ChartPointDots,
 } from "./model.js";
 import { keyFor } from "./compiler.js";
 
@@ -258,21 +259,11 @@ export interface ResolvedChart extends ResolvedBase {
   barRadius: number;
   /** Which corners of a bar are rounded. */
   barCorners: ChartBarCorners;
-  /** Dots on the readings of a line or area; `chartGeometry` decides whether
-   * `auto` draws them. */
-  pointDots: ChartPointDots;
-  /** A reading dot's diameter, already clamped into 1…12; absent is the
-   * automatic `lineWidth * CHART_DOT_SCALE`. */
-  pointDotSize?: number;
-  /** Every plain reading dot's colour, beating the bands; absent is the series
-   * or band colour. */
-  pointDotColorHex?: string;
-  /** Horizontal grid lines inside the plot, 0…4. */
-  gridLines: number;
-  /** Colour of the grid lines and the zero line. */
-  gridColorHex: string;
-  /** Whether a line is drawn where zero falls, when zero is inside the range. */
-  zeroLine: boolean;
+  /** The largest diameter among this chart's `chartDots` layers that are shown
+   * on this shape and actually draw. The plot's stroke inset grows to half of
+   * it, so the dots at the edges are not clipped. Absent when none draws. Set by
+   * `settleChartDots`. */
+  dotDiameter?: number;
   /** Where the threshold line sits, as a fraction of the plot from the bottom.
    * Absent when the chart has no threshold, or when a fixed scale puts it off
    * the plot; the renderer then draws no line rather than one on an edge. */
@@ -382,6 +373,39 @@ export interface ResolvedChartTimes extends ResolvedBase {
   labels: TimelineLabel[];
   labelSize: number;
   labelColorHex: string;
+}
+
+/** A chart's reading dots as a layer of their own. `frame` is the chart's own
+ * frame on this shape, because the dots draw in the chart's box. Mirrors
+ * `CustomComplication.ResolvedChartDots` in the app repo. */
+export interface ResolvedChartDots extends ResolvedBase {
+  kind: "chartDots";
+  /** The chart layer's id. */
+  chart: string;
+  dots: ChartDotsMode;
+  /** The size the layer stores, clamped into 1…12; absent when it stores none. */
+  size?: number;
+  /** The effective diameter: `size`, or the chart's line width times
+   * `CHART_DOT_SCALE`. 0 when the chart is missing. */
+  diameter: number;
+  /** Every dot's colour; absent paints each in the series colour at its reading. */
+  colorHex?: string;
+  /** The readings that get a dot, oldest first: holes and the readings the chart
+   * marks with its own highlight dot left out. Empty when the layer draws
+   * nothing: no chart, bars, or `auto` finding the readings too close. */
+  indices: number[];
+}
+
+/** A chart's grid lines as a layer of their own, drawn across the chart's plot
+ * in the chart's box. Mirrors `CustomComplication.ResolvedChartGrid`. */
+export interface ResolvedChartGrid extends ResolvedBase {
+  kind: "chartGrid";
+  chart: string;
+  lines: number;
+  colorHex: string;
+  thickness: number;
+  /** True when its chart is on this shape and has readings. */
+  draws: boolean;
 }
 
 /** One clock time under (or over) a timeline. `position` is a fraction of the
@@ -534,7 +558,7 @@ export interface ResolvedTap extends ResolvedBase {
    * preview can leave an attached tap undrawn; the watch ignores it. */
   attachedTo?: string;
 }
-export type ResolvedElement = ResolvedText | ResolvedIcon | ResolvedGauge | ResolvedChart | ResolvedTimeline | ResolvedShape | ResolvedImage | ResolvedTap | ResolvedChartTimes;
+export type ResolvedElement = ResolvedText | ResolvedIcon | ResolvedGauge | ResolvedChart | ResolvedTimeline | ResolvedShape | ResolvedImage | ResolvedTap | ResolvedChartTimes | ResolvedChartDots | ResolvedChartGrid;
 
 export interface ResolvedBezelGauge {
   value: number;
@@ -1654,12 +1678,6 @@ export class Resolver {
           ...(c.fillColorHex !== undefined ? { fillColorHex: c.fillColorHex } : {}),
           barRadius: chartBarRadius(c.barRadius),
           barCorners: chartBarCorners(c.barCorners),
-          pointDots: chartPointDots(c.pointDots),
-          ...(chartPointDotSize(c.pointDotSize) !== undefined ? { pointDotSize: chartPointDotSize(c.pointDotSize) } : {}),
-          ...(c.pointDotColorHex !== undefined ? { pointDotColorHex: c.pointDotColorHex } : {}),
-          gridLines: chartGridLines(c.gridLines),
-          gridColorHex: chartGridColorHex(c.gridColorHex),
-          zeroLine: c.zeroLine === true,
           thresholdColorHex: c.thresholdColorHex,
           drawsThreshold: c.drawsThreshold !== false,
           nowColorHex: c.nowColorHex,
@@ -1777,6 +1795,37 @@ export class Resolver {
         };
         return out;
       }
+      // Both settle against their chart in `settleChartDots`, once every layer
+      // on the shape is resolved: the chart's frame and line width are only
+      // known then.
+      case "chartDots": {
+        const d = el.payload;
+        const size = chartPointDotSize(d.size);
+        const out: ResolvedChartDots = {
+          kind: "chartDots",
+          ...base,
+          chart: d.chart,
+          dots: chartDotsMode(d.dots),
+          diameter: 0,
+          indices: [],
+        };
+        if (size !== undefined) out.size = size;
+        if (d.colorHex !== undefined) out.colorHex = d.colorHex;
+        return out;
+      }
+      case "chartGrid": {
+        const g = el.payload;
+        const out: ResolvedChartGrid = {
+          kind: "chartGrid",
+          ...base,
+          chart: g.chart,
+          lines: chartGridLayerLines(g.lines),
+          colorHex: chartGridColorHex(g.colorHex),
+          thickness: chartGridThickness(g.thickness),
+          draws: false,
+        };
+        return out;
+      }
     }
   }
 
@@ -1789,9 +1838,12 @@ export class Resolver {
     // The markers move onto their charts here, not at draw time, so the preview,
     // the drag handles, the layer thumbnails and the app repo's own resolver all
     // read one set of frames. Mirrors `CustomComplication.resolve` in the app repo.
+    // Dots settle before the anchors: the dots decide the chart's inset, and the
+    // inset moves every reading an anchor sits on.
+    const canvas = DESIGN_BOX[family === "inline" ? "rectangular" : family];
     const elements = [...placeChartAnchors(
-      elementsFor(config, family).map((el) => this.resolveElement(el, forced)),
-      DESIGN_BOX[family === "inline" ? "rectangular" : family],
+      settleChartDots(elementsFor(config, family).map((el) => this.resolveElement(el, forced)), canvas),
+      canvas,
     )];
     const style = layout ? this.applyRules(layout.rules, forced) : new Map<StyleProperty, StyleChange>();
     const out: ResolvedLayout = {
@@ -1924,24 +1976,84 @@ export const CHART_HIGHLIGHT_DOT_RADIUS = 1.7;
 /** A reading's dot is this many line widths across. */
 export const CHART_DOT_SCALE = 1.8;
 
-/** Whether a line or area draws a dot on every reading. `all` always does;
+/** Whether a `chartDots` layer draws on a line or area. `all` always does;
  * `auto` only when neighbouring readings sit at least three dots apart,
  * measured on the plot the stroke alone would leave (inset by half the line),
- * and always for a single reading. Bars never do.
+ * and always for a single reading. Bars and an empty chart never do.
  *
  * Mirrors `CustomComplicationChartGeometry` in the app repo. */
 export function chartDrawsDots(
   style: ChartStyle,
-  pointDots: ChartPointDots,
+  dots: ChartDotsMode,
   count: number,
   plotWidth: number,
   lineInset: number,
   diameter: number,
 ): boolean {
-  if (style === "bars" || pointDots === "none" || count === 0) return false;
-  if (pointDots === "all" || count === 1) return true;
+  if (style === "bars" || count === 0) return false;
+  if (dots === "all" || count === 1) return true;
   const spacing = Math.max(plotWidth - lineInset * 2, 0) / (count - 1);
   return spacing >= 3 * diameter;
+}
+
+/**
+ * Every `chartDots` and `chartGrid` layer settled against its chart on one
+ * shape, and every chart given the inset its dots need.
+ *
+ * A dots or grid layer takes its chart's frame, because it draws in the chart's
+ * box; one whose chart is missing keeps its own and draws nothing. A dots
+ * layer's diameter is its own size or the chart's line width times
+ * `CHART_DOT_SCALE`, whether it draws follows `chartDrawsDots`, and its
+ * `indices` are the readings that get a dot. A chart then carries the largest
+ * diameter among its dots layers that are shown and draw, as `dotDiameter`.
+ * Mirrors `CustomComplication.settlingChartDots` in the app repo.
+ */
+export function settleChartDots(elements: readonly ResolvedElement[], canvas: CanvasSize): ResolvedElement[] {
+  if (!elements.some((el) => el.kind === "chartDots" || el.kind === "chartGrid")) return [...elements];
+  const charts = new Map<string, ResolvedChart>();
+  for (const el of elements) if (el.kind === "chart") charts.set(el.id, el);
+  const widest = new Map<string, number>();
+  const settled = elements.map((el): ResolvedElement => {
+    if (el.kind === "chartGrid") {
+      const chart = charts.get(el.chart);
+      return chart === undefined ? { ...el, draws: false } : { ...el, frame: chart.frame, draws: chart.values.length > 0 };
+    }
+    if (el.kind !== "chartDots") return el;
+    const chart = charts.get(el.chart);
+    if (chart === undefined) return { ...el, diameter: 0, indices: [] };
+    const diameter = el.size ?? chart.lineWidth * CHART_DOT_SCALE;
+    const plotWidth = Math.max(chart.frame.width * canvas.width, 0);
+    const draws = chartDrawsDots(chart.style, el.dots, chart.values.length, plotWidth, chart.lineWidth / 2, diameter);
+    if (draws && !el.isHidden) widest.set(chart.id, Math.max(widest.get(chart.id) ?? 0, diameter));
+    // The chart's own highlight dot already marks its high and low reading on a
+    // line or area, so a dot here would sit on it as a ring.
+    const indices = draws
+      ? chart.values.map((_, i) => i).filter((i) => chart.holes[i] !== true && i !== chart.highIndex && i !== chart.lowIndex)
+      : [];
+    return { ...el, frame: chart.frame, diameter, indices };
+  });
+  if (widest.size === 0) return settled;
+  return settled.map((el) => {
+    if (el.kind !== "chart") return el;
+    const d = widest.get(el.id);
+    return d === undefined ? el : { ...el, dotDiameter: d };
+  });
+}
+
+/** Where zero sits on a chart's scale, as a fraction of the plot from the
+ * bottom, or undefined unless zero is strictly inside the range: on an edge a
+ * line at zero would read as the plot's own border. */
+export function chartZeroFraction(chart: { domainMin: number; domainMax: number }): number | undefined {
+  if (!(chart.domainMin < 0 && chart.domainMax > 0)) return undefined;
+  return (0 - chart.domainMin) / (chart.domainMax - chart.domainMin);
+}
+
+/** Where each grid line of `lines` runs across a chart's plot, top first: equal
+ * rows, never on the plot's top or bottom edge. */
+export function chartGridYs(g: { plotTop: number; plotBottom: number }, lines: number): number[] {
+  const n = Math.max(0, Math.min(4, Math.round(lines)));
+  const height = g.plotBottom - g.plotTop;
+  return Array.from({ length: n }, (_, k) => g.plotTop + (height * (k + 1)) / (n + 1));
 }
 
 /** Where every mark of a chart lands inside its frame.
@@ -1962,14 +2074,11 @@ export function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, b
 
   // Line and area are stroked on the value itself, so half the stroke would fall
   // outside a plot sized to the frame. Bars are filled inside theirs. Dots on
-  // the readings are wider than the stroke, so when they draw the inset grows
-  // to a dot's radius and the dots at the edges are not clipped.
+  // the readings are wider than the stroke, so while a dots layer draws the
+  // inset grows to the widest dot's radius and the dots at the edges are not
+  // clipped.
   const lineInset = el.style === "bars" ? 0 : el.lineWidth / 2;
-  // `pointDotSize` when the layer sets one, and both the auto rule and the inset
-  // read this effective diameter.
-  const dotDiameter = el.pointDotSize ?? el.lineWidth * CHART_DOT_SCALE;
-  const drawsDots = chartDrawsDots(el.style, el.pointDots, values.length, plotW, lineInset, dotDiameter);
-  const inset = drawsDots ? Math.max(lineInset, dotDiameter / 2) : lineInset;
+  const inset = el.dotDiameter !== undefined && el.style !== "bars" ? Math.max(lineInset, el.dotDiameter / 2) : lineInset;
 
   // An end marker takes only the room it needs to stay inside the frame, at its
   // own end (highest along the top, lowest along the bottom). A dot sits on the
@@ -1996,17 +2105,6 @@ export function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, b
   const fraction = (v: number) => Math.min(1, Math.max(0, (v - el.domainMin) / span));
   const y = (v: number) => bottom - fraction(v) * height;
 
-  // Grid lines split the plot into equal rows, never on its top or bottom edge.
-  const gridLines = Math.max(0, Math.min(4, Math.round(el.gridLines)));
-  const gridYs = Array.from({ length: gridLines }, (_, k) => top + (height * (k + 1)) / (gridLines + 1));
-  // The zero line only while zero is inside the range, and not on an edge,
-  // where it would read as the plot's own border.
-  let zeroY: number | undefined;
-  if (el.zeroLine && el.domainMin <= 0 && el.domainMax >= 0) {
-    const at = y(0);
-    if (at !== top && at !== bottom) zeroY = at;
-  }
-
   return {
     count: values.length,
     barWidth,
@@ -2015,13 +2113,8 @@ export function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, b
     plotLeft: plotX,
     plotRight: plotX + plotW,
     baselineY: growsFromBottom ? bottom : y(0),
-    /** Whether every reading gets a dot (`pointDots` all, or auto with room). */
-    drawsDots,
-    dotDiameter,
-    /** Where each grid line runs, top first. */
-    gridYs,
-    /** Where the zero line runs, or undefined when it draws none. */
-    zeroY,
+    /** How far line and area points sit in from the plot's sides. */
+    inset,
     /** Where a 0…1 fraction of the domain lands, 1 being the top of the plot.
      * The resolver hands the threshold over as a fraction so the renderer never
      * has to know what the domain was. */
@@ -2264,6 +2357,9 @@ export function placeChartAnchors(
     if (anchor === undefined) return el;
     const chart = charts.get(anchor.layer);
     if (chart === undefined) return el;
+    // A layer at zero is not drawn at all while zero is outside the range or on
+    // its edge: unlike a threshold, nothing the author typed put it there.
+    if (anchor.at === "zero" && chartZeroFraction(chart) === undefined) return { ...el, isHidden: true };
     const frame = anchoredFrame(el.frame, anchor, chart, canvas);
     return frame === undefined ? el : { ...el, frame };
   });
@@ -2292,6 +2388,7 @@ function anchorIndex(
       ? undefined
       : Math.min(Math.max(chart.nowIndex, 0), values.length - 1);
     case "threshold": return undefined;
+    case "zero": return undefined;
   }
 }
 
@@ -2333,8 +2430,10 @@ function anchoredFrame(
       level = p.y;
     }
   } else {
-    if (chart.thresholdY === undefined) return undefined;
-    level = g.yAtFraction(chart.thresholdY);
+    // A height: the threshold's, or zero's on the chart's scale.
+    const at = anchor.at === "zero" ? chartZeroFraction(chart) : chart.thresholdY;
+    if (at === undefined) return undefined;
+    level = g.yAtFraction(at);
   }
 
   const w = Math.max(frame.width, 0) * canvas.width;

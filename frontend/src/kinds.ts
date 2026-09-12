@@ -20,6 +20,8 @@ export const KIND_COLOR: Record<LayerKind, string> = {
   image: "#00acc1",
   tap: "#ec407a",
   chartTimes: "#5e35b1",
+  chartDots: "#5e35b1",
+  chartGrid: "#5e35b1",
 };
 
 export const KIND_LABEL: Record<LayerKind, string> = {
@@ -32,10 +34,13 @@ export const KIND_LABEL: Record<LayerKind, string> = {
   image: "Picture",
   tap: "Tap area",
   chartTimes: "Chart times",
+  chartDots: "Chart dots",
+  chartGrid: "Chart grid",
 };
 
-/** The order the add buttons and the picker show the kinds in. Chart times
- * are not here: they are made from a chart's Extras card, never blank. */
+/** The order the add buttons and the picker show the kinds in. Chart times,
+ * dots and grid are not here: they are made from a chart's Extras card, never
+ * blank. */
 export const KIND_ORDER: readonly LayerKind[] = ["text", "icon", "gauge", "chart", "timeline", "shape", "image", "tap"];
 
 /**

@@ -1,0 +1,253 @@
+{
+  "name": "Chart grid layer",
+  "description": "Grid lines as `chartGrid` layers. A grid layer draws in its chart's frame, not its own, so each resolves to the chart's frame; `draws` is true when its chart is in the shape and has readings. The first grid sits below a bar chart and stores nothing, so it resolves to 3 lines in white at 20 % (`#FFFFFF33`), 1 point thick. A line chart carries two more: 2 orange lines half a point thick, and one at the upper limits, 4 lines 4 points thick (clamping is pinned in each side's unit tests, since an out-of-range value cannot round-trip). The last grid links to a chart the document does not have, keeps its own frame and draws nothing.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-000000000220",
+    "name": "Chart grid layer",
+    "slotIndex": 2,
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "chartGrid",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000222",
+          "rules": [],
+          "frame": {
+            "x": 0.7,
+            "y": 0.7,
+            "width": 0.2,
+            "height": 0.2,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "chart": "EEEEEEEE-0000-4000-8000-000000000221"
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000221",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "2,5,3"
+            }
+          },
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "style": "bars",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 0.5,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000223",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "1,2"
+            }
+          },
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "style": "line",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.5,
+            "y": 0,
+            "width": 0.5,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chartGrid",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000224",
+          "rules": [],
+          "frame": {
+            "x": 0.5,
+            "y": 0,
+            "width": 0.5,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "chart": "EEEEEEEE-0000-4000-8000-000000000223",
+          "lines": 2,
+          "colorHex": "#FF9F0A66",
+          "thickness": 0.5
+        }
+      },
+      {
+        "kind": "chartGrid",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000225",
+          "rules": [],
+          "frame": {
+            "x": 0.5,
+            "y": 0,
+            "width": 0.5,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "chart": "EEEEEEEE-0000-4000-8000-000000000223",
+          "lines": 4,
+          "thickness": 4
+        }
+      },
+      {
+        "kind": "chartGrid",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000226",
+          "rules": [],
+          "frame": {
+            "x": 0.1,
+            "y": 0.1,
+            "width": 0.1,
+            "height": 0.1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "chart": "EEEEEEEE-0000-4000-8000-0000000002FF"
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "wedge",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {},
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": [],
+    "expressionKeys": [],
+    "historyKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000222",
+          "kind": "chartGrid",
+          "lines": 3,
+          "colorHex": "#FFFFFF33",
+          "thickness": 1,
+          "draws": true,
+          "isHidden": false,
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 0.5,
+            "height": 1,
+            "rotationDegrees": 0
+          }
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000221",
+          "kind": "chart",
+          "values": [2, 5, 3]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000223",
+          "kind": "chart",
+          "values": [1, 2]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000224",
+          "kind": "chartGrid",
+          "lines": 2,
+          "colorHex": "#FF9F0A66",
+          "thickness": 0.5,
+          "draws": true
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000225",
+          "kind": "chartGrid",
+          "lines": 4,
+          "colorHex": "#FFFFFF33",
+          "thickness": 4,
+          "draws": true
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000226",
+          "kind": "chartGrid",
+          "lines": 3,
+          "draws": false,
+          "frame": {
+            "x": 0.1,
+            "y": 0.1,
+            "width": 0.1,
+            "height": 0.1,
+            "rotationDegrees": 0
+          }
+        }
+      ]
+    }
+  }
+}

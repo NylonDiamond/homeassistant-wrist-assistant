@@ -1,10 +1,10 @@
 {
-  "name": "Chart dot style",
-  "description": "Two line charts read 1, 4, 2, 6 with a dot on every reading. The first stores a dot size of 5 and an orange dot colour, so it resolves with both keys. The second stores neither, so its dots take the automatic size and the series colour, and both keys resolve absent.",
+  "name": "Chart fill style",
+  "description": "Two area charts read -2, 4, 1, 6 against a zero baseline. The first stores no fill keys, so it resolves to a flat fill in the series colour. The second has a blue fade fill. Reading dots, grid lines and the zero line are layers now (`chart_dots_layer.json`, `chart_grid_layer.json`, `chart_zero_anchor.json`); a chart still carrying the retired keys is covered by each side's unit tests, since no encoder writes them back.",
   "config": {
     "schemaVersion": 6,
-    "id": "AAAAAAAA-0000-4000-8000-0000000001E0",
-    "name": "Chart dot style",
+    "id": "AAAAAAAA-0000-4000-8000-0000000001D0",
+    "name": "Chart fill style",
     "slotIndex": 2,
     "supportedFamilies": [
       "rectangular"
@@ -14,22 +14,22 @@
       {
         "kind": "chart",
         "payload": {
-          "id": "EEEEEEEE-0000-4000-8000-0000000001E1",
+          "id": "EEEEEEEE-0000-4000-8000-0000000001D1",
           "value": {
             "kind": {
               "kind": "literal",
-              "value": "1,4,2,6"
+              "value": "-2,4,1,6"
             }
           },
           "historyMinutes": 0,
           "historyPoints": 24,
-          "style": "line",
+          "style": "area",
           "limit": 0,
           "takeFromEnd": false,
           "scale": "auto",
           "minValue": 0,
           "maxValue": 100,
-          "baseline": "lowest",
+          "baseline": "zero",
           "barGap": 1.5,
           "lineWidth": 2,
           "highlight": "none",
@@ -40,9 +40,6 @@
           "bands": [],
           "bandAboveColorHex": "#FF453A",
           "fillBands": false,
-          "pointDots": "all",
-          "pointDotSize": 5,
-          "pointDotColorHex": "#FF9F0A",
           "colorSlot": {
             "baseColorHex": "#FFFFFF"
           },
@@ -60,22 +57,22 @@
       {
         "kind": "chart",
         "payload": {
-          "id": "EEEEEEEE-0000-4000-8000-0000000001E2",
+          "id": "EEEEEEEE-0000-4000-8000-0000000001D2",
           "value": {
             "kind": {
               "kind": "literal",
-              "value": "1,4,2,6"
+              "value": "-2,4,1,6"
             }
           },
           "historyMinutes": 0,
           "historyPoints": 24,
-          "style": "line",
+          "style": "area",
           "limit": 0,
           "takeFromEnd": false,
           "scale": "auto",
           "minValue": 0,
           "maxValue": 100,
-          "baseline": "lowest",
+          "baseline": "zero",
           "barGap": 1.5,
           "lineWidth": 2,
           "highlight": "none",
@@ -86,7 +83,8 @@
           "bands": [],
           "bandAboveColorHex": "#FF453A",
           "fillBands": false,
-          "pointDots": "all",
+          "fillStyle": "fade",
+          "fillColorHex": "#0A84FF",
           "colorSlot": {
             "baseColorHex": "#FFFFFF"
           },
@@ -128,18 +126,16 @@
     "rectangular": {
       "elements": [
         {
-          "id": "EEEEEEEE-0000-4000-8000-0000000001E1",
+          "id": "EEEEEEEE-0000-4000-8000-0000000001D1",
           "kind": "chart",
-          "pointDots": "all",
-          "pointDotSize": 5,
-          "pointDotColorHex": "#FF9F0A"
+          "fillStyle": "flat",
+          "fillColorHex": null
         },
         {
-          "id": "EEEEEEEE-0000-4000-8000-0000000001E2",
+          "id": "EEEEEEEE-0000-4000-8000-0000000001D2",
           "kind": "chart",
-          "pointDots": "all",
-          "pointDotSize": null,
-          "pointDotColorHex": null
+          "fillStyle": "fade",
+          "fillColorHex": "#0A84FF"
         }
       ]
     }

@@ -5,7 +5,6 @@
 
 import { svg, nothing, type TemplateResult } from "lit";
 import {
-  CHART_DEFAULT_GRID_HEX,
   DESIGN_BOX,
   TIMELINE_MAX_LABEL_SIZE,
   TIMELINE_MIN_LABEL_SIZE,
@@ -32,7 +31,9 @@ import {
   chartGeometry,
   chartLegs,
   chartRuns,
+  chartGridYs,
   type ChartLeg,
+  type ResolvedChart,
   timeLabelRowSplit,
 } from "./resolver.js";
 
@@ -622,16 +623,6 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
   const banded = el.pointColorHexes.length === g.count;
   const bandAt = (i: number) => (banded ? colorAttrs(el.pointColorHexes[i]!, "fill", el.colorHex) : base);
 
-  // Grid lines and the zero line sit under the series, solid and one point
-  // thick. The threshold line keeps its dash, so it never reads as grid.
-  if (g.gridYs.length > 0 || g.zeroY !== undefined) {
-    const grid = parseColor(el.gridColorHex) ?? parseColor(CHART_DEFAULT_GRID_HEX)!;
-    const rule = (y: number) => svg`<path d=${`M${g.plotLeft} ${y} L${g.plotRight} ${y}`} fill="none"
-      stroke=${grid.color} stroke-opacity=${grid.opacity} stroke-width="1" />`;
-    for (const y of g.gridYs) body.push(rule(y));
-    if (g.zeroY !== undefined) body.push(rule(g.zeroY));
-  }
-
   // An area's paint in one colour: 28 % flat, or a fade from 28 % at the top of
   // the plot to clear at the baseline. The gradient runs in plot space, one per
   // colour, so neighbouring band quads line up into one wash.
@@ -720,24 +711,6 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
       } else {
         body.push(svg`<path d=${line} fill="none" stroke=${base.fill} stroke-opacity=${base["fill-opacity"]}
           stroke-width=${el.lineWidth} stroke-linecap="round" stroke-linejoin="round" />`);
-      }
-    }
-    // A dot on each reading, in `pointDotColorHex` when set, else its band colour
-    // or the series colour: one path per colour holding every dot, drawn before
-    // the highlight dots so those stay on top. A hole has no reading to mark, and
-    // the high and low readings are left to their own dot, which would otherwise
-    // sit on this one as a ring.
-    if (g.drawsDots) {
-      const r = g.dotDiameter / 2;
-      const byColour = new Map<string, string>();
-      points.forEach((p, i) => {
-        if (el.holes[i] === true || i === el.highIndex || i === el.lowIndex) return;
-        const hex = el.pointDotColorHex ?? (banded ? el.pointColorHexes[i]! : el.colorHex);
-        byColour.set(hex, `${byColour.get(hex) ?? ""}M${p.x - r} ${p.y} a${r} ${r} 0 1 0 ${2 * r} 0 a${r} ${r} 0 1 0 ${-2 * r} 0 Z`);
-      });
-      for (const [hex, d] of byColour) {
-        const colour = colorAttrs(hex, "fill", el.colorHex);
-        body.push(svg`<path d=${d} fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} stroke="none" />`);
       }
     }
     // A single stroke cannot change colour halfway without splitting into two
@@ -856,6 +829,46 @@ function renderChartTimes(el: Extract<ResolvedElement, { kind: "chartTimes" }>, 
   const { labelSize, rowHeight } = timeLabelRowSplit({ labels: el.labels, labelSize: el.labelSize, labelsAbove: false }, box);
   const row: Box = { ...box, y: box.cy - rowHeight / 2, h: rowHeight };
   return svg`${renderTimeLabelRow({ labels: el.labels, labelColorHex: el.labelColorHex, labelsAbove: false }, row, labelSize, rowHeight)}`;
+}
+
+/** The chart a dots or grid layer draws on, and the plot inside its box: the
+ * same split the chart itself makes for its own clock times. */
+function chartPlotFor(chart: ResolvedChart | undefined, box: Box) {
+  if (chart === undefined || box.w <= 0 || box.h <= 0) return undefined;
+  return { chart, g: chartGeometry(chart, timeLabelRowSplit(chart, box).body) };
+}
+
+/**
+ * A dot on each of the layer's `indices`, in the chart's box: in the layer's
+ * colour when it sets one, else the colour the series has at that reading. One
+ * path per colour.
+ */
+export function renderChartDots(el: Extract<ResolvedElement, { kind: "chartDots" }>, box: Box, chart: ResolvedChart | undefined) {
+  const on = chartPlotFor(chart, box);
+  if (el.indices.length === 0 || on === undefined) return nothing;
+  const c = on.chart;
+  const banded = c.pointColorHexes.length === c.values.length;
+  const r = el.diameter / 2;
+  const byColour = new Map<string, string>();
+  for (const i of el.indices) {
+    if (i >= c.values.length) continue;
+    const p = on.g.point(i);
+    const hex = el.colorHex ?? (banded ? c.pointColorHexes[i]! : c.colorHex);
+    byColour.set(hex, `${byColour.get(hex) ?? ""}M${p.x - r} ${p.y} a${r} ${r} 0 1 0 ${2 * r} 0 a${r} ${r} 0 1 0 ${-2 * r} 0 Z`);
+  }
+  return svg`${[...byColour].map(([hex, d]) => {
+    const colour = colorAttrs(hex, "fill", c.colorHex);
+    return svg`<path d=${d} fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} stroke="none" />`;
+  })}`;
+}
+
+/** The chart's grid lines, solid, across its plot in its box. */
+export function renderChartGrid(el: Extract<ResolvedElement, { kind: "chartGrid" }>, box: Box, chart: ResolvedChart | undefined) {
+  const on = chartPlotFor(chart, box);
+  if (!el.draws || on === undefined) return nothing;
+  const colour = parseColor(el.colorHex) ?? { color: "#FFFFFF", opacity: 0.2 };
+  return svg`${chartGridYs(on.g, el.lines).map((y) => svg`<path d=${`M${on.g.plotLeft} ${y} L${on.g.plotRight} ${y}`} fill="none"
+    stroke=${colour.color} stroke-opacity=${colour.opacity} stroke-width=${el.thickness} />`)}`;
 }
 
 function renderShape(el: Extract<ResolvedElement, { kind: "shape" }>, box: Box) {
@@ -1142,7 +1155,14 @@ function tapLabelText(label: string, box: Box): string | undefined {
   return `${label.slice(0, keep).replace(/\s+$/, "")}…`;
 }
 
-function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderOptions) {
+/** The charts of a layout by id, for the dots and grid layers that draw on one. */
+function chartsById(elements: readonly ResolvedElement[]): Map<string, ResolvedChart> {
+  const out = new Map<string, ResolvedChart>();
+  for (const el of elements) if (el.kind === "chart") out.set(el.id, el);
+  return out;
+}
+
+function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderOptions, charts: ReadonlyMap<string, ResolvedChart> = new Map()) {
   if (el.isHidden && !options.showHidden) return nothing;
   const review = options.tapReview === true;
   const showTaps = options.tapAreas === true || review;
@@ -1171,6 +1191,8 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     case "chart": body = renderChart(el, box); break;
     case "timeline": body = renderTimeline(el, box); break;
     case "chartTimes": body = renderChartTimes(el, box); break;
+    case "chartDots": body = renderChartDots(el, box, charts.get(el.chart)); break;
+    case "chartGrid": body = renderChartGrid(el, box, charts.get(el.chart)); break;
     case "shape": body = renderShape(el, box); break;
     case "image": body = renderImage(el, box, options); break;
     case "tap": body = renderTap(el, box, options.icons, showTaps, labelled ? describeTapAction(el.action) : undefined); break;
@@ -1409,6 +1431,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
   const border = parseColor(layout.borderColorHex);
   const bw = layout.borderWidth * fit.scale;
   const elements = layout.elements;
+  const charts = chartsById(elements);
 
   if (family === "corner") {
     // Watch-corner context preview: black screen quadrant, the content disc
@@ -1465,7 +1488,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
         <g clip-path=${`url(#${uid})`}>
           ${bg ? svg`<rect width=${tile} height=${tile} fill=${bg.color} fill-opacity=${bg.opacity} />` : nothing}
           <g data-design-box transform="scale(${fit.scale * tileScale})">
-            ${elements.map((el) => renderElement(el, design, options))}
+            ${elements.map((el) => renderElement(el, design, options, charts))}
           </g>
         </g>
         <circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} fill="none"
@@ -1498,7 +1521,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
       ${well}
       ${bg ? svg`<rect width=${canvas.width} height=${canvas.height} fill=${bg.color} fill-opacity=${bg.opacity} />` : nothing}
       <g data-design-box transform="translate(${fit.x} ${fit.y}) scale(${fit.scale})">
-        ${elements.map((el) => renderElement(el, design, options))}
+        ${elements.map((el) => renderElement(el, design, options, charts))}
       </g>
     </g>
     ${chrome}
@@ -1601,7 +1624,7 @@ export function renderLayerThumb(layout: ResolvedLayout, ids: readonly string[],
       width=${options.width} height=${options.height} preserveAspectRatio="xMidYMid meet" aria-hidden="true">
     <rect x=${crop.x} y=${crop.y} width=${crop.w} height=${crop.h} fill="#000000" />
     ${face}
-    ${picked.map((el) => renderElement(el, design, render))}
+    ${picked.map((el) => renderElement(el, design, render, chartsById(layout.elements)))}
     ${chrome}
   </svg>`;
 }
