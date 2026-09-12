@@ -23,13 +23,26 @@ const MIN_SIZE = 0.04;
 /** Keep about 4% of the box on canvas, like the phone editor (schema §4.1). */
 const KEEP_VISIBLE = 0.04;
 
-/** Convert a pointer event to canvas points using the SVG's own CTM. */
-export function canvasPoint(svg: SVGSVGElement, ev: PointerEvent): { x: number; y: number } {
-  const pt = new DOMPoint(ev.clientX, ev.clientY);
-  const ctm = svg.getScreenCTM();
-  if (!ctm) return { x: 0, y: 0 };
-  const p = pt.matrixTransform(ctm.inverse());
-  return { x: p.x, y: p.y };
+/**
+ * How far the pointer has moved since `start`, in the SVG's own units.
+ *
+ * Measured from screen movement and the SVG's scale alone, never from where the
+ * SVG sits on screen. The press that starts a drag often selects the layer too,
+ * and that re-render can shift the preview under a still pointer; mapping each
+ * point through the live position read that shift as a huge drag and threw the
+ * layer to the top or bottom of the face. A scale that cannot be read (the SVG
+ * was re-rendered away mid-drag) keeps the last one that could.
+ */
+export function pointerTravel(svg: SVGSVGElement, start: PointerEvent): (ev: PointerEvent) => { x: number; y: number } {
+  const scaleOf = () => {
+    const ctm = svg.getScreenCTM();
+    return ctm && ctm.a !== 0 && ctm.d !== 0 ? { x: ctm.a, y: ctm.d } : undefined;
+  };
+  let scale = scaleOf() ?? { x: 1, y: 1 };
+  return (ev) => {
+    scale = scaleOf() ?? scale;
+    return { x: (ev.clientX - start.clientX) / scale.x, y: (ev.clientY - start.clientY) / scale.y };
+  };
 }
 
 /**
@@ -109,7 +122,7 @@ export function beginGesture(
   target: GestureTarget,
   cb: GestureCallbacks,
 ): () => void {
-  const origin = canvasPoint(svg, start);
+  const travel = pointerTravel(svg, start);
   const base = { ...target.frame };
   let last = base;
   svg.setPointerCapture(start.pointerId);
@@ -118,9 +131,9 @@ export function beginGesture(
 
   const move = (ev: PointerEvent) => {
     if (ev.pointerId !== start.pointerId) return;
-    const p = canvasPoint(svg, ev);
-    const dx = (p.x - origin.x) / canvas.width;
-    const dy = (p.y - origin.y) / canvas.height;
+    const t = travel(ev);
+    const dx = t.x / canvas.width;
+    const dy = t.y / canvas.height;
     let next: NormalizedFrame;
     if (!target.handle) {
       next = clampFrame({ ...base, x: round(base.x + dx), y: round(base.y + dy) });
@@ -180,7 +193,7 @@ export function beginPointDrag(
   base: { x: number; y: number },
   onPoint: (x: number, y: number, done: boolean) => void,
 ): () => void {
-  const origin = canvasPoint(svg, start);
+  const travel = pointerTravel(svg, start);
   let last = base;
   svg.setPointerCapture(start.pointerId);
   const round = (n: number) => Math.round(n * 1000) / 1000;
@@ -188,10 +201,10 @@ export function beginPointDrag(
 
   const move = (ev: PointerEvent) => {
     if (ev.pointerId !== start.pointerId) return;
-    const p = canvasPoint(svg, ev);
+    const t = travel(ev);
     // A zero-sized box would divide by zero; it cannot be dragged either.
-    const x = box.w > 0 ? clamp(base.x + (p.x - origin.x) / box.w) : base.x;
-    const y = box.h > 0 ? clamp(base.y + (p.y - origin.y) / box.h) : base.y;
+    const x = box.w > 0 ? clamp(base.x + t.x / box.w) : base.x;
+    const y = box.h > 0 ? clamp(base.y + t.y / box.h) : base.y;
     last = { x: round(x), y: round(y) };
     onPoint(last.x, last.y, false);
   };
@@ -230,15 +243,15 @@ export function beginScaleDrag(
   size: { w: number; h: number },
   onScale: (factor: number, done: boolean) => void,
 ): () => void {
-  const origin = canvasPoint(svg, start);
+  const travel = pointerTravel(svg, start);
   let last = 1;
   svg.setPointerCapture(start.pointerId);
 
   const move = (ev: PointerEvent) => {
     if (ev.pointerId !== start.pointerId) return;
-    const p = canvasPoint(svg, ev);
-    const dx = (p.x - origin.x) * (corner.includes("e") ? 1 : -1);
-    const dy = (p.y - origin.y) * (corner.includes("s") ? 1 : -1);
+    const t = travel(ev);
+    const dx = t.x * (corner.includes("e") ? 1 : -1);
+    const dy = t.y * (corner.includes("s") ? 1 : -1);
     const fx = size.w > 0 ? (size.w + dx) / size.w : 1;
     const fy = size.h > 0 ? (size.h + dy) / size.h : 1;
     const f = Math.abs(fx - 1) >= Math.abs(fy - 1) ? fx : fy;

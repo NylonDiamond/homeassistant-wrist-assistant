@@ -3013,6 +3013,7 @@ function anchorFields(host: EditorHost, el: CElement, family: FamilyKind): Templ
             const target = c.elements.find((e) => e.payload.id === id);
             if (target) delete target.payload.chartAnchor;
           })}><span>Unpin</span></button>
+        <span class="muted">Stops following the chart, so you can move it anywhere.</span>
         ${el.kind === "text" && anchor.place !== "through"
           ? html`<button class="small" title="Swap this text marker for an icon of the same shape, keeping where it sits"
               @click=${() => host.update((c) => { chartMarkerToIcon(c, id); })}><span>Use an icon</span></button>`

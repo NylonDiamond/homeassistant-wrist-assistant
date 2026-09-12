@@ -1685,6 +1685,7 @@ export class WristAssistantPanel extends LitElement {
     .values-list .datum:hover button.icon, .values-list .datum:focus-within button.icon { opacity: .7; pointer-events: auto; }
     .values-list .datum button.icon:hover:not(:disabled), .values-list .datum button.icon:focus-visible { opacity: 1; }
     .chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .chips .muted { color: var(--wa-muted); font-size: 12px; }
     /* Every entity the face reads, one white line each. The whole line is the
        button, so clicking anywhere on it opens the test value. */
     .chips.values { display: flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 6px; }
