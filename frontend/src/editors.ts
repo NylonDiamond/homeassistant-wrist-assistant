@@ -4,6 +4,7 @@
 // so the bundle stays free of HA's internal component library.
 
 import { html, nothing, type TemplateResult } from "lit";
+import { repeat } from "lit/directives/repeat.js";
 import {
   type AggregateSpec,
   type BezelGauge,
@@ -4783,16 +4784,47 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
   const markedAlready = new Set(markers.map((m) => m.payload.chartAnchor!.at));
   // One row per layer: a lead that shows what it draws, a name, and what kind of
   // layer it is underneath, so a marker and a line on the same reading tell apart.
-  const row = (id: string, lead: unknown, title: string, kind: string) => html`
+  // A click opens the row in place with the settings people change most, so the
+  // chart stays selected; "More settings" hands the selection to the layer.
+  // Native <details> keeps each row's open state in the page, and `repeat` keys
+  // it by layer id so deleting one row never opens its neighbour.
+  interface ExtraRow { el: CElement; lead: unknown; title: string; kind: string }
+  const rows: ExtraRow[] = [
+    ...labels.map((l): ExtraRow => ({ el: l, lead: host.resolve(l.payload.value) ?? "--", title: layerTitle(l, ctx), kind: "Number" })),
+    ...markers.map((m): ExtraRow => {
+      const { at, place } = m.payload.chartAnchor!;
+      const name = CHART_ANCHOR_POINTS.find(([k]) => k === at)?.[1] ?? "Reading";
+      if (place === "through") return { el: m, lead: at === "now" ? "│" : "─", title: at === "zero" ? "Zero" : name, kind: "Line" };
+      const glyph = m.kind === "text" ? (host.resolve(m.payload.value) ?? "●")
+        : m.kind === "icon" ? markerGlyph(host.resolve(m.payload.symbol)) : "◆";
+      return { el: m, lead: glyph, title: name, kind: "Marker" };
+    }),
+    ...times.map((t): ExtraRow => ({ el: t, lead: uiIcon("clock"), title: "Clock times", kind: "Times" })),
+    ...dots.map((d): ExtraRow => ({ el: d, lead: uiIcon("chartDots"), title: "Reading dots", kind: "Dots" })),
+    ...grids.map((g): ExtraRow => ({ el: g, lead: uiIcon("chartGrid"), title: "Grid lines", kind: "Grid" })),
+  ];
+  const row = ({ el: layer, lead, title, kind }: ExtraRow) => {
+    const id = layer.payload.id;
+    const what = kind.toLowerCase();
+    return html`
     <div class="num-row">
-      <button class="num-pick" title=${`Edit this ${kind.toLowerCase()}`} @click=${() => host.selectLayer(id)}>
-        <span class="num-lead">${lead}</span>
-        <span class="num-text"><span class="num-title">${title}</span><span class="num-kind">${kind}</span></span>
-      </button>
-      <button class="icon danger" title=${`Delete this ${kind.toLowerCase()}`} aria-label=${`Delete this ${kind.toLowerCase()}`}
+      <details class="num-item">
+        <summary class="num-pick" title=${`Show the settings for this ${what}`}>
+          <span class="num-lead">${lead}</span>
+          <span class="num-text"><span class="num-title">${title}</span><span class="num-kind">${kind}</span></span>
+          <span class="chev">${uiIcon("chevron")}</span>
+        </summary>
+        <div class="num-body">
+          ${chartExtraQuickFields(host, layer)}
+          <div class="chips"><button class="small" title=${`Select this ${what} to see all of its settings`}
+            @click=${() => host.selectLayer(id)}><span>More settings</span></button></div>
+        </div>
+      </details>
+      <button class="icon danger" title=${`Delete this ${what}`} aria-label=${`Delete this ${what}`}
         @click=${() => host.update((c) => removeElement(c, id))}>${uiIcon("close")}</button>
     </div>`;
-  const count = labels.length + markers.length + times.length + dots.length + grids.length;
+  };
+  const count = rows.length;
   return html`
     <div class="hint">Everything the chart shows besides its readings: a threshold, now, clock times, numbers
       and markers. Each one is a layer in this chart's group, so you can drag it and give it any size or colour.</div>
@@ -4825,22 +4857,140 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
     ${count === 0 ? nothing : html`
       <div class="shown-head">On this chart <span class="shown-count">${count}</span></div>
       <div class="chart-numbers">
-        ${labels.map((l) => row(l.payload.id, host.resolve(l.payload.value) ?? "--", layerTitle(l, ctx), "Number"))}
-        ${markers.map((m) => {
-          const { at, place } = m.payload.chartAnchor!;
-          const name = CHART_ANCHOR_POINTS.find(([k]) => k === at)?.[1] ?? "Reading";
-          if (place === "through") return row(m.payload.id, at === "now" ? "│" : "─", at === "zero" ? "Zero" : name, "Line");
-          const glyph = m.kind === "text" ? (host.resolve(m.payload.value) ?? "●")
-            : m.kind === "icon" ? markerGlyph(host.resolve(m.payload.symbol)) : "◆";
-          return row(m.payload.id, glyph, name, "Marker");
-        })}
-        ${times.map((t) => row(t.payload.id, uiIcon("clock"), "Clock times", "Times"))}
-        ${dots.map((d) => row(d.payload.id, uiIcon("chartDots"), "Reading dots", "Dots"))}
-        ${grids.map((g) => row(g.payload.id, uiIcon("chartGrid"), "Grid lines", "Grid"))}
+        ${repeat(rows, (r) => r.el.payload.id, row)}
       </div>
-      <div class="hint">Click a row to edit that layer. The × deletes it, and Undo brings it back. Dots and grid
+      <div class="hint">Click a row to open its main settings here. More settings selects that layer for the
+        rest. The × deletes it, and Undo brings it back. Dots and grid
         lines always sit on the chart, so on the preview a click on the chart selects the chart; click right on a
         dot to pick the dots.</div>`}`;
+}
+
+/**
+ * The few settings of a chart extra that people change most, shown when its
+ * row in the Extras card is opened: which reading, how big, what colour. The
+ * layer's own editor keeps everything else, one click away.
+ */
+function chartExtraQuickFields(host: EditorHost, el: CElement): TemplateResult {
+  const id = el.payload.id;
+  const key = `extra-${id}`;
+  const family = host.activeFamily;
+  const upd = (m: (e: CElement) => void, k: string) => host.update((c) => {
+    const target = c.elements.find((e) => e.payload.id === id);
+    if (target) m(target);
+  }, `${key}-${k}`);
+  const base = newElement(el.kind).payload as unknown as Record<string, unknown>;
+  const ownColour = elementColour(el);
+  const colour = ownColour === undefined ? nothing
+    : colorField("Colour", ownColour, (v) => upd((e) => {
+        if (elementColour(e) !== undefined) (e.payload as { colorSlot: { baseColorHex: string } }).colorSlot.baseColorHex = v ?? "#FFFFFF";
+      }, "colour"), false, (base.colorSlot as { baseColorHex: string } | undefined)?.baseColorHex ?? "#FFFFFF");
+  const anchor = el.payload.chartAnchor;
+
+  switch (el.kind) {
+    case "text": {
+      const k = el.payload.value.kind;
+      return html`
+        ${k.kind === "chartStat"
+          ? selectField("Number", k.stat, [...CHART_STATS], (v) => upd((e) => {
+              if (e.kind === "text" && e.payload.value.kind.kind === "chartStat") {
+                e.payload.value = { ...e.payload.value, kind: { ...e.payload.value.kind, stat: v } };
+              }
+            }, "stat"))
+          : nothing}
+        ${anchor && anchor.place !== "through" ? markerReadingFields(host, id, anchor, upd) : nothing}
+        <div class="grid2">
+          ${shapeSizeField(host, el, family, "Font size", { step: 1, min: 4, def: base.fontSize as number })}
+          ${el.payload.countdown || textUsesParts(el.payload) ? nothing : colour}
+        </div>`;
+    }
+    case "icon":
+      return html`
+        ${anchor ? markerReadingFields(host, id, anchor, upd) : nothing}
+        <div class="grid2">
+          ${shapeSizeField(host, el, family, "Icon size", { step: 1, min: 4, def: base.size as number })}
+          ${colour}
+        </div>`;
+    case "shape":
+      return html`
+        ${anchor ? chartPointFields(host, anchor, key) : nothing}
+        <div class="grid2">
+          ${numberField("Thickness", el.payload.thickness, (v) => upd((e) => {
+            if (e.kind === "shape") e.payload.thickness = v ?? 1;
+          }, "thick"), { step: 0.5, min: 0.5, def: base.thickness as number, unit: "pt" })}
+          ${colour}
+        </div>`;
+    case "chartTimes": {
+      const t = el.payload;
+      return html`
+        ${sliderField("Times", t.timeLabelCount, (v) => upd((e) => {
+          if (e.kind === "chartTimes") e.payload.timeLabelCount = Math.max(0, Math.min(TIMELINE_MAX_LABEL_COUNT, Math.round(v)));
+        }, "count"), { min: 0, max: TIMELINE_MAX_LABEL_COUNT, step: 1, def: base.timeLabelCount as number,
+          format: (v) => (v <= 0 ? "None" : String(Math.round(v))), range: false })}
+        <div class="grid2">
+          ${numberField("Time size", t.labelSize, (v) => upd((e) => {
+            if (e.kind === "chartTimes") e.payload.labelSize = Math.min(TIMELINE_MAX_LABEL_SIZE, Math.max(TIMELINE_MIN_LABEL_SIZE, v ?? TIMELINE_DEFAULT_LABEL_SIZE));
+          }, "size"), { step: 0.5, min: TIMELINE_MIN_LABEL_SIZE, max: TIMELINE_MAX_LABEL_SIZE, def: base.labelSize as number, unit: "pt" })}
+          ${colorField("Time colour", t.labelColorHex, (v) => upd((e) => {
+            if (e.kind === "chartTimes") e.payload.labelColorHex = v ?? TIMELINE_DEFAULT_LABEL_HEX;
+          }, "colour"), false, base.labelColorHex as string)}
+        </div>`;
+    }
+    case "chartDots": {
+      const d = el.payload;
+      const linked = host.config.elements.find((e) => e.payload.id === d.chart);
+      const lineWidth = linked?.kind === "chart" ? (effectivePlacement(host.config, family, linked).size ?? linked.payload.lineWidth) : undefined;
+      const autoSize = lineWidth === undefined ? undefined : Math.round(lineWidth * 18) / 10;
+      return html`
+        ${segField("Dots", d.dots, CHART_DOTS_MODE_OPTIONS, (v) => upd((e) => { if (e.kind === "chartDots") e.payload.dots = v; }, "mode"), { def: "auto" })}
+        <div class="grid2">
+          ${numberField("Dot size", d.size ?? autoSize, (v) => upd((e) => {
+            if (e.kind !== "chartDots") return;
+            const size = chartPointDotSize(v);
+            if (size === undefined || size === autoSize) delete e.payload.size;
+            else e.payload.size = size;
+          }, "size"), { step: 0.5, min: 1, max: 12, ...(autoSize === undefined ? {} : { def: autoSize }), unit: "pt" })}
+          ${fallbackColorField("Dot colour", d.colorHex, "Series colour", (v) => upd((e) => {
+            if (e.kind !== "chartDots") return;
+            if (v === undefined) delete e.payload.colorHex; else e.payload.colorHex = v;
+          }, "colour"))}
+        </div>`;
+    }
+    case "chartGrid": {
+      const g = el.payload;
+      return html`
+        <div class="grid2">
+          ${numberField("Lines", g.lines, (v) => upd((e) => {
+            if (e.kind === "chartGrid") e.payload.lines = chartGridLayerLines(v ?? CHART_DEFAULT_GRID_LINES);
+          }, "lines"), { step: 1, min: 1, max: 4, def: CHART_DEFAULT_GRID_LINES })}
+          ${numberField("Thickness", g.thickness, (v) => upd((e) => {
+            if (e.kind === "chartGrid") e.payload.thickness = chartGridThickness(v ?? CHART_GRID_LINE_WIDTH);
+          }, "thick"), { step: 0.25, min: CHART_MIN_GRID_THICKNESS, max: CHART_MAX_GRID_THICKNESS, def: CHART_GRID_LINE_WIDTH, unit: "pt" })}
+        </div>
+        ${colorField("Colour", g.colorHex, (v) => upd((e) => {
+          if (e.kind === "chartGrid") e.payload.colorHex = v ?? CHART_DEFAULT_GRID_HEX;
+        }, "colour"), false, CHART_DEFAULT_GRID_HEX)}`;
+    }
+    default:
+      return html`${colour}`;
+  }
+}
+
+/** Which reading a marker follows and which side of it it sits on, for its
+ * row in the Extras card. A marker follows one bar, so only the column readings
+ * are offered, plus whatever it already follows. */
+function markerReadingFields(
+  host: EditorHost,
+  id: string,
+  anchor: ChartAnchor,
+  upd: (m: (e: CElement) => void, k: string) => void,
+): TemplateResult {
+  const points = CHART_ANCHOR_POINTS.filter(([at]) => chartAnchorIsColumn(at) || at === anchor.at) as unknown as [ChartAnchorPoint, string][];
+  return html`
+    <div class="grid2">
+      ${selectField("Reading", anchor.at, points, (v) => upd((e) => { if (e.payload.chartAnchor) e.payload.chartAnchor.at = v; }, "at"))}
+      ${selectField("Sits", anchor.place, CHART_ANCHOR_PLACES.filter(([p]) => p !== "through") as [ChartAnchorPlace, string][],
+        (v) => upd((e) => { if (e.payload.chartAnchor) e.payload.chartAnchor.place = v; }, "place"))}
+    </div>`;
 }
 
 function tappableSection(host: EditorHost, el: CElement, key: string): TemplateResult | typeof nothing {

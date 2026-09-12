@@ -1889,13 +1889,23 @@ export class WristAssistantPanel extends LitElement {
        at the end deletes it. Two buttons, because one cannot sit inside the
        other. */
     .chart-numbers { display: flex; flex-direction: column; gap: 4px; }
-    .chart-numbers .num-row { display: flex; align-items: center; gap: 4px; }
-    .chart-numbers .num-row > button.icon { flex: none; }
+    .chart-numbers .num-row { display: flex; align-items: flex-start; gap: 4px; }
+    .chart-numbers .num-row > button.icon { flex: none; margin-top: 8px; }
+    /* A row opens in place: the header stays the same button-like strip, and the
+       body holds that layer's main settings under it, inside the same border. */
+    .chart-numbers details.num-item { flex: 1; min-width: 0; border-radius: 8px; border: 1px solid var(--wa-line-strong); background: var(--wa-panel); }
+    .chart-numbers details.num-item:hover { border-color: color-mix(in srgb, var(--primary-color, #7c6cf0) 60%, transparent); }
+    .chart-numbers details.num-item > summary { list-style: none; }
+    .chart-numbers details.num-item > summary::-webkit-details-marker { display: none; }
+    .chart-numbers details.num-item .chev { margin-left: auto; flex: none; color: var(--wa-muted); opacity: .6; transition: transform .15s ease-out; }
+    .chart-numbers details.num-item .chev svg { width: 14px; height: 14px; display: block; }
+    .chart-numbers details.num-item[open] .chev { transform: rotate(180deg); }
+    .chart-numbers .num-body { padding: 4px 8px 8px; border-top: 1px solid var(--wa-line-strong); }
+    .chart-numbers .num-body > .chips { margin-left: var(--wa-col); margin-top: 6px; }
     .shown-head { display: flex; align-items: center; gap: 6px; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--wa-line-strong); font-size: 12px; font-weight: 600; }
     .shown-count { font-size: 11px; font-weight: 500; color: var(--wa-muted); background: var(--wa-panel); border-radius: 999px; padding: 0 7px; line-height: 18px; }
-    .chart-numbers button.num-pick { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; text-align: left;
-      padding: 6px 8px; border-radius: 8px; border: 1px solid var(--wa-line-strong); background: var(--wa-panel); color: inherit; font: inherit; cursor: pointer; }
-    .chart-numbers button.num-pick:hover { border-color: color-mix(in srgb, var(--primary-color, #7c6cf0) 60%, transparent); }
+    .chart-numbers .num-pick { display: flex; align-items: center; gap: 10px; text-align: left;
+      padding: 6px 8px; color: inherit; font: inherit; cursor: pointer; }
     .num-lead { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 26px; padding: 0 6px;
       border-radius: 6px; background: color-mix(in srgb, currentColor 8%, transparent); font-variant-numeric: tabular-nums; font-weight: 600; font-size: 12px; }
     .num-lead svg { width: 15px; height: 15px; }
