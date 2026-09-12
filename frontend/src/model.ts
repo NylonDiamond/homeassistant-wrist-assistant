@@ -2450,10 +2450,14 @@ const CHART_MARKER_GLYPH_SYMBOLS: Record<string, string> = {
 };
 
 /** The colour a new marker starts in: the chart's own highest and lowest
- * colours where it has them, so a marker matches the bar it sits over. */
+ * colours where the author set them, so a marker matches the bar it sits over,
+ * and yellow over the highest and red over the lowest otherwise. */
 function chartMarkerColor(chart: Extract<Element, { kind: "chart" }>, at: ChartAnchorPoint): string {
-  if (at === "highest") return chart.payload.highColorHex ?? CHART_DEFAULT_HIGH_HEX;
-  if (at === "lowest") return chart.payload.lowColorHex ?? CHART_DEFAULT_LOW_HEX;
+  // A new chart carries the default colours written out, so only a colour that
+  // differs from the default counts as one the author chose.
+  const chosen = (hex: string | undefined, def: string) => (hex !== undefined && hex !== def ? hex : undefined);
+  if (at === "highest") return chosen(chart.payload.highColorHex, CHART_DEFAULT_HIGH_HEX) ?? "#FFD60A";
+  if (at === "lowest") return chosen(chart.payload.lowColorHex, CHART_DEFAULT_LOW_HEX) ?? "#FF453A";
   return "#FFFFFF";
 }
 

@@ -4002,21 +4002,32 @@ export class WristAssistantPanel extends LitElement {
     const plotOwnsY = anchor !== undefined && chartAnchorIsColumn(anchor.at) && anchor.place === "through";
     const design = DESIGN_BOX[family as DrawableFamily];
     const startNudge = { dx: anchor?.dx ?? 0, dy: anchor?.dy ?? 0 };
+    // A move starts from where the anchor draws the layer, not from its saved
+    // frame, which for a marker sits in the corner of the face. Starting there
+    // made the gesture hit the face edge after a few points and stop.
+    const placed = anchor !== undefined && !handle
+      ? resolveAll(this.draft.config, this.buildContext(), this.forced)[family as DrawableFamily]
+        ?.elements.find((x) => x.id === id)?.frame
+      : undefined;
+    const start = placed ?? frame;
     // Points, to the tenth: a nudge is an offset on the plot, not a place on the face.
     const round = (n: number) => Math.round(n * 10) / 10;
     this.cancelGesture?.();
-    this.cancelGesture = beginGesture(svg, canvas, e, { elementId: id, frame, handle: handle ?? undefined }, {
+    this.cancelGesture = beginGesture(svg, canvas, e, { elementId: id, frame: start, handle: handle ?? undefined }, {
       onFrame: (elementId: string, f: NormalizedFrame, done: boolean) => {
         this.mutate((c) => {
           if (anchor === undefined) {
             setPlacement(c, family, elementId, { frame: f });
             return;
           }
-          setPlacement(c, family, elementId, { frame: { ...f, x: ownsX ? f.x : frame.x, y: frame.y } });
+          // A move keeps the saved size: a line through the plot is drawn far
+          // bigger than its saved box, and that drawn size is not the author's.
+          const size = placed ? { width: frame.width, height: frame.height } : { width: f.width, height: f.height };
+          setPlacement(c, family, elementId, { frame: { ...f, ...size, x: ownsX ? f.x : frame.x, y: frame.y } });
           const target = c.elements.find((x) => x.payload.id === elementId)?.payload.chartAnchor;
           if (target === undefined) return;
           const dx = startNudge.dx;
-          const dy = plotOwnsY ? startNudge.dy : round(startNudge.dy + (f.y - frame.y) * design.height);
+          const dy = plotOwnsY ? startNudge.dy : round(startNudge.dy + (f.y - start.y) * design.height);
           if (dx) target.dx = dx; else delete target.dx;
           if (dy) target.dy = dy; else delete target.dy;
         }, `drag-${elementId}-${family}`);

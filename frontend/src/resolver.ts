@@ -1982,7 +1982,11 @@ function anchoredFrame(
     : anchor.place === "below" ? level + gap + h / 2
     : anchor.place === "bottom" ? g.plotBottom - gap - h / 2
     : level - gap - h / 2;
-  const y = held(cy + (anchor.dy ?? 0), plot.y + h / 2, plot.y + plot.h - h / 2);
+  // The spot the anchor names stays inside the plot, so a tall bar pushes its
+  // marker down rather than off the top. The nudge is the author's own choice and
+  // may take the marker past the chart, as far as the edge of the face.
+  const base = held(cy, plot.y + h / 2, plot.y + plot.h - h / 2);
+  const y = held(base + (anchor.dy ?? 0), h / 2, canvas.height - h / 2);
   out.y = (y - h / 2) / canvas.height;
   return out;
 }

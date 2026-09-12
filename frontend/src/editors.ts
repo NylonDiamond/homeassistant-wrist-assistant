@@ -2988,9 +2988,12 @@ function anchorFields(host: EditorHost, el: CElement, family: FamilyKind): Templ
     ${charts.length < 2 ? nothing : selectField("Follows", anchor.layer,
       charts.map((e): [string, string] => [e.payload.id, layerTitle(e, ctx)]),
       (v) => setAnchor((a) => { a.layer = v; }))}
-    ${segField("Reading", anchor.at, CHART_ANCHOR_POINTS as unknown as [ChartAnchorPoint, string][],
+    ${selectField("Reading", anchor.at, CHART_ANCHOR_POINTS as unknown as [ChartAnchorPoint, string][],
       (v) => setAnchor((a) => { a.at = v; }), { def: "highest" as ChartAnchorPoint })}
-    ${segField("Sits", anchor.place, CHART_ANCHOR_PLACES as unknown as [ChartAnchorPlace, string][],
+    ${/* A line runs through the plot by definition, so it has no side to sit on,
+       * and a marker is never turned into a line from here. */
+      anchor.place === "through" ? nothing
+      : selectField("Sits", anchor.place, CHART_ANCHOR_PLACES.filter(([p]) => p !== "through") as [ChartAnchorPlace, string][],
       (v) => setAnchor((a) => { a.place = v; }), { def: "above" as ChartAnchorPlace })}
     <div class="grid2">
       ${/* A marker belongs to its column, so it only moves up and down. Nudge X
@@ -3021,7 +3024,8 @@ function anchorFields(host: EditorHost, el: CElement, family: FamilyKind): Templ
           draws where its own frame puts it. Pick another chart above, or unpin it.</div>`
       : html`<div class="hint">This layer follows that reading on the ${familyTitle(family)} face and every
           other one: wherever the bar lands, it goes. It is held inside the plot, so a big glyph over a tall
-          bar is pushed down rather than off the top, and the bars never give up height to make room.</div>`}`;
+          bar is pushed down rather than off the top, and the bars never give up height to make room. Nudge Y
+          can still lift it past the top of the chart, as far as the edge of the face.</div>`}`;
 }
 
 /** What a tap on this layer does. A tap-area layer has no card, since the

@@ -1684,6 +1684,24 @@ describe("where an anchored marker lands", () => {
     expect(frameOf(ids[0]!).y).toBeLessThan(0.001);
   });
 
+  it("lets the nudge lift a marker past the top of the chart, as far as the face", () => {
+    // The chart takes the bottom half of the face, so there is room above it.
+    const bottomHalf = (c: ChartElement) => { c.frame = { x: 0, y: 0.5, width: 1, height: 0.5, rotationDegrees: 0 }; };
+    const { ids, frameOf } = placed("1,2,9",
+      [{ at: "highest" }, { at: "highest", dy: -20 }, { at: "highest", dy: -1000 }], bottomHalf);
+    const [plain, lifted, far] = ids.map((id) => frameOf(id).y);
+    // Without a nudge the tall bar still holds the marker on the chart's top edge.
+    expect(plain!).toBeCloseTo(0.5, 3);
+    expect((plain! - lifted!) * DESIGN_BOX.rectangular.height).toBeCloseTo(20, 3);
+    expect(far!).toBeCloseTo(0, 6);
+  });
+
+  it("starts the highest marker yellow and the lowest red", () => {
+    const { cfg, ids } = placed("1,2,9", [{ at: "highest" }, { at: "lowest" }]);
+    const colour = (id: string) => (cfg.elements.find((e) => e.payload.id === id)!.payload as IconElement).colorSlot.baseColorHex;
+    expect(ids.map(colour)).toEqual(["#FFD60A", "#FF453A"]);
+  });
+
   it("moves the marker around the bar top with the place", () => {
     // A fixed scale so the followed reading sits halfway up: on an auto scale
     // both ends clamp, which is a different test.
