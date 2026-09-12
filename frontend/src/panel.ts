@@ -3941,6 +3941,9 @@ export class WristAssistantPanel extends LitElement {
       this.inspect = { kind: "layer", id };
       if (handle) return;
     }
+    // A line through a chart's plot sits where its reading is, so a press
+    // selects it and never drags it off that reading.
+    if (el.payload.chartAnchor?.place === "through") return;
     e.preventDefault();
     const frame = effectivePlacement(this.draft.config, family, el).frame;
     const canvas = this.gestureCanvas(family as DrawableFamily);
@@ -4120,6 +4123,9 @@ export class WristAssistantPanel extends LitElement {
     const id = this.inspect.id;
     const el = cfg.elements.find((x) => x.payload.id === id);
     if (!el) return false;
+    // A line through a chart's plot sits on its reading, so arrows leave it
+    // where it is, the same as a drag does.
+    if (el.payload.chartAnchor?.place === "through") return false;
     // A locked group moves as one under the pointer, so it moves as one under
     // the keyboard too: otherwise a layer could leave its group by arrow and
     // not by drag.

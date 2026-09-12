@@ -3040,6 +3040,23 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
       ${checkField("Hidden", eff.isHidden, (v) => host.update((c) => setPlacement(c, family, id, { isHidden: v })), false)}`,
       { color: SECTION_COLOR.position, icon: "place", summary: `On the chart · ${familyTitle(family)}` });
   }
+  // A line through the plot takes its place, length and angle from the chart:
+  // it runs the plot's width (or height) at the reading it follows, and its
+  // thickness is set in Look. Moving, sizing or turning it by hand would only
+  // make it stop marking that reading, so none of that is offered. Rotation
+  // shows only while an old document still carries one, so it can be cleared.
+  if (anchor?.place === "through") {
+    return card(host, "placement", "Position", html`
+      <div class="hint keep">A line sits on its chart at the reading it follows, and runs the whole plot. To
+        change where it is, change the reading below or the chart. Thickness and colour are in Look.</div>
+      ${anchorFields(host, el, family)}
+      ${f.rotationDegrees !== 0
+        ? sliderField("Rotation", f.rotationDegrees, (v) => setFrame({ rotationDegrees: v }, "rot"),
+          { min: -180, max: 180, step: 1, def: 0, format: (v) => `${Math.round(v)}°`, unit: "°", range: false })
+        : nothing}
+      ${checkField("Hidden", eff.isHidden, (v) => host.update((c) => setPlacement(c, family, id, { isHidden: v })), false)}`,
+      { color: SECTION_COLOR.position, icon: "place", summary: `On the chart · ${familyTitle(family)}` });
+  }
   // The section id stays "placement": it is a stored key (openSections, and
   // the browser's own memory of which cards were open), not a label.
   return card(host, "placement", "Position", html`
@@ -3052,7 +3069,7 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
       </div>
     </div>`
     // The threshold settles only the height, so a label beside it keeps its own X.
-    : !chartAnchorIsColumn(anchor.at) && anchor.place !== "through" ? html`
+    : !chartAnchorIsColumn(anchor.at) ? html`
     <div class="field xy-field"><span>Position</span>
       <div class="xy">
         ${frameLetterField("X", "Left", f.x, (v) => setFrame({ x: v }, "x"), -100, 100)}
@@ -3132,11 +3149,14 @@ function anchorFields(host: EditorHost, el: CElement, family: FamilyKind): Templ
         !anchor.dx ? nothing : numberField("Nudge X", anchor.dx, (v) => setAnchor((a) => {
         if (v) a.dx = v; else delete a.dx;
       }, "dx"), { step: 0.5, def: 0, unit: "pt" })}
-      ${chartAnchorIsColumn(anchor.at) && anchor.place === "through" ? nothing
+      ${/* A line nudged off its reading no longer marks it, so a line shows Nudge Y
+         * only to clear one written before that rule. */
+        anchor.place === "through" && !anchor.dy ? nothing
         : numberField("Nudge Y", anchor.dy ?? 0, (v) => setAnchor((a) => {
         if (v) a.dy = v; else delete a.dy;
       }, "dy"), { step: 0.5, def: 0, unit: "pt" })}
     </div>
+    ${anchor.place === "through" ? nothing : html`
     <div class="field list-field"><span>Marker</span>
       <div class="chips">
         <button class="small" title="Stop following the chart and leave this layer where it is"
@@ -3145,15 +3165,16 @@ function anchorFields(host: EditorHost, el: CElement, family: FamilyKind): Templ
             if (target) delete target.payload.chartAnchor;
           })}><span>Unpin</span></button>
         <span class="muted">Stops following the chart, so you can move it anywhere.</span>
-        ${el.kind === "text" && anchor.place !== "through"
+        ${el.kind === "text"
           ? html`<button class="small" title="Swap this text marker for an icon of the same shape, keeping where it sits"
               @click=${() => host.update((c) => { chartMarkerToIcon(c, id); })}><span>Use an icon</span></button>`
           : nothing}
       </div>
-    </div>
+    </div>`}
     ${gone
       ? html`<div class="hint keep">The chart this followed is not in this document any more, so the layer
-          draws where its own frame puts it. Pick another chart above, or unpin it.</div>`
+          draws where its own frame puts it. Pick another chart above${anchor.place === "through" ? ", or delete the line" : ", or unpin it"}.</div>`
+      : anchor.place === "through" ? nothing
       : html`<div class="hint">This layer follows that reading on the ${familyTitle(family)} face and every
           other one: wherever the bar lands, it goes. It is held inside the plot, so a big glyph over a tall
           bar is pushed down rather than off the top, and the bars never give up height to make room. Nudge Y

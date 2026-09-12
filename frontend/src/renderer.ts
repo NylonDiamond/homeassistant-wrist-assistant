@@ -1231,7 +1231,10 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
   const onChart = el.kind === "chartDots" || el.kind === "chartGrid";
   // In the focus view only the focused tap is a thing you drag, so only it gets
   // the move cursor and the handles.
-  const draggable = options.handles === true && (!inFocusView || focused) && !onChart;
+  // A line through a chart's plot is placed by its reading, so it is selected
+  // but never dragged or resized.
+  const chartLine = el.chartAnchor?.place === "through";
+  const draggable = options.handles === true && (!inFocusView || focused) && !onChart && !chartLine;
   const highlight = selected && !onChart
     ? svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} fill="none" stroke="#0A84FF" stroke-width="0.75" stroke-dasharray="2 1" vector-effect="non-scaling-stroke" />`
     : nothing;
