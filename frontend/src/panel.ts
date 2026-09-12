@@ -1874,8 +1874,18 @@ export class WristAssistantPanel extends LitElement {
        other. */
     .chart-numbers { display: flex; flex-direction: column; gap: 4px; }
     .chart-numbers .num-row { display: flex; align-items: center; gap: 4px; }
-    .chart-numbers .num-row > button.small { flex: 1; min-width: 0; justify-content: flex-start; text-align: left; }
     .chart-numbers .num-row > button.icon { flex: none; }
+    .shown-head { display: flex; align-items: center; gap: 6px; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--wa-line-strong); font-size: 12px; font-weight: 600; }
+    .shown-count { font-size: 11px; font-weight: 500; color: var(--wa-muted); background: var(--wa-panel); border-radius: 999px; padding: 0 7px; line-height: 18px; }
+    .chart-numbers button.num-pick { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; text-align: left;
+      padding: 6px 8px; border-radius: 8px; border: 1px solid var(--wa-line-strong); background: var(--wa-panel); color: inherit; font: inherit; cursor: pointer; }
+    .chart-numbers button.num-pick:hover { border-color: color-mix(in srgb, var(--primary-color, #7c6cf0) 60%, transparent); }
+    .num-lead { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 26px; padding: 0 6px;
+      border-radius: 6px; background: color-mix(in srgb, currentColor 8%, transparent); font-variant-numeric: tabular-nums; font-weight: 600; font-size: 12px; }
+    .num-lead svg { width: 15px; height: 15px; }
+    .num-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+    .num-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .num-kind { font-size: 11px; color: var(--wa-muted); }
     dialog.preset-dialog {
       width: min(420px, calc(100vw - 32px)); padding: 16px 18px 18px;
       border: 1px solid var(--wa-line); border-radius: 12px;

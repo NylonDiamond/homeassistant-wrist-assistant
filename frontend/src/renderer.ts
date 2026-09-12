@@ -858,7 +858,9 @@ export function renderChartDots(el: Extract<ResolvedElement, { kind: "chartDots"
   }
   return svg`${[...byColour].map(([hex, d]) => {
     const colour = colorAttrs(hex, "fill", c.colorHex);
-    return svg`<path d=${d} fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} stroke="none" />`;
+    // The clear stroke widens each dot's click target past its drawn size; the
+    // layer has no other hit box (see `renderElement`).
+    return svg`<path d=${d} fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} stroke="transparent" stroke-width="3" />`;
   })}`;
 }
 
@@ -1202,9 +1204,15 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
   const opacity = Math.min(1, Math.max(0, el.opacity)) * (el.isHidden ? 0.35 : 1) * dim;
   const primary = options.highlightId === el.id;
   const selected = primary || options.highlightIds?.includes(el.id) === true;
+  // Dots and grid lines are drawn in their chart's whole box. Given the usual
+  // hit box they would sit over the chart and swallow every click meant for it,
+  // so they take no box: the grid takes no clicks at all, and the dots only
+  // under a dot, through the wide clear stroke `renderChartDots` gives each one.
+  // Neither is dragged, since they always sit on their chart.
+  const onChart = el.kind === "chartDots" || el.kind === "chartGrid";
   // In the focus view only the focused tap is a thing you drag, so only it gets
   // the move cursor and the handles.
-  const draggable = options.handles === true && (!inFocusView || focused);
+  const draggable = options.handles === true && (!inFocusView || focused) && !onChart;
   const highlight = selected
     ? svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} fill="none" stroke="#0A84FF" stroke-width="0.75" stroke-dasharray="2 1" vector-effect="non-scaling-stroke" />`
     : nothing;
@@ -1215,7 +1223,9 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
         stroke="#0A84FF" stroke-width="1" vector-effect="non-scaling-stroke" pointer-events="none" />`
     : nothing;
   // An invisible hit box so empty text and thin gauges are still grabbable.
-  const hit = svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} fill="transparent" stroke="none" />`;
+  const hit = onChart
+    ? nothing
+    : svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} fill="transparent" stroke="none" />`;
   const hs = 3;
   const handles = primary && draggable
     ? [["nw", box.x, box.y], ["ne", box.x + box.w, box.y], ["sw", box.x, box.y + box.h], ["se", box.x + box.w, box.y + box.h]].map(
@@ -1223,7 +1233,8 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
           fill="#FFFFFF" stroke="#0A84FF" stroke-width="0.5" style="cursor:${corner}-resize" />`,
       )
     : nothing;
-  return svg`<g data-element-id=${el.id} opacity=${opacity} style=${draggable ? "cursor:move" : nothing}
+  return svg`<g data-element-id=${el.id} opacity=${opacity} style=${draggable ? "cursor:move" : el.kind === "chartDots" ? "cursor:pointer" : nothing}
+    pointer-events=${el.kind === "chartGrid" ? "none" : nothing}
     transform="rotate(${el.frame.rotationDegrees} ${box.cx} ${box.cy})">${hit}${body}${hover}${highlight}${handles}</g>`;
 }
 

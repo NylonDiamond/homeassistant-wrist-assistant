@@ -4728,43 +4728,27 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
   const addMarker = (at: ChartAnchorPoint) => host.update((c) => { addChartMarker(c, el.payload.id, at); });
   const taken = new Set(labels.map((l) => (l.payload.value.kind.kind === "chartStat" ? l.payload.value.kind.stat : "")));
   const markedAlready = new Set(markers.map((m) => m.payload.chartAnchor!.at));
-  const row = (id: string, lead: unknown, title: string, what: string) => html`
+  // One row per layer: a lead that shows what it draws, a name, and what kind of
+  // layer it is underneath, so a marker and a line on the same reading tell apart.
+  const row = (id: string, lead: unknown, title: string, kind: string) => html`
     <div class="num-row">
-      <button class="small" title=${`Edit this ${what}`} @click=${() => host.selectLayer(id)}>
-        <b>${lead}</b> · <span class="ent-tok">${title}</span>
+      <button class="num-pick" title=${`Edit this ${kind.toLowerCase()}`} @click=${() => host.selectLayer(id)}>
+        <span class="num-lead">${lead}</span>
+        <span class="num-text"><span class="num-title">${title}</span><span class="num-kind">${kind}</span></span>
       </button>
-      <button class="icon danger" title=${`Delete this ${what}`} aria-label=${`Delete this ${what}`}
+      <button class="icon danger" title=${`Delete this ${kind.toLowerCase()}`} aria-label=${`Delete this ${kind.toLowerCase()}`}
         @click=${() => host.update((c) => removeElement(c, id))}>${uiIcon("close")}</button>
     </div>`;
+  const count = labels.length + markers.length + times.length + dots.length + grids.length;
   return html`
     <div class="hint">Everything the chart shows besides its readings: a threshold, now, clock times, numbers
       and markers. Each one is a layer in this chart's group, so you can drag it and give it any size or colour.</div>
     ${marks ?? nothing}
-    ${labels.length === 0 && markers.length === 0 && times.length === 0 && dots.length === 0 && grids.length === 0
+    ${count === 0
       ? html`<div class="hint keep">A chart on its own shows that a reading moved, not what it moved to and not
           which reading was the day's best. Add a number or a marker below and it appears as a layer in this chart's
           group: drag it anywhere, give it any size or colour, and it follows the live value.</div>`
-      : html`
-        <div class="field list-field"><span>Shown</span>
-          <div class="chart-numbers">
-            ${labels.map((l) => row(l.payload.id, host.resolve(l.payload.value) ?? "--", layerTitle(l, ctx), "number"))}
-            ${markers.map((m) => {
-              const { at, place } = m.payload.chartAnchor!;
-              const name = (CHART_ANCHOR_POINTS.find(([k]) => k === at)?.[1] ?? "reading").toLowerCase();
-              if (place === "through" && at === "zero") return row(m.payload.id, "─", "line at zero", "line");
-              if (place === "through") return row(m.payload.id, at === "threshold" ? "─" : "│", `line through the ${name}`, "line");
-              const glyph = m.kind === "text" ? (host.resolve(m.payload.value) ?? "●")
-                : m.kind === "icon" ? markerGlyph(host.resolve(m.payload.symbol)) : "◆";
-              return row(m.payload.id, glyph, `over the ${name}`, "marker");
-            })}
-            ${times.map((t) => row(t.payload.id, uiIcon("clock"), "clock times", "times layer"))}
-            ${dots.map((d) => row(d.payload.id, uiIcon("chartDots"), "reading dots", "dots layer"))}
-            ${grids.map((g) => row(g.payload.id, uiIcon("chartGrid"), "grid lines", "grid layer"))}
-          </div>
-        </div>
-        <div class="hint">Each one is a layer in this chart's group. Click one to edit it; drag it on the preview
-          to move it. A marker keeps following its reading wherever that lands. The × deletes it, and Undo brings
-          it back.</div>`}
+      : nothing}
     <div class="field list-field"><span>Add</span>
       <div class="adders">
         ${CHART_STATS.map(([stat, label]) => html`
@@ -4784,7 +4768,26 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
       the lowest. Pick any other icon for it in its Content card. It hangs in the empty space above its own bar rather than in a
       band along the top, so the bars keep their full height, and it is pushed back down rather than off the chart
       when the bar is already tall. Its Position card sets which reading it follows and which side of the bar it
-      sits on.</div>`;
+      sits on.</div>
+    ${count === 0 ? nothing : html`
+      <div class="shown-head">On this chart <span class="shown-count">${count}</span></div>
+      <div class="chart-numbers">
+        ${labels.map((l) => row(l.payload.id, host.resolve(l.payload.value) ?? "--", layerTitle(l, ctx), "Number"))}
+        ${markers.map((m) => {
+          const { at, place } = m.payload.chartAnchor!;
+          const name = CHART_ANCHOR_POINTS.find(([k]) => k === at)?.[1] ?? "Reading";
+          if (place === "through") return row(m.payload.id, at === "now" ? "│" : "─", at === "zero" ? "Zero" : name, "Line");
+          const glyph = m.kind === "text" ? (host.resolve(m.payload.value) ?? "●")
+            : m.kind === "icon" ? markerGlyph(host.resolve(m.payload.symbol)) : "◆";
+          return row(m.payload.id, glyph, name, "Marker");
+        })}
+        ${times.map((t) => row(t.payload.id, uiIcon("clock"), "Clock times", "Times"))}
+        ${dots.map((d) => row(d.payload.id, uiIcon("chartDots"), "Reading dots", "Dots"))}
+        ${grids.map((g) => row(g.payload.id, uiIcon("chartGrid"), "Grid lines", "Grid"))}
+      </div>
+      <div class="hint">Click a row to edit that layer. The × deletes it, and Undo brings it back. Dots and grid
+        lines always sit on the chart, so on the preview a click on the chart selects the chart; click right on a
+        dot to pick the dots.</div>`}`;
 }
 
 function tappableSection(host: EditorHost, el: CElement, key: string): TemplateResult | typeof nothing {
