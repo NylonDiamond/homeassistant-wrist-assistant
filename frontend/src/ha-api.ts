@@ -240,6 +240,32 @@ export interface HistorySeriesRequest {
   minutes: number;
   points: number;
   mode?: "numeric" | "states";
+  /** Empty tokens where the entity was unavailable. Sent only as true, so an
+   * older server never meets the key from a chart that does not ask. */
+  gaps?: true;
+}
+
+/** The wire body of one history query, with every optional key left out at
+ * its default so a plain chart sends exactly what it always sent. */
+export function historySeriesRequest(r: { entityId: string; minutes: number; points: number; mode: "numeric" | "states"; gaps: boolean }): HistorySeriesRequest {
+  return {
+    entity_id: r.entityId,
+    minutes: r.minutes,
+    points: r.points,
+    ...(r.mode === "states" ? { mode: "states" as const } : {}),
+    ...(r.gaps ? { gaps: true as const } : {}),
+  };
+}
+
+/** The wire body of one statistics query, `gaps` sent only when true. */
+export function statisticsSeriesRequest(r: { entityId: string; minutes: number; period: string; type: string; gaps: boolean }): StatisticsSeriesRequest {
+  return {
+    entity_id: r.entityId,
+    minutes: r.minutes,
+    period: r.period,
+    type: r.type,
+    ...(r.gaps ? { gaps: true as const } : {}),
+  };
 }
 
 export type HistorySeriesResult =
@@ -270,4 +296,5 @@ export interface StatisticsSeriesRequest {
   minutes: number;
   period: string;
   type: string;
+  gaps?: true;
 }

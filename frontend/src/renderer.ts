@@ -5,6 +5,7 @@
 
 import { svg, nothing, type TemplateResult } from "lit";
 import {
+  CHART_DEFAULT_GRID_HEX,
   DESIGN_BOX,
   TIMELINE_MAX_LABEL_SIZE,
   TIMELINE_MIN_LABEL_SIZE,
@@ -29,6 +30,9 @@ import {
   type CanvasSize,
   frameBox,
   chartGeometry,
+  chartLegs,
+  chartRuns,
+  type ChartLeg,
   timeLabelRowSplit,
 } from "./resolver.js";
 
@@ -567,8 +571,43 @@ function renderChart(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) 
   return times === undefined ? marks : svg`${marks}${times}`;
 }
 
+/** The SVG commands that continue a path along one leg, from its start (which
+ * the path is already at) to its end. */
+function chartLegCommands(leg: ChartLeg): string {
+  switch (leg.kind) {
+    case "smooth": return `C${leg.c1.x} ${leg.c1.y} ${leg.c2.x} ${leg.c2.y} ${leg.end.x} ${leg.end.y}`;
+    case "step": return `L${leg.corner.x} ${leg.corner.y} L${leg.end.x} ${leg.end.y}`;
+    case "straight": return `L${leg.end.x} ${leg.end.y}`;
+  }
+}
+
+/** A serial that makes SVG ids unique per rendered drawing. Ids are global to
+ * the page, so two previews drawing the same layer at different sizes would
+ * otherwise both define `chartfade-<id>` and one would paint with the other's
+ * gradient. */
+let svgIdSerial = 0;
+function nextSvgIdPrefix(): string {
+  svgIdSerial += 1;
+  return svgIdSerial.toString(36);
+}
+
+/** A bar with only the end away from the baseline rounded: the top, or the
+ * bottom for a bar hanging below zero. `radius` is already clamped to the bar. */
+export function chartBarPath(r: { x: number; y: number; w: number; h: number }, radius: number, roundBottom: boolean): string {
+  const { x, y, w, h } = r;
+  const k = Math.max(0, radius);
+  if (k === 0) return `M${x} ${y} L${x + w} ${y} L${x + w} ${y + h} L${x} ${y + h} Z`;
+  if (roundBottom) {
+    return `M${x} ${y} L${x + w} ${y} L${x + w} ${y + h - k} A${k} ${k} 0 0 1 ${x + w - k} ${y + h} `
+      + `L${x + k} ${y + h} A${k} ${k} 0 0 1 ${x} ${y + h - k} Z`;
+  }
+  return `M${x} ${y + h} L${x} ${y + k} A${k} ${k} 0 0 1 ${x + k} ${y} `
+    + `L${x + w - k} ${y} A${k} ${k} 0 0 1 ${x + w} ${y + k} L${x + w} ${y + h} Z`;
+}
+
 function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) {
   const g = chartGeometry(el, box);
+  const idPrefix = nextSvgIdPrefix();
   const base = colorAttrs(el.colorHex, "fill");
   const high = colorAttrs(el.highColorHex, "fill", el.colorHex);
   const low = colorAttrs(el.lowColorHex, "fill", el.colorHex);
@@ -577,56 +616,128 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
     svg`<circle cx=${c.x} cy=${c.y} r="1.7" fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} />`;
 
   const body: TemplateResult[] = [];
+  const defs = new Map<string, TemplateResult>();
 
   // One colour per reading when the chart is banded, otherwise the series colour.
   const banded = el.pointColorHexes.length === g.count;
   const bandAt = (i: number) => (banded ? colorAttrs(el.pointColorHexes[i]!, "fill", el.colorHex) : base);
 
+  // Grid lines and the zero line sit under the series, solid and one point
+  // thick. The threshold line keeps its dash, so it never reads as grid.
+  if (g.gridYs.length > 0 || g.zeroY !== undefined) {
+    const grid = parseColor(el.gridColorHex) ?? parseColor(CHART_DEFAULT_GRID_HEX)!;
+    const rule = (y: number) => svg`<path d=${`M${g.plotLeft} ${y} L${g.plotRight} ${y}`} fill="none"
+      stroke=${grid.color} stroke-opacity=${grid.opacity} stroke-width="1" />`;
+    for (const y of g.gridYs) body.push(rule(y));
+    if (g.zeroY !== undefined) body.push(rule(g.zeroY));
+  }
+
+  // An area's paint in one colour: 28 % flat, or a fade from 28 % at the top of
+  // the plot to clear at the baseline. The gradient runs in plot space, one per
+  // colour, so neighbouring band quads line up into one wash.
+  const fillPaint = (hex: string) => {
+    const c = parseColor(hex) ?? parseColor(el.colorHex) ?? { color: "#FFFFFF", opacity: 1 };
+    if (el.fillStyle !== "fade") return { fill: c.color, opacity: c.opacity * 0.28 };
+    const id = chartFadeId(idPrefix, el.id, hex);
+    // Strongest away from the baseline: from the plot top down to it, or, when
+    // the baseline sits at or above the top (every reading below zero), from
+    // the plot bottom up to it.
+    const strongY = g.baselineY <= g.plotTop ? g.plotBottom : g.plotTop;
+    if (!defs.has(id)) {
+      defs.set(id, svg`<linearGradient id=${id} gradientUnits="userSpaceOnUse" x1="0" y1=${strongY} x2="0" y2=${g.baselineY}>
+        <stop offset="0" stop-color=${c.color} stop-opacity=${c.opacity * 0.28} />
+        <stop offset="1" stop-color=${c.color} stop-opacity="0" /></linearGradient>`);
+    }
+    return { fill: `url(#${id})`, opacity: 1 };
+  };
+
   if (el.style === "bars") {
     for (let i = 0; i < g.count; i++) {
+      // A hole draws no bar: the slot stays empty where the entity was unavailable.
+      if (el.holes[i] === true) continue;
       const r = g.barRect(i);
       // The highlight is the more specific statement, so it paints over its band.
       const colour = i === el.highIndex ? high : i === el.lowIndex ? low : bandAt(i);
-      const radius = Math.min(1.2, r.w / 2, r.h / 2);
-      body.push(svg`<rect x=${r.x} y=${r.y} width=${r.w} height=${r.h} rx=${radius}
-        fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} />`);
+      const radius = Math.min(Math.max(el.barRadius, 0), r.w / 2, r.h / 2);
+      if (el.barCorners === "top") {
+        const hangs = el.baseline === "zero" && el.values[i]! < 0;
+        body.push(svg`<path d=${chartBarPath(r, radius, hangs)}
+          fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} />`);
+      } else {
+        body.push(svg`<rect x=${r.x} y=${r.y} width=${r.w} height=${r.h} rx=${radius}
+          fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} />`);
+      }
     }
   } else {
     const points = Array.from({ length: g.count }, (_, i) => g.point(i));
-    const line = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x} ${p.y}`).join(" ");
+    // Line and area never cross a hole: each run of real readings is its own
+    // line with its own legs and its own fill, so a smooth or step curve
+    // restarts after an outage. A lone reading between two holes draws nothing,
+    // since a stroke or a fill needs two ends. Without holes the whole series is
+    // one run and draws as it always has.
+    const hasHoles = el.holes.length > 0;
+    const runs = chartRuns(g.count, el.holes).filter((run) => !hasHoles || run.length > 1);
+    const drawn = runs.map((run) => {
+      const pts = run.map((i) => points[i]!);
+      // Every stroke and fill below reads the same legs, so a smooth or step line,
+      // its fill, and its banded pieces all follow one shape.
+      const legs = chartLegs(pts, el.curve);
+      const line = `M${pts[0]!.x} ${pts[0]!.y}${legs.map((leg) => ` ${chartLegCommands(leg)}`).join("")}`;
+      return { run, pts, legs, line };
+    });
     if (el.style === "area") {
-      if (el.fillBands && banded && g.count > 1) {
-        // One quad per leg, each under its own stretch of line. No clipping and no
-        // gradient: the quads share their edges, so they read as one wash.
-        for (let i = 0; i < g.count - 1; i++) {
-          const a = points[i]!;
-          const b = points[i + 1]!;
-          const colour = bandAt(i + 1);
-          const quad = `M${a.x} ${a.y} L${b.x} ${b.y} L${b.x} ${g.baselineY} L${a.x} ${g.baselineY} Z`;
-          body.push(svg`<path d=${quad} fill=${colour.fill}
-            fill-opacity=${(colour["fill-opacity"] as number) * 0.28} stroke="none" />`);
+      for (const { run, pts, legs, line } of drawn) {
+        // A fill colour of its own is one colour, so it overrides band fill.
+        if (el.fillBands && banded && run.length > 1 && el.fillColorHex === undefined) {
+          // One quad per leg, each under its own stretch of line. No clipping: the
+          // quads share their edges, so they read as one wash.
+          for (let k = 0; k < legs.length; k++) {
+            const a = pts[k]!;
+            const b = pts[k + 1]!;
+            const paint = fillPaint(el.pointColorHexes[run[k + 1]!]!);
+            const quad = `M${a.x} ${a.y} ${chartLegCommands(legs[k]!)} L${b.x} ${g.baselineY} L${a.x} ${g.baselineY} Z`;
+            body.push(svg`<path d=${quad} fill=${paint.fill} fill-opacity=${paint.opacity} stroke="none" />`);
+          }
+        } else {
+          const paint = fillPaint(el.fillColorHex ?? el.colorHex);
+          const area = `${line} L${pts[pts.length - 1]!.x} ${g.baselineY} L${pts[0]!.x} ${g.baselineY} Z`;
+          body.push(svg`<path d=${area} fill=${paint.fill} fill-opacity=${paint.opacity} stroke="none" />`);
         }
-      } else {
-        const area = `${line} L${points[points.length - 1]!.x} ${g.baselineY} L${points[0]!.x} ${g.baselineY} Z`;
-        body.push(svg`<path d=${area} fill=${base.fill}
-          fill-opacity=${(base["fill-opacity"] as number) * 0.28} stroke="none" />`);
       }
     }
-    if (banded && g.count > 1) {
-      // A stroke cannot change colour halfway, so a banded line is drawn one
-      // segment at a time. Each segment takes the band of the reading it arrives
-      // at, which puts the newest reading's colour on the last segment.
-      for (let i = 0; i < g.count - 1; i++) {
-        const a = points[i]!;
-        const b = points[i + 1]!;
-        const colour = bandAt(i + 1);
-        body.push(svg`<path d=${`M${a.x} ${a.y} L${b.x} ${b.y}`} fill="none"
-          stroke=${colour.fill} stroke-opacity=${colour["fill-opacity"]}
+    for (const { run, pts, legs, line } of drawn) {
+      if (banded && run.length > 1) {
+        // A stroke cannot change colour halfway, so a banded line is drawn one
+        // segment at a time. Each segment takes the band of the reading it arrives
+        // at, which puts the newest reading's colour on the last segment.
+        for (let k = 0; k < legs.length; k++) {
+          const a = pts[k]!;
+          const colour = bandAt(run[k + 1]!);
+          body.push(svg`<path d=${`M${a.x} ${a.y} ${chartLegCommands(legs[k]!)}`} fill="none"
+            stroke=${colour.fill} stroke-opacity=${colour["fill-opacity"]}
+            stroke-width=${el.lineWidth} stroke-linecap="round" stroke-linejoin="round" />`);
+        }
+      } else {
+        body.push(svg`<path d=${line} fill="none" stroke=${base.fill} stroke-opacity=${base["fill-opacity"]}
           stroke-width=${el.lineWidth} stroke-linecap="round" stroke-linejoin="round" />`);
       }
-    } else {
-      body.push(svg`<path d=${line} fill="none" stroke=${base.fill} stroke-opacity=${base["fill-opacity"]}
-        stroke-width=${el.lineWidth} stroke-linecap="round" stroke-linejoin="round" />`);
+    }
+    // A dot on each reading, in its band colour or the series colour: one path
+    // per colour holding every dot, drawn before the highlight dots so those stay
+    // on top. A hole has no reading to mark, and the high and low readings are
+    // left to their own dot, which would otherwise sit on this one as a ring.
+    if (g.drawsDots) {
+      const r = g.dotDiameter / 2;
+      const byColour = new Map<string, string>();
+      points.forEach((p, i) => {
+        if (el.holes[i] === true || i === el.highIndex || i === el.lowIndex) return;
+        const hex = banded ? el.pointColorHexes[i]! : el.colorHex;
+        byColour.set(hex, `${byColour.get(hex) ?? ""}M${p.x - r} ${p.y} a${r} ${r} 0 1 0 ${2 * r} 0 a${r} ${r} 0 1 0 ${-2 * r} 0 Z`);
+      });
+      for (const [hex, d] of byColour) {
+        const colour = colorAttrs(hex, "fill", el.colorHex);
+        body.push(svg`<path d=${d} fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} stroke="none" />`);
+      }
     }
     // A single stroke cannot change colour halfway without splitting into two
     // paths, so line and area put the highlight on a dot at the reading.
@@ -666,7 +777,14 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
       stroke=${colour.fill} stroke-opacity=${colour["fill-opacity"]} stroke-width="1" />`);
   }
 
-  return svg`${body}`;
+  return defs.size === 0 ? svg`${body}` : svg`<defs>${[...defs.values()]}</defs>${body}`;
+}
+
+/** The id of a chart's fade gradient in one colour: the drawing's own prefix,
+ * the layer's id and the colour's hex digits, so each colour is defined once
+ * per drawing and two drawings of one layer never share an id. */
+export function chartFadeId(prefix: string, elementId: string, hex: string): string {
+  return `chartfade-${prefix}-${elementId}-${hex}`.replace(/[^0-9A-Za-z_-]/g, "");
 }
 
 /** The row of clock times itself: the last hung off the right edge, the first
@@ -924,7 +1042,8 @@ export function imagePlaceholderSymbol(source: ImageSource, entityId: string): s
 
 function renderImage(el: Extract<ResolvedElement, { kind: "image" }>, box: Box, options: RenderOptions) {
   const icons = options.icons;
-  const clipId = `imgclip-${el.id}`;
+  // Unique per drawing, for the same reason as a chart's gradient ids.
+  const clipId = `imgclip-${nextSvgIdPrefix()}-${el.id}`;
   const r = Math.max(0, el.cornerRadius);
   const c = el.showTimestamp && el.url ? timestampChipRect(el, box, timestampLabel(new Date())) : undefined;
   const chip = c

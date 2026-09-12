@@ -750,7 +750,12 @@ async def _op_history(ctx: _OpContext) -> Response:
           "end_ms":   <epoch ms>?,   # defaults to now
           "points":   <int>?,        # see below
           "mode":     "numeric" | "states"?,   # defaults to numeric
+          "gaps":     <bool>?,       # chart form only, defaults to false
         }
+
+    With `gaps: true`, a chart slot spent entirely `unavailable` or `unknown`
+    is an empty token in the series (`12.1,,13.0`) instead of the last value
+    carried forward. Only exactly `true` turns it on.
 
     With `points`, the reply is a complication chart's series instead of a
     state log: the window is cut into that many equal slots, the numeric
@@ -816,6 +821,7 @@ async def _op_history(ctx: _OpContext) -> Response:
                 clamp_points(ctx.payload.get("points")),
                 now=window_end,
                 mode=normalize_mode(ctx.payload.get("mode")),
+                gaps=ctx.payload.get("gaps") is True,
             )
         except HistorySeriesError as err:
             return ctx.signed_json({"ok": False, "error": str(err)}, status=502)
@@ -882,7 +888,11 @@ async def _op_statistics(ctx: _OpContext) -> Response:
           "minutes":   <int>?,    # span, rolling back from now
           "period":    "5minute" | "hour" | "day" | "week" | "month"?,
           "type":      "mean" | "min" | "max" | "change" | "sum"?,
+          "gaps":      <bool>?,   # defaults to false
         }
+
+    With `gaps: true`, a missing period and a row with no value are empty
+    tokens (`0.42,,0.38`) instead of carried or zero-filled.
 
     Reply:
         {"entity_id": "<entity_id>", "series": "0.42,0.51,0.38"}
@@ -908,6 +918,7 @@ async def _op_statistics(ctx: _OpContext) -> Response:
             ctx.payload.get("minutes"),
             ctx.payload.get("period"),
             ctx.payload.get("type"),
+            gaps=ctx.payload.get("gaps") is True,
         )
     except StatisticsSeriesError as err:
         status = 503 if str(err) == RECORDER_UNAVAILABLE else 502

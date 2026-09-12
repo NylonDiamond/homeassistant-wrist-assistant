@@ -1,0 +1,441 @@
+{
+  "name": "Chart gaps",
+  "description": "Recorder charts that ask for outages as holes. With `gaps: true` the request carries `gaps` and the reply writes an outage as an empty field, so `4,,,6,5` is five slots, not three readings. A hole takes the value of the reading before it, and holes before the first reading take the first reading, so `values` keeps the count and the domain is unchanged; `holes` marks where nothing is drawn. The same entity charted without gaps is a different query under a different key, so the two never share a cached series; its `holes` is empty. Highlights and stats skip holes: on the statistics chart the lowest is the first reported 0.5 at index 1, not the leading hole at index 0, the first reading is 0.5 and the latest is the 0.7 before the trailing hole. The temperature chart's average reads the three reported readings (5), not the five slots. The humidity chart smooths `,2,4,,9,1` over 3 readings: holes add nothing to a window, and afterwards each hole is carried again from the averaged series (the previous reported output, or the first one for a leading hole), so both holes read 3 rather than the raw 2 and 4 they carried in. For statistics the recorder marks an outage by a missing row, which the server turns into the same empty field.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-0000000001F0",
+    "name": "Chart gaps",
+    "slotIndex": 2,
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F1",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.temperature",
+              "displayName": "Temperature",
+              "domain": "sensor"
+            }
+          },
+          "historyMinutes": 360,
+          "historyPoints": 5,
+          "style": "line",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "both",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "gaps": true,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 1,
+            "height": 0.3,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F4",
+          "value": {
+            "kind": {
+              "kind": "chartStat",
+              "layer": "EEEEEEEE-0000-4000-8000-0000000001F1",
+              "stat": "average"
+            }
+          },
+          "fontSize": 8,
+          "fontWeight": "medium",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.8,
+            "y": 0,
+            "width": 0.2,
+            "height": 0.1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F2",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.temperature",
+              "displayName": "Temperature",
+              "domain": "sensor"
+            }
+          },
+          "historyMinutes": 360,
+          "historyPoints": 5,
+          "style": "bars",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "both",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0.35,
+            "width": 1,
+            "height": 0.3,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F3",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.energy",
+              "displayName": "Energy",
+              "domain": "sensor"
+            }
+          },
+          "source": "statistics",
+          "historyMinutes": 1440,
+          "historyPoints": 24,
+          "statType": "change",
+          "style": "bars",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "lowest",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "gaps": true,
+          "colorSlot": {
+            "baseColorHex": "#9A6BFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0.7,
+            "width": 0.6,
+            "height": 0.3,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F7",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.humidity",
+              "displayName": "Humidity",
+              "domain": "sensor"
+            }
+          },
+          "historyMinutes": 360,
+          "historyPoints": 6,
+          "style": "area",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "smoothing": 3,
+          "gaps": true,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.65,
+            "y": 0.82,
+            "width": 0.35,
+            "height": 0.18,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F5",
+          "value": {
+            "kind": {
+              "kind": "chartStat",
+              "layer": "EEEEEEEE-0000-4000-8000-0000000001F3",
+              "stat": "first"
+            }
+          },
+          "fontSize": 8,
+          "fontWeight": "medium",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.65,
+            "y": 0.7,
+            "width": 0.15,
+            "height": 0.1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F6",
+          "value": {
+            "kind": {
+              "kind": "chartStat",
+              "layer": "EEEEEEEE-0000-4000-8000-0000000001F3",
+              "stat": "latest"
+            }
+          },
+          "fontSize": 8,
+          "fontWeight": "medium",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.82,
+            "y": 0.7,
+            "width": 0.15,
+            "height": 0.1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "wedge",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {
+      "sensor.temperature": {
+        "state": "5",
+        "domain": "sensor"
+      },
+      "sensor.energy": {
+        "state": "0.7",
+        "domain": "sensor"
+      }
+    },
+    "templateResults": {},
+    "historySeries": {
+      "sensor.temperature|360|5|gaps": "4,,,6,5",
+      "sensor.temperature|360|5": "4,4,4,6,5",
+      "sensor.energy|1440|hour|change|gaps": ",0.5,,0.7,",
+      "sensor.humidity|360|6|gaps": ",2,4,,9,1"
+    }
+  },
+  "expectedCompiled": {
+    "entities": [
+      "sensor.temperature",
+      "sensor.energy",
+      "sensor.humidity"
+    ],
+    "expressionKeys": [],
+    "historyKeys": [
+      "sensor.temperature|360|5",
+      "sensor.temperature|360|5|gaps",
+      "sensor.humidity|360|6|gaps"
+    ],
+    "statisticsKeys": [
+      "sensor.energy|1440|hour|change|gaps"
+    ]
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F1",
+          "kind": "chart",
+          "values": [
+            4,
+            4,
+            4,
+            6,
+            5
+          ],
+          "holes": [
+            false,
+            true,
+            true,
+            false,
+            false
+          ],
+          "style": "line",
+          "domainMin": 4,
+          "domainMax": 6,
+          "highIndex": 3,
+          "lowIndex": 0
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F4",
+          "kind": "text",
+          "text": "5.0",
+          "isHidden": false
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F2",
+          "kind": "chart",
+          "values": [
+            4,
+            4,
+            4,
+            6,
+            5
+          ],
+          "holes": [],
+          "style": "bars",
+          "domainMin": 4,
+          "domainMax": 6,
+          "highIndex": 3,
+          "lowIndex": 0
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F3",
+          "kind": "chart",
+          "values": [
+            0.5,
+            0.5,
+            0.5,
+            0.7,
+            0.7
+          ],
+          "holes": [
+            true,
+            false,
+            true,
+            false,
+            true
+          ],
+          "style": "bars",
+          "domainMin": 0.5,
+          "domainMax": 0.7,
+          "highIndex": null,
+          "lowIndex": 1
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F7",
+          "kind": "chart",
+          "values": [
+            3,
+            3,
+            3,
+            3,
+            5,
+            5
+          ],
+          "holes": [
+            true,
+            false,
+            false,
+            true,
+            false,
+            false
+          ],
+          "style": "area",
+          "smoothing": 3,
+          "domainMin": 3,
+          "domainMax": 5
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F5",
+          "kind": "text",
+          "text": "0.50",
+          "isHidden": false
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001F6",
+          "kind": "text",
+          "text": "0.70",
+          "isHidden": false
+        }
+      ]
+    }
+  }
+}

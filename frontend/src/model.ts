@@ -92,6 +92,84 @@ export type ChartMarker = "none" | "dot" | "pointer";
 export type ChartEndMarker = "none" | "dot" | "triangle";
 export const CHART_END_MARKERS: readonly ChartEndMarker[] = ["none", "dot", "triangle"];
 export type ChartColoring = "uniform" | "bands";
+/** How a line or area chart joins its readings. `straight` is a ruler line
+ * from reading to reading, `smooth` a monotone cubic that never passes either
+ * end reading of a leg, `step` holds each reading flat until the next one.
+ * Ignored by bars. A new key rather than new `style` cases, because an older
+ * watch fails a layer whose `style` it does not know but ignores this key. */
+export type ChartCurve = "straight" | "smooth" | "step";
+export const CHART_CURVES: readonly ChartCurve[] = ["straight", "smooth", "step"];
+/** The moving-average windows a chart offers, in readings. 0 is off. */
+export const CHART_SMOOTHING_WINDOWS: readonly number[] = [0, 3, 5, 7, 9];
+
+/** A decoded `curve`, with any spelling this build does not know read as straight. */
+export function chartCurve(raw: unknown): ChartCurve {
+  return typeof raw === "string" && (CHART_CURVES as readonly string[]).includes(raw) ? raw as ChartCurve : "straight";
+}
+
+/** How an area chart washes the space under its line: `flat` one even wash,
+ * `fade` the same strength at the top of the plot fading to clear at the
+ * baseline. Ignored by bars and line. */
+export type ChartFillStyle = "flat" | "fade";
+export const CHART_FILL_STYLES: readonly ChartFillStyle[] = ["flat", "fade"];
+/** Which readings of a line or area get a dot. `auto` draws every dot only
+ * while the readings sit far enough apart to tell the dots apart. */
+export type ChartPointDots = "none" | "all" | "auto";
+export const CHART_POINT_DOTS: readonly ChartPointDots[] = ["none", "all", "auto"];
+/** The most horizontal grid lines a chart draws. */
+export const CHART_MAX_GRID_LINES = 4;
+/** Grid line colour when the layer stores none: white at 20 %. */
+export const CHART_DEFAULT_GRID_HEX = "#FFFFFF33";
+
+/** A decoded `fillStyle`, with any spelling this build does not know read as flat. */
+export function chartFillStyle(raw: unknown): ChartFillStyle {
+  return typeof raw === "string" && (CHART_FILL_STYLES as readonly string[]).includes(raw) ? raw as ChartFillStyle : "flat";
+}
+
+/** A decoded `pointDots`, with any spelling this build does not know read as none. */
+export function chartPointDots(raw: unknown): ChartPointDots {
+  return typeof raw === "string" && (CHART_POINT_DOTS as readonly string[]).includes(raw) ? raw as ChartPointDots : "none";
+}
+
+/** A decoded `gridLines`: a whole number clamped into 0…4, anything else 0. */
+export function chartGridLines(raw: unknown): number {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return 0;
+  return Math.max(0, Math.min(CHART_MAX_GRID_LINES, Math.round(raw)));
+}
+
+/** Two stored colours that spell the same hex, whatever the case of the digits. */
+export function sameHex(a: string, b: string): boolean {
+  return a.replace(/^#/, "").toUpperCase() === b.replace(/^#/, "").toUpperCase();
+}
+
+/** A decoded `gridColorHex`: the stored colour, or the default when none is. */
+export function chartGridColorHex(raw: unknown): string {
+  return typeof raw === "string" && raw !== "" ? raw : CHART_DEFAULT_GRID_HEX;
+}
+
+/** Which corners of a bar are rounded: `all` four, or only the `top`, meaning
+ * the end away from the baseline (the bottom end of a bar hanging below zero). */
+export type ChartBarCorners = "all" | "top";
+export const CHART_BAR_CORNERS: readonly ChartBarCorners[] = ["all", "top"];
+/** A bar's corner radius when the layer stores none, in design-box points. */
+export const CHART_DEFAULT_BAR_RADIUS = 1.2;
+
+/** A decoded `barRadius`: a finite number, negative read as 0, anything else
+ * the default. */
+export function chartBarRadius(raw: unknown): number {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return CHART_DEFAULT_BAR_RADIUS;
+  return Math.max(0, raw);
+}
+
+/** A decoded `barCorners`, with any spelling this build does not know read as all. */
+export function chartBarCorners(raw: unknown): ChartBarCorners {
+  return typeof raw === "string" && (CHART_BAR_CORNERS as readonly string[]).includes(raw) ? raw as ChartBarCorners : "all";
+}
+
+/** A decoded `smoothing`, with any window not offered read as off. */
+export function chartSmoothingWindow(raw: unknown): number {
+  return typeof raw === "number" && CHART_SMOOTHING_WINDOWS.includes(raw) ? raw : 0;
+}
 /** Where a chart's past comes from.
  *
  * The recorder keeps two different things. State history is every reported
@@ -749,6 +827,37 @@ export interface ChartElement extends ElementBase {
   bandAboveColorHex: string;
   /** Whether an area chart's fill follows the bands too. */
   fillBands: boolean;
+  /** How a line or area joins its readings. Absent reads as `straight`, which
+   * is how it is written: omitted at the default. Ignored by bars. */
+  curve?: ChartCurve;
+  /** How an area fills under its line. Absent reads as `flat`. Area only. */
+  fillStyle?: ChartFillStyle;
+  /** The fill's own colour. Absent fills in the series colour, or each band's
+   * colour when `fillBands` is on. Area only. */
+  fillColorHex?: string;
+  /** A bar's corner radius in design-box points. Absent reads as
+   * `CHART_DEFAULT_BAR_RADIUS`, which is also never written. Bars only. */
+  barRadius?: number;
+  /** Which corners of a bar are rounded. Absent reads as `all`. Bars only. */
+  barCorners?: ChartBarCorners;
+  /** Dots on the readings of a line or area. Absent reads as `none`. */
+  pointDots?: ChartPointDots;
+  /** Horizontal grid lines spaced evenly inside the plot, 0…4. Absent reads as 0. */
+  gridLines?: number;
+  /** The grid lines' colour, and the zero line's. Absent reads as
+   * `CHART_DEFAULT_GRID_HEX`, which is also never written. */
+  gridColorHex?: string;
+  /** One line where zero falls, while zero is inside the range. Absent reads as false. */
+  zeroLine?: boolean;
+  /** A centred moving-average window over the drawn readings, 0 (off), 3, 5,
+   * 7 or 9. Applied after `limit`, and everything downstream (the range,
+   * highlights, bands, anchors and `chartStat` numbers) reads the averaged
+   * series. Absent reads as 0. */
+  smoothing?: number;
+  /** Ask the server to leave a slot empty where the entity was unavailable,
+   * so the line breaks there instead of carrying the last value across.
+   * History and statistics sources only. Absent reads as false. */
+  gaps?: boolean;
   /** A dashed horizontal line across the plot at this value. Absent draws
    * nothing. On an auto scale the domain grows to include it, so the line is
    * always on the plot; on a fixed scale a threshold outside `minValue`…
@@ -968,7 +1077,9 @@ function chartRecorderEntity(el: ChartElement): string | undefined {
 export function chartHistoryKey(el: ChartElement): string | undefined {
   const entityId = chartHistoryEntity(el);
   if (entityId === undefined) return undefined;
-  return `${entityId}|${Math.round(el.historyMinutes)}|${chartHistoryPoints(el)}`;
+  // `|gaps` last, and only when asked, so every key a plain chart has ever
+  // used is unchanged. The watch hashes the same readable string.
+  return `${entityId}|${Math.round(el.historyMinutes)}|${chartHistoryPoints(el)}${el.gaps === true ? "|gaps" : ""}`;
 }
 
 /** The cache key for one chart's long-term statistics query, or undefined when
@@ -981,7 +1092,7 @@ export function chartHistoryKey(el: ChartElement): string | undefined {
 export function chartStatisticsKey(el: ChartElement): string | undefined {
   const entityId = chartStatisticsEntity(el);
   if (entityId === undefined) return undefined;
-  return `${entityId}|${Math.round(el.historyMinutes)}|${el.statPeriod}|${el.statType}`;
+  return `${entityId}|${Math.round(el.historyMinutes)}|${el.statPeriod}|${el.statType}${el.gaps === true ? "|gaps" : ""}`;
 }
 
 /** What a recorder query asks for: numbers averaged into slots, or the states
@@ -1011,6 +1122,8 @@ export interface HistoryRequest {
   minutes: number;
   points: number;
   mode: HistoryMode;
+  /** Holes where the entity was unavailable. True only for a chart that asks. */
+  gaps: boolean;
 }
 
 /** Every distinct history query a config needs, deduped. What the panel sends
@@ -1036,6 +1149,7 @@ export function chartHistoryRequests(config: CustomComplicationConfig): HistoryR
         minutes: Math.round(el.payload.historyMinutes),
         points: chartHistoryPoints(el.payload),
         mode: "numeric",
+        gaps: el.payload.gaps === true,
       });
     } else if (el.kind === "timeline") {
       const key = timelineHistoryKey(el.payload);
@@ -1047,6 +1161,7 @@ export function chartHistoryRequests(config: CustomComplicationConfig): HistoryR
         minutes: timelineHistoryMinutes(el.payload),
         points: TIMELINE_HISTORY_POINTS,
         mode: "states",
+        gaps: false,
       });
     }
   }
@@ -1061,6 +1176,8 @@ export interface StatisticsRequest {
   minutes: number;
   period: StatPeriod;
   type: StatType;
+  /** Holes where the entity was unavailable. True only for a chart that asks. */
+  gaps: boolean;
 }
 
 /** Every distinct statistics query a config needs, deduped. What the panel
@@ -1083,6 +1200,7 @@ export function chartStatisticsRequests(config: CustomComplicationConfig): Stati
       minutes: Math.round(el.payload.historyMinutes),
       period: el.payload.statPeriod,
       type: el.payload.statType,
+      gaps: el.payload.gaps === true,
     });
   }
   return [...seen.values()];
@@ -2061,6 +2179,22 @@ function parseElementKind(raw: unknown): Element {
           bands: parseChartBands(p),
           bandAboveColorHex: str(p.bandHighColorHex, str(p.bandAboveColorHex, CHART_DEFAULT_BAND_HIGH_HEX)),
           fillBands: p.fillBands === true,
+          // Both lenient: a curve this build does not know draws straight, and a
+          // window it does not offer draws the readings as they are. Kept off the
+          // payload at their defaults, so a chart that uses neither round-trips as is.
+          ...(chartCurve(p.curve) !== "straight" ? { curve: chartCurve(p.curve) } : {}),
+          // The looks keys after it, on the same rule: a spelling this build does
+          // not know reads as the default, and a default stays off the payload.
+          ...(chartFillStyle(p.fillStyle) !== "flat" ? { fillStyle: chartFillStyle(p.fillStyle) } : {}),
+          ...(typeof p.fillColorHex === "string" ? { fillColorHex: p.fillColorHex } : {}),
+          ...(chartBarRadius(p.barRadius) !== CHART_DEFAULT_BAR_RADIUS ? { barRadius: chartBarRadius(p.barRadius) } : {}),
+          ...(chartBarCorners(p.barCorners) !== "all" ? { barCorners: chartBarCorners(p.barCorners) } : {}),
+          ...(chartPointDots(p.pointDots) !== "none" ? { pointDots: chartPointDots(p.pointDots) } : {}),
+          ...(chartGridLines(p.gridLines) !== 0 ? { gridLines: chartGridLines(p.gridLines) } : {}),
+          ...(!sameHex(chartGridColorHex(p.gridColorHex), CHART_DEFAULT_GRID_HEX) ? { gridColorHex: chartGridColorHex(p.gridColorHex) } : {}),
+          ...(p.zeroLine === true ? { zeroLine: true } : {}),
+          ...(chartSmoothingWindow(p.smoothing) !== 0 ? { smoothing: chartSmoothingWindow(p.smoothing) } : {}),
+          ...(p.gaps === true ? { gaps: true } : {}),
           ...(typeof p.thresholdValue === "number" && Number.isFinite(p.thresholdValue)
             ? { thresholdValue: p.thresholdValue }
             : {}),
@@ -2999,6 +3133,28 @@ function encodeElementKind(el: Element): J {
         o.highMarker = markers.high;
         o.lowMarker = markers.low;
       }
+      // The chart looks keys, each omitted at its default, in the order both
+      // encoders share: curve, fillStyle, fillColorHex, barRadius, barCorners,
+      // pointDots, gridLines, gridColorHex, zeroLine, smoothing, gaps.
+      const curve = c.curve ?? "straight";
+      if (curve !== "straight") o.curve = curve;
+      const fillStyle = chartFillStyle(c.fillStyle);
+      if (fillStyle !== "flat") o.fillStyle = fillStyle;
+      if (c.fillColorHex !== undefined) o.fillColorHex = c.fillColorHex;
+      const barRadius = chartBarRadius(c.barRadius);
+      if (barRadius !== CHART_DEFAULT_BAR_RADIUS) o.barRadius = encNum(barRadius);
+      const barCorners = chartBarCorners(c.barCorners);
+      if (barCorners !== "all") o.barCorners = barCorners;
+      const pointDots = chartPointDots(c.pointDots);
+      if (pointDots !== "none") o.pointDots = pointDots;
+      const gridLines = chartGridLines(c.gridLines);
+      if (gridLines !== 0) o.gridLines = gridLines;
+      const gridColorHex = chartGridColorHex(c.gridColorHex);
+      if (!sameHex(gridColorHex, CHART_DEFAULT_GRID_HEX)) o.gridColorHex = gridColorHex;
+      if (c.zeroLine === true) o.zeroLine = true;
+      const smoothing = chartSmoothingWindow(c.smoothing);
+      if (smoothing !== 0) o.smoothing = smoothing;
+      if (c.gaps === true) o.gaps = true;
       return { kind: "chart", payload: o };
     }
     case "timeline": {
@@ -3304,6 +3460,7 @@ const K = {
     "drawsThreshold", "drawsNowLine",
     "timeLabelCount", "labelSize", "labelColorHex", "labelsAbove", "hourCycle", "minutes",
     "highMarker", "lowMarker",
+    "curve", "fillStyle", "fillColorHex", "barRadius", "barCorners", "pointDots", "gridLines", "gridColorHex", "zeroLine", "smoothing", "gaps",
     // Written only on 2026-09-05. The band bounds are read forward by
     // `parseChartBands`; the built-in numbers are read forward by
     // `migrateChartLabels` into text layers. All still listed so a document
@@ -3559,7 +3716,12 @@ export function newElement(kind: Element["kind"]): Element {
     // `marker: "none"` because a chart drawn today marks its ends with marker
     // layers, added from its Extras card. A chart drawing its own is a document
     // from before 2026-09-12; it keeps doing so until its author converts it.
-    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: CHART_HISTORY_DEFAULT_MINUTES, historyPoints: 24, source: CHART_DEFAULT_SOURCE, statPeriod: CHART_DEFAULT_STAT_PERIOD, statType: CHART_DEFAULT_STAT_TYPE, style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "none", coloring: "uniform", bands: [], bandAboveColorHex: CHART_DEFAULT_BAND_HIGH_HEX, fillBands: false, thresholdColorHex: CHART_DEFAULT_THRESHOLD_HEX, nowColorHex: CHART_DEFAULT_NOW_HEX, timeLabelCount: TIMELINE_DEFAULT_LABEL_COUNT, labelSize: TIMELINE_DEFAULT_LABEL_SIZE, labelColorHex: TIMELINE_DEFAULT_LABEL_HEX, labelsAbove: false, hourCycle: TIMELINE_DEFAULT_HOUR_CYCLE, minutes: TIMELINE_DEFAULT_MINUTE_STYLE } };
+    //
+    // `curve: "smooth"` and `fillStyle: "fade"` are written on purpose (decided
+    // 2026-09-12): a new chart switched to line or area draws smooth with a
+    // fading fill, while an existing chart, which omits both keys, stays
+    // straight and flat.
+    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: CHART_HISTORY_DEFAULT_MINUTES, historyPoints: 24, source: CHART_DEFAULT_SOURCE, statPeriod: CHART_DEFAULT_STAT_PERIOD, statType: CHART_DEFAULT_STAT_TYPE, style: "bars", curve: "smooth", fillStyle: "fade", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "none", coloring: "uniform", bands: [], bandAboveColorHex: CHART_DEFAULT_BAND_HIGH_HEX, fillBands: false, thresholdColorHex: CHART_DEFAULT_THRESHOLD_HEX, nowColorHex: CHART_DEFAULT_NOW_HEX, timeLabelCount: TIMELINE_DEFAULT_LABEL_COUNT, labelSize: TIMELINE_DEFAULT_LABEL_SIZE, labelColorHex: TIMELINE_DEFAULT_LABEL_HEX, labelsAbove: false, hourCycle: TIMELINE_DEFAULT_HOUR_CYCLE, minutes: TIMELINE_DEFAULT_MINUTE_STYLE } };
     // No sample states: a timeline of a made-up string would draw a strip that
     // looks like data. Empty until an entity is picked, which is also when the
     // colour table can be seeded from its domain.

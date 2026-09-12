@@ -212,7 +212,26 @@ import { MIN_ZOOM, familyTitle, type IconProvider } from "./renderer.js";
 import { CURATED_SYMBOLS, SYMBOL_CATEGORIES, SymbolBrowser, searchSymbols, type SymbolPack } from "./symbols.js";
 import { MDI_PREFIX } from "./icons.js";
 import { typedFrame } from "./interact.js";
-import { DESIGN_BOX } from "./model.js";
+import {
+  DESIGN_BOX,
+  CHART_DEFAULT_BAR_RADIUS,
+  CHART_DEFAULT_GRID_HEX,
+  CHART_MAX_GRID_LINES,
+  CHART_SMOOTHING_WINDOWS,
+  chartBarCorners,
+  chartBarRadius,
+  chartFillStyle,
+  chartGridColorHex,
+  chartGridLines,
+  chartPointDots,
+  chartSmoothingWindow,
+  sameHex,
+  type ChartCurve,
+  type ChartFillStyle,
+  type ChartPointDots,
+} from "./model.js";
+import { chartMovingAverage, chartSeriesWithHoles } from "./resolver.js";
+import { watchVersionNote } from "./version.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import { SECTION_COLOR } from "./kinds.js";
 import { domainIcon, domainLabel, isActiveState } from "./domain-icons.js";
@@ -227,6 +246,10 @@ export interface EditorHost {
   /** Watch-app pages (id + name, watch order) from the watch's last sync
    * report; feeds the "Open the page" tap-action picker. */
   pages: { id: string; name: string }[];
+  /** The Wrist Assistant version the edited watch last reported, for the
+   * "Needs Wrist Assistant X.Y" notes under newer controls. Absent or null when
+   * it has not reported, which shows no note. */
+  watchAppVersion?: string | null;
   /** Mutate the draft. `coalesce` groups rapid edits of one control into one undo step. */
   update(mutate: (cfg: CustomComplicationConfig) => void, coalesce?: string): void;
   endGesture(): void;
@@ -279,6 +302,18 @@ export const ALL_SECTIONS = ["content", "look", "numbers", "timestamp", "tappabl
 
 function onInput(handler: (v: string) => void) {
   return (e: Event) => handler((e.target as HTMLInputElement).value);
+}
+
+/** The one line under a control whose setting the edited watch is too old to
+ * draw: "Needs Wrist Assistant X.Y or later on your watch." Nothing when the
+ * minimum is not set yet, the watch is new enough, or its version is unknown.
+ * The control still works either way. Defaults to the chart looks minimum;
+ * a later control with its own release passes that one. */
+function watchNote(host: EditorHost, minimum?: string | null) {
+  const note = minimum === undefined
+    ? watchVersionNote(host.watchAppVersion)
+    : watchVersionNote(host.watchAppVersion, minimum);
+  return note === undefined ? nothing : html`<div class="hint keep">${note}</div>`;
 }
 
 /**
@@ -569,13 +604,13 @@ function composeColor(rgbHex: string, alpha: number): string {
 
 /** The box of a `colorField` without its title: swatch, hex and opacity. For
  * a row that names its colour some other way, such as a band table's. */
-function colorBox(label: string, value: string | undefined, set: (v: string | undefined) => void, off = false): TemplateResult {
+function colorBox(label: string, value: string | undefined, set: (v: string | undefined) => void, off = false, placeholder = "#RRGGBB"): TemplateResult {
   const { valid, swatch, rgb, alpha } = colorParts(value);
   return html`<span class="color-box">
       <span class="color-swatch" style=${`--sw:${off || !valid ? "transparent" : swatch}`} title="Pick a colour">
         <input type="color" .value=${rgb} ?disabled=${off} aria-label=${`${label}: pick a colour`} @input=${onInput((v) => set(composeColor(v, alpha)))} />
       </span>
-      <input type="text" class="mono hex" .value=${value ?? ""} placeholder="#RRGGBB" spellcheck="false" aria-label=${`${label}: hex`} ?disabled=${off}
+      <input type="text" class="mono hex" .value=${value ?? ""} placeholder=${placeholder} spellcheck="false" aria-label=${`${label}: hex`} ?disabled=${off}
         @input=${onInput((v) => { const t = v.trim(); if (/^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(t)) set(t.startsWith("#") ? t.toUpperCase() : `#${t.toUpperCase()}`); })} />
       <span class="num-box alpha" style="--wa-unit:1">
         <input type="number" min="0" max="100" step="1" .value=${String(alpha)} title="Opacity" aria-label=${`${label}: opacity`} ?disabled=${off}
@@ -583,6 +618,15 @@ function colorBox(label: string, value: string | undefined, set: (v: string | un
         <span class="unit" aria-hidden="true">%</span>
       </span>
     </span>`;
+}
+
+/** A colour that may be left empty, where empty means another colour stands in
+ * (named by `empty`, shown in the hex box). Picking a colour sets one; the
+ * reset dot clears it again. */
+function fallbackColorField(label: string, value: string | undefined, empty: string, set: (v: string | undefined) => void) {
+  const back: ResetTo = { atDefault: value === undefined, title: `Back to ${empty.toLowerCase()}`, reset: () => set(undefined) };
+  return html`<div class="field color">${fieldLabel(label, back)}
+    <div class="color-row">${colorBox(label, value, set, false, empty)}</div></div>`;
 }
 
 function sameColor(a: string | undefined, b: string | undefined): boolean {
@@ -1202,6 +1246,22 @@ const VALUE_KIND_HINTS: Partial<Record<ValueKind["kind"], string>> = {
   dataAge: "Seconds since the watch last fetched values.",
 };
 
+const CHART_CURVE_OPTIONS: [ChartCurve, string][] = [
+  ["straight", "Straight"],
+  ["smooth", "Smooth"],
+  ["step", "Step"],
+];
+const CHART_FILL_STYLE_OPTIONS: [ChartFillStyle, string][] = [
+  ["flat", "Flat"],
+  ["fade", "Fade"],
+];
+const CHART_POINT_DOT_OPTIONS: [ChartPointDots, string][] = [
+  ["none", "Off"],
+  ["all", "All"],
+  ["auto", "Auto"],
+];
+const CHART_SMOOTHING_OPTIONS: [string, string][] =CHART_SMOOTHING_WINDOWS.map(
+  (w): [string, string] => [String(w), w === 0 ? "Off" : `${w} readings`]);
 const CHART_STYLES: [ChartStyle, string][] = [
   ["bars", "Bars"], ["line", "Line"], ["area", "Area"],
 ];
@@ -3792,10 +3852,19 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
       const raw = usingRecorder && namesEntity ? (historyRaw ?? "") : (host.resolve(c.value) ?? "");
       const everyReading = c.historyPoints < 1;
       const customSpan = spanIsCustom(id, c.historyMinutes, spans);
-      const series = chartNumbers(raw);
-      const shown = c.limit > 0 && series.length > c.limit
-        ? (c.takeFromEnd ? series.slice(series.length - c.limit) : series.slice(0, c.limit))
-        : series;
+      // A fetched series keeps its holes, exactly as the resolver reads it.
+      const parsed = usingRecorder && namesEntity
+        ? chartSeriesWithHoles(raw)
+        : { values: chartNumbers(raw), holes: [] as boolean[] };
+      const series = parsed.values;
+      const trimTo = <T,>(a: T[]) => (c.limit > 0 && a.length > c.limit
+        ? (c.takeFromEnd ? a.slice(a.length - c.limit) : a.slice(0, c.limit))
+        : a);
+      const trimmed = trimTo(series);
+      // What the chart actually reads: the readout and seeded bands follow the
+      // averaged series, the same one the resolver hands the plot and its stats.
+      const shown = chartMovingAverage(trimmed, chartSmoothingWindow(c.smoothing),
+        parsed.holes.length > 0 ? trimTo(parsed.holes) : []);
 
       // The nudge that answers "why is my chart one bar?" before it is asked:
       // a lone number from a plain sensor is exactly the shape that says the
@@ -3914,6 +3983,14 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               : nothing}`
           : nothing}
         ${usingRecorder
+          ? html`
+            ${checkField("Show gaps when unavailable", c.gaps === true,
+              (v) => setChart((p) => { if (v) p.gaps = true; else delete p.gaps; }), base.gaps === true)}
+            ${watchNote(host)}
+            <div class="hint">Breaks the line, and leaves the bar out, wherever the entity was unavailable,
+              instead of carrying the last reading across the outage.</div>`
+          : nothing}
+        ${usingRecorder
           ? nothing
           : html`
             <div class="hint">Every number in what this resolves to becomes one point, in order.
@@ -3942,7 +4019,17 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         </div>
         <div class="hint">${usingRecorder
           ? "Trims the series after it arrives, so 0 draws every reading fetched above."
-          : "A forecast sensor often carries 24 or 48 entries. 0 draws all of them."}</div>`;
+          : "A forecast sensor often carries 24 or 48 entries. 0 draws all of them."}</div>
+        ${selectField("Smooth data", String(chartSmoothingWindow(c.smoothing)), CHART_SMOOTHING_OPTIONS,
+          (v) => setChart((p) => {
+            const w = chartSmoothingWindow(Number(v));
+            if (w === 0) delete p.smoothing; else p.smoothing = w;
+          }),
+          { def: String(chartSmoothingWindow(base.smoothing)) })}
+        ${watchNote(host)}
+        <div class="hint">Averages each reading with its neighbours, so a jumpy sensor draws a calm
+          line. The chart's own numbers read the averaged series too: its stats, highlights and
+          bands. A text layer pointed at the entity itself still shows the raw value.</div>`;
       colourPlaced = true;
       look = html`
         <div class="grid2">
@@ -3951,6 +4038,51 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             ? numberField("Bar gap", c.barGap, (v) => setChart((p) => { p.barGap = Math.max(0, v ?? 0); }, "gap"), { step: 0.5, min: 0, def: base.barGap as number, unit: "pt" })
             : shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5, def: baseSize("lineWidth") })}
         </div>
+        ${c.style === "bars" ? html`
+          <div class="grid2">
+            ${numberField("Corner radius", chartBarRadius(c.barRadius),
+              (v) => setChart((p) => {
+                const r = Math.max(0, v ?? CHART_DEFAULT_BAR_RADIUS);
+                if (r === CHART_DEFAULT_BAR_RADIUS) delete p.barRadius; else p.barRadius = r;
+              }, "barradius"),
+              { step: 0.5, min: 0, def: chartBarRadius(base.barRadius), unit: "pt" })}
+          </div>
+          ${checkField("Round top only", chartBarCorners(c.barCorners) === "top",
+            (v) => setChart((p) => { if (v) p.barCorners = "top"; else delete p.barCorners; }),
+            chartBarCorners(base.barCorners) === "top")}
+          ${watchNote(host)}
+          <div class="hint">Round top only rounds the end away from the baseline, so a bar hanging
+            below zero rounds its bottom.</div>` : html`
+          ${segField("Curve", c.curve ?? "straight", CHART_CURVE_OPTIONS,
+            (v) => setChart((p) => { if (v === "straight") delete p.curve; else p.curve = v; }),
+            { titles: {
+                straight: "A straight line from each reading to the next",
+                smooth: "A smooth line that never rises past the highest reading or dips under the lowest",
+                step: "Each reading holds flat until the next one, the way a state does",
+              },
+              def: (base.curve as ChartCurve | undefined) ?? "straight" })}
+          ${watchNote(host)}
+          ${c.style === "area" ? html`
+            ${segField("Fill", chartFillStyle(c.fillStyle), CHART_FILL_STYLE_OPTIONS,
+              (v) => setChart((p) => { if (v === "flat") delete p.fillStyle; else p.fillStyle = v; }),
+              { titles: {
+                  flat: "One even wash under the line",
+                  fade: "Strongest at the top of the plot, fading to clear at the baseline",
+                },
+                def: chartFillStyle(base.fillStyle) })}
+            ${fallbackColorField("Fill colour", c.fillColorHex, "Line colour",
+              (v) => setChart((p) => { if (v === undefined) delete p.fillColorHex; else p.fillColorHex = v; }, "fillcol"))}
+            ${watchNote(host)}`
+            : nothing}
+          ${segField("Dots", chartPointDots(c.pointDots), CHART_POINT_DOT_OPTIONS,
+            (v) => setChart((p) => { if (v === "none") delete p.pointDots; else p.pointDots = v; }),
+            { titles: {
+                none: "No dots on the readings",
+                all: "A dot on every reading",
+                auto: "A dot on every reading while they sit far enough apart to tell apart, none on a crowded chart",
+              },
+              def: chartPointDots(base.pointDots) })}
+          ${watchNote(host)}`}
         <div class="grid2">
           ${segField("Scale", c.scale, CHART_SCALES, (v) => setChart((p) => { p.scale = v; }),
             { titles: { auto: "The plot stretches to fit the readings it has", fixed: "The plot always runs from Min to Max" }, def: base.scale as typeof c.scale })}
@@ -3973,6 +4105,21 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         <div class="hint">${c.baseline === "zero"
           ? "Bars grow from where zero falls, so a negative reading hangs below the line."
           : "Bars grow from the bottom, and the smallest reading keeps a visible stub. Switch to Zero when the readings can go negative."}</div>
+        <div class="grid2">
+          ${numberField("Grid", chartGridLines(c.gridLines),
+            (v) => setChart((p) => { const n = chartGridLines(v ?? 0); if (n === 0) delete p.gridLines; else p.gridLines = n; }, "grid"),
+            { step: 1, min: 0, max: CHART_MAX_GRID_LINES, def: chartGridLines(base.gridLines) })}
+          ${chartGridLines(c.gridLines) === 0 && c.zeroLine !== true
+            ? nothing
+            : colorField("Grid colour", chartGridColorHex(c.gridColorHex),
+              (v) => setChart((p) => { if (v === undefined || sameHex(v, CHART_DEFAULT_GRID_HEX)) delete p.gridColorHex; else p.gridColorHex = v; }, "gridcol"),
+              false, CHART_DEFAULT_GRID_HEX)}
+        </div>
+        ${checkField("Line at zero", c.zeroLine === true,
+          (v) => setChart((p) => { if (v) p.zeroLine = true; else delete p.zeroLine; }), base.zeroLine === true)}
+        ${watchNote(host)}
+        <div class="hint">Grid lines split the plot into equal rows under the series. The line at zero
+          draws only while zero is inside the range, and uses the grid colour.</div>
         <div class="field"><span>Series</span>
           <div class="row-acts">
             <button class="small" title="Add a second chart layer on this frame, drawn against this chart's range"
@@ -4267,7 +4414,7 @@ const LOOK_KEYS: Record<CElement["kind"], readonly string[]> = {
     "coloring", "bands", "bandAboveColorHex", "highlight", "highColorHex", "lowColorHex"],
   icon: ["size", "colorSlot"],
   gauge: ["style", "lineWidth", "trackColorHex", "colorSlot", "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex"],
-  chart: ["style", "scale", "minValue", "maxValue", "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker", "highMarker", "lowMarker", "coloring", "bands", "bandAboveColorHex", "fillBands", "thresholdValue", "thresholdColorHex", "nowIndex", "nowColorHex", "scaleFrom", "colorSlot", "timeLabelCount", "labelSize", "labelColorHex", "labelsAbove", "hourCycle", "minutes"],
+  chart: ["style", "scale", "minValue", "maxValue", "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker", "highMarker", "lowMarker", "coloring", "bands", "bandAboveColorHex", "fillBands", "curve", "fillStyle", "fillColorHex", "barRadius", "barCorners", "pointDots", "gridLines", "gridColorHex", "zeroLine", "thresholdValue", "thresholdColorHex", "nowIndex", "nowColorHex", "scaleFrom", "colorSlot", "timeLabelCount", "labelSize", "labelColorHex", "labelsAbove", "hourCycle", "minutes"],
   timeline: ["bands", "otherColorHex", "gap", "cornerRadius", "labelSize", "labelColorHex", "labelsAbove", "timeLabelCount", "hourCycle", "minutes"],
   shape: ["colorSlot", "borderColorHex", "borderWidth", "thickness"],
   image: ["contentMode", "zoom", "panX", "panY", "cornerRadius"],

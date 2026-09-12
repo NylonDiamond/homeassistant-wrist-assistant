@@ -277,3 +277,55 @@ def test_the_period_table_covers_every_period_the_module_serves():
 def test_a_day_span_of_hourly_rows_fits_under_the_cap():
     span = timedelta(minutes=clamp_minutes(1440))
     assert span.total_seconds() / HOUR <= statistics_series.MAX_POINTS
+
+
+# --- gaps: holes instead of filling ---------------------------------------
+
+
+def test_with_gaps_a_missing_mean_row_is_a_hole():
+    # The recorder writes no row for an hour with no numeric state, so a
+    # missing row between two real rows is the outage.
+    rows = [row(0, mean=10.0), row(4, mean=20.0)]
+    values = fill_series(rows, HOUR, "mean", gaps=True)
+    assert values == [10, None, None, None, 20]
+    assert series_to_string(values) == "10,,,,20"
+
+
+def test_with_gaps_a_missing_change_row_is_a_hole_not_a_zero():
+    rows = [row(0, change=0.4), row(3, change=0.9)]
+    assert fill_series(rows, HOUR, "change", gaps=True) == [0.4, None, None, 0.9]
+
+
+def test_with_gaps_every_stat_type_leaves_holes():
+    for stat in ("min", "max", "sum"):
+        rows = [row(0, **{stat: 5.0}), row(2, **{stat: 8.0})]
+        assert fill_series(rows, HOUR, stat, gaps=True) == [5, None, 8], stat
+
+
+def test_with_gaps_a_none_value_is_a_hole():
+    rows = [row(0, mean=4.0), row(1, mean=None), row(2, mean=6.0)]
+    assert fill_series(rows, HOUR, "mean", gaps=True) == [4, None, 6]
+    rows = [row(0, change=1.0), row(1, change=None), row(2, change=3.0)]
+    assert fill_series(rows, HOUR, "change", gaps=True) == [1, None, 3]
+
+
+def test_with_gaps_leading_periods_stay_dropped():
+    rows = [row(0, mean=None), row(1, mean=None), row(3, mean=7.0), row(4, mean=8.0)]
+    assert fill_series(rows, HOUR, "mean", gaps=True) == [7, 8]
+    rows = [row(0, change=None), row(1, change=2.0)]
+    assert fill_series(rows, HOUR, "change", gaps=True) == [2]
+
+
+def test_with_gaps_month_rows_fill_nothing_but_none_is_a_hole():
+    month = lambda m, v: {  # noqa: E731
+        "start": datetime(2026, m, 1, tzinfo=timezone.utc).timestamp(),
+        "change": v,
+    }
+    rows = [month(1, 100.0), month(2, None), month(6, 60.0)]
+    assert fill_series(rows, MONTH, "change", gaps=True) == [100, None, 60]
+
+
+def test_gaps_off_is_unchanged():
+    rows = [row(0, change=0.4), row(1, change=None), row(3, change=0.9)]
+    assert fill_series(rows, HOUR, "change") == [0.4, 0, 0, 0.9]
+    assert fill_series(rows, HOUR, "change", gaps=False) == [0.4, 0, 0, 0.9]

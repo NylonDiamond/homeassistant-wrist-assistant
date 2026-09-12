@@ -1,7 +1,29 @@
 // The watch-version gate for one-shape and Inline documents (rule 8).
 
 import { describe, expect, it } from "vitest";
-import { MIN_WATCH_VERSION_FOR_SHAPES, compareVersions, parseVersion, updateWatchMessage, watchSupportsShapes } from "../src/version.js";
+import { MIN_WATCH_VERSION_FOR_CHART_LOOKS, MIN_WATCH_VERSION_FOR_SHAPES, compareVersions, parseVersion, updateWatchMessage, watchSupportsShapes, watchVersionNote } from "../src/version.js";
+
+describe("watchVersionNote", () => {
+  it("is unset until the app release is cut, and then says nothing", () => {
+    expect(MIN_WATCH_VERSION_FOR_CHART_LOOKS).toBeNull();
+    expect(watchVersionNote("1.0.0")).toBeUndefined();
+    expect(watchVersionNote("1.0.0", null)).toBeUndefined();
+  });
+
+  it("names the minimum for a watch older than it", () => {
+    expect(watchVersionNote("2.8.0", "2.9.0")).toBe("Needs Wrist Assistant 2.9 or later on your watch.");
+    expect(watchVersionNote("2.8.9 (4)", "2.9")).toBe("Needs Wrist Assistant 2.9 or later on your watch.");
+    expect(watchVersionNote("2.9.0", "2.9.1")).toBe("Needs Wrist Assistant 2.9.1 or later on your watch.");
+  });
+
+  it("says nothing for a watch that is new enough or has not reported", () => {
+    expect(watchVersionNote("2.9.0", "2.9.0")).toBeUndefined();
+    expect(watchVersionNote("3.0.0b2", "2.9.0")).toBeUndefined();
+    expect(watchVersionNote(undefined, "2.9.0")).toBeUndefined();
+    expect(watchVersionNote(null, "2.9.0")).toBeUndefined();
+    expect(watchVersionNote("beta", "2.9.0")).toBeUndefined();
+  });
+});
 
 describe("updateWatchMessage", () => {
   it("names the reported version and the minimum", () => {

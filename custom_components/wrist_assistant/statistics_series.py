@@ -178,8 +178,18 @@ def fill_series(
     period_seconds: int,
     stat_type: str,
     limit: int = MAX_POINTS,
-) -> list[float]:
+    gaps: bool = False,
+) -> list[float | None]:
     """Statistics rows as an evenly spaced series, oldest first.
+
+    With `gaps` on, nothing is filled: a missing period between rows and a row
+    whose value is `None` both come back as `None`, a hole, for every stat
+    type. The recorder writes no row at all for an hour with no numeric state
+    (a sensor that is steady but reporting still gets one, because the state
+    at the start of the hour carries in), so a missing row is the outage
+    signal. Leading holes before the first real value are still dropped, and
+    month rows still fill no missing periods. Without `gaps` the rules below
+    hold unchanged.
 
     A chart's x axis is time, so a period the recorder has no row for has to
     occupy the same width as one it does. Dropping the hole instead would
@@ -218,7 +228,7 @@ def fill_series(
         ordered.append((start, _as_number(value)))
     ordered.sort(key=lambda item: item[0])
 
-    out: list[float] = []
+    out: list[float | None] = []
     carried: float | None = None
     previous: float | None = None
 
@@ -232,12 +242,20 @@ def fill_series(
                 # build a list whose newest `limit` values are all this
                 # filler anyway.
                 missing = min(int(round(gap / period_seconds)) - 1, limit)
-                filler = 0.0 if zero_fills else carried
-                if filler is not None:
-                    out.extend([filler] * max(0, missing))
+                if gaps:
+                    if carried is not None:
+                        out.extend([None] * max(0, missing))
+                else:
+                    filler = 0.0 if zero_fills else carried
+                    if filler is not None:
+                        out.extend([filler] * max(0, missing))
         previous = start
 
         if value is None:
+            if gaps:
+                if carried is not None:
+                    out.append(None)
+                continue
             filler = 0.0 if zero_fills else carried
             if filler is not None:
                 out.append(filler)
@@ -256,8 +274,12 @@ async def async_statistics_series(
     period: str,
     stat_type: str,
     now: datetime | None = None,
+    gaps: bool = False,
 ) -> str:
     """Fetch one entity's long-term statistics. Returns the wire string.
+
+    `gaps` writes missing periods and `None` rows as empty tokens instead of
+    filling them. See `fill_series`.
 
     The window is `[now - minutes, now)`, rolling. The point count is not a
     parameter: it is however many periods the span holds, newest
@@ -308,4 +330,6 @@ async def async_statistics_series(
         raise StatisticsSeriesError(str(err)) from err
 
     rows = rows_by_id.get(entity_id, []) or []
-    return series_to_string(fill_series(rows, PERIOD_SECONDS[period], stat_type))
+    return series_to_string(
+        fill_series(rows, PERIOD_SECONDS[period], stat_type, gaps=gaps)
+    )

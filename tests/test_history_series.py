@@ -227,3 +227,71 @@ def test_states_are_percent_encoded_on_the_wire():
 
 def test_unreserved_characters_survive_encoding():
     assert states_to_string([(0, "a-z_0.9~")]) == "0:a-z_0.9~"
+
+
+# --- Gaps: holes where the entity was offline -------------------------------
+
+outage_intervals = history_series.outage_intervals
+
+
+def test_a_slot_fully_covered_by_an_outage_is_an_empty_token():
+    # Readings at 0:30 and 5:30, unavailable from 1:00 to 5:00.
+    samples = [(at(30), 12.0), (at(330), 13.0)]
+    recorded = [
+        (at(30), "12"),
+        (at(60), "unavailable"),
+        (at(180), "unknown"),
+        (at(300), "13.5"),
+        (at(330), "13"),
+    ]
+    outages = outage_intervals(recorded, START, END)
+    assert outages == [(at(60), at(300))]
+    values = bucket_series(samples, START, END, 6, outages=outages)
+    assert values == [12, None, None, None, None, 13]
+    assert series_to_string(values) == "12,,,,,13"
+
+
+def test_a_partly_covered_slot_carries_forward():
+    # Offline from 1:30 to 2:30: neither slot is wholly inside it.
+    samples = [(at(30), 12.0), (at(330), 13.0)]
+    recorded = [(at(30), "12"), (at(90), "unavailable"), (at(150), "12"), (at(330), "13")]
+    outages = outage_intervals(recorded, START, END)
+    assert bucket_series(samples, START, END, 6, outages=outages) == [12, 12, 12, 12, 12, 13]
+
+
+def test_a_slot_with_a_real_reading_keeps_its_average_despite_an_outage():
+    samples = [(at(30), 10.0), (at(70), 20.0), (at(110), 30.0)]
+    outages = [(at(60), at(120))]
+    assert bucket_series(samples, START, END, 6, outages=outages) == [10, 25, 25, 25, 25, 25]
+
+
+def test_an_uncovered_empty_slot_still_carries_with_gaps_on():
+    samples = [(at(10), 5.0), (at(310), 9.0)]
+    outages = [(at(60), at(120))]
+    assert bucket_series(samples, START, END, 6, outages=outages) == [5, None, 5, 5, 5, 9]
+
+
+def test_leading_slots_stay_dropped_with_gaps_on():
+    # Offline since before the window: no anchor, nothing to draw a hole after.
+    samples = [(at(200), 7.0)]
+    recorded = [(START - timedelta(hours=1), "unavailable"), (at(200), "7")]
+    outages = outage_intervals(recorded, START, END)
+    assert outages == [(START, at(200))]
+    assert bucket_series(samples, START, END, 6, outages=outages) == [7, 7, 7]
+
+
+def test_an_outage_open_at_the_end_runs_to_the_end():
+    recorded = [(at(10), "4"), (at(240), "unavailable")]
+    outages = outage_intervals(recorded, START, END)
+    assert outages == [(at(240), END)]
+    samples = [(at(10), 4.0)]
+    assert bucket_series(samples, START, END, 6, anchor=3.0, outages=outages) == [
+        4, 4, 4, 4, None, None,
+    ]
+
+
+def test_gaps_off_is_unchanged():
+    samples = [(at(30), 12.0), (at(330), 13.0)]
+    assert bucket_series(samples, START, END, 6) == [12, 12, 12, 12, 12, 13]
+    assert bucket_series(samples, START, END, 6, outages=[]) == [12, 12, 12, 12, 12, 13]
+    assert series_to_string([12.0, 12.0, 13.0]) == "12,12,13"

@@ -744,6 +744,7 @@ def ws_render_values(
                 # Absent means numeric, which is what every caller before the
                 # state timeline asked for.
                 vol.Optional("mode"): vol.In([MODE_NUMERIC, MODE_STATES]),
+                vol.Optional("gaps", default=False): bool,
             }
         },
     }
@@ -778,6 +779,7 @@ async def ws_history_series(
                 request["minutes"],
                 request["points"],
                 mode=normalize_mode(request.get("mode")),
+                gaps=request["gaps"],
             )
         except HistorySeriesError as err:
             results[key] = {"ok": False, "error": str(err)}
@@ -796,6 +798,7 @@ async def ws_history_series(
                 vol.Required("minutes"): int,
                 vol.Required("period"): vol.In(list(PERIODS)),
                 vol.Required("type"): vol.In(list(STAT_TYPES)),
+                vol.Optional("gaps", default=False): bool,
             }
         },
     }
@@ -833,6 +836,7 @@ async def ws_statistics_series(
                 request["minutes"],
                 request["period"],
                 request["type"],
+                gaps=request["gaps"],
             )
         except StatisticsSeriesError as err:
             results[key] = {"ok": False, "error": str(err)}

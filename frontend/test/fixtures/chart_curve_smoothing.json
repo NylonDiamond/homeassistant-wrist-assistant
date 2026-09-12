@@ -1,0 +1,218 @@
+{
+  "name": "Chart curve and smoothing",
+  "description": "Three charts read 3, 9, 0, 6, 3, 9. The first stores neither key, so it draws a straight line over the raw readings. The second draws a smooth (monotone cubic) line over a centred 3-reading moving average, which shrinks at the ends: 6, 4, 5, 3, 6, 6. The third is a step-after area over a 5-reading average: 4, 4.5, 4.2, 5.4, 4.5, 6. The average runs after the limit trim and everything downstream (domain, highlights, stats) reads the averaged values.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-0000000001C0",
+    "name": "Chart curve and smoothing",
+    "slotIndex": 2,
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001C1",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "3,9,0,6,3,9"
+            }
+          },
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "style": "line",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "both",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 0.3,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001C2",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "3,9,0,6,3,9"
+            }
+          },
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "style": "line",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "both",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "curve": "smooth",
+          "smoothing": 3,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.34,
+            "y": 0,
+            "width": 0.3,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001C3",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "3,9,0,6,3,9"
+            }
+          },
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "style": "area",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "both",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "curve": "step",
+          "smoothing": 5,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.68,
+            "y": 0,
+            "width": 0.3,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "wedge",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {},
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": [],
+    "expressionKeys": [],
+    "historyKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001C1",
+          "kind": "chart",
+          "values": [
+            3,
+            9,
+            0,
+            6,
+            3,
+            9
+          ],
+          "curve": "straight",
+          "smoothing": 0
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001C2",
+          "kind": "chart",
+          "values": [
+            6,
+            4,
+            5,
+            3,
+            6,
+            6
+          ],
+          "curve": "smooth",
+          "smoothing": 3
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000001C3",
+          "kind": "chart",
+          "values": [
+            4,
+            4.5,
+            4.2,
+            5.4,
+            4.5,
+            6
+          ],
+          "curve": "step",
+          "smoothing": 5
+        }
+      ]
+    }
+  }
+}

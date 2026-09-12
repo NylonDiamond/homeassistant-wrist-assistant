@@ -17,6 +17,13 @@
  * layer kind, bump this to that release. */
 export const MIN_WATCH_VERSION_FOR_SHAPES = "2.8.0";
 
+/** First watch app version that draws the chart looks keys (curve, smoothing,
+ * and the fill, bar corner, dot, grid and gap keys after them). Not a gate: an
+ * older watch ignores those keys and draws the plain chart, so the controls
+ * stay usable and only carry a note (`watchVersionNote`). null until the app
+ * release that draws them is cut; set it then, not before. */
+export const MIN_WATCH_VERSION_FOR_CHART_LOOKS: string | null = null;
+
 
 export type Version = [number, number, number];
 
@@ -45,6 +52,22 @@ export function watchSupportsShapes(appVersion: string | null | undefined, minim
   const need = parseVersion(minimum);
   if (!have || !need) return false;
   return compareVersions(have, need) >= 0;
+}
+
+/** The one line under a control whose setting this watch is too old to draw,
+ * or undefined for no line: when there is no minimum yet, when the watch is
+ * new enough, and when its version is unknown (a guess would nag every watch
+ * that has not reported). The setting still saves either way. */
+export function watchVersionNote(
+  appVersion: string | null | undefined,
+  minimum: string | null = MIN_WATCH_VERSION_FOR_CHART_LOOKS,
+): string | undefined {
+  if (minimum === null) return undefined;
+  const have = parseVersion(appVersion);
+  const need = parseVersion(minimum);
+  if (!have || !need || compareVersions(have, need) >= 0) return undefined;
+  const named = need[2] === 0 ? `${need[0]}.${need[1]}` : need.join(".");
+  return `Needs Wrist Assistant ${named} or later on your watch.`;
 }
 
 /** The lead line of the whole-panel gate, worded for what the watch reported.

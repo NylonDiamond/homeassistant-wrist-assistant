@@ -60,8 +60,9 @@ import {
 } from "../src/model.js";
 import { describeValue, layerTitle } from "../src/editors.js";
 import { compile } from "../src/compiler.js";
-import { renderLayout, type IconProvider } from "../src/renderer.js";
-import { chartDomain, chartLabels, chartNumbers, placeChartAnchors, resolveAll, type EntityState, type ResolvedChart, type ResolvedLayout } from "../src/resolver.js";
+import { chartBarPath, renderLayout, type IconProvider } from "../src/renderer.js";
+import { chartDomain, chartGeometry, chartLabels, chartLegs, chartMovingAverage, chartNumbers, chartRuns, chartSeriesWithHoles, chartStatValue, placeChartAnchors, resolveAll, type ChartPoint, type EntityState, type ResolvedChart, type ResolvedLayout } from "../src/resolver.js";
+import { historySeriesRequest, statisticsSeriesRequest } from "../src/ha-api.js";
 
 const noIcons: IconProvider = { render: () => undefined, available: () => false, names: () => undefined };
 
@@ -541,7 +542,7 @@ describe("drawing a chart", () => {
     expect(rects(line)).toHaveLength(0);
     expect(line).toContain("stroke-linejoin");
 
-    const area = draw(prices, (p) => { p.style = "area"; });
+    const area = draw(prices, (p) => { p.style = "area"; p.fillStyle = "flat"; });
     expect(area).toContain("fill-opacity=0.28");
   });
 
@@ -635,6 +636,7 @@ describe("colouring a chart by value", () => {
   it("leaves an area's fill one colour until asked otherwise", () => {
     const { cfg } = chartConfig("5, 15, 25", (p) => {
       p.style = "area";
+      p.fillStyle = "flat";
       band(p, [[10, "#00FF00"], [20, "#9A6BFF"]]);
       p.colorSlot.baseColorHex = "#123456";
     });
@@ -647,6 +649,7 @@ describe("colouring a chart by value", () => {
   it("bands an area's fill when asked, one quad per leg", () => {
     const { cfg } = chartConfig("5, 15, 25", (p) => {
       p.style = "area";
+      p.fillStyle = "flat";
       band(p, [[10, "#00FF00"], [20, "#9A6BFF"]]);
       p.fillBands = true;
     });
@@ -1843,5 +1846,559 @@ describe("chart lines as layers", () => {
     const other = chartWith((c) => { c.nowIndex = literal("3"); });
     addChartLine(other.cfg, other.chart.payload.id, "now");
     expect(other.chart.payload.nowIndex).toEqual(literal("3"));
+  });
+});
+
+// ── curve and smoothing ───────────────────────────────────────────────────
+//
+// The watch runs the same maths in `CustomComplicationChartGeometry`, and its
+// tests pin the same numbers, so drift fails on both sides.
+
+describe("chart curve legs", () => {
+  const golden: ChartPoint[] = [
+    { x: 0, y: 10 }, { x: 10, y: 30 }, { x: 20, y: 25 }, { x: 30, y: 25 }, { x: 40, y: 5 }, { x: 50, y: 0 },
+  ];
+  const r4 = (n: number) => Math.round(n * 10000) / 10000;
+
+  it("pins the monotone cubic control points both renderers share", () => {
+    const legs = chartLegs(golden, "smooth").map((leg) => {
+      if (leg.kind !== "smooth") throw new Error("expected a smooth leg");
+      return [leg.start, leg.c1, leg.c2, leg.end].map((p) => [r4(p.x), r4(p.y)]);
+    });
+    expect(legs).toEqual([
+      [[0, 10], [3.3333, 16.6667], [6.6667, 30], [10, 30]],
+      [[10, 30], [13.3333, 30], [16.6667, 25], [20, 25]],
+      [[20, 25], [23.3333, 25], [26.6667, 25], [30, 25]],
+      [[30, 25], [33.3333, 25], [36.6667, 9.1667], [40, 5]],
+      [[40, 5], [43.3333, 0.8333], [46.6667, 1.6667], [50, 0]],
+    ]);
+  });
+
+  it("never puts a control point outside its leg's two readings", () => {
+    const series = [
+      [10, 30, 25, 25, 5, 0],
+      [0, 100, 0, 100, 0],
+      [1, 2, 40, 41, 42, 0, 0, 3],
+      [5, 5.1, 90, 90.2, 1],
+    ];
+    for (const ys of series) {
+      const points = ys.map((y, i) => ({ x: i * 7.5, y }));
+      for (const leg of chartLegs(points, "smooth")) {
+        if (leg.kind !== "smooth") throw new Error("expected a smooth leg");
+        const lo = Math.min(leg.start.y, leg.end.y) - 1e-9;
+        const hi = Math.max(leg.start.y, leg.end.y) + 1e-9;
+        for (const c of [leg.c1, leg.c2]) {
+          expect(c.y, `${ys.join(",")}`).toBeGreaterThanOrEqual(lo);
+          expect(c.y, `${ys.join(",")}`).toBeLessThanOrEqual(hi);
+        }
+      }
+    }
+  });
+
+  it("steps after each reading, 2n - 1 points in all", () => {
+    const legs = chartLegs(golden, "step");
+    const path = [golden[0]!, ...legs.flatMap((leg) => {
+      if (leg.kind !== "step") throw new Error("expected a step leg");
+      return [leg.corner, leg.end];
+    })];
+    expect(path).toHaveLength(2 * golden.length - 1);
+    expect(legs[0]).toEqual({ kind: "step", start: { x: 0, y: 10 }, corner: { x: 10, y: 10 }, end: { x: 10, y: 30 } });
+  });
+
+  it("joins straight legs reading to reading, and draws no leg for one point", () => {
+    expect(chartLegs(golden, "straight")[1]).toEqual({ kind: "straight", start: { x: 10, y: 30 }, end: { x: 20, y: 25 } });
+    for (const curve of ["straight", "smooth", "step"] as const) {
+      expect(chartLegs([{ x: 3, y: 4 }], curve)).toEqual([]);
+      expect(chartLegs([], curve)).toEqual([]);
+    }
+  });
+});
+
+describe("chart smoothing", () => {
+  it("averages a centred window that shrinks at the ends", () => {
+    expect(chartMovingAverage([3, 9, 0, 6, 3, 9], 3)).toEqual([6, 4, 5, 3, 6, 6]);
+    const five = chartMovingAverage([3, 9, 0, 6, 3, 9], 5);
+    [4, 4.5, 4.2, 5.4, 4.5, 6].forEach((want, i) => expect(five[i]).toBeCloseTo(want, 12));
+    expect(chartMovingAverage([3, 9, 0], 0)).toEqual([3, 9, 0]);
+    expect(chartMovingAverage([], 9)).toEqual([]);
+  });
+
+  it("runs after the limit trim, and the range and highlights read the averaged series", () => {
+    const { cfg, state } = chartConfig("100,3,9,0,6", (p) => {
+      p.limit = 4;
+      p.takeFromEnd = true;
+      p.smoothing = 3;
+      p.highlight = "both";
+    });
+    const chart = chartOf(rectangular(cfg, state));
+    // [3, 9, 0, 6] averaged; the trimmed-off 100 never reaches the window.
+    expect(chart.values).toEqual([6, 4, 5, 3]);
+    expect(chart.smoothing).toBe(3);
+    expect(chart.highIndex).toBe(0);
+    expect(chart.lowIndex).toBe(3);
+    expect(chart.domainMax).toBeLessThan(100);
+  });
+});
+
+describe("chart curve and smoothing keys", () => {
+  function payloadWith(extra: Record<string, unknown>) {
+    const { cfg } = chartConfig("1,2,3");
+    const enc = encodeConfig(cfg) as { elements: { payload: Record<string, unknown> }[] };
+    const payload = enc.elements[0]!.payload;
+    delete payload.curve;
+    delete payload.fillStyle;
+    Object.assign(payload, extra);
+    const back = parseConfig(enc).elements[0]!;
+    if (back.kind !== "chart") throw new Error("expected a chart");
+    return { chart: back.payload, written: (encodeConfig(parseConfig(enc)) as typeof enc).elements[0]!.payload };
+  }
+
+  it("starts a new chart smooth, written out, so an older chart stays straight", () => {
+    const el = newElement("chart") as Extract<Element, { kind: "chart" }>;
+    expect(el.payload.curve).toBe("smooth");
+    expect(el.payload.smoothing).toBeUndefined();
+    const { chart, written } = payloadWith({});
+    expect(chart.curve).toBeUndefined();
+    expect("curve" in written).toBe(false);
+    expect("smoothing" in written).toBe(false);
+  });
+
+  it("reads an unknown curve as straight and a window it does not offer as off", () => {
+    for (const curve of ["bezier", 3, null]) {
+      const { chart, written } = payloadWith({ curve });
+      expect(chart.curve ?? "straight").toBe("straight");
+      expect("curve" in written).toBe(false);
+    }
+    for (const smoothing of [4, 11, -3, "5", 2.5]) {
+      const { chart, written } = payloadWith({ smoothing });
+      expect(chart.smoothing ?? 0).toBe(0);
+      expect("smoothing" in written).toBe(false);
+    }
+  });
+
+  it("writes curve then smoothing after the end markers, and reads them back", () => {
+    const { chart, written } = payloadWith({ highMarker: "dot", lowMarker: "none", smoothing: 7, curve: "step" });
+    expect([chart.curve, chart.smoothing]).toEqual(["step", 7]);
+    const keys = Object.keys(written);
+    expect(keys.slice(keys.indexOf("lowMarker"), keys.indexOf("lowMarker") + 3)).toEqual(["lowMarker", "curve", "smoothing"]);
+    expect(auditUnknownKeys(encodeConfig(parseConfig({ ...encodeConfig(chartConfig("1").cfg) })))).toEqual([]);
+  });
+});
+
+// ── fill, dots and grid ───────────────────────────────────────────────────
+
+describe("chart fill, dots and grid keys", () => {
+  const LOOKS = ["fillStyle", "fillColorHex", "pointDots", "gridLines", "gridColorHex", "zeroLine"];
+
+  function payloadWith(extra: Record<string, unknown>) {
+    const { cfg } = chartConfig("1,2,3");
+    const enc = encodeConfig(cfg) as { elements: { payload: Record<string, unknown> }[] };
+    const payload = enc.elements[0]!.payload;
+    delete payload.curve;
+    delete payload.fillStyle;
+    Object.assign(payload, extra);
+    const back = parseConfig(enc).elements[0]!;
+    if (back.kind !== "chart") throw new Error("expected a chart");
+    return { chart: back.payload, written: (encodeConfig(parseConfig(enc)) as typeof enc).elements[0]!.payload };
+  }
+
+  it("starts a new chart fading, written out, so an older chart stays flat", () => {
+    const el = newElement("chart") as Extract<Element, { kind: "chart" }>;
+    expect(el.payload.fillStyle).toBe("fade");
+    const { chart, written } = payloadWith({});
+    expect(chart.fillStyle).toBeUndefined();
+    for (const key of LOOKS) expect(key in written, key).toBe(false);
+  });
+
+  it("omits every key at its default", () => {
+    const { written } = payloadWith({ fillStyle: "flat", pointDots: "none", gridLines: 0, gridColorHex: "#ffffff33", zeroLine: false });
+    for (const key of LOOKS) expect(key in written, key).toBe(false);
+  });
+
+  it("reads a spelling it does not know as the default", () => {
+    for (const bad of ["gradient", 3, null]) {
+      const { chart, written } = payloadWith({ fillStyle: bad, pointDots: bad });
+      expect(chart.fillStyle ?? "flat").toBe("flat");
+      expect(chart.pointDots ?? "none").toBe("none");
+      expect("fillStyle" in written).toBe(false);
+      expect("pointDots" in written).toBe(false);
+    }
+  });
+
+  it("clamps grid lines into 0 to 4 and keeps a colour that differs", () => {
+    expect(payloadWith({ gridLines: 9 }).written.gridLines).toBe(4);
+    expect("gridLines" in payloadWith({ gridLines: -2 }).written).toBe(false);
+    expect("gridLines" in payloadWith({ gridLines: "3" }).written).toBe(false);
+    expect(payloadWith({ gridLines: 2.4 }).written.gridLines).toBe(2);
+    expect(payloadWith({ gridColorHex: "#FF9F0A66" }).written.gridColorHex).toBe("#FF9F0A66");
+  });
+
+  it("writes the looks keys between curve and smoothing, and reads them back", () => {
+    const { chart, written } = payloadWith({
+      curve: "smooth", smoothing: 3, zeroLine: true, gridColorHex: "#FF000080", gridLines: 3,
+      pointDots: "auto", fillColorHex: "#0A84FF", fillStyle: "fade",
+    });
+    expect(chart).toMatchObject({ fillStyle: "fade", fillColorHex: "#0A84FF", pointDots: "auto", gridLines: 3, gridColorHex: "#FF000080", zeroLine: true });
+    const keys = Object.keys(written);
+    const from = keys.indexOf("curve");
+    expect(keys.slice(from, from + 8)).toEqual(["curve", ...LOOKS, "smoothing"]);
+    const dressed = chartConfig("1", (p) => { p.gridLines = 2; p.zeroLine = true; p.pointDots = "all"; p.fillColorHex = "#0A84FF"; });
+    expect(auditUnknownKeys(encodeConfig(dressed.cfg))).toEqual([]);
+  });
+});
+
+describe("chart fill, dots and grid geometry", () => {
+  const box = { x: 0, y: 0, w: 181, h: 60, cx: 90.5, cy: 30 };
+  function geometryOf(state: string, tweak: (p: ChartElement) => void) {
+    const { cfg } = chartConfig(state, tweak);
+    return chartGeometry(chartOf(rectangular(cfg, state)), box);
+  }
+
+  it("spaces grid lines evenly inside the plot, never on its edges", () => {
+    expect(geometryOf("1,2,3", (p) => { p.gridLines = 1; }).gridYs).toEqual([30]);
+    expect(geometryOf("1,2,3", (p) => { p.gridLines = 3; }).gridYs).toEqual([15, 30, 45]);
+    expect(geometryOf("1,2,3", () => {}).gridYs).toEqual([]);
+  });
+
+  it("draws the zero line only where zero falls inside the plot", () => {
+    expect(geometryOf("-2,4,1,6", (p) => { p.baseline = "zero"; p.zeroLine = true; }).zeroY).toBe(45);
+    expect(geometryOf("-2,4,1,6", (p) => { p.baseline = "zero"; }).zeroY).toBeUndefined();
+    expect(geometryOf("1,2,3", (p) => { p.zeroLine = true; }).zeroY).toBeUndefined();
+    // Zero is the bottom of this range, which is the plot's own edge.
+    expect(geometryOf("0,2,3", (p) => { p.baseline = "zero"; p.zeroLine = true; }).zeroY).toBeUndefined();
+  });
+
+  it("draws auto dots only while the readings sit three dots apart", () => {
+    const series = (n: number) => Array.from({ length: n }, (_, i) => (i % 5) + 1).join(",");
+    const dots = (n: number, pointDots: "auto" | "all") =>
+      geometryOf(series(n), (p) => { p.style = "line"; p.lineWidth = 2; p.pointDots = pointDots; });
+    // Dots are 3.6 across at line width 2, so neighbours need 10.8 of room. The
+    // spacing is measured on the plot the stroke leaves (181 less 1 each side):
+    // 17 readings sit 11.19 apart and draw, 18 sit 10.53 apart and do not.
+    const sparse = dots(17, "auto");
+    expect(sparse.drawsDots).toBe(true);
+    expect(sparse.dotDiameter).toBeCloseTo(3.6, 9);
+    // The stroke inset grows to a dot's radius so the edge dots are not clipped.
+    expect(sparse.point(0).x).toBeCloseTo(1.8, 9);
+    expect(dots(18, "auto").drawsDots).toBe(false);
+    expect(dots(24, "auto").drawsDots).toBe(false);
+    const crowded = dots(120, "auto");
+    expect(crowded.drawsDots).toBe(false);
+    expect(crowded.point(0).x).toBeCloseTo(1, 9);
+    expect(dots(120, "all").drawsDots).toBe(true);
+    expect(dots(1, "auto").drawsDots).toBe(true);
+    expect(geometryOf(series(24), (p) => { p.pointDots = "all"; }).drawsDots).toBe(false); // bars
+  });
+});
+
+describe("drawing chart fill, dots and grid", () => {
+  function draw(state: string, tweak: (p: ChartElement) => void): string {
+    const { cfg } = chartConfig(state, tweak);
+    return flatten(renderLayout(rectangular(cfg, state), { icons: noIcons }));
+  }
+  const count = (s: string, needle: string) => s.split(needle).length - 1;
+
+  it("defines one fade gradient per colour, and banded quads share them", () => {
+    const svg = draw("1,2,5,6", (p) => {
+      p.style = "area";
+      p.fillStyle = "fade";
+      p.coloring = "bands";
+      p.bands = [{ id: "B1", upTo: 3, colorHex: "#00FF00" }];
+      p.bandAboveColorHex = "#FF0000";
+      p.fillBands = true;
+    });
+    expect(count(svg, "<linearGradient")).toBe(2);
+    expect(count(svg, "fill=url(#chartfade-")).toBe(3);
+    expect(svg).toContain("gradientUnits=\"userSpaceOnUse\"");
+  });
+
+  it("keeps a flat fill at 28 % with no gradient, and a fill colour of its own", () => {
+    const flat = draw("1,2,5,6", (p) => { p.style = "area"; p.fillStyle = "flat"; p.fillColorHex = "#0A84FF"; });
+    expect(flat).not.toContain("<linearGradient");
+    expect(flat).toContain("fill=#0A84FF fill-opacity=0.28");
+  });
+
+  it("draws every dot of one colour in one path, before the highlight dots", () => {
+    const svg = draw("1,2,5,6", (p) => { p.style = "line"; p.pointDots = "all"; p.highlight = "highest"; p.marker = "none"; });
+    // Four readings, but the highest keeps only its highlight dot, so no ring
+    // of the reading dot shows around it.
+    expect(count(svg, " a1.8 1.8 0 1 0 3.6 0")).toBe(3);
+    expect(svg.indexOf(" a1.8 1.8")).toBeLessThan(svg.indexOf("<circle"));
+  });
+
+  it("draws grid and zero lines under the series", () => {
+    const svg = draw("-2,4,1,6", (p) => { p.style = "line"; p.baseline = "zero"; p.gridLines = 2; p.zeroLine = true; });
+    expect(count(svg, "stroke-width=\"1\"")).toBe(3);
+    expect(svg.indexOf("stroke-width=\"1\"")).toBeLessThan(svg.indexOf("stroke-linejoin"));
+  });
+
+  it("runs a fade from the plot bottom when the baseline sits at the top", () => {
+    const grads = (svg: string) => [...svg.matchAll(/y1=([-\d.]+) x2="0" y2=([-\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])]);
+    // Every reading below zero on a zero baseline: zero is the top of the plot.
+    const under = grads(draw("-5,-2,-3", (p) => { p.style = "area"; p.fillStyle = "fade"; p.baseline = "zero"; }));
+    expect(under).toHaveLength(1);
+    expect(under[0]![0]).toBeGreaterThan(under[0]![1]!);
+    const over = grads(draw("1,2,5", (p) => { p.style = "area"; p.fillStyle = "fade"; }));
+    expect(over[0]![0]).toBeLessThan(over[0]![1]!);
+  });
+
+  it("gives every drawing its own gradient ids", () => {
+    const ids = (svg: string) => [...svg.matchAll(/<linearGradient id=([^\s>]+)/g)].map((m) => m[1]);
+    const one = ids(draw("1,2,5", (p) => { p.style = "area"; p.fillStyle = "fade"; }));
+    const two = ids(draw("1,2,5", (p) => { p.style = "area"; p.fillStyle = "fade"; }));
+    expect(one).toHaveLength(1);
+    expect(one[0]).not.toBe(two[0]);
+    const svg = draw("1,2,5", (p) => { p.style = "area"; p.fillStyle = "fade"; });
+    const id = ids(svg)[0]!;
+    expect(svg).toContain(`fill=url(#${id})`);
+  });
+
+  it("gives every drawing of an image its own clip id", () => {
+    const cfg = newConfig("Picture", 0);
+    const img = newElement("image");
+    img.payload.frame = { x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 };
+    cfg.elements.push(img);
+    const clip = () => {
+      const layout = resolveAll(cfg, { entityStates: new Map(), templateResults: new Map(), namedValues: [] }).rectangular!;
+      return /clipPath id=(imgclip-[^\s>]+)/.exec(flatten(renderLayout(layout, { icons: noIcons })))?.[1];
+    };
+    const a = clip();
+    expect(a).toBeDefined();
+    expect(a).not.toBe(clip());
+  });
+});
+
+describe("bar corners", () => {
+  function draw(state: string, tweak: (p: ChartElement) => void): string {
+    const { cfg } = chartConfig(state, tweak);
+    return flatten(renderLayout(rectangular(cfg, state), { icons: noIcons }));
+  }
+
+  function written(extra: Record<string, unknown>) {
+    const { cfg } = chartConfig("1,2,3");
+    const enc = encodeConfig(cfg) as { elements: { payload: Record<string, unknown> }[] };
+    Object.assign(enc.elements[0]!.payload, extra);
+    const back = parseConfig(enc).elements[0]!;
+    if (back.kind !== "chart") throw new Error("expected a chart");
+    return { chart: back.payload, payload: (encodeConfig(parseConfig(enc)) as typeof enc).elements[0]!.payload };
+  }
+
+  it("omits both keys at their defaults and reads bad values leniently", () => {
+    for (const key of ["barRadius", "barCorners"]) expect(key in written({}).payload, key).toBe(false);
+    expect("barRadius" in written({ barRadius: 1.2 }).payload).toBe(false);
+    expect("barCorners" in written({ barCorners: "all" }).payload).toBe(false);
+    expect("barCorners" in written({ barCorners: "rounded" }).payload).toBe(false);
+    expect("barRadius" in written({ barRadius: "3" }).payload).toBe(false);
+    expect(written({ barRadius: -4 }).payload.barRadius).toBe(0);
+    expect(written({ barRadius: 3, barCorners: "top" }).chart).toMatchObject({ barRadius: 3, barCorners: "top" });
+  });
+
+  it("writes the keys between fillColorHex and pointDots, and gaps after smoothing", () => {
+    const keys = Object.keys(written({
+      gaps: true, smoothing: 3, pointDots: "all", barCorners: "top", barRadius: 2, fillColorHex: "#0A84FF", curve: "smooth",
+    }).payload);
+    const from = keys.indexOf("curve");
+    expect(keys.slice(from)).toEqual(["curve", "fillStyle", "fillColorHex", "barRadius", "barCorners", "pointDots", "smoothing", "gaps"]);
+    const dressed = chartConfig("1", (p) => { p.barRadius = 2; p.barCorners = "top"; p.gaps = true; });
+    expect(auditUnknownKeys(encodeConfig(dressed.cfg))).toEqual([]);
+  });
+
+  it("keeps a rect with today's radius on every corner by default", () => {
+    const svg = draw("1,2,3", () => {});
+    expect(count(svg, "rx=1.2")).toBe(3);
+    expect(svg).not.toMatch(/<path d=M[^>]* A/);
+  });
+
+  it("clamps the radius to half the bar", () => {
+    const svg = draw("1,2,3", (p) => { p.barRadius = 500; });
+    const bar = rects(svg)[0]!;
+    const rx = Number(/rx=([\d.]+)/.exec(svg.slice(svg.indexOf(`width=${bar.w}`)))![1]);
+    expect(rx).toBeCloseTo(Math.min(bar.w / 2, bar.h / 2), 9);
+  });
+
+  it("rounds only the end away from the baseline", () => {
+    const top = chartBarPath({ x: 0, y: 10, w: 8, h: 20 }, 3, false);
+    expect(top).toBe("M0 30 L0 13 A3 3 0 0 1 3 10 L5 10 A3 3 0 0 1 8 13 L8 30 Z");
+    const bottom = chartBarPath({ x: 0, y: 10, w: 8, h: 20 }, 3, true);
+    expect(bottom).toBe("M0 10 L8 10 L8 27 A3 3 0 0 1 5 30 L3 30 A3 3 0 0 1 0 27 Z");
+    expect(chartBarPath({ x: 0, y: 0, w: 4, h: 4 }, 0, false)).not.toContain("A");
+
+    // With a zero baseline a negative bar rounds its bottom end.
+    const svg = draw("-2,4", (p) => { p.baseline = "zero"; p.barCorners = "top"; p.barRadius = 3; });
+    const paths = [...svg.matchAll(/<path d=(M[^\s]+ [^\s]+ L[^"]*?Z)/g)].map((m) => m[1]!);
+    expect(paths).toHaveLength(2);
+    expect(paths[0]!.startsWith("M") && /L[-\d.]+ [-\d.]+ A/.test(paths[0]!)).toBe(true);
+    // The negative bar's path starts along its flat top edge.
+    expect(paths[0]).toMatch(/^M[-\d.]+ [-\d.]+ L[-\d.]+ [-\d.]+ L[-\d.]+ [-\d.]+ A/);
+    // The positive bar's path climbs from its flat bottom straight into a corner.
+    expect(paths[1]).toMatch(/^M[-\d.]+ [-\d.]+ L[-\d.]+ [-\d.]+ A/);
+  });
+
+  const count = (s: string, needle: string) => s.split(needle).length - 1;
+});
+
+describe("gaps for unavailable", () => {
+  const F = false;
+  const T = true;
+
+  function recorderChart(series: string, tweak: (p: ChartElement) => void = () => {}) {
+    const cfg = newConfig("Gaps", 0);
+    const el = newElement("chart") as Extract<Element, { kind: "chart" }>;
+    el.payload.frame = { x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 };
+    el.payload.value = { kind: { kind: "entityState", entityId: "sensor.t", displayName: "T", domain: "sensor" } };
+    el.payload.historyMinutes = 360;
+    el.payload.historyPoints = 24;
+    el.payload.source = "history";
+    el.payload.gaps = true;
+    tweak(el.payload);
+    cfg.elements.push(el);
+    const key = chartHistoryKey(el.payload) ?? chartStatisticsKey(el.payload)!;
+    const layout = resolveAll(cfg, {
+      entityStates: new Map([["sensor.t", { entityId: "sensor.t", state: "1", domain: "sensor", iconName: "" }]]),
+      templateResults: new Map(),
+      namedValues: cfg.values,
+      historySeries: new Map([[key, series]]),
+    }).rectangular!;
+    return { cfg, key, layout, chart: chartOf(layout), svg: () => flatten(renderLayout(layout, { icons: noIcons })) };
+  }
+
+  describe("reading a fetched series", () => {
+    it("keeps an empty field as a hole carrying the reading before it", () => {
+      expect(chartSeriesWithHoles("4,,,6,5")).toEqual({ values: [4, 4, 4, 6, 5], holes: [F, T, T, F, F] });
+      expect(chartSeriesWithHoles("12.1, ,13.0")).toEqual({ values: [12.1, 12.1, 13], holes: [F, T, F] });
+    });
+
+    it("gives leading holes the first reading", () => {
+      expect(chartSeriesWithHoles(",,3,,4")).toEqual({ values: [3, 3, 3, 3, 4], holes: [T, T, F, T, F] });
+    });
+
+    it("reads no readings at all as an empty series", () => {
+      expect(chartSeriesWithHoles(",, ,")).toEqual({ values: [], holes: [] });
+      expect(chartSeriesWithHoles("")).toEqual({ values: [], holes: [] });
+    });
+
+    it("normalises a series with no holes to an empty mask, and still skips junk", () => {
+      expect(chartSeriesWithHoles("1,2,3")).toEqual({ values: [1, 2, 3], holes: [] });
+      expect(chartSeriesWithHoles("1,junk,2")).toEqual({ values: [1, 2], holes: [] });
+    });
+
+    it("leaves the text parser alone", () => {
+      expect(chartNumbers("4,,,6")).toEqual([4, 6]);
+    });
+  });
+
+  describe("keys and requests", () => {
+    it("appends |gaps to both readable keys only when the chart asks", () => {
+      const history = recorderChart("1").cfg.elements[0]!.payload as ChartElement;
+      expect(chartHistoryKey(history)).toBe("sensor.t|360|24|gaps");
+      history.gaps = false;
+      expect(chartHistoryKey(history)).toBe("sensor.t|360|24");
+      const stats = recorderChart("1", (p) => { p.source = "statistics"; p.statPeriod = "hour"; p.statType = "mean"; }).cfg.elements[0]!.payload as ChartElement;
+      expect(chartStatisticsKey(stats)).toBe("sensor.t|360|hour|mean|gaps");
+      delete stats.gaps;
+      expect(chartStatisticsKey(stats)).toBe("sensor.t|360|hour|mean");
+    });
+
+    it("sends gaps on the websocket only when true", () => {
+      const withGaps = recorderChart("1").cfg;
+      const [asked] = chartHistoryRequests(withGaps);
+      expect(historySeriesRequest(asked!)).toEqual({ entity_id: "sensor.t", minutes: 360, points: 24, gaps: true });
+      (withGaps.elements[0]!.payload as ChartElement).gaps = false;
+      const plain = historySeriesRequest(chartHistoryRequests(withGaps)[0]!);
+      expect("gaps" in plain).toBe(false);
+
+      const stats = recorderChart("1", (p) => { p.source = "statistics"; }).cfg;
+      const statAsked = chartStatisticsRequests(stats)[0]!;
+      expect(statisticsSeriesRequest(statAsked).gaps).toBe(true);
+      (stats.elements[0]!.payload as ChartElement).gaps = false;
+      expect("gaps" in statisticsSeriesRequest(chartStatisticsRequests(stats)[0]!)).toBe(false);
+    });
+
+    it("omits gaps from the payload when false", () => {
+      const { cfg } = chartConfig("1", (p) => { p.gaps = false; });
+      const payload = (encodeConfig(cfg) as { elements: { payload: Record<string, unknown> }[] }).elements[0]!.payload;
+      expect("gaps" in payload).toBe(false);
+    });
+  });
+
+  describe("reading the series", () => {
+    it("carries holes into the resolved chart", () => {
+      const { chart } = recorderChart("4,,,6,5");
+      expect(chart.values).toEqual([4, 4, 4, 6, 5]);
+      expect(chart.holes).toEqual([F, T, T, F, F]);
+      expect(recorderChart("4,5").chart.holes).toEqual([]);
+    });
+
+    it("trims holes in step with the limit", () => {
+      expect(recorderChart("1,,3,4", (p) => { p.limit = 3; p.takeFromEnd = true; }).chart.holes).toEqual([T, F, F]);
+      expect(recorderChart("1,2,,4", (p) => { p.limit = 2; }).chart.holes).toEqual([]);
+    });
+
+    it("averages across a hole without counting it, and re-carries the hole from the output", () => {
+      expect(chartMovingAverage([1, 1, 9, 3, 5], 3, [F, F, T, F, F])).toEqual([1, 1, 1, 4, 4]);
+      // Leading holes take the first real output.
+      expect(chartMovingAverage([3, 3, 3, 5], 3, [T, T, F, F])).toEqual([4, 4, 4, 4]);
+      // Without smoothing nothing changes.
+      expect(chartMovingAverage([1, 1, 9], 0, [F, T, F])).toEqual([1, 1, 9]);
+    });
+
+    it("never highlights a hole", () => {
+      // Averaged, the readings are 5, 5, 1, 1 with the hole carrying the 5
+      // before it; the highlight picks the first real 5.
+      const { chart } = recorderChart("1,9,,1,1", (p) => { p.smoothing = 3; p.highlight = "highest"; });
+      expect(chart.values).toEqual([5, 5, 5, 1, 1]);
+      expect(chart.highIndex).toBe(0);
+      // A hole that would be first to the highest value is still passed over.
+      const { chart: led } = recorderChart(",9,1", (p) => { p.highlight = "highest"; });
+      expect(led.values).toEqual([9, 9, 1]);
+      expect(led.highIndex).toBe(1);
+    });
+
+    it("reads stats from real readings only", () => {
+      const r = { values: [3, 4, 4], holes: [F, F, T], domainMin: 3, domainMax: 4 };
+      expect(chartStatValue(r, "latest")).toBe(4);
+      expect(chartStatValue(r, "average")).toBe(3.5);
+      expect(chartStatValue(r, "sum")).toBe(7);
+      expect(chartStatValue({ values: [2, 2, 5], holes: [F, T, F], domainMin: 2, domainMax: 5 }, "delta")).toBe(3);
+    });
+  });
+
+  describe("drawing", () => {
+    it("splits into runs that never cross a hole", () => {
+      expect(chartRuns(5, [F, F, T, F, F])).toEqual([[0, 1], [3, 4]]);
+      expect(chartRuns(3, [])).toEqual([[0, 1, 2]]);
+      expect(chartRuns(4, [T, F, F, T])).toEqual([[1, 2]]);
+    });
+
+    it("draws a line and a fill per run, and nothing for a lone reading", () => {
+      const strokes = (svg: string) => svg.split("stroke-linejoin").length - 1;
+      const fills = (svg: string) => svg.split("stroke=\"none\"").length - 1;
+      // Against the same chart with no hole, which is one run: the layout adds
+      // `stroke="none"` chrome of its own, so compare rather than count outright.
+      const area = (p: ChartElement) => { p.style = "area"; p.curve = "smooth"; p.fillStyle = "flat"; };
+      const whole = recorderChart("1,2,3,4,5", area).svg();
+      const split = recorderChart("1,2,,4,5", area).svg();
+      expect(strokes(whole)).toBe(1);
+      expect(strokes(split)).toBe(2);
+      expect(fills(split)).toBe(fills(whole) + 1);
+      // No stroke path reaches from before the hole to after it.
+      const { chart } = recorderChart("1,2,,4,5", (p) => { p.style = "line"; });
+      const g = chartGeometry(chart, { x: 0, y: 0, w: 181, h: 60, cx: 90.5, cy: 30 });
+      const holeX = g.point(2).x;
+      for (const m of recorderChart("1,2,,4,5", (p) => { p.style = "line"; }).svg().matchAll(/<path d=(M[^"]*?) fill="none"/g)) {
+        const xs = [...m[1]!.matchAll(/[MLC]([-\d.]+) /g)].map((x) => Number(x[1]));
+        expect(xs.every((x) => x < holeX) || xs.every((x) => x > holeX)).toBe(true);
+      }
+      const lone = recorderChart("1,,3,,5", (p) => { p.style = "area"; }).svg();
+      expect(strokes(lone)).toBe(0);
+      expect(fills(lone)).toBe(fills(whole) - 1);
+    });
+
+    it("skips the bar and the reading dot at a hole", () => {
+      const bars = recorderChart("1,,3", (p) => { p.style = "bars"; }).svg();
+      expect(rects(bars)).toHaveLength(2);
+      const dots = recorderChart("1,,3,4", (p) => { p.style = "line"; p.pointDots = "all"; }).svg();
+      expect(dots.split(" a1.8 1.8 0 1 0 3.6 0").length - 1).toBe(3);
+    });
   });
 });

@@ -74,6 +74,19 @@ import {
   TIMELINE_MIN_LABEL_SIZE,
   TIMELINE_MAX_LABEL_SIZE,
 } from "./model.js";
+import {
+  chartBarCorners,
+  chartBarRadius,
+  type ChartBarCorners,
+  chartFillStyle,
+  chartGridColorHex,
+  chartGridLines,
+  chartPointDots,
+  chartSmoothingWindow,
+  type ChartCurve,
+  type ChartFillStyle,
+  type ChartPointDots,
+} from "./model.js";
 import { keyFor } from "./compiler.js";
 
 export interface EntityState {
@@ -199,6 +212,10 @@ export interface ResolvedGauge extends ResolvedBase {
 export interface ResolvedChart extends ResolvedBase {
   kind: "chart";
   values: number[];
+  /** Parallel to `values`, true where the slot was unavailable; empty when
+   * none is. A hole carries the reading before it, draws nothing, and is
+   * skipped by highlights and stats. */
+  holes: boolean[];
   style: ChartStyle;
   domainMin: number;
   domainMax: number;
@@ -224,6 +241,28 @@ export interface ResolvedChart extends ResolvedBase {
   pointColorHexes: string[];
   /** Whether an area's fill follows `pointColorHexes` too. */
   fillBands: boolean;
+  /** How line and area join their readings; see `chartLegs`. Carried for bars
+   * too, which ignore it. */
+  curve: ChartCurve;
+  /** The moving-average window `values` was already run through, 0 for none. */
+  smoothing: number;
+  /** How an area fills under its line. Carried for every style. */
+  fillStyle: ChartFillStyle;
+  /** The fill's own colour; absent fills in the series or band colour. */
+  fillColorHex?: string;
+  /** A bar's corner radius as stored (default 1.2), clamped to the bar when drawn. */
+  barRadius: number;
+  /** Which corners of a bar are rounded. */
+  barCorners: ChartBarCorners;
+  /** Dots on the readings of a line or area; `chartGeometry` decides whether
+   * `auto` draws them. */
+  pointDots: ChartPointDots;
+  /** Horizontal grid lines inside the plot, 0…4. */
+  gridLines: number;
+  /** Colour of the grid lines and the zero line. */
+  gridColorHex: string;
+  /** Whether a line is drawn where zero falls, when zero is inside the range. */
+  zeroLine: boolean;
   /** Where the threshold line sits, as a fraction of the plot from the bottom.
    * Absent when the chart has no threshold, or when a fixed scale puts it off
    * the plot; the renderer then draws no line rather than one on an edge. */
@@ -254,6 +293,10 @@ export interface ResolvedChart extends ResolvedBase {
  * draws come from one calculation. Mirrors `CustomComplication.ChartReadings`. */
 export interface ChartReadings {
   values: number[];
+  /** Parallel to `values`: true where the server marked the slot unavailable.
+   * A hole's value is the reading before it (or the first reading, for leading
+   * holes), so ranges need no special case. Empty when there are none. */
+  holes: boolean[];
   domainMin: number;
   domainMax: number;
   /** The entity the chart reads, when it names one, so a stat can carry the
@@ -265,23 +308,27 @@ export interface ChartReadings {
  * read: an empty series has no newest reading and no average. Mirrors
  * `ChartReadings.value(of:)`. */
 export function chartStatValue(r: ChartReadings, stat: ChartStat): number | undefined {
-  if (r.values.length === 0) return undefined;
+  // Holes carry a value only so the plot has somewhere to put them; no stat
+  // counts one, so "latest" is the newest real reading and an average is not
+  // weighted by an outage.
+  const values = r.holes.length === 0 ? r.values : r.values.filter((_, i) => !r.holes[i]);
+  if (values.length === 0) return undefined;
   switch (stat) {
-    case "latest": return r.values[r.values.length - 1];
-    case "highest": return Math.max(...r.values);
-    case "lowest": return Math.min(...r.values);
-    case "average": return r.values.reduce((a, b) => a + b, 0) / r.values.length;
+    case "latest": return values[values.length - 1];
+    case "highest": return Math.max(...values);
+    case "lowest": return Math.min(...values);
+    case "average": return values.reduce((a, b) => a + b, 0) / values.length;
     case "top": return r.domainMax;
     case "bottom": return r.domainMin;
-    case "first": return r.values[0];
-    case "delta": return r.values[r.values.length - 1]! - r.values[0]!;
-    case "sum": return r.values.reduce((a, b) => a + b, 0);
+    case "first": return values[0];
+    case "delta": return values[values.length - 1]! - values[0]!;
+    case "sum": return values.reduce((a, b) => a + b, 0);
     case "trend": {
       // The sign of the change, but only after the change has been rounded the
       // way every other number off this chart is rounded. Without that deadband
       // a series that wobbled in the last decimal place the chart does not even
       // print would still read as rising.
-      const change = r.values[r.values.length - 1]! - r.values[0]!;
+      const change = values[values.length - 1]! - values[0]!;
       const rounded = Number(chartStatText(change, r.domainMax - r.domainMin));
       if (rounded > 0) return 1;
       if (rounded < 0) return -1;
@@ -639,6 +686,54 @@ export function chartNumbers(raw: string, limit = 240): number[] {
   return numberTokens(raw, limit).map((t) => t.value);
 }
 
+/** A fetched recorder series with its holes kept in place. */
+export interface ChartSeries {
+  values: number[];
+  /** Parallel to `values`, or empty when nothing is a hole. */
+  holes: boolean[];
+}
+
+/** A series the server fetched (history or statistics), read so that an empty
+ * field is a hole rather than squashed out of the axis: `12.1,,13.0` is three
+ * slots. Every other field is read with `chartNumbers`, so junk is skipped as
+ * it always was. A hole takes the value of the reading before it, and leading
+ * holes the first reading; a series with no readings at all is empty.
+ *
+ * Only for fetched series. Text layers and typed-in values keep `chartNumbers`,
+ * which treats an empty field as a separator. Mirrors the watch's series parser. */
+export function chartSeriesWithHoles(raw: string, limit = 240): ChartSeries {
+  const slots: (number | undefined)[] = [];
+  for (const field of raw.split(",")) {
+    if (slots.length >= limit) break;
+    if (field.trim() === "") {
+      slots.push(undefined);
+      continue;
+    }
+    for (const n of chartNumbers(field, limit - slots.length)) slots.push(n);
+  }
+  const firstReal = slots.find((v) => v !== undefined);
+  if (firstReal === undefined) return { values: [], holes: [] };
+  const values: number[] = [];
+  const holes: boolean[] = [];
+  let carried = firstReal;
+  for (const slot of slots) {
+    if (slot === undefined) {
+      values.push(carried);
+      holes.push(true);
+    } else {
+      carried = slot;
+      values.push(slot);
+      holes.push(false);
+    }
+  }
+  return { values, holes: normaliseHoles(holes) };
+}
+
+/** `holes` as the resolved chart carries it: empty when none is set. */
+export function normaliseHoles(holes: boolean[]): boolean[] {
+  return holes.some((h) => h) ? holes : [];
+}
+
 /** One number read out of a string, and where it sits. `start` and `end` are
  * offsets into the string (UTF-16 code units, `end` exclusive), so
  * `raw.slice(start, end)` is the characters the number was read from. */
@@ -929,9 +1024,9 @@ export class Resolver {
    * two cannot disagree about what "the newest reading" is. Mirrors
    * `CustomComplication.chartReadings(for:context:)`. */
   chartReadings(c: ChartElement): ChartReadings {
-    const values = this.chartSeries(c);
+    const { values, holes } = this.chartSeries(c);
     const domain = chartDomain(values, c);
-    const out: ChartReadings = { values, domainMin: domain.min, domainMax: domain.max };
+    const out: ChartReadings = { values, holes, domainMin: domain.min, domainMax: domain.max };
     const entity = this.chartEntity(c);
     if (entity) out.entity = entity;
     return out;
@@ -941,7 +1036,7 @@ export class Resolver {
    * what range to draw them against. Split out because `scaleFrom` settles the
    * series of every chart before it settles any range. Mirrors
    * `CustomComplication.chartSeries`. */
-  private chartSeries(c: ChartElement): number[] {
+  private chartSeries(c: ChartElement): ChartSeries {
     // A history chart never reads its own value: the value only names the
     // entity, and the readings are whatever the last recorder fetch left
     // behind. Before that arrives the chart is empty rather than one bar of
@@ -958,15 +1053,28 @@ export class Resolver {
     } else {
       raw = this.resolve(c.value) ?? "";
     }
-    let values = chartNumbers(raw);
+    // A fetched series keeps its holes (empty fields); a value of the chart's
+    // own reads every number in it, as it always has.
+    let { values, holes } = fromRecorder !== undefined
+      ? chartSeriesWithHoles(raw)
+      : { values: chartNumbers(raw), holes: [] as boolean[] };
     // A test value stands in for the newest reading, the way it stands in for
     // the state everywhere else. A chart of its own value already reads it.
     const tested = fromRecorder === undefined ? undefined : this.testedReading(c);
-    if (tested !== undefined) values = [...values.slice(0, -1), tested];
-    if (c.limit > 0 && values.length > c.limit) {
-      return c.takeFromEnd ? values.slice(values.length - c.limit) : values.slice(0, c.limit);
+    if (tested !== undefined) {
+      values = [...values.slice(0, -1), tested];
+      if (holes.length > 0) holes = [...holes.slice(0, -1), false];
     }
-    return values;
+    if (c.limit > 0 && values.length > c.limit) {
+      const trim = <T,>(a: T[]) => (c.takeFromEnd ? a.slice(a.length - c.limit) : a.slice(0, c.limit));
+      values = trim(values);
+      if (holes.length > 0) holes = trim(holes);
+    }
+    holes = normaliseHoles(holes);
+    // The average runs after the trim, so its window never reaches a reading
+    // that is not drawn, and before anything else reads the series: the range,
+    // highlights, bands, anchors and `chartStat` numbers all agree with the line.
+    return { values: chartMovingAverage(values, chartSmoothingWindow(c.smoothing), holes), holes };
   }
 
   /** The number a chart's entity is being tested at, when it is. */
@@ -1011,7 +1119,7 @@ export class Resolver {
       order.push(el.payload.id);
     }
 
-    const series = new Map<string, number[]>();
+    const series = new Map<string, ChartSeries>();
     for (const id of order) series.set(id, this.chartSeries(charts.get(id)!));
 
     const domains = new Map<string, { min: number; max: number }>();
@@ -1023,7 +1131,7 @@ export class Resolver {
       const source = chart.scaleFrom;
       const result = source !== undefined && source !== id && charts.has(source) && !visiting.has(source)
         ? domainOf(source, new Set([...visiting, source]))
-        : chartDomain(series.get(id) ?? [], chart);
+        : chartDomain(series.get(id)?.values ?? [], chart);
       domains.set(id, result);
       return result;
     };
@@ -1032,7 +1140,8 @@ export class Resolver {
       const chart = charts.get(id)!;
       const range = domainOf(id, new Set([id]));
       const out: ChartReadings = {
-        values: series.get(id) ?? [],
+        values: series.get(id)?.values ?? [],
+        holes: series.get(id)?.holes ?? [],
         domainMin: range.min,
         domainMax: range.max,
       };
@@ -1470,6 +1579,7 @@ export class Resolver {
         const c = el.payload;
         const readings = this.charts.get(c.id) ?? this.chartReadings(c);
         const values = readings.values;
+        const holes = readings.holes;
         const domain = { min: readings.domainMin, max: readings.domainMax };
         const baseColorHex = this.styleColor(style, "color") ?? c.colorSlot.baseColorHex;
         const sortedBands = chartSortedBands(c);
@@ -1483,6 +1593,7 @@ export class Resolver {
           kind: "chart",
           ...base,
           values,
+          holes,
           style: c.style,
           domainMin: domain.min,
           domainMax: domain.max,
@@ -1497,6 +1608,16 @@ export class Resolver {
           lowMarker: marksLow ? markers.low : "none",
           pointColorHexes,
           fillBands: c.fillBands,
+          curve: c.curve ?? "straight",
+          smoothing: chartSmoothingWindow(c.smoothing),
+          fillStyle: chartFillStyle(c.fillStyle),
+          ...(c.fillColorHex !== undefined ? { fillColorHex: c.fillColorHex } : {}),
+          barRadius: chartBarRadius(c.barRadius),
+          barCorners: chartBarCorners(c.barCorners),
+          pointDots: chartPointDots(c.pointDots),
+          gridLines: chartGridLines(c.gridLines),
+          gridColorHex: chartGridColorHex(c.gridColorHex),
+          zeroLine: c.zeroLine === true,
           thresholdColorHex: c.thresholdColorHex,
           drawsThreshold: c.drawsThreshold !== false,
           nowColorHex: c.nowColorHex,
@@ -1510,9 +1631,13 @@ export class Resolver {
           labelColorHex: c.labelColorHex,
           labelsAbove: c.labelsAbove,
         };
-        if (values.length > 0) {
-          const high = marksHigh ? values.indexOf(Math.max(...values)) : -1;
-          const low = marksLow ? values.indexOf(Math.min(...values)) : -1;
+        // A hole is never an end of the range: the highlight picks among real
+        // readings only, first occurrence winning as before.
+        const real = holes.length === 0 ? values : values.filter((_, i) => !holes[i]);
+        if (real.length > 0) {
+          const pick = (target: number) => values.findIndex((v, i) => v === target && holes[i] !== true);
+          const high = marksHigh ? pick(Math.max(...real)) : -1;
+          const low = marksLow ? pick(Math.min(...real)) : -1;
           if (high >= 0) out.highIndex = high;
           // One reading cannot be both ends of the range; highest wins.
           if (low >= 0 && low !== high) out.lowIndex = low;
@@ -1739,6 +1864,29 @@ export function frameBox(el: ResolvedElement, canvas: CanvasSize): Box {
  * Mirrors `CustomComplicationChartGeometry.markerHeight` in Swift. */
 const CHART_MARKER_BAND = 5;
 
+/** A reading's dot is this many line widths across. */
+export const CHART_DOT_SCALE = 1.8;
+
+/** Whether a line or area draws a dot on every reading. `all` always does;
+ * `auto` only when neighbouring readings sit at least three dots apart,
+ * measured on the plot the stroke alone would leave (inset by half the line),
+ * and always for a single reading. Bars never do.
+ *
+ * Mirrors `CustomComplicationChartGeometry` in the app repo. */
+export function chartDrawsDots(
+  style: ChartStyle,
+  pointDots: ChartPointDots,
+  count: number,
+  plotWidth: number,
+  lineInset: number,
+  diameter: number,
+): boolean {
+  if (style === "bars" || pointDots === "none" || count === 0) return false;
+  if (pointDots === "all" || count === 1) return true;
+  const spacing = Math.max(plotWidth - lineInset * 2, 0) / (count - 1);
+  return spacing >= 3 * diameter;
+}
+
 /** Where every mark of a chart lands inside its frame.
  *
  * Pure geometry, no colours: mirrors `CustomComplicationChartGeometry` in the app
@@ -1750,14 +1898,20 @@ export function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, b
   const marks = (el.highIndex !== undefined && el.highMarker !== "none")
     || (el.lowIndex !== undefined && el.lowMarker !== "none");
   const band = marks ? CHART_MARKER_BAND : 0;
-  // Line and area are stroked on the value itself, so half the stroke would fall
-  // outside a plot sized to the frame. Bars are filled inside theirs.
-  const inset = el.style === "bars" ? 0 : el.lineWidth / 2;
 
   // The plot takes the whole frame. A chart's numbers are text layers of their
   // own, so nothing here reserves room for them; the author resizes the chart.
   const plotX = box.x;
   const plotW = Math.max(box.w, 0);
+
+  // Line and area are stroked on the value itself, so half the stroke would fall
+  // outside a plot sized to the frame. Bars are filled inside theirs. Dots on
+  // the readings are wider than the stroke, so when they draw the inset grows
+  // to a dot's radius and the dots at the edges are not clipped.
+  const lineInset = el.style === "bars" ? 0 : el.lineWidth / 2;
+  const dotDiameter = el.lineWidth * CHART_DOT_SCALE;
+  const drawsDots = chartDrawsDots(el.style, el.pointDots, values.length, plotW, lineInset, dotDiameter);
+  const inset = drawsDots ? Math.max(lineInset, dotDiameter / 2) : lineInset;
 
   const top = box.y + band + inset;
   const height = Math.max(box.h - band - inset * 2, 1);
@@ -1774,6 +1928,17 @@ export function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, b
   const fraction = (v: number) => Math.min(1, Math.max(0, (v - el.domainMin) / span));
   const y = (v: number) => bottom - fraction(v) * height;
 
+  // Grid lines split the plot into equal rows, never on its top or bottom edge.
+  const gridLines = Math.max(0, Math.min(4, Math.round(el.gridLines)));
+  const gridYs = Array.from({ length: gridLines }, (_, k) => top + (height * (k + 1)) / (gridLines + 1));
+  // The zero line only while zero is inside the range, and not on an edge,
+  // where it would read as the plot's own border.
+  let zeroY: number | undefined;
+  if (el.zeroLine && el.domainMin <= 0 && el.domainMax >= 0) {
+    const at = y(0);
+    if (at !== top && at !== bottom) zeroY = at;
+  }
+
   return {
     count: values.length,
     barWidth,
@@ -1782,6 +1947,13 @@ export function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, b
     plotLeft: plotX,
     plotRight: plotX + plotW,
     baselineY: growsFromBottom ? bottom : y(0),
+    /** Whether every reading gets a dot (`pointDots` all, or auto with room). */
+    drawsDots,
+    dotDiameter,
+    /** Where each grid line runs, top first. */
+    gridYs,
+    /** Where the zero line runs, or undefined when it draws none. */
+    zeroY,
     /** Where a 0…1 fraction of the domain lands, 1 being the top of the plot.
      * The resolver hands the threshold over as a fraction so the renderer never
      * has to know what the domain was. */
@@ -1818,6 +1990,143 @@ export function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, b
       return { x: r ? r.x + r.w / 2 : this.point(index).x, y: box.y + band / 2 };
     },
   };
+}
+
+/** A point on a chart's plot, in drawing coordinates. */
+export interface ChartPoint {
+  x: number;
+  y: number;
+}
+
+/** One leg of a line chart, from one reading to the next. Each leg is its own
+ * curve, which is what lets a banded line or fill draw one path per leg. */
+export type ChartLeg =
+  | { kind: "straight"; start: ChartPoint; end: ChartPoint }
+  | { kind: "smooth"; start: ChartPoint; c1: ChartPoint; c2: ChartPoint; end: ChartPoint }
+  | { kind: "step"; start: ChartPoint; corner: ChartPoint; end: ChartPoint };
+
+/** The legs joining a chart's points, already mapped to plot coordinates, on
+ * the chosen curve. Fewer than two points have no legs.
+ *
+ * Smooth is a Fritsch-Carlson monotone cubic: unlike Catmull-Rom it never
+ * passes either end reading of a leg, so the line cannot overshoot the plot or
+ * show a value that never happened. Step is step after: each reading holds
+ * flat until the next one, which is what a Home Assistant state means.
+ *
+ * Mirrors `CustomComplicationChartGeometry` in the app repo, which runs the
+ * same maths in the same order; `chart.test.ts` pins the shared numbers. */
+export function chartLegs(points: readonly ChartPoint[], curve: ChartCurve): ChartLeg[] {
+  const n = points.length;
+  if (n < 2) return [];
+  const legs: ChartLeg[] = [];
+  if (curve === "step") {
+    for (let k = 0; k < n - 1; k++) {
+      const start = points[k]!;
+      const end = points[k + 1]!;
+      legs.push({ kind: "step", start, corner: { x: end.x, y: start.y }, end });
+    }
+    return legs;
+  }
+  if (curve !== "smooth") {
+    for (let k = 0; k < n - 1; k++) legs.push({ kind: "straight", start: points[k]!, end: points[k + 1]! });
+    return legs;
+  }
+  // Secant slopes, then a tangent per point: the ends take their one secant,
+  // an interior point the mean of its two unless the series turns there.
+  // A leg with no width (a plot squeezed to nothing) reads as flat, as on the
+  // watch, so the maths stays finite.
+  const d: number[] = [];
+  for (let k = 0; k < n - 1; k++) {
+    const h = points[k + 1]!.x - points[k]!.x;
+    d.push(h === 0 ? 0 : (points[k + 1]!.y - points[k]!.y) / h);
+  }
+  const m: number[] = new Array<number>(n).fill(0);
+  m[0] = d[0]!;
+  m[n - 1] = d[n - 2]!;
+  for (let k = 1; k < n - 1; k++) {
+    m[k] = d[k - 1]! * d[k]! <= 0 ? 0 : (d[k - 1]! + d[k]!) / 2;
+  }
+  // Pull back any tangent pair steep enough to overshoot its leg.
+  for (let k = 0; k < n - 1; k++) {
+    if (d[k] === 0) {
+      m[k] = 0;
+      m[k + 1] = 0;
+      continue;
+    }
+    const a = m[k]! / d[k]!;
+    const b = m[k + 1]! / d[k]!;
+    const s = a * a + b * b;
+    if (s > 9) {
+      const t = 3 / Math.sqrt(s);
+      m[k] = t * a * d[k]!;
+      m[k + 1] = t * b * d[k]!;
+    }
+  }
+  for (let k = 0; k < n - 1; k++) {
+    const start = points[k]!;
+    const end = points[k + 1]!;
+    const h = end.x - start.x;
+    legs.push({
+      kind: "smooth",
+      start,
+      c1: { x: start.x + h / 3, y: start.y + (m[k]! * h) / 3 },
+      c2: { x: end.x - h / 3, y: end.y - (m[k + 1]! * h) / 3 },
+      end,
+    });
+  }
+  return legs;
+}
+
+/** A centred moving average over `window` readings (0 or 1 is off), shrinking
+ * at the ends so no reading is dropped and every index still lines up.
+ * Mirrors the averaging in `CustomComplication.chartSeries`.
+ *
+ * Written as an explicit sum and count so holes (gaps for unavailable) can be
+ * skipped by leaving them out of both. */
+export function chartMovingAverage(values: number[], window: number, holes: readonly boolean[] = []): number[] {
+  if (window <= 1 || values.length === 0) return values;
+  const n = values.length;
+  const half = Math.floor(window / 2);
+  const isHole = (i: number) => holes[i] === true;
+  const averaged = values.map((v, i) => {
+    if (isHole(i)) return v;
+    let sum = 0;
+    let count = 0;
+    for (let j = Math.max(0, i - half); j <= Math.min(n - 1, i + half); j++) {
+      if (isHole(j)) continue;
+      sum += values[j]!;
+      count += 1;
+    }
+    return sum / count;
+  });
+  // A hole stays a hole, re-carried from the averaged series: the previous
+  // real output, or the first real output for leading holes. So a hole never
+  // holds a raw value the averaged line does not reach.
+  const firstReal = averaged.find((_, i) => !isHole(i));
+  if (firstReal === undefined) return averaged;
+  let carried = firstReal;
+  return averaged.map((v, i) => {
+    if (isHole(i)) return carried;
+    carried = v;
+    return v;
+  });
+}
+
+/** The stretches of a chart a line or area draws: runs of consecutive indices
+ * with no hole in them, oldest first. A series without holes is one run. */
+export function chartRuns(count: number, holes: readonly boolean[]): number[][] {
+  const runs: number[][] = [];
+  let current: number[] = [];
+  for (let i = 0; i < count; i++) {
+    if (holes[i] === true) {
+      if (current.length > 0) runs.push(current);
+      current = [];
+    } else {
+      current.push(i);
+    }
+  }
+  if (current.length > 0) runs.push(current);
+  return runs;
 }
 
 /** The point between the row of times and the drawing beside it, so a descender
@@ -1883,18 +2192,21 @@ export function placeChartAnchors(
  * such column. The highest and lowest are found here rather than read from the
  * chart's `highIndex`, because those are set only when the highlight asks for them
  * and a marker is worth having on a chart that highlights nothing. First occurrence
- * wins, matching the rule the highlight itself uses on a flat run. */
+ * wins, matching the rule the highlight itself uses on a flat run. A hole is never
+ * named: its value is a carried copy, and nothing is drawn there to sit on. */
 function anchorIndex(
   at: ChartAnchorPoint,
   chart: Extract<ResolvedElement, { kind: "chart" }>,
 ): number | undefined {
   const values = chart.values;
   if (values.length === 0) return undefined;
+  const real = values.map((_, i) => i).filter((i) => chart.holes.length === 0 || !chart.holes[i]);
+  if (real.length === 0) return undefined;
   switch (at) {
-    case "highest": return values.indexOf(Math.max(...values));
-    case "lowest": return values.indexOf(Math.min(...values));
-    case "first": return 0;
-    case "latest": return values.length - 1;
+    case "highest": return real.reduce((best, i) => (values[i]! > values[best]! ? i : best));
+    case "lowest": return real.reduce((best, i) => (values[i]! < values[best]! ? i : best));
+    case "first": return real[0];
+    case "latest": return real[real.length - 1];
     case "now": return chart.nowIndex === undefined
       ? undefined
       : Math.min(Math.max(chart.nowIndex, 0), values.length - 1);

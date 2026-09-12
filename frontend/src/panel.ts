@@ -19,6 +19,8 @@ import {
   fetchHistorySeries,
   type HistorySeriesRequest,
   fetchStatisticsSeries,
+  historySeriesRequest,
+  statisticsSeriesRequest,
   type StatisticsSeriesRequest,
   renderTemplates,
   saveRecord,
@@ -3245,6 +3247,7 @@ export class WristAssistantPanel extends LitElement {
       icons: this.icons,
       symbols: this.symbols,
       pages: this.pages,
+      watchAppVersion: this.selectedOwner?.app_version,
       update: (m, c) => this.mutate(m, c),
       endGesture: () => this.draft?.endGesture(),
       resolve: (v: Value) => resolver.resolve(v),
@@ -3557,25 +3560,11 @@ export class WristAssistantPanel extends LitElement {
       return;
     }
     const requests: Record<string, HistorySeriesRequest> = {};
-    for (const r of wanted) {
-      // `mode` is left out at numeric, so a document with no timeline in it
-      // sends exactly the request it always sent.
-      requests[r.key] = {
-        entity_id: r.entityId,
-        minutes: r.minutes,
-        points: r.points,
-        ...(r.mode === "states" ? { mode: "states" as const } : {}),
-      };
-    }
+    // `mode` is left out at numeric and `gaps` unless a chart asks, so a
+    // document with no timeline and no gap chart sends exactly what it always sent.
+    for (const r of wanted) requests[r.key] = historySeriesRequest(r);
     const statRequests: Record<string, StatisticsSeriesRequest> = {};
-    for (const r of wantedStats) {
-      statRequests[r.key] = {
-        entity_id: r.entityId,
-        minutes: r.minutes,
-        period: r.period,
-        type: r.type,
-      };
-    }
+    for (const r of wantedStats) statRequests[r.key] = statisticsSeriesRequest(r);
     try {
       // Two commands, one Map. The two stores answer different questions but in
       // the same shape, and the keys cannot collide, so the resolver has one

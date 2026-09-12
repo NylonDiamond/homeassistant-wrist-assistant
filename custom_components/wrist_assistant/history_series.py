@@ -48,6 +48,10 @@ MAX_MINUTES = 7 * 24 * 60
 MODE_NUMERIC = "numeric"
 MODE_STATES = "states"
 
+# The recorded states that mean "offline", as opposed to "did not report". A
+# chart with gaps on draws a hole across a slot spent entirely in these.
+OUTAGE_STATES = frozenset({"unavailable", "unknown"})
+
 
 class HistorySeriesError(Exception):
     """Raised when the series cannot be produced at all."""
@@ -103,13 +107,51 @@ def _format(value: float) -> str:
     return text if text not in ("", "-0") else "0"
 
 
+def outage_intervals(
+    states: list[tuple[datetime, str]],
+    start: datetime,
+    end: datetime,
+) -> list[tuple[datetime, datetime]]:
+    """The stretches of the window the entity spent `unavailable` or `unknown`.
+
+    `states` is every recorded state, oldest first, strings as recorded. A row
+    before the window counts from `start`, which is how an entity that was
+    already offline when the window opened is seen. A stretch lasts until the
+    next row that is not an outage state, or until `end`. Intervals come back
+    merged and clipped to the window.
+    """
+    intervals: list[tuple[datetime, datetime]] = []
+    open_from: datetime | None = None
+    for when, state in states:
+        if state in OUTAGE_STATES:
+            if open_from is None:
+                open_from = max(when, start)
+            continue
+        if open_from is not None:
+            closed_at = min(max(when, start), end)
+            if closed_at > open_from:
+                intervals.append((open_from, closed_at))
+            open_from = None
+    if open_from is not None and end > open_from:
+        intervals.append((open_from, end))
+
+    merged: list[tuple[datetime, datetime]] = []
+    for begin, finish in intervals:
+        if merged and begin <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], finish))
+        else:
+            merged.append((begin, finish))
+    return merged
+
+
 def bucket_series(
     samples: list[tuple[datetime, float]],
     start: datetime,
     end: datetime,
     points: int,
     anchor: float | None = None,
-) -> list[float]:
+    outages: list[tuple[datetime, datetime]] | None = None,
+) -> list[float | None]:
     """Average timestamped readings into `points` equal time slots.
 
     `samples` must be oldest-first and already numeric. `anchor` is the entity's
@@ -124,6 +166,13 @@ def bucket_series(
     Leading slots with nothing before them are dropped rather than invented, so
     a sensor that only started recording halfway through the window draws a
     shorter series instead of a flat run that never happened.
+
+    `outages` (from `outage_intervals`, merged and sorted) is how a chart with
+    gaps on tells "did not report" from "was offline". A slot with no reading
+    whose whole span sits inside one outage comes back as `None`, a hole; a
+    slot with any real reading keeps its average, and a slot the outages only
+    partly cover still carries forward. Without `outages` nothing is ever
+    `None`, and the series is exactly what it always was.
     """
     if points < 1 or end <= start:
         return []
@@ -143,11 +192,27 @@ def bucket_series(
         sums[index] += value
         counts[index] += 1
 
-    out: list[float] = []
+    covered = [
+        ((begin - start).total_seconds(), (finish - start).total_seconds())
+        for begin, finish in (outages or [])
+    ]
+
+    def is_outage(index: int) -> bool:
+        slot_start = index * slot
+        slot_end = span if index == points - 1 else (index + 1) * slot
+        return any(a <= slot_start and b >= slot_end for a, b in covered)
+
+    out: list[float | None] = []
     carried = anchor
     for index in range(points):
         if counts[index]:
             carried = sums[index] / counts[index]
+        elif covered and carried is not None and is_outage(index):
+            # The last real value stays `carried`, so a quiet slot after the
+            # outage (with no state change to end it) still has something to
+            # inherit. Leading slots with nothing before them stay dropped.
+            out.append(None)
+            continue
         if carried is not None:
             out.append(carried)
     return out
@@ -180,9 +245,14 @@ def raw_series(
     return values[-limit:]
 
 
-def series_to_string(values: list[float]) -> str:
-    """The wire form: readings joined by commas, oldest first."""
-    return ",".join(_format(value) for value in values)
+def series_to_string(values: list[float | None]) -> str:
+    """The wire form: readings joined by commas, oldest first.
+
+    A `None` is a hole (a chart with gaps on, over a stretch the entity was
+    offline) and is written as an empty token: `12.1,,13.0`. Only a caller
+    that asked for gaps ever passes one, so every other series is unchanged.
+    """
+    return ",".join("" if value is None else _format(value) for value in values)
 
 
 def normalize_mode(raw: Any, default: str = MODE_NUMERIC) -> str:
@@ -258,8 +328,13 @@ async def async_history_series(
     points: int,
     now: datetime | None = None,
     mode: str = MODE_NUMERIC,
+    gaps: bool = False,
 ) -> str:
     """Fetch one entity's recent history. Returns the wire string.
+
+    `gaps` only affects bucketed numeric mode: slots spent entirely
+    `unavailable` or `unknown` come back as empty tokens instead of carrying
+    the last value forward. See `bucket_series`.
 
     In `numeric` mode the states are read as numbers and bucketed: `points` of
     `EVERY_READING` skips the bucketing and returns the recorded readings
@@ -332,11 +407,15 @@ async def async_history_series(
 
     anchor: float | None = None
     samples: list[tuple[datetime, float]] = []
+    recorded: list[tuple[datetime, str]] = []
     for state in raw:
         when = getattr(state, "last_changed", None)
         if when is None:
             continue
-        value = _as_number(getattr(state, "state", None))
+        text = getattr(state, "state", None)
+        if isinstance(text, str):
+            recorded.append((when, text))
+        value = _as_number(text)
         if value is None:
             continue
         if when < start:
@@ -348,4 +427,7 @@ async def async_history_series(
 
     if points == EVERY_READING:
         return series_to_string(raw_series(samples, anchor=anchor))
-    return series_to_string(bucket_series(samples, start, end, points, anchor))
+    outages = outage_intervals(recorded, start, end) if gaps else None
+    return series_to_string(
+        bucket_series(samples, start, end, points, anchor, outages)
+    )

@@ -254,6 +254,7 @@ describe("the history request", () => {
       minutes: 60,
       points: 120,
       mode: "states",
+      gaps: false,
     }]);
   });
 
