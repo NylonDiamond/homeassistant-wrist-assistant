@@ -35,6 +35,8 @@ import {
   literalPartText,
   addChartMarker,
   type TextElement,
+  type IconElement,
+  chartMarkerToIcon,
   DESIGN_BOX,
   type ChartAnchorPoint,
   type ChartAnchorPlace,
@@ -1466,12 +1468,12 @@ describe("chart markers as layers", () => {
     return { cfg, chartId: chart.payload.id };
   };
 
-  it("adds a marker as a text layer in the chart's group, pinned to its reading", () => {
+  it("adds a marker as an icon layer in the chart's group, pinned to its reading", () => {
     const { cfg, chartId } = withChart();
     const id = addChartMarker(cfg, chartId, "lowest");
     expect(id).toBeDefined();
     const marker = cfg.elements.find((el) => el.payload.id === id)!;
-    expect(marker.kind).toBe("text");
+    expect(marker.kind).toBe("icon");
     expect(marker.payload.chartAnchor).toEqual({ layer: chartId, at: "lowest", place: "above" });
     // Same group as the chart, so the Layers list files it under the chart and
     // a drag on the chart takes it along.
@@ -1480,21 +1482,65 @@ describe("chart markers as layers", () => {
     expect(chartMarkersOf(cfg, chartId).map((m) => m.payload.id)).toEqual([id]);
   });
 
-  it("starts as a glyph the author can replace with anything, including an emoji", () => {
+  it("starts as the icon of the mark it replaces, and takes any other icon", () => {
     const { cfg, chartId } = withChart();
     const highId = addChartMarker(cfg, chartId, "highest")!;
     const lowId = addChartMarker(cfg, chartId, "lowest")!;
-    const high = cfg.elements.find((el) => el.payload.id === highId)!;
-    const low = cfg.elements.find((el) => el.payload.id === lowId)!;
-    expect(literalPartText((high.payload as TextElement).value)).toBe("▲");
-    expect(literalPartText((low.payload as TextElement).value)).toBe("●");
+    const nowId = addChartMarker(cfg, chartId, "now")!;
+    const symbol = (id: string) => literalPartText((cfg.elements.find((el) => el.payload.id === id)!.payload as IconElement).symbol);
+    expect(symbol(highId)).toBe("arrowtriangle.up.fill");
+    expect(symbol(lowId)).toBe("circle.fill");
+    expect(symbol(nowId)).toBe("arrowtriangle.down.fill");
 
-    // The whole point of a marker being a text layer: any character goes in.
-    (low.payload as TextElement).value = literal("💚");
+    const low = cfg.elements.find((el) => el.payload.id === lowId)!;
+    (low.payload as IconElement).symbol = literal("heart.fill");
     const round = parseConfig(encodeConfig(cfg));
-    const back = round.elements.find((el) => el.payload.id === low.payload.id)!;
-    expect(literalPartText((back.payload as TextElement).value)).toBe("💚");
+    const back = round.elements.find((el) => el.payload.id === lowId)!;
+    expect(literalPartText((back.payload as IconElement).symbol)).toBe("heart.fill");
     expect(back.payload.chartAnchor).toEqual({ layer: chartId, at: "lowest", place: "above" });
+  });
+
+  it("swaps a text marker for an icon of the same shape, keeping its id, place and states", () => {
+    const { cfg, chartId } = withChart();
+    const text = newElement("text") as Extract<Element, { kind: "text" }>;
+    text.payload.value = literal("▼");
+    text.payload.fontSize = 9;
+    text.payload.chartAnchor = { layer: chartId, at: "now", place: "above", dy: -2 };
+    text.payload.rules = [{
+      id: "r1",
+      cases: [{ id: "c1", when: { kind: "always" } as never, then: [
+        { kind: "setText", value: literal("▲") },
+        { kind: "setFontWeight", weight: "bold" },
+        { kind: "setColor", value: literal("#FF0000") },
+      ] }],
+      otherwise: [{ kind: "setText", value: literal("hot") }],
+    }];
+    cfg.elements.push(text);
+    const id = text.payload.id;
+
+    chartMarkerToIcon(cfg, id);
+    const icon = cfg.elements.find((el) => el.payload.id === id)!;
+    expect(icon.kind).toBe("icon");
+    const p = icon.payload as IconElement;
+    expect(literalPartText(p.symbol)).toBe("arrowtriangle.down.fill");
+    expect(p.size).toBe(9);
+    expect(p.chartAnchor).toEqual({ layer: chartId, at: "now", place: "above", dy: -2 });
+    // A glyph becomes its icon, a word has no icon and goes, and weight means nothing to an icon.
+    expect(p.rules[0]!.cases[0]!.then).toEqual([
+      { kind: "setIcon", value: literal("arrowtriangle.up.fill") },
+      { kind: "setColor", value: literal("#FF0000") },
+    ]);
+    expect(p.rules[0]!.otherwise).toEqual([]);
+    expect(cfg.elements.filter((el) => el.payload.id === id)).toHaveLength(1);
+
+    // An emoji has no match, so it takes the icon a new marker there starts as.
+    const heart = newElement("text") as Extract<Element, { kind: "text" }>;
+    heart.payload.value = literal("💚");
+    heart.payload.chartAnchor = { layer: chartId, at: "lowest", place: "above" };
+    cfg.elements.push(heart);
+    chartMarkerToIcon(cfg, heart.payload.id);
+    expect(literalPartText((cfg.elements.find((el) => el.payload.id === heart.payload.id)!.payload as IconElement).symbol))
+      .toBe("circle.fill");
   });
 
   it("writes no anchor key on a layer that follows nothing", () => {
@@ -1559,7 +1605,7 @@ describe("chart markers as layers", () => {
     convertChartMarkers(cfg, chartId);
     const markers = chartMarkersOf(cfg, chartId);
     expect(markers.map((m) => m.payload.chartAnchor!.at)).toEqual(["lowest", "highest"]);
-    expect(markers.map((m) => literalPartText((m.payload as TextElement).value))).toEqual(["●", "▲"]);
+    expect(markers.map((m) => literalPartText((m.payload as IconElement).symbol))).toEqual(["circle.fill", "arrowtriangle.up.fill"]);
     // And the chart stops drawing its own, so the band along the top goes too.
     expect(chart.payload.marker).toBe("none");
     expect(chartDrawsBuiltInMarkers(chart)).toBe(false);

@@ -162,6 +162,7 @@ import {
   chartMarkersOf,
   chartDrawsBuiltInMarkers,
   convertChartMarkers,
+  chartMarkerToIcon,
   addChartLine,
   chartAnchorIsColumn,
   CHART_LINES,
@@ -3009,6 +3010,10 @@ function anchorFields(host: EditorHost, el: CElement, family: FamilyKind): Templ
             const target = c.elements.find((e) => e.payload.id === id);
             if (target) delete target.payload.chartAnchor;
           })}><span>Unpin</span></button>
+        ${el.kind === "text" && anchor.place !== "through"
+          ? html`<button class="small" title="Swap this text marker for an icon of the same shape, keeping where it sits"
+              @click=${() => host.update((c) => { chartMarkerToIcon(c, id); })}><span>Use an icon</span></button>`
+          : nothing}
       </div>
     </div>
     ${gone
@@ -4469,7 +4474,8 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
               const { at, place } = m.payload.chartAnchor!;
               const name = (CHART_ANCHOR_POINTS.find(([k]) => k === at)?.[1] ?? "reading").toLowerCase();
               if (place === "through") return row(m.payload.id, at === "threshold" ? "─" : "│", `line through the ${name}`, "line");
-              const glyph = m.kind === "text" ? (host.resolve(m.payload.value) ?? "●") : "◆";
+              const glyph = m.kind === "text" ? (host.resolve(m.payload.value) ?? "●")
+                : m.kind === "icon" ? markerGlyph(host.resolve(m.payload.symbol)) : "◆";
               return row(m.payload.id, glyph, `over the ${name}`, "marker");
             })}
           </div>
@@ -4506,8 +4512,8 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
         })}
       </div>
     </div>
-    <div class="hint">A marker starts as a character over the reading it names, so type any glyph or emoji into it:
-      🔺 over the highest tariff, 💚 over the lowest. It hangs in the empty space above its own bar rather than in a
+    <div class="hint">A marker starts as an icon over the reading it names: a triangle over the highest, a dot over
+      the lowest. Pick any other icon for it in its Content card. It hangs in the empty space above its own bar rather than in a
       band along the top, so the bars keep their full height, and it is pushed back down rather than off the chart
       when the bar is already tall. Its Position card sets which reading it follows and which side of the bar it
       sits on.</div>`;
@@ -4554,6 +4560,16 @@ function tappableSection(host: EditorHost, el: CElement, key: string): TemplateR
  * entity; as a row title the name alone is the clearer thing. */
 function unquote(s: string): string {
   return s.length >= 2 && s.startsWith("\"") && s.endsWith("\"") ? s.slice(1, -1) : s;
+}
+
+/** A character that stands in for an icon marker in the Extras list, where
+ * there is no room for the icon itself. */
+function markerGlyph(symbol: string | undefined): string {
+  if (symbol === undefined) return "◆";
+  if (symbol.includes("up")) return "▲";
+  if (symbol.includes("down")) return "▼";
+  if (symbol.startsWith("circle")) return "●";
+  return "◆";
 }
 
 /** The name a layer goes by in the Layers list and the crumbs. */

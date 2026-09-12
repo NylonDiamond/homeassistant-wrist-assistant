@@ -2423,17 +2423,30 @@ export function addChartLabel(cfg: CustomComplicationConfig, chartId: string, st
 // number is a layer with a `chartStat` naming it. Both live in the chart's
 // group, and both are listed and added from the chart's Extras card.
 
-/** The glyph a new marker starts as. The old built-in markers were a triangle
- * over the highest reading and a dot over the lowest, so a marker added today
- * starts looking like the one it replaces. Every one of them is a character in
- * a text layer, which is the whole point: the author types a 💚 over it. */
-const CHART_MARKER_GLYPHS: Record<ChartAnchorPoint, string> = {
-  highest: "▲",
-  lowest: "●",
-  now: "▼",
-  first: "●",
-  latest: "●",
-  threshold: "●",
+/** The SF Symbol a new marker starts as. The old built-in markers were a
+ * triangle over the highest reading and a dot over the lowest, so a marker added
+ * today starts looking like the one it replaces. An icon rather than a character
+ * in a text layer: a font glyph draws differently in a browser and on the watch,
+ * and the symbol picker offers every other shape without typing one. */
+const CHART_MARKER_SYMBOLS: Record<ChartAnchorPoint, string> = {
+  highest: "arrowtriangle.up.fill",
+  lowest: "circle.fill",
+  now: "arrowtriangle.down.fill",
+  first: "circle.fill",
+  latest: "circle.fill",
+  threshold: "circle.fill",
+};
+
+/** The size a new marker starts at, in points. */
+const CHART_MARKER_SIZE = 6;
+
+/** The symbol for each glyph the panel used to start a text marker as, so a
+ * marker made before icons becomes the same shape. */
+const CHART_MARKER_GLYPH_SYMBOLS: Record<string, string> = {
+  "▲": "arrowtriangle.up.fill",
+  "▼": "arrowtriangle.down.fill",
+  "●": "circle.fill",
+  "◆": "diamond.fill",
 };
 
 /** The colour a new marker starts in: the chart's own highest and lowest
@@ -2457,9 +2470,8 @@ export function chartMarkersOf(cfg: CustomComplicationConfig, chartId: string): 
 }
 
 /** Add a marker over one of the chart's readings, in the chart's group, and
- * return its id. A text layer, so the author can replace the glyph with any
- * character or emoji and take every text setting with it. Undefined when
- * `chartId` is not a chart. */
+ * return its id. An icon layer, so the author picks any symbol for it and gets
+ * size, colour and states with it. Undefined when `chartId` is not a chart. */
 export function addChartMarker(
   cfg: CustomComplicationConfig,
   chartId: string,
@@ -2469,21 +2481,67 @@ export function addChartMarker(
   const chart = cfg.elements.find((el) => el.payload.id === chartId);
   if (!chart || chart.kind !== "chart") return undefined;
   if (at === "now") seedChartNow(chart.payload);
-  const el = newElement("text") as Extract<Element, { kind: "text" }>;
-  const fontSize = 6;
-  el.payload.value = literal(CHART_MARKER_GLYPHS[at]);
-  el.payload.fontSize = fontSize;
-  el.payload.fontWeight = "medium";
+  const el = newElement("icon") as Extract<Element, { kind: "icon" }>;
+  el.payload.symbol = literal(CHART_MARKER_SYMBOLS[at]);
+  el.payload.size = CHART_MARKER_SIZE;
   el.payload.colorSlot = { baseColorHex: chartMarkerColor(chart, at) };
   // A box one glyph wide. The renderer pins its centre over the reading, so
   // only the size here matters; x and y are worked out every render.
-  el.payload.frame = chartMarkerFrame(fontSize);
+  el.payload.frame = chartMarkerFrame(CHART_MARKER_SIZE);
   el.payload.chartAnchor = { layer: chartId, at, place };
   // Directly above the chart in z-order, so the marker sits on the plot.
   const index = cfg.elements.findIndex((e) => e.payload.id === chartId);
   cfg.elements.splice(index + 1, 0, el);
   joinChartGroup(cfg, chart, el.payload.id);
   return el.payload.id;
+}
+
+/** Turn a text marker into an icon marker in place, keeping its id, so its tap,
+ * its group, its anchor and its place in Layers all stay. The glyph picks the
+ * symbol: ▲ becomes a filled up triangle, and a character with no match (an
+ * emoji, say) takes the symbol a new marker over that reading starts as. States
+ * carry over where an icon reads them; a state that set the text becomes one
+ * that sets the icon when its text was a glyph with a match, and is dropped
+ * otherwise, as are font weight changes. Does nothing to any other layer. */
+export function chartMarkerToIcon(cfg: CustomComplicationConfig, id: string): void {
+  const index = cfg.elements.findIndex((e) => e.payload.id === id);
+  const old = cfg.elements[index];
+  if (!old || old.kind !== "text" || old.payload.chartAnchor === undefined) return;
+  const t = old.payload;
+  const anchor = t.chartAnchor!;
+  const symbolFor = (v: Value): string | undefined => {
+    const text = literalPartText(v);
+    return text === undefined ? undefined : CHART_MARKER_GLYPH_SYMBOLS[text.trim()];
+  };
+  const allowed = new Set(RULE_TARGET_PROPERTIES.icon);
+  const changes = (list: StyleChange[]): StyleChange[] => list.flatMap((ch): StyleChange[] => {
+    if (ch.kind === "setText") {
+      const symbol = ch.value === undefined ? undefined : symbolFor(ch.value);
+      return symbol === undefined ? [] : [{ kind: "setIcon", value: literal(symbol) }];
+    }
+    return allowed.has(STYLE_PROPERTY[ch.kind]) ? [ch] : [];
+  });
+  const rules = t.rules
+    .filter((r) => r.partId === undefined)
+    .map((r): Rule => ({
+      ...r,
+      cases: r.cases.map((c) => ({ ...c, then: changes(c.then) })),
+      ...(r.otherwise !== undefined ? { otherwise: changes(r.otherwise) } : {}),
+    }));
+  const icon = newElement("icon") as Extract<Element, { kind: "icon" }>;
+  icon.payload = {
+    ...icon.payload,
+    id: t.id,
+    colorSlot: t.colorSlot,
+    rules,
+    frame: t.frame,
+    isHidden: t.isHidden,
+    ...(t.groupId !== undefined ? { groupId: t.groupId } : {}),
+    chartAnchor: anchor,
+    symbol: literal(symbolFor(t.value) ?? CHART_MARKER_SYMBOLS[anchor.at]),
+    size: t.fontSize,
+  };
+  cfg.elements[index] = icon;
 }
 
 /** A box just big enough for one glyph of `fontSize` points, in the
@@ -2539,8 +2597,8 @@ export function convertChartMarkers(cfg: CustomComplicationConfig, chartId: stri
     const id = addChartMarker(cfg, chartId, at);
     const el = cfg.elements.find((e) => e.payload.id === id);
     // A dot where the chart drew a dot, a triangle where it drew a triangle,
-    // whichever end each was on.
-    if (el?.kind === "text") el.payload.value = literal(shape === "triangle" ? "▲" : "●");
+    // whichever end each was on. The built-in triangle pointed up at both ends.
+    if (el?.kind === "icon") el.payload.symbol = literal(shape === "triangle" ? "arrowtriangle.up.fill" : "circle.fill");
   }
   // The chart stops drawing its own, so the band along the top goes with it and
   // the bars get their height back.
