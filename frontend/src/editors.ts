@@ -3103,7 +3103,24 @@ function anchorFields(host: EditorHost, el: CElement, family: FamilyKind): Templ
       charts.map((e): [string, string] => [e.payload.id, layerTitle(e, ctx)]),
       (v) => setAnchor((a) => { a.layer = v; }))}
     ${selectField("Reading", anchor.at, CHART_ANCHOR_POINTS as unknown as [ChartAnchorPoint, string][],
-      (v) => setAnchor((a) => { a.at = v; }), { def: "highest" as ChartAnchorPoint })}
+      (v) => host.update((c) => {
+        const target = c.elements.find((e) => e.payload.id === id);
+        if (!target?.payload.chartAnchor) return;
+        target.payload.chartAnchor.at = v;
+        // Threshold and now are numbers on the chart. A layer moved onto one the
+        // chart does not have yet seeds it, so the layer lands on a reading.
+        const ch = c.elements.find((e) => e.payload.id === anchor.layer);
+        if (ch?.kind !== "chart") return;
+        if (v === "threshold" && ch.payload.thresholdValue === undefined) {
+          ch.payload.thresholdValue = seedThreshold(chartNumbers(host.resolve(ch.payload.value) ?? ""));
+          ch.payload.drawsThreshold = false;
+        }
+        if (v === "now" && ch.payload.nowIndex === undefined) {
+          ch.payload.nowIndex = { kind: { kind: "time", timeField: "hour" } };
+          ch.payload.drawsNowLine = false;
+        }
+      }), { def: "highest" as ChartAnchorPoint })}
+    ${chartPointFields(host, anchor, key)}
     ${/* A line runs through the plot by definition, so it has no side to sit on,
        * and a marker is never turned into a line from here. */
       anchor.place === "through" ? nothing
@@ -3141,6 +3158,48 @@ function anchorFields(host: EditorHost, el: CElement, family: FamilyKind): Templ
           other one: wherever the bar lands, it goes. It is held inside the plot, so a big glyph over a tall
           bar is pushed down rather than off the top, and the bars never give up height to make room. Nudge Y
           can still lift it past the top of the chart, as far as the edge of the face.</div>`}`;
+}
+
+/**
+ * The number behind a threshold or now reading, edited from the layer that
+ * follows it. The number itself lives on the chart, so every layer on the same
+ * reading moves together; the hint says so when there is more than one.
+ */
+function chartPointFields(host: EditorHost, anchor: ChartAnchor, key: string): TemplateResult | typeof nothing {
+  const chart = host.config.elements.find((e) => e.payload.id === anchor.layer);
+  if (chart?.kind !== "chart") return nothing;
+  const c = chart.payload;
+  const setChart = (m: (p: typeof c) => void, k: string) => host.update((cfg) => {
+    const ch = cfg.elements.find((e) => e.payload.id === anchor.layer);
+    if (ch?.kind === "chart") m(ch.payload);
+  }, `${key}-${k}`);
+  const sharing = chartMarkersOf(host.config, anchor.layer).filter((m) => m.payload.chartAnchor?.at === anchor.at).length;
+  const shared = sharing > 1
+    ? ` ${sharing} layers follow this ${anchor.at === "now" ? "reading" : "threshold"}, and they all move with this number.`
+    : "";
+  if (anchor.at === "threshold") {
+    return html`
+      <div class="grid2">
+        ${numberField("Threshold at", c.thresholdValue ?? 0, (v) => setChart((p) => { p.thresholdValue = v ?? 0; p.drawsThreshold = false; }, "thval"))}
+      </div>
+      <div class="hint">${c.scale === "fixed"
+        ? "A threshold outside the chart's Min and Max draws nothing: the plot keeps the range you asked for."
+        : "The plot stretches to include the threshold, so a series that never reaches it still shows how far off it is."}${shared}</div>`;
+  }
+  if (anchor.at === "now") {
+    return html`
+      ${valueEditor(host, c.nowIndex ?? { kind: { kind: "time", timeField: "hour" } },
+        (v) => setChart((p) => { p.nowIndex = v; p.drawsNowLine = false; }, "nowidx"),
+        { showResolved: true, label: "Now is reading", key: `${key}-nowindex` })}
+      <div class="hint">Counted from 0, so Hour puts now on reading 14 at 2 pm, which is what a 24-reading
+        price or forecast chart wants. Rounded, and clamped to the readings drawn.${shared}</div>`;
+  }
+  if (anchor.at === "zero") {
+    return html`<div class="hint">Drawn only while the plot runs from below zero to above it, like a
+      temperature or a battery charging and discharging. On readings that stay on one side of zero, zero
+      sits on the edge of the plot or outside it, and nothing draws.</div>`;
+  }
+  return nothing;
 }
 
 /** What a tap on this layer does. A tap-area layer has no card, since the
@@ -4242,25 +4301,13 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             ${drawButton("Grid lines", gridOn, (cfg) => { addChartGrid(cfg, id); })}
           </div>
         </div>
-        ${c.thresholdValue === undefined ? nothing : html`
-          <div class="grid2">
-            ${numberField("Threshold at", c.thresholdValue, (v) => setChart((p) => { p.thresholdValue = v ?? 0; }, "thval"))}
-          </div>
-          <div class="hint">${c.scale === "fixed"
-            ? "A threshold outside Min and Max draws nothing: the plot keeps the range you asked for."
-            : "The plot stretches to include the threshold, so a series that never reaches it still shows how far off it is."}</div>`}
-        ${c.nowIndex === undefined ? nothing : html`
-          ${valueEditor(host, c.nowIndex, (v) => setChart((p) => { p.nowIndex = v; }, "nowidx"),
-            { showResolved: true, label: "Now is reading", key: `${key}-nowindex` })}
-          <div class="hint">Counted from 0, so Hour puts now on reading 14 at 2 pm, which is what a 24-reading
-            price or forecast chart wants. Rounded, and clamped to the readings drawn.</div>`}
         ${zeroOn && !zeroCrossed
-          ? html`<div class="hint warn">These readings never go below zero, or never above it, so zero sits
-              on the edge of the plot or outside it and the zero line is not drawn. It shows on a chart
-              whose readings cross zero, like a temperature or a battery charging and discharging.</div>`
+          ? html`<div class="hint warn">These readings never go below zero, or never above it, so the zero
+              line is not drawn.</div>`
           : nothing}
         <div class="hint">Each button adds a layer to this chart, listed at the bottom. Click it there to set its
-          colour, size and the rest.</div>
+          value, colour, size and the rest: where the threshold sits and which reading is now are set on
+          those lines.</div>
         ${watchNote(host)}`;
       break;
     }
@@ -4737,16 +4784,16 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
     <div class="field list-field"><span>Numbers</span>
       <div class="adders">
         ${CHART_STATS.map(([stat, label]) => html`
-          <button class="small" title=${taken.has(stat) ? `Add another ${label.toLowerCase()}` : `Add the ${label.toLowerCase()}`}
-            @click=${() => add(stat)}>${uiIcon("plus")}<span>${label}</span></button>`)}
+          <button class="small ${taken.has(stat) ? "on" : ""}" title=${taken.has(stat) ? `Add another ${label.toLowerCase()}` : `Add the ${label.toLowerCase()}`}
+            @click=${() => add(stat)}>${taken.has(stat) ? html`<span aria-hidden="true">✓</span>` : uiIcon("plus")}<span>${label}</span></button>`)}
       </div>
     </div>
     <div class="hint">The newest reading, the change and the total start with the entity's unit after them. The change is the newest reading minus the first, and the trend arrow is that change as ↑, ↓ or →, flat when it is too small for the chart to print. The ends of the scale come from the plot's range, so on a Fixed scale they print the Min and Max above.</div>
     <div class="field list-field"><span>Markers</span>
       <div class="adders">
         ${CHART_ANCHOR_POINTS.filter(([at]) => chartAnchorIsColumn(at)).map(([at, label]) => html`
-          <button class="small" title=${markedAlready.has(at) ? `Add another mark over the ${label.toLowerCase()}` : `Mark the ${label.toLowerCase()}`}
-            @click=${() => addMarker(at)}>${uiIcon("plus")}<span>${label}</span></button>`)}
+          <button class="small ${markedAlready.has(at) ? "on" : ""}" title=${markedAlready.has(at) ? `Add another mark over the ${label.toLowerCase()}` : `Mark the ${label.toLowerCase()}`}
+            @click=${() => addMarker(at)}>${markedAlready.has(at) ? html`<span aria-hidden="true">✓</span>` : uiIcon("plus")}<span>${label}</span></button>`)}
       </div>
     </div>
     <div class="hint">A marker starts as an icon over the reading it names: a triangle over the highest, a dot over
