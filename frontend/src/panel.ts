@@ -3987,10 +3987,31 @@ export class WristAssistantPanel extends LitElement {
       });
       return;
     }
+    // A layer pinned to a chart reading is not dragged to a place, because the
+    // anchor decides its place every time the chart refreshes. The same drag
+    // nudges it off that spot instead, so what the pointer does still matches
+    // what the eye sees, and a resize still lands on the width and height.
+    const anchor = el.payload.chartAnchor;
+    const design = DESIGN_BOX[family as DrawableFamily];
+    const startNudge = { dx: anchor?.dx ?? 0, dy: anchor?.dy ?? 0 };
+    // Points, to the tenth: a nudge is an offset on the plot, not a place on the face.
+    const round = (n: number) => Math.round(n * 10) / 10;
     this.cancelGesture?.();
     this.cancelGesture = beginGesture(svg, canvas, e, { elementId: id, frame, handle: handle ?? undefined }, {
       onFrame: (elementId: string, f: NormalizedFrame, done: boolean) => {
-        this.mutate((c) => setPlacement(c, family, elementId, { frame: f }), `drag-${elementId}-${family}`);
+        this.mutate((c) => {
+          if (anchor === undefined) {
+            setPlacement(c, family, elementId, { frame: f });
+            return;
+          }
+          setPlacement(c, family, elementId, { frame: { ...f, x: frame.x, y: frame.y } });
+          const target = c.elements.find((x) => x.payload.id === elementId)?.payload.chartAnchor;
+          if (target === undefined) return;
+          const dx = round(startNudge.dx + (f.x - frame.x) * design.width);
+          const dy = round(startNudge.dy + (f.y - frame.y) * design.height);
+          if (dx) target.dx = dx; else delete target.dx;
+          if (dy) target.dy = dy; else delete target.dy;
+        }, `drag-${elementId}-${family}`);
         if (done) {
           this.draft?.endGesture();
           this.cancelGesture = undefined;

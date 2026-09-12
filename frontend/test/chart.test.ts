@@ -32,6 +32,15 @@ import {
   groupMembers,
   groupOf,
   literal,
+  literalPartText,
+  addChartMarker,
+  type TextElement,
+  DESIGN_BOX,
+  type ChartAnchorPoint,
+  type ChartAnchorPlace,
+  chartMarkersOf,
+  chartDrawsBuiltInMarkers,
+  convertChartMarkers,
   newConfig,
   newElement,
   parseConfig,
@@ -49,7 +58,7 @@ import {
 import { describeValue } from "../src/editors.js";
 import { compile } from "../src/compiler.js";
 import { renderLayout, type IconProvider } from "../src/renderer.js";
-import { chartDomain, chartLabels, chartNumbers, resolveAll, type EntityState, type ResolvedChart, type ResolvedLayout } from "../src/resolver.js";
+import { chartDomain, chartLabels, chartNumbers, placeChartAnchors, resolveAll, type EntityState, type ResolvedChart, type ResolvedLayout } from "../src/resolver.js";
 
 const noIcons: IconProvider = { render: () => undefined, available: () => false, names: () => undefined };
 
@@ -1443,5 +1452,212 @@ describe("long-term statistics", () => {
     expect(parsed.payload.source).toBe("history");
     expect(parsed.payload.statPeriod).toBe("hour");
     expect(parsed.payload.statType).toBe("mean");
+  });
+});
+
+describe("chart markers as layers", () => {
+  /** A config with one chart, and the chart. */
+  const withChart = () => {
+    const cfg = newConfig("Prices", 0);
+    const chart = newElement("chart") as Extract<Element, { kind: "chart" }>;
+    chart.payload.value = literal("10,40,20,5,30");
+    cfg.elements.push(chart);
+    return { cfg, chartId: chart.payload.id };
+  };
+
+  it("adds a marker as a text layer in the chart's group, pinned to its reading", () => {
+    const { cfg, chartId } = withChart();
+    const id = addChartMarker(cfg, chartId, "lowest");
+    expect(id).toBeDefined();
+    const marker = cfg.elements.find((el) => el.payload.id === id)!;
+    expect(marker.kind).toBe("text");
+    expect(marker.payload.chartAnchor).toEqual({ layer: chartId, at: "lowest", place: "above" });
+    // Same group as the chart, so the Layers list files it under the chart and
+    // a drag on the chart takes it along.
+    expect(marker.payload.groupId).toBeDefined();
+    expect(marker.payload.groupId).toBe(cfg.elements.find((el) => el.payload.id === chartId)!.payload.groupId);
+    expect(chartMarkersOf(cfg, chartId).map((m) => m.payload.id)).toEqual([id]);
+  });
+
+  it("starts as a glyph the author can replace with anything, including an emoji", () => {
+    const { cfg, chartId } = withChart();
+    const highId = addChartMarker(cfg, chartId, "highest")!;
+    const lowId = addChartMarker(cfg, chartId, "lowest")!;
+    const high = cfg.elements.find((el) => el.payload.id === highId)!;
+    const low = cfg.elements.find((el) => el.payload.id === lowId)!;
+    expect(literalPartText((high.payload as TextElement).value)).toBe("▲");
+    expect(literalPartText((low.payload as TextElement).value)).toBe("●");
+
+    // The whole point of a marker being a text layer: any character goes in.
+    (low.payload as TextElement).value = literal("💚");
+    const round = parseConfig(encodeConfig(cfg));
+    const back = round.elements.find((el) => el.payload.id === low.payload.id)!;
+    expect(literalPartText((back.payload as TextElement).value)).toBe("💚");
+    expect(back.payload.chartAnchor).toEqual({ layer: chartId, at: "lowest", place: "above" });
+  });
+
+  it("writes no anchor key on a layer that follows nothing", () => {
+    const cfg = newConfig("Plain", 0);
+    cfg.elements.push(newElement("text"));
+    const doc = encodeConfig(cfg) as { elements: { payload: Record<string, unknown> }[] };
+    expect("chartAnchor" in doc.elements[0]!.payload).toBe(false);
+  });
+
+  it("round-trips the nudge, and omits it at zero", () => {
+    const { cfg, chartId } = withChart();
+    const id = addChartMarker(cfg, chartId, "now", "on")!;
+    const marker = cfg.elements.find((el) => el.payload.id === id)!;
+    marker.payload.chartAnchor!.dx = 2;
+    marker.payload.chartAnchor!.dy = -1.5;
+    const doc = encodeConfig(cfg) as { elements: { payload: Record<string, unknown> }[] };
+    const written = doc.elements.find((e) => (e.payload as { id: string }).id === id)!.payload.chartAnchor;
+    expect(written).toEqual({ layer: chartId, at: "now", place: "on", dx: 2, dy: -1.5 });
+    expect(parseConfig(doc).elements.find((el) => el.payload.id === id)!.payload.chartAnchor)
+      .toEqual({ layer: chartId, at: "now", place: "on", dx: 2, dy: -1.5 });
+
+    marker.payload.chartAnchor!.dx = 0;
+    delete marker.payload.chartAnchor!.dy;
+    const bare = (encodeConfig(cfg) as { elements: { payload: Record<string, unknown> }[] })
+      .elements.find((e) => (e.payload as { id: string }).id === id)!.payload.chartAnchor;
+    expect(bare).toEqual({ layer: chartId, at: "now", place: "on" });
+  });
+
+  it("reads an anchor written by a newer panel rather than refusing the document", () => {
+    const { cfg, chartId } = withChart();
+    const id = addChartMarker(cfg, chartId, "highest")!;
+    const doc = encodeConfig(cfg) as { elements: { payload: Record<string, unknown> }[] };
+    const payload = doc.elements.find((e) => (e.payload as { id: string }).id === id)!.payload;
+    payload.chartAnchor = { layer: chartId, at: "median", place: "orbiting" };
+    expect(auditUnknownKeys(doc)).toEqual([]);
+    expect(parseConfig(doc).elements.find((el) => el.payload.id === id)!.payload.chartAnchor)
+      .toEqual({ layer: chartId, at: "highest", place: "above" });
+  });
+
+  it("a new chart draws no marks of its own, so nothing is offered to convert", () => {
+    const { cfg, chartId } = withChart();
+    const chart = cfg.elements.find((el) => el.payload.id === chartId) as Extract<Element, { kind: "chart" }>;
+    expect(chart.payload.marker).toBe("none");
+    chart.payload.highlight = "both";
+    expect(chartDrawsBuiltInMarkers(chart)).toBe(false);
+  });
+
+  it("converts a chart's built-in marks into layers, shape for shape, only when asked", () => {
+    const { cfg, chartId } = withChart();
+    const chart = cfg.elements.find((el) => el.payload.id === chartId) as Extract<Element, { kind: "chart" }>;
+    chart.payload.highlight = "both";
+    setChartEndMarkers(chart.payload, { high: "triangle", low: "dot" });
+    expect(chartDrawsBuiltInMarkers(chart)).toBe(true);
+
+    // Opening a document changes nothing: the conversion rewrites the chart and
+    // shifts how its marks look, so it waits for the button.
+    const reopened = parseConfig(encodeConfig(cfg));
+    expect(chartMarkersOf(reopened, chartId)).toEqual([]);
+    expect((reopened.elements.find((el) => el.payload.id === chartId)!.payload as ChartElement).marker)
+      .toBe("pointer");
+
+    convertChartMarkers(cfg, chartId);
+    const markers = chartMarkersOf(cfg, chartId);
+    expect(markers.map((m) => m.payload.chartAnchor!.at)).toEqual(["lowest", "highest"]);
+    expect(markers.map((m) => literalPartText((m.payload as TextElement).value))).toEqual(["●", "▲"]);
+    // And the chart stops drawing its own, so the band along the top goes too.
+    expect(chart.payload.marker).toBe("none");
+    expect(chartDrawsBuiltInMarkers(chart)).toBe(false);
+  });
+
+  it("converts only the ends the highlight actually marked", () => {
+    const { cfg, chartId } = withChart();
+    const chart = cfg.elements.find((el) => el.payload.id === chartId) as Extract<Element, { kind: "chart" }>;
+    chart.payload.highlight = "lowest";
+    setChartEndMarkers(chart.payload, { high: "triangle", low: "dot" });
+    convertChartMarkers(cfg, chartId);
+    expect(chartMarkersOf(cfg, chartId).map((m) => m.payload.chartAnchor!.at)).toEqual(["lowest"]);
+  });
+
+  it("keeps a marker when its chart is deleted, and stops it following nothing", () => {
+    const { cfg, chartId } = withChart();
+    const id = addChartMarker(cfg, chartId, "highest")!;
+    removeElement(cfg, chartId);
+    const marker = cfg.elements.find((el) => el.payload.id === id);
+    expect(marker).toBeDefined();
+    expect(marker!.payload.chartAnchor).toBeUndefined();
+  });
+});
+
+describe("where an anchored marker lands", () => {
+  /** One chart filling the whole canvas, plus the markers pinned to it, placed
+   * the way the renderer places them. The chart takes the full frame so the
+   * numbers below are the design box's own, with no sub-rect to allow for. */
+  const placed = (
+    readings: string,
+    markers: { at: ChartAnchorPoint; place?: ChartAnchorPlace; dx?: number; dy?: number }[],
+    tweak: (c: ChartElement) => void = () => {},
+  ) => {
+    const cfg = newConfig("Prices", 0);
+    const chart = newElement("chart") as Extract<Element, { kind: "chart" }>;
+    chart.payload.value = literal(readings);
+    chart.payload.frame = { x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 };
+    tweak(chart.payload);
+    cfg.elements.push(chart);
+    const ids = markers.map((m) => {
+      const id = addChartMarker(cfg, chart.payload.id, m.at, m.place ?? "above")!;
+      const el = cfg.elements.find((e) => e.payload.id === id)!;
+      el.payload.frame = { x: 0, y: 0, width: 0.05, height: 0.1, rotationDegrees: 0 };
+      if (m.dx !== undefined) el.payload.chartAnchor!.dx = m.dx;
+      if (m.dy !== undefined) el.payload.chartAnchor!.dy = m.dy;
+      return id;
+    });
+    const resolved = resolveAll(cfg, {
+      entityStates: new Map(), templateResults: new Map(), namedValues: [],
+    }).rectangular!;
+    const out = placeChartAnchors(resolved.elements, DESIGN_BOX.rectangular);
+    return { ids, frameOf: (id: string) => out.find((e) => e.id === id)!.frame };
+  };
+
+  it("puts a marker over the column it names, not where its frame put it", () => {
+    // Five readings, the lowest fourth and the highest second.
+    const { ids, frameOf } = placed("10,40,20,5,30",
+      [{ at: "lowest" }, { at: "highest" }], (c) => { c.barGap = 0; });
+    const [low, high] = ids.map(frameOf);
+    // Five even columns across the full width: the fourth is centred at 0.7,
+    // the second at 0.3.
+    expect(low!.x + low!.width / 2).toBeCloseTo(0.7, 3);
+    expect(high!.x + high!.width / 2).toBeCloseTo(0.3, 3);
+    // The lowest bar is short, so its marker hangs well below the highest one.
+    expect(low!.y).toBeGreaterThan(high!.y);
+  });
+
+  it("pushes a marker over the tallest bar down rather than off the chart", () => {
+    const { ids, frameOf } = placed("1,2,9", [{ at: "highest" }]);
+    // The tallest bar reaches the top of the plot on an auto scale, so "above"
+    // it is off the chart. The marker sits on the top edge instead, and the
+    // bars keep every point of their height.
+    expect(frameOf(ids[0]!).y).toBeGreaterThanOrEqual(0);
+    expect(frameOf(ids[0]!).y).toBeLessThan(0.001);
+  });
+
+  it("moves the marker around the bar top with the place", () => {
+    // A fixed scale so the followed reading sits halfway up: on an auto scale
+    // both ends clamp, which is a different test.
+    const { ids, frameOf } = placed("5,9,9,9",
+      [{ at: "lowest", place: "above" }, { at: "lowest", place: "on" },
+       { at: "lowest", place: "below" }, { at: "lowest", place: "bottom" }],
+      (c) => { c.scale = "fixed"; c.minValue = 0; c.maxValue = 10; c.baseline = "zero"; });
+    const [above, on, below, bottom] = ids.map((id) => frameOf(id).y);
+    expect(above!).toBeLessThan(on!);
+    expect(on!).toBeLessThan(below!);
+    expect(below!).toBeLessThan(bottom!);
+  });
+
+  it("shifts a marker by the nudge without giving up the follow", () => {
+    const { ids, frameOf } = placed("5,9,9,9",
+      [{ at: "lowest", place: "on" }, { at: "lowest", place: "on", dx: 4, dy: 3 }]);
+    const [plain, nudged] = ids.map(frameOf);
+    expect((nudged!.x - plain!.x) * DESIGN_BOX.rectangular.width).toBeCloseTo(4, 3);
+    expect((nudged!.y - plain!.y) * DESIGN_BOX.rectangular.height).toBeCloseTo(3, 3);
+  });
+
+  it("leaves a layer alone when its anchor has nothing to point at", () => {
+    const { ids, frameOf } = placed("not a series", [{ at: "highest" }]);
+    expect(frameOf(ids[0]!)).toEqual({ x: 0, y: 0, width: 0.05, height: 0.1, rotationDegrees: 0 });
   });
 });

@@ -152,6 +152,16 @@ import {
   shareValue,
   sharedValueUses,
   unsharedCopy,
+  CHART_ANCHOR_POINTS,
+  CHART_ANCHOR_PLACES,
+  type ChartAnchor,
+  type ChartAnchorPlace,
+  type ChartEndMarkers,
+  type ChartAnchorPoint,
+  addChartMarker,
+  chartMarkersOf,
+  chartDrawsBuiltInMarkers,
+  convertChartMarkers,
 } from "./model.js";
 import {
   type StatesTable,
@@ -2910,15 +2920,18 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
   const f = eff.frame;
   const setFrame = (patch: Partial<NormalizedFrame>, k: string) => host.update((c) => setPlacement(c, family, id, { frame: typedFrame(f, patch) }), `${key}-${k}-${family}`);
   const placeChanged = !same(f, CENTERED_FRAME) || eff.isHidden;
+  const anchor = el.payload.chartAnchor;
   // The section id stays "placement": it is a stored key (openSections, and
   // the browser's own memory of which cards were open), not a label.
   return card(host, "placement", "Position", html`
+    ${anchorFields(host, el, family)}
+    ${anchor !== undefined ? nothing : html`
     <div class="field xy-field"><span>Position</span>
       <div class="xy">
         ${frameLetterField("X", "Left", f.x, (v) => setFrame({ x: v }, "x"), -100, 100)}
         ${frameLetterField("Y", "Top", f.y, (v) => setFrame({ y: v }, "y"), -100, 100)}
       </div>
-    </div>
+    </div>`}
     <div class="field xy-field"><span>Size</span>
       <div class="xy">
         ${frameLetterField("W", "Width", f.width, (v) => setFrame({ width: v }, "w"), 4, 200)}
@@ -2928,12 +2941,67 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
     ${sliderField("Rotation", f.rotationDegrees, (v) => setFrame({ rotationDegrees: v }, "rot"),
       { min: -180, max: 180, step: 1, def: 0, format: (v) => `${Math.round(v)}°`, unit: "°", range: false })}
     ${checkField("Hidden", eff.isHidden, (v) => host.update((c) => setPlacement(c, family, id, { isHidden: v })), false)}
-    <div class="hint">X, Y, W and H are a percent of the face, on the ${familyTitle(family)} shape only. Drag a letter left or right to change its number. Arrow keys nudge 1 pt, shift for 10.</div>`,
+    <div class="hint">${anchor === undefined ? "X, Y, W and H are" : "W and H are"} a percent of the face, on the ${familyTitle(family)} shape only. Drag a letter left or right to change its number. Arrow keys nudge 1 pt, shift for 10.</div>`,
     { color: SECTION_COLOR.position, icon: "place", summary: `${Math.round(f.width * 100)}% wide · ${familyTitle(family)}`,
       ...(placeChanged ? {
         resetTitle: `Put this layer back to the middle of the ${familyTitle(family)} face at half size, unrotated and shown`,
         reset: () => host.update((c) => setPlacement(c, family, id, { frame: { ...CENTERED_FRAME }, isHidden: false })),
       } : {}) });
+}
+
+/**
+ * The chart a layer follows, where it sits against the reading, and the nudge
+ * from there. Only for a layer that has an anchor, which is how a chart marker
+ * is made; every other layer sees none of this.
+ *
+ * X and Y are hidden while a layer is anchored, because the anchor decides both
+ * every time the chart refreshes. The nudge is what moves it from there, and it
+ * is in points rather than a percent, because it is an offset from a spot on the
+ * plot and not a place on the face.
+ */
+function anchorFields(host: EditorHost, el: CElement, family: FamilyKind): TemplateResult | typeof nothing {
+  const anchor = el.payload.chartAnchor;
+  if (anchor === undefined) return nothing;
+  const id = el.payload.id;
+  const key = `el-${id}-anchor`;
+  const charts = host.config.elements.filter((e) => e.kind === "chart");
+  const setAnchor = (m: (a: ChartAnchor) => void, k?: string) => host.update((c) => {
+    const target = c.elements.find((e) => e.payload.id === id);
+    if (target?.payload.chartAnchor) m(target.payload.chartAnchor);
+  }, k ? `${key}-${k}` : undefined);
+  const ctx = describeContext(host);
+  const gone = !charts.some((e) => e.payload.id === anchor.layer);
+  return html`
+    ${charts.length < 2 ? nothing : selectField("Follows", anchor.layer,
+      charts.map((e): [string, string] => [e.payload.id, layerTitle(e, ctx)]),
+      (v) => setAnchor((a) => { a.layer = v; }))}
+    ${segField("Reading", anchor.at, CHART_ANCHOR_POINTS as unknown as [ChartAnchorPoint, string][],
+      (v) => setAnchor((a) => { a.at = v; }), { def: "highest" as ChartAnchorPoint })}
+    ${segField("Sits", anchor.place, CHART_ANCHOR_PLACES as unknown as [ChartAnchorPlace, string][],
+      (v) => setAnchor((a) => { a.place = v; }), { def: "above" as ChartAnchorPlace })}
+    <div class="grid2">
+      ${numberField("Nudge X", anchor.dx ?? 0, (v) => setAnchor((a) => {
+        if (v) a.dx = v; else delete a.dx;
+      }, "dx"), { step: 0.5, def: 0, unit: "pt" })}
+      ${numberField("Nudge Y", anchor.dy ?? 0, (v) => setAnchor((a) => {
+        if (v) a.dy = v; else delete a.dy;
+      }, "dy"), { step: 0.5, def: 0, unit: "pt" })}
+    </div>
+    <div class="field list-field"><span>Marker</span>
+      <div class="chips">
+        <button class="small" title="Stop following the chart and leave this layer where it is"
+          @click=${() => host.update((c) => {
+            const target = c.elements.find((e) => e.payload.id === id);
+            if (target) delete target.payload.chartAnchor;
+          })}><span>Unpin</span></button>
+      </div>
+    </div>
+    ${gone
+      ? html`<div class="hint keep">The chart this followed is not in this document any more, so the layer
+          draws where its own frame puts it. Pick another chart above, or unpin it.</div>`
+      : html`<div class="hint">This layer follows that reading on the ${familyTitle(family)} face and every
+          other one: wherever the bar lands, it goes. It is held inside the plot, so a big glyph over a tall
+          bar is pushed down rather than off the top, and the bars never give up height to make room.</div>`}`;
 }
 
 /** What a tap on this layer does. A tap-area layer has no card, since the
@@ -3914,20 +3982,13 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         ${c.highlight === "none" ? nothing : html`
           <div class="grid2">
             ${c.highlight === "lowest" ? nothing
-              : segField("Highest marker", markers.high, CHART_END_MARKER_CHOICES,
-                (v) => setChart((p) => { setChartEndMarkers(p, { ...chartEndMarkers(p), high: v }); }), { def: baseMarkers.high })}
-            ${c.highlight === "highest" ? nothing
-              : segField("Lowest marker", markers.low, CHART_END_MARKER_CHOICES,
-                (v) => setChart((p) => { setChartEndMarkers(p, { ...chartEndMarkers(p), low: v }); }), { def: baseMarkers.low })}
-          </div>
-          <div class="grid2">
-            ${c.highlight === "lowest" ? nothing
               : colorField("Highest colour", c.highColorHex, (v) => setChart((p) => { p.highColorHex = v ?? CHART_DEFAULT_HIGH_HEX; }, "hicol"), false, CHART_DEFAULT_HIGH_HEX)}
             ${c.highlight === "highest" ? nothing
               : colorField("Lowest colour", c.lowColorHex, (v) => setChart((p) => { p.lowColorHex = v ?? CHART_DEFAULT_LOW_HEX; }, "locol"), false, CHART_DEFAULT_LOW_HEX)}
           </div>
-          <div class="hint">A marker is worth keeping on: most watch faces tint a complication into one colour,
-            which flattens the two colours into each other, and the marker shape is what survives that.</div>`}
+          <div class="hint">Most watch faces tint a complication into one colour, which flattens the two
+            colours into each other. A marker in Extras is the shape that survives that.</div>`}
+        ${legacyMarkerFields(host, el, markers, baseMarkers, setChart)}
         ${checkField("Threshold",c.thresholdValue !== undefined, (v) => setChart((p) => {
           if (v) p.thresholdValue = seedThreshold(shown);
           else delete p.thresholdValue;
@@ -4139,9 +4200,14 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             restoreKeys(c.elements[idx]!.payload, base, lookKeys);
             if (sizedHere) setPlacement(c, family, id, {}, true);
           }) } : {}) })}
-    ${el.kind === "chart" ? card(host, "numbers", "Numbers", chartNumbersSection(host, el),
+    ${el.kind === "chart" ? card(host, "numbers", "Extras", chartExtrasSection(host, el),
       { color: SECTION_COLOR.numbers, icon: "text", summary: chartNumbersSummary(host, el),
-        ...(labels.length > 0 ? { reset: () => host.update((c) => { for (const l of chartLabelsOf(c, id)) removeElement(c, l.payload.id); }) } : {}) }) : nothing}
+        ...(labels.length > 0 || chartMarkersOf(host.config, id).length > 0
+          ? { reset: () => host.update((c) => {
+              for (const l of chartLabelsOf(c, id)) removeElement(c, l.payload.id);
+              for (const m of chartMarkersOf(c, id)) removeElement(c, m.payload.id);
+            }) }
+          : {}) }) : nothing}
     ${el.kind === "image" ? card(host, "timestamp", "Timestamp", imageTimestampSection(el.payload, (m, k) => upd((e) => m((e as typeof el).payload), k)),
       { color: SECTION_COLOR.numbers, icon: "clock", summary: stamp ? `Shown · ${el.payload.timestampSize} pt` : "Hidden",
         ...(stamp ? { reset: resetKeys(TIMESTAMP_KEYS, "reset-stamp") } : {}) }) : nothing}
@@ -4244,46 +4310,114 @@ function tapSizeHint(host: EditorHost, tapId: string): TemplateResult | typeof n
  * invisible rectangle by hand; the action editor then sits right here, which
  * is why an attached tap needs no row of its own in the Layers card.
  */
-/** The one-line state of a chart's Numbers card. */
+/**
+ * The two marker rows a chart drew its own marks from, shown only while it still
+ * has them.
+ *
+ * Until 2026-09-12 this was the only way to mark an end, and it bought one shape
+ * from a list of three, at a size nobody could change, in the highlight's colour.
+ * A marker is a layer now: any glyph or emoji, any size, any colour, its own
+ * states. These rows stay so a document from before that keeps working and reads
+ * the same, and the line under them points at the button that converts it.
+ *
+ * A chart drawn today never shows them: `newElement` seeds `marker: "none"`.
+ */
+function legacyMarkerFields(
+  host: EditorHost,
+  el: Extract<CElement, { kind: "chart" }>,
+  markers: ChartEndMarkers,
+  baseMarkers: ChartEndMarkers,
+  setChart: (m: (p: ChartElement) => void, k?: string) => void,
+): TemplateResult | typeof nothing {
+  if (!chartDrawsBuiltInMarkers(el)) return nothing;
+  const c = el.payload;
+  return html`
+    <div class="grid2">
+      ${c.highlight === "lowest" ? nothing
+        : segField("Highest marker", markers.high, CHART_END_MARKER_CHOICES,
+          (v) => setChart((p) => { setChartEndMarkers(p, { ...chartEndMarkers(p), high: v }); }), { def: baseMarkers.high })}
+      ${c.highlight === "highest" ? nothing
+        : segField("Lowest marker", markers.low, CHART_END_MARKER_CHOICES,
+          (v) => setChart((p) => { setChartEndMarkers(p, { ...chartEndMarkers(p), low: v }); }), { def: baseMarkers.low })}
+    </div>
+    <div class="field list-field"><span>Markers</span>
+      <div class="chips">
+        <button class="small" title="Turn these two marks into layers you can restyle"
+          @click=${() => host.update((cfg) => { convertChartMarkers(cfg, c.id); })}>${uiIcon("plus")}<span>Move to layers</span></button>
+      </div>
+    </div>
+    <div class="hint">These marks are drawn by the chart itself, which is why they are one of three
+      shapes at a size you cannot set, and why the plot gives up five points of height to make room
+      for them. Move them to layers and each becomes an ordinary layer in Extras: any character or
+      emoji, any size, any colour, sitting over its own bar instead of in a band along the top.</div>`;
+}
+
+/** The one-line state of a chart's Extras card. */
 function chartNumbersSummary(host: EditorHost, el: Extract<CElement, { kind: "chart" }>): string {
   const labels = chartLabelsOf(host.config, el.payload.id);
-  if (labels.length === 0) return "None yet";
-  return labels.map((l) => {
+  const markers = chartMarkersOf(host.config, el.payload.id);
+  if (labels.length === 0 && markers.length === 0) return "None yet";
+  const parts = labels.map((l) => {
     const k = l.payload.value.kind;
     return k.kind === "chartStat" ? (CHART_STATS.find(([s]) => s === k.stat)?.[1] ?? "number").toLowerCase() : "number";
-  }).join(" · ");
+  });
+  for (const m of markers) {
+    const at = m.payload.chartAnchor!.at;
+    parts.push(`${(CHART_ANCHOR_POINTS.find(([k]) => k === at)?.[1] ?? "reading").toLowerCase()} marker`);
+  }
+  return parts.join(" · ");
 }
 
 /**
- * A chart's numbers: the text layers that print one of its readings, and a
- * row of buttons that add one. Each number is an ordinary text layer in the
- * chart's group, so it is dragged, sized and coloured like any other layer;
- * this card only lists them and hands the selection over.
+ * What a chart carries besides the plot: the text layers that print one of its
+ * readings, the layers pinned over one of them, and the buttons that add either.
+ *
+ * Both are ordinary layers in the chart's group, dragged, sized, coloured and
+ * given states like any other; this card only lists them and hands the selection
+ * over. That is the whole design: a number is a text layer with a `chartStat`
+ * value, a marker is any layer with a `chartAnchor`, and neither is a setting on
+ * the chart that has to be invented twice.
  */
-function chartNumbersSection(host: EditorHost, el: Extract<CElement, { kind: "chart" }>): TemplateResult {
+function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "chart" }>): TemplateResult {
   const ctx = describeContext(host);
   const labels = chartLabelsOf(host.config, el.payload.id);
   // The chart stays selected after an add: the next click is usually another
   // number, and the new one is one click away in the list above the buttons.
+  const markers = chartMarkersOf(host.config, el.payload.id);
+  // The chart stays selected after an add: the next click is usually another
+  // number, and the new one is one click away in the list above the buttons.
   const add = (stat: ChartStat) => host.update((c) => { addChartLabel(c, el.payload.id, stat); });
+  const addMarker = (at: ChartAnchorPoint) => host.update((c) => { addChartMarker(c, el.payload.id, at); });
   const taken = new Set(labels.map((l) => (l.payload.value.kind.kind === "chartStat" ? l.payload.value.kind.stat : "")));
+  const markedAlready = new Set(markers.map((m) => m.payload.chartAnchor!.at));
+  const row = (id: string, lead: unknown, title: string, what: string) => html`
+    <div class="num-row">
+      <button class="small" title=${`Edit this ${what}`} @click=${() => host.selectLayer(id)}>
+        <b>${lead}</b> · <span class="ent-tok">${title}</span>
+      </button>
+      <button class="icon danger" title=${`Delete this ${what}`} aria-label=${`Delete this ${what}`}
+        @click=${() => host.update((c) => removeElement(c, id))}>${uiIcon("close")}</button>
+    </div>`;
   return html`
-    ${labels.length === 0
-      ? html`<div class="hint keep">A chart with no numbers on it shows that a reading moved, not what it moved to. Add one and it appears as a text layer in this chart's group: drag it anywhere, give it any size or colour, and it prints the live value.</div>`
+    ${labels.length === 0 && markers.length === 0
+      ? html`<div class="hint keep">A chart on its own shows that a reading moved, not what it moved to and not
+          which reading was the day's best. Add a number or a marker and it appears as a layer in this chart's
+          group: drag it anywhere, give it any size or colour, and it follows the live value.</div>`
       : html`
         <div class="field list-field"><span>Shown</span>
           <div class="chart-numbers">
-            ${labels.map((l) => html`
-              <div class="num-row">
-                <button class="small" title="Edit this number" @click=${() => host.selectLayer(l.payload.id)}>
-                  <b>${host.resolve(l.payload.value) ?? "--"}</b> · <span class="ent-tok">${layerTitle(l, ctx)}</span>
-                </button>
-                <button class="icon danger" title="Delete this number" aria-label="Delete this number"
-                  @click=${() => host.update((c) => removeElement(c, l.payload.id))}>${uiIcon("close")}</button>
-              </div>`)}
+            ${labels.map((l) => row(l.payload.id, host.resolve(l.payload.value) ?? "--", layerTitle(l, ctx), "number"))}
+            ${markers.map((m) => {
+              const at = m.payload.chartAnchor!.at;
+              const name = CHART_ANCHOR_POINTS.find(([k]) => k === at)?.[1] ?? "reading";
+              const glyph = m.kind === "text" ? (host.resolve(m.payload.value) ?? "●") : "◆";
+              return row(m.payload.id, glyph, `over the ${name.toLowerCase()}`, "marker");
+            })}
           </div>
         </div>
-        <div class="hint">Each number is a text layer in this chart's group. Click one to edit it; drag it on the preview to move it. The × deletes it, and Undo brings it back.</div>`}
+        <div class="hint">Each one is a layer in this chart's group. Click one to edit it; drag it on the preview
+          to move it. A marker keeps following its reading wherever that lands. The × deletes it, and Undo brings
+          it back.</div>`}
     <div class="field list-field"><span>Add</span>
       <div class="adders">
         ${CHART_STATS.map(([stat, label]) => html`
@@ -4291,7 +4425,19 @@ function chartNumbersSection(host: EditorHost, el: Extract<CElement, { kind: "ch
             @click=${() => add(stat)}>${uiIcon("plus")}<span>${label}</span></button>`)}
       </div>
     </div>
-    <div class="hint">The newest reading, the change and the total start with the entity's unit after them. The change is the newest reading minus the first, and the trend arrow is that change as ↑, ↓ or →, flat when it is too small for the chart to print. The ends of the scale come from the plot's range, so on a Fixed scale they print the Min and Max above.</div>`;
+    <div class="hint">The newest reading, the change and the total start with the entity's unit after them. The change is the newest reading minus the first, and the trend arrow is that change as ↑, ↓ or →, flat when it is too small for the chart to print. The ends of the scale come from the plot's range, so on a Fixed scale they print the Min and Max above.</div>
+    <div class="field list-field"><span>Mark</span>
+      <div class="adders">
+        ${CHART_ANCHOR_POINTS.map(([at, label]) => html`
+          <button class="small" title=${markedAlready.has(at) ? `Add another mark over the ${label.toLowerCase()}` : `Mark the ${label.toLowerCase()}`}
+            @click=${() => addMarker(at)}>${uiIcon("plus")}<span>${label}</span></button>`)}
+      </div>
+    </div>
+    <div class="hint">A marker starts as a character over the reading it names, so type any glyph or emoji into it:
+      🔺 over the highest tariff, 💚 over the lowest. It hangs in the empty space above its own bar rather than in a
+      band along the top, so the bars keep their full height, and it is pushed back down rather than off the chart
+      when the bar is already tall. Its Position card sets which reading it follows and which side of the bar it
+      sits on.</div>`;
 }
 
 function tappableSection(host: EditorHost, el: CElement, key: string): TemplateResult | typeof nothing {

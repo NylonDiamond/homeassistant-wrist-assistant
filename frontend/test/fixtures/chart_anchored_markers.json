@@ -1,0 +1,324 @@
+{
+ "name": "Chart anchored markers",
+ "description": "Markers as layers. Five text layers are pinned to one bar chart of 10,40,20,5,30 through `chartAnchor`, and each one's frame is worked out from the chart rather than from what the author typed: only x and y move, the width and height stay theirs. The chart fills the whole face with no gap between bars, so the five columns are centred on 0.1, 0.3, 0.5, 0.7 and 0.9 and every x below is one of those less half the layer's width. The triangle over the highest reading would sit above the tallest bar, which already reaches the top of an auto scale, so it is held at the top edge instead of leaving the plot: this is what lets the bars keep their full height, where the chart's own marker used to take five points off every one of them. The green heart over the lowest hangs above the shortest bar, which is where the empty space is. The dot on `now` is centred on that bar's top; the dot at the bottom sits on the floor of the plot whatever its reading; and the last one asks for `below` with a nudge of 3 points right and 2 up, which is what a drag on an anchored layer writes.",
+ "config": {
+  "schemaVersion": 6,
+  "id": "AAAAAAAA-0000-4000-8000-0000000000A0",
+  "name": "Chart anchored markers",
+  "slotIndex": 2,
+  "supportedFamilies": [
+   "rectangular"
+  ],
+  "values": [],
+  "elements": [
+   {
+    "kind": "chart",
+    "payload": {
+     "id": "EEEEEEEE-0000-4000-8000-0000000000A1",
+     "value": {
+      "kind": {
+       "kind": "literal",
+       "value": "10,40,20,5,30"
+      }
+     },
+     "historyMinutes": 0,
+     "historyPoints": 24,
+     "style": "bars",
+     "limit": 0,
+     "takeFromEnd": false,
+     "scale": "auto",
+     "minValue": 0,
+     "maxValue": 100,
+     "baseline": "lowest",
+     "barGap": 0,
+     "lineWidth": 2,
+     "colorSlot": {
+      "baseColorHex": "#FFFFFF"
+     },
+     "highlight": "both",
+     "highColorHex": "#FF6B35",
+     "lowColorHex": "#32D74B",
+     "marker": "none",
+     "coloring": "uniform",
+     "bands": [],
+     "bandAboveColorHex": "#FF453A",
+     "fillBands": false,
+     "thresholdColorHex": "#FFFFFF",
+     "nowIndex": {
+      "kind": {
+       "kind": "literal",
+       "value": "2"
+      }
+     },
+     "nowColorHex": "#FFFFFF",
+     "rules": [],
+     "frame": {
+      "x": 0,
+      "y": 0,
+      "width": 1,
+      "height": 1,
+      "rotationDegrees": 0
+     },
+     "isHidden": false
+    }
+   },
+   {
+    "kind": "text",
+    "payload": {
+     "id": "EEEEEEEE-0000-4000-8000-0000000000A2",
+     "colorSlot": {
+      "baseColorHex": "#FFFFFF"
+     },
+     "rules": [],
+     "frame": {
+      "x": 0,
+      "y": 0,
+      "width": 0.06,
+      "height": 0.16,
+      "rotationDegrees": 0
+     },
+     "isHidden": false,
+     "value": {
+      "kind": {
+       "kind": "literal",
+       "value": "▲"
+      }
+     },
+     "fontSize": 7,
+     "fontWeight": "medium",
+     "chartAnchor": {
+      "layer": "EEEEEEEE-0000-4000-8000-0000000000A1",
+      "at": "highest",
+      "place": "above"
+     }
+    }
+   },
+   {
+    "kind": "text",
+    "payload": {
+     "id": "EEEEEEEE-0000-4000-8000-0000000000A3",
+     "colorSlot": {
+      "baseColorHex": "#FFFFFF"
+     },
+     "rules": [],
+     "frame": {
+      "x": 0,
+      "y": 0,
+      "width": 0.06,
+      "height": 0.16,
+      "rotationDegrees": 0
+     },
+     "isHidden": false,
+     "value": {
+      "kind": {
+       "kind": "literal",
+       "value": "💚"
+      }
+     },
+     "fontSize": 7,
+     "fontWeight": "medium",
+     "chartAnchor": {
+      "layer": "EEEEEEEE-0000-4000-8000-0000000000A1",
+      "at": "lowest",
+      "place": "above"
+     }
+    }
+   },
+   {
+    "kind": "text",
+    "payload": {
+     "id": "EEEEEEEE-0000-4000-8000-0000000000A4",
+     "colorSlot": {
+      "baseColorHex": "#FFFFFF"
+     },
+     "rules": [],
+     "frame": {
+      "x": 0,
+      "y": 0,
+      "width": 0.06,
+      "height": 0.16,
+      "rotationDegrees": 0
+     },
+     "isHidden": false,
+     "value": {
+      "kind": {
+       "kind": "literal",
+       "value": "●"
+      }
+     },
+     "fontSize": 7,
+     "fontWeight": "medium",
+     "chartAnchor": {
+      "layer": "EEEEEEEE-0000-4000-8000-0000000000A1",
+      "at": "now",
+      "place": "on"
+     }
+    }
+   },
+   {
+    "kind": "text",
+    "payload": {
+     "id": "EEEEEEEE-0000-4000-8000-0000000000A5",
+     "colorSlot": {
+      "baseColorHex": "#FFFFFF"
+     },
+     "rules": [],
+     "frame": {
+      "x": 0,
+      "y": 0,
+      "width": 0.06,
+      "height": 0.16,
+      "rotationDegrees": 0
+     },
+     "isHidden": false,
+     "value": {
+      "kind": {
+       "kind": "literal",
+       "value": "●"
+      }
+     },
+     "fontSize": 7,
+     "fontWeight": "medium",
+     "chartAnchor": {
+      "layer": "EEEEEEEE-0000-4000-8000-0000000000A1",
+      "at": "latest",
+      "place": "bottom"
+     }
+    }
+   },
+   {
+    "kind": "text",
+    "payload": {
+     "id": "EEEEEEEE-0000-4000-8000-0000000000A6",
+     "colorSlot": {
+      "baseColorHex": "#FFFFFF"
+     },
+     "rules": [],
+     "frame": {
+      "x": 0,
+      "y": 0,
+      "width": 0.06,
+      "height": 0.16,
+      "rotationDegrees": 0
+     },
+     "isHidden": false,
+     "value": {
+      "kind": {
+       "kind": "literal",
+       "value": "●"
+      }
+     },
+     "fontSize": 7,
+     "fontWeight": "medium",
+     "chartAnchor": {
+      "layer": "EEEEEEEE-0000-4000-8000-0000000000A1",
+      "at": "first",
+      "place": "below",
+      "dx": 3,
+      "dy": -2
+     }
+    }
+   }
+  ],
+  "perFamily": [
+   "rectangular",
+   {
+    "cornerBodyShape": "wedge",
+    "borderWidth": 2
+   }
+  ],
+  "dataSources": [],
+  "tapAction": {
+   "type": "refresh"
+  }
+ },
+ "inputs": {
+  "entityStates": {},
+  "templateResults": {}
+ },
+ "expectedCompiled": {
+  "entities": [],
+  "expressionKeys": [],
+  "historyKeys": []
+ },
+ "expected": {
+  "rectangular": {
+   "elements": [
+    {
+     "id": "EEEEEEEE-0000-4000-8000-0000000000A1",
+     "kind": "chart",
+     "values": [
+      10,
+      40,
+      20,
+      5,
+      30
+     ],
+     "highIndex": 1,
+     "lowIndex": 3,
+     "nowIndex": 2
+    },
+    {
+     "id": "EEEEEEEE-0000-4000-8000-0000000000A2",
+     "kind": "text",
+     "text": "▲",
+     "frame": {
+      "x": 0.27,
+      "y": 0,
+      "width": 0.06,
+      "height": 0.16,
+      "rotationDegrees": 0
+     }
+    },
+    {
+     "id": "EEEEEEEE-0000-4000-8000-0000000000A3",
+     "kind": "text",
+     "text": "💚",
+     "frame": {
+      "x": 0.67,
+      "y": 0.7085496183206106,
+      "width": 0.06,
+      "height": 0.16,
+      "rotationDegrees": 0
+     }
+    },
+    {
+     "id": "EEEEEEEE-0000-4000-8000-0000000000A4",
+     "kind": "text",
+     "text": "●",
+     "frame": {
+      "x": 0.47,
+      "y": 0.4228571428571429,
+      "width": 0.06,
+      "height": 0.16,
+      "rotationDegrees": 0
+     }
+    },
+    {
+     "id": "EEEEEEEE-0000-4000-8000-0000000000A5",
+     "kind": "text",
+     "text": "●",
+     "frame": {
+      "x": 0.87,
+      "y": 0.8285496183206106,
+      "width": 0.06,
+      "height": 0.16,
+      "rotationDegrees": 0
+     }
+    },
+    {
+     "id": "EEEEEEEE-0000-4000-8000-0000000000A6",
+     "kind": "text",
+     "text": "●",
+     "frame": {
+      "x": 0.08657458563535912,
+      "y": 0.7352017448200655,
+      "width": 0.06,
+      "height": 0.16,
+      "rotationDegrees": 0
+     }
+    }
+   ]
+  }
+ }
+}

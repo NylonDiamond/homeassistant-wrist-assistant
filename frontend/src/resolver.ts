@@ -67,6 +67,11 @@ import {
   elementsFor,
   formatIsEmpty,
   hasFreeTimestamp,
+  DESIGN_BOX,
+  type ChartAnchor,
+  type ChartAnchorPoint,
+  TIMELINE_MIN_LABEL_SIZE,
+  TIMELINE_MAX_LABEL_SIZE,
 } from "./model.js";
 import { keyFor } from "./compiler.js";
 
@@ -112,6 +117,10 @@ export interface ResolvedBase {
   isHidden: boolean;
   frame: NormalizedFrame;
   opacity: number;
+  /** The chart reading this layer follows, carried through so the renderer can
+   * put it over that reading. The frame here is still the author's: the anchor
+   * only ever decides where it lands, and the width and height stay theirs. */
+  chartAnchor?: ChartAnchor;
 }
 export interface ResolvedText extends ResolvedBase {
   kind: "text";
@@ -1346,7 +1355,8 @@ export class Resolver {
     const rotation = this.styleNumber(style, "rotation");
     const frame = rotation === undefined ? p.frame : { ...p.frame, rotationDegrees: rotation };
     const opacity = this.styleNumber(style, "opacity") ?? 1;
-    const base = { id: p.id, isHidden, frame, opacity };
+    const base: ResolvedBase = { id: p.id, isHidden, frame, opacity };
+    if (p.chartAnchor !== undefined) base.chartAnchor = p.chartAnchor;
     switch (el.kind) {
       case "text": {
         const countdownEnd = el.payload.countdown ? this.countdownEnd(el.payload.value) : undefined;
@@ -1589,7 +1599,13 @@ export class Resolver {
     // reading, or a rule that tests one, needs the chart settled before it
     // resolves, whatever order the two sit in the layer list.
     this.settleCharts(config);
-    const elements = elementsFor(config, family).map((el) => this.resolveElement(el, forced));
+    // The markers move onto their charts here, not at draw time, so the preview,
+    // the drag handles, the layer thumbnails and the app repo's own resolver all
+    // read one set of frames. Mirrors `CustomComplication.resolve` in the app repo.
+    const elements = [...placeChartAnchors(
+      elementsFor(config, family).map((el) => this.resolveElement(el, forced)),
+      DESIGN_BOX[family === "inline" ? "rectangular" : family],
+    )];
     const style = layout ? this.applyRules(layout.rules, forced) : new Map<StyleProperty, StyleChange>();
     const out: ResolvedLayout = {
       family,
@@ -1680,6 +1696,265 @@ export function resolveAll(
   if (config.supportedFamilies.includes("inline") && config.inline) out.inline = resolveInline(config.inline, ctx, config);
   return out;
 }
+
+// ── geometry ──────────────────────────────────────────────────────────────
+// Where a resolved layer's marks land inside its frame. Pure arithmetic over
+// resolved elements, with no SVG in it, and it lives here rather than in the
+// renderer because the anchors have to be settled before anything reads a
+// frame: the preview, the drag handles, the layer thumbnails and the app repo's
+// own resolver all have to agree about where a marker is.
+
+/** The face the design box is drawn into, in points. */
+export interface CanvasSize {
+  width: number;
+  height: number;
+}
+
+export interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  cx: number;
+  cy: number;
+}
+
+export function frameBox(el: ResolvedElement, canvas: CanvasSize): Box {
+  const w = Math.max(0, el.frame.width * canvas.width);
+  const h = Math.max(0, el.frame.height * canvas.height);
+  const cx = (el.frame.x + el.frame.width / 2) * canvas.width;
+  const cy = (el.frame.y + el.frame.height / 2) * canvas.height;
+  return { x: cx - w / 2, y: cy - h / 2, w, h, cx, cy };
+}
+
+/** Height of the band a chart reserves along its top for markers, in watch points.
+ * Mirrors `CustomComplicationChartGeometry.markerHeight` in Swift. */
+const CHART_MARKER_BAND = 5;
+
+/** Where every mark of a chart lands inside its frame.
+ *
+ * Pure geometry, no colours: mirrors `CustomComplicationChartGeometry` in the app
+ * repo, at scale 1 because the panel already draws in watch points. */
+export function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) {
+  const values = el.values;
+  const n = Math.max(values.length, 1);
+  // Room along the top only when a highlighted end actually draws a mark there.
+  const marks = (el.highIndex !== undefined && el.highMarker !== "none")
+    || (el.lowIndex !== undefined && el.lowMarker !== "none");
+  const band = marks ? CHART_MARKER_BAND : 0;
+  // Line and area are stroked on the value itself, so half the stroke would fall
+  // outside a plot sized to the frame. Bars are filled inside theirs.
+  const inset = el.style === "bars" ? 0 : el.lineWidth / 2;
+
+  // The plot takes the whole frame. A chart's numbers are text layers of their
+  // own, so nothing here reserves room for them; the author resizes the chart.
+  const plotX = box.x;
+  const plotW = Math.max(box.w, 0);
+
+  const top = box.y + band + inset;
+  const height = Math.max(box.h - band - inset * 2, 1);
+  const bottom = top + height;
+
+  const span = Math.max(el.domainMax - el.domainMin, Number.EPSILON);
+  const growsFromBottom = el.baseline === "lowest";
+  const minimumBar = growsFromBottom ? height * 0.12 : 0;
+
+  // Cap the gap so bars never starve, whatever the author typed.
+  const gap = Math.min(Math.max(el.barGap, 0), plotW / (n * 2));
+  const barWidth = Math.max((plotW - gap * (n - 1)) / n, 0.5);
+
+  const fraction = (v: number) => Math.min(1, Math.max(0, (v - el.domainMin) / span));
+  const y = (v: number) => bottom - fraction(v) * height;
+
+  return {
+    count: values.length,
+    barWidth,
+    plotTop: top,
+    plotBottom: bottom,
+    plotLeft: plotX,
+    plotRight: plotX + plotW,
+    baselineY: growsFromBottom ? bottom : y(0),
+    /** Where a 0…1 fraction of the domain lands, 1 being the top of the plot.
+     * The resolver hands the threshold over as a fraction so the renderer never
+     * has to know what the domain was. */
+    yAtFraction(f: number) {
+      return bottom - Math.min(Math.max(f, 0), 1) * height;
+    },
+    barRect(index: number) {
+      const x = plotX + index * (barWidth + gap);
+      const value = values[index]!;
+      let hi: number;
+      let lo: number;
+      if (growsFromBottom) {
+        // The lowest reading would otherwise be a zero-height sliver, and a run of
+        // equal readings would vanish entirely. Every bar keeps a visible stub.
+        const h = minimumBar + fraction(value) * (height - minimumBar);
+        hi = bottom - h;
+        lo = bottom;
+      } else {
+        hi = y(value);
+        lo = growsFromBottom ? bottom : y(0);
+        if (hi > lo) [hi, lo] = [lo, hi]; // negative reading, hanging below zero
+      }
+      return { x, y: hi, w: barWidth, h: Math.max(lo - hi, 0.5) };
+    },
+    point(index: number) {
+      const usable = Math.max(plotW - inset * 2, 0);
+      const x = values.length > 1
+        ? plotX + inset + (usable * index) / (values.length - 1)
+        : plotX + plotW / 2;
+      return { x, y: y(values[index]!) };
+    },
+    markerCenter(index: number, bars: boolean) {
+      const r = bars ? this.barRect(index) : undefined;
+      return { x: r ? r.x + r.w / 2 : this.point(index).x, y: box.y + band / 2 };
+    },
+  };
+}
+
+/** The point between the row of times and the drawing beside it, so a descender
+ * never touches a run or a bar. Mirrors the same spacing in the app repo's
+ * timeline and chart views. */
+const TIMELINE_LABEL_ROW_GAP = 1;
+
+/** How a layer's frame splits between its drawing and its row of times.
+ *
+ * A frame too short to carry both keeps the drawing whole: half a strip and
+ * half a time reads as neither, and the drawing is the thing the layer is for.
+ * Mirrors `TimelineBodyView` and `ChartBodyView` in the app repo. */
+export function timeLabelRowSplit(
+  el: { labels: TimelineLabel[]; labelSize: number; labelsAbove: boolean },
+  box: Box,
+): { labelSize: number; rowHeight: number; body: Box; showsLabels: boolean } {
+  const labelSize = Math.max(TIMELINE_MIN_LABEL_SIZE, Math.min(TIMELINE_MAX_LABEL_SIZE, el.labelSize));
+  const rowHeight = labelSize * 1.2;
+  const showsLabels = el.labels.length > 0 && box.h - rowHeight - TIMELINE_LABEL_ROW_GAP >= 2;
+  const body: Box = showsLabels
+    ? {
+      ...box,
+      y: el.labelsAbove ? box.y + rowHeight + TIMELINE_LABEL_ROW_GAP : box.y,
+      h: box.h - rowHeight - TIMELINE_LABEL_ROW_GAP,
+      cy: (el.labelsAbove ? box.y + rowHeight + TIMELINE_LABEL_ROW_GAP : box.y)
+        + (box.h - rowHeight - TIMELINE_LABEL_ROW_GAP) / 2,
+    }
+    : box;
+  return { labelSize, rowHeight, body, showsLabels };
+}
+
+/**
+ * Every layer with its anchored ones moved onto their chart.
+ *
+ * A chart marker is an ordinary layer with a `chartAnchor` on it, so this is the one
+ * place that turns "over the lowest reading" into a frame. Only `x` and `y` are
+ * rewritten: the author's width and height are the marker's size.
+ *
+ * Nothing is reserved along the top of the plot for it. The marker hangs in the empty
+ * space above its own bar and is pushed back down when the bar is tall enough that it
+ * would otherwise leave the chart, so the bars keep their full height. Mirrors
+ * `CustomComplication.applyingChartAnchors` in the app repo.
+ */
+export function placeChartAnchors(
+  elements: readonly ResolvedElement[],
+  canvas: CanvasSize,
+): readonly ResolvedElement[] {
+  if (!elements.some((el) => el.chartAnchor !== undefined)) return elements;
+  const charts = new Map<string, Extract<ResolvedElement, { kind: "chart" }>>();
+  for (const el of elements) if (el.kind === "chart") charts.set(el.id, el);
+  if (charts.size === 0) return elements;
+  return elements.map((el) => {
+    const anchor = el.chartAnchor;
+    if (anchor === undefined) return el;
+    const chart = charts.get(anchor.layer);
+    if (chart === undefined) return el;
+    const frame = anchoredFrame(el.frame, anchor, chart, canvas);
+    return frame === undefined ? el : { ...el, frame };
+  });
+}
+
+/** Which column of the chart an anchor names, or undefined when this chart has no
+ * such column. The highest and lowest are found here rather than read from the
+ * chart's `highIndex`, because those are set only when the highlight asks for them
+ * and a marker is worth having on a chart that highlights nothing. First occurrence
+ * wins, matching the rule the highlight itself uses on a flat run. */
+function anchorIndex(
+  at: ChartAnchorPoint,
+  chart: Extract<ResolvedElement, { kind: "chart" }>,
+): number | undefined {
+  const values = chart.values;
+  if (values.length === 0) return undefined;
+  switch (at) {
+    case "highest": return values.indexOf(Math.max(...values));
+    case "lowest": return values.indexOf(Math.min(...values));
+    case "first": return 0;
+    case "latest": return values.length - 1;
+    case "now": return chart.nowIndex === undefined
+      ? undefined
+      : Math.min(Math.max(chart.nowIndex, 0), values.length - 1);
+  }
+}
+
+/** Where one anchored layer sits, in normalized coordinates. Mirrors
+ * `CustomComplication.anchoredFrame` in the app repo, point for point. */
+function anchoredFrame(
+  frame: NormalizedFrame,
+  anchor: ChartAnchor,
+  chart: Extract<ResolvedElement, { kind: "chart" }>,
+  canvas: CanvasSize,
+): NormalizedFrame | undefined {
+  if (canvas.width <= 0 || canvas.height <= 0) return undefined;
+  const index = anchorIndex(anchor.at, chart);
+  if (index === undefined) return undefined;
+
+  const layer = frameBox(chart, canvas);
+  if (layer.w <= 0 || layer.h <= 0) return undefined;
+  // A chart drawing clock times gives the row its own band, and the plot is what is
+  // left. A marker belongs to the plot, so it measures against that rect.
+  const plot = timeLabelRowSplit(chart, layer).body;
+  if (plot.w <= 0 || plot.h <= 0) return undefined;
+
+  const g = chartGeometry(chart, plot);
+  // Bars are filled to their top edge; a line or an area passes through a point.
+  // Either way the marker measures from the same place the eye does.
+  let localX: number;
+  let readingTop: number;
+  if (chart.style === "bars") {
+    const bar = g.barRect(index);
+    localX = bar.x + bar.w / 2;
+    readingTop = bar.y;
+  } else {
+    const p = g.point(index);
+    localX = p.x;
+    readingTop = p.y;
+  }
+
+  const w = Math.max(frame.width, 0) * canvas.width;
+  const h = Math.max(frame.height, 0) * canvas.height;
+  // Enough daylight that a marker reads as sitting over the bar rather than welded
+  // to it, and small enough that it never looks detached.
+  const gap = 0.75;
+  const cy =
+    anchor.place === "on" ? readingTop
+    : anchor.place === "below" ? readingTop + gap + h / 2
+    : anchor.place === "bottom" ? g.plotBottom - gap - h / 2
+    : readingTop - gap - h / 2;
+  const centreX = localX + (anchor.dx ?? 0);
+  const centreY = cy + (anchor.dy ?? 0);
+
+  // Keep the marker inside the chart it belongs to. A marker that slid off the plot
+  // is a marker pointing at nothing, and on the top edge this is exactly what stops
+  // a large glyph from eating into the bars.
+  const held = (v: number, lo: number, hi: number) =>
+    lo > hi ? (lo + hi) / 2 : Math.min(Math.max(v, lo), hi);
+  const x = held(centreX, plot.x + w / 2, plot.x + plot.w - w / 2);
+  const y = held(centreY, plot.y + h / 2, plot.y + plot.h - h / 2);
+
+  return {
+    ...frame,
+    x: (x - w / 2) / canvas.width,
+    y: (y - h / 2) / canvas.height,
+  };
+}
+
 
 export function comparisonNeedsValue(c: Comparison): boolean {
   return c.value !== undefined;

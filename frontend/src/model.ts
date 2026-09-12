@@ -237,6 +237,99 @@ export interface NormalizedFrame {
 
 export const CENTERED_FRAME: NormalizedFrame = { x: 0.25, y: 0.25, width: 0.5, height: 0.5, rotationDegrees: 0 };
 
+/** Which reading on a chart an anchored layer follows. Mirrors
+ * `CustomComplication.ChartAnchor.Point` in the app repo. */
+export type ChartAnchorPoint = "highest" | "lowest" | "now" | "first" | "latest";
+
+export const CHART_ANCHOR_POINTS: readonly [ChartAnchorPoint, string][] = [
+  ["highest", "Highest reading"],
+  ["lowest", "Lowest reading"],
+  ["now", "Now"],
+  ["first", "First reading"],
+  ["latest", "Newest reading"],
+];
+
+/** Where an anchored layer sits against the reading it follows. Mirrors
+ * `CustomComplication.ChartAnchor.Place` in the app repo. */
+export type ChartAnchorPlace = "above" | "on" | "below" | "bottom";
+
+export const CHART_ANCHOR_PLACES: readonly [ChartAnchorPlace, string][] = [
+  ["above", "Above"],
+  ["on", "On"],
+  ["below", "Inside"],
+  ["bottom", "At the bottom"],
+];
+
+/**
+ * Pins a layer to a reading on a chart in the same document, so it follows that
+ * reading instead of sitting where it was dropped.
+ *
+ * This is what a chart's high and low markers are made of. A marker used to be a
+ * setting on the chart, which meant one shape from a list of three, at one size, in
+ * one colour. As a layer it is an ordinary text, icon, shape or image: any glyph or
+ * emoji, any size, any colour, its own rules, dragged and deleted like everything
+ * else. The chart only has to say where the reading is.
+ *
+ * The layer's `frame` still gives its size. Its `x` and `y` are worked out at render
+ * time, and `dx`/`dy` nudge it from there in design-box points, which is what a drag
+ * writes while a layer is anchored.
+ */
+export interface ChartAnchor {
+  /** The chart layer this follows, by element id. */
+  layer: string;
+  at: ChartAnchorPoint;
+  place: ChartAnchorPlace;
+  /** Nudge in design-box points, `+y` down. Absent means zero. */
+  dx?: number;
+  dy?: number;
+}
+
+function isChartAnchorPoint(v: unknown): v is ChartAnchorPoint {
+  return CHART_ANCHOR_POINTS.some(([k]) => k === v);
+}
+
+function isChartAnchorPlace(v: unknown): v is ChartAnchorPlace {
+  return CHART_ANCHOR_PLACES.some(([k]) => k === v);
+}
+
+/** An anchor written by a newer panel falls back rather than throwing, matching the
+ * Swift decoder: a marker in the wrong spot beats a complication that will not open. */
+function parseChartAnchor(o: unknown): ChartAnchor | undefined {
+  if (!isObject(o) || typeof o.layer !== "string" || o.layer === "") return undefined;
+  const anchor: ChartAnchor = {
+    layer: o.layer.toUpperCase(),
+    at: isChartAnchorPoint(o.at) ? o.at : "highest",
+    place: isChartAnchorPlace(o.place) ? o.place : "above",
+  };
+  const dx = num(o.dx, 0);
+  const dy = num(o.dy, 0);
+  if (dx !== 0) anchor.dx = dx;
+  if (dy !== 0) anchor.dy = dy;
+  return anchor;
+}
+
+/** Read an anchor onto a layer that can carry one. Called from the four kinds the
+ * app repo decodes it on, and nowhere else, so a hand-written anchor on a gauge is
+ * dropped here rather than round-tripping into a document the watch disagrees with. */
+function readChartAnchor(p: J, payload: { chartAnchor?: ChartAnchor }): void {
+  const anchor = parseChartAnchor(p.chartAnchor);
+  if (anchor !== undefined) payload.chartAnchor = anchor;
+}
+
+/** The matching write. A layer that follows nothing writes no key, so every document
+ * that predates markers-as-layers keeps the bytes it always had. */
+function writeChartAnchor(payload: { chartAnchor?: ChartAnchor }, o: J): void {
+  if (payload.chartAnchor !== undefined) o.chartAnchor = encodeChartAnchor(payload.chartAnchor);
+}
+
+/** The nudges are omitted at zero, matching the app's encoder byte for byte. */
+function encodeChartAnchor(a: ChartAnchor): J {
+  const o: J = { layer: a.layer, at: a.at, place: a.place };
+  if (a.dx !== undefined && a.dx !== 0) o.dx = encNum(a.dx);
+  if (a.dy !== undefined && a.dy !== 0) o.dy = encNum(a.dy);
+  return o;
+}
+
 export interface ColorSlot {
   baseColorHex: string;
 }
@@ -327,6 +420,11 @@ interface ElementBase {
   /** The layer group this belongs to (see `LayerGroup`). Editor-only: the
    * watch draws the layer exactly as it would without it. */
   groupId?: string;
+  /** Pins this layer to a reading on a chart, so it follows that reading. Only
+   * text, icon, shape and image layers carry one: a gauge, a chart, a timeline
+   * or a tap area pinned to a reading is not something anyone wants, and the
+   * app repo gives those four kinds alone a field to decode. See `ChartAnchor`. */
+  chartAnchor?: ChartAnchor;
 }
 
 /**
@@ -1875,6 +1973,7 @@ function parseElementKind(raw: unknown): Element {
       if (low !== CHART_DEFAULT_LOW_HEX) payload.lowColorHex = low;
       const parts = parseTextParts(p.parts);
       if (parts.length > 0) payload.parts = parts;
+      readChartAnchor(p, payload);
       return { kind: "text", payload };
     }
     case "icon": {
@@ -1885,6 +1984,7 @@ function parseElementKind(raw: unknown): Element {
       };
       const path = optStr(p.path);
       if (path !== undefined && path !== "") payload.path = path;
+      readChartAnchor(p, payload);
       return { kind: "icon", payload };
     }
     case "gauge": {
@@ -1991,6 +2091,7 @@ function parseElementKind(raw: unknown): Element {
         borderWidth: num(p.borderWidth, 1),
       };
       if (typeof p.borderColorHex === "string") el.borderColorHex = p.borderColorHex;
+      readChartAnchor(p, el);
       return { kind: "shape", payload: el };
     }
     case "image": {
@@ -2019,6 +2120,7 @@ function parseElementKind(raw: unknown): Element {
         el.timestampX = clamp01(tsx);
         el.timestampY = clamp01(tsy);
       }
+      readChartAnchor(p, el);
       return { kind: "image", payload: el };
     }
     case "tap": {
@@ -2296,6 +2398,126 @@ export function addChartLabel(cfg: CustomComplicationConfig, chartId: string, st
   return el.payload.id;
 }
 
+// ── chart markers ─────────────────────────────────────────────────────────
+// A marker is a layer with a `ChartAnchor` naming the chart, exactly as a
+// number is a layer with a `chartStat` naming it. Both live in the chart's
+// group, and both are listed and added from the chart's Extras card.
+
+/** The glyph a new marker starts as. The old built-in markers were a triangle
+ * over the highest reading and a dot over the lowest, so a marker added today
+ * starts looking like the one it replaces. Every one of them is a character in
+ * a text layer, which is the whole point: the author types a 💚 over it. */
+const CHART_MARKER_GLYPHS: Record<ChartAnchorPoint, string> = {
+  highest: "▲",
+  lowest: "●",
+  now: "▼",
+  first: "●",
+  latest: "●",
+};
+
+/** The colour a new marker starts in: the chart's own highest and lowest
+ * colours where it has them, so a marker matches the bar it sits over. */
+function chartMarkerColor(chart: Extract<Element, { kind: "chart" }>, at: ChartAnchorPoint): string {
+  if (at === "highest") return chart.payload.highColorHex ?? CHART_DEFAULT_HIGH_HEX;
+  if (at === "lowest") return chart.payload.lowColorHex ?? CHART_DEFAULT_LOW_HEX;
+  return "#FFFFFF";
+}
+
+/** The layers pinned to one chart, in document order. */
+export function chartMarkersOf(cfg: CustomComplicationConfig, chartId: string): Element[] {
+  return cfg.elements.filter((el) => el.payload.chartAnchor?.layer === chartId);
+}
+
+/** Add a marker over one of the chart's readings, in the chart's group, and
+ * return its id. A text layer, so the author can replace the glyph with any
+ * character or emoji and take every text setting with it. Undefined when
+ * `chartId` is not a chart. */
+export function addChartMarker(
+  cfg: CustomComplicationConfig,
+  chartId: string,
+  at: ChartAnchorPoint,
+  place: ChartAnchorPlace = "above",
+): string | undefined {
+  const chart = cfg.elements.find((el) => el.payload.id === chartId);
+  if (!chart || chart.kind !== "chart") return undefined;
+  const el = newElement("text") as Extract<Element, { kind: "text" }>;
+  const fontSize = 6;
+  el.payload.value = literal(CHART_MARKER_GLYPHS[at]);
+  el.payload.fontSize = fontSize;
+  el.payload.fontWeight = "medium";
+  el.payload.colorSlot = { baseColorHex: chartMarkerColor(chart, at) };
+  // A box one glyph wide. The renderer pins its centre over the reading, so
+  // only the size here matters; x and y are worked out every render.
+  el.payload.frame = chartMarkerFrame(fontSize);
+  el.payload.chartAnchor = { layer: chartId, at, place };
+  // Directly above the chart in z-order, so the marker sits on the plot.
+  const index = cfg.elements.findIndex((e) => e.payload.id === chartId);
+  cfg.elements.splice(index + 1, 0, el);
+  joinChartGroup(cfg, chart, el.payload.id);
+  return el.payload.id;
+}
+
+/** A box just big enough for one glyph of `fontSize` points, in the
+ * rectangular design box. Position is the anchor's business. */
+function chartMarkerFrame(fontSize: number): NormalizedFrame {
+  const box = DESIGN_BOX.rectangular;
+  return {
+    x: 0,
+    y: 0,
+    width: Math.min(1, (fontSize * 1.2) / box.width),
+    height: Math.min(1, (fontSize * 1.3) / box.height),
+    rotationDegrees: 0,
+  };
+}
+
+/** Whether this chart still draws its own end marks rather than carrying marker
+ * layers. What the Extras card offers to convert. */
+export function chartDrawsBuiltInMarkers(chart: Extract<Element, { kind: "chart" }>): boolean {
+  const c = chart.payload;
+  if (c.highlight === "none" || c.highlight === undefined) return false;
+  const markers = chartEndMarkers(c);
+  const marksHigh = c.highlight === "highest" || c.highlight === "both";
+  const marksLow = c.highlight === "lowest" || c.highlight === "both";
+  return (marksHigh && markers.high !== "none") || (marksLow && markers.low !== "none");
+}
+
+/** Turn a chart's built-in end marks into marker layers, and stop the chart
+ * drawing its own.
+ *
+ * Until 2026-09-12 this was the only way to mark an end: `marker` chose one of
+ * three looks for both ends, and `highMarker`/`lowMarker` overrode one end each.
+ * That bought one shape from a list of three, at a size nobody could change, and
+ * it cost every bar five points of height, because the mark sat in a band
+ * reserved along the top of the plot whether or not a tall bar needed it.
+ *
+ * Deliberately not run when a document is opened. A conversion rewrites the
+ * chart and shifts its marks from a drawn path to a glyph, and doing that to
+ * every saved complication the moment someone opens the panel would change
+ * faces nobody asked to change. The author presses the button. */
+export function convertChartMarkers(cfg: CustomComplicationConfig, chartId: string): void {
+  const chart = cfg.elements.find((el) => el.payload.id === chartId);
+  if (!chart || chart.kind !== "chart") return;
+  const c = chart.payload;
+  const markers = chartEndMarkers(c);
+  // The highlight decides which ends were marked at all: a chart highlighting
+  // only its highest never drew a low mark, whatever `marker` said.
+  const marksHigh = c.highlight === "highest" || c.highlight === "both";
+  const marksLow = c.highlight === "lowest" || c.highlight === "both";
+  const wanted: [ChartAnchorPoint, ChartEndMarker][] = [];
+  if (marksHigh && markers.high !== "none") wanted.push(["highest", markers.high]);
+  if (marksLow && markers.low !== "none") wanted.push(["lowest", markers.low]);
+  for (const [at, shape] of wanted) {
+    const id = addChartMarker(cfg, chartId, at);
+    const el = cfg.elements.find((e) => e.payload.id === id);
+    // A dot where the chart drew a dot, a triangle where it drew a triangle,
+    // whichever end each was on.
+    if (el?.kind === "text") el.payload.value = literal(shape === "triangle" ? "▲" : "●");
+  }
+  // The chart stops drawing its own, so the band along the top goes with it and
+  // the bars get their height back.
+  setChartEndMarkers(c, { high: "none", low: "none" });
+}
+
 /** Read the first cut of a chart's built-in numbers (2026-09-05) forward into
  * text layers.
  *
@@ -2542,6 +2764,7 @@ function encodeElementKind(el: Element): J {
         o.parts = t.parts.map(encodeTextPart);
         if (textUsesParts(t)) o.value = encodeValue(richTextFallback(t.parts));
       }
+      writeChartAnchor(t, o);
       return { kind: "text", payload: o };
     }
     case "icon": {
@@ -2550,6 +2773,7 @@ function encodeElementKind(el: Element): J {
       // set: an SF Symbol layer writes the bytes it always did.
       if (el.payload.path !== undefined && el.payload.path !== "") o.path = el.payload.path;
       o.size = encNum(el.payload.size);
+      writeChartAnchor(el.payload, o);
       return { kind: "icon", payload: o };
     }
     case "gauge": {
@@ -2669,6 +2893,7 @@ function encodeElementKind(el: Element): J {
       // Same "only when it differs" rule as the app's encoder, so a shape that is
       // not a line writes exactly the bytes it always did.
       if (el.payload.thickness !== 1) o.thickness = encNum(el.payload.thickness);
+      writeChartAnchor(el.payload, o);
       return { kind: "shape", payload: o };
     }
     case "image": {
@@ -2701,6 +2926,7 @@ function encodeElementKind(el: Element): J {
         o.timestampX = encNum(p.timestampX!);
         o.timestampY = encNum(p.timestampY!);
       }
+      writeChartAnchor(p, o);
       return { kind: "image", payload: o };
     }
     case "tap": {
@@ -2917,12 +3143,14 @@ const K = {
   scope: ["kind", "entities", "domains", "areaIds", "labelIds", "floorIds"],
   stateFilter: ["kind", "value"],
   frame: ["x", "y", "width", "height", "rotationDegrees"],
+  chartAnchor: ["layer", "at", "place", "dx", "dy"],
   elementEnvelope: ["kind", "payload"],
   elementBase: ["id", "colorSlot", "rules", "frame", "isHidden", "groupId"],
   text: ["value", "fontSize", "fontWeight", "countdown", "monospacedDigits", "lineLimit", "alignment",
-    "coloring", "bands", "bandAboveColorHex", "highlight", "highColorHex", "lowColorHex", "parts"],
+    "coloring", "bands", "bandAboveColorHex", "highlight", "highColorHex", "lowColorHex", "parts",
+    "chartAnchor"],
   textPart: ["id", "value", "colorHex", "fontWeight", "fontSize", "coloring", "bands", "bandAboveColorHex"],
-  icon: ["symbol", "path", "size"],
+  icon: ["symbol", "path", "size", "chartAnchor"],
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex",
     "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex", "total", "minSource", "maxSource"],
   chart: ["value", "historyMinutes", "historyPoints", "source", "statPeriod", "statType",
@@ -2944,13 +3172,14 @@ const K = {
   // it existed still carries it, and dropping it from this list would make that
   // document read as carrying a key nothing decodes.
   timeline: ["value", "historyMinutes", "bands", "otherColorHex", "gap", "cornerRadius", "timeLabels", "labelSize", "labelColorHex", "labelsAbove", "timeLabelCount", "hourCycle", "minutes"],
-  shape: ["kind", "cornerRadius", "thickness", "borderColorHex", "borderWidth"],
+  shape: ["kind", "cornerRadius", "thickness", "borderColorHex", "borderWidth", "chartAnchor"],
   // `timestampStyle` is retired (the age style, built and removed 2026-09-04).
   // It stays listed so a document saved while it existed does not read as
   // corrupt; nothing decodes it, and it leaves the wire on that document's next
   // save.
   image: ["entity", "source", "timestamp", "contentMode", "zoom", "panX", "panY", "cornerRadius",
-    "timestampCorner", "timestampSize", "timestampStyle", "timestampX", "timestampY"],
+    "timestampCorner", "timestampSize", "timestampStyle", "timestampX", "timestampY",
+    "chartAnchor"],
   // `grow` is retired (the uniform tap inflation, replaced by a resizable tap
   // box on 2026-09-04). Listed so a document saved while it existed still
   // opens; nothing decodes it, and it leaves the wire on that document's next
@@ -3075,6 +3304,7 @@ export function auditUnknownKeys(raw: unknown): string[] {
       check(e.payload, [...K.elementBase, ...extra], `${ep}.payload`);
       check(e.payload.colorSlot, K.colorSlot, `${ep}.payload.colorSlot`);
       check(e.payload.frame, K.frame, `${ep}.payload.frame`);
+      if ("chartAnchor" in e.payload) check(e.payload.chartAnchor, K.chartAnchor, `${ep}.payload.chartAnchor`);
       rules(e.payload.rules, `${ep}.payload.rules`);
       for (const vk of ["value", "symbol", "nowIndex", "total", "minSource", "maxSource"]) if (vk in e.payload) value(e.payload[vk], `${ep}.payload.${vk}`);
       if (kind === "text" && Array.isArray(e.payload.parts)) {
@@ -3181,7 +3411,11 @@ export function newElement(kind: Element["kind"]): Element {
     // A new chart is set to draw history: nearly every chart is of a plain
     // sensor, and a plain sensor's own value is one bar. Until an entity is
     // named the sample list draws instead, so the layer is never blank.
-    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: CHART_HISTORY_DEFAULT_MINUTES, historyPoints: 24, source: CHART_DEFAULT_SOURCE, statPeriod: CHART_DEFAULT_STAT_PERIOD, statType: CHART_DEFAULT_STAT_TYPE, style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "pointer", coloring: "uniform", bands: [], bandAboveColorHex: CHART_DEFAULT_BAND_HIGH_HEX, fillBands: false, thresholdColorHex: CHART_DEFAULT_THRESHOLD_HEX, nowColorHex: CHART_DEFAULT_NOW_HEX, timeLabelCount: TIMELINE_DEFAULT_LABEL_COUNT, labelSize: TIMELINE_DEFAULT_LABEL_SIZE, labelColorHex: TIMELINE_DEFAULT_LABEL_HEX, labelsAbove: false, hourCycle: TIMELINE_DEFAULT_HOUR_CYCLE, minutes: TIMELINE_DEFAULT_MINUTE_STYLE } };
+    //
+    // `marker: "none"` because a chart drawn today marks its ends with marker
+    // layers, added from its Extras card. A chart drawing its own is a document
+    // from before 2026-09-12; it keeps doing so until its author converts it.
+    case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: CHART_HISTORY_DEFAULT_MINUTES, historyPoints: 24, source: CHART_DEFAULT_SOURCE, statPeriod: CHART_DEFAULT_STAT_PERIOD, statType: CHART_DEFAULT_STAT_TYPE, style: "bars", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "none", coloring: "uniform", bands: [], bandAboveColorHex: CHART_DEFAULT_BAND_HIGH_HEX, fillBands: false, thresholdColorHex: CHART_DEFAULT_THRESHOLD_HEX, nowColorHex: CHART_DEFAULT_NOW_HEX, timeLabelCount: TIMELINE_DEFAULT_LABEL_COUNT, labelSize: TIMELINE_DEFAULT_LABEL_SIZE, labelColorHex: TIMELINE_DEFAULT_LABEL_HEX, labelsAbove: false, hourCycle: TIMELINE_DEFAULT_HOUR_CYCLE, minutes: TIMELINE_DEFAULT_MINUTE_STYLE } };
     // No sample states: a timeline of a made-up string would draw a strip that
     // looks like data. Empty until an entity is picked, which is also when the
     // colour table can be seeded from its domain.
@@ -3674,6 +3908,10 @@ export function removeElement(cfg: CustomComplicationConfig, id: string): void {
   // A chart's numbers name it by id, so without the chart they would print the
   // placeholder forever. They go with it, the way an attached tap does.
   for (const label of chartLabelsOf(cfg, id)) removeElement(cfg, label.payload.id);
+  // A marker names its chart by id too. Unlike a number it still has something
+  // to show, so it stays and goes back to sitting where its frame puts it,
+  // rather than disappearing along with a chart the author may be replacing.
+  for (const marker of chartMarkersOf(cfg, id)) delete marker.payload.chartAnchor;
   detachTaps(cfg, id);
   cfg.elements = cfg.elements.filter((el) => el.payload.id !== id);
   // A chart that borrowed the deleted one's scale goes back to its own. The
@@ -3896,6 +4134,15 @@ export function pasteElements(cfg: CustomComplicationConfig, clip: LayerClip, op
       const chart = idMap.get(copy.payload.value.kind.layer);
       if (chart) copy.payload.value.kind.layer = chart;
       else if (!here.has(copy.payload.value.kind.layer)) continue;
+    }
+    // A marker follows a copied chart onto the copy, stays on the original when
+    // that original is still here, and stops being a marker when it is neither:
+    // the layer is kept, because a glyph the author styled is worth keeping, but
+    // it goes back to sitting where its frame puts it.
+    if (copy.payload.chartAnchor !== undefined) {
+      const chart = idMap.get(copy.payload.chartAnchor.layer);
+      if (chart) copy.payload.chartAnchor.layer = chart;
+      else if (!here.has(copy.payload.chartAnchor.layer)) delete copy.payload.chartAnchor;
     }
     copy.payload.frame = shift(copy.payload.frame);
     clones.push(copy);

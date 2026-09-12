@@ -12,6 +12,9 @@ import {
   type FamilyKind,
   type ImageContentMode,
   type ImageSource,
+  type ChartAnchor,
+  type ChartAnchorPoint,
+  type NormalizedFrame,
 } from "./model.js";
 import type { ImageSizeProvider } from "./image-sizes.js";
 import {
@@ -22,12 +25,14 @@ import {
   type ResolvedTextPart,
   type TextSpan,
   type TimelineLabel,
+  type Box,
+  type CanvasSize,
+  frameBox,
+  chartGeometry,
+  timeLabelRowSplit,
 } from "./resolver.js";
 
-export interface CanvasSize {
-  width: number;
-  height: number;
-}
+export type { CanvasSize } from "./resolver.js";
 
 // The design box: the real WidgetKit slot on a 46 mm watch, measured 2026-08-30
 // (app repo docs/custom_complication_design_box.md). Every watch draws a uniformly
@@ -191,23 +196,6 @@ export function parseColor(hex: string | undefined): { color: string; opacity: n
 function colorAttrs(hex: string | undefined, attr: "fill" | "stroke", fallback = "#FFFFFF") {
   const c = parseColor(hex) ?? { color: fallback, opacity: 1 };
   return { [attr]: c.color, [`${attr}-opacity`]: c.opacity };
-}
-
-interface Box {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  cx: number;
-  cy: number;
-}
-
-function frameBox(el: ResolvedElement, canvas: CanvasSize): Box {
-  const w = Math.max(0, el.frame.width * canvas.width);
-  const h = Math.max(0, el.frame.height * canvas.height);
-  const cx = (el.frame.x + el.frame.width / 2) * canvas.width;
-  const cy = (el.frame.y + el.frame.height / 2) * canvas.height;
-  return { x: cx - w / 2, y: cy - h / 2, w, h, cx, cy };
 }
 
 /** Approximate glyph width, in points, at a given font size. The 0.55 em figure
@@ -563,91 +551,6 @@ function gaugeTick(box: Box, r: number, lw: number, degrees: number, colorHex: s
     stroke-width="1" stroke=${tick.stroke} stroke-opacity=${tick["stroke-opacity"]} />`;
 }
 
-/** Height of the band a chart reserves along its top for markers, in watch points.
- * Mirrors `CustomComplicationChartGeometry.markerHeight` in Swift. */
-const CHART_MARKER_BAND = 5;
-
-/** Where every mark of a chart lands inside its frame.
- *
- * Pure geometry, no colours: mirrors `CustomComplicationChartGeometry` in the app
- * repo, at scale 1 because the panel already draws in watch points. */
-function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) {
-  const values = el.values;
-  const n = Math.max(values.length, 1);
-  // Room along the top only when a highlighted end actually draws a mark there.
-  const marks = (el.highIndex !== undefined && el.highMarker !== "none")
-    || (el.lowIndex !== undefined && el.lowMarker !== "none");
-  const band = marks ? CHART_MARKER_BAND : 0;
-  // Line and area are stroked on the value itself, so half the stroke would fall
-  // outside a plot sized to the frame. Bars are filled inside theirs.
-  const inset = el.style === "bars" ? 0 : el.lineWidth / 2;
-
-  // The plot takes the whole frame. A chart's numbers are text layers of their
-  // own, so nothing here reserves room for them; the author resizes the chart.
-  const plotX = box.x;
-  const plotW = Math.max(box.w, 0);
-
-  const top = box.y + band + inset;
-  const height = Math.max(box.h - band - inset * 2, 1);
-  const bottom = top + height;
-
-  const span = Math.max(el.domainMax - el.domainMin, Number.EPSILON);
-  const growsFromBottom = el.baseline === "lowest";
-  const minimumBar = growsFromBottom ? height * 0.12 : 0;
-
-  // Cap the gap so bars never starve, whatever the author typed.
-  const gap = Math.min(Math.max(el.barGap, 0), plotW / (n * 2));
-  const barWidth = Math.max((plotW - gap * (n - 1)) / n, 0.5);
-
-  const fraction = (v: number) => Math.min(1, Math.max(0, (v - el.domainMin) / span));
-  const y = (v: number) => bottom - fraction(v) * height;
-
-  return {
-    count: values.length,
-    barWidth,
-    plotTop: top,
-    plotBottom: bottom,
-    plotLeft: plotX,
-    plotRight: plotX + plotW,
-    baselineY: growsFromBottom ? bottom : y(0),
-    /** Where a 0…1 fraction of the domain lands, 1 being the top of the plot.
-     * The resolver hands the threshold over as a fraction so the renderer never
-     * has to know what the domain was. */
-    yAtFraction(f: number) {
-      return bottom - Math.min(Math.max(f, 0), 1) * height;
-    },
-    barRect(index: number) {
-      const x = plotX + index * (barWidth + gap);
-      const value = values[index]!;
-      let hi: number;
-      let lo: number;
-      if (growsFromBottom) {
-        // The lowest reading would otherwise be a zero-height sliver, and a run of
-        // equal readings would vanish entirely. Every bar keeps a visible stub.
-        const h = minimumBar + fraction(value) * (height - minimumBar);
-        hi = bottom - h;
-        lo = bottom;
-      } else {
-        hi = y(value);
-        lo = growsFromBottom ? bottom : y(0);
-        if (hi > lo) [hi, lo] = [lo, hi]; // negative reading, hanging below zero
-      }
-      return { x, y: hi, w: barWidth, h: Math.max(lo - hi, 0.5) };
-    },
-    point(index: number) {
-      const usable = Math.max(plotW - inset * 2, 0);
-      const x = values.length > 1
-        ? plotX + inset + (usable * index) / (values.length - 1)
-        : plotX + plotW / 2;
-      return { x, y: y(values[index]!) };
-    },
-    markerCenter(index: number, bars: boolean) {
-      const r = bars ? this.barRect(index) : undefined;
-      return { x: r ? r.x + r.w / 2 : this.point(index).x, y: box.y + band / 2 };
-    },
-  };
-}
-
 /**
  * A chart's marks, and the row of clock times when the layer asks for one.
  *
@@ -763,35 +666,6 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
   }
 
   return svg`${body}`;
-}
-
-/** The point between the row of times and the drawing beside it, so a descender
- * never touches a run or a bar. Mirrors the same spacing in the app repo's
- * timeline and chart views. */
-const TIMELINE_LABEL_ROW_GAP = 1;
-
-/** How a layer's frame splits between its drawing and its row of times.
- *
- * A frame too short to carry both keeps the drawing whole: half a strip and
- * half a time reads as neither, and the drawing is the thing the layer is for.
- * Mirrors `TimelineBodyView` and `ChartBodyView` in the app repo. */
-function timeLabelRowSplit(
-  el: { labels: TimelineLabel[]; labelSize: number; labelsAbove: boolean },
-  box: Box,
-): { labelSize: number; rowHeight: number; body: Box; showsLabels: boolean } {
-  const labelSize = Math.max(TIMELINE_MIN_LABEL_SIZE, Math.min(TIMELINE_MAX_LABEL_SIZE, el.labelSize));
-  const rowHeight = labelSize * 1.2;
-  const showsLabels = el.labels.length > 0 && box.h - rowHeight - TIMELINE_LABEL_ROW_GAP >= 2;
-  const body: Box = showsLabels
-    ? {
-      ...box,
-      y: el.labelsAbove ? box.y + rowHeight + TIMELINE_LABEL_ROW_GAP : box.y,
-      h: box.h - rowHeight - TIMELINE_LABEL_ROW_GAP,
-      cy: (el.labelsAbove ? box.y + rowHeight + TIMELINE_LABEL_ROW_GAP : box.y)
-        + (box.h - rowHeight - TIMELINE_LABEL_ROW_GAP) / 2,
-    }
-    : box;
-  return { labelSize, rowHeight, body, showsLabels };
 }
 
 /** The row of clock times itself: the last hung off the right edge, the first
@@ -1403,6 +1277,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
   const bg = parseColor(layout.backgroundColorHex);
   const border = parseColor(layout.borderColorHex);
   const bw = layout.borderWidth * fit.scale;
+  const elements = layout.elements;
 
   if (family === "corner") {
     // Watch-corner context preview: black screen quadrant, the content disc
@@ -1459,7 +1334,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
         <g clip-path=${`url(#${uid})`}>
           ${bg ? svg`<rect width=${tile} height=${tile} fill=${bg.color} fill-opacity=${bg.opacity} />` : nothing}
           <g data-design-box transform="scale(${fit.scale * tileScale})">
-            ${layout.elements.map((el) => renderElement(el, design, options))}
+            ${elements.map((el) => renderElement(el, design, options))}
           </g>
         </g>
         <circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} fill="none"
@@ -1492,7 +1367,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
       ${well}
       ${bg ? svg`<rect width=${canvas.width} height=${canvas.height} fill=${bg.color} fill-opacity=${bg.opacity} />` : nothing}
       <g data-design-box transform="translate(${fit.x} ${fit.y}) scale(${fit.scale})">
-        ${layout.elements.map((el) => renderElement(el, design, options))}
+        ${elements.map((el) => renderElement(el, design, options))}
       </g>
     </g>
     ${chrome}
