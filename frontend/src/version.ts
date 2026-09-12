@@ -24,12 +24,12 @@ export const MIN_WATCH_VERSION_FOR_SHAPES = "2.8.0";
  * release that draws them is cut; set it then, not before. */
 export const MIN_WATCH_VERSION_FOR_CHART_LOOKS: string | null = null;
 
-/** First watch app version that knows the `chartTimes` layer kind. Unlike the
- * looks keys this is treated as a gate for the one button that makes such a
- * layer: a watch that meets a kind it does not know is assumed to drop the
- * whole document, so "Move to layer" for a chart's times is disabled for an
- * older watch and carries the note. An unknown version leaves it enabled.
- * null until the app release that draws the layer is cut. */
+/** First watch app version that knows the `chartTimes` layer kind. A watch
+ * that meets a kind it does not know drops the whole document, and since
+ * 2026-09-12 a chart's clock times are always that layer (a document where the
+ * chart drew its own is converted when opened). So this must not be newer than
+ * `MIN_WATCH_VERSION_FOR_SHAPES`, the editor's own gate. null until the app
+ * release that draws the layer is cut. */
 export const MIN_WATCH_VERSION_FOR_CHART_TIMES_LAYER: string | null = null;
 
 

@@ -722,16 +722,17 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
           stroke-width=${el.lineWidth} stroke-linecap="round" stroke-linejoin="round" />`);
       }
     }
-    // A dot on each reading, in its band colour or the series colour: one path
-    // per colour holding every dot, drawn before the highlight dots so those stay
-    // on top. A hole has no reading to mark, and the high and low readings are
-    // left to their own dot, which would otherwise sit on this one as a ring.
+    // A dot on each reading, in `pointDotColorHex` when set, else its band colour
+    // or the series colour: one path per colour holding every dot, drawn before
+    // the highlight dots so those stay on top. A hole has no reading to mark, and
+    // the high and low readings are left to their own dot, which would otherwise
+    // sit on this one as a ring.
     if (g.drawsDots) {
       const r = g.dotDiameter / 2;
       const byColour = new Map<string, string>();
       points.forEach((p, i) => {
         if (el.holes[i] === true || i === el.highIndex || i === el.lowIndex) return;
-        const hex = banded ? el.pointColorHexes[i]! : el.colorHex;
+        const hex = el.pointDotColorHex ?? (banded ? el.pointColorHexes[i]! : el.colorHex);
         byColour.set(hex, `${byColour.get(hex) ?? ""}M${p.x - r} ${p.y} a${r} ${r} 0 1 0 ${2 * r} 0 a${r} ${r} 0 1 0 ${-2 * r} 0 Z`);
       });
       for (const [hex, d] of byColour) {

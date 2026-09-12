@@ -13,11 +13,6 @@ import {
   type ChartColoring,
   type ChartElement,
   type ChartHighlight,
-  type ChartEndMarker,
-  type ChartMarker,
-  chartEndMarkers,
-  chartMarkersFromLegacy,
-  setChartEndMarkers,
   type ChartScale,
   type ChartStat,
   type ChartStyle,
@@ -60,8 +55,6 @@ import {
   chartSortedBands,
   CHART_DEFAULT_BAND_LOW_HEX,
   CHART_DEFAULT_HIGH_HEX,
-  CHART_DEFAULT_NOW_HEX,
-  CHART_DEFAULT_THRESHOLD_HEX,
   CHART_HISTORY_DEFAULT_MINUTES,
   CHART_HISTORY_EVERY_READING,
   CHART_HISTORY_MAX_MINUTES,
@@ -156,20 +149,17 @@ import {
   CHART_ANCHOR_PLACES,
   type ChartAnchor,
   type ChartAnchorPlace,
-  type ChartEndMarkers,
   type ChartAnchorPoint,
   addChartMarker,
   chartMarkersOf,
-  chartDrawsBuiltInMarkers,
-  convertChartMarkers,
   convertChartTimes,
   chartTimesOf,
   type ChartTimesElement,
   chartMarkerToIcon,
   addChartLine,
   chartAnchorIsColumn,
-  CHART_LINES,
-  type ChartLine,
+  setChartNow,
+  setChartThreshold,
 } from "./model.js";
 import {
   type StatesTable,
@@ -233,7 +223,7 @@ import {
   type ChartPointDots,
 } from "./model.js";
 import { chartSmoothed, chartSeriesWithHoles } from "./resolver.js";
-import { MIN_WATCH_VERSION_FOR_CHART_TIMES_LAYER, watchVersionNote } from "./version.js";
+import { watchVersionNote } from "./version.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import { SECTION_COLOR } from "./kinds.js";
 import { domainIcon, domainLabel, isActiveState } from "./domain-icons.js";
@@ -1280,9 +1270,6 @@ const CHART_BASELINES: [ChartBaseline, string][] = [
 ];
 const CHART_HIGHLIGHTS: [ChartHighlight, string][] = [
   ["none", "None"], ["highest", "Highest"], ["lowest", "Lowest"], ["both", "Both"],
-];
-const CHART_END_MARKER_CHOICES: [ChartEndMarker, string][] = [
-  ["none", "None"], ["dot", "Dot"], ["triangle", "Triangle"],
 ];
 const CHART_COLORINGS: [ChartColoring, string][] = [
   ["uniform", "One colour"], ["bands", "By value"],
@@ -3862,8 +3849,6 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
     case "chart": {
       const c = el.payload;
       const setChart = (m: (p: ChartElement) => void, k?: string) => upd((e) => m((e as typeof el).payload), k);
-      const markers = chartEndMarkers(c);
-      const baseMarkers = chartMarkersFromLegacy(base.marker as ChartMarker);
 
       // Three ways a chart gets its numbers, and the difference is the single
       // thing people trip on. A forecast sensor already holds a list, so its
@@ -4050,15 +4035,17 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               Switch Draw to <b>Recorded history</b> to plot how it has moved.</div>`
           : nothing}
         <div class="grid2">
-          ${numberField("Use", c.limit, (v) => setChart((p) => { p.limit = Math.max(0, Math.round(v ?? 0)); }, "limit"), { step: 1, min: 0, def: base.limit as number })}
-          ${segField("From", c.takeFromEnd ? "end" : "start",
-            [["start", "The first"], ["end", "The last"]],
+          ${numberField("Only draw", c.limit, (v) => setChart((p) => { p.limit = Math.max(0, Math.round(v ?? 0)); }, "limit"), { step: 1, min: 0, def: base.limit as number, unit: "readings" })}
+          ${c.limit <= 0 ? nothing : segField("Keep", c.takeFromEnd ? "end" : "start",
+            usingRecorder ? [["start", "Oldest"], ["end", "Newest"]] : [["start", "First"], ["end", "Last"]],
             (v) => setChart((p) => { p.takeFromEnd = v === "end"; }),
             { def: base.takeFromEnd === true ? "end" : "start" })}
         </div>
-        <div class="hint">${usingRecorder
-          ? "Trims the series after it arrives, so 0 draws every reading fetched above."
-          : "A forecast sensor often carries 24 or 48 entries. 0 draws all of them."}</div>
+        <div class="hint">${c.limit <= 0
+          ? `0 draws every reading${usingRecorder ? " fetched above" : ""}. Type a number to draw only that many.`
+          : usingRecorder
+            ? `Draws only ${c.limit} of the readings fetched above: the oldest or the newest ones.`
+            : `Draws only ${c.limit} of the numbers: the first or the last ones. A forecast sensor often carries 24 or 48.`}</div>
         ${selectField("Smooth data", chartSmoothing(c.smoothing) ?? "off", CHART_SMOOTHING_OPTIONS,
           (v) => setChart((p) => {
             const s = chartSmoothing(v);
@@ -4071,6 +4058,18 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           readings, Light, Medium and Strong average 7, 13 or 25 of them. The chart's own numbers
           read the smoothed series too: its stats, highlights and bands. A text layer pointed at the entity itself still shows the raw value.</div>`;
       colourPlaced = true;
+      // Whether zero falls strictly inside the plot, which is the only place the
+      // line at zero draws. Worked out from the readings on screen the way the
+      // resolver sets the range; a chart on another's scale is not second-guessed.
+      const zeroCrossed = (() => {
+        if (borrowed) return true;
+        if (c.scale === "fixed") return c.minValue < 0 && c.maxValue > 0;
+        const real = shown.filter((n) => Number.isFinite(n));
+        if (real.length === 0) return true;
+        const lo = Math.min(...real, c.thresholdValue ?? Infinity);
+        const hi = Math.max(...real, c.thresholdValue ?? -Infinity);
+        return lo < 0 && hi > 0;
+      })();
       look = html`
         <div class="grid2">
           ${segField("Style", c.style, CHART_STYLES, (v) => setChart((p) => { p.style = v; }), { def: base.style as typeof c.style })}
@@ -4122,6 +4121,21 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
                 auto: "A dot on every reading while they sit far enough apart to tell apart, none on a crowded chart",
               },
               def: chartPointDots(base.pointDots) })}
+          ${chartPointDots(c.pointDots) === "none" ? html`
+            <div class="hint">A dot on each reading shows where the real numbers are along the line.</div>` : html`
+            <div class="grid2">
+              ${numberField("Dot size", c.pointDotSize ?? Math.round(c.lineWidth * 18) / 10,
+                (v) => setChart((p) => {
+                  if (v === undefined) delete p.pointDotSize;
+                  else p.pointDotSize = Math.max(1, Math.min(12, v));
+                }, "dotsize"),
+                { step: 0.5, min: 1, max: 12, def: Math.round(c.lineWidth * 18) / 10, unit: "pt" })}
+              ${fallbackColorField("Dot colour", c.pointDotColorHex, "Line colour",
+                (v) => setChart((p) => { if (v === undefined) delete p.pointDotColorHex; else p.pointDotColorHex = v; }, "dotcol"))}
+            </div>
+            <div class="hint">A dot on each reading shows where the real numbers are along the line. Auto
+              leaves them off once the readings sit too close to tell apart. Left alone, a dot is a little wider
+              than the line and takes its colour.</div>`}
           ${watchNote(host)}`}
         <div class="grid2">
           ${segField("Scale", c.scale, CHART_SCALES, (v) => setChart((p) => { p.scale = v; }),
@@ -4146,7 +4160,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           ? "Bars grow from where zero falls, so a negative reading hangs below the line."
           : "Bars grow from the bottom, and the smallest reading keeps a visible stub. Switch to Zero when the readings can go negative."}</div>
         <div class="grid2">
-          ${numberField("Grid", chartGridLines(c.gridLines),
+          ${numberField("Grid lines", chartGridLines(c.gridLines),
             (v) => setChart((p) => { const n = chartGridLines(v ?? 0); if (n === 0) delete p.gridLines; else p.gridLines = n; }, "grid"),
             { step: 1, min: 0, max: CHART_MAX_GRID_LINES, def: chartGridLines(base.gridLines) })}
           ${chartGridLines(c.gridLines) === 0 && c.zeroLine !== true
@@ -4158,8 +4172,13 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         ${checkField("Line at zero", c.zeroLine === true,
           (v) => setChart((p) => { if (v) p.zeroLine = true; else delete p.zeroLine; }), base.zeroLine === true)}
         ${watchNote(host)}
-        <div class="hint">Grid lines split the plot into equal rows under the series. The line at zero
-          draws only while zero is inside the range, and uses the grid colour.</div>
+        ${c.zeroLine === true && !zeroCrossed
+          ? html`<div class="hint warn">These readings never go below zero, or never above it, so zero sits
+              on the edge of the plot or outside it and the line has nothing to draw. It shows on a chart
+              whose readings cross zero, like a temperature or a battery charging and discharging.</div>`
+          : nothing}
+        <div class="hint">Grid lines split the plot into equal rows under the series. The line at zero is
+          one line where zero falls, in the grid colour.</div>
         <div class="field"><span>Series</span>
           <div class="row-acts">
             <button class="small" title="Add a second chart layer on this frame, drawn against this chart's range"
@@ -4190,46 +4209,48 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
                 than one band and as noise on one that flickers between them.</div>`
             : nothing}`
           : nothing}`;
+      // A line that was turned on but whose layer was since deleted: one button
+      // brings a layer back, rather than making the author toggle it off and on.
+      const addLineIfGone = (line: "now" | "threshold") =>
+        chartMarkersOf(host.config, id).some((m) => m.payload.chartAnchor?.at === line)
+          ? nothing
+          : html`<div class="field list-field"><span>Line</span>
+              <div class="chips">
+                <button class="small" title="Nothing draws this line now. Add a line layer for it"
+                  @click=${() => host.update((cfg) => { addChartLine(cfg, id, line); })}>${uiIcon("plus")}<span>Add line</span></button>
+              </div>
+            </div>`;
+      const timesLayers = chartTimesOf(host.config, id);
       chartMarks = html`
-        ${segField("Highlight", c.highlight, CHART_HIGHLIGHTS, (v) => setChart((p) => { p.highlight = v; }), { def: base.highlight as typeof c.highlight })}
-        ${c.highlight === "none" ? nothing : html`
-          <div class="grid2">
-            ${c.highlight === "lowest" ? nothing
-              : colorField("Highest colour", c.highColorHex, (v) => setChart((p) => { p.highColorHex = v ?? CHART_DEFAULT_HIGH_HEX; }, "hicol"), false, CHART_DEFAULT_HIGH_HEX)}
-            ${c.highlight === "highest" ? nothing
-              : colorField("Lowest colour", c.lowColorHex, (v) => setChart((p) => { p.lowColorHex = v ?? CHART_DEFAULT_LOW_HEX; }, "locol"), false, CHART_DEFAULT_LOW_HEX)}
-          </div>
-          <div class="hint">Most watch faces tint a complication into one colour, which flattens the two
-            colours into each other. A marker, added below, is the shape that survives that.</div>`}
-        ${legacyMarkerFields(host, el, markers, baseMarkers, setChart)}
-        ${checkField("Threshold",c.thresholdValue !== undefined, (v) => setChart((p) => {
-          if (v) p.thresholdValue = seedThreshold(shown);
-          else delete p.thresholdValue;
-        }))}
+        ${checkField("Threshold", c.thresholdValue !== undefined,
+          (v) => host.update((cfg) => { setChartThreshold(cfg, id, v ? seedThreshold(shown) : undefined); }))}
         ${c.thresholdValue === undefined ? nothing : html`
           <div class="grid2">
             ${numberField("At", c.thresholdValue, (v) => setChart((p) => { p.thresholdValue = v ?? 0; }, "thval"))}
-            ${c.drawsThreshold === false ? nothing : colorField("Line colour", c.thresholdColorHex,
-              (v) => setChart((p) => { p.thresholdColorHex = v ?? CHART_DEFAULT_THRESHOLD_HEX; }, "thcol"), false, CHART_DEFAULT_THRESHOLD_HEX)}
           </div>
+          ${addLineIfGone("threshold")}
           <div class="hint">${c.scale === "fixed"
             ? "A threshold outside Min and Max draws nothing: the plot keeps the range you asked for."
-            : "The plot stretches to include the line, so a series that never reaches it still shows how far off it is."}</div>
-          ${chartLineFields(host, el, "threshold")}`}
-        ${checkField("Now marker",c.nowIndex !== undefined, (v) => setChart((p) => {
-          if (v) p.nowIndex = { kind: { kind: "time", timeField: "hour" } };
-          else delete p.nowIndex;
-        }))}
+            : "The plot stretches to include the line, so a series that never reaches it still shows how far off it is."}
+            The line is a layer listed below, so its colour and thickness are set there.</div>`}
+        ${checkField("Now", c.nowIndex !== undefined,
+          (v) => host.update((cfg) => { setChartNow(cfg, id, v); }))}
         ${c.nowIndex === undefined ? nothing : html`
           ${valueEditor(host, c.nowIndex, (v) => setChart((p) => { p.nowIndex = v; }, "nowidx"),
             { showResolved: true, label: "Reading number", key: `${key}-nowindex` })}
-          ${c.drawsNowLine === false ? nothing : colorField("Marker colour", c.nowColorHex,
-            (v) => setChart((p) => { p.nowColorHex = v ?? CHART_DEFAULT_NOW_HEX; }, "nowcol"), false, CHART_DEFAULT_NOW_HEX)}
+          ${addLineIfGone("now")}
           <div class="hint">Counted from 0, so Hour puts the line on reading 14 at 2 pm, which is what a
-            24-reading price or forecast chart wants. Rounded, and clamped to the readings drawn.</div>
-          ${chartLineFields(host, el, "now")}`}
+            24-reading price or forecast chart wants. Rounded, and clamped to the readings drawn. The line is
+            a layer listed below, so its colour and thickness are set there.</div>`}
         ${chartShowsTimeLabels(c)
-          ? chartTimeFields(host, el, setChart, base)
+          ? html`
+            ${checkField("Times", timesLayers.length > 0, (v) => host.update((cfg) => {
+              if (v) convertChartTimes(cfg, id);
+              else for (const t of chartTimesOf(cfg, id)) removeElement(cfg, t.payload.id);
+            }))}
+            <div class="hint">Clock times from the start of the span to now, as a layer in this chart's group.
+              Drag it anywhere on the preview. Click it in the list below to set how many, their size, colour
+              and clock.</div>`
           : everyReading && usingHistory
             ? html`<div class="hint keep">Clock times need evenly spaced readings, so they are offered when
               Points is Average rather than Every one.</div>`
@@ -4558,137 +4579,6 @@ function tapSizeHint(host: EditorHost, tapId: string): TemplateResult | typeof n
  * invisible rectangle by hand; the action editor then sits right here, which
  * is why an attached tap needs no row of its own in the Layers card.
  */
-/**
- * The two marker rows a chart drew its own marks from, shown only while it still
- * has them.
- *
- * Until 2026-09-12 this was the only way to mark an end, and it bought one shape
- * from a list of three, at a size nobody could change, in the highlight's colour.
- * A marker is a layer now: any glyph or emoji, any size, any colour, its own
- * states. These rows stay so a document from before that keeps working and reads
- * the same, and the line under them points at the button that converts it.
- *
- * A chart drawn today never shows them: `newElement` seeds `marker: "none"`.
- */
-function legacyMarkerFields(
-  host: EditorHost,
-  el: Extract<CElement, { kind: "chart" }>,
-  markers: ChartEndMarkers,
-  baseMarkers: ChartEndMarkers,
-  setChart: (m: (p: ChartElement) => void, k?: string) => void,
-): TemplateResult | typeof nothing {
-  if (!chartDrawsBuiltInMarkers(el)) return nothing;
-  const c = el.payload;
-  return html`
-    <div class="grid2">
-      ${c.highlight === "lowest" ? nothing
-        : segField("Highest marker", markers.high, CHART_END_MARKER_CHOICES,
-          (v) => setChart((p) => { setChartEndMarkers(p, { ...chartEndMarkers(p), high: v }); }), { def: baseMarkers.high })}
-      ${c.highlight === "highest" ? nothing
-        : segField("Lowest marker", markers.low, CHART_END_MARKER_CHOICES,
-          (v) => setChart((p) => { setChartEndMarkers(p, { ...chartEndMarkers(p), low: v }); }), { def: baseMarkers.low })}
-    </div>
-    <div class="field list-field"><span>Markers</span>
-      <div class="chips">
-        <button class="small" title="Turn these two marks into layers you can restyle"
-          @click=${() => host.update((cfg) => { convertChartMarkers(cfg, c.id); })}>${uiIcon("plus")}<span>Move to layers</span></button>
-      </div>
-    </div>
-    <div class="hint">These marks are drawn by the chart itself, which is why they are one of three
-      shapes at a size you cannot set. A dot sits on the plot's edge and takes no more room than it
-      needs to stay inside the chart; a triangle gives up five points of height at its own end
-      (highest along the top, lowest along the bottom). Move them to layers and each becomes an
-      ordinary layer listed below: any character or emoji, any size, any colour, sitting over its own
-      bar and taking no room from the plot.</div>`;
-}
-
-/**
- * The chart's own threshold or "now" line, and the button that hands it to a layer.
- *
- * The number stays in Extras either way: the threshold stretches the scale, "now" says
- * which reading is now, and a layer drawing either line reads that number. Only the
- * drawing moves. Once it has, this row says where it went, and offers to draw it on
- * the chart again if that layer has since been deleted.
- */
-function chartLineFields(host: EditorHost, el: Extract<CElement, { kind: "chart" }>, line: ChartLine): TemplateResult {
-  const c = el.payload;
-  const draws = line === "now" ? c.drawsNowLine !== false : c.drawsThreshold !== false;
-  const name = line === "now" ? "now line" : "threshold line";
-  if (draws) {
-    return html`
-      <div class="field list-field"><span>Line</span>
-        <div class="chips">
-          <button class="small" title=${`Turn the ${name} into a layer you can restyle`}
-            @click=${() => host.update((cfg) => { addChartLine(cfg, c.id, line); })}>${uiIcon("plus")}<span>Move to layers</span></button>
-        </div>
-      </div>`;
-  }
-  const layered = chartMarkersOf(host.config, c.id).some((m) => m.payload.chartAnchor?.at === line);
-  return html`
-    ${layered ? nothing : html`
-      <div class="field list-field"><span>Line</span>
-        <div class="chips">
-          <button class="small" title=${`Let the chart draw the ${name} itself again`}
-            @click=${() => host.update((cfg) => {
-              const chart = cfg.elements.find((e) => e.payload.id === c.id);
-              if (chart?.kind !== "chart") return;
-              if (line === "now") delete chart.payload.drawsNowLine;
-              else delete chart.payload.drawsThreshold;
-            })}><span>Draw on the chart</span></button>
-        </div>
-      </div>`}
-    <div class="hint">${layered
-      ? `The ${name} is a layer listed below, so its colour, thickness and style are set there. The number here still decides where it sits.`
-      : `The ${name} was moved to a layer that has since been deleted, so nothing draws it.`}</div>`;
-}
-
-/**
- * A chart's clock times, and the button that hands them to a layer.
- *
- * The same six controls a timeline has, while the chart draws its own row. Once
- * the row is a `chartTimes` layer the controls go with it, since the chart's own
- * keys no longer draw anything, and this says where the times went, offering to
- * draw them on the chart again if that layer has since been deleted.
- */
-function chartTimeFields(
-  host: EditorHost,
-  el: Extract<CElement, { kind: "chart" }>,
-  setChart: (m: (p: ChartElement) => void, k?: string) => void,
-  base: Record<string, unknown>,
-): TemplateResult {
-  const c = el.payload;
-  if (c.drawsTimeLabels === false) {
-    const layered = chartTimesOf(host.config, c.id).length > 0;
-    return html`
-      ${layered ? nothing : html`
-        <div class="field list-field"><span>Times</span>
-          <div class="chips">
-            <button class="small" title="Let the chart draw its clock times itself again"
-              @click=${() => setChart((p) => { delete p.drawsTimeLabels; })}><span>Draw on the chart</span></button>
-          </div>
-        </div>`}
-      <div class="hint">${layered
-        ? "The clock times are a layer in this chart's group, so how many, their size, colour and clock are set there."
-        : "The clock times were moved to a layer that has since been deleted, so nothing draws them."}</div>`;
-  }
-  const blocked = watchVersionNote(host.watchAppVersion, MIN_WATCH_VERSION_FOR_CHART_TIMES_LAYER) !== undefined;
-  return html`
-    ${timeLabelFields(c, setChart, base, "cl", html`
-      <div class="hint">Clock times from the start of the span to now, evenly spaced, in a row of
-        their own. The right edge is now and the left edge is the start of the span, so a slot
-        the recorder had nothing for shifts the earlier times a little.</div>`)}
-    ${c.timeLabelCount <= 0 ? nothing : html`
-      <div class="field list-field"><span>Times</span>
-        <div class="chips">
-          <button class="small" ?disabled=${blocked}
-            title=${blocked ? "The watch is too old to draw clock times as a layer" : "Turn the clock times into a layer you can move and size"}
-            @click=${() => host.update((cfg) => { convertChartTimes(cfg, c.id); })}>${uiIcon("plus")}<span>Move to layer</span></button>
-        </div>
-      </div>
-      ${watchNote(host, MIN_WATCH_VERSION_FOR_CHART_TIMES_LAYER)}
-      <div class="hint">As a layer the row can sit anywhere at any width, and the plot gets its height back.</div>`}`;
-}
-
 /** The one-line state of a chart's Extras card: the marks the chart draws on
  * its plot first, then the layers that belong to it. */
 function chartNumbersSummary(host: EditorHost, el: Extract<CElement, { kind: "chart" }>): string {
@@ -4696,13 +4586,8 @@ function chartNumbersSummary(host: EditorHost, el: Extract<CElement, { kind: "ch
   const labels = chartLabelsOf(host.config, c.id);
   const markers = chartMarkersOf(host.config, c.id);
   const times = chartTimesOf(host.config, c.id);
-  const own: string[] = [];
-  if (c.highlight !== "none") own.push(`${CHART_HIGHLIGHTS.find(([v]) => v === c.highlight)?.[1].toLowerCase() ?? ""} marked`);
-  if (c.thresholdValue !== undefined) own.push("threshold");
-  if (c.nowIndex !== undefined) own.push("now");
-  if (c.drawsTimeLabels !== false && chartShowsTimeLabels(c) && c.timeLabelCount > 0) own.push(`${c.timeLabelCount} times`);
-  if (own.length === 0 && labels.length === 0 && markers.length === 0 && times.length === 0) return "None yet";
-  const parts = [...own, ...labels.map((l) => {
+  if (labels.length === 0 && markers.length === 0 && times.length === 0) return "None yet";
+  const parts = [...labels.map((l) => {
     const k = l.payload.value.kind;
     return k.kind === "chartStat" ? (CHART_STATS.find(([s]) => s === k.stat)?.[1] ?? "number").toLowerCase() : "number";
   })];
@@ -4747,8 +4632,8 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
         @click=${() => host.update((c) => removeElement(c, id))}>${uiIcon("close")}</button>
     </div>`;
   return html`
-    <div class="hint">What the chart draws over its plot besides the series: a highlight on its ends, a
-      threshold, a now marker and clock times. Each of the last three can move to a layer of its own.</div>
+    <div class="hint">Everything the chart shows besides its readings: a threshold, now, clock times, numbers
+      and markers. Each one is a layer in this chart's group, so you can drag it and give it any size or colour.</div>
     ${marks ?? nothing}
     ${labels.length === 0 && markers.length === 0 && times.length === 0
       ? html`<div class="hint keep">A chart on its own shows that a reading moved, not what it moved to and not
@@ -4785,20 +4670,6 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
         ${CHART_ANCHOR_POINTS.filter(([at]) => chartAnchorIsColumn(at)).map(([at, label]) => html`
           <button class="small" title=${markedAlready.has(at) ? `Add another mark over the ${label.toLowerCase()}` : `Mark the ${label.toLowerCase()}`}
             @click=${() => addMarker(at)}>${uiIcon("plus")}<span>${label}</span></button>`)}
-      </div>
-    </div>
-    <div class="field list-field"><span>Line</span>
-      <div class="adders">
-        ${CHART_LINES.map(([line, label]) => {
-          // A threshold line needs a threshold to sit on, and there is no sensible
-          // value to guess here, so Look sets it first. "Now" has one obvious
-          // default, the hour, which `addChartLine` seeds.
-          const needsThreshold = line === "threshold" && el.payload.thresholdValue === undefined;
-          return html`
-            <button class="small" ?disabled=${needsThreshold}
-              title=${needsThreshold ? "Turn on Threshold above first, so the line has a value to sit on" : `Draw the ${label.toLowerCase()} as a layer you can restyle`}
-              @click=${() => host.update((c) => { addChartLine(c, el.payload.id, line); })}>${uiIcon("plus")}<span>${label}</span></button>`;
-        })}
       </div>
     </div>
     <div class="hint">A marker starts as an icon over the reading it names: a triangle over the highest, a dot over

@@ -2069,6 +2069,39 @@ describe("chart fill, dots and grid keys", () => {
     const dressed = chartConfig("1", (p) => { p.gridLines = 2; p.zeroLine = true; p.pointDots = "all"; p.fillColorHex = "#0A84FF"; });
     expect(auditUnknownKeys(encodeConfig(dressed.cfg))).toEqual([]);
   });
+
+  it("omits the dot size and colour when absent, and reads a wrong type as absent", () => {
+    const { chart, written } = payloadWith({});
+    expect(chart.pointDotSize).toBeUndefined();
+    expect(chart.pointDotColorHex).toBeUndefined();
+    expect("pointDotSize" in written).toBe(false);
+    expect("pointDotColorHex" in written).toBe(false);
+    for (const bad of ["5", null, Number.NaN, true]) {
+      const odd = payloadWith({ pointDotSize: bad, pointDotColorHex: 7 });
+      expect(odd.chart.pointDotSize).toBeUndefined();
+      expect(odd.chart.pointDotColorHex).toBeUndefined();
+      expect("pointDotSize" in odd.written).toBe(false);
+      expect("pointDotColorHex" in odd.written).toBe(false);
+    }
+  });
+
+  it("clamps the dot size into 1 to 12", () => {
+    expect(payloadWith({ pointDotSize: 40 }).written.pointDotSize).toBe(12);
+    expect(payloadWith({ pointDotSize: 0.2 }).written.pointDotSize).toBe(1);
+    expect(payloadWith({ pointDotSize: 3.5 }).written.pointDotSize).toBe(3.5);
+  });
+
+  it("writes the dot size and colour right after pointDots", () => {
+    const { chart, written } = payloadWith({
+      gridLines: 2, pointDotColorHex: "#FF9F0A", pointDotSize: 5, pointDots: "all", barCorners: "top",
+    });
+    expect(chart).toMatchObject({ pointDotSize: 5, pointDotColorHex: "#FF9F0A" });
+    const keys = Object.keys(written);
+    const from = keys.indexOf("barCorners");
+    expect(keys.slice(from, from + 5)).toEqual(["barCorners", "pointDots", "pointDotSize", "pointDotColorHex", "gridLines"]);
+    const dressed = chartConfig("1", (p) => { p.pointDots = "all"; p.pointDotSize = 5; p.pointDotColorHex = "#FF9F0A"; });
+    expect(auditUnknownKeys(encodeConfig(dressed.cfg))).toEqual([]);
+  });
 });
 
 describe("chart end marker room", () => {
@@ -2153,6 +2186,26 @@ describe("chart fill, dots and grid geometry", () => {
     expect(dots(1, "auto").drawsDots).toBe(true);
     expect(geometryOf(series(24), (p) => { p.pointDots = "all"; }).drawsDots).toBe(false); // bars
   });
+
+  it("reads a set dot size for the auto rule and the inset", () => {
+    const series = (n: number) => Array.from({ length: n }, (_, i) => (i % 5) + 1).join(",");
+    const dots = (n: number, pointDots: "auto" | "all", size: number | undefined) =>
+      geometryOf(series(n), (p) => { p.style = "line"; p.lineWidth = 2; p.pointDots = pointDots; if (size !== undefined) p.pointDotSize = size; });
+    // Diameter 6 wants a gap of 18 across 179 points: 10 readings sit 19.89 apart, 11 sit 17.9.
+    expect(dots(10, "auto", 6).drawsDots).toBe(true);
+    expect(dots(11, "auto", 6).drawsDots).toBe(false);
+    // A dot smaller than the automatic 3.6 draws where the automatic one would not.
+    expect(dots(18, "auto", undefined).drawsDots).toBe(false);
+    expect(dots(18, "auto", 3).drawsDots).toBe(true);
+    const big = dots(10, "all", 6);
+    expect(big.dotDiameter).toBe(6);
+    expect(big.point(0).x).toBeCloseTo(3, 9);
+    expect(big.plotTop).toBeCloseTo(3, 9);
+    // A dot narrower than the stroke keeps the stroke inset.
+    expect(dots(10, "all", 1).point(0).x).toBeCloseTo(1, 9);
+    // Clamped on the way through the resolver.
+    expect(dots(3, "all", 30).dotDiameter).toBe(12);
+  });
 });
 
 describe("drawing chart fill, dots and grid", () => {
@@ -2188,6 +2241,27 @@ describe("drawing chart fill, dots and grid", () => {
     // of the reading dot shows around it.
     expect(count(svg, " a1.8 1.8 0 1 0 3.6 0")).toBe(3);
     expect(svg.indexOf(" a1.8 1.8")).toBeLessThan(svg.indexOf("<circle"));
+  });
+
+  it("draws dots at a set size, in a set colour that beats the bands but not the highlight", () => {
+    const svg = draw("1,2,5,6", (p) => {
+      p.style = "line";
+      p.pointDots = "all";
+      p.pointDotSize = 6;
+      p.pointDotColorHex = "#FF9F0A";
+      p.coloring = "bands";
+      p.bands = [{ id: "B1", upTo: 3, colorHex: "#00FF00" }];
+      p.bandAboveColorHex = "#FF0000";
+      p.highlight = "highest";
+      p.highColorHex = "#123456";
+      p.marker = "none";
+    });
+    expect(count(svg, " a3 3 0 1 0 6 0")).toBe(3);
+    // One path of dots, all in the set colour; no dot in a band colour.
+    expect(count(svg, "fill=#FF9F0A")).toBe(1);
+    expect(svg).not.toContain("fill=#00FF00");
+    expect(svg).not.toContain("fill=#FF0000");
+    expect(svg).toContain("fill=#123456");
   });
 
   it("draws grid and zero lines under the series", () => {

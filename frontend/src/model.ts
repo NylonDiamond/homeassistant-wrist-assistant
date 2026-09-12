@@ -150,6 +150,17 @@ export function chartGridColorHex(raw: unknown): string {
   return typeof raw === "string" && raw !== "" ? raw : CHART_DEFAULT_GRID_HEX;
 }
 
+/** The smallest and largest reading dot a chart draws, across, in design points. */
+export const CHART_MIN_POINT_DOT_SIZE = 1;
+export const CHART_MAX_POINT_DOT_SIZE = 12;
+
+/** A decoded `pointDotSize`: a finite number clamped into 1…12, anything else
+ * absent, which draws the automatic size. */
+export function chartPointDotSize(raw: unknown): number | undefined {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return undefined;
+  return Math.max(CHART_MIN_POINT_DOT_SIZE, Math.min(CHART_MAX_POINT_DOT_SIZE, raw));
+}
+
 /** Which corners of a bar are rounded: `all` four, or only the `top`, meaning
  * the end away from the baseline (the bottom end of a bar hanging below zero). */
 export type ChartBarCorners = "all" | "top";
@@ -860,6 +871,12 @@ export interface ChartElement extends ElementBase {
   barCorners?: ChartBarCorners;
   /** Dots on the readings of a line or area. Absent reads as `none`. */
   pointDots?: ChartPointDots;
+  /** A reading dot's diameter in design points, 1…12. Absent draws the automatic
+   * size, `lineWidth * CHART_DOT_SCALE`. */
+  pointDotSize?: number;
+  /** Every plain reading dot's colour, beating the bands. Absent paints each dot
+   * in the series or its band colour. The high and low dots keep their own. */
+  pointDotColorHex?: string;
   /** Horizontal grid lines spaced evenly inside the plot, 0…4. Absent reads as 0. */
   gridLines?: number;
   /** The grid lines' colour, and the zero line's. Absent reads as
@@ -2234,6 +2251,8 @@ function parseElementKind(raw: unknown): Element {
           ...(chartBarRadius(p.barRadius) !== CHART_DEFAULT_BAR_RADIUS ? { barRadius: chartBarRadius(p.barRadius) } : {}),
           ...(chartBarCorners(p.barCorners) !== "all" ? { barCorners: chartBarCorners(p.barCorners) } : {}),
           ...(chartPointDots(p.pointDots) !== "none" ? { pointDots: chartPointDots(p.pointDots) } : {}),
+          ...(chartPointDotSize(p.pointDotSize) !== undefined ? { pointDotSize: chartPointDotSize(p.pointDotSize) } : {}),
+          ...(typeof p.pointDotColorHex === "string" ? { pointDotColorHex: p.pointDotColorHex } : {}),
           ...(chartGridLines(p.gridLines) !== 0 ? { gridLines: chartGridLines(p.gridLines) } : {}),
           ...(!sameHex(chartGridColorHex(p.gridColorHex), CHART_DEFAULT_GRID_HEX) ? { gridColorHex: chartGridColorHex(p.gridColorHex) } : {}),
           ...(p.zeroLine === true ? { zeroLine: true } : {}),
@@ -2661,7 +2680,11 @@ function chartMarkerColor(chart: Extract<Element, { kind: "chart" }>, at: ChartA
  * the one obvious answer and what the Look toggle seeds too, so a now marker or
  * line added first lands on a reading instead of in the corner of the face. */
 function seedChartNow(c: ChartElement): void {
-  if (c.nowIndex === undefined) c.nowIndex = { kind: { kind: "time", timeField: "hour" } };
+  if (c.nowIndex !== undefined) return;
+  c.nowIndex = { kind: { kind: "time", timeField: "hour" } };
+  // A chart's now line is always a layer now, so a now it had to seed never
+  // draws a line of its own on top of whatever layer asked for it.
+  c.drawsNowLine = false;
 }
 
 /** The layers pinned to one chart, in document order. */
@@ -2875,7 +2898,9 @@ export function convertChartTimes(cfg: CustomComplicationConfig, chartId: string
   const c = chart.payload;
   const el = newElement("chartTimes") as Extract<Element, { kind: "chartTimes" }>;
   el.payload.chart = chartId;
-  el.payload.timeLabelCount = clampTimeLabelCount(c.timeLabelCount);
+  // A chart that never printed its times has a count of 0, and a layer of no
+  // times would look like a broken switch.
+  el.payload.timeLabelCount = c.timeLabelCount > 0 ? clampTimeLabelCount(c.timeLabelCount) : TIMELINE_NEW_LABEL_COUNT;
   el.payload.labelSize = c.labelSize;
   el.payload.labelColorHex = c.labelColorHex;
   el.payload.hourCycle = c.hourCycle;
@@ -2886,6 +2911,104 @@ export function convertChartTimes(cfg: CustomComplicationConfig, chartId: string
   joinChartGroup(cfg, chart, el.payload.id);
   c.drawsTimeLabels = false;
   return el.payload.id;
+}
+
+/** Turn a chart's threshold on at `value`, or off with undefined.
+ *
+ * On, the chart keeps the number (the scale stretches to it) and a line layer
+ * draws it, added unless one is already anchored there. Off, the number goes and
+ * so does every layer anchored to it, since they would follow nothing. */
+export function setChartThreshold(cfg: CustomComplicationConfig, chartId: string, value: number | undefined): void {
+  const chart = cfg.elements.find((el) => el.payload.id === chartId);
+  if (!chart || chart.kind !== "chart") return;
+  const c = chart.payload;
+  if (value === undefined) {
+    delete c.thresholdValue;
+    delete c.drawsThreshold;
+    for (const m of chartMarkersOf(cfg, chartId)) if (m.payload.chartAnchor?.at === "threshold") removeElement(cfg, m.payload.id);
+    return;
+  }
+  c.thresholdValue = value;
+  c.drawsThreshold = false;
+  if (!chartMarkersOf(cfg, chartId).some((m) => m.payload.chartAnchor?.at === "threshold")) addChartLine(cfg, chartId, "threshold");
+}
+
+/** Turn a chart's "now" on or off, the same way as its threshold: on seeds the
+ * hour and adds a now line layer unless something already follows now; off drops
+ * the number and every layer anchored to it. */
+export function setChartNow(cfg: CustomComplicationConfig, chartId: string, on: boolean): void {
+  const chart = cfg.elements.find((el) => el.payload.id === chartId);
+  if (!chart || chart.kind !== "chart") return;
+  const c = chart.payload;
+  if (!on) {
+    delete c.nowIndex;
+    delete c.drawsNowLine;
+    for (const m of chartMarkersOf(cfg, chartId)) if (m.payload.chartAnchor?.at === "now") removeElement(cfg, m.payload.id);
+    return;
+  }
+  seedChartNow(c);
+  c.drawsNowLine = false;
+  if (!chartMarkersOf(cfg, chartId).some((m) => m.payload.chartAnchor?.at === "now")) addChartLine(cfg, chartId, "now");
+}
+
+/**
+ * Hand every mark a chart still draws itself to layers: its highlighted ends,
+ * its threshold and now lines, and its clock times.
+ *
+ * Decided 2026-09-12: those are always layers. The panel has no controls for a
+ * chart drawing its own any more, so a document that still does is converted when
+ * it is opened, before the draft takes its baseline, and the change rides along
+ * with the next save. Each conversion copies what the chart drew (colour, shape,
+ * count, clock), so the face reads the same.
+ *
+ * A highlight that only tinted its reading, with no marker, becomes the marker a
+ * new one starts as, in the highlight's colour. That is the one visible change.
+ */
+export function liftChartOwnMarks(cfg: CustomComplicationConfig): void {
+  const charts = cfg.elements.filter((el): el is Extract<Element, { kind: "chart" }> => el.kind === "chart");
+  for (const chart of charts) {
+    const c = chart.payload;
+    const before = new Set(cfg.elements.map((e) => e.payload.id));
+    // Opened documents are in canonical form: the chart's real frame is its one
+    // placement, and the frame on the payload can be stale. The helpers below
+    // size their layers from the payload, so lend it the placement for the length
+    // of the conversion, then seat every new layer on the chart's own shape.
+    const seat = DRAWABLE_FAMILIES.find((f) => cfg.perFamily[f]?.placements[c.id] !== undefined);
+    const ownFrame = c.frame;
+    const placed = seat === undefined ? undefined : cfg.perFamily[seat]!.placements[c.id]!;
+    if (placed) c.frame = { ...placed.frame };
+    liftOneChart(cfg, c);
+    c.frame = ownFrame;
+    if (seat === undefined || placed === undefined) continue;
+    for (const el of cfg.elements) {
+      if (before.has(el.payload.id)) continue;
+      cfg.perFamily[seat]!.placements[el.payload.id] = { frame: { ...el.payload.frame }, isHidden: placed.isHidden };
+      el.payload.isHidden = true;
+    }
+  }
+}
+
+function liftOneChart(cfg: CustomComplicationConfig, c: ChartElement): void {
+  {
+    if (c.highlight !== undefined && c.highlight !== "none") {
+      const markers = chartEndMarkers(c);
+      const ends: [ChartAnchorPoint, ChartEndMarker][] = [];
+      if (c.highlight === "highest" || c.highlight === "both") ends.push(["highest", markers.high]);
+      if (c.highlight === "lowest" || c.highlight === "both") ends.push(["lowest", markers.low]);
+      for (const [at, shape] of ends) {
+        const id = addChartMarker(cfg, c.id, at);
+        const el = cfg.elements.find((e) => e.payload.id === id);
+        if (el?.kind === "icon" && shape !== "none") {
+          el.payload.symbol = literal(shape === "triangle" ? "arrowtriangle.up.fill" : "circle.fill");
+        }
+      }
+      setChartEndMarkers(c, { high: "none", low: "none" });
+      c.highlight = "none";
+    }
+    if (c.thresholdValue !== undefined && c.drawsThreshold !== false) addChartLine(cfg, c.id, "threshold");
+    if (c.nowIndex !== undefined && c.drawsNowLine !== false) addChartLine(cfg, c.id, "now");
+    if (c.drawsTimeLabels !== false && chartShowsTimeLabels(c) && c.timeLabelCount > 0) convertChartTimes(cfg, c.id);
+  }
 }
 
 /** One line of `labelSize` points across the chart's width, below it or above
@@ -3248,7 +3371,8 @@ function encodeElementKind(el: Element): J {
       }
       // The chart looks keys, each omitted at its default, in the order both
       // encoders share: curve, fillStyle, fillColorHex, barRadius, barCorners,
-      // pointDots, gridLines, gridColorHex, zeroLine, smoothing, gaps.
+      // pointDots, pointDotSize, pointDotColorHex, gridLines, gridColorHex,
+      // zeroLine, smoothing, gaps.
       const curve = c.curve ?? "straight";
       if (curve !== "straight") o.curve = curve;
       const fillStyle = chartFillStyle(c.fillStyle);
@@ -3260,6 +3384,9 @@ function encodeElementKind(el: Element): J {
       if (barCorners !== "all") o.barCorners = barCorners;
       const pointDots = chartPointDots(c.pointDots);
       if (pointDots !== "none") o.pointDots = pointDots;
+      const pointDotSize = chartPointDotSize(c.pointDotSize);
+      if (pointDotSize !== undefined) o.pointDotSize = encNum(pointDotSize);
+      if (c.pointDotColorHex !== undefined) o.pointDotColorHex = c.pointDotColorHex;
       const gridLines = chartGridLines(c.gridLines);
       if (gridLines !== 0) o.gridLines = gridLines;
       const gridColorHex = chartGridColorHex(c.gridColorHex);
@@ -3590,7 +3717,8 @@ const K = {
     "drawsThreshold", "drawsNowLine", "drawsTimeLabels",
     "timeLabelCount", "labelSize", "labelColorHex", "labelsAbove", "hourCycle", "minutes",
     "highMarker", "lowMarker",
-    "curve", "fillStyle", "fillColorHex", "barRadius", "barCorners", "pointDots", "gridLines", "gridColorHex", "zeroLine", "smoothing", "gaps",
+    "curve", "fillStyle", "fillColorHex", "barRadius", "barCorners", "pointDots", "pointDotSize", "pointDotColorHex",
+    "gridLines", "gridColorHex", "zeroLine", "smoothing", "gaps",
     // Written only on 2026-09-05. The band bounds are read forward by
     // `parseChartBands`; the built-in numbers are read forward by
     // `migrateChartLabels` into text layers. All still listed so a document

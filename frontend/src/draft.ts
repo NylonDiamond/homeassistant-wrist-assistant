@@ -4,7 +4,7 @@
 // `baseRevision` and then `commit()`s on success (plan §"Save and conflict
 // rules").
 
-import { type CustomComplicationConfig, type FamilyKind, encodeConfig, normalizeOwnership, parseConfig, syncAttachedTaps } from "./model.js";
+import { type CustomComplicationConfig, type FamilyKind, encodeConfig, liftChartOwnMarks, normalizeOwnership, parseConfig, syncAttachedTaps } from "./model.js";
 import { deriveDataSources } from "./compiler.js";
 
 const HISTORY_LIMIT = 100;
@@ -81,6 +81,9 @@ export class Draft {
     // changes what the watch draws.
     normalizeOwnership(config);
     syncAttachedTaps(config);
+    // A chart's highlight, lines and times are always layers now; one saved
+    // while the chart drew its own opens converted.
+    liftChartOwnMarks(config);
     this.baseline = JSON.stringify(encodeConfig(config));
   }
 

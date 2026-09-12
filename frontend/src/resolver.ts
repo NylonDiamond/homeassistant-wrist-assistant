@@ -81,6 +81,7 @@ import {
   type ChartBarCorners,
   chartFillStyle,
   chartGridColorHex,
+  chartPointDotSize,
   chartGridLines,
   chartPointDots,
   chartSmoothing,
@@ -260,6 +261,12 @@ export interface ResolvedChart extends ResolvedBase {
   /** Dots on the readings of a line or area; `chartGeometry` decides whether
    * `auto` draws them. */
   pointDots: ChartPointDots;
+  /** A reading dot's diameter, already clamped into 1…12; absent is the
+   * automatic `lineWidth * CHART_DOT_SCALE`. */
+  pointDotSize?: number;
+  /** Every plain reading dot's colour, beating the bands; absent is the series
+   * or band colour. */
+  pointDotColorHex?: string;
   /** Horizontal grid lines inside the plot, 0…4. */
   gridLines: number;
   /** Colour of the grid lines and the zero line. */
@@ -1648,6 +1655,8 @@ export class Resolver {
           barRadius: chartBarRadius(c.barRadius),
           barCorners: chartBarCorners(c.barCorners),
           pointDots: chartPointDots(c.pointDots),
+          ...(chartPointDotSize(c.pointDotSize) !== undefined ? { pointDotSize: chartPointDotSize(c.pointDotSize) } : {}),
+          ...(c.pointDotColorHex !== undefined ? { pointDotColorHex: c.pointDotColorHex } : {}),
           gridLines: chartGridLines(c.gridLines),
           gridColorHex: chartGridColorHex(c.gridColorHex),
           zeroLine: c.zeroLine === true,
@@ -1956,7 +1965,9 @@ export function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, b
   // the readings are wider than the stroke, so when they draw the inset grows
   // to a dot's radius and the dots at the edges are not clipped.
   const lineInset = el.style === "bars" ? 0 : el.lineWidth / 2;
-  const dotDiameter = el.lineWidth * CHART_DOT_SCALE;
+  // `pointDotSize` when the layer sets one, and both the auto rule and the inset
+  // read this effective diameter.
+  const dotDiameter = el.pointDotSize ?? el.lineWidth * CHART_DOT_SCALE;
   const drawsDots = chartDrawsDots(el.style, el.pointDots, values.length, plotW, lineInset, dotDiameter);
   const inset = drawsDots ? Math.max(lineInset, dotDiameter / 2) : lineInset;
 
