@@ -2444,6 +2444,13 @@ function chartMarkerColor(chart: Extract<Element, { kind: "chart" }>, at: ChartA
   return "#FFFFFF";
 }
 
+/** "Now" means nothing until the chart knows which reading is now. The hour is
+ * the one obvious answer and what the Look toggle seeds too, so a now marker or
+ * line added first lands on a reading instead of in the corner of the face. */
+function seedChartNow(c: ChartElement): void {
+  if (c.nowIndex === undefined) c.nowIndex = { kind: { kind: "time", timeField: "hour" } };
+}
+
 /** The layers pinned to one chart, in document order. */
 export function chartMarkersOf(cfg: CustomComplicationConfig, chartId: string): Element[] {
   return cfg.elements.filter((el) => el.payload.chartAnchor?.layer === chartId);
@@ -2461,6 +2468,7 @@ export function addChartMarker(
 ): string | undefined {
   const chart = cfg.elements.find((el) => el.payload.id === chartId);
   if (!chart || chart.kind !== "chart") return undefined;
+  if (at === "now") seedChartNow(chart.payload);
   const el = newElement("text") as Extract<Element, { kind: "text" }>;
   const fontSize = 6;
   el.payload.value = literal(CHART_MARKER_GLYPHS[at]);
@@ -2562,6 +2570,7 @@ export function addChartLine(cfg: CustomComplicationConfig, chartId: string, lin
   const chart = cfg.elements.find((el) => el.payload.id === chartId);
   if (!chart || chart.kind !== "chart") return undefined;
   const c = chart.payload;
+  if (line === "now") seedChartNow(c);
   const el = newElement("shape") as Extract<Element, { kind: "shape" }>;
   el.payload.kind = "line";
   el.payload.thickness = 1;

@@ -2992,10 +2992,13 @@ function anchorFields(host: EditorHost, el: CElement, family: FamilyKind): Templ
     ${segField("Sits", anchor.place, CHART_ANCHOR_PLACES as unknown as [ChartAnchorPlace, string][],
       (v) => setAnchor((a) => { a.place = v; }), { def: "above" as ChartAnchorPlace })}
     <div class="grid2">
-      ${numberField("Nudge X", anchor.dx ?? 0, (v) => setAnchor((a) => {
+      ${/* A marker belongs to its column, so it only moves up and down. Nudge X
+         * is shown only to clear a sideways nudge written before that rule. */
+        !anchor.dx ? nothing : numberField("Nudge X", anchor.dx, (v) => setAnchor((a) => {
         if (v) a.dx = v; else delete a.dx;
       }, "dx"), { step: 0.5, def: 0, unit: "pt" })}
-      ${numberField("Nudge Y", anchor.dy ?? 0, (v) => setAnchor((a) => {
+      ${chartAnchorIsColumn(anchor.at) && anchor.place === "through" ? nothing
+        : numberField("Nudge Y", anchor.dy ?? 0, (v) => setAnchor((a) => {
         if (v) a.dy = v; else delete a.dy;
       }, "dy"), { step: 0.5, def: 0, unit: "pt" })}
     </div>
@@ -4494,19 +4497,12 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
         ${CHART_LINES.map(([line, label]) => {
           // A threshold line needs a threshold to sit on, and there is no sensible
           // value to guess here, so Look sets it first. "Now" has one obvious
-          // default, the hour, which is what the Look toggle seeds too.
+          // default, the hour, which `addChartLine` seeds.
           const needsThreshold = line === "threshold" && el.payload.thresholdValue === undefined;
           return html`
             <button class="small" ?disabled=${needsThreshold}
               title=${needsThreshold ? "Turn on Threshold in Look first, so the line has a value to sit on" : `Draw the ${label.toLowerCase()} as a layer you can restyle`}
-              @click=${() => host.update((c) => {
-                const chart = c.elements.find((e) => e.payload.id === el.payload.id);
-                if (chart?.kind !== "chart") return;
-                if (line === "now" && chart.payload.nowIndex === undefined) {
-                  chart.payload.nowIndex = { kind: { kind: "time", timeField: "hour" } };
-                }
-                addChartLine(c, el.payload.id, line);
-              })}>${uiIcon("plus")}<span>${label}</span></button>`;
+              @click=${() => host.update((c) => { addChartLine(c, el.payload.id, line); })}>${uiIcon("plus")}<span>${label}</span></button>`;
         })}
       </div>
     </div>
@@ -4562,6 +4558,13 @@ function unquote(s: string): string {
 
 /** The name a layer goes by in the Layers list and the crumbs. */
 export function layerTitle(el: CElement, ctx?: DescribeContext): string {
+  // A chart extra is named for what it marks. Its own content is a glyph or a
+  // bare line, which says nothing in a list of five of them.
+  const anchor = el.payload.chartAnchor;
+  if (anchor !== undefined) {
+    const name = CHART_ANCHOR_POINTS.find(([k]) => k === anchor.at)?.[1] ?? "Reading";
+    return anchor.place === "through" ? `${name} line` : `${name} marker`;
+  }
   switch (el.kind) {
     case "text": return unquote(describeValue(el.payload.value, ctx));
     case "icon": return unquote(describeValue(el.payload.symbol, ctx));

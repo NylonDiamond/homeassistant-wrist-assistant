@@ -56,7 +56,7 @@ import {
   type Value,
   type ValueFormat,
 } from "../src/model.js";
-import { describeValue } from "../src/editors.js";
+import { describeValue, layerTitle } from "../src/editors.js";
 import { compile } from "../src/compiler.js";
 import { renderLayout, type IconProvider } from "../src/renderer.js";
 import { chartDomain, chartLabels, chartNumbers, placeChartAnchors, resolveAll, type EntityState, type ResolvedChart, type ResolvedLayout } from "../src/resolver.js";
@@ -1760,5 +1760,24 @@ describe("chart lines as layers", () => {
     expect(model.drawsThreshold).toBe(true);
     // The layer still needs to know which reading is now.
     expect(model.nowIndex).toBe(1);
+  });
+
+  it("names each extra for what it marks, not for its glyph", () => {
+    const { cfg, chart } = chartWith((c) => { c.thresholdValue = 2; });
+    const title = (id: string | undefined) => layerTitle(cfg.elements.find((e) => e.payload.id === id)!);
+    expect(title(addChartMarker(cfg, chart.payload.id, "highest"))).toBe("Highest reading marker");
+    expect(title(addChartMarker(cfg, chart.payload.id, "now"))).toBe("Now marker");
+    expect(title(addChartLine(cfg, chart.payload.id, "threshold"))).toBe("Threshold line");
+  });
+
+  it("gives the chart a now reading when a now marker or line is added first", () => {
+    const { cfg, chart } = chartWith(() => {});
+    expect(chart.payload.nowIndex).toBeUndefined();
+    addChartMarker(cfg, chart.payload.id, "now");
+    expect(chart.payload.nowIndex).toEqual({ kind: { kind: "time", timeField: "hour" } });
+    // One the author already set is left alone.
+    const other = chartWith((c) => { c.nowIndex = literal("3"); });
+    addChartLine(other.cfg, other.chart.payload.id, "now");
+    expect(other.chart.payload.nowIndex).toEqual(literal("3"));
   });
 });
