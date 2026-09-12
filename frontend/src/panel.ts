@@ -3863,7 +3863,10 @@ export class WristAssistantPanel extends LitElement {
     const target = e.target as SVGElement;
     const handle = target.closest("[data-handle]")?.getAttribute("data-handle") as HandleCorner | null;
     const hitId = target.closest("[data-element-id]")?.getAttribute("data-element-id") ?? undefined;
-    const svg = target.closest("svg") as SVGSVGElement | null;
+    // The face's own svg, not the nearest one: an icon draws its glyph as a
+    // nested svg with a viewBox of its own, and a drag measured against that
+    // one ran several times faster than the pointer.
+    const svg = target.closest("svg.complication") as SVGSVGElement | null;
     // Any press on the face that is not on the timestamp chip drops the chip's
     // selection, the way a click elsewhere drops any selection.
     // `closest` gives undefined through the optional chain when nothing
