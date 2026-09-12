@@ -4213,83 +4213,54 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
                 than one band and as noise on one that flickers between them.</div>`
             : nothing}`
           : nothing}`;
-      // A line that was turned on but whose layer was since deleted: one button
-      // brings a layer back, rather than making the author toggle it off and on.
-      const addLineIfGone = (line: "now" | "threshold") =>
-        chartMarkersOf(host.config, id).some((m) => m.payload.chartAnchor?.at === line)
-          ? nothing
-          : html`<div class="field list-field"><span>Line</span>
-              <div class="chips">
-                <button class="small" title="Nothing draws this line now. Add a line layer for it"
-                  @click=${() => host.update((cfg) => { addChartLine(cfg, id, line); })}>${uiIcon("plus")}<span>Add line</span></button>
-              </div>
-            </div>`;
-      const timesLayers = chartTimesOf(host.config, id);
-      const dotsLayers = chartDotsOf(host.config, id);
-      const gridLayers = chartGridsOf(host.config, id);
-      const zeroLines = chartZeroLinesOf(host.config, id);
+      // Every extra is a button that adds a layer, the same as Numbers and
+      // Markers below, so the card has one kind of control. A button whose layer
+      // is already on the chart shows a tick and stays pressed; the × in the list
+      // at the bottom takes it off again.
+      const anchoredAt = (at: "now" | "threshold") => chartMarkersOf(host.config, id).some((m) => m.payload.chartAnchor?.at === at);
+      const timesOn = chartTimesOf(host.config, id).length > 0;
+      const dotsOn = chartDotsOf(host.config, id).length > 0;
+      const gridOn = chartGridsOf(host.config, id).length > 0;
+      const zeroOn = chartZeroLinesOf(host.config, id).length > 0;
+      const timesBlocked = chartShowsTimeLabels(c) ? undefined
+        : everyReading && usingHistory
+          ? "Clock times need evenly spaced readings: set Points to Average"
+          : "Clock times need a recorded span: set Draw to Recorded history";
+      const dotsBlocked = c.style === "bars" ? "Dots sit on a line or area chart: set Style to Line or Area" : undefined;
+      const drawButton = (label: string, on: boolean, add: (cfg: CustomComplicationConfig) => void, blocked?: string) => html`
+        <button class="small ${on ? "on" : ""}" ?disabled=${on || blocked !== undefined} aria-pressed=${on ? "true" : "false"}
+          title=${on ? `${label} is on this chart. Remove it in the list at the bottom.` : blocked ?? `Add ${label.toLowerCase()} to this chart`}
+          @click=${() => host.update((cfg) => { add(cfg); })}>${on ? html`<span aria-hidden="true">✓</span>` : uiIcon("plus")}<span>${label}</span></button>`;
       chartMarks = html`
-        ${checkField("Threshold", c.thresholdValue !== undefined,
-          (v) => host.update((cfg) => { setChartThreshold(cfg, id, v ? seedThreshold(shown) : undefined); }))}
+        <div class="field list-field"><span>Draw</span>
+          <div class="adders">
+            ${drawButton("Threshold line", anchoredAt("threshold"), (cfg) => setChartThreshold(cfg, id, c.thresholdValue ?? seedThreshold(shown)))}
+            ${drawButton("Now line", anchoredAt("now"), (cfg) => setChartNow(cfg, id, true))}
+            ${drawButton("Zero line", zeroOn, (cfg) => { addChartZeroLine(cfg, id); })}
+            ${drawButton("Clock times", timesOn, (cfg) => { convertChartTimes(cfg, id); }, timesBlocked)}
+            ${drawButton("Dots", dotsOn, (cfg) => { addChartDots(cfg, id); }, dotsBlocked)}
+            ${drawButton("Grid lines", gridOn, (cfg) => { addChartGrid(cfg, id); })}
+          </div>
+        </div>
         ${c.thresholdValue === undefined ? nothing : html`
           <div class="grid2">
-            ${numberField("At", c.thresholdValue, (v) => setChart((p) => { p.thresholdValue = v ?? 0; }, "thval"))}
+            ${numberField("Threshold at", c.thresholdValue, (v) => setChart((p) => { p.thresholdValue = v ?? 0; }, "thval"))}
           </div>
-          ${addLineIfGone("threshold")}
           <div class="hint">${c.scale === "fixed"
             ? "A threshold outside Min and Max draws nothing: the plot keeps the range you asked for."
-            : "The plot stretches to include the line, so a series that never reaches it still shows how far off it is."}
-            The line is a layer listed below, so its colour and thickness are set there.</div>`}
-        ${checkField("Now", c.nowIndex !== undefined,
-          (v) => host.update((cfg) => { setChartNow(cfg, id, v); }))}
+            : "The plot stretches to include the threshold, so a series that never reaches it still shows how far off it is."}</div>`}
         ${c.nowIndex === undefined ? nothing : html`
           ${valueEditor(host, c.nowIndex, (v) => setChart((p) => { p.nowIndex = v; }, "nowidx"),
-            { showResolved: true, label: "Reading number", key: `${key}-nowindex` })}
-          ${addLineIfGone("now")}
-          <div class="hint">Counted from 0, so Hour puts the line on reading 14 at 2 pm, which is what a
-            24-reading price or forecast chart wants. Rounded, and clamped to the readings drawn. The line is
-            a layer listed below, so its colour and thickness are set there.</div>`}
-        ${chartShowsTimeLabels(c)
-          ? html`
-            ${checkField("Times", timesLayers.length > 0, (v) => host.update((cfg) => {
-              if (v) convertChartTimes(cfg, id);
-              else for (const t of chartTimesOf(cfg, id)) removeElement(cfg, t.payload.id);
-            }))}
-            <div class="hint">Clock times from the start of the span to now, as a layer in this chart's group.
-              Drag it anywhere on the preview. Click it in the list below to set how many, their size, colour
-              and clock.</div>`
-          : everyReading && usingHistory
-            ? html`<div class="hint keep">Clock times need evenly spaced readings, so they are offered when
-              Points is Average rather than Every one.</div>`
-            : html`<div class="hint keep">Clock times need a recorded span, so they are offered when Draw is
-              Recorded history.</div>`}
-        ${c.style !== "bars" || dotsLayers.length > 0
-          ? checkField("Dots", dotsLayers.length > 0, (v) => host.update((cfg) => {
-              if (v) addChartDots(cfg, id);
-              else for (const d of chartDotsOf(cfg, id)) removeElement(cfg, d.payload.id);
-            }))
-          : nothing}
-        ${c.style === "bars"
-          ? html`<div class="hint keep">Dots on the readings are drawn on a line or area chart, so they are offered
-              when Style is Line or Area.</div>`
-          : html`<div class="hint">A dot on each reading, as a layer on this chart. Click it in the list below to set
-              Auto or All, the size and the colour.</div>`}
-        ${checkField("Grid lines", gridLayers.length > 0, (v) => host.update((cfg) => {
-          if (v) addChartGrid(cfg, id);
-          else for (const g of chartGridsOf(cfg, id)) removeElement(cfg, g.payload.id);
-        }))}
-        <div class="hint">Equal rows across the plot, as a layer behind this chart. Click it in the list below to set
-          how many, the colour and the thickness.</div>
-        ${checkField("Line at zero", zeroLines.length > 0, (v) => host.update((cfg) => {
-          if (v) addChartZeroLine(cfg, id);
-          else for (const z of chartZeroLinesOf(cfg, id)) removeElement(cfg, z.payload.id);
-        }))}
-        ${zeroLines.length > 0 && !zeroCrossed
+            { showResolved: true, label: "Now is reading", key: `${key}-nowindex` })}
+          <div class="hint">Counted from 0, so Hour puts now on reading 14 at 2 pm, which is what a 24-reading
+            price or forecast chart wants. Rounded, and clamped to the readings drawn.</div>`}
+        ${zeroOn && !zeroCrossed
           ? html`<div class="hint warn">These readings never go below zero, or never above it, so zero sits
-              on the edge of the plot or outside it and the line is not drawn. It shows on a chart
+              on the edge of the plot or outside it and the zero line is not drawn. It shows on a chart
               whose readings cross zero, like a temperature or a battery charging and discharging.</div>`
-          : html`<div class="hint">One line where zero falls, as a line layer listed below, so its colour and
-              thickness are set there.</div>`}
+          : nothing}
+        <div class="hint">Each button adds a layer to this chart, listed at the bottom. Click it there to set its
+          colour, size and the rest.</div>
         ${watchNote(host)}`;
       break;
     }
@@ -4763,7 +4734,7 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
           which reading was the day's best. Add a number or a marker below and it appears as a layer in this chart's
           group: drag it anywhere, give it any size or colour, and it follows the live value.</div>`
       : nothing}
-    <div class="field list-field"><span>Add</span>
+    <div class="field list-field"><span>Numbers</span>
       <div class="adders">
         ${CHART_STATS.map(([stat, label]) => html`
           <button class="small" title=${taken.has(stat) ? `Add another ${label.toLowerCase()}` : `Add the ${label.toLowerCase()}`}
@@ -4771,7 +4742,7 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
       </div>
     </div>
     <div class="hint">The newest reading, the change and the total start with the entity's unit after them. The change is the newest reading minus the first, and the trend arrow is that change as ↑, ↓ or →, flat when it is too small for the chart to print. The ends of the scale come from the plot's range, so on a Fixed scale they print the Min and Max above.</div>
-    <div class="field list-field"><span>Mark</span>
+    <div class="field list-field"><span>Markers</span>
       <div class="adders">
         ${CHART_ANCHOR_POINTS.filter(([at]) => chartAnchorIsColumn(at)).map(([at, label]) => html`
           <button class="small" title=${markedAlready.has(at) ? `Add another mark over the ${label.toLowerCase()}` : `Mark the ${label.toLowerCase()}`}

@@ -808,6 +808,10 @@ export class WristAssistantPanel extends LitElement {
        block, sits on a line of its own above the words. */
     button.small:has(> svg.ui-icon) { display: inline-flex; align-items: center; gap: 5px; }
     button.small > svg.ui-icon { width: 13px; height: 13px; flex: none; }
+    /* An Extras button whose layer is already on the chart: pressed, not greyed. */
+    .adders button.small.on, .adders button.small.on:disabled { display: inline-flex; align-items: center; gap: 5px; opacity: 1;
+      color: var(--primary-color, #7c6cf0); border-color: color-mix(in srgb, var(--primary-color, #7c6cf0) 45%, transparent);
+      background: color-mix(in srgb, var(--primary-color, #7c6cf0) 12%, transparent); }
     button.icon {
       font: inherit; border: none; background: none; cursor: pointer; color: var(--wa-muted);
       display: inline-flex; align-items: center; justify-content: center;

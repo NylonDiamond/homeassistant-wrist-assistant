@@ -132,6 +132,11 @@ export interface IconProvider {
 
 export interface RenderOptions {
   icons: IconProvider;
+  /** Smallest dot radius and grid stroke to draw, in design points. A layer
+   * thumbnail shrinks a 181 pt chart into a few dozen pixels, where a real dot or
+   * hairline vanishes and the row looks empty. */
+  minDotRadius?: number;
+  minGridStroke?: number;
   /** Editor affordance: hidden layers at 35% instead of invisible. */
   showHidden?: boolean;
   /** Element id to outline. */
@@ -843,12 +848,12 @@ function chartPlotFor(chart: ResolvedChart | undefined, box: Box) {
  * colour when it sets one, else the colour the series has at that reading. One
  * path per colour.
  */
-export function renderChartDots(el: Extract<ResolvedElement, { kind: "chartDots" }>, box: Box, chart: ResolvedChart | undefined, selected = false) {
+export function renderChartDots(el: Extract<ResolvedElement, { kind: "chartDots" }>, box: Box, chart: ResolvedChart | undefined, selected = false, minR = 0) {
   const on = chartPlotFor(chart, box);
   if (el.indices.length === 0 || on === undefined) return nothing;
   const c = on.chart;
   const banded = c.pointColorHexes.length === c.values.length;
-  const r = el.diameter / 2;
+  const r = Math.max(el.diameter / 2, minR);
   const byColour = new Map<string, string>();
   // A selected dots layer rings every dot: the layer's box is the chart's, so
   // the usual dashed box would read as the chart being selected.
@@ -873,7 +878,7 @@ export function renderChartDots(el: Extract<ResolvedElement, { kind: "chartDots"
 }
 
 /** The chart's grid lines, solid, across its plot in its box. */
-export function renderChartGrid(el: Extract<ResolvedElement, { kind: "chartGrid" }>, box: Box, chart: ResolvedChart | undefined, selected = false) {
+export function renderChartGrid(el: Extract<ResolvedElement, { kind: "chartGrid" }>, box: Box, chart: ResolvedChart | undefined, selected = false, minStroke = 0) {
   const on = chartPlotFor(chart, box);
   if (!el.draws || on === undefined) return nothing;
   const colour = parseColor(el.colorHex) ?? { color: "#FFFFFF", opacity: 0.2 };
@@ -881,7 +886,7 @@ export function renderChartGrid(el: Extract<ResolvedElement, { kind: "chartGrid"
   // Selected, each line gets a dashed blue copy over it, for the same reason the
   // dots get rings: the layer's box is the chart's.
   return svg`${ys.map((y) => svg`<path d=${`M${on.g.plotLeft} ${y} L${on.g.plotRight} ${y}`} fill="none"
-    stroke=${colour.color} stroke-opacity=${colour.opacity} stroke-width=${el.thickness} />`)}${selected
+    stroke=${colour.color} stroke-opacity=${Math.max(colour.opacity, minStroke > 0 ? 0.6 : 0)} stroke-width=${Math.max(el.thickness, minStroke)} />`)}${selected
     ? ys.map((y) => svg`<path d=${`M${on.g.plotLeft} ${y} L${on.g.plotRight} ${y}`} fill="none" stroke="#0A84FF"
         stroke-width="1" stroke-dasharray="2 1" vector-effect="non-scaling-stroke" pointer-events="none" />`)
     : nothing}`;
@@ -1207,8 +1212,8 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     case "chart": body = renderChart(el, box); break;
     case "timeline": body = renderTimeline(el, box); break;
     case "chartTimes": body = renderChartTimes(el, box); break;
-    case "chartDots": body = renderChartDots(el, box, charts.get(el.chart), options.highlightId === el.id || options.highlightIds?.includes(el.id) === true); break;
-    case "chartGrid": body = renderChartGrid(el, box, charts.get(el.chart), options.highlightId === el.id || options.highlightIds?.includes(el.id) === true); break;
+    case "chartDots": body = renderChartDots(el, box, charts.get(el.chart), options.highlightId === el.id || options.highlightIds?.includes(el.id) === true, options.minDotRadius); break;
+    case "chartGrid": body = renderChartGrid(el, box, charts.get(el.chart), options.highlightId === el.id || options.highlightIds?.includes(el.id) === true, options.minGridStroke); break;
     case "shape": body = renderShape(el, box); break;
     case "image": body = renderImage(el, box, options); break;
     case "tap": body = renderTap(el, box, options.icons, showTaps, labelled ? describeTapAction(el.action) : undefined); break;
@@ -1635,7 +1640,11 @@ export function renderLayerThumb(layout: ResolvedLayout, ids: readonly string[],
   const bg = parseColor(layout.backgroundColorHex);
   const border = parseColor(layout.borderColorHex);
   const bw = layout.borderWidth;
-  const render: RenderOptions = { icons: options.icons, showHidden: true, tapAreas: true, ...(options.imageSizes ? { imageSizes: options.imageSizes } : {}) };
+  const render: RenderOptions = {
+    icons: options.icons, showHidden: true, tapAreas: true,
+    minDotRadius: crop.w / 40, minGridStroke: crop.w / 110,
+    ...(options.imageSizes ? { imageSizes: options.imageSizes } : {}),
+  };
   const picked = layout.elements.filter((el) => ids.includes(el.id));
   const chrome = border && bw > 0
     ? (family === "rectangular"

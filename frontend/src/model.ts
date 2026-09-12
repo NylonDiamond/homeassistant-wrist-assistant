@@ -4747,8 +4747,22 @@ export function removeElement(cfg: CustomComplicationConfig, id: string): void {
   // to show, so it stays and goes back to sitting where its frame puts it,
   // rather than disappearing along with a chart the author may be replacing.
   for (const marker of chartMarkersOf(cfg, id)) delete marker.payload.chartAnchor;
+  const gone = cfg.elements.find((el) => el.payload.id === id);
   detachTaps(cfg, id);
   cfg.elements = cfg.elements.filter((el) => el.payload.id !== id);
+  // A chart's threshold and "now" exist for the layers that follow them, and a
+  // threshold also stretches the scale. Once the last layer following one goes,
+  // the number goes too, so a deleted threshold line does not leave the plot
+  // stretched towards a line nobody can see. Undo brings both back.
+  const anchor = gone?.payload.chartAnchor;
+  if (anchor && (anchor.at === "threshold" || anchor.at === "now")
+    && !chartMarkersOf(cfg, anchor.layer).some((m) => m.payload.chartAnchor?.at === anchor.at)) {
+    const chart = cfg.elements.find((e) => e.payload.id === anchor.layer);
+    if (chart?.kind === "chart") {
+      if (anchor.at === "threshold") { delete chart.payload.thresholdValue; delete chart.payload.drawsThreshold; }
+      else { delete chart.payload.nowIndex; delete chart.payload.drawsNowLine; }
+    }
+  }
   // A chart that borrowed the deleted one's scale goes back to its own. The
   // resolver falls back anyway, but a link to nothing left in the document would
   // sit in the picker as a name nobody can see.
