@@ -70,6 +70,7 @@ import {
   DESIGN_BOX,
   type ChartAnchor,
   type ChartAnchorPoint,
+  chartAnchorIsColumn,
   TIMELINE_MIN_LABEL_SIZE,
   TIMELINE_MAX_LABEL_SIZE,
 } from "./model.js";
@@ -228,10 +229,15 @@ export interface ResolvedChart extends ResolvedBase {
    * the plot; the renderer then draws no line rather than one on an edge. */
   thresholdY?: number;
   thresholdColorHex: string;
+  /** False when the threshold line is a layer. `thresholdY` is still set,
+   * because that layer's anchor reads it. */
+  drawsThreshold: boolean;
   /** Which reading the "now" line stands on, already rounded and clamped into
    * `values`. Absent when the chart has no `nowIndex` or nothing resolved. */
   nowIndex?: number;
   nowColorHex: string;
+  /** False when the "now" line is a layer. `nowIndex` is still set. */
+  drawsNowLine: boolean;
   /** The clock times printed along the span, already formatted: the timeline's
    * own row, drawn beside the plot. Empty when the layer asks for none, and
    * when the plot has no window to label or no evenly spaced slots to label it
@@ -1492,7 +1498,9 @@ export class Resolver {
           pointColorHexes,
           fillBands: c.fillBands,
           thresholdColorHex: c.thresholdColorHex,
+          drawsThreshold: c.drawsThreshold !== false,
           nowColorHex: c.nowColorHex,
+          drawsNowLine: c.drawsNowLine !== false,
           // The times do not wait on the series: the window is known the moment
           // the layer names an entity and a span, so a plot still fetching
           // prints them. The size is carried as written and clamped where it is
@@ -1890,6 +1898,7 @@ function anchorIndex(
     case "now": return chart.nowIndex === undefined
       ? undefined
       : Math.min(Math.max(chart.nowIndex, 0), values.length - 1);
+    case "threshold": return undefined;
   }
 }
 
@@ -1902,8 +1911,6 @@ function anchoredFrame(
   canvas: CanvasSize,
 ): NormalizedFrame | undefined {
   if (canvas.width <= 0 || canvas.height <= 0) return undefined;
-  const index = anchorIndex(anchor.at, chart);
-  if (index === undefined) return undefined;
 
   const layer = frameBox(chart, canvas);
   if (layer.w <= 0 || layer.h <= 0) return undefined;
@@ -1913,18 +1920,28 @@ function anchoredFrame(
   if (plot.w <= 0 || plot.h <= 0) return undefined;
 
   const g = chartGeometry(chart, plot);
-  // Bars are filled to their top edge; a line or an area passes through a point.
-  // Either way the marker measures from the same place the eye does.
-  let localX: number;
-  let readingTop: number;
-  if (chart.style === "bars") {
-    const bar = g.barRect(index);
-    localX = bar.x + bar.w / 2;
-    readingTop = bar.y;
+
+  // What the anchor names, inside the plot. A column gives a centre across and the
+  // top of its reading; the threshold gives a height and nothing across.
+  let across: number | undefined;
+  let level: number;
+  if (chartAnchorIsColumn(anchor.at)) {
+    const index = anchorIndex(anchor.at, chart);
+    if (index === undefined) return undefined;
+    // Bars are filled to their top edge; a line or an area passes through a point.
+    // Either way the marker measures from the same place the eye does.
+    if (chart.style === "bars") {
+      const bar = g.barRect(index);
+      across = bar.x + bar.w / 2;
+      level = bar.y;
+    } else {
+      const p = g.point(index);
+      across = p.x;
+      level = p.y;
+    }
   } else {
-    const p = g.point(index);
-    localX = p.x;
-    readingTop = p.y;
+    if (chart.thresholdY === undefined) return undefined;
+    level = g.yAtFraction(chart.thresholdY);
   }
 
   const w = Math.max(frame.width, 0) * canvas.width;
@@ -1932,27 +1949,42 @@ function anchoredFrame(
   // Enough daylight that a marker reads as sitting over the bar rather than welded
   // to it, and small enough that it never looks detached.
   const gap = 0.75;
-  const cy =
-    anchor.place === "on" ? readingTop
-    : anchor.place === "below" ? readingTop + gap + h / 2
-    : anchor.place === "bottom" ? g.plotBottom - gap - h / 2
-    : readingTop - gap - h / 2;
-  const centreX = localX + (anchor.dx ?? 0);
-  const centreY = cy + (anchor.dy ?? 0);
 
   // Keep the marker inside the chart it belongs to. A marker that slid off the plot
   // is a marker pointing at nothing, and on the top edge this is exactly what stops
   // a large glyph from eating into the bars.
   const held = (v: number, lo: number, hi: number) =>
     lo > hi ? (lo + hi) / 2 : Math.min(Math.max(v, lo), hi);
-  const x = held(centreX, plot.x + w / 2, plot.x + plot.w - w / 2);
-  const y = held(centreY, plot.y + h / 2, plot.y + plot.h - h / 2);
 
-  return {
-    ...frame,
-    x: (x - w / 2) / canvas.width,
-    y: (y - h / 2) / canvas.height,
-  };
+  const out: NormalizedFrame = { ...frame };
+  if (across !== undefined) {
+    const x = held(across + (anchor.dx ?? 0), plot.x + w / 2, plot.x + plot.w - w / 2);
+    out.x = (x - w / 2) / canvas.width;
+  }
+
+  // Through the plot: the plot owns the other axis outright, so the nudge along it
+  // is ignored and nothing there is clamped.
+  if (anchor.place === "through") {
+    if (across !== undefined) {
+      out.y = g.plotTop / canvas.height;
+      out.height = (g.plotBottom - g.plotTop) / canvas.height;
+    } else {
+      out.x = g.plotLeft / canvas.width;
+      out.width = (g.plotRight - g.plotLeft) / canvas.width;
+      const y = held(level + (anchor.dy ?? 0), plot.y + h / 2, plot.y + plot.h - h / 2);
+      out.y = (y - h / 2) / canvas.height;
+    }
+    return out;
+  }
+
+  const cy =
+    anchor.place === "on" ? level
+    : anchor.place === "below" ? level + gap + h / 2
+    : anchor.place === "bottom" ? g.plotBottom - gap - h / 2
+    : level - gap - h / 2;
+  const y = held(cy + (anchor.dy ?? 0), plot.y + h / 2, plot.y + plot.h - h / 2);
+  out.y = (y - h / 2) / canvas.height;
+  return out;
 }
 
 

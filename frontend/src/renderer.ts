@@ -651,14 +651,15 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
   // horizontal one at the threshold, and a vertical one standing on "now". Both
   // are one point thick, so they read as annotation over the series rather than
   // as another series.
-  if (el.thresholdY !== undefined) {
+  // A line that has moved into a layer is drawn by that layer, not here.
+  if (el.drawsThreshold && el.thresholdY !== undefined) {
     const y = g.yAtFraction(el.thresholdY);
     const colour = colorAttrs(el.thresholdColorHex, "fill", el.colorHex);
     body.push(svg`<path d=${`M${g.plotLeft} ${y} L${g.plotRight} ${y}`} fill="none"
       stroke=${colour.fill} stroke-opacity=${colour["fill-opacity"]}
       stroke-width="1" stroke-dasharray="2 2" />`);
   }
-  if (el.nowIndex !== undefined && el.nowIndex < g.count) {
+  if (el.drawsNowLine && el.nowIndex !== undefined && el.nowIndex < g.count) {
     const x = g.markerCenter(el.nowIndex, el.style === "bars").x;
     const colour = colorAttrs(el.nowColorHex, "fill", el.colorHex);
     body.push(svg`<path d=${`M${x} ${g.plotTop} L${x} ${g.plotBottom}`} fill="none"

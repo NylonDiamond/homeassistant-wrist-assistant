@@ -239,7 +239,7 @@ export const CENTERED_FRAME: NormalizedFrame = { x: 0.25, y: 0.25, width: 0.5, h
 
 /** Which reading on a chart an anchored layer follows. Mirrors
  * `CustomComplication.ChartAnchor.Point` in the app repo. */
-export type ChartAnchorPoint = "highest" | "lowest" | "now" | "first" | "latest";
+export type ChartAnchorPoint = "highest" | "lowest" | "now" | "first" | "latest" | "threshold";
 
 export const CHART_ANCHOR_POINTS: readonly [ChartAnchorPoint, string][] = [
   ["highest", "Highest reading"],
@@ -247,17 +247,28 @@ export const CHART_ANCHOR_POINTS: readonly [ChartAnchorPoint, string][] = [
   ["now", "Now"],
   ["first", "First reading"],
   ["latest", "Newest reading"],
+  ["threshold", "Threshold"],
 ];
 
+/** True when the point names a column of readings, which is every point but the
+ * threshold. A column anchor owns the layer's x; the threshold owns its y. Mirrors
+ * `ChartAnchor.Point.isColumn` in the app repo. */
+export function chartAnchorIsColumn(at: ChartAnchorPoint): boolean {
+  return at !== "threshold";
+}
+
 /** Where an anchored layer sits against the reading it follows. Mirrors
- * `CustomComplication.ChartAnchor.Place` in the app repo. */
-export type ChartAnchorPlace = "above" | "on" | "below" | "bottom";
+ * `CustomComplication.ChartAnchor.Place` in the app repo. `through` runs the layer
+ * right across the plot on the axis the anchor does not settle, which is what a
+ * "now" line and a threshold line are made of. */
+export type ChartAnchorPlace = "above" | "on" | "below" | "bottom" | "through";
 
 export const CHART_ANCHOR_PLACES: readonly [ChartAnchorPlace, string][] = [
   ["above", "Above"],
   ["on", "On"],
   ["below", "Inside"],
   ["bottom", "At the bottom"],
+  ["through", "Through"],
 ];
 
 /**
@@ -750,6 +761,13 @@ export interface ChartElement extends ElementBase {
    * else. Rounded, then clamped into the series. */
   nowIndex?: Value;
   nowColorHex: string;
+  /** Whether the chart draws its own threshold line. False once the line is a
+   * layer anchored to `threshold` `through`: `thresholdValue` stays, because it
+   * still stretches the scale and tells the layer where to sit. Omitted at true. */
+  drawsThreshold?: boolean;
+  /** The same for the "now" line, once it is a layer anchored to `now` `through`.
+   * `nowIndex` stays, because the layer reads it. Omitted at true. */
+  drawsNowLine?: boolean;
   /** Another chart layer whose range this one is drawn against, instead of its
    * own `scale`. Absent is the ordinary case and every chart before this.
    *
@@ -2049,6 +2067,8 @@ function parseElementKind(raw: unknown): Element {
           thresholdColorHex: str(p.thresholdColorHex, CHART_DEFAULT_THRESHOLD_HEX),
           ...(isObject(p.nowIndex) ? { nowIndex: parseValue(p.nowIndex) } : {}),
           nowColorHex: str(p.nowColorHex, CHART_DEFAULT_NOW_HEX),
+          ...(p.drawsThreshold === false ? { drawsThreshold: false } : {}),
+          ...(p.drawsNowLine === false ? { drawsNowLine: false } : {}),
           ...(optStr(p.scaleFrom) !== undefined ? { scaleFrom: optStr(p.scaleFrom)! } : {}),
           // The clock times, read exactly the way a timeline reads them: same
           // keys, same defaults, same forgiveness for a word this build does
@@ -2413,6 +2433,7 @@ const CHART_MARKER_GLYPHS: Record<ChartAnchorPoint, string> = {
   now: "▼",
   first: "●",
   latest: "●",
+  threshold: "●",
 };
 
 /** The colour a new marker starts in: the chart's own highest and lowest
@@ -2516,6 +2537,55 @@ export function convertChartMarkers(cfg: CustomComplicationConfig, chartId: stri
   // The chart stops drawing its own, so the band along the top goes with it and
   // the bars get their height back.
   setChartEndMarkers(c, { high: "none", low: "none" });
+}
+
+/** The two lines a chart can draw across its plot rather than over one reading. */
+export type ChartLine = "now" | "threshold";
+
+export const CHART_LINES: readonly [ChartLine, string][] = [
+  ["now", "Now line"],
+  ["threshold", "Threshold line"],
+];
+
+/** Hand one of a chart's own lines to a layer, and return the layer's id.
+ *
+ * A line shape anchored `through`: the anchor settles where it sits and how long it
+ * runs, and the author's frame keeps only the thickness of the box. It starts in
+ * the colour the chart drew the line in, one point thick, so the face looks the
+ * same the moment the button is pressed.
+ *
+ * The chart's own number stays (`nowIndex`, `thresholdValue`): the scale and the
+ * layer both still read it. Only the chart's drawing stops. A chart without that
+ * number yet gets the layer anyway, which follows nothing and stays where its
+ * frame put it until the number is set. Undefined when `chartId` is not a chart. */
+export function addChartLine(cfg: CustomComplicationConfig, chartId: string, line: ChartLine): string | undefined {
+  const chart = cfg.elements.find((el) => el.payload.id === chartId);
+  if (!chart || chart.kind !== "chart") return undefined;
+  const c = chart.payload;
+  const el = newElement("shape") as Extract<Element, { kind: "shape" }>;
+  el.payload.kind = "line";
+  el.payload.thickness = 1;
+  el.payload.borderWidth = 0;
+  el.payload.colorSlot = { baseColorHex: line === "now" ? c.nowColorHex : c.thresholdColorHex };
+  el.payload.frame = chartLineFrame(c.frame, line);
+  el.payload.chartAnchor = { layer: chartId, at: line, place: "through" };
+  const index = cfg.elements.findIndex((e) => e.payload.id === chartId);
+  cfg.elements.splice(index + 1, 0, el);
+  joinChartGroup(cfg, chart, el.payload.id);
+  if (line === "now") c.drawsNowLine = false;
+  else c.drawsThreshold = false;
+  return el.payload.id;
+}
+
+/** The chart's own frame, cut down to a box a few points thick across the line.
+ * A line shape runs along the long side of its box, so a tall thin box stands up
+ * and a wide flat one lies down. The anchor replaces the rest every render. */
+function chartLineFrame(chart: NormalizedFrame, line: ChartLine): NormalizedFrame {
+  const box = DESIGN_BOX.rectangular;
+  const thick = 3;
+  return line === "now"
+    ? { ...chart, width: Math.min(chart.width, thick / box.width), rotationDegrees: 0 }
+    : { ...chart, height: Math.min(chart.height, thick / box.height), rotationDegrees: 0 };
 }
 
 /** Read the first cut of a chart's built-in numbers (2026-09-05) forward into
@@ -2837,6 +2907,8 @@ function encodeElementKind(el: Element): J {
       if (c.thresholdColorHex !== CHART_DEFAULT_THRESHOLD_HEX) o.thresholdColorHex = c.thresholdColorHex;
       if (c.nowIndex !== undefined) o.nowIndex = encodeValue(c.nowIndex);
       if (c.nowColorHex !== CHART_DEFAULT_NOW_HEX) o.nowColorHex = c.nowColorHex;
+      if (c.drawsThreshold === false) o.drawsThreshold = false;
+      if (c.drawsNowLine === false) o.drawsNowLine = false;
       if (c.scaleFrom !== undefined) o.scaleFrom = c.scaleFrom;
       // The clock times, in the order and on the rule the app's encoder uses, so
       // a chart drawing none writes exactly the bytes it always did.
@@ -3158,6 +3230,7 @@ const K = {
     "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker",
     "coloring", "bands", "bandAboveColorHex", "fillBands",
     "thresholdValue", "thresholdColorHex", "nowIndex", "nowColorHex", "scaleFrom",
+    "drawsThreshold", "drawsNowLine",
     "timeLabelCount", "labelSize", "labelColorHex", "labelsAbove", "hourCycle", "minutes",
     "highMarker", "lowMarker",
     // Written only on 2026-09-05. The band bounds are read forward by

@@ -162,6 +162,10 @@ import {
   chartMarkersOf,
   chartDrawsBuiltInMarkers,
   convertChartMarkers,
+  addChartLine,
+  chartAnchorIsColumn,
+  CHART_LINES,
+  type ChartLine,
 } from "./model.js";
 import {
   type StatesTable,
@@ -2925,13 +2929,21 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
   // the browser's own memory of which cards were open), not a label.
   return card(host, "placement", "Position", html`
     ${anchorFields(host, el, family)}
-    ${anchor !== undefined ? nothing : html`
+    ${anchor === undefined ? html`
     <div class="field xy-field"><span>Position</span>
       <div class="xy">
         ${frameLetterField("X", "Left", f.x, (v) => setFrame({ x: v }, "x"), -100, 100)}
         ${frameLetterField("Y", "Top", f.y, (v) => setFrame({ y: v }, "y"), -100, 100)}
       </div>
-    </div>`}
+    </div>`
+    // The threshold settles only the height, so a label beside it keeps its own X.
+    : !chartAnchorIsColumn(anchor.at) && anchor.place !== "through" ? html`
+    <div class="field xy-field"><span>Position</span>
+      <div class="xy">
+        ${frameLetterField("X", "Left", f.x, (v) => setFrame({ x: v }, "x"), -100, 100)}
+      </div>
+    </div>`
+    : nothing}
     <div class="field xy-field"><span>Size</span>
       <div class="xy">
         ${frameLetterField("W", "Width", f.width, (v) => setFrame({ width: v }, "w"), 4, 200)}
@@ -3996,12 +4008,13 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         ${c.thresholdValue === undefined ? nothing : html`
           <div class="grid2">
             ${numberField("At", c.thresholdValue, (v) => setChart((p) => { p.thresholdValue = v ?? 0; }, "thval"))}
-            ${colorField("Line colour", c.thresholdColorHex,
+            ${c.drawsThreshold === false ? nothing : colorField("Line colour", c.thresholdColorHex,
               (v) => setChart((p) => { p.thresholdColorHex = v ?? CHART_DEFAULT_THRESHOLD_HEX; }, "thcol"), false, CHART_DEFAULT_THRESHOLD_HEX)}
           </div>
           <div class="hint">${c.scale === "fixed"
             ? "A threshold outside Min and Max draws nothing: the plot keeps the range you asked for."
-            : "The plot stretches to include the line, so a series that never reaches it still shows how far off it is."}</div>`}
+            : "The plot stretches to include the line, so a series that never reaches it still shows how far off it is."}</div>
+          ${chartLineFields(host, el, "threshold")}`}
         ${checkField("Now marker",c.nowIndex !== undefined, (v) => setChart((p) => {
           if (v) p.nowIndex = { kind: { kind: "time", timeField: "hour" } };
           else delete p.nowIndex;
@@ -4009,10 +4022,11 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         ${c.nowIndex === undefined ? nothing : html`
           ${valueEditor(host, c.nowIndex, (v) => setChart((p) => { p.nowIndex = v; }, "nowidx"),
             { showResolved: true, label: "Reading number", key: `${key}-nowindex` })}
-          ${colorField("Marker colour", c.nowColorHex,
+          ${c.drawsNowLine === false ? nothing : colorField("Marker colour", c.nowColorHex,
             (v) => setChart((p) => { p.nowColorHex = v ?? CHART_DEFAULT_NOW_HEX; }, "nowcol"), false, CHART_DEFAULT_NOW_HEX)}
           <div class="hint">Counted from 0, so Hour puts the line on reading 14 at 2 pm, which is what a
-            24-reading price or forecast chart wants. Rounded, and clamped to the readings drawn.</div>`}
+            24-reading price or forecast chart wants. Rounded, and clamped to the readings drawn.</div>
+          ${chartLineFields(host, el, "now")}`}
         ${chartShowsTimeLabels(c)
           ? timeLabelFields(c, setChart, base, "cl", html`
             <div class="hint">Clock times from the start of the span to now, evenly spaced, in a row of
@@ -4352,6 +4366,46 @@ function legacyMarkerFields(
       emoji, any size, any colour, sitting over its own bar instead of in a band along the top.</div>`;
 }
 
+/**
+ * The chart's own threshold or "now" line, and the button that hands it to a layer.
+ *
+ * The number stays in Look either way: the threshold stretches the scale, "now" says
+ * which reading is now, and a layer drawing either line reads that number. Only the
+ * drawing moves. Once it has, this row says where it went, and offers to draw it on
+ * the chart again if that layer has since been deleted.
+ */
+function chartLineFields(host: EditorHost, el: Extract<CElement, { kind: "chart" }>, line: ChartLine): TemplateResult {
+  const c = el.payload;
+  const draws = line === "now" ? c.drawsNowLine !== false : c.drawsThreshold !== false;
+  const name = line === "now" ? "now line" : "threshold line";
+  if (draws) {
+    return html`
+      <div class="field list-field"><span>Line</span>
+        <div class="chips">
+          <button class="small" title=${`Turn the ${name} into a layer you can restyle`}
+            @click=${() => host.update((cfg) => { addChartLine(cfg, c.id, line); })}>${uiIcon("plus")}<span>Move to layers</span></button>
+        </div>
+      </div>`;
+  }
+  const layered = chartMarkersOf(host.config, c.id).some((m) => m.payload.chartAnchor?.at === line);
+  return html`
+    ${layered ? nothing : html`
+      <div class="field list-field"><span>Line</span>
+        <div class="chips">
+          <button class="small" title=${`Let the chart draw the ${name} itself again`}
+            @click=${() => host.update((cfg) => {
+              const chart = cfg.elements.find((e) => e.payload.id === c.id);
+              if (chart?.kind !== "chart") return;
+              if (line === "now") delete chart.payload.drawsNowLine;
+              else delete chart.payload.drawsThreshold;
+            })}><span>Draw on the chart</span></button>
+        </div>
+      </div>`}
+    <div class="hint">${layered
+      ? `The ${name} is a layer in Extras, so its colour, thickness and style are set there. The number here still decides where it sits.`
+      : `The ${name} was moved to a layer that has since been deleted, so nothing draws it.`}</div>`;
+}
+
 /** The one-line state of a chart's Extras card. */
 function chartNumbersSummary(host: EditorHost, el: Extract<CElement, { kind: "chart" }>): string {
   const labels = chartLabelsOf(host.config, el.payload.id);
@@ -4362,8 +4416,9 @@ function chartNumbersSummary(host: EditorHost, el: Extract<CElement, { kind: "ch
     return k.kind === "chartStat" ? (CHART_STATS.find(([s]) => s === k.stat)?.[1] ?? "number").toLowerCase() : "number";
   });
   for (const m of markers) {
-    const at = m.payload.chartAnchor!.at;
-    parts.push(`${(CHART_ANCHOR_POINTS.find(([k]) => k === at)?.[1] ?? "reading").toLowerCase()} marker`);
+    const { at, place } = m.payload.chartAnchor!;
+    const name = (CHART_ANCHOR_POINTS.find(([k]) => k === at)?.[1] ?? "reading").toLowerCase();
+    parts.push(place === "through" ? `${name} line` : `${name} marker`);
   }
   return parts.join(" · ");
 }
@@ -4408,10 +4463,11 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
           <div class="chart-numbers">
             ${labels.map((l) => row(l.payload.id, host.resolve(l.payload.value) ?? "--", layerTitle(l, ctx), "number"))}
             ${markers.map((m) => {
-              const at = m.payload.chartAnchor!.at;
-              const name = CHART_ANCHOR_POINTS.find(([k]) => k === at)?.[1] ?? "reading";
+              const { at, place } = m.payload.chartAnchor!;
+              const name = (CHART_ANCHOR_POINTS.find(([k]) => k === at)?.[1] ?? "reading").toLowerCase();
+              if (place === "through") return row(m.payload.id, at === "threshold" ? "─" : "│", `line through the ${name}`, "line");
               const glyph = m.kind === "text" ? (host.resolve(m.payload.value) ?? "●") : "◆";
-              return row(m.payload.id, glyph, `over the ${name.toLowerCase()}`, "marker");
+              return row(m.payload.id, glyph, `over the ${name}`, "marker");
             })}
           </div>
         </div>
@@ -4428,9 +4484,30 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
     <div class="hint">The newest reading, the change and the total start with the entity's unit after them. The change is the newest reading minus the first, and the trend arrow is that change as ↑, ↓ or →, flat when it is too small for the chart to print. The ends of the scale come from the plot's range, so on a Fixed scale they print the Min and Max above.</div>
     <div class="field list-field"><span>Mark</span>
       <div class="adders">
-        ${CHART_ANCHOR_POINTS.map(([at, label]) => html`
+        ${CHART_ANCHOR_POINTS.filter(([at]) => chartAnchorIsColumn(at)).map(([at, label]) => html`
           <button class="small" title=${markedAlready.has(at) ? `Add another mark over the ${label.toLowerCase()}` : `Mark the ${label.toLowerCase()}`}
             @click=${() => addMarker(at)}>${uiIcon("plus")}<span>${label}</span></button>`)}
+      </div>
+    </div>
+    <div class="field list-field"><span>Line</span>
+      <div class="adders">
+        ${CHART_LINES.map(([line, label]) => {
+          // A threshold line needs a threshold to sit on, and there is no sensible
+          // value to guess here, so Look sets it first. "Now" has one obvious
+          // default, the hour, which is what the Look toggle seeds too.
+          const needsThreshold = line === "threshold" && el.payload.thresholdValue === undefined;
+          return html`
+            <button class="small" ?disabled=${needsThreshold}
+              title=${needsThreshold ? "Turn on Threshold in Look first, so the line has a value to sit on" : `Draw the ${label.toLowerCase()} as a layer you can restyle`}
+              @click=${() => host.update((c) => {
+                const chart = c.elements.find((e) => e.payload.id === el.payload.id);
+                if (chart?.kind !== "chart") return;
+                if (line === "now" && chart.payload.nowIndex === undefined) {
+                  chart.payload.nowIndex = { kind: { kind: "time", timeField: "hour" } };
+                }
+                addChartLine(c, el.payload.id, line);
+              })}>${uiIcon("plus")}<span>${label}</span></button>`;
+        })}
       </div>
     </div>
     <div class="hint">A marker starts as a character over the reading it names, so type any glyph or emoji into it:

@@ -41,6 +41,7 @@ import {
   chartMarkersOf,
   chartDrawsBuiltInMarkers,
   convertChartMarkers,
+  addChartLine,
   newConfig,
   newElement,
   parseConfig,
@@ -1591,6 +1592,7 @@ describe("where an anchored marker lands", () => {
     readings: string,
     markers: { at: ChartAnchorPoint; place?: ChartAnchorPlace; dx?: number; dy?: number }[],
     tweak: (c: ChartElement) => void = () => {},
+    edit: (markers: Element[]) => void = () => {},
   ) => {
     const cfg = newConfig("Prices", 0);
     const chart = newElement("chart") as Extract<Element, { kind: "chart" }>;
@@ -1606,11 +1608,12 @@ describe("where an anchored marker lands", () => {
       if (m.dy !== undefined) el.payload.chartAnchor!.dy = m.dy;
       return id;
     });
+    edit(ids.map((id) => cfg.elements.find((e) => e.payload.id === id)!));
     const resolved = resolveAll(cfg, {
       entityStates: new Map(), templateResults: new Map(), namedValues: [],
     }).rectangular!;
     const out = placeChartAnchors(resolved.elements, DESIGN_BOX.rectangular);
-    return { ids, frameOf: (id: string) => out.find((e) => e.id === id)!.frame };
+    return { cfg, ids, frameOf: (id: string) => out.find((e) => e.id === id)!.frame };
   };
 
   it("puts a marker over the column it names, not where its frame put it", () => {
@@ -1659,5 +1662,103 @@ describe("where an anchored marker lands", () => {
   it("leaves a layer alone when its anchor has nothing to point at", () => {
     const { ids, frameOf } = placed("not a series", [{ at: "highest" }]);
     expect(frameOf(ids[0]!)).toEqual({ x: 0, y: 0, width: 0.05, height: 0.1, rotationDegrees: 0 });
+  });
+
+  it("stands a layer through a column from the top of the plot to the bottom", () => {
+    const { ids, frameOf } = placed("10,40,20,5,30",
+      [{ at: "now", place: "through", dy: 5 }],
+      (c) => { c.barGap = 0; c.nowIndex = literal("1"); });
+    const f = frameOf(ids[0]!);
+    // Column two of five is centred at 0.3, and the frame keeps its own width.
+    expect(f.x + f.width / 2).toBeCloseTo(0.3, 3);
+    expect(f.width).toBeCloseTo(0.05, 4);
+    // The plot owns the height outright, so the nudge down is ignored.
+    expect(f.y).toBeCloseTo(0, 4);
+    expect(f.height).toBeCloseTo(1, 4);
+  });
+
+  it("settles only the height on the threshold, and runs the width through it", () => {
+    const { ids, frameOf, cfg } = placed("1,2,3",
+      [{ at: "threshold", place: "on" }, { at: "threshold", place: "through", dx: 7 }],
+      (c) => { c.scale = "fixed"; c.minValue = 0; c.maxValue = 10; c.baseline = "zero"; c.thresholdValue = 5; },
+      (els) => { els[0]!.payload.frame.x = 0.4; });
+    void cfg;
+    const [label, line] = ids.map(frameOf);
+    // Halfway up a 0 to 10 scale.
+    expect(label!.y + label!.height / 2).toBeCloseTo(0.5, 3);
+    // A threshold names nothing across, so the label keeps the X its author gave it.
+    expect(label!.x).toBeCloseTo(0.4, 4);
+    // Through: left edge to right edge on the same height, the nudge across ignored.
+    expect(line!.x).toBeCloseTo(0, 4);
+    expect(line!.width).toBeCloseTo(1, 4);
+    expect(line!.y + line!.height / 2).toBeCloseTo(0.5, 3);
+  });
+});
+
+describe("chart lines as layers", () => {
+  const chartWith = (tweak: (c: ChartElement) => void) => {
+    const cfg = newConfig("Prices", 0);
+    const chart = newElement("chart") as Extract<Element, { kind: "chart" }>;
+    chart.payload.value = literal("1,2,3");
+    tweak(chart.payload);
+    cfg.elements.push(chart);
+    return { cfg, chart };
+  };
+
+  it("hands the now line to a thin line shape and keeps the number", () => {
+    const { cfg, chart } = chartWith((c) => { c.nowIndex = literal("1"); });
+    const id = addChartLine(cfg, chart.payload.id, "now")!;
+    const el = cfg.elements.find((e) => e.payload.id === id)!;
+    expect(el.kind).toBe("shape");
+    if (el.kind !== "shape") return;
+    expect(el.payload.kind).toBe("line");
+    expect(el.payload.chartAnchor).toEqual({ layer: chart.payload.id, at: "now", place: "through" });
+    // Taller than wide, so the line stands up.
+    expect(el.payload.frame.width).toBeLessThan(el.payload.frame.height);
+    expect(el.payload.colorSlot.baseColorHex).toBe(chart.payload.nowColorHex);
+    expect(chart.payload.drawsNowLine).toBe(false);
+    expect(chart.payload.nowIndex).toBeDefined();
+    // Straight after the chart, and in its group.
+    expect(cfg.elements.indexOf(el)).toBe(cfg.elements.indexOf(chart) + 1);
+  });
+
+  it("hands the threshold line to a flat line shape", () => {
+    const { cfg, chart } = chartWith((c) => { c.thresholdValue = 2; });
+    const id = addChartLine(cfg, chart.payload.id, "threshold")!;
+    const el = cfg.elements.find((e) => e.payload.id === id)!;
+    expect(el.payload.frame.height).toBeLessThan(el.payload.frame.width);
+    expect(el.payload.chartAnchor?.at).toBe("threshold");
+    expect(chart.payload.drawsThreshold).toBe(false);
+    expect(chart.payload.thresholdValue).toBe(2);
+  });
+
+  it("writes the draw flags only when off, and reads them back", () => {
+    const { cfg, chart } = chartWith((c) => { c.thresholdValue = 2; c.nowIndex = literal("1"); });
+    const plain = JSON.stringify(encodeConfig(cfg));
+    expect(plain).not.toContain("drawsThreshold");
+    expect(plain).not.toContain("drawsNowLine");
+    addChartLine(cfg, chart.payload.id, "now");
+    addChartLine(cfg, chart.payload.id, "threshold");
+    const moved = encodeConfig(cfg);
+    expect(JSON.stringify(moved)).toContain("\"drawsThreshold\":false");
+    expect(JSON.stringify(moved)).toContain("\"drawsNowLine\":false");
+    const back = parseConfig(moved).elements.find((e) => e.kind === "chart")!;
+    if (back.kind !== "chart") return;
+    expect(back.payload.drawsThreshold).toBe(false);
+    expect(back.payload.drawsNowLine).toBe(false);
+  });
+
+  it("stops the chart drawing a line once a layer draws it", () => {
+    const { cfg, chart } = chartWith((c) => { c.thresholdValue = 2; c.nowIndex = literal("1"); });
+    addChartLine(cfg, chart.payload.id, "now");
+    const resolved = resolveAll(cfg, {
+      entityStates: new Map(), templateResults: new Map(), namedValues: [],
+    }).rectangular!;
+    const model = resolved.elements.find((e) => e.kind === "chart")!;
+    if (model.kind !== "chart") return;
+    expect(model.drawsNowLine).toBe(false);
+    expect(model.drawsThreshold).toBe(true);
+    // The layer still needs to know which reading is now.
+    expect(model.nowIndex).toBe(1);
   });
 });

@@ -1,0 +1,224 @@
+{
+ "name": "Chart anchored lines",
+ "description": "Lines as layers. One bar chart of 10,40,20,5,30 fills the face, with a threshold at 25 and now on reading 2, and it draws neither line itself (`drawsThreshold` and `drawsNowLine` are false). Two line shapes draw them instead, each anchored `through`. The now line follows column three, centred on 0.5, keeps its own width, and runs the full height of the plot whatever its frame said. The threshold line takes its height from the threshold and runs the full width. A text label anchored `above` the threshold keeps the X its author gave it, because a threshold names a height and nothing across. The chart still resolves `nowIndex`, since the now line reads it.",
+ "config": {
+  "schemaVersion": 6,
+  "id": "AAAAAAAA-0000-4000-8000-0000000000B0",
+  "name": "Chart anchored lines",
+  "values": [],
+  "slotIndex": 2,
+  "elements": [
+   {
+    "kind": "chart",
+    "payload": {
+     "id": "EEEEEEEE-0000-4000-8000-0000000000B1",
+     "colorSlot": {
+      "baseColorHex": "#FFFFFF"
+     },
+     "rules": [],
+     "frame": {
+      "x": 0,
+      "y": 0,
+      "width": 1,
+      "height": 1,
+      "rotationDegrees": 0
+     },
+     "isHidden": false,
+     "value": {
+      "kind": {
+       "kind": "literal",
+       "value": "10,40,20,5,30"
+      }
+     },
+     "historyMinutes": 0,
+     "historyPoints": 24,
+     "style": "bars",
+     "limit": 0,
+     "takeFromEnd": false,
+     "scale": "auto",
+     "minValue": 0,
+     "maxValue": 100,
+     "baseline": "lowest",
+     "barGap": 0,
+     "lineWidth": 2,
+     "highlight": "none",
+     "highColorHex": "#FF6B35",
+     "lowColorHex": "#32D74B",
+     "marker": "none",
+     "coloring": "uniform",
+     "bands": [],
+     "bandAboveColorHex": "#FF453A",
+     "fillBands": false,
+     "thresholdValue": 25,
+     "nowIndex": {
+      "kind": {
+       "kind": "literal",
+       "value": "2"
+      }
+     },
+     "nowColorHex": "#FFFFFF",
+     "drawsThreshold": false,
+     "drawsNowLine": false
+    }
+   },
+   {
+    "kind": "shape",
+    "payload": {
+     "id": "EEEEEEEE-0000-4000-8000-0000000000B2",
+     "colorSlot": {
+      "baseColorHex": "#FFFFFF"
+     },
+     "rules": [],
+     "frame": {
+      "x": 0,
+      "y": 0.3,
+      "width": 0.016574585635359115,
+      "height": 0.2,
+      "rotationDegrees": 0
+     },
+     "isHidden": false,
+     "kind": "line",
+     "cornerRadius": 6,
+     "borderWidth": 0,
+     "chartAnchor": {
+      "layer": "EEEEEEEE-0000-4000-8000-0000000000B1",
+      "at": "now",
+      "place": "through"
+     }
+    }
+   },
+   {
+    "kind": "shape",
+    "payload": {
+     "id": "EEEEEEEE-0000-4000-8000-0000000000B3",
+     "colorSlot": {
+      "baseColorHex": "#FF453A"
+     },
+     "rules": [],
+     "frame": {
+      "x": 0.2,
+      "y": 0,
+      "width": 0.3,
+      "height": 0.04580152671755725,
+      "rotationDegrees": 0
+     },
+     "isHidden": false,
+     "kind": "line",
+     "cornerRadius": 6,
+     "borderWidth": 0,
+     "chartAnchor": {
+      "layer": "EEEEEEEE-0000-4000-8000-0000000000B1",
+      "at": "threshold",
+      "place": "through"
+     }
+    }
+   },
+   {
+    "kind": "text",
+    "payload": {
+     "id": "EEEEEEEE-0000-4000-8000-0000000000B4",
+     "colorSlot": {
+      "baseColorHex": "#FF453A"
+     },
+     "rules": [],
+     "frame": {
+      "x": 0.8,
+      "y": 0,
+      "width": 0.1,
+      "height": 0.16,
+      "rotationDegrees": 0
+     },
+     "isHidden": false,
+     "value": {
+      "kind": {
+       "kind": "literal",
+       "value": "25"
+      }
+     },
+     "fontSize": 7,
+     "fontWeight": "medium",
+     "chartAnchor": {
+      "layer": "EEEEEEEE-0000-4000-8000-0000000000B1",
+      "at": "threshold",
+      "place": "above"
+     }
+    }
+   }
+  ],
+  "supportedFamilies": [
+   "rectangular"
+  ],
+  "perFamily": [
+   "rectangular",
+   {
+    "cornerBodyShape": "wedge",
+    "borderWidth": 2
+   }
+  ],
+  "dataSources": [],
+  "tapAction": {
+   "type": "refresh"
+  }
+ },
+ "inputs": {
+  "entityStates": {},
+  "templateResults": {}
+ },
+ "expectedCompiled": {
+  "entities": [],
+  "expressionKeys": [],
+  "historyKeys": []
+ },
+ "expected": {
+  "rectangular": {
+   "elements": [
+    {
+     "id": "EEEEEEEE-0000-4000-8000-0000000000B1",
+     "kind": "chart",
+     "values": [
+      10,
+      40,
+      20,
+      5,
+      30
+     ],
+     "nowIndex": 2
+    },
+    {
+     "id": "EEEEEEEE-0000-4000-8000-0000000000B2",
+     "kind": "shape",
+     "frame": {
+      "x": 0.49171270718232046,
+      "y": 0,
+      "width": 0.016574585635359115,
+      "height": 1,
+      "rotationDegrees": 0
+     }
+    },
+    {
+     "id": "EEEEEEEE-0000-4000-8000-0000000000B3",
+     "kind": "shape",
+     "frame": {
+      "x": 0,
+      "y": 0.40567066521265005,
+      "width": 1,
+      "height": 0.04580152671755725,
+      "rotationDegrees": 0
+     }
+    },
+    {
+     "id": "EEEEEEEE-0000-4000-8000-0000000000B4",
+     "kind": "text",
+     "text": "25",
+     "frame": {
+      "x": 0.8,
+      "y": 0.2571210468920393,
+      "width": 0.1,
+      "height": 0.16,
+      "rotationDegrees": 0
+     }
+    }
+   ]
+  }
+ }
+}

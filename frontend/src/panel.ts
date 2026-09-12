@@ -73,6 +73,7 @@ import {
   hasFreeTimestamp,
   deleteSharedValue,
   DESIGN_BOX,
+  chartAnchorIsColumn,
 } from "./model.js";
 import { SHARED_TEST_PREFIX, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues } from "./test-controls.js";
 import { SEND_WAIT_MS, describeSend, sendState } from "./send-state.js";
@@ -3992,6 +3993,11 @@ export class WristAssistantPanel extends LitElement {
     // nudges it off that spot instead, so what the pointer does still matches
     // what the eye sees, and a resize still lands on the width and height.
     const anchor = el.payload.chartAnchor;
+    // The threshold settles only the height, so beside it the drag still moves the
+    // layer's own X. Through the plot, the plot owns the other axis and the drag
+    // along it does nothing.
+    const ownsX = anchor !== undefined && !chartAnchorIsColumn(anchor.at) && anchor.place !== "through";
+    const plotOwnsY = anchor !== undefined && chartAnchorIsColumn(anchor.at) && anchor.place === "through";
     const design = DESIGN_BOX[family as DrawableFamily];
     const startNudge = { dx: anchor?.dx ?? 0, dy: anchor?.dy ?? 0 };
     // Points, to the tenth: a nudge is an offset on the plot, not a place on the face.
@@ -4004,11 +4010,11 @@ export class WristAssistantPanel extends LitElement {
             setPlacement(c, family, elementId, { frame: f });
             return;
           }
-          setPlacement(c, family, elementId, { frame: { ...f, x: frame.x, y: frame.y } });
+          setPlacement(c, family, elementId, { frame: { ...f, x: ownsX ? f.x : frame.x, y: frame.y } });
           const target = c.elements.find((x) => x.payload.id === elementId)?.payload.chartAnchor;
           if (target === undefined) return;
-          const dx = round(startNudge.dx + (f.x - frame.x) * design.width);
-          const dy = round(startNudge.dy + (f.y - frame.y) * design.height);
+          const dx = ownsX ? startNudge.dx : round(startNudge.dx + (f.x - frame.x) * design.width);
+          const dy = plotOwnsY ? startNudge.dy : round(startNudge.dy + (f.y - frame.y) * design.height);
           if (dx) target.dx = dx; else delete target.dx;
           if (dy) target.dy = dy; else delete target.dy;
         }, `drag-${elementId}-${family}`);
