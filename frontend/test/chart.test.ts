@@ -61,7 +61,8 @@ import {
 import { describeValue, layerTitle } from "../src/editors.js";
 import { compile } from "../src/compiler.js";
 import { chartBarPath, renderLayout, type IconProvider } from "../src/renderer.js";
-import { chartDomain, chartGeometry, chartLabels, chartLegs, chartMovingAverage, chartNumbers, chartRuns, chartSeriesWithHoles, chartStatValue, placeChartAnchors, resolveAll, type ChartPoint, type EntityState, type ResolvedChart, type ResolvedLayout } from "../src/resolver.js";
+import { chartSmoothing, chartSmoothingWindowSize } from "../src/model.js";
+import { chartDomain, chartGeometry, chartLabels, chartLegs, chartSmoothed, chartNumbers, chartRuns, chartSeriesWithHoles, chartStatValue, placeChartAnchors, resolveAll, type ChartPoint, type EntityState, type ResolvedChart, type ResolvedLayout } from "../src/resolver.js";
 import { historySeriesRequest, statisticsSeriesRequest } from "../src/ha-api.js";
 
 const noIcons: IconProvider = { render: () => undefined, available: () => false, names: () => undefined };
@@ -522,12 +523,12 @@ describe("drawing a chart", () => {
     expect(circleCount(svg)).toBe(0);
   });
 
-  it("keeps room along the top only when a highlighted end draws a marker", () => {
+  it("keeps room for a marker only when a highlighted end draws one", () => {
     const tops = (tweak: (p: ChartElement) => void) => rects(draw(prices, tweak)).map((b) => b.y);
     const plain = tops(() => {});
     // Highest highlighted with no marker: the lowest's stored triangle is not drawn and takes no room.
     expect(tops((p) => { p.highlight = "highest"; setChartEndMarkers(p, { high: "none", low: "triangle" }); })).toEqual(plain);
-    const marked = tops((p) => { p.highlight = "both"; setChartEndMarkers(p, { high: "none", low: "dot" }); });
+    const marked = tops((p) => { p.highlight = "both"; setChartEndMarkers(p, { high: "triangle", low: "none" }); });
     expect(marked[8]!).toBeGreaterThan(plain[8]!);
   });
 
@@ -1915,28 +1916,42 @@ describe("chart curve legs", () => {
 });
 
 describe("chart smoothing", () => {
-  it("averages a centred window that shrinks at the ends", () => {
-    expect(chartMovingAverage([3, 9, 0, 6, 3, 9], 3)).toEqual([6, 4, 5, 3, 6, 6]);
-    const five = chartMovingAverage([3, 9, 0, 6, 3, 9], 5);
-    [4, 4.5, 4.2, 5.4, 4.5, 6].forEach((want, i) => expect(five[i]).toBeCloseTo(want, 12));
-    expect(chartMovingAverage([3, 9, 0], 0)).toEqual([3, 9, 0]);
-    expect(chartMovingAverage([], 9)).toEqual([]);
+  const round6 = (xs: number[]) => xs.map((x) => Math.round(x * 1e6) / 1e6);
+
+  it("scales the window with the number of readings, at least 3 and always odd", () => {
+    const sizes = (n: number) => (["light", "medium", "strong"] as const).map((s) => chartSmoothingWindowSize(n, s));
+    expect(sizes(6)).toEqual([3, 3, 3]);
+    expect(sizes(24)).toEqual([3, 3, 5]);
+    expect(sizes(120)).toEqual([7, 13, 25]);
+    // Off, or too few readings to smooth, is no window at all.
+    expect(chartSmoothingWindowSize(120, undefined)).toBe(0);
+    expect(chartSmoothingWindowSize(1, "strong")).toBe(0);
+    expect(chartSmoothingWindowSize(2, "light")).toBe(3);
   });
 
-  it("runs after the limit trim, and the range and highlights read the averaged series", () => {
+  it("matches the reference Gaussian average to six decimals", () => {
+    expect(round6(chartSmoothed([3, 9, 0, 6, 3, 9], "light")))
+      .toEqual([3.715218, 7.402395, 1.597605, 5.041437, 3.958563, 8.284782]);
+    expect(chartSmoothed([3, 9, 0], undefined)).toEqual([3, 9, 0]);
+    expect(chartSmoothed([7], "strong")).toEqual([7]);
+    expect(chartSmoothed([], "strong")).toEqual([]);
+  });
+
+  it("runs after the limit trim, and the range and highlights read the smoothed series", () => {
     const { cfg, state } = chartConfig("100,3,9,0,6", (p) => {
       p.limit = 4;
       p.takeFromEnd = true;
-      p.smoothing = 3;
+      p.smoothing = "light";
       p.highlight = "both";
     });
     const chart = chartOf(rectangular(cfg, state));
-    // [3, 9, 0, 6] averaged; the trimmed-off 100 never reaches the window.
-    expect(chart.values).toEqual([6, 4, 5, 3]);
-    expect(chart.smoothing).toBe(3);
-    expect(chart.highIndex).toBe(0);
-    expect(chart.lowIndex).toBe(3);
+    // [3, 9, 0, 6] smoothed; the trimmed-off 100 never reaches the window.
+    expect(round6(chart.values)).toEqual([3.715218, 7.402395, 1.597605, 5.284782]);
+    expect(chart.smoothing).toBe("light");
+    expect(chart.highIndex).toBe(1);
+    expect(chart.lowIndex).toBe(2);
     expect(chart.domainMax).toBeLessThan(100);
+    expect(chartOf(rectangular(chartConfig("1,2,3").cfg, "1,2,3")).smoothing).toBe("off");
   });
 });
 
@@ -1963,22 +1978,31 @@ describe("chart curve and smoothing keys", () => {
     expect("smoothing" in written).toBe(false);
   });
 
-  it("reads an unknown curve as straight and a window it does not offer as off", () => {
+  it("reads an unknown curve as straight and a strength it does not know as off", () => {
     for (const curve of ["bezier", 3, null]) {
       const { chart, written } = payloadWith({ curve });
       expect(chart.curve ?? "straight").toBe("straight");
       expect("curve" in written).toBe(false);
     }
-    for (const smoothing of [4, 11, -3, "5", 2.5]) {
+    for (const smoothing of [0, 1, 4, 11, -3, "5", 2.5, "heavy", "off", null]) {
       const { chart, written } = payloadWith({ smoothing });
-      expect(chart.smoothing ?? 0).toBe(0);
+      expect(chart.smoothing).toBeUndefined();
       expect("smoothing" in written).toBe(false);
     }
   });
 
+  it("reads a legacy window as a strength and writes the strength back", () => {
+    for (const [legacy, strength] of [[3, "light"], [5, "light"], [7, "medium"], [9, "strong"]] as const) {
+      expect(chartSmoothing(legacy)).toBe(strength);
+      const { chart, written } = payloadWith({ smoothing: legacy });
+      expect(chart.smoothing).toBe(strength);
+      expect(written.smoothing).toBe(strength);
+    }
+  });
+
   it("writes curve then smoothing after the end markers, and reads them back", () => {
-    const { chart, written } = payloadWith({ highMarker: "dot", lowMarker: "none", smoothing: 7, curve: "step" });
-    expect([chart.curve, chart.smoothing]).toEqual(["step", 7]);
+    const { chart, written } = payloadWith({ highMarker: "dot", lowMarker: "none", smoothing: "medium", curve: "step" });
+    expect([chart.curve, chart.smoothing]).toEqual(["step", "medium"]);
     const keys = Object.keys(written);
     expect(keys.slice(keys.indexOf("lowMarker"), keys.indexOf("lowMarker") + 3)).toEqual(["lowMarker", "curve", "smoothing"]);
     expect(auditUnknownKeys(encodeConfig(parseConfig({ ...encodeConfig(chartConfig("1").cfg) })))).toEqual([]);
@@ -2035,7 +2059,7 @@ describe("chart fill, dots and grid keys", () => {
 
   it("writes the looks keys between curve and smoothing, and reads them back", () => {
     const { chart, written } = payloadWith({
-      curve: "smooth", smoothing: 3, zeroLine: true, gridColorHex: "#FF000080", gridLines: 3,
+      curve: "smooth", smoothing: "light", zeroLine: true, gridColorHex: "#FF000080", gridLines: 3,
       pointDots: "auto", fillColorHex: "#0A84FF", fillStyle: "fade",
     });
     expect(chart).toMatchObject({ fillStyle: "fade", fillColorHex: "#0A84FF", pointDots: "auto", gridLines: 3, gridColorHex: "#FF000080", zeroLine: true });
@@ -2044,6 +2068,46 @@ describe("chart fill, dots and grid keys", () => {
     expect(keys.slice(from, from + 8)).toEqual(["curve", ...LOOKS, "smoothing"]);
     const dressed = chartConfig("1", (p) => { p.gridLines = 2; p.zeroLine = true; p.pointDots = "all"; p.fillColorHex = "#0A84FF"; });
     expect(auditUnknownKeys(encodeConfig(dressed.cfg))).toEqual([]);
+  });
+});
+
+describe("chart end marker room", () => {
+  const box = { x: 0, y: 0, w: 181, h: 60, cx: 90.5, cy: 30 };
+  function geometry(high: "none" | "dot" | "triangle", low: "none" | "dot" | "triangle", tweak: (p: ChartElement) => void = (p) => { p.style = "bars"; }) {
+    const state = "1,5,3";
+    const { cfg } = chartConfig(state, (p) => { tweak(p); p.highlight = "both"; setChartEndMarkers(p, { high, low }); });
+    return chartGeometry(chartOf(rectangular(cfg, state)), box);
+  }
+
+  it("takes no room for a marker of none", () => {
+    const g = geometry("none", "none");
+    expect([g.plotTop, g.plotBottom]).toEqual([0, 60]);
+  });
+
+  it("gives a dot only its radius, at its own end", () => {
+    const high = geometry("dot", "none");
+    expect([high.plotTop, high.plotBottom]).toEqual([1.7, 60]);
+    expect(high.markerCenter(1, true, "high").y).toBe(1.7);
+    const low = geometry("none", "dot");
+    expect([low.plotTop, low.plotBottom]).toEqual([0, 58.3]);
+    expect(low.markerCenter(0, true, "low").y).toBe(58.3);
+  });
+
+  it("changes nothing for a dot that already fits in the stroke or dot inset", () => {
+    const dotted = (p: ChartElement) => { p.style = "line"; p.lineWidth = 2; p.pointDots = "all"; };
+    const plain = geometry("none", "none", dotted);
+    const marked = geometry("dot", "dot", dotted);
+    expect([marked.plotTop, marked.plotBottom]).toEqual([plain.plotTop, plain.plotBottom]);
+    expect(plain.plotTop).toBeCloseTo(1.8, 9);
+  });
+
+  it("keeps a triangle's five points, only at the end that draws one", () => {
+    const high = geometry("triangle", "none");
+    expect([high.plotTop, high.plotBottom]).toEqual([5, 60]);
+    expect(high.markerCenter(1, true, "high").y).toBe(2.5);
+    const low = geometry("none", "triangle");
+    expect([low.plotTop, low.plotBottom]).toEqual([0, 55]);
+    expect(low.markerCenter(0, true, "low").y).toBe(57.5);
   });
 });
 
@@ -2195,7 +2259,7 @@ describe("bar corners", () => {
 
   it("writes the keys between fillColorHex and pointDots, and gaps after smoothing", () => {
     const keys = Object.keys(written({
-      gaps: true, smoothing: 3, pointDots: "all", barCorners: "top", barRadius: 2, fillColorHex: "#0A84FF", curve: "smooth",
+      gaps: true, smoothing: "light", pointDots: "all", barCorners: "top", barRadius: 2, fillColorHex: "#0A84FF", curve: "smooth",
     }).payload);
     const from = keys.indexOf("curve");
     expect(keys.slice(from)).toEqual(["curve", "fillStyle", "fillColorHex", "barRadius", "barCorners", "pointDots", "smoothing", "gaps"]);
@@ -2334,20 +2398,21 @@ describe("gaps for unavailable", () => {
       expect(recorderChart("1,2,,4", (p) => { p.limit = 2; }).chart.holes).toEqual([]);
     });
 
-    it("averages across a hole without counting it, and re-carries the hole from the output", () => {
-      expect(chartMovingAverage([1, 1, 9, 3, 5], 3, [F, F, T, F, F])).toEqual([1, 1, 1, 4, 4]);
+    it("smooths across a hole without weighing it, and re-carries the hole from the output", () => {
+      const round6 = (xs: number[]) => xs.map((x) => Math.round(x * 1e6) / 1e6);
+      expect(round6(chartSmoothed([1, 1, 9, 3, 5], "light", [F, F, T, F, F]))).toEqual([1, 1, 1, 3.238406, 4.761594]);
       // Leading holes take the first real output.
-      expect(chartMovingAverage([3, 3, 3, 5], 3, [T, T, F, F])).toEqual([4, 4, 4, 4]);
+      expect(round6(chartSmoothed([3, 3, 3, 5], "light", [T, T, F, F]))).toEqual([3.238406, 3.238406, 3.238406, 4.761594]);
       // Without smoothing nothing changes.
-      expect(chartMovingAverage([1, 1, 9], 0, [F, T, F])).toEqual([1, 1, 9]);
+      expect(chartSmoothed([1, 1, 9], undefined, [F, T, F])).toEqual([1, 1, 9]);
     });
 
     it("never highlights a hole", () => {
-      // Averaged, the readings are 5, 5, 1, 1 with the hole carrying the 5
-      // before it; the highlight picks the first real 5.
-      const { chart } = recorderChart("1,9,,1,1", (p) => { p.smoothing = 3; p.highlight = "highest"; });
-      expect(chart.values).toEqual([5, 5, 5, 1, 1]);
-      expect(chart.highIndex).toBe(0);
+      // Smoothed, the hole carries the 8.05 before it; the highlight picks the
+      // real reading, not the hole.
+      const { chart } = recorderChart("1,9,,1,1", (p) => { p.smoothing = "light"; p.highlight = "highest"; });
+      expect(chart.values.map((x) => Math.round(x * 1e6) / 1e6)).toEqual([1.953623, 8.046377, 8.046377, 1, 1]);
+      expect(chart.highIndex).toBe(1);
       // A hole that would be first to the highest value is still passed over.
       const { chart: led } = recorderChart(",9,1", (p) => { p.highlight = "highest"; });
       expect(led.values).toEqual([9, 9, 1]);

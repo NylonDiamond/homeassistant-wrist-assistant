@@ -162,6 +162,9 @@ import {
   chartMarkersOf,
   chartDrawsBuiltInMarkers,
   convertChartMarkers,
+  convertChartTimes,
+  chartTimesOf,
+  type ChartTimesElement,
   chartMarkerToIcon,
   addChartLine,
   chartAnchorIsColumn,
@@ -217,21 +220,20 @@ import {
   CHART_DEFAULT_BAR_RADIUS,
   CHART_DEFAULT_GRID_HEX,
   CHART_MAX_GRID_LINES,
-  CHART_SMOOTHING_WINDOWS,
   chartBarCorners,
   chartBarRadius,
   chartFillStyle,
   chartGridColorHex,
   chartGridLines,
   chartPointDots,
-  chartSmoothingWindow,
+  chartSmoothing,
   sameHex,
   type ChartCurve,
   type ChartFillStyle,
   type ChartPointDots,
 } from "./model.js";
-import { chartMovingAverage, chartSeriesWithHoles } from "./resolver.js";
-import { watchVersionNote } from "./version.js";
+import { chartSmoothed, chartSeriesWithHoles } from "./resolver.js";
+import { MIN_WATCH_VERSION_FOR_CHART_TIMES_LAYER, watchVersionNote } from "./version.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import { SECTION_COLOR } from "./kinds.js";
 import { domainIcon, domainLabel, isActiveState } from "./domain-icons.js";
@@ -1260,8 +1262,9 @@ const CHART_POINT_DOT_OPTIONS: [ChartPointDots, string][] = [
   ["all", "All"],
   ["auto", "Auto"],
 ];
-const CHART_SMOOTHING_OPTIONS: [string, string][] =CHART_SMOOTHING_WINDOWS.map(
-  (w): [string, string] => [String(w), w === 0 ? "Off" : `${w} readings`]);
+const CHART_SMOOTHING_OPTIONS: [string, string][] = [
+  ["off", "Off"], ["light", "Light"], ["medium", "Medium"], ["strong", "Strong"],
+];
 const CHART_STYLES: [ChartStyle, string][] = [
   ["bars", "Bars"], ["line", "Line"], ["area", "Area"],
 ];
@@ -2420,7 +2423,7 @@ export function flagAcross(values: readonly boolean[]): PickedFlag {
  * draws a photo, a tap area draws nothing, and every colour on a timeline
  * comes out of its own table. */
 export function elementColour(el: CElement): string | undefined {
-  return el.kind === "image" || el.kind === "tap" || el.kind === "timeline"
+  return el.kind === "image" || el.kind === "tap" || el.kind === "timeline" || el.kind === "chartTimes"
     ? undefined
     : el.payload.colorSlot.baseColorHex;
 }
@@ -2926,6 +2929,10 @@ export function contentSummary(host: EditorHost, el: CElement): string {
     case "image": return el.payload.entity.displayName || el.payload.entity.entityId
       || (el.payload.source === "camera" ? "No camera yet" : "No entity yet");
     case "tap": return describeTapAction(el.payload.action);
+    case "chartTimes": {
+      const chart = host.config.elements.find((e) => e.payload.id === el.payload.chart);
+      return chart?.kind === "chart" ? truncate(`Times of ${describeValue(chart.payload.value, ctx)}`, 48) : "No chart";
+    }
   }
 }
 
@@ -2938,7 +2945,8 @@ export function lookSummary(el: CElement): string | undefined {
       const size = g.style === "dots" ? `${g.bands.length > 0 && g.coloring === "bands" ? "banded" : colorWords(g.colorSlot.baseColorHex)} dots` : `${g.lineWidth} pt line · ${g.coloring === "bands" && g.bands.length > 0 ? `${g.bands.length + 1} colour bands` : colorWords(g.colorSlot.baseColorHex)}`;
       return `${g.style} · ${size}${g.thresholdValue === undefined ? "" : ` · threshold ${g.thresholdValue}`}`;
     }
-    case "chart": return `${el.payload.style} · ${el.payload.scale === "auto" ? "auto scale" : `${el.payload.minValue} to ${el.payload.maxValue}`}${el.payload.highlight === "none" ? "" : ` · ${CHART_HIGHLIGHTS.find(([v]) => v === el.payload.highlight)?.[1].toLowerCase() ?? ""} marked`}`;
+    // The highlight is an Extras setting now, so it is that card's summary.
+    case "chart": return `${el.payload.style} · ${el.payload.scale === "auto" ? "auto scale" : `${el.payload.minValue} to ${el.payload.maxValue}`}`;
     case "timeline": {
       const t = el.payload;
       const colours = t.bands.length === 0
@@ -2951,6 +2959,7 @@ export function lookSummary(el: CElement): string | undefined {
       : `${colorWords(el.payload.colorSlot.baseColorHex)}${el.payload.borderColorHex ? ` · ${el.payload.borderWidth} pt border` : ""}`;
     case "image": return `${el.payload.contentMode === "fill" ? "Fill the frame" : "Fit inside"} · ${el.payload.zoom.toFixed(2)}x · corners ${el.payload.cornerRadius} pt`;
     case "tap": return undefined;
+    case "chartTimes": return `${el.payload.timeLabelCount <= 0 ? "no" : el.payload.timeLabelCount} times · ${el.payload.labelSize} pt · ${colorWords(el.payload.labelColorHex)}`;
   }
 }
 
@@ -3107,7 +3116,9 @@ interface TimeLabelled {
   timeLabelCount: number;
   labelSize: number;
   labelColorHex: string;
-  labelsAbove: boolean;
+  /** Absent on a chart times layer, whose frame says where the row is, so the
+   * Row control is not offered there. */
+  labelsAbove?: boolean;
   hourCycle: TimelineHourCycle;
   minutes: TimelineMinuteStyle;
 }
@@ -3147,7 +3158,7 @@ function timeLabelFields<T extends TimeLabelled>(
           p.labelColorHex = v ?? TIMELINE_DEFAULT_LABEL_HEX;
         }, `${keyPrefix}colour`), false, base.labelColorHex as string)}
       </div>
-      ${segField("Row", el.labelsAbove ? "above" : "below", [["below", "Below"], ["above", "Above"]],
+      ${el.labelsAbove === undefined ? nothing : segField("Row", el.labelsAbove ? "above" : "below", [["below", "Below"], ["above", "Above"]],
         (v) => set((p) => { p.labelsAbove = v === "above"; }),
         { def: base.labelsAbove === true ? "above" : "below" })}
       ${segField("Clock", el.hourCycle, TIMELINE_HOUR_CYCLES,
@@ -3727,9 +3738,12 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
   // colour by value, the colour sits right under that choice; anywhere else it
   // closes the Look card.
   let colourPlaced = false;
-  const colourRow = (label: string) => el.kind === "image" || el.kind === "tap" || el.kind === "timeline"
+  const colourRow = (label: string) => el.kind === "image" || el.kind === "tap" || el.kind === "timeline" || el.kind === "chartTimes"
     ? nothing
-    : colorField(label, el.payload.colorSlot.baseColorHex, (v) => upd((e) => { if (e.kind !== "image" && e.kind !== "tap" && e.kind !== "timeline") e.payload.colorSlot.baseColorHex = v ?? "#FFFFFF"; }, "color"), false, baseColor);
+    : colorField(label, el.payload.colorSlot.baseColorHex, (v) => upd((e) => { if (e.kind !== "image" && e.kind !== "tap" && e.kind !== "timeline" && e.kind !== "chartTimes") e.payload.colorSlot.baseColorHex = v ?? "#FFFFFF"; }, "color"), false, baseColor);
+  // A chart's marks on the plot (highlight, threshold, now, clock times). Built in
+  // the chart case, where its setters live, and shown in the Extras card.
+  let chartMarks: TemplateResult | undefined;
 
   // Content is what the layer shows; look is how it is drawn. Splitting them
   // per kind is the whole difference between a form and a page a person can
@@ -3863,7 +3877,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
       const trimmed = trimTo(series);
       // What the chart actually reads: the readout and seeded bands follow the
       // averaged series, the same one the resolver hands the plot and its stats.
-      const shown = chartMovingAverage(trimmed, chartSmoothingWindow(c.smoothing),
+      const shown = chartSmoothed(trimmed, chartSmoothing(c.smoothing),
         parsed.holes.length > 0 ? trimTo(parsed.holes) : []);
 
       // The nudge that answers "why is my chart one bar?" before it is asked:
@@ -4020,16 +4034,17 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         <div class="hint">${usingRecorder
           ? "Trims the series after it arrives, so 0 draws every reading fetched above."
           : "A forecast sensor often carries 24 or 48 entries. 0 draws all of them."}</div>
-        ${selectField("Smooth data", String(chartSmoothingWindow(c.smoothing)), CHART_SMOOTHING_OPTIONS,
+        ${selectField("Smooth data", chartSmoothing(c.smoothing) ?? "off", CHART_SMOOTHING_OPTIONS,
           (v) => setChart((p) => {
-            const w = chartSmoothingWindow(Number(v));
-            if (w === 0) delete p.smoothing; else p.smoothing = w;
+            const s = chartSmoothing(v);
+            if (s === undefined) delete p.smoothing; else p.smoothing = s;
           }),
-          { def: String(chartSmoothingWindow(base.smoothing)) })}
+          { def: chartSmoothing(base.smoothing) ?? "off" })}
         ${watchNote(host)}
-        <div class="hint">Averages each reading with its neighbours, so a jumpy sensor draws a calm
-          line. The chart's own numbers read the averaged series too: its stats, highlights and
-          bands. A text layer pointed at the entity itself still shows the raw value.</div>`;
+        <div class="hint">Averages each reading with its neighbours, weighted towards the middle, so a
+          jumpy sensor draws a calm line. The strength scales with the number of readings: over 120
+          readings, Light, Medium and Strong average 7, 13 or 25 of them. The chart's own numbers
+          read the smoothed series too: its stats, highlights and bands. A text layer pointed at the entity itself still shows the raw value.</div>`;
       colourPlaced = true;
       look = html`
         <div class="grid2">
@@ -4149,7 +4164,8 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
                 fill takes its own band, which reads well on a chart that spends real time in more
                 than one band and as noise on one that flickers between them.</div>`
             : nothing}`
-          : nothing}
+          : nothing}`;
+      chartMarks = html`
         ${segField("Highlight", c.highlight, CHART_HIGHLIGHTS, (v) => setChart((p) => { p.highlight = v; }), { def: base.highlight as typeof c.highlight })}
         ${c.highlight === "none" ? nothing : html`
           <div class="grid2">
@@ -4159,7 +4175,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               : colorField("Lowest colour", c.lowColorHex, (v) => setChart((p) => { p.lowColorHex = v ?? CHART_DEFAULT_LOW_HEX; }, "locol"), false, CHART_DEFAULT_LOW_HEX)}
           </div>
           <div class="hint">Most watch faces tint a complication into one colour, which flattens the two
-            colours into each other. A marker in Extras is the shape that survives that.</div>`}
+            colours into each other. A marker, added below, is the shape that survives that.</div>`}
         ${legacyMarkerFields(host, el, markers, baseMarkers, setChart)}
         ${checkField("Threshold",c.thresholdValue !== undefined, (v) => setChart((p) => {
           if (v) p.thresholdValue = seedThreshold(shown);
@@ -4188,10 +4204,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             24-reading price or forecast chart wants. Rounded, and clamped to the readings drawn.</div>
           ${chartLineFields(host, el, "now")}`}
         ${chartShowsTimeLabels(c)
-          ? timeLabelFields(c, setChart, base, "cl", html`
-            <div class="hint">Clock times from the start of the span to now, evenly spaced, in a row of
-              their own. The right edge is now and the left edge is the start of the span, so a slot
-              the recorder had nothing for shifts the earlier times a little.</div>`)
+          ? chartTimeFields(host, el, setChart, base)
           : everyReading && usingHistory
             ? html`<div class="hint keep">Clock times need evenly spaced readings, so they are offered when
               Points is Average rather than Every one.</div>`
@@ -4332,9 +4345,32 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         <div class="hint">To make one layer tappable, tick Tappable on that layer instead.</div>`;
       break;
     }
+    case "chartTimes": {
+      const t = el.payload;
+      const setTimes = (m: (p: ChartTimesElement) => void, k?: string) => upd((e) => m((e as typeof el).payload), k);
+      const linked = host.config.elements.find((e) => e.payload.id === t.chart);
+      const chart = linked?.kind === "chart" ? linked : undefined;
+      content = html`
+        <div class="field readout"><span>Chart</span><span class="readout-v">${chart
+          ? html`<button class="small" title="Select that chart" @click=${() => host.selectLayer(chart.payload.id)}>${layerTitle(chart, describeContext(host))}</button>`
+          : "None"}</span></div>
+        ${chart === undefined
+          ? html`<div class="hint warn">The chart these times belonged to is gone, so this layer draws nothing.</div>`
+          : chartShowsTimeLabels(chart.payload)
+            ? nothing
+            : html`<div class="hint warn">That chart has no evenly spaced span to label, so this layer draws
+                nothing. Clock times are drawn when its Draw is Recorded history with Points on Average,
+                or Long-term statistics.</div>`}
+        <div class="hint">The clock times of that chart's span, spread across this layer's width and centred
+          in its height. Move and size it like any other layer.</div>`;
+      look = timeLabelFields(t, setTimes, base, "ct", html`
+        <div class="hint">Evenly spaced from the start of the chart's span to now. Auto follows the watch's
+          own clock and drops the minutes past a three hour span.</div>`);
+      break;
+    }
   }
 
-  const colour = colourPlaced || el.kind === "image" || el.kind === "tap" || el.kind === "timeline"
+  const colour = colourPlaced || el.kind === "image" || el.kind === "tap" || el.kind === "timeline" || el.kind === "chartTimes"
     ? undefined
     : colourRow(el.kind === "shape" ? "Fill colour" : el.kind === "text" && textUsesParts(el.payload) ? "Layer colour" : "Colour");
 
@@ -4360,7 +4396,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
   const resetKeys = (keys: readonly string[], k: string) => () => upd((e) => restoreKeys(e.payload, base, keys), k);
 
   return html`
-    ${card(host, "content", "Content", html`${el.kind === "tap" || el.kind === "text" ? nothing : layerEntityField(host, el, key)}${content}`,
+    ${card(host, "content", "Content", html`${el.kind === "tap" || el.kind === "text" || el.kind === "chartTimes" ? nothing : layerEntityField(host, el, key)}${content}`,
       { color: SECTION_COLOR.content, icon: "content", summary: contentSummary(host, el),
         ...(contentChanged ? { reset: () => upd((e) => {
           restoreKeys(e.payload, base, contentKeys);
@@ -4374,12 +4410,16 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             restoreKeys(c.elements[idx]!.payload, base, lookKeys);
             if (sizedHere) setPlacement(c, family, id, {}, true);
           }) } : {}) })}
-    ${el.kind === "chart" ? card(host, "numbers", "Extras", chartExtrasSection(host, el),
+    ${el.kind === "chart" ? card(host, "numbers", "Extras", chartExtrasSection(host, el, chartMarks),
       { color: SECTION_COLOR.numbers, icon: "text", summary: chartNumbersSummary(host, el),
-        ...(labels.length > 0 || chartMarkersOf(host.config, id).length > 0
+        ...(labels.length > 0 || chartMarkersOf(host.config, id).length > 0 || chartTimesOf(host.config, id).length > 0
+          || anyDiffers(el.payload, base, CHART_EXTRAS_KEYS)
           ? { reset: () => host.update((c) => {
               for (const l of chartLabelsOf(c, id)) removeElement(c, l.payload.id);
               for (const m of chartMarkersOf(c, id)) removeElement(c, m.payload.id);
+              for (const t of chartTimesOf(c, id)) removeElement(c, t.payload.id);
+              const chart = c.elements.find((e) => e.payload.id === id);
+              if (chart) restoreKeys(chart.payload, base, CHART_EXTRAS_KEYS);
             }) }
           : {}) }) : nothing}
     ${el.kind === "image" ? card(host, "timestamp", "Timestamp", imageTimestampSection(el.payload, (m, k) => upd((e) => m((e as typeof el).payload), k)),
@@ -4406,20 +4446,29 @@ const CONTENT_KEYS: Record<CElement["kind"], readonly string[]> = {
   shape: ["kind", "cornerRadius"],
   image: ["entity", "source"],
   tap: ["action", "openPageName"],
+  chartTimes: [],
 };
 
-/** The payload fields the Look card owns, per kind. */
+/** The payload fields the Look card owns, per kind. A chart's marks on the plot
+ * are not here: they live in its Extras card (`CHART_EXTRAS_KEYS`). */
 const LOOK_KEYS: Record<CElement["kind"], readonly string[]> = {
   text: ["fontSize", "fontWeight", "colorSlot", "alignment", "lineLimit", "monospacedDigits",
     "coloring", "bands", "bandAboveColorHex", "highlight", "highColorHex", "lowColorHex"],
   icon: ["size", "colorSlot"],
   gauge: ["style", "lineWidth", "trackColorHex", "colorSlot", "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex"],
-  chart: ["style", "scale", "minValue", "maxValue", "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker", "highMarker", "lowMarker", "coloring", "bands", "bandAboveColorHex", "fillBands", "curve", "fillStyle", "fillColorHex", "barRadius", "barCorners", "pointDots", "gridLines", "gridColorHex", "zeroLine", "thresholdValue", "thresholdColorHex", "nowIndex", "nowColorHex", "scaleFrom", "colorSlot", "timeLabelCount", "labelSize", "labelColorHex", "labelsAbove", "hourCycle", "minutes"],
+  chart: ["style", "scale", "minValue", "maxValue", "baseline", "barGap", "lineWidth", "coloring", "bands", "bandAboveColorHex", "fillBands", "curve", "fillStyle", "fillColorHex", "barRadius", "barCorners", "pointDots", "gridLines", "gridColorHex", "zeroLine", "scaleFrom", "colorSlot"],
   timeline: ["bands", "otherColorHex", "gap", "cornerRadius", "labelSize", "labelColorHex", "labelsAbove", "timeLabelCount", "hourCycle", "minutes"],
   shape: ["colorSlot", "borderColorHex", "borderWidth", "thickness"],
   image: ["contentMode", "zoom", "panX", "panY", "cornerRadius"],
   tap: [],
+  chartTimes: ["timeLabelCount", "labelSize", "labelColorHex", "hourCycle", "minutes"],
 };
+
+/** The chart payload fields the Extras card owns: the marks the chart draws on
+ * its own plot, and whether each has moved to a layer. */
+const CHART_EXTRAS_KEYS = ["highlight", "highColorHex", "lowColorHex", "marker", "highMarker", "lowMarker",
+  "thresholdValue", "thresholdColorHex", "nowIndex", "nowColorHex", "drawsThreshold", "drawsNowLine", "drawsTimeLabels",
+  "timeLabelCount", "labelSize", "labelColorHex", "labelsAbove", "hourCycle", "minutes"] as const;
 
 // ── Tappable ──────────────────────────────────────────────────────────────
 
@@ -4521,15 +4570,17 @@ function legacyMarkerFields(
       </div>
     </div>
     <div class="hint">These marks are drawn by the chart itself, which is why they are one of three
-      shapes at a size you cannot set, and why the plot gives up five points of height to make room
-      for them. Move them to layers and each becomes an ordinary layer in Extras: any character or
-      emoji, any size, any colour, sitting over its own bar instead of in a band along the top.</div>`;
+      shapes at a size you cannot set. A dot sits on the plot's edge and takes no more room than it
+      needs to stay inside the chart; a triangle gives up five points of height at its own end
+      (highest along the top, lowest along the bottom). Move them to layers and each becomes an
+      ordinary layer listed below: any character or emoji, any size, any colour, sitting over its own
+      bar and taking no room from the plot.</div>`;
 }
 
 /**
  * The chart's own threshold or "now" line, and the button that hands it to a layer.
  *
- * The number stays in Look either way: the threshold stretches the scale, "now" says
+ * The number stays in Extras either way: the threshold stretches the scale, "now" says
  * which reading is now, and a layer drawing either line reads that number. Only the
  * drawing moves. Once it has, this row says where it went, and offers to draw it on
  * the chart again if that layer has since been deleted.
@@ -4562,24 +4613,80 @@ function chartLineFields(host: EditorHost, el: Extract<CElement, { kind: "chart"
         </div>
       </div>`}
     <div class="hint">${layered
-      ? `The ${name} is a layer in Extras, so its colour, thickness and style are set there. The number here still decides where it sits.`
+      ? `The ${name} is a layer listed below, so its colour, thickness and style are set there. The number here still decides where it sits.`
       : `The ${name} was moved to a layer that has since been deleted, so nothing draws it.`}</div>`;
 }
 
-/** The one-line state of a chart's Extras card. */
+/**
+ * A chart's clock times, and the button that hands them to a layer.
+ *
+ * The same six controls a timeline has, while the chart draws its own row. Once
+ * the row is a `chartTimes` layer the controls go with it, since the chart's own
+ * keys no longer draw anything, and this says where the times went, offering to
+ * draw them on the chart again if that layer has since been deleted.
+ */
+function chartTimeFields(
+  host: EditorHost,
+  el: Extract<CElement, { kind: "chart" }>,
+  setChart: (m: (p: ChartElement) => void, k?: string) => void,
+  base: Record<string, unknown>,
+): TemplateResult {
+  const c = el.payload;
+  if (c.drawsTimeLabels === false) {
+    const layered = chartTimesOf(host.config, c.id).length > 0;
+    return html`
+      ${layered ? nothing : html`
+        <div class="field list-field"><span>Times</span>
+          <div class="chips">
+            <button class="small" title="Let the chart draw its clock times itself again"
+              @click=${() => setChart((p) => { delete p.drawsTimeLabels; })}><span>Draw on the chart</span></button>
+          </div>
+        </div>`}
+      <div class="hint">${layered
+        ? "The clock times are a layer in this chart's group, so how many, their size, colour and clock are set there."
+        : "The clock times were moved to a layer that has since been deleted, so nothing draws them."}</div>`;
+  }
+  const blocked = watchVersionNote(host.watchAppVersion, MIN_WATCH_VERSION_FOR_CHART_TIMES_LAYER) !== undefined;
+  return html`
+    ${timeLabelFields(c, setChart, base, "cl", html`
+      <div class="hint">Clock times from the start of the span to now, evenly spaced, in a row of
+        their own. The right edge is now and the left edge is the start of the span, so a slot
+        the recorder had nothing for shifts the earlier times a little.</div>`)}
+    ${c.timeLabelCount <= 0 ? nothing : html`
+      <div class="field list-field"><span>Times</span>
+        <div class="chips">
+          <button class="small" ?disabled=${blocked}
+            title=${blocked ? "The watch is too old to draw clock times as a layer" : "Turn the clock times into a layer you can move and size"}
+            @click=${() => host.update((cfg) => { convertChartTimes(cfg, c.id); })}>${uiIcon("plus")}<span>Move to layer</span></button>
+        </div>
+      </div>
+      ${watchNote(host, MIN_WATCH_VERSION_FOR_CHART_TIMES_LAYER)}
+      <div class="hint">As a layer the row can sit anywhere at any width, and the plot gets its height back.</div>`}`;
+}
+
+/** The one-line state of a chart's Extras card: the marks the chart draws on
+ * its plot first, then the layers that belong to it. */
 function chartNumbersSummary(host: EditorHost, el: Extract<CElement, { kind: "chart" }>): string {
-  const labels = chartLabelsOf(host.config, el.payload.id);
-  const markers = chartMarkersOf(host.config, el.payload.id);
-  if (labels.length === 0 && markers.length === 0) return "None yet";
-  const parts = labels.map((l) => {
+  const c = el.payload;
+  const labels = chartLabelsOf(host.config, c.id);
+  const markers = chartMarkersOf(host.config, c.id);
+  const times = chartTimesOf(host.config, c.id);
+  const own: string[] = [];
+  if (c.highlight !== "none") own.push(`${CHART_HIGHLIGHTS.find(([v]) => v === c.highlight)?.[1].toLowerCase() ?? ""} marked`);
+  if (c.thresholdValue !== undefined) own.push("threshold");
+  if (c.nowIndex !== undefined) own.push("now");
+  if (c.drawsTimeLabels !== false && chartShowsTimeLabels(c) && c.timeLabelCount > 0) own.push(`${c.timeLabelCount} times`);
+  if (own.length === 0 && labels.length === 0 && markers.length === 0 && times.length === 0) return "None yet";
+  const parts = [...own, ...labels.map((l) => {
     const k = l.payload.value.kind;
     return k.kind === "chartStat" ? (CHART_STATS.find(([s]) => s === k.stat)?.[1] ?? "number").toLowerCase() : "number";
-  });
+  })];
   for (const m of markers) {
     const { at, place } = m.payload.chartAnchor!;
     const name = (CHART_ANCHOR_POINTS.find(([k]) => k === at)?.[1] ?? "reading").toLowerCase();
     parts.push(place === "through" ? `${name} line` : `${name} marker`);
   }
+  for (const _ of times) parts.push("times layer");
   return parts.join(" · ");
 }
 
@@ -4593,9 +4700,10 @@ function chartNumbersSummary(host: EditorHost, el: Extract<CElement, { kind: "ch
  * value, a marker is any layer with a `chartAnchor`, and neither is a setting on
  * the chart that has to be invented twice.
  */
-function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "chart" }>): TemplateResult {
+function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "chart" }>, marks: TemplateResult | undefined): TemplateResult {
   const ctx = describeContext(host);
   const labels = chartLabelsOf(host.config, el.payload.id);
+  const times = chartTimesOf(host.config, el.payload.id);
   // The chart stays selected after an add: the next click is usually another
   // number, and the new one is one click away in the list above the buttons.
   const markers = chartMarkersOf(host.config, el.payload.id);
@@ -4614,9 +4722,12 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
         @click=${() => host.update((c) => removeElement(c, id))}>${uiIcon("close")}</button>
     </div>`;
   return html`
-    ${labels.length === 0 && markers.length === 0
+    <div class="hint">What the chart draws over its plot besides the series: a highlight on its ends, a
+      threshold, a now marker and clock times. Each of the last three can move to a layer of its own.</div>
+    ${marks ?? nothing}
+    ${labels.length === 0 && markers.length === 0 && times.length === 0
       ? html`<div class="hint keep">A chart on its own shows that a reading moved, not what it moved to and not
-          which reading was the day's best. Add a number or a marker and it appears as a layer in this chart's
+          which reading was the day's best. Add a number or a marker below and it appears as a layer in this chart's
           group: drag it anywhere, give it any size or colour, and it follows the live value.</div>`
       : html`
         <div class="field list-field"><span>Shown</span>
@@ -4630,6 +4741,7 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
                 : m.kind === "icon" ? markerGlyph(host.resolve(m.payload.symbol)) : "◆";
               return row(m.payload.id, glyph, `over the ${name}`, "marker");
             })}
+            ${times.map((t) => row(t.payload.id, uiIcon("clock"), "clock times", "times layer"))}
           </div>
         </div>
         <div class="hint">Each one is a layer in this chart's group. Click one to edit it; drag it on the preview
@@ -4659,7 +4771,7 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
           const needsThreshold = line === "threshold" && el.payload.thresholdValue === undefined;
           return html`
             <button class="small" ?disabled=${needsThreshold}
-              title=${needsThreshold ? "Turn on Threshold in Look first, so the line has a value to sit on" : `Draw the ${label.toLowerCase()} as a layer you can restyle`}
+              title=${needsThreshold ? "Turn on Threshold above first, so the line has a value to sit on" : `Draw the ${label.toLowerCase()} as a layer you can restyle`}
               @click=${() => host.update((c) => { addChartLine(c, el.payload.id, line); })}>${uiIcon("plus")}<span>${label}</span></button>`;
         })}
       </div>
@@ -4753,6 +4865,7 @@ export function layerTitle(el: CElement, ctx?: DescribeContext): string {
           : a.type === "openPage" ? (el.payload.openPageName || "") : "";
       return target ? `${a.type} · ${target}` : a.type;
     }
+    case "chartTimes": return "Clock times";
   }
 }
 

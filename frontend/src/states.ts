@@ -462,6 +462,9 @@ export const DEFAULT_COLUMN: Record<string, StyleProperty> = {
   shape: "color",
   image: "visibility",
   tap: "visibility",
+  // Chart times carry their own colour, like a timeline, so hiding is what a
+  // state can do to them.
+  chartTimes: "visibility",
   layout: "backgroundColor",
 };
 

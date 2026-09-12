@@ -97,6 +97,13 @@ function normalise(el: Record<string, unknown>): Record<string, unknown> {
       colorHex: typeof r.colorHex === "string" ? r.colorHex.toUpperCase() : r.colorHex,
     }));
   }
+  // A smoothed chart's readings are sums of Gaussian weights, which each side
+  // prints to its own last digit. Both runners round them to six decimals.
+  // `|| 0` folds a rounded -0 into 0, which `toEqual` would otherwise tell apart.
+  const values = el.values;
+  if (Array.isArray(values)) {
+    out.values = values.map((v: unknown) => (typeof v === "number" ? Math.round(v * 1e6) / 1e6 || 0 : v));
+  }
   // A row of clock times is compared by where its times land, not by what they
   // read: a printed time carries the machine's own zone and locale, so a fixture
   // pinning one would pass on the Mac that wrote it and nowhere else. How a time

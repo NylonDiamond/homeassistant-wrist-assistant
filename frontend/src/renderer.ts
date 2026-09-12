@@ -747,16 +747,16 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
 
   // Each end draws its own mark in its own colour. The colour is the
   // highlight's either way, so an end with no mark is still painted.
-  const endMark = (index: number | undefined, marker: typeof el.highMarker, colour: typeof high) => {
+  const endMark = (index: number | undefined, marker: typeof el.highMarker, colour: typeof high, end: "high" | "low") => {
     if (index === undefined || marker === "none") return;
-    const c = g.markerCenter(index, el.style === "bars");
+    const c = g.markerCenter(index, el.style === "bars", end);
     body.push(marker === "triangle"
       ? svg`<path d=${`M${c.x} ${c.y - 1.8} L${c.x + 2.2} ${c.y + 1.8} L${c.x - 2.2} ${c.y + 1.8} Z`}
           fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} />`
       : dot(c, colour));
   };
-  endMark(el.highIndex, el.highMarker, high);
-  endMark(el.lowIndex, el.lowMarker, low);
+  endMark(el.highIndex, el.highMarker, high, "high");
+  endMark(el.lowIndex, el.lowMarker, low, "low");
 
   // The two lines that are about the plot rather than about a reading: a dashed
   // horizontal one at the threshold, and a vertical one standing on "now". Both
@@ -846,6 +846,15 @@ function renderTimeline(el: Extract<ResolvedElement, { kind: "timeline" }>, box:
   });
   if (!showsLabels) return svg`${body}`;
   return svg`${body}${renderTimeLabelRow(el, box, labelSize, rowHeight)}`;
+}
+
+/** A chart's clock times as their own layer: one row across the frame, centred
+ * in its height, placed exactly the way the chart places its own row. */
+function renderChartTimes(el: Extract<ResolvedElement, { kind: "chartTimes" }>, box: Box) {
+  if (el.labels.length === 0 || box.w <= 0 || box.h <= 0) return nothing;
+  const { labelSize, rowHeight } = timeLabelRowSplit({ labels: el.labels, labelSize: el.labelSize, labelsAbove: false }, box);
+  const row: Box = { ...box, y: box.cy - rowHeight / 2, h: rowHeight };
+  return svg`${renderTimeLabelRow({ labels: el.labels, labelColorHex: el.labelColorHex, labelsAbove: false }, row, labelSize, rowHeight)}`;
 }
 
 function renderShape(el: Extract<ResolvedElement, { kind: "shape" }>, box: Box) {
@@ -1160,6 +1169,7 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     case "gauge": body = renderGauge(el, box); break;
     case "chart": body = renderChart(el, box); break;
     case "timeline": body = renderTimeline(el, box); break;
+    case "chartTimes": body = renderChartTimes(el, box); break;
     case "shape": body = renderShape(el, box); break;
     case "image": body = renderImage(el, box, options); break;
     case "tap": body = renderTap(el, box, options.icons, showTaps, labelled ? describeTapAction(el.action) : undefined); break;

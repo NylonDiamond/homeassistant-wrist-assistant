@@ -11,7 +11,7 @@ import { type TemplateResult, html, svg } from "lit";
 
 export type UiIconName =
   | "up" | "down" | "show" | "hide" | "duplicate" | "delete" | "close" | "reset"
-  | "text" | "icon" | "gauge" | "chart" | "timeline" | "shape" | "image" | "tap"
+  | "text" | "icon" | "gauge" | "chart" | "timeline" | "shape" | "image" | "tap" | "chartTimes"
   | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "plus"
   | "lock" | "unlock" | "folder" | "ungroup" | "watch"
   | "compact" | "expanded" | "search" | "undo" | "redo" | "expand" | "left" | "right"
@@ -43,6 +43,8 @@ function shape(name: UiIconName) {
       return svg`<rect x="3.5" y="5" width="17" height="14" rx="2.5" /><path d="M7 9.5H17M7 13H13" />`;
     case "look":
       return svg`<circle cx="12" cy="12" r="8.5" /><circle cx="8.5" cy="10.5" r="1.1" /><circle cx="12" cy="8" r="1.1" /><circle cx="15.5" cy="10.5" r="1.1" /><path d="M12 20.5a2.5 2.5 0 0 0 0-5h-1a1.8 1.8 0 0 1 0-3.6" />`;
+    // A chart's clock times as a layer: the clock is the whole of what it draws.
+    case "chartTimes":
     case "clock":
       return svg`<circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12L15 14" />`;
     case "states":

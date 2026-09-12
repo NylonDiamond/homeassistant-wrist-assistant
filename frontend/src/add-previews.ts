@@ -138,6 +138,14 @@ function sample(kind: LayerKind): TemplateResult {
           <path d="M10 11.5a1.8 1.8 0 0 0-3.6 0v3.5a6.6 6.6 0 0 0 13.2 0v-1.5" />
         </g>
       </g>`;
+    // A row of times on its own. Never an add button (see KIND_ORDER), but the
+    // switch covers every kind.
+    case "chartTimes":
+      return svg`<g font-family=${FONT} font-size="8" fill="var(--k)">
+        <text x="6" y="27">9 AM</text>
+        <text x="60" y="27" text-anchor="middle">1 PM</text>
+        <text x="114" y="27" text-anchor="end">5 PM</text>
+      </g>`;
   }
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "Chart gaps",
-  "description": "Recorder charts that ask for outages as holes. With `gaps: true` the request carries `gaps` and the reply writes an outage as an empty field, so `4,,,6,5` is five slots, not three readings. A hole takes the value of the reading before it, and holes before the first reading take the first reading, so `values` keeps the count and the domain is unchanged; `holes` marks where nothing is drawn. The same entity charted without gaps is a different query under a different key, so the two never share a cached series; its `holes` is empty. Highlights and stats skip holes: on the statistics chart the lowest is the first reported 0.5 at index 1, not the leading hole at index 0, the first reading is 0.5 and the latest is the 0.7 before the trailing hole. The temperature chart's average reads the three reported readings (5), not the five slots. The humidity chart smooths `,2,4,,9,1` over 3 readings: holes add nothing to a window, and afterwards each hole is carried again from the averaged series (the previous reported output, or the first one for a leading hole), so both holes read 3 rather than the raw 2 and 4 they carried in. For statistics the recorder marks an outage by a missing row, which the server turns into the same empty field.",
+  "description": "Recorder charts that ask for outages as holes. With `gaps: true` the request carries `gaps` and the reply writes an outage as an empty field, so `4,,,6,5` is five slots, not three readings. A hole takes the value of the reading before it, and holes before the first reading take the first reading, so `values` keeps the count and the domain is unchanged; `holes` marks where nothing is drawn. The same entity charted without gaps is a different query under a different key, so the two never share a cached series; its `holes` is empty. Highlights and stats skip holes: on the statistics chart the lowest is the first reported 0.5 at index 1, not the leading hole at index 0, the first reading is 0.5 and the latest is the 0.7 before the trailing hole. The temperature chart's average reads the three reported readings (5), not the five slots. The humidity chart smooths `,2,4,,9,1` at `light` strength, which on six slots is a 3-reading Gaussian window (sigma 0.5): holes add nothing to a window, and afterwards each hole is carried again from the smoothed series (the previous reported output, or the first one for a leading hole), so the leading hole reads 2.238406 and the other 3.761594 rather than the raw 2 and 4 they carried in. Values are compared at six decimals. For statistics the recorder marks an outage by a missing row, which the server turns into the same empty field.",
   "config": {
     "schemaVersion": 6,
     "id": "AAAAAAAA-0000-4000-8000-0000000001F0",
@@ -208,7 +208,7 @@
           "bands": [],
           "bandAboveColorHex": "#FF453A",
           "fillBands": false,
-          "smoothing": 3,
+          "smoothing": "light",
           "gaps": true,
           "colorSlot": {
             "baseColorHex": "#FFFFFF"
@@ -403,12 +403,12 @@
           "id": "EEEEEEEE-0000-4000-8000-0000000001F7",
           "kind": "chart",
           "values": [
-            3,
-            3,
-            3,
-            3,
-            5,
-            5
+            2.238406,
+            2.238406,
+            3.761594,
+            3.761594,
+            8.046377,
+            1.953623
           ],
           "holes": [
             true,
@@ -419,9 +419,7 @@
             false
           ],
           "style": "area",
-          "smoothing": 3,
-          "domainMin": 3,
-          "domainMax": 5
+          "smoothing": "light"
         },
         {
           "id": "EEEEEEEE-0000-4000-8000-0000000001F5",

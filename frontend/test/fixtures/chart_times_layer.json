@@ -1,0 +1,294 @@
+{
+  "name": "Chart times layer",
+  "description": "A chart's clock times moved into a `chartTimes` layer. The voltage chart asks for four times but carries `drawsTimeLabels: false`, so it prints none (`labels` is empty) and gives the row no height; its label keys stay. The first times layer links to it and asks for three, so it draws the chart's window at 0, one half and 1 across its own width, with its own size and colour. The humidity chart still draws its own two times. The second times layer links to a chart the document does not have, and the third to the prices chart, which draws its own value and so has no time axis: both draw nothing. The times are pinned as positions, not printed times, for the reason `chart_series.json` gives.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-000000000200",
+    "name": "Chart times layer",
+    "slotIndex": 3,
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000201",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.voltage",
+              "displayName": "Voltage",
+              "domain": "sensor"
+            }
+          },
+          "historyMinutes": 360,
+          "historyPoints": 6,
+          "style": "line",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "labelSize": 8,
+          "timeLabelCount": 4,
+          "drawsTimeLabels": false,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 1,
+            "height": 0.4,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chartTimes",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000202",
+          "chart": "EEEEEEEE-0000-4000-8000-000000000201",
+          "timeLabelCount": 3,
+          "labelSize": 7,
+          "labelColorHex": "#FFFFFF99",
+          "hourCycle": "h24",
+          "minutes": "never",
+          "rules": [],
+          "frame": {
+            "x": 0.1,
+            "y": 0.4,
+            "width": 0.8,
+            "height": 0.12,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000203",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.humidity",
+              "displayName": "Humidity",
+              "domain": "sensor"
+            }
+          },
+          "historyMinutes": 180,
+          "historyPoints": 6,
+          "style": "bars",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "timeLabelCount": 2,
+          "colorSlot": {
+            "baseColorHex": "#0A84FF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0.55,
+            "width": 1,
+            "height": 0.3,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chartTimes",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000204",
+          "chart": "EEEEEEEE-0000-4000-8000-0000000002FF",
+          "timeLabelCount": 3,
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0.88,
+            "width": 0.5,
+            "height": 0.12,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000205",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "15,13,14,17"
+            }
+          },
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "style": "bars",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "lowest",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "timeLabelCount": 2,
+          "drawsTimeLabels": false,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.5,
+            "y": 0.88,
+            "width": 0.3,
+            "height": 0.12,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chartTimes",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000206",
+          "chart": "EEEEEEEE-0000-4000-8000-000000000205",
+          "timeLabelCount": 2,
+          "rules": [],
+          "frame": {
+            "x": 0.8,
+            "y": 0.88,
+            "width": 0.2,
+            "height": 0.12,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "wedge",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {
+      "sensor.voltage": {
+        "state": "3068",
+        "domain": "sensor"
+      },
+      "sensor.humidity": {
+        "state": "41",
+        "domain": "sensor"
+      }
+    },
+    "templateResults": {},
+    "historySeries": {
+      "sensor.voltage|360|6": "3068,3071,3069,3075,3063,3070",
+      "sensor.humidity|180|6": "40,42,45,43,41,44"
+    }
+  },
+  "expectedCompiled": {
+    "entities": [
+      "sensor.voltage",
+      "sensor.humidity"
+    ],
+    "expressionKeys": [],
+    "historyKeys": [
+      "sensor.voltage|360|6",
+      "sensor.humidity|180|6"
+    ]
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000201",
+          "kind": "chart",
+          "values": [3068, 3071, 3069, 3075, 3063, 3070],
+          "labels": []
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000202",
+          "kind": "chartTimes",
+          "labels": [0, 0.5, 1],
+          "labelSize": 7,
+          "labelColorHex": "#FFFFFF99",
+          "isHidden": false
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000203",
+          "kind": "chart",
+          "values": [40, 42, 45, 43, 41, 44],
+          "labels": [0, 1]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000204",
+          "kind": "chartTimes",
+          "labels": [],
+          "labelSize": 9,
+          "labelColorHex": "#8E8E93"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000205",
+          "kind": "chart",
+          "values": [15, 13, 14, 17],
+          "labels": []
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000206",
+          "kind": "chartTimes",
+          "labels": []
+        }
+      ]
+    }
+  }
+}

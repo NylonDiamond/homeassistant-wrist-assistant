@@ -1,6 +1,6 @@
 {
   "name": "Chart curve and smoothing",
-  "description": "Three charts read 3, 9, 0, 6, 3, 9. The first stores neither key, so it draws a straight line over the raw readings. The second draws a smooth (monotone cubic) line over a centred 3-reading moving average, which shrinks at the ends: 6, 4, 5, 3, 6, 6. The third is a step-after area over a 5-reading average: 4, 4.5, 4.2, 5.4, 4.5, 6. The average runs after the limit trim and everything downstream (domain, highlights, stats) reads the averaged values.",
+  "description": "Three charts read the same 24 readings. The first stores neither key, so it draws a straight line over the raw readings. The second draws a smooth (monotone cubic) line at `light` strength and the third a step-after area at `strong`. Smoothing is a strength, not a window: the window is the strength's share of the series (light 0.05, medium 0.10, strong 0.20) times the reading count, rounded half up, at least 3 and made odd. On 24 readings light gives 3 and strong 5, so the two lines differ. Each reading is a Gaussian-weighted average of the readings within half a window of it (sigma a quarter of the window, summed left to right, divided by the summed weights), shrinking at the ends. Smoothing runs after the limit trim and everything downstream (domain, highlights, stats) reads the smoothed values. Values are compared at six decimals, because exp may differ in its last bit between Swift and JavaScript.",
   "config": {
     "schemaVersion": 6,
     "id": "AAAAAAAA-0000-4000-8000-0000000001C0",
@@ -18,7 +18,7 @@
           "value": {
             "kind": {
               "kind": "literal",
-              "value": "3,9,0,6,3,9"
+              "value": "12,14,13,17,21,19,24,28,26,22,18,15,11,9,12,16,20,25,27,23,19,14,10,8"
             }
           },
           "historyMinutes": 0,
@@ -61,7 +61,7 @@
           "value": {
             "kind": {
               "kind": "literal",
-              "value": "3,9,0,6,3,9"
+              "value": "12,14,13,17,21,19,24,28,26,22,18,15,11,9,12,16,20,25,27,23,19,14,10,8"
             }
           },
           "historyMinutes": 0,
@@ -84,7 +84,7 @@
           "bandAboveColorHex": "#FF453A",
           "fillBands": false,
           "curve": "smooth",
-          "smoothing": 3,
+          "smoothing": "light",
           "colorSlot": {
             "baseColorHex": "#FFFFFF"
           },
@@ -106,7 +106,7 @@
           "value": {
             "kind": {
               "kind": "literal",
-              "value": "3,9,0,6,3,9"
+              "value": "12,14,13,17,21,19,24,28,26,22,18,15,11,9,12,16,20,25,27,23,19,14,10,8"
             }
           },
           "historyMinutes": 0,
@@ -129,7 +129,7 @@
           "bandAboveColorHex": "#FF453A",
           "fillBands": false,
           "curve": "step",
-          "smoothing": 5,
+          "smoothing": "strong",
           "colorSlot": {
             "baseColorHex": "#FFFFFF"
           },
@@ -173,44 +173,29 @@
         {
           "id": "EEEEEEEE-0000-4000-8000-0000000001C1",
           "kind": "chart",
-          "values": [
-            3,
-            9,
-            0,
-            6,
-            3,
-            9
-          ],
+          "values": [12, 14, 13, 17, 21, 19, 24, 28, 26, 22, 18, 15, 11, 9, 12, 16, 20, 25, 27, 23, 19, 14, 10, 8],
           "curve": "straight",
-          "smoothing": 0
+          "smoothing": "off",
+          "highIndex": 7,
+          "lowIndex": 23
         },
         {
           "id": "EEEEEEEE-0000-4000-8000-0000000001C2",
           "kind": "chart",
-          "values": [
-            6,
-            4,
-            5,
-            3,
-            6,
-            6
-          ],
+          "values": [12.238406, 13.680479, 13.532535, 17.0, 20.360958, 19.745549, 23.893493, 27.360958, 25.786986, 22.0, 18.106507, 14.893493, 11.213014, 9.532535, 12.106507, 16.0, 20.106507, 24.680479, 26.360958, 23.0, 18.893493, 14.106507, 10.213014, 8.238406],
           "curve": "smooth",
-          "smoothing": 3
+          "smoothing": "light",
+          "highIndex": 7,
+          "lowIndex": 23
         },
         {
           "id": "EEEEEEEE-0000-4000-8000-0000000001C3",
           "kind": "chart",
-          "values": [
-            4,
-            4.5,
-            4.2,
-            5.4,
-            4.5,
-            6
-          ],
+          "values": [12.77411, 13.398063, 14.602428, 16.945511, 19.262349, 21.09083, 23.70131, 25.717462, 24.96671, 21.945511, 18.29869, 14.810287, 11.924312, 10.92936, 12.625622, 16.108977, 20.189713, 23.66802, 24.717462, 22.618579, 18.70131, 14.407667, 11.035208, 9.162588],
           "curve": "step",
-          "smoothing": 5
+          "smoothing": "strong",
+          "highIndex": 7,
+          "lowIndex": 23
         }
       ]
     }

@@ -99,8 +99,11 @@ export type ChartColoring = "uniform" | "bands";
  * watch fails a layer whose `style` it does not know but ignores this key. */
 export type ChartCurve = "straight" | "smooth" | "step";
 export const CHART_CURVES: readonly ChartCurve[] = ["straight", "smooth", "step"];
-/** The moving-average windows a chart offers, in readings. 0 is off. */
-export const CHART_SMOOTHING_WINDOWS: readonly number[] = [0, 3, 5, 7, 9];
+/** How strongly a chart smooths its readings. Off is the key being absent. */
+export type ChartSmoothing = "light" | "medium" | "strong";
+export const CHART_SMOOTHINGS: readonly ChartSmoothing[] = ["light", "medium", "strong"];
+/** The share of the drawn readings each strength averages over. */
+export const CHART_SMOOTHING_SHARES: Readonly<Record<ChartSmoothing, number>> = { light: 0.05, medium: 0.10, strong: 0.20 };
 
 /** A decoded `curve`, with any spelling this build does not know read as straight. */
 export function chartCurve(raw: unknown): ChartCurve {
@@ -166,9 +169,24 @@ export function chartBarCorners(raw: unknown): ChartBarCorners {
   return typeof raw === "string" && (CHART_BAR_CORNERS as readonly string[]).includes(raw) ? raw as ChartBarCorners : "all";
 }
 
-/** A decoded `smoothing`, with any window not offered read as off. */
-export function chartSmoothingWindow(raw: unknown): number {
-  return typeof raw === "number" && CHART_SMOOTHING_WINDOWS.includes(raw) ? raw : 0;
+/** A decoded `smoothing`, undefined for off. A strength this build does not
+ * know reads as off. The key held a moving-average window before it shipped,
+ * so a stored number still maps: 3 or 5 light, 7 medium, 9 strong. */
+export function chartSmoothing(raw: unknown): ChartSmoothing | undefined {
+  if (typeof raw === "string") return (CHART_SMOOTHINGS as readonly string[]).includes(raw) ? raw as ChartSmoothing : undefined;
+  if (raw === 3 || raw === 5) return "light";
+  if (raw === 7) return "medium";
+  if (raw === 9) return "strong";
+  return undefined;
+}
+
+/** How many readings a smoothing strength averages over a series of `count`:
+ * its share of the readings, at least 3 and always odd. 0 when off or when there
+ * are fewer than two readings. Mirrors the watch. */
+export function chartSmoothingWindowSize(count: number, smoothing: ChartSmoothing | undefined): number {
+  if (smoothing === undefined || count < 2) return 0;
+  const w = Math.max(3, Math.floor(count * CHART_SMOOTHING_SHARES[smoothing] + 0.5));
+  return w % 2 === 0 ? w + 1 : w;
 }
 /** Where a chart's past comes from.
  *
@@ -849,11 +867,12 @@ export interface ChartElement extends ElementBase {
   gridColorHex?: string;
   /** One line where zero falls, while zero is inside the range. Absent reads as false. */
   zeroLine?: boolean;
-  /** A centred moving-average window over the drawn readings, 0 (off), 3, 5,
-   * 7 or 9. Applied after `limit`, and everything downstream (the range,
-   * highlights, bands, anchors and `chartStat` numbers) reads the averaged
-   * series. Absent reads as 0. */
-  smoothing?: number;
+  /** How strongly the drawn readings are smoothed: a centred, Gaussian-weighted
+   * average whose window scales with the number of readings (see
+   * `chartSmoothingWindowSize`). Applied after `limit`, and everything downstream
+   * (the range, highlights, bands, anchors and `chartStat` numbers) reads the
+   * smoothed series. Absent is off. */
+  smoothing?: ChartSmoothing;
   /** Ask the server to leave a slot empty where the entity was unavailable,
    * so the line breaks there instead of carrying the last value across.
    * History and statistics sources only. Absent reads as false. */
@@ -877,6 +896,10 @@ export interface ChartElement extends ElementBase {
   /** The same for the "now" line, once it is a layer anchored to `now` `through`.
    * `nowIndex` stays, because the layer reads it. Omitted at true. */
   drawsNowLine?: boolean;
+  /** The same for the clock times, once they are a `chartTimes` layer. False
+   * draws no times and gives up no room for them; the label keys below stay,
+   * because they are what the layer was copied from. Omitted at true. */
+  drawsTimeLabels?: boolean;
   /** Another chart layer whose range this one is drawn against, instead of its
    * own `scale`. Absent is the ordinary case and every chart before this.
    *
@@ -1589,6 +1612,25 @@ export function isZeroOutset(o: TapOutset | undefined): boolean {
   return o === undefined || (o.top === 0 && o.left === 0 && o.bottom === 0 && o.right === 0);
 }
 
+/** A chart's clock times as a layer of their own. It draws the times its chart
+ * would print, at `timeLabelPositions(timeLabelCount)` across its own width and
+ * centred in its own height, so the row can sit anywhere and be sized like any
+ * layer. The chart then carries `drawsTimeLabels: false`. A link to a layer
+ * that is not a chart, or to nothing, draws nothing.
+ *
+ * No colorSlot, for the timeline's reason: the times' colour is
+ * `labelColorHex`. No `labelsAbove`: the layer's frame says where the row is.
+ * Mirrors `CustomComplication.ChartTimesElement` in the app repo. */
+export interface ChartTimesElement extends Omit<ElementBase, "colorSlot"> {
+  /** The chart layer whose span the times are read from. */
+  chart: string;
+  timeLabelCount: number;
+  labelSize: number;
+  labelColorHex: string;
+  hourCycle: TimelineHourCycle;
+  minutes: TimelineMinuteStyle;
+}
+
 export type Element =
   | { kind: "text"; payload: TextElement }
   | { kind: "icon"; payload: IconElement }
@@ -1597,7 +1639,8 @@ export type Element =
   | { kind: "timeline"; payload: TimelineElement }
   | { kind: "shape"; payload: ShapeElement }
   | { kind: "image"; payload: ImageElement }
-  | { kind: "tap"; payload: TapElement };
+  | { kind: "tap"; payload: TapElement }
+  | { kind: "chartTimes"; payload: ChartTimesElement };
 
 export interface Placement {
   frame: NormalizedFrame;
@@ -2193,7 +2236,7 @@ function parseElementKind(raw: unknown): Element {
           ...(chartGridLines(p.gridLines) !== 0 ? { gridLines: chartGridLines(p.gridLines) } : {}),
           ...(!sameHex(chartGridColorHex(p.gridColorHex), CHART_DEFAULT_GRID_HEX) ? { gridColorHex: chartGridColorHex(p.gridColorHex) } : {}),
           ...(p.zeroLine === true ? { zeroLine: true } : {}),
-          ...(chartSmoothingWindow(p.smoothing) !== 0 ? { smoothing: chartSmoothingWindow(p.smoothing) } : {}),
+          ...(chartSmoothing(p.smoothing) !== undefined ? { smoothing: chartSmoothing(p.smoothing) } : {}),
           ...(p.gaps === true ? { gaps: true } : {}),
           ...(typeof p.thresholdValue === "number" && Number.isFinite(p.thresholdValue)
             ? { thresholdValue: p.thresholdValue }
@@ -2203,6 +2246,7 @@ function parseElementKind(raw: unknown): Element {
           nowColorHex: str(p.nowColorHex, CHART_DEFAULT_NOW_HEX),
           ...(p.drawsThreshold === false ? { drawsThreshold: false } : {}),
           ...(p.drawsNowLine === false ? { drawsNowLine: false } : {}),
+          ...(p.drawsTimeLabels === false ? { drawsTimeLabels: false } : {}),
           ...(optStr(p.scaleFrom) !== undefined ? { scaleFrom: optStr(p.scaleFrom)! } : {}),
           // The clock times, read exactly the way a timeline reads them: same
           // keys, same defaults, same forgiveness for a word this build does
@@ -2294,6 +2338,23 @@ function parseElementKind(raw: unknown): Element {
       // already carry its result, and syncAttachedTaps recovers the outset from
       // them. It stays in the key audit so an older document still opens.
       return { kind: "tap", payload: el };
+    }
+    case "chartTimes": {
+      const { colorSlot: _unused, ...base } = parseElementBase(p, "#FFFFFF");
+      return {
+        kind: "chartTimes",
+        payload: {
+          ...base,
+          // Ids are uppercased on the way in, so the link has to be too.
+          chart: str(p.chart).toUpperCase(),
+          // Read exactly the way the chart reads its own times.
+          timeLabelCount: clampTimeLabelCount(p.timeLabelCount),
+          labelSize: num(p.labelSize, TIMELINE_DEFAULT_LABEL_SIZE),
+          labelColorHex: str(p.labelColorHex, TIMELINE_DEFAULT_LABEL_HEX),
+          hourCycle: parseHourCycle(p.hourCycle),
+          minutes: parseMinuteStyle(p.minutes),
+        },
+      };
     }
     default:
       throw new ConfigParseError(`unknown element kind ${String(raw.kind)}`);
@@ -2793,6 +2854,56 @@ function chartLineFrame(chart: NormalizedFrame, line: ChartLine): NormalizedFram
     : { ...chart, height: Math.min(chart.height, thick / box.height), rotationDegrees: 0 };
 }
 
+/** The `chartTimes` layers reading one chart, in document order. */
+export function chartTimesOf(cfg: CustomComplicationConfig, chartId: string): Extract<Element, { kind: "chartTimes" }>[] {
+  return cfg.elements.filter((el): el is Extract<Element, { kind: "chartTimes" }> =>
+    el.kind === "chartTimes" && el.payload.chart === chartId);
+}
+
+/** Hand a chart's clock times to a layer of their own, and return its id.
+ *
+ * The layer copies the chart's label keys, so the face reads the same the moment
+ * the button is pressed, and sits in the chart's group directly above it in
+ * z-order. Its frame is the chart's width, one line of `labelSize` tall, just
+ * under the chart (over it when the chart printed its times above), held inside
+ * the face. The chart stops drawing its own row and gets that height back.
+ * Undefined when `chartId` is not a chart. */
+export function convertChartTimes(cfg: CustomComplicationConfig, chartId: string): string | undefined {
+  const chart = cfg.elements.find((el) => el.payload.id === chartId);
+  if (!chart || chart.kind !== "chart") return undefined;
+  const c = chart.payload;
+  const el = newElement("chartTimes") as Extract<Element, { kind: "chartTimes" }>;
+  el.payload.chart = chartId;
+  el.payload.timeLabelCount = clampTimeLabelCount(c.timeLabelCount);
+  el.payload.labelSize = c.labelSize;
+  el.payload.labelColorHex = c.labelColorHex;
+  el.payload.hourCycle = c.hourCycle;
+  el.payload.minutes = c.minutes;
+  el.payload.frame = chartTimesFrame(c.frame, c.labelSize, c.labelsAbove);
+  const index = cfg.elements.findIndex((e) => e.payload.id === chartId);
+  cfg.elements.splice(index + 1, 0, el);
+  joinChartGroup(cfg, chart, el.payload.id);
+  c.drawsTimeLabels = false;
+  return el.payload.id;
+}
+
+/** One line of `labelSize` points across the chart's width, below it or above
+ * it, in the rectangular design box and held inside the face. */
+function chartTimesFrame(chart: NormalizedFrame, labelSize: number, above: boolean): NormalizedFrame {
+  const box = DESIGN_BOX.rectangular;
+  const size = Math.max(TIMELINE_MIN_LABEL_SIZE, Math.min(TIMELINE_MAX_LABEL_SIZE, labelSize));
+  const height = Math.min(1, (size * 1.2) / box.height);
+  const width = Math.min(1, Math.max(0, chart.width));
+  const y = above ? chart.y - height : chart.y + chart.height;
+  return {
+    x: Math.max(0, Math.min(1 - width, chart.x)),
+    y: Math.max(0, Math.min(1 - height, y)),
+    width,
+    height,
+    rotationDegrees: 0,
+  };
+}
+
 /** Read the first cut of a chart's built-in numbers (2026-09-05) forward into
  * text layers.
  *
@@ -3114,6 +3225,7 @@ function encodeElementKind(el: Element): J {
       if (c.nowColorHex !== CHART_DEFAULT_NOW_HEX) o.nowColorHex = c.nowColorHex;
       if (c.drawsThreshold === false) o.drawsThreshold = false;
       if (c.drawsNowLine === false) o.drawsNowLine = false;
+      if (c.drawsTimeLabels === false) o.drawsTimeLabels = false;
       if (c.scaleFrom !== undefined) o.scaleFrom = c.scaleFrom;
       // The clock times, in the order and on the rule the app's encoder uses, so
       // a chart drawing none writes exactly the bytes it always did.
@@ -3152,8 +3264,8 @@ function encodeElementKind(el: Element): J {
       const gridColorHex = chartGridColorHex(c.gridColorHex);
       if (!sameHex(gridColorHex, CHART_DEFAULT_GRID_HEX)) o.gridColorHex = gridColorHex;
       if (c.zeroLine === true) o.zeroLine = true;
-      const smoothing = chartSmoothingWindow(c.smoothing);
-      if (smoothing !== 0) o.smoothing = smoothing;
+      const smoothing = chartSmoothing(c.smoothing);
+      if (smoothing !== undefined) o.smoothing = smoothing;
       if (c.gaps === true) o.gaps = true;
       return { kind: "chart", payload: o };
     }
@@ -3238,6 +3350,23 @@ function encodeElementKind(el: Element): J {
       o.frame = encodeFrame(p.frame);
       o.isHidden = p.isHidden;
       return { kind: "tap", payload: o };
+    }
+    case "chartTimes": {
+      const t = el.payload;
+      const o: J = {
+        id: t.id,
+        rules: encodeRules(t.rules),
+        frame: encodeFrame(t.frame),
+        isHidden: t.isHidden,
+        chart: t.chart,
+      };
+      // The chart's own order and "only when it differs" rule for the same keys.
+      if (t.labelSize !== TIMELINE_DEFAULT_LABEL_SIZE) o.labelSize = encNum(t.labelSize);
+      if (t.labelColorHex !== TIMELINE_DEFAULT_LABEL_HEX) o.labelColorHex = t.labelColorHex;
+      if (t.timeLabelCount !== TIMELINE_DEFAULT_LABEL_COUNT) o.timeLabelCount = clampTimeLabelCount(t.timeLabelCount);
+      if (t.hourCycle !== TIMELINE_DEFAULT_HOUR_CYCLE) o.hourCycle = t.hourCycle;
+      if (t.minutes !== TIMELINE_DEFAULT_MINUTE_STYLE) o.minutes = t.minutes;
+      return { kind: "chartTimes", payload: o };
     }
   }
 }
@@ -3457,7 +3586,7 @@ const K = {
     "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker",
     "coloring", "bands", "bandAboveColorHex", "fillBands",
     "thresholdValue", "thresholdColorHex", "nowIndex", "nowColorHex", "scaleFrom",
-    "drawsThreshold", "drawsNowLine",
+    "drawsThreshold", "drawsNowLine", "drawsTimeLabels",
     "timeLabelCount", "labelSize", "labelColorHex", "labelsAbove", "hourCycle", "minutes",
     "highMarker", "lowMarker",
     "curve", "fillStyle", "fillColorHex", "barRadius", "barCorners", "pointDots", "gridLines", "gridColorHex", "zeroLine", "smoothing", "gaps",
@@ -3486,6 +3615,7 @@ const K = {
   // opens; nothing decodes it, and it leaves the wire on that document's next
   // save. The tap's frames already carry what it did.
   tap: ["action", "openPageId", "openPageName", "attachedTo", "grow"],
+  chartTimes: ["chart", "timeLabelCount", "labelSize", "labelColorHex", "hourCycle", "minutes"],
   colorSlot: ["baseColorHex"],
   rule: ["id", "cases", "otherwise", "partId"],
   case: ["id", "when", "then"],
@@ -3769,6 +3899,23 @@ export function newElement(kind: Element["kind"]): Element {
       const { colorSlot: _unused, ...b } = base("#FFFFFF");
       return { kind, payload: { ...b, action: { type: "refresh" } } };
     }
+    // Linked to no chart: `convertChartTimes` is the way one is made, and it
+    // fills the link and copies the chart's own keys over these.
+    case "chartTimes": {
+      const { colorSlot: _unused, ...b } = base("#FFFFFF");
+      return {
+        kind,
+        payload: {
+          ...b,
+          chart: "",
+          timeLabelCount: TIMELINE_DEFAULT_LABEL_COUNT,
+          labelSize: TIMELINE_DEFAULT_LABEL_SIZE,
+          labelColorHex: TIMELINE_DEFAULT_LABEL_HEX,
+          hourCycle: TIMELINE_DEFAULT_HOUR_CYCLE,
+          minutes: TIMELINE_DEFAULT_MINUTE_STYLE,
+        },
+      };
+    }
   }
 }
 
@@ -3796,6 +3943,7 @@ export function elementSize(el: Element): number | undefined {
     case "shape": return undefined;
     case "image": return undefined;
     case "tap": return undefined;
+    case "chartTimes": return undefined;
   }
 }
 
@@ -3890,6 +4038,7 @@ export function primaryValue(el: Element): Value | undefined {
     case "shape": return undefined;
     case "image": return { kind: { kind: "entityState", ...el.payload.entity } };
     case "tap": return undefined;
+    case "chartTimes": return undefined;
   }
 }
 
@@ -4214,6 +4363,9 @@ export function removeElement(cfg: CustomComplicationConfig, id: string): void {
   // A chart's numbers name it by id, so without the chart they would print the
   // placeholder forever. They go with it, the way an attached tap does.
   for (const label of chartLabelsOf(cfg, id)) removeElement(cfg, label.payload.id);
+  // A times layer has nothing to read without its chart and would sit in the
+  // list drawing nothing, so it goes too.
+  for (const times of chartTimesOf(cfg, id)) removeElement(cfg, times.payload.id);
   // A marker names its chart by id too. Unlike a number it still has something
   // to show, so it stays and goes back to sitting where its frame puts it,
   // rather than disappearing along with a chart the author may be replacing.
@@ -4440,6 +4592,13 @@ export function pasteElements(cfg: CustomComplicationConfig, clip: LayerClip, op
       const chart = idMap.get(copy.payload.value.kind.layer);
       if (chart) copy.payload.value.kind.layer = chart;
       else if (!here.has(copy.payload.value.kind.layer)) continue;
+    }
+    // A times layer reads its chart the way a number does, and is dropped the
+    // same way when it would paste reading nothing.
+    if (copy.kind === "chartTimes") {
+      const chart = idMap.get(copy.payload.chart);
+      if (chart) copy.payload.chart = chart;
+      else if (!here.has(copy.payload.chart)) continue;
     }
     // A marker follows a copied chart onto the copy, stays on the original when
     // that original is still here, and stops being a marker when it is neither:
@@ -4821,6 +4980,7 @@ const SITE_KIND_WORD: Record<Element["kind"], string> = {
   shape: "shape",
   image: "picture",
   tap: "tap area",
+  chartTimes: "chart times",
 };
 
 function upperFirst(s: string): string {
@@ -5191,6 +5351,8 @@ export const RULE_TARGET_PROPERTIES: Record<RuleTarget, StyleProperty[]> = {
   shape: ["color", "opacity", "borderColor", "borderWidth", "rotation", "visibility"],
   image: ["opacity", "rotation", "visibility"],
   tap: ["visibility"],
+  // No colour, for the timeline's reason: the times carry their own.
+  chartTimes: ["opacity", "rotation", "visibility"],
   layout: ["backgroundColor", "borderColor", "borderWidth", "text"],
 };
 

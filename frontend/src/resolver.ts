@@ -36,6 +36,7 @@ import {
   type ChartElement,
   type ChartStat,
   type TimelineElement,
+  type ChartTimesElement,
   type TimelineHourCycle,
   type TimelineMinuteStyle,
   TIMELINE_HISTORY_POINTS,
@@ -82,7 +83,9 @@ import {
   chartGridColorHex,
   chartGridLines,
   chartPointDots,
-  chartSmoothingWindow,
+  chartSmoothing,
+  chartSmoothingWindowSize,
+  type ChartSmoothing,
   type ChartCurve,
   type ChartFillStyle,
   type ChartPointDots,
@@ -244,8 +247,8 @@ export interface ResolvedChart extends ResolvedBase {
   /** How line and area join their readings; see `chartLegs`. Carried for bars
    * too, which ignore it. */
   curve: ChartCurve;
-  /** The moving-average window `values` was already run through, 0 for none. */
-  smoothing: number;
+  /** The smoothing strength `values` was already run through, "off" for none. */
+  smoothing: ChartSmoothing | "off";
   /** How an area fills under its line. Carried for every style. */
   fillStyle: ChartFillStyle;
   /** The fill's own colour; absent fills in the series or band colour. */
@@ -363,6 +366,17 @@ export interface ResolvedTimeline extends ResolvedBase {
   labelsAbove: boolean;
 }
 
+/** A chart's clock times drawn as a layer of their own: the row the chart
+ * would print, at fractions of this layer's width, centred in its height.
+ * Empty when the linked chart is missing, is not a chart, or has no times to
+ * print. Mirrors `CustomComplication.ResolvedChartTimes` in the app repo. */
+export interface ResolvedChartTimes extends ResolvedBase {
+  kind: "chartTimes";
+  labels: TimelineLabel[];
+  labelSize: number;
+  labelColorHex: string;
+}
+
 /** One clock time under (or over) a timeline. `position` is a fraction of the
  * frame's width, 0 at the window's start and 1 at now. Mirrors
  * `ResolvedTimeline.Label` in the app repo. */
@@ -453,6 +467,21 @@ export function chartLabels(el: ChartElement, nowMs: number): TimelineLabel[] {
   );
 }
 
+/** The clock times a `chartTimes` layer prints: its chart's span, read the way
+ * the chart reads it, at the layer's own count, clock and minutes. Nothing
+ * when there is no chart or the chart has no times to give. Mirrors
+ * `chartTimesLabels` in the app repo. */
+export function chartTimesLabels(el: ChartTimesElement, chart: ChartElement | undefined, nowMs: number): TimelineLabel[] {
+  if (chart === undefined || !chartShowsTimeLabels(chart)) return [];
+  return timeLabels(
+    Math.round(chart.historyMinutes) * 60,
+    timeLabelPositions(clampTimeLabelCount(el.timeLabelCount)),
+    el.hourCycle,
+    el.minutes,
+    nowMs,
+  );
+}
+
 export interface ResolvedShape extends ResolvedBase {
   kind: "shape";
   shapeKind: ShapeKind;
@@ -498,7 +527,7 @@ export interface ResolvedTap extends ResolvedBase {
    * preview can leave an attached tap undrawn; the watch ignores it. */
   attachedTo?: string;
 }
-export type ResolvedElement = ResolvedText | ResolvedIcon | ResolvedGauge | ResolvedChart | ResolvedTimeline | ResolvedShape | ResolvedImage | ResolvedTap;
+export type ResolvedElement = ResolvedText | ResolvedIcon | ResolvedGauge | ResolvedChart | ResolvedTimeline | ResolvedShape | ResolvedImage | ResolvedTap | ResolvedChartTimes;
 
 export interface ResolvedBezelGauge {
   value: number;
@@ -1013,6 +1042,9 @@ export class Resolver {
    * when the resolver is built, and again by `resolveLayout`, so a text layer
    * or a rule that reads a chart's number finds the chart already decided. */
   private readonly charts = new Map<string, ChartReadings>();
+  /** The chart layers themselves, by id, settled with `charts`, so a
+   * `chartTimes` layer reads its chart's span whatever order the two sit in. */
+  private readonly chartElements = new Map<string, ChartElement>();
 
   constructor(private readonly ctx: ResolveContext, config?: CustomComplicationConfig) {
     this.named = new Map(ctx.namedValues.map((n) => [n.id.toUpperCase(), n.value]));
@@ -1074,7 +1106,7 @@ export class Resolver {
     // The average runs after the trim, so its window never reaches a reading
     // that is not drawn, and before anything else reads the series: the range,
     // highlights, bands, anchors and `chartStat` numbers all agree with the line.
-    return { values: chartMovingAverage(values, chartSmoothingWindow(c.smoothing), holes), holes };
+    return { values: chartSmoothed(values, chartSmoothing(c.smoothing), holes), holes };
   }
 
   /** The number a chart's entity is being tested at, when it is. */
@@ -1148,6 +1180,7 @@ export class Resolver {
       const entity = this.chartEntity(chart);
       if (entity) out.entity = entity;
       this.charts.set(id, out);
+      this.chartElements.set(id, chart);
     }
   }
 
@@ -1609,7 +1642,7 @@ export class Resolver {
           pointColorHexes,
           fillBands: c.fillBands,
           curve: c.curve ?? "straight",
-          smoothing: chartSmoothingWindow(c.smoothing),
+          smoothing: chartSmoothing(c.smoothing) ?? "off",
           fillStyle: chartFillStyle(c.fillStyle),
           ...(c.fillColorHex !== undefined ? { fillColorHex: c.fillColorHex } : {}),
           barRadius: chartBarRadius(c.barRadius),
@@ -1626,7 +1659,8 @@ export class Resolver {
           // the layer names an entity and a span, so a plot still fetching
           // prints them. The size is carried as written and clamped where it is
           // drawn, exactly as the timeline carries its own.
-          labels: chartLabels(c, this.nowMs()),
+          // A chart whose times are a layer prints none and keeps no row for them.
+          labels: c.drawsTimeLabels === false ? [] : chartLabels(c, this.nowMs()),
           labelSize: c.labelSize,
           labelColorHex: c.labelColorHex,
           labelsAbove: c.labelsAbove,
@@ -1721,6 +1755,17 @@ export class Resolver {
         };
         if (el.payload.openPageId !== undefined) out.openPageId = el.payload.openPageId;
         if (el.payload.attachedTo !== undefined) out.attachedTo = el.payload.attachedTo;
+        return out;
+      }
+      case "chartTimes": {
+        const t = el.payload;
+        const out: ResolvedChartTimes = {
+          kind: "chartTimes",
+          ...base,
+          labels: chartTimesLabels(t, this.chartElements.get(t.chart), this.nowMs()),
+          labelSize: t.labelSize,
+          labelColorHex: t.labelColorHex,
+        };
         return out;
       }
     }
@@ -1860,9 +1905,12 @@ export function frameBox(el: ResolvedElement, canvas: CanvasSize): Box {
   return { x: cx - w / 2, y: cy - h / 2, w, h, cx, cy };
 }
 
-/** Height of the band a chart reserves along its top for markers, in watch points.
- * Mirrors `CustomComplicationChartGeometry.markerHeight` in Swift. */
+/** Height of the band a chart reserves for a triangle marker, at the end that
+ * draws one, in watch points. Mirrors `CustomComplicationChartGeometry.markerHeight`
+ * in Swift. */
 const CHART_MARKER_BAND = 5;
+/** Radius of a highlight dot, the chart's own end-marker dot included. */
+export const CHART_HIGHLIGHT_DOT_RADIUS = 1.7;
 
 /** A reading's dot is this many line widths across. */
 export const CHART_DOT_SCALE = 1.8;
@@ -1894,10 +1942,9 @@ export function chartDrawsDots(
 export function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) {
   const values = el.values;
   const n = Math.max(values.length, 1);
-  // Room along the top only when a highlighted end actually draws a mark there.
-  const marks = (el.highIndex !== undefined && el.highMarker !== "none")
-    || (el.lowIndex !== undefined && el.lowMarker !== "none");
-  const band = marks ? CHART_MARKER_BAND : 0;
+  // What each end actually draws: nothing unless that end is highlighted.
+  const highMark = el.highIndex !== undefined ? el.highMarker : "none";
+  const lowMark = el.lowIndex !== undefined ? el.lowMarker : "none";
 
   // The plot takes the whole frame. A chart's numbers are text layers of their
   // own, so nothing here reserves room for them; the author resizes the chart.
@@ -1913,8 +1960,18 @@ export function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, b
   const drawsDots = chartDrawsDots(el.style, el.pointDots, values.length, plotW, lineInset, dotDiameter);
   const inset = drawsDots ? Math.max(lineInset, dotDiameter / 2) : lineInset;
 
-  const top = box.y + band + inset;
-  const height = Math.max(box.h - band - inset * 2, 1);
+  // An end marker takes only the room it needs to stay inside the frame, at its
+  // own end (highest along the top, lowest along the bottom). A dot sits on the
+  // plot's edge, so it needs its radius, which the stroke or dot inset may
+  // already give. A triangle keeps its own band beyond the inset.
+  const endInset = (mark: ChartEndMarker) => mark === "triangle"
+    ? CHART_MARKER_BAND + inset
+    : mark === "dot" ? Math.max(inset, CHART_HIGHLIGHT_DOT_RADIUS) : inset;
+  const topInset = endInset(highMark);
+  const bottomInset = endInset(lowMark);
+
+  const top = box.y + topInset;
+  const height = Math.max(box.h - topInset - bottomInset, 1);
   const bottom = top + height;
 
   const span = Math.max(el.domainMax - el.domainMin, Number.EPSILON);
@@ -1985,9 +2042,16 @@ export function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, b
         : plotX + plotW / 2;
       return { x, y: y(values[index]!) };
     },
-    markerCenter(index: number, bars: boolean) {
+    /** Where an end's marker is centred: a dot on the plot's edge at that end, a
+     * triangle in the middle of its band at that end. */
+    markerCenter(index: number, bars: boolean, end: "high" | "low" = "high") {
       const r = bars ? this.barRect(index) : undefined;
-      return { x: r ? r.x + r.w / 2 : this.point(index).x, y: box.y + band / 2 };
+      const x = r ? r.x + r.w / 2 : this.point(index).x;
+      const mark = end === "high" ? highMark : lowMark;
+      const y = end === "high"
+        ? (mark === "triangle" ? box.y + CHART_MARKER_BAND / 2 : top)
+        : (mark === "triangle" ? box.y + box.h - CHART_MARKER_BAND / 2 : bottom);
+      return { x, y };
     },
   };
 }
@@ -2077,27 +2141,33 @@ export function chartLegs(points: readonly ChartPoint[], curve: ChartCurve): Cha
   return legs;
 }
 
-/** A centred moving average over `window` readings (0 or 1 is off), shrinking
- * at the ends so no reading is dropped and every index still lines up.
- * Mirrors the averaging in `CustomComplication.chartSeries`.
+/** A centred, Gaussian-weighted average at a smoothing strength, the window
+ * scaling with the number of readings (`chartSmoothingWindowSize`) and shrinking
+ * at the ends so no reading is dropped and every index still lines up. Sigma is
+ * a quarter of the window. Mirrors the smoothing in `CustomComplication.chartSeries`,
+ * down to summing left to right so the two agree to the last digit.
  *
- * Written as an explicit sum and count so holes (gaps for unavailable) can be
- * skipped by leaving them out of both. */
-export function chartMovingAverage(values: number[], window: number, holes: readonly boolean[] = []): number[] {
-  if (window <= 1 || values.length === 0) return values;
+ * Holes (gaps for unavailable) are left out of both the weighted sum and the
+ * weights. */
+export function chartSmoothed(values: number[], smoothing: ChartSmoothing | undefined, holes: readonly boolean[] = []): number[] {
   const n = values.length;
+  const window = chartSmoothingWindowSize(n, smoothing);
+  if (window === 0) return values;
   const half = Math.floor(window / 2);
+  const sigma = half / 2;
   const isHole = (i: number) => holes[i] === true;
   const averaged = values.map((v, i) => {
     if (isHole(i)) return v;
     let sum = 0;
-    let count = 0;
+    let weights = 0;
     for (let j = Math.max(0, i - half); j <= Math.min(n - 1, i + half); j++) {
       if (isHole(j)) continue;
-      sum += values[j]!;
-      count += 1;
+      const d = j - i;
+      const w = Math.exp(-(d * d) / (2 * sigma * sigma));
+      sum += values[j]! * w;
+      weights += w;
     }
-    return sum / count;
+    return sum / weights;
   });
   // A hole stays a hole, re-carried from the averaged series: the previous
   // real output, or the first real output for leading holes. So a hole never
