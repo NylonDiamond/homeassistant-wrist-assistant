@@ -3026,6 +3026,20 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
   const setFrame = (patch: Partial<NormalizedFrame>, k: string) => host.update((c) => setPlacement(c, family, id, { frame: typedFrame(f, patch) }), `${key}-${k}-${family}`);
   const placeChanged = !same(f, CENTERED_FRAME) || eff.isHidden;
   const anchor = el.payload.chartAnchor;
+  // Dots and grid lines are drawn in their chart's box whatever their own frame
+  // says, so a frame to edit would be numbers that change nothing. Only Hidden
+  // means anything for them.
+  if (el.kind === "chartDots" || el.kind === "chartGrid") {
+    const chart = host.config.elements.find((e) => e.payload.id === el.payload.chart);
+    return card(host, "placement", "Position", html`
+      <div class="hint keep">${el.kind === "chartDots" ? "Dots sit" : "Grid lines sit"} on their chart, so they move,
+        size and turn with it. To change where they are, change the chart.</div>
+      ${chart ? html`<div class="field list-field"><span>Chart</span>
+        <div class="chips"><button class="small" @click=${() => host.selectLayer(chart.payload.id)}>Select the chart</button></div>
+      </div>` : nothing}
+      ${checkField("Hidden", eff.isHidden, (v) => host.update((c) => setPlacement(c, family, id, { isHidden: v })), false)}`,
+      { color: SECTION_COLOR.position, icon: "place", summary: `On the chart · ${familyTitle(family)}` });
+  }
   // The section id stays "placement": it is a stored key (openSections, and
   // the browser's own memory of which cards were open), not a label.
   return card(host, "placement", "Position", html`

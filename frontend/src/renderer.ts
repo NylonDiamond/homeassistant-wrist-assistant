@@ -843,20 +843,28 @@ function chartPlotFor(chart: ResolvedChart | undefined, box: Box) {
  * colour when it sets one, else the colour the series has at that reading. One
  * path per colour.
  */
-export function renderChartDots(el: Extract<ResolvedElement, { kind: "chartDots" }>, box: Box, chart: ResolvedChart | undefined) {
+export function renderChartDots(el: Extract<ResolvedElement, { kind: "chartDots" }>, box: Box, chart: ResolvedChart | undefined, selected = false) {
   const on = chartPlotFor(chart, box);
   if (el.indices.length === 0 || on === undefined) return nothing;
   const c = on.chart;
   const banded = c.pointColorHexes.length === c.values.length;
   const r = el.diameter / 2;
   const byColour = new Map<string, string>();
+  // A selected dots layer rings every dot: the layer's box is the chart's, so
+  // the usual dashed box would read as the chart being selected.
+  const ringR = r + 1.2;
+  let rings = "";
   for (const i of el.indices) {
     if (i >= c.values.length) continue;
     const p = on.g.point(i);
     const hex = el.colorHex ?? (banded ? c.pointColorHexes[i]! : c.colorHex);
     byColour.set(hex, `${byColour.get(hex) ?? ""}M${p.x - r} ${p.y} a${r} ${r} 0 1 0 ${2 * r} 0 a${r} ${r} 0 1 0 ${-2 * r} 0 Z`);
+    if (selected) rings += `M${p.x - ringR} ${p.y} a${ringR} ${ringR} 0 1 0 ${2 * ringR} 0 a${ringR} ${ringR} 0 1 0 ${-2 * ringR} 0 Z`;
   }
-  return svg`${[...byColour].map(([hex, d]) => {
+  const ringPath = selected && rings !== ""
+    ? svg`<path d=${rings} fill="none" stroke="#0A84FF" stroke-width="1" vector-effect="non-scaling-stroke" pointer-events="none" />`
+    : nothing;
+  return svg`${ringPath}${[...byColour].map(([hex, d]) => {
     const colour = colorAttrs(hex, "fill", c.colorHex);
     // The clear stroke widens each dot's click target past its drawn size; the
     // layer has no other hit box (see `renderElement`).
@@ -865,12 +873,18 @@ export function renderChartDots(el: Extract<ResolvedElement, { kind: "chartDots"
 }
 
 /** The chart's grid lines, solid, across its plot in its box. */
-export function renderChartGrid(el: Extract<ResolvedElement, { kind: "chartGrid" }>, box: Box, chart: ResolvedChart | undefined) {
+export function renderChartGrid(el: Extract<ResolvedElement, { kind: "chartGrid" }>, box: Box, chart: ResolvedChart | undefined, selected = false) {
   const on = chartPlotFor(chart, box);
   if (!el.draws || on === undefined) return nothing;
   const colour = parseColor(el.colorHex) ?? { color: "#FFFFFF", opacity: 0.2 };
-  return svg`${chartGridYs(on.g, el.lines).map((y) => svg`<path d=${`M${on.g.plotLeft} ${y} L${on.g.plotRight} ${y}`} fill="none"
-    stroke=${colour.color} stroke-opacity=${colour.opacity} stroke-width=${el.thickness} />`)}`;
+  const ys = chartGridYs(on.g, el.lines);
+  // Selected, each line gets a dashed blue copy over it, for the same reason the
+  // dots get rings: the layer's box is the chart's.
+  return svg`${ys.map((y) => svg`<path d=${`M${on.g.plotLeft} ${y} L${on.g.plotRight} ${y}`} fill="none"
+    stroke=${colour.color} stroke-opacity=${colour.opacity} stroke-width=${el.thickness} />`)}${selected
+    ? ys.map((y) => svg`<path d=${`M${on.g.plotLeft} ${y} L${on.g.plotRight} ${y}`} fill="none" stroke="#0A84FF"
+        stroke-width="1" stroke-dasharray="2 1" vector-effect="non-scaling-stroke" pointer-events="none" />`)
+    : nothing}`;
 }
 
 function renderShape(el: Extract<ResolvedElement, { kind: "shape" }>, box: Box) {
@@ -1193,8 +1207,8 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     case "chart": body = renderChart(el, box); break;
     case "timeline": body = renderTimeline(el, box); break;
     case "chartTimes": body = renderChartTimes(el, box); break;
-    case "chartDots": body = renderChartDots(el, box, charts.get(el.chart)); break;
-    case "chartGrid": body = renderChartGrid(el, box, charts.get(el.chart)); break;
+    case "chartDots": body = renderChartDots(el, box, charts.get(el.chart), options.highlightId === el.id || options.highlightIds?.includes(el.id) === true); break;
+    case "chartGrid": body = renderChartGrid(el, box, charts.get(el.chart), options.highlightId === el.id || options.highlightIds?.includes(el.id) === true); break;
     case "shape": body = renderShape(el, box); break;
     case "image": body = renderImage(el, box, options); break;
     case "tap": body = renderTap(el, box, options.icons, showTaps, labelled ? describeTapAction(el.action) : undefined); break;
@@ -1213,7 +1227,7 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
   // In the focus view only the focused tap is a thing you drag, so only it gets
   // the move cursor and the handles.
   const draggable = options.handles === true && (!inFocusView || focused) && !onChart;
-  const highlight = selected
+  const highlight = selected && !onChart
     ? svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} fill="none" stroke="#0A84FF" stroke-width="0.75" stroke-dasharray="2 1" vector-effect="non-scaling-stroke" />`
     : nothing;
   // Solid tint rather than the selection's dashes, so the two never read as the
