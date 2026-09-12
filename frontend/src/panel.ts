@@ -17,6 +17,8 @@ import {
   nudgeWatch,
   fetchWatchStatus,
   fetchHistorySeries,
+  collectSeriesResults,
+  type HistoryReadings,
   type HistorySeriesRequest,
   fetchStatisticsSeries,
   historySeriesRequest,
@@ -454,6 +456,8 @@ export class WristAssistantPanel extends LitElement {
   @state() private pages: { id: string; name: string }[] = [];
   @state() private templateResults = new Map<string, string>();
   @state() private historySeries = new Map<string, string>();
+  /** Every-reading fetches' counts, by the same key, from the same fetch. */
+  @state() private historyReadings = new Map<string, HistoryReadings>();
   @state() private templateError?: string;
   @state() private templateFetchedAt?: number;
   @state() private forced: ForcedBranches = new Map();
@@ -3253,6 +3257,7 @@ export class WristAssistantPanel extends LitElement {
       resolve: (v: Value) => resolver.resolve(v),
       canCountDown: (v: Value) => resolver.canCountDown(v),
       historySeries: (key: string) => this.historySeries.get(key),
+      historyReadings: (key: string) => this.historyReadings.get(key),
       evaluateTest: (t) => resolver.evaluateTest(t),
       liveBranch: (rule) => resolver.liveBranches([rule]).get(rule.id) ?? "none",
       forced: this.forced,
@@ -3557,6 +3562,7 @@ export class WristAssistantPanel extends LitElement {
     const wantedStats = cfg ? chartStatisticsRequests(cfg) : [];
     if (wanted.length === 0 && wantedStats.length === 0) {
       if (this.historySeries.size > 0) this.historySeries = new Map();
+      if (this.historyReadings.size > 0) this.historyReadings = new Map();
       return;
     }
     const requests: Record<string, HistorySeriesRequest> = {};
@@ -3576,11 +3582,9 @@ export class WristAssistantPanel extends LitElement {
       ]);
       // Rebuilt rather than merged, so a chart the author retargeted or deleted
       // stops answering with the entity it used to point at.
-      const next = new Map<string, string>();
-      for (const [key, result] of Object.entries({ ...results, ...statResults })) {
-        if (result.ok) next.set(key, result.series);
-      }
-      this.historySeries = next;
+      const next = collectSeriesResults({ ...results, ...statResults });
+      this.historySeries = next.series;
+      this.historyReadings = next.readings;
     } catch {
       // A failed fetch leaves the last series in place. The preview being one
       // refresh stale beats it blanking every time the recorder is busy.

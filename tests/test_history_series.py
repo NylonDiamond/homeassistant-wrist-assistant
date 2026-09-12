@@ -295,3 +295,54 @@ def test_gaps_off_is_unchanged():
     assert bucket_series(samples, START, END, 6) == [12, 12, 12, 12, 12, 13]
     assert bucket_series(samples, START, END, 6, outages=[]) == [12, 12, 12, 12, 12, 13]
     assert series_to_string([12.0, 12.0, 13.0]) == "12,12,13"
+
+
+every_reading_series = history_series.every_reading_series
+
+
+def test_every_reading_within_the_cap_is_every_reading():
+    samples = [(at(i * 3), float(i)) for i in range(120)]
+    values, readings, averaged = every_reading_series(samples, START, END)
+    assert values == raw_series(samples)
+    assert len(values) == 120
+    assert (readings, averaged) == (120, False)
+
+
+def test_every_reading_counts_the_anchor_toward_the_cap():
+    fits = [(at(i * 3), float(i)) for i in range(119)]
+    values, readings, averaged = every_reading_series(fits, START, END, anchor=-1.0)
+    assert values == [-1.0] + [float(i) for i in range(119)]
+    assert (readings, averaged) == (120, False)
+
+    over = [(at(i * 3), float(i)) for i in range(120)]
+    values, readings, averaged = every_reading_series(over, START, END, anchor=-1.0)
+    assert (readings, averaged) == (121, True)
+    assert values == bucket_series(over, START, END, 120, anchor=-1.0)
+
+
+def test_every_reading_past_the_cap_averages_the_whole_span():
+    # 514 readings across six hours: keeping the newest 120 would draw only
+    # the last 84 minutes. The averaged series starts at the window's start.
+    samples = [(START + timedelta(seconds=i * 42), float(i)) for i in range(514)]
+    values, readings, averaged = every_reading_series(samples, START, END, anchor=5.0)
+    assert (readings, averaged) == (515, True)
+    assert values == bucket_series(samples, START, END, 120, anchor=5.0)
+    assert len(values) == 120
+    assert values[0] < 10  # the oldest readings, not the newest 120
+    assert values[-1] > 500
+
+
+def test_every_reading_ignores_gaps_unless_it_falls_back():
+    outages = [(at(300), END)]
+    few = [(at(10), 1.0), (at(100), 2.0)]
+    values, _, averaged = every_reading_series(few, START, END, anchor=0.5, outages=outages)
+    assert averaged is False
+    assert values == [0.5, 1.0, 2.0]
+
+    many = [(at(i * 2), float(i)) for i in range(150)]  # all before minute 300
+    values, _, averaged = every_reading_series(many, START, END, outages=outages)
+    assert averaged is True
+    assert values == bucket_series(many, START, END, 120, outages=outages)
+    assert values[-1] is None and None in values
+    plain, _, _ = every_reading_series(many, START, END)
+    assert None not in plain

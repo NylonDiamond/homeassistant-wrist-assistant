@@ -262,6 +262,10 @@ export interface EditorHost {
   /** The fetched recorder series for one chart's history query, by
    * `chartHistoryKey`. Undefined while the fetch is still out. */
   historySeries(key: string): string | undefined;
+  /** What the latest every-reading fetch for that key reported: how many
+   * readings the span held and whether the server averaged them. Undefined
+   * for any other fetch, or while it is still out. */
+  historyReadings?(key: string): import("./ha-api.js").HistoryReadings | undefined;
   /** Live result of one rule test. */
   evaluateTest(test: import("./model.js").Test): boolean;
   /** Which branch a rule takes live: a case id, "otherwise", or "none". */
@@ -2815,6 +2819,21 @@ function historySpanLabel(
   return `Last ${parts.join(" ")}`;
 }
 
+/** The note under Points when an every-reading chart's span held more
+ * readings than the server keeps, so it averaged the whole span instead.
+ * Undefined when the chart averages anyway, the fetch has not reported, or
+ * every reading fit. `spanLabel` is the picker's own ("Last 6 hours"). */
+export function everyReadingAveragedHint(
+  everyReading: boolean,
+  info: { readings: number; averaged: boolean } | undefined,
+  spanLabel: string,
+): string | undefined {
+  if (!everyReading || info === undefined || !info.averaged) return undefined;
+  const rest = spanLabel.replace(/^Last\s+/, "");
+  const cover = /^\d/.test(rest) ? `all ${rest}` : `the whole ${rest}`;
+  return `This span has ${info.readings} readings, more than ${CHART_HISTORY_MAX_POINTS}, so they are averaged into ${CHART_HISTORY_MAX_POINTS} even slots to cover ${cover}.`;
+}
+
 /** Layers whose Span picker is on "Custom…" right now. Picking Custom is not
  * a change to the document, so it lives here rather than in the config; a
  * stored span the picker does not list counts as custom on its own. */
@@ -3865,6 +3884,10 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
       // own value, which is what the watch does too (both gates need an entity).
       const raw = usingRecorder && namesEntity ? (historyRaw ?? "") : (host.resolve(c.value) ?? "");
       const everyReading = c.historyPoints < 1;
+      const readingsInfo = usingHistory && namesEntity && seriesKey !== undefined
+        ? host.historyReadings?.(seriesKey)
+        : undefined;
+      const averagedHint = everyReadingAveragedHint(everyReading, readingsInfo, historySpanLabel(c.historyMinutes));
       const customSpan = spanIsCustom(id, c.historyMinutes, spans);
       // A fetched series keeps its holes, exactly as the resolver reads it.
       const parsed = usingRecorder && namesEntity
@@ -3982,12 +4005,14 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               ? historySpanCustomFields(c.historyMinutes, (m) => setChart((p) => { p.historyMinutes = m; }, "span"))
               : nothing}
             <div class="hint">${everyReading
-              ? html`Every state the recorder holds in that span, oldest first, one reading per change,
-                  and a chatty sensor keeps its newest ${CHART_HISTORY_MAX_POINTS}. The time axis follows
-                  the changes, so a quiet hour draws narrower than a busy one.`
+              ? html`Every state the recorder holds in that span, oldest first, one reading per change.
+                  The time axis follows the changes, so a quiet hour draws narrower than a busy one.
+                  A span with more than ${CHART_HISTORY_MAX_POINTS} readings is averaged into
+                  ${CHART_HISTORY_MAX_POINTS} even slots instead, so the chart still covers all of it.`
               : html`Home Assistant averages the recorded states into this many equal time slots,
                   oldest first. About 20 suits a rectangular complication; more than that draws bars
                   thinner than the screen can show.`}</div>
+            ${averagedHint === undefined ? nothing : html`<div class="hint keep">${averagedHint}</div>`}
             ${namesEntity && historyRaw === undefined
               ? html`<div class="hint keep">Reading the history…</div>`
               : nothing}

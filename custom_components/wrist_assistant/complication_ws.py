@@ -68,7 +68,7 @@ from .history_series import (
     MODE_NUMERIC,
     MODE_STATES,
     HistorySeriesError,
-    async_history_series,
+    async_history_series_detail,
     normalize_mode,
 )
 from .statistics_series import (
@@ -765,6 +765,11 @@ async def ws_history_series(
     Keys are the caller's own; the reply mirrors them. Each resolves
     independently, so one entity with no recorder coverage does not blank the
     other charts: ``{key: {ok, series}}`` or ``{key: {ok: false, error}}``.
+
+    A numeric every-reading request (``points`` 0) also gets ``readings``, the
+    count found in the span, and ``averaged``, true when there were more than
+    fit and the server averaged the span instead. The editor explains the
+    averaging from these; the watch's signed reply never carries them.
     """
     results: dict[str, dict[str, Any]] = {}
     for key, request in msg["requests"].items():
@@ -773,7 +778,7 @@ async def ws_history_series(
             results[key] = {"ok": False, "error": "entity_id required"}
             continue
         try:
-            series = await async_history_series(
+            fetched = await async_history_series_detail(
                 hass,
                 entity_id,
                 request["minutes"],
@@ -784,7 +789,11 @@ async def ws_history_series(
         except HistorySeriesError as err:
             results[key] = {"ok": False, "error": str(err)}
             continue
-        results[key] = {"ok": True, "series": series}
+        result: dict[str, Any] = {"ok": True, "series": fetched.series}
+        if fetched.readings is not None:
+            result["readings"] = fetched.readings
+            result["averaged"] = bool(fetched.averaged)
+        results[key] = result
     connection.send_result(msg["id"], {"results": results})
 
 

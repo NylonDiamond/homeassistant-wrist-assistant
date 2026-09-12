@@ -268,9 +268,38 @@ export function statisticsSeriesRequest(r: { entityId: string; minutes: number; 
   };
 }
 
+/** `readings` and `averaged` arrive only for a numeric every-reading request
+ * (`points` 0): the count found in the span, and whether there were more than
+ * the server keeps, so it averaged the whole span instead. */
 export type HistorySeriesResult =
-  | { ok: true; series: string }
+  | { ok: true; series: string; readings?: number; averaged?: boolean }
   | { ok: false; error: string };
+
+/** What the server said about an every-reading fetch. */
+export interface HistoryReadings {
+  readings: number;
+  averaged: boolean;
+}
+
+/** Folds command results into the series Map the resolver reads and the
+ * readings Map the chart editor explains averaging from. Failed keys land in
+ * neither, and a result without `readings` (averaged mode, a timeline, a
+ * statistics row, an older server) lands only in the series. */
+export function collectSeriesResults(results: Record<string, HistorySeriesResult>): {
+  series: Map<string, string>;
+  readings: Map<string, HistoryReadings>;
+} {
+  const series = new Map<string, string>();
+  const readings = new Map<string, HistoryReadings>();
+  for (const [key, result] of Object.entries(results)) {
+    if (!result.ok) continue;
+    series.set(key, result.series);
+    if (typeof result.readings === "number") {
+      readings.set(key, { readings: result.readings, averaged: result.averaged === true });
+    }
+  }
+  return { series, readings };
+}
 
 /** One long-term statistics series per request key, for the preview's charts.
  *

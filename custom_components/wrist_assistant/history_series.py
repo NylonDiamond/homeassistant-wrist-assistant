@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 from functools import partial
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import quote
 
 # Home Assistant is imported for types only, and the runtime imports live inside
@@ -34,7 +34,9 @@ _LOGGER = logging.getLogger(__name__)
 #
 # A point count of `EVERY_READING` asks for the recorded states themselves, one
 # reading per state change, instead of an average per time slot. The same cap
-# applies: a chatty sensor keeps its newest `MAX_POINTS` readings.
+# applies, but a span with more readings than `MAX_POINTS` is averaged into
+# `MAX_POINTS` slots rather than cut to its newest, so the chart still covers
+# the whole span the author picked. See `every_reading_series`.
 EVERY_READING = 0
 MIN_POINTS = 2
 MAX_POINTS = 120
@@ -236,6 +238,9 @@ def raw_series(
     it would come back empty; an empty series does not blank a complication,
     it leaves the stale drawing on the wrist. Being the oldest, it is also the
     first thing the `limit` sheds.
+
+    The server's every-reading path never reaches the `limit`: it goes through
+    `every_reading_series`, which averages instead once there are too many.
     """
     if limit < 1:
         return []
@@ -243,6 +248,30 @@ def raw_series(
     if anchor is not None:
         values.insert(0, anchor)
     return values[-limit:]
+
+
+def every_reading_series(
+    samples: list[tuple[datetime, float]],
+    start: datetime,
+    end: datetime,
+    anchor: float | None = None,
+    outages: list[tuple[datetime, datetime]] | None = None,
+    limit: int = MAX_POINTS,
+) -> tuple[list[float | None], int, bool]:
+    """Every reading when they fit, the averaged span when they do not.
+
+    Returns `(values, readings, averaged)`. `readings` counts the samples plus
+    the anchor, exactly what `raw_series` would return uncapped. When that fits
+    in `limit` the values are `raw_series` and `outages` is ignored, as
+    every-reading mode always has. Past it, keeping the newest `limit` would
+    quietly shrink a six-hour chart to its last hour, so the whole span is
+    averaged into `limit` slots instead: `bucket_series` with the same anchor
+    and, when the caller asked for gaps, the same holes.
+    """
+    readings = len(samples) + (0 if anchor is None else 1)
+    if readings <= limit:
+        return list(raw_series(samples, limit, anchor)), readings, False
+    return bucket_series(samples, start, end, limit, anchor, outages), readings, True
 
 
 def series_to_string(values: list[float | None]) -> str:
@@ -321,6 +350,19 @@ def states_to_string(pairs: list[tuple[int, str]]) -> str:
     return " ".join(f"{offset}:{quote(state, safe='')}" for offset, state in pairs)
 
 
+class HistorySeries(NamedTuple):
+    """One fetched series and, in every-reading mode, how it was produced.
+
+    `readings` and `averaged` are None outside numeric every-reading mode.
+    Only the panel's websocket command reports them; the watch's signed reply
+    carries the string alone.
+    """
+
+    series: str
+    readings: int | None = None
+    averaged: bool | None = None
+
+
 async def async_history_series(
     hass: HomeAssistant,
     entity_id: str,
@@ -332,13 +374,34 @@ async def async_history_series(
 ) -> str:
     """Fetch one entity's recent history. Returns the wire string.
 
-    `gaps` only affects bucketed numeric mode: slots spent entirely
-    `unavailable` or `unknown` come back as empty tokens instead of carrying
-    the last value forward. See `bucket_series`.
+    See `async_history_series_detail`, which this wraps.
+    """
+    result = await async_history_series_detail(
+        hass, entity_id, minutes, points, now=now, mode=mode, gaps=gaps
+    )
+    return result.series
+
+
+async def async_history_series_detail(
+    hass: HomeAssistant,
+    entity_id: str,
+    minutes: int,
+    points: int,
+    now: datetime | None = None,
+    mode: str = MODE_NUMERIC,
+    gaps: bool = False,
+) -> HistorySeries:
+    """Fetch one entity's recent history, with how the series was produced.
+
+    `gaps` affects bucketed numeric mode: slots spent entirely `unavailable`
+    or `unknown` come back as empty tokens instead of carrying the last value
+    forward. See `bucket_series`.
 
     In `numeric` mode the states are read as numbers and bucketed: `points` of
     `EVERY_READING` skips the bucketing and returns the recorded readings
-    themselves, newest `MAX_POINTS` of them. Both paths keep the pre-window
+    themselves while they fit in `MAX_POINTS`. A span with more is averaged
+    into `MAX_POINTS` slots instead (gaps included), so the chart still covers
+    the whole span; see `every_reading_series`. Both paths keep the pre-window
     anchor reading, so a sensor that did not change inside the window still
     draws a line rather than nothing.
 
@@ -403,7 +466,7 @@ async def async_history_series(
                 anchor_state = text
                 continue
             changes.append((when, text))
-        return states_to_string(state_pairs(changes, start, anchor_state))
+        return HistorySeries(states_to_string(state_pairs(changes, start, anchor_state)))
 
     anchor: float | None = None
     samples: list[tuple[datetime, float]] = []
@@ -425,9 +488,12 @@ async def async_history_series(
             continue
         samples.append((when, value))
 
-    if points == EVERY_READING:
-        return series_to_string(raw_series(samples, anchor=anchor))
     outages = outage_intervals(recorded, start, end) if gaps else None
-    return series_to_string(
-        bucket_series(samples, start, end, points, anchor, outages)
+    if points == EVERY_READING:
+        values, readings, averaged = every_reading_series(
+            samples, start, end, anchor, outages
+        )
+        return HistorySeries(series_to_string(values), readings, averaged)
+    return HistorySeries(
+        series_to_string(bucket_series(samples, start, end, points, anchor, outages))
     )

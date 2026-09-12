@@ -1034,7 +1034,8 @@ export const CHART_STATISTICS_MAX_MINUTES = 366 * 24 * 60;
 export const CHART_HISTORY_MIN_POINTS = 2;
 export const CHART_HISTORY_MAX_POINTS = 120;
 /** `historyPoints` meaning "every recorded reading, no averaging". The server
- * returns the states themselves, newest `CHART_HISTORY_MAX_POINTS` kept. */
+ * returns the states themselves while they fit in `CHART_HISTORY_MAX_POINTS`,
+ * and averages the whole span into that many slots when there are more. */
 export const CHART_HISTORY_EVERY_READING = 0;
 
 /** Clamped point count. Mirrors `resolvedHistoryPoints` in Swift, and the
