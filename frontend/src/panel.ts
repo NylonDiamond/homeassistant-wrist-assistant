@@ -349,6 +349,17 @@ const clampColumn = (n: number) => Math.max(COL_MIN, Math.min(COL_MAX, Math.roun
  * Ctrl everywhere else. Shift keeps working too, since it did before.
  */
 const isMultiKey = (e: MouseEvent | PointerEvent) => e.metaKey || e.ctrlKey || e.shiftKey;
+
+/** Whether a press lands inside a layer's hit box on the preview, whatever is
+ * drawn over it. The hit box is the first child of the layer's group and carries
+ * its rotation, so its on-screen bounds are the box the author sees dashed. */
+function pressInsideLayer(svg: SVGSVGElement, id: string, e: PointerEvent): boolean {
+  const g = svg.querySelector(`g[data-element-id="${CSS.escape(id)}"]`);
+  const hit = g?.firstElementChild;
+  if (!hit || hit.tagName.toLowerCase() !== "rect") return false;
+  const r = hit.getBoundingClientRect();
+  return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+}
 /** Input types that hold no text, so nothing is lost by letting the panel's
  * own shortcuts through while one of them has the focus. */
 const NON_TEXT_INPUTS = /^(range|checkbox|radio|color|button|submit|reset|file|image)$/;
@@ -3918,13 +3929,29 @@ export class WristAssistantPanel extends LitElement {
     // An attached tap sits exactly over its owner and is not a layer the user
     // ever selects or drags: send the hit to the layer it belongs to, which is
     // what the author sees there. A free-standing tap is grabbed as before.
-    const id = selectableLayerId(this.draft.config, hitId);
-    const el = this.draft.config.elements.find((x) => x.payload.id === id);
+    let id = selectableLayerId(this.draft.config, hitId);
+    let el = this.draft.config.elements.find((x) => x.payload.id === id);
     if (!id || !el) return;
     if (multiKey) {
       e.preventDefault();
       this.togglePick(id);
       return;
+    }
+    // The selected layer wins a press inside its own box, even where another
+    // layer draws over it, so a layer picked from the list can be dragged out
+    // from under the one on top. A press that never moves still selects the
+    // top layer on release, so clicking a number on a selected chart works.
+    let pickOnClick: string | undefined;
+    const selectedId = this.inspect.kind === "layer" ? this.inspect.id : undefined;
+    if (selectedId !== undefined && selectedId !== id && !handle && !onChip) {
+      const selected = this.draft.config.elements.find((x) => x.payload.id === selectedId);
+      const movable = selected !== undefined && selected.kind !== "chartDots" && selected.kind !== "chartGrid"
+        && selected.payload.chartAnchor?.place !== "through" && groupOf(this.draft.config, selectedId)?.locked !== true;
+      if (movable && pressInsideLayer(svg, selectedId, e)) {
+        pickOnClick = id;
+        id = selectedId;
+        el = selected;
+      }
     }
     // A locked group moves as one: a press on any member grabs all of them,
     // and selects the group. Its corners stay with the member selected from
@@ -4028,8 +4055,15 @@ export class WristAssistantPanel extends LitElement {
     // Points, to the tenth: a nudge is an offset on the plot, not a place on the face.
     const round = (n: number) => Math.round(n * 10) / 10;
     this.cancelGesture?.();
+    let moved = false;
     this.cancelGesture = beginGesture(svg, canvas, e, { elementId: id, frame: start, handle: handle ?? undefined }, {
       onFrame: (elementId: string, f: NormalizedFrame, done: boolean) => {
+        if (!done) moved = true;
+        if (done && !moved && pickOnClick !== undefined) {
+          this.inspect = { kind: "layer", id: pickOnClick };
+          this.cancelGesture = undefined;
+          return;
+        }
         this.mutate((c) => {
           if (anchor === undefined) {
             setPlacement(c, family, elementId, { frame: f });
@@ -4134,6 +4168,23 @@ export class WristAssistantPanel extends LitElement {
       return this.nudgeMany(groupMembers(cfg, group.id).map((m) => m.payload.id), family, box, `nudge-group-${group.id}-${family}`, px, py);
     }
     const frame = effectivePlacement(cfg, family, el).frame;
+    // A chart marker is drawn where its anchor says, whatever its frame says, so
+    // the arrows move it the way a drag does: up and down change its nudge, and
+    // sideways moves its own X only beside a threshold or zero, where the reading
+    // does not settle X. Above a column, sideways does nothing.
+    const anchor = el.payload.chartAnchor;
+    if (anchor !== undefined) {
+      const ownsX = !chartAnchorIsColumn(anchor.at);
+      if (py === 0 && !(ownsX && px !== 0)) return true;
+      this.mutate((c) => {
+        if (ownsX && px !== 0) setPlacement(c, family, id, { frame: nudgeFrame(frame, px, 0, box) });
+        const a = c.elements.find((x) => x.payload.id === id)?.payload.chartAnchor;
+        if (a === undefined || py === 0) return;
+        const dy = Math.round(((a.dy ?? 0) + py) * 10) / 10;
+        if (dy) a.dy = dy; else delete a.dy;
+      }, `nudge-${id}-${family}`);
+      return true;
+    }
     const next = nudgeFrame(frame, px, py, box);
     // At the edge of the face the clamp gives the frame back unchanged. The key
     // is still ours (the page must not scroll under a nudge), but there is
