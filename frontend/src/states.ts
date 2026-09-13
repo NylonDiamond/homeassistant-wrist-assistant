@@ -303,6 +303,22 @@ export function statesSummary(rules: Rule[]): string {
   return n === 1 ? "1 state." : `${n} states.`;
 }
 
+/** The table's empty state, for a layer or a layout's shape. */
+export function statesEmptyText(target: string): string {
+  return `No states yet. This ${target === "layout" ? "shape" : "layer"} looks the same whatever the value is.`;
+}
+
+/** The line beside each add control under the table, so each one says what it
+ * adds in the table's own words: a state is a row with a When, Otherwise is the
+ * row for no match, and every other setting is a column. */
+export function statesAddNotes(target: string): { state: string; otherwise: string; column: string } {
+  return {
+    state: `When the value matches, change how this ${target === "layout" ? "shape" : "layer"} looks.`,
+    otherwise: "The look when no state above matches.",
+    column: "Adds a column, so every state can change it.",
+  };
+}
+
 // ── editing ───────────────────────────────────────────────────────────────
 // The table edits the live `Rule[]` a layer already holds rather than
 // recompiling one from a model, so ids stay put, undo sees one step per edit,
