@@ -4680,8 +4680,15 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
   // Every card's reset is one update, so one Undo takes the whole card back.
   const resetKeys = (keys: readonly string[], k: string) => () => upd((e) => restoreKeys(e.payload, base, keys), k);
 
+  // The layer's own name, as on a group card. Empty shows the automatic title
+  // as the placeholder, and saves no name at all.
+  const nameRow = textField("Name", el.payload.name ?? "", (v) => upd((e) => {
+    const name = typedLayerName(v);
+    if (name === undefined) delete e.payload.name; else e.payload.name = name;
+  }, "name"), { placeholder: autoLayerTitle(el, describeContext(host)) });
+
   return html`
-    ${card(host, "content", "Content", html`${el.kind === "tap" || el.kind === "text" || el.kind === "chartTimes" || el.kind === "chartDots" || el.kind === "chartGrid" || el.kind === "imageTime" ? nothing : layerEntityField(host, el, key)}${content}`,
+    ${card(host, "content", "Content", html`${nameRow}${el.kind === "tap" || el.kind === "text" || el.kind === "chartTimes" || el.kind === "chartDots" || el.kind === "chartGrid" || el.kind === "imageTime" ? nothing : layerEntityField(host, el, key)}${content}`,
       { color: SECTION_COLOR.content, icon: "content", summary: contentSummary(host, el),
         ...(contentChanged ? { reset: () => upd((e) => {
           restoreKeys(e.payload, base, contentKeys);
@@ -5279,6 +5286,20 @@ function markerGlyph(symbol: string | undefined): string {
 export function layerTitle(el: CElement, ctx?: DescribeContext): string {
   // A name the author or the editor gave the layer wins over anything derived.
   if (el.payload.name) return el.payload.name;
+  return autoLayerTitle(el, ctx);
+}
+
+/** What a typed layer name saves as: trimmed, and nothing at all when blank,
+ * so an emptied Name box goes back to the automatic title instead of
+ * saving an empty name. */
+export function typedLayerName(raw: string): string | undefined {
+  const name = raw.trim();
+  return name === "" ? undefined : name;
+}
+
+/** The title a layer gets from its content, whatever its name. The Name box
+ * shows it as its placeholder. */
+export function autoLayerTitle(el: CElement, ctx?: DescribeContext): string {
   // A chart extra is named for what it marks. Its own content is a glyph or a
   // bare line, which says nothing in a list of five of them.
   const anchor = el.payload.chartAnchor;

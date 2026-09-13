@@ -18,7 +18,7 @@ import {
   pasteElements,
   type Element,
 } from "../src/model.js";
-import { layerTitle } from "../src/editors.js";
+import { autoLayerTitle, layerTitle, typedLayerName } from "../src/editors.js";
 
 function chartConfig() {
   const cfg = newConfig("Series", 0);
@@ -39,6 +39,20 @@ describe("layer name", () => {
     expect(layerTitle(chart)).toBe("Voltage");
     chart.payload.name = "";
     expect(layerTitle(chart)).toBe(derived);
+  });
+
+  it("saves a typed name trimmed, and a blank one as no name", () => {
+    expect(typedLayerName("  Voltage 2 ")).toBe("Voltage 2");
+    expect(typedLayerName("Voltage ")).toBe("Voltage");
+    expect(typedLayerName("   ")).toBeUndefined();
+    expect(typedLayerName("")).toBeUndefined();
+  });
+
+  it("keeps the automatic title for the placeholder while a name is set", () => {
+    const { chart } = chartConfig();
+    const derived = layerTitle(chart);
+    chart.payload.name = "Voltage";
+    expect(autoLayerTitle(chart)).toBe(derived);
   });
 
   it("round-trips through the wire and is a known key", () => {
