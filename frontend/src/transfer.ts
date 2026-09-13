@@ -206,6 +206,9 @@ export function exportText(
   const encoded = encodeConfig(doc);
   delete encoded.id;
   delete encoded.slotIndex;
+  // Hiding is about the author's own watch picker. A backup keeps it, since it
+  // is a record of this copy; a share does not.
+  if (mode === "share") delete encoded.hidden;
   // Derived on save. Exporting it would ship a stale answer to a question the
   // reader's own save re-answers correctly.
   encoded.dataSources = [];
@@ -289,6 +292,9 @@ export function parseImportText(text: string, maxSchemaVersion: number): ImportP
     const detail = err instanceof ConfigParseError || err instanceof Error ? err.message : String(err);
     return { ok: false, error: `${DECODE_FAILED}\n\n${readableParseFailure(detail)}` };
   }
+  // An imported complication starts shown, even from a backup of a hidden one:
+  // nobody expects a design they just brought in to be missing from the watch.
+  delete config.hidden;
 
   const unknown = auditUnknownKeys(object);
   if (unknown.length > 0) {

@@ -74,6 +74,9 @@ _OPTIONAL_DOCUMENT_KEYS: dict[str, type | tuple[type, ...]] = {
     "openPageName": str,
     "showSuccessFlash": bool,
     "successFlashColorHex": str,
+    # Kept out of the watch's complication picker; a face already using it
+    # keeps drawing it. Writers omit the key when shown.
+    "hidden": bool,
     # The Inline shape's text; present exactly when supportedFamilies has "inline".
     "inline": dict,
 }

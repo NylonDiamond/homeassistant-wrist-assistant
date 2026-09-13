@@ -106,7 +106,11 @@ import { Draft, draftStatus } from "./draft.js";
 import { ScrollFades } from "./scroll-fade.js";
 import { statesSummary } from "./states.js";
 import { uiIcon } from "./ui-icons.js";
-import { loadHidden, pickerStorage, saveHidden, splitHidden, toggleHidden } from "./picker-hidden.js";
+import { isHiddenDocument, splitHidden, withHidden } from "./model.js";
+
+/** Where an older panel kept hidden picker rows, per watch, in this browser.
+ * The flag lives on the document now; the old keys are cleared once on load. */
+const LEGACY_PICKER_HIDDEN_PREFIX = "wrist-assistant-panel.picker-hidden.v1:";
 import { addPreview } from "./add-previews.js";
 import { GRID_STEPS, NUDGE_COARSE, beginGesture, beginPointDrag, beginScaleDrag, gridFor, gridNudgeFrame, nudgeFrame, nudgePoint, type Grid, type HandleCorner } from "./interact.js";
 import {
@@ -503,9 +507,6 @@ export class WristAssistantPanel extends LitElement {
   /** The slot of the locked picker row whose explanation is unfolded. A tap
    * shows it inline because a hover title never appears on a touch screen. */
   @state() private pickerNote?: number;
-  /** Complications hidden from the picker on this watch, kept in this browser
-   * only. The watch never hears of it. */
-  @state() private pickerHidden: Set<string> = new Set();
   /** Whether the picker's Hidden section is unfolded. */
   @state() private pickerHiddenOpen = false;
   /** The picker row asking "Really delete", by record id. */
@@ -2811,6 +2812,7 @@ export class WristAssistantPanel extends LitElement {
 
   override connectedCallback() {
     super.connectedCallback();
+    this.clearLegacyPickerHidden();
     this.loadColumnWidths();
     this.loadListView();
     this.loadGrid();
@@ -3332,7 +3334,6 @@ export class WristAssistantPanel extends LitElement {
       return;
     }
     this.ownerId = ownerId;
-    this.pickerHidden = loadHidden(pickerStorage(), ownerId);
     this.pickerConfirmDelete = undefined;
     this.selectedId = undefined;
     this.moveTarget = undefined;
@@ -3878,7 +3879,6 @@ export class WristAssistantPanel extends LitElement {
         this.clearDraft();
         this.selectedId = undefined;
       }
-      if (this.pickerHidden.has(id)) this.setPickerHidden(id);
       await this.loadRecords();
     } catch (err) {
       this.saveError = errText(err);
@@ -4244,6 +4244,7 @@ export class WristAssistantPanel extends LitElement {
       ["Save", `Writes the complication to Home Assistant (${m}S). A new one says Save new until then. Only an administrator can save.`],
       ["The dot", "Beside Save: unsaved changes, saved, or not saved yet. The footer says the same in words."],
       ["Reaching the watch", "The watch pulls saved changes by itself while Wrist Assistant is open on this home. There is no separate send step."],
+      ["Hide", "The eye beside a complication in the list. It stops the watch offering that complication when you edit a face, and faces already using it keep it. Hidden ones fold into Hidden at the bottom of the list. For the open complication it saves with Save; for any other it saves at once."],
     ];
     const status: [string, string][] = [
       ["On watch", "The watch has applied every change. With last seen beside it, the watch is not listening now, so a later save waits until the app is open again."],
@@ -4956,7 +4957,7 @@ export class WristAssistantPanel extends LitElement {
       : all.filter((row) => (row.kind === "record" ? familiesOf(row.record) : row.families).includes(filter));
     // Hidden rows go to a folded section at the bottom. The open complication
     // never does, so it can always be picked again.
-    const split = splitHidden(rows, (row) => (row.kind === "record" ? row.record.id : undefined), this.pickerHidden, this.selectedId);
+    const split = splitHidden(rows, (row) => (row.kind === "record" ? { id: row.record.id, hidden: this.rowHidden(row.record) } : undefined), this.selectedId);
     // The revision is not shown here: it meant nothing to anyone reading the
     // list. The inspector's summary still carries it.
     return html`<div class="picker">
@@ -4998,11 +4999,13 @@ export class WristAssistantPanel extends LitElement {
     }
     const record = row.record;
     const open = record.id === this.selectedId;
-    const hidden = this.pickerHidden.has(record.id);
+    const hidden = this.rowHidden(record);
     const recName = String(record.document?.name ?? "Untitled");
     // The open complication goes through the inspector's own Delete, so an
-    // unsaved draft and a conflict behave the same from either place.
+    // unsaved draft and a conflict behave the same from either place. Hide
+    // follows the same split: the open one through its draft, others at once.
     const mayDelete = open ? this.canEdit : !!this.hass.user?.is_admin;
+    const mayHide = mayDelete;
     const confirming = this.pickerConfirmDelete === record.id;
     const stop = (e: Event) => e.stopPropagation();
     return html`<div class="row rec ${hidden ? "dim" : ""}" aria-current=${open ? "true" : "false"}>
@@ -5017,21 +5020,78 @@ export class WristAssistantPanel extends LitElement {
           ? html`<button type="button" class="ghost danger small" ?disabled=${this.saving}
               @click=${(e: Event) => { stop(e); void (open ? this.deleteCurrent() : this.deleteSaved(record.id, record.revision)); }}>Really delete</button>
             <button type="button" class="ghost small" @click=${(e: Event) => { stop(e); this.pickerConfirmDelete = undefined; }}>Cancel</button>`
-          : html`<button type="button" class="icon" title=${hidden ? "Show in this list" : "Hide from this list. The watch is not changed."}
-              aria-label=${hidden ? `Show ${recName} in the list` : `Hide ${recName} from the list`}
-              @click=${(e: Event) => { stop(e); this.setPickerHidden(record.id); }}>${uiIcon(hidden ? "hide" : "show")}</button>
+          : html`${mayHide ? html`<button type="button" class="icon" ?disabled=${!open && this.saving}
+              title=${hidden
+                ? "Hidden from the watch's complication list. Show it there again."
+                : "Hide from the watch's complication list. Faces already using it keep it."}
+              aria-label=${hidden ? `Show ${recName} in the watch's complication list` : `Hide ${recName} from the watch's complication list`}
+              @click=${(e: Event) => { stop(e); void this.setPickerHidden(record, !hidden); }}>${uiIcon(hidden ? "hide" : "show")}</button>` : nothing}
             ${mayDelete ? html`<button type="button" class="icon danger" title="Delete this complication" aria-label=${`Delete ${recName}`}
               ?disabled=${this.saving} @click=${(e: Event) => { stop(e); this.pickerConfirmDelete = record.id; }}>${uiIcon("delete")}</button>` : nothing}`}
       </span>
     </div>`;
   }
 
-  /** Hide one complication from the picker on this watch, or show it again.
-   * Stored per watch in this browser; nothing is sent. */
-  private setPickerHidden(id: string) {
+  /** Whether a picker row is hidden from the watch's complication list. The
+   * open one answers from its draft, so an unsaved hide shows at once. */
+  private rowHidden(record: ComplicationRecord): boolean {
+    if (record.id === this.selectedId && this.draft) return this.draft.config.hidden === true;
+    return isHiddenDocument(record.document);
+  }
+
+  /**
+   * Hide one complication from the watch's complication list, or show it again.
+   *
+   * The open one changes through its draft, so the flag saves with Save and
+   * undoes like any other edit: saving it behind the draft's back would move
+   * the revision under unsaved work. Any other row has no draft, so it saves at
+   * once with the revision the list holds, the way the picker's Delete does. A
+   * conflict there is a plain error, since there is nothing to reconcile.
+   */
+  private async setPickerHidden(record: ComplicationRecord, hide: boolean) {
     if (!this.ownerId) return;
-    this.pickerHidden = toggleHidden(this.pickerHidden, id, this.records.map((r) => r.id));
-    saveHidden(pickerStorage(), this.ownerId, this.pickerHidden);
+    if (record.id === this.selectedId) {
+      this.mutate((c) => {
+        if (hide) c.hidden = true;
+        else delete c.hidden;
+      });
+      return;
+    }
+    if (!this.hass.user?.is_admin || this.saving || !record.document) return;
+    this.saving = true;
+    this.saveError = undefined;
+    try {
+      const doc = withHidden(record.document as Record<string, unknown>, hide);
+      const result = await saveRecord(this.hass, this.ownerId, doc, record.revision);
+      if (!result.ok) {
+        this.saveError = result.error === "conflict"
+          ? `${String(record.document.name ?? "That complication")} changed on the server. Try again.`
+          : result.message ?? result.error ?? "Save failed";
+        return;
+      }
+      this.beginSendWait();
+      await this.loadRecords();
+    } catch (err) {
+      this.saveError = errText(err);
+    } finally {
+      this.saving = false;
+    }
+  }
+
+  /** Clear the hidden lists an older panel kept in this browser. Storage that
+   * throws (a private window, blocked site data) is left alone. */
+  private clearLegacyPickerHidden() {
+    try {
+      const storage = window.localStorage;
+      const stale: string[] = [];
+      for (let i = 0; i < storage.length; i++) {
+        const key = storage.key(i);
+        if (key?.startsWith(LEGACY_PICKER_HIDDEN_PREFIX)) stale.push(key);
+      }
+      for (const key of stale) storage.removeItem(key);
+    } catch {
+      // Nothing to clear, or no way to reach it.
+    }
   }
 
   /** Open or shut one of the preview bar's menus; opening one shuts the other.

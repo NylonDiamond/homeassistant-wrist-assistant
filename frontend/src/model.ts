@@ -1968,6 +1968,9 @@ export interface CustomComplicationConfig {
   successFlashColorHex?: string;
   /** Layer groups (editor-only). Encoded only when there is at least one. */
   groups?: LayerGroup[];
+  /** Kept out of the watch's complication picker. A face already using it
+   * keeps drawing it. Only ever true: writers omit the key when shown. */
+  hidden?: true;
 }
 
 // ── parsing ───────────────────────────────────────────────────────────────
@@ -2737,6 +2740,7 @@ export function parseConfig(raw: unknown): CustomComplicationConfig {
   if (typeof raw.openPageName === "string") cfg.openPageName = raw.openPageName;
   if (typeof raw.showSuccessFlash === "boolean") cfg.showSuccessFlash = raw.showSuccessFlash;
   if (typeof raw.successFlashColorHex === "string") cfg.successFlashColorHex = raw.successFlashColorHex;
+  if (raw.hidden === true) cfg.hidden = true;
   if (Array.isArray(raw.groups)) {
     const groups = raw.groups.filter(isObject).filter((g) => typeof g.id === "string").map((g): LayerGroup => ({
       id: str(g.id).toUpperCase(),
@@ -4053,7 +4057,42 @@ export function encodeConfig(cfg: CustomComplicationConfig): J {
   if (cfg.groups !== undefined && cfg.groups.length > 0) {
     o.groups = cfg.groups.map((g) => ({ id: g.id, name: g.name, locked: g.locked }));
   }
+  if (cfg.hidden === true) o.hidden = true;
   return o;
+}
+
+/** Whether a stored document is kept out of the watch's complication picker.
+ * Anything but a literal `true` reads as shown. */
+export function isHiddenDocument(document: unknown): boolean {
+  return isObject(document) && document.hidden === true;
+}
+
+/** The same document with `hidden` set, or with the key gone when shown. The
+ * input is not changed, and every other key rides along untouched. */
+export function withHidden(document: Record<string, unknown>, hidden: boolean): Record<string, unknown> {
+  const next = { ...document };
+  if (hidden) next.hidden = true;
+  else delete next.hidden;
+  return next;
+}
+
+/** Split picker rows into the ones shown and the ones hidden, each keeping its
+ * order. A row without a document (a locked slot) is never hidden, and neither
+ * is the complication open now, which stays in the list so it can always be
+ * picked. */
+export function splitHidden<T>(
+  rows: readonly T[],
+  hiddenOf: (row: T) => { id: string; hidden: boolean } | undefined,
+  openId: string | undefined,
+): { shown: T[]; hidden: T[] } {
+  const shown: T[] = [];
+  const tucked: T[] = [];
+  for (const row of rows) {
+    const info = hiddenOf(row);
+    if (info !== undefined && info.hidden && info.id !== openId) tucked.push(row);
+    else shown.push(row);
+  }
+  return { shown, hidden: tucked };
 }
 
 // ── layer groups ──────────────────────────────────────────────────────────
@@ -4153,7 +4192,7 @@ export function setGroup(cfg: CustomComplicationConfig, elementId: string, group
 // non-empty and tells the user which paths it does not understand.
 
 const K = {
-  config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "inline", "dataSources", "refreshMinutes", "tapAction", "openPageId", "openPageName", "showSuccessFlash", "successFlashColorHex", "groups"],
+  config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "inline", "dataSources", "refreshMinutes", "tapAction", "openPageId", "openPageName", "showSuccessFlash", "successFlashColorHex", "groups", "hidden"],
   group: ["id", "name", "locked"],
   inline: ["label", "value", "symbol", "countdown"],
   named: ["id", "name", "value"],

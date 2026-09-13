@@ -613,6 +613,34 @@ def test_high_slots_are_valid_with_the_schema_marker(mod):
     assert rec.document["slotIndex"] == MAX_SLOTS - 1
 
 
+def test_hidden_flag_is_stored_and_flipping_it_is_a_normal_save(mod):
+    """`hidden` rides along like any optional key, and a save that only flips
+    it bumps the revision and token and notifies listeners like any other."""
+    store = _new(mod)
+    seen = []
+    store.async_add_listener(seen.append)
+    first = store.save(OWNER, _doc(), base_revision=None, updated_by="t")
+    token = store.token
+    same = first.document["id"]
+    rec = store.save(OWNER, _doc(id=same, hidden=True), base_revision=first.revision, updated_by="t")
+    assert rec.revision == 2
+    assert rec.document["hidden"] is True
+    assert rec.as_dict()["document"]["hidden"] is True
+    assert store.token == token + 1
+    assert len(seen) == 2
+    assert [r.id for r in store.changes_since(OWNER, token)] == [rec.id]
+
+    shown = store.save(OWNER, _doc(id=same), base_revision=rec.revision, updated_by="t")
+    assert "hidden" not in shown.document
+
+
+@pytest.mark.parametrize("value", ["true", 1, [True]])
+def test_hidden_flag_must_be_a_bool(mod, value):
+    store = _new(mod)
+    with pytest.raises(mod.ComplicationValidationError):
+        store.save(OWNER, _doc(hidden=value), base_revision=None, updated_by="t")
+
+
 def test_document_is_stored_unchanged(mod):
     store = _new(mod)
     doc = _doc(extraFutureField={"nested": [1, 2, 3]})
