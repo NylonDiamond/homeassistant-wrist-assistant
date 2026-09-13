@@ -542,7 +542,7 @@ export class WristAssistantPanel extends LitElement {
   @state() private snapGrid = false;
   @state() private gridStep: number = 0.05;
   /** Alt is down. It flips snapping for a drag, so the grid lines show while
-   * it is held even with Snap grid off. */
+   * it is held even with Snap to grid off. */
   @state() private altHeld = false;
   /** Groups folded shut in the Layers list. List state only, never saved. */
   @state() private collapsed: ReadonlySet<string> = new Set();
@@ -1540,11 +1540,29 @@ export class WristAssistantPanel extends LitElement {
       .gate-card { padding: 26px 22px 24px; }
       .gate-title { font-size: 21px; }
     }
+    /* Two rows with a hairline between them: which shape is being edited on
+       top, how the face is looked at underneath. The tool row sits a shade
+       darker so the stage below reads as a third, separate surface. */
     .canvas-bar {
-      display: flex; align-items: center; gap: 4px; padding: 8px 10px; flex-wrap: wrap; font-size: 13px; flex: none;
+      display: flex; flex-direction: column; font-size: 13px; flex: none;
       border-bottom: 1px solid var(--wa-line); background: var(--wa-raised);
     }
+    .bar-row { display: flex; align-items: center; gap: 6px; padding: 6px 10px; flex-wrap: wrap; }
+    .bar-row.tools {
+      border-top: 1px solid var(--wa-line);
+      background: color-mix(in srgb, var(--wa-raised) 55%, var(--wa-input));
+    }
+    .bar-sep { width: 1px; height: 18px; background: var(--wa-line-strong); margin: 0 2px; flex: none; }
     .canvas-bar .spacer { flex: 1; min-width: 0; }
+    /* The shapes the complication has, as one segmented control. */
+    .shape-seg {
+      display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border-radius: 10px;
+      background: var(--wa-input); box-shadow: inset 0 0 0 1px var(--wa-line);
+    }
+    .shape-seg button.tab { height: 30px; padding: 0 10px; border-radius: 8px; }
+    .shape-adds { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+    .shape-adds button.tab { height: 28px; padding: 0 9px; gap: 5px; font-weight: 500; }
+    .shape-adds button.tab svg { width: 12px; height: 12px; }
     .canvas-bar .hint { margin: 0; }
     /* Shape tabs: one per family, drawn with a real picture of what that shape
        holds. A family the complication does not have is a dashed invitation. */
@@ -1583,8 +1601,15 @@ export class WristAssistantPanel extends LitElement {
     /* The three face toggles wrap as one block, so a narrow bar never leaves
        one of them stranded on the line above the other two. */
     .canvas-bar .face-tools { display: inline-flex; gap: 6px; flex: none; }
-    .grid-tool { display: inline-flex; align-items: center; gap: 4px; }
-    select.grid-step { height: 30px; padding: 0 6px; font-size: 12.5px; border-radius: 8px; }
+    /* With snapping on, the button and its size read as one accent pill. */
+    .grid-tool { display: inline-flex; align-items: center; }
+    .grid-tool.on button.pick { border-radius: 8px 0 0 8px; padding-right: 8px; }
+    select.grid-step {
+      height: 30px; padding: 0 6px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+      border: 0; border-left: 1px solid color-mix(in srgb, var(--wa-accent-ink) 30%, transparent); border-radius: 0 8px 8px 0;
+      background-color: color-mix(in srgb, var(--wa-accent) 82%, #000); color: var(--wa-accent-ink);
+    }
+    select.grid-step:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .canvas-bar label { display: inline-flex; align-items: center; gap: 8px; color: var(--wa-muted); }
     .canvas-bar label select { color: var(--wa-ink); font-weight: 500; }
     button.pick {
@@ -3849,10 +3874,10 @@ export class WristAssistantPanel extends LitElement {
   private renderGridButton() {
     const on = this.snapGrid;
     const off = !this.draft || this.parseError !== undefined || this.activeFamily === "inline";
-    return html`<span class="grid-tool">
+    return html`<span class="grid-tool ${on ? "on" : ""}">
       <button class="pick ${on ? "on" : ""}" ?disabled=${off} aria-pressed=${on ? "true" : "false"}
         title=${on ? "Layers snap to the grid when you drag them, and arrow keys move one grid step. Hold Alt to drag freely. Click to turn it off." : "Snap layers to a grid when you drag them. Without it, hold Alt while dragging to snap."}
-        @click=${() => this.setGrid(!on, this.gridStep)}><span class="glyph">▦</span>Snap grid</button>
+        @click=${() => this.setGrid(!on, this.gridStep)}><span class="glyph">▦</span>Snap to grid</button>
       ${on ? html`<select class="grid-step" aria-label="Grid size" ?disabled=${off}
         @change=${(e: Event) => this.setGrid(true, Number((e.target as HTMLSelectElement).value))}>
         ${GRID_STEPS.map((step) => html`<option value=${step} ?selected=${step === this.gridStep}>${step * 100}%</option>`)}
@@ -3918,8 +3943,8 @@ export class WristAssistantPanel extends LitElement {
       ["Drag a row", "Reorder the list. Drop it on a folder to put it inside"],
       ["Pick layer", "Point at the face to find a layer. Click it to select it"],
       ["Show taps", "Every tap area, labelled. With a layer selected, only its tap shows and its corners drag"],
-      ["Snap grid", "Snap layers to a grid of 1%, 2.5%, 5% or 10% of the face when you drag them. Arrows then move one grid step"],
-      ["Alt-drag", "Flips Snap grid for that drag: snaps with it off, moves freely with it on"],
+      ["Snap to grid", "Snap layers to a grid of 1%, 2.5%, 5% or 10% of the face when you drag them. Arrows then move one grid step"],
+      ["Alt-drag", "Flips Snap to grid for that drag: snaps with it off, moves freely with it on"],
       ["Expand", "The face full-window, for small moves. Everything above works there too"],
       ["Locked group", "Drags as one. Unlock it in its row to move layers alone"],
       ["Timestamp chip", "On a picture layer: click it to move it, pull a corner for its size"],
@@ -5814,15 +5839,19 @@ export class WristAssistantPanel extends LitElement {
     return html`
       <div class="card canvas-card">
         <div class="canvas-bar">
-          ${this.renderShapeTabs(cfg, layouts)}
-          <span class="spacer"></span>
+          <div class="bar-row shapes">${this.renderShapeTabs(cfg, layouts)}</div>
+          <div class="bar-row tools">
           <span class="inbox" title=${`Layouts are made in the ${REFERENCE_CASE.label} box. Smaller cases scale it down.`}>
             <span class="pre">Preview as</span>
             <select aria-label="Preview as" @change=${(e: Event) => { this.previewCase = (e.target as HTMLSelectElement).value; }}>
               ${CASES.map((c) => html`<option value=${c.label} ?selected=${c.label === watchCase.label}>${c.label}${c.measured ? "" : " (estimated)"}</option>`)}
             </select>
           </span>
-          <span class="face-tools">${this.renderPickButton()}${this.renderShowTapsButton()}${this.renderGridButton()}${this.renderZoomButton()}</span>
+          <span class="bar-sep" aria-hidden="true"></span>
+          <span class="face-tools">${this.renderPickButton()}${this.renderShowTapsButton()}${this.renderGridButton()}</span>
+          <span class="spacer"></span>
+          ${this.renderZoomButton()}
+          </div>
         </div>
         <div class="stage">
           ${family === "inline" ? this.renderInlinePreview(layouts.inline, false) : this.renderBigPreview(family, layouts, watchCase)}
@@ -6071,14 +6100,22 @@ export class WristAssistantPanel extends LitElement {
    * add one. Tabs rather than tiles because this is which face you are looking
    * at, and that question belongs on the face's own card.
    */
+  /**
+   * The shapes the complication has, as one segmented control, and after it
+   * the shapes it could add, as small dashed buttons. Kept apart so the control
+   * reads as "which one am I editing" and the adds as a separate offer.
+   */
   private renderShapeTabs(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
     const have = cfg.supportedFamilies;
-    return ALL_FAMILIES.map((f) => {
-      if (!have.includes(f)) {
-        return html`<button class="tab off ${f}" ?disabled=${!this.canEdit} title=${`Add the ${familyTitle(f)} shape`} @click=${() => this.addShape(f)}>
-          ${uiIcon("plus")}${familyTitle(f)}
-        </button>`;
-      }
+    const missing = ALL_FAMILIES.filter((f) => !have.includes(f));
+    return html`<div class="shape-seg" role="group" aria-label="Shapes">${this.renderHaveTabs(cfg, layouts)}</div>
+      ${missing.length > 0 ? html`<span class="shape-adds">${missing.map((f) => html`<button class="tab off ${f}" ?disabled=${!this.canEdit}
+        title=${`Add the ${familyTitle(f)} shape`} @click=${() => this.addShape(f)}>${uiIcon("plus")}${familyTitle(f)}</button>`)}</span>` : nothing}`;
+  }
+
+  private renderHaveTabs(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
+    const have = cfg.supportedFamilies;
+    return ALL_FAMILIES.filter((f) => have.includes(f)).map((f) => {
       const active = f === this.activeFamily;
       let art: TemplateResult | typeof nothing;
       if (f === "inline") art = this.renderInlinePreview(layouts.inline, true);
@@ -6094,7 +6131,7 @@ export class WristAssistantPanel extends LitElement {
         <button class="tab ${f}" aria-pressed=${active ? "true" : "false"} title=${`Edit the ${familyTitle(f)} shape`}
           @click=${() => { this.activeFamily = f; if (f === "inline" && this.inspect.kind === "layer") this.inspect = { kind: "family" }; }}>
           <span class="art">${art}</span>
-          <span class="lbl">${familyTitle(f)}</span>${empty ? html`<small>nothing shown</small>` : nothing}${active ? html`<small>editing</small>` : nothing}
+          <span class="lbl">${familyTitle(f)}</span>${empty ? html`<small>nothing shown</small>` : nothing}
         </button>
         ${this.canEdit ? html`<button class="icon danger tab-x" ?disabled=${!removable}
           title=${removable ? `Remove the ${familyTitle(f)} shape` : "The only shape. Add another before removing it."}

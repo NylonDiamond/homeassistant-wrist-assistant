@@ -36,8 +36,8 @@ export interface GestureTarget {
    */
   outline?: NormalizedFrame;
   /**
-   * Snap grid: `step` is the grid as a fraction of the face (0.05 is a line
-   * every 5%), `on` is whether the Snap grid toggle is on. Snapping lands a
+   * Snap to grid: `step` is the grid as a fraction of the face (0.05 is a line
+   * every 5%), `on` is whether the Snap to grid toggle is on. Snapping lands a
    * moved layer's nearest edge or middle on a line, and a corner drag's pulled
    * edge. Holding Alt flips it for as long as it is held: free with the grid
    * on, snapped with it off. Undefined never snaps.
