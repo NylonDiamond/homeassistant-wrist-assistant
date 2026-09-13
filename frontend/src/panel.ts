@@ -2041,6 +2041,9 @@ export class WristAssistantPanel extends LitElement {
     /* A number's title drags the number. */
     .field > span.scrub { cursor: ew-resize; user-select: none; -webkit-user-select: none; touch-action: none; }
     .field > span.scrub:hover { color: var(--wa-accent); }
+    /* So does an idle number box; one being typed in keeps its text cursor. */
+    input[data-scrub]:not(:focus):not(:disabled) { cursor: ew-resize; touch-action: pan-y; }
+    input[data-scrub].scrubbing { user-select: none; -webkit-user-select: none; }
     .field input[type=text], .field input[type=number], .field select, .field textarea { width: 100%; min-width: 0; }
     /* The controls in an inspector row: 26px, 12px text, a soft fill and no
        ring until hovered, so a card of twenty rows is not twenty boxes. */
@@ -3964,10 +3967,16 @@ export class WristAssistantPanel extends LitElement {
     // the list, so a handle press still resizes that one layer. A group
     // selected in the list moves as one too, locked or not: selecting the
     // row is selecting every member at once.
+    //
+    // The first click on a group selects the group. Once the group or one of
+    // its members is selected, a click that never moves goes one level in and
+    // selects the member under the pointer, while a drag from the same press
+    // still moves the whole group.
     const group = groupOf(this.draft.config, id);
     const groupSelected = group !== undefined && this.inspect.kind === "group" && this.inspect.id === group.id;
     if (group && (group.locked || groupSelected) && !handle) {
-      this.beginGroupGesture(family as DrawableFamily, e, svg, group);
+      const inside = groupSelected || (this.inspect.kind === "layer" && groupOf(this.draft.config, this.inspect.id)?.id === group.id);
+      this.beginGroupGesture(family as DrawableFamily, e, svg, group, inside ? id : undefined);
       return;
     }
     if (this.inspect.kind !== "layer" || this.inspect.id !== id) {
@@ -4042,13 +4051,16 @@ export class WristAssistantPanel extends LitElement {
    * Drag every member of a group by the same amount. The gesture runs on the
    * members' bounding box, which is what keeps the whole group on the face,
    * and each member's placement is set from where it started plus the move.
+   *
+   * With `pickOnClick`, a release that never moved selects that member instead
+   * of moving anything, and the press leaves the selection as it was.
    */
-  private beginGroupGesture(family: DrawableFamily, e: PointerEvent, svg: SVGSVGElement, group: LayerGroup) {
+  private beginGroupGesture(family: DrawableFamily, e: PointerEvent, svg: SVGSVGElement, group: LayerGroup, pickOnClick?: string) {
     const cfg = this.draft?.config;
     if (!cfg) return;
     const members = groupMembers(cfg, group.id);
     if (members.length === 0) return;
-    if (this.inspect.kind !== "group" || this.inspect.id !== group.id) this.inspect = { kind: "group", id: group.id };
+    if (pickOnClick === undefined && (this.inspect.kind !== "group" || this.inspect.id !== group.id)) this.inspect = { kind: "group", id: group.id };
     e.preventDefault();
     const starts = new Map(members.map((m) => [m.payload.id, effectivePlacement(cfg, family, m).frame] as const));
     const frames = [...starts.values()];
@@ -4059,8 +4071,15 @@ export class WristAssistantPanel extends LitElement {
     const bounds: NormalizedFrame = { x: x0, y: y0, width: x1 - x0, height: y1 - y0, rotationDegrees: 0 };
     const round = (n: number) => Math.round(n * 1000) / 1000;
     this.cancelGesture?.();
+    let moved = false;
     this.cancelGesture = beginGesture(svg, this.gestureCanvas(family), e, { elementId: group.id, frame: bounds }, {
       onFrame: (_id, f, done) => {
+        if (!done) moved = true;
+        if (done && !moved && pickOnClick !== undefined) {
+          this.inspect = { kind: "layer", id: pickOnClick };
+          this.cancelGesture = undefined;
+          return;
+        }
         const dx = f.x - bounds.x;
         const dy = f.y - bounds.y;
         this.mutate((c) => {

@@ -370,13 +370,109 @@ function fieldLabel(label: string, back?: ResetTo, scrub?: (e: PointerEvent) => 
 export const SCRUB_START = "wa-scrub-start";
 export const SCRUB_END = "wa-scrub-end";
 
+/** How far a press has to travel sideways before it is a drag, in px. */
+const SCRUB_SLOP = 3;
+/** Pointer travel per step while dragging a number, in px. */
+const SCRUB_PX_PER_STEP = 3;
+
+interface ScrubRange {
+  step?: number;
+  min?: number;
+  max?: number;
+}
+
+/** Where a dragged number starts: its value, or the bottom of its range (and
+ * never below 0) for a box still empty. */
+export function scrubStart(value: number | undefined, opts: ScrubRange): number {
+  return value !== undefined && Number.isFinite(value) ? value : Math.max(0, opts.min ?? 0);
+}
+
+/** One step of a dragged number. The field's own step when it has one;
+ * otherwise as fine as the number's own decimals (1 for a whole number, 0.1
+ * or 0.01 for one written with decimals), so a drag never rounds away what
+ * was typed. Shift makes it ten times coarser, Alt ten times finer. */
+export function scrubUnit(start: number, step: number | undefined, mods: { coarse?: boolean; fine?: boolean } = {}): number {
+  const base = step !== undefined && step > 0 ? step : 10 ** -Math.min(2, decimalsOf(start));
+  return mods.coarse ? base * 10 : mods.fine ? base / 10 : base;
+}
+
+/** The number a drag lands on: `raw`, the unrounded running total, snapped to
+ * whole units counted from `start` (so 23.47 stepped by 1 goes to 24.47, not
+ * 24), clamped to the range and cleared of float dust. */
+export function scrubValue(start: number, raw: number, unit: number, opts: ScrubRange): number {
+  let v = start + Math.round((raw - start) / unit) * unit;
+  if (opts.min !== undefined) v = Math.max(opts.min, v);
+  if (opts.max !== undefined) v = Math.min(opts.max, v);
+  return Number(v.toFixed(Math.min(10, Math.max(decimalsOf(unit), decimalsOf(start)))));
+}
+
+function decimalsOf(n: number): number {
+  if (!Number.isFinite(n) || Number.isInteger(n)) return 0;
+  const s = String(n);
+  const exp = /e-(\d+)$/.exec(s);
+  if (exp) return Number(exp[1]) + ((s.split("e")[0]!.split(".")[1] ?? "").length);
+  return (s.split(".")[1] ?? "").length;
+}
+
 /**
- * Drag a number's title left or right to change it: one step every 3px,
- * clamped to the field's range. The step is the field's own, else 1, or 0.1
- * for a number that already has decimals. A press that never moves is left to
- * the label, which focuses the box as it always did.
+ * Follows one press on a number's drag handle: nothing until it has moved
+ * `SCRUB_SLOP` sideways, then a step every `SCRUB_PX_PER_STEP`, with Shift and
+ * Alt read on every move so a modifier can change mid-drag without the number
+ * jumping. The drag is sent as `SCRUB_START` and `SCRUB_END`, so the panel
+ * keeps all of it as one undo step. `release` hears how the press ended.
  */
-function scrubber(value: number | undefined, set: (v: number) => void, opts: { step?: number; min?: number; max?: number }) {
+function trackScrub(handle: HTMLElement, e: PointerEvent, value: number | undefined, set: (v: number) => void,
+  opts: ScrubRange, release: (dragged: boolean, ev: PointerEvent) => void) {
+  const start = scrubStart(value, opts);
+  const x0 = e.clientX;
+  let lastX = x0;
+  let raw = start;
+  let last = start;
+  let dragging = false;
+  const move = (ev: PointerEvent) => {
+    if (!dragging) {
+      if (Math.abs(ev.clientX - x0) < SCRUB_SLOP) return;
+      dragging = true;
+      lastX = ev.clientX;
+      handle.classList.add("scrubbing");
+      handle.dispatchEvent(new CustomEvent(SCRUB_START, { bubbles: true, composed: true }));
+    }
+    const unit = scrubUnit(start, opts.step, { coarse: ev.shiftKey, fine: ev.altKey });
+    raw += ((ev.clientX - lastX) / SCRUB_PX_PER_STEP) * unit;
+    lastX = ev.clientX;
+    // Held to the range, so turning back past an end answers at once.
+    if (opts.min !== undefined) raw = Math.max(opts.min, raw);
+    if (opts.max !== undefined) raw = Math.min(opts.max, raw);
+    const v = scrubValue(start, raw, unit, opts);
+    if (v !== last) { last = v; set(v); }
+  };
+  const end = (ev: PointerEvent) => {
+    handle.removeEventListener("pointermove", move);
+    handle.removeEventListener("pointerup", end);
+    handle.removeEventListener("pointercancel", end);
+    if (dragging) {
+      handle.classList.remove("scrubbing");
+      handle.dispatchEvent(new CustomEvent(SCRUB_END, { bubbles: true, composed: true }));
+      // A drag is not a click: without this a label would pass the release on
+      // to its box and focus it.
+      const swallow = (c: Event) => { c.preventDefault(); c.stopPropagation(); };
+      handle.addEventListener("click", swallow, { capture: true, once: true });
+      setTimeout(() => handle.removeEventListener("click", swallow, { capture: true }), 0);
+    }
+    release(dragging, ev);
+  };
+  handle.setPointerCapture(e.pointerId);
+  handle.addEventListener("pointermove", move);
+  handle.addEventListener("pointerup", end);
+  handle.addEventListener("pointercancel", end);
+}
+
+/**
+ * Drag a number's title left or right to change it (see `trackScrub`). A press
+ * that never moves is left to the label, which focuses the box as it always
+ * did.
+ */
+function scrubber(value: number | undefined, set: (v: number) => void, opts: ScrubRange) {
   return (e: PointerEvent) => {
     if (e.button !== 0 || !e.isPrimary) return;
     const handle = e.currentTarget as HTMLElement;
@@ -384,39 +480,30 @@ function scrubber(value: number | undefined, set: (v: number) => void, opts: { s
     // Keeps the press from selecting the title's text. The click after a press
     // that did not move still reaches the label and focuses the box.
     e.preventDefault();
-    const start = value !== undefined && Number.isFinite(value) ? value : Math.max(0, opts.min ?? 0);
-    const step = opts.step ?? (Number.isInteger(start) ? 1 : 0.1);
-    const places = (String(step).split(".")[1] ?? "").length;
-    const x0 = e.clientX;
-    let moved = false;
-    let last = start;
-    const move = (ev: PointerEvent) => {
-      const dx = ev.clientX - x0;
-      if (!moved && Math.abs(dx) < 3) return;
-      moved = true;
-      let v = start + Math.round(dx / 3) * step;
-      if (opts.min !== undefined) v = Math.max(opts.min, v);
-      if (opts.max !== undefined) v = Math.min(opts.max, v);
-      v = Number(v.toFixed(places));
-      if (v !== last) { last = v; set(v); }
-    };
-    const end = () => {
-      handle.removeEventListener("pointermove", move);
-      handle.removeEventListener("pointerup", end);
-      handle.removeEventListener("pointercancel", end);
-      handle.dispatchEvent(new CustomEvent(SCRUB_END, { bubbles: true, composed: true }));
-      if (!moved) return;
-      // A drag is not a click: without this the label would pass the release
-      // on to its box and focus it.
-      const swallow = (c: Event) => { c.preventDefault(); c.stopPropagation(); };
-      handle.addEventListener("click", swallow, { capture: true, once: true });
-      setTimeout(() => handle.removeEventListener("click", swallow, { capture: true }), 0);
-    };
-    handle.setPointerCapture(e.pointerId);
-    handle.addEventListener("pointermove", move);
-    handle.addEventListener("pointerup", end);
-    handle.addEventListener("pointercancel", end);
-    handle.dispatchEvent(new CustomEvent(SCRUB_START, { bubbles: true, composed: true }));
+    trackScrub(handle, e, value, set, opts, () => {});
+  };
+}
+
+/**
+ * The same drag on the number box itself, the way a design tool's number
+ * fields work. Only while the box is not being typed in: a focused box keeps
+ * its caret, selection and text drag. On an idle box the press is held back
+ * from the browser, so moving it selects nothing and focuses nothing; a press
+ * that never moved then focuses the box with its number selected, ready to be
+ * typed over, and a drag leaves the box unfocused. The box wants `data-scrub`,
+ * which gives it the ew-resize cursor while idle and keeps a sideways touch
+ * from scrolling the card.
+ */
+function boxScrubber(value: number | undefined, set: (v: number) => void, opts: ScrubRange) {
+  return (e: PointerEvent) => {
+    const box = e.currentTarget as HTMLInputElement;
+    if (e.button !== 0 || !e.isPrimary || box.disabled || box.matches(":focus")) return;
+    e.preventDefault();
+    trackScrub(box, e, value, set, opts, (dragged, ev) => {
+      if (dragged || ev.type !== "pointerup") return;
+      box.focus();
+      box.select();
+    });
   };
 }
 
@@ -441,9 +528,13 @@ export function textArea(label: string, value: string, set: (v: string) => void,
 }
 
 /** `def` adds a reset dot, drawn only while the value is away from that
- * default. The title doubles as a handle that drags the number. */
-export function numberField(label: string, value: number | undefined, set: (v: number | undefined) => void, opts: NumberInputOptions & { def?: number } = {}) {
-  return html`<label class="field num">${fieldLabel(label, backTo<number | undefined>(value, opts.def, set), scrubber(value, set, opts))}${numberInput(value, set, opts)}</label>`;
+ * default; `null` is the default of an optional number left empty. The title
+ * and the box both drag the number. */
+export function numberField(label: string, value: number | undefined, set: (v: number | undefined) => void, opts: NumberInputOptions & { def?: number | null } = {}) {
+  const back: ResetTo | undefined = opts.def === null
+    ? { atDefault: value === undefined, title: "Back to none", reset: () => set(undefined) }
+    : backTo<number | undefined>(value, opts.def, set);
+  return html`<label class="field num">${fieldLabel(label, back, scrubber(value, set, opts))}${numberInput(value, set, opts)}</label>`;
 }
 
 interface NumberInputOptions {
@@ -467,6 +558,7 @@ function numberInput(value: number | undefined, set: (v: number | undefined) => 
   const shown = value === undefined || Number.isNaN(value) ? "" : String(value);
   const input = html`<input type="number" .value=${shown} step=${opts.step ?? "any"} min=${opts.min ?? nothing} max=${opts.max ?? nothing}
       aria-label=${opts.ariaLabel ?? nothing} placeholder=${opts.placeholder ?? nothing}
+      data-scrub @pointerdown=${boxScrubber(value, set, opts)}
       @input=${onInput((v) => {
         if (v.trim() === "") {
           if (opts.optional) set(undefined);
@@ -627,6 +719,7 @@ function colorBox(label: string, value: string | undefined, set: (v: string | un
         @input=${onInput((v) => { const t = v.trim(); if (/^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(t)) set(t.startsWith("#") ? t.toUpperCase() : `#${t.toUpperCase()}`); })} />
       <span class="num-box alpha" style="--wa-unit:1">
         <input type="number" min="0" max="100" step="1" .value=${String(alpha)} title="Opacity" aria-label=${`${label}: opacity`} ?disabled=${off}
+          data-scrub @pointerdown=${boxScrubber(alpha, (n) => set(composeColor(rgb, n)), { step: 1, min: 0, max: 100 })}
           @input=${onInput((v) => { const n = Number(v); if (v.trim() !== "" && n >= 0 && n <= 100) set(composeColor(rgb, Math.round(n))); })} />
         <span class="unit" aria-hidden="true">%</span>
       </span>
@@ -1408,11 +1501,17 @@ function bandTableFields(
   };
   return html`<div class="bands">
     ${bandBar(sorted, above, now)}
-    ${sorted.map((b) => html`
+    ${sorted.map((b, i) => html`
       <div class="band-row ${hit === b.id ? "hit" : ""}">
         <span class="le" aria-hidden="true">≤</span>
         <input type="number" class="band-up" step="any" .value=${String(b.upTo)} aria-label="Up to"
           title="This colour runs up to and including this number"
+          data-scrub @pointerdown=${boxScrubber(b.upTo, (n) => set(band(b.id, (x) => { x.upTo = n; })), {
+            // Held between its neighbours, so the rows never re-sort under
+            // the pointer mid-drag.
+            ...(i > 0 ? { min: sorted[i - 1]!.upTo } : {}),
+            ...(i < sorted.length - 1 ? { max: sorted[i + 1]!.upTo } : {}),
+          })}
           @change=${onInput((v) => {
             const n = Number(v);
             if (v.trim() !== "" && Number.isFinite(n)) set(band(b.id, (x) => { x.upTo = n; }));
@@ -2981,6 +3080,7 @@ function frameLetterField(letter: string, name: string, value: number, set: (v: 
     <span class="pl" title=${`${name}. Drag left or right to change it.`}
       @pointerdown=${scrubber(pct, setPct, { step: 0.5, min, max })}>${letter}</span>
     <input type="number" step="0.5" min=${min} max=${max} .value=${String(pct)} aria-label=${`${name} in percent`}
+      data-scrub @pointerdown=${boxScrubber(pct, setPct, { step: 0.5, min, max })}
       @input=${onInput((v) => { const n = Number(v); if (v.trim() !== "" && Number.isFinite(n)) setPct(n); })} />
     <span class="unit" aria-hidden="true">%</span>
   </label>`;
@@ -3173,9 +3273,15 @@ function chartPointFields(host: EditorHost, anchor: ChartAnchor, key: string): T
     ? ` ${sharing} layers follow this ${anchor.at === "now" ? "reading" : "threshold"}, and they all move with this number.`
     : "";
   if (anchor.at === "threshold") {
+    // The default is where a new threshold starts, the middle of the readings
+    // (see `seedThreshold`), the way a new line's thickness and colour reset to
+    // what the line was drawn with. The chart never draws its own line once a
+    // layer follows the threshold, so every edit keeps `drawsThreshold` off.
+    const seed = seedThreshold(chartNumbers(host.resolve(c.value) ?? ""));
     return html`
       <div class="grid2">
-        ${numberField("Threshold at", c.thresholdValue ?? 0, (v) => setChart((p) => { p.thresholdValue = v ?? 0; p.drawsThreshold = false; }, "thval"))}
+        ${numberField("Threshold at", c.thresholdValue ?? seed, (v) => setChart((p) => { p.thresholdValue = v ?? seed; p.drawsThreshold = false; }, "thval"),
+          { def: seed })}
       </div>
       <div class="hint">${c.scale === "fixed"
         ? "A threshold outside the chart's Min and Max draws nothing: the plot keeps the range you asked for."
@@ -3933,7 +4039,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           <div class="grid2">
             ${numberField("Threshold", g.thresholdValue, (v) => setGauge((p) => {
               if (v === undefined) delete p.thresholdValue; else p.thresholdValue = v;
-            }, "thr"), { optional: true })}
+            }, "thr"), { optional: true, def: null })}
             ${g.thresholdValue === undefined ? nothing
               : colorField("Threshold colour", g.thresholdColorHex, (v) => setGauge((p) => { p.thresholdColorHex = v ?? GAUGE_DEFAULT_THRESHOLD_HEX; }, "thrcol"), false, GAUGE_DEFAULT_THRESHOLD_HEX)}
           </div>
@@ -4077,6 +4183,8 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
                     <input type="number" class="short" aria-label="How many time slots" .value=${String(c.historyPoints)}
                       title="How many equal time slots the span is averaged into, so how many bars or points get drawn"
                       step="1" min=${CHART_HISTORY_MIN_POINTS} max=${CHART_HISTORY_MAX_POINTS}
+                      data-scrub @pointerdown=${boxScrubber(c.historyPoints, (n) => setChart((p) => { p.historyPoints = Math.round(n); }, "hpoints"),
+                        { step: 1, min: CHART_HISTORY_MIN_POINTS, max: CHART_HISTORY_MAX_POINTS })}
                       @input=${onInput((v) => { const n = Number(v); if (v.trim() !== "" && Number.isFinite(n) && n >= 1) setChart((p) => { p.historyPoints = Math.round(n); }, "hpoints"); })} />
                     <span class="readings-unit">slots</span>`}
                 </div>
