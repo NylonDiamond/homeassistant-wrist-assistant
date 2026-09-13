@@ -446,6 +446,23 @@ describe("each end's own marker", () => {
     expect("highMarker" in encodedPayload(parseConfig(raw))).toBe(false);
   });
 
+  it("reads a look word it does not know as the default, as the watch does", () => {
+    const { cfg } = chartConfig("1,2,3");
+    const raw = encodeConfig(cfg) as { elements: { payload: Record<string, unknown> }[] };
+    Object.assign(raw.elements[0]!.payload, {
+      style: "pie", scale: "log", baseline: 7, highlight: "median", coloring: "gradient", marker: "star",
+    });
+    const back = parseConfig(raw).elements[0]!;
+    if (back.kind !== "chart") throw new Error("expected a chart");
+    const p = back.payload;
+    expect([p.style, p.scale, p.baseline, p.highlight, p.coloring, p.marker])
+      .toEqual(["bars", "auto", "lowest", "none", "uniform", "dot"]);
+    Object.assign(raw.elements[0]!.payload, { marker: 3 });
+    const numeric = parseConfig(raw).elements[0]!;
+    if (numeric.kind !== "chart") throw new Error("expected a chart");
+    expect(numeric.payload.marker).toBe("pointer");
+  });
+
   it("resolves an end the highlight does not cover to no marker", () => {
     const stored = (p: ChartElement) => setChartEndMarkers(p, { high: "dot", low: "triangle" });
     const highest = chartOf(rectangular(chartConfig("3,9,1,5", (p) => { stored(p); p.highlight = "highest"; }).cfg, "3,9,1,5"));

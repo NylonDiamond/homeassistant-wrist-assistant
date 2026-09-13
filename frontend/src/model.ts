@@ -2008,6 +2008,10 @@ function optStr(v: unknown): string | undefined {
  * document, which is fine for the enums that have never grown. These three are
  * expected to grow, so a value a newer panel wrote has to read as the default
  * here rather than becoming a request the server cannot serve. */
+/** One word out of a fixed list, or the fallback when it is not text or not in it. */
+function pickWord<T extends string>(raw: unknown, words: readonly T[], fallback: T): T {
+  return typeof raw === "string" && (words as readonly string[]).includes(raw) ? raw as T : fallback;
+}
 function pickEnum<T extends string>(
   raw: string | undefined,
   table: readonly (readonly [T, string])[],
@@ -2399,24 +2403,28 @@ function parseElementKind(raw: unknown): Element {
           source: pickEnum(optStr(p.source), CHART_SOURCES, CHART_DEFAULT_SOURCE),
           statPeriod: pickEnum(optStr(p.statPeriod), STAT_PERIODS, CHART_DEFAULT_STAT_PERIOD),
           statType: pickEnum(optStr(p.statType), STAT_TYPES, CHART_DEFAULT_STAT_TYPE),
-          style: (optStr(p.style) as ChartStyle | undefined) ?? "bars",
+          // A style, scale, baseline, highlight or colouring this build does not
+          // know reads as the default, the same rule the app's decoder applies.
+          style: pickWord<ChartStyle>(p.style, ["bars", "line", "area"], "bars"),
           limit: Math.max(0, Math.round(num(p.limit, 0))),
           takeFromEnd: p.takeFromEnd === true,
-          scale: (optStr(p.scale) as ChartScale | undefined) ?? "auto",
+          scale: pickWord<ChartScale>(p.scale, ["auto", "fixed"], "auto"),
           minValue: num(p.minValue, 0),
           maxValue: num(p.maxValue, 100),
-          baseline: (optStr(p.baseline) as ChartBaseline | undefined) ?? "lowest",
+          baseline: pickWord<ChartBaseline>(p.baseline, ["lowest", "zero"], "lowest"),
           barGap: num(p.barGap, 1.5),
           lineWidth: num(p.lineWidth, 2),
-          highlight: (optStr(p.highlight) as ChartHighlight | undefined) ?? "none",
+          highlight: pickWord<ChartHighlight>(p.highlight, ["none", "highest", "lowest", "both"], "none"),
           highColorHex: str(p.highColorHex, CHART_DEFAULT_HIGH_HEX),
           lowColorHex: str(p.lowColorHex, CHART_DEFAULT_LOW_HEX),
-          marker: (optStr(p.marker) as ChartMarker | undefined) ?? "pointer",
+          // Unknown text reads as dots and anything else as the pointer, which is
+          // what the old cast drew and what the app's decoder now reads.
+          marker: typeof p.marker === "string" ? pickWord<ChartMarker>(p.marker, ["none", "dot", "pointer"], "dot") : "pointer",
           // A word this build does not know is left off, so that end reads as
           // whatever `marker` implies.
           ...(isChartEndMarker(p.highMarker) ? { highMarker: p.highMarker } : {}),
           ...(isChartEndMarker(p.lowMarker) ? { lowMarker: p.lowMarker } : {}),
-          coloring: (optStr(p.coloring) as ChartColoring | undefined) ?? "uniform",
+          coloring: pickWord<ChartColoring>(p.coloring, ["uniform", "bands"], "uniform"),
           bands: parseChartBands(p),
           bandAboveColorHex: str(p.bandHighColorHex, str(p.bandAboveColorHex, CHART_DEFAULT_BAND_HIGH_HEX)),
           fillBands: p.fillBands === true,
