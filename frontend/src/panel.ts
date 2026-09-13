@@ -539,8 +539,11 @@ export class WristAssistantPanel extends LitElement {
   /** Snap to grid, and the grid's step as a fraction of the face. A choice of
    * this browser, like the column widths, never saved into a complication:
    * the watch has no use for it. */
-  @state() private snapGrid = false;
-  @state() private gridStep: number = 0.05;
+  @state() private snapGrid = true;
+  @state() private gridStep: number = 0.01;
+  /** Whether the grid's lines are drawn. Snapping works either way; the lines
+   * start hidden so a fine grid does not cover the face. */
+  @state() private showGridLines = false;
   /** Alt is down. It flips snapping for a drag, so the grid lines show while
    * it is held even with Snap to grid off. */
   @state() private altHeld = false;
@@ -1604,12 +1607,16 @@ export class WristAssistantPanel extends LitElement {
     /* With snapping on, the button and its size read as one accent pill. */
     .grid-tool { display: inline-flex; align-items: center; }
     .grid-tool.on button.pick { border-radius: 8px 0 0 8px; padding-right: 8px; }
-    select.grid-step {
-      height: 30px; padding: 0 6px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
-      border: 0; border-left: 1px solid color-mix(in srgb, var(--wa-accent-ink) 30%, transparent); border-radius: 0 8px 8px 0;
+    select.grid-step, button.grid-lines {
+      height: 30px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+      border: 0; border-left: 1px solid color-mix(in srgb, var(--wa-accent-ink) 30%, transparent);
       background-color: color-mix(in srgb, var(--wa-accent) 82%, #000); color: var(--wa-accent-ink);
     }
-    select.grid-step:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    select.grid-step { padding: 0 6px; border-radius: 0; }
+    button.grid-lines { width: 30px; padding: 0; display: inline-grid; place-items: center; border-radius: 0 8px 8px 0; }
+    button.grid-lines[aria-pressed="false"] { color: color-mix(in srgb, var(--wa-accent-ink) 60%, transparent); }
+    button.grid-lines svg { width: 15px; height: 15px; }
+    select.grid-step:focus-visible, button.grid-lines:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .canvas-bar label { display: inline-flex; align-items: center; gap: 8px; color: var(--wa-muted); }
     .canvas-bar label select { color: var(--wa-ink); font-weight: 500; }
     button.pick {
@@ -2650,19 +2657,21 @@ export class WristAssistantPanel extends LitElement {
     try {
       const raw = window.localStorage.getItem(GRID_STORE_KEY);
       if (!raw) return;
-      const saved = JSON.parse(raw) as { on?: unknown; step?: unknown };
+      const saved = JSON.parse(raw) as { on?: unknown; step?: unknown; lines?: unknown };
       if (typeof saved.on === "boolean") this.snapGrid = saved.on;
       if ((GRID_STEPS as readonly unknown[]).includes(saved.step)) this.gridStep = saved.step as number;
+      if (typeof saved.lines === "boolean") this.showGridLines = saved.lines;
     } catch {
-      /* A browser with storage off starts with the grid off. */
+      /* A browser with storage off keeps the defaults. */
     }
   }
 
-  private setGrid(on: boolean, step: number) {
+  private setGrid(on: boolean, step: number, lines = this.showGridLines) {
     this.snapGrid = on;
     this.gridStep = step;
+    this.showGridLines = lines;
     try {
-      window.localStorage.setItem(GRID_STORE_KEY, JSON.stringify({ on, step }));
+      window.localStorage.setItem(GRID_STORE_KEY, JSON.stringify({ on, step, lines }));
     } catch {
       /* Storage off: the grid still holds for this visit. */
     }
@@ -3867,13 +3876,17 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The snap-to-grid toggle, and while it is on, the grid's size. The grid is
-   * in percent of the face, the unit the X and Y fields use, so a snapped
-   * layer lands on the same numbers on every shape.
+   * The snap-to-grid toggle, and while it is on, the grid's size and whether
+   * its lines are drawn. The size is a percent of the face's shorter side;
+   * the longer side takes the same distance in points, so cells are square.
    */
   private renderGridButton() {
     const on = this.snapGrid;
+    const lines = this.showGridLines;
     const off = !this.draft || this.parseError !== undefined || this.activeFamily === "inline";
+    const eye = lines
+      ? svg`<path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" /><circle cx="8" cy="8" r="1.9" />`
+      : svg`<path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" /><path d="M2.5 13.5l11-11" />`;
     return html`<span class="grid-tool ${on ? "on" : ""}">
       <button class="pick ${on ? "on" : ""}" ?disabled=${off} aria-pressed=${on ? "true" : "false"}
         title=${on ? "Layers snap to the grid when you drag them, and arrow keys move one grid step. Hold Alt to drag freely. Click to turn it off." : "Snap layers to a grid when you drag them. Without it, hold Alt while dragging to snap."}
@@ -3881,7 +3894,13 @@ export class WristAssistantPanel extends LitElement {
       ${on ? html`<select class="grid-step" aria-label="Grid size" ?disabled=${off}
         @change=${(e: Event) => this.setGrid(true, Number((e.target as HTMLSelectElement).value))}>
         ${GRID_STEPS.map((step) => html`<option value=${step} ?selected=${step === this.gridStep}>${step * 100}%</option>`)}
-      </select>` : nothing}
+      </select>
+      <button class="grid-lines" ?disabled=${off} aria-pressed=${lines ? "true" : "false"}
+        aria-label=${lines ? "Hide the grid lines" : "Show the grid lines"}
+        title=${lines ? "Hide the grid lines. Layers still snap." : "Show the grid lines. Layers snap either way."}
+        @click=${() => this.setGrid(true, this.gridStep, !lines)}>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${eye}</svg>
+      </button>` : nothing}
     </span>`;
   }
 
@@ -3943,7 +3962,7 @@ export class WristAssistantPanel extends LitElement {
       ["Drag a row", "Reorder the list. Drop it on a folder to put it inside"],
       ["Pick layer", "Point at the face to find a layer. Click it to select it"],
       ["Show taps", "Every tap area, labelled. With a layer selected, only its tap shows and its corners drag"],
-      ["Snap to grid", "Snap layers to a grid of 1%, 2.5%, 5% or 10% of the face when you drag them. Arrows then move one grid step"],
+      ["Snap to grid", "On by default at 1%. Layers snap to the grid when you drag them, and arrows move one grid step. The eye beside the size shows or hides the lines; snapping works either way"],
       ["Alt-drag", "Flips Snap to grid for that drag: snaps with it off, moves freely with it on"],
       ["Expand", "The face full-window, for small moves. Everything above works there too"],
       ["Locked group", "Drags as one. Unlock it in its row to move layers alone"],
@@ -5891,7 +5910,7 @@ export class WristAssistantPanel extends LitElement {
       icons: this.icons, imageSizes: this.imageSizes, tapAreas: true, slot,
       highlightId: focus ?? peek ?? highlightId,
       ...(outlineIds.length > 0 && !this.showTaps && peek === undefined ? { highlightIds: outlineIds } : {}),
-      ...(this.snapGrid || (this.altHeld && this.canEdit) ? { grid: this.gridStep } : {}),
+      ...(this.showGridLines && (this.snapGrid || (this.altHeld && this.canEdit)) ? { grid: this.gridStep } : {}),
       tapReview: this.showTaps,
       ...(focus !== undefined ? { tapFocusId: focus } : {}),
       handles: this.canEdit && !this.picking && (!this.showTaps || focus !== undefined),
