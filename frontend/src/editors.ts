@@ -54,6 +54,7 @@ import {
   GAUGE_DEFAULT_THRESHOLD_HEX,
   GAUGE_MAX_DOTS,
   chartSortedBands,
+  chartStatText,
   CHART_DEFAULT_BAND_LOW_HEX,
   CHART_DEFAULT_HIGH_HEX,
   CHART_HISTORY_DEFAULT_MINUTES,
@@ -163,7 +164,6 @@ import {
   addChartZeroLine,
   chartDotsOf,
   chartGridsOf,
-  chartZeroLinesOf,
   type ChartDotsElement,
   type ChartGridElement,
   CHART_DEFAULT_GRID_LINES,
@@ -196,6 +196,8 @@ import {
   setOtherwise,
   setTestedValue,
   shownColumns,
+  statesAddNotes,
+  statesEmptyText,
   statesSummary,
   tableShape,
   whenText,
@@ -241,7 +243,11 @@ import {
 import { chartSmoothed, chartSeriesWithHoles } from "./resolver.js";
 import { watchVersionNote } from "./version.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
-import { type ExtraKey, type ExtraOwner, extraInfo, extraName, extraOwner, extraPreview } from "./extra-previews.js";
+import {
+  CHART_DRAW_EXTRAS, CHART_READINGS, type ChartDrawExtra, type ChartSample, type ExtraKey, type ExtraOwner,
+  extraInfo, extraName, extraOwner, extraPreview,
+} from "./extra-previews.js";
+import { type ChartColourRow, chartColourRows } from "./chart-colours.js";
 import { KIND_LABEL, SECTION_COLOR } from "./kinds.js";
 import { domainIcon, domainLabel, isActiveState } from "./domain-icons.js";
 
@@ -759,6 +765,15 @@ function fallbackColorField(label: string, value: string | undefined, empty: str
   const back: ResetTo = { atDefault: value === undefined, title: `Back to ${empty.toLowerCase()}`, reset: () => set(undefined) };
   return html`<div class="field color">${fieldLabel(label, back)}
     <div class="color-row">${colorBox(label, value, set, false, empty)}</div></div>`;
+}
+
+/** One of a chart's own colour rows, as `chartColourRows` names it, with its
+ * line of what it does under it. A warning always shows; a plain note waits for
+ * the card's help. */
+function chartColourField(row: ChartColourRow, value: string | undefined, set: (v: string | undefined) => void): TemplateResult {
+  return html`${fallbackColorField(row.label, value, row.empty, set)}${row.note === undefined
+    ? nothing
+    : html`<div class=${row.warn ? "hint warn" : "hint"}>${row.note}</div>`}`;
 }
 
 function sameColor(a: string | undefined, b: string | undefined): boolean {
@@ -4105,8 +4120,10 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
   // A chart's marks on the plot (highlight, threshold, now, clock times). Built in
   // the chart case, where its setters live, and shown in the Extras card.
   let chartMarks: TemplateResult | undefined;
-  // Why a Draw button is greyed out, for the Extras preview.
+  // Why a plot switch is greyed out, for the Extras preview.
   let chartBlocked: Partial<Record<ExtraKey, string>> = {};
+  // The readings a chart draws, for the Extras previews.
+  let chartShown: readonly number[] = [];
 
   // Content is what the layer shows; look is how it is drawn. Splitting them
   // per kind is the whole difference between a form and a page a person can
@@ -4443,6 +4460,10 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         const hi = Math.max(...real, c.thresholdValue ?? -Infinity);
         return lo < 0 && hi > 0;
       })();
+      // Only the colours that paint something on this chart get a row, named
+      // for what they paint (see chart-colours.ts).
+      const colourRows = chartColourRows(c);
+      chartShown = shown;
       look = html`
         <div class="grid2">
           ${segField("Style", c.style, CHART_STYLES, (v) => setChart((p) => { p.style = v; }), { def: base.style as typeof c.style })}
@@ -4468,7 +4489,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             below zero rounds its bottom.</div>
           </div>
           <div class="fgroup">
-          ${fallbackColorField("Fill colour", c.fillColorHex, "Bar colour",
+          ${colourRows.fill === undefined ? nothing : chartColourField(colourRows.fill, c.fillColorHex,
             (v) => setChart((p) => { if (v === undefined) delete p.fillColorHex; else p.fillColorHex = v; }, "fillcol"))}
           ${checkField("Border", c.barBorderWidth !== undefined,
             (v) => setChart((p) => { if (v) p.barBorderWidth = 1; else delete p.barBorderWidth; }), false)}
@@ -4476,7 +4497,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             ${numberField("Border width", c.barBorderWidth,
               (v) => setChart((p) => { p.barBorderWidth = Math.min(Math.max(v ?? 1, 0), CHART_MAX_BAR_BORDER_WIDTH); }, "barborderw"),
               { step: 0.5, min: 0, max: CHART_MAX_BAR_BORDER_WIDTH, def: 1, unit: "pt" })}
-            ${fallbackColorField("Border colour", c.barBorderColorHex, "White",
+            ${colourRows.border === undefined ? nothing : chartColourField(colourRows.border, c.barBorderColorHex,
               (v) => setChart((p) => { if (v === undefined) delete p.barBorderColorHex; else p.barBorderColorHex = v; }, "barbordercol"))}
             ${checkField("No border on the baseline", c.barBorderOpenBase === true,
               (v) => setChart((p) => { if (v) p.barBorderOpenBase = true; else delete p.barBorderOpenBase; }), false)}`}
@@ -4506,7 +4527,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
                   fade: "Strongest at the top of the plot, fading to clear at the baseline",
                 },
                 def: chartFillStyle(base.fillStyle) })}
-            ${fallbackColorField("Fill colour", c.fillColorHex, "Line colour",
+            ${colourRows.fill === undefined ? nothing : chartColourField(colourRows.fill, c.fillColorHex,
               (v) => setChart((p) => { if (v === undefined) delete p.fillColorHex; else p.fillColorHex = v; }, "fillcol"))}
             ${watchNote(host)}
             </div>`
@@ -4550,7 +4571,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           p.coloring = v;
           if (v === "bands" && p.bands.length === 0) p.bands = seedBands(shown);
         }), { def: base.coloring as typeof c.coloring })}
-        ${colourRow("Main colour")}
+        ${colourRows.main === undefined ? nothing : colourRow(colourRows.main)}
         ${c.coloring === "bands" ? html`
           <div class="hint">Checked lowest first, so each row only says where it ends. A reading past
             the last row takes the colour underneath.
@@ -4571,43 +4592,70 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             : nothing}`
           : nothing}
         </div>`;
-      // Every extra is a button that adds a layer, the same as Numbers and
-      // Markers below, so the card has one kind of control. A button whose layer
-      // is already on the chart shows a tick and stays pressed; the × in the list
-      // at the bottom takes it off again.
-      const anchoredAt = (at: "now" | "threshold") => chartMarkersOf(host.config, id).some((m) => m.payload.chartAnchor?.at === at);
-      const timesOn = chartTimesOf(host.config, id).length > 0;
-      const dotsOn = chartDotsOf(host.config, id).length > 0;
-      const gridOn = chartGridsOf(host.config, id).length > 0;
-      const zeroOn = chartZeroLinesOf(host.config, id).length > 0;
-      const timesBlocked = chartShowsTimeLabels(c) ? undefined
-        : everyReading && usingHistory
-          ? "Clock times need evenly spaced readings: set Points to Average"
-          : "Clock times need a recorded span: set Draw to Recorded history";
-      const dotsBlocked = c.style === "bars" ? "Dots sit on a line or area chart: set Style to Line or Area" : undefined;
-      chartBlocked = { "draw:times": timesBlocked, "draw:dots": dotsBlocked };
-      const drawButton = (key: ExtraKey, label: string, on: boolean, add: (cfg: CustomComplicationConfig) => void, blocked?: string) => html`
-        <button class="small ${on ? "on" : ""}" ?disabled=${on || blocked !== undefined} aria-pressed=${on ? "true" : "false"}
-          data-extra=${key} title=${extraTitle(key, on ? `${label} is on this chart. Remove it in the list at the bottom.` : blocked ?? `Add ${label.toLowerCase()} to this chart`)}
-          @click=${() => host.update((cfg) => { add(cfg); })}>${on ? html`<span aria-hidden="true">✓</span>` : uiIcon("plus")}<span>${label}</span></button>`;
+      // Every plot extra is a switch. On adds the layer the old button added;
+      // off deletes it again, the same as its × in the list at the bottom. A line
+      // counts only when it runs through the plot, so an icon marker at now or
+      // at the threshold neither lights nor loses the line's switch.
+      const through = (cfg: CustomComplicationConfig, at: ChartAnchorPoint) =>
+        chartMarkersOf(cfg, id).filter((m) => m.payload.chartAnchor?.at === at && m.payload.chartAnchor.place === "through");
+      const followed = (cfg: CustomComplicationConfig, at: ChartAnchorPoint) =>
+        chartMarkersOf(cfg, id).some((m) => m.payload.chartAnchor?.at === at);
+      const plotLayers: Record<ChartDrawExtra, (cfg: CustomComplicationConfig) => CElement[]> = {
+        threshold: (cfg) => through(cfg, "threshold"),
+        now: (cfg) => through(cfg, "now"),
+        zero: (cfg) => through(cfg, "zero"),
+        times: (cfg) => chartTimesOf(cfg, id),
+        dots: (cfg) => chartDotsOf(cfg, id),
+        grid: (cfg) => chartGridsOf(cfg, id),
+      };
+      const addPlotLayer: Record<ChartDrawExtra, (cfg: CustomComplicationConfig) => void> = {
+        // With nothing following the threshold or now yet, the setter seeds the
+        // number and adds the line. With a marker already there, the number is
+        // set and only the line is missing.
+        threshold: (cfg) => {
+          if (followed(cfg, "threshold")) addChartLine(cfg, id, "threshold");
+          else setChartThreshold(cfg, id, c.thresholdValue ?? seedThreshold(shown));
+        },
+        now: (cfg) => { if (followed(cfg, "now")) addChartLine(cfg, id, "now"); else setChartNow(cfg, id, true); },
+        zero: (cfg) => { addChartZeroLine(cfg, id); },
+        times: (cfg) => { convertChartTimes(cfg, id); },
+        dots: (cfg) => { addChartDots(cfg, id); },
+        grid: (cfg) => { addChartGrid(cfg, id); },
+      };
+      const why: Partial<Record<ChartDrawExtra, string>> = {};
+      if (!chartShowsTimeLabels(c)) {
+        why.times = everyReading && usingHistory
+          ? "Clock times need evenly spaced readings. Set Points to Average."
+          : "Clock times need a recorded span. Set Draw to Recorded history.";
+      }
+      if (c.style === "bars") why.dots = "Dots need a line or area chart. Set Style to Line or Area.";
+      const plotOn = (d: ChartDrawExtra) => plotLayers[d](host.config).length > 0;
+      chartBlocked = {};
+      for (const [d, reason] of Object.entries(why) as [ChartDrawExtra, string][]) chartBlocked[`draw:${d}`] = reason;
+      const plotSwitch = ([d, label]: readonly [ChartDrawExtra, string]) => {
+        const on = plotOn(d);
+        // A layer already on the chart can always come off, even where a new one
+        // would draw nothing.
+        const blocked = on ? undefined : why[d];
+        const key: ExtraKey = `draw:${d}`;
+        return html`<button type="button" class="small ${on ? "on" : ""}" role="switch" aria-checked=${on ? "true" : "false"}
+          ?disabled=${blocked !== undefined} data-extra=${key}
+          title=${extraTitle(key, blocked ?? (on ? `Remove the ${label.toLowerCase()} from this chart` : `Add ${label.toLowerCase()} to this chart`))}
+          @click=${() => host.update((cfg) => {
+            if (on) for (const layer of plotLayers[d](cfg)) removeElement(cfg, layer.payload.id);
+            else addPlotLayer[d](cfg);
+          })}>${on ? html`<span aria-hidden="true">✓</span>` : uiIcon("plus")}<span>${label}</span></button>`;
+      };
       chartMarks = html`
-        <div class="field list-field"><span>Draw</span>
+        <div class="field list-field"><span>On the plot</span>
           <div class="adders" @pointerover=${pointExtra} @focusin=${pointExtra}>
-            ${drawButton("draw:threshold", "Threshold line", anchoredAt("threshold"), (cfg) => setChartThreshold(cfg, id, c.thresholdValue ?? seedThreshold(shown)))}
-            ${drawButton("draw:now", "Now line", anchoredAt("now"), (cfg) => setChartNow(cfg, id, true))}
-            ${drawButton("draw:zero", "Zero line", zeroOn, (cfg) => { addChartZeroLine(cfg, id); })}
-            ${drawButton("draw:times", "Clock times", timesOn, (cfg) => { convertChartTimes(cfg, id); }, timesBlocked)}
-            ${drawButton("draw:dots", "Dots", dotsOn, (cfg) => { addChartDots(cfg, id); }, dotsBlocked)}
-            ${drawButton("draw:grid", "Grid lines", gridOn, (cfg) => { addChartGrid(cfg, id); })}
+            ${CHART_DRAW_EXTRAS.map(plotSwitch)}
           </div>
         </div>
-        ${zeroOn && !zeroCrossed
-          ? html`<div class="hint warn">These readings never go below zero, or never above it, so the zero
-              line is not drawn.</div>`
+        ${CHART_DRAW_EXTRAS.filter(([d]) => why[d] !== undefined && !plotOn(d)).map(([d]) => html`<div class="hint keep">${why[d]}</div>`)}
+        ${plotOn("zero") && !zeroCrossed
+          ? html`<div class="hint warn">These readings never cross zero, so the zero line is not drawn.</div>`
           : nothing}
-        <div class="hint">Each button adds a layer to this chart, listed at the bottom. Click it there to set its
-          value, colour, size and the rest: where the threshold sits and which reading is now are set on
-          those lines.</div>
         ${watchNote(host)}`;
       break;
     }
@@ -4917,7 +4965,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             restoreKeys(c.elements[idx]!.payload, base, lookKeys);
             if (sizedHere) setPlacement(c, family, id, {}, true);
           }) } : {}) })}
-    ${el.kind === "chart" ? card(host, "numbers", "Extras", chartExtrasSection(host, el, chartMarks, chartBlocked),
+    ${el.kind === "chart" ? card(host, "numbers", "Extras", chartExtrasSection(host, el, chartMarks, chartBlocked, chartShown),
       { color: SECTION_COLOR.numbers, icon: "text", summary: chartNumbersSummary(host, el),
         ...(labels.length > 0 || chartMarkersOf(host.config, id).length > 0 || chartTimesOf(host.config, id).length > 0
           || chartDotsOf(host.config, id).length > 0 || chartGridsOf(host.config, id).length > 0
@@ -5142,19 +5190,72 @@ function chartNumbersSummary(host: EditorHost, el: Extract<CElement, { kind: "ch
  * the chart that has to be invented twice.
  */
 function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "chart" }>, marks: TemplateResult | undefined,
-  blocked: Partial<Record<ExtraKey, string>> = {}): TemplateResult {
+  blocked: Partial<Record<ExtraKey, string>> = {}, shown: readonly number[] = []): TemplateResult {
+  const id = el.payload.id;
   const ctx = describeContext(host);
-  const labels = chartLabelsOf(host.config, el.payload.id);
-  const times = chartTimesOf(host.config, el.payload.id);
-  const dots = chartDotsOf(host.config, el.payload.id);
-  const grids = chartGridsOf(host.config, el.payload.id);
-  const markers = chartMarkersOf(host.config, el.payload.id);
-  // The chart stays selected after an add: the next click is usually another
-  // number, and the new one is one click away in the list above the buttons.
-  const add = (stat: ChartStat) => host.update((c) => { addChartLabel(c, el.payload.id, stat); });
-  const addMarker = (at: ChartAnchorPoint) => host.update((c) => { addChartMarker(c, el.payload.id, at); });
-  const taken = new Set(labels.map((l) => (l.payload.value.kind.kind === "chartStat" ? l.payload.value.kind.stat : "")));
-  const markedAlready = new Set(markers.map((m) => m.payload.chartAnchor!.at));
+  const labels = chartLabelsOf(host.config, id);
+  const times = chartTimesOf(host.config, id);
+  const dots = chartDotsOf(host.config, id);
+  const grids = chartGridsOf(host.config, id);
+  const markers = chartMarkersOf(host.config, id);
+
+  // Every number as the resolver prints it for this chart right now, which is
+  // what a number layer added for it would print (before its unit).
+  const texts: Partial<Record<ChartStat, string>> = {};
+  for (const [stat] of CHART_STATS) {
+    const t = host.resolve({ kind: { kind: "chartStat", layer: id, stat } });
+    if (t !== undefined && t.trim() !== "") texts[stat] = t;
+  }
+  const real = shown.filter((n) => Number.isFinite(n));
+  const nowRaw = el.payload.nowIndex === undefined ? NaN : Number(host.resolve(el.payload.nowIndex));
+  const nowAt = Number.isFinite(nowRaw) && shown.length > 0 ? Math.min(shown.length - 1, Math.max(0, Math.round(nowRaw))) : undefined;
+  const nowValue = nowAt === undefined || !Number.isFinite(shown[nowAt]!) || real.length === 0
+    ? undefined
+    : chartStatText(shown[nowAt]!, Math.max(...real) - Math.min(...real));
+  const sample: ChartSample = {
+    values: shown,
+    texts,
+    ...(nowAt === undefined ? {} : { now: nowAt }),
+    ...(el.payload.thresholdValue === undefined ? {} : { threshold: el.payload.thresholdValue }),
+  };
+
+  // Each reading's two switches. On adds the same layer the old Numbers and
+  // Markers buttons added, and the chart stays selected; off deletes every
+  // layer of that kind for the reading, which Undo brings back.
+  const numbersFor = (cfg: CustomComplicationConfig, stat: ChartStat) => chartLabelsOf(cfg, id)
+    .filter((l) => l.payload.value.kind.kind === "chartStat" && l.payload.value.kind.stat === stat);
+  const markersFor = (cfg: CustomComplicationConfig, at: ChartAnchorPoint) => chartMarkersOf(cfg, id)
+    .filter((m) => m.payload.chartAnchor?.at === at && m.payload.chartAnchor.place !== "through");
+  const readingSwitch = (key: ExtraKey, count: number, addTitle: string, removeTitle: string, label: string,
+    add: (cfg: CustomComplicationConfig) => void, layersNow: (cfg: CustomComplicationConfig) => CElement[]) => html`
+    <button type="button" class="xtog ${count > 0 ? "on" : ""}" role="switch" aria-checked=${count > 0 ? "true" : "false"}
+      aria-label=${label} data-extra=${key}
+      title=${extraTitle(key, count === 0 ? addTitle : count === 1 ? removeTitle : `${removeTitle}: all ${count} of them`)}
+      @click=${() => host.update((cfg) => {
+        if (count > 0) for (const layer of layersNow(cfg)) removeElement(cfg, layer.payload.id);
+        else add(cfg);
+      })}>${count > 0 ? html`<span aria-hidden="true">✓</span>` : uiIcon("plus")}</button>`;
+  const readings = html`<div class="xreadings" role="table" aria-label="Readings" @pointerover=${pointExtra} @focusin=${pointExtra}>
+    <div class="xr-row xr-head" role="row">
+      <span role="columnheader"><span class="xr-name">Reading</span></span><span role="columnheader"></span>
+      <span role="columnheader">Number</span><span role="columnheader">Marker</span>
+    </div>
+    ${CHART_READINGS.map((r) => {
+      const value = r.stat !== undefined ? texts[r.stat] : nowValue;
+      const statName = r.stat === undefined ? "" : (CHART_STATS.find(([s]) => s === r.stat)?.[1] ?? r.label).toLowerCase();
+      const markName = r.marker === "now" ? "the reading at now" : `the ${(CHART_ANCHOR_POINTS.find(([a]) => a === r.marker)?.[1] ?? r.label).toLowerCase()}`;
+      return html`<div class="xr-row" role="row">
+        <span role="cell"><span class="xr-name">${r.label}</span></span>
+        <span role="cell"><span class="xr-v nums">${value ?? ""}</span></span>
+        <span role="cell">${r.stat === undefined ? nothing : readingSwitch(`number:${r.stat}`, numbersFor(host.config, r.stat).length,
+          `Print the ${statName} as a number`, `Remove the ${statName} number`, `${r.label} number`,
+          (cfg) => { addChartLabel(cfg, id, r.stat!); }, (cfg) => numbersFor(cfg, r.stat!))}</span>
+        <span role="cell">${r.marker === undefined ? nothing : readingSwitch(`marker:${r.marker}`, markersFor(host.config, r.marker).length,
+          `Put a marker over ${markName}`, `Remove the marker over ${markName}`, `${r.label} marker`,
+          (cfg) => { addChartMarker(cfg, id, r.marker!); }, (cfg) => markersFor(cfg, r.marker!))}</span>
+      </div>`;
+    })}
+  </div>`;
   // A lead that shows what each one draws, so a marker and a line on the same
   // reading tell apart.
   const rows: LayerRow[] = [
@@ -5173,48 +5274,21 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
   ];
   const count = rows.length;
   return html`
-    <div class="hint">Everything the chart shows besides its readings: a threshold, now, clock times, numbers
-      and markers. Each one is a layer in this chart's group, so you can drag it and give it any size or colour.</div>
-    ${extraPreviewPane("chart", blocked, el.payload.style === "bars")}
+    <div class="hint keep">Each one you switch on is a layer in this chart's group.</div>
+    ${extraPreviewPane("chart", blocked, el.payload.style === "bars", sample)}
     ${marks ?? nothing}
-    ${count === 0
-      ? html`<div class="hint keep">A chart on its own shows that a reading moved, not what it moved to and not
-          which reading was the day's best. Add a number or a marker below and it appears as a layer in this chart's
-          group: drag it anywhere, give it any size or colour, and it follows the live value.</div>`
-      : nothing}
-    <div class="field list-field"><span>Numbers</span>
-      <div class="adders" @pointerover=${pointExtra} @focusin=${pointExtra}>
-        ${CHART_STATS.map(([stat, label]) => html`
-          <button class="small ${taken.has(stat) ? "on" : ""}" data-extra=${`number:${stat}`}
-            title=${extraTitle(`number:${stat}`, taken.has(stat) ? `Add another ${label.toLowerCase()}` : `Add the ${label.toLowerCase()}`)}
-            @click=${() => add(stat)}>${taken.has(stat) ? html`<span aria-hidden="true">✓</span>` : uiIcon("plus")}<span>${label}</span></button>`)}
-      </div>
-    </div>
-    <div class="hint">The newest reading, the change and the total start with the entity's unit after them. The change is the newest reading minus the first, and the trend arrow is that change as ↑, ↓ or →, flat when it is too small for the chart to print. The ends of the scale come from the plot's range, so on a Fixed scale they print the Min and Max above.</div>
-    <div class="field list-field"><span>Markers</span>
-      <div class="adders" @pointerover=${pointExtra} @focusin=${pointExtra}>
-        ${CHART_ANCHOR_POINTS.filter(([at]) => chartAnchorIsColumn(at)).map(([at, label]) => html`
-          <button class="small ${markedAlready.has(at) ? "on" : ""}" data-extra=${`marker:${at}`}
-            title=${extraTitle(`marker:${at}`, markedAlready.has(at) ? `Add another mark over the ${label.toLowerCase()}` : `Mark the ${label.toLowerCase()}`)}
-            @click=${() => addMarker(at)}>${markedAlready.has(at) ? html`<span aria-hidden="true">✓</span>` : uiIcon("plus")}<span>${label}</span></button>`)}
-      </div>
-    </div>
-    <div class="hint">A marker starts as an icon over the reading it names: a triangle over the highest, a dot over
-      the lowest. Pick any other icon for it in its Content card. It hangs in the empty space above its own bar rather than in a
-      band along the top, so the bars keep their full height, and it is pushed back down rather than off the chart
-      when the bar is already tall. Its Position card sets which reading it follows and which side of the bar it
-      sits on.</div>
+    <div class="field list-field"><span>Readings</span>${readings}</div>
+    <div class="hint">A number is a text layer that prints the reading. A marker is an icon over it, pushed down
+      rather than off the chart when the bar is tall. Newest, Change and Total start with the entity's unit.</div>
     ${count === 0 ? nothing : html`
       <div class="shown-head">On this chart <span class="shown-count">${count}</span></div>
       ${layerRowList(host, rows, {
         icon: "close", danger: true,
         label: (what) => `Delete this ${what}`,
-        run: (id) => host.update((c) => removeElement(c, id)),
+        run: (layerId) => host.update((c) => removeElement(c, layerId)),
       })}
-      <div class="hint">Click a row to open its main settings here. More settings selects that layer for the
-        rest. The × deletes it, and Undo brings it back. Dots and grid
-        lines always sit on the chart, so on the preview a click on the chart selects the chart; click right on a
-        dot to pick the dots.</div>`}`;
+      <div class="hint">Click a row to set its value, colour and size here. More settings selects that layer.
+        On the preview, click right on a dot to pick the dots.</div>`}`;
 }
 
 /** The Extras button last pointed at or focused, shown in the preview. Kept
@@ -5253,7 +5327,7 @@ function extraTitle(key: ExtraKey, action: string): string {
 
 /** The preview at the top of an Extras card. `owner` is the layer the card
  * belongs to: a button pointed at on another kind's card is not shown here. */
-function extraPreviewPane(owner: ExtraOwner, blocked: Partial<Record<ExtraKey, string>> = {}, bars = false): TemplateResult {
+function extraPreviewPane(owner: ExtraOwner, blocked: Partial<Record<ExtraKey, string>> = {}, bars = false, sample: ChartSample = {}): TemplateResult {
   if (!extraPreviewOn) {
     return html`<button class="link xprev-show" @click=${(e: Event) => setExtraPreviewOn(true, e.currentTarget)}>
       ${uiIcon("show")}<span>Show preview</span></button>`;
@@ -5264,10 +5338,10 @@ function extraPreviewPane(owner: ExtraOwner, blocked: Partial<Record<ExtraKey, s
   const why = key === undefined ? undefined : blocked[key];
   const word = owner === "image" ? "picture" : owner;
   return html`<div class="xprev">
-    <span class="well">${extraPreview(owner, key, bars)}</span>
+    <span class="well">${extraPreview(owner, key, bars, sample)}</span>
     <span class="xprev-t">
       <b>${key === undefined ? "Preview" : extraName(key)}</b>
-      <span>${key === undefined ? `Point at a button below to see what it adds to the ${word}.` : extraInfo(key)}</span>
+      <span>${key === undefined ? `Point at a ${owner === "chart" ? "switch" : "button"} below to see what it adds to the ${word}.` : extraInfo(key)}</span>
       ${why ? html`<span class="xprev-why">${why}</span>` : nothing}
     </span>
     <button class="icon xprev-hide" title="Hide the preview" aria-label="Hide the preview"
@@ -6339,7 +6413,7 @@ function statesTable(
           ${rows}
           ${otherwiseRow}
           ${table.rows.length === 0 && table.otherwise === undefined
-            ? html`<tr><td class="empty-row" colspan=${columns.length + 2}>No states yet. Add one to change how this ${target === "layout" ? "shape" : "layer"} looks when a value changes.</td></tr>`
+            ? html`<tr><td class="empty-row" colspan=${columns.length + 2}>${statesEmptyText(target)}</td></tr>`
             : nothing}
         </tbody>
       </table></div>
@@ -6354,26 +6428,27 @@ function statesTable(
         }}>Remove</button>
         <button class="small" @click=${(e: Event) => { pendingColumnRemoval.delete(key); requestRerender(e.target); }}>Cancel</button>
       </div>`}
-      <div class="field list-field"><span>Add</span>
-        <div class="states-foot">
-          <button class="small" title="Add a row: a value to match and what the layer looks like then" @click=${addRow}>${uiIcon("plus")}<span>State</span></button>
-          ${table.otherwise === undefined
-            ? html`<button class="small" title="What this layer looks like when no state above matches" @click=${() => upd((rs) => setOtherwise(rs, true))}>${uiIcon("plus")}<span>Otherwise</span></button>`
-            : nothing}
-          ${spare.length === 0 ? nothing : html`<select class="chip-add" title="Add a column" aria-label="Add a column" @change=${(e: Event) => {
-            const sel = e.target as HTMLSelectElement;
-            const p = sel.value as StyleProperty | "";
-            sel.value = "";
-            if (!p) return;
-            const set = pickedColumns.get(key) ?? new Set<StyleProperty>();
-            set.add(p);
-            pickedColumns.set(key, set);
-            requestRerender(sel);
-          }}>
-            <option value="" selected>+ Column…</option>
-            ${spare.map((p) => html`<option value=${p}>${PROPERTY_LABELS[p]}</option>`)}
-          </select>`}
-        </div>
+      <div class="states-add">
+        <button class="small" title="Add a row to the table: a value to match under When, and the look it gets" @click=${addRow}>${uiIcon("plus")}<span>Add a state</span></button>
+        <span class="states-add-note">${statesAddNotes(target).state}</span>
+        ${table.otherwise === undefined
+          ? html`<button class="small" title="Add an Otherwise row at the bottom of the table" @click=${() => upd((rs) => setOtherwise(rs, true))}>${uiIcon("plus")}<span>Add otherwise</span></button>
+            <span class="states-add-note">${statesAddNotes(target).otherwise}</span>`
+          : nothing}
+        ${spare.length === 0 ? nothing : html`<select class="chip-add" title="Add a column to the table" aria-label="Change another setting" @change=${(e: Event) => {
+          const sel = e.target as HTMLSelectElement;
+          const p = sel.value as StyleProperty | "";
+          sel.value = "";
+          if (!p) return;
+          const set = pickedColumns.get(key) ?? new Set<StyleProperty>();
+          set.add(p);
+          pickedColumns.set(key, set);
+          requestRerender(sel);
+        }}>
+          <option value="" selected>Change another setting…</option>
+          ${spare.map((p) => html`<option value=${p}>${PROPERTY_LABELS[p]}</option>`)}
+        </select>
+        <span class="states-add-note">${statesAddNotes(target).column}</span>`}
       </div>
       ${forced === "live" ? nothing : html`<div class="field"><span>Preview</span>
         <div class="row-acts"><button class="small" @click=${() => rule && host.setForced(rule.id, "live")}>Back to live</button></div>

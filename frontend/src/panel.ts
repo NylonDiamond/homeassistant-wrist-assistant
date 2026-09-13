@@ -880,8 +880,8 @@ export class WristAssistantPanel extends LitElement {
        block, sits on a line of its own above the words. */
     button.small:has(> svg.ui-icon) { display: inline-flex; align-items: center; gap: 5px; }
     button.small > svg.ui-icon { width: 13px; height: 13px; flex: none; }
-    /* An Extras button whose layer is already on the chart: pressed, not greyed.
-       Draw buttons stay disabled; Numbers and Markers still add another. */
+    /* An Extras switch whose layer is already on the chart: pressed, not greyed.
+       Clicking it again takes the layer off. */
     .adders button.small.on, .adders button.small.on:disabled { display: inline-flex; align-items: center; gap: 5px; opacity: 1;
       color: var(--primary-color, #7c6cf0); border-color: color-mix(in srgb, var(--primary-color, #7c6cf0) 45%, transparent);
       background: color-mix(in srgb, var(--primary-color, #7c6cf0) 12%, transparent); }
@@ -2111,6 +2111,28 @@ export class WristAssistantPanel extends LitElement {
     .num-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
     .num-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .num-kind { font-size: 11px; color: var(--wa-muted); }
+    /* A chart's Readings list: one line per reading, its value now, and a
+       Number and a Marker switch where the reading has one. The cells sit in
+       one grid so every switch lines up down its column. */
+    .field.list-field > .xreadings { margin: 0; }
+    .xreadings { display: grid; grid-template-columns: minmax(0, 1fr) auto 44px 44px; min-width: 0; }
+    .xr-row { display: contents; }
+    .xr-row > span { display: flex; align-items: center; min-width: 0; min-height: 26px; border-top: 1px solid var(--wa-line); }
+    .xr-row > span:nth-child(n+3) { justify-content: center; }
+    .xr-row > span:nth-child(2) { justify-content: flex-end; padding-left: 6px; }
+    .xr-head > span { min-height: 20px; border-top: 0; font-size: 11px; font-weight: 600; color: var(--wa-muted); }
+    .xr-name { display: block; min-width: 0; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .xr-head .xr-name { font-size: 11px; }
+    .xr-v { display: block; max-width: 72px; font-size: 11.5px; color: var(--wa-muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    button.xtog {
+      display: inline-grid; place-items: center; width: 30px; height: 20px; padding: 0; border-radius: 6px; cursor: pointer;
+      font: inherit; font-size: 12px; font-weight: 700; line-height: 1;
+      border: 1px dashed var(--wa-line-strong); background: transparent; color: var(--wa-muted);
+    }
+    button.xtog svg { width: 12px; height: 12px; display: block; }
+    button.xtog:hover { color: var(--wa-ink); border-color: var(--wa-muted); }
+    button.xtog:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    button.xtog.on { border: 1px solid transparent; background: var(--primary-color, #7c6cf0); color: #fff; }
     dialog.preset-dialog {
       width: min(420px, calc(100vw - 32px)); padding: 16px 18px 18px;
       border: 1px solid var(--wa-line); border-radius: 12px;
@@ -2573,6 +2595,19 @@ export class WristAssistantPanel extends LitElement {
     }
     .states-switch { display: flex; align-items: baseline; gap: 8px; margin-top: 8px; }
     .states-switch .hint { margin: 0; }
+    /* The add controls under a states table, each with its one line of what it
+       adds. A narrow inspector puts the line under its control. */
+    .states > .states-add { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 5px 10px; margin: 8px 0 2px var(--wa-col); }
+    .states-add > :is(button.small, select.chip-add) { justify-self: start; }
+    .states-add-note { font-size: 11.5px; line-height: 1.35; color: var(--wa-muted); }
+    .sec-b .states-add select.chip-add {
+      width: auto; flex: none; height: 26px; min-height: 26px; padding: 0 22px 0 9px; border-radius: 8px;
+      border: 1px dashed var(--wa-line-strong); background-color: transparent; font-size: 12px; font-weight: 600;
+    }
+    @container insp (max-width: 360px) {
+      .states > .states-add { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+      .states-add-note { margin-bottom: 5px; }
+    }
     .confirm-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .value-chip-field.compact { margin: 0; }
     .value-chip-field.compact button.value-chip { padding: 3px 8px; font-size: 13px; max-width: 190px; }
