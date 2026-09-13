@@ -1895,6 +1895,25 @@ export class WristAssistantPanel extends LitElement {
     .picked .row .glyph svg { width: 16px; height: 16px; display: block; }
     .picked .row .kind { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--k); flex: none; }
     .adders { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+    /* The Extras preview: the button last pointed at, drawn on a sample chart.
+       A fixed height, so the buttons under it never move as the text changes. */
+    .xprev {
+      display: grid; grid-template-columns: minmax(96px, 150px) minmax(0, 1fr) auto; gap: 10px; align-items: start;
+      margin: 6px 0 4px; padding: 8px; border-radius: 9px; background: var(--wa-field); min-height: 74px; box-sizing: border-box;
+    }
+    .xprev .well {
+      --k: var(--primary-color, #7c6cf0);
+      display: block; aspect-ratio: 120 / 46; border-radius: 7px; overflow: hidden; background: #000;
+      border: 1px solid var(--wa-line-strong); box-sizing: border-box;
+    }
+    .xprev svg.shot { display: block; width: 100%; height: 100%; }
+    .xprev-t { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--wa-muted); min-width: 0; }
+    .xprev-t b { font-size: 12.5px; font-weight: 600; color: var(--wa-ink); }
+    .xprev-t .xprev-why { color: var(--warning-color, #e0a100); }
+    .xprev button.xprev-hide { width: 24px; height: 24px; border-radius: 6px; }
+    .xprev button.xprev-hide svg { width: 15px; height: 15px; }
+    button.link.xprev-show { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
+    button.link.xprev-show svg { width: 14px; height: 14px; }
     /* One row per number: the whole label opens that text layer, and the ×
        at the end deletes it. Two buttons, because one cannot sit inside the
        other. */
