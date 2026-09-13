@@ -4638,17 +4638,28 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         // would draw nothing.
         const blocked = on ? undefined : why[d];
         const key: ExtraKey = `draw:${d}`;
-        return html`<button type="button" class="small ${on ? "on" : ""}" role="switch" aria-checked=${on ? "true" : "false"}
-          ?disabled=${blocked !== undefined} data-extra=${key}
-          title=${extraTitle(key, blocked ?? (on ? `Remove the ${label.toLowerCase()} from this chart` : `Add ${label.toLowerCase()} to this chart`))}
-          @click=${() => host.update((cfg) => {
-            if (on) for (const layer of plotLayers[d](cfg)) removeElement(cfg, layer.payload.id);
-            else addPlotLayer[d](cfg);
-          })}>${on ? html`<span aria-hidden="true">✓</span>` : uiIcon("plus")}<span>${label}</span></button>`;
+        // Same row and switch as the Readings list below, so the two read as one
+        // kind of control: the switch sits in the Number column.
+        return html`<div class="xr-row" role="row">
+          <span role="cell"><span class="xr-name">${label}</span></span>
+          <span role="cell"></span>
+          <span role="cell"><button type="button" class="xtog ${on ? "on" : ""}" role="switch" aria-checked=${on ? "true" : "false"}
+            aria-label=${label} ?disabled=${blocked !== undefined} data-extra=${key}
+            title=${extraTitle(key, blocked ?? (on ? `Remove the ${label.toLowerCase()} from this chart` : `Add ${label.toLowerCase()} to this chart`))}
+            @click=${() => host.update((cfg) => {
+              if (on) for (const layer of plotLayers[d](cfg)) removeElement(cfg, layer.payload.id);
+              else addPlotLayer[d](cfg);
+            })}>${on ? html`<span aria-hidden="true">✓</span>` : uiIcon("plus")}</button></span>
+          <span role="cell"></span>
+        </div>`;
       };
       chartMarks = html`
         <div class="field list-field"><span>On the plot</span>
-          <div class="adders" @pointerover=${pointExtra} @focusin=${pointExtra}>
+          <div class="xreadings" role="table" aria-label="On the plot" @pointerover=${pointExtra} @focusin=${pointExtra}>
+            <div class="xr-row xr-head" role="row">
+              <span role="columnheader"><span class="xr-name">Line</span></span><span role="columnheader"></span>
+              <span role="columnheader">Show</span><span role="columnheader"></span>
+            </div>
             ${CHART_DRAW_EXTRAS.map(plotSwitch)}
           </div>
         </div>

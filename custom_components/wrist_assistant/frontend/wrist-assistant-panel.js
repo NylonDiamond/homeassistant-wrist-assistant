@@ -892,12 +892,21 @@ var Wm=Object.defineProperty;var Km=Object.getOwnPropertyDescriptor;var N=(e,n,t
               <div class="hint">Off, the wash under the line stays one colour. On, each stretch of
                 fill takes its own band, which reads well on a chart that spends real time in more
                 than one band and as noise on one that flickers between them.</div>`:g}`:g}
-        </div>`;let vo=(T,I)=>Ne(T,a).filter(de=>de.payload.chartAnchor?.at===I&&de.payload.chartAnchor.place==="through"),rd=(T,I)=>Ne(T,a).some(de=>de.payload.chartAnchor?.at===I),od={threshold:T=>vo(T,"threshold"),now:T=>vo(T,"now"),zero:T=>vo(T,"zero"),times:T=>on(T,a),dots:T=>Dn(T,a),grid:T=>On(T,a)},Vm={threshold:T=>{rd(T,"threshold")?En(T,a,"threshold"):Hc(T,a,x.thresholdValue??Il(St))},now:T=>{rd(T,"now")?En(T,a,"now"):Ac(T,a,!0)},zero:T=>{us(T,a)},times:T=>{Nn(T,a)},dots:T=>{ds(T,a)},grid:T=>{cs(T,a)}},ai={};Ln(x)||(ai.times=Je&&re?"Clock times need evenly spaced readings. Set Points to Average.":"Clock times need a recorded span. Set Draw to Recorded history."),x.style==="bars"&&(ai.dots="Dots need a line or area chart. Set Style to Line or Area.");let wo=T=>od[T](e.config).length>0;k={};for(let[T,I]of Object.entries(ai))k[`draw:${T}`]=I;let Gm=([T,I])=>{let de=wo(T),Ra=de?void 0:ai[T],sd=`draw:${T}`;return h`<button type="button" class="small ${de?"on":""}" role="switch" aria-checked=${de?"true":"false"}
-          ?disabled=${Ra!==void 0} data-extra=${sd}
-          title=${Pl(sd,Ra??(de?`Remove the ${I.toLowerCase()} from this chart`:`Add ${I.toLowerCase()} to this chart`))}
-          @click=${()=>e.update(ko=>{if(de)for(let Um of od[T](ko))ge(ko,Um.payload.id);else Vm[T](ko)})}>${de?h`<span aria-hidden="true">✓</span>`:U("plus")}<span>${I}</span></button>`};b=h`
+        </div>`;let vo=(T,I)=>Ne(T,a).filter(de=>de.payload.chartAnchor?.at===I&&de.payload.chartAnchor.place==="through"),rd=(T,I)=>Ne(T,a).some(de=>de.payload.chartAnchor?.at===I),od={threshold:T=>vo(T,"threshold"),now:T=>vo(T,"now"),zero:T=>vo(T,"zero"),times:T=>on(T,a),dots:T=>Dn(T,a),grid:T=>On(T,a)},Vm={threshold:T=>{rd(T,"threshold")?En(T,a,"threshold"):Hc(T,a,x.thresholdValue??Il(St))},now:T=>{rd(T,"now")?En(T,a,"now"):Ac(T,a,!0)},zero:T=>{us(T,a)},times:T=>{Nn(T,a)},dots:T=>{ds(T,a)},grid:T=>{cs(T,a)}},ai={};Ln(x)||(ai.times=Je&&re?"Clock times need evenly spaced readings. Set Points to Average.":"Clock times need a recorded span. Set Draw to Recorded history."),x.style==="bars"&&(ai.dots="Dots need a line or area chart. Set Style to Line or Area.");let wo=T=>od[T](e.config).length>0;k={};for(let[T,I]of Object.entries(ai))k[`draw:${T}`]=I;let Gm=([T,I])=>{let de=wo(T),Ra=de?void 0:ai[T],sd=`draw:${T}`;return h`<div class="xr-row" role="row">
+          <span role="cell"><span class="xr-name">${I}</span></span>
+          <span role="cell"></span>
+          <span role="cell"><button type="button" class="xtog ${de?"on":""}" role="switch" aria-checked=${de?"true":"false"}
+            aria-label=${I} ?disabled=${Ra!==void 0} data-extra=${sd}
+            title=${Pl(sd,Ra??(de?`Remove the ${I.toLowerCase()} from this chart`:`Add ${I.toLowerCase()} to this chart`))}
+            @click=${()=>e.update(ko=>{if(de)for(let Um of od[T](ko))ge(ko,Um.payload.id);else Vm[T](ko)})}>${de?h`<span aria-hidden="true">✓</span>`:U("plus")}</button></span>
+          <span role="cell"></span>
+        </div>`};b=h`
         <div class="field list-field"><span>On the plot</span>
-          <div class="adders" @pointerover=${Ti} @focusin=${Ti}>
+          <div class="xreadings" role="table" aria-label="On the plot" @pointerover=${Ti} @focusin=${Ti}>
+            <div class="xr-row xr-head" role="row">
+              <span role="columnheader"><span class="xr-name">Line</span></span><span role="columnheader"></span>
+              <span role="columnheader">Show</span><span role="columnheader"></span>
+            </div>
             ${Ur.map(Gm)}
           </div>
         </div>
@@ -2858,7 +2867,7 @@ ${cw(c)}`}}let l=dr(a);if(l.length>0){let d=l.slice(0,3).join(", "),c=l.length>3
        Number and a Marker switch where the reading has one. The cells sit in
        one grid so every switch lines up down its column. */
     .field.list-field > .xreadings { margin: 0; }
-    .xreadings { display: grid; grid-template-columns: minmax(0, 1fr) auto 44px 44px; min-width: 0; }
+    .xreadings { display: grid; grid-template-columns: minmax(64px, 0.9fr) auto minmax(52px, 1fr) minmax(52px, 1fr); min-width: 0; }
     .xr-row { display: contents; }
     .xr-row > span { display: flex; align-items: center; min-width: 0; min-height: 26px; border-top: 1px solid var(--wa-line); }
     .xr-row > span:nth-child(n+3) { justify-content: center; }
@@ -2868,7 +2877,7 @@ ${cw(c)}`}}let l=dr(a);if(l.length>0){let d=l.slice(0,3).join(", "),c=l.length>3
     .xr-head .xr-name { font-size: 11px; }
     .xr-v { display: block; max-width: 72px; font-size: 11.5px; color: var(--wa-muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     button.xtog {
-      display: inline-grid; place-items: center; width: 30px; height: 20px; padding: 0; border-radius: 6px; cursor: pointer;
+      display: inline-grid; place-items: center; width: calc(100% - 8px); max-width: 72px; height: 22px; padding: 0; border-radius: 6px; cursor: pointer;
       font: inherit; font-size: 12px; font-weight: 700; line-height: 1;
       border: 1px dashed var(--wa-line-strong); background: transparent; color: var(--wa-muted);
     }
@@ -2876,7 +2885,8 @@ ${cw(c)}`}}let l=dr(a);if(l.length>0){let d=l.slice(0,3).join(", "),c=l.length>3
     button.xtog:hover { color: var(--wa-ink); border-color: var(--wa-muted); }
     button.xtog:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.xtog.on { border: 1px solid transparent; background: var(--primary-color, #7c6cf0); color: #fff; }
-    dialog.preset-dialog {
+    button.xtog:disabled { opacity: .35; cursor: not-allowed; }
+    button.xtog:disabled:hover { color: var(--wa-muted); border-color: var(--wa-line-strong); }    dialog.preset-dialog {
       width: min(420px, calc(100vw - 32px)); padding: 16px 18px 18px;
       border: 1px solid var(--wa-line); border-radius: 12px;
       background: var(--wa-card); color: var(--wa-ink);

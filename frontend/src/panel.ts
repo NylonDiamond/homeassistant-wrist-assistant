@@ -2115,7 +2115,7 @@ export class WristAssistantPanel extends LitElement {
        Number and a Marker switch where the reading has one. The cells sit in
        one grid so every switch lines up down its column. */
     .field.list-field > .xreadings { margin: 0; }
-    .xreadings { display: grid; grid-template-columns: minmax(0, 1fr) auto 44px 44px; min-width: 0; }
+    .xreadings { display: grid; grid-template-columns: minmax(64px, 0.9fr) auto minmax(52px, 1fr) minmax(52px, 1fr); min-width: 0; }
     .xr-row { display: contents; }
     .xr-row > span { display: flex; align-items: center; min-width: 0; min-height: 26px; border-top: 1px solid var(--wa-line); }
     .xr-row > span:nth-child(n+3) { justify-content: center; }
@@ -2125,7 +2125,7 @@ export class WristAssistantPanel extends LitElement {
     .xr-head .xr-name { font-size: 11px; }
     .xr-v { display: block; max-width: 72px; font-size: 11.5px; color: var(--wa-muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     button.xtog {
-      display: inline-grid; place-items: center; width: 30px; height: 20px; padding: 0; border-radius: 6px; cursor: pointer;
+      display: inline-grid; place-items: center; width: calc(100% - 8px); max-width: 72px; height: 22px; padding: 0; border-radius: 6px; cursor: pointer;
       font: inherit; font-size: 12px; font-weight: 700; line-height: 1;
       border: 1px dashed var(--wa-line-strong); background: transparent; color: var(--wa-muted);
     }
@@ -2133,7 +2133,8 @@ export class WristAssistantPanel extends LitElement {
     button.xtog:hover { color: var(--wa-ink); border-color: var(--wa-muted); }
     button.xtog:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.xtog.on { border: 1px solid transparent; background: var(--primary-color, #7c6cf0); color: #fff; }
-    dialog.preset-dialog {
+    button.xtog:disabled { opacity: .35; cursor: not-allowed; }
+    button.xtog:disabled:hover { color: var(--wa-muted); border-color: var(--wa-line-strong); }    dialog.preset-dialog {
       width: min(420px, calc(100vw - 32px)); padding: 16px 18px 18px;
       border: 1px solid var(--wa-line); border-radius: 12px;
       background: var(--wa-card); color: var(--wa-ink);
