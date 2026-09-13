@@ -543,6 +543,11 @@ export class WristAssistantPanel extends LitElement {
    * every member for a group row. Tinted on the preview, so a row can be
    * found on the face without selecting it. Selection stays where it was. */
   @state() private listHoverIds: readonly string[] = [];
+  /** The same tint for the rows inside an inspector (a group's members, a
+   * chart's extras): the one under the pointer, and every row that is open, so
+   * the layer being changed stays marked while the pointer is on its fields. */
+  @state() private rowHoverId?: string;
+  @state() private openRowIds: readonly string[] = [];
   /** The preview is open full-width in a modal, for fine moves on a small
    * face. Only the face and its gestures come along; the columns stay under
    * the backdrop. */
@@ -2707,6 +2712,9 @@ export class WristAssistantPanel extends LitElement {
       const before = changed.get("inspect") as Inspect | undefined;
       if (before === undefined || inspectKey(before) !== inspectKey(this.inspect)) {
         this.openSections = new Set(ALL_SECTIONS);
+        // Those rows are drawn fresh and closed for the new selection.
+        this.rowHoverId = undefined;
+        this.openRowIds = [];
       }
     }
   }
@@ -3309,6 +3317,15 @@ export class WristAssistantPanel extends LitElement {
       helpSections: this.helpSections,
       toggleHelp: (id) => this.toggleHelp(id),
       selectLayer:(id) => { this.multi = new Set(); this.inspect = { kind: "layer", id }; },
+      peekLayer: (id, on, why) => {
+        if (why === "hover") {
+          if (on) this.rowHoverId = id;
+          else if (this.rowHoverId === id) this.rowHoverId = undefined;
+          return;
+        }
+        const rest = this.openRowIds.filter((x) => x !== id);
+        this.openRowIds = on ? [...rest, id] : rest;
+      },
       selectValue: (id) => this.openSharedValue(id),
       beginGesture: () => this.draft?.beginGesture(),
     };
@@ -5795,6 +5812,7 @@ export class WristAssistantPanel extends LitElement {
     // while picking nothing on the face is dragged. Review mode drops them
     // too, except on the one tap box it is narrowed to.
     const focus = this.focusTapId();
+    const hoverIds = [...new Set([...this.listHoverIds, ...this.openRowIds, ...(this.rowHoverId !== undefined ? [this.rowHoverId] : [])])];
     const opts = {
       icons: this.icons, imageSizes: this.imageSizes, tapAreas: true, slot,
       highlightId: focus ?? highlightId,
@@ -5802,11 +5820,12 @@ export class WristAssistantPanel extends LitElement {
       tapReview: this.showTaps,
       ...(focus !== undefined ? { tapFocusId: focus } : {}),
       handles: this.canEdit && !this.picking && (!this.showTaps || focus !== undefined),
-      // Pick mode owns the tint while it is on; otherwise the Layers list
-      // does, so resting on a row shows where that layer sits on the face.
+      // Pick mode owns the tint while it is on; otherwise the Layers list and
+      // the inspector's rows do, so resting on a row shows where that layer
+      // sits on the face.
       ...(this.picking
         ? (this.pickHoverId !== undefined ? { hoverId: this.pickHoverId } : {})
-        : (this.listHoverIds.length > 0 ? { hoverIds: this.listHoverIds } : {})),
+        : (hoverIds.length > 0 ? { hoverIds } : {})),
       ...(this.timestampActiveId !== undefined && this.timestampActiveId === highlightId && !this.showTaps && !this.picking
         ? { timestampActiveId: this.timestampActiveId } : {}),
     };

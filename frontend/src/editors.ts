@@ -298,6 +298,9 @@ export interface EditorHost {
   toggleHelp(id: string): void;
   /** Make a layer the selection, the way a click on its Layers row does. */
   selectLayer(id: string): void;
+  /** Tint a layer on the preview without selecting it, for a row inside the
+   * inspector: while the pointer is on it (`hover`), or while it is open. */
+  peekLayer(id: string, on: boolean, why: "hover" | "open"): void;
   /** Open one shared value for editing, in its card under the preview. */
   selectValue(id: string): void;
   /** Hold every update until `endGesture` in one undo step. */
@@ -4863,7 +4866,10 @@ function layerRowList(
     const what = kind.toLowerCase();
     return html`
     <div class="num-row">
-      <details class="num-item">
+      <details class="num-item"
+        @toggle=${(e: Event) => host.peekLayer(id, (e.currentTarget as HTMLDetailsElement).open, "open")}
+        @pointerenter=${() => host.peekLayer(id, true, "hover")}
+        @pointerleave=${() => host.peekLayer(id, false, "hover")}>
         <summary class="num-pick" title=${`Show the settings for this ${what}`}>
           <span class="num-lead">${lead}</span>
           <span class="num-text"><span class="num-title">${title}</span><span class="num-kind">${kind}</span></span>
@@ -4876,7 +4882,12 @@ function layerRowList(
         </div>
       </details>
       <button class="icon ${action.danger ? "danger" : ""}" title=${action.label(what)} aria-label=${action.label(what)}
-        @click=${() => action.run(id)}>${uiIcon(action.icon)}</button>
+        @click=${() => {
+          // The row goes away with its toggle unheard, so drop its tint here.
+          host.peekLayer(id, false, "open");
+          host.peekLayer(id, false, "hover");
+          action.run(id);
+        }}>${uiIcon(action.icon)}</button>
     </div>`;
   };
   return html`<div class="chart-numbers">${repeat(rows, (r) => r.el.payload.id, row)}</div>`;
