@@ -543,12 +543,12 @@ export class WristAssistantPanel extends LitElement {
   /** Whether the grid's lines are drawn. Snapping works either way; the lines
    * start hidden so a fine grid does not cover the face. */
   @state() private showGridLines = false;
-  /** The grid size menu is open. Drawn by the panel rather than a native
-   * select: Chrome on macOS held the next click on the face for most of a
-   * second after its native menu closed, so a drag right after a size change
-   * lagged (measured 2026-09-12: the press was 650 to 900 ms old on arrival,
-   * with no long task on the page). */
-  @state() private gridMenuOpen = false;
+  /** Which of the preview bar's menus is open: the grid size or Preview as.
+   * Both are drawn by the panel rather than native selects: Chrome on macOS
+   * held the next click on the face for most of a second after a native menu
+   * closed, so a drag right after a change lagged (measured 2026-09-12: the
+   * press was 650 to 900 ms old on arrival, with no long task on the page). */
+  @state() private openMenu?: "grid" | "case";
   /** Alt is down. It flips snapping for a drag, so the grid lines show while
    * it is held even with Snap to grid off. */
   @state() private altHeld = false;
@@ -1623,19 +1623,29 @@ export class WristAssistantPanel extends LitElement {
     button.grid-lines[aria-pressed="false"] { color: color-mix(in srgb, var(--wa-accent-ink) 60%, transparent); }
     button.grid-lines svg { width: 15px; height: 15px; }
     button.grid-step:focus-visible, button.grid-lines:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .grid-menu {
+    /* The preview bar's own menus (grid size, Preview as), in place of native
+       selects, whose closing menu made Chrome on macOS hold the next click. */
+    .pop-menu {
       position: absolute; top: calc(100% + 6px); right: 0; z-index: 50; min-width: 84px;
       background: var(--wa-card); color: var(--wa-ink); border: 1px solid var(--wa-line-strong);
       border-radius: var(--wa-r-md); box-shadow: var(--wa-shadow-pop); padding: 4px;
       display: flex; flex-direction: column; gap: 1px;
     }
-    .grid-menu .row {
-      font: inherit; font-size: 12.5px; font-weight: 600; text-align: left; font-variant-numeric: tabular-nums;
+    .pop-menu .row {
+      font: inherit; font-size: 12.5px; font-weight: 600; text-align: left; font-variant-numeric: tabular-nums; white-space: nowrap;
       background: transparent; border: 0; color: inherit; padding: 6px 10px; border-radius: 7px; cursor: pointer;
     }
-    .grid-menu .row:hover { background: var(--wa-panel); }
-    .grid-menu .row[aria-selected="true"] { background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
-    .grid-menu .row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .pop-menu .row:hover { background: var(--wa-panel); }
+    .pop-menu .row[aria-selected="true"] { background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
+    .pop-menu .row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .case-tool { position: relative; display: inline-flex; }
+    .case-tool .pop-menu { left: -6px; right: auto; min-width: 150px; }
+    button.case-pick {
+      display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 6px 0 0; border: 0; border-radius: 6px;
+      background: transparent; color: var(--wa-ink); font: inherit; font-weight: 500; cursor: pointer; white-space: nowrap;
+    }
+    button.case-pick svg { width: 14px; height: 14px; opacity: .7; }
+    button.case-pick:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .canvas-bar label { display: inline-flex; align-items: center; gap: 8px; color: var(--wa-muted); }
     .canvas-bar label select { color: var(--wa-ink); font-weight: 500; }
     button.pick {
@@ -3918,16 +3928,16 @@ export class WristAssistantPanel extends LitElement {
     const eye = lines
       ? svg`<path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" /><circle cx="8" cy="8" r="1.9" />`
       : svg`<path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" /><path d="M2.5 13.5l11-11" />`;
-    return html`<span class="grid-tool ${on ? "on" : ""}">
+    return html`<span class="grid-tool ${on ? "on" : ""}" data-menu="grid">
       <button class="pick ${on ? "on" : ""}" ?disabled=${off} aria-pressed=${on ? "true" : "false"}
         title=${on ? "Layers snap to the grid when you drag them, and arrow keys move one grid step. Hold Alt to drag freely. Click to turn it off." : "Snap layers to a grid when you drag them. Without it, hold Alt while dragging to snap."}
         @click=${() => this.setGrid(!on, this.gridStep)}><span class="glyph">▦</span>Snap to grid</button>
-      ${on ? html`<button class="grid-step" ?disabled=${off} aria-haspopup="listbox" aria-expanded=${this.gridMenuOpen ? "true" : "false"}
+      ${on ? html`<button class="grid-step" ?disabled=${off} aria-haspopup="listbox" aria-expanded=${this.openMenu === "grid" ? "true" : "false"}
         aria-label=${`Grid size, ${this.gridStep * 100}%`} title="Grid size"
-        @click=${() => this.toggleGridMenu()}>${this.gridStep * 100}%${uiIcon("chevron")}</button>
-      ${this.gridMenuOpen ? html`<div class="grid-menu" role="listbox" aria-label="Grid size">
+        @click=${() => this.toggleMenu("grid")}>${this.gridStep * 100}%${uiIcon("chevron")}</button>
+      ${this.openMenu === "grid" ? html`<div class="pop-menu" role="listbox" aria-label="Grid size">
         ${GRID_STEPS.map((step) => html`<button class="row" role="option" aria-selected=${step === this.gridStep ? "true" : "false"}
-          @click=${() => { this.toggleGridMenu(false); this.setGrid(true, step); }}>${step * 100}%</button>`)}
+          @click=${() => { this.toggleMenu("grid", false); this.setGrid(true, step); }}>${step * 100}%</button>`)}
       </div>` : nothing}
       <button class="grid-lines" ?disabled=${off} aria-pressed=${lines ? "true" : "false"}
         aria-label=${lines ? "Hide the grid lines" : "Show the grid lines"}
@@ -4702,17 +4712,20 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
   }
 
-  /** Open or shut the grid size menu. A press anywhere outside it shuts it,
-   * the same way the complication picker closes. */
-  private toggleGridMenu(next = !this.gridMenuOpen) {
-    this.gridMenuOpen = next;
-    if (next) window.addEventListener("pointerdown", this.gridMenuOutside, { capture: true });
-    else window.removeEventListener("pointerdown", this.gridMenuOutside, { capture: true });
+  /** Open or shut one of the preview bar's menus; opening one shuts the other.
+   * A press anywhere outside the open menu's control shuts it, the same way
+   * the complication picker closes. */
+  private toggleMenu(menu: "grid" | "case", next = this.openMenu !== menu) {
+    this.openMenu = next ? menu : this.openMenu === menu ? undefined : this.openMenu;
+    if (this.openMenu !== undefined) window.addEventListener("pointerdown", this.menuOutside, { capture: true });
+    else window.removeEventListener("pointerdown", this.menuOutside, { capture: true });
   }
 
-  private gridMenuOutside = (e: PointerEvent) => {
-    const inside = e.composedPath().some((n) => n instanceof HTMLElement && n.classList.contains("grid-tool"));
-    if (!inside) this.toggleGridMenu(false);
+  private menuOutside = (e: PointerEvent) => {
+    const open = this.openMenu;
+    if (open === undefined) return;
+    const inside = e.composedPath().some((n) => n instanceof HTMLElement && n.dataset.menu === open);
+    if (!inside) this.toggleMenu(open, false);
   };
 
   private togglePicker(next = !this.pickerOpen) {
@@ -5913,9 +5926,16 @@ export class WristAssistantPanel extends LitElement {
           <div class="bar-row tools">
           <span class="inbox" title=${`Layouts are made in the ${REFERENCE_CASE.label} box. Smaller cases scale it down.`}>
             <span class="pre">Preview as</span>
-            <select aria-label="Preview as" @change=${(e: Event) => { this.previewCase = (e.target as HTMLSelectElement).value; }}>
-              ${CASES.map((c) => html`<option value=${c.label} ?selected=${c.label === watchCase.label}>${c.label}${c.measured ? "" : " (estimated)"}</option>`)}
-            </select>
+            <span class="case-tool" data-menu="case">
+              <button class="case-pick" aria-haspopup="listbox" aria-expanded=${this.openMenu === "case" ? "true" : "false"}
+                aria-label=${`Preview as ${watchCase.label}`} @click=${() => this.toggleMenu("case")}>
+                ${watchCase.label}${watchCase.measured ? "" : " (estimated)"}${uiIcon("chevron")}
+              </button>
+              ${this.openMenu === "case" ? html`<div class="pop-menu" role="listbox" aria-label="Preview as">
+                ${CASES.map((c) => html`<button class="row" role="option" aria-selected=${c.label === watchCase.label ? "true" : "false"}
+                  @click=${() => { this.toggleMenu("case", false); this.previewCase = c.label; }}>${c.label}${c.measured ? "" : " (estimated)"}</button>`)}
+              </div>` : nothing}
+            </span>
           </span>
           <span class="bar-sep" aria-hidden="true"></span>
           <span class="face-tools">${this.renderPickButton()}${this.renderShowTapsButton()}${this.renderGridButton()}</span>
