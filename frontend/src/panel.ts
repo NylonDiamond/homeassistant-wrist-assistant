@@ -4039,6 +4039,13 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private onPreviewPointerDown(family: FamilyKind, e: PointerEvent) {
+    // A press on the face calls preventDefault to start a drag, which also
+    // stops the browser moving focus. A control used just before (the grid
+    // size menu, a number box) then kept it and went on taking the arrow keys
+    // meant for the layer. Clicking the face is clicking away, so let it go.
+    const root = this.renderRoot as ShadowRoot | HTMLElement;
+    const active = ("activeElement" in root ? root.activeElement : null) as HTMLElement | null;
+    if (active && typeof active.blur === "function" && !(e.currentTarget as HTMLElement | null)?.contains(active)) active.blur();
     // Pick mode outranks dragging, and selecting is not an edit, so it works on
     // a read-only complication too.
     if (this.picking) {
