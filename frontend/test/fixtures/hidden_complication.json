@@ -1,0 +1,63 @@
+{
+  "name": "Hidden complication",
+  "description": "A document the author hid in the panel. The top-level `hidden: true` is the whole contract: the watch leaves the complication out of every watch face picker list, but a face that already shows it keeps drawing it and its slot stays taken. Hiding changes nothing about how it resolves, so every shape below draws exactly what a shown copy would. Writers put the key on the wire only when it is true (absent means shown), share export drops it, backup keeps it.",
+  "config": {
+    "schemaVersion": 4,
+    "id": "AAAAAAAA-0000-4000-8000-000000000091",
+    "name": "Hidden garage",
+    "hidden": true,
+    "values": [],
+    "slotIndex": 5,
+    "elements": [
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000091",
+          "value": {"kind": {"kind": "entityState", "entityId": "cover.garage", "displayName": "Garage", "domain": "cover"}},
+          "fontSize": 14,
+          "fontWeight": "regular",
+          "colorSlot": {"baseColorHex": "#FFFFFF"},
+          "rules": [],
+          "frame": {"x": 0.1, "y": 0.1, "width": 0.8, "height": 0.8, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      }
+    ],
+    "supportedFamilies": ["rectangular", "circular", "corner"],
+    "perFamily": [
+      "rectangular", {"cornerBodyShape": "circle", "borderWidth": 2},
+      "circular", {"cornerBodyShape": "circle", "borderWidth": 2},
+      "corner", {"cornerBodyShape": "circle", "borderWidth": 2}
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {"type": "refresh"}
+  },
+  "inputs": {
+    "entityStates": {
+      "cover.garage": {"state": "closed", "domain": "cover"}
+    },
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": ["cover.garage"],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {"id": "EEEEEEEE-0000-4000-8000-000000000091", "kind": "text", "text": "closed", "isHidden": false}
+      ]
+    },
+    "circular": {
+      "elements": [
+        {"id": "EEEEEEEE-0000-4000-8000-000000000091", "kind": "text", "text": "closed", "isHidden": false}
+      ]
+    },
+    "corner": {
+      "elements": [
+        {"id": "EEEEEEEE-0000-4000-8000-000000000091", "kind": "text", "text": "closed", "isHidden": false}
+      ]
+    }
+  }
+}
