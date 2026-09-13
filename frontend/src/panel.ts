@@ -2611,6 +2611,20 @@ export class WristAssistantPanel extends LitElement {
    */
   protected override firstUpdated(changed: PropertyValues) {
     super.firstUpdated(changed);
+    // TEMP [wa-lag] instrument: remove with the real fix. A long task means the
+    // page itself was busy; no long task means the browser held the press.
+    try {
+      new PerformanceObserver((list) => {
+        for (const t of list.getEntries()) {
+          console.log(`[wa-lag] long task ${Math.round(t.duration)}ms, began +${Math.round(t.startTime - WA_LAG.mark)}ms after setGrid`);
+        }
+      }).observe({ type: "longtask", buffered: false });
+    } catch {
+      console.log("[wa-lag] long task observer not supported");
+    }
+    window.addEventListener("pointerdown", (e) => {
+      console.log(`[wa-lag] window pointerdown +${Math.round(performance.now() - WA_LAG.mark)}ms after setGrid; event age ${Math.round(performance.now() - e.timeStamp)}ms`);
+    }, { capture: true });
     this.renderRoot.addEventListener("change", (e) => {
       const el = e.target as HTMLElement | null;
       if (el?.tagName === "SELECT") el.blur();
