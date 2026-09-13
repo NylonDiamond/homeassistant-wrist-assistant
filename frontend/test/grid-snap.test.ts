@@ -92,6 +92,21 @@ describe("a grid with its own spacing each way", () => {
     expect(next.y).toBe(0.3);
   });
 
+  it("always moves an arrow press, even where the next line rounds back to the same three decimals", () => {
+    const fine = gridFor(0.01, { width: 181, height: 65.5 });
+    let f = frame({ x: 0.301 });
+    for (let i = 0; i < 30; i++) {
+      const left = gridNudgeFrame(f, -1, 0, fine);
+      expect(left.x).toBeLessThan(f.x);
+      f = left;
+    }
+    for (let i = 0; i < 60; i++) {
+      const right = gridNudgeFrame(f, 1, 0, fine);
+      expect(right.x).toBeGreaterThan(f.x);
+      f = right;
+    }
+  });
+
   it("moves one fine step across with an arrow", () => {
     const next = gridNudgeFrame(frame({ x: 0.5 }), 1, 0, wide);
     expect(next.x).toBeCloseTo(0.5 + wide.x, 3);

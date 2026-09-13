@@ -144,8 +144,16 @@ export function gridNudgeFrame(frame: NormalizedFrame, dx: number, dy: number, g
   const next = (n: number, dir: number, step: number) => {
     if (dir === 0) return n;
     const k = (n - 0.5) / step;
-    const line = dir > 0 ? Math.floor(k + ON_LINE) + 1 : Math.ceil(k - ON_LINE) - 1;
-    return round3(line * step + 0.5);
+    let line = dir > 0 ? Math.floor(k + ON_LINE) + 1 : Math.ceil(k - ON_LINE) - 1;
+    // A frame keeps three decimals, and a fine grid's next line can round back
+    // to where the layer already is (0.30095 is 0.301 again), which left the
+    // arrow doing nothing. Step on until the rounded value really moves.
+    let v = round3(line * step + 0.5);
+    for (let guard = 0; guard < 1000 && (dir > 0 ? v <= n : v >= n); guard++) {
+      line += dir;
+      v = round3(line * step + 0.5);
+    }
+    return v;
   };
   return clampFrame({ ...frame, x: next(frame.x, Math.sign(dx), g.x), y: next(frame.y, Math.sign(dy), g.y) });
 }
