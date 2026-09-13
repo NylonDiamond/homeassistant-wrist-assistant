@@ -329,6 +329,10 @@ type LayerDetail = "compact" | "expanded";
  * like the column widths, and never part of the document. */
 const LIST_STORE_KEY = "wrist-assistant-panel.layers.v1";
 const GRID_STORE_KEY = "wrist-assistant-panel.grid.v1";
+
+// TEMP [wa-lag] instrument: timestamps for the drag delay after a grid change.
+// Remove with the real fix.
+const WA_LAG = { mark: 0, down: 0, firstMove: false, renderStart: 0 };
 /** How tall the slot a dragged row opens is, CSS px. */
 const DROP_GAP = 34;
 const COL_MIN = 200;
@@ -2682,6 +2686,9 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private setGrid(on: boolean, step: number, lines = this.showGridLines) {
+    // TEMP [wa-lag] instrument: remove with the real fix.
+    WA_LAG.mark = performance.now();
+    console.log(`[wa-lag] setGrid on=${on} step=${step} lines=${lines}`);
     this.snapGrid = on;
     this.gridStep = step;
     this.showGridLines = lines;
@@ -2849,6 +2856,13 @@ export class WristAssistantPanel extends LitElement {
   }
 
   protected override updated(changed: PropertyValues) {
+    // TEMP [wa-lag] instrument: remove with the real fix.
+    {
+      const ms = Math.round(performance.now() - WA_LAG.renderStart);
+      if (ms >= 30 || changed.has("gridStep") || changed.has("snapGrid")) {
+        console.log(`[wa-lag] render+update ${ms}ms, changed: ${[...changed.keys()].map(String).join(", ")}`);
+      }
+    }
     // Every render can change what is in a scroll box, so the edge fades are
     // re-measured here rather than only on the first one.
     this.fades.refresh([
@@ -4054,6 +4068,10 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private onPreviewPointerDown(family: FamilyKind, e: PointerEvent) {
+    // TEMP [wa-lag] instrument: remove with the real fix.
+    WA_LAG.down = performance.now();
+    WA_LAG.firstMove = true;
+    console.log(`[wa-lag] preview pointerdown +${Math.round(WA_LAG.down - WA_LAG.mark)}ms after setGrid; event age ${Math.round(performance.now() - e.timeStamp)}ms`);
     // A press on the face calls preventDefault to start a drag, which also
     // stops the browser moving focus. A control used just before (the grid
     // size menu, a number box) then kept it and went on taking the arrow keys
@@ -4212,6 +4230,11 @@ export class WristAssistantPanel extends LitElement {
     const resize = drawn !== undefined ? handleResize(drawn, start, canvas) : {};
     this.cancelGesture = beginGesture(svg, canvas, e, { elementId: id, frame: start, handle: handle ?? undefined, ...resize, ...(anchor === undefined ? this.snapTarget(family as DrawableFamily) : {}) }, {
       onFrame: (elementId: string, f: NormalizedFrame, done: boolean) => {
+        // TEMP [wa-lag] instrument: remove with the real fix.
+        if (WA_LAG.firstMove && !done) {
+          WA_LAG.firstMove = false;
+          console.log(`[wa-lag] first drag frame +${Math.round(performance.now() - WA_LAG.down)}ms after pointerdown`);
+        }
         if (!done) moved = true;
         if (done && !moved && pickOnClick !== undefined) {
           this.inspect = { kind: "layer", id: pickOnClick };
@@ -4447,6 +4470,8 @@ export class WristAssistantPanel extends LitElement {
   // ── render ────────────────────────────────────────────────────────────
 
   override render() {
+    // TEMP [wa-lag] instrument: remove with the real fix.
+    WA_LAG.renderStart = performance.now();
     const d = this.draft;
     const dirty = !!d?.dirty;
     // `narrow` is Home Assistant telling us it is a phone; otherwise the fit
