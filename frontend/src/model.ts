@@ -906,14 +906,15 @@ export interface ChartElement extends ElementBase {
    * Absent or 0 draws none. Clamped 0…6 when resolved. Bars only: a line or
    * area resolves it as 0. */
   barBorderWidth?: number;
-  /** The bars' border colour. Absent borders each bar in its own colour, and a
-   * band's own `borderColorHex` wins over it. Bars only. */
+  /** The bars' border colour. Absent borders each bar in white
+   * (`CHART_DEFAULT_BAR_BORDER_HEX`), and a band's own `borderColorHex` wins
+   * over it. Bars only. */
   barBorderColorHex?: string;
   /** Fill colour of a bar above the last band. Absent reads as the chart's
    * `fillColorHex`, then `bandAboveColorHex`. Bars only. */
   bandAboveFillColorHex?: string;
   /** Border colour of a bar above the last band. Absent reads as the chart's
-   * `barBorderColorHex`, then `bandAboveColorHex`. Bars only. */
+   * `barBorderColorHex`, then white. Bars only. */
   bandAboveBorderColorHex?: string;
   /** A bar's corner radius in design-box points. Absent reads as
    * `CHART_DEFAULT_BAR_RADIUS`, which is also never written. Bars only. */
@@ -1015,12 +1016,15 @@ export interface ChartBand {
    * and an area keep it as written and ignore it. */
   fillColorHex?: string;
   /** A bar's border in this band. Absent reads as the chart's
-   * `barBorderColorHex`, then `colorHex`. Bars only, on the same rule. */
+   * `barBorderColorHex`, then white. Bars only, on the same rule. */
   borderColorHex?: string;
 }
 
 /** Largest bar border a chart draws, in design-box points. */
 export const CHART_MAX_BAR_BORDER_WIDTH = 6;
+/** What a bar border is drawn in when neither its band nor the chart names a
+ * colour. Mirrors `ChartElement.defaultBarBorderColorHex` in the app. */
+export const CHART_DEFAULT_BAR_BORDER_HEX = "#FFFFFF";
 
 /** A stored bar border width as it is drawn: 0 when absent, not a number, or
  * not bars, else clamped 0…6. Mirrors the app's resolver. */
@@ -1034,7 +1038,8 @@ export function chartBarBorderWidth(el: Pick<ChartElement, "style" | "barBorderW
 /** One bar's fill and border colour, by the precedence the app's resolver
  * uses. A highlight wins over everything; a banded bar reads its band's own
  * colour, then the chart's, then the band colour; a one-colour bar reads the
- * chart's colour, then the series colour. `sorted` is `chartSortedBands`, and is
+ * chart's colour, then the series colour. A border that nothing names is white.
+ * `sorted` is `chartSortedBands`, and is
  * only read when the chart uses its bands. */
 export function chartBarColors(
   c: ChartElement,
@@ -1045,7 +1050,7 @@ export function chartBarColors(
 ): { fill: string; border: string } {
   if (highlightHex !== undefined) return { fill: highlightHex, border: highlightHex };
   if (!chartUsesBands(c)) {
-    return { fill: c.fillColorHex ?? seriesHex, border: c.barBorderColorHex ?? seriesHex };
+    return { fill: c.fillColorHex ?? seriesHex, border: c.barBorderColorHex ?? CHART_DEFAULT_BAR_BORDER_HEX };
   }
   const band = sorted.find((b) => reading <= b.upTo);
   const own = band
@@ -1053,7 +1058,7 @@ export function chartBarColors(
     : { color: c.bandAboveColorHex, fill: c.bandAboveFillColorHex, border: c.bandAboveBorderColorHex };
   return {
     fill: own.fill ?? c.fillColorHex ?? own.color,
-    border: own.border ?? c.barBorderColorHex ?? own.color,
+    border: own.border ?? c.barBorderColorHex ?? CHART_DEFAULT_BAR_BORDER_HEX,
   };
 }
 

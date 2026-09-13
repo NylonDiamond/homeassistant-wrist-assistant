@@ -1,6 +1,6 @@
 {
   "name": "Chart bar border and fill",
-  "description": "Five charts read 2, 5, 9. Each bar has a fill colour and, when the border is on, a border colour drawn inside the bar outline. The first bar chart stores no new key, so its border is off and every bar fills in the series colour, as before. The second is one colour with a 1.5 point yellow border and a see-through yellow fill. The third is banded with a 2 point border and a chart fill colour of #333333: reading 2 falls in the first band, which has its own fill and border colours; reading 5 falls in the second band, which has neither, so it fills in the chart fill colour and borders in the band colour; reading 9 is above the last band, which has its own fill and borders in the above colour. A band's own fill wins over the chart fill, and the chart fill wins over the band colour. The fourth highlights both ends: a highlighted bar fills and borders in its highlight colour, and the middle bar takes the chart fill and border colours. The fifth is a line, which has no bars, so the stored border width reads as 0 and both colour lists are empty.",
+  "description": "Five charts read 2, 5, 9. Each bar has a fill colour and, when the border is on, a border colour drawn inside the bar outline. The first bar chart stores no new key, so its border is off and every bar fills in the series colour, as before. The second is one colour with a 1.5 point yellow border and a see-through yellow fill. The third is banded with a 2 point border and a chart fill colour of #333333: reading 2 falls in the first band, which has its own fill and border colours; reading 5 falls in the second band, which has neither, so it fills in the chart fill colour and borders in white; reading 9 is above the last band, which has its own fill and borders in white. A band's own fill wins over the chart fill, and the chart fill wins over the band colour. A border that neither its band nor the chart names is white. The fourth highlights both ends: a highlighted bar fills and borders in its highlight colour, and the middle bar takes the chart fill and border colours. The fifth is a line, which has no bars, so the stored border width reads as 0 and both colour lists are empty.",
   "config": {
     "schemaVersion": 6,
     "id": "AAAAAAAA-0000-4000-8000-000000000300",
@@ -230,7 +230,7 @@
           "kind": "chart",
           "barBorderWidth": 2,
           "barFillColorHexes": ["#32D74B66", "#333333", "#FF453A66"],
-          "barBorderColorHexes": ["#7CFF8A", "#FFD60A", "#FF453A"]
+          "barBorderColorHexes": ["#7CFF8A", "#FFFFFF", "#FFFFFF"]
         },
         {
           "id": "EEEEEEEE-0000-4000-8000-000000000304",

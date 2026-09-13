@@ -229,6 +229,7 @@ import {
   CHART_DEFAULT_GRID_HEX,
   CHART_MAX_GRID_LINES,
   CHART_MAX_BAR_BORDER_WIDTH,
+  CHART_DEFAULT_BAR_BORDER_HEX,
   chartBarCorners,
   chartBarRadius,
   chartFillStyle,
@@ -1550,7 +1551,7 @@ function bandTableFields(
   // which is what the band bar above shows and what a bar fills in, and also the
   // band's own fill only while the chart has a fill colour that would otherwise
   // win. Border writes the band's own border; its reset dot goes back to the
-  // chart's border colour, or the band colour.
+  // chart's border colour, or white.
   const colours = (label: string, row: { colorHex: string; fillColorHex?: string; borderColorHex?: string },
     setColour: (v: string) => void, setFill: (v: string | undefined) => void, setBorder: (v: string | undefined) => void) => {
     if (!split) return colorBox(label, row.colorHex, (v) => setColour(v ?? "#FFFFFF"));
@@ -1560,7 +1561,7 @@ function bandTableFields(
       atDefault: false, title: "Back to the chart fill colour", reset: () => setFill(undefined),
     };
     const borderBack: ResetTo | undefined = row.borderColorHex === undefined ? undefined : {
-      atDefault: false, title: `Back to ${chartBorder === undefined ? "the band colour" : "the chart border colour"}`, reset: () => setBorder(undefined),
+      atDefault: false, title: `Back to ${chartBorder === undefined ? "white" : "the chart border colour"}`, reset: () => setBorder(undefined),
     };
     return html`
       ${bandColorCell(`${label} fill`, row.fillColorHex ?? chartFill ?? row.colorHex, (v) => {
@@ -1568,7 +1569,7 @@ function bandTableFields(
         setColour(v);
         setFill(chartFill === undefined ? undefined : v);
       }, fillBack)}
-      ${bandColorCell(`${label} border`, row.borderColorHex ?? chartBorder ?? row.colorHex, (v) => setBorder(v), borderBack)}`;
+      ${bandColorCell(`${label} border`, row.borderColorHex ?? chartBorder ?? CHART_DEFAULT_BAR_BORDER_HEX, (v) => setBorder(v), borderBack)}`;
   };
   // The box for where band `i` ends. A middle row shows two: its own end, and
   // the end of the band under it as its start, so a row reads "122 – 231".
@@ -4450,7 +4451,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             ${numberField("Border width", c.barBorderWidth,
               (v) => setChart((p) => { p.barBorderWidth = Math.min(Math.max(v ?? 1, 0), CHART_MAX_BAR_BORDER_WIDTH); }, "barborderw"),
               { step: 0.5, min: 0, max: CHART_MAX_BAR_BORDER_WIDTH, def: 1, unit: "pt" })}
-            ${fallbackColorField("Border colour", c.barBorderColorHex, "Bar colour",
+            ${fallbackColorField("Border colour", c.barBorderColorHex, "White",
               (v) => setChart((p) => { if (v === undefined) delete p.barBorderColorHex; else p.barBorderColorHex = v; }, "barbordercol"))}`}
           ${watchNote(host)}
           <div class="hint">The border is drawn inside each bar, so bars keep their size. A highlighted

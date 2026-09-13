@@ -128,11 +128,11 @@ describe("resolving bar border and fill", () => {
     }
   });
 
-  it("fills a one-colour bar in the rule-changed series colour when nothing is set", () => {
+  it("fills a one-colour bar in the series colour and borders it in white when nothing is set", () => {
     const { cfg, state } = chartConfig("1,2", (p) => { p.style = "bars"; p.colorSlot.baseColorHex = "#0A84FF"; p.barBorderWidth = 1; });
     const c = chartOf(cfg, state);
     expect(c.barFillColorHexes).toEqual(["#0A84FF", "#0A84FF"]);
-    expect(c.barBorderColorHexes).toEqual(["#0A84FF", "#0A84FF"]);
+    expect(c.barBorderColorHexes).toEqual(["#FFFFFF", "#FFFFFF"]);
   });
 
   it("puts a band's own colour over the chart's, the chart's over the band colour, and a highlight over all", () => {
