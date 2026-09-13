@@ -99,7 +99,6 @@ import {
   elementSize,
   refitPlacement,
   IMAGE_DEFAULT_CORNER_RADIUS,
-  IMAGE_DEFAULT_TIMESTAMP_SIZE,
   ZERO_OUTSET,
   hasFreeTimestamp,
   isZeroOutset,
@@ -159,9 +158,6 @@ import {
   type ChartTimesElement,
   addImageTime,
   imageTimesOf,
-  type ImageTimeElement,
-  IMAGE_TIME_MIN_SIZE,
-  IMAGE_TIME_MAX_SIZE,
   addChartDots,
   addChartGrid,
   addChartZeroLine,
@@ -2960,7 +2956,7 @@ export function lookSummary(el: CElement): string | undefined {
     case "image": return `${el.payload.contentMode === "fill" ? "Fill the frame" : "Fit inside"} · ${el.payload.zoom.toFixed(2)}x · corners ${el.payload.cornerRadius} pt`;
     case "tap": return undefined;
     case "chartTimes": return `${el.payload.timeLabelCount <= 0 ? "no" : el.payload.timeLabelCount} times · ${el.payload.labelSize} pt · ${colorWords(el.payload.labelColorHex)}`;
-    case "imageTime": return `${el.payload.size} pt`;
+    case "imageTime": return undefined;
     case "chartDots": {
       const d = el.payload;
       return `${d.dots === "all" ? "all" : "auto"} · ${d.size === undefined ? "automatic size" : `${d.size} pt`} · ${d.colorHex === undefined ? "series colour" : colorWords(d.colorHex)}`;
@@ -4482,8 +4478,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           : nothing}
         <div class="hint">The time that picture was fetched, not the time now: a picture that stops updating
           keeps its old time, so a stale one reads as stale. The watch shows nothing here until the picture
-          has been fetched once. Move it like any other layer; the chip sits in the middle of the frame.</div>`;
-      look = html`<div class="grid2">${imageTimeSizeField(t, (m) => upd((e) => m((e as typeof el).payload), "size"))}</div>`;
+          has been fetched once. Move and size it like any other layer: the chip grows to fill the frame.</div>`;
       break;
     }
     case "chartDots": {
@@ -4616,13 +4611,6 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
     ${opts.tap === false ? nothing : tapCard(host, el)}`;
 }
 
-/** A timestamp layer's one setting: how big its text is. */
-function imageTimeSizeField(t: ImageTimeElement, set: (m: (p: ImageTimeElement) => void) => void): TemplateResult {
-  return numberField("Text size", t.size, (v) => set((p) => {
-    p.size = Math.min(IMAGE_TIME_MAX_SIZE, Math.max(IMAGE_TIME_MIN_SIZE, v ?? IMAGE_DEFAULT_TIMESTAMP_SIZE));
-  }), { step: 1, min: IMAGE_TIME_MIN_SIZE, max: IMAGE_TIME_MAX_SIZE, def: IMAGE_DEFAULT_TIMESTAMP_SIZE, unit: "pt" });
-}
-
 /**
  * The Extras card of a timeline or a picture: the one layer each can have
  * besides itself (a timeline's clock times, a picture's timestamp), the button
@@ -4706,7 +4694,7 @@ const LOOK_KEYS: Record<CElement["kind"], readonly string[]> = {
   chartTimes: ["timeLabelCount", "labelSize", "labelColorHex", "hourCycle", "minutes"],
   chartDots: ["dots", "size", "colorHex"],
   chartGrid: ["lines", "colorHex", "thickness"],
-  imageTime: ["size"],
+  imageTime: [],
 };
 
 /** The Chart row of a layer that draws on a chart: the chart's name as a button
@@ -5067,7 +5055,7 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
         </div>`;
     }
     case "imageTime":
-      return html`<div class="grid2">${imageTimeSizeField(el.payload, (m) => upd((e) => { if (e.kind === "imageTime") m(e.payload); }, "size"))}</div>`;
+      return html``;
     case "chartDots": {
       const d = el.payload;
       const linked = host.config.elements.find((e) => e.payload.id === d.chart);

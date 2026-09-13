@@ -6409,7 +6409,7 @@ function layerMeta(el: CElement, resolver: Resolver, historySeries: Map<string, 
     case "chartTimes": return `${el.payload.timeLabelCount} times · ${el.payload.labelSize} pt`;
     case "chartDots": return `${el.payload.dots === "all" ? "every reading" : "auto"}${el.payload.size === undefined ? "" : ` · ${el.payload.size} pt`}`;
     case "chartGrid": return `${el.payload.lines} ${el.payload.lines === 1 ? "line" : "lines"} · ${el.payload.thickness} pt`;
-    case "imageTime": return `${el.payload.size} pt`;
+    case "imageTime": return undefined;
   }
 }
 

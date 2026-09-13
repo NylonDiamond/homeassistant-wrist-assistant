@@ -1720,8 +1720,10 @@ export interface ChartGridElement extends Omit<ElementBase, "colorSlot"> {
 }
 
 /** A picture's fetched-at time as a layer of their own: the chip the image
- * used to draw inside itself (`h:mm:ss` on a dark capsule), centred in this
- * layer's frame, so it can sit anywhere on the face, outside the picture too.
+ * used to draw inside itself (`h:mm:ss` on a dark capsule), as big as fits in
+ * this layer's frame and centred in it (`imageTimeTextSize`), so it can sit
+ * anywhere on the face, outside the picture too, and resizing the frame
+ * resizes the chip.
  * Nothing is drawn on the watch until the linked picture has been fetched, or
  * when the link is not a picture.
  *
@@ -1730,12 +1732,7 @@ export interface ChartGridElement extends Omit<ElementBase, "colorSlot"> {
 export interface ImageTimeElement extends Omit<ElementBase, "colorSlot"> {
   /** The image layer whose fetched-at time is shown. */
   image: string;
-  /** Text size in design points. Clamped 4…40 when drawn. */
-  size: number;
 }
-
-export const IMAGE_TIME_MIN_SIZE = 4;
-export const IMAGE_TIME_MAX_SIZE = 40;
 
 export type Element =
   | { kind: "text"; payload: TextElement }
@@ -2476,8 +2473,6 @@ function parseElementKind(raw: unknown): Element {
           ...base,
           // Ids are uppercased on the way in, so the link has to be too.
           image: str(p.image).toUpperCase(),
-          // Kept as written; clamped only when drawn, as the app does.
-          size: num(p.size, IMAGE_DEFAULT_TIMESTAMP_SIZE),
         },
       };
     }
@@ -3058,15 +3053,24 @@ export function imageTimesOf(cfg: CustomComplicationConfig, imageId: string): Ex
  * `CustomComplication.timestampChipSize` in the app, for the widest label
  * (`10:00:00`), so a layer made from it never clips the time. */
 export function imageTimeChipSize(size: number): { w: number; h: number } {
-  const s = Math.min(IMAGE_TIME_MAX_SIZE, Math.max(IMAGE_TIME_MIN_SIZE, size));
+  const s = Math.min(40, Math.max(4, size));
   return { w: 8 * s * 0.578 + s * 0.89, h: s * 1.25 };
+}
+
+/** The text size a timestamp layer draws at: the biggest whose chip, for the
+ * widest label (`10:00:00`), fits a frame `w` by `h` design points. Sizing
+ * from the widest label keeps the text still as the hour gains a digit. The
+ * inverse of `imageTimeChipSize`, and `CustomComplication.timestampTextSize`
+ * in the app. */
+export function imageTimeTextSize(w: number, h: number): number {
+  return Math.max(0, Math.min(w / (8 * 0.578 + 0.89), h / 1.25));
 }
 
 /** Give a picture's timestamp a layer of its own, and return its id.
  *
- * The layer is exactly the chip the picture drew: the same text size, and a
- * frame the chip's own size at the spot the picture put it (its corner, or its
- * free point), so the face reads the same. It sits directly above the picture in
+ * The layer is exactly the chip the picture drew: a frame the chip's own size
+ * at the spot the picture put it (its corner, or its free point), so it draws
+ * at the same text size and the face reads the same. It sits directly above the picture in
  * its group. The picture's own timestamp keys are cleared, so it draws no chip
  * of its own. `box` is the design box the picture's frame is a fraction of.
  * Undefined when `imageId` is not a picture. */
@@ -3080,7 +3084,6 @@ export function addImageTime(
   const p = image.payload;
   const el = newElement("imageTime") as Extract<Element, { kind: "imageTime" }>;
   el.payload.image = imageId;
-  el.payload.size = p.timestampSize;
   const chip = imageTimeChipSize(p.timestampSize);
   const lx = p.frame.x * box.width;
   const ly = p.frame.y * box.height;
@@ -3816,7 +3819,6 @@ function encodeElementKind(el: Element): J {
         isHidden: t.isHidden,
       };
       if (t.image !== "") o.image = t.image;
-      if (t.size !== IMAGE_DEFAULT_TIMESTAMP_SIZE) o.size = encNum(t.size);
       return { kind: "imageTime", payload: o };
     }
     case "chartDots": {
@@ -4105,6 +4107,9 @@ const K = {
   chartTimes: ["chart", "timeLabelCount", "labelSize", "labelColorHex", "hourCycle", "minutes"],
   chartDots: ["chart", "dots", "size", "colorHex"],
   chartGrid: ["chart", "lines", "colorHex", "thickness"],
+  // `size` is retired (the text size, replaced on 2026-09-12 by the chip
+  // filling the frame). Listed so a document saved while it existed still
+  // opens; nothing decodes it, and it leaves the wire on the next save.
   imageTime: ["image", "size"],
   colorSlot: ["baseColorHex"],
   rule: ["id", "cases", "otherwise", "partId"],
@@ -4409,7 +4414,7 @@ export function newElement(kind: Element["kind"]): Element {
     // Linked to no picture: `addImageTime` is the way one is made.
     case "imageTime": {
       const { colorSlot: _unused, ...b } = base("#FFFFFF");
-      return { kind, payload: { ...b, image: "", size: IMAGE_DEFAULT_TIMESTAMP_SIZE } };
+      return { kind, payload: { ...b, image: "" } };
     }
     // Linked to no chart, like chart times: `addChartDots` and `addChartGrid`
     // are the way one is made.

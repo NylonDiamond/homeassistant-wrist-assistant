@@ -74,8 +74,6 @@ import {
   chartAnchorIsColumn,
   TIMELINE_MIN_LABEL_SIZE,
   TIMELINE_MAX_LABEL_SIZE,
-  IMAGE_TIME_MIN_SIZE,
-  IMAGE_TIME_MAX_SIZE,
 } from "./model.js";
 import {
   chartBarCorners,
@@ -377,15 +375,14 @@ export interface ResolvedChartTimes extends ResolvedBase {
   labelColorHex: string;
 }
 
-/** A picture's timestamp as a layer of its own. `image` is the link as written,
- * `size` the text size clamped the way it is drawn. The watch carries the
+/** A picture's timestamp as a layer of its own. `image` is the link as written.
+ * The text size comes from the frame when drawn. The watch carries the
  * picture's fetched-at time here; the preview has no fetch of its own, so it
  * carries the picture's live URL instead, and draws the time now. Mirrors
  * `CustomComplication.ResolvedImageTime` in the app repo. */
 export interface ResolvedImageTime extends ResolvedBase {
   kind: "imageTime";
   image: string;
-  size: number;
   /** Whether the link names a picture in the document. False draws nothing. */
   linked: boolean;
   /** The linked picture's preview URL. Absent while it has none. */
@@ -1836,7 +1833,6 @@ export class Resolver {
           kind: "imageTime",
           ...base,
           image: t.image,
-          size: Math.min(IMAGE_TIME_MAX_SIZE, Math.max(IMAGE_TIME_MIN_SIZE, t.size)),
           linked: image !== undefined,
         };
         const url = image === undefined ? undefined : this.ctx.entityStates.get(image.entity.entityId)?.entityPicture;

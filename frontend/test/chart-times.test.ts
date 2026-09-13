@@ -8,7 +8,9 @@ import {
   chartTimesOf,
   ConfigParseError,
   convertChartTimes,
+  DESIGN_BOX,
   imageTimesOf,
+  imageTimeTextSize,
   liftChartOwnMarks,
   encodeConfig,
   groupOf,
@@ -272,7 +274,9 @@ describe("a picture's timestamp as a layer", () => {
     const t = cfg.elements.find((e) => e.payload.id === id) as ImageTime;
     expect(t.kind).toBe("imageTime");
     expect(t.payload.image).toBe(image.payload.id);
-    expect(t.payload.size).toBe(12);
+    // The frame is the chip at 12 pt, so filling it draws 12 pt text again.
+    const box = DESIGN_BOX.rectangular;
+    expect(imageTimeTextSize(t.payload.frame.width * box.width, t.payload.frame.height * box.height)).toBeCloseTo(12, 1);
     // Bottom right of the picture's box, inside its 4 pt pad.
     const f = t.payload.frame;
     expect(f.x + f.width).toBeLessThanOrEqual(0.5);
@@ -281,19 +285,31 @@ describe("a picture's timestamp as a layer", () => {
     expect(image.payload.timestamp).toBeUndefined();
     const written = payloadOf(cfg, image.payload.id);
     expect(Object.keys(written).some((k) => k.startsWith("timestamp"))).toBe(false);
-    expect(payloadOf(cfg, id)).toMatchObject({ image: image.payload.id, size: 12 });
+    expect(payloadOf(cfg, id)).toMatchObject({ image: image.payload.id });
     expect(groupOf(cfg, id)?.id).toBe(groupOf(cfg, image.payload.id)?.id);
   });
 
-  it("round-trips with no unknown keys, and writes size only when it is not 9", () => {
+  it("round-trips with no unknown keys, and drops the retired size key", () => {
     const { cfg, image } = camera();
     const id = addImageTime(cfg, image.payload.id)!;
     const raw = JSON.parse(JSON.stringify(encodeConfig(cfg)));
     expect(auditUnknownKeys(raw)).toEqual([]);
-    expect("size" in payloadOf(cfg, id)).toBe(false);
     expect("colorSlot" in payloadOf(cfg, id)).toBe(false);
+    const layer = (raw.elements as { payload: Record<string, unknown> }[]).find((e) => e.payload.id === id)!;
+    layer.payload.size = 11;
+    expect(auditUnknownKeys(raw)).toEqual([]);
     const back = parseConfig(raw).elements.find((e) => e.payload.id === id) as ImageTime;
-    expect(back.payload).toMatchObject({ image: image.payload.id, size: 9 });
+    expect(back.payload).toMatchObject({ image: image.payload.id });
+    expect("size" in back.payload).toBe(false);
+    expect("size" in payloadOf(parseConfig(raw), id)).toBe(false);
+  });
+
+  it("fills its frame: the text size follows the frame, sized by the widest label", () => {
+    expect(imageTimeTextSize(8 * 9 * 0.578 + 9 * 0.89, 9 * 1.25)).toBeCloseTo(9, 6);
+    // A wide, short frame is limited by its height; a tall one by its width.
+    expect(imageTimeTextSize(1000, 25)).toBeCloseTo(20, 6);
+    expect(imageTimeTextSize(55.14, 1000)).toBeCloseTo(10, 2);
+    expect(imageTimeTextSize(0, 10)).toBe(0);
   });
 
   it("is made when a document with a picture drawing its own chip is opened, and only then", () => {
@@ -315,7 +331,7 @@ describe("a picture's timestamp as a layer", () => {
       ["camera.door", { entityId: "camera.door", state: "idle", domain: "camera", iconName: "", entityPicture: "/pic" }],
     ]);
     const t = resolveAll(cfg, { entityStates, templateResults: new Map(), namedValues: [] }).rectangular!.elements.find((e) => e.id === id);
-    expect(t).toMatchObject({ kind: "imageTime", image: image.payload.id, size: 9, linked: true, url: "/pic" });
+    expect(t).toMatchObject({ kind: "imageTime", image: image.payload.id, linked: true, url: "/pic" });
     removeElement(cfg, image.payload.id);
     expect(cfg.elements.some((e) => e.payload.id === id)).toBe(false);
   });

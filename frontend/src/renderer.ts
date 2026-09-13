@@ -9,6 +9,7 @@ import {
   TIMELINE_MAX_LABEL_SIZE,
   TIMELINE_MIN_LABEL_SIZE,
   describeTapAction,
+  imageTimeTextSize,
   type FamilyKind,
   type ImageContentMode,
   type ImageSource,
@@ -1123,17 +1124,19 @@ function renderTimestampChip(c: { x: number; y: number; w: number; h: number; si
       font-family="-apple-system, 'SF Pro Rounded', Helvetica, Arial, sans-serif">${c.label}</text></g>`;
 }
 
-/** A picture's timestamp as its own layer: the chip centred in the frame, with
- * the time now, since the preview picture is always live. The watch draws
+/** A picture's timestamp as its own layer: the chip as big as fits the frame
+ * and centred in it, with the time now, since the preview picture is always live. The watch draws
  * nothing until the picture has been fetched; the preview still draws a picture
  * with no URL yet, faded, so the layer can be seen and moved. Nothing at all
  * once the picture is gone. */
 function renderImageTime(el: Extract<ResolvedElement, { kind: "imageTime" }>, box: Box) {
   if (!el.linked) return nothing;
   const label = timestampLabel(new Date());
-  const w = label.length * el.size * 0.578 + el.size * 0.89;
-  const h = el.size * 1.25;
-  return renderTimestampChip({ x: box.cx - w / 2, y: box.cy - h / 2, w, h, size: el.size, label }, el.url === undefined ? 0.5 : 1);
+  const size = imageTimeTextSize(box.w, box.h);
+  if (size <= 0) return nothing;
+  const w = label.length * size * 0.578 + size * 0.89;
+  const h = size * 1.25;
+  return renderTimestampChip({ x: box.cx - w / 2, y: box.cy - h / 2, w, h, size, label }, el.url === undefined ? 0.5 : 1);
 }
 
 /** Tap area, editor only: a faint dashed box with a small hand glyph so the

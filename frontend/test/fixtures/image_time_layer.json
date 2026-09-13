@@ -1,6 +1,6 @@
 {
   "name": "Image time layer",
-  "description": "A picture's fetched-at time as an `imageTime` layer instead of the image's own `timestamp` keys. The camera layer carries no timestamp keys, so it draws no chip of its own (`showTimestamp` false). The first time layer sits above the image in the layer list and links to it at size 11; the second links to it with no `size` and resolves to the default 9; the third links to a layer the document does not have. A fixture carries no picture bytes, so every layer resolves with no fetched-at time (`fetchedAt` absent) and draws nothing here: what both sides pin is the link, the size and the element base. An `imageTime` alone asks for no picture, so the fetch list is the image's own camera once.",
+  "description": "A picture's fetched-at time as an `imageTime` layer instead of the image's own `timestamp` keys. The camera layer carries no timestamp keys, so it draws no chip of its own (`showTimestamp` false). The first time layer sits above the image in the layer list and links to it; the second links to it too; the third links to a layer the document does not have. The chip's text size comes from the layer's frame when drawn, so nothing resolved carries a size. A fixture carries no picture bytes, so every layer resolves with no fetched-at time (`fetchedAt` absent) and draws nothing here: what both sides pin is the link and the element base. An `imageTime` alone asks for no picture, so the fetch list is the image's own camera once.",
   "config": {
     "schemaVersion": 6,
     "id": "AAAAAAAA-0000-4000-8000-000000000220",
@@ -24,8 +24,7 @@
             "rotationDegrees": 0
           },
           "isHidden": false,
-          "image": "EEEEEEEE-0000-4000-8000-000000000221",
-          "size": 11
+          "image": "EEEEEEEE-0000-4000-8000-000000000221"
         }
       },
       {
@@ -116,7 +115,6 @@
           "id": "EEEEEEEE-0000-4000-8000-000000000222",
           "kind": "imageTime",
           "image": "EEEEEEEE-0000-4000-8000-000000000221",
-          "size": 11,
           "fetchedAt": null,
           "isHidden": false,
           "frame": {
@@ -137,14 +135,12 @@
           "id": "EEEEEEEE-0000-4000-8000-000000000223",
           "kind": "imageTime",
           "image": "EEEEEEEE-0000-4000-8000-000000000221",
-          "size": 9,
           "fetchedAt": null
         },
         {
           "id": "EEEEEEEE-0000-4000-8000-000000000224",
           "kind": "imageTime",
           "image": "EEEEEEEE-0000-4000-8000-0000000002FF",
-          "size": 9,
           "fetchedAt": null
         }
       ]
