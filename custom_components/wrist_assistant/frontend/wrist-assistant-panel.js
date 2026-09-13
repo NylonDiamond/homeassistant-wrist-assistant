@@ -806,6 +806,7 @@ var Em=Object.defineProperty;var Mm=Object.getOwnPropertyDescriptor;var P=(e,n,t
           ${x.style==="bars"?ae("Bar gap",x.barGap,T=>C(I=>{I.barGap=Math.max(0,T??0)},"gap"),{step:.5,min:0,def:u.barGap,unit:"pt"}):un(e,n,t,"Line width",{step:.5,min:.5,def:m("lineWidth")})}
         </div>
         ${x.style==="bars"?h`
+          <div class="fgroup">
           <div class="grid2">
             ${ae("Corner radius",Yt(x.barRadius),T=>C(I=>{let ye=Math.max(0,T??oi);ye===oi?delete I.barRadius:I.barRadius=ye},"barradius"),{step:.5,min:0,def:Yt(u.barRadius),unit:"pt"})}
           </div>
@@ -813,6 +814,8 @@ var Em=Object.defineProperty;var Mm=Object.getOwnPropertyDescriptor;var P=(e,n,t
           ${Nt(e)}
           <div class="hint">Round top only rounds the end away from the baseline, so a bar hanging
             below zero rounds its bottom.</div>
+          </div>
+          <div class="fgroup">
           ${ma("Fill colour",x.fillColorHex,"Bar colour",T=>C(I=>{T===void 0?delete I.fillColorHex:I.fillColorHex=T},"fillcol"))}
           ${Oe("Border",x.barBorderWidth!==void 0,T=>C(I=>{T?I.barBorderWidth=1:delete I.barBorderWidth}),!1)}
           ${x.barBorderWidth===void 0?g:h`
@@ -821,13 +824,19 @@ var Em=Object.defineProperty;var Mm=Object.getOwnPropertyDescriptor;var P=(e,n,t
             ${Oe("No border on the baseline",x.barBorderOpenBase===!0,T=>C(I=>{T?I.barBorderOpenBase=!0:delete I.barBorderOpenBase}),!1)}`}
           ${Nt(e)}
           <div class="hint">The border is drawn inside each bar, so bars keep their size. A highlighted
-            bar fills and borders in its highlight colour.${x.barBorderOpenBase===!0?" With no border on the baseline, a bar hanging below zero leaves its top open.":""}${x.coloring==="bands"?" Each band can set its own fill and border below.":""}</div>`:h`
+            bar fills and borders in its highlight colour.${x.barBorderOpenBase===!0?" With no border on the baseline, a bar hanging below zero leaves its top open.":""}${x.coloring==="bands"?" Each band can set its own fill and border below.":""}</div>
+          </div>`:h`
+          <div class="fgroup">
           ${ie("Curve",x.curve??"straight",xb,T=>C(I=>{T==="straight"?delete I.curve:I.curve=T}),{titles:{straight:"A straight line from each reading to the next",smooth:"A smooth line that never rises past the highest reading or dips under the lowest",step:"Each reading holds flat until the next one, the way a state does"},def:u.curve??"straight"})}
           ${Nt(e)}
+          </div>
           ${x.style==="area"?h`
+            <div class="fgroup">
             ${ie("Fill",qt(x.fillStyle),vb,T=>C(I=>{T==="flat"?delete I.fillStyle:I.fillStyle=T}),{titles:{flat:"One even wash under the line",fade:"Strongest at the top of the plot, fading to clear at the baseline"},def:qt(u.fillStyle)})}
             ${ma("Fill colour",x.fillColorHex,"Line colour",T=>C(I=>{T===void 0?delete I.fillColorHex:I.fillColorHex=T},"fillcol"))}
-            ${Nt(e)}`:g}`}
+            ${Nt(e)}
+            </div>`:g}`}
+        <div class="fgroup">
         <div class="grid2">
           ${ie("Scale",x.scale,kb,T=>C(I=>{I.scale=T}),{titles:{auto:"The plot stretches to fit the readings it has",fixed:"The plot always runs from Min to Max"},def:u.scale})}
           ${ie("Baseline",x.baseline,$b,T=>C(I=>{I.baseline=T}),{def:u.baseline})}
@@ -841,12 +850,14 @@ var Em=Object.defineProperty;var Mm=Object.getOwnPropertyDescriptor;var P=(e,n,t
               ${ae("Max",x.maxValue,T=>C(I=>{I.maxValue=T??100},"cmax"),{def:u.maxValue})}
             </div>`:g}
         <div class="hint">${x.baseline==="zero"?"Bars grow from where zero falls, so a negative reading hangs below the line.":"Bars grow from the bottom, and the smallest reading keeps a visible stub. Switch to Zero when the readings can go negative."}</div>
+        </div>
         <div class="field"><span>Series</span>
           <div class="row-acts">
             <button class="small" title="Add a second chart layer on this frame, drawn against this chart's range"
               @click=${()=>{let T;e.update(I=>{T=Ac(I,a,ye=>Te(ye,jl))}),T&&e.selectLayer(T)}}>${V("plus")}<span>Add a second series</span></button>
           </div>
         </div>
+        <div class="fgroup">
         ${ie("Colour",x.coloring,xl,T=>C(I=>{I.coloring=T,T==="bands"&&I.bands.length===0&&(I.bands=Jr(Gt))}),{def:u.coloring})}
         ${y("Main colour")}
         ${x.coloring==="bands"?h`
@@ -857,7 +868,8 @@ var Em=Object.defineProperty;var Mm=Object.getOwnPropertyDescriptor;var P=(e,n,t
           ${x.style==="area"?h`${Oe("Band fill",x.fillBands,T=>C(I=>{I.fillBands=T}),u.fillBands)}
               <div class="hint">Off, the wash under the line stays one colour. On, each stretch of
                 fill takes its own band, which reads well on a chart that spends real time in more
-                than one band and as noise on one that flickers between them.</div>`:g}`:g}`;let ql=T=>Ge(e.config,a).some(I=>I.payload.chartAnchor?.at===T),$m=rn(e.config,a).length>0,Cm=Nn(e.config,a).length>0,Sm=Dn(e.config,a).length>0,Yl=wc(e.config,a).length>0,Xl=An(x)?void 0:Je&&te?"Clock times need evenly spaced readings: set Points to Average":"Clock times need a recorded span: set Draw to Recorded history",Jl=x.style==="bars"?"Dots sit on a line or area chart: set Style to Line or Area":void 0;k={"draw:times":Xl,"draw:dots":Jl};let ii=(T,I,ye,yo,Zl)=>h`
+                than one band and as noise on one that flickers between them.</div>`:g}`:g}
+        </div>`;let ql=T=>Ge(e.config,a).some(I=>I.payload.chartAnchor?.at===T),$m=rn(e.config,a).length>0,Cm=Nn(e.config,a).length>0,Sm=Dn(e.config,a).length>0,Yl=wc(e.config,a).length>0,Xl=An(x)?void 0:Je&&te?"Clock times need evenly spaced readings: set Points to Average":"Clock times need a recorded span: set Draw to Recorded history",Jl=x.style==="bars"?"Dots sit on a line or area chart: set Style to Line or Area":void 0;k={"draw:times":Xl,"draw:dots":Jl};let ii=(T,I,ye,yo,Zl)=>h`
         <button class="small ${ye?"on":""}" ?disabled=${ye||Zl!==void 0} aria-pressed=${ye?"true":"false"}
           data-extra=${T} title=${eo(T,ye?`${I} is on this chart. Remove it in the list at the bottom.`:Zl??`Add ${I.toLowerCase()} to this chart`)}
           @click=${()=>e.update(Tm=>{yo(Tm)})}>${ye?h`<span aria-hidden="true">✓</span>`:V("plus")}<span>${I}</span></button>`;b=h`
@@ -2646,12 +2658,24 @@ ${Uv(c)}`}}let l=or(a);if(l.length>0){let d=l.slice(0,3).join(", "),c=l.length>3
     .sec[data-open="true"] .sec-h .chev { transform: rotate(180deg); }
     .sec-b { padding: 0 0 10px; }
     .sec-b > .hint { margin: 2px 0 6px; }
+    /* Rows that belong together (a bar's border settings, its scale) sit in a
+       hairline box. The box reaches 8px out into the card's padding, so its rows
+       keep the same title and control edges as the rows outside it, and a
+       changed-setting dot moves in so it stays inside the line. */
+    .fgroup {
+      margin: 6px -8px; padding: 3px 8px; border-radius: 8px;
+      background: color-mix(in srgb, var(--c, var(--wa-accent)) 3%, transparent);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, var(--wa-accent)) 20%, transparent);
+    }
+    .fgroup > .hint { margin: 2px 0 6px; }
+    .fgroup > .hint:last-child { margin-bottom: 4px; }
+    .fgroup button.reset-dot { left: -6px; }
     .sec-b > :is(.adders, .chart-numbers, .states-switch, details.sub) { margin-top: 6px; }
     .sec-b > :is(button.small, button.link) { margin: 4px 0; }
     /* Anything in a card that is not a row (help, a note, a strip of buttons)
        starts where the controls start, so the titles keep one clean edge down
        the left. Boxes that hold rows of their own keep the full width. */
-    :is(.sec-b, .sec-b :is(.grid2, .grid4, .value-editor, .states, .rich-parts, .part-editor, .rule-box, .case-box, .test-box, .change-box))
+    :is(.sec-b, .sec-b :is(.fgroup, .grid2, .grid4, .value-editor, .states, .rich-parts, .part-editor, .rule-box, .case-box, .test-box, .change-box))
       > :is(.hint, .rich-note, .rich-confirm, .adders, .chips, .states-foot, .states-switch, .span-parts, button.small, button.link, select.adder, details.sub):not(.value-pop *) {
       margin-left: var(--wa-col);
     }

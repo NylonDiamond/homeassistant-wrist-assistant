@@ -4429,6 +4429,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             : shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5, def: baseSize("lineWidth") })}
         </div>
         ${c.style === "bars" ? html`
+          <div class="fgroup">
           <div class="grid2">
             ${numberField("Corner radius", chartBarRadius(c.barRadius),
               (v) => setChart((p) => {
@@ -4443,6 +4444,8 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           ${watchNote(host)}
           <div class="hint">Round top only rounds the end away from the baseline, so a bar hanging
             below zero rounds its bottom.</div>
+          </div>
+          <div class="fgroup">
           ${fallbackColorField("Fill colour", c.fillColorHex, "Bar colour",
             (v) => setChart((p) => { if (v === undefined) delete p.fillColorHex; else p.fillColorHex = v; }, "fillcol"))}
           ${checkField("Border", c.barBorderWidth !== undefined,
@@ -4459,7 +4462,9 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           <div class="hint">The border is drawn inside each bar, so bars keep their size. A highlighted
             bar fills and borders in its highlight colour.${c.barBorderOpenBase === true
               ? " With no border on the baseline, a bar hanging below zero leaves its top open." : ""}${c.coloring === "bands"
-              ? " Each band can set its own fill and border below." : ""}</div>` : html`
+              ? " Each band can set its own fill and border below." : ""}</div>
+          </div>` : html`
+          <div class="fgroup">
           ${segField("Curve", c.curve ?? "straight", CHART_CURVE_OPTIONS,
             (v) => setChart((p) => { if (v === "straight") delete p.curve; else p.curve = v; }),
             { titles: {
@@ -4469,7 +4474,9 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               },
               def: (base.curve as ChartCurve | undefined) ?? "straight" })}
           ${watchNote(host)}
+          </div>
           ${c.style === "area" ? html`
+            <div class="fgroup">
             ${segField("Fill", chartFillStyle(c.fillStyle), CHART_FILL_STYLE_OPTIONS,
               (v) => setChart((p) => { if (v === "flat") delete p.fillStyle; else p.fillStyle = v; }),
               { titles: {
@@ -4479,8 +4486,10 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
                 def: chartFillStyle(base.fillStyle) })}
             ${fallbackColorField("Fill colour", c.fillColorHex, "Line colour",
               (v) => setChart((p) => { if (v === undefined) delete p.fillColorHex; else p.fillColorHex = v; }, "fillcol"))}
-            ${watchNote(host)}`
+            ${watchNote(host)}
+            </div>`
             : nothing}`}
+        <div class="fgroup">
         <div class="grid2">
           ${segField("Scale", c.scale, CHART_SCALES, (v) => setChart((p) => { p.scale = v; }),
             { titles: { auto: "The plot stretches to fit the readings it has", fixed: "The plot always runs from Min to Max" }, def: base.scale as typeof c.scale })}
@@ -4503,6 +4512,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         <div class="hint">${c.baseline === "zero"
           ? "Bars grow from where zero falls, so a negative reading hangs below the line."
           : "Bars grow from the bottom, and the smallest reading keeps a visible stub. Switch to Zero when the readings can go negative."}</div>
+        </div>
         <div class="field"><span>Series</span>
           <div class="row-acts">
             <button class="small" title="Add a second chart layer on this frame, drawn against this chart's range"
@@ -4513,6 +4523,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               }}>${uiIcon("plus")}<span>Add a second series</span></button>
           </div>
         </div>
+        <div class="fgroup">
         ${segField("Colour", c.coloring, CHART_COLORINGS, (v) => setChart((p) => {
           p.coloring = v;
           if (v === "bands" && p.bands.length === 0) p.bands = seedBands(shown);
@@ -4536,7 +4547,8 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
                 fill takes its own band, which reads well on a chart that spends real time in more
                 than one band and as noise on one that flickers between them.</div>`
             : nothing}`
-          : nothing}`;
+          : nothing}
+        </div>`;
       // Every extra is a button that adds a layer, the same as Numbers and
       // Markers below, so the card has one kind of control. A button whose layer
       // is already on the chart shows a tick and stays pressed; the × in the list

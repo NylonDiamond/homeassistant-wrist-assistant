@@ -1900,12 +1900,24 @@ export class WristAssistantPanel extends LitElement {
     .sec[data-open="true"] .sec-h .chev { transform: rotate(180deg); }
     .sec-b { padding: 0 0 10px; }
     .sec-b > .hint { margin: 2px 0 6px; }
+    /* Rows that belong together (a bar's border settings, its scale) sit in a
+       hairline box. The box reaches 8px out into the card's padding, so its rows
+       keep the same title and control edges as the rows outside it, and a
+       changed-setting dot moves in so it stays inside the line. */
+    .fgroup {
+      margin: 6px -8px; padding: 3px 8px; border-radius: 8px;
+      background: color-mix(in srgb, var(--c, var(--wa-accent)) 3%, transparent);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, var(--wa-accent)) 20%, transparent);
+    }
+    .fgroup > .hint { margin: 2px 0 6px; }
+    .fgroup > .hint:last-child { margin-bottom: 4px; }
+    .fgroup button.reset-dot { left: -6px; }
     .sec-b > :is(.adders, .chart-numbers, .states-switch, details.sub) { margin-top: 6px; }
     .sec-b > :is(button.small, button.link) { margin: 4px 0; }
     /* Anything in a card that is not a row (help, a note, a strip of buttons)
        starts where the controls start, so the titles keep one clean edge down
        the left. Boxes that hold rows of their own keep the full width. */
-    :is(.sec-b, .sec-b :is(.grid2, .grid4, .value-editor, .states, .rich-parts, .part-editor, .rule-box, .case-box, .test-box, .change-box))
+    :is(.sec-b, .sec-b :is(.fgroup, .grid2, .grid4, .value-editor, .states, .rich-parts, .part-editor, .rule-box, .case-box, .test-box, .change-box))
       > :is(.hint, .rich-note, .rich-confirm, .adders, .chips, .states-foot, .states-switch, .span-parts, button.small, button.link, select.adder, details.sub):not(.value-pop *) {
       margin-left: var(--wa-col);
     }
