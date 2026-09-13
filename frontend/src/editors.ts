@@ -123,6 +123,7 @@ import {
   groupMembers,
   layerEntityUses,
   ungroup,
+  setGroup,
   literal,
   literalPartText,
   syncRichTextFallback,
@@ -237,7 +238,7 @@ import {
 import { chartSmoothed, chartSeriesWithHoles } from "./resolver.js";
 import { watchVersionNote } from "./version.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
-import { SECTION_COLOR } from "./kinds.js";
+import { KIND_LABEL, SECTION_COLOR } from "./kinds.js";
 import { domainIcon, domainLabel, isActiveState } from "./domain-icons.js";
 
 export interface EditorHost {
@@ -4782,16 +4783,11 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
   const addMarker = (at: ChartAnchorPoint) => host.update((c) => { addChartMarker(c, el.payload.id, at); });
   const taken = new Set(labels.map((l) => (l.payload.value.kind.kind === "chartStat" ? l.payload.value.kind.stat : "")));
   const markedAlready = new Set(markers.map((m) => m.payload.chartAnchor!.at));
-  // One row per layer: a lead that shows what it draws, a name, and what kind of
-  // layer it is underneath, so a marker and a line on the same reading tell apart.
-  // A click opens the row in place with the settings people change most, so the
-  // chart stays selected; "More settings" hands the selection to the layer.
-  // Native <details> keeps each row's open state in the page, and `repeat` keys
-  // it by layer id so deleting one row never opens its neighbour.
-  interface ExtraRow { el: CElement; lead: unknown; title: string; kind: string }
-  const rows: ExtraRow[] = [
-    ...labels.map((l): ExtraRow => ({ el: l, lead: host.resolve(l.payload.value) ?? "--", title: layerTitle(l, ctx), kind: "Number" })),
-    ...markers.map((m): ExtraRow => {
+  // A lead that shows what each one draws, so a marker and a line on the same
+  // reading tell apart.
+  const rows: LayerRow[] = [
+    ...labels.map((l): LayerRow => ({ el: l, lead: host.resolve(l.payload.value) ?? "--", title: layerTitle(l, ctx), kind: "Number" })),
+    ...markers.map((m): LayerRow => {
       const { at, place } = m.payload.chartAnchor!;
       const name = CHART_ANCHOR_POINTS.find(([k]) => k === at)?.[1] ?? "Reading";
       if (place === "through") return { el: m, lead: at === "now" ? "│" : "─", title: at === "zero" ? "Zero" : name, kind: "Line" };
@@ -4799,31 +4795,10 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
         : m.kind === "icon" ? markerGlyph(host.resolve(m.payload.symbol)) : "◆";
       return { el: m, lead: glyph, title: name, kind: "Marker" };
     }),
-    ...times.map((t): ExtraRow => ({ el: t, lead: uiIcon("clock"), title: "Clock times", kind: "Times" })),
-    ...dots.map((d): ExtraRow => ({ el: d, lead: uiIcon("chartDots"), title: "Reading dots", kind: "Dots" })),
-    ...grids.map((g): ExtraRow => ({ el: g, lead: uiIcon("chartGrid"), title: "Grid lines", kind: "Grid" })),
+    ...times.map((t): LayerRow => ({ el: t, lead: uiIcon("clock"), title: "Clock times", kind: "Times" })),
+    ...dots.map((d): LayerRow => ({ el: d, lead: uiIcon("chartDots"), title: "Reading dots", kind: "Dots" })),
+    ...grids.map((g): LayerRow => ({ el: g, lead: uiIcon("chartGrid"), title: "Grid lines", kind: "Grid" })),
   ];
-  const row = ({ el: layer, lead, title, kind }: ExtraRow) => {
-    const id = layer.payload.id;
-    const what = kind.toLowerCase();
-    return html`
-    <div class="num-row">
-      <details class="num-item">
-        <summary class="num-pick" title=${`Show the settings for this ${what}`}>
-          <span class="num-lead">${lead}</span>
-          <span class="num-text"><span class="num-title">${title}</span><span class="num-kind">${kind}</span></span>
-          <span class="chev">${uiIcon("chevron")}</span>
-        </summary>
-        <div class="num-body">
-          ${chartExtraQuickFields(host, layer)}
-          <div class="chips"><button class="small" title=${`Select this ${what} to see all of its settings`}
-            @click=${() => host.selectLayer(id)}><span>More settings</span></button></div>
-        </div>
-      </details>
-      <button class="icon danger" title=${`Delete this ${what}`} aria-label=${`Delete this ${what}`}
-        @click=${() => host.update((c) => removeElement(c, id))}>${uiIcon("close")}</button>
-    </div>`;
-  };
   const count = rows.length;
   return html`
     <div class="hint">Everything the chart shows besides its readings: a threshold, now, clock times, numbers
@@ -4856,23 +4831,65 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
       sits on.</div>
     ${count === 0 ? nothing : html`
       <div class="shown-head">On this chart <span class="shown-count">${count}</span></div>
-      <div class="chart-numbers">
-        ${repeat(rows, (r) => r.el.payload.id, row)}
-      </div>
+      ${layerRowList(host, rows, {
+        icon: "close", danger: true,
+        label: (what) => `Delete this ${what}`,
+        run: (id) => host.update((c) => removeElement(c, id)),
+      })}
       <div class="hint">Click a row to open its main settings here. More settings selects that layer for the
         rest. The × deletes it, and Undo brings it back. Dots and grid
         lines always sit on the chart, so on the preview a click on the chart selects the chart; click right on a
         dot to pick the dots.</div>`}`;
 }
 
+/** One layer listed inside another layer's inspector: the chart's extras, a
+ * group's members. */
+interface LayerRow { el: CElement; lead: unknown; title: string; kind: string }
+
 /**
- * The few settings of a chart extra that people change most, shown when its
- * row in the Extras card is opened: which reading, how big, what colour. The
+ * Layers listed as rows that open in place with the settings people change
+ * most, so the layer being inspected stays selected; "More settings" hands the
+ * selection to the row's layer. Native <details> keeps each row's open state in
+ * the page, and `repeat` keys it by layer id so removing one row never opens its
+ * neighbour. The button beside each row is the caller's: delete, or take out.
+ */
+function layerRowList(
+  host: EditorHost,
+  rows: readonly LayerRow[],
+  action: { icon: UiIconName; danger?: boolean; label: (what: string) => string; run: (id: string) => void },
+): TemplateResult {
+  const row = ({ el: layer, lead, title, kind }: LayerRow) => {
+    const id = layer.payload.id;
+    const what = kind.toLowerCase();
+    return html`
+    <div class="num-row">
+      <details class="num-item">
+        <summary class="num-pick" title=${`Show the settings for this ${what}`}>
+          <span class="num-lead">${lead}</span>
+          <span class="num-text"><span class="num-title">${title}</span><span class="num-kind">${kind}</span></span>
+          <span class="chev">${uiIcon("chevron")}</span>
+        </summary>
+        <div class="num-body">
+          ${layerQuickFields(host, layer)}
+          <div class="chips"><button class="small" title=${`Select this ${what} to see all of its settings`}
+            @click=${() => host.selectLayer(id)}><span>More settings</span></button></div>
+        </div>
+      </details>
+      <button class="icon ${action.danger ? "danger" : ""}" title=${action.label(what)} aria-label=${action.label(what)}
+        @click=${() => action.run(id)}>${uiIcon(action.icon)}</button>
+    </div>`;
+  };
+  return html`<div class="chart-numbers">${repeat(rows, (r) => r.el.payload.id, row)}</div>`;
+}
+
+/**
+ * The few settings of a layer that people change most, shown when its row in
+ * another layer's inspector is opened: what it shows, how big, what colour. The
  * layer's own editor keeps everything else, one click away.
  */
-function chartExtraQuickFields(host: EditorHost, el: CElement): TemplateResult {
+function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
   const id = el.payload.id;
-  const key = `extra-${id}`;
+  const key = `quick-${id}`;
   const family = host.activeFamily;
   const upd = (m: (e: CElement) => void, k: string) => host.update((c) => {
     const target = c.elements.find((e) => e.payload.id === id);
@@ -4896,7 +4913,10 @@ function chartExtraQuickFields(host: EditorHost, el: CElement): TemplateResult {
                 e.payload.value = { ...e.payload.value, kind: { ...e.payload.value.kind, stat: v } };
               }
             }, "stat"))
-          : nothing}
+          : anchor || textUsesParts(el.payload)
+            ? nothing
+            : valueEditor(host, el.payload.value, (v) => upd((e) => { if (e.kind === "text") e.payload.value = v; }, "value"),
+                { showResolved: true, label: el.payload.countdown ? "Until" : "Text", key: `${key}-value` })}
         ${anchor && anchor.place !== "through" ? markerReadingFields(host, id, anchor, upd) : nothing}
         <div class="grid2">
           ${shapeSizeField(host, el, family, "Font size", { step: 1, min: 4, def: base.fontSize as number })}
@@ -4905,12 +4925,30 @@ function chartExtraQuickFields(host: EditorHost, el: CElement): TemplateResult {
     }
     case "icon":
       return html`
-        ${anchor ? markerReadingFields(host, id, anchor, upd) : nothing}
+        ${anchor ? markerReadingFields(host, id, anchor, upd) : valueEditor(host, el.payload.symbol,
+          (v) => upd((e) => { if (e.kind === "icon") e.payload.symbol = v; }, "symbol"), {
+            noFormat: true, showResolved: true, symbol: true, label: "Symbol", key: `${key}-symbol`,
+            setSymbolPath: (d) => upd((e) => {
+              if (e.kind !== "icon") return;
+              if (d) e.payload.path = d; else delete e.payload.path;
+            }, "symbol"),
+          })}
         <div class="grid2">
           ${shapeSizeField(host, el, family, "Icon size", { step: 1, min: 4, def: base.size as number })}
           ${colour}
         </div>`;
     case "shape":
+      if (el.payload.kind !== "line") {
+        return html`
+          <div class="grid2">
+            ${el.payload.kind === "roundedRectangle"
+              ? numberField("Corner radius", el.payload.cornerRadius, (v) => upd((e) => {
+                  if (e.kind === "shape") e.payload.cornerRadius = v ?? 6;
+                }, "radius"), { step: 0.5, min: 0, def: base.cornerRadius as number, unit: "pt" })
+              : nothing}
+            ${colour}
+          </div>`;
+      }
       return html`
         ${anchor ? chartPointFields(host, anchor, key) : nothing}
         <div class="grid2">
@@ -4919,6 +4957,42 @@ function chartExtraQuickFields(host: EditorHost, el: CElement): TemplateResult {
           }, "thick"), { step: 0.5, min: 0.5, def: base.thickness as number, unit: "pt" })}
           ${colour}
         </div>`;
+    case "gauge": {
+      const g = el.payload;
+      return html`
+        ${valueEditor(host, g.value, (v) => upd((e) => { if (e.kind === "gauge") e.payload.value = v; }, "value"),
+          { showResolved: true, label: "Reading", key: `${key}-value` })}
+        <div class="grid2">
+          ${g.style === "dots" ? nothing : shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5, def: base.lineWidth as number })}
+          ${colour}
+        </div>`;
+    }
+    case "chart": {
+      const c = el.payload;
+      return html`
+        ${valueEditor(host, c.value, (v) => upd((e) => { if (e.kind === "chart") e.payload.value = v; }, "value"),
+          { label: "Readings", noShare: true, key: `${key}-value` })}
+        ${segField("Style", c.style, CHART_STYLES, (v) => upd((e) => { if (e.kind === "chart") e.payload.style = v; }, "style"),
+          { def: base.style as typeof c.style })}
+        <div class="grid2">
+          ${c.style === "bars" ? nothing : shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5, def: base.lineWidth as number })}
+          ${colour}
+        </div>`;
+    }
+    case "timeline":
+      return html`
+        ${valueEditor(host, el.payload.value, (v) => upd((e) => { if (e.kind === "timeline") e.payload.value = v; }, "value"),
+          { label: "States", noShare: true, key: `${key}-value` })}`;
+    case "image": {
+      const img = el.payload;
+      return html`
+        ${segField("Source", img.source, [["camera", "Camera"], ["entityPicture", "Entity picture"]],
+          (v) => upd((e) => { if (e.kind === "image") e.payload.source = v; }, "source"), { def: base.source as typeof img.source })}
+        ${segField("Picture", img.contentMode, [["fill", "Fill the frame"], ["fit", "Fit inside"]],
+          (v) => upd((e) => { if (e.kind === "image") e.payload.contentMode = v; }, "mode"), { def: base.contentMode as typeof img.contentMode })}`;
+    }
+    case "tap":
+      return tapActionEditor(host, el.payload, (m, k) => upd((e) => { if (e.kind === "tap") m(e.payload); }, k ?? "action"), key);
     case "chartTimes": {
       const t = el.payload;
       return html`
@@ -5096,13 +5170,17 @@ export function groupEditor(host: EditorHost, group: LayerGroup): TemplateResult
     <div class="hint">${group.locked
       ? "Locked: a drag on any of these layers moves all of them. Unlock to move one at a time."
       : "Unlocked: each layer moves on its own. With the group selected, a drag still moves all of them. Lock it when the part is the way you want it."}</div>
-    <div class="field list-field"><span>Layers</span>
-      <span class="readout-v">${members.map((m) => layerTitle(m, ctx)).join(", ")}</span>
-      <div class="row-acts">
-        <button class="small" title="Keep the layers where they are and drop the folder" @click=${() => host.update((c) => ungroup(c, group.id))}>Ungroup</button>
-      </div>
+    <div class="shown-head">Layers <span class="shown-count">${members.length}</span></div>
+    ${layerRowList(host, members.map((m): LayerRow => ({ el: m, lead: uiIcon(m.kind), title: layerTitle(m, ctx), kind: KIND_LABEL[m.kind] })), {
+      icon: "ungroup",
+      label: (what) => `Take this ${what} out of the group`,
+      run: (id) => host.update((c) => setGroup(c, id, undefined)),
+    })}
+    <div class="row-acts">
+      <button class="small" title="Keep the layers where they are and drop the folder" @click=${() => host.update((c) => ungroup(c, group.id))}>Ungroup</button>
     </div>
-    <div class="hint">Click a layer in the list to edit it.</div>`,
+    <div class="hint">Click a row to open its main settings here. More settings selects that layer for the rest.
+      The button beside a row takes that layer out of the group and keeps it on the face.</div>`,
     { color: SECTION_COLOR.group, icon: "folder", summary: `${members.length} layers · ${group.locked ? "moves as one" : "unlocked"}` });
 }
 
