@@ -896,6 +896,25 @@ export function centredSquare(box: Box): Box {
   return { x: box.cx - side / 2, y: box.cy - side / 2, w: side, h: side, cx: box.cx, cy: box.cy };
 }
 
+/** Thinnest a line's selection box gets, in design points, so a 1 pt line is
+ * still a thing you can hover and grab, and its handles do not sit on top of
+ * each other. */
+export const LINE_OUTLINE_MIN = 4;
+
+/**
+ * The box a line's selection sits on: its bar down the middle of the frame's
+ * long side, as `renderShape` draws it, widened to `LINE_OUTLINE_MIN` but never
+ * past the frame.
+ */
+export function lineOutline(box: Box, thickness: number): Box {
+  const along = box.w >= box.h;
+  const short = along ? box.h : box.w;
+  const t = Math.min(short, Math.max(LINE_OUTLINE_MIN, Math.max(0, thickness)));
+  return along
+    ? { x: box.x, y: box.cy - t / 2, w: box.w, h: t, cx: box.cx, cy: box.cy }
+    : { x: box.cx - t / 2, y: box.y, w: t, h: box.h, cx: box.cx, cy: box.cy };
+}
+
 function renderShape(el: Extract<ResolvedElement, { kind: "shape" }>, box: Box) {
   const fill = colorAttrs(el.fillColorHex, "fill");
   const border = el.borderColorHex ? parseColor(el.borderColorHex) : undefined;
@@ -1248,10 +1267,14 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
   // but never dragged or resized.
   const chartLine = el.chartAnchor?.place === "through";
   const draggable = options.handles === true && (!inFocusView || focused) && !onChart && !chartLine;
-  // A circle draws in the square at the middle of its frame, so the selection,
-  // the hover tint, the hit box and the corner handles sit on that square.
-  // Boxed to the whole frame they floated far outside a circle in a wide frame.
-  const outline = el.kind === "shape" && el.shapeKind === "circle" ? centredSquare(box) : box;
+  // A circle draws in the square at the middle of its frame, and a line in a bar
+  // down its middle, so the selection, the hover tint, the hit box and the
+  // corner handles sit on what is drawn. Boxed to the whole frame they floated
+  // far outside a circle in a wide frame, or a thin line in a tall one.
+  const outline = el.kind !== "shape" ? box
+    : el.shapeKind === "circle" ? centredSquare(box)
+    : el.shapeKind === "line" ? lineOutline(box, el.thickness)
+    : box;
   const highlight = selected && !onChart
     ? svg`<rect x=${outline.x} y=${outline.y} width=${outline.w} height=${outline.h} fill="none" stroke="#0A84FF" stroke-width="0.75" stroke-dasharray="2 1" vector-effect="non-scaling-stroke" />`
     : nothing;

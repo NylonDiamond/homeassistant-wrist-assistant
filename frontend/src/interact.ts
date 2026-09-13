@@ -20,6 +20,13 @@ export interface GestureTarget {
    * never reaches.
    */
   square?: boolean;
+  /**
+   * The layer draws as a line down the middle of its frame's long side, and its
+   * handles sit on that bar. A corner drag then changes only the length, since
+   * the frame's short side is slack the line never fills, and pulling on it
+   * moved the handle half as far as the pointer.
+   */
+  line?: boolean;
 }
 
 export interface GestureCallbacks {
@@ -155,6 +162,38 @@ export function squareResize(
 }
 
 /**
+ * Resize a line by a corner drag of `travel` design points: only its length
+ * changes, pinned at the far end. The length never drops below the frame's
+ * short side, so the line keeps the direction it is drawn in.
+ */
+export function lineResize(
+  base: NormalizedFrame,
+  canvas: CanvasSize,
+  handle: HandleCorner,
+  travel: { x: number; y: number },
+): NormalizedFrame {
+  const W = canvas.width;
+  const H = canvas.height;
+  const along = base.width * W >= base.height * H;
+  if (along) {
+    const min = Math.max(MIN_SIZE, (base.height * H) / W);
+    const right = base.x + base.width;
+    const width = handle.includes("e")
+      ? Math.max(min, base.width + travel.x / W)
+      : Math.max(min, base.width - travel.x / W);
+    const x = handle.includes("e") ? base.x : right - width;
+    return { ...base, x: round3(x), width: round3(width) };
+  }
+  const min = Math.max(MIN_SIZE, (base.width * W) / H);
+  const bottom = base.y + base.height;
+  const height = handle.includes("s")
+    ? Math.max(min, base.height + travel.y / H)
+    : Math.max(min, base.height - travel.y / H);
+  const y = handle.includes("s") ? base.y : bottom - height;
+  return { ...base, y: round3(y), height: round3(height) };
+}
+
+/**
  * Start a gesture on `pointerdown`. Captures the pointer on the SVG and
  * reports frames until release. Returns a cleanup that cancels the gesture.
  */
@@ -182,6 +221,8 @@ export function beginGesture(
       next = clampFrame({ ...base, x: round(base.x + dx), y: round(base.y + dy) });
     } else if (target.square) {
       next = squareResize(base, canvas, target.handle, t);
+    } else if (target.line) {
+      next = lineResize(base, canvas, target.handle, t);
     } else {
       let { x, y, width, height } = base;
       const right = base.x + base.width;

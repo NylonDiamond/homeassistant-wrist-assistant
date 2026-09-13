@@ -4043,10 +4043,11 @@ export class WristAssistantPanel extends LitElement {
     const round = (n: number) => Math.round(n * 10) / 10;
     this.cancelGesture?.();
     let moved = false;
-    // A circle's handles sit on the square it draws in, so a corner drag resizes
-    // that square rather than the wider frame around it.
+    // A circle's handles sit on the square it draws in, and a line's on its bar,
+    // so a corner drag resizes what is drawn rather than the frame around it.
     const square = handle !== null && el.kind === "shape" && el.payload.kind === "circle";
-    this.cancelGesture = beginGesture(svg, canvas, e, { elementId: id, frame: start, handle: handle ?? undefined, square }, {
+    const line = handle !== null && el.kind === "shape" && el.payload.kind === "line";
+    this.cancelGesture = beginGesture(svg, canvas, e, { elementId: id, frame: start, handle: handle ?? undefined, square, line }, {
       onFrame: (elementId: string, f: NormalizedFrame, done: boolean) => {
         if (!done) moved = true;
         if (done && !moved && pickOnClick !== undefined) {
