@@ -107,7 +107,7 @@ import { ScrollFades } from "./scroll-fade.js";
 import { statesSummary } from "./states.js";
 import { uiIcon } from "./ui-icons.js";
 import { addPreview } from "./add-previews.js";
-import { GRID_STEPS, NUDGE_COARSE, beginGesture, beginPointDrag, beginScaleDrag, gridNudgeFrame, nudgeFrame, nudgePoint, type HandleCorner } from "./interact.js";
+import { GRID_STEPS, NUDGE_COARSE, beginGesture, beginPointDrag, beginScaleDrag, gridFor, gridNudgeFrame, nudgeFrame, nudgePoint, type Grid, type HandleCorner } from "./interact.js";
 import {
   type CopiedPosition,
   type EditorHost,
@@ -2670,8 +2670,8 @@ export class WristAssistantPanel extends LitElement {
 
   /** What a drag passes to the gesture: the grid, and whether snapping is on
    * before Alt flips it. */
-  private snapTarget(): { snap: { step: number; on: boolean } } {
-    return { snap: { step: this.gridStep, on: this.snapGrid } };
+  private snapTarget(family: DrawableFamily): { snap: { step: Grid; on: boolean } } {
+    return { snap: { step: gridFor(this.gridStep, DESIGN_BOX[family]), on: this.snapGrid } };
   }
 
   // ── how the Layers list is shown ──────────────────────────────────────
@@ -4169,7 +4169,7 @@ export class WristAssistantPanel extends LitElement {
       return;
     }
     const resize = drawn !== undefined ? handleResize(drawn, start, canvas) : {};
-    this.cancelGesture = beginGesture(svg, canvas, e, { elementId: id, frame: start, handle: handle ?? undefined, ...resize, ...(anchor === undefined ? this.snapTarget() : {}) }, {
+    this.cancelGesture = beginGesture(svg, canvas, e, { elementId: id, frame: start, handle: handle ?? undefined, ...resize, ...(anchor === undefined ? this.snapTarget(family as DrawableFamily) : {}) }, {
       onFrame: (elementId: string, f: NormalizedFrame, done: boolean) => {
         if (!done) moved = true;
         if (done && !moved && pickOnClick !== undefined) {
@@ -4226,7 +4226,7 @@ export class WristAssistantPanel extends LitElement {
     const round = (n: number) => Math.round(n * 1000) / 1000;
     this.cancelGesture?.();
     let moved = false;
-    this.cancelGesture = beginGesture(svg, this.gestureCanvas(family), e, { elementId: group.id, frame: bounds, ...this.snapTarget() }, {
+    this.cancelGesture = beginGesture(svg, this.gestureCanvas(family), e, { elementId: group.id, frame: bounds, ...this.snapTarget(family) }, {
       onFrame: (_id, f, done) => {
         if (!done) moved = true;
         if (done && !moved && pickOnClick !== undefined) {
@@ -4306,7 +4306,7 @@ export class WristAssistantPanel extends LitElement {
       return true;
     }
     // With the grid on, a press moves to the next grid line instead of 1 pt.
-    const next = this.snapGrid ? gridNudgeFrame(frame, px, py, this.gridStep) : nudgeFrame(frame, px, py, box);
+    const next = this.snapGrid ? gridNudgeFrame(frame, px, py, gridFor(this.gridStep, box)) : nudgeFrame(frame, px, py, box);
     // At the edge of the face the clamp gives the frame back unchanged. The key
     // is still ours (the page must not scroll under a nudge), but there is
     // nothing to record.
@@ -4337,7 +4337,7 @@ export class WristAssistantPanel extends LitElement {
     const x1 = Math.max(...frames.map((f) => f.x + f.width));
     const y1 = Math.max(...frames.map((f) => f.y + f.height));
     const bounds: NormalizedFrame = { x: x0, y: y0, width: x1 - x0, height: y1 - y0, rotationDegrees: 0 };
-    const moved = this.snapGrid ? gridNudgeFrame(bounds, px, py, this.gridStep) : nudgeFrame(bounds, px, py, box);
+    const moved = this.snapGrid ? gridNudgeFrame(bounds, px, py, gridFor(this.gridStep, box)) : nudgeFrame(bounds, px, py, box);
     const dx = moved.x - bounds.x;
     const dy = moved.y - bounds.y;
     if (dx !== 0 || dy !== 0) {
@@ -4389,7 +4389,7 @@ export class WristAssistantPanel extends LitElement {
     const attached = isAttachedTap(cfg, tap);
     const frame = effectivePlacement(cfg, family, tap).frame;
     this.cancelGesture?.();
-    this.cancelGesture = beginGesture(svg, this.gestureCanvas(family), e, { elementId: tapId, frame, handle, ...this.snapTarget() }, {
+    this.cancelGesture = beginGesture(svg, this.gestureCanvas(family), e, { elementId: tapId, frame, handle, ...this.snapTarget(family) }, {
       onFrame: (elementId: string, f: NormalizedFrame, done: boolean) => {
         this.mutate((c) => {
           if (attached) setTapOutsetFromFrame(c, elementId, family, f);

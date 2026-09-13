@@ -4,6 +4,7 @@
 // 160x62 rectangle scaled 2x looks like the native editor.
 
 import { svg, nothing, type TemplateResult } from "lit";
+import { gridFor } from "./interact.js";
 import {
   DESIGN_BOX,
   TIMELINE_MAX_LABEL_SIZE,
@@ -190,21 +191,27 @@ export interface RenderOptions {
  */
 function gridLines(design: CanvasSize, step: number | undefined): TemplateResult | typeof nothing {
   if (step === undefined || !(step > 0)) return nothing;
-  const n = Math.round(1 / step);
+  // Square cells, counted out from the middle: the same spacing gesture
+  // snapping uses (interact.ts gridFor), so a line drawn is a line snapped to.
+  const g = gridFor(step, design);
   const lines: TemplateResult[] = [];
   // A fine grid (1%) would bury the face in lines, so its lines go fainter and
   // every tenth one keeps the usual weight as a guide to count by.
-  const fine = n > 40;
-  for (let i = 1; i < n; i++) {
-    const stroke = i * 2 === n
-      ? "rgba(10,132,255,0.6)"
-      : fine && i % 10 !== 0 ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.14)";
-    const x = (design.width * i) / n;
-    const y = (design.height * i) / n;
-    lines.push(
-      svg`<line x1=${x} y1="0" x2=${x} y2=${design.height} stroke=${stroke} stroke-width="0.5" vector-effect="non-scaling-stroke" />`,
-      svg`<line x1="0" y1=${y} x2=${design.width} y2=${y} stroke=${stroke} stroke-width="0.5" vector-effect="non-scaling-stroke" />`,
-    );
+  const fine = step < 0.025;
+  const strokeFor = (k: number) => k === 0
+    ? "rgba(10,132,255,0.6)"
+    : fine && k % 10 !== 0 ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.14)";
+  const kx = Math.floor(0.5 / g.x + 1e-6);
+  for (let k = -kx; k <= kx; k++) {
+    const x = (0.5 + k * g.x) * design.width;
+    if (x <= 0 || x >= design.width) continue;
+    lines.push(svg`<line x1=${x} y1="0" x2=${x} y2=${design.height} stroke=${strokeFor(k)} stroke-width="0.5" vector-effect="non-scaling-stroke" />`);
+  }
+  const ky = Math.floor(0.5 / g.y + 1e-6);
+  for (let k = -ky; k <= ky; k++) {
+    const y = (0.5 + k * g.y) * design.height;
+    if (y <= 0 || y >= design.height) continue;
+    lines.push(svg`<line x1="0" y1=${y} x2=${design.width} y2=${y} stroke=${strokeFor(k)} stroke-width="0.5" vector-effect="non-scaling-stroke" />`);
   }
   return svg`<g class="snap-grid" pointer-events="none">${lines}</g>`;
 }

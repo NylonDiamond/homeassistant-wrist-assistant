@@ -42,18 +42,46 @@ export interface GestureTarget {
    * edge. Holding Alt flips it for as long as it is held: free with the grid
    * on, snapped with it off. Undefined never snaps.
    */
-  snap?: { step: number; on: boolean };
+  snap?: { step: Grid; on: boolean };
 }
 
 /** The grid steps the preview offers, as fractions of the face. */
 export const GRID_STEPS = [0.01, 0.025, 0.05, 0.1] as const;
 
+/**
+ * A snap grid: the spacing across and down, each as a fraction of the face.
+ * A plain number is the same spacing both ways. Lines are counted out from the
+ * middle of the face, so the middle is always a line whatever the spacing.
+ */
+export type Grid = number | { x: number; y: number };
+
+/**
+ * The grid for one face with square cells. The face's shorter side takes the
+ * chosen percent, and the longer side takes the same distance in points, so a
+ * 1% grid on the 181 x 65.5 pt wide face has lines 0.655 pt apart both ways
+ * rather than 1.81 pt across and 0.655 pt down. A square face gets `step` both ways.
+ */
+export function gridFor(step: number, box: { width: number; height: number }): { x: number; y: number } {
+  if (!(box.width > 0 && box.height > 0) || box.width === box.height) return { x: step, y: step };
+  return box.width > box.height
+    ? { x: (step * box.height) / box.width, y: step }
+    : { x: step, y: (step * box.width) / box.height };
+}
+
+function gridAxes(grid: Grid): { x: number; y: number } {
+  return typeof grid === "number" ? { x: grid, y: grid } : grid;
+}
+
+function validGrid(g: { x: number; y: number }): boolean {
+  return g.x > 0 && g.y > 0;
+}
+
 /** A tiny margin so a value already on a line counts as on it despite float dust. */
 const ON_LINE = 1e-6;
 
-/** How far `n` is from the nearest line of a `step` grid, signed. */
+/** How far `n` is from the nearest line of a `step` grid counted from the middle, signed. */
 function toLine(n: number, step: number): number {
-  return Math.round(n / step) * step - n;
+  return Math.round((n - 0.5) / step) * step + 0.5 - n;
 }
 
 /** Move one axis so whichever of its start, middle or end is closest to a line lands on it. */
@@ -68,9 +96,10 @@ function snapSpan(start: number, size: number, step: number): number {
  * line lands on it, so a layer can sit left-aligned, centred or right-aligned
  * on the grid without the author choosing which. Size and turn stay.
  */
-export function snapFrameMove(frame: NormalizedFrame, step: number): NormalizedFrame {
-  if (!(step > 0)) return frame;
-  return clampFrame({ ...frame, x: snapSpan(frame.x, frame.width, step), y: snapSpan(frame.y, frame.height, step) });
+export function snapFrameMove(frame: NormalizedFrame, grid: Grid): NormalizedFrame {
+  const g = gridAxes(grid);
+  if (!validGrid(g)) return frame;
+  return clampFrame({ ...frame, x: snapSpan(frame.x, frame.width, g.x), y: snapSpan(frame.y, frame.height, g.y) });
 }
 
 /**
@@ -81,22 +110,23 @@ export function snapFrameMove(frame: NormalizedFrame, step: number): NormalizedF
 export function snapFrameEdges(
   frame: NormalizedFrame,
   handle: HandleCorner,
-  step: number,
+  grid: Grid,
   axes: { x: boolean; y: boolean } = { x: true, y: true },
 ): NormalizedFrame {
-  if (!(step > 0)) return frame;
+  const g = gridAxes(grid);
+  if (!validGrid(g)) return frame;
   let { x, y, width, height } = frame;
   const right = x + width;
   const bottom = y + height;
-  if (axes.x && handle.includes("e")) width = Math.max(MIN_SIZE, round3(right + toLine(right, step) - x));
+  if (axes.x && handle.includes("e")) width = Math.max(MIN_SIZE, round3(right + toLine(right, g.x) - x));
   if (axes.x && handle.includes("w")) {
-    const left = Math.min(round3(x + toLine(x, step)), right - MIN_SIZE);
+    const left = Math.min(round3(x + toLine(x, g.x)), right - MIN_SIZE);
     width = round3(right - left);
     x = round3(left);
   }
-  if (axes.y && handle.includes("s")) height = Math.max(MIN_SIZE, round3(bottom + toLine(bottom, step) - y));
+  if (axes.y && handle.includes("s")) height = Math.max(MIN_SIZE, round3(bottom + toLine(bottom, g.y) - y));
   if (axes.y && handle.includes("n")) {
-    const top = Math.min(round3(y + toLine(y, step)), bottom - MIN_SIZE);
+    const top = Math.min(round3(y + toLine(y, g.y)), bottom - MIN_SIZE);
     height = round3(bottom - top);
     y = round3(top);
   }
@@ -108,14 +138,16 @@ export function snapFrameEdges(
  * goes to the next grid line in that direction. A layer already on a line
  * moves one step; one between lines lands on the next line first.
  */
-export function gridNudgeFrame(frame: NormalizedFrame, dx: number, dy: number, step: number): NormalizedFrame {
-  if (!(step > 0)) return frame;
-  const next = (n: number, dir: number) => {
+export function gridNudgeFrame(frame: NormalizedFrame, dx: number, dy: number, grid: Grid): NormalizedFrame {
+  const g = gridAxes(grid);
+  if (!validGrid(g)) return frame;
+  const next = (n: number, dir: number, step: number) => {
     if (dir === 0) return n;
-    const line = dir > 0 ? Math.floor(n / step + ON_LINE) + 1 : Math.ceil(n / step - ON_LINE) - 1;
-    return round3(line * step);
+    const k = (n - 0.5) / step;
+    const line = dir > 0 ? Math.floor(k + ON_LINE) + 1 : Math.ceil(k - ON_LINE) - 1;
+    return round3(line * step + 0.5);
   };
-  return clampFrame({ ...frame, x: next(frame.x, Math.sign(dx)), y: next(frame.y, Math.sign(dy)) });
+  return clampFrame({ ...frame, x: next(frame.x, Math.sign(dx), g.x), y: next(frame.y, Math.sign(dy), g.y) });
 }
 
 export interface GestureCallbacks {
