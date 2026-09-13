@@ -12,6 +12,14 @@ export interface GestureTarget {
   elementId: string;
   frame: NormalizedFrame;
   handle?: HandleCorner;
+  /**
+   * The layer draws as a circle in the square at the middle of its frame, and
+   * its handles sit on that square's corners. A corner drag then resizes that
+   * square, pinned at the opposite corner, and leaves a square frame behind, so
+   * the handle stays under the pointer instead of pulling on a side the circle
+   * never reaches.
+   */
+  square?: boolean;
 }
 
 export interface GestureCallbacks {
@@ -112,6 +120,41 @@ export function nudgePoint(
 }
 
 /**
+ * Resize the square a circle draws in by a corner drag of `travel` design
+ * points. The square starts as the frame's shorter side centred in the frame,
+ * grows by the pointer's travel along the corner's diagonal, and keeps the
+ * opposite corner where it was. Works in points, since a square in points is
+ * not square in the canvas fractions a frame is stored in.
+ */
+export function squareResize(
+  base: NormalizedFrame,
+  canvas: CanvasSize,
+  handle: HandleCorner,
+  travel: { x: number; y: number },
+): NormalizedFrame {
+  const W = canvas.width;
+  const H = canvas.height;
+  const w = base.width * W;
+  const h = base.height * H;
+  const side0 = Math.min(w, h);
+  const left0 = base.x * W + (w - side0) / 2;
+  const top0 = base.y * H + (h - side0) / 2;
+  const sx = handle.includes("e") ? 1 : -1;
+  const sy = handle.includes("s") ? 1 : -1;
+  const minSide = MIN_SIZE * Math.max(W, H);
+  const side = Math.max(minSide, side0 + (sx * travel.x + sy * travel.y) / 2);
+  const left = sx > 0 ? left0 : left0 + side0 - side;
+  const top = sy > 0 ? top0 : top0 + side0 - side;
+  return {
+    ...base,
+    x: round3(left / W),
+    y: round3(top / H),
+    width: round3(side / W),
+    height: round3(side / H),
+  };
+}
+
+/**
  * Start a gesture on `pointerdown`. Captures the pointer on the SVG and
  * reports frames until release. Returns a cleanup that cancels the gesture.
  */
@@ -137,6 +180,8 @@ export function beginGesture(
     let next: NormalizedFrame;
     if (!target.handle) {
       next = clampFrame({ ...base, x: round(base.x + dx), y: round(base.y + dy) });
+    } else if (target.square) {
+      next = squareResize(base, canvas, target.handle, t);
     } else {
       let { x, y, width, height } = base;
       const right = base.x + base.width;

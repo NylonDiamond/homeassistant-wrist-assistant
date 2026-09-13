@@ -890,6 +890,12 @@ export function renderChartGrid(el: Extract<ResolvedElement, { kind: "chartGrid"
     : nothing}`;
 }
 
+/** The square a circle draws in: the frame's shorter side, centred in it. */
+export function centredSquare(box: Box): Box {
+  const side = Math.min(box.w, box.h);
+  return { x: box.cx - side / 2, y: box.cy - side / 2, w: side, h: side, cx: box.cx, cy: box.cy };
+}
+
 function renderShape(el: Extract<ResolvedElement, { kind: "shape" }>, box: Box) {
   const fill = colorAttrs(el.fillColorHex, "fill");
   const border = el.borderColorHex ? parseColor(el.borderColorHex) : undefined;
@@ -1242,22 +1248,27 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
   // but never dragged or resized.
   const chartLine = el.chartAnchor?.place === "through";
   const draggable = options.handles === true && (!inFocusView || focused) && !onChart && !chartLine;
+  // A circle draws in the square at the middle of its frame, so the selection,
+  // the hover tint, the hit box and the corner handles sit on that square.
+  // Boxed to the whole frame they floated far outside a circle in a wide frame.
+  const outline = el.kind === "shape" && el.shapeKind === "circle" ? centredSquare(box) : box;
   const highlight = selected && !onChart
-    ? svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} fill="none" stroke="#0A84FF" stroke-width="0.75" stroke-dasharray="2 1" vector-effect="non-scaling-stroke" />`
+    ? svg`<rect x=${outline.x} y=${outline.y} width=${outline.w} height=${outline.h} fill="none" stroke="#0A84FF" stroke-width="0.75" stroke-dasharray="2 1" vector-effect="non-scaling-stroke" />`
     : nothing;
   // Solid tint rather than the selection's dashes, so the two never read as the
   // same state when the pointer happens to rest on the selected layer.
   const hover = options.hoverId === el.id || options.hoverIds?.includes(el.id) === true
-    ? svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} fill="#0A84FF" fill-opacity="0.22"
+    ? svg`<rect x=${outline.x} y=${outline.y} width=${outline.w} height=${outline.h} fill="#0A84FF" fill-opacity="0.22"
         stroke="#0A84FF" stroke-width="1" vector-effect="non-scaling-stroke" pointer-events="none" />`
     : nothing;
   // An invisible hit box so empty text and thin gauges are still grabbable.
   const hit = onChart
     ? nothing
-    : svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} fill="transparent" stroke="none" />`;
+    : svg`<rect x=${outline.x} y=${outline.y} width=${outline.w} height=${outline.h} fill="transparent" stroke="none" />`;
   const hs = 3;
+  const o = outline;
   const handles = primary && draggable
-    ? [["nw", box.x, box.y], ["ne", box.x + box.w, box.y], ["sw", box.x, box.y + box.h], ["se", box.x + box.w, box.y + box.h]].map(
+    ? [["nw", o.x, o.y], ["ne", o.x + o.w, o.y], ["sw", o.x, o.y + o.h], ["se", o.x + o.w, o.y + o.h]].map(
         ([corner, x, y]) => svg`<rect data-handle=${corner} x=${(x as number) - hs / 2} y=${(y as number) - hs / 2} width=${hs} height=${hs}
           fill="#FFFFFF" stroke="#0A84FF" stroke-width="0.5" style="cursor:${corner}-resize" />`,
       )
