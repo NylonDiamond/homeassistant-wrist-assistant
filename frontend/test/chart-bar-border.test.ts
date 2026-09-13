@@ -200,4 +200,49 @@ describe("drawing a bar border", () => {
     expect((svg.match(/fill="none" stroke=#FF0000/g) ?? []).length).toBe(2);
     expect(svg).toMatch(/<path d=M[^>]* A2\.5 2\.5 [^>]*fill="none" stroke=#FF0000/);
   });
+
+  it("round-trips an open base, and writes nothing while it is off", () => {
+    expect("barBorderOpenBase" in roundTrip({}).payload).toBe(false);
+    expect("barBorderOpenBase" in roundTrip({ barBorderOpenBase: false }).payload).toBe(false);
+    const { payload, audit } = roundTrip({ barBorderWidth: 1, barBorderOpenBase: true });
+    expect(audit).toEqual([]);
+    expect(payload.barBorderOpenBase).toBe(true);
+  });
+
+  it("resolves an open base only while a border draws", () => {
+    expect(chartOf(chartConfig("1,2", (p) => { p.style = "bars"; p.barBorderOpenBase = true; }).cfg, "1,2").barBorderOpenBase).toBe(false);
+    expect(chartOf(chartConfig("1,2", (p) => { p.style = "bars"; p.barBorderWidth = 1; p.barBorderOpenBase = true; }).cfg, "1,2").barBorderOpenBase).toBe(true);
+  });
+
+  it("leaves the baseline edge open: sides run to the base, clipped to the bar", () => {
+    const { cfg, state } = chartConfig("10,20", (p) => {
+      p.style = "bars"; p.barBorderWidth = 2; p.barBorderColorHex = "#FF0000"; p.barRadius = 0; p.barGap = 10; p.barBorderOpenBase = true;
+    });
+    const svg = draw(cfg, state);
+    const bars = [...svg.matchAll(/<rect x=([-\d.]+) y=([-\d.]+) width=([-\d.]+) height=([-\d.]+) rx=[-\d.]+\s+fill=#FFFFFF/g)];
+    const strokes = [...svg.matchAll(/<path d=(M[^ ]+ [^ ]+ L[^ ]+ [^ ]+ L[^ ]+ [^ ]+ L[^ ]+ [^ ]+) fill="none" stroke=#FF0000[^>]*clip-path=url\(#[^)]+\)/g)];
+    expect(strokes).toHaveLength(2);
+    expect(svg.match(/<clipPath id=[^>]*bb\d/g) ?? []).toHaveLength(2);
+    const [bx, by, bw, bh] = bars[0]!.slice(1).map(Number) as [number, number, number, number];
+    const nums = strokes[0]![1]!.replace(/[ML]/g, "").split(" ").map(Number);
+    // Starts and ends on the bar's bottom edge, crosses its top one border in.
+    expect(nums[0]).toBeCloseTo(bx + 1, 9);
+    expect(nums[1]).toBeCloseTo(by + bh, 9);
+    expect(nums[3]).toBeCloseTo(by + 1, 9);
+    expect(nums[6]).toBeCloseTo(bx + bw - 1, 9);
+    expect(nums[7]).toBeCloseTo(by + bh, 9);
+  });
+
+  it("opens a bar hanging below zero at its top", () => {
+    const { cfg, state } = chartConfig("-10,10", (p) => {
+      p.style = "bars"; p.barBorderWidth = 2; p.barBorderColorHex = "#FF0000"; p.barRadius = 0; p.baseline = "zero"; p.barBorderOpenBase = true;
+    });
+    const svg = draw(cfg, state);
+    const bars = [...svg.matchAll(/<rect x=([-\d.]+) y=([-\d.]+) width=([-\d.]+) height=([-\d.]+) rx=[-\d.]+\s+fill=#FFFFFF/g)];
+    const strokes = [...svg.matchAll(/<path d=(M[^ ]+ [^ ]+ L[^ ]+ [^ ]+ L[^ ]+ [^ ]+ L[^ ]+ [^ ]+) fill="none" stroke=#FF0000/g)];
+    const [, by, , bh] = bars[0]!.slice(1).map(Number) as [number, number, number, number];
+    const nums = strokes[0]![1]!.replace(/[ML]/g, "").split(" ").map(Number);
+    expect(nums[1]).toBeCloseTo(by, 9);
+    expect(nums[3]).toBeCloseTo(by + bh - 1, 9);
+  });
 });

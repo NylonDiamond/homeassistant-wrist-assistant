@@ -269,6 +269,9 @@ export interface ResolvedChart extends ResolvedBase {
   /** Each bar's border colour, parallel to `values`. Empty unless the chart is
    * bars with a border. */
   barBorderColorHexes: string[];
+  /** Whether the border leaves out each bar's baseline end. Only true while a
+   * border draws. */
+  barBorderOpenBase: boolean;
   /** The largest diameter among this chart's `chartDots` layers that are shown
    * on this shape and actually draw. The plot's stroke inset grows to half of
    * it, so the dots at the edges are not clipped. Absent when none draws. Set by
@@ -1721,6 +1724,7 @@ export class Resolver {
           barBorderWidth: chartBarBorderWidth(c),
           barFillColorHexes: [],
           barBorderColorHexes: [],
+          barBorderOpenBase: chartBarBorderWidth(c) > 0 && c.barBorderOpenBase === true,
           thresholdColorHex: c.thresholdColorHex,
           drawsThreshold: c.drawsThreshold !== false,
           nowColorHex: c.nowColorHex,

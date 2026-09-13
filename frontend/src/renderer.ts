@@ -653,6 +653,31 @@ export function chartBarPath(r: { x: number; y: number; w: number; h: number }, 
     + `L${x + w - k} ${y} A${k} ${k} 0 0 1 ${x + w} ${y + k} L${x + w} ${y + h} Z`;
 }
 
+/** A bar border open at the baseline end: `inner` is the bar `r` inset by half
+ * the stroke, `k` the far corners' eased radius. A bar that `hangs` below zero
+ * has its baseline at the top, so the path turns across its bottom instead. */
+export function chartOpenBarBorderPath(
+  r: { x: number; y: number; w: number; h: number },
+  inner: { x: number; y: number; w: number; h: number },
+  k: number,
+  hangs: boolean,
+): string {
+  const left = inner.x;
+  const right = inner.x + inner.w;
+  if (hangs) {
+    const base = r.y;
+    const far = inner.y + inner.h;
+    if (k === 0) return `M${left} ${base} L${left} ${far} L${right} ${far} L${right} ${base}`;
+    return `M${left} ${base} L${left} ${far - k} A${k} ${k} 0 0 0 ${left + k} ${far} `
+      + `L${right - k} ${far} A${k} ${k} 0 0 0 ${right} ${far - k} L${right} ${base}`;
+  }
+  const base = r.y + r.h;
+  const far = inner.y;
+  if (k === 0) return `M${left} ${base} L${left} ${far} L${right} ${far} L${right} ${base}`;
+  return `M${left} ${base} L${left} ${far + k} A${k} ${k} 0 0 1 ${left + k} ${far} `
+    + `L${right - k} ${far} A${k} ${k} 0 0 1 ${right} ${far + k} L${right} ${base}`;
+}
+
 function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) {
   const g = chartGeometry(el, box);
   const idPrefix = nextSvgIdPrefix();
@@ -702,7 +727,8 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
         ? colorAttrs(fillHex, "fill", el.colorHex)
         : i === el.highIndex ? high : i === el.lowIndex ? low : bandAt(i);
       const radius = Math.min(Math.max(el.barRadius, 0), r.w / 2, r.h / 2);
-      const hangs = el.barCorners === "top" && el.baseline === "zero" && el.values[i]! < 0;
+      const below = el.baseline === "zero" && el.values[i]! < 0;
+      const hangs = el.barCorners === "top" && below;
       const borderHex = el.barBorderWidth > 0 && el.barBorderColorHexes.length === g.count ? el.barBorderColorHexes[i] : undefined;
       const bw = el.barBorderWidth;
       // A bar too thin or too short to hold its border on both sides is all border.
@@ -722,6 +748,18 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
         const stroke = colorAttrs(borderHex, "fill", el.colorHex);
         const inner = { x: r.x + bw / 2, y: r.y + bw / 2, w: r.w - bw, h: r.h - bw };
         const k = Math.min(Math.max(radius - bw / 2, 0), inner.w / 2, inner.h / 2);
+        if (el.barBorderOpenBase) {
+          // Up one side, across the far end, down the other, with both sides
+          // running on to the baseline edge. The bar's own outline clips them,
+          // so rounded baseline corners trim the ends the way they trim the fill.
+          const id = `${idPrefix}bb${i}`;
+          const outline = el.barCorners === "top"
+            ? svg`<path d=${chartBarPath(r, radius, hangs)} />`
+            : svg`<rect x=${r.x} y=${r.y} width=${r.w} height=${r.h} rx=${radius} />`;
+          defs.set(id, svg`<clipPath id=${id}>${outline}</clipPath>`);
+          body.push(svg`<path d=${chartOpenBarBorderPath(r, inner, k, below)} fill="none" stroke=${stroke.fill} stroke-opacity=${stroke["fill-opacity"]} stroke-width=${bw} clip-path=${`url(#${id})`} />`);
+          continue;
+        }
         const d = el.barCorners === "top"
           ? chartBarPath(inner, k, hangs)
           : chartBarPath(inner, 0, false);

@@ -910,6 +910,10 @@ export interface ChartElement extends ElementBase {
    * (`CHART_DEFAULT_BAR_BORDER_HEX`), and a band's own `borderColorHex` wins
    * over it. Bars only. */
   barBorderColorHex?: string;
+  /** Leaves the border off each bar's baseline end, so it frames the top and
+   * both sides only (the bottom and both sides of a bar hanging below zero).
+   * Absent reads as false, which is never written. Bars only. */
+  barBorderOpenBase?: boolean;
   /** Fill colour of a bar above the last band. Absent reads as the chart's
    * `fillColorHex`, then `bandAboveColorHex`. Bars only. */
   bandAboveFillColorHex?: string;
@@ -2429,6 +2433,7 @@ function parseElementKind(raw: unknown): Element {
             ? { barBorderWidth: p.barBorderWidth }
             : {}),
           ...(typeof p.barBorderColorHex === "string" ? { barBorderColorHex: p.barBorderColorHex } : {}),
+          ...(p.barBorderOpenBase === true ? { barBorderOpenBase: true } : {}),
           ...(typeof p.bandAboveFillColorHex === "string" ? { bandAboveFillColorHex: p.bandAboveFillColorHex } : {}),
           ...(typeof p.bandAboveBorderColorHex === "string" ? { bandAboveBorderColorHex: p.bandAboveBorderColorHex } : {}),
           ...(chartPointDots(p.pointDots) !== "none" ? { pointDots: chartPointDots(p.pointDots) } : {}),
@@ -3809,6 +3814,7 @@ function encodeElementKind(el: Element): J {
       if (c.barBorderColorHex !== undefined) o.barBorderColorHex = c.barBorderColorHex;
       if (c.bandAboveFillColorHex !== undefined) o.bandAboveFillColorHex = c.bandAboveFillColorHex;
       if (c.bandAboveBorderColorHex !== undefined) o.bandAboveBorderColorHex = c.bandAboveBorderColorHex;
+      if (c.barBorderOpenBase === true) o.barBorderOpenBase = true;
       return { kind: "chart", payload: o };
     }
     case "timeline": {
@@ -4177,7 +4183,7 @@ const K = {
     "timeLabelCount", "labelSize", "labelColorHex", "labelsAbove", "hourCycle", "minutes",
     "highMarker", "lowMarker",
     "curve", "fillStyle", "fillColorHex", "barRadius", "barCorners", "smoothing", "gaps",
-    "barBorderWidth", "barBorderColorHex", "bandAboveFillColorHex", "bandAboveBorderColorHex",
+    "barBorderWidth", "barBorderColorHex", "bandAboveFillColorHex", "bandAboveBorderColorHex", "barBorderOpenBase",
     // Written only on 2026-09-12, before dots, grid and the zero line became
     // layers. `liftChartOwnMarks` reads them forward.
     "pointDots", "pointDotSize", "pointDotColorHex", "gridLines", "gridColorHex", "zeroLine",

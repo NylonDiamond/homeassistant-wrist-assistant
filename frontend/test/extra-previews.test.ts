@@ -27,6 +27,15 @@ describe("extra previews", () => {
     for (const owner of ["chart", "timeline", "image"] as const) expect(() => extraPreview(owner, undefined)).not.toThrow();
   });
 
+  it("draws a bars chart's samples on bars, and a line's on a line", () => {
+    const text = (t: unknown): string => {
+      const r = t as { strings: readonly string[]; values: unknown[] };
+      return r.strings.join("") + r.values.map((v): string => (Array.isArray(v) ? v.map(text).join("") : v && typeof v === "object" && "strings" in v ? text(v) : String(v))).join("");
+    };
+    expect(text(extraPreview("chart", "draw:grid", true))).toContain("<rect");
+    expect(text(extraPreview("chart", "draw:grid"))).not.toContain("<rect");
+  });
+
   it("puts timeline and picture extras on their own samples", () => {
     expect(extraOwner("timeline:times")).toBe("timeline");
     expect(extraOwner("image:time")).toBe("image");

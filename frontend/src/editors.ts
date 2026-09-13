@@ -4452,10 +4452,13 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               (v) => setChart((p) => { p.barBorderWidth = Math.min(Math.max(v ?? 1, 0), CHART_MAX_BAR_BORDER_WIDTH); }, "barborderw"),
               { step: 0.5, min: 0, max: CHART_MAX_BAR_BORDER_WIDTH, def: 1, unit: "pt" })}
             ${fallbackColorField("Border colour", c.barBorderColorHex, "White",
-              (v) => setChart((p) => { if (v === undefined) delete p.barBorderColorHex; else p.barBorderColorHex = v; }, "barbordercol"))}`}
+              (v) => setChart((p) => { if (v === undefined) delete p.barBorderColorHex; else p.barBorderColorHex = v; }, "barbordercol"))}
+            ${checkField("No border on the baseline", c.barBorderOpenBase === true,
+              (v) => setChart((p) => { if (v) p.barBorderOpenBase = true; else delete p.barBorderOpenBase; }), false)}`}
           ${watchNote(host)}
           <div class="hint">The border is drawn inside each bar, so bars keep their size. A highlighted
-            bar fills and borders in its highlight colour.${c.coloring === "bands"
+            bar fills and borders in its highlight colour.${c.barBorderOpenBase === true
+              ? " With no border on the baseline, a bar hanging below zero leaves its top open." : ""}${c.coloring === "bands"
               ? " Each band can set its own fill and border below." : ""}</div>` : html`
           ${segField("Curve", c.curve ?? "straight", CHART_CURVE_OPTIONS,
             (v) => setChart((p) => { if (v === "straight") delete p.curve; else p.curve = v; }),
@@ -4975,7 +4978,7 @@ const LOOK_KEYS: Record<CElement["kind"], readonly string[]> = {
     "coloring", "bands", "bandAboveColorHex", "highlight", "highColorHex", "lowColorHex"],
   icon: ["size", "colorSlot"],
   gauge: ["style", "lineWidth", "trackColorHex", "colorSlot", "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex"],
-  chart: ["style", "scale", "minValue", "maxValue", "baseline", "barGap", "lineWidth", "coloring", "bands", "bandAboveColorHex", "fillBands", "curve", "fillStyle", "fillColorHex", "barRadius", "barCorners", "barBorderWidth", "barBorderColorHex", "bandAboveFillColorHex", "bandAboveBorderColorHex", "scaleFrom", "colorSlot"],
+  chart: ["style", "scale", "minValue", "maxValue", "baseline", "barGap", "lineWidth", "coloring", "bands", "bandAboveColorHex", "fillBands", "curve", "fillStyle", "fillColorHex", "barRadius", "barCorners", "barBorderWidth", "barBorderColorHex", "bandAboveFillColorHex", "bandAboveBorderColorHex", "barBorderOpenBase", "scaleFrom", "colorSlot"],
   timeline: ["bands", "otherColorHex", "gap", "cornerRadius"],
   shape: ["colorSlot", "borderColorHex", "borderWidth", "thickness"],
   image: ["contentMode", "zoom", "panX", "panY", "cornerRadius"],
@@ -5132,7 +5135,7 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
   return html`
     <div class="hint">Everything the chart shows besides its readings: a threshold, now, clock times, numbers
       and markers. Each one is a layer in this chart's group, so you can drag it and give it any size or colour.</div>
-    ${extraPreviewPane("chart", blocked)}
+    ${extraPreviewPane("chart", blocked, el.payload.style === "bars")}
     ${marks ?? nothing}
     ${count === 0
       ? html`<div class="hint keep">A chart on its own shows that a reading moved, not what it moved to and not
@@ -5210,7 +5213,7 @@ function extraTitle(key: ExtraKey, action: string): string {
 
 /** The preview at the top of an Extras card. `owner` is the layer the card
  * belongs to: a button pointed at on another kind's card is not shown here. */
-function extraPreviewPane(owner: ExtraOwner, blocked: Partial<Record<ExtraKey, string>> = {}): TemplateResult {
+function extraPreviewPane(owner: ExtraOwner, blocked: Partial<Record<ExtraKey, string>> = {}, bars = false): TemplateResult {
   if (!extraPreviewOn) {
     return html`<button class="link xprev-show" @click=${(e: Event) => setExtraPreviewOn(true, e.currentTarget)}>
       ${uiIcon("show")}<span>Show preview</span></button>`;
@@ -5221,7 +5224,7 @@ function extraPreviewPane(owner: ExtraOwner, blocked: Partial<Record<ExtraKey, s
   const why = key === undefined ? undefined : blocked[key];
   const word = owner === "image" ? "picture" : owner;
   return html`<div class="xprev">
-    <span class="well">${extraPreview(owner, key)}</span>
+    <span class="well">${extraPreview(owner, key, bars)}</span>
     <span class="xprev-t">
       <b>${key === undefined ? "Preview" : extraName(key)}</b>
       <span>${key === undefined ? `Point at a button below to see what it adds to the ${word}.` : extraInfo(key)}</span>

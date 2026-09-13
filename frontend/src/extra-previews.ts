@@ -56,6 +56,12 @@ function baseChart(): TemplateResult {
     <path d=${LINE} fill="none" stroke=${DIM} stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />`;
 }
 
+/** The same sample as bars, one per reading, centred where the line's points
+ * are so every marker and number still lands on its reading. */
+function baseBars(): TemplateResult {
+  return svg`${XS.map((x, i) => svg`<rect x=${x - 5} y=${YS[i]} width="10" height=${BOTTOM_Y - YS[i]!} rx="2" fill=${DIM} opacity=".45" />`)}`;
+}
+
 /** A timeline's strip of runs, high enough to leave a row for its times. */
 function baseTimeline(): TemplateResult {
   const runs: [number, number, number][] = [[4, 30, .35], [35, 18, .7], [54, 10, .35], [65, 26, .7], [92, 24, .35]];
@@ -139,9 +145,10 @@ export function extraOwner(key: ExtraKey): ExtraOwner {
 }
 
 /** The sample for one button, or the bare layer when none has been pointed at.
- * Sized by the `.xprev svg.shot` rule in the panel's styles. */
-export function extraPreview(owner: ExtraOwner, key: ExtraKey | undefined): TemplateResult {
-  const base = owner === "timeline" ? baseTimeline() : owner === "image" ? baseImage() : baseChart();
+ * Sized by the `.xprev svg.shot` rule in the panel's styles. A bars chart's
+ * samples are drawn on bars, so the picture matches the chart being edited. */
+export function extraPreview(owner: ExtraOwner, key: ExtraKey | undefined, bars = false): TemplateResult {
+  const base = owner === "timeline" ? baseTimeline() : owner === "image" ? baseImage() : bars ? baseBars() : baseChart();
   const shown = key !== undefined && extraOwner(key) === owner ? overlay(key) : "";
   return html`<svg class="shot" viewBox="0 0 120 46" aria-hidden="true">${base}${shown}</svg>`;
 }
