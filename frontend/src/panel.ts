@@ -106,6 +106,7 @@ import { Draft, draftStatus } from "./draft.js";
 import { ScrollFades } from "./scroll-fade.js";
 import { statesSummary } from "./states.js";
 import { uiIcon } from "./ui-icons.js";
+import { loadHidden, pickerStorage, saveHidden, splitHidden, toggleHidden } from "./picker-hidden.js";
 import { addPreview } from "./add-previews.js";
 import { GRID_STEPS, NUDGE_COARSE, beginGesture, beginPointDrag, beginScaleDrag, gridFor, gridNudgeFrame, nudgeFrame, nudgePoint, type Grid, type HandleCorner } from "./interact.js";
 import {
@@ -494,6 +495,13 @@ export class WristAssistantPanel extends LitElement {
   /** The slot of the locked picker row whose explanation is unfolded. A tap
    * shows it inline because a hover title never appears on a touch screen. */
   @state() private pickerNote?: number;
+  /** Complications hidden from the picker on this watch, kept in this browser
+   * only. The watch never hears of it. */
+  @state() private pickerHidden: Set<string> = new Set();
+  /** Whether the picker's Hidden section is unfolded. */
+  @state() private pickerHiddenOpen = false;
+  /** The picker row asking "Really delete", by record id. */
+  @state() private pickerConfirmDelete?: string;
   /** Entity states typed in under the preview, standing in for the live ones
    * so the other states can be seen without waiting for the house. Never
    * saved; cleared by Back to live. */
@@ -936,6 +944,27 @@ export class WristAssistantPanel extends LitElement {
     .picker .menu .row.locked { opacity: .6; cursor: help; }
     .picker .menu .pk-note { font-size: 12px; line-height: 1.4; color: var(--wa-muted); padding: 0 10px 8px 88px; }
     .picker .menu .pk-badge { font-size: 11px; opacity: .7; white-space: nowrap; }
+    /* A saved complication's row: the part that opens it, then its own hide
+       and delete buttons, which neither open it nor shut the menu. */
+    .picker .menu .row.rec { padding: 0; gap: 0; cursor: default; }
+    .picker .menu .row.rec > .pick {
+      display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; text-align: left; font: inherit;
+      background: transparent; border: 0; color: inherit; padding: 6px 4px 6px 10px; border-radius: 8px; cursor: pointer;
+    }
+    .picker .menu .row.rec > .pick:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .picker .menu .row.rec.dim > .pick { opacity: .5; }
+    .picker .menu .pk-acts { display: flex; align-items: center; gap: 2px; flex: none; padding-right: 6px; }
+    .picker .menu .pk-acts button.icon { width: 26px; height: 26px; }
+    .picker .menu .pk-acts button.small { min-height: 24px; padding: 0 7px; }
+    .picker .menu .pk-hidden-head {
+      display: flex; align-items: center; gap: 6px; width: 100%; font: inherit; font-size: 12px; font-weight: 600;
+      color: var(--wa-muted); background: transparent; border: 0; border-top: 1px solid var(--wa-line);
+      margin-top: 6px; padding: 8px 10px 6px; cursor: pointer; text-align: left;
+    }
+    .picker .menu .pk-hidden-head:hover { color: var(--wa-ink); }
+    .picker .menu .pk-hidden-head:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 6px; }
+    .picker .menu .pk-hidden-head svg { width: 14px; height: 14px; transition: transform .12s ease-out; }
+    .picker .menu .pk-hidden-head[aria-expanded="true"] svg { transform: rotate(90deg); }
     /* The row picture: the complication drawn as the watch draws it, in a
        fixed box so every name in the list still starts on the same column. */
     .pk-art { width: 68px; height: 30px; flex: none; display: grid; place-items: center; pointer-events: none; }
@@ -3202,6 +3231,8 @@ export class WristAssistantPanel extends LitElement {
       return;
     }
     this.ownerId = ownerId;
+    this.pickerHidden = loadHidden(pickerStorage(), ownerId);
+    this.pickerConfirmDelete = undefined;
     this.selectedId = undefined;
     this.moveTarget = undefined;
     this.moveError = undefined;
@@ -3724,22 +3755,36 @@ export class WristAssistantPanel extends LitElement {
       this.selectFirst();
       return;
     }
+    await this.deleteSaved(this.selectedId, this.draft.baseRevision);
+  }
+
+  /** Delete one saved complication on the server: the open one from the
+   * inspector's Delete, or any row from the picker's. A conflict on the open
+   * one opens the conflict banner, as a save's would; on another row it is a
+   * plain error, since there is no draft of it to reconcile. */
+  private async deleteSaved(id: string, revision: number) {
+    if (!this.ownerId) return;
+    const open = id === this.selectedId;
     this.saving = true;
     try {
-      const result = await deleteRecord(this.hass, this.ownerId, this.selectedId, this.draft.baseRevision);
+      const result = await deleteRecord(this.hass, this.ownerId, id, revision);
       if (!result.ok) {
-        if (result.error === "conflict") this.conflict = { current: result.current ?? null, message: result.message ?? "This complication changed on the server." };
+        if (result.error === "conflict" && open) this.conflict = { current: result.current ?? null, message: result.message ?? "This complication changed on the server." };
         else this.saveError = result.message ?? result.error ?? "Delete failed";
         return;
       }
-      this.clearDraft();
-      this.selectedId = undefined;
+      if (open) {
+        this.clearDraft();
+        this.selectedId = undefined;
+      }
+      if (this.pickerHidden.has(id)) this.setPickerHidden(id);
       await this.loadRecords();
     } catch (err) {
       this.saveError = errText(err);
     } finally {
       this.saving = false;
       this.confirmDelete = false;
+      this.pickerConfirmDelete = undefined;
     }
   }
 
@@ -4714,7 +4759,6 @@ export class WristAssistantPanel extends LitElement {
 
   private renderPicker() {
     const d = this.draft;
-    const rec = this.records.find((r) => r.id === this.selectedId);
     const name = d ? (d.config.name.trim() || "Untitled") : "No complication";
     const families = d ? d.config.supportedFamilies : [];
     const all = this.pickerRows();
@@ -4722,37 +4766,84 @@ export class WristAssistantPanel extends LitElement {
     const rows = filter === "all"
       ? all
       : all.filter((row) => (row.kind === "record" ? familiesOf(row.record) : row.families).includes(filter));
+    // Hidden rows go to a folded section at the bottom. The open complication
+    // never does, so it can always be picked again.
+    const split = splitHidden(rows, (row) => (row.kind === "record" ? row.record.id : undefined), this.pickerHidden, this.selectedId);
+    // The revision is not shown here: it meant nothing to anyone reading the
+    // list. The inspector's summary still carries it.
     return html`<div class="picker">
       <button id="wa-picker" aria-haspopup="listbox" aria-expanded=${this.pickerOpen ? "true" : "false"} title="Choose a complication"
         @click=${() => this.togglePicker()}>
         ${this.shapeDots(families)}
         <span class="pk-name">${name}</span>
-        ${rec ? html`<span class="pk-rev">r${rec.revision}</span>` : d && d.baseRevision === null ? html`<span class="pk-rev">unsaved</span>` : nothing}
+        ${d && d.baseRevision === null ? html`<span class="pk-rev">unsaved</span>` : nothing}
         ${uiIcon("chevron")}
       </button>
       ${this.pickerOpen ? html`<div class="menu" role="listbox">
         ${all.length >= WristAssistantPanel.FILTER_FROM_ROWS ? this.renderPickerFilter(all) : nothing}
         ${all.length === 0 && !(d && d.baseRevision === null) ? html`<div class="empty">No complications for this watch yet.</div>` : nothing}
         ${all.length > 0 && rows.length === 0 ? html`<div class="empty">Nothing on this watch has a ${filter === "all" ? "" : familyTitle(filter)} shape.</div>` : nothing}
-        ${rows.map((row) => row.kind === "record"
-          ? html`<button class="row" role="option" aria-current=${row.record.id === this.selectedId ? "true" : "false"}
-              @click=${() => { this.togglePicker(false); this.selectRecord(row.record); }}>
-              ${this.renderRowArt(row.record)}
-              <span class="pk-name">${String(row.record.document?.name ?? "Untitled")}</span>
-              ${this.shapeDots(familiesOf(row.record))}
-              <span class="pk-badge">r${row.record.revision}</span>
-            </button>`
-          : html`<button type="button" class="row locked" role="option" aria-disabled="true" title=${row.title}
-              @click=${() => { this.pickerNote = this.pickerNote === row.slot ? undefined : row.slot; }}>
-              <span class="pk-art"></span>
-              <span class="pk-name">${row.name}</span>
-              ${this.shapeDots(row.families)}
-              <span class="pk-badge">${row.badge}</span>
-            </button>
-            ${this.pickerNote === row.slot ? html`<div class="pk-note">${row.title}</div>` : nothing}`)}
+        ${split.shown.map((row) => this.renderPickerRow(row))}
         ${d && d.baseRevision === null ? html`<div class="row" aria-current="true"><span class="pk-art"></span><span class="pk-name">${name}</span>${this.shapeDots(families)}<span class="pk-badge">unsaved</span></div>` : nothing}
+        ${split.hidden.length > 0 ? html`
+          <button type="button" class="pk-hidden-head" aria-expanded=${this.pickerHiddenOpen ? "true" : "false"}
+            @click=${() => { this.pickerHiddenOpen = !this.pickerHiddenOpen; }}>
+            ${uiIcon("chevron")}<span>Hidden (${split.hidden.length})</span>
+          </button>
+          ${this.pickerHiddenOpen ? split.hidden.map((row) => this.renderPickerRow(row)) : nothing}` : nothing}
       </div>` : nothing}
     </div>`;
+  }
+
+  /** One picker row. A saved complication opens from the row and carries its
+   * own hide and delete buttons; a locked slot unfolds its explanation. */
+  private renderPickerRow(row: PickerRow) {
+    if (row.kind !== "record") {
+      return html`<button type="button" class="row locked" role="option" aria-disabled="true" title=${row.title}
+          @click=${() => { this.pickerNote = this.pickerNote === row.slot ? undefined : row.slot; }}>
+          <span class="pk-art"></span>
+          <span class="pk-name">${row.name}</span>
+          ${this.shapeDots(row.families)}
+          <span class="pk-badge">${row.badge}</span>
+        </button>
+        ${this.pickerNote === row.slot ? html`<div class="pk-note">${row.title}</div>` : nothing}`;
+    }
+    const record = row.record;
+    const open = record.id === this.selectedId;
+    const hidden = this.pickerHidden.has(record.id);
+    const recName = String(record.document?.name ?? "Untitled");
+    // The open complication goes through the inspector's own Delete, so an
+    // unsaved draft and a conflict behave the same from either place.
+    const mayDelete = open ? this.canEdit : !!this.hass.user?.is_admin;
+    const confirming = this.pickerConfirmDelete === record.id;
+    const stop = (e: Event) => e.stopPropagation();
+    return html`<div class="row rec ${hidden ? "dim" : ""}" aria-current=${open ? "true" : "false"}>
+      <button type="button" class="pick" role="option" aria-selected=${open ? "true" : "false"}
+        @click=${() => { this.togglePicker(false); this.selectRecord(record); }}>
+        ${this.renderRowArt(record)}
+        <span class="pk-name">${recName}</span>
+        ${this.shapeDots(familiesOf(record))}
+      </button>
+      <span class="pk-acts">
+        ${confirming
+          ? html`<button type="button" class="ghost danger small" ?disabled=${this.saving}
+              @click=${(e: Event) => { stop(e); void (open ? this.deleteCurrent() : this.deleteSaved(record.id, record.revision)); }}>Really delete</button>
+            <button type="button" class="ghost small" @click=${(e: Event) => { stop(e); this.pickerConfirmDelete = undefined; }}>Cancel</button>`
+          : html`<button type="button" class="icon" title=${hidden ? "Show in this list" : "Hide from this list. The watch is not changed."}
+              aria-label=${hidden ? `Show ${recName} in the list` : `Hide ${recName} from the list`}
+              @click=${(e: Event) => { stop(e); this.setPickerHidden(record.id); }}>${uiIcon(hidden ? "hide" : "show")}</button>
+            ${mayDelete ? html`<button type="button" class="icon danger" title="Delete this complication" aria-label=${`Delete ${recName}`}
+              ?disabled=${this.saving} @click=${(e: Event) => { stop(e); this.pickerConfirmDelete = record.id; }}>${uiIcon("delete")}</button>` : nothing}`}
+      </span>
+    </div>`;
+  }
+
+  /** Hide one complication from the picker on this watch, or show it again.
+   * Stored per watch in this browser; nothing is sent. */
+  private setPickerHidden(id: string) {
+    if (!this.ownerId) return;
+    this.pickerHidden = toggleHidden(this.pickerHidden, id, this.records.map((r) => r.id));
+    saveHidden(pickerStorage(), this.ownerId, this.pickerHidden);
   }
 
   /** Open or shut one of the preview bar's menus; opening one shuts the other.
@@ -4773,7 +4864,10 @@ export class WristAssistantPanel extends LitElement {
 
   private togglePicker(next = !this.pickerOpen) {
     this.pickerOpen = next;
-    if (!next) this.pickerNote = undefined;
+    if (!next) {
+      this.pickerNote = undefined;
+      this.pickerConfirmDelete = undefined;
+    }
     if (next) window.addEventListener("pointerdown", this.pickerOutside, { capture: true });
     else window.removeEventListener("pointerdown", this.pickerOutside, { capture: true });
   }
@@ -6429,13 +6523,16 @@ export class WristAssistantPanel extends LitElement {
     } else if (ins.kind === "layer") {
       const el = cfg.elements.find((e) => e.payload.id === ins.id);
       if (el) {
-        here = html`<span class="here" style=${`--k:${KIND_COLOR[el.kind]}`}><span class="kchip">${KIND_LABEL[el.kind]}</span><span class="nm" title=${layerTitle(el, describeContext(this.host()))}>${layerTitle(el, describeContext(this.host()))}</span></span>`;
+        // Only the kind: the name is the Name row directly under the crumbs,
+        // so spelling it here too said it twice. It stays in the tooltip.
+        here = html`<span class="here" style=${`--k:${KIND_COLOR[el.kind]}`} title=${layerTitle(el, describeContext(this.host()))}><span class="kchip">${KIND_LABEL[el.kind]}</span></span>`;
         const g = groupOf(cfg, el.payload.id);
         if (g) parent = html`<span class="sep">›</span><button @click=${() => { this.inspect = { kind: "group", id: g.id }; }} title="Edit the group">${g.name}</button>`;
       }
     } else if (ins.kind === "group") {
       const g = cfg.groups?.find((x) => x.id === ins.id);
-      if (g) here = html`<span class="here" style=${`--k:${SECTION_COLOR.group}`}><span class="kchip">Group</span><span class="nm" title=${g.name}>${g.name}</span></span>`;
+      // The group's card opens with its Name field, so the crumb is the kind alone.
+      if (g) here = html`<span class="here" style=${`--k:${SECTION_COLOR.group}`} title=${g.name}><span class="kchip">Group</span></span>`;
     }
     // The root deselects, and with nothing selected the inspector is the
     // complication itself.
