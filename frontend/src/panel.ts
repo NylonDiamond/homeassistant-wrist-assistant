@@ -2598,6 +2598,21 @@ export class WristAssistantPanel extends LitElement {
 
   // ── lifecycle ─────────────────────────────────────────────────────────
 
+  /**
+   * A dropdown lets go of focus as soon as an option is picked. Kept focused,
+   * it went on taking the arrow keys meant for the selected layer, and the
+   * first press on the face afterwards had to take the focus away before the
+   * drag could begin. One listener on the shadow root covers every select the
+   * panel draws, the zoom dialog's included, since `change` bubbles to it.
+   */
+  protected override firstUpdated(changed: PropertyValues) {
+    super.firstUpdated(changed);
+    this.renderRoot.addEventListener("change", (e) => {
+      const el = e.target as HTMLElement | null;
+      if (el?.tagName === "SELECT") el.blur();
+    });
+  }
+
   override connectedCallback() {
     super.connectedCallback();
     this.loadColumnWidths();
