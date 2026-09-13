@@ -328,12 +328,7 @@ type LayerDetail = "compact" | "expanded";
 /** How the Layers list is shown: picture size and row detail. Per browser,
  * like the column widths, and never part of the document. */
 const LIST_STORE_KEY = "wrist-assistant-panel.layers.v1";
-const GRID_STORE_KEY = "wrist-assistant-panel.grid.v1";
-
-// TEMP [wa-lag] instrument: timestamps for the drag delay after a grid change.
-// Remove with the real fix.
-const WA_LAG = { mark: 0, down: 0, firstMove: false, renderStart: 0 };
-/** How tall the slot a dragged row opens is, CSS px. */
+const GRID_STORE_KEY = "wrist-assistant-panel.grid.v1";/** How tall the slot a dragged row opens is, CSS px. */
 const DROP_GAP = 34;
 const COL_MIN = 200;
 const COL_MAX = 720;
@@ -548,6 +543,12 @@ export class WristAssistantPanel extends LitElement {
   /** Whether the grid's lines are drawn. Snapping works either way; the lines
    * start hidden so a fine grid does not cover the face. */
   @state() private showGridLines = false;
+  /** The grid size menu is open. Drawn by the panel rather than a native
+   * select: Chrome on macOS held the next click on the face for most of a
+   * second after its native menu closed, so a drag right after a size change
+   * lagged (measured 2026-09-12: the press was 650 to 900 ms old on arrival,
+   * with no long task on the page). */
+  @state() private gridMenuOpen = false;
   /** Alt is down. It flips snapping for a drag, so the grid lines show while
    * it is held even with Snap to grid off. */
   @state() private altHeld = false;
@@ -1609,18 +1610,32 @@ export class WristAssistantPanel extends LitElement {
        one of them stranded on the line above the other two. */
     .canvas-bar .face-tools { display: inline-flex; gap: 6px; flex: none; }
     /* With snapping on, the button and its size read as one accent pill. */
-    .grid-tool { display: inline-flex; align-items: center; }
+    .grid-tool { display: inline-flex; align-items: center; position: relative; }
     .grid-tool.on button.pick { border-radius: 8px 0 0 8px; padding-right: 8px; }
-    select.grid-step, button.grid-lines {
+    button.grid-step, button.grid-lines {
       height: 30px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
       border: 0; border-left: 1px solid color-mix(in srgb, var(--wa-accent-ink) 30%, transparent);
       background-color: color-mix(in srgb, var(--wa-accent) 82%, #000); color: var(--wa-accent-ink);
     }
-    select.grid-step { padding: 0 6px; border-radius: 0; }
+    button.grid-step { padding: 0 6px 0 8px; border-radius: 0; display: inline-flex; align-items: center; gap: 3px; font-variant-numeric: tabular-nums; }
+    button.grid-step svg { width: 12px; height: 12px; opacity: .8; }
     button.grid-lines { width: 30px; padding: 0; display: inline-grid; place-items: center; border-radius: 0 8px 8px 0; }
     button.grid-lines[aria-pressed="false"] { color: color-mix(in srgb, var(--wa-accent-ink) 60%, transparent); }
     button.grid-lines svg { width: 15px; height: 15px; }
-    select.grid-step:focus-visible, button.grid-lines:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    button.grid-step:focus-visible, button.grid-lines:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .grid-menu {
+      position: absolute; top: calc(100% + 6px); right: 0; z-index: 50; min-width: 84px;
+      background: var(--wa-card); color: var(--wa-ink); border: 1px solid var(--wa-line-strong);
+      border-radius: var(--wa-r-md); box-shadow: var(--wa-shadow-pop); padding: 4px;
+      display: flex; flex-direction: column; gap: 1px;
+    }
+    .grid-menu .row {
+      font: inherit; font-size: 12.5px; font-weight: 600; text-align: left; font-variant-numeric: tabular-nums;
+      background: transparent; border: 0; color: inherit; padding: 6px 10px; border-radius: 7px; cursor: pointer;
+    }
+    .grid-menu .row:hover { background: var(--wa-panel); }
+    .grid-menu .row[aria-selected="true"] { background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
+    .grid-menu .row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .canvas-bar label { display: inline-flex; align-items: center; gap: 8px; color: var(--wa-muted); }
     .canvas-bar label select { color: var(--wa-ink); font-weight: 500; }
     button.pick {
@@ -2610,22 +2625,7 @@ export class WristAssistantPanel extends LitElement {
    * panel draws, the zoom dialog's included, since `change` bubbles to it.
    */
   protected override firstUpdated(changed: PropertyValues) {
-    super.firstUpdated(changed);
-    // TEMP [wa-lag] instrument: remove with the real fix. A long task means the
-    // page itself was busy; no long task means the browser held the press.
-    try {
-      new PerformanceObserver((list) => {
-        for (const t of list.getEntries()) {
-          console.log(`[wa-lag] long task ${Math.round(t.duration)}ms, began +${Math.round(t.startTime - WA_LAG.mark)}ms after setGrid`);
-        }
-      }).observe({ type: "longtask", buffered: false });
-    } catch {
-      console.log("[wa-lag] long task observer not supported");
-    }
-    window.addEventListener("pointerdown", (e) => {
-      console.log(`[wa-lag] window pointerdown +${Math.round(performance.now() - WA_LAG.mark)}ms after setGrid; event age ${Math.round(performance.now() - e.timeStamp)}ms`);
-    }, { capture: true });
-    this.renderRoot.addEventListener("change", (e) => {
+    super.firstUpdated(changed);    this.renderRoot.addEventListener("change", (e) => {
       const el = e.target as HTMLElement | null;
       if (el?.tagName === "SELECT") el.blur();
     });
@@ -2699,11 +2699,7 @@ export class WristAssistantPanel extends LitElement {
     }
   }
 
-  private setGrid(on: boolean, step: number, lines = this.showGridLines) {
-    // TEMP [wa-lag] instrument: remove with the real fix.
-    WA_LAG.mark = performance.now();
-    console.log(`[wa-lag] setGrid on=${on} step=${step} lines=${lines}`);
-    this.snapGrid = on;
+  private setGrid(on: boolean, step: number, lines = this.showGridLines) {    this.snapGrid = on;
     this.gridStep = step;
     this.showGridLines = lines;
     try {
@@ -2869,15 +2865,7 @@ export class WristAssistantPanel extends LitElement {
     }
   }
 
-  protected override updated(changed: PropertyValues) {
-    // TEMP [wa-lag] instrument: remove with the real fix.
-    {
-      const ms = Math.round(performance.now() - WA_LAG.renderStart);
-      if (ms >= 30 || changed.has("gridStep") || changed.has("snapGrid")) {
-        console.log(`[wa-lag] render+update ${ms}ms, changed: ${[...changed.keys()].map(String).join(", ")}`);
-      }
-    }
-    // Every render can change what is in a scroll box, so the edge fades are
+  protected override updated(changed: PropertyValues) {    // Every render can change what is in a scroll box, so the edge fades are
     // re-measured here rather than only on the first one.
     this.fades.refresh([
       this.renderRoot.querySelector<HTMLElement>(".column.inspector"),
@@ -3934,10 +3922,13 @@ export class WristAssistantPanel extends LitElement {
       <button class="pick ${on ? "on" : ""}" ?disabled=${off} aria-pressed=${on ? "true" : "false"}
         title=${on ? "Layers snap to the grid when you drag them, and arrow keys move one grid step. Hold Alt to drag freely. Click to turn it off." : "Snap layers to a grid when you drag them. Without it, hold Alt while dragging to snap."}
         @click=${() => this.setGrid(!on, this.gridStep)}><span class="glyph">▦</span>Snap to grid</button>
-      ${on ? html`<select class="grid-step" aria-label="Grid size" ?disabled=${off}
-        @change=${(e: Event) => this.setGrid(true, Number((e.target as HTMLSelectElement).value))}>
-        ${GRID_STEPS.map((step) => html`<option value=${step} ?selected=${step === this.gridStep}>${step * 100}%</option>`)}
-      </select>
+      ${on ? html`<button class="grid-step" ?disabled=${off} aria-haspopup="listbox" aria-expanded=${this.gridMenuOpen ? "true" : "false"}
+        aria-label=${`Grid size, ${this.gridStep * 100}%`} title="Grid size"
+        @click=${() => this.toggleGridMenu()}>${this.gridStep * 100}%${uiIcon("chevron")}</button>
+      ${this.gridMenuOpen ? html`<div class="grid-menu" role="listbox" aria-label="Grid size">
+        ${GRID_STEPS.map((step) => html`<button class="row" role="option" aria-selected=${step === this.gridStep ? "true" : "false"}
+          @click=${() => { this.toggleGridMenu(false); this.setGrid(true, step); }}>${step * 100}%</button>`)}
+      </div>` : nothing}
       <button class="grid-lines" ?disabled=${off} aria-pressed=${lines ? "true" : "false"}
         aria-label=${lines ? "Hide the grid lines" : "Show the grid lines"}
         title=${lines ? "Hide the grid lines. Layers still snap." : "Show the grid lines. Layers snap either way."}
@@ -4081,12 +4072,7 @@ export class WristAssistantPanel extends LitElement {
     this.inspect = { kind: "layer", id };
   }
 
-  private onPreviewPointerDown(family: FamilyKind, e: PointerEvent) {
-    // TEMP [wa-lag] instrument: remove with the real fix.
-    WA_LAG.down = performance.now();
-    WA_LAG.firstMove = true;
-    console.log(`[wa-lag] preview pointerdown +${Math.round(WA_LAG.down - WA_LAG.mark)}ms after setGrid; event age ${Math.round(performance.now() - e.timeStamp)}ms`);
-    // A press on the face calls preventDefault to start a drag, which also
+  private onPreviewPointerDown(family: FamilyKind, e: PointerEvent) {    // A press on the face calls preventDefault to start a drag, which also
     // stops the browser moving focus. A control used just before (the grid
     // size menu, a number box) then kept it and went on taking the arrow keys
     // meant for the layer. Clicking the face is clicking away, so let it go.
@@ -4243,13 +4229,7 @@ export class WristAssistantPanel extends LitElement {
     }
     const resize = drawn !== undefined ? handleResize(drawn, start, canvas) : {};
     this.cancelGesture = beginGesture(svg, canvas, e, { elementId: id, frame: start, handle: handle ?? undefined, ...resize, ...(anchor === undefined ? this.snapTarget(family as DrawableFamily) : {}) }, {
-      onFrame: (elementId: string, f: NormalizedFrame, done: boolean) => {
-        // TEMP [wa-lag] instrument: remove with the real fix.
-        if (WA_LAG.firstMove && !done) {
-          WA_LAG.firstMove = false;
-          console.log(`[wa-lag] first drag frame +${Math.round(performance.now() - WA_LAG.down)}ms after pointerdown`);
-        }
-        if (!done) moved = true;
+      onFrame: (elementId: string, f: NormalizedFrame, done: boolean) => {        if (!done) moved = true;
         if (done && !moved && pickOnClick !== undefined) {
           this.inspect = { kind: "layer", id: pickOnClick };
           this.cancelGesture = undefined;
@@ -4483,10 +4463,7 @@ export class WristAssistantPanel extends LitElement {
 
   // ── render ────────────────────────────────────────────────────────────
 
-  override render() {
-    // TEMP [wa-lag] instrument: remove with the real fix.
-    WA_LAG.renderStart = performance.now();
-    const d = this.draft;
+  override render() {    const d = this.draft;
     const dirty = !!d?.dirty;
     // `narrow` is Home Assistant telling us it is a phone; otherwise the fit
     // is decided from the panel's own measured width.
@@ -4724,6 +4701,19 @@ export class WristAssistantPanel extends LitElement {
       </div>` : nothing}
     </div>`;
   }
+
+  /** Open or shut the grid size menu. A press anywhere outside it shuts it,
+   * the same way the complication picker closes. */
+  private toggleGridMenu(next = !this.gridMenuOpen) {
+    this.gridMenuOpen = next;
+    if (next) window.addEventListener("pointerdown", this.gridMenuOutside, { capture: true });
+    else window.removeEventListener("pointerdown", this.gridMenuOutside, { capture: true });
+  }
+
+  private gridMenuOutside = (e: PointerEvent) => {
+    const inside = e.composedPath().some((n) => n instanceof HTMLElement && n.classList.contains("grid-tool"));
+    if (!inside) this.toggleGridMenu(false);
+  };
 
   private togglePicker(next = !this.pickerOpen) {
     this.pickerOpen = next;
