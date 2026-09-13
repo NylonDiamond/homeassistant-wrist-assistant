@@ -35,6 +35,86 @@ export interface GestureTarget {
    * so the handle on its corner stays under the pointer.
    */
   outline?: NormalizedFrame;
+  /**
+   * Snap to grid: the grid's step as a fraction of the face (0.05 is a line
+   * every 5%). A move lands the layer's nearest edge or middle on a line, a
+   * corner drag lands the edge it pulls. Holding Alt moves freely for that
+   * drag. Undefined drags freely, as before there was a grid.
+   */
+  snap?: number;
+}
+
+/** The grid steps the preview offers, as fractions of the face. */
+export const GRID_STEPS = [0.025, 0.05, 0.1] as const;
+
+/** A tiny margin so a value already on a line counts as on it despite float dust. */
+const ON_LINE = 1e-6;
+
+/** How far `n` is from the nearest line of a `step` grid, signed. */
+function toLine(n: number, step: number): number {
+  return Math.round(n / step) * step - n;
+}
+
+/** Move one axis so whichever of its start, middle or end is closest to a line lands on it. */
+function snapSpan(start: number, size: number, step: number): number {
+  const offsets = [start, start + size / 2, start + size].map((n) => toLine(n, step));
+  const best = offsets.reduce((a, b) => (Math.abs(b) < Math.abs(a) ? b : a));
+  return round3(start + best);
+}
+
+/**
+ * A moved frame put on the grid: on each axis the edge or middle nearest a
+ * line lands on it, so a layer can sit left-aligned, centred or right-aligned
+ * on the grid without the author choosing which. Size and turn stay.
+ */
+export function snapFrameMove(frame: NormalizedFrame, step: number): NormalizedFrame {
+  if (!(step > 0)) return frame;
+  return clampFrame({ ...frame, x: snapSpan(frame.x, frame.width, step), y: snapSpan(frame.y, frame.height, step) });
+}
+
+/**
+ * A resized frame with the edges a corner drag pulled put on the grid. The
+ * opposite edges stay where the drag pinned them. `axes` limits it to the
+ * sides the resize actually changes, so a line keeps its thickness.
+ */
+export function snapFrameEdges(
+  frame: NormalizedFrame,
+  handle: HandleCorner,
+  step: number,
+  axes: { x: boolean; y: boolean } = { x: true, y: true },
+): NormalizedFrame {
+  if (!(step > 0)) return frame;
+  let { x, y, width, height } = frame;
+  const right = x + width;
+  const bottom = y + height;
+  if (axes.x && handle.includes("e")) width = Math.max(MIN_SIZE, round3(right + toLine(right, step) - x));
+  if (axes.x && handle.includes("w")) {
+    const left = Math.min(round3(x + toLine(x, step)), right - MIN_SIZE);
+    width = round3(right - left);
+    x = round3(left);
+  }
+  if (axes.y && handle.includes("s")) height = Math.max(MIN_SIZE, round3(bottom + toLine(bottom, step) - y));
+  if (axes.y && handle.includes("n")) {
+    const top = Math.min(round3(y + toLine(y, step)), bottom - MIN_SIZE);
+    height = round3(bottom - top);
+    y = round3(top);
+  }
+  return { ...frame, x, y, width, height };
+}
+
+/**
+ * What an arrow key does with the grid on: the frame's left (or top) edge
+ * goes to the next grid line in that direction. A layer already on a line
+ * moves one step; one between lines lands on the next line first.
+ */
+export function gridNudgeFrame(frame: NormalizedFrame, dx: number, dy: number, step: number): NormalizedFrame {
+  if (!(step > 0)) return frame;
+  const next = (n: number, dir: number) => {
+    if (dir === 0) return n;
+    const line = dir > 0 ? Math.floor(n / step + ON_LINE) + 1 : Math.ceil(n / step - ON_LINE) - 1;
+    return round3(line * step);
+  };
+  return clampFrame({ ...frame, x: next(frame.x, Math.sign(dx)), y: next(frame.y, Math.sign(dy)) });
 }
 
 export interface GestureCallbacks {
@@ -251,12 +331,21 @@ export function beginGesture(
     const dx = t.x / canvas.width;
     const dy = t.y / canvas.height;
     let next: NormalizedFrame;
+    // Alt is read on every move, so it can be pressed or let go mid-drag.
+    const snap = target.snap !== undefined && !ev.altKey ? target.snap : undefined;
     if (!target.handle) {
       next = clampFrame({ ...base, x: round(base.x + dx), y: round(base.y + dy) });
+      if (snap !== undefined) next = snapFrameMove(next, snap);
     } else if (target.square) {
+      // A circle's square is square in points, which a grid in fractions of a
+      // wide face cannot keep, so its corners drag freely.
       next = squareResize(base, canvas, target.handle, t);
     } else if (target.line || target.bar) {
       next = lineResize(base, canvas, target.handle, t, target.bar === true);
+      if (snap !== undefined) {
+        const along = target.bar === true || next.width * canvas.width >= next.height * canvas.height;
+        next = snapFrameEdges(next, target.handle, snap, { x: along, y: !along });
+      }
     } else {
       let { x, y, width, height } = base;
       const right = base.x + base.width;
@@ -272,6 +361,7 @@ export function beginGesture(
         y = bottom - height;
       }
       next = { ...base, x: round(x), y: round(y), width: round(width), height: round(height) };
+      if (snap !== undefined) next = snapFrameEdges(next, target.handle, snap);
     }
     last = next;
     cb.onFrame(target.elementId, next, false);

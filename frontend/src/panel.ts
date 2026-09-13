@@ -107,7 +107,7 @@ import { ScrollFades } from "./scroll-fade.js";
 import { statesSummary } from "./states.js";
 import { uiIcon } from "./ui-icons.js";
 import { addPreview } from "./add-previews.js";
-import { NUDGE_COARSE, beginGesture, beginPointDrag, beginScaleDrag, nudgeFrame, nudgePoint, type HandleCorner } from "./interact.js";
+import { GRID_STEPS, NUDGE_COARSE, beginGesture, beginPointDrag, beginScaleDrag, gridNudgeFrame, nudgeFrame, nudgePoint, type HandleCorner } from "./interact.js";
 import {
   type CopiedPosition,
   type EditorHost,
@@ -328,6 +328,7 @@ type LayerDetail = "compact" | "expanded";
 /** How the Layers list is shown: picture size and row detail. Per browser,
  * like the column widths, and never part of the document. */
 const LIST_STORE_KEY = "wrist-assistant-panel.layers.v1";
+const GRID_STORE_KEY = "wrist-assistant-panel.grid.v1";
 /** How tall the slot a dragged row opens is, CSS px. */
 const DROP_GAP = 34;
 const COL_MIN = 200;
@@ -535,6 +536,11 @@ export class WristAssistantPanel extends LitElement {
   /** A layer's position lifted by the Position card's Copy position, for its
    * Paste position on another layer. Kept for the tab, like `clipboard`. */
   @state() private copiedPosition?: CopiedPosition;
+  /** Snap to grid, and the grid's step as a fraction of the face. A choice of
+   * this browser, like the column widths, never saved into a complication:
+   * the watch has no use for it. */
+  @state() private snapGrid = false;
+  @state() private gridStep: number = 0.05;
   /** Groups folded shut in the Layers list. List state only, never saved. */
   @state() private collapsed: ReadonlySet<string> = new Set();
   @state() private activeFamily: FamilyKind = "rectangular";
@@ -1568,6 +1574,8 @@ export class WristAssistantPanel extends LitElement {
     /* The three face toggles wrap as one block, so a narrow bar never leaves
        one of them stranded on the line above the other two. */
     .canvas-bar .face-tools { display: inline-flex; gap: 6px; flex: none; }
+    .grid-tool { display: inline-flex; align-items: center; gap: 4px; }
+    select.grid-step { height: 30px; padding: 0 6px; font-size: 12.5px; border-radius: 8px; }
     .canvas-bar label { display: inline-flex; align-items: center; gap: 8px; color: var(--wa-muted); }
     .canvas-bar label select { color: var(--wa-ink); font-weight: 500; }
     button.pick {
@@ -2553,6 +2561,7 @@ export class WristAssistantPanel extends LitElement {
     super.connectedCallback();
     this.loadColumnWidths();
     this.loadListView();
+    this.loadGrid();
     this.sizeObserver.observe(this);
     window.addEventListener("keydown", this.keyHandler);
     window.addEventListener("keyup", this.keyUpHandler);
@@ -2598,6 +2607,35 @@ export class WristAssistantPanel extends LitElement {
     } catch {
       /* Storage off: the widths still work for this visit. */
     }
+  }
+
+  // ── snap to grid ──────────────────────────────────────────────────────
+
+  private loadGrid() {
+    try {
+      const raw = window.localStorage.getItem(GRID_STORE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { on?: unknown; step?: unknown };
+      if (typeof saved.on === "boolean") this.snapGrid = saved.on;
+      if ((GRID_STEPS as readonly unknown[]).includes(saved.step)) this.gridStep = saved.step as number;
+    } catch {
+      /* A browser with storage off starts with the grid off. */
+    }
+  }
+
+  private setGrid(on: boolean, step: number) {
+    this.snapGrid = on;
+    this.gridStep = step;
+    try {
+      window.localStorage.setItem(GRID_STORE_KEY, JSON.stringify({ on, step }));
+    } catch {
+      /* Storage off: the grid still holds for this visit. */
+    }
+  }
+
+  /** What a drag passes to the gesture so it snaps, or nothing with the grid off. */
+  private snapTarget(): { snap?: number } {
+    return this.snapGrid ? { snap: this.gridStep } : {};
   }
 
   // ── how the Layers list is shown ──────────────────────────────────────
@@ -3792,6 +3830,25 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
+   * The snap-to-grid toggle, and while it is on, the grid's size. The grid is
+   * in percent of the face, the unit the X and Y fields use, so a snapped
+   * layer lands on the same numbers on every shape.
+   */
+  private renderGridButton() {
+    const on = this.snapGrid;
+    const off = !this.draft || this.parseError !== undefined || this.activeFamily === "inline";
+    return html`<span class="grid-tool">
+      <button class="pick ${on ? "on" : ""}" ?disabled=${off} aria-pressed=${on ? "true" : "false"}
+        title=${on ? "Layers snap to the grid when you drag them, and arrow keys move one grid step. Hold Alt to drag freely. Click to turn it off." : "Snap layers to a grid when you drag them"}
+        @click=${() => this.setGrid(!on, this.gridStep)}><span class="glyph">▦</span>Grid</button>
+      ${on ? html`<select class="grid-step" aria-label="Grid size" ?disabled=${off}
+        @change=${(e: Event) => this.setGrid(true, Number((e.target as HTMLSelectElement).value))}>
+        ${GRID_STEPS.map((step) => html`<option value=${step} ?selected=${step === this.gridStep}>${step * 100}%</option>`)}
+      </select>` : nothing}
+    </span>`;
+  }
+
+  /**
    * The full-width preview: the same face, the same gestures, drawn as wide as
    * the window allows. A native dialog brings the backdrop and Escape with it.
    * The bar keeps the two face toggles and Close; everything else stays under
@@ -3810,6 +3867,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="spacer"></span>
         ${this.renderPickButton()}
         ${this.renderShowTapsButton()}
+        ${this.renderGridButton()}
         <button class="pick" title="Back to the editor (Escape)" @click=${() => { this.zoomed = false; }}><span class="glyph">⤡</span>Close</button>
       </div>
       <div class="zoom-stage" style=${`--wa-ratio:${ratio}`}>
@@ -3848,6 +3906,7 @@ export class WristAssistantPanel extends LitElement {
       ["Drag a row", "Reorder the list. Drop it on a folder to put it inside"],
       ["Pick layer", "Point at the face to find a layer. Click it to select it"],
       ["Show taps", "Every tap area, labelled. With a layer selected, only its tap shows and its corners drag"],
+      ["Grid", "Snap layers to a grid of 2.5%, 5% or 10% of the face when you drag them. Arrows then move one grid step. Hold Alt while dragging to move freely"],
       ["Expand", "The face full-window, for small moves. Everything above works there too"],
       ["Locked group", "Drags as one. Unlock it in its row to move layers alone"],
       ["Timestamp chip", "On a picture layer: click it to move it, pull a corner for its size"],
@@ -4072,7 +4131,7 @@ export class WristAssistantPanel extends LitElement {
       return;
     }
     const resize = drawn !== undefined ? handleResize(drawn, start, canvas) : {};
-    this.cancelGesture = beginGesture(svg, canvas, e, { elementId: id, frame: start, handle: handle ?? undefined, ...resize }, {
+    this.cancelGesture = beginGesture(svg, canvas, e, { elementId: id, frame: start, handle: handle ?? undefined, ...resize, ...(anchor === undefined ? this.snapTarget() : {}) }, {
       onFrame: (elementId: string, f: NormalizedFrame, done: boolean) => {
         if (!done) moved = true;
         if (done && !moved && pickOnClick !== undefined) {
@@ -4129,7 +4188,7 @@ export class WristAssistantPanel extends LitElement {
     const round = (n: number) => Math.round(n * 1000) / 1000;
     this.cancelGesture?.();
     let moved = false;
-    this.cancelGesture = beginGesture(svg, this.gestureCanvas(family), e, { elementId: group.id, frame: bounds }, {
+    this.cancelGesture = beginGesture(svg, this.gestureCanvas(family), e, { elementId: group.id, frame: bounds, ...this.snapTarget() }, {
       onFrame: (_id, f, done) => {
         if (!done) moved = true;
         if (done && !moved && pickOnClick !== undefined) {
@@ -4208,7 +4267,8 @@ export class WristAssistantPanel extends LitElement {
       }, `nudge-${id}-${family}`);
       return true;
     }
-    const next = nudgeFrame(frame, px, py, box);
+    // With the grid on, a press moves to the next grid line instead of 1 pt.
+    const next = this.snapGrid ? gridNudgeFrame(frame, px, py, this.gridStep) : nudgeFrame(frame, px, py, box);
     // At the edge of the face the clamp gives the frame back unchanged. The key
     // is still ours (the page must not scroll under a nudge), but there is
     // nothing to record.
@@ -4239,7 +4299,7 @@ export class WristAssistantPanel extends LitElement {
     const x1 = Math.max(...frames.map((f) => f.x + f.width));
     const y1 = Math.max(...frames.map((f) => f.y + f.height));
     const bounds: NormalizedFrame = { x: x0, y: y0, width: x1 - x0, height: y1 - y0, rotationDegrees: 0 };
-    const moved = nudgeFrame(bounds, px, py, box);
+    const moved = this.snapGrid ? gridNudgeFrame(bounds, px, py, this.gridStep) : nudgeFrame(bounds, px, py, box);
     const dx = moved.x - bounds.x;
     const dy = moved.y - bounds.y;
     if (dx !== 0 || dy !== 0) {
@@ -4291,7 +4351,7 @@ export class WristAssistantPanel extends LitElement {
     const attached = isAttachedTap(cfg, tap);
     const frame = effectivePlacement(cfg, family, tap).frame;
     this.cancelGesture?.();
-    this.cancelGesture = beginGesture(svg, this.gestureCanvas(family), e, { elementId: tapId, frame, handle }, {
+    this.cancelGesture = beginGesture(svg, this.gestureCanvas(family), e, { elementId: tapId, frame, handle, ...this.snapTarget() }, {
       onFrame: (elementId: string, f: NormalizedFrame, done: boolean) => {
         this.mutate((c) => {
           if (attached) setTapOutsetFromFrame(c, elementId, family, f);
@@ -5749,7 +5809,7 @@ export class WristAssistantPanel extends LitElement {
               ${CASES.map((c) => html`<option value=${c.label} ?selected=${c.label === watchCase.label}>${c.label}${c.measured ? "" : " (estimated)"}</option>`)}
             </select>
           </span>
-          <span class="face-tools">${this.renderPickButton()}${this.renderShowTapsButton()}${this.renderZoomButton()}</span>
+          <span class="face-tools">${this.renderPickButton()}${this.renderShowTapsButton()}${this.renderGridButton()}${this.renderZoomButton()}</span>
         </div>
         <div class="stage">
           ${family === "inline" ? this.renderInlinePreview(layouts.inline, false) : this.renderBigPreview(family, layouts, watchCase)}
@@ -5789,6 +5849,7 @@ export class WristAssistantPanel extends LitElement {
       icons: this.icons, imageSizes: this.imageSizes, tapAreas: true, slot,
       highlightId: focus ?? peek ?? highlightId,
       ...(outlineIds.length > 0 && !this.showTaps && peek === undefined ? { highlightIds: outlineIds } : {}),
+      ...(this.snapGrid ? { grid: this.gridStep } : {}),
       tapReview: this.showTaps,
       ...(focus !== undefined ? { tapFocusId: focus } : {}),
       handles: this.canEdit && !this.picking && (!this.showTaps || focus !== undefined),
@@ -5826,7 +5887,7 @@ export class WristAssistantPanel extends LitElement {
       const g = groupOf(cfg, sel.payload.id);
       tail = g?.locked
         ? html`editing <b>${layerTitle(sel, ctx)}</b> in <b>${g.name}</b>. A drag moves the whole group; pull a corner to resize this layer. Arrow keys nudge the group.`
-        : html`editing <b>${layerTitle(sel, ctx)}</b>. Drag it, or pull a corner. Arrow keys nudge it.`;
+        : html`editing <b>${layerTitle(sel, ctx)}</b>. Drag it, or pull a corner. Arrow keys nudge it.${this.snapGrid ? " It snaps to the grid. Hold Alt to drag freely." : ""}`;
     } else {
       tail = "click a layer to edit it";
     }

@@ -178,6 +178,30 @@ export interface RenderOptions {
    * exactly as the watch does.
    */
   slot?: CanvasSize;
+  /** Editor affordance: the snap grid's step as a fraction of the face. Draws
+   * faint lines over the layers, with the middle lines in the accent colour. */
+  grid?: number;
+}
+
+/**
+ * The snap grid, in design points, over everything the layers draw. Lines are
+ * hairlines at any zoom and take no pointer events, so a drag still reaches the
+ * layer under them.
+ */
+function gridLines(design: CanvasSize, step: number | undefined): TemplateResult | typeof nothing {
+  if (step === undefined || !(step > 0)) return nothing;
+  const n = Math.round(1 / step);
+  const lines: TemplateResult[] = [];
+  for (let i = 1; i < n; i++) {
+    const stroke = i * 2 === n ? "rgba(10,132,255,0.6)" : "rgba(255,255,255,0.14)";
+    const x = (design.width * i) / n;
+    const y = (design.height * i) / n;
+    lines.push(
+      svg`<line x1=${x} y1="0" x2=${x} y2=${design.height} stroke=${stroke} stroke-width="0.5" vector-effect="non-scaling-stroke" />`,
+      svg`<line x1="0" y1=${y} x2=${design.width} y2=${y} stroke=${stroke} stroke-width="0.5" vector-effect="non-scaling-stroke" />`,
+    );
+  }
+  return svg`<g class="snap-grid" pointer-events="none">${lines}</g>`;
 }
 
 const FONT_WEIGHT: Record<string, number> = { regular: 400, medium: 500, semibold: 600, bold: 700 };
@@ -1651,6 +1675,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
           ${bg ? svg`<rect width=${tile} height=${tile} fill=${bg.color} fill-opacity=${bg.opacity} />` : nothing}
           <g data-design-box transform="scale(${fit.scale * tileScale})">
             ${elements.map((el) => renderElement(el, design, options, charts))}
+            ${gridLines(design, options.grid)}
           </g>
         </g>
         <circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} fill="none"
@@ -1684,6 +1709,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
       ${bg ? svg`<rect width=${canvas.width} height=${canvas.height} fill=${bg.color} fill-opacity=${bg.opacity} />` : nothing}
       <g data-design-box transform="translate(${fit.x} ${fit.y}) scale(${fit.scale})">
         ${elements.map((el) => renderElement(el, design, options, charts))}
+            ${gridLines(design, options.grid)}
       </g>
     </g>
     ${chrome}
