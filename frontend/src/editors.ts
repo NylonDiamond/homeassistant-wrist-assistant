@@ -1562,27 +1562,34 @@ function bandTableFields(
     ${bars.border
       ? barSwatch("Border", border, bars.borderHex ?? own, bars.borderHex === undefined ? "the band colour" : "the chart border colour", setBorder)
       : nothing}`;
+  // The box for where band `i` ends. A middle row shows two: its own end, and
+  // the end of the band under it as its start, so a row reads "122 – 231".
+  // Both edit the same number, held between its neighbours, so the rows never
+  // re-sort under the pointer mid-drag.
+  const endBox = (i: number, label: string) => {
+    const b = sorted[i]!;
+    return html`<input type="number" class="band-up" step="any" .value=${String(b.upTo)} aria-label=${label}
+      title=${`Band ${i + 1} runs up to and including this number`}
+      data-scrub @pointerdown=${boxScrubber(b.upTo, (n) => set(band(b.id, (x) => { x.upTo = n; })), {
+        ...(i > 0 ? { min: sorted[i - 1]!.upTo } : {}),
+        ...(i < sorted.length - 1 ? { max: sorted[i + 1]!.upTo } : {}),
+      })}
+      @change=${onInput((v) => {
+        const n = Number(v);
+        if (v.trim() !== "" && Number.isFinite(n)) set(band(b.id, (x) => { x.upTo = n; }));
+      })} />`;
+  };
   const cols = bars === undefined ? 0 : bars.border ? 2 : 1;
   return html`<div class=${bars === undefined ? "bands" : "bands bars"} style=${bars === undefined ? nothing : `--sw-cols:${cols}`}>
     ${bandBar(sorted, above, now)}
     ${bars === undefined || sorted.length === 0 ? nothing : html`<div class="band-row band-head" aria-hidden="true">
-      <span></span><span></span><span></span><span>Fill</span>${bars.border ? html`<span>Border</span>` : nothing}<span></span>
+      <span></span><span></span><span>Fill</span>${bars.border ? html`<span>Border</span>` : nothing}<span></span>
     </div>`}
     ${sorted.map((b, i) => html`
       <div class="band-row ${hit === b.id ? "hit" : ""}">
-        <span class="le" aria-hidden="true">≤</span>
-        <input type="number" class="band-up" step="any" .value=${String(b.upTo)} aria-label="Up to"
-          title="This colour runs up to and including this number"
-          data-scrub @pointerdown=${boxScrubber(b.upTo, (n) => set(band(b.id, (x) => { x.upTo = n; })), {
-            // Held between its neighbours, so the rows never re-sort under
-            // the pointer mid-drag.
-            ...(i > 0 ? { min: sorted[i - 1]!.upTo } : {}),
-            ...(i < sorted.length - 1 ? { max: sorted[i + 1]!.upTo } : {}),
-          })}
-          @change=${onInput((v) => {
-            const n = Number(v);
-            if (v.trim() !== "" && Number.isFinite(n)) set(band(b.id, (x) => { x.upTo = n; }));
-          })} />
+        <span class="range">${i === 0
+          ? html`<span></span><span class="le" aria-hidden="true">≤</span>${endBox(i, "Up to")}`
+          : html`${endBox(i - 1, "From above")}<span class="le" aria-hidden="true">–</span>${endBox(i, "Up to")}`}</span>
         ${colorBox(`Up to ${b.upTo}`, b.colorHex, (v) => set(band(b.id, (x) => { x.colorHex = v ?? "#FFFFFF"; }), `bcol${b.id}`))}
         ${swatches(b.colorHex, b.fillColorHex, b.borderColorHex,
           (v) => set(band(b.id, (x) => { if (v === undefined) delete x.fillColorHex; else x.fillColorHex = v; }), `bfill${b.id}`),
@@ -1591,8 +1598,9 @@ function bandTableFields(
           @click=${() => set((p) => { p.bands = p.bands.filter((x) => x.id !== b.id); })}>${uiIcon("close")}</button>
       </div>`)}
     <div class="band-row ${hit === "above" ? "hit" : ""}">${resetButton(aboveBack)}
-      <span class="le" aria-hidden="true">&gt;</span>
-      <span class="else">Above</span>
+      <span class="range">${sorted.length === 0
+        ? html`<span class="else">Every value</span>`
+        : html`<span></span><span class="le" aria-hidden="true">&gt;</span>${endBox(sorted.length - 1, "Above")}`}</span>
       ${colorBox("Above the last band", above, (v) => set((p) => { p.bandAboveColorHex = v ?? CHART_DEFAULT_BAND_HIGH_HEX; }, "babove"))}
       ${swatches(above, layer.bandAboveFillColorHex, layer.bandAboveBorderColorHex,
         (v) => set((p) => { if (v === undefined) delete p.bandAboveFillColorHex; else p.bandAboveFillColorHex = v; }, "bafill"),

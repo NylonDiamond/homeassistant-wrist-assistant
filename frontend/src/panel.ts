@@ -2243,8 +2243,14 @@ export class WristAssistantPanel extends LitElement {
       position: absolute; top: -4px; width: 2px; height: 16px; margin-left: -1px; border-radius: 1px;
       background: var(--wa-ink); box-shadow: 0 0 0 1.5px var(--wa-card);
     }
-    .band-row { position: relative; display: grid; grid-template-columns: 12px 64px minmax(0, 1fr) 22px; gap: 4px; align-items: center; min-height: 28px; }
-    .band-row .le { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--wa-muted); text-align: center; }
+    /* The first column is the band's range: a start box, a sign and an end box.
+       The first row has no start ("≤ 122"), a middle row has both
+       ("122 – 231"), and Above shows the last end ("> 231"), so every end box
+       lines up in the same slot. */
+    .band-row { position: relative; display: grid; grid-template-columns: 124px minmax(0, 1fr) 22px; gap: 4px; align-items: center; min-height: 28px; }
+    .band-row .range { display: grid; grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr); align-items: center; }
+    .band-row .le { font-size: 16px; line-height: 1; font-weight: 500; color: var(--wa-muted); text-align: center; }
+    .band-row .range .else { grid-column: 1 / -1; }
     .band-row .else { font-size: 12px; color: var(--wa-muted); padding-left: 2px; }
     .band-row.hit .le, .band-row.hit .else { color: var(--wa-val); font-weight: 700; }
     .band-row input.band-up {
@@ -2263,7 +2269,7 @@ export class WristAssistantPanel extends LitElement {
        border is on, under small column titles. An empty swatch shows the colour
        it inherits, faint and dashed; a set one carries its own reset dot at its
        corner, which clears it back to inherited. */
-    .bands.bars .band-row { grid-template-columns: 12px 64px minmax(0, 1fr) repeat(var(--sw-cols, 1), 26px) 22px; }
+    .bands.bars .band-row { grid-template-columns: 124px minmax(0, 1fr) repeat(var(--sw-cols, 1), 26px) 22px; }
     .band-row.band-head { min-height: 0; margin-bottom: -2px; }
     .band-row.band-head span { font-size: 10px; line-height: 12px; color: var(--wa-muted); text-align: center; white-space: nowrap; overflow: visible; }
     .bar-sw { position: relative; display: flex; justify-content: center; align-items: center; height: 26px; }
@@ -2274,7 +2280,13 @@ export class WristAssistantPanel extends LitElement {
     @container (max-width: 320px) {
       .bands.bars .band-row .color-box .alpha { display: none; }
       .bands.bars .band-row .color-box { padding-right: 6px; }
-      .bands.bars .band-row { grid-template-columns: 12px 48px minmax(0, 1fr) repeat(var(--sw-cols, 1), 24px) 22px; }
+      .bands.bars .band-row { grid-template-columns: 104px minmax(0, 1fr) repeat(var(--sw-cols, 1), 24px) 22px; }
+    }
+    /* Too narrow for a hex beside two numbers: the colour box keeps its swatch. */
+    @container (max-width: 270px) {
+      .band-row { grid-template-columns: 104px minmax(0, 1fr) 22px; }
+      .bands.bars .band-row { grid-template-columns: 104px minmax(30px, 1fr) repeat(var(--sw-cols, 1), 24px) 22px; }
+      .band-row .color-box input.hex { display: none; }
     }
     .bands button.link.add-band { justify-self: start; margin-top: 2px; font-size: 12px; font-weight: 500; }
     /* The Position card's four numbers: a 2x2 grid of boxes, each with its
