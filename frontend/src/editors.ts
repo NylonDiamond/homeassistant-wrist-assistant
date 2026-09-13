@@ -239,7 +239,7 @@ import {
 import { chartSmoothed, chartSeriesWithHoles } from "./resolver.js";
 import { watchVersionNote } from "./version.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
-import { type ChartExtraKey, extraInfo, extraPreview } from "./extra-previews.js";
+import { type ExtraKey, type ExtraOwner, extraInfo, extraName, extraOwner, extraPreview } from "./extra-previews.js";
 import { KIND_LABEL, SECTION_COLOR } from "./kinds.js";
 import { domainIcon, domainLabel, isActiveState } from "./domain-icons.js";
 
@@ -3954,7 +3954,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
   // the chart case, where its setters live, and shown in the Extras card.
   let chartMarks: TemplateResult | undefined;
   // Why a Draw button is greyed out, for the Extras preview.
-  let chartBlocked: Partial<Record<ChartExtraKey, string>> = {};
+  let chartBlocked: Partial<Record<ExtraKey, string>> = {};
 
   // Content is what the layer shows; look is how it is drawn. Splitting them
   // per kind is the whole difference between a form and a page a person can
@@ -4393,7 +4393,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           : "Clock times need a recorded span: set Draw to Recorded history";
       const dotsBlocked = c.style === "bars" ? "Dots sit on a line or area chart: set Style to Line or Area" : undefined;
       chartBlocked = { "draw:times": timesBlocked, "draw:dots": dotsBlocked };
-      const drawButton = (key: ChartExtraKey, label: string, on: boolean, add: (cfg: CustomComplicationConfig) => void, blocked?: string) => html`
+      const drawButton = (key: ExtraKey, label: string, on: boolean, add: (cfg: CustomComplicationConfig) => void, blocked?: string) => html`
         <button class="small ${on ? "on" : ""}" ?disabled=${on || blocked !== undefined} aria-pressed=${on ? "true" : "false"}
           data-extra=${key} title=${extraTitle(key, on ? `${label} is on this chart. Remove it in the list at the bottom.` : blocked ?? `Add ${label.toLowerCase()} to this chart`)}
           @click=${() => host.update((cfg) => { add(cfg); })}>${on ? html`<span aria-hidden="true">✓</span>` : uiIcon("plus")}<span>${label}</span></button>`;
@@ -4769,11 +4769,13 @@ function ownedExtrasCard(host: EditorHost, el: Extract<CElement, { kind: "timeli
   });
   const on = layers.length > 0;
   const rows = layers.map((l): LayerRow => ({ el: l, lead: uiIcon("clock"), title: label, kind: timeline ? "Times" : "Timestamp" }));
+  const key: ExtraKey = timeline ? "timeline:times" : "image:time";
   const body = html`
+    ${extraPreviewPane(timeline ? "timeline" : "image")}
     <div class="field list-field"><span>Draw</span>
-      <div class="adders">
-        <button class="small ${on ? "on" : ""}" ?disabled=${on} aria-pressed=${on ? "true" : "false"}
-          title=${on ? `${label} is on this ${timeline ? "timeline" : "picture"}. Remove it in the list below.` : `Add ${label.toLowerCase()}`}
+      <div class="adders" @pointerover=${pointExtra} @focusin=${pointExtra}>
+        <button class="small ${on ? "on" : ""}" ?disabled=${on} aria-pressed=${on ? "true" : "false"} data-extra=${key}
+          title=${extraTitle(key, on ? `${label} is on this ${timeline ? "timeline" : "picture"}. Remove it in the list below.` : `Add ${label.toLowerCase()}`)}
           @click=${add}>${on ? html`<span aria-hidden="true">✓</span>` : uiIcon("plus")}<span>${label}</span></button>
       </div>
     </div>
@@ -4941,7 +4943,7 @@ function chartNumbersSummary(host: EditorHost, el: Extract<CElement, { kind: "ch
  * the chart that has to be invented twice.
  */
 function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "chart" }>, marks: TemplateResult | undefined,
-  blocked: Partial<Record<ChartExtraKey, string>> = {}): TemplateResult {
+  blocked: Partial<Record<ExtraKey, string>> = {}): TemplateResult {
   const ctx = describeContext(host);
   const labels = chartLabelsOf(host.config, el.payload.id);
   const times = chartTimesOf(host.config, el.payload.id);
@@ -4974,7 +4976,7 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
   return html`
     <div class="hint">Everything the chart shows besides its readings: a threshold, now, clock times, numbers
       and markers. Each one is a layer in this chart's group, so you can drag it and give it any size or colour.</div>
-    ${extraPreviewPane(blocked)}
+    ${extraPreviewPane("chart", blocked)}
     ${marks ?? nothing}
     ${count === 0
       ? html`<div class="hint keep">A chart on its own shows that a reading moved, not what it moved to and not
@@ -5019,7 +5021,7 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
 /** The Extras button last pointed at or focused, shown in the preview. Kept
  * after the pointer leaves, so moving from one row of buttons to the next does
  * not flash the bare chart in between. */
-let extraPointed: ChartExtraKey | undefined;
+let extraPointed: ExtraKey | undefined;
 
 const EXTRA_PREVIEW_STORE_KEY = "wrist-assistant-extras-preview";
 
@@ -5038,7 +5040,7 @@ function setExtraPreviewOn(on: boolean, node: EventTarget | null): void {
  * events still reach a disabled button, so a greyed out one explains itself. */
 function pointExtra(e: Event): void {
   if (!extraPreviewOn) return;
-  const key = (e.target as Element | null)?.closest?.("[data-extra]")?.getAttribute("data-extra") as ChartExtraKey | null;
+  const key = (e.target as Element | null)?.closest?.("[data-extra]")?.getAttribute("data-extra") as ExtraKey | null;
   if (!key || key === extraPointed) return;
   extraPointed = key;
   requestRerender(e.currentTarget);
@@ -5046,36 +5048,33 @@ function pointExtra(e: Event): void {
 
 /** A button's tooltip. With the preview hidden it also says what the button
  * adds, since nothing else on the card does. */
-function extraTitle(key: ChartExtraKey, action: string): string {
+function extraTitle(key: ExtraKey, action: string): string {
   return extraPreviewOn ? action : `${extraInfo(key)} ${action}.`;
 }
 
-function extraPreviewPane(blocked: Partial<Record<ChartExtraKey, string>>): TemplateResult {
+/** The preview at the top of an Extras card. `owner` is the layer the card
+ * belongs to: a button pointed at on another kind's card is not shown here. */
+function extraPreviewPane(owner: ExtraOwner, blocked: Partial<Record<ExtraKey, string>> = {}): TemplateResult {
   if (!extraPreviewOn) {
     return html`<button class="link xprev-show" @click=${(e: Event) => setExtraPreviewOn(true, e.currentTarget)}>
       ${uiIcon("show")}<span>Show preview</span></button>`;
   }
-  const key = extraPointed;
-  const name = key === undefined ? undefined
-    : key.startsWith("draw:") ? EXTRA_DRAW_NAMES[key.slice(5) as keyof typeof EXTRA_DRAW_NAMES]
-      : key.startsWith("number:") ? CHART_STATS.find(([s]) => `number:${s}` === key)?.[1]
-        : `${CHART_ANCHOR_POINTS.find(([a]) => `marker:${a}` === key)?.[1] ?? "Reading"} marker`;
+  // A timeline or a picture has one button, so its preview shows it from the start.
+  const only: ExtraKey | undefined = owner === "timeline" ? "timeline:times" : owner === "image" ? "image:time" : undefined;
+  const key = extraPointed !== undefined && extraOwner(extraPointed) === owner ? extraPointed : only;
   const why = key === undefined ? undefined : blocked[key];
+  const word = owner === "image" ? "picture" : owner;
   return html`<div class="xprev">
-    <span class="well">${extraPreview(key)}</span>
+    <span class="well">${extraPreview(owner, key)}</span>
     <span class="xprev-t">
-      <b>${name ?? "Preview"}</b>
-      <span>${key === undefined ? "Point at a button below to see what it adds to the chart." : extraInfo(key)}</span>
+      <b>${key === undefined ? "Preview" : extraName(key)}</b>
+      <span>${key === undefined ? `Point at a button below to see what it adds to the ${word}.` : extraInfo(key)}</span>
       ${why ? html`<span class="xprev-why">${why}</span>` : nothing}
     </span>
     <button class="icon xprev-hide" title="Hide the preview" aria-label="Hide the preview"
       @click=${(e: Event) => setExtraPreviewOn(false, e.currentTarget)}>${uiIcon("hide")}</button>
   </div>`;
 }
-
-const EXTRA_DRAW_NAMES = {
-  threshold: "Threshold line", now: "Now line", zero: "Zero line", times: "Clock times", dots: "Dots", grid: "Grid lines",
-} as const;
 
 /** One layer listed inside another layer's inspector: the chart's extras, a
  * group's members. */
