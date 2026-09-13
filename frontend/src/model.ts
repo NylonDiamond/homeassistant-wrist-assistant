@@ -5029,6 +5029,35 @@ export function removeElement(cfg: CustomComplicationConfig, id: string): void {
   for (const family of DRAWABLE_FAMILIES) delete cfg.perFamily[family]?.placements[id];
   syncAttachedTaps(cfg);
   pruneGroups(cfg);
+  // The chart's group was made when its first extra joined, so the last extra
+  // leaving takes the group with it rather than leaving a folder of one.
+  if (gone) unwrapLoneOwnerGroup(cfg, gone.payload.groupId, extraOwnerOf(gone));
+}
+
+/** The layer an extra was made for: the chart a number, marker, line, dots,
+ * grid or times layer reads, or the picture a timestamp belongs to. Undefined
+ * for any other layer. */
+export function extraOwnerOf(el: Element): string | undefined {
+  if (el.payload.chartAnchor) return el.payload.chartAnchor.layer;
+  switch (el.kind) {
+    case "text": return el.payload.value.kind.kind === "chartStat" ? el.payload.value.kind.layer : undefined;
+    case "chartTimes": return el.payload.chart;
+    case "chartDots": return el.payload.chart;
+    case "chartGrid": return el.payload.chart;
+    case "imageTime": return el.payload.image;
+    default: return undefined;
+  }
+}
+
+/** Dissolve a group left holding only `ownerId`, the layer whose extra just
+ * left it. A group is only made once a second layer joins a chart, so one that
+ * drops back to the chart alone goes too. A group of one the author built some
+ * other way, or one saved like that, is left alone. */
+export function unwrapLoneOwnerGroup(cfg: CustomComplicationConfig, groupId: string | undefined, ownerId: string | undefined): void {
+  if (groupId === undefined || ownerId === undefined) return;
+  if (!cfg.groups?.some((g) => g.id === groupId)) return;
+  const members = groupMembers(cfg, groupId);
+  if (members.length === 1 && members[0]!.payload.id === ownerId) ungroup(cfg, groupId);
 }
 
 /** Copy a layer (and any tap attached to it) directly above the original,
