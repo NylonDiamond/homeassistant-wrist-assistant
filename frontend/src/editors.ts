@@ -1457,30 +1457,20 @@ interface BandedLayer {
   bandAboveBorderColorHex?: string;
 }
 
-/** What a bars chart adds to its band table: a Fill swatch on every row, and a
- * Border swatch while the border is on. Each names what an empty swatch falls
- * back to before the band's own colour: the chart's fill and border colours. */
+/** What a bars chart adds to its band table. While the border is on, every row
+ * shows a Fill and a Border colour box side by side in place of its one colour.
+ * `fillHex` and `borderHex` are the chart's own fill and border colours, which
+ * come before a band's colour when the band sets none. */
 interface BarBandOptions {
   fillHex?: string;
   borderHex?: string;
   border: boolean;
 }
 
-/** A band row's Fill or Border swatch. Empty, it shows the colour it inherits
- * faintly, and picking a colour sets one (keeping the inherited opacity); set,
- * a reset dot clears it back to inherited. */
-function barSwatch(label: string, value: string | undefined, inherited: string, inheritedName: string, set: (v: string | undefined) => void): TemplateResult {
-  const shown = colorParts(value ?? inherited);
-  const title = value === undefined
-    ? `${label}: ${inheritedName} (${inherited}). Pick a colour to set one.`
-    : `${label}: ${value}`;
-  return html`<span class="bar-sw">
-    <span class="color-swatch ${value === undefined ? "inh" : ""}" style=${`--sw:${shown.swatch}`} title=${title}>
-      <input type="color" .value=${shown.rgb} aria-label=${`${label}: pick a colour`}
-        @input=${onInput((v) => set(composeColor(v, shown.alpha)))} />
-    </span>
-    ${value === undefined ? nothing : resetButton({ atDefault: false, title: `Back to ${inheritedName}`, reset: () => set(undefined) })}
-  </span>`;
+/** One of a band row's Fill or Border boxes, with a reset dot at its corner
+ * while `back` says the colour is the band's own. */
+function bandColorCell(label: string, value: string, set: (v: string | undefined) => void, back?: ResetTo): TemplateResult {
+  return html`<span class="band-cell">${colorBox(label, value, set)}${resetButton(back)}</span>`;
 }
 
 /** Where a band table's colour bar starts and ends: a typical band's width
@@ -1554,14 +1544,32 @@ function bandTableFields(
     title: `Back to ${CHART_DEFAULT_BAND_HIGH_HEX}`,
     reset: () => set((p) => { p.bandAboveColorHex = CHART_DEFAULT_BAND_HIGH_HEX; }),
   };
-  // A bars chart's Fill and Border swatches for one row. `own` is the row's
-  // main colour, which an empty swatch falls back to after the chart's.
-  const swatches = (own: string, fill: string | undefined, border: string | undefined,
-    setFill: (v: string | undefined) => void, setBorder: (v: string | undefined) => void) => bars === undefined ? nothing : html`
-    ${barSwatch("Fill", fill, bars.fillHex ?? own, bars.fillHex === undefined ? "the band colour" : "the chart fill colour", setFill)}
-    ${bars.border
-      ? barSwatch("Border", border, bars.borderHex ?? own, bars.borderHex === undefined ? "the band colour" : "the chart border colour", setBorder)
-      : nothing}`;
+  const split = bars?.border === true;
+  // A row's colours. With the border off it is the one colour box it always
+  // was. With it on, a Fill box and a Border box. Fill writes the band colour,
+  // which is what the band bar above shows and what a bar fills in, and also the
+  // band's own fill only while the chart has a fill colour that would otherwise
+  // win. Border writes the band's own border; its reset dot goes back to the
+  // chart's border colour, or the band colour.
+  const colours = (label: string, row: { colorHex: string; fillColorHex?: string; borderColorHex?: string },
+    setColour: (v: string) => void, setFill: (v: string | undefined) => void, setBorder: (v: string | undefined) => void) => {
+    if (!split) return colorBox(label, row.colorHex, (v) => setColour(v ?? "#FFFFFF"));
+    const chartFill = bars?.fillHex;
+    const chartBorder = bars?.borderHex;
+    const fillBack: ResetTo | undefined = row.fillColorHex === undefined ? undefined : {
+      atDefault: false, title: "Back to the chart fill colour", reset: () => setFill(undefined),
+    };
+    const borderBack: ResetTo | undefined = row.borderColorHex === undefined ? undefined : {
+      atDefault: false, title: `Back to ${chartBorder === undefined ? "the band colour" : "the chart border colour"}`, reset: () => setBorder(undefined),
+    };
+    return html`
+      ${bandColorCell(`${label} fill`, row.fillColorHex ?? chartFill ?? row.colorHex, (v) => {
+        if (v === undefined) return;
+        setColour(v);
+        setFill(chartFill === undefined ? undefined : v);
+      }, fillBack)}
+      ${bandColorCell(`${label} border`, row.borderColorHex ?? chartBorder ?? row.colorHex, (v) => setBorder(v), borderBack)}`;
+  };
   // The box for where band `i` ends. A middle row shows two: its own end, and
   // the end of the band under it as its start, so a row reads "122 – 231".
   // Both edit the same number, held between its neighbours, so the rows never
@@ -1579,19 +1587,21 @@ function bandTableFields(
         if (v.trim() !== "" && Number.isFinite(n)) set(band(b.id, (x) => { x.upTo = n; }));
       })} />`;
   };
-  const cols = bars === undefined ? 0 : bars.border ? 2 : 1;
-  return html`<div class=${bars === undefined ? "bands" : "bands bars"} style=${bars === undefined ? nothing : `--sw-cols:${cols}`}>
+  // The range cell is four slots: a sign, a start box, "to", an end box. The
+  // first row and Above put their sign and one box at the front and leave the
+  // rest blank, so every row's first box lines up.
+  return html`<div class=${split ? "bands split" : "bands"}>
     ${bandBar(sorted, above, now)}
-    ${bars === undefined || sorted.length === 0 ? nothing : html`<div class="band-row band-head" aria-hidden="true">
-      <span></span><span></span><span>Fill</span>${bars.border ? html`<span>Border</span>` : nothing}<span></span>
+    ${!split || sorted.length === 0 ? nothing : html`<div class="band-row band-head" aria-hidden="true">
+      <span></span><span>Fill</span><span>Border</span><span></span>
     </div>`}
     ${sorted.map((b, i) => html`
       <div class="band-row ${hit === b.id ? "hit" : ""}">
         <span class="range">${i === 0
-          ? html`<span></span><span class="le" aria-hidden="true">≤</span>${endBox(i, "Up to")}`
-          : html`${endBox(i - 1, "From above")}<span class="le" aria-hidden="true">–</span>${endBox(i, "Up to")}`}</span>
-        ${colorBox(`Up to ${b.upTo}`, b.colorHex, (v) => set(band(b.id, (x) => { x.colorHex = v ?? "#FFFFFF"; }), `bcol${b.id}`))}
-        ${swatches(b.colorHex, b.fillColorHex, b.borderColorHex,
+          ? html`<span class="le" aria-hidden="true">≤</span>${endBox(i, "Up to")}`
+          : html`<span></span>${endBox(i - 1, "From")}<span class="to">to</span>${endBox(i, "Up to")}`}</span>
+        ${colours(`Up to ${b.upTo}`, b,
+          (v) => set(band(b.id, (x) => { x.colorHex = v; }), `bcol${b.id}`),
           (v) => set(band(b.id, (x) => { if (v === undefined) delete x.fillColorHex; else x.fillColorHex = v; }), `bfill${b.id}`),
           (v) => set(band(b.id, (x) => { if (v === undefined) delete x.borderColorHex; else x.borderColorHex = v; }), `bborder${b.id}`))}
         <button type="button" class="icon" title="Remove this band" aria-label="Remove this band"
@@ -1600,9 +1610,12 @@ function bandTableFields(
     <div class="band-row ${hit === "above" ? "hit" : ""}">${resetButton(aboveBack)}
       <span class="range">${sorted.length === 0
         ? html`<span class="else">Every value</span>`
-        : html`<span></span><span class="le" aria-hidden="true">&gt;</span>${endBox(sorted.length - 1, "Above")}`}</span>
-      ${colorBox("Above the last band", above, (v) => set((p) => { p.bandAboveColorHex = v ?? CHART_DEFAULT_BAND_HIGH_HEX; }, "babove"))}
-      ${swatches(above, layer.bandAboveFillColorHex, layer.bandAboveBorderColorHex,
+        : html`<span class="le" aria-hidden="true">&gt;</span>${endBox(sorted.length - 1, "Above")}`}</span>
+      ${colours("Above the last band",
+        { colorHex: above,
+          ...(layer.bandAboveFillColorHex === undefined ? {} : { fillColorHex: layer.bandAboveFillColorHex }),
+          ...(layer.bandAboveBorderColorHex === undefined ? {} : { borderColorHex: layer.bandAboveBorderColorHex }) },
+        (v) => set((p) => { p.bandAboveColorHex = v; }, "babove"),
         (v) => set((p) => { if (v === undefined) delete p.bandAboveFillColorHex; else p.bandAboveFillColorHex = v; }, "bafill"),
         (v) => set((p) => { if (v === undefined) delete p.bandAboveBorderColorHex; else p.bandAboveBorderColorHex = v; }, "baborder"))}
       <span></span>

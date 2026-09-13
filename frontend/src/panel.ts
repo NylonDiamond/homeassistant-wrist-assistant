@@ -2243,13 +2243,14 @@ export class WristAssistantPanel extends LitElement {
       position: absolute; top: -4px; width: 2px; height: 16px; margin-left: -1px; border-radius: 1px;
       background: var(--wa-ink); box-shadow: 0 0 0 1.5px var(--wa-card);
     }
-    /* The first column is the band's range: a start box, a sign and an end box.
-       The first row has no start ("≤ 122"), a middle row has both
-       ("122 – 231"), and Above shows the last end ("> 231"), so every end box
-       lines up in the same slot. */
-    .band-row { position: relative; display: grid; grid-template-columns: 124px minmax(0, 1fr) 22px; gap: 4px; align-items: center; min-height: 28px; }
-    .band-row .range { display: grid; grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr); align-items: center; }
-    .band-row .le { font-size: 16px; line-height: 1; font-weight: 500; color: var(--wa-muted); text-align: center; }
+    /* The first column is the band's range, four slots: a sign, a start box,
+       "to" and an end box. The first row is "≤ 122" and Above is "> 231", both
+       in the first two slots with blank space after; a middle row leaves the
+       sign blank and reads "122 to 231". So every row's first box lines up. */
+    .band-row { position: relative; display: grid; grid-template-columns: 164px minmax(0, 1fr) 22px; gap: 4px; align-items: center; min-height: 28px; }
+    .band-row .range { display: grid; grid-template-columns: 16px minmax(0, 1fr) 22px minmax(0, 1fr); align-items: center; }
+    .band-row .le { font-size: 16px; line-height: 1; font-weight: 500; color: var(--wa-muted); text-align: left; }
+    .band-row .to { font-size: 12px; color: var(--wa-muted); text-align: center; }
     .band-row .range .else { grid-column: 1 / -1; }
     .band-row .else { font-size: 12px; color: var(--wa-muted); padding-left: 2px; }
     .band-row.hit .le, .band-row.hit .else { color: var(--wa-val); font-weight: 700; }
@@ -2265,27 +2266,26 @@ export class WristAssistantPanel extends LitElement {
     .band-row input.band-up:focus-visible { border-color: var(--c, var(--wa-accent)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c, var(--wa-accent)) 28%, transparent); }
     .band-row.hit input.band-up { color: var(--wa-val); }
     .band-row button.reset-dot { top: 50%; margin-top: -3px; }
-    /* A bars chart's table: a Fill swatch per row and a Border swatch while the
-       border is on, under small column titles. An empty swatch shows the colour
-       it inherits, faint and dashed; a set one carries its own reset dot at its
-       corner, which clears it back to inherited. */
-    .bands.bars .band-row { grid-template-columns: 124px minmax(0, 1fr) repeat(var(--sw-cols, 1), 26px) 22px; }
+    /* A bars chart with a border: a Fill and a Border colour box side by side
+       on every row, under small column titles. A box whose colour is the
+       band's own carries a reset dot at its corner. */
+    .bands.split .band-row { grid-template-columns: 164px minmax(0, 1fr) minmax(0, 1fr) 22px; }
     .band-row.band-head { min-height: 0; margin-bottom: -2px; }
-    .band-row.band-head span { font-size: 10px; line-height: 12px; color: var(--wa-muted); text-align: center; white-space: nowrap; overflow: visible; }
-    .bar-sw { position: relative; display: flex; justify-content: center; align-items: center; height: 26px; }
-    .bar-sw .color-swatch { width: 18px; height: 18px; }
-    .bar-sw .color-swatch.inh { opacity: .45; outline: 1px dashed var(--wa-muted); outline-offset: 1px; }
-    .bar-sw .color-swatch.inh:hover { opacity: .8; }
-    .band-row .bar-sw button.reset-dot { left: auto; right: -2px; top: 1px; margin-top: 0; }
-    @container (max-width: 320px) {
-      .bands.bars .band-row .color-box .alpha { display: none; }
-      .bands.bars .band-row .color-box { padding-right: 6px; }
-      .bands.bars .band-row { grid-template-columns: 104px minmax(0, 1fr) repeat(var(--sw-cols, 1), 24px) 22px; }
+    .band-row.band-head span { font-size: 10px; line-height: 12px; color: var(--wa-muted); padding-left: 2px; white-space: nowrap; }
+    .band-cell { position: relative; display: flex; min-width: 0; }
+    .band-cell .color-box { flex: 1; min-width: 0; }
+    .band-row .band-cell button.reset-dot { left: auto; right: -2px; top: -2px; margin-top: 0; }
+    @container (max-width: 470px) {
+      .bands.split .band-row .color-box .alpha { display: none; }
+      .bands.split .band-row .color-box { padding-right: 6px; }
     }
-    /* Too narrow for a hex beside two numbers: the colour box keeps its swatch. */
-    @container (max-width: 270px) {
-      .band-row { grid-template-columns: 104px minmax(0, 1fr) 22px; }
-      .bands.bars .band-row { grid-template-columns: 104px minmax(30px, 1fr) repeat(var(--sw-cols, 1), 24px) 22px; }
+    /* Too narrow for a hex beside the numbers: a colour box keeps its swatch. */
+    @container (max-width: 340px) {
+      .band-row, .bands.split .band-row { grid-template-columns: 136px minmax(0, 1fr) 22px; }
+      .bands.split .band-row { grid-template-columns: 136px minmax(28px, 1fr) minmax(28px, 1fr) 22px; }
+      .band-row .range { grid-template-columns: 14px minmax(0, 1fr) 18px minmax(0, 1fr); }
+    }
+    @container (max-width: 300px) {
       .band-row .color-box input.hex { display: none; }
     }
     .bands button.link.add-band { justify-self: start; margin-top: 2px; font-size: 12px; font-weight: 500; }
