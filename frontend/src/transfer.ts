@@ -428,6 +428,138 @@ export function importSummary(cfg: CustomComplicationConfig): string {
   return families.length === 0 ? count : `${count}, ${joinWords(families)}`;
 }
 
+/** What the import preview lists beside its picture. */
+export interface ImportFacts {
+  layers: number;
+  /** In schema order, as their titles. */
+  families: string[];
+  /** Placeholders the reader has to point at one of their own entities. */
+  slots: number;
+  /** Real ids this Home Assistant does not have, which the reader may leave. */
+  missing: number;
+}
+
+const FAMILY_TITLES: Record<string, string> = {
+  rectangular: "Rectangular",
+  circular: "Circular",
+  corner: "Corner",
+  inline: "Inline",
+};
+
+/** The numbers the preview shows, so "this needs four entities" is known
+ * before the table of them is read. */
+export function importFacts(cfg: CustomComplicationConfig, rows: readonly UnresolvedEntity[]): ImportFacts {
+  return {
+    layers: cfg.elements.length,
+    families: supportedFamilies(cfg).map((f) => FAMILY_TITLES[f] ?? f),
+    slots: rows.filter((r) => r.required).length,
+    missing: rows.filter((r) => !r.required).length,
+  };
+}
+
+// ── share links ───────────────────────────────────────────────────────────
+//
+// A link to this panel with the shared text in its hash. The hash never
+// reaches a server, Home Assistant's included, so the link is as private as
+// the text it carries. The payload starts with one letter saying how it was
+// packed: `z` for gzip, `t` for plain UTF-8, both then base64url. Gzip roughly
+// quarters a pretty-printed document, which is what keeps a link short enough
+// for a chat message; a browser without CompressionStream still makes a link,
+// just a longer one, and every browser that can read one kind can read both
+// unless it lacks DecompressionStream too.
+
+/** The hash key a share link uses: `#import=<payload>`. */
+export const SHARE_LINK_KEY = "import";
+
+export function bytesToBase64Url(bytes: Uint8Array): string {
+  let binary = "";
+  // Chunked, because spreading a large array into one call overflows the stack.
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/** Undefined for anything that is not base64url. */
+export function base64UrlToBytes(text: string): Uint8Array | undefined {
+  if (!/^[A-Za-z0-9_-]*$/.test(text) || text.length % 4 === 1) return undefined;
+  const padded = text.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((text.length + 3) % 4);
+  try {
+    const binary = atob(padded);
+    const out = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
+    return out;
+  } catch {
+    return undefined;
+  }
+}
+
+async function throughStream(bytes: Uint8Array, stream: GenericTransformStream): Promise<Uint8Array> {
+  const out = new Blob([bytes as BlobPart]).stream().pipeThrough(stream as TransformStream<Uint8Array, Uint8Array>);
+  return new Uint8Array(await new Response(out).arrayBuffer());
+}
+
+/** The hash payload for one shared text. `compress: false` forces the plain
+ * form, which is also what a browser without CompressionStream gets. */
+export async function encodeShareLink(text: string, opts: { compress?: boolean } = {}): Promise<string> {
+  const bytes = new TextEncoder().encode(text);
+  if (opts.compress !== false && typeof CompressionStream === "function") {
+    try {
+      return `z${bytesToBase64Url(await throughStream(bytes, new CompressionStream("gzip")))}`;
+    } catch {
+      // Fall through to the plain form.
+    }
+  }
+  return `t${bytesToBase64Url(bytes)}`;
+}
+
+/** The text a hash payload carries, or undefined when it is damaged, cut
+ * short, or packed in a way this browser cannot unpack. */
+export async function decodeShareLink(payload: string): Promise<string | undefined> {
+  const bytes = base64UrlToBytes(payload.slice(1));
+  if (!bytes) return undefined;
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  try {
+    if (payload.startsWith("t")) return decoder.decode(bytes);
+    if (payload.startsWith("z") && typeof DecompressionStream === "function") {
+      return decoder.decode(await throughStream(bytes, new DecompressionStream("gzip")));
+    }
+  } catch {
+    // A truncated gzip stream or bytes that are not UTF-8.
+  }
+  return undefined;
+}
+
+/** A link to `base` (the panel's own address, without a hash) that opens the
+ * Import dialog with the text filled in. */
+export function shareLinkUrl(base: string, payload: string): string {
+  const bare = base.split("#")[0] ?? base;
+  return `${bare}#${SHARE_LINK_KEY}=${payload}`;
+}
+
+/** The payload in a location hash, when it is a share link. */
+export function shareLinkPayload(hash: string): string | undefined {
+  const body = hash.startsWith("#") ? hash.slice(1) : hash;
+  const prefix = `${SHARE_LINK_KEY}=`;
+  if (!body.startsWith(prefix)) return undefined;
+  const payload = body.slice(prefix.length);
+  return payload.length > 1 ? payload : undefined;
+}
+
+/** The payload of a share link pasted as text: one line, no spaces, with the
+ * link's hash in it. Undefined for anything else, a document included. This is
+ * how a link made on another home still works: its address is somebody else's
+ * Home Assistant, but the hash is the whole document. */
+export function shareLinkInText(text: string): string | undefined {
+  const t = text.trim();
+  if (t === "" || /\s/.test(t) || t.startsWith("{")) return undefined;
+  const at = t.indexOf("#");
+  return at < 0 ? undefined : shareLinkPayload(t.slice(at));
+}
+
+/** What the import dialog says about a link that does not unpack. */
+export const SHARE_LINK_DAMAGED = "This share link is damaged or cut short. Ask for it again, or paste the text instead.";
+
 /** Everything the Import button waits on, in the order the reader meets it. */
 export interface ImportReadiness {
   /** True once the text parsed into a document. */

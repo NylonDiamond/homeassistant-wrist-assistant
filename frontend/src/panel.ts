@@ -145,13 +145,19 @@ import {
   type ImportParse,
   type ShareSlot,
   type UnresolvedEntity,
+  SHARE_LINK_DAMAGED,
+  decodeShareLink,
+  encodeShareLink,
   exportFileName,
   exportText,
   hasInstanceFilters,
+  importFacts,
   importProblem,
-  importSummary,
   parseImportText,
   remapEntities,
+  shareLinkInText,
+  shareLinkPayload,
+  shareLinkUrl,
   shareSlots,
   suggestImportName,
   unresolvedEntities,
@@ -324,6 +330,8 @@ function layerRowFolds(): string {
   }).join("\n");
 }
 type ThumbStep = 0 | 1 | 2;
+/** The help dialog's tabs. */
+type HelpTab = "basics" | "keys" | "sync";
 type LayerDetail = "compact" | "expanded";
 /** How the Layers list is shown: picture size and row detail. Per browser,
  * like the column widths, and never part of the document. */
@@ -616,6 +624,23 @@ export class WristAssistantPanel extends LitElement {
   @state() private importParse?: ImportParse;
   @state() private importName = "";
   @state() private importMap: ReadonlyMap<string, EntityRef> = new Map();
+  /** A file is being dragged over the Import dialog. */
+  @state() private importDrop = false;
+  /** Enter and leave fire for every child a drag crosses, so the highlight
+   * counts them rather than trusting whichever fired last. */
+  private importDragDepth = 0;
+  /** The entities the pasted document reads, for its preview picture. */
+  private importEntities: EntityRef[] = [];
+  /** The link the Share dialog last built and the text it holds. A link for
+   * different text is not shown. */
+  @state() private shareLink?: { text: string; url: string };
+  @state() private helpTab: HelpTab = "basics";
+  /** A share link the panel was opened with, held until the watch list has
+   * loaded, since that is what says whether there is a slot to import into. */
+  private pendingLink?: string;
+  private linkReady = false;
+  /** Why a share link could not open the Import dialog. */
+  @state() private linkNote?: string;
   /** Parsed config per saved record, keyed by id and invalidated by revision.
    * The picker draws a real preview of every complication, and parsing and
    * compiling every document on every render of an open menu is the one part
@@ -1063,7 +1088,29 @@ export class WristAssistantPanel extends LitElement {
     .xfer-slot .hint { margin: 3px 0 0; }
     .xfer-file { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .xfer-file .hint { margin: 0; }
-    .xfer-file input[type=file] { font: inherit; font-size: 12px; color: var(--wa-muted); min-width: 0; }
+    .xfer-problem { white-space: pre-line; }
+    .xfer-link { width: 100%; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    /* What the pasted text turned out to be: each shape drawn small, beside
+       its name and the counts that matter before importing. */
+    .xfer-preview {
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; padding: 10px 12px;
+      border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-panel);
+    }
+    .xfer-preview + .field { margin-top: 14px; }
+    .xfer-arts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .pk-art.xfer-art { width: auto; min-width: 48px; max-width: 150px; height: 56px; }
+    .pk-art.xfer-art svg { max-height: 56px; }
+    .pk-art.xfer-art .inline-line { font-size: 11px; padding: 3px 8px; }
+    .xfer-facts { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 13px; }
+    .xfer-facts span { font-size: 12px; color: var(--wa-muted); }
+    /* The whole dialog is the drop target, lit while a file is over it. */
+    dialog.import-dialog.dropping { border-color: var(--wa-accent); box-shadow: 0 0 0 2px var(--wa-accent), 0 12px 40px rgba(0,0,0,.4); }
+    .xfer-drop {
+      position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; border-radius: 12px;
+      background: color-mix(in srgb, var(--wa-accent) 16%, transparent); font-size: 14px; font-weight: 600;
+    }
+    .xfer-drop span { padding: 8px 14px; border-radius: 8px; background: var(--wa-card); }
+    .link-note { margin: 4px 12px 0; display: flex; align-items: center; gap: 10px; }
     .xfer-ent { padding: 10px 0; border-top: 1px solid var(--wa-line); }
     .xfer-ent:first-child { border-top: 0; padding-top: 2px; }
     .xfer-ent .hint { margin: 4px 0 0; }
@@ -2061,7 +2108,20 @@ export class WristAssistantPanel extends LitElement {
       box-shadow: 0 12px 40px rgba(0,0,0,.4);
     }
     dialog.help-dialog::backdrop { background: rgba(0,0,0,.45); }
-    .help-head { display: flex; align-items: center; gap: 8px; padding: 14px 18px; border-bottom: 1px solid var(--wa-line); }
+    .help-head { display: flex; align-items: center; gap: 12px; padding: 14px 18px 4px; }
+    .help-head a { font-size: 13px; color: var(--wa-accent); }
+    .help-tabs { display: flex; gap: 4px; padding: 0 18px; border-bottom: 1px solid var(--wa-line); }
+    .help-tabs button {
+      font: inherit; font-size: 13px; font-weight: 500; padding: 8px 10px; margin-bottom: -1px; cursor: pointer;
+      border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--wa-muted);
+    }
+    .help-tabs button:hover { color: var(--wa-ink); }
+    .help-tabs button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .help-tabs button[aria-selected="true"] { color: var(--wa-ink); border-bottom-color: var(--wa-accent); }
+    /* Words rather than keys in the first column wrap, so a long name does
+       not squeeze its explanation into a sliver. */
+    .help-body table.terms th { white-space: normal; width: 30%; }
+    .help-body section + section h3 { margin-top: 0; }
     .help-head h2 { margin: 0; font-size: 15px; font-weight: 500; }
     .help-head .spacer { flex: 1; }
     .help-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 8px 24px; padding: 14px 18px 18px; }
@@ -2701,6 +2761,8 @@ export class WristAssistantPanel extends LitElement {
     window.addEventListener("focusin", this.sharedValueFocus);
     this.addEventListener(SCRUB_START, this.scrubStart);
     this.addEventListener(SCRUB_END, this.scrubEnd);
+    window.addEventListener("hashchange", this.takeShareLink);
+    this.takeShareLink();
     void this.loadOwners();
     this.watchStatusTimer = window.setInterval(() => void this.refreshWatchStatus(), WATCH_STATUS_MS);
   }
@@ -2863,6 +2925,7 @@ export class WristAssistantPanel extends LitElement {
     window.removeEventListener("focusin", this.sharedValueFocus);
     this.removeEventListener(SCRUB_START, this.scrubStart);
     this.removeEventListener(SCRUB_END, this.scrubEnd);
+    window.removeEventListener("hashchange", this.takeShareLink);
     void this.unsubscribe?.();
     if (this.templateTimer) window.clearInterval(this.templateTimer);
     if (this.debounceTimer) window.clearTimeout(this.debounceTimer);
@@ -3194,6 +3257,8 @@ export class WristAssistantPanel extends LitElement {
     } catch (err) {
       this.loadError = `Could not load devices: ${errText(err)}`;
     }
+    this.linkReady = true;
+    void this.openPendingLink();
   }
 
   private async selectOwner(ownerId: string) {
@@ -4020,11 +4085,12 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The keys-and-mouse help: every shortcut the panel answers to and the
-   * pointer tricks that otherwise live only in tooltips. One native dialog,
-   * so Escape and the backdrop come for free, the same as the zoomed preview.
-   * Opened by the ? button only: the ? key belongs to Home Assistant's own
-   * shortcut dialog, and taking it would stack two dialogs.
+   * The help: what the parts of the editor are, every shortcut and pointer
+   * trick, and how a complication reaches the watch and other people. Three
+   * tabs, so each stays short enough to scan. One native dialog, so Escape and
+   * the backdrop come for free, the same as the zoomed preview. Opened by the ?
+   * button only: the ? key belongs to Home Assistant's own shortcut dialog, and
+   * taking it would stack two dialogs.
    */
   private renderHelpDialog() {
     const m = KEY_MOD;
@@ -4054,16 +4120,73 @@ export class WristAssistantPanel extends LitElement {
       ["Expand", "The face full-window, for small moves. Everything above works there too"],
       ["Locked group", "Drags as one. Unlock it in its row to move layers alone"],
       ["Timestamp chip", "On a picture layer: click it to move it, pull a corner for its size"],
-      ["Share · Import", "Share turns this complication into text you can post anywhere, with your entity ids replaced by numbered slots. Import pastes that text back and asks which of your entities each slot means"],
+    ];
+    const shapes: [string, string][] = [
+      ["Shapes", "Rectangular, Circular, Corner and Inline are the kinds of slot on a watch face. The watch offers a complication only in slots whose shape it has."],
+      ["Shape tabs", "Above the preview. Click one to edit that shape, or a dashed one to add it."],
+      ["Canvas shapes", "Rectangular, Circular and Corner each hold their own layers. A layer belongs to one shape, so editing it never changes another. An empty shape can take a copy of another shape's layers."],
+      ["Corner", "Its Corner content card picks big curved text or a canvas of layers."],
+      ["Inline", "One line of text with an optional symbol before it. It has no layers."],
+      ["The shape itself", "The bottom row of the Layers list: its background, border and Shape states."],
+    ];
+    const layers: [string, string][] = [
+      ["Text", "A value: typed words, an entity, a template, a shared value and more. It can count down to a time."],
+      ["Icon", "An SF Symbol or Material Design icon, or the entity's own icon."],
+      ["Gauge", "A number drawn between a minimum and a maximum."],
+      ["Chart", "Recent history as bars, a line or an area."],
+      ["Timeline", "Which state an entity was in over time, as a coloured strip."],
+      ["Shape", "A rectangle, rounded rectangle, capsule, circle or line."],
+      ["Picture", "A camera snapshot, or an entity's picture such as a person's avatar or album art."],
+      ["Tap area", "Invisible. A tap inside it runs its own action. Outside it, the complication's tap action applies."],
+      ["Extras", "Clock times, chart dots, a chart grid and a picture's timestamp are added from their layer's Extras card."],
+      ["Order", "The top of the Layers list draws on top. Drag a row to reorder."],
+      ["Groups", `A folder of layers. Pick some and press ${m}G. Locked, the group moves as one on the face. Unlocked, each layer moves alone. The watch never sees groups.`],
+    ];
+    const cards: [string, string][] = [
+      ["Content", "What the layer shows, starting with its entity or value."],
+      ["Look", "How it is drawn: size, colour and style. On a picture the card is called Picture."],
+      ["Extras", "Charts, timelines and pictures only: labels, markers, clock times, dots, grid lines or a timestamp."],
+      ["States", "Changes that apply while a value matches, described below."],
+      ["Position", "Where the layer sits on the shape being edited, and its size."],
+      ["Tap", "What a tap on the layer does."],
+      ["?", "In a card's header: shows that card's help text."],
+    ];
+    const values: [string, string][] = [
+      ["By value", "Gauges, charts and text can colour by value instead of one colour. Each band colours readings up to its number, lowest band first. Readings above every band take the Above the last band colour."],
+      ["Timeline colours", "A timeline colours each state from its own table."],
+      ["States", "Rows that test a value, like is on or is greater than, each with the changes it makes: icon, text, colour, visibility and more. Rows are checked top to bottom and the first match wins. Otherwise applies when none match."],
+      ["Shape states", "The same table, on the shape itself."],
+      ["Shared values", "Like a variable: set it once under the Layers card, and every layer that reads it follows. On a layer, set Source to Shared value, or click Make shared."],
+      ["Values on the watch", "Every entity and shared value the complication reads, with its live reading. Slide, pick or type another value to watch the preview and the states react. Nothing is saved, and Live or Back to live returns to the real reading."],
+    ];
+    const saving: [string, string][] = [
+      ["Save", `Writes the complication to Home Assistant (${m}S). A new one says Save new until then. Only an administrator can save.`],
+      ["The dot", "Beside Save: unsaved changes, saved, or not saved yet. The footer says the same in words."],
+      ["Reaching the watch", "The watch pulls saved changes by itself while Wrist Assistant is open on this home. There is no separate send step."],
+    ];
+    const status: [string, string][] = [
+      ["On watch", "The watch has applied every change. With last seen beside it, the watch is not listening now, so a later save waits until the app is open again."],
+      ["Sending…", "Waiting for the watch to pull and confirm."],
+      ["Not on watch yet", "The watch is connected but has not confirmed the latest change. Resend wakes it again."],
+      ["Open the watch app to sync", "The watch is not listening. Open Wrist Assistant on the watch, or switch it to this home, and it pulls at once. Resend tries to wake it."],
+      ["Update the watch app", "This watch has never reported a change. Its app is older than custom complications, or it has not opened this home yet."],
+    ];
+    const sharing: [string, string][] = [
+      ["Share", "In the top bar. Turns the open complication into text anyone can import. Your entity ids and names become numbered slots, and you can label each one."],
+      ["Backup", "The other choice in Share: an exact copy, entity ids and names included. For your records, or another watch in this home."],
+      ["Copy link", "A link to this panel with the text inside it. Opening it here fills in the Import dialog. On another home, paste the link into Import."],
+      ["Import", "Beside New. Paste text or a link, choose a file, or drop one on the dialog. Check the preview, choose your own entity for each slot, then Import. It opens as unsaved work and reaches the watch at the first Save."],
     ];
     const rows = (list: [string, string][]) => list.map(([k, what]) => html`<tr><th scope="row"><kbd>${k}</kbd></th><td>${what}</td></tr>`);
-    return html`<dialog class="help-dialog" @close=${() => { this.helpOpen = false; }}>
-      <div class="help-head">
-        <h2>Keys and mouse</h2>
-        <span class="spacer"></span>
-        <button class="pick" title="Close (Escape)" @click=${() => { this.helpOpen = false; }}>Close</button>
-      </div>
-      <div class="help-body">
+    const section = (title: string, list: [string, string][]) => html`<section>
+      <h3>${title}</h3>
+      <table class="terms"><tbody>${list.map(([k, what]) => html`<tr><th scope="row">${k}</th><td>${what}</td></tr>`)}</tbody></table>
+    </section>`;
+    const tab = (id: HelpTab, label: string) => html`<button role="tab" id=${`wa-help-${id}`} aria-selected=${this.helpTab === id ? "true" : "false"}
+      @click=${() => { this.helpTab = id; }}>${label}</button>`;
+    let body: TemplateResult;
+    if (this.helpTab === "keys") {
+      body = html`
         <section>
           <h3>Keys</h3>
           <table><tbody>${rows(keys)}</tbody></table>
@@ -4072,8 +4195,23 @@ export class WristAssistantPanel extends LitElement {
         <section>
           <h3>Mouse</h3>
           <table><tbody>${rows(mouse)}</tbody></table>
-        </section>
+        </section>`;
+    } else if (this.helpTab === "sync") {
+      body = html`<div>${section("Saving", saving)}${section("Watch status", status)}</div>${section("Share and import", sharing)}`;
+    } else {
+      body = html`<div>${section("Shapes", shapes)}${section("Cards", cards)}</div><div>${section("Layers", layers)}${section("Colour, states and values", values)}</div>`;
+    }
+    return html`<dialog class="help-dialog" @close=${() => { this.helpOpen = false; }}>
+      <div class="help-head">
+        <h2>Help</h2>
+        <span class="spacer"></span>
+        <a href="https://docs.wrist-assistant.com/" target="_blank" rel="noopener noreferrer">Wrist Assistant docs</a>
+        <button class="pick" title="Close (Escape)" @click=${() => { this.helpOpen = false; }}>Close</button>
       </div>
+      <div class="help-tabs" role="tablist" aria-label="Help topics">
+        ${tab("basics", "Basics")}${tab("keys", "Keys and mouse")}${tab("sync", "Syncing and sharing")}
+      </div>
+      <div class="help-body" role="tabpanel" aria-labelledby=${`wa-help-${this.helpTab}`}>${body}</div>
     </dialog>`;
   }
 
@@ -4540,8 +4678,11 @@ export class WristAssistantPanel extends LitElement {
         ${this.renderPicker()}
         ${this.hass.user?.is_admin ? html`<span class="hor" aria-hidden="true">or</span>${headerArrow()}` : nothing}
         ${this.renderNewButton()}
+        ${d ? html`<button class="new-btn" aria-haspopup="dialog" aria-expanded=${this.shareOpen ? "true" : "false"}
+          title="Share or back up this complication as text, a file or a link"
+          @click=${() => this.openShareDialog()}><span>Share</span></button>` : nothing}
         <span class="spacer"></span>
-        <button class="help" title="Keys and mouse tips" aria-label="Keys and mouse tips" @click=${() => { this.helpOpen = true; }}>?</button>
+        <button class="help" title="Help" aria-label="Help" @click=${() => { this.helpOpen = true; }}>?</button>
         <div class="toolbar hbox hist">
           <button class="icon" @click=${() => this.undo()} ?disabled=${!d?.canUndo} title="Undo (⌘Z)" aria-label="Undo">${uiIcon("undo")}</button>
           <span class="hdiv"></span>
@@ -4554,6 +4695,8 @@ export class WristAssistantPanel extends LitElement {
         </div>
       </header>
       ${this.loadError ? html`<div class="card error">${this.loadError}</div>` : nothing}
+      ${this.linkNote ? html`<div class="banner warn link-note"><span>${this.linkNote}</span>
+        <button class="link" @click=${() => { this.linkNote = undefined; }}>Dismiss</button></div>` : nothing}
       ${this.helpOpen ? this.renderHelpDialog() : nothing}
       ${this.newOpen ? this.renderNewDialog() : nothing}
       ${this.shareOpen ? this.renderShareDialog() : nothing}
@@ -4682,8 +4825,15 @@ export class WristAssistantPanel extends LitElement {
       ? this.pickerFilter
       : undefined;
     const family = filtered ?? firstDrawable(cfg) ?? "inline";
+    return this.renderConfigArts(cfg, entry.entities, [family], "pk-art")[0]!;
+  }
+
+  /** Shapes of a document drawn small, one picture each, from the live states
+   * of the entities it reads. The picker rows and the import preview both use
+   * it; a class beyond `pk-art` sizes the picture for its place. */
+  private renderConfigArts(cfg: CustomComplicationConfig, entities: readonly EntityRef[], families: readonly FamilyKind[], cls: string): TemplateResult[] {
     const entityStates = new Map<string, EntityState>();
-    for (const ref of entry.entities) {
+    for (const ref of entities) {
       const state = this.entityStateFor(ref.entityId, ref.iconName ?? "", false);
       if (state) entityStates.set(ref.entityId, state);
     }
@@ -4692,10 +4842,12 @@ export class WristAssistantPanel extends LitElement {
       templateResults: new Map(),
       namedValues: cfg.values,
     });
-    if (family === "inline") return html`<span class="pk-art inline">${this.renderInlinePreview(layouts.inline, true)}</span>`;
-    const layout = layouts[family];
-    if (!layout) return html`<span class="pk-art"></span>`;
-    return html`<span class="pk-art ${family}">${renderLayout(layout, { icons: this.icons, imageSizes: this.imageSizes, slot: REFERENCE_CASE.slots[family] })}</span>`;
+    return families.map((family) => {
+      if (family === "inline") return html`<span class="${cls} inline">${this.renderInlinePreview(layouts.inline, true)}</span>`;
+      const layout = layouts[family];
+      if (!layout) return html`<span class=${cls}></span>`;
+      return html`<span class="${cls} ${family}">${renderLayout(layout, { icons: this.icons, imageSizes: this.imageSizes, slot: REFERENCE_CASE.slots[family] })}</span>`;
+    });
   }
 
   /** The shape chips above the list. Each one carries its own count, so a
@@ -4944,6 +5096,7 @@ export class WristAssistantPanel extends LitElement {
     if (!cfg) return nothing;
     const slots = this.currentShareSlots();
     const text = exportText(cfg, this.shareMode, slots);
+    const link = this.shareLink?.text === text ? this.shareLink : undefined;
     const mode = (value: "share" | "backup", title: string, blurb: string) => html`<label class="xfer-mode">
       <input type="radio" name="wa-share-mode" .checked=${this.shareMode === value}
         @change=${() => { this.shareMode = value; this.shareNote = ""; }} />
@@ -4968,12 +5121,19 @@ export class WristAssistantPanel extends LitElement {
           <span>Text</span>
           <textarea class="xfer-text" rows="14" readonly aria-label="The text to share" .value=${text}></textarea>
         </div>
+        ${link ? html`<div class="field">
+          <span>Link</span>
+          <input class="xfer-link" type="text" readonly aria-label="Share link" .value=${link.url}
+            @focus=${(e: Event) => (e.target as HTMLInputElement).select()} />
+          <div class="hint">Opening it on this Home Assistant fills in the Import dialog. Someone on another home pastes it into their own Import dialog instead.</div>
+        </div>` : nothing}
       </div>
       <div class="xfer-foot">
         ${this.shareNote === "" ? nothing : html`<span class="note">${this.shareNote}</span>`}
         <span class="spacer"></span>
         <button class="small" @click=${() => this.closeShareDialog()}>Close</button>
         <button class="small" @click=${() => this.downloadShareText(text)}>Download</button>
+        <button class="small" title="A link that opens Import with this text filled in" @click=${() => void this.copyShareLink(text)}>Copy link</button>
         <button class="primary" @click=${() => void this.copyShareText(text)}>Copy</button>
       </div>
     </dialog>`;
@@ -5019,6 +5179,7 @@ export class WristAssistantPanel extends LitElement {
     this.shareMode = "share";
     this.shareLabels = new Map();
     this.shareNote = "";
+    this.shareLink = undefined;
     void this.updateComplete.then(() => {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.share-dialog");
       if (dialog && !dialog.open) dialog.showModal();
@@ -5041,17 +5202,17 @@ export class WristAssistantPanel extends LitElement {
    * it goes second. Only when that fails too does the user get the keys named:
    * the text stays selected, so one shortcut finishes the job.
    */
-  private async copyShareText(text: string) {
+  private async copyShareText(text: string, from = "dialog.share-dialog textarea", done = "Copied.") {
     try {
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(text);
-        this.shareNote = "Copied.";
+        this.shareNote = done;
         return;
       }
     } catch {
       // Refused or unavailable; the selection below works either way.
     }
-    const area = this.renderRoot.querySelector<HTMLTextAreaElement>("dialog.share-dialog textarea");
+    const area = this.renderRoot.querySelector<HTMLTextAreaElement | HTMLInputElement>(from);
     area?.focus();
     area?.select();
     let copied = false;
@@ -5060,7 +5221,21 @@ export class WristAssistantPanel extends LitElement {
     } catch {
       copied = false;
     }
-    this.shareNote = copied ? "Copied." : "Press Cmd+C or Ctrl+C to copy.";
+    this.shareNote = copied ? done : "Press Cmd+C or Ctrl+C to copy.";
+  }
+
+  /**
+   * Build a link to this panel with the text in its hash, show it, and copy it
+   * the same way as the text. The field is drawn before the copy so the
+   * fallback has something to select. The address is this Home Assistant's;
+   * on another home the Import dialog reads the same link pasted in.
+   */
+  private async copyShareLink(text: string) {
+    const payload = await encodeShareLink(text);
+    const url = shareLinkUrl(`${window.location.origin}${window.location.pathname}`, payload);
+    this.shareLink = { text, url };
+    await this.updateComplete;
+    await this.copyShareText(url, "dialog.share-dialog input.xfer-link", "Link copied.");
   }
 
   /** Save the text as a file: a Blob and one click on a link nobody sees. The
@@ -5097,7 +5272,8 @@ export class WristAssistantPanel extends LitElement {
       taken: this.takenNames(),
       unchosen: this.unchosenCount(rows),
     });
-    return html`<dialog class="import-dialog" @keydown=${this.importKeys} @close=${() => { this.importOpen = false; }}>
+    return html`<dialog class="import-dialog ${this.importDrop ? "dropping" : ""}" @keydown=${this.importKeys} @close=${() => { this.importOpen = false; }}
+      @dragenter=${this.importDragEnter} @dragover=${this.importDragOver} @dragleave=${this.importDragLeave} @drop=${this.importDropped}>
       <div class="new-head">
         <h2>Import a complication</h2>
         <span class="spacer"></span>
@@ -5106,16 +5282,19 @@ export class WristAssistantPanel extends LitElement {
       <div class="xfer-body">
         <div class="field">
           <span>Shared text</span>
-          <textarea class="xfer-text" rows="8" placeholder="Paste the shared complication here"
-            aria-label="Shared complication text" .value=${this.importText}
+          <textarea class="xfer-text" rows="8" placeholder="Paste the shared text or a share link here"
+            aria-label="Shared complication text or link" .value=${this.importText}
             @input=${(e: Event) => this.setImportText((e.target as HTMLTextAreaElement).value)}></textarea>
           <div class="xfer-file">
-            <span class="hint">Or read it from a file:</span>
-            <input type="file" accept=".json,application/json" aria-label="Read it from a file instead"
+            <button type="button" class="small"
+              @click=${(e: Event) => (e.currentTarget as HTMLElement).parentElement?.querySelector<HTMLInputElement>("input[type=file]")?.click()}>Choose a file</button>
+            <span class="hint">or drop one on this dialog</span>
+            <input type="file" hidden accept=".json,application/json,text/plain"
               @change=${(e: Event) => void this.readImportFile(e)} />
           </div>
         </div>
-        ${parse && !parse.ok ? html`<div class="hint err">${parse.error}</div>` : nothing}
+        ${parse && !parse.ok ? html`<div class="hint err xfer-problem" role="alert">${parse.error}</div>` : nothing}
+        ${cfg ? this.renderImportPreview(cfg, rows) : nothing}
         ${cfg ? this.renderImportDetails(cfg, rows) : nothing}
       </div>
       <div class="xfer-foot">
@@ -5124,8 +5303,70 @@ export class WristAssistantPanel extends LitElement {
         <button class="primary" ?disabled=${problem !== undefined}
           title=${problem ?? "Open it in the editor"} @click=${() => this.doImport()}>Import</button>
       </div>
+      ${this.importDrop ? html`<div class="xfer-drop" aria-hidden="true"><span>Drop to read the file</span></div>` : nothing}
     </dialog>`;
   }
+
+  /** What the pasted text turned out to be, before anything is picked: each
+   * shape it has drawn small, its name, and how much the rest of the dialog
+   * is going to ask. */
+  private renderImportPreview(cfg: CustomComplicationConfig, rows: readonly UnresolvedEntity[]) {
+    const facts = importFacts(cfg, rows);
+    const layers = facts.layers === 1 ? "1 layer" : `${facts.layers} layers`;
+    const slots = facts.slots === 0 ? "no entities to choose" : facts.slots === 1 ? "1 entity to choose" : `${facts.slots} entities to choose`;
+    const missing = facts.missing === 0 ? "" : ` · ${facts.missing} not in your Home Assistant`;
+    return html`<div class="xfer-preview">
+      <div class="xfer-arts">${this.renderConfigArts(cfg, this.importEntities, supportedFamilies(cfg), "pk-art xfer-art")}</div>
+      <div class="xfer-facts">
+        <b>${cfg.name.trim() || "Untitled"}</b>
+        <span>${facts.families.join(" · ")}</span>
+        <span>${layers} · ${slots}${missing}</span>
+      </div>
+    </div>`;
+  }
+
+  /** Whether a drag carries something the Import dialog can read. */
+  private dragReadable(e: DragEvent): boolean {
+    const types = e.dataTransfer ? [...e.dataTransfer.types] : [];
+    return types.includes("Files") || types.includes("text/plain");
+  }
+
+  private importDragEnter = (e: DragEvent) => {
+    if (!this.dragReadable(e)) return;
+    e.preventDefault();
+    this.importDragDepth += 1;
+    this.importDrop = true;
+  };
+
+  /** Refused by default, which is what makes a drop land here instead of the
+   * browser opening the file in place of Home Assistant. */
+  private importDragOver = (e: DragEvent) => {
+    if (!this.dragReadable(e)) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  };
+
+  private importDragLeave = () => {
+    if (this.importDragDepth === 0) return;
+    this.importDragDepth -= 1;
+    if (this.importDragDepth === 0) this.importDrop = false;
+  };
+
+  /** A dropped file reads like a chosen one; dropped text replaces the box. */
+  private importDropped = (e: DragEvent) => {
+    this.importDragDepth = 0;
+    this.importDrop = false;
+    const file = e.dataTransfer?.files?.[0];
+    if (file) {
+      e.preventDefault();
+      void this.readImportBlob(file);
+      return;
+    }
+    const text = e.dataTransfer?.getData("text/plain") ?? "";
+    if (text === "") return;
+    e.preventDefault();
+    this.setImportText(text);
+  };
 
   /** Required rows nobody has answered yet. */
   private unchosenCount(rows: readonly UnresolvedEntity[]): number {
@@ -5146,7 +5387,7 @@ export class WristAssistantPanel extends LitElement {
       </div>
       ${taken
         ? html`<div class="hint err">A complication on this watch already has that name.</div>`
-        : html`<div class="hint">${importSummary(cfg)}. It opens in the editor and reaches the watch at the first Save.</div>`}
+        : html`<div class="hint">It opens in the editor and reaches the watch at the first Save.</div>`}
       ${rows.length === 0
         ? html`<div class="hint">Every entity this design reads is already in your Home Assistant.</div>`
         : html`<div class="field">
@@ -5195,6 +5436,20 @@ export class WristAssistantPanel extends LitElement {
    */
   private setImportText(text: string) {
     this.importText = text;
+    // A pasted share link is read for the document inside it, which then
+    // replaces the link in the box. An edit made while that unpacks wins.
+    const link = shareLinkInText(text);
+    if (link !== undefined) {
+      this.importParse = undefined;
+      this.importMap = new Map();
+      this.importName = "";
+      void decodeShareLink(link).then((decoded) => {
+        if (this.importText !== text) return;
+        if (decoded === undefined) this.importParse = { ok: false, error: SHARE_LINK_DAMAGED };
+        else this.setImportText(decoded);
+      });
+      return;
+    }
     const before = this.importParse?.ok ? JSON.stringify(this.importParse.config) : undefined;
     const parse = text.trim() === "" ? undefined : parseImportText(text, this.maxSchemaVersion);
     this.importParse = parse;
@@ -5202,6 +5457,11 @@ export class WristAssistantPanel extends LitElement {
       this.importMap = new Map();
       this.importName = "";
       return;
+    }
+    try {
+      this.importEntities = [...compile(parse.config).entities.values()];
+    } catch {
+      this.importEntities = [];
     }
     if (JSON.stringify(parse.config) === before) return;
     this.importMap = new Map();
@@ -5214,13 +5474,59 @@ export class WristAssistantPanel extends LitElement {
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
+    await this.readImportBlob(file);
+    // Cleared so choosing the same file twice still counts as a change.
+    input.value = "";
+  }
+
+  private async readImportBlob(file: Blob) {
     try {
       this.setImportText(await file.text());
     } catch (err) {
       this.importParse = { ok: false, error: `That file could not be read: ${errText(err)}` };
     }
-    // Cleared so choosing the same file twice still counts as a change.
-    input.value = "";
+  }
+
+  /**
+   * Take a share link out of the address, if the panel was opened with one.
+   *
+   * The hash is cleared at once, so a reload or a bookmarked address does not
+   * offer the import again. It waits for the watch list before opening
+   * anything, because that is what says whether there is a slot to import into.
+   */
+  private takeShareLink = () => {
+    const payload = shareLinkPayload(window.location.hash);
+    if (payload === undefined) return;
+    history.replaceState(history.state, "", `${window.location.pathname}${window.location.search}`);
+    this.pendingLink = payload;
+    if (this.linkReady) void this.openPendingLink();
+  };
+
+  /** Open the Import dialog on the link's text, or say why it cannot open. */
+  private async openPendingLink() {
+    const payload = this.pendingLink;
+    if (payload === undefined) return;
+    this.pendingLink = undefined;
+    if (!this.hass.user?.is_admin) {
+      this.linkNote = "This link holds a shared complication. Only a Home Assistant administrator can import it.";
+      return;
+    }
+    const text = await decodeShareLink(payload);
+    if (text === undefined) {
+      this.linkNote = SHARE_LINK_DAMAGED;
+      return;
+    }
+    if (!this.ownerId) {
+      this.linkNote = "This link holds a shared complication, but no watch has connected to this Home Assistant yet.";
+      return;
+    }
+    if (this.freeSlot() < 0) {
+      this.linkNote = "This link holds a shared complication, but this watch has no free slot. Delete a complication, then open the link again.";
+      return;
+    }
+    this.linkNote = undefined;
+    this.openImportDialog();
+    this.setImportText(text);
   }
 
   /**
@@ -5285,6 +5591,9 @@ export class WristAssistantPanel extends LitElement {
     this.importParse = undefined;
     this.importName = "";
     this.importMap = new Map();
+    this.importEntities = [];
+    this.importDrop = false;
+    this.importDragDepth = 0;
     void this.updateComplete.then(() => {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.import-dialog");
       if (!dialog) return;
@@ -6453,8 +6762,9 @@ export class WristAssistantPanel extends LitElement {
 
   /**
    * The inspector's header with no layer selected: the complication's name and
-   * the four things done to the whole complication. Raw JSON and Share only
-   * read, so they stay usable when the document cannot be edited.
+   * the things done to the whole complication. Raw JSON only reads, so it
+   * stays usable when the document cannot be edited. Share is in the top bar,
+   * where it can be found whatever is selected.
    */
   private complicationHead(cfg: CustomComplicationConfig) {
     const name = cfg.name.trim() || "Complication";
@@ -6462,7 +6772,6 @@ export class WristAssistantPanel extends LitElement {
       <div class="crumbs"><span class="here" style=${`--k:${SECTION_COLOR.complication}`}>${name}</span></div>
       <span class="comp-acts">
         <button class="ghost" @click=${() => this.openRaw()}>Raw JSON</button>
-        <button class="ghost" @click=${() => this.openShareDialog()}>Share</button>
         ${this.canEdit ? html`
           <button class="ghost" @click=${() => this.duplicate()}>Duplicate</button>
           ${this.confirmDelete
