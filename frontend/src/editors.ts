@@ -4350,7 +4350,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             <button class="small" title="Add a second chart layer on this frame, drawn against this chart's range"
               @click=${() => {
                 let made: string | undefined;
-                host.update((cfg) => { made = addChartSeries(cfg, id); });
+                host.update((cfg) => { made = addChartSeries(cfg, id, (el) => layerTitle(el, chartCtx)); });
                 if (made) host.selectLayer(made);
               }}>${uiIcon("plus")}<span>Add a second series</span></button>
           </div>
@@ -5277,6 +5277,8 @@ function markerGlyph(symbol: string | undefined): string {
 
 /** The name a layer goes by in the Layers list and the crumbs. */
 export function layerTitle(el: CElement, ctx?: DescribeContext): string {
+  // A name the author or the editor gave the layer wins over anything derived.
+  if (el.payload.name) return el.payload.name;
   // A chart extra is named for what it marks. Its own content is a glyph or a
   // bare line, which says nothing in a list of five of them.
   const anchor = el.payload.chartAnchor;

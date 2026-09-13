@@ -570,6 +570,9 @@ interface ElementBase {
   /** The layer group this belongs to (see `LayerGroup`). Editor-only: the
    * watch draws the layer exactly as it would without it. */
   groupId?: string;
+  /** What the author calls this layer in the Layers list. Editor-only, like
+   * `groupId`: absent means the list names the layer from its content. */
+  name?: string;
   /** Pins this layer to a reading on a chart, so it follows that reading. Only
    * text, icon, shape and image layers carry one: a gauge, a chart, a timeline
    * or a tap area pinned to a reading is not something anyone wants, and the
@@ -2220,6 +2223,7 @@ export function parseElement(raw: unknown): Element {
   const el = parseElementKind(raw);
   const p = (raw as J).payload as J;
   if (typeof p.groupId === "string" && p.groupId !== "") el.payload.groupId = p.groupId.toUpperCase();
+  if (typeof p.name === "string" && p.name !== "") el.payload.name = p.name;
   return el;
 }
 
@@ -2888,6 +2892,7 @@ export function chartMarkerToIcon(cfg: CustomComplicationConfig, id: string): vo
     frame: t.frame,
     isHidden: t.isHidden,
     ...(t.groupId !== undefined ? { groupId: t.groupId } : {}),
+    ...(t.name !== undefined ? { name: t.name } : {}),
     chartAnchor: anchor,
     symbol: literal(symbolFor(t.value) ?? CHART_MARKER_SYMBOLS[anchor.at]),
     size: t.fontSize,
@@ -3563,6 +3568,7 @@ function encodeTextPart(p: TextPart): J {
 function encodeElement(el: Element): J {
   const o = encodeElementKind(el);
   if (el.payload.groupId !== undefined) (o.payload as J).groupId = el.payload.groupId;
+  if (el.payload.name !== undefined) (o.payload as J).name = el.payload.name;
   return o;
 }
 
@@ -4059,7 +4065,7 @@ const K = {
   frame: ["x", "y", "width", "height", "rotationDegrees"],
   chartAnchor: ["layer", "at", "place", "dx", "dy"],
   elementEnvelope: ["kind", "payload"],
-  elementBase: ["id", "colorSlot", "rules", "frame", "isHidden", "groupId"],
+  elementBase: ["id", "colorSlot", "rules", "frame", "isHidden", "groupId", "name"],
   text: ["value", "fontSize", "fontWeight", "countdown", "monospacedDigits", "lineLimit", "alignment",
     "coloring", "bands", "bandAboveColorHex", "highlight", "highColorHex", "lowColorHex", "parts",
     "chartAnchor"],
@@ -4959,6 +4965,17 @@ export function duplicateElement(cfg: CustomComplicationConfig, id: string): str
   return copyId;
 }
 
+/** `title` with the lowest number from 2 up that no name in `taken` has yet.
+ * A title that already ends in a number counts on from its stem, so a copy of
+ * "Voltage 2" is "Voltage 3" rather than "Voltage 2 2". */
+export function nextNumberedName(title: string, taken: readonly string[]): string {
+  const stem = /^(.*\S) \d+$/.exec(title)?.[1] ?? title;
+  const used = new Set(taken);
+  let n = 2;
+  while (used.has(`${stem} ${n}`)) n++;
+  return `${stem} ${n}`;
+}
+
 /**
  * A second series over an existing chart: a copy of it directly above, on the
  * exact same frame and every per-shape placement, drawn against the original's
@@ -4970,8 +4987,12 @@ export function duplicateElement(cfg: CustomComplicationConfig, id: string): str
  * share one range. The copy keeps its own colour, style, bands and stats, and
  * its numbers are not copied, because a second set of numbers on the same spot
  * is noise the author has to move before reading either.
+ *
+ * Both series usually read the same entity, so they would share one title in
+ * the Layers list. The copy is named after the original with the next free
+ * number, found with `titleOf`, which is how the list names a layer.
  */
-export function addChartSeries(cfg: CustomComplicationConfig, chartId: string): string | undefined {
+export function addChartSeries(cfg: CustomComplicationConfig, chartId: string, titleOf?: (el: Element) => string): string | undefined {
   const index = cfg.elements.findIndex((el) => el.payload.id === chartId);
   const src = cfg.elements[index];
   if (!src || src.kind !== "chart") return undefined;
@@ -4979,6 +5000,7 @@ export function addChartSeries(cfg: CustomComplicationConfig, chartId: string): 
   const copy = structuredClone(src);
   copy.payload.id = copyId;
   copy.payload.scaleFrom = chartId;
+  if (titleOf) copy.payload.name = nextNumberedName(titleOf(src), cfg.elements.map(titleOf));
   cfg.elements.splice(index + 1, 0, copy);
   for (const family of DRAWABLE_FAMILIES) {
     const layout = cfg.perFamily[family];
@@ -5609,6 +5631,7 @@ function entityRefCopy(r: EntityRef): EntityRef {
  * the editors, but without the describe machinery: this one only has to be
  * recognisable in a table of entity slots. */
 function layerNameOf(cfg: CustomComplicationConfig, el: Element): string {
+  if (el.payload.name) return el.payload.name;
   if (el.kind === "shape") return el.payload.kind === "roundedRectangle" ? "rounded rectangle" : el.payload.kind;
   if (el.kind === "tap") return "";
   if (el.kind === "image") return el.payload.entity.displayName || el.payload.entity.entityId;
