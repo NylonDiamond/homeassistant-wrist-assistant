@@ -4680,18 +4680,23 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
   // Every card's reset is one update, so one Undo takes the whole card back.
   const resetKeys = (keys: readonly string[], k: string) => () => upd((e) => restoreKeys(e.payload, base, keys), k);
 
-  // The layer's own name, as on a group card, in a card of its own above the
-  // rest. Empty shows the automatic title as the placeholder and saves no name
-  // at all. Always open: a name is the first thing a layer is told apart by,
-  // and a one-row card shut behind a click would hide nothing worth hiding.
-  const autoTitle = autoLayerTitle(el, describeContext(host));
-  const nameCard = card(host, "name", "Name", textField("Name", el.payload.name ?? "", (v) => upd((e) => {
-    const name = typedLayerName(v);
-    if (name === undefined) delete e.payload.name; else e.payload.name = name;
-  }, "name"), { placeholder: autoTitle }),
-    { color: SECTION_COLOR.place, icon: "text", alwaysOpen: true,
-      summary: el.payload.name ? `Automatic title: ${autoTitle}` : "Automatic title",
-      ...(el.payload.name !== undefined ? { reset: () => upd((e) => { delete e.payload.name; }, "reset-name"), resetTitle: "Go back to the automatic title" } : {}) });
+  // The layer's own name, above every card, in the same tinted box but as one
+  // row at header height: the box's icon, its title and the input, with no
+  // body to open or shut. Empty shows the automatic title as the placeholder
+  // and saves no name at all. A div rather than a label, because a label
+  // hands its clicks to its first control, and that is the reset dot.
+  const nameCard = html`<section class="sec name-sec" data-open="true" style=${`--c:${SECTION_COLOR.place}`}>
+    <div class="sec-h pinned">
+      <span class="swatch">${uiIcon("text")}</span>
+      <h4>Name${resetButton(el.payload.name === undefined ? undefined
+        : { atDefault: false, title: "Go back to the automatic title", reset: () => upd((e) => { delete e.payload.name; }, "reset-name") })}</h4>
+      <input type="text" aria-label="Layer name" .value=${el.payload.name ?? ""} placeholder=${autoLayerTitle(el, describeContext(host))}
+        @input=${onInput((v) => upd((e) => {
+          const name = typedLayerName(v);
+          if (name === undefined) delete e.payload.name; else e.payload.name = name;
+        }, "name"))} />
+    </div>
+  </section>`;
 
   return html`
     ${nameCard}

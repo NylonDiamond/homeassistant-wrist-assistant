@@ -1852,6 +1852,15 @@ export class WristAssistantPanel extends LitElement {
     button.reset-dot::after { content: ""; position: absolute; inset: -7px; }
     button.reset-dot:hover, button.reset-dot:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--wa-accent) 32%, transparent); }
     .sec-h h4 button.reset-dot { position: relative; left: auto; top: auto; }
+    /* A layer's name: one header row with the input in place of the summary.
+       The title never wraps and the input takes what width is left, down to
+       nothing, so the row stays one line in the narrowest column. */
+    .name-sec .sec-h { gap: 8px; }
+    .name-sec .sec-h input[type=text] {
+      flex: 1 1 auto; width: 0; min-width: 0; height: 26px; min-height: 26px; padding: 0 8px; font-size: 12px;
+      border-radius: 6px; border-color: transparent; background-color: var(--wa-field);
+    }
+    .name-sec .sec-h input[type=text]:focus-visible { border-color: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 28%, transparent); }
     /* Each card's "?": quiet until the header is hovered, lit while its help
        is showing. A touch screen has no hover, so there it always shows. */
     button.sec-help {
