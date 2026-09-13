@@ -157,6 +157,11 @@ import {
   convertChartTimes,
   chartTimesOf,
   type ChartTimesElement,
+  addImageTime,
+  imageTimesOf,
+  type ImageTimeElement,
+  IMAGE_TIME_MIN_SIZE,
+  IMAGE_TIME_MAX_SIZE,
   addChartDots,
   addChartGrid,
   addChartZeroLine,
@@ -2430,7 +2435,7 @@ export function flagAcross(values: readonly boolean[]): PickedFlag {
  * comes out of its own table. */
 export function elementColour(el: CElement): string | undefined {
   return el.kind === "image" || el.kind === "tap" || el.kind === "timeline" || el.kind === "chartTimes"
-    || el.kind === "chartDots" || el.kind === "chartGrid"
+    || el.kind === "chartDots" || el.kind === "chartGrid" || el.kind === "imageTime"
     ? undefined
     : el.payload.colorSlot.baseColorHex;
 }
@@ -2580,44 +2585,6 @@ function imagePanHint(img: ImageElement): string {
   return "Pan moves the frame over the picture: -1 is hard left (or top), 1 is hard right (or bottom). An edge the picture does not overflow cannot move.";
 }
 
-/** The fetched-at overlay: whether it is drawn, where, how big, and what it
- * says. `age` keeps counting on the watch between snapshots, which is the
- * honest answer to "is this picture current?". */
-function imageTimestampSection(img: ImageElement, upd: (m: (p: ImageElement) => void, key?: string) => void): TemplateResult {
-  const on = img.timestamp === true;
-  const free = hasFreeTimestamp(img);
-  // Leaving free placement keeps the corner the chip was nearest, so the chip
-  // barely moves; entering it starts from wherever the corner already put it,
-  // so the first drag is a nudge rather than a jump.
-  const setFree = (v: boolean) => upd((p) => {
-    if (v) {
-      p.timestampX = p.timestampCorner.endsWith("Leading") ? 0.16 : 0.84;
-      p.timestampY = p.timestampCorner.startsWith("top") ? 0.16 : 0.84;
-    } else {
-      if (hasFreeTimestamp(p)) p.timestampCorner = nearestTimestampCorner(p.timestampX!, p.timestampY!);
-      delete p.timestampX;
-      delete p.timestampY;
-    }
-  });
-  return html`
-    ${checkField("Timestamp", on, (v) => upd((p) => { if (v) p.timestamp = true; else delete p.timestamp; }), false)}
-    ${!on ? nothing : html`
-      ${segField("Placement", free ? "free" : "corner", [
-        ["corner", "A corner"],
-        ["free", "Anywhere"],
-      ], (v) => setFree(v === "free"))}
-      ${free
-        ? nothing
-        : segField("Corner", img.timestampCorner, [
-            ["topLeading", "Top left"],
-            ["topTrailing", "Top right"],
-            ["bottomLeading", "Bottom left"],
-            ["bottomTrailing", "Bottom right"],
-          ], (v) => upd((p) => { p.timestampCorner = v; }))}
-      ${numberField("Text size", img.timestampSize, (v) => upd((p) => { p.timestampSize = Math.min(40, Math.max(4, v ?? IMAGE_DEFAULT_TIMESTAMP_SIZE)); }, "tssize"), { step: 1, min: 4, max: 40, def: IMAGE_DEFAULT_TIMESTAMP_SIZE, unit: "pt" })}
-      <div class="hint">Click the chip in the preview to select it. Drag it to move it (it stays inside the picture), or drag a corner to change the text size.</div>
-      <div class="hint">The time the snapshot was fetched, not the time now. A frame that stops updating keeps its old time.</div>`}`;
-}
 
 interface CardOptions {
   /** Tint of the header band and the edge; one of SECTION_COLOR, so a card
@@ -2953,7 +2920,12 @@ export function contentSummary(host: EditorHost, el: CElement): string {
     case "tap": return describeTapAction(el.payload.action);
     case "chartTimes": {
       const chart = host.config.elements.find((e) => e.payload.id === el.payload.chart);
-      return chart?.kind === "chart" ? truncate(`Times of ${describeValue(chart.payload.value, ctx)}`, 48) : "No chart";
+      return chart?.kind === "chart" || chart?.kind === "timeline"
+        ? truncate(`Times of ${describeValue(chart.payload.value, ctx)}`, 48) : "No chart or timeline";
+    }
+    case "imageTime": {
+      const image = host.config.elements.find((e) => e.payload.id === el.payload.image);
+      return image?.kind === "image" ? truncate(`Time of ${layerTitle(image, ctx)}`, 48) : "No picture";
     }
     case "chartDots":
     case "chartGrid": {
@@ -2988,6 +2960,7 @@ export function lookSummary(el: CElement): string | undefined {
     case "image": return `${el.payload.contentMode === "fill" ? "Fill the frame" : "Fit inside"} · ${el.payload.zoom.toFixed(2)}x · corners ${el.payload.cornerRadius} pt`;
     case "tap": return undefined;
     case "chartTimes": return `${el.payload.timeLabelCount <= 0 ? "no" : el.payload.timeLabelCount} times · ${el.payload.labelSize} pt · ${colorWords(el.payload.labelColorHex)}`;
+    case "imageTime": return `${el.payload.size} pt`;
     case "chartDots": {
       const d = el.payload;
       return `${d.dots === "all" ? "all" : "auto"} · ${d.size === undefined ? "automatic size" : `${d.size} pt`} · ${d.colorHex === undefined ? "series colour" : colorWords(d.colorHex)}`;
@@ -4399,10 +4372,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         <div class="hint">A gap is taken off the right of each run, so the strip still ends flush with
           the frame and the newest state keeps the edge. 0 draws one continuous bar, which is what a
           door or a light usually wants.</div>
-        ${timeLabelFields(t, setTimeline, base, "tl", html`
-          <div class="hint">Clock times from the start of the span to now, evenly spaced. Four is what
-            the history page on the watch shows. Auto follows the watch's own clock and drops the
-            minutes past a three hour span.</div>`)}`;
+`;
       break;
     }
     case "shape":
@@ -4474,23 +4444,46 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
       const t = el.payload;
       const setTimes = (m: (p: ChartTimesElement) => void, k?: string) => upd((e) => m((e as typeof el).payload), k);
       const linked = host.config.elements.find((e) => e.payload.id === t.chart);
-      const chart = linked?.kind === "chart" ? linked : undefined;
+      const owner = linked?.kind === "chart" || linked?.kind === "timeline" ? linked : undefined;
+      const word = owner?.kind === "timeline" ? "timeline" : "chart";
       content = html`
-        <div class="field readout"><span>Chart</span><span class="readout-v">${chart
-          ? html`<button class="small" title="Select that chart" @click=${() => host.selectLayer(chart.payload.id)}>${layerTitle(chart, describeContext(host))}</button>`
+        <div class="field readout"><span>${owner?.kind === "timeline" ? "Timeline" : "Chart"}</span><span class="readout-v">${owner
+          ? html`<button class="small" title=${`Select that ${word}`} @click=${() => host.selectLayer(owner.payload.id)}>${layerTitle(owner, describeContext(host))}</button>`
           : "None"}</span></div>
-        ${chart === undefined
-          ? html`<div class="hint warn">The chart these times belonged to is gone, so this layer draws nothing.</div>`
-          : chartShowsTimeLabels(chart.payload)
-            ? nothing
-            : html`<div class="hint warn">That chart has no evenly spaced span to label, so this layer draws
-                nothing. Clock times are drawn when its Draw is Recorded history with Points on Average,
-                or Long-term statistics.</div>`}
-        <div class="hint">The clock times of that chart's span, spread across this layer's width and centred
+        ${owner === undefined
+          ? html`<div class="hint warn">The chart or timeline these times belonged to is gone, so this layer draws nothing.</div>`
+          : owner.kind === "timeline"
+            ? timelineHistoryKey(owner.payload) === undefined
+              ? html`<div class="hint warn">That timeline names no entity yet, so it has no span to label and
+                  this layer draws nothing.</div>`
+              : nothing
+            : chartShowsTimeLabels(owner.payload)
+              ? nothing
+              : html`<div class="hint warn">That chart has no evenly spaced span to label, so this layer draws
+                  nothing. Clock times are drawn when its Draw is Recorded history with Points on Average,
+                  or Long-term statistics.</div>`}
+        <div class="hint">The clock times of that ${word}'s span, spread across this layer's width and centred
           in its height. Move and size it like any other layer.</div>`;
       look = timeLabelFields(t, setTimes, base, "ct", html`
-        <div class="hint">Evenly spaced from the start of the chart's span to now. Auto follows the watch's
+        <div class="hint">Evenly spaced from the start of the ${word}'s span to now. Auto follows the watch's
           own clock and drops the minutes past a three hour span.</div>`);
+      break;
+    }
+    case "imageTime": {
+      const t = el.payload;
+      const linked = host.config.elements.find((e) => e.payload.id === t.image);
+      const image = linked?.kind === "image" ? linked : undefined;
+      content = html`
+        <div class="field readout"><span>Picture</span><span class="readout-v">${image
+          ? html`<button class="small" title="Select that picture" @click=${() => host.selectLayer(image.payload.id)}>${layerTitle(image, describeContext(host))}</button>`
+          : "None"}</span></div>
+        ${image === undefined
+          ? html`<div class="hint warn">The picture this time belonged to is gone, so this layer draws nothing.</div>`
+          : nothing}
+        <div class="hint">The time that picture was fetched, not the time now: a picture that stops updating
+          keeps its old time, so a stale one reads as stale. The watch shows nothing here until the picture
+          has been fetched once. Move it like any other layer; the chip sits in the middle of the frame.</div>`;
+      look = html`<div class="grid2">${imageTimeSizeField(t, (m) => upd((e) => m((e as typeof el).payload), "size"))}</div>`;
       break;
     }
     case "chartDots": {
@@ -4568,7 +4561,6 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
   // entity is asked for once at the top of this editor and never again.
   const ref = elementEntity(host.config, el);
   const tested: Value | undefined = ref ? { kind: { kind: "entityState", ...ref } } : undefined;
-  const stamp = el.kind === "image" ? el.payload.timestamp === true : false;
   const textParts = el.kind === "text" && (el.payload.parts?.length ?? 0) > 0 ? el.payload.parts : undefined;
 
   // Which fields each card owns, for its header reset. Content is what the
@@ -4586,7 +4578,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
   const resetKeys = (keys: readonly string[], k: string) => () => upd((e) => restoreKeys(e.payload, base, keys), k);
 
   return html`
-    ${card(host, "content", "Content", html`${el.kind === "tap" || el.kind === "text" || el.kind === "chartTimes" || el.kind === "chartDots" || el.kind === "chartGrid" ? nothing : layerEntityField(host, el, key)}${content}`,
+    ${card(host, "content", "Content", html`${el.kind === "tap" || el.kind === "text" || el.kind === "chartTimes" || el.kind === "chartDots" || el.kind === "chartGrid" || el.kind === "imageTime" ? nothing : layerEntityField(host, el, key)}${content}`,
       { color: SECTION_COLOR.content, icon: "content", summary: contentSummary(host, el),
         ...(contentChanged ? { reset: () => upd((e) => {
           restoreKeys(e.payload, base, contentKeys);
@@ -4615,9 +4607,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               if (chart) restoreKeys(chart.payload, base, CHART_EXTRAS_KEYS);
             }) }
           : {}) }) : nothing}
-    ${el.kind === "image" ? card(host, "timestamp", "Timestamp", imageTimestampSection(el.payload, (m, k) => upd((e) => m((e as typeof el).payload), k)),
-      { color: SECTION_COLOR.numbers, icon: "clock", summary: stamp ? `Shown · ${el.payload.timestampSize} pt` : "Hidden",
-        ...(stamp ? { reset: resetKeys(TIMESTAMP_KEYS, "reset-stamp") } : {}) }) : nothing}
+    ${el.kind === "timeline" || el.kind === "image" ? ownedExtrasCard(host, el) : nothing}
     ${card(host, "states", "States", statesEditor(host, el.payload.rules, el.kind,
       (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`, tested, textParts),
       { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(el.payload.rules).replace(/\.$/, ""),
@@ -4626,8 +4616,64 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
     ${opts.tap === false ? nothing : tapCard(host, el)}`;
 }
 
-/** The payload fields the Timestamp card owns. Pictures only. */
-const TIMESTAMP_KEYS = ["timestamp", "timestampCorner", "timestampSize"] as const;
+/** A timestamp layer's one setting: how big its text is. */
+function imageTimeSizeField(t: ImageTimeElement, set: (m: (p: ImageTimeElement) => void) => void): TemplateResult {
+  return numberField("Text size", t.size, (v) => set((p) => {
+    p.size = Math.min(IMAGE_TIME_MAX_SIZE, Math.max(IMAGE_TIME_MIN_SIZE, v ?? IMAGE_DEFAULT_TIMESTAMP_SIZE));
+  }), { step: 1, min: IMAGE_TIME_MIN_SIZE, max: IMAGE_TIME_MAX_SIZE, def: IMAGE_DEFAULT_TIMESTAMP_SIZE, unit: "pt" });
+}
+
+/**
+ * The Extras card of a timeline or a picture: the one layer each can have
+ * besides itself (a timeline's clock times, a picture's timestamp), the button
+ * that adds it, and its row, opened in place like a chart's extras.
+ *
+ * The new layer is made from where the owner sits on the shape being edited,
+ * so it lands under the timeline or in the picture's corner there.
+ */
+function ownedExtrasCard(host: EditorHost, el: Extract<CElement, { kind: "timeline" | "image" }>): TemplateResult {
+  const id = el.payload.id;
+  const timeline = el.kind === "timeline";
+  const layers: CElement[] = timeline ? chartTimesOf(host.config, id) : imageTimesOf(host.config, id);
+  const label = timeline ? "Clock times" : "Timestamp";
+  const family = host.activeFamily;
+  const add = () => host.update((c) => {
+    const owner = c.elements.find((e) => e.payload.id === id);
+    if (!owner) return;
+    // The helpers read the payload's frame, which can be stale in canonical
+    // form; lend them this shape's placement for the length of the add.
+    const own = owner.payload.frame;
+    owner.payload.frame = { ...effectivePlacement(c, family, owner).frame };
+    if (timeline) convertChartTimes(c, id);
+    else addImageTime(c, id, DESIGN_BOX[family === "inline" ? "rectangular" : family]);
+    owner.payload.frame = own;
+  });
+  const on = layers.length > 0;
+  const rows = layers.map((l): LayerRow => ({ el: l, lead: uiIcon("clock"), title: label, kind: timeline ? "Times" : "Timestamp" }));
+  const body = html`
+    <div class="field list-field"><span>Draw</span>
+      <div class="adders">
+        <button class="small ${on ? "on" : ""}" ?disabled=${on} aria-pressed=${on ? "true" : "false"}
+          title=${on ? `${label} is on this ${timeline ? "timeline" : "picture"}. Remove it in the list below.` : `Add ${label.toLowerCase()}`}
+          @click=${add}>${on ? html`<span aria-hidden="true">✓</span>` : uiIcon("plus")}<span>${label}</span></button>
+      </div>
+    </div>
+    <div class="hint">${timeline
+      ? "Adds the clock times of this timeline's span as their own layer in its group, so you can drag them anywhere and give them any size or colour."
+      : "Adds the time the picture was fetched as its own layer in its group, so you can drag it anywhere, inside the picture or beside it."}</div>
+    ${on ? html`
+      ${layerRowList(host, rows, {
+        icon: "close", danger: true,
+        label: (what) => `Delete this ${what}`,
+        run: (lid) => host.update((c) => removeElement(c, lid)),
+      })}
+      <div class="hint">Click the row to open its main settings here. More settings selects that layer. The ×
+        deletes it, and Undo brings it back.</div>` : nothing}`;
+  return card(host, "numbers", "Extras", body, {
+    color: SECTION_COLOR.numbers, icon: "clock", summary: on ? `${label} layer` : "None yet",
+    ...(on ? { reset: () => host.update((c) => { for (const l of layers) removeElement(c, l.payload.id); }) } : {}),
+  });
+}
 
 /** The payload fields the Content card owns, per kind. */
 const CONTENT_KEYS: Record<CElement["kind"], readonly string[]> = {
@@ -4642,6 +4688,7 @@ const CONTENT_KEYS: Record<CElement["kind"], readonly string[]> = {
   chartTimes: [],
   chartDots: [],
   chartGrid: [],
+  imageTime: [],
 };
 
 /** The payload fields the Look card owns, per kind. A chart's marks on the plot
@@ -4652,13 +4699,14 @@ const LOOK_KEYS: Record<CElement["kind"], readonly string[]> = {
   icon: ["size", "colorSlot"],
   gauge: ["style", "lineWidth", "trackColorHex", "colorSlot", "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex"],
   chart: ["style", "scale", "minValue", "maxValue", "baseline", "barGap", "lineWidth", "coloring", "bands", "bandAboveColorHex", "fillBands", "curve", "fillStyle", "fillColorHex", "barRadius", "barCorners", "scaleFrom", "colorSlot"],
-  timeline: ["bands", "otherColorHex", "gap", "cornerRadius", "labelSize", "labelColorHex", "labelsAbove", "timeLabelCount", "hourCycle", "minutes"],
+  timeline: ["bands", "otherColorHex", "gap", "cornerRadius"],
   shape: ["colorSlot", "borderColorHex", "borderWidth", "thickness"],
   image: ["contentMode", "zoom", "panX", "panY", "cornerRadius"],
   tap: [],
   chartTimes: ["timeLabelCount", "labelSize", "labelColorHex", "hourCycle", "minutes"],
   chartDots: ["dots", "size", "colorHex"],
   chartGrid: ["lines", "colorHex", "thickness"],
+  imageTime: ["size"],
 };
 
 /** The Chart row of a layer that draws on a chart: the chart's name as a button
@@ -5018,6 +5066,8 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
           }, "colour"), false, base.labelColorHex as string)}
         </div>`;
     }
+    case "imageTime":
+      return html`<div class="grid2">${imageTimeSizeField(el.payload, (m) => upd((e) => { if (e.kind === "imageTime") m(e.payload); }, "size"))}</div>`;
     case "chartDots": {
       const d = el.payload;
       const linked = host.config.elements.find((e) => e.payload.id === d.chart);
@@ -5161,6 +5211,7 @@ export function layerTitle(el: CElement, ctx?: DescribeContext): string {
     case "chartTimes": return "Clock times";
     case "chartDots": return "Reading dots";
     case "chartGrid": return "Grid lines";
+    case "imageTime": return "Timestamp";
   }
 }
 

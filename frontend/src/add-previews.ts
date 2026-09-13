@@ -155,6 +155,12 @@ function sample(kind: LayerKind): TemplateResult {
       return svg`<g stroke="var(--k)" stroke-width="1.4" opacity=".7">
         <path d="M10 12H110M10 23H110M10 34H110" />
       </g>`;
+    // The timestamp chip on its own.
+    case "imageTime":
+      return svg`<g>
+        <rect x="30" y="14" width="60" height="18" rx="9" fill="var(--k)" fill-opacity=".3" />
+        <text x="60" y="27" text-anchor="middle" font-family=${FONT} font-size="10" fill="var(--k)">3:41:07</text>
+      </g>`;
   }
 }
 

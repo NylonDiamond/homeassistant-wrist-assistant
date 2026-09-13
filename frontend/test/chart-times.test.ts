@@ -3,9 +3,13 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  addImageTime,
   auditUnknownKeys,
+  chartTimesOf,
   ConfigParseError,
   convertChartTimes,
+  imageTimesOf,
+  liftChartOwnMarks,
   encodeConfig,
   groupOf,
   newConfig,
@@ -196,6 +200,123 @@ describe("chartTimes resolved", () => {
     const { cfg, chart } = historyChart();
     const id = convertChartTimes(cfg, chart.payload.id)!;
     removeElement(cfg, chart.payload.id);
+    expect(cfg.elements.some((e) => e.payload.id === id)).toBe(false);
+  });
+});
+
+type Timeline = Extract<Element, { kind: "timeline" }>;
+type Image = Extract<Element, { kind: "image" }>;
+type ImageTime = Extract<Element, { kind: "imageTime" }>;
+
+function doorTimeline(): { cfg: CustomComplicationConfig; timeline: Timeline } {
+  const cfg = newConfig("Door", 0);
+  const timeline = newElement("timeline") as Timeline;
+  timeline.payload.value = { kind: { kind: "entityState", entityId: "binary_sensor.door", displayName: "Door", domain: "binary_sensor" } };
+  timeline.payload.frame = { x: 0, y: 0, width: 1, height: 0.5, rotationDegrees: 0 };
+  timeline.payload.historyMinutes = 360;
+  timeline.payload.timeLabelCount = 4;
+  timeline.payload.labelSize = 8;
+  cfg.elements.push(timeline);
+  return { cfg, timeline };
+}
+
+describe("a timeline's clock times as a layer", () => {
+  it("converts like a chart's, and the timeline stops drawing its own", () => {
+    const { cfg, timeline } = doorTimeline();
+    const id = convertChartTimes(cfg, timeline.payload.id)!;
+    const times = cfg.elements.find((e) => e.payload.id === id) as Times;
+    expect(times.payload).toMatchObject({ chart: timeline.payload.id, timeLabelCount: 4, labelSize: 8 });
+    expect(timeline.payload.drawsTimeLabels).toBe(false);
+    expect(times.payload.frame.y).toBeCloseTo(0.5);
+    expect(groupOf(cfg, id)?.id).toBe(groupOf(cfg, timeline.payload.id)?.id);
+    const raw = JSON.parse(JSON.stringify(encodeConfig(cfg)));
+    expect(auditUnknownKeys(raw)).toEqual([]);
+    expect(payloadOf(cfg, timeline.payload.id).drawsTimeLabels).toBe(false);
+  });
+
+  it("resolves the timeline's window, and the timeline draws no row", () => {
+    const { cfg, timeline } = doorTimeline();
+    const id = convertChartTimes(cfg, timeline.payload.id)!;
+    cfg.elements.reverse();
+    const els = resolveAll(cfg, { entityStates: new Map(), templateResults: new Map(), namedValues: [] }).rectangular!.elements;
+    const t = els.find((e) => e.id === id);
+    const own = els.find((e) => e.id === timeline.payload.id);
+    expect(t?.kind === "chartTimes" && t.labels.map((l) => l.position)).toEqual([0, 1 / 3, 2 / 3, 1]);
+    expect(own?.kind === "timeline" && own.labels).toEqual([]);
+  });
+
+  it("is made when a document with a timeline drawing its own times is opened", () => {
+    const { cfg, timeline } = doorTimeline();
+    liftChartOwnMarks(cfg);
+    expect(chartTimesOf(cfg, timeline.payload.id)).toHaveLength(1);
+    expect(timeline.payload.drawsTimeLabels).toBe(false);
+    liftChartOwnMarks(cfg);
+    expect(chartTimesOf(cfg, timeline.payload.id)).toHaveLength(1);
+  });
+});
+
+function camera(tweak: (p: Image["payload"]) => void = () => {}): { cfg: CustomComplicationConfig; image: Image } {
+  const cfg = newConfig("Camera", 0);
+  const image = newElement("image") as Image;
+  image.payload.entity = { entityId: "camera.door", displayName: "Door", domain: "camera" };
+  image.payload.frame = { x: 0, y: 0, width: 0.5, height: 1, rotationDegrees: 0 };
+  tweak(image.payload);
+  cfg.elements.push(image);
+  return { cfg, image };
+}
+
+describe("a picture's timestamp as a layer", () => {
+  it("is the chip the picture drew: same size, same corner, and the picture's keys cleared", () => {
+    const { cfg, image } = camera((p) => { p.timestamp = true; p.timestampCorner = "bottomTrailing"; p.timestampSize = 12; });
+    const id = addImageTime(cfg, image.payload.id)!;
+    const t = cfg.elements.find((e) => e.payload.id === id) as ImageTime;
+    expect(t.kind).toBe("imageTime");
+    expect(t.payload.image).toBe(image.payload.id);
+    expect(t.payload.size).toBe(12);
+    // Bottom right of the picture's box, inside its 4 pt pad.
+    const f = t.payload.frame;
+    expect(f.x + f.width).toBeLessThanOrEqual(0.5);
+    expect(f.x + f.width).toBeGreaterThan(0.4);
+    expect(f.y + f.height).toBeGreaterThan(0.9);
+    expect(image.payload.timestamp).toBeUndefined();
+    const written = payloadOf(cfg, image.payload.id);
+    expect(Object.keys(written).some((k) => k.startsWith("timestamp"))).toBe(false);
+    expect(payloadOf(cfg, id)).toMatchObject({ image: image.payload.id, size: 12 });
+    expect(groupOf(cfg, id)?.id).toBe(groupOf(cfg, image.payload.id)?.id);
+  });
+
+  it("round-trips with no unknown keys, and writes size only when it is not 9", () => {
+    const { cfg, image } = camera();
+    const id = addImageTime(cfg, image.payload.id)!;
+    const raw = JSON.parse(JSON.stringify(encodeConfig(cfg)));
+    expect(auditUnknownKeys(raw)).toEqual([]);
+    expect("size" in payloadOf(cfg, id)).toBe(false);
+    expect("colorSlot" in payloadOf(cfg, id)).toBe(false);
+    const back = parseConfig(raw).elements.find((e) => e.payload.id === id) as ImageTime;
+    expect(back.payload).toMatchObject({ image: image.payload.id, size: 9 });
+  });
+
+  it("is made when a document with a picture drawing its own chip is opened, and only then", () => {
+    const { cfg, image } = camera((p) => { p.timestamp = true; });
+    liftChartOwnMarks(cfg);
+    expect(imageTimesOf(cfg, image.payload.id)).toHaveLength(1);
+    liftChartOwnMarks(cfg);
+    expect(imageTimesOf(cfg, image.payload.id)).toHaveLength(1);
+    const plain = camera();
+    liftChartOwnMarks(plain.cfg);
+    expect(imageTimesOf(plain.cfg, plain.image.payload.id)).toHaveLength(0);
+  });
+
+  it("resolves its picture whatever order the two sit in, and goes with it", () => {
+    const { cfg, image } = camera();
+    const id = addImageTime(cfg, image.payload.id)!;
+    cfg.elements.reverse();
+    const entityStates = new Map<string, EntityState>([
+      ["camera.door", { entityId: "camera.door", state: "idle", domain: "camera", iconName: "", entityPicture: "/pic" }],
+    ]);
+    const t = resolveAll(cfg, { entityStates, templateResults: new Map(), namedValues: [] }).rectangular!.elements.find((e) => e.id === id);
+    expect(t).toMatchObject({ kind: "imageTime", image: image.payload.id, size: 9, linked: true, url: "/pic" });
+    removeElement(cfg, image.payload.id);
     expect(cfg.elements.some((e) => e.payload.id === id)).toBe(false);
   });
 });

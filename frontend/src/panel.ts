@@ -67,6 +67,7 @@ import {
   timelineHistoryMinutes,
   newConfig,
   newElement,
+  convertChartTimes,
   newId,
   parseConfig,
   schemaVersionFor,
@@ -557,10 +558,6 @@ export class WristAssistantPanel extends LitElement {
    * An attached tap is invisible during normal editing on purpose, which is
    * exactly why "what happens if I tap here?" needed a mode of its own. */
   @state() private showTaps = false;
-  /** The image layer whose timestamp chip was clicked. The chip then shows a
-   * selection box and corner handles, so it reads as the movable, resizable
-   * thing it is. Cleared by any other click on the face, or by Escape. */
-  @state() private timestampActiveId?: string;
   /** The name the open complication had when its edit session started, so the
    * General tab can warn that a rename does not reach the watch face picker.
    * Undefined for a brand-new complication (nothing is on the watch yet). */
@@ -2767,9 +2764,6 @@ export class WristAssistantPanel extends LitElement {
       this.togglePicking(false);
       return;
     }
-    // Escape also drops the timestamp chip's selection. Not claimed (no
-    // preventDefault), so a dialog that is open keeps its Escape too.
-    if (e.key === "Escape") this.timestampActiveId = undefined;
     const focused = e.composedPath()[0] as HTMLElement | undefined;
     const inField = !!focused?.tagName?.match(/INPUT|TEXTAREA|SELECT/) || focused?.isContentEditable === true;
     // A slider, a checkbox or a select keeps the focus after it is used, so
@@ -3906,14 +3900,6 @@ export class WristAssistantPanel extends LitElement {
     // nested svg with a viewBox of its own, and a drag measured against that
     // one ran several times faster than the pointer.
     const svg = target.closest("svg.complication") as SVGSVGElement | null;
-    // Any press on the face that is not on the timestamp chip drops the chip's
-    // selection, the way a click elsewhere drops any selection.
-    // `closest` gives undefined through the optional chain when nothing
-    // matches, so the corner has to be normalised to null before the test, or
-    // every press on the picture reads as a press on the chip.
-    const tsCorner = (target.closest("[data-ts-corner]")?.getAttribute("data-ts-corner") ?? null) as HandleCorner | null;
-    const onChip = tsCorner !== null || target.closest("[data-ts-handle]") !== null;
-    if (!onChip) this.timestampActiveId = undefined;
     // Review mode reads the face rather than moving it. A click still selects,
     // so a tap box leads to its layer, but a layer never drags here: a pushed-out
     // tap reaches past its own layer, and dragging that outer margin would move
@@ -3963,7 +3949,7 @@ export class WristAssistantPanel extends LitElement {
     // top layer on release, so clicking a number on a selected chart works.
     let pickOnClick: string | undefined;
     const selectedId = this.inspect.kind === "layer" ? this.inspect.id : undefined;
-    if (selectedId !== undefined && selectedId !== id && !handle && !onChip) {
+    if (selectedId !== undefined && selectedId !== id && !handle) {
       const selected = this.draft.config.elements.find((x) => x.payload.id === selectedId);
       const movable = selected !== undefined && selected.kind !== "chartDots" && selected.kind !== "chartGrid"
         && selected.payload.chartAnchor?.place !== "through" && groupOf(this.draft.config, selectedId)?.locked !== true;
@@ -3980,7 +3966,7 @@ export class WristAssistantPanel extends LitElement {
     // row is selecting every member at once.
     const group = groupOf(this.draft.config, id);
     const groupSelected = group !== undefined && this.inspect.kind === "group" && this.inspect.id === group.id;
-    if (group && (group.locked || groupSelected) && !handle && !onChip) {
+    if (group && (group.locked || groupSelected) && !handle) {
       this.beginGroupGesture(family as DrawableFamily, e, svg, group);
       return;
     }
@@ -3994,62 +3980,6 @@ export class WristAssistantPanel extends LitElement {
     e.preventDefault();
     const frame = effectivePlacement(this.draft.config, family, el).frame;
     const canvas = this.gestureCanvas(family as DrawableFamily);
-    // The timestamp chip sits inside its image layer's group, so the layer hit
-    // above already selected the right layer. A press on the chip selects the
-    // chip: dragging it moves it (and frees it from its corner on the first
-    // move), dragging one of its corners changes the text size.
-    if (onChip && el.kind === "image" && el.payload.timestamp === true) {
-      this.timestampActiveId = id;
-      const img = el.payload;
-      const design = DESIGN_BOX[family as DrawableFamily];
-      const lw = frame.width * design.width;
-      const lh = frame.height * design.height;
-      const layerBox = { x: 0, y: 0, w: lw, h: lh, cx: lw / 2, cy: lh / 2 };
-      const chip = timestampChipRect(img, layerBox, timestampLabel(new Date()));
-      this.cancelGesture?.();
-      if (tsCorner) {
-        // Chip geometry is in design points; the pointer moves in slot points.
-        const scale = canvas.width / design.width;
-        const startSize = img.timestampSize;
-        this.cancelGesture = beginScaleDrag(svg, e, tsCorner, { w: chip.w * scale, h: chip.h * scale }, (factor, done) => {
-          const size = Math.min(40, Math.max(4, Math.round(startSize * factor)));
-          this.mutate((c) => {
-            const n = c.elements.find((x) => x.payload.id === id);
-            if (n?.kind === "image") n.payload.timestampSize = size;
-          }, `ts-size-${id}`);
-          if (done) {
-            this.draft?.endGesture();
-            this.cancelGesture = undefined;
-          }
-        });
-        return;
-      }
-      const chipBox = { x: 0, y: 0, w: frame.width * canvas.width, h: frame.height * canvas.height };
-      // A cornered chip starts its drag from where the corner put it, so the
-      // first move is a nudge rather than a jump.
-      const base = hasFreeTimestamp(img)
-        ? { x: img.timestampX!, y: img.timestampY! }
-        : { x: (chip.x + chip.w / 2) / layerBox.w, y: (chip.y + chip.h / 2) / layerBox.h };
-      let moved = false;
-      this.cancelGesture = beginPointDrag(svg, chipBox, e, base, (x, y, done) => {
-        // A plain click selects the chip and changes nothing, so a cornered
-        // chip stays cornered until it is actually dragged.
-        if (!done) moved = true;
-        if (moved) {
-          this.mutate((c) => {
-            const n = c.elements.find((x) => x.payload.id === id);
-            if (n?.kind !== "image") return;
-            n.payload.timestampX = x;
-            n.payload.timestampY = y;
-          }, `ts-${id}`);
-        }
-        if (done) {
-          this.draft?.endGesture();
-          this.cancelGesture = undefined;
-        }
-      });
-      return;
-    }
     // A layer pinned to a chart reading is not dragged to a place, because the
     // anchor decides its place every time the chart refreshes. The same drag
     // nudges it off that spot instead, so what the pointer does still matches
@@ -4165,9 +4095,6 @@ export class WristAssistantPanel extends LitElement {
     const py = dy * step;
     const family = this.canvasFamily;
     const box = DESIGN_BOX[family];
-    // The chip is the innermost thing that can be selected, and it moves inside
-    // its own picture rather than on the face, so it answers first.
-    if (this.timestampActiveId !== undefined && this.nudgeTimestamp(this.timestampActiveId, family, px, py)) return true;
     if (this.multi.size >= 2) return this.nudgeMany([...this.multi], family, box, `nudge-multi-${family}`, px, py);
     if (this.inspect.kind === "group") {
       const gid = this.inspect.id;
@@ -4243,38 +4170,6 @@ export class WristAssistantPanel extends LitElement {
       this.mutate((c) => {
         for (const [mid, sf] of starts) setPlacement(c, family, mid, { frame: { ...sf, x: round(sf.x + dx), y: round(sf.y + dy) } });
       }, key);
-    }
-    return true;
-  }
-
-  /**
-   * Move the image timestamp chip inside its own picture, writing the free
-   * position its drag writes: the first nudge frees a cornered chip, exactly as
-   * the first drag move does. Returns false when the selected chip is not one
-   * that can move, so the arrows fall through to whatever else is selected.
-   */
-  private nudgeTimestamp(id: string, family: DrawableFamily, px: number, py: number): boolean {
-    const cfg = this.draft?.config;
-    const el = cfg?.elements.find((x) => x.payload.id === id);
-    if (!cfg || el?.kind !== "image" || el.payload.timestamp !== true) return false;
-    const img = el.payload;
-    const design = DESIGN_BOX[family];
-    const frame = effectivePlacement(cfg, family, el).frame;
-    // Chip geometry is in design points, as it is for the drag.
-    const lw = frame.width * design.width;
-    const lh = frame.height * design.height;
-    const chip = timestampChipRect(img, { x: 0, y: 0, w: lw, h: lh, cx: lw / 2, cy: lh / 2 }, timestampLabel(new Date()));
-    const base = hasFreeTimestamp(img)
-      ? { x: img.timestampX!, y: img.timestampY! }
-      : { x: lw > 0 ? (chip.x + chip.w / 2) / lw : 0.5, y: lh > 0 ? (chip.y + chip.h / 2) / lh : 0.5 };
-    const next = nudgePoint(base, px, py, { w: lw, h: lh });
-    if (next.x !== base.x || next.y !== base.y) {
-      this.mutate((c) => {
-        const n = c.elements.find((x) => x.payload.id === id);
-        if (n?.kind !== "image") return;
-        n.payload.timestampX = next.x;
-        n.payload.timestampY = next.y;
-      }, `nudge-ts-${id}`);
     }
     return true;
   }
@@ -5195,7 +5090,11 @@ export class WristAssistantPanel extends LitElement {
         ? html`
           <div class="add-grid ${rich ? "" : "lean"}">
             ${KIND_ORDER.map((k) => html`<button class="add" style=${`--k:${KIND_COLOR[k]}`} ?disabled=${full} title=${`Add a blank ${KIND_LABEL[k].toLowerCase()} layer`}
-              @click=${() => { const el = newElement(k); this.addHere((c) => { c.elements.push(el); }); this.inspect = { kind: "layer", id: el.payload.id }; }}
+              @click=${() => { const el = newElement(k); this.addHere((c) => {
+                // A timeline's clock times are always a layer of their own.
+                c.elements.push(el);
+                if (el.kind === "timeline") convertChartTimes(c, el.payload.id);
+              }); this.inspect = { kind: "layer", id: el.payload.id }; }}
               >${rich ? html`<span class="well">${addPreview(k)}</span>` : nothing}<span class="add-name">${rich ? uiIcon(k) : html`<span class="k"></span>`}<span>${KIND_LABEL[k]}</span></span></button>`)}
           </div>
           <div class="presets">
@@ -5822,8 +5721,6 @@ export class WristAssistantPanel extends LitElement {
       ...(this.picking
         ? (this.pickHoverId !== undefined ? { hoverId: this.pickHoverId } : {})
         : (hoverIds.length > 0 ? { hoverIds } : {})),
-      ...(this.timestampActiveId !== undefined && this.timestampActiveId === highlightId && !this.showTaps && !this.picking
-        ? { timestampActiveId: this.timestampActiveId } : {}),
     };
     return html`<div class="preview ${family} active ${this.picking ? "picking" : ""}"
       @pointerdown=${(e: PointerEvent) => this.onPreviewPointerDown(family, e)}
@@ -6351,7 +6248,7 @@ export class WristAssistantPanel extends LitElement {
     const setColour = (v: string) => this.mutate((c) => {
       for (const el of picked) {
         const t = c.elements.find((e) => e.payload.id === el.payload.id);
-        if (t && t.kind !== "image" && t.kind !== "tap" && t.kind !== "timeline" && t.kind !== "chartTimes" && t.kind !== "chartDots" && t.kind !== "chartGrid") t.payload.colorSlot.baseColorHex = v;
+        if (t && t.kind !== "image" && t.kind !== "tap" && t.kind !== "timeline" && t.kind !== "chartTimes" && t.kind !== "chartDots" && t.kind !== "chartGrid" && t.kind !== "imageTime") t.payload.colorSlot.baseColorHex = v;
       }
     }, "multi-colour");
     return html`
@@ -6507,11 +6404,12 @@ function layerMeta(el: CElement, resolver: Resolver, historySeries: Map<string, 
       return `${historySpanWords(timelineHistoryMinutes(el.payload))} · ${changes} ${changes === 1 ? "change" : "changes"}`;
     }
     case "shape": return `${colorWords(el.payload.colorSlot.baseColorHex)}${el.payload.borderColorHex ? " · border" : ""}`;
-    case "image": return `${el.payload.contentMode === "fill" ? "fill" : "fit"} · ${el.payload.timestamp ? "time shown" : "no time"}`;
+    case "image": return el.payload.contentMode === "fill" ? "fill" : "fit";
     case "tap": return describeTapAction(el.payload.action);
     case "chartTimes": return `${el.payload.timeLabelCount} times · ${el.payload.labelSize} pt`;
     case "chartDots": return `${el.payload.dots === "all" ? "every reading" : "auto"}${el.payload.size === undefined ? "" : ` · ${el.payload.size} pt`}`;
     case "chartGrid": return `${el.payload.lines} ${el.payload.lines === 1 ? "line" : "lines"} · ${el.payload.thickness} pt`;
+    case "imageTime": return `${el.payload.size} pt`;
   }
 }
 

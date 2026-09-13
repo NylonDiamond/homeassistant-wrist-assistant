@@ -1,0 +1,153 @@
+{
+  "name": "Image time layer",
+  "description": "A picture's fetched-at time as an `imageTime` layer instead of the image's own `timestamp` keys. The camera layer carries no timestamp keys, so it draws no chip of its own (`showTimestamp` false). The first time layer sits above the image in the layer list and links to it at size 11; the second links to it with no `size` and resolves to the default 9; the third links to a layer the document does not have. A fixture carries no picture bytes, so every layer resolves with no fetched-at time (`fetchedAt` absent) and draws nothing here: what both sides pin is the link, the size and the element base. An `imageTime` alone asks for no picture, so the fetch list is the image's own camera once.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-000000000220",
+    "name": "Image time layer",
+    "slotIndex": 2,
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "imageTime",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000222",
+          "rules": [],
+          "frame": {
+            "x": 0.55,
+            "y": 0.05,
+            "width": 0.4,
+            "height": 0.2,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "image": "EEEEEEEE-0000-4000-8000-000000000221",
+          "size": 11
+        }
+      },
+      {
+        "kind": "image",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000221",
+          "entity": {
+            "entityId": "camera.front_door",
+            "displayName": "Front door",
+            "domain": "camera"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 0.5,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "imageTime",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000223",
+          "rules": [],
+          "frame": {
+            "x": 0.55,
+            "y": 0.4,
+            "width": 0.4,
+            "height": 0.2,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "image": "EEEEEEEE-0000-4000-8000-000000000221"
+        }
+      },
+      {
+        "kind": "imageTime",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000224",
+          "rules": [],
+          "frame": {
+            "x": 0.55,
+            "y": 0.75,
+            "width": 0.4,
+            "height": 0.2,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "image": "EEEEEEEE-0000-4000-8000-0000000002FF"
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {
+      "camera.front_door": {
+        "state": "recording",
+        "domain": "camera"
+      }
+    },
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": [
+      "camera.front_door"
+    ],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000222",
+          "kind": "imageTime",
+          "image": "EEEEEEEE-0000-4000-8000-000000000221",
+          "size": 11,
+          "fetchedAt": null,
+          "isHidden": false,
+          "frame": {
+            "x": 0.55,
+            "y": 0.05,
+            "width": 0.4,
+            "height": 0.2,
+            "rotationDegrees": 0
+          }
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000221",
+          "kind": "image",
+          "entityId": "camera.front_door",
+          "showTimestamp": false
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000223",
+          "kind": "imageTime",
+          "image": "EEEEEEEE-0000-4000-8000-000000000221",
+          "size": 9,
+          "fetchedAt": null
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000224",
+          "kind": "imageTime",
+          "image": "EEEEEEEE-0000-4000-8000-0000000002FF",
+          "size": 9,
+          "fetchedAt": null
+        }
+      ]
+    }
+  }
+}

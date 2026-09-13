@@ -167,9 +167,6 @@ export interface RenderOptions {
    * with the drawing (free-standing). Only read when `tapReview` is on.
    */
   tapFocusId?: string;
-  /** The image layer whose timestamp chip is selected: it draws a selection
-   * box and corner handles (`data-ts-corner`) so it reads as movable. */
-  timestampActiveId?: string;
   /** Natural sizes of the camera pictures, so a layer can be cropped the way
    * the watch crops it. Absent falls back to the browser's own fitting. */
   imageSizes?: ImageSizeProvider;
@@ -1089,28 +1086,11 @@ function renderImage(el: Extract<ResolvedElement, { kind: "image" }>, box: Box, 
   // Unique per drawing, for the same reason as a chart's gradient ids.
   const clipId = `imgclip-${nextSvgIdPrefix()}-${el.id}`;
   const r = Math.max(0, el.cornerRadius);
+  // A document opened in the editor never gets here with a chip: the timestamp
+  // is converted to an `imageTime` layer first. The chip is still drawn for a
+  // document rendered straight from the wire, as the watch still draws it.
   const c = el.showTimestamp && el.url ? timestampChipRect(el, box, timestampLabel(new Date())) : undefined;
-  const chip = c
-    ? svg`
-        <rect data-ts-handle="1" x=${c.x} y=${c.y} width=${c.w} height=${c.h} rx=${c.h / 2}
-          fill="#000000" fill-opacity="0.55" />
-        <text data-ts-handle="1" x=${c.x + c.w / 2} y=${c.y + c.h / 2} text-anchor="middle" dominant-baseline="central"
-          font-size=${c.size} font-weight="600" fill="#FFFFFF"
-          font-family="-apple-system, 'SF Pro Rounded', Helvetica, Arial, sans-serif">${c.label}</text>`
-    : nothing;
-  // The selected chip gets the same dashed box and corner handles a selected
-  // layer gets, drawn outside the picture's clip so a chip on the edge still
-  // shows all four. The corners resize the text; the chip itself moves.
-  const hs = 3;
-  const chipSelection = c && options.timestampActiveId === el.id
-    ? svg`
-        <rect x=${c.x} y=${c.y} width=${c.w} height=${c.h} fill="none" stroke="#0A84FF" stroke-width="0.75"
-          stroke-dasharray="2 1" vector-effect="non-scaling-stroke" pointer-events="none" />
-        ${[["nw", c.x, c.y], ["ne", c.x + c.w, c.y], ["sw", c.x, c.y + c.h], ["se", c.x + c.w, c.y + c.h]].map(
-          ([corner, x, y]) => svg`<rect data-ts-corner=${corner} x=${(x as number) - hs / 2} y=${(y as number) - hs / 2} width=${hs} height=${hs}
-            fill="#FFFFFF" stroke="#0A84FF" stroke-width="0.5" style="cursor:${corner}-resize" />`,
-        )}`
-    : nothing;
+  const chip = c ? renderTimestampChip(c) : nothing;
   // The crop needs the picture's own pixel size. Until the browser reports it,
   // fall back to its own fitting, which is exactly right at the default
   // settings and one render out of date for the rest.
@@ -1130,7 +1110,30 @@ function renderImage(el: Extract<ResolvedElement, { kind: "image" }>, box: Box, 
   }
   return svg`
     <defs><clipPath id=${clipId}><rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} rx=${r} /></clipPath></defs>
-    <g clip-path=${`url(#${clipId})`}>${content}${chip}</g>${chipSelection}`;
+    <g clip-path=${`url(#${clipId})`}>${content}${chip}</g>`;
+}
+
+/** The timestamp capsule: `h:mm:ss` in white on a dark pill, as the watch's
+ * `ImageElementView` draws it. */
+function renderTimestampChip(c: { x: number; y: number; w: number; h: number; size: number; label: string }, opacity = 1) {
+  return svg`<g opacity=${opacity}>
+    <rect x=${c.x} y=${c.y} width=${c.w} height=${c.h} rx=${c.h / 2} fill="#000000" fill-opacity="0.55" />
+    <text x=${c.x + c.w / 2} y=${c.y + c.h / 2} text-anchor="middle" dominant-baseline="central"
+      font-size=${c.size} font-weight="600" fill="#FFFFFF"
+      font-family="-apple-system, 'SF Pro Rounded', Helvetica, Arial, sans-serif">${c.label}</text></g>`;
+}
+
+/** A picture's timestamp as its own layer: the chip centred in the frame, with
+ * the time now, since the preview picture is always live. The watch draws
+ * nothing until the picture has been fetched; the preview still draws a picture
+ * with no URL yet, faded, so the layer can be seen and moved. Nothing at all
+ * once the picture is gone. */
+function renderImageTime(el: Extract<ResolvedElement, { kind: "imageTime" }>, box: Box) {
+  if (!el.linked) return nothing;
+  const label = timestampLabel(new Date());
+  const w = label.length * el.size * 0.578 + el.size * 0.89;
+  const h = el.size * 1.25;
+  return renderTimestampChip({ x: box.cx - w / 2, y: box.cy - h / 2, w, h, size: el.size, label }, el.url === undefined ? 0.5 : 1);
 }
 
 /** Tap area, editor only: a faint dashed box with a small hand glyph so the
@@ -1212,6 +1215,7 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     case "chart": body = renderChart(el, box); break;
     case "timeline": body = renderTimeline(el, box); break;
     case "chartTimes": body = renderChartTimes(el, box); break;
+    case "imageTime": body = renderImageTime(el, box); break;
     case "chartDots": body = renderChartDots(el, box, charts.get(el.chart), options.highlightId === el.id || options.highlightIds?.includes(el.id) === true, options.minDotRadius); break;
     case "chartGrid": body = renderChartGrid(el, box, charts.get(el.chart), options.highlightId === el.id || options.highlightIds?.includes(el.id) === true, options.minGridStroke); break;
     case "shape": body = renderShape(el, box); break;

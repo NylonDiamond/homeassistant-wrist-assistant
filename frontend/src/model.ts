@@ -1324,6 +1324,11 @@ export interface TimelineElement extends Omit<ElementBase, "colorSlot"> {
   /** Whether the times carry their minutes. `auto` keeps them up to a three
    * hour span and drops them past it. */
   minutes: TimelineMinuteStyle;
+  /** The chart's key with the chart's meaning: false once the times are a
+   * `chartTimes` layer linked to this timeline. The timeline then draws no row
+   * and gives the strip that height back; the label keys stay, because they
+   * are what the layer was copied from. Omitted at true. */
+  drawsTimeLabels?: boolean;
 }
 
 /** The clock a timeline's times are printed on. Mirrors
@@ -1663,17 +1668,18 @@ export function isZeroOutset(o: TapOutset | undefined): boolean {
   return o === undefined || (o.top === 0 && o.left === 0 && o.bottom === 0 && o.right === 0);
 }
 
-/** A chart's clock times as a layer of their own. It draws the times its chart
- * would print, at `timeLabelPositions(timeLabelCount)` across its own width and
- * centred in its own height, so the row can sit anywhere and be sized like any
- * layer. The chart then carries `drawsTimeLabels: false`. A link to a layer
- * that is not a chart, or to nothing, draws nothing.
+/** Clock times as a layer of their own. It draws the times its chart or
+ * timeline would print, at `timeLabelPositions(timeLabelCount)` across its own
+ * width and centred in its own height, so the row can sit anywhere and be sized
+ * like any layer. The linked layer then carries `drawsTimeLabels: false`. A link
+ * to a layer that is neither, or to nothing, draws nothing. The kind keeps the
+ * chart's name because the chart had it first.
  *
  * No colorSlot, for the timeline's reason: the times' colour is
  * `labelColorHex`. No `labelsAbove`: the layer's frame says where the row is.
  * Mirrors `CustomComplication.ChartTimesElement` in the app repo. */
 export interface ChartTimesElement extends Omit<ElementBase, "colorSlot"> {
-  /** The chart layer whose span the times are read from. */
+  /** The chart or timeline layer whose span the times are read from. */
   chart: string;
   timeLabelCount: number;
   labelSize: number;
@@ -1713,6 +1719,24 @@ export interface ChartGridElement extends Omit<ElementBase, "colorSlot"> {
   thickness: number;
 }
 
+/** A picture's fetched-at time as a layer of their own: the chip the image
+ * used to draw inside itself (`h:mm:ss` on a dark capsule), centred in this
+ * layer's frame, so it can sit anywhere on the face, outside the picture too.
+ * Nothing is drawn on the watch until the linked picture has been fetched, or
+ * when the link is not a picture.
+ *
+ * No colorSlot: the chip's look is fixed. Mirrors
+ * `CustomComplication.ImageTimeElement` in the app repo. */
+export interface ImageTimeElement extends Omit<ElementBase, "colorSlot"> {
+  /** The image layer whose fetched-at time is shown. */
+  image: string;
+  /** Text size in design points. Clamped 4…40 when drawn. */
+  size: number;
+}
+
+export const IMAGE_TIME_MIN_SIZE = 4;
+export const IMAGE_TIME_MAX_SIZE = 40;
+
 export type Element =
   | { kind: "text"; payload: TextElement }
   | { kind: "icon"; payload: IconElement }
@@ -1724,7 +1748,8 @@ export type Element =
   | { kind: "tap"; payload: TapElement }
   | { kind: "chartTimes"; payload: ChartTimesElement }
   | { kind: "chartDots"; payload: ChartDotsElement }
-  | { kind: "chartGrid"; payload: ChartGridElement };
+  | { kind: "chartGrid"; payload: ChartGridElement }
+  | { kind: "imageTime"; payload: ImageTimeElement };
 
 export interface Placement {
   frame: NormalizedFrame;
@@ -2363,6 +2388,7 @@ function parseElementKind(raw: unknown): Element {
           labelsAbove: p.labelsAbove === true,
           hourCycle: parseHourCycle(p.hourCycle),
           minutes: parseMinuteStyle(p.minutes),
+          ...(p.drawsTimeLabels === false ? { drawsTimeLabels: false } : {}),
         },
       };
     }
@@ -2439,6 +2465,19 @@ function parseElementKind(raw: unknown): Element {
           labelColorHex: str(p.labelColorHex, TIMELINE_DEFAULT_LABEL_HEX),
           hourCycle: parseHourCycle(p.hourCycle),
           minutes: parseMinuteStyle(p.minutes),
+        },
+      };
+    }
+    case "imageTime": {
+      const { colorSlot: _unused, ...base } = parseElementBase(p, "#FFFFFF");
+      return {
+        kind: "imageTime",
+        payload: {
+          ...base,
+          // Ids are uppercased on the way in, so the link has to be too.
+          image: str(p.image).toUpperCase(),
+          // Kept as written; clamped only when drawn, as the app does.
+          size: num(p.size, IMAGE_DEFAULT_TIMESTAMP_SIZE),
         },
       };
     }
@@ -2642,7 +2681,7 @@ export function chartLabelsOf(cfg: CustomComplicationConfig, chartId: string): E
  * when the chart reads one, else plain "Chart". */
 function chartGroupName(cfg: CustomComplicationConfig, chart: Element): string {
   const ref = valueEntity(cfg, primaryValue(chart))?.ref;
-  return ref?.displayName || ref?.entityId || "Chart";
+  return ref?.displayName || ref?.entityId || (chart.kind === "image" ? "Picture" : chart.kind === "timeline" ? "Timeline" : "Chart");
 }
 
 /** Put a layer into the chart's group, making the group when the chart has
@@ -2972,27 +3011,28 @@ function chartLineFrame(chart: NormalizedFrame, line: ChartLine): NormalizedFram
     : { ...chart, height: Math.min(chart.height, thick / box.height), rotationDegrees: 0 };
 }
 
-/** The `chartTimes` layers reading one chart, in document order. */
+/** The `chartTimes` layers reading one chart or timeline, in document order. */
 export function chartTimesOf(cfg: CustomComplicationConfig, chartId: string): Extract<Element, { kind: "chartTimes" }>[] {
   return cfg.elements.filter((el): el is Extract<Element, { kind: "chartTimes" }> =>
     el.kind === "chartTimes" && el.payload.chart === chartId);
 }
 
-/** Hand a chart's clock times to a layer of their own, and return its id.
+/** Hand a chart's or a timeline's clock times to a layer of their own, and
+ * return its id.
  *
- * The layer copies the chart's label keys, so the face reads the same the moment
- * the button is pressed, and sits in the chart's group directly above it in
- * z-order. Its frame is the chart's width, one line of `labelSize` tall, just
- * under the chart (over it when the chart printed its times above), held inside
- * the face. The chart stops drawing its own row and gets that height back.
- * Undefined when `chartId` is not a chart. */
+ * The layer copies the label keys, so the face reads the same the moment the
+ * button is pressed, and sits in the layer's group directly above it in
+ * z-order. Its frame is the layer's width, one line of `labelSize` tall, just
+ * under it (over it when it printed its times above), held inside the face.
+ * The chart or timeline stops drawing its own row and gets that height back.
+ * Undefined when `chartId` is neither. */
 export function convertChartTimes(cfg: CustomComplicationConfig, chartId: string): string | undefined {
   const chart = cfg.elements.find((el) => el.payload.id === chartId);
-  if (!chart || chart.kind !== "chart") return undefined;
+  if (!chart || (chart.kind !== "chart" && chart.kind !== "timeline")) return undefined;
   const c = chart.payload;
   const el = newElement("chartTimes") as Extract<Element, { kind: "chartTimes" }>;
   el.payload.chart = chartId;
-  // A chart that never printed its times has a count of 0, and a layer of no
+  // A layer that never printed its times has a count of 0, and a layer of no
   // times would look like a broken switch.
   el.payload.timeLabelCount = c.timeLabelCount > 0 ? clampTimeLabelCount(c.timeLabelCount) : TIMELINE_NEW_LABEL_COUNT;
   el.payload.labelSize = c.labelSize;
@@ -3004,6 +3044,77 @@ export function convertChartTimes(cfg: CustomComplicationConfig, chartId: string
   cfg.elements.splice(index + 1, 0, el);
   joinChartGroup(cfg, chart, el.payload.id);
   c.drawsTimeLabels = false;
+  return el.payload.id;
+}
+
+/** The `imageTime` layers showing one picture's fetched-at time, in document order. */
+export function imageTimesOf(cfg: CustomComplicationConfig, imageId: string): Extract<Element, { kind: "imageTime" }>[] {
+  return cfg.elements.filter((el): el is Extract<Element, { kind: "imageTime" }> =>
+    el.kind === "imageTime" && el.payload.image === imageId);
+}
+
+/** Width and height of the timestamp chip at one text size, in design points.
+ * The same arithmetic as `timestampChipRect` in the renderer and
+ * `CustomComplication.timestampChipSize` in the app, for the widest label
+ * (`10:00:00`), so a layer made from it never clips the time. */
+export function imageTimeChipSize(size: number): { w: number; h: number } {
+  const s = Math.min(IMAGE_TIME_MAX_SIZE, Math.max(IMAGE_TIME_MIN_SIZE, size));
+  return { w: 8 * s * 0.578 + s * 0.89, h: s * 1.25 };
+}
+
+/** Give a picture's timestamp a layer of its own, and return its id.
+ *
+ * The layer is exactly the chip the picture drew: the same text size, and a
+ * frame the chip's own size at the spot the picture put it (its corner, or its
+ * free point), so the face reads the same. It sits directly above the picture in
+ * its group. The picture's own timestamp keys are cleared, so it draws no chip
+ * of its own. `box` is the design box the picture's frame is a fraction of.
+ * Undefined when `imageId` is not a picture. */
+export function addImageTime(
+  cfg: CustomComplicationConfig,
+  imageId: string,
+  box: { width: number; height: number } = DESIGN_BOX.rectangular,
+): string | undefined {
+  const image = cfg.elements.find((el) => el.payload.id === imageId);
+  if (!image || image.kind !== "image") return undefined;
+  const p = image.payload;
+  const el = newElement("imageTime") as Extract<Element, { kind: "imageTime" }>;
+  el.payload.image = imageId;
+  el.payload.size = p.timestampSize;
+  const chip = imageTimeChipSize(p.timestampSize);
+  const lx = p.frame.x * box.width;
+  const ly = p.frame.y * box.height;
+  const lw = p.frame.width * box.width;
+  const lh = p.frame.height * box.height;
+  let x: number;
+  let y: number;
+  if (hasFreeTimestamp(p)) {
+    // The chip's centre, kept inside the picture: the renderer's `fit`.
+    const fit = (centre: number, origin: number, extent: number, size: number) =>
+      size >= extent ? origin + (extent - size) / 2 : Math.min(origin + extent - size, Math.max(origin, centre - size / 2));
+    x = fit(lx + p.timestampX! * lw, lx, lw, chip.w);
+    y = fit(ly + p.timestampY! * lh, ly, lh, chip.h);
+  } else {
+    const pad = 4;
+    x = p.timestampCorner.endsWith("Leading") ? lx + pad : lx + lw - pad - chip.w;
+    y = p.timestampCorner.startsWith("top") ? ly + pad : ly + lh - pad - chip.h;
+  }
+  const round3 = (n: number) => Math.round(n * 1000) / 1000;
+  el.payload.frame = {
+    x: round3(x / box.width),
+    y: round3(y / box.height),
+    width: round3(chip.w / box.width),
+    height: round3(chip.h / box.height),
+    rotationDegrees: 0,
+  };
+  const index = cfg.elements.findIndex((e) => e.payload.id === imageId);
+  cfg.elements.splice(index + 1, 0, el);
+  joinChartGroup(cfg, image, el.payload.id);
+  delete p.timestamp;
+  delete p.timestampX;
+  delete p.timestampY;
+  p.timestampCorner = "topLeading";
+  p.timestampSize = IMAGE_DEFAULT_TIMESTAMP_SIZE;
   return el.payload.id;
 }
 
@@ -3129,21 +3240,30 @@ export function setChartNow(cfg: CustomComplicationConfig, chartId: string, on: 
  *
  * A highlight that only tinted its reading, with no marker, becomes the marker a
  * new one starts as, in the highlight's colour. That is the one visible change.
+ *
+ * Also decided 2026-09-12, for the same reasons: a timeline's clock times and a
+ * picture's timestamp are layers too, converted here the same way.
  */
 export function liftChartOwnMarks(cfg: CustomComplicationConfig): void {
-  const charts = cfg.elements.filter((el): el is Extract<Element, { kind: "chart" }> => el.kind === "chart");
-  for (const chart of charts) {
-    const c = chart.payload;
+  const owners = cfg.elements.filter((el) => el.kind === "chart" || el.kind === "timeline" || el.kind === "image");
+  for (const owner of owners) {
+    const c = owner.payload;
     const before = new Set(cfg.elements.map((e) => e.payload.id));
-    // Opened documents are in canonical form: the chart's real frame is its one
+    // Opened documents are in canonical form: the layer's real frame is its one
     // placement, and the frame on the payload can be stale. The helpers below
     // size their layers from the payload, so lend it the placement for the length
-    // of the conversion, then seat every new layer on the chart's own shape.
+    // of the conversion, then seat every new layer on the layer's own shape.
     const seat = DRAWABLE_FAMILIES.find((f) => cfg.perFamily[f]?.placements[c.id] !== undefined);
     const ownFrame = c.frame;
     const placed = seat === undefined ? undefined : cfg.perFamily[seat]!.placements[c.id]!;
     if (placed) c.frame = { ...placed.frame };
-    liftOneChart(cfg, c);
+    if (owner.kind === "chart") liftOneChart(cfg, owner.payload);
+    if (owner.kind === "timeline" && owner.payload.drawsTimeLabels !== false && owner.payload.timeLabelCount > 0) {
+      convertChartTimes(cfg, c.id);
+    }
+    if (owner.kind === "image" && owner.payload.timestamp === true) {
+      addImageTime(cfg, c.id, DESIGN_BOX[seat === undefined || seat === "inline" ? "rectangular" : seat]);
+    }
     c.frame = ownFrame;
     if (seat === undefined || placed === undefined) continue;
     for (const el of cfg.elements) {
@@ -3614,6 +3734,7 @@ function encodeElementKind(el: Element): J {
       }
       if (t.hourCycle !== TIMELINE_DEFAULT_HOUR_CYCLE) o.hourCycle = t.hourCycle;
       if (t.minutes !== TIMELINE_DEFAULT_MINUTE_STYLE) o.minutes = t.minutes;
+      if (t.drawsTimeLabels === false) o.drawsTimeLabels = false;
       return { kind: "timeline", payload: o };
     }
     case "shape": {
@@ -3685,6 +3806,18 @@ function encodeElementKind(el: Element): J {
       if (t.hourCycle !== TIMELINE_DEFAULT_HOUR_CYCLE) o.hourCycle = t.hourCycle;
       if (t.minutes !== TIMELINE_DEFAULT_MINUTE_STYLE) o.minutes = t.minutes;
       return { kind: "chartTimes", payload: o };
+    }
+    case "imageTime": {
+      const t = el.payload;
+      const o: J = {
+        id: t.id,
+        rules: encodeRules(t.rules),
+        frame: encodeFrame(t.frame),
+        isHidden: t.isHidden,
+      };
+      if (t.image !== "") o.image = t.image;
+      if (t.size !== IMAGE_DEFAULT_TIMESTAMP_SIZE) o.size = encNum(t.size);
+      return { kind: "imageTime", payload: o };
     }
     case "chartDots": {
       const d = el.payload;
@@ -3955,7 +4088,7 @@ const K = {
   // `timeLabels` is retired and never written, but a document saved the evening
   // it existed still carries it, and dropping it from this list would make that
   // document read as carrying a key nothing decodes.
-  timeline: ["value", "historyMinutes", "bands", "otherColorHex", "gap", "cornerRadius", "timeLabels", "labelSize", "labelColorHex", "labelsAbove", "timeLabelCount", "hourCycle", "minutes"],
+  timeline: ["value", "historyMinutes", "bands", "otherColorHex", "gap", "cornerRadius", "timeLabels", "labelSize", "labelColorHex", "labelsAbove", "timeLabelCount", "hourCycle", "minutes", "drawsTimeLabels"],
   shape: ["kind", "cornerRadius", "thickness", "borderColorHex", "borderWidth", "chartAnchor"],
   // `timestampStyle` is retired (the age style, built and removed 2026-09-04).
   // It stays listed so a document saved while it existed does not read as
@@ -3972,6 +4105,7 @@ const K = {
   chartTimes: ["chart", "timeLabelCount", "labelSize", "labelColorHex", "hourCycle", "minutes"],
   chartDots: ["chart", "dots", "size", "colorHex"],
   chartGrid: ["chart", "lines", "colorHex", "thickness"],
+  imageTime: ["image", "size"],
   colorSlot: ["baseColorHex"],
   rule: ["id", "cases", "otherwise", "partId"],
   case: ["id", "when", "then"],
@@ -4272,6 +4406,11 @@ export function newElement(kind: Element["kind"]): Element {
         },
       };
     }
+    // Linked to no picture: `addImageTime` is the way one is made.
+    case "imageTime": {
+      const { colorSlot: _unused, ...b } = base("#FFFFFF");
+      return { kind, payload: { ...b, image: "", size: IMAGE_DEFAULT_TIMESTAMP_SIZE } };
+    }
     // Linked to no chart, like chart times: `addChartDots` and `addChartGrid`
     // are the way one is made.
     case "chartDots": {
@@ -4315,6 +4454,8 @@ export function elementSize(el: Element): number | undefined {
     case "chartTimes": return undefined;
     case "chartDots": return undefined;
     case "chartGrid": return undefined;
+    // The chip's text size is its own `size`, never a per-shape override.
+    case "imageTime": return undefined;
   }
 }
 
@@ -4412,6 +4553,7 @@ export function primaryValue(el: Element): Value | undefined {
     case "chartTimes": return undefined;
     case "chartDots": return undefined;
     case "chartGrid": return undefined;
+    case "imageTime": return undefined;
   }
 }
 
@@ -4743,6 +4885,8 @@ export function removeElement(cfg: CustomComplicationConfig, id: string): void {
   // nothing at all.
   for (const dots of chartDotsOf(cfg, id)) removeElement(cfg, dots.payload.id);
   for (const grid of chartGridsOf(cfg, id)) removeElement(cfg, grid.payload.id);
+  // A timestamp has no time to show without its picture.
+  for (const time of imageTimesOf(cfg, id)) removeElement(cfg, time.payload.id);
   // A marker names its chart by id too. Unlike a number it still has something
   // to show, so it stays and goes back to sitting where its frame puts it,
   // rather than disappearing along with a chart the author may be replacing.
@@ -4990,6 +5134,11 @@ export function pasteElements(cfg: CustomComplicationConfig, clip: LayerClip, op
       const chart = idMap.get(copy.payload.chart);
       if (chart) copy.payload.chart = chart;
       else if (!here.has(copy.payload.chart)) continue;
+    }
+    if (copy.kind === "imageTime") {
+      const image = idMap.get(copy.payload.image);
+      if (image) copy.payload.image = image;
+      else if (!here.has(copy.payload.image)) continue;
     }
     // A marker follows a copied chart onto the copy, stays on the original when
     // that original is still here, and stops being a marker when it is neither:
@@ -5371,9 +5520,10 @@ const SITE_KIND_WORD: Record<Element["kind"], string> = {
   shape: "shape",
   image: "picture",
   tap: "tap area",
-  chartTimes: "chart times",
+  chartTimes: "clock times",
   chartDots: "chart dots",
   chartGrid: "chart grid",
+  imageTime: "timestamp",
 };
 
 function upperFirst(s: string): string {
@@ -5750,7 +5900,9 @@ export const RULE_TARGET_PROPERTIES: Record<RuleTarget, StyleProperty[]> = {
   // draws in its chart's box, turned the way the chart is.
   chartDots: ["opacity", "visibility"],
   chartGrid: ["opacity", "visibility"],
-  layout: ["backgroundColor", "borderColor", "borderWidth", "text"],
+  // No colour: the chip's look is fixed, as it was inside the picture.
+  imageTime: ["opacity", "rotation", "visibility"],
+  layout:["backgroundColor", "borderColor", "borderWidth", "text"],
 };
 
 export const COMPARISON_KINDS: ComparisonKind[] = [

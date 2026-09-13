@@ -467,6 +467,8 @@ export const DEFAULT_COLUMN: Record<string, StyleProperty> = {
   chartTimes: "visibility",
   chartDots: "visibility",
   chartGrid: "visibility",
+  // A timestamp's look is fixed, so hiding it is what a state can do.
+  imageTime: "visibility",
   layout: "backgroundColor",
 };
 

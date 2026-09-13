@@ -11,7 +11,7 @@ import { type TemplateResult, html, svg } from "lit";
 
 export type UiIconName =
   | "up" | "down" | "show" | "hide" | "duplicate" | "delete" | "close" | "reset"
-  | "text" | "icon" | "gauge" | "chart" | "timeline" | "shape" | "image" | "tap" | "chartTimes" | "chartDots" | "chartGrid"
+  | "text" | "icon" | "gauge" | "chart" | "timeline" | "shape" | "image" | "tap" | "chartTimes" | "chartDots" | "chartGrid" | "imageTime"
   | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "plus"
   | "lock" | "unlock" | "folder" | "ungroup" | "watch"
   | "compact" | "expanded" | "search" | "undo" | "redo" | "expand" | "left" | "right"
@@ -49,8 +49,10 @@ function shape(name: UiIconName) {
     // A chart's grid lines as a layer: three even rules.
     case "chartGrid":
       return svg`<path d="M4 7H20M4 12H20M4 17H20" />`;
-    // A chart's clock times as a layer: the clock is the whole of what it draws.
+    // Clock times, and a picture's timestamp, as layers: the clock is the whole
+    // of what either draws.
     case "chartTimes":
+    case "imageTime":
     case "clock":
       return svg`<circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12L15 14" />`;
     case "states":

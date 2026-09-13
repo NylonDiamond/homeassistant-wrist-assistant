@@ -25,10 +25,11 @@ export const MIN_WATCH_VERSION_FOR_SHAPES = "2.8.0";
 export const MIN_WATCH_VERSION_FOR_CHART_LOOKS: string | null = null;
 
 /** First watch app version that knows the `chartTimes` layer kind, and with it
- * the `chartDots` and `chartGrid` kinds and the `zero` chart anchor. A watch
- * that meets a kind it does not know drops the whole document, and since
- * 2026-09-12 a chart's clock times are always that layer (a document where the
- * chart drew its own is converted when opened). So this must not be newer than
+ * the `chartDots`, `chartGrid` and `imageTime` kinds, the `zero` chart anchor,
+ * and a `chartTimes` layer linked to a timeline. A watch that meets a kind it
+ * does not know drops the whole document, and since 2026-09-12 the clock times
+ * of a chart or timeline and a picture's timestamp are always layers (a
+ * document drawing its own is converted when opened). So this must not be newer than
  * `MIN_WATCH_VERSION_FOR_SHAPES`, the editor's own gate. null until the app
  * release that draws the layer is cut. */
 export const MIN_WATCH_VERSION_FOR_CHART_TIMES_LAYER: string | null = null;

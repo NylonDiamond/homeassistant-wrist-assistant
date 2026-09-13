@@ -74,6 +74,8 @@ import {
   chartAnchorIsColumn,
   TIMELINE_MIN_LABEL_SIZE,
   TIMELINE_MAX_LABEL_SIZE,
+  IMAGE_TIME_MIN_SIZE,
+  IMAGE_TIME_MAX_SIZE,
 } from "./model.js";
 import {
   chartBarCorners,
@@ -375,6 +377,21 @@ export interface ResolvedChartTimes extends ResolvedBase {
   labelColorHex: string;
 }
 
+/** A picture's timestamp as a layer of its own. `image` is the link as written,
+ * `size` the text size clamped the way it is drawn. The watch carries the
+ * picture's fetched-at time here; the preview has no fetch of its own, so it
+ * carries the picture's live URL instead, and draws the time now. Mirrors
+ * `CustomComplication.ResolvedImageTime` in the app repo. */
+export interface ResolvedImageTime extends ResolvedBase {
+  kind: "imageTime";
+  image: string;
+  size: number;
+  /** Whether the link names a picture in the document. False draws nothing. */
+  linked: boolean;
+  /** The linked picture's preview URL. Absent while it has none. */
+  url?: string;
+}
+
 /** A chart's reading dots as a layer of their own. `frame` is the chart's own
  * frame on this shape, because the dots draw in the chart's box. Mirrors
  * `CustomComplication.ResolvedChartDots` in the app repo. */
@@ -498,11 +515,21 @@ export function chartLabels(el: ChartElement, nowMs: number): TimelineLabel[] {
   );
 }
 
-/** The clock times a `chartTimes` layer prints: its chart's span, read the way
- * the chart reads it, at the layer's own count, clock and minutes. Nothing
- * when there is no chart or the chart has no times to give. Mirrors
- * `chartTimesLabels` in the app repo. */
-export function chartTimesLabels(el: ChartTimesElement, chart: ChartElement | undefined, nowMs: number): TimelineLabel[] {
+/** The clock times a `chartTimes` layer prints: its chart's or its timeline's
+ * span, read the way that layer reads it, at the times layer's own count, clock
+ * and minutes. Nothing when the link is neither, or has no times to give.
+ * Mirrors `chartTimesLabels` in the app repo. */
+export function chartTimesLabels(el: ChartTimesElement, chart: ChartElement | undefined, nowMs: number, timeline?: TimelineElement): TimelineLabel[] {
+  if (chart === undefined && timeline !== undefined) {
+    if (timelineHistoryKey(timeline) === undefined) return [];
+    return timeLabels(
+      timelineHistoryMinutes(timeline) * 60,
+      timeLabelPositions(clampTimeLabelCount(el.timeLabelCount)),
+      el.hourCycle,
+      el.minutes,
+      nowMs,
+    );
+  }
   if (chart === undefined || !chartShowsTimeLabels(chart)) return [];
   return timeLabels(
     Math.round(chart.historyMinutes) * 60,
@@ -558,7 +585,7 @@ export interface ResolvedTap extends ResolvedBase {
    * preview can leave an attached tap undrawn; the watch ignores it. */
   attachedTo?: string;
 }
-export type ResolvedElement = ResolvedText | ResolvedIcon | ResolvedGauge | ResolvedChart | ResolvedTimeline | ResolvedShape | ResolvedImage | ResolvedTap | ResolvedChartTimes | ResolvedChartDots | ResolvedChartGrid;
+export type ResolvedElement = ResolvedText | ResolvedIcon | ResolvedGauge | ResolvedChart | ResolvedTimeline | ResolvedShape | ResolvedImage | ResolvedTap | ResolvedChartTimes | ResolvedChartDots | ResolvedChartGrid | ResolvedImageTime;
 
 export interface ResolvedBezelGauge {
   value: number;
@@ -1076,6 +1103,10 @@ export class Resolver {
   /** The chart layers themselves, by id, settled with `charts`, so a
    * `chartTimes` layer reads its chart's span whatever order the two sit in. */
   private readonly chartElements = new Map<string, ChartElement>();
+  /** Timelines and pictures by id, for the same reason: a times layer reads a
+   * timeline, and a timestamp layer a picture, whatever order they sit in. */
+  private readonly timelineElements = new Map<string, TimelineElement>();
+  private readonly imageElements = new Map<string, Extract<Element, { kind: "image" }>["payload"]>();
 
   constructor(private readonly ctx: ResolveContext, config?: CustomComplicationConfig) {
     this.named = new Map(ctx.namedValues.map((n) => [n.id.toUpperCase(), n.value]));
@@ -1177,6 +1208,8 @@ export class Resolver {
     const charts = new Map<string, ChartElement>();
     const order: string[] = [];
     for (const el of config.elements) {
+      if (el.kind === "timeline") this.timelineElements.set(el.payload.id, el.payload);
+      if (el.kind === "image") this.imageElements.set(el.payload.id, el.payload);
       if (el.kind !== "chart" || charts.has(el.payload.id)) continue;
       charts.set(el.payload.id, el.payload);
       order.push(el.payload.id);
@@ -1726,7 +1759,8 @@ export class Resolver {
           cornerRadius: t.cornerRadius,
           // The times do not wait on the series: the window is known the moment
           // the layer names an entity, so a strip still fetching prints them.
-          labels: timelineLabels(t, this.nowMs()),
+          // None once the times are a layer of their own.
+          labels: t.drawsTimeLabels === false ? [] : timelineLabels(t, this.nowMs()),
           labelSize: t.labelSize,
           labelColorHex: t.labelColorHex,
           labelsAbove: t.labelsAbove,
@@ -1789,10 +1823,24 @@ export class Resolver {
         const out: ResolvedChartTimes = {
           kind: "chartTimes",
           ...base,
-          labels: chartTimesLabels(t, this.chartElements.get(t.chart), this.nowMs()),
+          labels: chartTimesLabels(t, this.chartElements.get(t.chart), this.nowMs(), this.timelineElements.get(t.chart)),
           labelSize: t.labelSize,
           labelColorHex: t.labelColorHex,
         };
+        return out;
+      }
+      case "imageTime": {
+        const t = el.payload;
+        const image = this.imageElements.get(t.image);
+        const out: ResolvedImageTime = {
+          kind: "imageTime",
+          ...base,
+          image: t.image,
+          size: Math.min(IMAGE_TIME_MAX_SIZE, Math.max(IMAGE_TIME_MIN_SIZE, t.size)),
+          linked: image !== undefined,
+        };
+        const url = image === undefined ? undefined : this.ctx.entityStates.get(image.entity.entityId)?.entityPicture;
+        if (url !== undefined) out.url = url;
         return out;
       }
       // Both settle against their chart in `settleChartDots`, once every layer

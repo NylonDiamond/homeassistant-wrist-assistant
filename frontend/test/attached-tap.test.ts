@@ -8,6 +8,7 @@ import {
   type Element as CElement,
   type TapAction,
   type TapElement,
+  addImageTime,
   attachTap,
   attachedTapsOf,
   auditUnknownKeys,
@@ -682,16 +683,16 @@ describe("call a service", () => {
   });
 });
 
-describe("timestamp chip selection", () => {
+describe("timestamp chip", () => {
   function withChip(): { cfg: CustomComplicationConfig; id: string } {
     const cfg = newConfig("Test", 0);
     const img = newElement("image");
     if (img.kind === "image") {
       img.payload.entity = { entityId: "camera.door", displayName: "Door", domain: "camera" };
-      img.payload.timestamp = true;
     }
     cfg.elements.push(img);
-    return { cfg, id: img.payload.id };
+    const id = addImageTime(cfg, img.payload.id)!;
+    return { cfg, id };
   }
 
   /** The rectangular face with the camera's picture known, so the chip draws. */
@@ -703,12 +704,11 @@ describe("timestamp chip selection", () => {
     return flatten(renderLayout(layouts.rectangular!, { icons: noIcons, showHidden: true, tapAreas: true, ...opts }));
   }
 
-  it("draws a box and corner handles only for the selected chip", () => {
+  it("is a layer of its own, selected and dragged like any other", () => {
     const { cfg, id } = withChip();
-    const plain = drawWithPicture(cfg, { highlightId: id, handles: true });
-    expect(plain).toContain("data-ts-handle");
-    expect(plain).not.toContain("data-ts-corner");
-    const selected = drawWithPicture(cfg, { highlightId: id, handles: true, timestampActiveId: id });
-    expect(selected.match(/data-ts-corner=/g)).toHaveLength(4);
+    const drawn = drawWithPicture(cfg, { highlightId: id, handles: true });
+    expect(drawn).toContain(id);
+    expect(drawn).toMatch(/\d{1,2}:\d{2}:\d{2}/);
+    expect(drawn).not.toContain("data-ts-");
   });
 });
