@@ -357,13 +357,13 @@ var Tm=Object.defineProperty;var Em=Object.getOwnPropertyDescriptor;var z=(e,n,t
     </div>`}
     ${r.map((f,y)=>h`
       <div class="band-row ${s===f.id?"hit":""}">
-        <span class="range">${y===0?h`<span class="le" aria-hidden="true">≤</span>${m(y,"Up to")}`:h`<span></span>${m(y-1,"From")}<span class="to">to</span>${m(y,"Up to")}`}</span>
+        <span class="range">${y===0?h`<span class="le">Less than</span>${m(y,"Less than")}`:h`${m(y-1,"From")}<span class="to">to</span>${m(y,"Up to")}`}</span>
         ${p(`Up to ${f.upTo}`,f,b=>t(l(f.id,k=>{k.colorHex=b}),`bcol${f.id}`),b=>t(l(f.id,k=>{b===void 0?delete k.fillColorHex:k.fillColorHex=b}),`bfill${f.id}`),b=>t(l(f.id,k=>{b===void 0?delete k.borderColorHex:k.borderColorHex=b}),`bborder${f.id}`))}
         <button type="button" class="icon" title="Remove this band" aria-label="Remove this band"
           @click=${()=>t(b=>{b.bands=b.bands.filter(k=>k.id!==f.id)})}>${B("close")}</button>
       </div>`)}
     <div class="band-row ${s==="above"?"hit":""}">${xa(c)}
-      <span class="range">${r.length===0?h`<span class="else">Every value</span>`:h`<span class="le" aria-hidden="true">&gt;</span>${m(r.length-1,"Above")}`}</span>
+      <span class="range">${r.length===0?h`<span class="else">Every value</span>`:h`<span class="le">Greater than</span>${m(r.length-1,"Greater than")}`}</span>
       ${p("Above the last band",{colorHex:d,...e.bandAboveFillColorHex===void 0?{}:{fillColorHex:e.bandAboveFillColorHex},...e.bandAboveBorderColorHex===void 0?{}:{borderColorHex:e.bandAboveBorderColorHex}},f=>t(y=>{y.bandAboveColorHex=f},"babove"),f=>t(y=>{f===void 0?delete y.bandAboveFillColorHex:y.bandAboveFillColorHex=f},"bafill"),f=>t(y=>{f===void 0?delete y.bandAboveBorderColorHex:y.bandAboveBorderColorHex=f},"baborder"))}
       <span></span>
     </div>
@@ -2988,13 +2988,14 @@ ${Vv(c)}`}}let l=ar(a);if(l.length>0){let d=l.slice(0,3).join(", "),c=l.length>3
       position: absolute; top: -4px; width: 2px; height: 16px; margin-left: -1px; border-radius: 1px;
       background: var(--wa-ink); box-shadow: 0 0 0 1.5px var(--wa-card);
     }
-    /* The first column is the band's range, four slots: a sign, a start box,
-       "to" and an end box. The first row is "≤ 122" and Above is "> 231", both
-       in the first two slots with blank space after; a middle row leaves the
-       sign blank and reads "122 to 231". So every row's first box lines up. */
+    /* The first column is the band's range, three slots: a start box, "to" and
+       an end box ("122 to 231"). The first row and the last put their words
+       ("Less than", "Greater than") across the first two slots and their number
+       in the end slot, so the words line up with the start boxes and every
+       row's end box lines up. */
     .band-row { position: relative; display: grid; grid-template-columns: 164px minmax(0, 1fr) 22px; gap: 4px; align-items: center; min-height: 28px; }
-    .band-row .range { display: grid; grid-template-columns: 16px minmax(0, 1fr) 22px minmax(0, 1fr); align-items: center; }
-    .band-row .le { font-size: 16px; line-height: 1; font-weight: 500; color: var(--wa-muted); text-align: left; }
+    .band-row .range { display: grid; grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr); align-items: center; }
+    .band-row .le { grid-column: 1 / 3; font-size: 12px; color: var(--wa-muted); padding-left: 2px; white-space: nowrap; }
     .band-row .to { font-size: 12px; color: var(--wa-muted); text-align: center; }
     .band-row .range .else { grid-column: 1 / -1; }
     .band-row .else { font-size: 12px; color: var(--wa-muted); padding-left: 2px; }
@@ -3028,7 +3029,8 @@ ${Vv(c)}`}}let l=ar(a);if(l.length>0){let d=l.slice(0,3).join(", "),c=l.length>3
     @container (max-width: 340px) {
       .band-row, .bands.split .band-row { grid-template-columns: 136px minmax(0, 1fr) 22px; }
       .bands.split .band-row { grid-template-columns: 136px minmax(28px, 1fr) minmax(28px, 1fr) 22px; }
-      .band-row .range { grid-template-columns: 14px minmax(0, 1fr) 18px minmax(0, 1fr); }
+      .band-row .range { grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr); }
+      .band-row .le { font-size: 11px; }
     }
     @container (max-width: 300px) {
       .band-row .color-box input.hex { display: none; }

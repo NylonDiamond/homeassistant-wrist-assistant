@@ -1598,8 +1598,8 @@ function bandTableFields(
     ${sorted.map((b, i) => html`
       <div class="band-row ${hit === b.id ? "hit" : ""}">
         <span class="range">${i === 0
-          ? html`<span class="le" aria-hidden="true">≤</span>${endBox(i, "Up to")}`
-          : html`<span></span>${endBox(i - 1, "From")}<span class="to">to</span>${endBox(i, "Up to")}`}</span>
+          ? html`<span class="le">Less than</span>${endBox(i, "Less than")}`
+          : html`${endBox(i - 1, "From")}<span class="to">to</span>${endBox(i, "Up to")}`}</span>
         ${colours(`Up to ${b.upTo}`, b,
           (v) => set(band(b.id, (x) => { x.colorHex = v; }), `bcol${b.id}`),
           (v) => set(band(b.id, (x) => { if (v === undefined) delete x.fillColorHex; else x.fillColorHex = v; }), `bfill${b.id}`),
@@ -1610,7 +1610,7 @@ function bandTableFields(
     <div class="band-row ${hit === "above" ? "hit" : ""}">${resetButton(aboveBack)}
       <span class="range">${sorted.length === 0
         ? html`<span class="else">Every value</span>`
-        : html`<span class="le" aria-hidden="true">&gt;</span>${endBox(sorted.length - 1, "Above")}`}</span>
+        : html`<span class="le">Greater than</span>${endBox(sorted.length - 1, "Greater than")}`}</span>
       ${colours("Above the last band",
         { colorHex: above,
           ...(layer.bandAboveFillColorHex === undefined ? {} : { fillColorHex: layer.bandAboveFillColorHex }),
