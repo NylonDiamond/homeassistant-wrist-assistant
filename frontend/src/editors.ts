@@ -228,6 +228,7 @@ import {
   CHART_DEFAULT_BAR_RADIUS,
   CHART_DEFAULT_GRID_HEX,
   CHART_MAX_GRID_LINES,
+  CHART_MAX_BAR_BORDER_WIDTH,
   chartBarCorners,
   chartBarRadius,
   chartFillStyle,
@@ -1451,6 +1452,35 @@ function nextBand(bands: readonly ChartBand[], ownColorHex: string): ChartBand {
 interface BandedLayer {
   bands: ChartBand[];
   bandAboveColorHex: string;
+  /** A bars chart's colours for a bar above the last band. */
+  bandAboveFillColorHex?: string;
+  bandAboveBorderColorHex?: string;
+}
+
+/** What a bars chart adds to its band table: a Fill swatch on every row, and a
+ * Border swatch while the border is on. Each names what an empty swatch falls
+ * back to before the band's own colour: the chart's fill and border colours. */
+interface BarBandOptions {
+  fillHex?: string;
+  borderHex?: string;
+  border: boolean;
+}
+
+/** A band row's Fill or Border swatch. Empty, it shows the colour it inherits
+ * faintly, and picking a colour sets one (keeping the inherited opacity); set,
+ * a reset dot clears it back to inherited. */
+function barSwatch(label: string, value: string | undefined, inherited: string, inheritedName: string, set: (v: string | undefined) => void): TemplateResult {
+  const shown = colorParts(value ?? inherited);
+  const title = value === undefined
+    ? `${label}: ${inheritedName} (${inherited}). Pick a colour to set one.`
+    : `${label}: ${value}`;
+  return html`<span class="bar-sw">
+    <span class="color-swatch ${value === undefined ? "inh" : ""}" style=${`--sw:${shown.swatch}`} title=${title}>
+      <input type="color" .value=${shown.rgb} aria-label=${`${label}: pick a colour`}
+        @input=${onInput((v) => set(composeColor(v, shown.alpha)))} />
+    </span>
+    ${value === undefined ? nothing : resetButton({ atDefault: false, title: `Back to ${inheritedName}`, reset: () => set(undefined) })}
+  </span>`;
 }
 
 /** Where a band table's colour bar starts and ends: a typical band's width
@@ -1509,6 +1539,7 @@ function bandTableFields(
   ownColorHex: string,
   set: (mutate: (p: BandedLayer) => void, k?: string) => void,
   value?: number,
+  bars?: BarBandOptions,
 ): TemplateResult {
   const sorted = chartSortedBands({ bands: layer.bands });
   const now = value !== undefined && Number.isFinite(value) ? value : undefined;
@@ -1523,8 +1554,20 @@ function bandTableFields(
     title: `Back to ${CHART_DEFAULT_BAND_HIGH_HEX}`,
     reset: () => set((p) => { p.bandAboveColorHex = CHART_DEFAULT_BAND_HIGH_HEX; }),
   };
-  return html`<div class="bands">
+  // A bars chart's Fill and Border swatches for one row. `own` is the row's
+  // main colour, which an empty swatch falls back to after the chart's.
+  const swatches = (own: string, fill: string | undefined, border: string | undefined,
+    setFill: (v: string | undefined) => void, setBorder: (v: string | undefined) => void) => bars === undefined ? nothing : html`
+    ${barSwatch("Fill", fill, bars.fillHex ?? own, bars.fillHex === undefined ? "the band colour" : "the chart fill colour", setFill)}
+    ${bars.border
+      ? barSwatch("Border", border, bars.borderHex ?? own, bars.borderHex === undefined ? "the band colour" : "the chart border colour", setBorder)
+      : nothing}`;
+  const cols = bars === undefined ? 0 : bars.border ? 2 : 1;
+  return html`<div class=${bars === undefined ? "bands" : "bands bars"} style=${bars === undefined ? nothing : `--sw-cols:${cols}`}>
     ${bandBar(sorted, above, now)}
+    ${bars === undefined || sorted.length === 0 ? nothing : html`<div class="band-row band-head" aria-hidden="true">
+      <span></span><span></span><span></span><span>Fill</span>${bars.border ? html`<span>Border</span>` : nothing}<span></span>
+    </div>`}
     ${sorted.map((b, i) => html`
       <div class="band-row ${hit === b.id ? "hit" : ""}">
         <span class="le" aria-hidden="true">≤</span>
@@ -1541,6 +1584,9 @@ function bandTableFields(
             if (v.trim() !== "" && Number.isFinite(n)) set(band(b.id, (x) => { x.upTo = n; }));
           })} />
         ${colorBox(`Up to ${b.upTo}`, b.colorHex, (v) => set(band(b.id, (x) => { x.colorHex = v ?? "#FFFFFF"; }), `bcol${b.id}`))}
+        ${swatches(b.colorHex, b.fillColorHex, b.borderColorHex,
+          (v) => set(band(b.id, (x) => { if (v === undefined) delete x.fillColorHex; else x.fillColorHex = v; }), `bfill${b.id}`),
+          (v) => set(band(b.id, (x) => { if (v === undefined) delete x.borderColorHex; else x.borderColorHex = v; }), `bborder${b.id}`))}
         <button type="button" class="icon" title="Remove this band" aria-label="Remove this band"
           @click=${() => set((p) => { p.bands = p.bands.filter((x) => x.id !== b.id); })}>${uiIcon("close")}</button>
       </div>`)}
@@ -1548,6 +1594,9 @@ function bandTableFields(
       <span class="le" aria-hidden="true">&gt;</span>
       <span class="else">Above</span>
       ${colorBox("Above the last band", above, (v) => set((p) => { p.bandAboveColorHex = v ?? CHART_DEFAULT_BAND_HIGH_HEX; }, "babove"))}
+      ${swatches(above, layer.bandAboveFillColorHex, layer.bandAboveBorderColorHex,
+        (v) => set((p) => { if (v === undefined) delete p.bandAboveFillColorHex; else p.bandAboveFillColorHex = v; }, "bafill"),
+        (v) => set((p) => { if (v === undefined) delete p.bandAboveBorderColorHex; else p.bandAboveBorderColorHex = v; }, "baborder"))}
       <span></span>
     </div>
     <button type="button" class="link add-band" @click=${() => set((p) => { p.bands = [...p.bands, nextBand(p.bands, ownColorHex)]; })}>+ Band</button>
@@ -4371,7 +4420,21 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             chartBarCorners(base.barCorners) === "top")}
           ${watchNote(host)}
           <div class="hint">Round top only rounds the end away from the baseline, so a bar hanging
-            below zero rounds its bottom.</div>` : html`
+            below zero rounds its bottom.</div>
+          ${fallbackColorField("Fill colour", c.fillColorHex, "Bar colour",
+            (v) => setChart((p) => { if (v === undefined) delete p.fillColorHex; else p.fillColorHex = v; }, "fillcol"))}
+          ${checkField("Border", c.barBorderWidth !== undefined,
+            (v) => setChart((p) => { if (v) p.barBorderWidth = 1; else delete p.barBorderWidth; }), false)}
+          ${c.barBorderWidth === undefined ? nothing : html`
+            ${numberField("Border width", c.barBorderWidth,
+              (v) => setChart((p) => { p.barBorderWidth = Math.min(Math.max(v ?? 1, 0), CHART_MAX_BAR_BORDER_WIDTH); }, "barborderw"),
+              { step: 0.5, min: 0, max: CHART_MAX_BAR_BORDER_WIDTH, def: 1, unit: "pt" })}
+            ${fallbackColorField("Border colour", c.barBorderColorHex, "Bar colour",
+              (v) => setChart((p) => { if (v === undefined) delete p.barBorderColorHex; else p.barBorderColorHex = v; }, "barbordercol"))}`}
+          ${watchNote(host)}
+          <div class="hint">The border is drawn inside each bar, so bars keep their size. A highlighted
+            bar fills and borders in its highlight colour.${c.coloring === "bands"
+              ? " Each band can set its own fill and border below." : ""}</div>` : html`
           ${segField("Curve", c.curve ?? "straight", CHART_CURVE_OPTIONS,
             (v) => setChart((p) => { if (v === "straight") delete p.curve; else p.curve = v; }),
             { titles: {
@@ -4436,7 +4499,11 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             ${c.style === "bars"
               ? "Each bar is coloured on its own value."
               : "A stroke cannot change colour halfway, so each leg of the line takes the band of the reading it arrives at."}</div>
-          ${bandTableFields(c, c.colorSlot.baseColorHex, setChart)}
+          ${bandTableFields(c, c.colorSlot.baseColorHex, setChart, undefined, c.style === "bars"
+            ? { ...(c.fillColorHex === undefined ? {} : { fillHex: c.fillColorHex }),
+                ...(c.barBorderColorHex === undefined ? {} : { borderHex: c.barBorderColorHex }),
+                border: c.barBorderWidth !== undefined }
+            : undefined)}
           ${c.style === "area"
             ? html`${checkField("Band fill",c.fillBands,
                 (v) => setChart((p) => { p.fillBands = v; }), base.fillBands as boolean)}
@@ -4886,7 +4953,7 @@ const LOOK_KEYS: Record<CElement["kind"], readonly string[]> = {
     "coloring", "bands", "bandAboveColorHex", "highlight", "highColorHex", "lowColorHex"],
   icon: ["size", "colorSlot"],
   gauge: ["style", "lineWidth", "trackColorHex", "colorSlot", "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex"],
-  chart: ["style", "scale", "minValue", "maxValue", "baseline", "barGap", "lineWidth", "coloring", "bands", "bandAboveColorHex", "fillBands", "curve", "fillStyle", "fillColorHex", "barRadius", "barCorners", "scaleFrom", "colorSlot"],
+  chart: ["style", "scale", "minValue", "maxValue", "baseline", "barGap", "lineWidth", "coloring", "bands", "bandAboveColorHex", "fillBands", "curve", "fillStyle", "fillColorHex", "barRadius", "barCorners", "barBorderWidth", "barBorderColorHex", "bandAboveFillColorHex", "bandAboveBorderColorHex", "scaleFrom", "colorSlot"],
   timeline: ["bands", "otherColorHex", "gap", "cornerRadius"],
   shape: ["colorSlot", "borderColorHex", "borderWidth", "thickness"],
   image: ["contentMode", "zoom", "panX", "panY", "cornerRadius"],

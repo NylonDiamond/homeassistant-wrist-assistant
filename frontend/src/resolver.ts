@@ -76,6 +76,8 @@ import {
   TIMELINE_MAX_LABEL_SIZE,
 } from "./model.js";
 import {
+  chartBarBorderWidth,
+  chartBarColors,
   chartBarCorners,
   chartBarRadius,
   type ChartBarCorners,
@@ -259,6 +261,14 @@ export interface ResolvedChart extends ResolvedBase {
   barRadius: number;
   /** Which corners of a bar are rounded. */
   barCorners: ChartBarCorners;
+  /** The border drawn inside each bar's outline, clamped 0…6. 0 when off, and
+   * always 0 for line and area. */
+  barBorderWidth: number;
+  /** Each bar's fill colour, parallel to `values`. Empty for line and area. */
+  barFillColorHexes: string[];
+  /** Each bar's border colour, parallel to `values`. Empty unless the chart is
+   * bars with a border. */
+  barBorderColorHexes: string[];
   /** The largest diameter among this chart's `chartDots` layers that are shown
    * on this shape and actually draw. The plot's stroke inset grows to half of
    * it, so the dots at the edges are not clipped. Absent when none draws. Set by
@@ -1708,6 +1718,9 @@ export class Resolver {
           ...(c.fillColorHex !== undefined ? { fillColorHex: c.fillColorHex } : {}),
           barRadius: chartBarRadius(c.barRadius),
           barCorners: chartBarCorners(c.barCorners),
+          barBorderWidth: chartBarBorderWidth(c),
+          barFillColorHexes: [],
+          barBorderColorHexes: [],
           thresholdColorHex: c.thresholdColorHex,
           drawsThreshold: c.drawsThreshold !== false,
           nowColorHex: c.nowColorHex,
@@ -1732,6 +1745,14 @@ export class Resolver {
           if (high >= 0) out.highIndex = high;
           // One reading cannot be both ends of the range; highest wins.
           if (low >= 0 && low !== high) out.lowIndex = low;
+        }
+        // Each bar's fill and border, once the highlight has picked its ends,
+        // since a highlighted bar is filled and bordered in its highlight colour.
+        if (c.style === "bars") {
+          const colors = values.map((v, i) => chartBarColors(c, v, sortedBands, baseColorHex,
+            i === out.highIndex ? c.highColorHex : i === out.lowIndex ? c.lowColorHex : undefined));
+          out.barFillColorHexes = colors.map((x) => x.fill);
+          if (out.barBorderWidth > 0) out.barBorderColorHexes = colors.map((x) => x.border);
         }
         const thresholdY = chartThresholdFraction(c, domain.min, domain.max);
         if (thresholdY !== undefined) out.thresholdY = thresholdY;

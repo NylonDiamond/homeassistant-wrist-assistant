@@ -896,9 +896,25 @@ export interface ChartElement extends ElementBase {
   curve?: ChartCurve;
   /** How an area fills under its line. Absent reads as `flat`. Area only. */
   fillStyle?: ChartFillStyle;
-  /** The fill's own colour. Absent fills in the series colour, or each band's
-   * colour when `fillBands` is on. Area only. */
+  /** The fill's own colour. On an area, absent fills in the series colour, or
+   * each band's colour when `fillBands` is on. On bars, the colour a bar is
+   * filled in: absent is the bar's own colour (its band's, or the series
+   * colour), and a band's own `fillColorHex` wins over it. A highlighted bar
+   * always fills in its highlight colour. */
   fillColorHex?: string;
+  /** Width of the border drawn inside each bar's outline, in design-box points.
+   * Absent or 0 draws none. Clamped 0…6 when resolved. Bars only: a line or
+   * area resolves it as 0. */
+  barBorderWidth?: number;
+  /** The bars' border colour. Absent borders each bar in its own colour, and a
+   * band's own `borderColorHex` wins over it. Bars only. */
+  barBorderColorHex?: string;
+  /** Fill colour of a bar above the last band. Absent reads as the chart's
+   * `fillColorHex`, then `bandAboveColorHex`. Bars only. */
+  bandAboveFillColorHex?: string;
+  /** Border colour of a bar above the last band. Absent reads as the chart's
+   * `barBorderColorHex`, then `bandAboveColorHex`. Bars only. */
+  bandAboveBorderColorHex?: string;
   /** A bar's corner radius in design-box points. Absent reads as
    * `CHART_DEFAULT_BAR_RADIUS`, which is also never written. Bars only. */
   barRadius?: number;
@@ -994,6 +1010,51 @@ export interface ChartBand {
   /** Readings at or below this take `colorHex`. */
   upTo: number;
   colorHex: string;
+  /** A bar's fill in this band. Absent reads as the chart's `fillColorHex`,
+   * then `colorHex`. Only a bars chart reads it; a gauge, a text layer, a line
+   * and an area keep it as written and ignore it. */
+  fillColorHex?: string;
+  /** A bar's border in this band. Absent reads as the chart's
+   * `barBorderColorHex`, then `colorHex`. Bars only, on the same rule. */
+  borderColorHex?: string;
+}
+
+/** Largest bar border a chart draws, in design-box points. */
+export const CHART_MAX_BAR_BORDER_WIDTH = 6;
+
+/** A stored bar border width as it is drawn: 0 when absent, not a number, or
+ * not bars, else clamped 0…6. Mirrors the app's resolver. */
+export function chartBarBorderWidth(el: Pick<ChartElement, "style" | "barBorderWidth">): number {
+  if (el.style !== "bars") return 0;
+  const w = el.barBorderWidth;
+  if (typeof w !== "number" || !Number.isFinite(w)) return 0;
+  return Math.min(Math.max(w, 0), CHART_MAX_BAR_BORDER_WIDTH);
+}
+
+/** One bar's fill and border colour, by the precedence the app's resolver
+ * uses. A highlight wins over everything; a banded bar reads its band's own
+ * colour, then the chart's, then the band colour; a one-colour bar reads the
+ * chart's colour, then the series colour. `sorted` is `chartSortedBands`, and is
+ * only read when the chart uses its bands. */
+export function chartBarColors(
+  c: ChartElement,
+  reading: number,
+  sorted: readonly ChartBand[],
+  seriesHex: string,
+  highlightHex?: string,
+): { fill: string; border: string } {
+  if (highlightHex !== undefined) return { fill: highlightHex, border: highlightHex };
+  if (!chartUsesBands(c)) {
+    return { fill: c.fillColorHex ?? seriesHex, border: c.barBorderColorHex ?? seriesHex };
+  }
+  const band = sorted.find((b) => reading <= b.upTo);
+  const own = band
+    ? { color: band.colorHex, fill: band.fillColorHex, border: band.borderColorHex }
+    : { color: c.bandAboveColorHex, fill: c.bandAboveFillColorHex, border: c.bandAboveBorderColorHex };
+  return {
+    fill: own.fill ?? c.fillColorHex ?? own.color,
+    border: own.border ?? c.barBorderColorHex ?? own.color,
+  };
 }
 
 export const CHART_DEFAULT_HIGH_HEX = "#FF6B35";
@@ -2154,11 +2215,26 @@ function parseColorSlot(o: unknown, fallback: string): ColorSlot {
  * one, which is the single value the two spellings disagree on. */
 function parseColorBands(raw: unknown): ChartBand[] {
   if (!Array.isArray(raw)) return [];
-  return raw.filter(isObject).map((b) => ({
-    id: str(b.id, newId()),
-    upTo: num(b.upTo, 0),
-    colorHex: str(b.colorHex, "#FFFFFF"),
-  }));
+  return raw.filter(isObject).map((b) => {
+    const band: ChartBand = {
+      id: str(b.id, newId()),
+      upTo: num(b.upTo, 0),
+      colorHex: str(b.colorHex, "#FFFFFF"),
+    };
+    // The bar fill and border colours. Kept on every kind's table so a gauge
+    // or text band carrying them round-trips, though only bars draw them.
+    if (typeof b.fillColorHex === "string") band.fillColorHex = b.fillColorHex;
+    if (typeof b.borderColorHex === "string") band.borderColorHex = b.borderColorHex;
+    return band;
+  });
+}
+
+/** One colour table row as written: its two bar colours only when set. */
+function encodeBand(b: ChartBand): J {
+  const o: J = { id: b.id, upTo: encNum(b.upTo), colorHex: b.colorHex };
+  if (b.fillColorHex !== undefined) o.fillColorHex = b.fillColorHex;
+  if (b.borderColorHex !== undefined) o.borderColorHex = b.borderColorHex;
+  return o;
 }
 
 /** A rich text layer's parts. Each style key is kept only when the document
@@ -2342,6 +2418,14 @@ function parseElementKind(raw: unknown): Element {
           ...(typeof p.fillColorHex === "string" ? { fillColorHex: p.fillColorHex } : {}),
           ...(chartBarRadius(p.barRadius) !== CHART_DEFAULT_BAR_RADIUS ? { barRadius: chartBarRadius(p.barRadius) } : {}),
           ...(chartBarCorners(p.barCorners) !== "all" ? { barCorners: chartBarCorners(p.barCorners) } : {}),
+          // The bar border and fill keys, each kept only when set. The width is
+          // kept as written (clamped where it is resolved), and 0 reads as absent.
+          ...(typeof p.barBorderWidth === "number" && Number.isFinite(p.barBorderWidth) && p.barBorderWidth !== 0
+            ? { barBorderWidth: p.barBorderWidth }
+            : {}),
+          ...(typeof p.barBorderColorHex === "string" ? { barBorderColorHex: p.barBorderColorHex } : {}),
+          ...(typeof p.bandAboveFillColorHex === "string" ? { bandAboveFillColorHex: p.bandAboveFillColorHex } : {}),
+          ...(typeof p.bandAboveBorderColorHex === "string" ? { bandAboveBorderColorHex: p.bandAboveBorderColorHex } : {}),
           ...(chartPointDots(p.pointDots) !== "none" ? { pointDots: chartPointDots(p.pointDots) } : {}),
           ...(chartPointDotSize(p.pointDotSize) !== undefined ? { pointDotSize: chartPointDotSize(p.pointDotSize) } : {}),
           ...(typeof p.pointDotColorHex === "string" ? { pointDotColorHex: p.pointDotColorHex } : {}),
@@ -3560,7 +3644,7 @@ function encodeTextPart(p: TextPart): J {
   if (p.fontWeight !== undefined) o.fontWeight = p.fontWeight;
   if (p.fontSize !== undefined) o.fontSize = encNum(p.fontSize);
   if (p.coloring !== undefined && p.coloring !== "uniform") o.coloring = p.coloring;
-  if (p.bands !== undefined && p.bands.length > 0) o.bands = p.bands.map((b) => ({ id: b.id, upTo: encNum(b.upTo), colorHex: b.colorHex }));
+  if (p.bands !== undefined && p.bands.length > 0) o.bands = p.bands.map(encodeBand);
   if (p.bandAboveColorHex !== undefined && p.bandAboveColorHex !== CHART_DEFAULT_BAND_HIGH_HEX) o.bandAboveColorHex = p.bandAboveColorHex;
   return o;
 }
@@ -3591,7 +3675,7 @@ function encodeElementKind(el: Element): J {
       // default, so a text layer without colour by value writes what it always did.
       const t = el.payload;
       if (t.coloring !== undefined && t.coloring !== "uniform") o.coloring = t.coloring;
-      if (t.bands !== undefined && t.bands.length > 0) o.bands = t.bands.map((b) => ({ id: b.id, upTo: encNum(b.upTo), colorHex: b.colorHex }));
+      if (t.bands !== undefined && t.bands.length > 0) o.bands = t.bands.map(encodeBand);
       if (t.bandAboveColorHex !== undefined && t.bandAboveColorHex !== CHART_DEFAULT_BAND_HIGH_HEX) o.bandAboveColorHex = t.bandAboveColorHex;
       if (t.highlight !== undefined && t.highlight !== "none") o.highlight = t.highlight;
       if (t.highColorHex !== undefined && t.highColorHex !== CHART_DEFAULT_HIGH_HEX) o.highColorHex = t.highColorHex;
@@ -3629,7 +3713,7 @@ function encodeElementKind(el: Element): J {
       // Same order and same "only when it differs" rule as the app's encoder, so
       // a gauge authored before the colour table writes the bytes it always did.
       if (g.coloring !== "uniform") o.coloring = g.coloring;
-      if (g.bands.length > 0) o.bands = g.bands.map((b) => ({ id: b.id, upTo: encNum(b.upTo), colorHex: b.colorHex }));
+      if (g.bands.length > 0) o.bands = g.bands.map(encodeBand);
       if (g.bandAboveColorHex !== CHART_DEFAULT_BAND_HIGH_HEX) o.bandAboveColorHex = g.bandAboveColorHex;
       if (g.thresholdValue !== undefined) o.thresholdValue = encNum(g.thresholdValue);
       if (g.thresholdColorHex !== GAUGE_DEFAULT_THRESHOLD_HEX) o.thresholdColorHex = g.thresholdColorHex;
@@ -3659,7 +3743,7 @@ function encodeElementKind(el: Element): J {
         lowColorHex: c.lowColorHex,
         marker: chartLegacyMarker(chartEndMarkers(c)),
         coloring: c.coloring,
-        bands: c.bands.map((b) => ({ id: b.id, upTo: encNum(b.upTo), colorHex: b.colorHex })),
+        bands: c.bands.map(encodeBand),
         bandAboveColorHex: c.bandAboveColorHex,
         fillBands: c.fillBands,
       };
@@ -3714,6 +3798,12 @@ function encodeElementKind(el: Element): J {
       const smoothing = chartSmoothing(c.smoothing);
       if (smoothing !== undefined) o.smoothing = smoothing;
       if (c.gaps === true) o.gaps = true;
+      // The bar border and fill keys, after gaps, each only when set, so a
+      // chart that uses neither writes the bytes it always did.
+      if (c.barBorderWidth !== undefined && c.barBorderWidth !== 0) o.barBorderWidth = encNum(c.barBorderWidth);
+      if (c.barBorderColorHex !== undefined) o.barBorderColorHex = c.barBorderColorHex;
+      if (c.bandAboveFillColorHex !== undefined) o.bandAboveFillColorHex = c.bandAboveFillColorHex;
+      if (c.bandAboveBorderColorHex !== undefined) o.bandAboveBorderColorHex = c.bandAboveBorderColorHex;
       return { kind: "chart", payload: o };
     }
     case "timeline": {
@@ -4082,6 +4172,7 @@ const K = {
     "timeLabelCount", "labelSize", "labelColorHex", "labelsAbove", "hourCycle", "minutes",
     "highMarker", "lowMarker",
     "curve", "fillStyle", "fillColorHex", "barRadius", "barCorners", "smoothing", "gaps",
+    "barBorderWidth", "barBorderColorHex", "bandAboveFillColorHex", "bandAboveBorderColorHex",
     // Written only on 2026-09-12, before dots, grid and the zero line became
     // layers. `liftChartOwnMarks` reads them forward.
     "pointDots", "pointDotSize", "pointDotColorHex", "gridLines", "gridColorHex", "zeroLine",

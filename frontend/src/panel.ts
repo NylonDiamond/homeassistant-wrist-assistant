@@ -2259,6 +2259,23 @@ export class WristAssistantPanel extends LitElement {
     .band-row input.band-up:focus-visible { border-color: var(--c, var(--wa-accent)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c, var(--wa-accent)) 28%, transparent); }
     .band-row.hit input.band-up { color: var(--wa-val); }
     .band-row button.reset-dot { top: 50%; margin-top: -3px; }
+    /* A bars chart's table: a Fill swatch per row and a Border swatch while the
+       border is on, under small column titles. An empty swatch shows the colour
+       it inherits, faint and dashed; a set one carries its own reset dot at its
+       corner, which clears it back to inherited. */
+    .bands.bars .band-row { grid-template-columns: 12px 64px minmax(0, 1fr) repeat(var(--sw-cols, 1), 26px) 22px; }
+    .band-row.band-head { min-height: 0; margin-bottom: -2px; }
+    .band-row.band-head span { font-size: 10px; line-height: 12px; color: var(--wa-muted); text-align: center; white-space: nowrap; overflow: visible; }
+    .bar-sw { position: relative; display: flex; justify-content: center; align-items: center; height: 26px; }
+    .bar-sw .color-swatch { width: 18px; height: 18px; }
+    .bar-sw .color-swatch.inh { opacity: .45; outline: 1px dashed var(--wa-muted); outline-offset: 1px; }
+    .bar-sw .color-swatch.inh:hover { opacity: .8; }
+    .band-row .bar-sw button.reset-dot { left: auto; right: -2px; top: 1px; margin-top: 0; }
+    @container (max-width: 320px) {
+      .bands.bars .band-row .color-box .alpha { display: none; }
+      .bands.bars .band-row .color-box { padding-right: 6px; }
+      .bands.bars .band-row { grid-template-columns: 12px 48px minmax(0, 1fr) repeat(var(--sw-cols, 1), 24px) 22px; }
+    }
     .bands button.link.add-band { justify-self: start; margin-top: 2px; font-size: 12px; font-weight: 500; }
     /* The Position card's four numbers: a 2x2 grid of boxes, each with its
        letter inside at the front. The letter drags the number. */

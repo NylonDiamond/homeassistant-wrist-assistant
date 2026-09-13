@@ -695,15 +695,42 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
       if (el.holes[i] === true) continue;
       const r = g.barRect(i);
       // The highlight is the more specific statement, so it paints over its band.
-      const colour = i === el.highIndex ? high : i === el.lowIndex ? low : bandAt(i);
+      // The resolver has already folded that in with the fill colours; a chart
+      // resolved without them draws the way it always did.
+      const fillHex = el.barFillColorHexes.length === g.count ? el.barFillColorHexes[i] : undefined;
+      const colour = fillHex !== undefined
+        ? colorAttrs(fillHex, "fill", el.colorHex)
+        : i === el.highIndex ? high : i === el.lowIndex ? low : bandAt(i);
       const radius = Math.min(Math.max(el.barRadius, 0), r.w / 2, r.h / 2);
+      const hangs = el.barCorners === "top" && el.baseline === "zero" && el.values[i]! < 0;
+      const borderHex = el.barBorderWidth > 0 && el.barBorderColorHexes.length === g.count ? el.barBorderColorHexes[i] : undefined;
+      const bw = el.barBorderWidth;
+      // A bar too thin or too short to hold its border on both sides is all border.
+      const solid = borderHex !== undefined && (r.w <= 2 * bw || r.h <= 2 * bw);
+      const paint = solid ? colorAttrs(borderHex, "fill", el.colorHex) : colour;
       if (el.barCorners === "top") {
-        const hangs = el.baseline === "zero" && el.values[i]! < 0;
         body.push(svg`<path d=${chartBarPath(r, radius, hangs)}
-          fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} />`);
+          fill=${paint.fill} fill-opacity=${paint["fill-opacity"]} />`);
       } else {
         body.push(svg`<rect x=${r.x} y=${r.y} width=${r.w} height=${r.h} rx=${radius}
-          fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} />`);
+          fill=${paint.fill} fill-opacity=${paint["fill-opacity"]} />`);
+      }
+      if (borderHex !== undefined && !solid) {
+        // Stroked along a copy of the outline inset by half the width, with the
+        // corners eased by the same amount, so the border sits inside the bar and
+        // its outer edge follows the bar's own corners. Bars never grow.
+        const stroke = colorAttrs(borderHex, "fill", el.colorHex);
+        const inner = { x: r.x + bw / 2, y: r.y + bw / 2, w: r.w - bw, h: r.h - bw };
+        const k = Math.min(Math.max(radius - bw / 2, 0), inner.w / 2, inner.h / 2);
+        const d = el.barCorners === "top"
+          ? chartBarPath(inner, k, hangs)
+          : chartBarPath(inner, 0, false);
+        if (el.barCorners === "top" || k === 0) {
+          body.push(svg`<path d=${d} fill="none" stroke=${stroke.fill} stroke-opacity=${stroke["fill-opacity"]} stroke-width=${bw} />`);
+        } else {
+          body.push(svg`<rect x=${inner.x} y=${inner.y} width=${inner.w} height=${inner.h} rx=${k}
+            fill="none" stroke=${stroke.fill} stroke-opacity=${stroke["fill-opacity"]} stroke-width=${bw} />`);
+        }
       }
     }
   } else {
