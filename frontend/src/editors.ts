@@ -3231,21 +3231,25 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
   return card(host, "placement", "Position", html`
     ${anchorFields(host, el, family)}
     ${anchor === undefined ? html`
+    <div class="fgroup">
     <div class="field xy-field"><span>Position</span>
       <div class="xy">
         ${frameLetterField("X", "Left", f.x, (v) => setFrame({ x: v }, "x"), -100, 100)}
         ${frameLetterField("Y", "Top", f.y, (v) => setFrame({ y: v }, "y"), -100, 100)}
       </div>
     </div>
-    ${lineUpField(host, el, family, f, ["across", "down", "both"])}`
+    ${lineUpField(host, el, family, f, ["across", "down", "both"])}
+    </div>`
     // The threshold settles only the height, so a label beside it keeps its own X.
     : !chartAnchorIsColumn(anchor.at) ? html`
+    <div class="fgroup">
     <div class="field xy-field"><span>Position</span>
       <div class="xy">
         ${frameLetterField("X", "Left", f.x, (v) => setFrame({ x: v }, "x"), -100, 100)}
       </div>
     </div>
-    ${lineUpField(host, el, family, f, ["across"])}`
+    ${lineUpField(host, el, family, f, ["across"])}
+    </div>`
     : nothing}
     <div class="field xy-field"><span>Size</span>
       <div class="xy">
@@ -3329,6 +3333,7 @@ function anchorFields(host: EditorHost, el: CElement, family: FamilyKind): Templ
   const ctx = describeContext(host);
   const gone = !charts.some((e) => e.payload.id === anchor.layer);
   return html`
+    <div class="fgroup">
     ${charts.length < 2 ? nothing : selectField("Follows", anchor.layer,
       charts.map((e): [string, string] => [e.payload.id, layerTitle(e, ctx)]),
       (v) => setAnchor((a) => { a.layer = v; }))}
@@ -3356,6 +3361,7 @@ function anchorFields(host: EditorHost, el: CElement, family: FamilyKind): Templ
       anchor.place === "through" ? nothing
       : selectField("Sits", anchor.place, CHART_ANCHOR_PLACES.filter(([p]) => p !== "through") as [ChartAnchorPlace, string][],
       (v) => setAnchor((a) => { a.place = v; }), { def: "above" as ChartAnchorPlace })}
+    </div>
     <div class="grid2">
       ${/* A marker belongs to its column, so it only moves up and down. Nudge X
          * is shown only to clear a sideways nudge written before that rule. */
@@ -3494,6 +3500,7 @@ function timeLabelFields<T extends TimeLabelled>(
       range: false,
     })}
     ${el.timeLabelCount <= 0 ? nothing : html`
+      <div class="fgroup">
       <div class="grid2">
         ${numberField("Time size", el.labelSize, (v) => set((p) => {
           p.labelSize = Math.min(TIMELINE_MAX_LABEL_SIZE, Math.max(TIMELINE_MIN_LABEL_SIZE, v ?? TIMELINE_DEFAULT_LABEL_SIZE));
@@ -3505,13 +3512,16 @@ function timeLabelFields<T extends TimeLabelled>(
       ${el.labelsAbove === undefined ? nothing : segField("Row", el.labelsAbove ? "above" : "below", [["below", "Below"], ["above", "Above"]],
         (v) => set((p) => { p.labelsAbove = v === "above"; }),
         { def: base.labelsAbove === true ? "above" : "below" })}
+      </div>
+      <div class="fgroup">
       ${segField("Clock", el.hourCycle, TIMELINE_HOUR_CYCLES,
         (v) => set((p) => { p.hourCycle = v; }),
         { titles: { auto: "Whatever clock the watch is set to" }, def: base.hourCycle as TimelineHourCycle })}
       ${segField("Minutes", el.minutes, TIMELINE_MINUTE_STYLES,
         (v) => set((p) => { p.minutes = v; }),
         { titles: { auto: "Kept up to a three hour span, dropped past it" }, def: base.minutes as TimelineMinuteStyle })}
-      ${hint}`}`;
+      ${hint}
+      </div>`}`;
 }
 
 /** One end of a gauge's range. */
@@ -3621,6 +3631,7 @@ function textValueColourFields(
   // The table marks the number the text reads, when it reads exactly one.
   const numbers = coloring === "bands" ? chartNumbers(host.resolve(t.value) ?? "") : [];
   return html`
+    <div class="fgroup">
     ${segField("Colour", coloring, CHART_COLORINGS, (v) => set((p) => {
       if (v === "uniform") { delete p.coloring; return; }
       p.coloring = v;
@@ -3634,6 +3645,8 @@ function textValueColourFields(
       ${bandTableFields({ bands: t.bands ?? [], bandAboveColorHex: t.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX }, t.colorSlot.baseColorHex, setBands,
         numbers.length === 1 ? numbers[0] : undefined)}`
       : nothing}
+    </div>
+    <div class="fgroup">
     ${segField("Highlight", highlight, CHART_HIGHLIGHTS, (v) => set((p) => {
       if (v === "none") delete p.highlight; else p.highlight = v;
     }), { def: "none" })}
@@ -3644,7 +3657,8 @@ function textValueColourFields(
         ${highlight === "highest" ? nothing
           : colorField("Lowest colour", t.lowColorHex ?? CHART_DEFAULT_LOW_HEX, (v) => setHex("lowColorHex", CHART_DEFAULT_LOW_HEX, v), false, CHART_DEFAULT_LOW_HEX)}
       </div>
-      ${coloring === "bands" ? nothing : html`<div class="hint">${highlightHint}, and other text keeps the layer colour.</div>`}`}`;
+      ${coloring === "bands" ? nothing : html`<div class="hint">${highlightHint}, and other text keeps the layer colour.</div>`}`}
+    </div>`;
 }
 
 // ── Rich text ─────────────────────────────────────────────────────────────
@@ -4105,6 +4119,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
       content = textContentFields(host, el, family, setText, key);
       colourPlaced = !el.payload.countdown && !textUsesParts(el.payload);
       look = html`
+        <div class="fgroup">
         ${shapeSizeField(host, el, family, "Font size", { step: 1, min: 4, def: baseSize("fontSize") })}
         ${segField("Weight", el.payload.fontWeight, FONT_WEIGHTS, (v) => upd((e) => { (e as typeof el).payload.fontWeight = v; }),
           { def: base.fontWeight as typeof el.payload.fontWeight })}
@@ -4122,6 +4137,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           if (v) p.monospacedDigits = true; else delete p.monospacedDigits;
         }), base.monospacedDigits === true)}
         ${el.payload.monospacedDigits ? html`<div class="hint">Digits take the same width, so a number that ticks does not shuffle what sits beside it.</div>` : nothing}
+        </div>
         ${colourPlaced ? textValueColourFields(host, el.payload, setText, colourRow("Main colour")) : nothing}`;
       break;
     }
@@ -4150,7 +4166,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             <div class="hint">How many dots to draw. Left as it is, a count of the same
               entities without the filter, so "3 of 8 lights on" is one reading and one
               total over one scope. At most ${GAUGE_MAX_DOTS} dots are drawn.</div>`
-          : gaugeRangeFields(host, g, { min: base.minValue as number, max: base.maxValue as number }, key, setGauge)}`;
+          : html`<div class="fgroup">${gaugeRangeFields(host, g, { min: base.minValue as number, max: base.maxValue as number }, key, setGauge)}</div>`}`;
       colourPlaced = true;
       look = html`
         <div class="grid2">
@@ -4164,6 +4180,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           }), { titles: GAUGE_STYLE_TITLES, def: base.style as typeof g.style })}
           ${dots ? nothing : shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5, def: baseSize("lineWidth") })}
         </div>
+        <div class="fgroup">
         ${colorField(dots ? "Empty dot colour" : "Track colour", g.trackColorHex, (v) => setGauge((p) => { p.trackColorHex = v ?? "#FFFFFF40"; }, "track"), false, base.trackColorHex as string)}
         ${segField("Colour", g.coloring, CHART_COLORINGS, (v) => setGauge((p) => {
           p.coloring = v;
@@ -4176,7 +4193,9 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             last row takes the colour underneath.</div>
           ${bandTableFields(g, g.colorSlot.baseColorHex, setGauge, chartNumbers(host.resolve(g.value) ?? "")[0])}`
           : nothing}
+        </div>
         ${dots ? nothing : html`
+          <div class="fgroup">
           <div class="grid2">
             ${numberField("Threshold", g.thresholdValue, (v) => setGauge((p) => {
               if (v === undefined) delete p.thresholdValue; else p.thresholdValue = v;
@@ -4186,7 +4205,8 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           </div>
           <div class="hint">A short tick on the scale at that value, so the fill reads
             against a target instead of on its own. A value outside Min to Max draws
-            nothing. Leave it empty for no mark.</div>`}`;
+            nothing. Leave it empty for no mark.</div>
+          </div>`}`;
       break;
     }
     case "chart": {
@@ -4247,6 +4267,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
       content = html`
         ${valueEditor(host, c.value, (v) => setChart((p) => { p.value = v; }, "value"),
           { label: "Readings", noShare: true, key: `${key}-value` })}
+        <div class="fgroup">
         ${segField("Draw", drawMode,
           [["history", "Recorded history"], ["statistics", "Long-term statistics"], ["value", "The value itself"]],
           (v) => setChart((p) => {
@@ -4366,6 +4387,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               Commas, spaces and square brackets are all just separators, so a text sensor, a list
               attribute and a template that joins a forecast all work. A dot is a decimal point;
               a comma never is.</div>`}
+        </div>
         ${series.length === 0 && !(usingRecorder && (!namesEntity || historyRaw === undefined || historyRaw === ""))
           ? html`<div class="hint warn">No numbers in this value yet, so the chart draws nothing.</div>`
           : nothing}
@@ -4609,6 +4631,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         ${namesEntity ? nothing : html`<div class="hint warn">A timeline draws an entity's recorded
           past, so it needs one named above. A typed-in value, a template or a shared value has no
           past to read, and this layer stays blank until States names an entity.</div>`}
+        <div class="fgroup">
         ${historySpanPicker(id, t.historyMinutes, baseSpan, (m) => setTimeline((p) => { p.historyMinutes = m; }))}
         ${customSpan
           ? historySpanCustomFields(t.historyMinutes, (m) => setTimeline((p) => { p.historyMinutes = m; }, "span"))
@@ -4623,6 +4646,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           ? html`<div class="hint warn">Nothing recorded for this entity in that span. Either it is
             excluded from the recorder, or it has not been seen in that long.</div>`
           : nothing}
+        </div>
         ${samples.length > 0
           ? html`<div class="field readout"><span>Reads</span><span class="readout-v"><span class="nums">${timelineReadout(samples, spanSeconds)}</span></span></div>`
           : nothing}
@@ -4666,8 +4690,10 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
       look = el.payload.kind === "line"
         ? numberField("Thickness", el.payload.thickness, (v) => upd((e) => { (e as typeof el).payload.thickness = v ?? 1; }, "thick"), { step: 0.5, min: 0.5, def: base.thickness as number, unit: "pt" })
         : html`
+        <div class="fgroup">
         ${colorField("Border colour", el.payload.borderColorHex, (v) => upd((e) => { if (v === undefined) delete (e as typeof el).payload.borderColorHex; else (e as typeof el).payload.borderColorHex = v; }, "border"), true, null)}
-        ${el.payload.borderColorHex !== undefined ? numberField("Border width", el.payload.borderWidth, (v) => upd((e) => { (e as typeof el).payload.borderWidth = v ?? 1; }, "bw"), { step: 0.5, min: 0, def: base.borderWidth as number, unit: "pt" }) : nothing}`;
+        ${el.payload.borderColorHex !== undefined ? numberField("Border width", el.payload.borderWidth, (v) => upd((e) => { (e as typeof el).payload.borderWidth = v ?? 1; }, "bw"), { step: 0.5, min: 0, def: base.borderWidth as number, unit: "pt" }) : nothing}
+        </div>`;
       break;
     case "image": {
       const img = el.payload;
@@ -4699,6 +4725,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
       // frame has to be aimed, and every control here is about where the
       // picture sits rather than what it is.
       look = html`
+        <div class="fgroup">
         ${segField("Picture", img.contentMode, [["fill", "Fill the frame"], ["fit", "Fit inside"]],
           (v) => setImage((p) => { p.contentMode = v; }),
           { titles: { fill: "Cover the frame, cropping what does not fit", fit: "Show the whole picture, with space around it" }, def: base.contentMode as typeof img.contentMode })}
@@ -4709,6 +4736,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         ${sliderField("Pan up/down", img.panY, (v) => setImage((p) => { p.panY = v; }, "pany"),
           { min: -1, max: 1, step: 0.02, def: 0 })}
         <div class=${img.contentMode === "fit" && img.zoom === 1 ? "hint keep" : "hint"}>${imagePanHint(img)}</div>
+        </div>
         ${numberField("Corner radius", img.cornerRadius, (v) => setImage((p) => { p.cornerRadius = Math.max(0, v ?? IMAGE_DEFAULT_CORNER_RADIUS); }, "imgradius"), { step: 1, min: 0, def: IMAGE_DEFAULT_CORNER_RADIUS, unit: "pt" })}`;
       break;
     }
@@ -5632,8 +5660,10 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
   return html`
     ${card(host, "look", `${familyTitle(family)} shape`, html`
       ${colorField("Background (blank = transparent)", layout.backgroundColorHex, (v) => upd((l) => { if (v === undefined) delete l.backgroundColorHex; else l.backgroundColorHex = v; }, "bg"), true, null)}
+      <div class="fgroup">
       ${colorField("Border colour", layout.borderColorHex, (v) => upd((l) => { if (v === undefined) delete l.borderColorHex; else l.borderColorHex = v; }, "border"), true, null)}
-      ${numberField("Border width", layout.borderWidth, (v) => upd((l) => { l.borderWidth = v ?? 2; }, "bw"), { step: 0.5, min: 0, def: 2, unit: "pt" })}`,
+      ${numberField("Border width", layout.borderWidth, (v) => upd((l) => { l.borderWidth = v ?? 2; }, "bw"), { step: 0.5, min: 0, def: 2, unit: "pt" })}
+      </div>`,
       { color: SECTION_COLOR.look, icon: "shape", summary: `${bg} · ${border}`,
         ...(layout.backgroundColorHex !== undefined || layout.borderColorHex !== undefined || layout.borderWidth !== 2
           ? { reset: () => upd((l) => { delete l.backgroundColorHex; delete l.borderColorHex; l.borderWidth = 2; }, "reset-look") } : {}) })}
@@ -5686,6 +5716,7 @@ function cornerEditor(
   const mode: "canvas" | "curved" = layout.curvedText ? "curved" : "canvas";
   const bezelKind: "none" | "text" | "gauge" = layout.bezelGauge ? "gauge" : layout.bezelText ? "text" : "none";
   return html`
+    <div class="fgroup">
     ${segField("Main content", mode, [["canvas", "Layer canvas"], ["curved", "Big curved text"]], (v) => upd((l) => {
       if (v === "curved") { if (!l.curvedText) l.curvedText = literal("Text"); }
       else { delete l.curvedText; delete l.curvedColorHex; }
@@ -5695,6 +5726,8 @@ function cornerEditor(
       ${colorField("Curved text colour", layout.curvedColorHex ?? "#FFFFFF", (v) => upd((l) => { if (v === undefined) delete l.curvedColorHex; else l.curvedColorHex = v; }, "curvedcolor"))}
       <div class="hint">Curved text replaces the layer canvas in the corner. The watch draws it big along the corner curve, like the stock Calendar and Weather corners.</div>
     ` : nothing}
+    </div>
+    <div class="fgroup">
     ${segField("Bezel", bezelKind, [["none", "None"], ["text", "Text label"], ["gauge", "Gauge arc"]], (v) => upd((l) => {
       if (v === "text") { delete l.bezelGauge; if (!l.bezelText) l.bezelText = literal("Label"); }
       else if (v === "gauge") { delete l.bezelText; if (!l.bezelGauge) l.bezelGauge = { value: literal("50"), minValue: 0, maxValue: 100, colorHexes: ["#34C759", "#FFCC00", "#FF3B30"] }; }
@@ -5705,7 +5738,8 @@ function cornerEditor(
       ${countdownFields(host, layout.bezelCountdown === true, layout.bezelText, (v) => upd((l) => {
         if (v) l.bezelCountdown = true; else delete l.bezelCountdown;
       }))}` : nothing}
-    ${bezelKind === "gauge" && layout.bezelGauge ? bezelGaugeEditor(host, layout.bezelGauge, upd) : nothing}`;
+    ${bezelKind === "gauge" && layout.bezelGauge ? bezelGaugeEditor(host, layout.bezelGauge, upd) : nothing}
+    </div>`;
 }
 
 function bezelGaugeEditor(

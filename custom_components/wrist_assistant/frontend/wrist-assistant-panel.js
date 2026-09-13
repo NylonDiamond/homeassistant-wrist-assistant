@@ -28,11 +28,11 @@ var Em=Object.defineProperty;var Mm=Object.getOwnPropertyDescriptor;var P=(e,n,t
       ${e.thresholdFraction===void 0?g:Vg(n,s,r,d*360*e.thresholdFraction,e.thresholdColorHex)}
     </g>`}function Vg(e,n,t,i,a){let r=me(a,"stroke","#FFFFFF"),o=i*Math.PI/180,s=Math.cos(o),l=Math.sin(o),d=t/2+1;return v`<line x1=${e.cx+s*(n-d)} y1=${e.cy+l*(n-d)}
     x2=${e.cx+s*(n+d)} y2=${e.cy+l*(n+d)}
-    stroke-width="1" stroke=${r.stroke} stroke-opacity=${r["stroke-opacity"]} />`}function Gg(e,n){let{labelSize:t,rowHeight:i,body:a,showsLabels:r}=Kn(e,n),o=r?Gs(e,n,t,i):void 0;if(e.values.length===0)return o===void 0?g:v`${o}`;let s=Kg(e,a);return o===void 0?s:v`${s}${o}`}function _s(e){switch(e.kind){case"smooth":return`C${e.c1.x} ${e.c1.y} ${e.c2.x} ${e.c2.y} ${e.end.x} ${e.end.y}`;case"step":return`L${e.corner.x} ${e.corner.y} L${e.end.x} ${e.end.y}`;case"straight":return`L${e.end.x} ${e.end.y}`}}var pu=0;function Hu(){return pu+=1,pu.toString(36)}function $r(e,n,t){let{x:i,y:a,w:r,h:o}=e,s=Math.max(0,n);return s===0?`M${i} ${a} L${i+r} ${a} L${i+r} ${a+o} L${i} ${a+o} Z`:t?`M${i} ${a} L${i+r} ${a} L${i+r} ${a+o-s} A${s} ${s} 0 0 1 ${i+r-s} ${a+o} L${i+s} ${a+o} A${s} ${s} 0 0 1 ${i} ${a+o-s} Z`:`M${i} ${a+o} L${i} ${a+s} A${s} ${s} 0 0 1 ${i+s} ${a} L${i+r-s} ${a} A${s} ${s} 0 0 1 ${i+r} ${a+s} L${i+r} ${a+o} Z`}function Ug(e,n,t,i){let a=n.x,r=n.x+n.w;if(i){let l=e.y,d=n.y+n.h;return t===0?`M${a} ${l} L${a} ${d} L${r} ${d} L${r} ${l}`:`M${a} ${l} L${a} ${d-t} A${t} ${t} 0 0 0 ${a+t} ${d} L${r-t} ${d} A${t} ${t} 0 0 0 ${r} ${d-t} L${r} ${l}`}let o=e.y+e.h,s=n.y;return t===0?`M${a} ${o} L${a} ${s} L${r} ${s} L${r} ${o}`:`M${a} ${o} L${a} ${s+t} A${t} ${t} 0 0 1 ${a+t} ${s} L${r-t} ${s} A${t} ${t} 0 0 1 ${r} ${s+t} L${r} ${o}`}function Kg(e,n){let t=br(e,n),i=Hu(),a=me(e.colorHex,"fill"),r=me(e.highColorHex,"fill",e.colorHex),o=me(e.lowColorHex,"fill",e.colorHex),s=(f,y)=>v`<circle cx=${f.x} cy=${f.y} r="1.7" fill=${y.fill} fill-opacity=${y["fill-opacity"]} />`,l=[],d=new Map,c=e.pointColorHexes.length===t.count,u=f=>c?me(e.pointColorHexes[f],"fill",e.colorHex):a,p=f=>{let y=Ye(f)??Ye(e.colorHex)??{color:"#FFFFFF",opacity:1};if(e.fillStyle!=="fade")return{fill:y.color,opacity:y.opacity*.28};let b=Wg(i,e.id,f),k=t.baselineY<=t.plotTop?t.plotBottom:t.plotTop;return d.has(b)||d.set(b,v`<linearGradient id=${b} gradientUnits="userSpaceOnUse" x1="0" y1=${k} x2="0" y2=${t.baselineY}>
+    stroke-width="1" stroke=${r.stroke} stroke-opacity=${r["stroke-opacity"]} />`}function Gg(e,n){let{labelSize:t,rowHeight:i,body:a,showsLabels:r}=Kn(e,n),o=r?Gs(e,n,t,i):void 0;if(e.values.length===0)return o===void 0?g:v`${o}`;let s=Kg(e,a);return o===void 0?s:v`${s}${o}`}function _s(e){switch(e.kind){case"smooth":return`C${e.c1.x} ${e.c1.y} ${e.c2.x} ${e.c2.y} ${e.end.x} ${e.end.y}`;case"step":return`L${e.corner.x} ${e.corner.y} L${e.end.x} ${e.end.y}`;case"straight":return`L${e.end.x} ${e.end.y}`}}var pu=0;function Hu(){return pu+=1,pu.toString(36)}function $r(e,n,t){let{x:i,y:a,w:r,h:o}=e,s=Math.max(0,n);if(s===0)return`M${i} ${a} L${i+r} ${a} L${i+r} ${a+o} L${i} ${a+o} Z`;if(s>o){let l=Math.sqrt(o*(2*s-o)),d=i+s-l,c=i+r-s+l;return t?`M${d} ${a} L${c} ${a} A${s} ${s} 0 0 1 ${i+r-s} ${a+o} L${i+s} ${a+o} A${s} ${s} 0 0 1 ${d} ${a} Z`:`M${d} ${a+o} A${s} ${s} 0 0 1 ${i+s} ${a} L${i+r-s} ${a} A${s} ${s} 0 0 1 ${c} ${a+o} Z`}return t?`M${i} ${a} L${i+r} ${a} L${i+r} ${a+o-s} A${s} ${s} 0 0 1 ${i+r-s} ${a+o} L${i+s} ${a+o} A${s} ${s} 0 0 1 ${i} ${a+o-s} Z`:`M${i} ${a+o} L${i} ${a+s} A${s} ${s} 0 0 1 ${i+s} ${a} L${i+r-s} ${a} A${s} ${s} 0 0 1 ${i+r} ${a+s} L${i+r} ${a+o} Z`}function Ug(e,n,t,i){let a=n.x,r=n.x+n.w;if(i){let l=e.y,d=n.y+n.h;return t===0?`M${a} ${l} L${a} ${d} L${r} ${d} L${r} ${l}`:`M${a} ${l} L${a} ${d-t} A${t} ${t} 0 0 0 ${a+t} ${d} L${r-t} ${d} A${t} ${t} 0 0 0 ${r} ${d-t} L${r} ${l}`}let o=e.y+e.h,s=n.y;return t===0?`M${a} ${o} L${a} ${s} L${r} ${s} L${r} ${o}`:`M${a} ${o} L${a} ${s+t} A${t} ${t} 0 0 1 ${a+t} ${s} L${r-t} ${s} A${t} ${t} 0 0 1 ${r} ${s+t} L${r} ${o}`}function Kg(e,n){let t=br(e,n),i=Hu(),a=me(e.colorHex,"fill"),r=me(e.highColorHex,"fill",e.colorHex),o=me(e.lowColorHex,"fill",e.colorHex),s=(f,y)=>v`<circle cx=${f.x} cy=${f.y} r="1.7" fill=${y.fill} fill-opacity=${y["fill-opacity"]} />`,l=[],d=new Map,c=e.pointColorHexes.length===t.count,u=f=>c?me(e.pointColorHexes[f],"fill",e.colorHex):a,p=f=>{let y=Ye(f)??Ye(e.colorHex)??{color:"#FFFFFF",opacity:1};if(e.fillStyle!=="fade")return{fill:y.color,opacity:y.opacity*.28};let b=Wg(i,e.id,f),k=t.baselineY<=t.plotTop?t.plotBottom:t.plotTop;return d.has(b)||d.set(b,v`<linearGradient id=${b} gradientUnits="userSpaceOnUse" x1="0" y1=${k} x2="0" y2=${t.baselineY}>
         <stop offset="0" stop-color=${y.color} stop-opacity=${y.opacity*.28} />
-        <stop offset="1" stop-color=${y.color} stop-opacity="0" /></linearGradient>`),{fill:`url(#${b})`,opacity:1}};if(e.style==="bars")for(let f=0;f<t.count;f++){if(e.holes[f]===!0)continue;let y=t.barRect(f),b=e.barFillColorHexes.length===t.count?e.barFillColorHexes[f]:void 0,k=b!==void 0?me(b,"fill",e.colorHex):f===e.highIndex?r:f===e.lowIndex?o:u(f),$=Math.min(Math.max(e.barRadius,0),y.w/2,y.h/2),w=e.baseline==="zero"&&e.values[f]<0,S=e.barCorners==="top"&&w,L=e.barBorderWidth>0&&e.barBorderColorHexes.length===t.count?e.barBorderColorHexes[f]:void 0,_=e.barBorderWidth,A=L!==void 0&&(y.w<=2*_||y.h<=2*_),W=A?me(L,"fill",e.colorHex):k;if(e.barCorners==="top"?l.push(v`<path d=${$r(y,$,S)}
+        <stop offset="1" stop-color=${y.color} stop-opacity="0" /></linearGradient>`),{fill:`url(#${b})`,opacity:1}};if(e.style==="bars")for(let f=0;f<t.count;f++){if(e.holes[f]===!0)continue;let y=t.barRect(f),b=e.barFillColorHexes.length===t.count?e.barFillColorHexes[f]:void 0,k=b!==void 0?me(b,"fill",e.colorHex):f===e.highIndex?r:f===e.lowIndex?o:u(f),$=e.barCorners==="top"?Math.min(Math.max(e.barRadius,0),y.w/2):Math.min(Math.max(e.barRadius,0),y.w/2,y.h/2),w=e.baseline==="zero"&&e.values[f]<0,S=e.barCorners==="top"&&w,L=e.barBorderWidth>0&&e.barBorderColorHexes.length===t.count?e.barBorderColorHexes[f]:void 0,_=e.barBorderWidth,A=L!==void 0&&(y.w<=2*_||y.h<=2*_),W=A?me(L,"fill",e.colorHex):k;if(e.barCorners==="top"?l.push(v`<path d=${$r(y,$,S)}
           fill=${W.fill} fill-opacity=${W["fill-opacity"]} />`):l.push(v`<rect x=${y.x} y=${y.y} width=${y.w} height=${y.h} rx=${$}
-          fill=${W.fill} fill-opacity=${W["fill-opacity"]} />`),L!==void 0&&!A){let E=me(L,"fill",e.colorHex),G={x:y.x+_/2,y:y.y+_/2,w:y.w-_,h:y.h-_},q=Math.min(Math.max($-_/2,0),G.w/2,G.h/2);if(e.barBorderOpenBase){let ee=`${i}bb${f}`,R=e.barCorners==="top"?v`<path d=${$r(y,$,S)} />`:v`<rect x=${y.x} y=${y.y} width=${y.w} height=${y.h} rx=${$} />`;d.set(ee,v`<clipPath id=${ee}>${R}</clipPath>`),l.push(v`<path d=${Ug(y,G,q,w)} fill="none" stroke=${E.fill} stroke-opacity=${E["fill-opacity"]} stroke-width=${_} clip-path=${`url(#${ee})`} />`);continue}let U=e.barCorners==="top"?$r(G,q,S):$r(G,0,!1);e.barCorners==="top"||q===0?l.push(v`<path d=${U} fill="none" stroke=${E.fill} stroke-opacity=${E["fill-opacity"]} stroke-width=${_} />`):l.push(v`<rect x=${G.x} y=${G.y} width=${G.w} height=${G.h} rx=${q}
+          fill=${W.fill} fill-opacity=${W["fill-opacity"]} />`),L!==void 0&&!A){let E=me(L,"fill",e.colorHex),G={x:y.x+_/2,y:y.y+_/2,w:y.w-_,h:y.h-_},q=e.barCorners==="top"?Math.min(Math.max($-_/2,0),G.w/2):Math.min(Math.max($-_/2,0),G.w/2,G.h/2);if(e.barBorderOpenBase){let ee=`${i}bb${f}`,R=e.barCorners==="top"?v`<path d=${$r(y,$,S)} />`:v`<rect x=${y.x} y=${y.y} width=${y.w} height=${y.h} rx=${$} />`;d.set(ee,v`<clipPath id=${ee}>${R}</clipPath>`),l.push(v`<path d=${Ug(y,G,q,w)} fill="none" stroke=${E.fill} stroke-opacity=${E["fill-opacity"]} stroke-width=${_} clip-path=${`url(#${ee})`} />`);continue}let U=e.barCorners==="top"?$r(G,q,S):$r(G,0,!1);e.barCorners==="top"||q===0?l.push(v`<path d=${U} fill="none" stroke=${E.fill} stroke-opacity=${E["fill-opacity"]} stroke-width=${_} />`):l.push(v`<rect x=${G.x} y=${G.y} width=${G.w} height=${G.h} rx=${q}
             fill="none" stroke=${E.fill} stroke-opacity=${E["fill-opacity"]} stroke-width=${_} />`)}}else{let f=Array.from({length:t.count},($,w)=>t.point(w)),y=e.holes.length>0,k=iu(t.count,e.holes).filter($=>!y||$.length>1).map($=>{let w=$.map(_=>f[_]),S=nu(w,e.curve),L=`M${w[0].x} ${w[0].y}${S.map(_=>` ${_s(_)}`).join("")}`;return{run:$,pts:w,legs:S,line:L}});if(e.style==="area")for(let{run:$,pts:w,legs:S,line:L}of k)if(e.fillBands&&c&&$.length>1&&e.fillColorHex===void 0)for(let _=0;_<S.length;_++){let A=w[_],W=w[_+1],E=p(e.pointColorHexes[$[_+1]]),G=`M${A.x} ${A.y} ${_s(S[_])} L${W.x} ${t.baselineY} L${A.x} ${t.baselineY} Z`;l.push(v`<path d=${G} fill=${E.fill} fill-opacity=${E.opacity} stroke="none" />`)}else{let _=p(e.fillColorHex??e.colorHex),A=`${L} L${w[w.length-1].x} ${t.baselineY} L${w[0].x} ${t.baselineY} Z`;l.push(v`<path d=${A} fill=${_.fill} fill-opacity=${_.opacity} stroke="none" />`)}for(let{run:$,pts:w,legs:S,line:L}of k)if(c&&$.length>1)for(let _=0;_<S.length;_++){let A=w[_],W=u($[_+1]);l.push(v`<path d=${`M${A.x} ${A.y} ${_s(S[_])}`} fill="none"
             stroke=${W.fill} stroke-opacity=${W["fill-opacity"]}
             stroke-width=${e.lineWidth} stroke-linecap="round" stroke-linejoin="round" />`)}else l.push(v`<path d=${L} fill="none" stroke=${a.fill} stroke-opacity=${a["fill-opacity"]}
@@ -522,19 +522,23 @@ var Em=Object.defineProperty;var Mm=Object.getOwnPropertyDescriptor;var P=(e,n,t
       ${Oe("Hidden",r.isHidden,c=>e.update(u=>ke(u,t,i,{isHidden:c})),!1)}`,{color:Q.position,icon:"place",summary:`On the chart \xB7 ${ne(t)}`}):Se(e,"placement","Position",h`
     ${qp(e,n,t)}
     ${d===void 0?h`
+    <div class="fgroup">
     <div class="field xy-field"><span>Position</span>
       <div class="xy">
         ${pa("X","Left",o.x,c=>s({x:c},"x"),-100,100)}
         ${pa("Y","Top",o.y,c=>s({y:c},"y"),-100,100)}
       </div>
     </div>
-    ${jp(e,n,t,o,["across","down","both"])}`:gt(d.at)?g:h`
+    ${jp(e,n,t,o,["across","down","both"])}
+    </div>`:gt(d.at)?g:h`
+    <div class="fgroup">
     <div class="field xy-field"><span>Position</span>
       <div class="xy">
         ${pa("X","Left",o.x,c=>s({x:c},"x"),-100,100)}
       </div>
     </div>
-    ${jp(e,n,t,o,["across"])}`}
+    ${jp(e,n,t,o,["across"])}
+    </div>`}
     <div class="field xy-field"><span>Size</span>
       <div class="xy">
         ${pa("W","Width",o.width,c=>s({width:c},"w"),4,200)}
@@ -559,10 +563,12 @@ var Em=Object.defineProperty;var Mm=Object.getOwnPropertyDescriptor;var P=(e,n,t
         @click=${()=>s&&o(Qy(s,t,n.kind),"paste")}>Paste position</button>
     </div>
   </div>`}`}function qp(e,n,t){let i=n.payload.chartAnchor;if(i===void 0)return g;let a=n.payload.id,r=`el-${a}-anchor`,o=e.config.elements.filter(c=>c.kind==="chart"),s=(c,u)=>e.update(p=>{let m=p.elements.find(f=>f.payload.id===a);m?.payload.chartAnchor&&c(m.payload.chartAnchor)},u?`${r}-${u}`:void 0),l=de(e),d=!o.some(c=>c.payload.id===i.layer);return h`
+    <div class="fgroup">
     ${o.length<2?g:Ce("Follows",i.layer,o.map(c=>[c.payload.id,Te(c,l)]),c=>s(u=>{u.layer=c}))}
     ${Ce("Reading",i.at,ft,c=>e.update(u=>{let p=u.elements.find(f=>f.payload.id===a);if(!p?.payload.chartAnchor)return;p.payload.chartAnchor.at=c;let m=u.elements.find(f=>f.payload.id===i.layer);m?.kind==="chart"&&(c==="threshold"&&m.payload.thresholdValue===void 0&&(m.payload.thresholdValue=Tl(qe(e.resolve(m.payload.value)??"")),m.payload.drawsThreshold=!1),c==="now"&&m.payload.nowIndex===void 0&&(m.payload.nowIndex={kind:{kind:"time",timeField:"hour"}},m.payload.drawsNowLine=!1))}),{def:"highest"})}
     ${Mh(e,i,r)}
     ${i.place==="through"?g:Ce("Sits",i.place,Ya.filter(([c])=>c!=="through"),c=>s(u=>{u.place=c}),{def:"above"})}
+    </div>
     <div class="grid2">
       ${i.dx?ae("Nudge X",i.dx,c=>s(u=>{c?u.dx=c:delete u.dx},"dx"),{step:.5,def:0,unit:"pt"}):g}
       ${i.place==="through"&&!i.dy?g:ae("Nudge Y",i.dy??0,c=>s(u=>{c?u.dy=c:delete u.dy},"dy"),{step:.5,def:0,unit:"pt"})}
@@ -593,14 +599,18 @@ var Em=Object.defineProperty;var Mm=Object.getOwnPropertyDescriptor;var P=(e,n,t
       sits on the edge of the plot or outside it, and nothing draws.</div>`:g}function px(e,n){if(n.kind==="tap")return g;let t=n.payload.id,i=We(e.config,t)[0];return Se(e,"tappable","Tap",Dx(e,n,`el-${t}`),{color:Q.tap,icon:"tap",summary:i?At(i.payload.action):"Not tappable",...i?{reset:()=>e.update(a=>cr(a,t))}:{}})}function hx(e,n,t,i,a){return h`
     ${Jn("Times",e.timeLabelCount,r=>n(o=>{o.timeLabelCount=Math.max(0,Math.min(_n,Math.round(r)))},`${i}count`),{min:0,max:_n,step:1,def:t.timeLabelCount,format:r=>r<=0?"None":String(Math.round(r)),range:!1})}
     ${e.timeLabelCount<=0?g:h`
+      <div class="fgroup">
       <div class="grid2">
         ${ae("Time size",e.labelSize,r=>n(o=>{o.labelSize=Math.min(nn,Math.max(tn,r??tt))},`${i}size`),{step:.5,min:tn,max:nn,def:t.labelSize,unit:"pt"})}
         ${fe("Time colour",e.labelColorHex,r=>n(o=>{o.labelColorHex=r??nt},`${i}colour`),!1,t.labelColorHex)}
       </div>
       ${e.labelsAbove===void 0?g:ie("Row",e.labelsAbove?"above":"below",[["below","Below"],["above","Above"]],r=>n(o=>{o.labelsAbove=r==="above"}),{def:t.labelsAbove===!0?"above":"below"})}
+      </div>
+      <div class="fgroup">
       ${ie("Clock",e.hourCycle,ac,r=>n(o=>{o.hourCycle=r}),{titles:{auto:"Whatever clock the watch is set to"},def:t.hourCycle})}
       ${ie("Minutes",e.minutes,rc,r=>n(o=>{o.minutes=r}),{titles:{auto:"Kept up to a three hour span, dropped past it"},def:t.minutes})}
-      ${a}`}`}var mx=[["number","Number"],["entity","Entity"]];function fx(e,n){return(n==="min"?e.minSource:e.maxSource)===void 0?"number":"entity"}function gx(e,n,t){let i=n==="min"?"minSource":"maxSource";t==="number"?delete e[i]:e[i]===void 0&&(e[i]={kind:{kind:"entityState",entityId:"",displayName:"",domain:""}})}function yx(e,n,t,i,a){let r=o=>{let s=o==="min",l=s?"Min":"Max",d=fx(n,o),c=s?n.minValue:n.maxValue,u=y=>a(b=>{s?b.minValue=y??0:b.maxValue=y??100},o),p={number:`${l} is a fixed number`,entity:`${l} reads a number from an entity`},m=h`<div class="gauge-end-head">
+      ${a}
+      </div>`}`}var mx=[["number","Number"],["entity","Entity"]];function fx(e,n){return(n==="min"?e.minSource:e.maxSource)===void 0?"number":"entity"}function gx(e,n,t){let i=n==="min"?"minSource":"maxSource";t==="number"?delete e[i]:e[i]===void 0&&(e[i]={kind:{kind:"entityState",entityId:"",displayName:"",domain:""}})}function yx(e,n,t,i,a){let r=o=>{let s=o==="min",l=s?"Min":"Max",d=fx(n,o),c=s?n.minValue:n.maxValue,u=y=>a(b=>{s?b.minValue=y??0:b.maxValue=y??100},o),p={number:`${l} is a fixed number`,entity:`${l} reads a number from an entity`},m=h`<div class="gauge-end-head">
       ${Be(l,d==="number"?hn(c,t[o],u):void 0)}
       <span class="seg" role="radiogroup" aria-label=${`${l} comes from`}>
         ${mx.map(([y,b])=>h`<button type="button" role="radio" aria-checked=${y===d?"true":"false"}
@@ -609,18 +619,22 @@ var Em=Object.defineProperty;var Mm=Object.getOwnPropertyDescriptor;var P=(e,n,t
       </span>
     </div>`,f=s?n.minSource:n.maxSource;return d==="number"||f===void 0?h`<div class="field gauge-end">${m}${ro(c,u,{ariaLabel:l})}</div>`:h`<div class="field gauge-end">${m}${se(e,f,y=>a(b=>{s?b.minSource=y:b.maxSource=y},`${o}src`),{showResolved:!0,noLabel:!0,label:l,key:`${i}-${o}source`})}</div>
       <div class="hint">If the entity has no number, the gauge uses ${String(c)}.</div>`};return n.minSource===void 0&&n.maxSource===void 0?h`<div class="grid2 gauge-ends">${r("min")}${r("max")}</div>`:h`${r("min")}${r("max")}`}function bx(e,n,t,i){let a=n.coloring??"uniform",r=n.highlight??"none",o=(c,u)=>t(p=>{let m={bands:p.bands??[],bandAboveColorHex:p.bandAboveColorHex??ue};c(m),m.bands.length>0?p.bands=m.bands:delete p.bands,m.bandAboveColorHex!==ue?p.bandAboveColorHex=m.bandAboveColorHex:delete p.bandAboveColorHex},u),s=(c,u,p)=>t(m=>{p===void 0||p===u?delete m[c]:m[c]=p},c),l=r==="highest"?"The highest number takes its own colour":r==="lowest"?"The lowest number takes its own colour":"The highest and lowest numbers take their own colours",d=a==="bands"?qe(e.resolve(n.value)??""):[];return h`
+    <div class="fgroup">
     ${ie("Colour",a,xl,c=>t(u=>{if(c==="uniform"){delete u.coloring;return}u.coloring=c,(u.bands?.length??0)===0&&(u.bands=Jr(qe(e.resolve(u.value)??"")))}),{def:"uniform"})}
     ${i}
     ${a==="bands"?h`
       <div class="hint">Each number in the text takes the colour of the band it falls in, and other text keeps the layer colour.</div>
       ${Zr({bands:n.bands??[],bandAboveColorHex:n.bandAboveColorHex??ue},n.colorSlot.baseColorHex,o,d.length===1?d[0]:void 0)}`:g}
+    </div>
+    <div class="fgroup">
     ${ie("Highlight",r,Cb,c=>t(u=>{c==="none"?delete u.highlight:u.highlight=c}),{def:"none"})}
     ${r==="none"?g:h`
       <div class="grid2">
         ${r==="lowest"?g:fe("Highest colour",n.highColorHex??Qe,c=>s("highColorHex",Qe,c),!1,Qe)}
         ${r==="highest"?g:fe("Lowest colour",n.lowColorHex??et,c=>s("lowColorHex",et,c),!1,et)}
       </div>
-      ${a==="bands"?g:h`<div class="hint">${l}, and other text keeps the layer colour.</div>`}`}`}var fa=new Map,ha=new Map,Dt=new Map,Ur=new Map,gl=4,yl=40,xx=[["layer","Layer"],["pick","Pick"],["bands","By value"]],vx=[["plain","Plain"],["rich","Rich"]],wx={plain:"One line: typed words, a live value or a template",rich:"Parts, each with its own colour, weight and size"};function Ml(e,n,t,i){let a=t!==void 0&&e.canCountDown(t);return!n&&!a?g:h`${Oe("Count down",n,i)}
+      ${a==="bands"?g:h`<div class="hint">${l}, and other text keeps the layer colour.</div>`}`}
+    </div>`}var fa=new Map,ha=new Map,Dt=new Map,Ur=new Map,gl=4,yl=40,xx=[["layer","Layer"],["pick","Pick"],["bands","By value"]],vx=[["plain","Plain"],["rich","Rich"]],wx={plain:"One line: typed words, a live value or a template",rich:"Parts, each with its own colour, weight and size"};function Ml(e,n,t,i){let a=t!==void 0&&e.canCountDown(t);return!n&&!a?g:h`${Oe("Count down",n,i)}
     <div class="hint">Ticks down to the value's time on the watch, once a second: an active timer's finish, or any future timestamp. A paused timer shows its remaining time.</div>
     ${n&&!a?h`<div class="hint warn">This value is not a timer or a future time, so nothing counts down. The watch shows it as plain text.</div>`:g}`}function kx(e){return e.countdown===!0?"countdown":st(e)?"rich":"plain"}function $x(e){return(e.match(/ +|[^ ]+/g)??[]).map(n=>({text:n,space:n.startsWith(" ")}))}function Cx(e,n){let t=Hn(e);return t!==void 0?{kind:"text",label:t}:e.kind.kind==="jinja"?{kind:"template",label:De(e.kind.value,40)||"template"}:{kind:"value",label:ka(e,n)}}function Rh(e,n,t){let i=Hn(e.value),a=i===void 0?De(ka(e.value,t),28):i.trim()===""?i===""?"empty":"spaces":`"${De(i,24)}"`;return`Part ${n+1}: ${a}`}function Sx(e,n,t){let i=[["","Whole text"],...e.map((a,r)=>[a.id,Rh(a,r,t)])];return n!==void 0&&!e.some(a=>a.id===n)&&i.push([n,"A part that is gone"]),i}function wl(e){return e.coloring==="bands"?"bands":e.colorHex===void 0?"layer":"pick"}function Tx(e,n){if(wl(e)==="bands"&&(e.bands?.length??0)>0){let t=[...Qt({bands:e.bands}).map(r=>r.colorHex),e.bandAboveColorHex??ue],i=100/t.length,a=r=>`${Math.round(r*10)/10}%`;return`conic-gradient(${t.map((r,o)=>`${r} ${a(o*i)} ${a((o+1)*i)}`).join(", ")})`}return e.colorHex??n}function Yp(e){let n=r=>r.length===1?`Part ${r[0].index+1}`:`Parts ${uo(r.map(o=>String(o.index+1)))}`,t=e.filter(r=>r.reason==="kind"),i=e.filter(r=>r.reason==="format"),a=[];return t.length>0&&a.push(`${n(t)} ${t.length===1?"shows":"show"} a value a template cannot read, such as data age or a chart's number.`),i.length>0&&a.push(`${n(i)} ${i.length===1?"uses":"use"} a relative time or duration format, which a template cannot print.`),`Rich text stays on, because the parts cannot join into one line. ${a.join(" ")} Change or remove ${e.length===1?"that part":"those parts"} first.`}var Ex={fontSize:"font size",fontWeight:"weight",color:"colour",bands:"colour bands"};function Mx(e){return e.joined?e.template?"Rich text is off. The parts joined into one template, so the live values still update.":"Rich text is off. The parts joined into one line of text.":e.moved.length===0?"Rich text is off.":`Rich text is off. The part's ${uo(e.moved.map(n=>Ex[n]))} moved into Look.`}function Rx(e,n,t,i,a){let r=n.payload,o=r.id,s=kx(r),l=(r.parts?.length??0)>0,d=es(e.config,r.value),c=Dt.get(o),u=c&&c.rich===l?c:void 0,p=s==="rich"&&(r.parts?.length??0)>=2?ha.get(o):void 0,m=(b,k)=>{let $=!(r.parts??[]).every(S=>S.value.kind.kind==="literal"),w=Dr(structuredClone(r),e.config.values);if(ha.delete(o),!w.ok){Dt.set(o,{text:Yp(w.blocked),rich:!0,warn:!0}),He(k);return}Dt.set(o,{text:Mx(w.joined?{joined:!0,template:$}:w),rich:!1}),i(S=>{Dr(S,e.config.values),b==="countdown"&&(S.countdown=!0)})},f=(b,k)=>{if(ha.delete(o),s==="rich"){let $=b==="countdown"?"countdown":"plain",w=r.parts??[];if(w.length<2){m($,k);return}let S=sl(w,e.config.values);S.ok?(Dt.delete(o),ha.set(o,$)):Dt.set(o,{text:Yp(S.blocked),rich:!0,warn:!0}),He(k);return}if(b==="rich"){let $=r.parts?.[0]?.id??Z();fa.set(o,$),Dt.delete(o),i(w=>{delete w.countdown,Mp(w,$)});return}Dt.delete(o),i($=>{if(b==="countdown"){$.countdown=!0;return}($.parts?.length??0)>0&&Dr($,e.config.values),delete $.countdown})},y=p==="countdown"?"Switch to Countdown?":"Switch to Plain?";return h`
     ${ie("Type",s==="rich"?"rich":"plain",vx,f,{titles:wx})}
@@ -682,11 +696,13 @@ var Em=Object.defineProperty;var Mm=Object.getOwnPropertyDescriptor;var P=(e,n,t
       </label>
     </div>
   </div>`}function Hh(e,n,t,i={}){let a=n.payload.id,r=e.config.elements.findIndex(x=>x.payload.id===a),o=`el-${a}`,s=(x,C)=>e.update(M=>x(M.elements[r]),C?`${o}-${C}`:void 0),l=Le(e.config,t,n),d=l.frame,c=(x,C)=>e.update(M=>ke(M,t,a,{frame:vr(d,x)}),`${o}-${C}-${t}`),u=Ee(n.kind).payload,p=u.colorSlot?.baseColorHex??"#FFFFFF",m=x=>u[x],f=!1,y=x=>Xn(n)===void 0?g:fe(x,Xn(n),C=>s(M=>{Xn(M)!==void 0&&(M.payload.colorSlot.baseColorHex=C??"#FFFFFF")},"color"),!1,p),b,k={},$,w;switch(n.kind){case"text":{let x=(C,M)=>s(F=>C(F.payload),M);$=Rx(e,n,t,x,o),f=!n.payload.countdown&&!st(n.payload),w=h`
+        <div class="fgroup">
         ${un(e,n,t,"Font size",{step:1,min:4,def:m("fontSize")})}
         ${ie("Weight",n.payload.fontWeight,$i,C=>s(M=>{M.payload.fontWeight=C}),{def:u.fontWeight})}
         ${rb({label:"Align",value:n.payload.alignment??"center",options:Zb,def:"center",set:C=>s(M=>{let F=M.payload;C==="center"?delete F.alignment:F.alignment=C})},{label:"Lines",value:n.payload.lineLimit===2?"2":"1",options:Qb,def:"1",set:C=>s(M=>{let F=M.payload;C==="2"?F.lineLimit=2:delete F.lineLimit})})}
         ${Oe("Mono digits",n.payload.monospacedDigits===!0,C=>s(M=>{let F=M.payload;C?F.monospacedDigits=!0:delete F.monospacedDigits}),u.monospacedDigits===!0)}
         ${n.payload.monospacedDigits?h`<div class="hint">Digits take the same width, so a number that ticks does not shuffle what sits beside it.</div>`:g}
+        </div>
         ${f?bx(e,n.payload,x,y("Main colour")):g}`;break}case"icon":$=h`
         ${se(e,n.payload.symbol,x=>s(C=>{C.payload.symbol=x},"symbol"),{noFormat:!0,showResolved:!0,symbol:!0,label:"Symbol",key:`${o}-symbol`,setSymbolPath:x=>s(C=>{let M=C.payload;x?M.path=x:delete M.path},"symbol")})}
         <div class="hint">An entity source draws that entity's own icon instead. A Material Design icon travels with the document, so a rule that swaps the icon goes back to SF Symbols.</div>`,w=un(e,n,t,"Icon size",{step:1,min:4,def:m("size")});break;case"gauge":{let x=n.payload,C=(F,N)=>s(Y=>F(Y.payload),N),M=x.style==="dots";$=h`
@@ -695,11 +711,12 @@ var Em=Object.defineProperty;var Mm=Object.getOwnPropertyDescriptor;var P=(e,n,t
             ${se(e,x.total??Bp(x),F=>C(N=>{N.total=F},"total"),{showResolved:!0,label:"Total",key:`${o}-total`})}
             <div class="hint">How many dots to draw. Left as it is, a count of the same
               entities without the filter, so "3 of 8 lights on" is one reading and one
-              total over one scope. At most ${Xa} dots are drawn.</div>`:yx(e,x,{min:u.minValue,max:u.maxValue},o,C)}`,f=!0,w=h`
+              total over one scope. At most ${Xa} dots are drawn.</div>`:h`<div class="fgroup">${yx(e,x,{min:u.minValue,max:u.maxValue},o,C)}</div>`}`,f=!0,w=h`
         <div class="grid2">
           ${ie("Style",x.style,Hb,F=>C(N=>{F==="dots"&&N.total===void 0&&(N.total=Bp(N)),F!=="dots"&&delete N.total,N.style=F}),{titles:Fb,def:u.style})}
           ${M?g:un(e,n,t,"Line width",{step:.5,min:.5,def:m("lineWidth")})}
         </div>
+        <div class="fgroup">
         ${fe(M?"Empty dot colour":"Track colour",x.trackColorHex,F=>C(N=>{N.trackColorHex=F??"#FFFFFF40"},"track"),!1,u.trackColorHex)}
         ${ie("Colour",x.coloring,xl,F=>C(N=>{N.coloring=F,F==="bands"&&N.bands.length===0&&(N.bands=Jr([N.minValue,N.maxValue]))}),{def:u.coloring})}
         ${y("Main colour")}
@@ -708,15 +725,19 @@ var Em=Object.defineProperty;var Mm=Object.getOwnPropertyDescriptor;var P=(e,n,t
             gauge takes the colour of the row its reading falls in, and a reading past the
             last row takes the colour underneath.</div>
           ${Zr(x,x.colorSlot.baseColorHex,C,qe(e.resolve(x.value)??"")[0])}`:g}
+        </div>
         ${M?g:h`
+          <div class="fgroup">
           <div class="grid2">
             ${ae("Threshold",x.thresholdValue,F=>C(N=>{F===void 0?delete N.thresholdValue:N.thresholdValue=F},"thr"),{optional:!0,def:null})}
             ${x.thresholdValue===void 0?g:fe("Threshold colour",x.thresholdColorHex,F=>C(N=>{N.thresholdColorHex=F??si},"thrcol"),!1,si)}
           </div>
           <div class="hint">A short tick on the scale at that value, so the fill reads
             against a target instead of on its own. A value outside Min to Max draws
-            nothing. Leave it empty for no mark.</div>`}`;break}case"chart":{let x=n.payload,C=(T,I)=>s(ye=>T(ye.payload),I),M=u.historyMinutes,F=u.historyPoints,N=x.historyMinutes>0,Y=N&&x.source==="statistics",te=N&&!Y,$e=N?Y?"statistics":"history":"value",$t=Y?Bi:Fn,Vt=In(x)??Ln(x),Pe=x.value.kind.kind==="entityState",ge=Vt===void 0?void 0:e.historySeries(Vt),Ve=N&&Pe?ge??"":e.resolve(x.value)??"",Je=x.historyPoints<1,xm=te&&Pe&&Vt!==void 0?e.historyReadings?.(Vt):void 0,Ul=dx(Je,xm,Zn(x.historyMinutes)),Kl=vl(a,x.historyMinutes,$t),fo=N&&Pe?Ms(Ve):{values:qe(Ve),holes:[]},ni=fo.values,Wl=T=>x.limit>0&&T.length>x.limit?x.takeFromEnd?T.slice(T.length-x.limit):T.slice(0,x.limit):T,vm=Wl(ni),Gt=Rs(vm,ot(x.smoothing),fo.holes.length>0?Wl(fo.holes):[]),wm=!N&&Pe&&ni.length===1,go=e.config.elements.filter(T=>T.kind==="chart"&&T.payload.id!==a),jl=de(e),Sa=x.scaleFrom!==void 0&&go.some(T=>T.payload.id===x.scaleFrom);$=h`
+            nothing. Leave it empty for no mark.</div>
+          </div>`}`;break}case"chart":{let x=n.payload,C=(T,I)=>s(ye=>T(ye.payload),I),M=u.historyMinutes,F=u.historyPoints,N=x.historyMinutes>0,Y=N&&x.source==="statistics",te=N&&!Y,$e=N?Y?"statistics":"history":"value",$t=Y?Bi:Fn,Vt=In(x)??Ln(x),Pe=x.value.kind.kind==="entityState",ge=Vt===void 0?void 0:e.historySeries(Vt),Ve=N&&Pe?ge??"":e.resolve(x.value)??"",Je=x.historyPoints<1,xm=te&&Pe&&Vt!==void 0?e.historyReadings?.(Vt):void 0,Ul=dx(Je,xm,Zn(x.historyMinutes)),Kl=vl(a,x.historyMinutes,$t),fo=N&&Pe?Ms(Ve):{values:qe(Ve),holes:[]},ni=fo.values,Wl=T=>x.limit>0&&T.length>x.limit?x.takeFromEnd?T.slice(T.length-x.limit):T.slice(0,x.limit):T,vm=Wl(ni),Gt=Rs(vm,ot(x.smoothing),fo.holes.length>0?Wl(fo.holes):[]),wm=!N&&Pe&&ni.length===1,go=e.config.elements.filter(T=>T.kind==="chart"&&T.payload.id!==a),jl=de(e),Sa=x.scaleFrom!==void 0&&go.some(T=>T.payload.id===x.scaleFrom);$=h`
         ${se(e,x.value,T=>C(I=>{I.value=T},"value"),{label:"Readings",noShare:!0,key:`${o}-value`})}
+        <div class="fgroup">
         ${ie("Draw",$e,[["history","Recorded history"],["statistics","Long-term statistics"],["value","The value itself"]],T=>C(I=>{if(T==="value"){I.historyMinutes=0;return}I.source=T==="statistics"?"statistics":"history";let ye=I.historyMinutes||Qa;I.historyMinutes=T==="statistics"?Math.min(ye,Go):Math.min(ye,er)}),{titles:{history:"Read the entity's recorded states from the recorder and plot them",statistics:"Plot the recorder's pre-aggregated rows, which reach back a year",value:"Plot the numbers the value holds right now, such as a forecast list"},def:u.historyMinutes>0?"history":"value"})}
         ${Y?h`
             ${Pe?g:h`<div class="hint warn">Statistics need an entity.
@@ -783,6 +804,7 @@ var Em=Object.defineProperty;var Mm=Object.getOwnPropertyDescriptor;var P=(e,n,t
               Commas, spaces and square brackets are all just separators, so a text sensor, a list
               attribute and a template that joins a forecast all work. A dot is a decimal point;
               a comma never is.</div>`}
+        </div>
         ${ni.length===0&&!(N&&(!Pe||ge===void 0||ge===""))?h`<div class="hint warn">No numbers in this value yet, so the chart draws nothing.</div>`:g}
         ${ni.length>0?h`<div class="field readout"><span>Reads</span>
               <span class="readout-v"><span class="nums">${ix(Gt)}</span>${ni.length===Gt.length?h` · ${Gt.length} ${Gt.length===1?"value":"values"}`:h` · ${Gt.length} of ${ni.length}`}</span></div>`:g}
@@ -893,6 +915,7 @@ var Em=Object.defineProperty;var Mm=Object.getOwnPropertyDescriptor;var P=(e,n,t
         ${F?g:h`<div class="hint warn">A timeline draws an entity's recorded
           past, so it needs one named above. A typed-in value, a template or a shared value has no
           past to read, and this layer stays blank until States names an entity.</div>`}
+        <div class="fgroup">
         ${ml(a,x.historyMinutes,M,ge=>C(Ve=>{Ve.historyMinutes=ge}))}
         ${$t?fl(x.historyMinutes,ge=>C(Ve=>{Ve.historyMinutes=ge},"span")):g}
         <div class="hint">Every state the recorder holds in that span, oldest at the left, each run as
@@ -901,6 +924,7 @@ var Em=Object.defineProperty;var Mm=Object.getOwnPropertyDescriptor;var P=(e,n,t
         ${F&&Y===void 0?h`<div class="hint keep">Reading the history…</div>`:g}
         ${F&&Y===""?h`<div class="hint warn">Nothing recorded for this entity in that span. Either it is
             excluded from the recorder, or it has not been seen in that long.</div>`:g}
+        </div>
         ${$e.length>0?h`<div class="field readout"><span>Reads</span><span class="readout-v"><span class="nums">${lx($e,te)}</span></span></div>`:g}
         ${sx($e)?h`<div class="hint warn">This entity reports numbers, so every reading is its own
             state and the strip is one colour with a hairline wherever it dropped out. A timeline is
@@ -923,8 +947,10 @@ var Em=Object.defineProperty;var Mm=Object.getOwnPropertyDescriptor;var P=(e,n,t
           ${n.payload.kind==="roundedRectangle"?ae("Corner radius",n.payload.cornerRadius,x=>s(C=>{C.payload.cornerRadius=x??6},"radius"),{step:.5,min:0,def:u.cornerRadius,unit:"pt"}):g}
         </div>
         ${n.payload.kind==="line"?ox(t,d,c):g}`,w=n.payload.kind==="line"?ae("Thickness",n.payload.thickness,x=>s(C=>{C.payload.thickness=x??1},"thick"),{step:.5,min:.5,def:u.thickness,unit:"pt"}):h`
+        <div class="fgroup">
         ${fe("Border colour",n.payload.borderColorHex,x=>s(C=>{x===void 0?delete C.payload.borderColorHex:C.payload.borderColorHex=x},"border"),!0,null)}
-        ${n.payload.borderColorHex!==void 0?ae("Border width",n.payload.borderWidth,x=>s(C=>{C.payload.borderWidth=x??1},"bw"),{step:.5,min:0,def:u.borderWidth,unit:"pt"}):g}`;break;case"image":{let x=n.payload,C=(Y,te)=>s($e=>Y($e.payload),te),M=x.entity.entityId?e.hass.states[x.entity.entityId]?.attributes?.entity_picture:void 0,F=typeof M=="string"?M:void 0,N=F!==void 0&&!F.startsWith("/");$=h`
+        ${n.payload.borderColorHex!==void 0?ae("Border width",n.payload.borderWidth,x=>s(C=>{C.payload.borderWidth=x??1},"bw"),{step:.5,min:0,def:u.borderWidth,unit:"pt"}):g}
+        </div>`;break;case"image":{let x=n.payload,C=(Y,te)=>s($e=>Y($e.payload),te),M=x.entity.entityId?e.hass.states[x.entity.entityId]?.attributes?.entity_picture:void 0,F=typeof M=="string"?M:void 0,N=F!==void 0&&!F.startsWith("/");$=h`
         ${ie("Source",x.source,[["camera","Camera"],["entityPicture","Entity picture"]],Y=>C(te=>{te.source=Y}),{titles:{camera:"A snapshot from a camera entity",entityPicture:"The picture an entity already carries: a person's photo, cover art, a weather icon"},def:u.source})}
         ${x.source==="camera"?h`
             ${x.entity.entityId&&!x.entity.entityId.startsWith("camera.")?h`<div class="hint warn">Only camera entities have snapshots, so this layer stays blank until the entity is a camera. Switch the source to Entity picture to use this entity's own photo.</div>`:g}
@@ -932,11 +958,13 @@ var Em=Object.defineProperty;var Mm=Object.getOwnPropertyDescriptor;var P=(e,n,t
             ${x.entity.entityId&&F===void 0?h`<div class="hint warn">This entity has no picture right now, so the layer stays blank. Anything with an <code>entity_picture</code> works: a person, a media player playing something with cover art, a weather entity.</div>`:g}
             ${N?h`<div class="hint warn">This picture is hosted outside Home Assistant, so the watch cannot fetch it.</div>`:g}
             <div class="hint">The watch fetches the entity's own picture on refresh and shows the cached copy in between. This preview shows it live.</div>`}`,w=h`
+        <div class="fgroup">
         ${ie("Picture",x.contentMode,[["fill","Fill the frame"],["fit","Fit inside"]],Y=>C(te=>{te.contentMode=Y}),{titles:{fill:"Cover the frame, cropping what does not fit",fit:"Show the whole picture, with space around it"},def:u.contentMode})}
         ${Jn("Zoom",x.zoom,Y=>C(te=>{te.zoom=Y},"zoom"),{min:Ks,max:4,step:.05,def:1,format:Y=>`${Y.toFixed(2)}x`,unit:"x"})}
         ${Jn("Pan left/right",x.panX,Y=>C(te=>{te.panX=Y},"panx"),{min:-1,max:1,step:.02,def:0})}
         ${Jn("Pan up/down",x.panY,Y=>C(te=>{te.panY=Y},"pany"),{min:-1,max:1,step:.02,def:0})}
         <div class=${x.contentMode==="fit"&&x.zoom===1?"hint keep":"hint"}>${nx(x)}</div>
+        </div>
         ${ae("Corner radius",x.cornerRadius,Y=>C(te=>{te.cornerRadius=Math.max(0,Y??li)},"imgradius"),{step:1,min:0,def:li,unit:"pt"})}`;break}case"tap":{$=h`
         ${Rl(e,n.payload,(x,C)=>s(M=>x(M.payload),C),o)}
         <div class="hint">An invisible area: a tap inside this frame runs this action, and the layer highest in the list wins where two overlap.</div>
@@ -1157,8 +1185,10 @@ var Em=Object.defineProperty;var Mm=Object.getOwnPropertyDescriptor;var P=(e,n,t
       <button class="small" @click=${()=>e.update(s=>{s.perFamily[n]={placements:{},cornerBodyShape:"circle",borderWidth:2,rules:[]}})}>Add ${ne(n)} settings</button>`;let i=(s,l)=>e.update(d=>s(d.perFamily[n]),l?`fam-${n}-${l}`:void 0),a=co(e.config,n),r=t.backgroundColorHex?Ie(t.backgroundColorHex):"transparent",o=t.borderColorHex?`${t.borderWidth} pt ${Ie(t.borderColorHex)} border`:"no border";return h`
     ${Se(e,"look",`${ne(n)} shape`,h`
       ${fe("Background (blank = transparent)",t.backgroundColorHex,s=>i(l=>{s===void 0?delete l.backgroundColorHex:l.backgroundColorHex=s},"bg"),!0,null)}
+      <div class="fgroup">
       ${fe("Border colour",t.borderColorHex,s=>i(l=>{s===void 0?delete l.borderColorHex:l.borderColorHex=s},"border"),!0,null)}
-      ${ae("Border width",t.borderWidth,s=>i(l=>{l.borderWidth=s??2},"bw"),{step:.5,min:0,def:2,unit:"pt"})}`,{color:Q.look,icon:"shape",summary:`${r} \xB7 ${o}`,...t.backgroundColorHex!==void 0||t.borderColorHex!==void 0||t.borderWidth!==2?{reset:()=>i(s=>{delete s.backgroundColorHex,delete s.borderColorHex,s.borderWidth=2},"reset-look")}:{}})}
+      ${ae("Border width",t.borderWidth,s=>i(l=>{l.borderWidth=s??2},"bw"),{step:.5,min:0,def:2,unit:"pt"})}
+      </div>`,{color:Q.look,icon:"shape",summary:`${r} \xB7 ${o}`,...t.backgroundColorHex!==void 0||t.borderColorHex!==void 0||t.borderWidth!==2?{reset:()=>i(s=>{delete s.backgroundColorHex,delete s.borderColorHex,s.borderWidth=2},"reset-look")}:{}})}
     ${n==="corner"?Se(e,"corner","Corner content",Gx(e,t,i),{color:Q.content,icon:"content",summary:t.curvedText?"Big curved text":"Layer canvas",...t.curvedText!==void 0||t.bezelText!==void 0||t.bezelGauge!==void 0?{reset:()=>i(s=>{delete s.curvedText,delete s.bezelText,delete s.bezelGauge},"reset-corner")}:{}}):g}
     ${Se(e,"states","Shape states",Bh(e,t.rules,"layout",s=>s.perFamily[n]?.rules,`rules-${n}`),{color:Q.states,icon:"states",summary:aa(t.rules).replace(/\.$/,""),...t.rules.length>0?{reset:()=>i(s=>{s.rules=[]},"reset-states")}:{}})}
     ${Se(e,"placements","Layers",h`
@@ -1172,17 +1202,21 @@ var Em=Object.defineProperty;var Mm=Object.getOwnPropertyDescriptor;var P=(e,n,t
       ${ch(e,n.symbol??"",a=>t(r=>{a?r.symbol=a:delete r.symbol},"symbol"),"inline-symbol")}
       <div class="hint">Drawn before the text. Leave it blank for text only.</div>
       <div class="field readout"><span>On the face</span><span class="readout-v">${n.symbol?`${n.symbol} `:""}${n.label?`${n.label}: `:""}${e.resolve(n.value)??"--"}</span></div>`,{color:Q.look,icon:"icon",summary:n.symbol||"None"})}`}function Gx(e,n,t){let i=n.curvedText?"curved":"canvas",a=n.bezelGauge?"gauge":n.bezelText?"text":"none";return h`
+    <div class="fgroup">
     ${ie("Main content",i,[["canvas","Layer canvas"],["curved","Big curved text"]],r=>t(o=>{r==="curved"?o.curvedText||(o.curvedText=D("Text")):(delete o.curvedText,delete o.curvedColorHex)}))}
     ${i==="curved"&&n.curvedText?h`
       ${se(e,n.curvedText,r=>t(o=>{o.curvedText=r},"curved"),{showResolved:!0,label:"Curved text",key:"fam-corner-curved"})}
       ${fe("Curved text colour",n.curvedColorHex??"#FFFFFF",r=>t(o=>{r===void 0?delete o.curvedColorHex:o.curvedColorHex=r},"curvedcolor"))}
       <div class="hint">Curved text replaces the layer canvas in the corner. The watch draws it big along the corner curve, like the stock Calendar and Weather corners.</div>
     `:g}
+    </div>
+    <div class="fgroup">
     ${ie("Bezel",a,[["none","None"],["text","Text label"],["gauge","Gauge arc"]],r=>t(o=>{r==="text"?(delete o.bezelGauge,o.bezelText||(o.bezelText=D("Label"))):r==="gauge"?(delete o.bezelText,o.bezelGauge||(o.bezelGauge={value:D("50"),minValue:0,maxValue:100,colorHexes:["#34C759","#FFCC00","#FF3B30"]})):(delete o.bezelText,delete o.bezelGauge)}))}
     ${a==="text"&&n.bezelText?h`
       ${se(e,n.bezelText,r=>t(o=>{o.bezelText=r},"bezel"),{showResolved:!0,label:"Bezel label",key:"fam-corner-bezel"})}
       ${Ml(e,n.bezelCountdown===!0,n.bezelText,r=>t(o=>{r?o.bezelCountdown=!0:delete o.bezelCountdown}))}`:g}
-    ${a==="gauge"&&n.bezelGauge?Ux(e,n.bezelGauge,t):g}`}function Ux(e,n,t){let i=[n.colorHexes[0]??"#34C759",n.colorHexes[1]??n.colorHexes[n.colorHexes.length-1]??"#FFCC00",n.colorHexes[n.colorHexes.length-1]??"#FF3B30"],a=r=>o=>t(s=>{let l=[...i];l[r]=o??l[r],s.bezelGauge.colorHexes=l},`gstop${r}`);return h`
+    ${a==="gauge"&&n.bezelGauge?Ux(e,n.bezelGauge,t):g}
+    </div>`}function Ux(e,n,t){let i=[n.colorHexes[0]??"#34C759",n.colorHexes[1]??n.colorHexes[n.colorHexes.length-1]??"#FFCC00",n.colorHexes[n.colorHexes.length-1]??"#FF3B30"],a=r=>o=>t(s=>{let l=[...i];l[r]=o??l[r],s.bezelGauge.colorHexes=l},`gstop${r}`);return h`
     ${se(e,n.value,r=>t(o=>{o.bezelGauge.value=r},"gvalue"),{showResolved:!0,label:"Reading",key:"fam-corner-gvalue"})}
     <div class="grid2">
       ${ae("Gauge min",n.minValue,r=>t(o=>{o.bezelGauge.minValue=r??0},"gmin"),{step:1})}

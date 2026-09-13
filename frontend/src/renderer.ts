@@ -645,6 +645,21 @@ export function chartBarPath(r: { x: number; y: number; w: number; h: number }, 
   const { x, y, w, h } = r;
   const k = Math.max(0, radius);
   if (k === 0) return `M${x} ${y} L${x + w} ${y} L${x + w} ${y + h} L${x} ${y + h} Z`;
+  if (k > h) {
+    // A bar shorter than its radius shows only the tip of the rounded end, the
+    // way a taller bar would look cut off at this height: each corner arc runs
+    // until it meets the baseline edge, so a short bar reads as a dome rather
+    // than a flat slab with small corners.
+    const s = Math.sqrt(h * (2 * k - h));
+    const xl = x + k - s;
+    const xr = x + w - k + s;
+    if (roundBottom) {
+      return `M${xl} ${y} L${xr} ${y} A${k} ${k} 0 0 1 ${x + w - k} ${y + h} `
+        + `L${x + k} ${y + h} A${k} ${k} 0 0 1 ${xl} ${y} Z`;
+    }
+    return `M${xl} ${y + h} A${k} ${k} 0 0 1 ${x + k} ${y} `
+      + `L${x + w - k} ${y} A${k} ${k} 0 0 1 ${xr} ${y + h} Z`;
+  }
   if (roundBottom) {
     return `M${x} ${y} L${x + w} ${y} L${x + w} ${y + h - k} A${k} ${k} 0 0 1 ${x + w - k} ${y + h} `
       + `L${x + k} ${y + h} A${k} ${k} 0 0 1 ${x} ${y + h - k} Z`;
@@ -726,7 +741,11 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
       const colour = fillHex !== undefined
         ? colorAttrs(fillHex, "fill", el.colorHex)
         : i === el.highIndex ? high : i === el.lowIndex ? low : bandAt(i);
-      const radius = Math.min(Math.max(el.barRadius, 0), r.w / 2, r.h / 2);
+      // A rounded top only needs the bar's width: a bar shorter than the radius
+      // draws as a dome (see `chartBarPath`). Rounding both ends caps at half.
+      const radius = el.barCorners === "top"
+        ? Math.min(Math.max(el.barRadius, 0), r.w / 2)
+        : Math.min(Math.max(el.barRadius, 0), r.w / 2, r.h / 2);
       const below = el.baseline === "zero" && el.values[i]! < 0;
       const hangs = el.barCorners === "top" && below;
       const borderHex = el.barBorderWidth > 0 && el.barBorderColorHexes.length === g.count ? el.barBorderColorHexes[i] : undefined;
@@ -747,7 +766,9 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
         // its outer edge follows the bar's own corners. Bars never grow.
         const stroke = colorAttrs(borderHex, "fill", el.colorHex);
         const inner = { x: r.x + bw / 2, y: r.y + bw / 2, w: r.w - bw, h: r.h - bw };
-        const k = Math.min(Math.max(radius - bw / 2, 0), inner.w / 2, inner.h / 2);
+        const k = el.barCorners === "top"
+          ? Math.min(Math.max(radius - bw / 2, 0), inner.w / 2)
+          : Math.min(Math.max(radius - bw / 2, 0), inner.w / 2, inner.h / 2);
         if (el.barBorderOpenBase) {
           // Up one side, across the far end, down the other, with both sides
           // running on to the baseline edge. The bar's own outline clips them,

@@ -2234,6 +2234,19 @@ describe("bar corners", () => {
     expect(rx).toBeCloseTo(Math.min(bar.w / 2, bar.h / 2), 9);
   });
 
+  it("draws a round-top bar shorter than its radius as a dome", () => {
+    const s = Math.sqrt(12); // sqrt(h * (2k - h)) for h 2, k 4
+    const up = chartBarPath({ x: 0, y: 10, w: 8, h: 2 }, 4, false);
+    expect(up).toBe(`M${4 - s} 12 A4 4 0 0 1 4 10 L4 10 A4 4 0 0 1 ${4 + s} 12 Z`);
+    const hanging = chartBarPath({ x: 0, y: 10, w: 8, h: 2 }, 4, true);
+    expect(hanging).toBe(`M${4 - s} 10 L${4 + s} 10 A4 4 0 0 1 4 12 L4 12 A4 4 0 0 1 ${4 - s} 10 Z`);
+    // The renderer keeps the whole radius on a short bar instead of halving it.
+    const svg = draw("1,10", (p) => { p.barCorners = "top"; p.barRadius = 500; p.baseline = "lowest"; });
+    const radii = [...svg.matchAll(/<path d=M[^>]*? A([\d.]+) /g)].map((m) => Number(m[1]));
+    expect(radii).toHaveLength(2);
+    expect(radii[0]).toBeCloseTo(radii[1]!, 9);
+  });
+
   it("rounds only the end away from the baseline", () => {
     const top = chartBarPath({ x: 0, y: 10, w: 8, h: 20 }, 3, false);
     expect(top).toBe("M0 30 L0 13 A3 3 0 0 1 3 10 L5 10 A3 3 0 0 1 8 13 L8 30 Z");
