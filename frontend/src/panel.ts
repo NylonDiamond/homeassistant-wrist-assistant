@@ -541,6 +541,9 @@ export class WristAssistantPanel extends LitElement {
    * the watch has no use for it. */
   @state() private snapGrid = false;
   @state() private gridStep: number = 0.05;
+  /** Alt is down. It flips snapping for a drag, so the grid lines show while
+   * it is held even with Snap grid off. */
+  @state() private altHeld = false;
   /** Groups folded shut in the Layers list. List state only, never saved. */
   @state() private collapsed: ReadonlySet<string> = new Set();
   @state() private activeFamily: FamilyKind = "rectangular";
@@ -637,13 +640,19 @@ export class WristAssistantPanel extends LitElement {
   private debounceTimer?: number;
   private lastStatesSnapshot?: Record<string, unknown>;
   private cancelGesture?: () => void;
-  private keyHandler = (e: KeyboardEvent) => this.onKey(e);
+  private keyHandler = (e: KeyboardEvent) => {
+    if (e.key === "Alt") this.altHeld = true;
+    this.onKey(e);
+  };
+  /** A window that loses focus with Alt down never sees its keyup. */
+  private blurHandler = () => { this.altHeld = false; };
   /** Arrows being held down right now, only the ones that actually nudged. */
   private heldArrows = new Set<string>();
   /** Letting the last one go closes the coalescing window, the way a pointer up
    * does, so the next run of presses is a fresh undo step. Counting them keeps
    * a diagonal nudge (two arrows at once) one step rather than two. */
   private keyUpHandler = (e: KeyboardEvent) => {
+    if (e.key === "Alt") this.altHeld = false;
     if (!this.heldArrows.delete(e.key)) return;
     if (this.heldArrows.size === 0) this.draft?.endGesture();
   };
@@ -2565,6 +2574,7 @@ export class WristAssistantPanel extends LitElement {
     this.sizeObserver.observe(this);
     window.addEventListener("keydown", this.keyHandler);
     window.addEventListener("keyup", this.keyUpHandler);
+    window.addEventListener("blur", this.blurHandler);
     window.addEventListener("beforeunload", this.beforeUnload);
     window.addEventListener("pointerdown", this.pressStart, { capture: true });
     window.addEventListener("pointerup", this.pressEnd, { capture: true });
@@ -2633,9 +2643,10 @@ export class WristAssistantPanel extends LitElement {
     }
   }
 
-  /** What a drag passes to the gesture so it snaps, or nothing with the grid off. */
-  private snapTarget(): { snap?: number } {
-    return this.snapGrid ? { snap: this.gridStep } : {};
+  /** What a drag passes to the gesture: the grid, and whether snapping is on
+   * before Alt flips it. */
+  private snapTarget(): { snap: { step: number; on: boolean } } {
+    return { snap: { step: this.gridStep, on: this.snapGrid } };
   }
 
   // ── how the Layers list is shown ──────────────────────────────────────
@@ -2724,6 +2735,7 @@ export class WristAssistantPanel extends LitElement {
     this.fades.disconnect();
     window.removeEventListener("keydown", this.keyHandler);
     window.removeEventListener("keyup", this.keyUpHandler);
+    window.removeEventListener("blur", this.blurHandler);
     window.removeEventListener("beforeunload", this.beforeUnload);
     window.removeEventListener("pointerdown", this.pressStart, { capture: true });
     window.removeEventListener("pointerup", this.pressEnd, { capture: true });
@@ -3839,8 +3851,8 @@ export class WristAssistantPanel extends LitElement {
     const off = !this.draft || this.parseError !== undefined || this.activeFamily === "inline";
     return html`<span class="grid-tool">
       <button class="pick ${on ? "on" : ""}" ?disabled=${off} aria-pressed=${on ? "true" : "false"}
-        title=${on ? "Layers snap to the grid when you drag them, and arrow keys move one grid step. Hold Alt to drag freely. Click to turn it off." : "Snap layers to a grid when you drag them"}
-        @click=${() => this.setGrid(!on, this.gridStep)}><span class="glyph">▦</span>Grid</button>
+        title=${on ? "Layers snap to the grid when you drag them, and arrow keys move one grid step. Hold Alt to drag freely. Click to turn it off." : "Snap layers to a grid when you drag them. Without it, hold Alt while dragging to snap."}
+        @click=${() => this.setGrid(!on, this.gridStep)}><span class="glyph">▦</span>Snap grid</button>
       ${on ? html`<select class="grid-step" aria-label="Grid size" ?disabled=${off}
         @change=${(e: Event) => this.setGrid(true, Number((e.target as HTMLSelectElement).value))}>
         ${GRID_STEPS.map((step) => html`<option value=${step} ?selected=${step === this.gridStep}>${step * 100}%</option>`)}
@@ -3906,7 +3918,8 @@ export class WristAssistantPanel extends LitElement {
       ["Drag a row", "Reorder the list. Drop it on a folder to put it inside"],
       ["Pick layer", "Point at the face to find a layer. Click it to select it"],
       ["Show taps", "Every tap area, labelled. With a layer selected, only its tap shows and its corners drag"],
-      ["Grid", "Snap layers to a grid of 2.5%, 5% or 10% of the face when you drag them. Arrows then move one grid step. Hold Alt while dragging to move freely"],
+      ["Snap grid", "Snap layers to a grid of 1%, 2.5%, 5% or 10% of the face when you drag them. Arrows then move one grid step"],
+      ["Alt-drag", "Flips Snap grid for that drag: snaps with it off, moves freely with it on"],
       ["Expand", "The face full-window, for small moves. Everything above works there too"],
       ["Locked group", "Drags as one. Unlock it in its row to move layers alone"],
       ["Timestamp chip", "On a picture layer: click it to move it, pull a corner for its size"],
@@ -5849,7 +5862,7 @@ export class WristAssistantPanel extends LitElement {
       icons: this.icons, imageSizes: this.imageSizes, tapAreas: true, slot,
       highlightId: focus ?? peek ?? highlightId,
       ...(outlineIds.length > 0 && !this.showTaps && peek === undefined ? { highlightIds: outlineIds } : {}),
-      ...(this.snapGrid ? { grid: this.gridStep } : {}),
+      ...(this.snapGrid || (this.altHeld && this.canEdit) ? { grid: this.gridStep } : {}),
       tapReview: this.showTaps,
       ...(focus !== undefined ? { tapFocusId: focus } : {}),
       handles: this.canEdit && !this.picking && (!this.showTaps || focus !== undefined),
@@ -5887,7 +5900,7 @@ export class WristAssistantPanel extends LitElement {
       const g = groupOf(cfg, sel.payload.id);
       tail = g?.locked
         ? html`editing <b>${layerTitle(sel, ctx)}</b> in <b>${g.name}</b>. A drag moves the whole group; pull a corner to resize this layer. Arrow keys nudge the group.`
-        : html`editing <b>${layerTitle(sel, ctx)}</b>. Drag it, or pull a corner. Arrow keys nudge it.${this.snapGrid ? " It snaps to the grid. Hold Alt to drag freely." : ""}`;
+        : html`editing <b>${layerTitle(sel, ctx)}</b>. Drag it, or pull a corner. Arrow keys nudge it.${this.snapGrid ? " It snaps to the grid. Hold Alt to drag freely." : " Hold Alt while dragging to snap to the grid."}`;
     } else {
       tail = "click a layer to edit it";
     }

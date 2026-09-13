@@ -36,16 +36,17 @@ export interface GestureTarget {
    */
   outline?: NormalizedFrame;
   /**
-   * Snap to grid: the grid's step as a fraction of the face (0.05 is a line
-   * every 5%). A move lands the layer's nearest edge or middle on a line, a
-   * corner drag lands the edge it pulls. Holding Alt moves freely for that
-   * drag. Undefined drags freely, as before there was a grid.
+   * Snap grid: `step` is the grid as a fraction of the face (0.05 is a line
+   * every 5%), `on` is whether the Snap grid toggle is on. Snapping lands a
+   * moved layer's nearest edge or middle on a line, and a corner drag's pulled
+   * edge. Holding Alt flips it for as long as it is held: free with the grid
+   * on, snapped with it off. Undefined never snaps.
    */
-  snap?: number;
+  snap?: { step: number; on: boolean };
 }
 
 /** The grid steps the preview offers, as fractions of the face. */
-export const GRID_STEPS = [0.025, 0.05, 0.1] as const;
+export const GRID_STEPS = [0.01, 0.025, 0.05, 0.1] as const;
 
 /** A tiny margin so a value already on a line counts as on it despite float dust. */
 const ON_LINE = 1e-6;
@@ -332,7 +333,7 @@ export function beginGesture(
     const dy = t.y / canvas.height;
     let next: NormalizedFrame;
     // Alt is read on every move, so it can be pressed or let go mid-drag.
-    const snap = target.snap !== undefined && !ev.altKey ? target.snap : undefined;
+    const snap = target.snap !== undefined && target.snap.on !== ev.altKey ? target.snap.step : undefined;
     if (!target.handle) {
       next = clampFrame({ ...base, x: round(base.x + dx), y: round(base.y + dy) });
       if (snap !== undefined) next = snapFrameMove(next, snap);

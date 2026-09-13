@@ -192,8 +192,13 @@ function gridLines(design: CanvasSize, step: number | undefined): TemplateResult
   if (step === undefined || !(step > 0)) return nothing;
   const n = Math.round(1 / step);
   const lines: TemplateResult[] = [];
+  // A fine grid (1%) would bury the face in lines, so its lines go fainter and
+  // every tenth one keeps the usual weight as a guide to count by.
+  const fine = n > 40;
   for (let i = 1; i < n; i++) {
-    const stroke = i * 2 === n ? "rgba(10,132,255,0.6)" : "rgba(255,255,255,0.14)";
+    const stroke = i * 2 === n
+      ? "rgba(10,132,255,0.6)"
+      : fine && i % 10 !== 0 ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.14)";
     const x = (design.width * i) / n;
     const y = (design.height * i) / n;
     lines.push(
