@@ -18,6 +18,7 @@ import {
   type NormalizedFrame,
 } from "./model.js";
 import type { ImageSizeProvider } from "./image-sizes.js";
+import type { GestureTarget } from "./interact.js";
 import {
   countdownRemainingString,
   type ResolvedBezelGauge,
@@ -485,21 +486,28 @@ function renderText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box) {
  * gap in `GaugeDotsView` in the app repo. */
 const GAUGE_DOT_GAP = 2;
 
+/**
+ * Where a dots gauge puts its dots: one per unit along the long side. The
+ * diameter is the smaller of the short side and one dot's share of the long
+ * side, so a wide frame spreads them and a tall one stacks them.
+ */
+function gaugeDotLayout(el: Extract<ResolvedElement, { kind: "gauge" }>, box: Box) {
+  const horizontal = box.w >= box.h;
+  const count = Math.max(1, el.dotCount);
+  const long = horizontal ? box.w : box.h;
+  const short = horizontal ? box.h : box.w;
+  const d = Math.max(1, Math.min(short, long / count - GAUGE_DOT_GAP));
+  const span = count * d + (count - 1) * GAUGE_DOT_GAP;
+  return { horizontal, count, d, span };
+}
+
 function renderGauge(el: Extract<ResolvedElement, { kind: "gauge" }>, box: Box) {
   const fill = colorAttrs(el.colorHex, "stroke");
   const track = colorAttrs(el.trackColorHex, "stroke", "#FFFFFF");
   const tick = colorAttrs(el.thresholdColorHex, "stroke", "#FFFFFF");
   const lw = el.lineWidth;
   if (el.style === "dots") {
-    // One dot per unit along the long side, the first `filledCount` filled. The
-    // diameter is the smaller of the short side and one dot's share of the long
-    // side, so a wide frame spreads them and a tall one stacks them.
-    const horizontal = box.w >= box.h;
-    const count = Math.max(1, el.dotCount);
-    const long = horizontal ? box.w : box.h;
-    const short = horizontal ? box.h : box.w;
-    const d = Math.max(1, Math.min(short, long / count - GAUGE_DOT_GAP));
-    const span = count * d + (count - 1) * GAUGE_DOT_GAP;
+    const { horizontal, count, d, span } = gaugeDotLayout(el, box);
     const first = (horizontal ? box.cx : box.cy) - span / 2 + d / 2;
     return svg`${Array.from({ length: count }, (_, i) => {
       const at = first + i * (d + GAUGE_DOT_GAP);
@@ -915,6 +923,58 @@ export function lineOutline(box: Box, thickness: number): Box {
     : { x: box.cx - t / 2, y: box.y, w: t, h: box.h, cx: box.cx, cy: box.cy };
 }
 
+/**
+ * The box a layer's selection, hover tint, hit box and handles sit on: the part
+ * of its frame it actually draws in. Layers that fill their frame use the frame.
+ */
+export function layerOutline(el: ResolvedElement, box: Box): Box {
+  if (el.kind === "shape") {
+    if (el.shapeKind === "circle") return centredSquare(box);
+    if (el.shapeKind === "line") return lineOutline(box, el.thickness);
+    return box;
+  }
+  if (el.kind !== "gauge") return box;
+  switch (el.style) {
+    case "ring":
+    case "arc":
+      return centredSquare(box);
+    case "bar": {
+      // Always across the frame, a line width tall, whichever side is longer.
+      const t = Math.max(LINE_OUTLINE_MIN, el.lineWidth);
+      return { x: box.x, y: box.cy - t / 2, w: box.w, h: t, cx: box.cx, cy: box.cy };
+    }
+    case "dots": {
+      const { horizontal, d, span } = gaugeDotLayout(el, box);
+      const t = Math.max(LINE_OUTLINE_MIN, d);
+      return horizontal
+        ? { x: box.cx - span / 2, y: box.cy - t / 2, w: span, h: t, cx: box.cx, cy: box.cy }
+        : { x: box.cx - t / 2, y: box.cy - span / 2, w: t, h: span, cx: box.cx, cy: box.cy };
+    }
+    default:
+      return box;
+  }
+}
+
+/**
+ * How a corner drag resizes a layer whose outline is not its frame, so the
+ * handle stays under the pointer. A circle, ring or arc resizes its square; a
+ * line its length; a bar gauge its width; a row of dots starts from the box
+ * around the dots rather than the empty frame around them.
+ */
+export function handleResize(el: ResolvedElement, frame: NormalizedFrame, canvas: CanvasSize): Pick<GestureTarget, "square" | "line" | "bar" | "outline"> {
+  if (el.kind === "shape") {
+    if (el.shapeKind === "circle") return { square: true };
+    if (el.shapeKind === "line") return { line: true };
+    return {};
+  }
+  if (el.kind !== "gauge") return {};
+  if (el.style === "ring" || el.style === "arc") return { square: true };
+  if (el.style === "bar") return { bar: true };
+  if (el.style !== "dots" || canvas.width <= 0 || canvas.height <= 0) return {};
+  const o = layerOutline({ ...el, frame }, frameBox({ ...el, frame }, canvas));
+  return { outline: { ...frame, x: o.x / canvas.width, y: o.y / canvas.height, width: o.w / canvas.width, height: o.h / canvas.height } };
+}
+
 function renderShape(el: Extract<ResolvedElement, { kind: "shape" }>, box: Box) {
   const fill = colorAttrs(el.fillColorHex, "fill");
   const border = el.borderColorHex ? parseColor(el.borderColorHex) : undefined;
@@ -1267,14 +1327,10 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
   // but never dragged or resized.
   const chartLine = el.chartAnchor?.place === "through";
   const draggable = options.handles === true && (!inFocusView || focused) && !onChart && !chartLine;
-  // A circle draws in the square at the middle of its frame, and a line in a bar
-  // down its middle, so the selection, the hover tint, the hit box and the
-  // corner handles sit on what is drawn. Boxed to the whole frame they floated
-  // far outside a circle in a wide frame, or a thin line in a tall one.
-  const outline = el.kind !== "shape" ? box
-    : el.shapeKind === "circle" ? centredSquare(box)
-    : el.shapeKind === "line" ? lineOutline(box, el.thickness)
-    : box;
+  // The selection, the hover tint, the hit box and the corner handles sit on
+  // what is drawn, not on the whole frame: boxed to the frame they floated far
+  // outside a circle or ring in a wide frame, or a thin line or bar in a tall one.
+  const outline = layerOutline(el, box);
   const highlight = selected && !onChart
     ? svg`<rect x=${outline.x} y=${outline.y} width=${outline.w} height=${outline.h} fill="none" stroke="#0A84FF" stroke-width="0.75" stroke-dasharray="2 1" vector-effect="non-scaling-stroke" />`
     : nothing;

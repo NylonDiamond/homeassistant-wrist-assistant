@@ -95,7 +95,7 @@ import {
   countdownRemainingString,
   resolveAll,
 } from "./resolver.js";
-import { CASES, REFERENCE_CASE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, renderLayerThumb, renderLayout, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type WatchCase } from "./renderer.js";
+import { CASES, REFERENCE_CASE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, handleResize, renderLayerThumb, renderLayout, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type WatchCase } from "./renderer.js";
 import { ALL_FAMILIES, addFamily, canRemoveFamily, familyContentSummary, firstDrawable, isDrawable, removeFamily, supportedFamilies } from "./layouts.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { updateWatchMessage, watchSupportsShapes } from "./version.js";
@@ -4043,11 +4043,13 @@ export class WristAssistantPanel extends LitElement {
     const round = (n: number) => Math.round(n * 10) / 10;
     this.cancelGesture?.();
     let moved = false;
-    // A circle's handles sit on the square it draws in, and a line's on its bar,
-    // so a corner drag resizes what is drawn rather than the frame around it.
-    const square = handle !== null && el.kind === "shape" && el.payload.kind === "circle";
-    const line = handle !== null && el.kind === "shape" && el.payload.kind === "line";
-    this.cancelGesture = beginGesture(svg, canvas, e, { elementId: id, frame: start, handle: handle ?? undefined, square, line }, {
+    // Handles sit on what a layer draws (a circle's square, a line, a gauge's
+    // bar or dots), so a corner drag resizes that rather than the frame around it.
+    const drawn = handle !== null
+      ? resolveAll(this.draft.config, this.buildContext(), this.forced)[family as DrawableFamily]?.elements.find((x) => x.id === id)
+      : undefined;
+    const resize = drawn !== undefined ? handleResize(drawn, start, canvas) : {};
+    this.cancelGesture = beginGesture(svg, canvas, e, { elementId: id, frame: start, handle: handle ?? undefined, ...resize }, {
       onFrame: (elementId: string, f: NormalizedFrame, done: boolean) => {
         if (!done) moved = true;
         if (done && !moved && pickOnClick !== undefined) {

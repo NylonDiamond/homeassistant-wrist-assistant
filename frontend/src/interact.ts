@@ -27,6 +27,14 @@ export interface GestureTarget {
    * moved the handle half as far as the pointer.
    */
   line?: boolean;
+  /** A bar gauge: always across its frame, so a corner drag changes only the width. */
+  bar?: boolean;
+  /**
+   * The box around what the layer draws, when that is smaller than its frame
+   * (a row of dots). A corner drag resizes from this box instead of the frame,
+   * so the handle on its corner stays under the pointer.
+   */
+  outline?: NormalizedFrame;
 }
 
 export interface GestureCallbacks {
@@ -164,19 +172,22 @@ export function squareResize(
 /**
  * Resize a line by a corner drag of `travel` design points: only its length
  * changes, pinned at the far end. The length never drops below the frame's
- * short side, so the line keeps the direction it is drawn in.
+ * short side, so the line keeps the direction it is drawn in. `horizontal` is
+ * for a bar gauge, which runs across its frame whatever its shape, so only the
+ * smallest drag size holds it.
  */
 export function lineResize(
   base: NormalizedFrame,
   canvas: CanvasSize,
   handle: HandleCorner,
   travel: { x: number; y: number },
+  horizontal = false,
 ): NormalizedFrame {
   const W = canvas.width;
   const H = canvas.height;
-  const along = base.width * W >= base.height * H;
+  const along = horizontal || base.width * W >= base.height * H;
   if (along) {
-    const min = Math.max(MIN_SIZE, (base.height * H) / W);
+    const min = horizontal ? MIN_SIZE : Math.max(MIN_SIZE, (base.height * H) / W);
     const right = base.x + base.width;
     const width = handle.includes("e")
       ? Math.max(min, base.width + travel.x / W)
@@ -205,8 +216,9 @@ export function beginGesture(
   cb: GestureCallbacks,
 ): () => void {
   const travel = pointerTravel(svg, start);
-  const base = { ...target.frame };
-  let last = base;
+  const base = { ...(target.handle && target.outline ? target.outline : target.frame) };
+  // A press on a handle that never moves leaves the frame as it was.
+  let last = { ...target.frame };
   svg.setPointerCapture(start.pointerId);
 
   const round = (n: number) => Math.round(n * 1000) / 1000;
@@ -221,8 +233,8 @@ export function beginGesture(
       next = clampFrame({ ...base, x: round(base.x + dx), y: round(base.y + dy) });
     } else if (target.square) {
       next = squareResize(base, canvas, target.handle, t);
-    } else if (target.line) {
-      next = lineResize(base, canvas, target.handle, t);
+    } else if (target.line || target.bar) {
+      next = lineResize(base, canvas, target.handle, t, target.bar === true);
     } else {
       let { x, y, width, height } = base;
       const right = base.x + base.width;
