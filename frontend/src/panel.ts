@@ -109,6 +109,7 @@ import { uiIcon } from "./ui-icons.js";
 import { addPreview } from "./add-previews.js";
 import { NUDGE_COARSE, beginGesture, beginPointDrag, beginScaleDrag, nudgeFrame, nudgePoint, type HandleCorner } from "./interact.js";
 import {
+  type CopiedPosition,
   type EditorHost,
   type EffectivePlacement,
   type PickedFlag,
@@ -531,6 +532,9 @@ export class WristAssistantPanel extends LitElement {
    * so it works without a permission prompt and pastes into any complication
    * opened in this tab. */
   private clipboard?: LayerClip;
+  /** A layer's position lifted by the Position card's Copy position, for its
+   * Paste position on another layer. Kept for the tab, like `clipboard`. */
+  @state() private copiedPosition?: CopiedPosition;
   /** Groups folded shut in the Layers list. List state only, never saved. */
   @state() private collapsed: ReadonlySet<string> = new Set();
   @state() private activeFamily: FamilyKind = "rectangular";
@@ -3346,6 +3350,8 @@ export class WristAssistantPanel extends LitElement {
       },
       selectValue: (id) => this.openSharedValue(id),
       beginGesture: () => this.draft?.beginGesture(),
+      copiedPosition: this.copiedPosition,
+      copyPosition: (position) => { this.copiedPosition = position; },
     };
   }
 

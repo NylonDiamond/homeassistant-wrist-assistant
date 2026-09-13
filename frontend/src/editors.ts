@@ -222,7 +222,7 @@ import type { HassEntityState, HassLike } from "./ha-api.js";
 import { MIN_ZOOM, familyTitle, type IconProvider } from "./renderer.js";
 import { CURATED_SYMBOLS, SYMBOL_CATEGORIES, SymbolBrowser, searchSymbols, type SymbolPack } from "./symbols.js";
 import { MDI_PREFIX } from "./icons.js";
-import { typedFrame } from "./interact.js";
+import { centerFrame, isCentered, typedFrame, type CenterAxis } from "./interact.js";
 import {
   DESIGN_BOX,
   CHART_DEFAULT_BAR_RADIUS,
@@ -307,6 +307,29 @@ export interface EditorHost {
   selectValue(id: string): void;
   /** Hold every update until `endGesture` in one undo step. */
   beginGesture(): void;
+  /** The position last copied from a Position card, with the shape it was
+   * copied on. Held on the panel, so it pastes onto any layer, on any shape,
+   * in any complication opened in this tab. */
+  copiedPosition?: CopiedPosition;
+  copyPosition(position: CopiedPosition): void;
+}
+
+/** A layer's frame lifted by Copy position, and the shape it sat on. */
+export interface CopiedPosition {
+  frame: NormalizedFrame;
+  family: FamilyKind;
+}
+
+/**
+ * The frame Paste position gives a layer on `to`. The same shape, or another
+ * round one, takes the copied numbers as they are, since a percent of a square
+ * face is the same spot on any square face. Between the wide face and a round
+ * one it is scaled around the middle, the way copying a whole layout is, so a
+ * centred layer stays centred.
+ */
+export function pastedFrame(copied: CopiedPosition, to: FamilyKind, kind: CElement["kind"]): NormalizedFrame {
+  const fitted = refitPlacement({ frame: { ...copied.frame }, isHidden: false }, copied.family, to, kind).frame;
+  return typedFrame(fitted, {});
 }
 
 /** Every card id the inspector can show, for "Open all". */
@@ -3142,14 +3165,16 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
         ${frameLetterField("X", "Left", f.x, (v) => setFrame({ x: v }, "x"), -100, 100)}
         ${frameLetterField("Y", "Top", f.y, (v) => setFrame({ y: v }, "y"), -100, 100)}
       </div>
-    </div>`
+    </div>
+    ${lineUpField(host, el, family, f, ["across", "down", "both"])}`
     // The threshold settles only the height, so a label beside it keeps its own X.
     : !chartAnchorIsColumn(anchor.at) ? html`
     <div class="field xy-field"><span>Position</span>
       <div class="xy">
         ${frameLetterField("X", "Left", f.x, (v) => setFrame({ x: v }, "x"), -100, 100)}
       </div>
-    </div>`
+    </div>
+    ${lineUpField(host, el, family, f, ["across"])}`
     : nothing}
     <div class="field xy-field"><span>Size</span>
       <div class="xy">
@@ -3160,12 +3185,54 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
     ${sliderField("Rotation", f.rotationDegrees, (v) => setFrame({ rotationDegrees: v }, "rot"),
       { min: -180, max: 180, step: 1, def: 0, format: (v) => `${Math.round(v)}°`, unit: "°", range: false })}
     ${checkField("Hidden", eff.isHidden, (v) => host.update((c) => setPlacement(c, family, id, { isHidden: v })), false)}
-    <div class="hint">${anchor === undefined ? "X, Y, W and H are" : "W and H are"} a percent of the face, on the ${familyTitle(family)} shape only. Drag a letter left or right to change its number. Arrow keys nudge 1 pt, shift for 10.</div>`,
+    <div class="hint">${anchor === undefined ? "X, Y, W and H are" : "W and H are"} a percent of the face, on the ${familyTitle(family)} shape only. Drag a letter left or right to change its number. Arrow keys nudge 1 pt, shift for 10.${anchor === undefined ? " Copy position and Paste position repeat a spot on another layer, on any shape." : ""}</div>`,
     { color: SECTION_COLOR.position, icon: "place", summary: `${Math.round(f.width * 100)}% wide · ${familyTitle(family)}`,
       ...(placeChanged ? {
         resetTitle: `Put this layer back to the middle of the ${familyTitle(family)} face at half size, unrotated and shown`,
         reset: () => host.update((c) => setPlacement(c, family, id, { frame: { ...CENTERED_FRAME }, isHidden: false })),
       } : {}) });
+}
+
+const CENTER_LABELS: Record<CenterAxis, { label: string; title: string }> = {
+  across: { label: "Center across", title: "Move this layer to the middle of the face, left to right" },
+  down: { label: "Center up and down", title: "Move this layer to the middle of the face, top to bottom" },
+  both: { label: "Center", title: "Move this layer to the middle of the face" },
+};
+
+/**
+ * The Position card's shortcuts: centre the layer on the face, and copy its
+ * position onto another layer. Copy and paste carry X, Y, W, H and rotation,
+ * on the shape on screen only, and reach a layer on another shape or in
+ * another complication, which is how the same spot is repeated on Circular and
+ * Corner without typing the numbers twice. An anchored layer takes only the
+ * axes its anchor leaves free, so it gets centring across and no paste.
+ */
+function lineUpField(host: EditorHost, el: CElement, family: FamilyKind, f: NormalizedFrame, axes: CenterAxis[]): TemplateResult {
+  const id = el.payload.id;
+  const setWhole = (frame: NormalizedFrame, k: string) => host.update((c) => setPlacement(c, family, id, { frame }), `el-${id}-${k}-${family}`);
+  const copied = host.copiedPosition;
+  const anchored = el.payload.chartAnchor !== undefined;
+  const copiedHere = copied !== undefined && copied.family === family && same(copied.frame, f);
+  return html`<div class="field list-field"><span>Line up</span>
+    <div class="chips">
+      ${axes.map((axis) => html`<button class="small" title=${CENTER_LABELS[axis].title}
+        ?disabled=${isCentered(f, axis)}
+        @click=${() => setWhole(centerFrame(f, axis), `center-${axis}`)}>${CENTER_LABELS[axis].label}</button>`)}
+    </div>
+  </div>
+  ${anchored ? nothing : html`<div class="field list-field"><span>Copy</span>
+    <div class="chips">
+      <button class="small" title="Copy this layer's X, Y, W, H and rotation, to paste onto another layer"
+        @click=${() => host.copyPosition({ frame: { ...f }, family })}>${copiedHere ? "Copied" : "Copy position"}</button>
+      <button class="small" ?disabled=${copied === undefined || copiedHere}
+        title=${copied === undefined
+          ? "Copy a position from a layer first"
+          : copied.family === family || (family !== "rectangular" && copied.family !== "rectangular")
+            ? `Put this layer where the copied one sits on the ${familyTitle(copied.family)} face`
+            : `Put this layer where the copied one sits on the ${familyTitle(copied.family)} face, scaled for this shape`}
+        @click=${() => copied && setWhole(pastedFrame(copied, family, el.kind), "paste")}>Paste position</button>
+    </div>
+  </div>`}`;
 }
 
 /**

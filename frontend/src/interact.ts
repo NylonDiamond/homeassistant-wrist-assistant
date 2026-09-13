@@ -84,6 +84,28 @@ export function typedFrame(frame: NormalizedFrame, patch: Partial<NormalizedFram
   });
 }
 
+/** Which way the Position card's line-up buttons centre a layer. */
+export type CenterAxis = "across" | "down" | "both";
+
+/**
+ * A frame moved to the middle of the face: across, up and down, or both. Size
+ * and turn stay. The frame's own middle is what lands on the face's middle,
+ * which is also the middle of what every kind draws, since a circle, a line
+ * and a row of dots all sit centred in their frame.
+ */
+export function centerFrame(frame: NormalizedFrame, axis: CenterAxis): NormalizedFrame {
+  const x = axis === "down" ? frame.x : round3((1 - frame.width) / 2);
+  const y = axis === "across" ? frame.y : round3((1 - frame.height) / 2);
+  return clampFrame({ ...frame, x, y });
+}
+
+/** Whether a frame already sits in the middle of the face on that axis, to
+ * the three decimals the wire carries. */
+export function isCentered(frame: NormalizedFrame, axis: CenterAxis): boolean {
+  const next = centerFrame(frame, axis);
+  return next.x === frame.x && next.y === frame.y;
+}
+
 function clampFrame(f: NormalizedFrame): NormalizedFrame {
   const x = Math.min(1 - KEEP_VISIBLE, Math.max(-f.width + KEEP_VISIBLE, f.x));
   const y = Math.min(1 - KEEP_VISIBLE, Math.max(-f.height + KEEP_VISIBLE, f.y));
