@@ -933,6 +933,24 @@ export function layerOutline(el: ResolvedElement, box: Box): Box {
     if (el.shapeKind === "line") return lineOutline(box, el.thickness);
     return box;
   }
+  if (el.kind === "icon") {
+    // Drawn at its own size, centred, whatever the frame's size.
+    const s = Math.max(LINE_OUTLINE_MIN, iconDrawnSide(el));
+    return { x: box.cx - s / 2, y: box.cy - s / 2, w: s, h: s, cx: box.cx, cy: box.cy };
+  }
+  if (el.kind === "chartTimes") {
+    if (el.labels.length === 0 || box.w <= 0 || box.h <= 0) return box;
+    const { rowHeight } = timeLabelRowSplit({ labels: el.labels, labelSize: el.labelSize, labelsAbove: false }, box);
+    const t = Math.max(LINE_OUTLINE_MIN, rowHeight);
+    return { x: box.x, y: box.cy - t / 2, w: box.w, h: t, cx: box.cx, cy: box.cy };
+  }
+  if (el.kind === "imageTime") {
+    const size = imageTimeTextSize(box.w, box.h);
+    if (!el.linked || size <= 0) return box;
+    const w = timestampLabel(new Date()).length * size * 0.578 + size * 0.89;
+    const h = size * 1.25;
+    return { x: box.cx - w / 2, y: box.cy - h / 2, w, h, cx: box.cx, cy: box.cy };
+  }
   if (el.kind !== "gauge") return box;
   switch (el.style) {
     case "ring":
@@ -967,12 +985,26 @@ export function handleResize(el: ResolvedElement, frame: NormalizedFrame, canvas
     if (el.shapeKind === "line") return { line: true };
     return {};
   }
+  if (el.kind === "chartTimes") return { bar: true };
+  if (el.kind === "imageTime") return outlineFrame(el, frame, canvas);
   if (el.kind !== "gauge") return {};
   if (el.style === "ring" || el.style === "arc") return { square: true };
   if (el.style === "bar") return { bar: true };
-  if (el.style !== "dots" || canvas.width <= 0 || canvas.height <= 0) return {};
+  if (el.style !== "dots") return {};
+  return outlineFrame(el, frame, canvas);
+}
+
+/** A layer's outline as a frame, for a corner drag that starts from it. */
+function outlineFrame(el: ResolvedElement, frame: NormalizedFrame, canvas: CanvasSize): Pick<GestureTarget, "outline"> {
+  if (canvas.width <= 0 || canvas.height <= 0) return {};
   const o = layerOutline({ ...el, frame }, frameBox({ ...el, frame }, canvas));
   return { outline: { ...frame, x: o.x / canvas.width, y: o.y / canvas.height, width: o.w / canvas.width, height: o.h / canvas.height } };
+}
+
+/** How wide and tall an icon draws, in design points. An outline icon draws a
+ * little larger than its size, as MDI glyphs carry their own padding. */
+export function iconDrawnSide(el: Extract<ResolvedElement, { kind: "icon" }>): number {
+  return el.path !== undefined && el.path !== "" ? el.size * MDI_SIZE_FACTOR : el.size;
 }
 
 function renderShape(el: Extract<ResolvedElement, { kind: "shape" }>, box: Box) {

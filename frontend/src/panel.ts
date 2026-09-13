@@ -95,7 +95,7 @@ import {
   countdownRemainingString,
   resolveAll,
 } from "./resolver.js";
-import { CASES, REFERENCE_CASE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, handleResize, renderLayerThumb, renderLayout, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type WatchCase } from "./renderer.js";
+import { CASES, REFERENCE_CASE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, renderLayerThumb, renderLayout, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type WatchCase } from "./renderer.js";
 import { ALL_FAMILIES, addFamily, canRemoveFamily, familyContentSummary, firstDrawable, isDrawable, removeFamily, supportedFamilies } from "./layouts.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { updateWatchMessage, watchSupportsShapes } from "./version.js";
@@ -4048,6 +4048,23 @@ export class WristAssistantPanel extends LitElement {
     const drawn = handle !== null
       ? resolveAll(this.draft.config, this.buildContext(), this.forced)[family as DrawableFamily]?.elements.find((x) => x.id === id)
       : undefined;
+    // An icon draws at its own size, centred, so its corners change that size.
+    // Both sides grow at once, hence half the side: the corner then stays under
+    // the pointer.
+    if (handle !== null && drawn?.kind === "icon") {
+      const half = iconDrawnSide(drawn) / 2;
+      const startSize = drawn.size;
+      this.cancelGesture = beginScaleDrag(svg, e, handle, { w: half, h: half }, (factor, done) => {
+        this.mutate((c) => {
+          setPlacement(c, family, id, { size: Math.max(1, Math.round(startSize * factor)) });
+        }, `drag-${id}-${family}`);
+        if (done) {
+          this.draft?.endGesture();
+          this.cancelGesture = undefined;
+        }
+      });
+      return;
+    }
     const resize = drawn !== undefined ? handleResize(drawn, start, canvas) : {};
     this.cancelGesture = beginGesture(svg, canvas, e, { elementId: id, frame: start, handle: handle ?? undefined, ...resize }, {
       onFrame: (elementId: string, f: NormalizedFrame, done: boolean) => {
