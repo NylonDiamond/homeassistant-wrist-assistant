@@ -33,6 +33,7 @@ import {
   replaceQuotedEntityIds,
 } from "./model.js";
 import { supportedFamilies } from "./layouts.js";
+import { familyTitle } from "./renderer.js";
 
 // ── placeholders ──────────────────────────────────────────────────────────
 
@@ -445,19 +446,12 @@ export interface ImportFacts {
   missing: number;
 }
 
-const FAMILY_TITLES: Record<string, string> = {
-  rectangular: "Rectangular",
-  circular: "Circular",
-  corner: "Corner",
-  inline: "Inline",
-};
-
 /** The numbers the preview shows, so "this needs four entities" is known
  * before the table of them is read. */
 export function importFacts(cfg: CustomComplicationConfig, rows: readonly UnresolvedEntity[]): ImportFacts {
   return {
     layers: cfg.elements.length,
-    families: supportedFamilies(cfg).map((f) => FAMILY_TITLES[f] ?? f),
+    families: supportedFamilies(cfg).map(familyTitle),
     slots: rows.filter((r) => r.required).length,
     missing: rows.filter((r) => !r.required).length,
   };

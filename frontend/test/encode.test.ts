@@ -5,6 +5,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { COMPARISON_KINDS, auditUnknownKeys, encodeConfig, newCase, newConfig, newElement, newRule, newStyleChange, newTest, parseConfig, switchComparison, type StyleChangeKind } from "../src/model.js";
 import { deriveDataSources } from "../src/compiler.js";
+import { addFamily, removeFamily } from "../src/layouts.js";
 import { Draft } from "../src/draft.js";
 import { effectivePlacement, setPlacement } from "../src/editors.js";
 
@@ -380,6 +381,50 @@ describe("encodeConfig", () => {
     cfg.supportedFamilies = ["rectangular", "circular", "corner"];
     cfg.inline = { value: { kind: { kind: "literal", value: "x" } } };
     expect(encodeConfig(cfg).schemaVersion).toBe(6);
+  });
+
+  // Schema 7 is the iPhone Home Screen marker. Any one of the four shapes is
+  // enough, and it outranks every other rule: an app that predates them cannot
+  // draw the document at all, so it must skip it with "needs app update".
+  it("stamps schema 7 for any Home Screen shape, whatever else the document has", () => {
+    for (const family of ["small", "medium", "large", "xlarge"] as const) {
+      const cfg = newConfig("X", 0, [family]);
+      expect(cfg.supportedFamilies).toEqual([family]);
+      expect(encodeConfig(cfg).schemaVersion).toBe(7);
+      expect(cfg.schemaVersion).toBe(7);
+    }
+
+    // Beside the three watch shapes, which on their own would be 4.
+    const mixed = newConfig("X", 0);
+    expect(encodeConfig(mixed).schemaVersion).toBe(4);
+    addFamily(mixed, "medium");
+    expect(encodeConfig(mixed).schemaVersion).toBe(7);
+
+    // And beside Inline, which on its own would be 6.
+    const phone = newConfig("X", 0, ["rectangular", "circular", "inline"]);
+    expect(encodeConfig(phone).schemaVersion).toBe(6);
+    addFamily(phone, "large");
+    expect(encodeConfig(phone).schemaVersion).toBe(7);
+
+    // Dropping the last Home Screen shape drops the marker again.
+    removeFamily(phone, "large");
+    expect(encodeConfig(phone).schemaVersion).toBe(6);
+  });
+
+  it("writes every Home Screen layout into perFamily and reads it back", () => {
+    const cfg = newConfig("X", 0, ["rectangular", "small", "medium", "large", "xlarge"]);
+    cfg.elements.push(newElement("text"));
+    const enc = encodeConfig(cfg) as Record<string, unknown>;
+    expect(enc.supportedFamilies).toEqual(["rectangular", "small", "medium", "large", "xlarge"]);
+    // Alternating name, layout: the encoder's own order, which is DRAWABLE_FAMILIES.
+    expect((enc.perFamily as unknown[]).filter((v) => typeof v === "string"))
+      .toEqual(["rectangular", "small", "medium", "large", "xlarge"]);
+    expect(auditUnknownKeys(enc)).toEqual([]);
+
+    const back = parseConfig(enc);
+    expect(back.supportedFamilies).toEqual(cfg.supportedFamilies);
+    expect(Object.keys(back.perFamily).sort()).toEqual(["large", "medium", "rectangular", "small", "xlarge"]);
+    expect(encodeConfig(back)).toEqual(enc);
   });
 
   it("round-trips inline and omits it when absent", () => {

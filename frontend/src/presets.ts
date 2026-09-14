@@ -291,9 +291,10 @@ function gaugeGeometry(family: DrawableFamily): PresetGeometry {
 }
 
 /** A wide, short band: a chart is read across, and on a rectangular tile it wants
- * the room the text lines above and below it are not using. */
+ * the room the text lines above and below it are not using. The medium Home
+ * Screen tile is the same kind of band, about twice as wide as it is tall. */
 function chartGeometry(family: DrawableFamily): PresetGeometry {
-  const wide = family === "rectangular";
+  const wide = family === "rectangular" || family === "medium";
   return {
     frame: {
       x: 0.05,

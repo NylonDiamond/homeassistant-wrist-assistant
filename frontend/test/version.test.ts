@@ -131,11 +131,12 @@ describe("deviceSupportsShapes", () => {
 });
 
 describe("updateIPhoneMessage", () => {
-  // The phone is missing a lock screen widget, not a watch app, so the
-  // sentence is its own rather than the watch's with a word swapped.
+  // The phone is missing the widget extension, not a watch app, so the
+  // sentence is its own rather than the watch's with a word swapped. Both
+  // screens it draws on are named: one release brings the two.
   it("names the reported version and the minimum", () => {
     expect(updateIPhoneMessage("2.7.2", "2.8.0")).toBe(
-      "This iPhone runs Wrist Assistant 2.7.2. Lock screen complications need 2.8.0, coming soon to the App Store.",
+      "This iPhone runs Wrist Assistant 2.7.2. Lock Screen and Home Screen complications need 2.8.0, coming soon to the App Store.",
     );
   });
 

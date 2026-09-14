@@ -1,28 +1,59 @@
-// CustomComplicationConfig schemaVersion 4/5/6, as the Apple clients encode it.
-// Wire-format reference: docs/custom_complication_schema_v4.md in the app
+// CustomComplicationConfig schemaVersion 4/5/6/7, as the Apple clients encode
+// it. Wire-format reference: docs/custom_complication_schema_v4.md in the app
 // repo. `parseConfig` normalises the two shapes Swift can emit (perFamily as
 // an alternating array, `Value` in flat v2 or nested v3 form) into one typed
 // object; `encodeConfig` writes back exactly the shape the phone expects.
 // v5 is shape-identical to v4 and only marks slotIndex > 7; v6 adds the
 // optional `inline` object and marks a document that lacks a canvas shape or
-// carries Inline (see schemaVersionFor).
+// carries Inline (see schemaVersionFor); v7 adds the four iPhone Home Screen
+// shapes and marks any document naming one.
 
-export type FamilyKind = "rectangular" | "circular" | "corner" | "inline";
-export const DRAWABLE_FAMILIES: FamilyKind[] = ["rectangular", "circular", "corner"];
+/** The watch's three canvas shapes. This set is the schema-6 predicate: a
+ * document missing one of them must say 6, because an app that predates
+ * per-shape support would draw it from the shared layers. */
+export type WatchCanvasFamily = "rectangular" | "circular" | "corner";
+/** The four iPhone Home Screen tile sizes (`systemSmall`, `systemMedium`,
+ * `systemLarge`, `systemExtraLargePortrait`). A watch never draws one. */
+export type HomeFamily = "small" | "medium" | "large" | "xlarge";
+/** Every shape with a canvas, which is every shape but Inline. */
+export type DrawableFamily = WatchCanvasFamily | HomeFamily;
+export type FamilyKind = DrawableFamily | "inline";
+
+export const WATCH_CANVAS_FAMILIES: WatchCanvasFamily[] = ["rectangular", "circular", "corner"];
+export const HOME_FAMILIES: HomeFamily[] = ["small", "medium", "large", "xlarge"];
+export const DRAWABLE_FAMILIES: DrawableFamily[] = [...WATCH_CANVAS_FAMILIES, ...HOME_FAMILIES];
+
+/** Whether a shape has a canvas, which is every shape but Inline.
+ * `layouts.isDrawable` is the panel's name for the same answer; this copy is
+ * here so model.ts can narrow without importing the shape helpers. */
+export function hasCanvas(family: FamilyKind): family is DrawableFamily {
+  return (DRAWABLE_FAMILIES as FamilyKind[]).includes(family);
+}
 
 /** The design box each shape is drawn in, in points: the real WidgetKit slot on
- * a 46 mm watch. Frames are fractions of these, so the same point value is a
- * different fraction in each shape, which is why growing a tap area has to be
- * done per shape. `renderer.ts` re-exports this as CANVAS; mirrors
- * `CustomComplication.DesignBox` in Swift. */
-export const DESIGN_BOX: Record<"rectangular" | "circular" | "corner", { width: number; height: number }> = {
+ * a 46 mm watch, and the real Home Screen tile on an iPhone 15 Pro. Frames are
+ * fractions of these, so the same point value is a different fraction in each
+ * shape, which is why growing a tap area has to be done per shape.
+ * `renderer.ts` re-exports this as CANVAS; mirrors
+ * `CustomComplication.DesignBox` in Swift.
+ *
+ * The home sizes were measured on an iPhone 15 Pro running iOS 26.6 with
+ * margins disabled. Apple's published table is 5 to 7 points smaller in each
+ * direction than the real tile, which is why they are measured rather than
+ * copied. `xlarge` is a placeholder until it can be measured on iOS 27. */
+export const DESIGN_BOX: Record<DrawableFamily, { width: number; height: number }> = {
   rectangular: { width: 181, height: 65.5 },
   circular: { width: 51, height: 51 },
   corner: { width: 34, height: 34 },
+  small: { width: 162.67, height: 162.67 },
+  medium: { width: 344.67, height: 162.67 },
+  large: { width: 344.67, height: 360 },
+  xlarge: { width: 344.67, height: 557.33 },
 };
 /** Every shape, in the order the schema lists them. `layouts.ts` re-exports it
- * as ALL_FAMILIES for the panel; it lives here so newConfig can order a set. */
-const ALL_FAMILY_ORDER: FamilyKind[] = ["rectangular", "circular", "corner", "inline"];
+ * as ALL_FAMILIES for the panel; it lives here so newConfig can order a set.
+ * The Home Screen four go last so an existing document's order never moves. */
+const ALL_FAMILY_ORDER: FamilyKind[] = ["rectangular", "circular", "corner", "inline", ...HOME_FAMILIES];
 
 // The watch face picker always shows the first BASE_SLOTS slots and grows past
 // them only when a higher slot is occupied; MAX_SLOTS is the hard ceiling both
@@ -67,14 +98,18 @@ export function lockedOccupied(recordSlots: Iterable<number>, occupied: readonly
 /** The schema a document must carry for its content. Mirrors
  * `CustomComplicationConfig.schemaVersion(for:)` in the app.
  *
- * 6 when the document lacks one of the three canvas shapes, lists Inline, or
- * carries an `inline` object: an app that predates per-shape support would
+ * 7 when the document names any iPhone Home Screen shape, which an app that
+ * predates them cannot draw at all.
+ *
+ * 6 when the document lacks one of the three watch canvas shapes, lists Inline,
+ * or carries an `inline` object: an app that predates per-shape support would
  * draw the missing shapes from the shared layers, or "Custom" for Inline, so
  * it must skip the document ("needs app update") instead. Otherwise 5 above
  * slot 7 (an old app's slot-id parser rejects ids past 8) and 4 below, so an
  * unchanged document stays byte-stable for old apps. */
 export function schemaVersionFor(cfg: Pick<CustomComplicationConfig, "slotIndex" | "supportedFamilies" | "inline">): number {
-  const missesCanvasShape = DRAWABLE_FAMILIES.some((f) => !cfg.supportedFamilies.includes(f));
+  if (HOME_FAMILIES.some((f) => cfg.supportedFamilies.includes(f))) return 7;
+  const missesCanvasShape = WATCH_CANVAS_FAMILIES.some((f) => !cfg.supportedFamilies.includes(f));
   if (missesCanvasShape || cfg.supportedFamilies.includes("inline") || cfg.inline !== undefined) return 6;
   return cfg.slotIndex > 7 ? 5 : 4;
 }
@@ -3369,7 +3404,7 @@ export function liftChartOwnMarks(cfg: CustomComplicationConfig): void {
       convertChartTimes(cfg, c.id);
     }
     if (owner.kind === "image" && owner.payload.timestamp === true) {
-      addImageTime(cfg, c.id, DESIGN_BOX[seat === undefined || seat === "inline" ? "rectangular" : seat]);
+      addImageTime(cfg, c.id, DESIGN_BOX[seat ?? "rectangular"]);
     }
     c.frame = ownFrame;
     if (seat === undefined || placed === undefined) continue;
@@ -4479,11 +4514,12 @@ export function defaultLayout(): FamilyLayout {
   return { placements: {}, cornerBodyShape: "circle", borderWidth: 2, rules: [] };
 }
 
-/** A fresh document with the given shapes. The default is the three canvas
- * shapes, which is what a watch that predates per-shape support needs and
- * what every document had before schema 6; the panel's create dialog passes
- * one shape. Inline starts with a literal since there is no text layer yet. */
-export function newConfig(name: string, slotIndex: number, families: FamilyKind[] = [...DRAWABLE_FAMILIES]): CustomComplicationConfig {
+/** A fresh document with the given shapes. The default is the three watch
+ * canvas shapes, which is what a watch that predates per-shape support needs
+ * and what every document had before schema 6; the panel's create dialog
+ * passes one shape. Inline starts with a literal since there is no text layer
+ * yet. */
+export function newConfig(name: string, slotIndex: number, families: FamilyKind[] = [...WATCH_CANVAS_FAMILIES]): CustomComplicationConfig {
   const perFamily: Partial<Record<FamilyKind, FamilyLayout>> = {};
   for (const f of DRAWABLE_FAMILIES) if (families.includes(f)) perFamily[f] = defaultLayout();
   const cfg: CustomComplicationConfig = {
@@ -4875,7 +4911,7 @@ export function outsetBetween(owner: NormalizedFrame, tap: NormalizedFrame, box:
 export function setTapOutsetFromFrame(
   cfg: CustomComplicationConfig,
   tapId: string,
-  family: "rectangular" | "circular" | "corner",
+  family: DrawableFamily,
   frame: NormalizedFrame,
 ): void {
   const tap = cfg.elements.find((el) => el.payload.id === tapId);
@@ -4899,7 +4935,7 @@ export function setTapOutsetFromFrame(
 export function tapPointSize(
   cfg: CustomComplicationConfig,
   tapId: string,
-  family: "rectangular" | "circular" | "corner",
+  family: DrawableFamily,
 ): { width: number; height: number } | undefined {
   const tap = cfg.elements.find((el) => el.payload.id === tapId);
   if (!tap) return undefined;
@@ -4992,7 +5028,7 @@ export function syncAttachedTaps(cfg: CustomComplicationConfig): void {
       for (const family of DRAWABLE_FAMILIES) {
         const layout = cfg.perFamily[family];
         if (!layout) continue;
-        const box = DESIGN_BOX[family as "rectangular" | "circular" | "corner"];
+        const box = DESIGN_BOX[family];
         const p = layout.placements[ownerId];
         if (family !== home || !p) {
           delete layout.placements[tap.payload.id];
@@ -5270,8 +5306,8 @@ export function copyElements(cfg: CustomComplicationConfig, ids: readonly string
  */
 export function pasteElementsOnto(cfg: CustomComplicationConfig, clip: LayerClip, family: FamilyKind): string[] {
   const from = clip.family;
-  const across = from !== undefined && from !== family && DRAWABLE_FAMILIES.includes(from);
-  if (!DRAWABLE_FAMILIES.includes(family)) return pasteElements(cfg, clip);
+  const across = from !== undefined && from !== family && hasCanvas(from);
+  if (!hasCanvas(family)) return pasteElements(cfg, clip);
   const landed = pasteElements(cfg, clip, across ? { nudge: false } : {});
   const layout = cfg.perFamily[family] ?? (cfg.perFamily[family] = defaultLayout());
   for (const id of landed) {
@@ -5487,13 +5523,13 @@ export function ownedShownCount(cfg: CustomComplicationConfig, family: FamilyKin
 export function normalizeOwnership(cfg: CustomComplicationConfig, home?: FamilyKind): void {
   const families = DRAWABLE_FAMILIES.filter((f) => cfg.supportedFamilies.includes(f));
   if (families.length === 0) return;
-  const fallback = home !== undefined && families.includes(home) ? home : families[0]!;
+  const fallback = home !== undefined && hasCanvas(home) && families.includes(home) ? home : families[0]!;
   for (const f of families) if (!cfg.perFamily[f]) cfg.perFamily[f] = defaultLayout();
   // Attached taps are left out throughout: they are not rows, they follow
   // their owner, and `syncAttachedTaps` puts them right afterwards.
   const tops = () => cfg.elements.filter((el) => !isAttachedTap(cfg, el));
 
-  const seated = new Map<string, FamilyKind>();
+  const seated = new Map<string, DrawableFamily>();
   const drawnNowhere = new Set<string>();
   if (home === undefined) {
     // Opening. Read what each shape draws, then give the first shape that

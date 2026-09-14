@@ -11,7 +11,11 @@ import {
   TIMELINE_MIN_LABEL_SIZE,
   describeTapAction,
   imageTimeTextSize,
+  HOME_FAMILIES,
+  type DrawableFamily,
   type FamilyKind,
+  type HomeFamily,
+  type WatchCanvasFamily,
   type ImageContentMode,
   type ImageSource,
   type ChartAnchor,
@@ -43,22 +47,61 @@ import {
 export type { CanvasSize } from "./resolver.js";
 
 // The design box: the real WidgetKit slot on a 46 mm watch, measured 2026-08-30
-// (app repo docs/custom_complication_design_box.md). Every watch draws a uniformly
-// scaled copy of this box. It lives in model.ts because growing a tap area needs
-// it too, and one copy cannot drift from the other.
-export const CANVAS: Record<"rectangular" | "circular" | "corner", CanvasSize> = DESIGN_BOX;
+// (app repo docs/custom_complication_design_box.md), and the real iPhone Home
+// Screen tile, measured on an iPhone 15 Pro running iOS 26.6 with margins
+// disabled. Every watch draws a uniformly scaled copy of the watch boxes. It
+// lives in model.ts because growing a tap area needs it too, and one copy
+// cannot drift from the other.
+export const CANVAS: Record<DrawableFamily, CanvasSize> = DESIGN_BOX;
 
-export type DrawableFamily = keyof typeof CANVAS;
+export type { DrawableFamily, WatchCanvasFamily, HomeFamily } from "./model.js";
+
+/** The system's continuous corner on an iPhone Home Screen tile, in design-box
+ * points. One radius for every tile size, since it belongs to the device and
+ * not the widget. Preview chrome only: nothing about it is on the wire. */
+export const HOME_TILE_CORNER_RADIUS = 26.5;
+
+/** Whether this shape is one of the four iPhone Home Screen tiles. The same
+ * answer as `layouts.isHomeFamily`, kept here so the renderer needs nothing
+ * from the shape helpers. */
+function isHomeTile(family: FamilyKind): family is HomeFamily {
+  return (HOME_FAMILIES as FamilyKind[]).includes(family);
+}
 
 /** A watch case the panel can preview as. Slots in points, from the design-box doc. */
 export interface WatchCase {
   label: string;
   /** Screen size in points, as WKInterfaceDevice reports it. */
   screen: CanvasSize;
-  slots: Record<DrawableFamily, CanvasSize>;
+  slots: Record<WatchCanvasFamily, CanvasSize>;
   /** Only the 46 mm row was read off a real watch; the rest are scaled by screen width. */
   measured: boolean;
 }
+
+/** The seven slots an iPhone can put a complication in: the three lock screen
+ * shapes and the four Home Screen tiles. */
+export type PhoneSlotFamily = "rectangular" | "circular" | "inline" | HomeFamily;
+
+/** An iPhone the panel can preview as. Same idea as `WatchCase`: slot sizes in
+ * points, and a flag saying whether they came off a real phone. */
+export interface PhoneCase {
+  label: string;
+  /** Screen size in points, as UIScreen reports it. */
+  screen: CanvasSize;
+  slots: Record<PhoneSlotFamily, CanvasSize>;
+  /** Only the iPhone 15 Pro row was read off a real phone; the rest are
+   * estimated from Apple's published widget sizes. */
+  measured: boolean;
+}
+
+/** The measured 46 mm slots, which are the watch design boxes themselves. Spelled
+ * out rather than passed as `CANVAS`, so a watch case carries the three watch
+ * shapes and nothing else now that `CANVAS` also holds the phone's tiles. */
+const WATCH_46MM_SLOTS: Record<WatchCanvasFamily, CanvasSize> = {
+  rectangular: CANVAS.rectangular,
+  circular: CANVAS.circular,
+  corner: CANVAS.corner,
+};
 
 export const CASES: WatchCase[] = [
   { label: "40 mm", screen: { width: 162, height: 197 }, slots: { rectangular: { width: 141, height: 51 }, circular: { width: 40, height: 40 }, corner: { width: 26, height: 26 } }, measured: false },
@@ -66,11 +109,67 @@ export const CASES: WatchCase[] = [
   { label: "42 mm", screen: { width: 187, height: 223 }, slots: { rectangular: { width: 163, height: 59 }, circular: { width: 46, height: 46 }, corner: { width: 31, height: 31 } }, measured: false },
   { label: "44 mm", screen: { width: 184, height: 224 }, slots: { rectangular: { width: 160, height: 58 }, circular: { width: 45, height: 45 }, corner: { width: 30, height: 30 } }, measured: false },
   { label: "45 mm", screen: { width: 198, height: 242 }, slots: { rectangular: { width: 172, height: 62.5 }, circular: { width: 48.5, height: 48.5 }, corner: { width: 32, height: 32 } }, measured: false },
-  { label: "46 mm", screen: { width: 208, height: 248 }, slots: CANVAS, measured: true },
+  { label: "46 mm", screen: { width: 208, height: 248 }, slots: WATCH_46MM_SLOTS, measured: true },
   { label: "49 mm", screen: { width: 205, height: 251 }, slots: { rectangular: { width: 178.5, height: 64.5 }, circular: { width: 50, height: 50 }, corner: { width: 33.5, height: 33.5 } }, measured: false },
 ];
 
 export const REFERENCE_CASE = CASES.find((c) => c.measured)!;
+
+/** The iPhone 15 Pro's own Home Screen tiles, measured 2026-09-14 on iOS 26.6
+ * with margins disabled, and the lock screen circular slot measured at the
+ * same time. `xlarge` is the placeholder box (see `DESIGN_BOX`), and the lock
+ * screen rectangular and inline slots were never placed, so those two are
+ * estimated from the watch's shapes. */
+const IPHONE_15_PRO_SLOTS: Record<PhoneSlotFamily, CanvasSize> = {
+  rectangular: { width: 160, height: 72 },
+  circular: { width: 58, height: 58 },
+  inline: { width: 240, height: 20 },
+  small: CANVAS.small,
+  medium: CANVAS.medium,
+  large: CANVAS.large,
+  xlarge: CANVAS.xlarge,
+};
+
+/** An iPhone the panel can preview as. Only the iPhone 15 Pro row was read off
+ * a real phone; every other row is scaled from Apple's published widget sizes
+ * for that screen and is labelled "(estimated)", exactly like the watch cases.
+ *
+ * Apple's published table runs 5 to 7 points small against the real iOS 26
+ * tile, so an estimated row is a guide to proportion, not a measurement. */
+export const PHONE_CASES: PhoneCase[] = [
+  { label: "iPhone SE", screen: { width: 375, height: 667 }, slots: { rectangular: { width: 153, height: 69 }, circular: { width: 56, height: 56 }, inline: { width: 230, height: 19 }, small: { width: 148.33, height: 148.33 }, medium: { width: 321.67, height: 148.33 }, large: { width: 321.67, height: 324 }, xlarge: { width: 321.67, height: 499.67 } }, measured: false },
+  { label: "iPhone 13 mini", screen: { width: 375, height: 812 }, slots: { rectangular: { width: 153, height: 69 }, circular: { width: 56, height: 56 }, inline: { width: 230, height: 19 }, small: { width: 155.33, height: 155.33 }, medium: { width: 329, height: 155.33 }, large: { width: 329, height: 345 }, xlarge: { width: 329, height: 534.67 } }, measured: false },
+  { label: "iPhone 15 Pro", screen: { width: 393, height: 852 }, slots: IPHONE_15_PRO_SLOTS, measured: true },
+  { label: "iPhone 15 Pro Max", screen: { width: 430, height: 932 }, slots: { rectangular: { width: 172, height: 77 }, circular: { width: 62, height: 62 }, inline: { width: 258, height: 21 }, small: { width: 170, height: 170 }, medium: { width: 364.33, height: 170 }, large: { width: 364.33, height: 382 }, xlarge: { width: 364.33, height: 592 } }, measured: false },
+  { label: "iPhone 17 Pro Max", screen: { width: 440, height: 956 }, slots: { rectangular: { width: 176, height: 79 }, circular: { width: 63, height: 63 }, inline: { width: 264, height: 21 }, small: { width: 174, height: 174 }, medium: { width: 373, height: 174 }, large: { width: 373, height: 391 }, xlarge: { width: 373, height: 606 } }, measured: false },
+];
+
+export const REFERENCE_PHONE = PHONE_CASES.find((c) => c.measured)!;
+
+/** A device the panel can preview as, whichever kind it is. The panel picks
+ * the list by the owner's kind and holds one of these. */
+export type PreviewCase = WatchCase | PhoneCase;
+
+/** The real slot this device draws the shape in. A watch case carries the
+ * three watch shapes and nothing else, so a Home Screen tile asked of a watch
+ * falls back to its own design box rather than throwing: the panel never
+ * offers a watch owner one, and a stray document is drawn at its box. */
+export function slotFor(previewCase: PreviewCase, family: DrawableFamily): CanvasSize {
+  const slots: Partial<Record<DrawableFamily, CanvasSize>> = previewCase.slots;
+  return slots[family] ?? CANVAS[family];
+}
+
+/** The phone case matching a `screen_size` string ("393x852", points). The
+ * phone does not report one yet, so this answers undefined for every owner
+ * today and callers fall back to `REFERENCE_PHONE`. */
+export function phoneCaseForScreenSize(screenSize: string | null | undefined): PhoneCase | undefined {
+  if (!screenSize) return undefined;
+  const match = /^(\d+)x(\d+)$/.exec(screenSize.trim());
+  if (!match) return undefined;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  return PHONE_CASES.find((c) => c.screen.width === width && c.screen.height === height);
+}
 
 /**
  * The case matching a watch-reported `screen_size` string ("208x248", points,
@@ -1912,13 +2011,16 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
     </svg>`;
   }
 
-  const clip = svg`<rect width=${canvas.width} height=${canvas.height} />`;
+  // A Home Screen tile is drawn inside the system's rounded corner, which is
+  // where iOS clips the widget. The watch shapes have no corner of their own.
+  const rx = isHomeTile(family) ? HOME_TILE_CORNER_RADIUS * fit.scale : 0;
+  const clip = svg`<rect width=${canvas.width} height=${canvas.height} rx=${rx} />`;
   const chrome = border
-    ? svg`<rect x=${bw / 2} y=${bw / 2} width=${canvas.width - bw} height=${canvas.height - bw} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${bw} />`
+    ? svg`<rect x=${bw / 2} y=${bw / 2} width=${canvas.width - bw} height=${canvas.height - bw} rx=${Math.max(0, rx - bw / 2)} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${bw} />`
     : nothing;
   // Editor affordance: a black well when there is no background so white
   // layers stay visible (the watch face itself is black).
-  const well = svg`<rect width=${canvas.width} height=${canvas.height} fill="#000000" />`;
+  const well = svg`<rect width=${canvas.width} height=${canvas.height} rx=${rx} fill="#000000" />`;
   const viewBox = `0 0 ${canvas.width} ${canvas.height}`;
 
   return svg`<svg viewBox=${viewBox} xmlns="http://www.w3.org/2000/svg" class="complication ${family}"
@@ -1926,7 +2028,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
     <defs><clipPath id=${uid}>${clip}</clipPath>${defsTint}</defs>
     <g clip-path=${`url(#${uid})`}>
       ${well}
-      ${bg ? tinted(svg`<rect width=${canvas.width} height=${canvas.height} fill=${bg.color} fill-opacity=${bg.opacity} />`, "plain", tint) : nothing}
+      ${bg ? tinted(svg`<rect width=${canvas.width} height=${canvas.height} rx=${rx} fill=${bg.color} fill-opacity=${bg.opacity} />`, "plain", tint) : nothing}
       <g data-design-box transform="translate(${fit.x} ${fit.y}) scale(${fit.scale})">
         ${elements.map((el) => renderElement(el, design, options, charts, tint))}
             ${gridLines(design, options.grid)}
@@ -2072,14 +2174,20 @@ export function renderLayerThumb(layout: ResolvedLayout, ids: readonly string[],
     ...(options.imageSizes ? { imageSizes: options.imageSizes } : {}),
   };
   const picked = layout.elements.filter((el) => ids.includes(el.id));
+  // Three shapes of face, not two: a square one for rectangular, a disc for
+  // the round watch shapes, and a rounded tile for the Home Screen sizes.
+  const shape: "rect" | "circle" | "rounded" = family === "rectangular"
+    ? "rect"
+    : isHomeTile(family) ? "rounded" : "circle";
+  const rx = shape === "rounded" ? HOME_TILE_CORNER_RADIUS : 0;
   const chrome = border && bw > 0
-    ? (family === "rectangular"
-      ? svg`<rect x=${bw / 2} y=${bw / 2} width=${design.width - bw} height=${design.height - bw} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${bw} />`
-      : svg`<circle cx=${design.width / 2} cy=${design.height / 2} r=${design.width / 2 - bw / 2} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${bw} />`)
+    ? (shape === "circle"
+      ? svg`<circle cx=${design.width / 2} cy=${design.height / 2} r=${design.width / 2 - bw / 2} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${bw} />`
+      : svg`<rect x=${bw / 2} y=${bw / 2} width=${design.width - bw} height=${design.height - bw} rx=${Math.max(0, rx - bw / 2)} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${bw} />`)
     : nothing;
-  const face = family === "rectangular"
-    ? svg`<rect width=${design.width} height=${design.height} fill=${bg ? bg.color : "#000000"} fill-opacity=${bg ? bg.opacity : 1} />`
-    : svg`<circle cx=${design.width / 2} cy=${design.height / 2} r=${design.width / 2} fill=${bg ? bg.color : "#000000"} fill-opacity=${bg ? bg.opacity : 1} />`;
+  const face = shape === "circle"
+    ? svg`<circle cx=${design.width / 2} cy=${design.height / 2} r=${design.width / 2} fill=${bg ? bg.color : "#000000"} fill-opacity=${bg ? bg.opacity : 1} />`
+    : svg`<rect width=${design.width} height=${design.height} rx=${rx} fill=${bg ? bg.color : "#000000"} fill-opacity=${bg ? bg.opacity : 1} />`;
   return svg`<svg viewBox=${`${crop.x} ${crop.y} ${crop.w} ${crop.h}`} xmlns="http://www.w3.org/2000/svg" class="thumb ${family}"
       width=${options.width} height=${options.height} preserveAspectRatio="xMidYMid meet" aria-hidden="true">
     <rect x=${crop.x} y=${crop.y} width=${crop.w} height=${crop.h} fill="#000000" />
@@ -2095,5 +2203,9 @@ export function familyTitle(family: FamilyKind): string {
     case "circular": return "Circular";
     case "corner": return "Corner";
     case "inline": return "Inline";
+    case "small": return "Small";
+    case "medium": return "Medium";
+    case "large": return "Large";
+    case "xlarge": return "Extra Large";
   }
 }

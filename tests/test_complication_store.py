@@ -9,6 +9,7 @@ restore refusing to overwrite live data.
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import contextlib
 import copy
@@ -35,7 +36,7 @@ MAX_PER_OWNER = 8
 MAX_SLOTS = 64
 MAX_LAYERS = 64
 MAX_BYTES = 4096
-MAX_SCHEMA = 6
+MAX_SCHEMA = 7
 
 
 class _FakeStore:
@@ -534,6 +535,19 @@ def test_pages_drop_junk_and_clear_on_empty(mod):
         lambda d: d.update(supportedFamilies=[["rectangular"]]),
         lambda d: d.update(supportedFamilies=[{"a": 1}]),
         lambda d: d.update(supportedFamilies=["rectangular", "circular", "corner", 7]),
+        # Home Screen shapes the panel never writes.
+        lambda d: d.update(schemaVersion=7, supportedFamilies=["xsmall"]),
+        lambda d: d.update(schemaVersion=7, supportedFamilies=["systemSmall"]),
+        lambda d: d.update(schemaVersion=7, supportedFamilies=["rectangular", "Small"]),
+        # An iPhone Home Screen shape needs the schema-7 marker, so an app that
+        # predates it skips the document instead of drawing a shape it lacks.
+        lambda d: d.update(schemaVersion=6, supportedFamilies=["small"]),
+        lambda d: d.update(schemaVersion=6, supportedFamilies=["medium", "large"]),
+        lambda d: d.update(
+            schemaVersion=6,
+            supportedFamilies=["rectangular", "circular", "corner", "xlarge"],
+        ),
+        lambda d: d.update(supportedFamilies=["rectangular", "circular", "corner", "small"]),
         # One shape or Inline needs the schema-6 marker (an old app would draw
         # the missing shapes from the shared layers, or "Custom" for Inline).
         lambda d: d.update(supportedFamilies=["rectangular"]),
@@ -602,6 +616,71 @@ def test_single_shape_and_inline_documents_save_at_schema_six(mod, overrides):
         "supportedFamilies", ["rectangular", "circular", "corner"]
     )
     assert rec.document.get("inline") == overrides.get("inline")
+
+
+@pytest.mark.parametrize(
+    "families",
+    [
+        ["small"],
+        ["medium"],
+        ["large"],
+        ["xlarge"],
+        ["small", "medium", "large", "xlarge"],
+        # A phone document may mix its lock screen and Home Screen shapes.
+        ["rectangular", "circular", "small", "medium"],
+        # All eight names at once, the widest document the store accepts.
+        ["rectangular", "circular", "corner", "small", "medium", "large", "xlarge"],
+    ],
+)
+def test_home_screen_documents_save_at_schema_seven(mod, families):
+    """The four iPhone Home Screen shapes ride the wire at schema 7."""
+    store = _new(mod)
+    rec = store.save(
+        OWNER,
+        _doc(schemaVersion=7, supportedFamilies=families),
+        base_revision=None,
+        updated_by="t",
+    )
+    assert rec.document["supportedFamilies"] == families
+    assert rec.document["schemaVersion"] == 7
+
+
+def test_home_screen_document_below_schema_seven_names_the_version(mod):
+    """The refusal says which version the document needs, not just "invalid"."""
+    store = _new(mod)
+    with pytest.raises(mod.ComplicationValidationError) as err:
+        store.save(
+            OWNER,
+            _doc(schemaVersion=6, supportedFamilies=["small"]),
+            base_revision=None,
+            updated_by="t",
+        )
+    assert "7" in str(err.value)
+
+
+def test_the_shipped_schema_ceiling_is_seven():
+    """The store test stubs the constant, so read the real one too. Both the
+    websocket listing and the v2 delta reply hand this number to their client,
+    and a phone will not save a Home Screen document until it reads 7."""
+    const = (
+        Path(__file__).resolve().parents[1]
+        / "custom_components"
+        / "wrist_assistant"
+        / "const.py"
+    )
+    tree = ast.parse(const.read_text(), filename=str(const))
+    values = {
+        target.id: node.value.value
+        for node in tree.body
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    assert values["COMPLICATION_MAX_SCHEMA_VERSION"] == MAX_SCHEMA == 7
+
+    for name in ("complication_ws.py", "wa_v2_views.py"):
+        source = (const.parent / name).read_text()
+        assert '"max_schema_version": COMPLICATION_MAX_SCHEMA_VERSION' in source, name
 
 
 def test_high_slots_are_valid_with_the_schema_marker(mod):
@@ -873,6 +952,9 @@ def test_occupied_keeps_a_custom_rows_families(mod):
             {"slot": 3, "name": "C", "kind": "custom", "home": "Cabin", "families": "rectangular"},
             {"slot": 4, "name": "D", "kind": "custom", "home": "Cabin"},
             {"slot": 5, "name": "P", "kind": "preset", "families": ["circular"]},
+            # The iPhone Home Screen names pass the same filter.
+            {"slot": 6, "name": "E", "kind": "custom", "home": "Phone",
+             "families": ["xlarge", "small", "medium", "large", "tile"]},
         ],
     )
     rows = store.occupied(OWNER)
@@ -883,6 +965,7 @@ def test_occupied_keeps_a_custom_rows_families(mod):
     # A preset has no document; the key is still passed through as sent, the
     # panel ignores it for presets.
     assert rows[4]["families"] == ["circular"]
+    assert rows[5]["families"] == ["large", "medium", "small", "xlarge"]
     # Round trip through storage keeps it.
     assert _new(mod).occupied(OWNER)[0]["families"] == ["inline", "rectangular"]
 

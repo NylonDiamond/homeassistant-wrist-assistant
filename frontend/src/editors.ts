@@ -241,6 +241,7 @@ import {
   type ChartFillStyle,
 } from "./model.js";
 import { chartSmoothed, chartSeriesWithHoles } from "./resolver.js";
+import { familyNote, isHomeFamily } from "./layouts.js";
 import { watchVersionNote } from "./version.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import {
@@ -5218,8 +5219,8 @@ function tapSizeHint(host: EditorHost, tapId: string): TemplateResult | typeof n
   const parts: string[] = [];
   let smallest = Infinity;
   for (const family of DRAWABLE_FAMILIES) {
-    if (family === "inline" || !host.config.supportedFamilies.includes(family)) continue;
-    const size = tapPointSize(host.config, tapId, family as "rectangular" | "circular" | "corner");
+    if (!host.config.supportedFamilies.includes(family)) continue;
+    const size = tapPointSize(host.config, tapId, family);
     if (!size) continue;
     parts.push(`${familyTitle(family)} ${Math.round(size.width)} x ${Math.round(size.height)} pt`);
     smallest = Math.min(smallest, size.width, size.height);
@@ -5814,11 +5815,19 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
   const placed = shownCount(host.config, family);
   // Same sections as a layer, in the same order and for the same reason: a
   // shape is another object in the one inspector, not another tab.
-  const bg = layout.backgroundColorHex ? colorWords(layout.backgroundColorHex) : "transparent";
+  const home = isHomeFamily(family);
+  const bg = layout.backgroundColorHex ? colorWords(layout.backgroundColorHex) : home ? "the system's widget material" : "transparent";
   const border = layout.borderColorHex ? `${layout.borderWidth} pt ${colorWords(layout.borderColorHex)} border` : "no border";
+  const background = colorField(
+    home ? "Tile background (blank = the system's widget material)" : "Background (blank = transparent)",
+    layout.backgroundColorHex,
+    (v) => upd((l) => { if (v === undefined) delete l.backgroundColorHex; else l.backgroundColorHex = v; }, "bg"),
+    true,
+    null,
+  );
   return html`
     ${card(host, "look", `${familyTitle(family)} shape`, html`
-      ${colorField("Background (blank = transparent)", layout.backgroundColorHex, (v) => upd((l) => { if (v === undefined) delete l.backgroundColorHex; else l.backgroundColorHex = v; }, "bg"), true, null)}
+      ${home ? nothing : background}
       <div class="fgroup">
       ${colorField("Border colour", layout.borderColorHex, (v) => upd((l) => { if (v === undefined) delete l.borderColorHex; else l.borderColorHex = v; }, "border"), true, null)}
       ${numberField("Border width", layout.borderWidth, (v) => upd((l) => { l.borderWidth = v ?? 2; }, "bw"), { step: 0.5, min: 0, def: 2, unit: "pt" })}
@@ -5826,6 +5835,13 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
       { color: SECTION_COLOR.look, icon: "shape", summary: `${bg} · ${border}`,
         ...(layout.backgroundColorHex !== undefined || layout.borderColorHex !== undefined || layout.borderWidth !== 2
           ? { reset: () => upd((l) => { delete l.backgroundColorHex; delete l.borderColorHex; l.borderWidth = 2; }, "reset-look") } : {}) })}
+    ${home ? card(host, "home", "Home Screen", html`
+      ${background}
+      <div class="hint">The tile is drawn edge to edge: this colour fills every point of it, and the design is laid out inside the ${familyTitle(family)} box.</div>
+      <div class="hint keep">iOS 18 lets a user tint the whole Home Screen. The system then drops the background and draws the design in two tones, so check that it still reads without its colours.</div>
+      ${familyNote(family) ? html`<div class="hint keep">${familyTitle(family)} needs ${familyNote(family)}. An iPhone on an older version is not offered this size when adding a widget, and every other size still draws.</div>` : nothing}`,
+      { color: SECTION_COLOR.look, icon: "shape", summary: bg,
+        ...(layout.backgroundColorHex !== undefined ? { reset: () => upd((l) => { delete l.backgroundColorHex; }, "reset-home") } : {}) }) : nothing}
     ${family === "corner" ? card(host, "corner", "Corner content", cornerEditor(host, layout, upd),
       { color: SECTION_COLOR.content, icon: "content", summary: layout.curvedText ? "Big curved text" : "Layer canvas",
         ...(layout.curvedText !== undefined || layout.bezelText !== undefined || layout.bezelGauge !== undefined

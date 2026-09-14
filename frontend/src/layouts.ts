@@ -9,9 +9,13 @@
 
 import {
   type CustomComplicationConfig,
+  type DrawableFamily,
   type FamilyKind,
+  type HomeFamily,
   type InlineLayout,
   DRAWABLE_FAMILIES,
+  HOME_FAMILIES,
+  WATCH_CANVAS_FAMILIES,
   defaultLayout,
   literal,
   ownedElements,
@@ -20,10 +24,23 @@ import {
   removeElement,
   schemaVersionFor,
 } from "./model.js";
-import { type DeviceOwnerLike, deviceKindOf } from "./version.js";
+import {
+  type DeviceOwnerLike,
+  MIN_IPHONE_VERSION_FOR_HOME_SCREEN,
+  deviceKindOf,
+  watchSupportsShapes,
+} from "./version.js";
 
 /** Every shape, in the order the schema, the pickers and the panel list them. */
-export const ALL_FAMILIES: FamilyKind[] = ["rectangular", "circular", "corner", "inline"];
+export const ALL_FAMILIES: FamilyKind[] = ["rectangular", "circular", "corner", "inline", ...HOME_FAMILIES];
+
+/** Whether the panel offers the Extra Large Home Screen shape at all.
+ *
+ * Its design box is a placeholder: the 4x6 tile only exists on iOS 27 and
+ * nothing here has been measured on an iOS 27 phone yet. A design box is on
+ * the wire forever, so the shape stays hidden until the real number is in.
+ * Flip this to true in the same change that replaces `DESIGN_BOX.xlarge`. */
+export const XLARGE_MEASURED = false;
 
 /** The shapes the panel offers for one owner.
  *
@@ -33,15 +50,63 @@ export const ALL_FAMILIES: FamilyKind[] = ["rectangular", "circular", "corner", 
  * imported from a watch), it simply has no tab here, the same way the panel
  * treats any family a device cannot draw.
  *
+ * The four Home Screen shapes go the other way: only a phone has them, and
+ * only from the release whose widget extension draws them. A phone below that
+ * is not locked out, it simply keeps its three lock screen shapes.
+ *
  * Everywhere the panel lists shapes for the selected owner goes through this,
  * so the picker, the filter, the tabs and the New dialog can never disagree
  * about which shapes exist. */
 export function familiesFor(owner: DeviceOwnerLike | null | undefined): FamilyKind[] {
-  return deviceKindOf(owner) === "iphone" ? ALL_FAMILIES.filter((f) => f !== "corner") : ALL_FAMILIES;
+  if (deviceKindOf(owner) !== "iphone") return ALL_FAMILIES.filter((f) => !isHomeFamily(f));
+  const home = watchSupportsShapes(owner?.app_version, MIN_IPHONE_VERSION_FOR_HOME_SCREEN);
+  return ALL_FAMILIES.filter((f) => {
+    if (f === "corner") return false;
+    if (f === "xlarge") return home && XLARGE_MEASURED;
+    if (isHomeFamily(f)) return home;
+    return true;
+  });
 }
 
-export function isDrawable(family: FamilyKind): family is "rectangular" | "circular" | "corner" {
-  return DRAWABLE_FAMILIES.includes(family);
+export function isDrawable(family: FamilyKind): family is DrawableFamily {
+  return (DRAWABLE_FAMILIES as FamilyKind[]).includes(family);
+}
+
+/** Whether a shape is one of the four iPhone Home Screen tiles. */
+export function isHomeFamily(family: FamilyKind): family is HomeFamily {
+  return (HOME_FAMILIES as FamilyKind[]).includes(family);
+}
+
+/** The one short line a shape carries beside its name, or undefined for a
+ * shape that needs none. The full-page tile is the only one with a condition
+ * on it: iOS 27 added the family, and no OS version travels on the wire, so
+ * the label is how a phone on iOS 26 learns why the size never appears in its
+ * widget gallery. Read by the New dialog's shape card and the shape's own
+ * editor card, which is why it is here rather than in either of them. */
+export function familyNote(family: FamilyKind): string | undefined {
+  return family === "xlarge" ? "iOS 27 and later" : undefined;
+}
+
+/**
+ * The shapes an import can land on this device: the document's own, narrowed
+ * to the shapes the owner draws.
+ *
+ * A watch document imported on a phone loses Corner, and a Home Screen
+ * document imported on a watch loses its tiles, rather than arriving with a
+ * shape nothing on this device will ever draw. The preview and the saved copy
+ * read the same list, so what is shown is what lands.
+ *
+ * A document naming nothing this device draws keeps its shapes: there is no
+ * complication left otherwise, and the panel already copes with a shape that
+ * has no tab.
+ */
+export function importableFamilies(
+  cfg: Pick<CustomComplicationConfig, "supportedFamilies">,
+  offered: readonly FamilyKind[],
+): FamilyKind[] {
+  const have = supportedFamilies(cfg);
+  const kept = have.filter((f) => offered.includes(f));
+  return kept.length > 0 ? kept : have;
 }
 
 /** The document's shapes in canonical order, whatever order the file had. */
@@ -56,8 +121,8 @@ export function missingFamilies(cfg: Pick<CustomComplicationConfig, "supportedFa
 
 /** The first supported canvas shape, for the parts of the editor that need a
  * canvas (layer placements, drags) when the active shape is Inline. */
-export function firstDrawable(cfg: Pick<CustomComplicationConfig, "supportedFamilies">): "rectangular" | "circular" | "corner" | undefined {
-  return DRAWABLE_FAMILIES.find((f) => cfg.supportedFamilies.includes(f)) as "rectangular" | "circular" | "corner" | undefined;
+export function firstDrawable(cfg: Pick<CustomComplicationConfig, "supportedFamilies">): DrawableFamily | undefined {
+  return DRAWABLE_FAMILIES.find((f) => cfg.supportedFamilies.includes(f));
 }
 
 /** A shape can go only while another remains: the set is never empty. */

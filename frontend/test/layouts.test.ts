@@ -4,27 +4,36 @@ import { describe, expect, it } from "vitest";
 import { type Value, encodeConfig, literal, newConfig, newElement, newRule, parseConfig, schemaVersionFor } from "../src/model.js";
 import {
   ALL_FAMILIES,
+  XLARGE_MEASURED,
   addFamily,
   canRemoveFamily,
   familiesFor,
   familyContentSummary,
+  familyNote,
   firstDrawable,
+  isHomeFamily,
   keepFamilies,
   missingFamilies,
   removeFamily,
   blankInline,
   supportedFamilies,
 } from "../src/layouts.js";
+import { MIN_IPHONE_VERSION_FOR_HOME_SCREEN } from "../src/version.js";
+
+const WATCH_SHAPES = ["rectangular", "circular", "corner", "inline"];
+/** A phone new enough for the Home Screen shapes, per the gate. */
+const NEW_PHONE = { device_kind: "iphone" as const, app_version: MIN_IPHONE_VERSION_FOR_HOME_SCREEN };
 
 describe("familiesFor", () => {
-  it("offers every shape to a watch", () => {
-    expect(familiesFor({ device_kind: "watch" })).toEqual(ALL_FAMILIES);
+  it("offers the four watch shapes to a watch and never a Home Screen tile", () => {
+    expect(familiesFor({ device_kind: "watch" })).toEqual(WATCH_SHAPES);
+    expect(familiesFor({ device_kind: "watch", app_version: "9.9.9" })).toEqual(WATCH_SHAPES);
   });
 
   it("treats an absent or null kind as a watch, which is what every owner used to be", () => {
-    expect(familiesFor({})).toEqual(ALL_FAMILIES);
-    expect(familiesFor({ device_kind: null })).toEqual(ALL_FAMILIES);
-    expect(familiesFor(undefined)).toEqual(ALL_FAMILIES);
+    expect(familiesFor({})).toEqual(WATCH_SHAPES);
+    expect(familiesFor({ device_kind: null })).toEqual(WATCH_SHAPES);
+    expect(familiesFor(undefined)).toEqual(WATCH_SHAPES);
   });
 
   // Corner is a watch face slot and nothing else: the iPhone lock screen has
@@ -33,9 +42,36 @@ describe("familiesFor", () => {
     expect(familiesFor({ device_kind: "iphone" })).toEqual(["rectangular", "circular", "inline"]);
   });
 
+  // The Home Screen shapes are a version gate, not a lock-out: a phone below
+  // it keeps its three lock screen shapes and simply is not offered the tiles.
+  it("holds the Home Screen shapes back from a phone below the gate", () => {
+    for (const app_version of ["2.7.2", "1.0.0", undefined, null, "nonsense"]) {
+      expect(familiesFor({ device_kind: "iphone", app_version })).toEqual(["rectangular", "circular", "inline"]);
+    }
+  });
+
+  it("offers the Home Screen shapes to a phone at or above the gate", () => {
+    const expected = ["rectangular", "circular", "inline", "small", "medium", "large"];
+    expect(familiesFor(NEW_PHONE)).toEqual(XLARGE_MEASURED ? [...expected, "xlarge"] : expected);
+    expect(familiesFor({ device_kind: "iphone", app_version: "3.4.5" })).toEqual(
+      XLARGE_MEASURED ? [...expected, "xlarge"] : expected,
+    );
+  });
+
+  // Extra Large's design box is a placeholder until it is measured on iOS 27,
+  // and a design box is on the wire forever, so the shape stays hidden.
+  it("offers Extra Large only once its box is measured", () => {
+    expect(familiesFor(NEW_PHONE).includes("xlarge")).toBe(XLARGE_MEASURED);
+  });
+
   it("does not change the shared list it filters", () => {
     familiesFor({ device_kind: "iphone" });
-    expect(ALL_FAMILIES).toEqual(["rectangular", "circular", "corner", "inline"]);
+    familiesFor({ device_kind: "watch" });
+    expect(ALL_FAMILIES).toEqual([...WATCH_SHAPES, "small", "medium", "large", "xlarge"]);
+  });
+
+  it("knows which shapes are Home Screen tiles", () => {
+    expect(ALL_FAMILIES.filter(isHomeFamily)).toEqual(["small", "medium", "large", "xlarge"]);
   });
 });
 
@@ -229,12 +265,29 @@ describe("helpers", () => {
   it("lists supported and missing shapes in canonical order", () => {
     const cfg = { supportedFamilies: ["inline", "rectangular"] as const };
     expect(supportedFamilies({ supportedFamilies: [...cfg.supportedFamilies] })).toEqual(["rectangular", "inline"]);
-    expect(missingFamilies({ supportedFamilies: [...cfg.supportedFamilies] })).toEqual(["circular", "corner"]);
-    expect(ALL_FAMILIES).toEqual(["rectangular", "circular", "corner", "inline"]);
+    expect(missingFamilies({ supportedFamilies: [...cfg.supportedFamilies] })).toEqual(
+      ["circular", "corner", "small", "medium", "large", "xlarge"],
+    );
+    expect(ALL_FAMILIES).toEqual(["rectangular", "circular", "corner", "inline", "small", "medium", "large", "xlarge"]);
   });
 
   it("finds the first canvas shape, or none for Inline only", () => {
     expect(firstDrawable({ supportedFamilies: ["inline", "corner"] })).toBe("corner");
     expect(firstDrawable({ supportedFamilies: ["inline"] })).toBeUndefined();
+  });
+});
+
+// The note is read straight, not through familiesFor: Extra Large is hidden
+// from every owner while its design box is a placeholder, so the only way to
+// check the line the card would carry is to ask for it.
+describe("familyNote", () => {
+  it("marks Extra Large as an iOS 27 shape", () => {
+    expect(familyNote("xlarge")).toBe("iOS 27 and later");
+  });
+
+  it("says nothing about any other shape", () => {
+    for (const family of ALL_FAMILIES.filter((f) => f !== "xlarge")) {
+      expect(familyNote(family)).toBeUndefined();
+    }
   });
 });

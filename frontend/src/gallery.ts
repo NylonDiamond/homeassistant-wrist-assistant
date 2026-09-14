@@ -24,8 +24,12 @@ import { supportedFamilies } from "./layouts.js";
 /** Where the gallery lives. The one place to change for testing on staging. */
 export const GALLERY_API_BASE = "https://wrist-assistant.com/api/gallery";
 
-/** The shapes the gallery files a complication under: the panel's own. */
-export const GALLERY_FAMILIES: readonly FamilyKind[] = ["rectangular", "circular", "corner", "inline"];
+/** The shapes the gallery files a complication under: the panel's own, the
+ * four watch face slots and the four iPhone Home Screen tiles. The Worker's
+ * `FAMILIES` and the gallery page's own list carry the same eight names. */
+export const GALLERY_FAMILIES: readonly FamilyKind[] = [
+  "rectangular", "circular", "corner", "inline", "small", "medium", "large", "xlarge",
+];
 
 export const GALLERY_TAGS = [
   "weather", "energy", "climate", "security", "media", "health",
@@ -58,7 +62,10 @@ export const GALLERY_LIMITS = {
   tags: 5,
   slots: 40,
   slotLabel: 60,
-  previews: 4,
+  // One picture per canvas shape. Seven shapes have a canvas (the three watch
+  // shapes and the four Home Screen tiles), so eight is the cap the gallery
+  // contract states, one clear of the most a document can produce.
+  previews: 8,
   shareTextBytes: 64 * 1024,
   pngBytes: 150 * 1024,
   bodyBytes: 1024 * 1024,

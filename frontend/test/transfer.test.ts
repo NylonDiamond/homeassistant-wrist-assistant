@@ -34,7 +34,9 @@ import {
   unresolvedEntities,
 } from "../src/transfer.js";
 
-const MAX_SCHEMA = 6;
+// The integration's ceiling, `COMPLICATION_MAX_SCHEMA_VERSION`. Raise it with
+// every schema bump or the newest fixtures fail to import here.
+const MAX_SCHEMA = 7;
 
 const fixturesDir = join(__dirname, "fixtures");
 const transferDir = join(__dirname, "fixtures-transfer");

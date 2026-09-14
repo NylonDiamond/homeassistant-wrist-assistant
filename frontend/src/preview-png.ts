@@ -111,8 +111,10 @@ export function galleryPreviewContext(
 }
 
 /**
- * One PNG per canvas shape the document has, at most the gallery's four.
- * Inline has no canvas, so it has no picture. Browser only.
+ * One PNG per canvas shape the document has, at most the gallery's limit.
+ * Each is drawn at its own design box, so a Home Screen tile comes out at the
+ * tile's proportions and a watch shape at the watch's. Inline has no canvas,
+ * so it has no picture. Browser only.
  */
 export async function renderGalleryPreviews(
   cfg: CustomComplicationConfig,
@@ -138,10 +140,10 @@ export async function renderGalleryPreviews(
 /**
  * Draw one rendered SVG onto a canvas and read it back as base64 PNG.
  *
- * The canvas takes the SVG's own size, which is the design box for the
- * rectangular and circular shapes and the corner's piece of watch face for
- * the corner. Every icon is already a path inside the SVG, so nothing outside
- * it is needed to draw it.
+ * The canvas takes the SVG's own size, which is the design box for every
+ * shape but the corner, whose picture is its piece of watch face. Every icon
+ * is already a path inside the SVG, so nothing outside it is needed to draw
+ * it.
  */
 async function templateToPng(template: TemplateResult): Promise<string> {
   const host = document.createElement("div");

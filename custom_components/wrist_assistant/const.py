@@ -96,7 +96,11 @@ GALLERY_KEY_STORAGE_VERSION = 1
 # one missing a canvas shape (rectangular, circular or corner) or one carrying
 # Inline (the `inline` object). A document with all three canvas shapes and no
 # Inline keeps 4 or 5. The store refuses a document that breaks the pairing.
-COMPLICATION_MAX_SCHEMA_VERSION = 6
+# v7 adds the four iPhone Home Screen shapes (small, medium, large, xlarge).
+# A document naming any of them must say 7, so an app that predates them skips
+# it with "needs app update" rather than drawing a shape it does not know.
+# A document with only watch shapes keeps the version it would have had.
+COMPLICATION_MAX_SCHEMA_VERSION = 7
 COMPLICATION_MAX_DOCUMENT_BYTES = 256 * 1024
 COMPLICATION_MAX_LAYERS = 64
 # Slot indices 0..COMPLICATION_MAX_SLOTS-1 map onto ComplicationStableSlot on

@@ -81,11 +81,21 @@ _OPTIONAL_DOCUMENT_KEYS: dict[str, type | tuple[type, ...]] = {
     "inline": dict,
 }
 _CANVAS_FAMILY_KINDS = frozenset({"rectangular", "circular", "corner"})
-_FAMILY_KINDS = _CANVAS_FAMILY_KINDS | {"inline"}
+# The four iPhone Home Screen tile sizes (systemSmall, systemMedium,
+# systemLarge, systemExtraLargePortrait). They are canvases too, but they are
+# not part of the schema-6 predicate above, which is the watch's three.
+_HOME_FAMILY_KINDS = frozenset({"small", "medium", "large", "xlarge"})
+_FAMILY_KINDS = _CANVAS_FAMILY_KINDS | _HOME_FAMILY_KINDS | {"inline"}
+# Every accepted family name, in the order the error message lists them.
+_FAMILY_KINDS_TEXT = "rectangular, circular, corner, inline, small, medium, large, xlarge"
 # First schema whose writers treat supportedFamilies as authoritative. Older
 # apps draw every canvas shape from the shared layers and draw "Custom" for
 # Inline, so a document that lacks a canvas shape or carries Inline must say 6.
 _FAMILY_SCHEMA_VERSION = 6
+# First schema that knows the iPhone Home Screen shapes. A document naming any
+# of them must say 7 so an older app skips it instead of drawing a document
+# whose shapes it cannot render.
+_HOME_FAMILY_SCHEMA_VERSION = 7
 # 0..COMPLICATION_MAX_SLOTS-1 into `ComplicationStableSlot` on the watch.
 _SLOT_RANGE = range(COMPLICATION_MAX_SLOTS)
 # Slots the original 8-slot pool covered. A document using a slot above these
@@ -390,7 +400,7 @@ def validate_document(document: Any) -> dict[str, Any]:
     ):
         raise ComplicationValidationError(
             "document.supportedFamilies must be a non-empty list of "
-            "rectangular, circular, corner, inline"
+            f"{_FAMILY_KINDS_TEXT}"
         )
     has_inline = "inline" in families
     inline = document.get("inline")
@@ -419,12 +429,19 @@ def validate_document(document: Any) -> dict[str, Any]:
         raise ComplicationValidationError(
             "document.slotIndex above 7 requires schemaVersion 5 or newer"
         )
-    needs_family_schema = has_inline or not _CANVAS_FAMILY_KINDS.issubset(families)
-    if needs_family_schema and schema_version < _FAMILY_SCHEMA_VERSION:
-        raise ComplicationValidationError(
-            "document with fewer than three canvas shapes, or with inline, "
-            f"requires schemaVersion {_FAMILY_SCHEMA_VERSION} or newer"
-        )
+    if not _HOME_FAMILY_KINDS.isdisjoint(families):
+        if schema_version < _HOME_FAMILY_SCHEMA_VERSION:
+            raise ComplicationValidationError(
+                "document with an iPhone Home Screen shape requires "
+                f"schemaVersion {_HOME_FAMILY_SCHEMA_VERSION} or newer"
+            )
+    else:
+        needs_family_schema = has_inline or not _CANVAS_FAMILY_KINDS.issubset(families)
+        if needs_family_schema and schema_version < _FAMILY_SCHEMA_VERSION:
+            raise ComplicationValidationError(
+                "document with fewer than three canvas shapes, or with inline, "
+                f"requires schemaVersion {_FAMILY_SCHEMA_VERSION} or newer"
+            )
 
     elements = document.get("elements") or []
     if len(elements) > COMPLICATION_MAX_LAYERS:

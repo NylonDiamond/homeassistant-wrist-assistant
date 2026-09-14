@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { chartHistoryRequests, chartStatisticsRequests, parseConfig } from "../src/model.js";
+import { DRAWABLE_FAMILIES, type DrawableFamily, chartHistoryRequests, chartStatisticsRequests, parseConfig } from "../src/model.js";
 import { compile } from "../src/compiler.js";
 import { resolveAll, type EntityState, type ForcedBranches, type ResolveContext, type ResolvedElement } from "../src/resolver.js";
 
@@ -126,6 +126,20 @@ function badUUIDs(value: unknown, found: string[] = []): string[] {
   return found;
 }
 
+// The fixture runner walks the canvas shapes by name. If a shape is added to
+// the schema and not to that list, a fixture block for it would be read, found
+// to be no shape the loop knows, and silently skipped: green, and checking
+// nothing. So pin the list itself.
+describe("the fixture runner", () => {
+  it("walks all seven canvas shapes", () => {
+    expect(DRAWABLE_FAMILIES).toEqual(["rectangular", "circular", "corner", "small", "medium", "large", "xlarge"]);
+  });
+
+  it("reads every fixture in the shared folder", () => {
+    expect(files.length).toBeGreaterThan(0);
+  });
+});
+
 describe.each(files)("fixture %s", (file) => {
   const fx = JSON.parse(readFileSync(join(dir, file), "utf8")) as Fixture;
   const config = parseConfig(fx.config);
@@ -161,9 +175,12 @@ describe.each(files)("fixture %s", (file) => {
     expectSubset(got as unknown as Record<string, unknown>, want, "inline");
   });
 
+  // Every canvas shape, the four iPhone Home Screen tiles included, so a
+  // fixture that arrives carrying a `small` or `medium` block is checked
+  // without this file being touched again.
   it("resolves every family to the expected layout", () => {
     const layouts = resolveAll(config, contextFor(fx));
-    for (const family of ["rectangular", "circular", "corner"] as const) {
+    for (const family of DRAWABLE_FAMILIES) {
       const want = fx.expected[family];
       if (!want) continue;
       const got = layouts[family];
@@ -195,7 +212,7 @@ describe.each(files)("fixture %s", (file) => {
 
   it("honours every forced branch in the fixture", () => {
     const specs = fx.expected.forced as
-      | { ruleId: string; branch: string; family: "rectangular" | "circular" | "corner"; elementId?: string; expect: Record<string, unknown> }[]
+      | { ruleId: string; branch: string; family: DrawableFamily; elementId?: string; expect: Record<string, unknown> }[]
       | undefined;
     if (!specs) return;
     for (const spec of specs) {

@@ -76,6 +76,8 @@ import {
   TIMELINE_MAX_LABEL_SIZE,
 } from "./model.js";
 import {
+  type DrawableFamily,
+  DRAWABLE_FAMILIES,
   chartBarBorderWidth,
   chartBarColors,
   chartBarCorners,
@@ -1989,7 +1991,7 @@ export function resolveInline(inline: InlineLayout, ctx: ResolveContext, config?
  * one. A shape not in `supportedFamilies` is absent, the same as the watch
  * (app repo `CustomComplication.resolveDocument`), so a preview never shows a
  * shape the wrist would not draw. */
-export type ResolvedAll = Partial<Record<"rectangular" | "circular" | "corner", ResolvedLayout>> & { inline?: ResolvedInline };
+export type ResolvedAll = Partial<Record<DrawableFamily, ResolvedLayout>> & { inline?: ResolvedInline };
 
 export function resolveAll(
   config: CustomComplicationConfig,
@@ -1998,7 +2000,7 @@ export function resolveAll(
 ): ResolvedAll {
   const r = new Resolver(ctx);
   const out: ResolvedAll = {};
-  for (const family of ["rectangular", "circular", "corner"] as const) {
+  for (const family of DRAWABLE_FAMILIES) {
     if (config.supportedFamilies.includes(family)) out[family] = r.resolveLayout(config, family, forced);
   }
   if (config.supportedFamilies.includes("inline") && config.inline) out.inline = resolveInline(config.inline, ctx, config);

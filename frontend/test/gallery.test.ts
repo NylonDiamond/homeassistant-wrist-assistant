@@ -77,6 +77,15 @@ describe("buildGallerySubmission", () => {
     expect(body).not.toHaveProperty("previews");
   });
 
+  // The Worker, the gallery page and this file carry the same eight names, so
+  // a Home Screen tile is filed under its own shape rather than dropped.
+  it("files a Home Screen tile under its own shape", () => {
+    const cfg = livingRoom();
+    cfg.supportedFamilies = ["rectangular", "small", "medium", "large", "xlarge"];
+    const body = buildGallerySubmission(cfg, [], META);
+    expect(body.families).toEqual(["rectangular", "small", "medium", "large", "xlarge"]);
+  });
+
   it("trims the fields and keeps only gallery tags, once each", () => {
     const cfg = livingRoom();
     const body = buildGallerySubmission(cfg, [], { ...META, title: "  Hi  ", tags: ["media", "nope", "media"] });

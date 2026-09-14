@@ -12,7 +12,7 @@ import { Draft } from "../src/draft.js";
 import { addFamily } from "../src/layouts.js";
 import {
   type CustomComplicationConfig,
-  DRAWABLE_FAMILIES,
+  WATCH_CANVAS_FAMILIES,
   attachTap,
   elementsFor,
   encodeConfig,
@@ -46,9 +46,9 @@ function shared(): CustomComplicationConfig {
 describe("a document whose layers were drawn by every shape", () => {
   it("draws exactly what it drew before", () => {
     const cfg = shared();
-    const before = DRAWABLE_FAMILIES.map((f) => drawn(cfg, f as "rectangular"));
+    const before = WATCH_CANVAS_FAMILIES.map((f) => drawn(cfg, f as "rectangular"));
     normalizeOwnership(cfg);
-    expect(DRAWABLE_FAMILIES.map((f) => drawn(cfg, f as "rectangular"))).toEqual(before);
+    expect(WATCH_CANVAS_FAMILIES.map((f) => drawn(cfg, f as "rectangular"))).toEqual(before);
   });
 
   it("gives each shape its own copy of them", () => {
@@ -100,7 +100,7 @@ describe("a document whose layers were drawn by every shape", () => {
   // would draw it last, on top of everything. Splitting must not restack.
   it("keeps every shape's stacking", () => {
     const cfg = shared();
-    const before = DRAWABLE_FAMILIES.map((f) => drawn(cfg, f as "rectangular").map((d) => d.kind));
+    const before = WATCH_CANVAS_FAMILIES.map((f) => drawn(cfg, f as "rectangular").map((d) => d.kind));
     // Only the circular shape draws the icon, so its text has to be copied and
     // has to land under the icon again, where it started.
     for (const f of ["rectangular", "corner"] as const) {
@@ -115,7 +115,7 @@ describe("a document whose layers were drawn by every shape", () => {
     const cfg = shared();
     cfg.elements[1]!.payload.isHidden = true;
     normalizeOwnership(cfg);
-    const seats = DRAWABLE_FAMILIES.filter((f) => ownedElements(cfg, f).some((el) => el.kind === "icon"));
+    const seats = WATCH_CANVAS_FAMILIES.filter((f) => ownedElements(cfg, f).some((el) => el.kind === "icon"));
     expect(seats).toHaveLength(1);
     expect(drawn(cfg, "rectangular").map((d) => d.kind)).toEqual(["text"]);
   });

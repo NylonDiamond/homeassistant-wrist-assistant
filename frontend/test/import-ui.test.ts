@@ -5,8 +5,10 @@
 
 import { describe, expect, it } from "vitest";
 import { seriesRequests } from "../src/ha-api.js";
+import { familiesFor, importableFamilies, keepFamilies } from "../src/layouts.js";
 import { type CustomComplicationConfig, type Element, newConfig, newElement } from "../src/model.js";
 import { importProblem, importSummary, importTextFolded, remapEntities, suggestImportName } from "../src/transfer.js";
+import { MIN_IPHONE_VERSION_FOR_HOME_SCREEN } from "../src/version.js";
 
 const taken = (...names: string[]) => new Set(names.map((n) => n.toLowerCase()));
 
@@ -51,6 +53,43 @@ describe("importSummary", () => {
   it("joins three shapes with a comma and an and", () => {
     const cfg = newConfig("Three", 0, ["rectangular", "circular", "corner"]);
     expect(importSummary(cfg)).toBe("0 layers, rectangular, circular and corner");
+  });
+});
+
+// What the dialog shows and what Import saves read the same list: the
+// document's shapes narrowed to the ones the selected device draws.
+describe("importableFamilies", () => {
+  const watch = familiesFor({ device_kind: "watch" });
+  const phone = familiesFor({ device_kind: "iphone", app_version: MIN_IPHONE_VERSION_FOR_HOME_SCREEN });
+
+  it("drops Corner from a watch document taken on a phone", () => {
+    const cfg = newConfig("Weather", 0, ["rectangular", "circular", "corner", "inline"]);
+    expect(importableFamilies(cfg, phone)).toEqual(["rectangular", "circular", "inline"]);
+  });
+
+  it("drops the Home Screen tiles from a phone document taken on a watch", () => {
+    const cfg = newConfig("Energy", 0, ["rectangular", "small", "medium"]);
+    expect(importableFamilies(cfg, watch)).toEqual(["rectangular"]);
+  });
+
+  it("keeps a document every shape of which this device draws", () => {
+    const cfg = newConfig("Plain", 0, ["rectangular", "circular"]);
+    expect(importableFamilies(cfg, watch)).toEqual(["rectangular", "circular"]);
+    expect(importableFamilies(cfg, phone)).toEqual(["rectangular", "circular"]);
+  });
+
+  // Dropping every shape would leave no complication at all, so a document
+  // with nothing this device draws arrives whole and the editor copes.
+  it("keeps the document rather than empty its shapes", () => {
+    const cfg = newConfig("Tiles", 0, ["small", "large"]);
+    expect(importableFamilies(cfg, watch)).toEqual(["small", "large"]);
+  });
+
+  it("is what the saved copy is cut down to, layouts and all", () => {
+    const cfg = newConfig("Weather", 0, ["rectangular", "circular", "corner"]);
+    const saved = keepFamilies(cfg, importableFamilies(cfg, phone));
+    expect(saved.supportedFamilies).toEqual(["rectangular", "circular"]);
+    expect(saved.perFamily.corner).toBeUndefined();
   });
 });
 

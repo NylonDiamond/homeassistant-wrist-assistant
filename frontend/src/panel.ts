@@ -94,8 +94,8 @@ import {
   countdownRemainingString,
   resolveAll,
 } from "./resolver.js";
-import { CASES, FACE_TINTS, REFERENCE_CASE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, renderLayerThumb, renderLayout, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type WatchCase } from "./renderer.js";
-import { addFamily, canRemoveFamily, familiesFor, familyContentSummary, firstDrawable, isDrawable, keepFamilies, removeFamily, supportedFamilies } from "./layouts.js";
+import { CASES, FACE_TINTS, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, phoneCaseForScreenSize, renderLayerThumb, renderLayout, slotFor, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type PreviewCase } from "./renderer.js";
+import { addFamily, canRemoveFamily, familiesFor, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, keepFamilies, removeFamily, supportedFamilies } from "./layouts.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { deviceKindOf, deviceNoun, deviceSupportsShapes, updateDeviceMessage } from "./version.js";
 import { makeIconProvider } from "./icons.js";
@@ -337,23 +337,35 @@ function headerArrow(): TemplateResult {
 }
 
 /**
- * A shape drawn where it sits on the watch: the screen as a rounded outline,
+ * A shape drawn where it sits on the device: the screen as a rounded outline,
  * the slot filled inside it.
  *
- * The four names alone say nothing to anyone who has not already learned them,
- * and "Corner" in particular is a place rather than a shape. A picture of the
- * face answers both at once.
+ * The names alone say nothing to anyone who has not already learned them, and
+ * "Corner" in particular is a place rather than a shape. A picture of the face
+ * answers both at once.
+ *
+ * The four Home Screen tiles are drawn on a grid of four columns and six rows,
+ * the way iOS lays a Home Screen page out, so Small against Large against
+ * Extra Large reads as how much of a page each one takes.
  */
 function familyArt(family: FamilyKind): TemplateResult {
   const screen = svg`<rect x="3" y="2" width="38" height="48" rx="11" fill="none" stroke="currentColor" stroke-opacity=".55" stroke-width="1.5" />`;
-  const slot = family === "rectangular"
-    ? svg`<rect x="8" y="21" width="28" height="10" rx="3" fill="currentColor" />`
-    : family === "circular"
-      ? svg`<circle cx="22" cy="26" r="8" fill="currentColor" />`
-      : family === "corner"
-        ? svg`<path d="M9 18a9 9 0 0 1 9-9" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
-              <circle cx="11.5" cy="11.5" r="3" fill="currentColor" />`
-        : svg`<rect x="10" y="7" width="24" height="5" rx="2.5" fill="currentColor" />`;
+  // A Home Screen tile on the page's own grid of four columns and six rows:
+  // small is 2 by 2, medium 4 by 2, large 4 by 4 and extra large the whole 4
+  // by 6 page.
+  const tile = (w: number, h: number) => svg`<rect x=${22 - w / 2} y=${26 - h / 2} width=${w} height=${h} rx="3.5" fill="currentColor" />`;
+  let slot;
+  switch (family) {
+    case "rectangular": slot = svg`<rect x="8" y="21" width="28" height="10" rx="3" fill="currentColor" />`; break;
+    case "circular": slot = svg`<circle cx="22" cy="26" r="8" fill="currentColor" />`; break;
+    case "corner": slot = svg`<path d="M9 18a9 9 0 0 1 9-9" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+              <circle cx="11.5" cy="11.5" r="3" fill="currentColor" />`; break;
+    case "small": slot = tile(13, 13); break;
+    case "medium": slot = tile(28, 13); break;
+    case "large": slot = tile(28, 28); break;
+    case "xlarge": slot = tile(28, 42); break;
+    default: slot = svg`<rect x="10" y="7" width="24" height="5" rx="2.5" fill="currentColor" />`;
+  }
   return html`<svg class="shape-art" viewBox="0 0 44 52" aria-hidden="true">${screen}${slot}</svg>`;
 }
 
@@ -543,7 +555,7 @@ export class WristAssistantPanel extends LitElement {
   @state() private draft?: Draft;
   @state() private readOnlyReason?: string;
   @state() private parseError?: string;
-  @state() private maxSchemaVersion = 6;
+  @state() private maxSchemaVersion = 7;
   /** iPhone presets on the selected watch (slot + name). freeSlot() skips
    * their slots; the list shows them as locked rows. */
   @state() private presets: { slot: number; name: string }[] = [];
@@ -1180,6 +1192,12 @@ export class WristAssistantPanel extends LitElement {
     .pk-art svg { display: block; max-width: 100%; max-height: 30px; width: auto; height: auto; background: #000; border-radius: 4px; }
     .pk-art.circular svg { border-radius: 50%; }
     .pk-art.corner svg { background: #2c2c2e; }
+    /* A Home Screen tile is rounded far harder than a lock screen slot, so its
+       row picture takes the corner too, at the share of the box iOS uses. */
+    .pk-art.small svg { border-radius: 16.3%; }
+    .pk-art.medium svg { border-radius: 7.7% / 16.3%; }
+    .pk-art.large svg { border-radius: 7.7% / 7.4%; }
+    .pk-art.xlarge svg { border-radius: 7.7% / 4.8%; }
     .pk-art .inline-line {
       font-size: 9px; padding: 2px 6px; max-width: 100%; min-width: 0; display: inline-flex; align-items: center; gap: 3px;
       border-radius: 999px; background: #000; color: #fff; overflow: hidden; white-space: nowrap;
@@ -1239,7 +1257,10 @@ export class WristAssistantPanel extends LitElement {
     .new-body { padding: 14px 18px 4px; }
     .new-body .field.new-shapes { margin-top: 14px; }
     .new-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 18px 16px; }
-    .shape-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    /* Auto-fit rather than four fixed columns: a watch owner has four shape
+       cards and a phone owner up to seven, so the grid takes as many as the
+       dialog's width allows and wraps the rest onto another row. */
+    .shape-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 8px; }
     /* Not one of them starts picked. A tinted default reads as a
        recommendation, and the shape is the one thing about a complication
        that cannot be changed later without moving every layer. */
@@ -1254,11 +1275,20 @@ export class WristAssistantPanel extends LitElement {
     .shape-card.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-ink); }
     .shape-card .shape-art { width: 34px; height: 40px; display: block; }
     .shape-card-name { font-weight: 600; }
+    /* The condition under a shape's name: small, quiet, and on its own line, so
+       "Extra Large" still reads as the name of the shape. */
+    .shape-card-note { font-size: 10px; font-weight: 500; line-height: 1.25; opacity: .8; text-align: center; }
     .shape-dots { display: inline-flex; gap: 3px; align-items: center; flex: none; }
     .shape-dot { width: 14px; height: 10px; border-radius: 2px; background: currentColor; opacity: .3; display: inline-block; }
     .shape-dot.circular { width: 10px; border-radius: 50%; }
     .shape-dot.corner { width: 10px; border-radius: 0 6px 0 0; }
     .shape-dot.inline { width: 16px; height: 4px; }
+    /* One dot per Home Screen tile, at the tile's own proportions, so a row of
+       them reads as which sizes the complication draws. */
+    .shape-dot.small { width: 10px; height: 10px; border-radius: 3px; }
+    .shape-dot.medium { width: 16px; height: 8px; border-radius: 3px; }
+    .shape-dot.large { width: 11px; height: 11px; border-radius: 3px; }
+    .shape-dot.xlarge { width: 8px; height: 13px; border-radius: 3px; }
     .shape-dot.on { opacity: 1; }
 
     /* Share, Post to online gallery and Import share one look: a head with a
@@ -1308,7 +1338,14 @@ export class WristAssistantPanel extends LitElement {
        A spotlight inside the drawing picks out the layers being pointed at. */
     .xf-prev { display: grid; place-items: center; padding: 10px; border-radius: var(--wa-r-md); background: #000; border: 1px solid var(--wa-line); line-height: 0; }
     .xf-prev svg.complication { display: block; width: 100%; height: auto; max-height: 180px; }
-    .xf-prev:is(.circular, .corner) svg.complication { width: auto; height: 140px; max-width: 100%; }
+    .xf-prev:is(.circular, .corner, .small) svg.complication { width: auto; height: 140px; max-width: 100%; }
+    /* The two tall Home Screen tiles are given a height instead of a width, or
+       a full-width Extra Large would be taller than the dialog. */
+    .xf-prev:is(.large, .xlarge) svg.complication { width: auto; height: 180px; max-width: 100%; }
+    .xf-prev.small svg.complication { border-radius: 16.3%; }
+    .xf-prev.medium svg.complication { border-radius: 7.7% / 16.3%; }
+    .xf-prev.large svg.complication { border-radius: 7.7% / 7.4%; }
+    .xf-prev.xlarge svg.complication { border-radius: 7.7% / 4.8%; }
     .xf-prev .inline-line { line-height: 1.4; }
     .xf-prev-cap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; margin-top: 6px; font-size: 12px; color: var(--wa-muted); }
     .xf-prev-cap b { color: var(--wa-ink); font-weight: 600; }
@@ -2019,6 +2056,12 @@ export class WristAssistantPanel extends LitElement {
     .tab .art svg { display: block; max-height: 16px; max-width: 34px; width: auto; height: auto; background: #000; border-radius: 3px; }
     .tab.circular .art svg { border-radius: 50%; }
     .tab.corner .art svg { background: #2c2c2e; }
+    /* The tab pictures are small, so the Home Screen tiles take a share of
+       their own box as the corner rather than a flat radius. */
+    .tab.small .art svg { border-radius: 16.3%; }
+    .tab.medium .art svg { border-radius: 7.7% / 16.3%; }
+    .tab.large .art svg { border-radius: 7.7% / 7.4%; }
+    .tab.xlarge .art svg { border-radius: 7.7% / 4.8%; }
     .tab .art .inline-line { font-size: 8px; padding: 2px 5px; min-width: 0; display: inline-flex; align-items: center; gap: 3px; border-radius: 999px; background: #000; color: #fff; }
     .tab .art .inline-line svg { background: transparent; border-radius: 0; }
     /* The remove button rides beside its tab and only while the pointer is on it. */
@@ -2118,6 +2161,14 @@ export class WristAssistantPanel extends LitElement {
     .preview.rectangular svg { width: 100%; max-width: 900px; }
     .preview.circular svg { width: min(100%, 440px); border-radius: 50%; }
     .preview.corner svg { width: min(100%, 420px); background: #2c2c2e; }
+    /* The four Home Screen tiles. Each is capped at a width that leaves the
+       whole tile on screen at its own ratio (square, 2.1:1, 0.96:1, 0.62:1),
+       and takes the system's continuous corner as a share of its box, so the
+       black behind the drawing rounds with it at any size. */
+    .preview.small svg { width: min(100%, 460px); border-radius: 16.3%; }
+    .preview.medium svg { width: min(100%, 880px); border-radius: 7.7% / 16.3%; }
+    .preview.large svg { width: min(100%, 520px); border-radius: 7.7% / 7.4%; }
+    .preview.xlarge svg { width: min(100%, 380px); border-radius: 7.7% / 4.8%; }
     .preview.picking svg, .preview.picking svg * { cursor: crosshair; }
     .preview.inline .inline-line {
       display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 220px;
@@ -2588,7 +2639,11 @@ export class WristAssistantPanel extends LitElement {
     .zoom-stage .preview svg,
     .zoom-stage .preview.rectangular svg,
     .zoom-stage .preview.circular svg,
-    .zoom-stage .preview.corner svg {
+    .zoom-stage .preview.corner svg,
+    .zoom-stage .preview.small svg,
+    .zoom-stage .preview.medium svg,
+    .zoom-stage .preview.large svg,
+    .zoom-stage .preview.xlarge svg {
       width: min(100%, calc((100vh - 90px) * var(--wa-ratio, 1))); max-width: none;
     }
     dialog.preset-dialog h2 { margin: 0 0 4px; font-size: 15px; font-weight: 500; }
@@ -3410,7 +3465,8 @@ export class WristAssistantPanel extends LitElement {
    * countdown is live (and on disconnect). */
   private countdownTimer?: number;
   private syncCountdownTicker(layouts: ResolvedAll) {
-    const canvas = [layouts.rectangular, layouts.circular, layouts.corner]
+    const canvas = DRAWABLE_FAMILIES
+      .map((f) => layouts[f])
       .filter((l): l is ReturnType<Resolver["resolveLayout"]> => l !== undefined);
     const live = layouts.inline?.countdownEnd !== undefined || canvas.some((l) =>
       l.bezelCountdownEnd !== undefined ||
@@ -3741,13 +3797,21 @@ export class WristAssistantPanel extends LitElement {
     // previous watch's status must not be shown beside it in the meantime.
     this.sendStatusKnown = false;
     this.lastSyncSeconds = undefined;
-    // Default the preview to this watch's own case when the app reported one.
+    // Default the preview to this device's own case when the app reported one.
     // A manual dropdown pick survives record switches but re-defaults when a
-    // different watch is selected — that's the watch being previewed now.
-    const reported = caseForScreenSize(
-      this.owners.find((o) => o.owner_watch_id === ownerId)?.screen_size,
-    );
+    // different device is selected: that's the device being previewed now. The
+    // case comes from the owner's kind, since the two lists share no label, and
+    // switching between a watch and a phone falls back to the reference device
+    // of the new kind. No phone reports a screen size today, so a phone owner
+    // starts on the reference phone.
+    const owner = this.owners.find((o) => o.owner_watch_id === ownerId);
+    const phone = deviceKindOf(owner) === "iphone";
+    const cases: PreviewCase[] = phone ? PHONE_CASES : CASES;
+    const reported = phone ? phoneCaseForScreenSize(owner?.screen_size) : caseForScreenSize(owner?.screen_size);
     if (reported) this.previewCase = reported.label;
+    else if (!cases.some((c) => c.label === this.previewCase)) {
+      this.previewCase = (phone ? REFERENCE_PHONE : REFERENCE_CASE).label;
+    }
     this.clearDraft();
     await this.unsubscribe?.();
     this.unsubscribe = await subscribeChanges(this.hass, ownerId, () => void this.loadRecords());
@@ -4592,7 +4656,7 @@ export class WristAssistantPanel extends LitElement {
   /** The zoom toggle: open the face full-width in a modal for fine moves.
    * Inline has no face to zoom, so it has no button. */
   private renderZoomButton() {
-    const off = !this.draft || this.parseError !== undefined || this.activeFamily === "inline";
+    const off = !this.draft || this.parseError !== undefined || !isDrawable(this.activeFamily);
     return html`<button class="pick only-icon" ?disabled=${off} aria-label="Expand the preview"
       title="Open the preview as large as the window allows, for small moves. Drag and arrow keys work there too. Escape closes."
       @click=${() => { this.zoomed = true; }}>${uiIcon("expand")}</button>`;
@@ -4606,7 +4670,7 @@ export class WristAssistantPanel extends LitElement {
   private renderGridButton() {
     const on = this.snapGrid;
     const lines = this.showGridLines;
-    const off = !this.draft || this.parseError !== undefined || this.activeFamily === "inline";
+    const off = !this.draft || this.parseError !== undefined || !isDrawable(this.activeFamily);
     const eye = lines
       ? svg`<path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" /><circle cx="8" cy="8" r="1.9" />`
       : svg`<path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" /><path d="M2.5 13.5l11-11" />`;
@@ -4636,10 +4700,10 @@ export class WristAssistantPanel extends LitElement {
    * The bar keeps the two face toggles and Close; everything else stays under
    * the backdrop, which is the point.
    */
-  private renderZoomDialog(family: DrawableFamily, layouts: ResolvedAll, watchCase: WatchCase) {
+  private renderZoomDialog(family: DrawableFamily, layouts: ResolvedAll, deviceCase: PreviewCase) {
     const cfg = this.draft?.config;
     if (!cfg) return nothing;
-    const slot = watchCase.slots[family];
+    const slot = slotFor(deviceCase, family);
     // The picture's own aspect: the slot for rectangular and circular, and the
     // 104 × 124 screen quadrant the corner preview draws (renderer.ts).
     const ratio = family === "corner" ? 104 / 124 : slot.width / slot.height;
@@ -4654,7 +4718,7 @@ export class WristAssistantPanel extends LitElement {
         <button class="pick" title="Back to the editor (Escape)" @click=${() => { this.zoomed = false; }}><span class="glyph">⤡</span>Close</button>
       </div>
       <div class="zoom-stage" style=${`--wa-ratio:${ratio}`}>
-        ${this.renderBigPreview(family, layouts, watchCase)}
+        ${this.renderBigPreview(family, layouts, deviceCase)}
       </div>
     </dialog>`;
   }
@@ -4702,6 +4766,10 @@ export class WristAssistantPanel extends LitElement {
       ["Canvas shapes", "Rectangular, Circular and Corner each hold their own layers. A layer belongs to one shape, so editing it never changes another. An empty shape can take a copy of another shape's layers."],
       ["Corner", "Its Corner content card picks big curved text or a canvas of layers."],
       ["Inline", "One line of text with an optional symbol before it. It has no layers."],
+      ["Home Screen", "On an iPhone only: Small, Medium, Large and Extra Large are the Home Screen tile sizes. Each is a canvas shape with its own layers, drawn edge to edge in the tile."],
+      ["Small · Medium · Large", "A square, a wide band about twice as wide as it is tall, and a tall tile a little taller than it is wide. Add the ones you want; a size the complication does not have is not offered when you add a widget."],
+      ["Extra Large", "The full-page tile, iOS 27 and later. An iPhone on iOS 26 is not offered it when adding a widget, and everything else still draws."],
+      ["A tinted Home Screen", "iOS 18 lets a user tint the whole Home Screen. The system then drops the tile background and draws the design in two tones, so a design that relies on colour alone reads differently there."],
       ["The shape itself", "The bottom row of the Layers list: its background, border and Shape states."],
     ];
     const layers: [string, string][] = [
@@ -5356,7 +5424,7 @@ export class WristAssistantPanel extends LitElement {
     const steps = phone
       ? html`<li>
             <span class="gate-n">1</span>
-            <div><b>Update Wrist Assistant on your iPhone</b><span>Lock screen complications come with it.</span></div>
+            <div><b>Update Wrist Assistant on your iPhone</b><span>Lock Screen and Home Screen complications come with it.</span></div>
           </li>
           <li>
             <span class="gate-n">2</span>
@@ -5364,7 +5432,7 @@ export class WristAssistantPanel extends LitElement {
           </li>
           <li>
             <span class="gate-n">3</span>
-            <div><b>Reload this page</b><span>The editor opens, and what you save here shows up on the Lock Screen customise screen.</span></div>
+            <div><b>Reload this page</b><span>The editor opens. What you save here shows up on the Lock Screen customise screen, and when you add a Home Screen widget.</span></div>
           </li>`
       : html`<li>
             <span class="gate-n">1</span>
@@ -5477,7 +5545,7 @@ export class WristAssistantPanel extends LitElement {
       if (family === "inline") return html`<span class="${cls} inline">${this.renderInlinePreview(layouts.inline, true)}</span>`;
       const layout = layouts[family];
       if (!layout) return html`<span class=${cls}></span>`;
-      return html`<span class="${cls} ${family}">${renderLayout(layout, { icons: this.icons, imageSizes: this.imageSizes, slot: REFERENCE_CASE.slots[family] })}</span>`;
+      return html`<span class="${cls} ${family}">${renderLayout(layout, { icons: this.icons, imageSizes: this.imageSizes, slot: slotFor(this.referenceCase, family) })}</span>`;
     });
   }
 
@@ -5761,7 +5829,7 @@ export class WristAssistantPanel extends LitElement {
         ${nameProblem
           ? html`<div class="hint err">${nameProblem}</div>`
           : html`<div class="hint">${deviceKindOf(this.selectedOwner) === "iphone"
-            ? "This is the name the Lock Screen customise screen shows, so make it one you will recognise there."
+            ? "This is the name the Lock Screen customise screen and the Home Screen widget picker show, so make it one you will recognise there."
             : "This is what the name shows on the watch face picker, so make it one you will recognise there."}</div>`}
         <div class="field new-shapes">
           <span>Shape</span>
@@ -5771,6 +5839,7 @@ export class WristAssistantPanel extends LitElement {
               @click=${() => { this.newFamily = f; }}>
               ${familyArt(f)}
               <span class="shape-card-name">${familyTitle(f)}</span>
+              ${familyNote(f) ? html`<span class="shape-card-note">${familyNote(f)}</span>` : nothing}
             </button>`)}
           </div>
         </div>
@@ -5988,7 +6057,7 @@ export class WristAssistantPanel extends LitElement {
         const here = spot.filter((id) => layout.elements.some((el) => el.id === id));
         elsewhere = spot.length > 0 && here.length === 0;
         art = renderLayout(layout, {
-          icons: this.icons, imageSizes: this.imageSizes, slot: REFERENCE_CASE.slots[family], pictureScene,
+          icons: this.icons, imageSizes: this.imageSizes, slot: slotFor(this.referenceCase, family), pictureScene,
           ...(here.length > 0 ? { spotlightIds: here } : {}),
         });
       }
@@ -6695,11 +6764,17 @@ export class WristAssistantPanel extends LitElement {
    * waits for a button. Nothing is created until Import, and Import saves it
    * straight away, so leaving the page afterwards does not lose it.
    */
-  /** The pasted document with only the shapes chosen in Import. */
+  /** The pasted document with only the shapes chosen in Import, and only the
+   * shapes this device draws: a watch document taken on a phone arrives
+   * without its Corner layout, and a Home Screen one taken on a watch arrives
+   * without its tiles. The preview and the saved copy read the same list. */
   private importConfig(): CustomComplicationConfig | undefined {
     const parse = this.importParse;
     if (!parse?.ok) return undefined;
-    return this.importFamilies === undefined ? parse.config : keepFamilies(parse.config, [...this.importFamilies]);
+    const offered = importableFamilies(parse.config, this.ownerFamilies);
+    const keep = this.importFamilies === undefined ? offered : offered.filter((f) => this.importFamilies!.has(f));
+    if (keep.length === supportedFamilies(parse.config).length) return parse.config;
+    return keepFamilies(parse.config, keep);
   }
 
   private setImportFamilies(next: ReadonlySet<FamilyKind>) {
@@ -6765,7 +6840,9 @@ export class WristAssistantPanel extends LitElement {
     const rows = unresolvedEntities(cfg, this.hass.states);
     const known = this.knownDomains();
     const parse = this.importParse;
-    const have = supportedFamilies(parse?.ok ? parse.config : cfg);
+    // The chips list what this device can draw, so a shape it has no tab for
+    // is never offered as something to bring in.
+    const have = importableFamilies(parse?.ok ? parse.config : cfg, this.ownerFamilies);
     const preview = this.importPreview();
     const layouts: ResolvedAll = preview ? this.configLayouts(preview.config, preview.entities, this.importHistory) : {};
     const uses = new Map(rows.map((row) => [row.entityId, entityLayerIds(cfg, row.entityId, (id, domain) => isPlaceholderId(id) || known.has(domain))]));
@@ -7230,7 +7307,7 @@ export class WristAssistantPanel extends LitElement {
     if (!cfg || !this.canEdit) return nothing;
     // Nothing to add to a shape with no canvas. Left up, the buttons would
     // quietly put the layer on whichever canvas shape happens to be first.
-    if (this.activeFamily === "inline") return nothing;
+    if (!isDrawable(this.activeFamily)) return nothing;
     const full = cfg.elements.length >= 64;
     const open = this.addOpen;
     const rich = this.addDetail === "expanded";
@@ -7483,7 +7560,7 @@ export class WristAssistantPanel extends LitElement {
     // The card used to fall back to the first canvas shape and show that
     // shape's rows under a line of small print, which reads as "here are the
     // Inline layers" however the print is worded.
-    if (this.activeFamily === "inline") return this.renderInlineHasNoLayers();
+    if (!isDrawable(this.activeFamily)) return this.renderInlineHasNoLayers();
     const edit = this.canEdit;
     const family = this.canvasFamily;
     const move = (id: string, dir: -1 | 1) => this.moveLayer(id, dir);
@@ -7828,27 +7905,27 @@ export class WristAssistantPanel extends LitElement {
     if (!cfg) return html`<div class="card"><div class="empty">Choose a complication in the picker above, or make a new one.</div></div>`;
     const layouts = resolveAll(cfg, this.buildContext(), this.forced);
     this.syncCountdownTicker(layouts);
-    const watchCase = this.currentCase();
+    const deviceCase = this.currentCase();
     const family = this.activeFamily;
     return html`
       <div class="card canvas-card">
         <div class="canvas-bar">
           <div class="bar-row shapes">${this.renderShapeTabs(cfg, layouts)}</div>
           <div class="bar-row tools">
-          <span class="inbox" title=${`Layouts are made in the ${REFERENCE_CASE.label} box. Smaller cases scale it down.`}>
+          <span class="inbox" title=${`Layouts are made in the ${this.referenceCase.label} box. Every other size draws a scaled copy of it.`}>
             <span class="pre">Preview as</span>
             <span class="case-tool" data-menu="case">
               <button class="case-pick" aria-haspopup="listbox" aria-expanded=${this.openMenu === "case" ? "true" : "false"}
-                aria-label=${`Preview as ${watchCase.label}`} @click=${() => this.toggleMenu("case")}>
-                ${watchCase.label}${watchCase.measured ? "" : " (estimated)"}${uiIcon("chevron")}
+                aria-label=${`Preview as ${deviceCase.label}`} @click=${() => this.toggleMenu("case")}>
+                ${deviceCase.label}${deviceCase.measured ? "" : " (estimated)"}${uiIcon("chevron")}
               </button>
               ${this.openMenu === "case" ? html`<div class="pop-menu" role="listbox" aria-label="Preview as">
-                ${CASES.map((c) => html`<button class="row" role="option" aria-selected=${c.label === watchCase.label ? "true" : "false"}
+                ${this.previewCases.map((c) => html`<button class="row" role="option" aria-selected=${c.label === deviceCase.label ? "true" : "false"}
                   @click=${() => { this.toggleMenu("case", false); this.previewCase = c.label; }}>${c.label}${c.measured ? "" : " (estimated)"}</button>`)}
               </div>` : nothing}
             </span>
           </span>
-          ${family === "inline" ? nothing : this.renderTintTool()}
+          ${isDrawable(family) ? this.renderTintTool() : nothing}
           <span class="bar-sep" aria-hidden="true"></span>
           <span class="face-tools">${this.renderPickButton()}${this.renderShowTapsButton()}${this.renderGridButton()}</span>
           <span class="spacer"></span>
@@ -7856,17 +7933,17 @@ export class WristAssistantPanel extends LitElement {
           </div>
         </div>
         <div class="stage">
-          ${family === "inline" ? this.renderInlinePreview(layouts.inline, false) : this.renderBigPreview(family, layouts, watchCase)}
+          ${isDrawable(family) ? this.renderBigPreview(family, layouts, deviceCase) : this.renderInlinePreview(layouts.inline, false)}
           ${this.renderUnder(cfg, family)}
         </div>
-        ${this.zoomed && family !== "inline" ? this.renderZoomDialog(family, layouts, watchCase) : nothing}
+        ${this.zoomed && isDrawable(family) ? this.renderZoomDialog(family, layouts, deviceCase) : nothing}
       </div>
       <div class="under-grid">
         ${this.renderValuesRow()}
       </div>`;
   }
 
-  private renderBigPreview(family: DrawableFamily, layouts: ResolvedAll, watchCase: WatchCase) {
+  private renderBigPreview(family: DrawableFamily, layouts: ResolvedAll, deviceCase: PreviewCase) {
     const layout = layouts[family];
     if (!layout) return nothing;
     const highlightId = this.inspect.kind === "layer" ? this.inspect.id : undefined;
@@ -7879,7 +7956,7 @@ export class WristAssistantPanel extends LitElement {
     // Layers picked for grouping, in the list or on the face, outline as well,
     // so the pick reads the same in both places.
     const outlineIds = [...new Set([...groupIds, ...this.multi])];
-    const slot = watchCase.slots[family];
+    const slot = slotFor(deviceCase, family);
     // Pick mode drops the resize handles: they are drag affordances, and
     // while picking nothing on the face is dragged. Review mode drops them
     // too, except on the one tap box it is narrowed to.
@@ -7936,8 +8013,8 @@ export class WristAssistantPanel extends LitElement {
     } else {
       tail = "click a layer to edit it";
     }
-    if (family === "inline") return html`<div class="under"><b>Inline</b><span class="dot">·</span><span class="tail">${tail}</span></div>`;
-    const slot = this.currentCase().slots[family];
+    if (!isDrawable(family)) return html`<div class="under"><b>Inline</b><span class="dot">·</span><span class="tail">${tail}</span></div>`;
+    const slot = slotFor(this.currentCase(), family);
     const fit = fitBox(slot, family);
     const pct = Math.round(fit.scale * 100);
     return html`<div class="under">
@@ -8124,7 +8201,7 @@ export class WristAssistantPanel extends LitElement {
       if (f === "inline") art = this.renderInlinePreview(layouts.inline, true);
       else {
         const layout = layouts[f];
-        art = layout ? renderLayout(layout, { icons: this.icons, imageSizes: this.imageSizes, slot: REFERENCE_CASE.slots[f] }) : nothing;
+        art = layout ? renderLayout(layout, { icons: this.icons, imageSizes: this.imageSizes, slot: slotFor(this.referenceCase, f) }) : nothing;
       }
       const empty = f !== "inline" && shownCount(cfg, f) === 0 && cfg.elements.length > 0;
       const removable = this.canEdit && canRemoveFamily(cfg, f);
@@ -8273,12 +8350,27 @@ export class WristAssistantPanel extends LitElement {
     this.version++;
   }
 
-  private currentCase() {
-    return CASES.find((c) => c.label === this.previewCase) ?? REFERENCE_CASE;
+  /** The devices "Preview as" offers: the watch cases for a watch owner, the
+   * iPhone cases for a phone. A phone draws its lock screen shapes in slots of
+   * its own and the Home Screen tiles at their measured sizes, so previewing a
+   * phone document in a watch case would be the wrong picture twice over. */
+  private get previewCases(): PreviewCase[] {
+    return deviceKindOf(this.selectedOwner) === "iphone" ? PHONE_CASES : CASES;
+  }
+
+  /** The measured device of the owner's kind: the 46 mm watch, or the iPhone
+   * 15 Pro. Every small picture in the panel is drawn in it, so a row in the
+   * list and the big preview agree about proportions. */
+  private get referenceCase(): PreviewCase {
+    return deviceKindOf(this.selectedOwner) === "iphone" ? REFERENCE_PHONE : REFERENCE_CASE;
+  }
+
+  private currentCase(): PreviewCase {
+    return this.previewCases.find((c) => c.label === this.previewCase) ?? this.referenceCase;
   }
 
   private previewSlot(family: DrawableFamily) {
-    return this.currentCase().slots[family];
+    return slotFor(this.currentCase(), family);
   }
 
   // ── inspector ─────────────────────────────────────────────────────────
@@ -8286,7 +8378,7 @@ export class WristAssistantPanel extends LitElement {
   private crumbs(cfg: CustomComplicationConfig, picked?: number) {
     const ins = this.inspect;
     const name = cfg.name.trim() || "Complication";
-    const shape = this.activeFamily === "inline" ? "Inline" : familyTitle(this.activeFamily);
+    const shape = familyTitle(this.activeFamily);
     const shapeCrumb = ins.kind === "family" && picked === undefined
       ? html`<span class="here" style=${`--k:${SECTION_COLOR.place}`}>${shape} shape</span>`
       : html`<button @click=${() => { this.inspect = { kind: "family" }; }} title="Edit the shape">${shape}</button>`;

@@ -41,6 +41,13 @@ export const MIN_WATCH_VERSION_FOR_CHART_TIMES_LAYER: string | null = null;
  * is held back the same way it is for an old watch. */
 export const MIN_IPHONE_VERSION_FOR_LOCK_SCREEN = "2.8.0";
 
+/** First iPhone app version that draws custom complications on the Home
+ * Screen: the four tile sizes (small, medium, large, extra large). Unlike the
+ * lock screen gate this never closes the editor. A phone below it simply is
+ * not offered the four shapes, so its lock screen shapes keep working. Same
+ * release as the lock screen, so the two gates are the same version today. */
+export const MIN_IPHONE_VERSION_FOR_HOME_SCREEN = "2.8.0";
+
 /** Which device owns a set of records. Absent on the wire means a watch:
  * every owner was one before phones could own records. Null on an orphan,
  * which has no registered device left to ask. */
@@ -120,14 +127,15 @@ export function updateWatchMessage(appVersion: string | null | undefined, minimu
 }
 
 /** The same lead line for a phone owner. Its own sentence rather than a
- * substitution, because what the phone is missing is the lock screen widget,
- * not a watch app. */
+ * substitution, because what the phone is missing is the widget extension,
+ * not a watch app. Both places that extension draws are named, since the gate
+ * release brings the Lock Screen and the Home Screen at once. */
 export function updateIPhoneMessage(appVersion: string | null | undefined, minimum = MIN_IPHONE_VERSION_FOR_LOCK_SCREEN): string {
   const have = parseVersion(appVersion);
   const reported = have
     ? `This iPhone runs Wrist Assistant ${appVersion}.`
     : "This iPhone has not reported its Wrist Assistant version yet.";
-  return `${reported} Lock screen complications need ${minimum}, coming soon to the App Store.`;
+  return `${reported} Lock Screen and Home Screen complications need ${minimum}, coming soon to the App Store.`;
 }
 
 /** Whether the panel opens for this owner, whichever device it is. A watch
