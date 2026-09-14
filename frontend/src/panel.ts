@@ -20,11 +20,8 @@ import {
   fetchHistorySeries,
   collectSeriesResults,
   type HistoryReadings,
-  type HistorySeriesRequest,
   fetchStatisticsSeries,
-  historySeriesRequest,
-  statisticsSeriesRequest,
-  type StatisticsSeriesRequest,
+  seriesRequests,
   renderTemplates,
   saveRecord,
   subscribeChanges,
@@ -62,8 +59,6 @@ import {
   ungroup,
   chartHistoryKey,
   chartStatisticsKey,
-  chartHistoryRequests,
-  chartStatisticsRequests,
   chartHistorySignature,
   timelineHistoryKey,
   timelineHistoryMinutes,
@@ -160,6 +155,7 @@ import {
   hasInstanceFilters,
   importFacts,
   importProblem,
+  importTextFolded,
   parseImportText,
   remapEntities,
   shareLinkInText,
@@ -172,6 +168,8 @@ import {
 import {
   type GalleryFetch,
   type GalleryMeta,
+  type GalleryNameRow,
+  type GalleryOverrides,
   type GalleryPreview,
   type GalleryTag,
   type GalleryUpload,
@@ -675,9 +673,19 @@ export class WristAssistantPanel extends LitElement {
    * it speaks when a copy or a download landed, and when this browser has no
    * clipboard to write to and the text has been selected instead. */
   @state() private shareNote = "";
+  /** The Share dialog's text box is shown. Folded away each time it opens:
+   * the buttons carry the text, and the box is for reading it. */
+  @state() private shareTextOpen = false;
   /** The Share to gallery dialog, opened from Share. The slots and their
    * labels are the Share dialog's, so what is sent is what Share shows. */
   @state() private galleryOpen = false;
+  /** Folder and shared value names changed for the gallery copy only, by id.
+   * Cleared each time the dialog opens; the draft keeps its own names. */
+  @state() private galleryGroupNames: ReadonlyMap<string, string> = new Map();
+  @state() private galleryValueNames: ReadonlyMap<string, string> = new Map();
+  /** Waits out typing in a slot label before the pictures are drawn again,
+   * since they print the labels. */
+  private galleryRedrawTimer?: number;
   @state() private galleryTitle = "";
   @state() private galleryDescription = "";
   @state() private galleryTags: ReadonlySet<GalleryTag> = new Set();
@@ -711,8 +719,25 @@ export class WristAssistantPanel extends LitElement {
   /** Enter and leave fire for every child a drag crosses, so the highlight
    * counts them rather than trusting whichever fired last. */
   private importDragDepth = 0;
-  /** The entities the pasted document reads, for its preview picture. */
-  private importEntities: EntityRef[] = [];
+  /** The shared text is showing although it parsed. It folds away once it
+   * reads as a complication, so the preview and the pickers come first; the
+   * reader can still open it, and it stays open until the dialog closes. */
+  @state() private importTextShown = false;
+  /** Recorder series for the Import preview, keyed like `historySeries`. */
+  @state() private importHistory = new Map<string, string>();
+  private importHistoryTimer?: number;
+  /** Counts history fetches, so a slow reply about an older pick is dropped. */
+  private importHistoryRun = 0;
+  /** The requests the current `importHistory` answers. */
+  private importHistoryAsked?: string;
+  /** The preview's document with the picks applied, cached against the parse
+   * and the picks it was built from so a redraw does not remap and recompile. */
+  private importPreviewCache?: {
+    parse: ImportParse;
+    map: ReadonlyMap<string, EntityRef>;
+    config: CustomComplicationConfig;
+    entities: EntityRef[];
+  };
   /** The link the Share dialog last built and the text it holds. A link for
    * different text is not shown. */
   @state() private shareLink?: { text: string; url: string };
@@ -1195,6 +1220,10 @@ export class WristAssistantPanel extends LitElement {
     .xfer-slot .hint { margin: 3px 0 0; }
     .xfer-file { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .xfer-file .hint { margin: 0; }
+    .xfer-file .spacer { flex: 1; }
+    /* Parsed text folded to one row, so the preview and the pickers lead. */
+    .xfer-folded { display: flex; align-items: center; gap: 8px; }
+    .xfer-folded .hint { margin: 0; flex: 1; }
     .xfer-problem { white-space: pre-line; }
     .xfer-link { width: 100%; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
     /* What the pasted text turned out to be: each shape drawn small, beside
@@ -1228,7 +1257,16 @@ export class WristAssistantPanel extends LitElement {
     /* Share to gallery. The public list is the part to read before sending:
        every piece of free text in the upload, grouped, in the text's own
        characters, so nothing reads as tidier than what will be posted. */
-    .gal-lead { margin: 0 0 14px; }
+    /* Scoped so the plain .hint margin, declared further down, does not win. */
+    .xfer-body .gal-lead { margin: 0 0 16px; }
+    button.link.xfer-show { align-self: flex-start; font-size: 12px; }
+    .gal-name { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+    .gal-name input[type=text] { flex: 1 1 auto; min-width: 0; }
+    .gal-name .sid {
+      flex: none; max-width: 45%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+      color: var(--wa-ent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .xfer-body .gal-mine { margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--wa-line); }
     .gal-tags { display: flex; flex-wrap: wrap; gap: 6px; }
     .gal-previews { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 56px; }
     .gal-previews img { height: 56px; width: auto; max-width: 100%; border-radius: 8px; background: #000; }
@@ -4093,36 +4131,76 @@ export class WristAssistantPanel extends LitElement {
    * and each entry is a database query rather than a state read. */
   private async refreshHistorySeries() {
     const cfg = this.draft?.config;
-    const wanted = cfg ? chartHistoryRequests(cfg) : [];
-    const wantedStats = cfg ? chartStatisticsRequests(cfg) : [];
-    if (wanted.length === 0 && wantedStats.length === 0) {
+    // `mode` is left out at numeric and `gaps` unless a chart asks, so a
+    // document with no timeline and no gap chart sends exactly what it always sent.
+    const wanted = cfg ? seriesRequests(cfg) : undefined;
+    if (!wanted || (Object.keys(wanted.history).length === 0 && Object.keys(wanted.statistics).length === 0)) {
       if (this.historySeries.size > 0) this.historySeries = new Map();
       if (this.historyReadings.size > 0) this.historyReadings = new Map();
       return;
     }
-    const requests: Record<string, HistorySeriesRequest> = {};
-    // `mode` is left out at numeric and `gaps` unless a chart asks, so a
-    // document with no timeline and no gap chart sends exactly what it always sent.
-    for (const r of wanted) requests[r.key] = historySeriesRequest(r);
-    const statRequests: Record<string, StatisticsSeriesRequest> = {};
-    for (const r of wantedStats) statRequests[r.key] = statisticsSeriesRequest(r);
     try {
-      // Two commands, one Map. The two stores answer different questions but in
-      // the same shape, and the keys cannot collide, so the resolver has one
-      // place to look. Issued together so a slow recorder costs one wait rather
-      // than two, and one command failing does not blank the other's charts.
-      const [results, statResults] = await Promise.all([
-        fetchHistorySeries(this.hass, requests),
-        fetchStatisticsSeries(this.hass, statRequests).catch(() => ({})),
-      ]);
       // Rebuilt rather than merged, so a chart the author retargeted or deleted
       // stops answering with the entity it used to point at.
-      const next = collectSeriesResults({ ...results, ...statResults });
+      const next = await this.fetchSeries(wanted);
       this.historySeries = next.series;
       this.historyReadings = next.readings;
     } catch {
       // A failed fetch leaves the last series in place. The preview being one
       // refresh stale beats it blanking every time the recorder is busy.
+    }
+  }
+
+  /** Two commands, one Map. The two stores answer different questions but in
+   * the same shape, and the keys cannot collide, so the resolver has one place
+   * to look. Issued together so a slow recorder costs one wait rather than
+   * two, and one command failing does not blank the other's charts. */
+  private async fetchSeries(wanted: ReturnType<typeof seriesRequests>) {
+    const [results, statResults] = await Promise.all([
+      fetchHistorySeries(this.hass, wanted.history),
+      fetchStatisticsSeries(this.hass, wanted.statistics).catch(() => ({})),
+    ]);
+    return collectSeriesResults({ ...results, ...statResults });
+  }
+
+  /** Wait this long after the last pick before asking the recorder, so a run
+   * of changes in the Import dialog costs one query. */
+  private static readonly IMPORT_HISTORY_DELAY_MS = 350;
+
+  /**
+   * History for the Import dialog's preview, drawn with the entities picked so
+   * far. Its own Maps, not the open draft's: the dialog sits over an editor
+   * whose charts must keep their own answers.
+   *
+   * Debounced, skipped when the question is the one already answered, and
+   * numbered, so a slow reply about an earlier pick never lands over a newer one.
+   */
+  private scheduleImportHistory() {
+    if (this.importHistoryTimer) window.clearTimeout(this.importHistoryTimer);
+    this.importHistoryTimer = window.setTimeout(() => {
+      this.importHistoryTimer = undefined;
+      void this.refreshImportHistory();
+    }, WristAssistantPanel.IMPORT_HISTORY_DELAY_MS);
+  }
+
+  private async refreshImportHistory() {
+    const cfg = this.importOpen ? this.importPreview()?.config : undefined;
+    const wanted = cfg ? seriesRequests(cfg, (id) => this.hass.states[id] !== undefined) : undefined;
+    if (wanted?.signature === this.importHistoryAsked) return;
+    const run = ++this.importHistoryRun;
+    this.importHistoryAsked = wanted?.signature;
+    if (!wanted || (Object.keys(wanted.history).length === 0 && Object.keys(wanted.statistics).length === 0)) {
+      if (this.importHistory.size > 0) this.importHistory = new Map();
+      return;
+    }
+    try {
+      const next = await this.fetchSeries(wanted);
+      if (run !== this.importHistoryRun) return;
+      this.importHistory = next.series;
+    } catch {
+      // Asked again at the next pick. The picture without history is the one
+      // the dialog drew before, so nothing on screen gets worse.
+      if (run === this.importHistoryRun) this.importHistoryAsked = undefined;
     }
   }
 
@@ -5135,7 +5213,7 @@ export class WristAssistantPanel extends LitElement {
   /** Shapes of a document drawn small, one picture each, from the live states
    * of the entities it reads. The picker rows and the import preview both use
    * it; a class beyond `pk-art` sizes the picture for its place. */
-  private renderConfigArts(cfg: CustomComplicationConfig, entities: readonly EntityRef[], families: readonly FamilyKind[], cls: string): TemplateResult[] {
+  private renderConfigArts(cfg: CustomComplicationConfig, entities: readonly EntityRef[], families: readonly FamilyKind[], cls: string, historySeries?: Map<string, string>): TemplateResult[] {
     const entityStates = new Map<string, EntityState>();
     for (const ref of entities) {
       const state = this.entityStateFor(ref.entityId, ref.iconName ?? "", false);
@@ -5144,6 +5222,8 @@ export class WristAssistantPanel extends LitElement {
     const layouts = resolveAll(cfg, {
       entityStates,
       templateResults: new Map(),
+      // Only the import preview fetches any; a picker row's chart draws empty.
+      ...(historySeries ? { historySeries } : {}),
       namedValues: cfg.values,
     });
     return families.map((family) => {
@@ -5530,8 +5610,11 @@ export class WristAssistantPanel extends LitElement {
         </div>
         ${this.shareMode === "share" ? this.renderShareSlots(slots) : nothing}
         <div class="field">
-          <span>Text</span>
-          <textarea class="xfer-text" rows="14" readonly aria-label="The text to share" .value=${text}></textarea>
+          <button class="link xfer-show" aria-expanded=${this.shareTextOpen ? "true" : "false"}
+            @click=${() => { this.shareTextOpen = !this.shareTextOpen; }}>${this.shareTextOpen ? "Hide text" : "Show text"}</button>
+          ${this.shareTextOpen
+            ? html`<textarea class="xfer-text" rows="14" readonly aria-label="The text to share" .value=${text}></textarea>`
+            : nothing}
         </div>
         ${link ? html`<div class="field">
           <span>Link</span>
@@ -5594,6 +5677,7 @@ export class WristAssistantPanel extends LitElement {
     this.shareMode = "share";
     this.shareLabels = new Map();
     this.shareNote = "";
+    this.shareTextOpen = false;
     this.shareLink = undefined;
     void this.updateComplete.then(() => {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.share-dialog");
@@ -5639,12 +5723,41 @@ export class WristAssistantPanel extends LitElement {
     this.galleryPreviews = undefined;
     this.galleryPreviewNote = "";
     this.galleryConfirmDelete = undefined;
+    this.galleryGroupNames = new Map();
+    this.galleryValueNames = new Map();
     void this.updateComplete.then(() => {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.gallery-dialog");
       if (dialog && !dialog.open) dialog.showModal();
     });
     void this.makeGalleryPreviews(cfg, this.currentShareSlots());
     void this.loadGalleryUploads();
+  }
+
+  /** The renames that apply to the gallery copy: the title as its name, and
+   * the folder and shared value names changed in this dialog. */
+  private galleryOverrides(): GalleryOverrides {
+    return { name: this.galleryTitle, groupNames: this.galleryGroupNames, valueNames: this.galleryValueNames };
+  }
+
+  /** A name typed into the public list. Slot labels are the Share dialog's own,
+   * and the pictures print them, so those are drawn again once typing stops. */
+  private setGalleryName(row: GalleryNameRow, value: string) {
+    if (row.kind === "slot") {
+      this.setShareLabel(row.id, value);
+      window.clearTimeout(this.galleryRedrawTimer);
+      this.galleryRedrawTimer = window.setTimeout(() => {
+        const cfg = this.draft?.config;
+        if (!cfg || !this.galleryOpen || this.gallerySent) return;
+        this.galleryPreviews = undefined;
+        this.galleryPreviewNote = "";
+        void this.makeGalleryPreviews(cfg, this.currentShareSlots());
+      }, 500);
+      return;
+    }
+    const next = new Map(row.kind === "folder" ? this.galleryGroupNames : this.galleryValueNames);
+    next.set(row.id, value);
+    if (row.kind === "folder") this.galleryGroupNames = next;
+    else this.galleryValueNames = next;
   }
 
   private closeGalleryDialog() {
@@ -5693,12 +5806,13 @@ export class WristAssistantPanel extends LitElement {
     if (!cfg || this.gallerySending || this.gallerySent || !this.galleryConfirmed || this.galleryPreviews === undefined) return;
     const slots = this.currentShareSlots();
     const meta = this.galleryMeta();
-    if (galleryBlockers(cfg, slots, meta, this.knownDomains()).length > 0) return;
+    const overrides = this.galleryOverrides();
+    if (galleryBlockers(cfg, slots, meta, this.knownDomains(), overrides).length > 0) return;
     this.gallerySending = true;
     this.galleryError = "";
     try {
       const key = await this.ensureGalleryKey();
-      await submitToGallery(galleryFetch, key, { ...buildGallerySubmission(cfg, slots, meta), previews: this.galleryPreviews });
+      await submitToGallery(galleryFetch, key, { ...buildGallerySubmission(cfg, slots, meta, overrides), previews: this.galleryPreviews });
       this.gallerySent = true;
       writeGalleryNickname(meta.authorName.trim());
       void this.loadGalleryUploads();
@@ -5743,8 +5857,9 @@ export class WristAssistantPanel extends LitElement {
     const cfg = this.draft?.config;
     if (!cfg) return nothing;
     const slots = this.currentShareSlots();
-    const blockers = galleryBlockers(cfg, slots, this.galleryMeta(), this.knownDomains());
-    const publicFields = galleryPublicFields(cfg, slots);
+    const overrides = this.galleryOverrides();
+    const blockers = galleryBlockers(cfg, slots, this.galleryMeta(), this.knownDomains(), overrides);
+    const publicFields = galleryPublicFields(cfg, slots, overrides);
     const locked = this.gallerySending || this.gallerySent;
     const ready = blockers.length === 0 && this.galleryConfirmed && this.galleryPreviews !== undefined && !locked;
     const why = this.gallerySent ? "Already sent"
@@ -5787,7 +5902,7 @@ export class WristAssistantPanel extends LitElement {
           <span>Nickname</span>
           <input type="text" maxlength=${GALLERY_LIMITS.authorName} placeholder="Optional" .value=${this.galleryNickname} ?disabled=${locked}
             @input=${(e: Event) => { this.galleryNickname = (e.target as HTMLInputElement).value; }} />
-          <span class="hint">Shown beside it in the gallery. Leave it empty to post without a name.</span>
+          <div class="hint">Shown beside it in the gallery. Leave it empty to post without a name.</div>
         </label>
         <div class="field">
           <span>Preview</span>
@@ -5803,9 +5918,16 @@ export class WristAssistantPanel extends LitElement {
         <div class="field">
           <span>This will be public</span>
           <ul class="gal-public">
-            ${publicFields.map((g) => html`<li><b>${g.label}</b>${g.values.map((v) => html`<div class="gal-val">${v}</div>`)}</li>`)}
+            ${publicFields.map((g) => html`<li><b>${g.label}</b>${g.rows
+              ? g.rows.map((row) => html`<div class="gal-name">
+                ${row.kind === "slot" ? html`<span class="sid" title=${row.id}>${row.id}</span>` : nothing}
+                <input type="text" maxlength=${row.kind === "slot" ? 40 : nothing} .value=${row.value} placeholder=${row.original}
+                  aria-label=${`${g.label}: ${row.kind === "slot" ? row.id : row.original}`} ?disabled=${locked}
+                  @input=${(e: Event) => this.setGalleryName(row, (e.target as HTMLInputElement).value)} />
+              </div>`)
+              : g.values.map((v) => html`<div class="gal-val">${v}</div>`)}</li>`)}
           </ul>
-          <div class="hint">Read it through. Anything here that names a person, a place or a device in your home will be posted as written.</div>
+          <div class="hint">Read it through. Anything here that names a person, a place or a device in your home will be posted as written. Folder and shared value names changed here apply to the gallery copy only, and an empty one keeps its name. Slot labels are the ones from Share.</div>
         </div>
         ${blockers.length > 0 ? html`<div class="banner warn gal-blockers"><ul>${blockers.map((b) => html`<li>${b}</li>`)}</ul></div>` : nothing}
         <label class="xfer-mode gal-confirm">
@@ -5876,7 +5998,13 @@ export class WristAssistantPanel extends LitElement {
     } catch {
       // Refused or unavailable; the selection below works either way.
     }
-    const area = this.renderRoot.querySelector<HTMLTextAreaElement | HTMLInputElement>(from);
+    // The text box is folded away by default, and a hidden box has nothing
+    // to select.
+    if (from === "dialog.share-dialog textarea" && !this.shareTextOpen) {
+      this.shareTextOpen = true;
+      await this.updateComplete;
+    }
+    const area =this.renderRoot.querySelector<HTMLTextAreaElement | HTMLInputElement>(from);
     area?.focus();
     area?.select();
     let copied = false;
@@ -5923,8 +6051,8 @@ export class WristAssistantPanel extends LitElement {
    *
    * The parse runs on every keystroke because it is cheap and because an error
    * that appears while you are still pasting is easier to act on than one that
-   * waits for a button. Nothing is created until Import, and Import only opens
-   * a draft: the watch learns about it at the first Save.
+   * waits for a button. Nothing is created until Import, and Import saves it
+   * straight away, so leaving the page afterwards does not lose it.
    */
   private renderImportDialog() {
     const parse = this.importParse;
@@ -5936,7 +6064,8 @@ export class WristAssistantPanel extends LitElement {
       taken: this.takenNames(),
       unchosen: this.unchosenCount(rows),
     });
-    return html`<dialog class="import-dialog ${this.importDrop ? "dropping" : ""}" @keydown=${this.importKeys} @close=${() => { this.importOpen = false; }}
+    const folded = importTextFolded(parse, this.importTextShown);
+    return html`<dialog class="import-dialog ${this.importDrop ? "dropping" : ""}" @keydown=${this.importKeys} @close=${() => this.importClosed()}
       @dragenter=${this.importDragEnter} @dragover=${this.importDragOver} @dragleave=${this.importDragLeave} @drop=${this.importDropped}>
       <div class="new-head">
         <h2>Import a complication</h2>
@@ -5944,7 +6073,12 @@ export class WristAssistantPanel extends LitElement {
         <button class="icon" title="Cancel" aria-label="Cancel" @click=${() => this.closeImportDialog()}>${uiIcon("close")}</button>
       </div>
       <div class="xfer-body">
-        <div class="field">
+        ${folded
+          ? html`<div class="xfer-folded">
+              <span class="hint">Shared text loaded</span>
+              <button type="button" class="small" @click=${() => { this.importTextShown = true; }}>Show text</button>
+            </div>`
+          : html`<div class="field">
           <span>Shared text</span>
           <textarea class="xfer-text" rows="8" placeholder="Paste the shared text or a share link here"
             aria-label="Shared complication text or link" .value=${this.importText}
@@ -5953,10 +6087,14 @@ export class WristAssistantPanel extends LitElement {
             <button type="button" class="small"
               @click=${(e: Event) => (e.currentTarget as HTMLElement).parentElement?.querySelector<HTMLInputElement>("input[type=file]")?.click()}>Choose a file</button>
             <span class="hint">or drop one on this dialog</span>
+            ${cfg ? html`<span class="spacer"></span><button type="button" class="small" @click=${() => { this.importTextShown = false; }}>Hide text</button>` : nothing}
             <input type="file" hidden accept=".json,application/json,text/plain"
               @change=${(e: Event) => void this.readImportFile(e)} />
           </div>
-        </div>
+          ${this.importText.trim() === ""
+            ? html`<div class="hint">Find designs other people made at <a href="https://wrist-assistant.com/gallery/" target="_blank" rel="noopener">wrist-assistant.com/gallery</a>.</div>`
+            : nothing}
+        </div>`}
         ${parse && !parse.ok ? html`<div class="hint err xfer-problem" role="alert">${parse.error}</div>` : nothing}
         ${cfg ? this.renderImportPreview(cfg, rows) : nothing}
         ${cfg ? this.renderImportDetails(cfg, rows) : nothing}
@@ -5965,7 +6103,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="spacer"></span>
         <button class="small" @click=${() => this.closeImportDialog()}>Cancel</button>
         <button class="primary" ?disabled=${problem !== undefined}
-          title=${problem ?? "Open it in the editor"} @click=${() => this.doImport()}>Import</button>
+          title=${problem ?? "Save it to this watch and open it in the editor"} @click=${() => void this.doImport()}>Import</button>
       </div>
       ${this.importDrop ? html`<div class="xfer-drop" aria-hidden="true"><span>Drop to read the file</span></div>` : nothing}
     </dialog>`;
@@ -5979,8 +6117,13 @@ export class WristAssistantPanel extends LitElement {
     const layers = facts.layers === 1 ? "1 layer" : `${facts.layers} layers`;
     const slots = facts.slots === 0 ? "no entities to choose" : facts.slots === 1 ? "1 entity to choose" : `${facts.slots} entities to choose`;
     const missing = facts.missing === 0 ? "" : ` · ${facts.missing} not in your Home Assistant`;
+    // Drawn with the picks applied, so a chart reads the entity chosen for it
+    // and its history rather than a placeholder nobody has.
+    const preview = this.importPreview();
     return html`<div class="xfer-preview">
-      <div class="xfer-arts">${this.renderConfigArts(cfg, this.importEntities, supportedFamilies(cfg), "pk-art xfer-art")}</div>
+      <div class="xfer-arts">${preview
+        ? this.renderConfigArts(preview.config, preview.entities, supportedFamilies(cfg), "pk-art xfer-art", this.importHistory)
+        : nothing}</div>
       <div class="xfer-facts">
         <b>${cfg.name.trim() || "Untitled"}</b>
         <span>${facts.families.join(" · ")}</span>
@@ -6051,7 +6194,7 @@ export class WristAssistantPanel extends LitElement {
       </div>
       ${taken
         ? html`<div class="hint err">A complication on this watch already has that name.</div>`
-        : html`<div class="hint">It opens in the editor and reaches the watch at the first Save.</div>`}
+        : html`<div class="hint">Import saves it to this watch and opens it in the editor.</div>`}
       ${rows.length === 0
         ? html`<div class="hint">Every entity this design reads is already in your Home Assistant.</div>`
         : html`<div class="field">
@@ -6088,6 +6231,25 @@ export class WristAssistantPanel extends LitElement {
     // save copies into dataSources.
     else next.set(entityId, entityRefFrom(this.hass.states, ref.entityId));
     this.importMap = next;
+    this.scheduleImportHistory();
+  }
+
+  /** The parsed document with the picks so far applied, and the entities it
+   * reads, for the preview picture. Undefined until the text parses. */
+  private importPreview(): { config: CustomComplicationConfig; entities: EntityRef[] } | undefined {
+    const parse = this.importParse;
+    if (!parse?.ok) return undefined;
+    const cached = this.importPreviewCache;
+    if (cached && cached.parse === parse && cached.map === this.importMap) return cached;
+    const config = remapEntities(parse.config, this.importMap);
+    let entities: EntityRef[];
+    try {
+      entities = [...compile(config).entities.values()];
+    } catch {
+      entities = [];
+    }
+    this.importPreviewCache = { parse, map: this.importMap, config, entities };
+    return this.importPreviewCache;
   }
 
   /**
@@ -6117,15 +6279,11 @@ export class WristAssistantPanel extends LitElement {
     const before = this.importParse?.ok ? JSON.stringify(this.importParse.config) : undefined;
     const parse = text.trim() === "" ? undefined : parseImportText(text, this.maxSchemaVersion);
     this.importParse = parse;
+    this.scheduleImportHistory();
     if (!parse?.ok) {
       this.importMap = new Map();
       this.importName = "";
       return;
-    }
-    try {
-      this.importEntities = [...compile(parse.config).entities.values()];
-    } catch {
-      this.importEntities = [];
     }
     if (JSON.stringify(parse.config) === before) return;
     this.importMap = new Map();
@@ -6231,8 +6389,14 @@ export class WristAssistantPanel extends LitElement {
    * `startNew` is declined, because the answer to "discard your unsaved work?"
    * being no should not also throw away a table of entities somebody just
    * filled in.
+   *
+   * The copy is saved at once. It used to open as an unsaved draft, and
+   * leaving the page before pressing Save lost it, which is easy to do when
+   * the whole point of the dialog felt finished. A save that fails leaves the
+   * draft open and dirty with the editor's own save error beside it, so the
+   * document is still there to save again.
    */
-  private doImport() {
+  private async doImport() {
     const parse = this.importParse;
     if (!parse?.ok) return;
     const cfg = remapEntities(parse.config, this.importMap);
@@ -6242,10 +6406,11 @@ export class WristAssistantPanel extends LitElement {
     cfg.dataSources = [];
     cfg.schemaVersion = schemaVersionFor(cfg);
     if (!this.startNew(cfg)) return;
-    // A pasted document is unsaved work from the moment it lands: nothing about
-    // it is on the server, so Save has to be live before the first edit.
+    // Dirty before the save: nothing about it is on the server yet, and if the
+    // save does not go through, Save has to stay live.
     this.draft?.markDirty();
     this.closeImportDialog();
+    await this.save();
   }
 
   private openImportDialog() {
@@ -6255,7 +6420,10 @@ export class WristAssistantPanel extends LitElement {
     this.importParse = undefined;
     this.importName = "";
     this.importMap = new Map();
-    this.importEntities = [];
+    this.importTextShown = false;
+    this.importHistory = new Map();
+    this.importHistoryAsked = undefined;
+    this.importPreviewCache = undefined;
     this.importDrop = false;
     this.importDragDepth = 0;
     void this.updateComplete.then(() => {
@@ -6269,7 +6437,16 @@ export class WristAssistantPanel extends LitElement {
   private closeImportDialog() {
     const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.import-dialog");
     if (dialog?.open) dialog.close();
-    else this.importOpen = false;
+    else this.importClosed();
+  }
+
+  /** However the dialog shut, a history fetch still waiting or on its way no
+   * longer has a picture to draw into. */
+  private importClosed() {
+    this.importOpen = false;
+    if (this.importHistoryTimer) window.clearTimeout(this.importHistoryTimer);
+    this.importHistoryTimer = undefined;
+    this.importHistoryRun += 1;
   }
 
   private renderBanners() {

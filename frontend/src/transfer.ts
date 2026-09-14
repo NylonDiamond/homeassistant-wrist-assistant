@@ -588,3 +588,11 @@ export function importProblem(state: ImportReadiness): string | undefined {
   if (state.unchosen > 1) return `${state.unchosen} entities still need choosing.`;
   return undefined;
 }
+
+/** Whether the Import dialog folds the shared text away to one row. Only text
+ * that parsed folds: an empty box is where the pasting happens, and text with
+ * a problem has to stay readable so it can be fixed. `shown` is the reader
+ * having asked to see it anyway. */
+export function importTextFolded(parse: ImportParse | undefined, shown: boolean): boolean {
+  return parse?.ok === true && !shown;
+}

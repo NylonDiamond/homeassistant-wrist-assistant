@@ -32,7 +32,7 @@ export interface HassLike {
   themes?: { darkMode?: boolean };
 }
 
-import type { OccupiedSlot } from "./model.js";
+import { type CustomComplicationConfig, type OccupiedSlot, chartHistoryRequests, chartStatisticsRequests } from "./model.js";
 
 export interface OwnerSummary {
   owner_watch_id: string;
@@ -332,4 +332,21 @@ export interface StatisticsSeriesRequest {
   period: string;
   type: string;
   gaps?: true;
+}
+
+/** Both commands' request bodies for one document, keyed as the resolver
+ * reads the answers. `keep` leaves out entities not worth asking about: the
+ * import preview drops the `sensor.shared_1` placeholders nobody has answered,
+ * since the recorder has nothing for an id that is not in this house.
+ * `signature` is the pair as text, so a caller can tell a changed question
+ * from the same one asked again. */
+export function seriesRequests(
+  cfg: CustomComplicationConfig,
+  keep: (entityId: string) => boolean = () => true,
+): { history: Record<string, HistorySeriesRequest>; statistics: Record<string, StatisticsSeriesRequest>; signature: string } {
+  const history: Record<string, HistorySeriesRequest> = {};
+  for (const r of chartHistoryRequests(cfg)) if (keep(r.entityId)) history[r.key] = historySeriesRequest(r);
+  const statistics: Record<string, StatisticsSeriesRequest> = {};
+  for (const r of chartStatisticsRequests(cfg)) if (keep(r.entityId)) statistics[r.key] = statisticsSeriesRequest(r);
+  return { history, statistics, signature: JSON.stringify([history, statistics]) };
 }

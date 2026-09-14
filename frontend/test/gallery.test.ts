@@ -60,7 +60,9 @@ describe("buildGallerySubmission", () => {
     const slots = shareSlots(cfg, domainsOf(cfg)).map((s, i) => ({ ...s, label: `Thing ${i + 1}` }));
     expect(slots.length).toBeGreaterThan(0);
     const body = buildGallerySubmission(cfg, slots, META);
-    expect(body.shareText).toBe(exportText(cfg, "share", slots));
+    const named = structuredClone(cfg);
+    named.name = META.title;
+    expect(body.shareText).toBe(exportText(named, "share", slots));
     for (const slot of slots) expect(body.shareText).not.toContain(slot.originalId);
     expect(body.slots).toEqual(slots.map((s) => ({ id: s.placeholderId, label: s.label })));
     expect(body.families).toEqual(supportedFamilies(cfg));
@@ -73,6 +75,28 @@ describe("buildGallerySubmission", () => {
     const body = buildGallerySubmission(cfg, [], { ...META, title: "  Hi  ", tags: ["media", "nope", "media"] });
     expect(body.title).toBe("Hi");
     expect(body.tags).toEqual(["media"]);
+  });
+
+  it("renames folders and shared values in the copy only, and an empty name keeps the original", () => {
+    const cfg = livingRoom();
+    const folder = { id: newId(), name: "Jane's room", locked: false };
+    const other = { id: newId(), name: "Upstairs", locked: false };
+    cfg.groups = [...(cfg.groups ?? []), folder, other];
+    const value = { id: newId(), name: "Jane's heater", value: { kind: { kind: "literal" as const, value: "1" } } };
+    cfg.values.push(value);
+    const before = structuredClone(cfg);
+
+    const body = buildGallerySubmission(cfg, [], META, {
+      groupNames: new Map([[folder.id, "Bedroom"], [other.id, "  "]]),
+      valueNames: new Map([[value.id, "Heater"]]),
+    });
+    const sent = JSON.parse(body.shareText) as { name: string; groups: { name: string }[]; values: { name: string }[] };
+    expect(sent.name).toBe(META.title);
+    expect(sent.groups.map((g) => g.name)).toContain("Bedroom");
+    expect(sent.groups.map((g) => g.name)).toContain("Upstairs");
+    expect(sent.values.map((v) => v.name)).toContain("Heater");
+    expect(body.shareText).not.toContain("Jane");
+    expect(cfg).toEqual(before);
   });
 });
 
@@ -96,13 +120,44 @@ describe("galleryPublicFields", () => {
   const group = (groups: ReturnType<typeof galleryPublicFields>, label: string) =>
     groups.find((g) => g.label === label)?.values ?? [];
 
-  it("lists the name, layer names, shared value names and slot labels", () => {
+  it("lists layer names, shared value names and slot labels, and leaves the name to the title", () => {
     const { cfg, slots } = withText();
     const groups = galleryPublicFields(cfg, slots);
-    expect(group(groups, "Complication name")).toEqual([cfg.name]);
+    expect(groups.some((g) => g.label === "Complication name")).toBe(false);
+    expect(group(groups, "Other text")).not.toContain(cfg.name);
     expect(group(groups, "Layer names")).toContain("The Smiths lamp");
     expect(group(groups, "Shared value names")).toContain("Heating cost");
     expect(group(groups, "Slot labels")).toEqual(slots.map((s) => s.label));
+  });
+
+  it("offers folder, shared value and slot names as rows, with the renames applied", () => {
+    const { cfg, slots } = withText();
+    const heating = cfg.values.find((n) => n.name === "Heating cost")!;
+    const groups = galleryPublicFields(cfg, slots, { valueNames: new Map([[heating.id, "Boiler cost"]]) });
+    const shared = groups.find((g) => g.label === "Shared value names")!;
+    expect(shared.values).toContain("Boiler cost");
+    expect(shared.values).not.toContain("Heating cost");
+    expect(shared.rows).toContainEqual({ kind: "shared", id: heating.id, value: "Boiler cost", original: "Heating cost" });
+    expect(groups.find((g) => g.label === "Slot labels")?.rows?.map((r) => r.id)).toEqual(slots.map((s) => s.placeholderId));
+    expect(groups.find((g) => g.label === "Layer names")?.rows).toBeUndefined();
+    expect(cfg.values.find((n) => n.id === heating.id)?.name).toBe("Heating cost");
+  });
+
+  it("does not list an icon's symbol name as other text", () => {
+    const { cfg, slots } = withText();
+    const icon = newElement("icon");
+    if (icon.kind === "icon") icon.payload.symbol = { kind: { kind: "literal", value: "circle.fill" } };
+    icon.payload.rules = [{
+      id: newId(),
+      cases: [],
+      otherwise: [{ kind: "setIcon", value: { kind: { kind: "literal", value: "exclamationmark.triangle" } } }],
+    }];
+    cfg.elements.push(icon);
+    const other = group(galleryPublicFields(cfg, slots), "Other text");
+    expect(exportText(cfg, "share", slots)).toContain("circle.fill");
+    expect(other).not.toContain("circle.fill");
+    expect(other).not.toContain("exclamationmark.triangle");
+    expect(other).toContain("Hello Jane");
   });
 
   it("shows template text as it will be sent, with the entity replaced", () => {

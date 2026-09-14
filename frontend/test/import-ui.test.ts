@@ -4,8 +4,9 @@
 // browser to check.
 
 import { describe, expect, it } from "vitest";
-import { type CustomComplicationConfig, newConfig, newElement } from "../src/model.js";
-import { importProblem, importSummary, suggestImportName } from "../src/transfer.js";
+import { seriesRequests } from "../src/ha-api.js";
+import { type CustomComplicationConfig, type Element, newConfig, newElement } from "../src/model.js";
+import { importProblem, importSummary, importTextFolded, remapEntities, suggestImportName } from "../src/transfer.js";
 
 const taken = (...names: string[]) => new Set(names.map((n) => n.toLowerCase()));
 
@@ -78,5 +79,57 @@ describe("importProblem", () => {
 
   it("says nothing when the dialog is answered", () => {
     expect(importProblem(base)).toBeUndefined();
+  });
+});
+
+describe("importTextFolded", () => {
+  const parsed = { ok: true as const, config: newConfig("Energy", 0), unknownKeys: [] };
+
+  it("keeps the box open while there is nothing to read", () => {
+    expect(importTextFolded(undefined, false)).toBe(false);
+  });
+
+  it("keeps text with a problem readable", () => {
+    expect(importTextFolded({ ok: false, error: "Not a complication." }, false)).toBe(false);
+  });
+
+  it("folds text that parsed", () => {
+    expect(importTextFolded(parsed as never, false)).toBe(true);
+  });
+
+  it("stays open once the reader asks to see it", () => {
+    expect(importTextFolded(parsed as never, true)).toBe(false);
+  });
+});
+
+describe("the import preview's history", () => {
+  // A history bar chart as a share leaves it: reading a numbered placeholder.
+  function sharedChart(): CustomComplicationConfig {
+    const cfg = newConfig("Power", 0);
+    const el = newElement("chart") as Extract<Element, { kind: "chart" }>;
+    el.payload.value = { kind: { kind: "entityState", entityId: "sensor.shared_1", displayName: "Power", domain: "sensor" } };
+    el.payload.historyMinutes = 360;
+    el.payload.historyPoints = 24;
+    cfg.elements.push(el);
+    return cfg;
+  }
+  const inHouse = (ids: string[]) => (id: string) => ids.includes(id);
+
+  it("asks nothing about a placeholder nobody has answered", () => {
+    const wanted = seriesRequests(sharedChart(), inHouse(["sensor.grid_power"]));
+    expect(wanted.history).toEqual({});
+  });
+
+  it("asks about the entity picked for the slot", () => {
+    const map = new Map([["sensor.shared_1", { entityId: "sensor.grid_power", displayName: "Grid power", domain: "sensor" }]]);
+    const wanted = seriesRequests(remapEntities(sharedChart(), map), inHouse(["sensor.grid_power"]));
+    expect(Object.values(wanted.history)).toEqual([{ entity_id: "sensor.grid_power", minutes: 360, points: 24 }]);
+  });
+
+  it("gives the same question the same signature, and a new pick a new one", () => {
+    const keep = inHouse(["sensor.grid_power", "sensor.solar"]);
+    const pick = (id: string) => remapEntities(sharedChart(), new Map([["sensor.shared_1", { entityId: id, displayName: "", domain: "sensor" }]]));
+    expect(seriesRequests(pick("sensor.solar"), keep).signature).toBe(seriesRequests(pick("sensor.solar"), keep).signature);
+    expect(seriesRequests(pick("sensor.solar"), keep).signature).not.toBe(seriesRequests(pick("sensor.grid_power"), keep).signature);
   });
 });

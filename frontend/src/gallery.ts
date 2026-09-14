@@ -13,6 +13,8 @@
 import {
   type CustomComplicationConfig,
   type FamilyKind,
+  type Rule,
+  type Value,
   forEachValue,
   mapFreeText,
 } from "./model.js";
@@ -99,6 +101,29 @@ export interface GallerySubmission {
   panelVersion: string;
 }
 
+/**
+ * Names the author changed for the gallery copy only. Keyed by folder id and
+ * shared value id; an empty or missing entry keeps the document's own name.
+ * The draft is never touched: these apply to a clone just before export.
+ */
+export interface GalleryOverrides {
+  /** The name the shared copy takes. The submission fills it from the title. */
+  name?: string;
+  groupNames?: ReadonlyMap<string, string>;
+  valueNames?: ReadonlyMap<string, string>;
+}
+
+/** A copy of the document with the gallery's renames applied. */
+export function applyGalleryOverrides(cfg: CustomComplicationConfig, overrides: GalleryOverrides = {}): CustomComplicationConfig {
+  const next = structuredClone(cfg);
+  const pick = (original: string, wanted: string | undefined): string =>
+    wanted === undefined || wanted.trim() === "" ? original : wanted.trim();
+  next.name = pick(next.name, overrides.name);
+  for (const g of next.groups ?? []) g.name = pick(g.name, overrides.groupNames?.get(g.id));
+  for (const n of next.values) n.name = pick(n.name, overrides.valueNames?.get(n.id));
+  return next;
+}
+
 function isGalleryTag(tag: string): tag is GalleryTag {
   return (GALLERY_TAGS as readonly string[]).includes(tag);
 }
@@ -114,16 +139,20 @@ function byteLength(text: string): number {
  * same ones its text uses, so the gallery text is exactly the text the Share
  * dialog shows. Passing no slots would scrub nothing, which is why they are
  * not optional here.
+ *
+ * The copy is named by the title, and takes the folder and shared value names
+ * the author changed for the gallery.
  */
 export function buildGallerySubmission(
   cfg: CustomComplicationConfig,
   slots: readonly ShareSlot[],
   meta: GalleryMeta,
+  overrides: GalleryOverrides = {},
 ): Omit<GallerySubmission, "previews"> {
   const tags: GalleryTag[] = [];
   for (const tag of meta.tags) if (isGalleryTag(tag) && !tags.includes(tag)) tags.push(tag);
   return {
-    shareText: exportText(cfg, "share", slots),
+    shareText: exportText(applyGalleryOverrides(cfg, { ...overrides, name: meta.title }), "share", slots),
     title: meta.title.trim(),
     description: meta.description.trim(),
     authorName: meta.authorName.trim(),
@@ -136,9 +165,22 @@ export function buildGallerySubmission(
 
 // ── what becomes public ───────────────────────────────────────────────────
 
+/** One name the dialog lets the author change for the gallery copy. */
+export interface GalleryNameRow {
+  kind: "folder" | "shared" | "slot";
+  /** Folder id, shared value id, or slot placeholder id. */
+  id: string;
+  /** The name as it will be sent. */
+  value: string;
+  /** The document's own name, which an emptied field falls back to. */
+  original: string;
+}
+
 export interface GalleryPublicGroup {
   label: string;
   values: string[];
+  /** Present on the groups the author can rename, one row per item. */
+  rows?: GalleryNameRow[];
 }
 
 /** Keys in the share text whose strings are structure, not writing: ids,
@@ -174,23 +216,42 @@ function pushUnique(list: string[], value: string | undefined): void {
  * text" is every remaining string in the share text that is not structure,
  * which is what catches a literal typed into a layer, a rule's pattern, or a
  * text part's prefix.
+ *
+ * The complication's name is not listed: the copy takes the title, which the
+ * author typed a moment ago. Folder, shared value and slot groups carry rows
+ * so the dialog can offer each name for editing.
  */
-export function galleryPublicFields(cfg: CustomComplicationConfig, slots: readonly ShareSlot[]): GalleryPublicGroup[] {
-  const scrubbed = scrubForShare(cfg, slots);
-  const name: string[] = [];
+export function galleryPublicFields(
+  cfg: CustomComplicationConfig,
+  slots: readonly ShareSlot[],
+  overrides: GalleryOverrides = {},
+): GalleryPublicGroup[] {
+  const renamed = applyGalleryOverrides(cfg, overrides);
+  const scrubbed = scrubForShare(renamed, slots);
   const layers: string[] = [];
   const folders: string[] = [];
   const shared: string[] = [];
   const labels: string[] = [];
   const templates: string[] = [];
   const serviceData: string[] = [];
+  const symbols = new Set<string>();
   const other: string[] = [];
 
-  pushUnique(name, scrubbed.name);
+  const folderRows: GalleryNameRow[] = [];
+  const sharedRows: GalleryNameRow[] = [];
   for (const el of scrubbed.elements) pushUnique(layers, el.payload.name);
-  for (const g of scrubbed.groups ?? []) pushUnique(folders, g.name);
-  for (const n of scrubbed.values) pushUnique(shared, n.name);
+  (scrubbed.groups ?? []).forEach((g, i) => {
+    pushUnique(folders, g.name);
+    folderRows.push({ kind: "folder", id: g.id, value: g.name, original: cfg.groups?.[i]?.name ?? g.name });
+  });
+  scrubbed.values.forEach((n, i) => {
+    pushUnique(shared, n.name);
+    sharedRows.push({ kind: "shared", id: n.id, value: n.name, original: cfg.values[i]?.name ?? n.name });
+  });
   for (const slot of slots) pushUnique(labels, slot.label);
+  const slotRows: GalleryNameRow[] = slots.map((slot) => ({
+    kind: "slot", id: slot.placeholderId, value: slot.label, original: slot.label,
+  }));
   forEachValue(scrubbed, (v) => {
     if (v.kind.kind === "jinja") pushUnique(templates, v.kind.value);
   });
@@ -198,8 +259,24 @@ export function galleryPublicFields(cfg: CustomComplicationConfig, slots: readon
     if (site.part === "serviceData") pushUnique(serviceData, text);
     return text;
   });
+  // An icon's literal symbol, on the layer or set by a rule, is a built-in
+  // icon name such as `circle.fill`, not something the author wrote.
+  const symbolOf = (v: Value | undefined): void => {
+    if (v?.kind.kind === "literal") symbols.add(v.kind.value.trim());
+  };
+  const ruleSymbols = (rules: readonly Rule[]): void => {
+    for (const rule of rules) {
+      for (const c of rule.cases) for (const change of c.then) if (change.kind === "setIcon") symbolOf(change.value);
+      for (const change of rule.otherwise ?? []) if (change.kind === "setIcon") symbolOf(change.value);
+    }
+  };
+  for (const el of scrubbed.elements) {
+    if (el.kind === "icon") symbolOf(el.payload.symbol);
+    ruleSymbols(el.payload.rules);
+  }
+  for (const layout of Object.values(scrubbed.perFamily)) if (layout) ruleSymbols(layout.rules);
 
-  const listed = new Set([...name, ...layers, ...folders, ...shared, ...labels, ...templates, ...serviceData]);
+  const listed = new Set([scrubbed.name.trim(), ...layers, ...folders, ...shared, ...labels, ...templates, ...serviceData, ...symbols]);
   const walk = (v: unknown, key: string): void => {
     if (typeof v === "string") {
       const s = v.trim();
@@ -216,14 +293,13 @@ export function galleryPublicFields(cfg: CustomComplicationConfig, slots: readon
       for (const [k, x] of Object.entries(v)) walk(x, k);
     }
   };
-  walk(JSON.parse(exportText(cfg, "share", slots)), "");
+  walk(JSON.parse(exportText(renamed, "share", slots)), "");
 
   const groups: GalleryPublicGroup[] = [
-    { label: "Complication name", values: name },
     { label: "Layer names", values: layers },
-    { label: "Folder names", values: folders },
-    { label: "Shared value names", values: shared },
-    { label: "Slot labels", values: labels },
+    { label: "Folder names", values: folders, rows: folderRows },
+    { label: "Shared value names", values: shared, rows: sharedRows },
+    { label: "Slot labels", values: labels, rows: slotRows },
     { label: "Template text", values: templates },
     { label: "Service data", values: serviceData },
     { label: "Other text", values: other },
@@ -272,9 +348,10 @@ export function galleryBlockers(
   slots: readonly ShareSlot[],
   meta: GalleryMeta,
   knownDomains?: ReadonlySet<string>,
+  overrides: GalleryOverrides = {},
 ): string[] {
   const out: string[] = [];
-  const body = buildGallerySubmission(cfg, slots, meta);
+  const body = buildGallerySubmission(cfg, slots, meta, overrides);
 
   if (hasInstanceFilters(cfg)) {
     out.push("It reads entities by area, label or floor. Those belong to your Home Assistant, so pick the entities themselves before sending it to the gallery.");
