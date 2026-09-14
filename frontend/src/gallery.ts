@@ -102,7 +102,7 @@ export interface GallerySubmission {
 }
 
 /**
- * Names the author changed for the gallery copy only. Keyed by folder id and
+ * Names the author changed for the gallery copy only. Keyed by group id and
  * shared value id; an empty or missing entry keeps the document's own name.
  * The draft is never touched: these apply to a clone just before export.
  */
@@ -140,7 +140,7 @@ function byteLength(text: string): number {
  * dialog shows. Passing no slots would scrub nothing, which is why they are
  * not optional here.
  *
- * The copy is named by the title, and takes the folder and shared value names
+ * The copy is named by the title, and takes the group and shared value names
  * the author changed for the gallery.
  */
 export function buildGallerySubmission(
@@ -167,8 +167,8 @@ export function buildGallerySubmission(
 
 /** One name the dialog lets the author change for the gallery copy. */
 export interface GalleryNameRow {
-  kind: "folder" | "shared" | "slot";
-  /** Folder id, shared value id, or slot placeholder id. */
+  kind: "group" | "shared" | "slot";
+  /** Group id, shared value id, or slot placeholder id. */
   id: string;
   /** The name as it will be sent. */
   value: string;
@@ -218,7 +218,7 @@ function pushUnique(list: string[], value: string | undefined): void {
  * text part's prefix.
  *
  * The complication's name is not listed: the copy takes the title, which the
- * author typed a moment ago. Folder, shared value and slot groups carry rows
+ * author typed a moment ago. The group, shared value and slot lists carry rows
  * so the dialog can offer each name for editing.
  */
 export function galleryPublicFields(
@@ -229,7 +229,7 @@ export function galleryPublicFields(
   const renamed = applyGalleryOverrides(cfg, overrides);
   const scrubbed = scrubForShare(renamed, slots);
   const layers: string[] = [];
-  const folders: string[] = [];
+  const groupNames: string[] = [];
   const shared: string[] = [];
   const labels: string[] = [];
   const templates: string[] = [];
@@ -237,12 +237,12 @@ export function galleryPublicFields(
   const symbols = new Set<string>();
   const other: string[] = [];
 
-  const folderRows: GalleryNameRow[] = [];
+  const groupRows: GalleryNameRow[] = [];
   const sharedRows: GalleryNameRow[] = [];
   for (const el of scrubbed.elements) pushUnique(layers, el.payload.name);
   (scrubbed.groups ?? []).forEach((g, i) => {
-    pushUnique(folders, g.name);
-    folderRows.push({ kind: "folder", id: g.id, value: g.name, original: cfg.groups?.[i]?.name ?? g.name });
+    pushUnique(groupNames, g.name);
+    groupRows.push({ kind: "group", id: g.id, value: g.name, original: cfg.groups?.[i]?.name ?? g.name });
   });
   scrubbed.values.forEach((n, i) => {
     pushUnique(shared, n.name);
@@ -276,7 +276,7 @@ export function galleryPublicFields(
   }
   for (const layout of Object.values(scrubbed.perFamily)) if (layout) ruleSymbols(layout.rules);
 
-  const listed = new Set([scrubbed.name.trim(), ...layers, ...folders, ...shared, ...labels, ...templates, ...serviceData, ...symbols]);
+  const listed = new Set([scrubbed.name.trim(), ...layers, ...groupNames, ...shared, ...labels, ...templates, ...serviceData, ...symbols]);
   const walk = (v: unknown, key: string): void => {
     if (typeof v === "string") {
       const s = v.trim();
@@ -297,7 +297,7 @@ export function galleryPublicFields(
 
   const groups: GalleryPublicGroup[] = [
     { label: "Layer names", values: layers },
-    { label: "Folder names", values: folders, rows: folderRows },
+    { label: "Group names", values: groupNames, rows: groupRows },
     { label: "Shared value names", values: shared, rows: sharedRows },
     { label: "Slot labels", values: labels, rows: slotRows },
     { label: "Template text", values: templates },

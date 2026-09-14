@@ -679,7 +679,7 @@ export class WristAssistantPanel extends LitElement {
   /** The Share to gallery dialog, opened from Share. The slots and their
    * labels are the Share dialog's, so what is sent is what Share shows. */
   @state() private galleryOpen = false;
-  /** Folder and shared value names changed for the gallery copy only, by id.
+  /** Group and shared value names changed for the gallery copy only, by id.
    * Cleared each time the dialog opens; the draft keeps its own names. */
   @state() private galleryGroupNames: ReadonlyMap<string, string> = new Map();
   @state() private galleryValueNames: ReadonlyMap<string, string> = new Map();
@@ -4445,7 +4445,7 @@ export class WristAssistantPanel extends LitElement {
       ["Click", "A layer on the face or in the list: edit it. Drag it to move, pull a corner to resize"],
       [`${MULTI_KEY}-click · ⇧-click`, "Add a layer to the pick · Pick a range of rows. Then Group them so a finished part moves as one"],
       ["Rest on a row", "Tints that layer on the face without selecting it. A group row tints every member"],
-      ["Drag a row", "Reorder the list. Drop it on a folder to put it inside"],
+      ["Drag a row", "Reorder the list. Drop it on a group to put it inside"],
       ["Pick layer", "Point at the face to find a layer. Click it to select it"],
       ["Show taps", "Every tap area, labelled. With a layer selected, only its tap shows and its corners drag"],
       ["Snap to grid", "On by default at 1%. Layers snap to the grid when you drag them, and arrows move one grid step. The eye beside the size shows or hides the lines; snapping works either way"],
@@ -4473,7 +4473,7 @@ export class WristAssistantPanel extends LitElement {
       ["Tap area", "Invisible. A tap inside it runs its own action. Outside it, the complication's tap action applies."],
       ["Extras", "Clock times, chart dots, a chart grid and a picture's timestamp are added from their layer's Extras card."],
       ["Order", "The top of the Layers list draws on top. Drag a row to reorder."],
-      ["Groups", `A folder of layers. Pick some and press ${m}G. Locked, the group moves as one on the face. Unlocked, each layer moves alone. The watch never sees groups.`],
+      ["Groups", `A set of layers kept together in the list. Pick some and press ${m}G. Locked, the group moves as one on the face. Unlocked, each layer moves alone. The watch never sees groups.`],
     ];
     const cards: [string, string][] = [
       ["Content", "What the layer shows, starting with its entity or value."],
@@ -5734,7 +5734,7 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** The renames that apply to the gallery copy: the title as its name, and
-   * the folder and shared value names changed in this dialog. */
+   * the group and shared value names changed in this dialog. */
   private galleryOverrides(): GalleryOverrides {
     return { name: this.galleryTitle, groupNames: this.galleryGroupNames, valueNames: this.galleryValueNames };
   }
@@ -5754,9 +5754,9 @@ export class WristAssistantPanel extends LitElement {
       }, 500);
       return;
     }
-    const next = new Map(row.kind === "folder" ? this.galleryGroupNames : this.galleryValueNames);
+    const next = new Map(row.kind === "group" ? this.galleryGroupNames : this.galleryValueNames);
     next.set(row.id, value);
-    if (row.kind === "folder") this.galleryGroupNames = next;
+    if (row.kind === "group") this.galleryGroupNames = next;
     else this.galleryValueNames = next;
   }
 
@@ -5927,7 +5927,7 @@ export class WristAssistantPanel extends LitElement {
               </div>`)
               : g.values.map((v) => html`<div class="gal-val">${v}</div>`)}</li>`)}
           </ul>
-          <div class="hint">Read it through. Anything here that names a person, a place or a device in your home will be posted as written. Folder and shared value names changed here apply to the gallery copy only, and an empty one keeps its name. Slot labels are the ones from Share.</div>
+          <div class="hint">Read it through. Anything here that names a person, a place or a device in your home will be posted as written. Group and shared value names changed here apply to the gallery copy only, and an empty one keeps its name. Slot labels are the ones from Share.</div>
         </div>
         ${blockers.length > 0 ? html`<div class="banner warn gal-blockers"><ul>${blockers.map((b) => html`<li>${b}</li>`)}</ul></div>` : nothing}
         <label class="xfer-mode gal-confirm">
@@ -6829,7 +6829,7 @@ export class WristAssistantPanel extends LitElement {
         @click=${(e: MouseEvent) => this.clickRow(id, e)}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "layer", id }; }}
         @dragstart=${d.onStart} @dragend=${d.onEnd} @dragover=${d.onOver} @drop=${d.onDrop}>
-        <span class="grip" title="Drag to reorder. Drop on a folder to put it inside.">${uiIcon("grip")}</span>
+        <span class="grip" title="Drag to reorder. Drop on a group to put it inside.">${uiIcon("grip")}</span>
         <span class="bar"></span>
         ${thumb([id])}
         <span class="name">

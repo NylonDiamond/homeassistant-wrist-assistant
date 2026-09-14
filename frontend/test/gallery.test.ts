@@ -77,17 +77,17 @@ describe("buildGallerySubmission", () => {
     expect(body.tags).toEqual(["media"]);
   });
 
-  it("renames folders and shared values in the copy only, and an empty name keeps the original", () => {
+  it("renames groups and shared values in the copy only, and an empty name keeps the original", () => {
     const cfg = livingRoom();
-    const folder = { id: newId(), name: "Jane's room", locked: false };
+    const group = { id: newId(), name: "Jane's room", locked: false };
     const other = { id: newId(), name: "Upstairs", locked: false };
-    cfg.groups = [...(cfg.groups ?? []), folder, other];
+    cfg.groups = [...(cfg.groups ?? []), group, other];
     const value = { id: newId(), name: "Jane's heater", value: { kind: { kind: "literal" as const, value: "1" } } };
     cfg.values.push(value);
     const before = structuredClone(cfg);
 
     const body = buildGallerySubmission(cfg, [], META, {
-      groupNames: new Map([[folder.id, "Bedroom"], [other.id, "  "]]),
+      groupNames: new Map([[group.id, "Bedroom"], [other.id, "  "]]),
       valueNames: new Map([[value.id, "Heater"]]),
     });
     const sent = JSON.parse(body.shareText) as { name: string; groups: { name: string }[]; values: { name: string }[] };
@@ -130,7 +130,7 @@ describe("galleryPublicFields", () => {
     expect(group(groups, "Slot labels")).toEqual(slots.map((s) => s.label));
   });
 
-  it("offers folder, shared value and slot names as rows, with the renames applied", () => {
+  it("offers group, shared value and slot names as rows, with the renames applied", () => {
     const { cfg, slots } = withText();
     const heating = cfg.values.find((n) => n.name === "Heating cost")!;
     const groups = galleryPublicFields(cfg, slots, { valueNames: new Map([[heating.id, "Boiler cost"]]) });
