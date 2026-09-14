@@ -14,6 +14,7 @@ import {
   type Value,
 } from "../src/model.js";
 import {
+  bandLayout,
   bandScale,
   changeKindsFor,
   chipRuns,
@@ -91,17 +92,48 @@ describe("a text layer's Type row", () => {
 });
 
 describe("a band table's colour bar", () => {
-  it("runs one typical band past each end of the table", () => {
-    expect(bandScale([20, 10])).toEqual({ lo: 0, hi: 30 });
-    expect(bandScale([4])).toEqual({ lo: 2, hi: 6 });
-    expect(bandScale([0])).toEqual({ lo: -1, hi: 1 });
+  const close = (got: { lo: number; hi: number }, lo: number, hi: number) => {
+    expect(got.lo).toBeCloseTo(lo);
+    expect(got.hi).toBeCloseTo(hi);
+  };
+
+  it("spans the band ends with a little room past each", () => {
+    close(bandScale([20, 10]), 8.8, 21.2);
+    close(bandScale([4]), 2, 6);
+    close(bandScale([0]), -1, 1);
+    close(bandScale([]), -1, 1);
   });
 
-  it("stretches to take in the current value", () => {
-    expect(bandScale([10, 20], 50)).toEqual({ lo: 0, hi: 50 });
-    expect(bandScale([10, 20], -5)).toEqual({ lo: -5, hi: 30 });
-    expect(bandScale([10, 20], 15)).toEqual({ lo: 0, hi: 30 });
-    expect(bandScale([], 7)).toEqual({ lo: 6, hi: 8 });
+  it("stretches to take in the current value or every reading", () => {
+    close(bandScale([10, 20], 50), 5.2, 54.8);
+    close(bandScale([10, 20], 15), 8.8, 21.2);
+    close(bandScale([], 7), 3.5, 10.5);
+    close(bandScale([122, 231], [120.5, 122.7]), 120.5 - 13.26, 231 + 13.26);
+  });
+
+  it("gives every band at least a tenth of the bar", () => {
+    // Readings sit just under 122 while the next band end is 231: by numbers
+    // the first band is about 1% wide.
+    const { lo, hi } = bandScale([122, 231], [120.5, 122.7]);
+    const { shares } = bandLayout([122, 231], lo, hi);
+    expect(shares.reduce((a, b) => a + b, 0)).toBeCloseTo(1);
+    for (const s of shares) expect(s).toBeGreaterThanOrEqual(0.1 - 1e-9);
+  });
+
+  it("places a number inside its own band's piece", () => {
+    const { lo, hi } = bandScale([122, 231], [120.5, 122.7]);
+    const { shares, at } = bandLayout([122, 231], lo, hi);
+    const firstEnd = shares[0]! * 100;
+    expect(at(121)).toBeLessThan(firstEnd);
+    expect(at(122)).toBeCloseTo(firstEnd);
+    expect(at(122.5)).toBeGreaterThan(firstEnd);
+    expect(at(lo - 50)).toBe(0);
+    expect(at(hi + 50)).toBe(100);
+  });
+
+  it("keeps proportions when every band is wide enough", () => {
+    const { shares } = bandLayout([10, 20], 0, 30);
+    for (const s of shares) expect(s).toBeCloseTo(1 / 3);
   });
 });
 

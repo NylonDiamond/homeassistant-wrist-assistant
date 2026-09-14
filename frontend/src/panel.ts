@@ -96,7 +96,7 @@ import {
   countdownRemainingString,
   resolveAll,
 } from "./resolver.js";
-import { CASES, REFERENCE_CASE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, renderLayerThumb, renderLayout, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type WatchCase } from "./renderer.js";
+import { CASES, FACE_TINTS, REFERENCE_CASE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, renderLayerThumb, renderLayout, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type WatchCase } from "./renderer.js";
 import { ALL_FAMILIES, addFamily, canRemoveFamily, familyContentSummary, firstDrawable, isDrawable, removeFamily, supportedFamilies } from "./layouts.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { updateWatchMessage, watchSupportsShapes } from "./version.js";
@@ -568,7 +568,7 @@ export class WristAssistantPanel extends LitElement {
    * held the next click on the face for most of a second after a native menu
    * closed, so a drag right after a change lagged (measured 2026-09-12: the
    * press was 650 to 900 ms old on arrival, with no long task on the page). */
-  @state() private openMenu?: "grid" | "case";
+  @state() private openMenu?: "grid" | "case" | "tint";
   /** Alt is down. It flips snapping for a drag, so the grid lines show while
    * it is held even with Snap to grid off. */
   @state() private altHeld = false;
@@ -660,6 +660,10 @@ export class WristAssistantPanel extends LitElement {
   private readonly recordPreviews = new Map<string, { revision: number; config: CustomComplicationConfig; entities: EntityRef[] }>();
   /** Which watch case the previews are drawn in. The reference (46 mm) is scale 1. */
   @state() private previewCase = REFERENCE_CASE.label;
+  /** The tint of a tinted watch face to preview in, or undefined for full
+   * colour. Not saved: a preview left tinted by accident would read as a broken
+   * complication on the next visit. */
+  @state() private previewTint?: string;
   @state() private loadError?: string;
   @state() private saveError?: string;
   @state() private saving = false;
@@ -1725,6 +1729,16 @@ export class WristAssistantPanel extends LitElement {
       background: transparent; color: var(--wa-ink); font: inherit; font-weight: 500; cursor: pointer; white-space: nowrap;
     }
     button.case-pick svg { width: 14px; height: 14px; opacity: .7; }
+    /* The Colour menu: a round swatch per tint, and a split one for full colour.
+       While a tint is on the box takes an accent edge, so a tinted preview is
+       never mistaken for the real colours. */
+    .tint-box.on { border-color: var(--wa-accent); box-shadow: 0 0 0 1px var(--wa-accent); }
+    .tint-dot {
+      display: inline-block; flex: none; width: 11px; height: 11px; border-radius: 50%; margin-right: 6px; vertical-align: -1px;
+      background: var(--sw); box-shadow: inset 0 0 0 1px rgba(128,128,128,.5);
+    }
+    button.case-pick .tint-dot { margin-right: 0; }
+    .tint-dot.full { background: conic-gradient(#FF453A 0 25%, #FFD60A 0 50%, #30D158 0 75%, #0A84FF 0); }
     button.case-pick:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .canvas-bar label { display: inline-flex; align-items: center; gap: 8px; color: var(--wa-muted); }
     .canvas-bar label select { color: var(--wa-ink); font-weight: 500; }
@@ -2364,14 +2378,35 @@ export class WristAssistantPanel extends LitElement {
       .band-row .color-box .alpha { display: none; }
       .band-row .color-box { padding-right: 6px; }
     }
-    .band-bar { position: relative; height: 8px; margin: 4px 0 6px; }
-    .band-bar .bb { display: flex; height: 100%; border-radius: 4px; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(128,128,128,.25); }
-    .band-bar .bb i { display: block; flex: none; height: 100%; }
+    /* The bar is pieces with a hairline gap between them, so two close colours
+       still read as two bands; each piece is at least a tenth of the bar (see
+       bandLayout). With a bar border on, a piece shows its fill inside its
+       border colour. Band ends are labelled under the bar. */
+    .band-bar { position: relative; margin: 8px 0 4px; }
+    .band-bar .bb { display: flex; gap: 2px; height: 14px; }
+    .band-bar .bb i {
+      display: block; flex: 0 1 0; min-width: 4px; height: 100%; border-radius: 3px;
+      background: var(--f); box-shadow: inset 0 0 0 1px rgba(128,128,128,.3);
+    }
+    .band-bar .bb i:first-child { border-radius: 7px 3px 3px 7px; }
+    .band-bar .bb i:last-child { border-radius: 3px 7px 7px 3px; }
+    .band-bar .bb i:only-child { border-radius: 7px; }
+    .band-bar .bb i.bordered { box-shadow: inset 0 0 0 2px var(--b); }
     .band-bar .now {
-      position: absolute; top: -4px; width: 2px; height: 16px; margin-left: -1px; border-radius: 1px;
+      position: absolute; top: -4px; width: 3px; height: 22px; margin-left: -1.5px; border-radius: 2px;
       background: var(--wa-ink); box-shadow: 0 0 0 1.5px var(--wa-card);
     }
-    /* The first column is the band's range, three slots: a start box, "to" and
+    /* The stretch a chart reads, as a bracket just over the bar. */
+    .band-bar .span {
+      position: absolute; top: -6px; height: 3px; min-width: 3px; margin-left: -1.5px; padding-right: 3px; border-radius: 2px;
+      background: var(--wa-val); box-sizing: content-box;
+    }
+    .band-bar .ticks { position: relative; height: 13px; margin-top: 3px; }
+    .band-bar .ticks span {
+      position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; line-height: 13px;
+      color: var(--wa-muted); font-variant-numeric: tabular-nums;
+    }    /* The first column is the band's range, three slots: a start box, "to" and
        an end box ("122 to 231"). The first row and the last put their words
        ("Less than", "Greater than") across the first two slots and their number
        in the end slot, so the words line up with the start boxes and every
@@ -4099,6 +4134,35 @@ export class WristAssistantPanel extends LitElement {
       @click=${() => this.setShowTaps(!this.showTaps)}><span class="glyph">☞</span>Show taps</button>`;
   }
 
+  /**
+   * Full colour or a tinted watch face. Many faces draw complications in one
+   * tint, keeping only how see-through each part is, so colour by value and
+   * dark fills can look nothing like the full colour preview. The menu shows
+   * that before the watch does.
+   */
+  private renderTintTool() {
+    const on = this.previewTint;
+    const current = FACE_TINTS.find((t) => t.hex === on);
+    const off = !this.draft || this.parseError !== undefined;
+    const pick = (hex: string | undefined) => { this.toggleMenu("tint", false); this.previewTint = hex; };
+    return html`<span class="inbox tint-box ${on !== undefined ? "on" : ""}"
+      title="Many watch faces draw complications in one colour. Colours become the face's tint, text and background turn white, and only how see-through each part is survives.">
+      <span class="pre">Colour</span>
+      <span class="case-tool" data-menu="tint">
+        <button class="case-pick" ?disabled=${off} aria-haspopup="listbox" aria-expanded=${this.openMenu === "tint" ? "true" : "false"}
+          aria-label=${`Preview colour, ${current ? `${current.label} tinted face` : "full colour"}`} @click=${() => this.toggleMenu("tint")}>
+          ${current ? html`<i class="tint-dot" style=${`--sw:${current.hex}`}></i>${current.label} tint` : "Full colour"}${uiIcon("chevron")}
+        </button>
+        ${this.openMenu === "tint" ? html`<div class="pop-menu" role="listbox" aria-label="Preview colour">
+          <button class="row" role="option" aria-selected=${on === undefined ? "true" : "false"} @click=${() => pick(undefined)}>
+            <i class="tint-dot full"></i>Full colour</button>
+          ${FACE_TINTS.map((t) => html`<button class="row" role="option" aria-selected=${t.hex === on ? "true" : "false"}
+            @click=${() => pick(t.hex)}><i class="tint-dot" style=${`--sw:${t.hex}`}></i>${t.label} tint</button>`)}
+        </div>` : nothing}
+      </span>
+    </span>`;
+  }
+
   /** The zoom toggle: open the face full-width in a modal for fine moves.
    * Inline has no face to zoom, so it has no button. */
   private renderZoomButton() {
@@ -4157,6 +4221,7 @@ export class WristAssistantPanel extends LitElement {
       <div class="zoom-bar">
         ${this.renderUnder(cfg, family)}
         <span class="spacer"></span>
+        ${this.renderTintTool()}
         ${this.renderPickButton()}
         ${this.renderShowTapsButton()}
         ${this.renderGridButton()}
@@ -5147,7 +5212,7 @@ export class WristAssistantPanel extends LitElement {
   /** Open or shut one of the preview bar's menus; opening one shuts the other.
    * A press anywhere outside the open menu's control shuts it, the same way
    * the complication picker closes. */
-  private toggleMenu(menu: "grid" | "case", next = this.openMenu !== menu) {
+  private toggleMenu(menu: "grid" | "case" | "tint", next = this.openMenu !== menu) {
     this.openMenu = next ? menu : this.openMenu === menu ? undefined : this.openMenu;
     if (this.openMenu !== undefined) window.addEventListener("pointerdown", this.menuOutside, { capture: true });
     else window.removeEventListener("pointerdown", this.menuOutside, { capture: true });
@@ -6529,6 +6594,7 @@ export class WristAssistantPanel extends LitElement {
               </div>` : nothing}
             </span>
           </span>
+          ${family === "inline" ? nothing : this.renderTintTool()}
           <span class="bar-sep" aria-hidden="true"></span>
           <span class="face-tools">${this.renderPickButton()}${this.renderShowTapsButton()}${this.renderGridButton()}</span>
           <span class="spacer"></span>
@@ -6575,6 +6641,7 @@ export class WristAssistantPanel extends LitElement {
       ...(outlineIds.length > 0 && !this.showTaps && peek === undefined ? { highlightIds: outlineIds } : {}),
       ...(this.showGridLines && (this.snapGrid || (this.altHeld && this.canEdit)) ? { grid: this.gridStep } : {}),
       tapReview: this.showTaps,
+      ...(this.previewTint !== undefined ? { tint: this.previewTint } : {}),
       ...(focus !== undefined ? { tapFocusId: focus } : {}),
       handles: this.canEdit && !this.picking && (!this.showTaps || focus !== undefined),
       // Pick mode owns the tint while it is on; otherwise the Layers list

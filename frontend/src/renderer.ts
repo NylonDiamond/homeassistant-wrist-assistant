@@ -182,6 +182,72 @@ export interface RenderOptions {
   /** Editor affordance: the snap grid's step as a fraction of the face. Draws
    * faint lines over the layers, with the middle lines in the accent colour. */
   grid?: number;
+  /**
+   * Preview a tinted watch face in this colour (`#RRGGBB`). Absent draws full
+   * colour. See `tintGroup` for what each kind of layer turns into.
+   */
+  tint?: string;
+}
+
+/**
+ * Which WidgetKit group a layer kind lands in on a tinted face, as the app's
+ * views mark them (app repo `Shared/CustomComplicationViews.swift`). A tinted
+ * face keeps only each pixel's alpha and repaints it:
+ *
+ * - `accent`: views marked `.widgetAccentable()` (shapes, icons, gauges, charts,
+ *   timelines and their parts) take the face's tint colour.
+ * - `plain`: everything else (text, a picture's time chip, the background and
+ *   border) is the default group, drawn in white.
+ * - `picture`: a camera picture uses `.accentedDesaturated`, so its brightness
+ *   becomes alpha in the tint colour.
+ *
+ * Colour is dropped either way, so an opaque black fill is as bright as white.
+ */
+export type TintGroup = "accent" | "plain" | "picture";
+
+/** Tints to preview with, a spread of the colours watch faces offer. */
+export const FACE_TINTS: readonly { label: string; hex: string }[] = [
+  { label: "Orange", hex: "#FF9F0A" },
+  { label: "Red", hex: "#FF453A" },
+  { label: "Green", hex: "#30D158" },
+  { label: "Blue", hex: "#0A84FF" },
+  { label: "Purple", hex: "#BF5AF2" },
+  { label: "White", hex: "#FFFFFF" },
+];
+
+export function tintGroup(kind: ResolvedElement["kind"]): TintGroup {
+  switch (kind) {
+    case "text":
+    case "imageTime":
+    case "tap":
+      return "plain";
+    case "image":
+      return "picture";
+    default:
+      return "accent";
+  }
+}
+
+/** The `feColorMatrix` values that repaint a group, for a tint of `#RRGGBB`. */
+export function tintMatrix(group: TintGroup, tintHex: string): string {
+  const c = parseColor(tintHex) ?? { color: "#FFFFFF", opacity: 1 };
+  const ch = (i: number) => (parseInt(c.color.slice(1 + i * 2, 3 + i * 2), 16) / 255).toFixed(4);
+  const [r, g, b] = group === "plain" ? ["1", "1", "1"] : [ch(0), ch(1), ch(2)];
+  const alpha = group === "picture" ? "0.2126 0.7152 0.0722 0 0" : "0 0 0 1 0";
+  return `0 0 0 0 ${r} 0 0 0 0 ${g} 0 0 0 0 ${b} ${alpha}`;
+}
+
+/** One filter per group. The region is fixed and huge, in user space, because
+ * the default bounding-box region is empty for a flat line and would hide it. */
+function tintDefs(prefix: string, tintHex: string): TemplateResult {
+  const groups: TintGroup[] = ["accent", "plain", "picture"];
+  return svg`${groups.map((g) => svg`<filter id=${`${prefix}-${g}`} filterUnits="userSpaceOnUse" x="-10000" y="-10000" width="20000" height="20000"
+    color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values=${tintMatrix(g, tintHex)} /></filter>`)}`;
+}
+
+/** Wraps a drawing in its tint filter, or returns it untouched in full colour. */
+function tinted<T>(body: T, group: TintGroup, prefix: string | undefined): T | TemplateResult {
+  return prefix === undefined ? body : svg`<g filter=${`url(#${prefix}-${group})`}>${body}</g>`;
 }
 
 /**
@@ -1428,7 +1494,7 @@ function chartsById(elements: readonly ResolvedElement[]): Map<string, ResolvedC
   return out;
 }
 
-function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderOptions, charts: ReadonlyMap<string, ResolvedChart> = new Map()) {
+function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderOptions, charts: ReadonlyMap<string, ResolvedChart> = new Map(), tintPrefix?: string) {
   if (el.isHidden && !options.showHidden) return nothing;
   const review = options.tapReview === true;
   const showTaps = options.tapAreas === true || review;
@@ -1464,6 +1530,9 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     case "image": body = renderImage(el, box, options); break;
     case "tap": body = renderTap(el, box, options.icons, showTaps, labelled ? describeTapAction(el.action) : undefined); break;
   }
+  // A tap box is the editor's own mark, never drawn on the watch, so it keeps
+  // its colour on a tinted preview.
+  if (el.kind !== "tap") body = tinted(body, tintGroup(el.kind), tintPrefix);
   // Review mode pushes the drawing back so the tap boxes are the thing you read.
   const dim = review && (el.kind !== "tap" || (inFocusView && !focused)) ? 0.35 : 1;
   const opacity = Math.min(1, Math.max(0, el.opacity)) * (el.isHidden ? 0.35 : 1) * dim;
@@ -1716,6 +1785,8 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
   const bw = layout.borderWidth * fit.scale;
   const elements = layout.elements;
   const charts = chartsById(elements);
+  const tint = options.tint === undefined ? undefined : `${uid}-tint`;
+  const defsTint = tint === undefined ? nothing : tintDefs(tint, options.tint!);
 
   if (family === "corner") {
     // Watch-corner context preview: black screen quadrant, the content disc
@@ -1770,23 +1841,23 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
         : nothing;
       main = svg`<g transform="translate(${slotX} ${slotY})">
         <g clip-path=${`url(#${uid})`}>
-          ${bg ? svg`<rect width=${tile} height=${tile} fill=${bg.color} fill-opacity=${bg.opacity} />` : nothing}
+          ${bg ? tinted(svg`<rect width=${tile} height=${tile} fill=${bg.color} fill-opacity=${bg.opacity} />`, "plain", tint) : nothing}
           <g data-design-box transform="scale(${fit.scale * tileScale})">
-            ${elements.map((el) => renderElement(el, design, options, charts))}
+            ${elements.map((el) => renderElement(el, design, options, charts, tint))}
             ${gridLines(design, options.grid)}
           </g>
         </g>
         <circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} fill="none"
           stroke="rgba(255,255,255,0.22)" stroke-width=${0.75 * s} stroke-dasharray=${`${2 * s} ${2 * s}`} />
-        ${chrome}
+        ${tinted(chrome, "plain", tint)}
       </g>`;
     }
     return svg`<svg viewBox=${`0 0 ${ctx.quad.width} ${ctx.quad.height}`} xmlns="http://www.w3.org/2000/svg" class="complication corner"
         width=${ctx.quad.width} height=${ctx.quad.height}>
-      <defs><clipPath id=${uid}><circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} /></clipPath></defs>
+      <defs><clipPath id=${uid}><circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} /></clipPath>${defsTint}</defs>
       <path d=${shell} fill="#000000" />
-      ${bezel}
-      ${main}
+      ${tinted(bezel, "accent", tint)}
+      ${curvedMode ? tinted(main, "accent", tint) : main}
     </svg>`;
   }
 
@@ -1801,16 +1872,16 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
 
   return svg`<svg viewBox=${viewBox} xmlns="http://www.w3.org/2000/svg" class="complication ${family}"
       width=${canvas.width} height=${canvas.height}>
-    <defs><clipPath id=${uid}>${clip}</clipPath></defs>
+    <defs><clipPath id=${uid}>${clip}</clipPath>${defsTint}</defs>
     <g clip-path=${`url(#${uid})`}>
       ${well}
-      ${bg ? svg`<rect width=${canvas.width} height=${canvas.height} fill=${bg.color} fill-opacity=${bg.opacity} />` : nothing}
+      ${bg ? tinted(svg`<rect width=${canvas.width} height=${canvas.height} fill=${bg.color} fill-opacity=${bg.opacity} />`, "plain", tint) : nothing}
       <g data-design-box transform="translate(${fit.x} ${fit.y}) scale(${fit.scale})">
-        ${elements.map((el) => renderElement(el, design, options, charts))}
+        ${elements.map((el) => renderElement(el, design, options, charts, tint))}
             ${gridLines(design, options.grid)}
       </g>
     </g>
-    ${chrome}
+    ${tinted(chrome, "plain", tint)}
   </svg>`;
 }
 

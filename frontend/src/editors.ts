@@ -1489,42 +1489,96 @@ function bandColorCell(label: string, value: string, set: (v: string | undefined
   return html`<span class="band-cell">${colorBox(label, value, set)}${resetButton(back)}</span>`;
 }
 
-/** Where a band table's colour bar starts and ends: a typical band's width
- * before the first row and past the last, stretched to take in the current
- * value when there is one. */
-export function bandScale(upTos: readonly number[], value?: number): { lo: number; hi: number } {
-  const sorted = [...upTos].sort((a, b) => a - b);
-  const first = sorted[0];
-  const last = sorted.at(-1);
-  const now = value !== undefined && Number.isFinite(value) ? value : undefined;
-  let lo = (now ?? 0) - 1;
-  let hi = (now ?? 0) + 1;
-  if (first !== undefined && last !== undefined) {
-    const gap = (sorted.length > 1 ? (last - first) / (sorted.length - 1) : Math.abs(first) / 2) || 1;
-    lo = first - gap;
-    hi = last + gap;
-  }
-  if (now !== undefined) {
-    lo = Math.min(lo, now);
-    hi = Math.max(hi, now);
-  }
-  return { lo, hi };
+/** Where a band table's colour bar starts and ends: the band ends and every
+ * number the layer reads, with a little room past both ends. With nothing to
+ * span, a band end alone gets half its size either side. */
+export function bandScale(upTos: readonly number[], values?: number | readonly number[]): { lo: number; hi: number } {
+  const seen = (typeof values === "number" ? [values] : values ?? []).filter((n) => Number.isFinite(n));
+  const all = [...upTos, ...seen];
+  if (all.length === 0) return { lo: -1, hi: 1 };
+  const lo = Math.min(...all);
+  const hi = Math.max(...all);
+  const pad = hi > lo ? (hi - lo) * 0.12 : Math.abs(lo) / 2 || 1;
+  return { lo: lo - pad, hi: hi + pad };
 }
 
-/** The thin bar over a band table: each band's colour as wide as the stretch
- * of numbers it covers, and a mark where the current value falls. */
-function bandBar(sorted: readonly ChartBand[], aboveHex: string, value: number | undefined): TemplateResult {
-  const { lo, hi } = bandScale(sorted.map((b) => b.upTo), value);
-  const at = (n: number) => Math.max(0, Math.min(100, ((n - lo) / (hi - lo)) * 100));
-  let prev = lo;
-  const pieces = sorted.map((b) => {
-    const width = Math.max(0, at(b.upTo) - at(prev));
-    prev = Math.max(prev, b.upTo);
-    return html`<i style=${`width:${width}%;background:${b.colorHex}`}></i>`;
+/** Least share of the bar one band gets, so a band covering a sliver of the
+ * numbers is still a colour you can see and not a hairline. */
+const BAND_MIN_SHARE = 0.1;
+
+/**
+ * How the colour bar divides: each band's share of the width, and a function
+ * placing a number on it in percent. Shares follow the stretch of numbers a
+ * band covers, except that none falls under `minShare` (the rest give up room
+ * in proportion), and a number is placed inside its own band's piece, so the
+ * marks still land in the right colour after the stretch.
+ */
+export function bandLayout(upTos: readonly number[], lo: number, hi: number, minShare = BAND_MIN_SHARE): { shares: number[]; at: (n: number) => number } {
+  const sorted = [...upTos].sort((a, b) => a - b);
+  const clamp = (n: number) => Math.max(lo, Math.min(hi, n));
+  const edges = [lo, ...sorted.map(clamp), hi];
+  const span = hi - lo || 1;
+  const raw = edges.slice(1).map((e, i) => Math.max(0, e - edges[i]!) / span);
+  const floor = Math.min(minShare, 1 / raw.length);
+  const small = raw.map((w) => w < floor);
+  const smallCount = small.filter(Boolean).length;
+  const rest = raw.reduce((sum, w, i) => sum + (small[i] ? 0 : w), 0);
+  const left = 1 - smallCount * floor;
+  const bigCount = raw.length - smallCount;
+  const shares = raw.map((w, i) => small[i] ? floor : rest > 0 ? (w / rest) * left : left / bigCount);
+  const starts = shares.map((_, i) => shares.slice(0, i).reduce((a, b) => a + b, 0));
+  const at = (n: number) => {
+    const v = clamp(n);
+    let i = edges.length - 2;
+    for (let k = 0; k < edges.length - 1; k++) {
+      if (v <= edges[k + 1]!) { i = k; break; }
+    }
+    const width = edges[i + 1]! - edges[i]!;
+    const into = width > 0 ? (v - edges[i]!) / width : 0;
+    return Math.max(0, Math.min(100, (starts[i]! + into * shares[i]!) * 100));
+  };
+  return { shares, at };
+}
+
+/** A band end as a short label under the bar. */
+function bandTick(n: number): string {
+  return Math.abs(n) >= 1000 || Number.isInteger(n) ? String(Math.round(n * 100) / 100) : String(Number(n.toPrecision(4)));
+}
+
+/**
+ * The bar over a band table: each band's colour in a piece as wide as the
+ * numbers it covers, never too thin to see; each band end labelled under it;
+ * a mark where the current value falls, or a bracket over the stretch a chart
+ * reads. With `bordered` pieces the bar shows each band's fill inside its
+ * border, the way a bar draws.
+ */
+function bandBar(
+  pieces: readonly { upTo?: number; fill: string; border?: string }[],
+  values: number | readonly number[] | undefined,
+): TemplateResult {
+  const upTos = pieces.flatMap((p) => p.upTo === undefined ? [] : [p.upTo]);
+  const { lo, hi } = bandScale(upTos, values);
+  const { shares, at } = bandLayout(upTos, lo, hi);
+  const now = typeof values === "number" && Number.isFinite(values) ? values : undefined;
+  const seen = typeof values === "object" ? values.filter((n) => Number.isFinite(n)) : [];
+  const low = seen.length > 0 ? Math.min(...seen) : undefined;
+  const high = seen.length > 0 ? Math.max(...seen) : undefined;
+  // Band ends crowd when bands are narrow: a label too close to the one
+  // before it is left out, and its number is still in the rows below.
+  let lastTick = -Infinity;
+  const ticks = [...upTos].sort((a, b) => a - b).flatMap((n) => {
+    const x = at(n);
+    if (x - lastTick < 12) return [];
+    lastTick = x;
+    return [html`<span style=${`left:${x}%`}>${bandTick(n)}</span>`];
   });
   return html`<div class="band-bar">
-    <div class="bb" aria-hidden="true">${pieces}<i style=${`flex:1 1 auto;background:${aboveHex}`}></i></div>
-    ${value === undefined ? nothing : html`<span class="now" style=${`left:${at(value)}%`} title=${`Now ${value}`}></span>`}
+    <div class="bb" aria-hidden="true">${pieces.map((p, i) => html`<i class=${p.border === undefined ? "" : "bordered"}
+      style=${`flex-grow:${shares[i] ?? 0};--f:${p.fill}${p.border === undefined ? "" : `;--b:${p.border}`}`}></i>`)}</div>
+    ${low === undefined || high === undefined ? nothing : html`<span class="span" style=${`left:${at(low)}%;width:${at(high) - at(low)}%`}
+      title=${low === high ? `Reads ${bandTick(low)}` : `Reads ${bandTick(low)} to ${bandTick(high)}`}></span>`}
+    ${now === undefined ? nothing : html`<span class="now" style=${`left:${at(now)}%`} title=${`Now ${now}`}></span>`}
+    ${ticks.length === 0 ? nothing : html`<div class="ticks" aria-hidden="true">${ticks}</div>`}
   </div>`;
 }
 
@@ -1544,11 +1598,11 @@ function bandTableFields(
   layer: BandedLayer,
   ownColorHex: string,
   set: (mutate: (p: BandedLayer) => void, k?: string) => void,
-  value?: number,
+  value?: number | readonly number[],
   bars?: BarBandOptions,
 ): TemplateResult {
   const sorted = chartSortedBands({ bands: layer.bands });
-  const now = value !== undefined && Number.isFinite(value) ? value : undefined;
+  const now = typeof value === "number" && Number.isFinite(value) ? value : undefined;
   const hit = now === undefined ? undefined : (sorted.find((b) => now <= b.upTo)?.id ?? "above");
   const band = (id: string, mutate: (b: ChartBand) => void) => (p: BandedLayer) => {
     const b = p.bands.find((x) => x.id === id);
@@ -1606,8 +1660,23 @@ function bandTableFields(
   // The range cell is four slots: a sign, a start box, "to", an end box. The
   // first row and Above put their sign and one box at the front and leave the
   // rest blank, so every row's first box lines up.
+  // The bar shows what a bar would draw: with the border on, each band's fill
+  // inside its border, each colour taken the same way its row's boxes take it.
+  const piece = (upTo: number | undefined, row: { colorHex: string; fillColorHex?: string; borderColorHex?: string }) => ({
+    ...(upTo === undefined ? {} : { upTo }),
+    fill: split ? row.fillColorHex ?? bars?.fillHex ?? row.colorHex : row.colorHex,
+    ...(split ? { border: row.borderColorHex ?? bars?.borderHex ?? CHART_DEFAULT_BAR_BORDER_HEX } : {}),
+  });
+  const pieces = [
+    ...sorted.map((b) => piece(b.upTo, b)),
+    piece(undefined, {
+      colorHex: above,
+      ...(layer.bandAboveFillColorHex === undefined ? {} : { fillColorHex: layer.bandAboveFillColorHex }),
+      ...(layer.bandAboveBorderColorHex === undefined ? {} : { borderColorHex: layer.bandAboveBorderColorHex }),
+    }),
+  ];
   return html`<div class=${split ? "bands split" : "bands"}>
-    ${bandBar(sorted, above, now)}
+    ${bandBar(pieces, now ?? (typeof value === "object" ? value : undefined))}
     ${!split || sorted.length === 0 ? nothing : html`<div class="band-row band-head" aria-hidden="true">
       <span></span><span>Fill</span><span>Border</span><span></span>
     </div>`}
@@ -4391,7 +4460,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           : nothing}
         ${usingRecorder
           ? html`
-            ${checkField("Show gaps when unavailable", c.gaps === true,
+            ${checkField("Show gaps", c.gaps === true,
               (v) => setChart((p) => { if (v) p.gaps = true; else delete p.gaps; }), base.gaps === true)}
             ${watchNote(host)}
             <div class="hint">Breaks the line, and leaves the bar out, wherever the entity was unavailable,
@@ -4499,12 +4568,12 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               { step: 0.5, min: 0, max: CHART_MAX_BAR_BORDER_WIDTH, def: 1, unit: "pt" })}
             ${colourRows.border === undefined ? nothing : chartColourField(colourRows.border, c.barBorderColorHex,
               (v) => setChart((p) => { if (v === undefined) delete p.barBorderColorHex; else p.barBorderColorHex = v; }, "barbordercol"))}
-            ${checkField("No border on the baseline", c.barBorderOpenBase === true,
+            ${checkField("Open at base", c.barBorderOpenBase === true,
               (v) => setChart((p) => { if (v) p.barBorderOpenBase = true; else delete p.barBorderOpenBase; }), false)}`}
           ${watchNote(host)}
           <div class="hint">The border is drawn inside each bar, so bars keep their size. A highlighted
             bar fills and borders in its highlight colour.${c.barBorderOpenBase === true
-              ? " With no border on the baseline, a bar hanging below zero leaves its top open." : ""}${c.coloring === "bands"
+              ? " Open at base leaves the border off the edge on the baseline, so a bar hanging below zero leaves its top open." : " Open at base leaves the border off the edge on the baseline."}${c.coloring === "bands"
               ? " Each band can set its own fill and border below." : ""}</div>
           </div>` : html`
           <div class="fgroup">
@@ -4578,7 +4647,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             ${c.style === "bars"
               ? "Each bar is coloured on its own value."
               : "A stroke cannot change colour halfway, so each leg of the line takes the band of the reading it arrives at."}</div>
-          ${bandTableFields(c, c.colorSlot.baseColorHex, setChart, undefined, c.style === "bars"
+          ${bandTableFields(c, c.colorSlot.baseColorHex, setChart, shown, c.style === "bars"
             ? { ...(c.fillColorHex === undefined ? {} : { fillHex: c.fillColorHex }),
                 ...(c.barBorderColorHex === undefined ? {} : { borderHex: c.barBorderColorHex }),
                 border: c.barBorderWidth !== undefined }
