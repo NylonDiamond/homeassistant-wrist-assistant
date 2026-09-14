@@ -1567,11 +1567,13 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
   const hit = onChart
     ? nothing
     : svg`<rect x=${outline.x} y=${outline.y} width=${outline.w} height=${outline.h} fill="transparent" stroke="none" />`;
+  // Each handle sits just outside its corner, touching it, so a tiny layer is
+  // never buried under its own four handles.
   const hs = 3;
   const o = outline;
   const handles = primary && draggable
-    ? [["nw", o.x, o.y], ["ne", o.x + o.w, o.y], ["sw", o.x, o.y + o.h], ["se", o.x + o.w, o.y + o.h]].map(
-        ([corner, x, y]) => svg`<rect data-handle=${corner} x=${(x as number) - hs / 2} y=${(y as number) - hs / 2} width=${hs} height=${hs}
+    ? [["nw", o.x - hs, o.y - hs], ["ne", o.x + o.w, o.y - hs], ["sw", o.x - hs, o.y + o.h], ["se", o.x + o.w, o.y + o.h]].map(
+        ([corner, x, y]) => svg`<rect data-handle=${corner} x=${x} y=${y} width=${hs} height=${hs}
           fill="#FFFFFF" stroke="#0A84FF" stroke-width="0.5" style="cursor:${corner}-resize" />`,
       )
     : nothing;
