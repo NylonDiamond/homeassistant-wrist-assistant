@@ -1858,6 +1858,10 @@ ${ek(c)}`}}delete s.hidden;let l=Er(a);if(l.length>0){let d=l.slice(0,3).join(",
       display: flex; flex-direction: column;
     }
     dialog.xf::backdrop { background: rgba(0,0,0,.45); }
+    /* Share stays open under the gallery dialog, so Back returns to it, but
+       out of sight: one dialog and one dimmed backdrop at a time. */
+    dialog.share-dialog.under { visibility: hidden; }
+    dialog.share-dialog.under::backdrop { background: transparent; }
     .xf-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 12px 10px 12px 16px; border-bottom: 1px solid var(--wa-line); flex: none; }
     .xf-head .xf-t { flex: 1 1 180px; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
     .xf-head h2 { margin: 0; font-size: 15px; font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; }
@@ -4016,7 +4020,7 @@ ${ek(c)}`}}delete s.hidden;let l=Er(a);if(l.length>0){let d=l.slice(0,3).join(",
           title=${a?"Make it":i?t||"Pick a shape first":"Give it a name first"}
           @click=${()=>this.createNew()}>Create</button>
       </div>
-    </dialog>`}openNewDialog(){this.freeSlot()<0||(this.newOpen=!0,this.newName="",this.newFamily=void 0,this.updateComplete.then(()=>{let t=this.renderRoot.querySelector("dialog.new-dialog");t&&(t.open||t.showModal(),t.querySelector("input[type=text]")?.focus())}))}closeNewDialog(){let t=this.renderRoot.querySelector("dialog.new-dialog");t?.open?t.close():this.newOpen=!1}knownDomains(){let t=new Set;for(let i of Object.keys(this.hass.states)){let a=i.split(".")[0]??"";a!==""&&t.add(a)}return t}currentShareSlots(){let t=this.draft?.config;return t?Vm(t,this.knownDomains()).map(i=>{let a=this.shareLabels.get(i.placeholderId);return a===void 0?i:{...i,label:a}}):[]}renderShareDialog(){let t=this.draft?.config;if(!t)return f;let i=this.currentShareSlots(),a=this.shareMode==="share",r=Va(t,this.shareMode,i),o=this.shareLink?.text===r?this.shareLink:void 0,s=this.knownDomains(),l=gt(t,this.buildContext(),this.forced),d=new Map(i.map(y=>[y.placeholderId,Lr(t,y.originalId,(b,k)=>s.has(k))])),c=a?i.find(y=>y.placeholderId===this.shareFocus):void 0,u=c?d.get(c.placeholderId)??[]:[],p=this.dialogFamily(t),m=this.hass.user?.is_admin===!0,g=this.shareCopied;return h`<dialog class="share-dialog xf" @close=${()=>{this.shareOpen=!1}}>
+    </dialog>`}openNewDialog(){this.freeSlot()<0||(this.newOpen=!0,this.newName="",this.newFamily=void 0,this.updateComplete.then(()=>{let t=this.renderRoot.querySelector("dialog.new-dialog");t&&(t.open||t.showModal(),t.querySelector("input[type=text]")?.focus())}))}closeNewDialog(){let t=this.renderRoot.querySelector("dialog.new-dialog");t?.open?t.close():this.newOpen=!1}knownDomains(){let t=new Set;for(let i of Object.keys(this.hass.states)){let a=i.split(".")[0]??"";a!==""&&t.add(a)}return t}currentShareSlots(){let t=this.draft?.config;return t?Vm(t,this.knownDomains()).map(i=>{let a=this.shareLabels.get(i.placeholderId);return a===void 0?i:{...i,label:a}}):[]}renderShareDialog(){let t=this.draft?.config;if(!t)return f;let i=this.currentShareSlots(),a=this.shareMode==="share",r=Va(t,this.shareMode,i),o=this.shareLink?.text===r?this.shareLink:void 0,s=this.knownDomains(),l=gt(t,this.buildContext(),this.forced),d=new Map(i.map(y=>[y.placeholderId,Lr(t,y.originalId,(b,k)=>s.has(k))])),c=a?i.find(y=>y.placeholderId===this.shareFocus):void 0,u=c?d.get(c.placeholderId)??[]:[],p=this.dialogFamily(t),m=this.hass.user?.is_admin===!0,g=this.shareCopied;return h`<dialog class="share-dialog xf ${this.galleryOpen?"under":""}" @close=${()=>{this.shareOpen=!1}}>
       ${this.dialogHead(`Share \u201C${t.name.trim()||"Untitled"}\u201D`,`${cf(ti(t))} \xB7 ${uf(t)}`,()=>this.closeShareDialog())}
       <div class="xfer-body">
         ${this.dialogPreview(l,p,u,c?h`Uses <b>${c.label}</b>`:p?te(p):"",a&&i.length>0?"Point at an entity to see where it is":"")}

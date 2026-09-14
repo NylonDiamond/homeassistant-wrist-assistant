@@ -1246,6 +1246,10 @@ export class WristAssistantPanel extends LitElement {
       display: flex; flex-direction: column;
     }
     dialog.xf::backdrop { background: rgba(0,0,0,.45); }
+    /* Share stays open under the gallery dialog, so Back returns to it, but
+       out of sight: one dialog and one dimmed backdrop at a time. */
+    dialog.share-dialog.under { visibility: hidden; }
+    dialog.share-dialog.under::backdrop { background: transparent; }
     .xf-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 12px 10px 12px 16px; border-bottom: 1px solid var(--wa-line); flex: none; }
     .xf-head .xf-t { flex: 1 1 180px; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
     .xf-head h2 { margin: 0; font-size: 15px; font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; }
@@ -5781,7 +5785,7 @@ export class WristAssistantPanel extends LitElement {
     const family = this.dialogFamily(cfg);
     const admin = this.hass.user?.is_admin === true;
     const copied = this.shareCopied;
-    return html`<dialog class="share-dialog xf" @close=${() => { this.shareOpen = false; }}>
+    return html`<dialog class="share-dialog xf ${this.galleryOpen ? "under" : ""}" @close=${() => { this.shareOpen = false; }}>
       ${this.dialogHead(`Share “${cfg.name.trim() || "Untitled"}”`, `${familyWords(supportedFamilies(cfg))} · ${layerCountWords(cfg)}`, () => this.closeShareDialog())}
       <div class="xfer-body">
         ${this.dialogPreview(layouts, family, spot,
