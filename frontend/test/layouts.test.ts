@@ -288,10 +288,10 @@ describe("shapeGroups", () => {
     ]);
   });
 
-  it("splits a phone's shapes into Lock Screen and Home Screen", () => {
+  it("splits a phone's shapes into Home Screen first, then Lock Screen", () => {
     expect(shapeGroups(["rectangular", "circular", "inline", "small", "medium", "large"])).toEqual([
-      { label: "Lock Screen", families: ["rectangular", "circular", "inline"] },
       { label: "Home Screen", families: ["small", "medium", "large"] },
+      { label: "Lock Screen", families: ["rectangular", "circular", "inline"] },
     ]);
   });
 

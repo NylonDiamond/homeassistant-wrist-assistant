@@ -100,16 +100,16 @@ export interface ShapeGroup {
  * device. A watch has one place, the face, so its shapes stay in one unlabelled
  * run. A phone has two, the Lock Screen and the Home Screen, and a card grid
  * that mixes Circular with Small reads as six sizes of one thing when they are
- * two different screens, so each screen gets its own heading. Order within a
- * group follows `families`.
+ * two different screens, so each screen gets its own heading. The Home Screen
+ * comes first: it is the bigger canvas and the one a phone owner most often
+ * opens the dialog for. Order within a group follows `families`.
  */
 export function shapeGroups(families: readonly FamilyKind[]): ShapeGroup[] {
   const home = families.filter(isHomeFamily);
   if (home.length === 0) return [{ families: [...families] }];
   const lock = families.filter((f) => !isHomeFamily(f));
-  const groups: ShapeGroup[] = [];
+  const groups: ShapeGroup[] = [{ label: "Home Screen", families: home }];
   if (lock.length > 0) groups.push({ label: "Lock Screen", families: lock });
-  groups.push({ label: "Home Screen", families: home });
   return groups;
 }
 
