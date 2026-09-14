@@ -53,6 +53,7 @@ import {
   type LayerGroup,
   createGroup,
   groupMembers,
+  pickedMoveIds,
   groupOf,
   packGroups,
   pruneGroups,
@@ -4399,6 +4400,20 @@ export class WristAssistantPanel extends LitElement {
     // A plain press anywhere on the face drops the pick, the way a plain
     // click on a row does. A modified press keeps it and toggles the layer hit.
     const multiKey = isMultiKey(e);
+    // A plain press on a picked layer moves the whole pick. A release that never
+    // moved drops the pick and selects that one layer, as a plain click does.
+    // A corner still resizes just the layer it belongs to.
+    const pressedId = hitId !== undefined ? selectableLayerId(this.draft.config, hitId) : undefined;
+    if (!multiKey && !handle && svg && this.multi.size >= 2 && pressedId !== undefined && this.multi.has(pressedId)) {
+      const ids = pickedMoveIds(this.draft.config, this.multi);
+      e.preventDefault();
+      if (ids.length === 0) return;
+      this.beginMoveGesture(family as DrawableFamily, e, svg, ids, `drag-pick-${family}`, () => {
+        this.multi = new Set();
+        this.inspect = { kind: "layer", id: pressedId };
+      });
+      return;
+    }
     if (!multiKey && this.multi.size > 0) this.multi = new Set();
     if (!hitId || !svg) return;
     // An attached tap sits exactly over its owner and is not a layer the user
@@ -4550,6 +4565,21 @@ export class WristAssistantPanel extends LitElement {
     if (members.length === 0) return;
     if (pickOnClick === undefined && (this.inspect.kind !== "group" || this.inspect.id !== group.id)) this.inspect = { kind: "group", id: group.id };
     e.preventDefault();
+    const onClick = pickOnClick === undefined ? undefined : () => { this.inspect = { kind: "layer", id: pickOnClick }; };
+    this.beginMoveGesture(family, e, svg, members.map((m) => m.payload.id), `drag-group-${group.id}-${family}`, onClick);
+  }
+
+  /**
+   * Move several layers as one block by a drag: a group, or a pick. The grid
+   * and the edge of the face work on the box around all of them, so the block
+   * keeps its shape. With `onClick`, a release that never moved calls it
+   * instead of recording a move.
+   */
+  private beginMoveGesture(family: DrawableFamily, e: PointerEvent, svg: SVGSVGElement, ids: readonly string[], key: string, onClick?: () => void) {
+    const cfg = this.draft?.config;
+    if (!cfg) return;
+    const members = cfg.elements.filter((m) => ids.includes(m.payload.id));
+    if (members.length === 0) return;
     const starts = new Map(members.map((m) => [m.payload.id, effectivePlacement(cfg, family, m).frame] as const));
     const frames = [...starts.values()];
     const x0 = Math.min(...frames.map((f) => f.x));
@@ -4560,11 +4590,11 @@ export class WristAssistantPanel extends LitElement {
     const round = (n: number) => Math.round(n * 1000) / 1000;
     this.cancelGesture?.();
     let moved = false;
-    this.cancelGesture = beginGesture(svg, this.gestureCanvas(family), e, { elementId: group.id, frame: bounds, ...this.snapTarget(family) }, {
+    this.cancelGesture = beginGesture(svg, this.gestureCanvas(family), e, { elementId: key, frame: bounds, ...this.snapTarget(family) }, {
       onFrame: (_id, f, done) => {
         if (!done) moved = true;
-        if (done && !moved && pickOnClick !== undefined) {
-          this.inspect = { kind: "layer", id: pickOnClick };
+        if (done && !moved && onClick !== undefined) {
+          onClick();
           this.cancelGesture = undefined;
           return;
         }
@@ -4572,7 +4602,7 @@ export class WristAssistantPanel extends LitElement {
         const dy = f.y - bounds.y;
         this.mutate((c) => {
           for (const [mid, sf] of starts) setPlacement(c, family, mid, { frame: { ...sf, x: round(sf.x + dx), y: round(sf.y + dy) } });
-        }, `drag-group-${group.id}-${family}`);
+        }, key);
         if (done) {
           this.draft?.endGesture();
           this.cancelGesture = undefined;

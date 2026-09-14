@@ -4120,6 +4120,24 @@ export function groupMembers(cfg: CustomComplicationConfig, groupId: string): El
   return cfg.elements.filter((e) => e.payload.groupId === groupId && !isAttachedTap(cfg, e));
 }
 
+/**
+ * The layers a drag on a pick of several moves, in draw order. A picked member
+ * brings its whole group, the way a press on a locked group does. A layer a
+ * chart places (its dots, its grid, anything anchored to a reading) stays put,
+ * the way it stays put under a drag of its own: its place comes from the chart.
+ */
+export function pickedMoveIds(cfg: CustomComplicationConfig, picked: Iterable<string>): string[] {
+  const want = new Set<string>();
+  for (const id of picked) {
+    const group = groupOf(cfg, id);
+    if (group) for (const m of groupMembers(cfg, group.id)) want.add(m.payload.id);
+    else want.add(id);
+  }
+  return cfg.elements
+    .filter((e) => want.has(e.payload.id) && e.kind !== "chartDots" && e.kind !== "chartGrid" && e.payload.chartAnchor === undefined)
+    .map((e) => e.payload.id);
+}
+
 /** Drop a group nothing belongs to any more, and a membership that names no
  * group, so the two lists never disagree after a delete or an old document. */
 export function pruneGroups(cfg: CustomComplicationConfig): void {
