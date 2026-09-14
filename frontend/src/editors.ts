@@ -4709,7 +4709,9 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         const key: ExtraKey = `draw:${d}`;
         // Same row and switch as the Readings list below, so the two read as one
         // kind of control: the switch sits in the Number column.
-        return html`<div class="xr-row" role="row">
+        // The row carries the switch's key too, so pointing anywhere on the row
+        // previews it, not only the switch.
+        return html`<div class="xr-row" role="row" data-extra=${key}>
           <span role="cell"><span class="xr-name">${label}</span></span>
           <span role="cell"></span>
           <span role="cell"><button type="button" class="xtog ${on ? "on" : ""}" role="switch" aria-checked=${on ? "true" : "false"}
@@ -5324,7 +5326,10 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
       const value = r.stat !== undefined ? texts[r.stat] : nowValue;
       const statName = r.stat === undefined ? "" : (CHART_STATS.find(([s]) => s === r.stat)?.[1] ?? r.label).toLowerCase();
       const markName = r.marker === "now" ? "the reading at now" : `the ${(CHART_ANCHOR_POINTS.find(([a]) => a === r.marker)?.[1] ?? r.label).toLowerCase()}`;
-      return html`<div class="xr-row" role="row">
+      // Pointing at the row previews its number, or its marker when it has no
+      // number; each switch still previews its own kind, being the closer key.
+      const rowKey: ExtraKey | undefined = r.stat !== undefined ? `number:${r.stat}` : r.marker !== undefined ? `marker:${r.marker}` : undefined;
+      return html`<div class="xr-row" role="row" data-extra=${rowKey ?? nothing}>
         <span role="cell"><span class="xr-name">${r.label}</span></span>
         <span role="cell"><span class="xr-v nums">${value ?? ""}</span></span>
         <span role="cell">${r.stat === undefined ? nothing : readingSwitch(`number:${r.stat}`, numbersFor(host.config, r.stat).length,
