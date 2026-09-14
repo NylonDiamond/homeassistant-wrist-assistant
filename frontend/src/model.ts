@@ -40,7 +40,8 @@ export function hasCanvas(family: FamilyKind): family is DrawableFamily {
  * The home sizes were measured on an iPhone 15 Pro running iOS 26.6 with
  * margins disabled. Apple's published table is 5 to 7 points smaller in each
  * direction than the real tile, which is why they are measured rather than
- * copied. `xlarge` is a placeholder until it can be measured on iOS 27. */
+ * copied. `xlarge` was measured on an iPhone 15 Pro simulator running iOS 27,
+ * where the other three tiles came out identical to the phone. */
 export const DESIGN_BOX: Record<DrawableFamily, { width: number; height: number }> = {
   rectangular: { width: 181, height: 65.5 },
   circular: { width: 51, height: 51 },

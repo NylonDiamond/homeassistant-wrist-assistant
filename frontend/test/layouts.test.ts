@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { type Value, encodeConfig, literal, newConfig, newElement, newRule, parseConfig, schemaVersionFor } from "../src/model.js";
 import {
   ALL_FAMILIES,
-  XLARGE_MEASURED,
+  XLARGE_OFFERED,
   addFamily,
   canRemoveFamily,
   familiesFor,
@@ -53,16 +53,16 @@ describe("familiesFor", () => {
 
   it("offers the Home Screen shapes to a phone at or above the gate", () => {
     const expected = ["rectangular", "circular", "inline", "small", "medium", "large"];
-    expect(familiesFor(NEW_PHONE)).toEqual(XLARGE_MEASURED ? [...expected, "xlarge"] : expected);
+    expect(familiesFor(NEW_PHONE)).toEqual(XLARGE_OFFERED ? [...expected, "xlarge"] : expected);
     expect(familiesFor({ device_kind: "iphone", app_version: "3.4.5" })).toEqual(
-      XLARGE_MEASURED ? [...expected, "xlarge"] : expected,
+      XLARGE_OFFERED ? [...expected, "xlarge"] : expected,
     );
   });
 
   // Extra Large's design box is a placeholder until it is measured on iOS 27,
   // and a design box is on the wire forever, so the shape stays hidden.
   it("offers Extra Large only once its box is measured", () => {
-    expect(familiesFor(NEW_PHONE).includes("xlarge")).toBe(XLARGE_MEASURED);
+    expect(familiesFor(NEW_PHONE).includes("xlarge")).toBe(XLARGE_OFFERED);
   });
 
   it("does not change the shared list it filters", () => {

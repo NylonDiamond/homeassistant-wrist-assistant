@@ -36,11 +36,12 @@ export const ALL_FAMILIES: FamilyKind[] = ["rectangular", "circular", "corner", 
 
 /** Whether the panel offers the Extra Large Home Screen shape at all.
  *
- * Its design box is a placeholder: the 4x6 tile only exists on iOS 27 and
- * nothing here has been measured on an iOS 27 phone yet. A design box is on
- * the wire forever, so the shape stays hidden until the real number is in.
- * Flip this to true in the same change that replaces `DESIGN_BOX.xlarge`. */
-export const XLARGE_MEASURED = false;
+ * Its design box is measured (2026-09-14, iPhone 15 Pro simulator on iOS 27).
+ * What still holds it back is the app: the family exists only in the iOS 27
+ * SDK, and the release toolchain is Xcode 26, so the App Store build has no
+ * Extra Large widget for a layout to land on. Flip this to true once a release
+ * built with Xcode 27 is out; nothing else needs to change. */
+export const XLARGE_OFFERED = false;
 
 /** The shapes the panel offers for one owner.
  *
@@ -62,7 +63,7 @@ export function familiesFor(owner: DeviceOwnerLike | null | undefined): FamilyKi
   const home = watchSupportsShapes(owner?.app_version, MIN_IPHONE_VERSION_FOR_HOME_SCREEN);
   return ALL_FAMILIES.filter((f) => {
     if (f === "corner") return false;
-    if (f === "xlarge") return home && XLARGE_MEASURED;
+    if (f === "xlarge") return home && XLARGE_OFFERED;
     if (isHomeFamily(f)) return home;
     return true;
   });
