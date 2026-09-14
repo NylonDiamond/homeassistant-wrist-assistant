@@ -81,6 +81,11 @@ SNAPSHOT_ASPECT_STORAGE_VERSION = 1
 # document is the Apple clients' CustomComplicationConfig JSON, stored as-is.
 COMPLICATION_STORAGE_KEY = "wrist_assistant.custom_complications"
 COMPLICATION_STORAGE_VERSION = 1
+# The random key the panel sends to the complication gallery, so an uploader
+# can list and delete their own uploads. Made on first use, never derived from
+# anything about this Home Assistant.
+GALLERY_KEY_STORAGE_KEY = "wrist_assistant.gallery_key"
+GALLERY_KEY_STORAGE_VERSION = 1
 # Highest CustomComplicationConfig schemaVersion this integration can edit.
 # Must track `CustomComplicationConfig.currentSchemaVersion` in the app repo.
 # A newer document is displayed read-only and never re-saved.

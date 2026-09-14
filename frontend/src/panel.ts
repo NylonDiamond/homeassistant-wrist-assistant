@@ -11,6 +11,7 @@ import {
   type HassLike,
   type OwnerSummary,
   deleteRecord,
+  fetchGalleryKey,
   fetchList,
   fetchOwners,
   moveOwner,
@@ -168,6 +169,51 @@ import {
   suggestImportName,
   unresolvedEntities,
 } from "./transfer.js";
+import {
+  type GalleryFetch,
+  type GalleryMeta,
+  type GalleryPreview,
+  type GalleryTag,
+  type GalleryUpload,
+  GALLERY_LIMITS,
+  GALLERY_STATUS_LABEL,
+  GALLERY_TAGS,
+  GALLERY_TAG_LABEL,
+  GalleryError,
+  buildGallerySubmission,
+  deleteMyUpload,
+  galleryBlockers,
+  galleryErrorMessage,
+  galleryPublicFields,
+  listMyUploads,
+  submitToGallery,
+} from "./gallery.js";
+import { renderGalleryPreviews } from "./preview-png.js";
+
+/** The gallery calls go through the browser's own fetch. */
+const galleryFetch: GalleryFetch = (url, init) => window.fetch(url, init);
+
+/** Where this browser remembers the nickname last sent to the gallery. */
+const GALLERY_NICKNAME_KEY = "wrist-assistant-gallery-nickname";
+
+/** The nickname last sent, or empty. Storage can be blocked, which only means
+ * typing it again. */
+function readGalleryNickname(): string {
+  try {
+    return window.localStorage.getItem(GALLERY_NICKNAME_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeGalleryNickname(name: string): void {
+  try {
+    if (name === "") window.localStorage.removeItem(GALLERY_NICKNAME_KEY);
+    else window.localStorage.setItem(GALLERY_NICKNAME_KEY, name);
+  } catch {
+    // Not remembered; nothing else depends on it.
+  }
+}
 
 const TEMPLATE_REFRESH_MS = 30_000;
 const TEMPLATE_DEBOUNCE_MS = 500;
@@ -629,6 +675,30 @@ export class WristAssistantPanel extends LitElement {
    * it speaks when a copy or a download landed, and when this browser has no
    * clipboard to write to and the text has been selected instead. */
   @state() private shareNote = "";
+  /** The Share to gallery dialog, opened from Share. The slots and their
+   * labels are the Share dialog's, so what is sent is what Share shows. */
+  @state() private galleryOpen = false;
+  @state() private galleryTitle = "";
+  @state() private galleryDescription = "";
+  @state() private galleryTags: ReadonlySet<GalleryTag> = new Set();
+  @state() private galleryNickname = "";
+  @state() private galleryConfirmed = false;
+  /** Undefined while the pictures are being drawn. */
+  @state() private galleryPreviews?: GalleryPreview[];
+  @state() private galleryPreviewNote = "";
+  @state() private gallerySending = false;
+  @state() private gallerySent = false;
+  @state() private galleryError = "";
+  /** This home's uploads, undefined until the gallery has answered. */
+  @state() private galleryUploads?: GalleryUpload[];
+  @state() private galleryUploadsError = "";
+  /** The upload whose Delete was clicked once and now asks again. */
+  @state() private galleryConfirmDelete?: string;
+  @state() private galleryDeleting?: string;
+  /** Fetched from the integration once per panel load. */
+  private galleryKey?: string;
+  /** Counts preview runs, so a slow run for an older opening is dropped. */
+  private galleryPreviewRun = 0;
   /** The Import dialog: the pasted text, what it parsed into, the name the
    * copy will take, and one chosen entity per slot the design asks about. */
   @state() private importOpen = false;
@@ -1089,14 +1159,14 @@ export class WristAssistantPanel extends LitElement {
        text, the other a row for every entity the design reads. Both scroll
        inside themselves, so a design with twenty slots still has its buttons
        on screen. */
-    dialog.share-dialog, dialog.import-dialog {
+    dialog.share-dialog, dialog.import-dialog, dialog.gallery-dialog {
       width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 40px); padding: 0;
       border: 1px solid var(--wa-line); border-radius: 12px;
       background: var(--wa-card); color: var(--wa-ink);
       box-shadow: 0 12px 40px rgba(0,0,0,.4);
       display: flex; flex-direction: column;
     }
-    dialog.share-dialog::backdrop, dialog.import-dialog::backdrop { background: rgba(0,0,0,.45); }
+    dialog.share-dialog::backdrop, dialog.import-dialog::backdrop, dialog.gallery-dialog::backdrop { background: rgba(0,0,0,.45); }
     .xfer-body { padding: 14px 18px 4px; overflow: auto; flex: 1 1 auto; min-height: 0; }
     .xfer-body .field { display: flex; flex-direction: column; align-items: stretch; gap: 5px; }
     .xfer-body .field > span { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
@@ -1154,6 +1224,29 @@ export class WristAssistantPanel extends LitElement {
     .xfer-foot { display: flex; align-items: center; gap: 8px; padding: 14px 18px 16px; border-top: 1px solid var(--wa-line); flex: none; }
     .xfer-foot .spacer { flex: 1; }
     .xfer-foot .note { font-size: 12px; color: var(--wa-muted); }
+    .xfer-foot .note.err, .gal-err { color: var(--error-color, #db4437); }
+    /* Share to gallery. The public list is the part to read before sending:
+       every piece of free text in the upload, grouped, in the text's own
+       characters, so nothing reads as tidier than what will be posted. */
+    .gal-lead { margin: 0 0 14px; }
+    .gal-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .gal-previews { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 56px; }
+    .gal-previews img { height: 56px; width: auto; max-width: 100%; border-radius: 8px; background: #000; }
+    .gal-public { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .gal-public li > b { display: block; font-size: 12px; font-weight: 600; color: var(--wa-muted); margin-bottom: 2px; }
+    .gal-public .gal-val {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+      white-space: pre-wrap; overflow-wrap: anywhere;
+    }
+    .gal-blockers { margin-top: 14px; }
+    .gal-blockers ul { margin: 0; padding-left: 18px; }
+    .gal-confirm { margin-top: 14px; }
+    .gal-up .srow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .gal-up .spacer { flex: 1; }
+    .gal-up b { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
+    .gal-status { font-size: 12px; color: var(--wa-muted); }
+    .gal-status.approved { color: var(--wa-accent); }
+    .gal-status.rejected { color: var(--error-color, #db4437); }
 
     /* Three columns with a draggable gutter between each pair. The side widths
        come in as custom properties already fitted to the measured panel width
@@ -4910,6 +5003,7 @@ export class WristAssistantPanel extends LitElement {
       ${this.helpOpen ? this.renderHelpDialog() : nothing}
       ${this.newOpen ? this.renderNewDialog() : nothing}
       ${this.shareOpen ? this.renderShareDialog() : nothing}
+      ${this.galleryOpen ? this.renderGalleryDialog() : nothing}
       ${this.importOpen ? this.renderImportDialog() : nothing}
       ${this.watchSupported
         ? html`<div class="layout cols-${fit.columns}"
@@ -5450,6 +5544,9 @@ export class WristAssistantPanel extends LitElement {
         ${this.shareNote === "" ? nothing : html`<span class="note">${this.shareNote}</span>`}
         <span class="spacer"></span>
         <button class="small" @click=${() => this.closeShareDialog()}>Close</button>
+        ${this.hass.user?.is_admin ? html`<button class="small" aria-haspopup="dialog"
+          title="Send it to the public gallery on wrist-assistant.com, with the entities replaced as in Share"
+          @click=${() => this.openGalleryDialog()}>Share to gallery</button>` : nothing}
         <button class="small" @click=${() => this.downloadShareText(text)}>Download</button>
         <button class="small" title="A link that opens Import with this text filled in" @click=${() => void this.copyShareLink(text)}>Copy link</button>
         <button class="primary" @click=${() => void this.copyShareText(text)}>Copy</button>
@@ -5508,6 +5605,255 @@ export class WristAssistantPanel extends LitElement {
     const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.share-dialog");
     if (dialog?.open) dialog.close();
     else this.shareOpen = false;
+  }
+
+  // ── share to gallery ──────────────────────────────────────────────────
+  //
+  // A second dialog over the Share one. It sends the Share text, with the
+  // slot labels as the author left them in Share, to the public gallery, and
+  // lists what this home has sent before. The decisions live in gallery.ts
+  // and the pictures in preview-png.ts; this is markup and the network.
+
+  private galleryMeta(): GalleryMeta {
+    return {
+      title: this.galleryTitle,
+      description: this.galleryDescription,
+      authorName: this.galleryNickname,
+      tags: [...this.galleryTags],
+      panelVersion: this.panel?.config?.version ?? "",
+    };
+  }
+
+  private openGalleryDialog() {
+    const cfg = this.draft?.config;
+    if (!cfg || !this.hass.user?.is_admin) return;
+    this.galleryOpen = true;
+    this.galleryTitle = cfg.name.trim().slice(0, GALLERY_LIMITS.title);
+    this.galleryDescription = "";
+    this.galleryTags = new Set();
+    this.galleryNickname = readGalleryNickname();
+    this.galleryConfirmed = false;
+    this.gallerySending = false;
+    this.gallerySent = false;
+    this.galleryError = "";
+    this.galleryPreviews = undefined;
+    this.galleryPreviewNote = "";
+    this.galleryConfirmDelete = undefined;
+    void this.updateComplete.then(() => {
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.gallery-dialog");
+      if (dialog && !dialog.open) dialog.showModal();
+    });
+    void this.makeGalleryPreviews(cfg, this.currentShareSlots());
+    void this.loadGalleryUploads();
+  }
+
+  private closeGalleryDialog() {
+    const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.gallery-dialog");
+    if (dialog?.open) dialog.close();
+    else this.galleryOpen = false;
+  }
+
+  private async makeGalleryPreviews(cfg: CustomComplicationConfig, slots: readonly ShareSlot[]) {
+    const run = ++this.galleryPreviewRun;
+    try {
+      const previews = await renderGalleryPreviews(cfg, slots, {
+        entityState: (id) => this.entityStateFor(id, "", false),
+        templateResults: this.templateResults,
+        historySeries: this.historySeries,
+      }, this.icons);
+      if (run !== this.galleryPreviewRun) return;
+      this.galleryPreviews = previews;
+    } catch {
+      if (run !== this.galleryPreviewRun) return;
+      this.galleryPreviews = [];
+      this.galleryPreviewNote = "The preview pictures could not be made. It can still be sent without them.";
+    }
+  }
+
+  private async ensureGalleryKey(): Promise<string> {
+    if (this.galleryKey === undefined) this.galleryKey = (await fetchGalleryKey(this.hass)).key;
+    return this.galleryKey;
+  }
+
+  private async loadGalleryUploads() {
+    this.galleryUploadsError = "";
+    try {
+      const key = await this.ensureGalleryKey();
+      this.galleryUploads = await listMyUploads(galleryFetch, key);
+    } catch (err) {
+      this.galleryUploads = [];
+      this.galleryUploadsError = err instanceof GalleryError
+        ? galleryErrorMessage(err)
+        : "Could not read this Home Assistant's gallery key.";
+    }
+  }
+
+  private async sendToGallery() {
+    const cfg = this.draft?.config;
+    if (!cfg || this.gallerySending || this.gallerySent || !this.galleryConfirmed || this.galleryPreviews === undefined) return;
+    const slots = this.currentShareSlots();
+    const meta = this.galleryMeta();
+    if (galleryBlockers(cfg, slots, meta, this.knownDomains()).length > 0) return;
+    this.gallerySending = true;
+    this.galleryError = "";
+    try {
+      const key = await this.ensureGalleryKey();
+      await submitToGallery(galleryFetch, key, { ...buildGallerySubmission(cfg, slots, meta), previews: this.galleryPreviews });
+      this.gallerySent = true;
+      writeGalleryNickname(meta.authorName.trim());
+      void this.loadGalleryUploads();
+    } catch (err) {
+      this.galleryError = err instanceof GalleryError
+        ? galleryErrorMessage(err)
+        : "Could not read this Home Assistant's gallery key. Try again.";
+    } finally {
+      this.gallerySending = false;
+    }
+  }
+
+  /** Delete asks twice, in place: the first click turns the button into the
+   * question, the second answers it. */
+  private async deleteGalleryUpload(id: string) {
+    if (this.galleryConfirmDelete !== id) {
+      this.galleryConfirmDelete = id;
+      return;
+    }
+    this.galleryDeleting = id;
+    this.galleryUploadsError = "";
+    try {
+      const key = await this.ensureGalleryKey();
+      await deleteMyUpload(galleryFetch, key, id);
+      this.galleryUploads = this.galleryUploads?.filter((u) => u.id !== id);
+    } catch (err) {
+      this.galleryUploadsError = err instanceof GalleryError ? galleryErrorMessage(err) : "Could not delete it. Try again.";
+    } finally {
+      this.galleryDeleting = undefined;
+      this.galleryConfirmDelete = undefined;
+    }
+  }
+
+  private toggleGalleryTag(tag: GalleryTag) {
+    const next = new Set(this.galleryTags);
+    if (next.has(tag)) next.delete(tag);
+    else if (next.size < GALLERY_LIMITS.tags) next.add(tag);
+    this.galleryTags = next;
+  }
+
+  private renderGalleryDialog() {
+    const cfg = this.draft?.config;
+    if (!cfg) return nothing;
+    const slots = this.currentShareSlots();
+    const blockers = galleryBlockers(cfg, slots, this.galleryMeta(), this.knownDomains());
+    const publicFields = galleryPublicFields(cfg, slots);
+    const locked = this.gallerySending || this.gallerySent;
+    const ready = blockers.length === 0 && this.galleryConfirmed && this.galleryPreviews !== undefined && !locked;
+    const why = this.gallerySent ? "Already sent"
+      : blockers.length > 0 ? blockers[0]!
+      : this.galleryPreviews === undefined ? "Drawing the preview pictures"
+      : !this.galleryConfirmed ? "Tick the box above first"
+      : "Send it for review";
+    const previews = this.galleryPreviews;
+    return html`<dialog class="gallery-dialog" @close=${() => { this.galleryOpen = false; }}>
+      <div class="new-head">
+        <h2>Share to gallery</h2>
+        <span class="spacer"></span>
+        <button class="icon" title="Close" aria-label="Close" @click=${() => this.closeGalleryDialog()}>${uiIcon("close")}</button>
+      </div>
+      <div class="xfer-body">
+        <div class="hint gal-lead">The gallery on wrist-assistant.com is public. After a review, anyone can find this complication there and add it to their own Home Assistant. Your entities are replaced by the slots you named in Share.</div>
+        <label class="field">
+          <span>Title</span>
+          <input type="text" maxlength=${GALLERY_LIMITS.title} .value=${this.galleryTitle} ?disabled=${locked}
+            @input=${(e: Event) => { this.galleryTitle = (e.target as HTMLInputElement).value; }} />
+        </label>
+        <label class="field">
+          <span>Description</span>
+          <textarea rows="3" maxlength=${GALLERY_LIMITS.description} .value=${this.galleryDescription} ?disabled=${locked}
+            @input=${(e: Event) => { this.galleryDescription = (e.target as HTMLTextAreaElement).value; }}></textarea>
+        </label>
+        <div class="field">
+          <span>Tags</span>
+          <div class="gal-tags">
+            ${GALLERY_TAGS.map((tag) => {
+              const on = this.galleryTags.has(tag);
+              return html`<button class="pk-chip ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+                ?disabled=${locked || (!on && this.galleryTags.size >= GALLERY_LIMITS.tags)}
+                @click=${() => this.toggleGalleryTag(tag)}>${GALLERY_TAG_LABEL[tag]}</button>`;
+            })}
+          </div>
+          <div class="hint">Up to ${GALLERY_LIMITS.tags}, so people can find it.</div>
+        </div>
+        <label class="field">
+          <span>Nickname</span>
+          <input type="text" maxlength=${GALLERY_LIMITS.authorName} placeholder="Optional" .value=${this.galleryNickname} ?disabled=${locked}
+            @input=${(e: Event) => { this.galleryNickname = (e.target as HTMLInputElement).value; }} />
+          <span class="hint">Shown beside it in the gallery. Leave it empty to post without a name.</span>
+        </label>
+        <div class="field">
+          <span>Preview</span>
+          <div class="gal-previews">
+            ${previews === undefined
+              ? html`<span class="hint">Drawing…</span>`
+              : previews.length === 0
+                ? html`<span class="hint">${this.galleryPreviewNote || "Inline has no picture, so this one goes without."}</span>`
+                : previews.map((p) => html`<img alt=${`${p.family} preview`} src=${`data:image/png;base64,${p.png}`} />`)}
+          </div>
+          <div class="hint">Drawn with your current values. Picture layers are left out.</div>
+        </div>
+        <div class="field">
+          <span>This will be public</span>
+          <ul class="gal-public">
+            ${publicFields.map((g) => html`<li><b>${g.label}</b>${g.values.map((v) => html`<div class="gal-val">${v}</div>`)}</li>`)}
+          </ul>
+          <div class="hint">Read it through. Anything here that names a person, a place or a device in your home will be posted as written.</div>
+        </div>
+        ${blockers.length > 0 ? html`<div class="banner warn gal-blockers"><ul>${blockers.map((b) => html`<li>${b}</li>`)}</ul></div>` : nothing}
+        <label class="xfer-mode gal-confirm">
+          <input type="checkbox" .checked=${this.galleryConfirmed} ?disabled=${locked}
+            @change=${(e: Event) => { this.galleryConfirmed = (e.target as HTMLInputElement).checked; }} />
+          <span>I made this and it has no private information</span>
+        </label>
+        ${this.renderGalleryUploads()}
+      </div>
+      <div class="xfer-foot">
+        ${this.gallerySent
+          ? html`<span class="note">Sent. It will show in the gallery after review.</span>`
+          : this.galleryError !== "" ? html`<span class="note err">${this.galleryError}</span>` : nothing}
+        <span class="spacer"></span>
+        <button class="small" @click=${() => this.closeGalleryDialog()}>Close</button>
+        <button class="primary" ?disabled=${!ready} title=${why}
+          @click=${() => void this.sendToGallery()}>${this.gallerySending ? "Sending…" : this.gallerySent ? "Sent" : "Send"}</button>
+      </div>
+    </dialog>`;
+  }
+
+  /** What this home has sent before, newest as the gallery orders it. */
+  private renderGalleryUploads() {
+    const items = this.galleryUploads;
+    return html`<div class="field gal-mine">
+      <span>My gallery uploads</span>
+      ${this.galleryUploadsError !== "" ? html`<div class="hint gal-err">${this.galleryUploadsError}</div>` : nothing}
+      ${items === undefined
+        ? html`<div class="hint">Loading…</div>`
+        : items.length === 0
+          ? this.galleryUploadsError === "" ? html`<div class="hint">Nothing sent from this Home Assistant yet.</div>` : nothing
+          : html`<div>${items.map((u) => {
+            const asking = this.galleryConfirmDelete === u.id;
+            const deleting = this.galleryDeleting === u.id;
+            return html`<div class="xfer-ent gal-up">
+              <div class="srow">
+                <b>${u.title}</b>
+                <span class="gal-status ${u.status}">${GALLERY_STATUS_LABEL[u.status] ?? u.status}</span>
+                <span class="spacer"></span>
+                ${asking && !deleting ? html`<button class="small" @click=${() => { this.galleryConfirmDelete = undefined; }}>Keep</button>` : nothing}
+                <button class="small ${asking ? "danger" : ""}" ?disabled=${this.galleryDeleting !== undefined}
+                  title=${asking ? "Removes it from the gallery for good" : "Remove it from the gallery"}
+                  @click=${() => void this.deleteGalleryUpload(u.id)}>${deleting ? "Deleting…" : asking ? "Delete for good" : "Delete"}</button>
+              </div>
+              ${u.status === "rejected" && u.rejectReason ? html`<div class="hint">Reason: ${u.rejectReason}</div>` : nothing}
+            </div>`;
+          })}</div>`}
+    </div>`;
   }
 
   /**

@@ -30,6 +30,7 @@ Commands:
                                                                 minutes,
                                                                 period,
                                                                 type}}}
+    wrist_assistant/gallery_key
 
 ``save`` is all-or-nothing: the browser submits the whole document plus the
 revision it loaded. A mismatch returns error code ``conflict`` with the
@@ -40,6 +41,10 @@ is deliberately no force flag; last-write-wins is not a path that exists.
 all, it drops a provisioned device from the widget secret store. It lives
 here because ``owners`` is what surfaces that store to a human, so the list
 and the way to prune it stay in one file.
+
+``gallery_key`` hands the panel the random key it sends to the complication
+gallery (see ``gallery_key_store.py``). Admin-only like the rest: the key is
+what lets someone delete this home's gallery uploads.
 """
 
 from __future__ import annotations
@@ -77,6 +82,7 @@ from .statistics_series import (
     StatisticsSeriesError,
     async_statistics_series,
 )
+from .gallery_key_store import gallery_key_store
 from .widget_secret_store import DEVICE_KIND_WATCH
 
 _LOGGER = logging.getLogger(__name__)
@@ -94,6 +100,7 @@ _CMD_STATISTICS = f"{DOMAIN}/complications/statistics_series"
 _CMD_NUDGE = f"{DOMAIN}/complications/nudge"
 _CMD_WATCH_STATUS = f"{DOMAIN}/complications/watch_status"
 _CMD_FORGET = f"{DOMAIN}/devices/forget"
+_CMD_GALLERY_KEY = f"{DOMAIN}/gallery_key"
 
 
 def _store(hass: HomeAssistant) -> ComplicationStore | None:
@@ -195,6 +202,23 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_nudge)
     websocket_api.async_register_command(hass, ws_watch_status)
     websocket_api.async_register_command(hass, ws_forget_device)
+    websocket_api.async_register_command(hass, ws_gallery_key)
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): _CMD_GALLERY_KEY})
+@websocket_api.async_response
+async def ws_gallery_key(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The key the panel sends to the complication gallery.
+
+    Made on the first request and kept after that. Never the instance UUID:
+    the gallery is public, and the key should identify the uploads and nothing
+    else.
+    """
+    key = await gallery_key_store(hass).async_get_key()
+    connection.send_result(msg["id"], {"key": key})
 
 
 @websocket_api.require_admin

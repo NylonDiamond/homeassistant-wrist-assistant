@@ -88,6 +88,12 @@ export type RenderResult =
 
 const D = "wrist_assistant/complications";
 
+/** The random key this Home Assistant sends to the complication gallery.
+ * Made by the integration on the first request and kept after that. */
+export async function fetchGalleryKey(hass: HassLike) {
+  return hass.connection.sendMessagePromise<{ key: string }>({ type: "wrist_assistant/gallery_key" });
+}
+
 export async function fetchOwners(hass: HassLike) {
   return hass.connection.sendMessagePromise<{
     owners: OwnerSummary[];
