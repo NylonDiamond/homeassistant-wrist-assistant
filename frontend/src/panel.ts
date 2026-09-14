@@ -2133,17 +2133,27 @@ export class WristAssistantPanel extends LitElement {
        Number and a Marker switch where the reading has one. The cells sit in
        one grid so every switch lines up down its column. */
     .field.list-field > .xreadings { margin: 0; }
-    .xreadings { display: grid; grid-template-columns: minmax(64px, 0.9fr) auto minmax(52px, 1fr) minmax(52px, 1fr); min-width: 0; }
+    /* The On the plot and Readings tables share fixed columns, so their name,
+       value and switch columns line up across both tables, not just inside one. */
+    .field.list-field:has(> .xreadings) + .field.list-field:has(> .xreadings),
+    .hint + .field.list-field:has(> .xreadings) { margin-top: 10px; }
+    .xreadings { display: grid; grid-template-columns: minmax(0, 1fr) 52px 64px 64px; min-width: 0; }
     .xr-row { display: contents; }
-    .xr-row > span { display: flex; align-items: center; min-width: 0; min-height: 26px; border-top: 1px solid var(--wa-line); }
+    .xr-row > span { display: flex; align-items: center; min-width: 0; min-height: 28px; border-top: 1px solid var(--wa-line); }
+    .xr-row > span:first-child { padding-left: 6px; }
     .xr-row > span:nth-child(n+3) { justify-content: center; }
-    .xr-row > span:nth-child(2) { justify-content: flex-end; padding-left: 6px; }
-    .xr-head > span { min-height: 20px; border-top: 0; font-size: 11px; font-weight: 600; color: var(--wa-muted); }
+    .xr-row > span:nth-child(2) { justify-content: flex-end; padding-right: 4px; }
+    .xr-row:not(.xr-head):hover > span { background: var(--wa-field); }
+    .xr-row:not(.xr-head):hover > span:first-child { border-radius: 6px 0 0 6px; }
+    .xr-row:not(.xr-head):hover > span:last-child { border-radius: 0 6px 6px 0; }
+    .xr-head > span {
+      min-height: 20px; border-top: 0; font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--wa-muted);
+    }
     .xr-name { display: block; min-width: 0; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .xr-head .xr-name { font-size: 11px; }
-    .xr-v { display: block; max-width: 72px; font-size: 11.5px; color: var(--wa-muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .xr-head .xr-name { font-size: 10.5px; }
+    .xr-v { display: block; max-width: 52px; font-size: 11.5px; color: var(--wa-muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     button.xtog {
-      display: inline-grid; place-items: center; width: calc(100% - 8px); max-width: 72px; height: 22px; padding: 0; border-radius: 6px; cursor: pointer;
+      display: inline-grid; place-items: center; width: 48px; height: 22px; padding: 0; border-radius: 6px; cursor: pointer;
       font: inherit; font-size: 12px; font-weight: 700; line-height: 1;
       border: 1px dashed var(--wa-line-strong); background: transparent; color: var(--wa-muted);
     }

@@ -4726,7 +4726,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         <div class="field list-field"><span>On the plot</span>
           <div class="xreadings" role="table" aria-label="On the plot" @pointerover=${pointExtra} @focusin=${pointExtra}>
             <div class="xr-row xr-head" role="row">
-              <span role="columnheader"><span class="xr-name">Line</span></span><span role="columnheader"></span>
+              <span role="columnheader"><span class="xr-name">Layer</span></span><span role="columnheader"></span>
               <span role="columnheader">Show</span><span role="columnheader"></span>
             </div>
             ${CHART_DRAW_EXTRAS.map(plotSwitch)}
