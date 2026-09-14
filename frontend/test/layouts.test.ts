@@ -10,6 +10,7 @@ import {
   familiesFor,
   familyContentSummary,
   familyNote,
+  shapeGroups,
   firstDrawable,
   isHomeFamily,
   keepFamilies,
@@ -280,6 +281,25 @@ describe("helpers", () => {
 // The note is read straight, not through familiesFor: Extra Large is hidden
 // from every owner while its design box is a placeholder, so the only way to
 // check the line the card would carry is to ask for it.
+describe("shapeGroups", () => {
+  it("keeps a watch's shapes in one run with no heading", () => {
+    expect(shapeGroups(["rectangular", "circular", "corner", "inline"])).toEqual([
+      { families: ["rectangular", "circular", "corner", "inline"] },
+    ]);
+  });
+
+  it("splits a phone's shapes into Lock Screen and Home Screen", () => {
+    expect(shapeGroups(["rectangular", "circular", "inline", "small", "medium", "large"])).toEqual([
+      { label: "Lock Screen", families: ["rectangular", "circular", "inline"] },
+      { label: "Home Screen", families: ["small", "medium", "large"] },
+    ]);
+  });
+
+  it("labels a home-only list so the heading still says where the shapes live", () => {
+    expect(shapeGroups(["small"])).toEqual([{ label: "Home Screen", families: ["small"] }]);
+  });
+});
+
 describe("familyNote", () => {
   it("marks Extra Large as an iOS 27 shape", () => {
     expect(familyNote("xlarge")).toBe("iOS 27 and later");

@@ -95,7 +95,7 @@ import {
   resolveAll,
 } from "./resolver.js";
 import { CASES, FACE_TINTS, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, phoneCaseForScreenSize, renderLayerThumb, renderLayout, slotFor, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type PreviewCase } from "./renderer.js";
-import { addFamily, canRemoveFamily, familiesFor, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, keepFamilies, removeFamily, supportedFamilies } from "./layouts.js";
+import { addFamily, canRemoveFamily, familiesFor, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, keepFamilies, removeFamily, shapeGroups, supportedFamilies } from "./layouts.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { deviceKindOf, deviceNoun, deviceSupportsShapes, updateDeviceMessage } from "./version.js";
 import { makeIconProvider } from "./icons.js";
@@ -1261,6 +1261,11 @@ export class WristAssistantPanel extends LitElement {
        cards and a phone owner up to seven, so the grid takes as many as the
        dialog's width allows and wraps the rest onto another row. */
     .shape-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 8px; }
+    /* A phone's shapes come in two runs, Lock Screen and Home Screen, each
+       under its own quiet heading; a watch has one run and no heading. */
+    .shape-groups { display: flex; flex-direction: column; gap: 12px; }
+    .shape-group { display: flex; flex-direction: column; gap: 6px; }
+    .shape-group-label { font-size: 11px; font-weight: 600; color: var(--wa-muted); }
     /* Not one of them starts picked. A tinted default reads as a
        recommendation, and the shape is the one thing about a complication
        that cannot be changed later without moving every layer. */
@@ -5833,14 +5838,19 @@ export class WristAssistantPanel extends LitElement {
             : "This is what the name shows on the watch face picker, so make it one you will recognise there."}</div>`}
         <div class="field new-shapes">
           <span>Shape</span>
-          <div class="shape-cards" role="radiogroup" aria-label="Shape">
-            ${this.ownerFamilies.map((f) => html`<button type="button" role="radio" class="shape-card ${this.newFamily === f ? "on" : ""}"
-              aria-checked=${this.newFamily === f ? "true" : "false"}
-              @click=${() => { this.newFamily = f; }}>
-              ${familyArt(f)}
-              <span class="shape-card-name">${familyTitle(f)}</span>
-              ${familyNote(f) ? html`<span class="shape-card-note">${familyNote(f)}</span>` : nothing}
-            </button>`)}
+          <div class="shape-groups" role="radiogroup" aria-label="Shape">
+            ${shapeGroups(this.ownerFamilies).map((group) => html`<div class="shape-group">
+              ${group.label ? html`<span class="shape-group-label">${group.label}</span>` : nothing}
+              <div class="shape-cards">
+                ${group.families.map((f) => html`<button type="button" role="radio" class="shape-card ${this.newFamily === f ? "on" : ""}"
+                  aria-checked=${this.newFamily === f ? "true" : "false"}
+                  @click=${() => { this.newFamily = f; }}>
+                  ${familyArt(f)}
+                  <span class="shape-card-name">${familyTitle(f)}</span>
+                  ${familyNote(f) ? html`<span class="shape-card-note">${familyNote(f)}</span>` : nothing}
+                </button>`)}
+              </div>
+            </div>`)}
           </div>
         </div>
         <div class="hint">Start with one shape. More can be added under the preview later.</div>
