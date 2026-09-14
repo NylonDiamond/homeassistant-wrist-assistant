@@ -4360,7 +4360,10 @@ export class WristAssistantPanel extends LitElement {
       return;
     }
     const target = e.target as SVGElement;
-    const handle = target.closest("[data-handle]")?.getAttribute("data-handle") as HandleCorner | null;
+    // Null, never undefined, off a handle: the checks below test `!== null`, and
+    // an undefined handle sent a plain drag on an icon down the corner path,
+    // which threw on the first move.
+    const handle = (target.closest("[data-handle]")?.getAttribute("data-handle") ?? null) as HandleCorner | null;
     const hitId = target.closest("[data-element-id]")?.getAttribute("data-element-id") ?? undefined;
     // The face's own svg, not the nearest one: an icon draws its glyph as a
     // nested svg with a viewBox of its own, and a drag measured against that
