@@ -14,6 +14,7 @@ import {
   shareLinkInText,
   shareLinkPayload,
   shareLinkUrl,
+  SHARE_LINK_SITE,
   type UnresolvedEntity,
 } from "../src/transfer.js";
 
@@ -77,6 +78,14 @@ describe("encodeShareLink and decodeShareLink", () => {
 describe("shareLinkUrl and shareLinkPayload", () => {
   it("puts the payload in the hash of the panel address", () => {
     expect(shareLinkUrl("http://ha.local:8123/wrist-assistant", "zabc")).toBe("http://ha.local:8123/wrist-assistant#import=zabc");
+  });
+
+  it("points copied links at the site page, which every home can open", async () => {
+    const payload = await encodeShareLink(sampleText());
+    const url = shareLinkUrl(SHARE_LINK_SITE, payload);
+    expect(url.startsWith("https://wrist-assistant.com/import/#import=z")).toBe(true);
+    // A link pasted into Import still opens, whatever address it points at.
+    expect(shareLinkInText(url)).toBe(payload);
   });
 
   it("replaces a hash the address already had", () => {

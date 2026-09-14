@@ -536,8 +536,14 @@ export async function decodeShareLink(payload: string): Promise<string | undefin
   return undefined;
 }
 
-/** A link to `base` (the panel's own address, without a hash) that opens the
- * Import dialog with the text filled in. */
+/** Where a copied share link points. Every home has its own address, so a
+ * link to this panel would only open on this home's network. The page there
+ * asks the reader for their own Home Assistant address once, then forwards
+ * the same hash to their panel. The hash never reaches the site's server. */
+export const SHARE_LINK_SITE = "https://wrist-assistant.com/import/";
+
+/** A link to `base` (a panel address, or SHARE_LINK_SITE, without a hash)
+ * that opens the Import dialog with the text filled in. */
 export function shareLinkUrl(base: string, payload: string): string {
   const bare = base.split("#")[0] ?? base;
   return `${bare}#${SHARE_LINK_KEY}=${payload}`;

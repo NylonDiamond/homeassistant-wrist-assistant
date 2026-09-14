@@ -163,6 +163,7 @@ import {
   shareLinkInText,
   shareLinkPayload,
   shareLinkUrl,
+  SHARE_LINK_SITE,
   shareSlots,
   suggestImportName,
   unresolvedEntities,
@@ -5802,14 +5803,14 @@ export class WristAssistantPanel extends LitElement {
         ${share ? this.renderShareSlots(cfg, slots, uses, layouts) : nothing}
         <div class="xf-stack">
           <div class="xf-acts">
-            <button class="xf-act ${share ? "main" : ""}" ?disabled=${!share || !admin} aria-haspopup="dialog"
+            <button class="xf-act" ?disabled=${!share || !admin} aria-haspopup="dialog"
               @click=${() => this.openGalleryDialog()}>
               <span class="ic">${uiIcon("globe")}</span><b>Post to online gallery</b>
               <span>${!share ? "Only shares can go" : admin ? "Everyone can find it, after review" : "Needs a Home Assistant administrator"}</span>
             </button>
-            <button class="xf-act ${share ? "" : "main"} ${copied === "link" ? "flash" : ""}" @click=${() => void this.copyShareLink(text)}>
+            <button class="xf-act ${copied === "link" ? "flash" : ""}" @click=${() => void this.copyShareLink(text)}>
               <span class="ic">${uiIcon(copied === "link" ? "check" : "link")}</span><b>${copied === "link" ? "Link copied" : "Copy link"}</b>
-              <span>Opens Import in their panel</span>
+              <span>Opens in their own Home Assistant</span>
             </button>
             <button class="xf-act ${copied === "file" ? "flash" : ""}" title=${`Saves ${exportFileName(cfg)}`} @click=${() => this.downloadShareText(text)}>
               <span class="ic">${uiIcon(copied === "file" ? "check" : "download")}</span><b>${copied === "file" ? "Saved" : "Download"}</b>
@@ -6518,7 +6519,7 @@ export class WristAssistantPanel extends LitElement {
    */
   private async copyShareLink(text: string) {
     const payload = await encodeShareLink(text);
-    const url = shareLinkUrl(`${window.location.origin}${window.location.pathname}`, payload);
+    const url = shareLinkUrl(SHARE_LINK_SITE, payload);
     this.shareLink = { text, url };
     await this.copyShareText(url, "link");
   }
