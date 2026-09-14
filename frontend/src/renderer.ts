@@ -194,6 +194,13 @@ export interface RenderOptions {
    * colour. See `tintGroup` for what each kind of layer turns into.
    */
   tint?: string;
+  /**
+   * Draw a camera or photo picture that has no address as a small drawn
+   * landscape instead of the watch's faint glyph box. The gallery uses it,
+   * where no real picture is ever drawn and a glyph box reads as broken.
+   * People and media keep their glyph.
+   */
+  pictureScene?: boolean;
 }
 
 /**
@@ -1394,6 +1401,26 @@ export function imagePlaceholderSymbol(source: ImageSource, entityId: string): s
   }
 }
 
+/** A calm stand-in photo for `pictureScene`: dusk sky, a low sun, two hills
+ * and a strip of ground, drawn to the box so it crops like a real picture. */
+function renderPictureScene(box: Box, skyId: string) {
+  const { x, y, w, h } = box;
+  const px = (f: number) => x + w * f;
+  const py = (f: number) => y + h * f;
+  const sun = Math.max(2, Math.min(w, h) * 0.11);
+  return svg`
+    <defs><linearGradient id=${skyId} x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3B5B8C" /><stop offset="0.65" stop-color="#9DB4CF" /><stop offset="1" stop-color="#E8C9A0" />
+    </linearGradient></defs>
+    <rect x=${x} y=${y} width=${w} height=${h} fill=${`url(#${skyId})`} />
+    <circle cx=${px(0.72)} cy=${py(0.36)} r=${sun} fill="#FFF3D6" fill-opacity="0.9" />
+    <path d=${`M${px(0)} ${py(0.7)} L${px(0.22)} ${py(0.42)} L${px(0.4)} ${py(0.6)} L${px(0.58)} ${py(0.38)} L${px(0.86)} ${py(0.66)} L${px(1)} ${py(0.56)} L${px(1)} ${py(1)} L${px(0)} ${py(1)} Z`}
+      fill="#5C7391" />
+    <path d=${`M${px(0)} ${py(0.84)} Q${px(0.3)} ${py(0.62)} ${px(0.62)} ${py(0.8)} T${px(1)} ${py(0.74)} L${px(1)} ${py(1)} L${px(0)} ${py(1)} Z`}
+      fill="#34475E" />
+    <rect x=${x} y=${py(0.92)} width=${w} height=${h * 0.08} fill="#232F3E" />`;
+}
+
 function renderImage(el: Extract<ResolvedElement, { kind: "image" }>, box: Box, options: RenderOptions) {
   const icons = options.icons;
   // Unique per drawing, for the same reason as a chart's gradient ids.
@@ -1416,6 +1443,8 @@ function renderImage(el: Extract<ResolvedElement, { kind: "image" }>, box: Box, 
   } else if (el.url) {
     content = svg`<image href=${el.url} x=${box.x} y=${box.y} width=${box.w} height=${box.h}
       preserveAspectRatio=${el.contentMode === "fit" ? "xMidYMid meet" : "xMidYMid slice"} />`;
+  } else if (options.pictureScene && ["camera.fill", "photo"].includes(imagePlaceholderSymbol(el.source, el.entityId))) {
+    content = renderPictureScene(box, `${clipId}-sky`);
   } else {
     content = svg`
       <rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} rx=${r} fill="#FFFFFF" fill-opacity="0.18" />

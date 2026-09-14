@@ -6,8 +6,8 @@
 // name. Only the author's live values are copied across, onto the placeholder
 // ids, so the picture shows real numbers instead of dashes.
 //
-// Picture layers draw as the stand-in the watch shows before its first fetch:
-// a faint box with a camera, person or photo glyph. A picture is a camera
+// Picture layers draw as a stand-in: a small drawn landscape for a camera or a
+// photo, and the watch's faint glyph box for a person or media. A picture is a camera
 // frame, a person's avatar or album art from this house, served from this Home
 // Assistant with an access token in its address. Drawing it would put a
 // private photo into a public preview, and the canvas would refuse to export
@@ -128,7 +128,7 @@ export async function renderGalleryPreviews(
     const drawable = family as DrawableFamily;
     const layout = layouts[drawable];
     if (!layout) continue;
-    const png = await templateToPng(renderLayout(layout, { icons, slot: DESIGN_BOX[drawable] }));
+    const png = await templateToPng(renderLayout(layout, { icons, slot: DESIGN_BOX[drawable], pictureScene: true }));
     out.push({ family, png });
     if (out.length === GALLERY_LIMITS.previews) break;
   }

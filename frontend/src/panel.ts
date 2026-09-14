@@ -1377,6 +1377,9 @@ export class WristAssistantPanel extends LitElement {
     .xf-pub { display: grid; gap: 4px; padding: 8px; border-radius: var(--wa-r-md); background: var(--wa-val-bg); border: 1px solid color-mix(in srgb, var(--wa-val) 40%, var(--wa-line)); }
     .xf-pub .kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; align-items: start; padding: 6px; border-radius: 8px; transition: background-color .12s ease-out; }
     .xf-pub .kv.on { background: var(--wa-sel-bg); }
+    .xf-legend { display: grid; gap: 6px; }
+    .xf-mine { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+    .xf-mine > svg.ui-icon { width: 13px; height: 13px; flex: none; color: var(--wa-muted); }
     .xf-pub .kv > .k { font-size: 12px; color: var(--wa-muted); padding-top: 6px; }
     .xf-pub .kv > .v { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
     .xf-pub input[type=text] { width: 100%; box-sizing: border-box; background: var(--wa-card); }
@@ -5854,7 +5857,7 @@ export class WristAssistantPanel extends LitElement {
    * box its selection would use. Layers that are not on this shape pick out
    * nothing, and the caption says so.
    */
-  private dialogPreview(layouts: ResolvedAll, family: FamilyKind | undefined, spot: readonly string[], caption: unknown, tip: string) {
+  private dialogPreview(layouts: ResolvedAll, family: FamilyKind | undefined, spot: readonly string[], caption: unknown, tip: string, pictureScene = false) {
     if (family === undefined) return nothing;
     let art: unknown = nothing;
     let elsewhere = false;
@@ -5867,7 +5870,7 @@ export class WristAssistantPanel extends LitElement {
         const here = spot.filter((id) => layout.elements.some((el) => el.id === id));
         elsewhere = spot.length > 0 && here.length === 0;
         art = renderLayout(layout, {
-          icons: this.icons, imageSizes: this.imageSizes, slot: REFERENCE_CASE.slots[family],
+          icons: this.icons, imageSizes: this.imageSizes, slot: REFERENCE_CASE.slots[family], pictureScene,
           ...(here.length > 0 ? { spotlightIds: here } : {}),
         });
       }
@@ -6368,17 +6371,22 @@ export class WristAssistantPanel extends LitElement {
     const ctx = describeContext(this.host());
     const clear = () => { this.galleryFocus = undefined; };
     return html`
-      <div class="xf-lead warn">${uiIcon("info")}<span>Everyone can read these. Change anything that names a person, a place or a device.</span></div>
+      <div class="xf-legend">
+        <div class="xf-lead warn">${uiIcon("globe")}<span><b>The boxes are public.</b> Everyone can read them, so change anything that names a person, a place or a device.</span></div>
+        <div class="xf-lead">${uiIcon("lock")}<span><b>The tags under a box are only for you.</b> They show which of your layers use the name. They are never sent.</span></div>
+      </div>
       ${this.dialogPreview(layouts, family, focused?.ids ?? [],
         focused && focused.ids.length > 0 ? html`Where <b>${focused.name}</b> is` : family ? familyTitle(family) : "",
-        "Point at a name to see where it is")}
+        "Point at a name to see where it is", true)}
       <div class="xf-pub" @pointerleave=${(e: Event) => this.leaveRows(e, clear)} @focusout=${(e: Event) => this.leaveRows(e, clear)}>
         ${rows.map((row) => {
           const on = row.key === this.galleryFocus && row.ids.length > 0;
           const set = () => { this.galleryFocus = row.key; };
           return html`<div class="kv ${on ? "on" : ""}" @pointerenter=${set} @focusin=${set}>
             <span class="k">${row.label}</span>
-            <div class="v">${row.control}${row.ids.length > 0 ? this.layerTags(cfg, drawn, row.ids, ctx) : nothing}</div>
+            <div class="v">${row.control}${row.ids.length > 0
+              ? html`<div class="xf-mine" title="Only you see this. It is not sent.">${uiIcon("lock")}${this.layerTags(cfg, drawn, row.ids, ctx)}</div>`
+              : nothing}</div>
           </div>`;
         })}
       </div>
