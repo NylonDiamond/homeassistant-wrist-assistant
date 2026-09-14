@@ -99,6 +99,9 @@ export interface GallerySubmission {
   slots: GallerySlot[];
   previews: GalleryPreview[];
   panelVersion: string;
+  /** The approved upload this one is a new version of. The link and votes
+   * stay with it; the old version stays up until this one is approved. */
+  replaces?: string;
 }
 
 /**
@@ -350,22 +353,51 @@ export function galleryBlockers(
   knownDomains?: ReadonlySet<string>,
   overrides: GalleryOverrides = {},
 ): string[] {
-  const out: string[] = [];
+  return steppedBlockers(cfg, slots, meta, knownDomains, overrides).map((b) => b.text);
+}
+
+/** Which step of the gallery dialog a blocker belongs to: the details the
+ * author typed, or the upload as a whole, which Send answers for. */
+export type GalleryBlockerStep = "details" | "send";
+
+/** The blockers split by where the dialog shows them. */
+export function galleryBlockersByStep(
+  cfg: CustomComplicationConfig,
+  slots: readonly ShareSlot[],
+  meta: GalleryMeta,
+  knownDomains?: ReadonlySet<string>,
+  overrides: GalleryOverrides = {},
+): Record<GalleryBlockerStep, string[]> {
+  const out: Record<GalleryBlockerStep, string[]> = { details: [], send: [] };
+  for (const b of steppedBlockers(cfg, slots, meta, knownDomains, overrides)) out[b.step].push(b.text);
+  return out;
+}
+
+function steppedBlockers(
+  cfg: CustomComplicationConfig,
+  slots: readonly ShareSlot[],
+  meta: GalleryMeta,
+  knownDomains: ReadonlySet<string> | undefined,
+  overrides: GalleryOverrides,
+): { step: GalleryBlockerStep; text: string }[] {
+  const found: { step: GalleryBlockerStep; text: string }[] = [];
+  const out = { push: (text: string) => { found.push({ step: "send", text }); } };
+  const detail = (text: string) => { found.push({ step: "details", text }); };
   const body = buildGallerySubmission(cfg, slots, meta, overrides);
 
   if (hasInstanceFilters(cfg)) {
     out.push("It reads entities by area, label or floor. Those belong to your Home Assistant, so pick the entities themselves before sending it to the gallery.");
   }
-  if (body.title === "") out.push("Give it a title.");
-  if (body.title.length > GALLERY_LIMITS.title) out.push(`The title is longer than ${GALLERY_LIMITS.title} characters.`);
+  if (body.title === "") detail("Give it a title.");
+  if (body.title.length > GALLERY_LIMITS.title) detail(`The title is longer than ${GALLERY_LIMITS.title} characters.`);
   if (body.description.length > GALLERY_LIMITS.description) {
-    out.push(`The description is longer than ${GALLERY_LIMITS.description} characters.`);
+    detail(`The description is longer than ${GALLERY_LIMITS.description} characters.`);
   }
   if (body.authorName.length > GALLERY_LIMITS.authorName) {
-    out.push(`The nickname is longer than ${GALLERY_LIMITS.authorName} characters.`);
+    detail(`The nickname is longer than ${GALLERY_LIMITS.authorName} characters.`);
   }
-  if (meta.tags.length > GALLERY_LIMITS.tags) out.push(`Pick at most ${GALLERY_LIMITS.tags} tags.`);
-  if (meta.tags.some((t) => !isGalleryTag(t))) out.push("One of the tags is not a gallery tag.");
+  if (meta.tags.length > GALLERY_LIMITS.tags) detail(`Pick at most ${GALLERY_LIMITS.tags} tags.`);
+  if (meta.tags.some((t) => !isGalleryTag(t))) detail("One of the tags is not a gallery tag.");
   if (body.families.length === 0) out.push("It has no shape the gallery can show.");
 
   if (body.slots.length > GALLERY_LIMITS.slots) {
@@ -398,7 +430,7 @@ export function galleryBlockers(
   if (unquoted.size > 0) {
     out.push(`Template or service data text names ${[...unquoted].join(", ")} in a way sharing cannot replace. Write it in quotes, like states('sensor.example'), so it becomes a slot.`);
   }
-  return out;
+  return found;
 }
 
 // ── talking to the gallery ────────────────────────────────────────────────
@@ -416,11 +448,11 @@ export type GalleryFetch = (
 
 export type GalleryErrorCode =
   | "bad_json" | "too_large" | "invalid_field" | "schema_too_new" | "bad_png"
-  | "rate_limited" | "not_found" | "forbidden" | "server_error" | "network";
+  | "rate_limited" | "not_found" | "not_updatable" | "forbidden" | "server_error" | "network";
 
 const KNOWN_CODES: readonly GalleryErrorCode[] = [
   "bad_json", "too_large", "invalid_field", "schema_too_new", "bad_png",
-  "rate_limited", "not_found", "forbidden", "server_error",
+  "rate_limited", "not_found", "not_updatable", "forbidden", "server_error",
 ];
 
 export class GalleryError extends Error {
@@ -447,6 +479,7 @@ const FIELD_WORDS: Record<string, string> = {
   slots: "slot labels",
   previews: "preview pictures",
   panelVersion: "panel version",
+  replaces: "upload to update",
 };
 
 /** One sentence for the dialog, per error. */
@@ -469,6 +502,8 @@ export function galleryErrorMessage(err: unknown): string {
       return "The gallery could not read the upload. Update the Wrist Assistant integration and try again.";
     case "not_found":
       return "That upload is not in the gallery any more.";
+    case "not_updatable":
+      return "It has to be in the gallery before it can be updated. Wait for the review, then send the new version.";
     case "forbidden":
       return "The gallery did not accept this Home Assistant's key.";
     case "network":
@@ -519,13 +554,17 @@ export async function submitToGallery(
   key: string,
   submission: GallerySubmission,
   base: string = GALLERY_API_BASE,
-): Promise<{ id: string; status: string }> {
-  const body = JSON.stringify(submission);
+): Promise<{ id: string; status: string; replaces?: string }> {
+  // An empty `replaces` is a new item, and the key is left off the wire.
+  const { replaces, ...rest } = submission;
+  const body = JSON.stringify(replaces ? { ...rest, replaces } : rest);
   // Refused here rather than after a megabyte of upload.
   if (byteLength(body) > GALLERY_LIMITS.bodyBytes) throw new GalleryError("too_large", 0);
   const res = await call(fetchFn, `${base}/submissions`, "POST", key, body);
-  const out = await res.json() as { id?: unknown; status?: unknown };
-  return { id: String(out.id ?? ""), status: String(out.status ?? "pending") };
+  const out = await res.json() as { id?: unknown; status?: unknown; replaces?: unknown };
+  const result: { id: string; status: string; replaces?: string } = { id: String(out.id ?? ""), status: String(out.status ?? "pending") };
+  if (typeof out.replaces === "string" && out.replaces !== "") result.replaces = out.replaces;
+  return result;
 }
 
 export type GalleryUploadStatus = "pending" | "approved" | "rejected" | "removed";
@@ -537,6 +576,58 @@ export interface GalleryUpload {
   rejectReason: string | null;
   createdAt: string;
   voteCount: number;
+  /** The approved upload this one is a new version of, or null. */
+  replacesId: string | null;
+  updatedAt: string | null;
+  importCount: number;
+  /** An absolute address for the first preview picture, or null. */
+  previewUrl: string | null;
+}
+
+/**
+ * One `/mine` item read defensively. The gallery sends the newer fields in
+ * both spellings; either is taken. A relative preview address is resolved
+ * against the API base, since the panel runs on another origin.
+ */
+export function readGalleryUpload(raw: unknown, base: string = GALLERY_API_BASE): GalleryUpload | undefined {
+  if (raw === null || typeof raw !== "object") return undefined;
+  const r = raw as Record<string, unknown>;
+  const str = (...keys: string[]): string | null => {
+    for (const k of keys) if (typeof r[k] === "string") return r[k] as string;
+    return null;
+  };
+  const num = (...keys: string[]): number => {
+    for (const k of keys) if (typeof r[k] === "number" && Number.isFinite(r[k])) return r[k] as number;
+    return 0;
+  };
+  const id = str("id");
+  if (id === null || id === "") return undefined;
+  const preview = str("preview_url", "previewUrl");
+  const replaces = str("replaces_id", "replacesId");
+  return {
+    id,
+    title: str("title") ?? "",
+    status: (str("status") ?? "pending") as GalleryUploadStatus,
+    rejectReason: str("rejectReason", "reject_reason"),
+    createdAt: str("createdAt", "created_at") ?? "",
+    voteCount: num("voteCount", "vote_count"),
+    replacesId: replaces === "" ? null : replaces,
+    updatedAt: str("updated_at", "updatedAt"),
+    importCount: num("import_count", "importCount"),
+    previewUrl: preview === null || preview === "" ? null : resolvePreviewUrl(preview, base),
+  };
+}
+
+/** A preview address as the browser can load it. */
+export function resolvePreviewUrl(url: string, base: string = GALLERY_API_BASE): string {
+  if (/^https?:\/\//i.test(url)) return url;
+  const root = base.endsWith("/") ? base : `${base}/`;
+  try {
+    // A leading slash is from the site root; anything else is under the API.
+    return new URL(url.startsWith("/") ? url : url.replace(/^\.\//, ""), url.startsWith("/") ? new URL(root).origin : root).toString();
+  } catch {
+    return url;
+  }
 }
 
 export async function listMyUploads(
@@ -546,7 +637,70 @@ export async function listMyUploads(
 ): Promise<GalleryUpload[]> {
   const res = await call(fetchFn, `${base}/mine`, "GET", key);
   const body = await res.json() as { items?: unknown };
-  return Array.isArray(body.items) ? (body.items as GalleryUpload[]) : [];
+  if (!Array.isArray(body.items)) return [];
+  return body.items.map((item) => readGalleryUpload(item, base)).filter((u): u is GalleryUpload => u !== undefined);
+}
+
+/** One row of the uploads list: an upload, and the new versions of it that
+ * have not gone live, newest first. */
+export interface GalleryUploadRow {
+  upload: GalleryUpload;
+  /** New versions of this upload still in review or turned down. An approved
+   * one is gone from the list: it became the upload itself. */
+  updates: GalleryUpload[];
+  /** Update is offered: the upload is in the gallery and has no new version
+   * waiting already. */
+  canUpdate: boolean;
+}
+
+/** Whether an upload is a new version of another one. */
+export function isUpdate(u: GalleryUpload): boolean {
+  return u.replacesId !== null;
+}
+
+/** Whether an upload is a new version still waiting for review. */
+export function isPendingUpdate(u: GalleryUpload): boolean {
+  return u.status === "pending" && isUpdate(u);
+}
+
+/**
+ * The uploads list as rows, in the gallery's order. A new version sits under
+ * the upload it replaces instead of as a row of its own; one whose original is
+ * not in the list keeps its own row. Only an approved upload with no version
+ * waiting can be updated: a turned-down version does not stop another try.
+ */
+export function galleryUploadRows(items: readonly GalleryUpload[]): GalleryUploadRow[] {
+  const ids = new Set(items.map((u) => u.id));
+  const updates = new Map<string, GalleryUpload[]>();
+  for (const u of items) {
+    if (!isUpdate(u) || u.replacesId === u.id || !ids.has(u.replacesId!)) continue;
+    const list = updates.get(u.replacesId!) ?? [];
+    list.push(u);
+    updates.set(u.replacesId!, list);
+  }
+  const attached = new Set([...updates.values()].flat().map((u) => u.id));
+  const rows: GalleryUploadRow[] = [];
+  for (const u of items) {
+    if (attached.has(u.id)) continue;
+    const mine = updates.get(u.id) ?? [];
+    rows.push({
+      upload: u,
+      updates: mine,
+      canUpdate: u.status === "approved" && !mine.some(isPendingUpdate),
+    });
+  }
+  return rows;
+}
+
+/** The line under an upload's title: why it was turned down, or how it is doing. */
+export function galleryUploadSubline(u: GalleryUpload): string {
+  if (u.status === "rejected") return u.rejectReason ? u.rejectReason : "No reason was given.";
+  if (isPendingUpdate(u)) return "The old version stays up until this one is approved.";
+  if (u.status === "pending") return "It shows in the gallery after it is approved.";
+  if (u.status === "removed") return "It is no longer in the gallery.";
+  const votes = u.voteCount === 1 ? "1 vote" : `${u.voteCount} votes`;
+  const imports = u.importCount === 1 ? "added once" : `added ${u.importCount} times`;
+  return `${votes} · ${imports}`;
 }
 
 export async function deleteMyUpload(
@@ -562,6 +716,13 @@ export async function deleteMyUpload(
 export const GALLERY_STATUS_LABEL: Record<GalleryUploadStatus, string> = {
   pending: "Waiting for review",
   approved: "In the gallery",
-  rejected: "Not accepted",
+  rejected: "Not approved",
   removed: "Removed",
 };
+
+/** The status pill's words, with a new version named as one. */
+export function galleryStatusLabel(u: GalleryUpload): string {
+  if (isPendingUpdate(u)) return "New version in review";
+  if (isUpdate(u) && u.status === "rejected") return "New version not approved";
+  return GALLERY_STATUS_LABEL[u.status] ?? u.status;
+}

@@ -76,6 +76,8 @@ import {
   deleteSharedValue,
   DESIGN_BOX,
   chartAnchorIsColumn,
+  entityLayerIds,
+  sharedValueLayerIds,
 } from "./model.js";
 import { SHARED_TEST_PREFIX, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues } from "./test-controls.js";
 import { SEND_WAIT_MS, describeSend, sendState } from "./send-state.js";
@@ -153,11 +155,11 @@ import {
   exportFileName,
   exportText,
   hasInstanceFilters,
-  importFacts,
   importProblem,
-  importTextFolded,
+  isPlaceholderId,
   parseImportText,
   remapEntities,
+  scrubForShare,
   shareLinkInText,
   shareLinkPayload,
   shareLinkUrl,
@@ -173,20 +175,27 @@ import {
   type GalleryPreview,
   type GalleryTag,
   type GalleryUpload,
+  type GalleryUploadRow,
   GALLERY_LIMITS,
-  GALLERY_STATUS_LABEL,
   GALLERY_TAGS,
   GALLERY_TAG_LABEL,
   GalleryError,
+  applyGalleryOverrides,
   buildGallerySubmission,
   deleteMyUpload,
   galleryBlockers,
+  galleryBlockersByStep,
   galleryErrorMessage,
   galleryPublicFields,
+  galleryStatusLabel,
+  galleryUploadRows,
+  galleryUploadSubline,
+  isPendingUpdate,
   listMyUploads,
   submitToGallery,
 } from "./gallery.js";
-import { renderGalleryPreviews } from "./preview-png.js";
+import { galleryPreviewContext, renderGalleryPreviews, withoutImageLayers } from "./preview-png.js";
+import { domainIcon } from "./domain-icons.js";
 
 /** The gallery calls go through the browser's own fetch. */
 const galleryFetch: GalleryFetch = (url, init) => window.fetch(url, init);
@@ -211,6 +220,33 @@ function writeGalleryNickname(name: string): void {
   } catch {
     // Not remembered; nothing else depends on it.
   }
+}
+
+/** How the gallery dialog names each read-only kind of public text, one row
+ * per piece. */
+const PUBLIC_ROW_LABEL: Record<string, string> = {
+  "Layer names": "Layer name",
+  "Template text": "Template text",
+  "Service data": "Service data",
+  "Other text": "Other text",
+};
+
+/** The public gallery's own page, which Share, the gallery dialog and Import
+ * all link to. */
+const GALLERY_PAGE = "https://wrist-assistant.com/gallery/";
+
+/** Shapes in words, in the order given: "Rectangular and Circular". */
+function familyWords(families: readonly FamilyKind[]): string {
+  const words = families.map(familyTitle);
+  if (words.length <= 1) return words[0] ?? "";
+  return `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
+}
+
+/** How many layers a document has as rows: attached taps are part of their
+ * owner, not layers of their own. */
+function layerCountWords(cfg: CustomComplicationConfig): string {
+  const n = cfg.elements.filter((el) => !isAttachedTap(cfg, el)).length;
+  return n === 1 ? "1 layer" : `${n} layers`;
 }
 
 const TEMPLATE_REFRESH_MS = 30_000;
@@ -676,9 +712,25 @@ export class WristAssistantPanel extends LitElement {
   /** The Share dialog's text box is shown. Folded away each time it opens:
    * the buttons carry the text, and the box is for reading it. */
   @state() private shareTextOpen = false;
+  /** Which action tile just landed, for its "copied" or "saved" moment. */
+  @state() private shareCopied?: "link" | "file" | "text";
+  private shareCopiedTimer?: number;
+  /** The link field shows only when the link could not reach the clipboard,
+   * so there is something on screen to select and copy by hand. */
+  @state() private shareLinkShown = false;
+  /** The slot row the pointer or the focus is in, by placeholder id. The
+   * preview dims everything but the layers that read it. */
+  @state() private shareFocus?: string;
   /** The Share to gallery dialog, opened from Share. The slots and their
    * labels are the Share dialog's, so what is sent is what Share shows. */
   @state() private galleryOpen = false;
+  /** New upload or the uploads list, and which of the three steps New is on. */
+  @state() private galleryTab: "new" | "mine" = "new";
+  @state() private galleryStep: 1 | 2 | 3 = 1;
+  /** The approved upload this one is sent as a new version of. */
+  @state() private galleryReplaces?: { id: string; title: string };
+  /** The public text row the pointer or the focus is in. */
+  @state() private galleryFocus?: string;
   /** Group and shared value names changed for the gallery copy only, by id.
    * Cleared each time the dialog opens; the draft keeps its own names. */
   @state() private galleryGroupNames: ReadonlyMap<string, string> = new Map();
@@ -723,6 +775,8 @@ export class WristAssistantPanel extends LitElement {
    * reads as a complication, so the preview and the pickers come first; the
    * reader can still open it, and it stays open until the dialog closes. */
   @state() private importTextShown = false;
+  /** The entity row the pointer or the focus is in, by the id it replaces. */
+  @state() private importFocus?: string;
   /** Recorder series for the Import preview, keyed like `historySeries`. */
   @state() private importHistory = new Map<string, string>();
   private importHistoryTimer?: number;
@@ -1180,61 +1234,201 @@ export class WristAssistantPanel extends LitElement {
     .shape-dot.inline { width: 16px; height: 4px; }
     .shape-dot.on { opacity: 1; }
 
-    /* Share and Import. Both are wider than New: one holds a whole document as
-       text, the other a row for every entity the design reads. Both scroll
-       inside themselves, so a design with twenty slots still has its buttons
-       on screen. */
-    dialog.share-dialog, dialog.import-dialog, dialog.gallery-dialog {
-      width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 40px); padding: 0;
-      border: 1px solid var(--wa-line); border-radius: 12px;
+    /* Share, Post to online gallery and Import share one look: a head with a
+       title and a close button, a body that scrolls between it and a foot
+       that stays put, so a design with twenty entities still has its buttons
+       on screen. Only the panel's own tokens, so both skins work. */
+    dialog.xf {
+      width: min(600px, calc(100vw - 32px)); max-height: calc(100vh - 40px); padding: 0;
+      border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg);
       background: var(--wa-card); color: var(--wa-ink);
-      box-shadow: 0 12px 40px rgba(0,0,0,.4);
+      box-shadow: var(--wa-shadow-pop);
       display: flex; flex-direction: column;
     }
-    dialog.share-dialog::backdrop, dialog.import-dialog::backdrop, dialog.gallery-dialog::backdrop { background: rgba(0,0,0,.45); }
-    /* The body scrolls between a head and a foot that stay put. It holds the
-       inspector's own cards (.sec, pinned open), so a dialog reads the way a
-       layer's settings do: one tinted box per subject, label-left rows, and
-       rows that belong together in a hairline .fgroup. Most of these cards
-       hold a list rather than rows, so their loose notes run the full width. */
+    dialog.xf::backdrop { background: rgba(0,0,0,.45); }
+    .xf-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 12px 10px 12px 16px; border-bottom: 1px solid var(--wa-line); flex: none; }
+    .xf-head .xf-t { flex: 1 1 180px; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .xf-head h2 { margin: 0; font-size: 15px; font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; }
+    .xf-head .xf-t > span { font-size: 12px; color: var(--wa-muted); }
+    .xf-head > button.icon { width: 30px; height: 30px; flex: none; }
+    .xf-head > button.icon svg.ui-icon { width: 16px; height: 16px; }
     .xfer-body {
-      padding: 12px 14px 14px; overflow: auto; flex: 1 1 auto; min-height: 0;
-      display: flex; flex-direction: column; gap: 10px; container: xfer / inline-size;
+      padding: 16px; overflow: auto; flex: 1 1 auto; min-height: 0;
+      display: flex; flex-direction: column; gap: 16px; container: xfer / inline-size;
     }
-    .xfer-body > .sec { margin: 0; flex: none; }
-    .xfer-sec { --wa-col: 0px; }
-    .xfer-sec .sec-b { padding-bottom: 12px; }
-    .xfer-sec .sec-h > :is(button.small, button.link) { flex: none; margin-left: auto; font-size: 12px; }
-    .xfer-sec .sec-b .field { padding: 2px 0; }
-    /* A row's note stays under its control, not under its title. */
-    .xfer-sec .field > .hint { grid-column: 2; margin: 0 0 2px; }
-    /* Rows in one box, parted by hairlines in the card's colour. */
-    .fgroup.xfer-rows { padding: 0 8px; }
-    .xfer-rows > * + * { border-top: 1px solid color-mix(in srgb, var(--c) 16%, transparent); }
-    /* A note for the whole dialog rather than one card: a tinted strip wearing
-       the same mark as a card header. */
-    .xfer-callout {
-      --c: var(--wa-accent);
-      display: flex; align-items: flex-start; gap: 9px; padding: 9px 12px; border-radius: 9px; flex: none;
-      font-size: 12px; line-height: 1.45; color: var(--wa-ink);
-      background: color-mix(in srgb, var(--c) 7%, var(--wa-card));
-      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 24%, var(--wa-card));
+    .xfer-body > * { flex: none; }
+    .xf-stack { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+    .xf-label { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--wa-muted); font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .xf-label .r { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; }
+    .xf-count { font-size: 11px; font-weight: 600; letter-spacing: 0; text-transform: none; line-height: 16px; padding: 0 6px; border-radius: 999px; background: var(--wa-field); color: var(--wa-muted); }
+    .xf-f { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .xf-f > :is(input, textarea) { width: 100%; box-sizing: border-box; }
+    .xf-sub { font-size: 12px; color: var(--wa-muted); overflow-wrap: anywhere; }
+    .xf-lead { display: flex; gap: 10px; align-items: flex-start; font-size: 12.5px; line-height: 1.45; color: var(--wa-muted); }
+    .xf-lead > svg.ui-icon { width: 16px; height: 16px; flex: none; margin-top: 1px; color: var(--wa-accent); }
+    .xf-lead.warn > svg.ui-icon { color: var(--wa-val); }
+    .xf-lead b { color: var(--wa-ink); font-weight: 600; }
+    .xf-note { margin: 0; }
+    .xf-galink { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; font-size: 13px; font-weight: 550; color: var(--wa-accent); text-decoration: none; }
+    .xf-galink:hover { text-decoration: underline; }
+    .xf-galink svg.ui-icon { width: 14px; height: 14px; }
+    .xf-head .xf-galink { font-size: 12px; }
+    /* The complication, drawn by the renderer on the black of a watch face.
+       A spotlight inside the drawing picks out the layers being pointed at. */
+    .xf-prev { display: grid; place-items: center; padding: 10px; border-radius: var(--wa-r-md); background: #000; border: 1px solid var(--wa-line); line-height: 0; }
+    .xf-prev svg.complication { display: block; width: 100%; height: auto; max-height: 180px; }
+    .xf-prev:is(.circular, .corner) svg.complication { width: auto; height: 140px; max-width: 100%; }
+    .xf-prev .inline-line { line-height: 1.4; }
+    .xf-prev-cap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; margin-top: 6px; font-size: 12px; color: var(--wa-muted); }
+    .xf-prev-cap b { color: var(--wa-ink); font-weight: 600; }
+    .seg.wide.xf-modes { height: 34px; padding: 3px; border-radius: 10px; }
+    .seg.wide.xf-modes button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; line-height: 1; font-size: 12.5px; font-weight: 600; border-radius: 7px; }
+    .seg.wide.xf-modes button svg.ui-icon { width: 14px; height: 14px; flex: none; }
+    .seg.xf-tabs { height: 30px; }
+    .seg.xf-tabs button { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; font-size: 12px; }
+    /* Rows of entities or uploads in one hairline box. */
+    .xf-rows { border: 1px solid var(--wa-line); border-radius: var(--wa-r-md); overflow: hidden; }
+    .xf-row { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px 12px; transition: background-color .12s ease-out; }
+    .xf-row + .xf-row { border-top: 1px solid var(--wa-line); }
+    .xf-row.on { background: var(--wa-sel-bg); }
+    .xf-row .ent-ico.xf-dom { background: var(--wa-ent-bg); color: var(--wa-ent); margin-top: 1px; }
+    .xf-main { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+    .xf-main > input[type=text] { width: 100%; box-sizing: border-box; }
+    .xf-now { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 6px; font-size: 12px; color: var(--wa-muted); }
+    .xf-now svg.ui-icon { width: 12px; height: 12px; flex: none; }
+    .xf-now b { color: var(--wa-ink); font-weight: 550; }
+    .xf-now .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; overflow-wrap: anywhere; }
+    .xf-uses { display: flex; flex-wrap: wrap; gap: 6px; }
+    .xf-use { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; font-size: 12px; padding: 2px 8px 2px 2px; border-radius: 7px; border: 1px solid var(--wa-line); background: var(--wa-raised); }
+    .xf-use .xf-lt { width: 34px; height: 20px; flex: none; border-radius: 4px; overflow: hidden; background: #000; line-height: 0; }
+    .xf-use .xf-lt svg { display: block; }
+    .xf-use .xf-ln { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .xf-use em { font-style: normal; color: var(--wa-muted); flex: none; }
+    .xf-name { font-weight: 600; display: flex; align-items: center; gap: 6px; overflow-wrap: anywhere; }
+    .xf-done { color: var(--wa-ent); display: inline-flex; }
+    .xf-done svg.ui-icon { width: 14px; height: 14px; }
+    /* The entity search under its row, the row's name standing in for its label. */
+    .xf-picker .entity-field { display: block; padding: 0; }
+    .xf-picker .entity-field > span:first-child { display: none; }
+    /* Share's ways out, as tiles: the one that fits the mode is lit. */
+    .xf-acts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .xf-act {
+      font: inherit; color: inherit; text-align: left; cursor: pointer;
+      display: flex; flex-direction: column; gap: 6px; padding: 12px; min-width: 0;
+      border: 1px solid var(--wa-line); border-radius: var(--wa-r-md); background: var(--wa-raised);
+      transition: border-color .12s ease-out, background-color .12s ease-out;
     }
-    .xfer-callout > span:last-child { min-width: 0; }
-    /* Share or Backup as two tiles side by side: each choice has a sentence
-       that needs reading before picking it. */
-    .xfer-modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding-top: 2px; }
-    .xfer-mode {
-      display: flex; gap: 8px; align-items: flex-start; padding: 9px 10px; border-radius: 8px; cursor: pointer; font-size: 12.5px;
-      background: var(--wa-card); box-shadow: inset 0 0 0 1px var(--wa-line-strong);
-      transition: box-shadow .12s ease-out, background-color .12s ease-out;
+    .xf-act:hover:not(:disabled) { border-color: var(--wa-line-strong); }
+    .xf-act:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .xf-act b { font-weight: 600; font-size: 13px; }
+    .xf-act > span:last-child { font-size: 12px; color: var(--wa-muted); }
+    .xf-act .ic { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: var(--wa-field); }
+    .xf-act .ic svg.ui-icon { width: 16px; height: 16px; }
+    .xf-act.main { background: var(--wa-sel-bg); border-color: var(--wa-sel-ring); }
+    .xf-act.main .ic { background: var(--wa-primary-bg); color: var(--wa-primary-ink); }
+    .xf-act.flash { border-color: var(--wa-ent); }
+    .xf-act.flash .ic { background: var(--wa-ent-bg); color: var(--wa-ent); }
+    .xf-act:disabled { opacity: .45; cursor: not-allowed; }
+    .xf-raw > summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--wa-muted); }
+    .xf-raw > summary::-webkit-details-marker { display: none; }
+    .xf-raw > summary:hover { color: var(--wa-ink); }
+    .xf-raw > summary:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 6px; }
+    .xf-raw > summary svg.ui-icon { width: 13px; height: 13px; transition: transform .15s ease-out; }
+    .xf-raw[open] > summary svg.ui-icon { transform: rotate(90deg); }
+    .xf-raw > .xfer-text { margin-top: 8px; }
+    .xf-raw > button.link { margin-top: 6px; font-size: 12.5px; font-weight: 600; }
+    /* The gallery's steps. */
+    .xf-steps { display: flex; gap: 4px 16px; padding: 0 16px; border-bottom: 1px solid var(--wa-line); overflow-x: auto; flex: none; }
+    .xf-step {
+      font: inherit; font-size: 12.5px; font-weight: 600; color: var(--wa-muted); background: none; border: 0;
+      border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 10px 2px;
+      display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; cursor: pointer;
     }
-    .xfer-mode:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 55%, var(--wa-line-strong)); }
-    .xfer-mode.on { background: color-mix(in srgb, var(--c) 10%, var(--wa-card)); box-shadow: inset 0 0 0 1.5px var(--c); }
-    .xfer-mode:has(input:focus-visible) { box-shadow: inset 0 0 0 1.5px var(--c), var(--wa-ring); }
-    .xfer-mode input { flex: none; margin: 2px 0 0; accent-color: var(--c); }
-    .xfer-mode b { font-weight: 650; }
-    .xfer-mode .hint { display: block; margin: 2px 0 0; }
+    .xf-step i { font-style: normal; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; background: var(--wa-field); font-variant-numeric: tabular-nums; }
+    .xf-step i svg.ui-icon { width: 12px; height: 12px; }
+    .xf-step[aria-current="step"] { color: var(--wa-ink); border-bottom-color: var(--wa-accent); }
+    .xf-step[aria-current="step"] i { background: var(--wa-accent); color: var(--wa-accent-ink); }
+    .xf-step.past i { background: var(--wa-ent-bg); color: var(--wa-ent); }
+    .xf-step:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 6px; }
+    .xf-step:disabled { cursor: not-allowed; }
+    .xf-two { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 16px; align-items: start; }
+    .xf-form { gap: 14px; }
+    .xf-caption { font-size: 11px; color: var(--wa-muted); text-align: center; margin-top: 6px; }
+    .xf-gcard { border: 1px solid var(--wa-line); border-radius: var(--wa-r-md); overflow: hidden; background: var(--wa-raised); }
+    .xf-gcard .img { aspect-ratio: 4 / 3; max-width: 100%; display: grid; place-items: center; padding: 10px; box-sizing: border-box; background: #000; }
+    .xf-gcard .img img { max-width: 100%; max-height: 100%; display: block; }
+    .xf-gcard .img .hint { margin: 0; color: #a0a0a8; }
+    .xf-gcard .meta { padding: 10px; display: grid; gap: 3px; }
+    .xf-gcard .meta b { font-size: 13px; overflow-wrap: anywhere; }
+    .xf-gcard .meta > span { font-size: 12px; color: var(--wa-muted); overflow-wrap: anywhere; }
+    .xf-gcard .tg { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+    .xf-gcard .tg em { font-style: normal; font-size: 10.5px; padding: 1px 6px; border-radius: 999px; background: var(--wa-field); color: var(--wa-muted); }
+    .gal-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .xf-blockers { margin: 0; padding: 8px 12px 8px 28px; border-radius: var(--wa-r-sm); font-size: 12.5px; line-height: 1.45; color: var(--error-color, #db4437); background: color-mix(in srgb, var(--error-color, #db4437) 10%, transparent); }
+    div.xf-blockers { padding-left: 12px; }
+    .xf-banner { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--wa-r-md); background: var(--wa-sel-bg); border: 1px solid var(--wa-sel-ring); font-size: 12.5px; line-height: 1.45; }
+    .xf-banner svg.ui-icon { width: 16px; height: 16px; flex: none; margin-top: 1px; color: var(--wa-accent); }
+    /* What becomes public, in amber: the thing to read before sending. */
+    .xf-pub { display: grid; gap: 4px; padding: 8px; border-radius: var(--wa-r-md); background: var(--wa-val-bg); border: 1px solid color-mix(in srgb, var(--wa-val) 40%, var(--wa-line)); }
+    .xf-pub .kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; align-items: start; padding: 6px; border-radius: 8px; transition: background-color .12s ease-out; }
+    .xf-pub .kv.on { background: var(--wa-sel-bg); }
+    .xf-pub .kv > .k { font-size: 12px; color: var(--wa-muted); padding-top: 6px; }
+    .xf-pub .kv > .v { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+    .xf-pub input[type=text] { width: 100%; box-sizing: border-box; background: var(--wa-card); }
+    .xf-pill { font-size: 12px; padding: 5px 8px; border-radius: 6px; background: var(--wa-card); border: 1px solid var(--wa-line); overflow-wrap: anywhere; white-space: pre-wrap; }
+    .xf-pill.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .xf-edited { font-size: 11px; color: var(--wa-val); }
+    .xf-checks { display: grid; gap: 6px; }
+    .xf-checks > div { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    .xf-checks svg.ui-icon { width: 15px; height: 15px; flex: none; color: var(--wa-ent); }
+    .xf-switch { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--wa-line); border-radius: var(--wa-r-md); cursor: pointer; }
+    .xf-switch input[type=checkbox] { flex: none; margin: 0; }
+    .xf-switch .s b { display: block; font-weight: 600; font-size: 13px; }
+    .xf-switch .s span { font-size: 12px; color: var(--wa-muted); }
+    .xf-done { display: grid; justify-items: center; text-align: center; gap: 8px; padding: 24px 8px; }
+    .xf-done .big { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; background: var(--wa-ent-bg); color: var(--wa-ent); }
+    .xf-done .big svg.ui-icon { width: 24px; height: 24px; }
+    .xf-done b { font-size: 16px; }
+    .xf-done p { margin: 0; max-width: 38ch; color: var(--wa-muted); font-size: 13px; }
+    .xf-done .btns { display: flex; gap: 8px; margin-top: 6px; }
+    /* My uploads: a picture, the title and its state, and what can be done. A
+       new version still in review hangs under the upload it replaces. */
+    .xf-up { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; padding: 10px 12px; }
+    .xf-up + .xf-up { border-top: 1px solid var(--wa-line); }
+    .xf-up-thumb { width: 44px; height: 44px; border-radius: 10px; background: #000; overflow: hidden; display: grid; place-items: center; }
+    .xf-up-thumb img { max-width: 100%; max-height: 100%; display: block; }
+    .xf-up-t { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+    .xf-up-t b { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
+    .xf-up .sub { font-size: 12px; color: var(--wa-muted); overflow-wrap: anywhere; }
+    .xf-up-acts { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+    .xf-up-v { grid-column: 2 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 2px 0 2px 10px; border-left: 2px solid var(--wa-line-strong); }
+    .gal-status { font-size: 11px; font-weight: 600; line-height: 18px; padding: 0 8px; border-radius: 999px; white-space: nowrap; color: var(--wa-muted); background: var(--wa-field); }
+    .gal-status.approved { color: var(--wa-ent); background: var(--wa-ent-bg); }
+    .gal-status.pending { color: var(--wa-val); background: var(--wa-val-bg); }
+    .gal-status.rejected { color: var(--error-color, #db4437); background: color-mix(in srgb, var(--error-color, #db4437) 12%, transparent); }
+    /* Import: one dashed drop area until something is loaded. */
+    .xf-drop { display: grid; justify-items: center; gap: 10px; padding: 28px 16px; text-align: center; border: 1.5px dashed var(--wa-line-strong); border-radius: var(--wa-r-lg); transition: border-color .15s ease-out, background-color .15s ease-out; }
+    .xf-drop.over { border-color: var(--wa-accent); background: var(--wa-sel-bg); }
+    .xf-drop .big { width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; background: var(--wa-sel-bg); color: var(--wa-accent); }
+    .xf-drop .big svg.ui-icon { width: 22px; height: 22px; }
+    .xf-drop b { font-size: 15px; }
+    .xf-drop p { margin: 0; font-size: 13px; color: var(--wa-muted); }
+    .xf-drop .btns { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 4px; }
+    dialog.xf kbd { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; padding: 0 5px; border: 1px solid var(--wa-line-strong); border-bottom-width: 2px; border-radius: 5px; }
+    button.link.xf-type { align-self: center; font-size: 13px; font-weight: 550; }
+    .xf-galtile { display: flex; align-items: center; gap: 12px; padding: 12px; color: inherit; text-decoration: none; border: 1px solid var(--wa-line); border-radius: var(--wa-r-md); background: var(--wa-raised); }
+    .xf-galtile:hover { border-color: var(--wa-line-strong); }
+    .xf-galtile:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .xf-galtile .ic { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--wa-sel-bg); color: var(--wa-accent); flex: none; }
+    .xf-galtile svg.ui-icon { width: 16px; height: 16px; flex: none; }
+    .xf-galtile .t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .xf-galtile .t b { font-weight: 600; }
+    .xf-galtile .t span { font-size: 12px; color: var(--wa-muted); }
+    .xf-hero { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: 16px; align-items: center; }
+    .xf-bar { height: 6px; border-radius: 999px; background: var(--wa-field); overflow: hidden; }
+    .xf-bar > i { display: block; height: 100%; background: var(--wa-accent); transition: width .2s ease-out; }
+    button.primary:has(> svg.ui-icon) { display: inline-flex; align-items: center; gap: 6px; }
+    button.primary > svg.ui-icon { width: 14px; height: 14px; }
     /* The document itself. Monospace and never wrapped: a wrapped line reads as
        a line break that is not in the text, and this text gets pasted. */
     .xfer-text {
@@ -1242,38 +1436,8 @@ export class WristAssistantPanel extends LitElement {
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.45;
       border-color: transparent; border-radius: 7px; background: var(--wa-field);
     }
-    /* Where a document is pasted or dropped: a dashed well, lit along with the
-       dialog while a file is over it. */
-    .xfer-text.xfer-well {
-      padding: 10px 12px; border: 1.5px dashed color-mix(in srgb, var(--c) 45%, var(--wa-line-strong));
-      background: color-mix(in srgb, var(--c) 4%, var(--wa-card));
-    }
-    dialog.import-dialog.dropping .xfer-well { border-color: var(--wa-accent); }
-    /* One slot per row: the id the reader will see, in a title column wide
-       enough for one, the label they will read beside it, and under the label
-       every place in the design that uses it. */
-    .xfer-slots { --wa-lab: 132px; }
-    .xfer-slot .sid {
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
-      color: var(--wa-ent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .xfer-file { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-    .xfer-file .hint { margin: 0; }
-    .xfer-problem { white-space: pre-line; }
-    .xfer-link { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .xfer-text + .xfer-link-field { margin-top: 8px; }
-    /* What the pasted text turned out to be: each shape drawn small, beside
-       its name and the counts that matter before importing. */
-    .xfer-preview {
-      display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 8px; padding: 10px 12px;
-      border-radius: 8px; background: var(--wa-field);
-    }
-    .xfer-arts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .pk-art.xfer-art { width: auto; min-width: 48px; max-width: 150px; height: 56px; }
-    .pk-art.xfer-art svg { max-height: 56px; }
-    .pk-art.xfer-art .inline-line { font-size: 11px; padding: 3px 8px; }
-    .xfer-facts { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 13px; }
-    .xfer-facts span { font-size: 12px; color: var(--wa-muted); }
+    .xfer-problem { white-space: pre-line; margin: 0; }
+    .xfer-link { width: 100%; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
     /* The whole dialog is the drop target, lit while a file is over it. */
     dialog.import-dialog.dropping { border-color: var(--wa-accent); box-shadow: 0 0 0 2px var(--wa-accent), 0 12px 40px rgba(0,0,0,.4); }
     .xfer-drop {
@@ -1282,68 +1446,20 @@ export class WristAssistantPanel extends LitElement {
     }
     .xfer-drop span { padding: 8px 14px; border-radius: 8px; background: var(--wa-card); }
     .link-note { margin: 4px 12px 0; display: flex; align-items: center; gap: 10px; }
-    /* One entity per row: the search beside its title, its notes under the
-       search. */
-    .xfer-ent { padding: 4px 0 6px; }
-    .xfer-ent > .hint { margin: 2px 0 0 calc(var(--wa-lab) + 8px); }
-    .xfer-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 18px 14px; border-top: 1px solid var(--wa-line); flex: none; }
+    .xfer-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--wa-line); flex: none; }
     .xfer-foot .spacer { flex: 1; }
-    .xfer-foot .note { font-size: 12px; color: var(--wa-muted); }
-    .xfer-foot .note.err, .gal-err { color: var(--error-color, #db4437); }
-    /* Share's other ways out sit together, set off from Copy by a hairline. */
-    .xfer-acts { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; padding-right: 8px; border-right: 1px solid var(--wa-line); }
-    /* Share to gallery. The public card is the part to read before sending:
-       every piece of free text in the upload, grouped, in the text's own
-       characters, so nothing reads as tidier than what will be posted. */
-    .gal-name { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
-    .gal-name input[type=text] {
-      flex: 1 1 auto; min-width: 0; height: 26px; min-height: 26px; padding: 0 8px; font-size: 12px;
-      border-radius: 6px; border-color: transparent; background-color: var(--wa-field);
+    /* A narrow dialog stacks: the tiles, the card beside the form, the preview
+       beside the name, and each public row's name over its text. */
+    @container xfer (max-width: 480px) {
+      .xf-acts, .xf-two, .xf-hero { grid-template-columns: minmax(0, 1fr); }
+      .xf-pub .kv { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+      .xf-pub .kv > .k { padding-top: 0; }
+      .xf-up { grid-template-columns: 44px minmax(0, 1fr); }
+      .xf-up-acts { grid-column: 2; justify-content: flex-start; }
+      .xf-up-v { grid-column: 1 / -1; }
     }
-    .gal-name .sid {
-      flex: none; max-width: 45%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
-      color: var(--wa-ent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .gal-tags { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0; }
-    .gal-previews { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 56px; padding: 10px; border-radius: 8px; background: var(--wa-field); }
-    .gal-previews .hint { margin: 0; }
-    .gal-previews img { height: 56px; width: auto; max-width: 100%; border-radius: 8px; background: #000; }
-    .gal-public { margin: 0; padding: 0; list-style: none; }
-    .gal-public > li.fgroup { padding: 6px 8px 8px; }
-    .gal-public li > b { display: block; font-size: 11.5px; font-weight: 600; color: var(--wa-muted); margin-bottom: 3px; }
-    .gal-public .gal-val {
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
-      white-space: pre-wrap; overflow-wrap: anywhere;
-    }
-    .gal-blockers { flex: none; }
-    .gal-blockers ul { margin: 0; padding-left: 18px; }
-    /* The promise closes the card it is about: the words left, the switch right. */
-    .xfer-sec .field.gal-confirm {
-      grid-template-columns: minmax(0, 1fr) auto; margin-top: 8px; padding-top: 10px;
-      border-top: 1px solid color-mix(in srgb, var(--c) 24%, transparent);
-    }
-    .xfer-sec .field.gal-confirm > span { color: var(--wa-ink); font-size: 12.5px; font-weight: 600; }
-    .xfer-sec .field.gal-confirm:has(> input:disabled) > span { color: var(--wa-muted); }
-    .gal-up { padding: 7px 0; }
-    .gal-up .srow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .gal-up .spacer { flex: 1; }
-    .gal-up b { font-weight: 600; font-size: 12.5px; overflow-wrap: anywhere; }
-    .gal-up .hint { margin: 3px 0 0; }
-    .gal-status {
-      font-size: 11px; font-weight: 600; line-height: 18px; padding: 0 8px; border-radius: 999px; white-space: nowrap;
-      color: var(--wa-muted); background: var(--wa-field);
-    }
-    .gal-status.approved { color: var(--wa-accent); background: color-mix(in srgb, var(--wa-accent) 14%, transparent); }
-    .gal-status.rejected { color: var(--error-color, #db4437); background: color-mix(in srgb, var(--error-color, #db4437) 12%, transparent); }
-    /* A narrow dialog stacks its rows the way a narrow inspector does: the
-       title on its own line, the control under it. A switch keeps its words
-       beside it. */
-    @container xfer (max-width: 440px) {
-      .xfer-modes { grid-template-columns: minmax(0, 1fr); }
-      dialog .xfer-sec .sec-b .field:not(.check) { grid-template-columns: minmax(0, 1fr); gap: 4px; }
-      dialog .xfer-sec .sec-b .field:not(.check) > * { grid-column: 1 / -1; }
-      dialog .xfer-sec .sec-b .field:not(.check) > span:first-child { padding-top: 0; }
-      dialog .xfer-sec .xfer-ent > .hint { margin-left: 0; }
+    @media (prefers-reduced-motion: reduce) {
+      dialog.xf *, dialog.xf *::after { transition: none !important; }
     }
 
     /* Three columns with a draggable gutter between each pair. The side widths
@@ -5274,23 +5390,29 @@ export class WristAssistantPanel extends LitElement {
    * of the entities it reads. The picker rows and the import preview both use
    * it; a class beyond `pk-art` sizes the picture for its place. */
   private renderConfigArts(cfg: CustomComplicationConfig, entities: readonly EntityRef[], families: readonly FamilyKind[], cls: string, historySeries?: Map<string, string>): TemplateResult[] {
-    const entityStates = new Map<string, EntityState>();
-    for (const ref of entities) {
-      const state = this.entityStateFor(ref.entityId, ref.iconName ?? "", false);
-      if (state) entityStates.set(ref.entityId, state);
-    }
-    const layouts = resolveAll(cfg, {
-      entityStates,
-      templateResults: new Map(),
-      // Only the import preview fetches any; a picker row's chart draws empty.
-      ...(historySeries ? { historySeries } : {}),
-      namedValues: cfg.values,
-    });
+    const layouts = this.configLayouts(cfg, entities, historySeries);
     return families.map((family) => {
       if (family === "inline") return html`<span class="${cls} inline">${this.renderInlinePreview(layouts.inline, true)}</span>`;
       const layout = layouts[family];
       if (!layout) return html`<span class=${cls}></span>`;
       return html`<span class="${cls} ${family}">${renderLayout(layout, { icons: this.icons, imageSizes: this.imageSizes, slot: REFERENCE_CASE.slots[family] })}</span>`;
+    });
+  }
+
+  /** A document that is not the open one, resolved from the live states of
+   * the entities it reads. Templates are not rendered for it. */
+  private configLayouts(cfg: CustomComplicationConfig, entities: readonly EntityRef[], historySeries?: Map<string, string>): ResolvedAll {
+    const entityStates = new Map<string, EntityState>();
+    for (const ref of entities) {
+      const state = this.entityStateFor(ref.entityId, ref.iconName ?? "", false);
+      if (state) entityStates.set(ref.entityId, state);
+    }
+    return resolveAll(cfg, {
+      entityStates,
+      templateResults: new Map(),
+      // Only the import preview fetches any; a picker row's chart draws empty.
+      ...(historySeries ? { historySeries } : {}),
+      namedValues: cfg.values,
     });
   }
 
@@ -5637,103 +5759,187 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The Share dialog: pick what to share, name the slots, take the text.
+   * The Share dialog: the complication drawn at the top, Share or Backup, the
+   * names the other side will pick by, and the ways out.
    *
    * The text is recomputed on every render rather than held in state, so a
-   * label typed in the table shows up in the box it is about immediately.
-   * There is no Save here and nothing is stored: this dialog only reads.
+   * name typed in a row is in the link and the file at once. There is no Save
+   * here and nothing is stored: this dialog only reads.
    */
   private renderShareDialog() {
     const cfg = this.draft?.config;
     if (!cfg) return nothing;
     const slots = this.currentShareSlots();
+    const share = this.shareMode === "share";
     const text = exportText(cfg, this.shareMode, slots);
     const link = this.shareLink?.text === text ? this.shareLink : undefined;
-    const mode = (value: "share" | "backup", title: string, blurb: string) => html`<label class="xfer-mode ${this.shareMode === value ? "on" : ""}">
-      <input type="radio" name="wa-share-mode" .checked=${this.shareMode === value}
-        @change=${() => { this.shareMode = value; this.shareNote = ""; }} />
-      <span><b>${title}</b><span class="hint">${blurb}</span></span>
-    </label>`;
-    const textToggle = html`<button class="link xfer-show" aria-expanded=${this.shareTextOpen ? "true" : "false"}
-      @click=${() => { this.shareTextOpen = !this.shareTextOpen; }}>${this.shareTextOpen ? "Hide text" : "Show text"}</button>`;
-    return html`<dialog class="share-dialog" @close=${() => { this.shareOpen = false; }}>
-      <div class="new-head">
-        <h2>Share this complication</h2>
-        <span class="spacer"></span>
-        <button class="icon" title="Close" aria-label="Close" @click=${() => this.closeShareDialog()}>${uiIcon("close")}</button>
-      </div>
+    const known = this.knownDomains();
+    const layouts = resolveAll(cfg, this.buildContext(), this.forced);
+    const uses = new Map(slots.map((slot) => [slot.placeholderId, entityLayerIds(cfg, slot.originalId, (_id, domain) => known.has(domain))]));
+    const focus = share ? slots.find((slot) => slot.placeholderId === this.shareFocus) : undefined;
+    const spot = focus ? uses.get(focus.placeholderId) ?? [] : [];
+    const family = this.dialogFamily(cfg);
+    const admin = this.hass.user?.is_admin === true;
+    const copied = this.shareCopied;
+    return html`<dialog class="share-dialog xf" @close=${() => { this.shareOpen = false; }}>
+      ${this.dialogHead(`Share “${cfg.name.trim() || "Untitled"}”`, `${familyWords(supportedFamilies(cfg))} · ${layerCountWords(cfg)}`, () => this.closeShareDialog())}
       <div class="xfer-body">
-        ${this.dialogCard("What to share", "link", SECTION_COLOR.complication, html`<div class="xfer-modes">
-          ${mode("share", "Share", "Entity ids and friendly names are replaced by numbered slots, so nothing about your home travels with it. Whoever imports it picks their own entities.")}
-          ${mode("backup", "Backup", "An exact copy, your entity ids and names included. For your own records, or another watch in this home.")}
-        </div>`)}
-        ${this.shareMode === "share" ? this.renderShareSlots(slots) : nothing}
-        ${this.dialogCard("Text", "braces", SECTION_COLOR.place, this.shareTextOpen || link ? html`
-          ${this.shareTextOpen
-            ? html`<textarea class="xfer-text" rows="14" readonly aria-label="The text to share" .value=${text}></textarea>`
-            : nothing}
-          ${link ? html`<div class="field xfer-link-field">
-            <span>Link</span>
-            <input class="xfer-link" type="text" readonly aria-label="Share link" .value=${link.url}
-              @focus=${(e: Event) => (e.target as HTMLInputElement).select()} />
-            <div class="hint">Opening it on this Home Assistant fills in the Import dialog. Someone on another home pastes it into their own Import dialog instead.</div>
-          </div>` : nothing}` : nothing, { tool: textToggle })}
-      </div>
-      <div class="xfer-foot">
-        <button class="small" @click=${() => this.closeShareDialog()}>Close</button>
-        ${this.shareNote === "" ? nothing : html`<span class="note">${this.shareNote}</span>`}
-        <span class="spacer"></span>
-        <span class="xfer-acts">
-          ${this.hass.user?.is_admin ? html`<button class="small" aria-haspopup="dialog"
-            title="Send it to the public gallery on wrist-assistant.com, with the entities replaced as in Share"
-            @click=${() => this.openGalleryDialog()}>Share to gallery</button>` : nothing}
-          <button class="small" @click=${() => this.downloadShareText(text)}>Download</button>
-          <button class="small" title="A link that opens Import with this text filled in" @click=${() => void this.copyShareLink(text)}>Copy link</button>
-        </span>
-        <button class="primary" @click=${() => void this.copyShareText(text)}>Copy</button>
+        ${this.dialogPreview(layouts, family, spot,
+          focus ? html`Uses <b>${focus.label}</b>` : family ? familyTitle(family) : "",
+          share && slots.length > 0 ? "Point at an entity to see where it is" : "")}
+        <div class="xf-stack">
+          <div class="seg wide xf-modes" role="group" aria-label="What to share">
+            <button class=${share ? "on" : ""} aria-pressed=${share ? "true" : "false"} @click=${() => this.setShareMode("share")}>${uiIcon("globe")}<span>Share with others</span></button>
+            <button class=${share ? "" : "on"} aria-pressed=${share ? "false" : "true"} @click=${() => this.setShareMode("backup")}>${uiIcon("lock")}<span>Backup for me</span></button>
+          </div>
+          <div class="xf-lead ${share ? "" : "warn"}">${uiIcon(share ? "info" : "lock")}
+            <span>${share ? "Your entities are removed. The other person picks their own." : "Exact copy with your entities. Keep it for yourself or this home."}</span></div>
+        </div>
+        ${share ? this.renderShareSlots(cfg, slots, uses, layouts) : nothing}
+        <div class="xf-stack">
+          <div class="xf-acts">
+            <button class="xf-act ${share ? "main" : ""}" ?disabled=${!share || !admin} aria-haspopup="dialog"
+              @click=${() => this.openGalleryDialog()}>
+              <span class="ic">${uiIcon("globe")}</span><b>Post to online gallery</b>
+              <span>${!share ? "Only shares can go" : admin ? "Everyone can find it, after review" : "Needs a Home Assistant administrator"}</span>
+            </button>
+            <button class="xf-act ${share ? "" : "main"} ${copied === "link" ? "flash" : ""}" @click=${() => void this.copyShareLink(text)}>
+              <span class="ic">${uiIcon(copied === "link" ? "check" : "link")}</span><b>${copied === "link" ? "Link copied" : "Copy link"}</b>
+              <span>Opens Import in their panel</span>
+            </button>
+            <button class="xf-act ${copied === "file" ? "flash" : ""}" title=${`Saves ${exportFileName(cfg)}`} @click=${() => this.downloadShareText(text)}>
+              <span class="ic">${uiIcon(copied === "file" ? "check" : "download")}</span><b>${copied === "file" ? "Saved" : "Download"}</b>
+              <span>A .json file</span>
+            </button>
+          </div>
+          ${link && this.shareLinkShown ? html`<input class="xfer-link" type="text" readonly aria-label="Share link" .value=${link.url}
+            @focus=${(e: Event) => (e.target as HTMLInputElement).select()} />` : nothing}
+          ${this.shareNote === "" ? nothing : html`<div class="hint xf-note" role="status">${this.shareNote}</div>`}
+          <a class="xf-galink" href=${GALLERY_PAGE} target="_blank" rel="noopener">${uiIcon("globe")}<span>See the online gallery</span>${uiIcon("arrow")}</a>
+        </div>
+        <details class="xf-raw" .open=${this.shareTextOpen}
+          @toggle=${(e: Event) => { this.shareTextOpen = (e.target as HTMLDetailsElement).open; }}>
+          <summary>${uiIcon("right")}<span>Share text</span></summary>
+          <textarea class="xfer-text" rows="10" readonly aria-label="The text to share" .value=${text}></textarea>
+          <button class="link" @click=${() => void this.copyShareText(text, "text")}>${copied === "text" ? "Copied" : "Copy text"}</button>
+        </details>
       </div>
     </dialog>`;
   }
 
-  /** One card in the Share, gallery and Import dialogs: the inspector's
-   * section box, pinned open, with an optional control at the end of its
-   * header. Passing `nothing` as the body leaves just the header row. */
-  private dialogCard(title: string, icon: UiIconName, color: string, body: unknown,
-    opts: { cls?: string; tool?: unknown } = {}) {
-    return html`<section class="sec xfer-sec ${opts.cls ?? ""}" style=${`--c:${color}`}>
-      <div class="sec-h pinned">
-        <span class="swatch">${uiIcon(icon)}</span>
-        <span class="tt"><h4>${title}</h4></span>
-        ${opts.tool ?? nothing}
-      </div>
-      ${body === nothing ? nothing : html`<div class="sec-b">${body}</div>`}
-    </section>`;
+  /** The head every transfer dialog shares: a title, a line under it, any
+   * extra control, and a close button. Escape closes too, being a dialog. */
+  private dialogHead(title: string, sub: unknown, close: () => void, extra: unknown = nothing) {
+    return html`<div class="xf-head">
+      <div class="xf-t"><h2>${title}</h2>${sub === "" || sub === nothing ? nothing : html`<span>${sub}</span>`}</div>
+      ${extra}
+      <button class="icon" title="Close" aria-label="Close" @click=${close}>${uiIcon("close")}</button>
+    </div>`;
+  }
+
+  /** The shape the dialogs draw: the first drawn one, rectangular before the
+   * rest, else the inline line. */
+  private dialogFamily(cfg: CustomComplicationConfig): FamilyKind | undefined {
+    return firstDrawable(cfg) ?? (cfg.supportedFamilies.includes("inline") ? "inline" : undefined);
   }
 
   /**
-   * One row per entity the design reads: the id the other side will see, the
-   * label it will read beside it, and every place in this design that uses it.
-   *
-   * The label is the only editable thing here, and it is the only thing the
-   * reader has to go on when they choose what to point it at, so "Sensor 1" is
-   * worth replacing with "the one on the porch".
+   * The complication drawn by the panel's own renderer, with `spot` picked
+   * out: the rest dims and each of those layers gets an accent ring, on the
+   * box its selection would use. Layers that are not on this shape pick out
+   * nothing, and the caption says so.
    */
-  private renderShareSlots(slots: readonly ShareSlot[]) {
-    if (slots.length === 0) {
-      return this.dialogCard("Slots", "content", SECTION_COLOR.content,
-        html`<div class="hint">This design reads no entities, so there is nothing to replace.</div>`);
+  private dialogPreview(layouts: ResolvedAll, family: FamilyKind | undefined, spot: readonly string[], caption: unknown, tip: string) {
+    if (family === undefined) return nothing;
+    let art: unknown = nothing;
+    let elsewhere = false;
+    if (family === "inline") {
+      art = this.renderInlinePreview(layouts.inline, true);
+      elsewhere = spot.length > 0;
+    } else {
+      const layout = layouts[family];
+      if (layout) {
+        const here = spot.filter((id) => layout.elements.some((el) => el.id === id));
+        elsewhere = spot.length > 0 && here.length === 0;
+        art = renderLayout(layout, {
+          icons: this.icons, imageSizes: this.imageSizes, slot: REFERENCE_CASE.slots[family],
+          ...(here.length > 0 ? { spotlightIds: here } : {}),
+        });
+      }
     }
-    return this.dialogCard("Slots", "content", SECTION_COLOR.content, html`
-      <div class="fgroup xfer-rows">
-        ${slots.map((slot) => html`<div class="field xfer-slot">
-          <span class="sid" title=${slot.placeholderId}>${slot.placeholderId}</span>
-          <input type="text" maxlength="40" aria-label=${`Label for ${slot.placeholderId}`} .value=${slot.label}
-            @input=${(e: Event) => this.setShareLabel(slot.placeholderId, (e.target as HTMLInputElement).value)} />
-          <div class="hint">${slot.where.join(", ")}</div>
-        </div>`)}
+    return html`<div class="xf-prev-wrap">
+      <div class="xf-prev ${family}">${art}</div>
+      <div class="xf-prev-cap"><span>${caption}${elsewhere ? ", on another shape" : ""}</span>${tip === "" ? nothing : html`<span>${tip}</span>`}</div>
+    </div>`;
+  }
+
+  /** Small tags for the layers that use something: each layer's own picture,
+   * as the Layers list draws it, its name and its kind. */
+  private layerTags(cfg: CustomComplicationConfig, layouts: ResolvedAll, ids: readonly string[], ctx?: DescribeContext) {
+    if (ids.length === 0) return nothing;
+    return html`<span class="xf-uses">${ids.map((id) => {
+      const el = cfg.elements.find((e) => e.payload.id === id);
+      if (!el) return nothing;
+      const family = DRAWABLE_FAMILIES.find((f) => ownedElements(cfg, f).some((o) => o.payload.id === id)) as DrawableFamily | undefined;
+      const layout = family ? layouts[family] : undefined;
+      return html`<span class="xf-use">
+        <span class="xf-lt">${layout ? renderLayerThumb(layout, [id], { icons: this.icons, imageSizes: this.imageSizes, width: 34, height: 20 }) : nothing}</span>
+        <span class="xf-ln">${layerTitle(el, ctx)}</span><em>${KIND_LABEL[el.kind]}</em>
+      </span>`;
+    })}</span>`;
+  }
+
+  /** A pointer or focus leaving a list of rows lets go of the row it lit,
+   * unless the focus is still inside the list. */
+  private leaveRows(e: Event, clear: () => void) {
+    const box = e.currentTarget as HTMLElement;
+    const next = e instanceof FocusEvent ? e.relatedTarget : (box.getRootNode() as ShadowRoot | Document).activeElement;
+    if (next instanceof Node && box.contains(next)) return;
+    clear();
+  }
+
+  /**
+   * One row per entity the design reads: its type, the name the other side
+   * will pick by, what it is here (which only the author sees), and the layers
+   * that read it.
+   *
+   * The name is the only editable thing, and it is all the reader has to go on
+   * when they choose what to point it at, so "Sensor 1" is worth replacing
+   * with "the one on the porch".
+   */
+  private renderShareSlots(cfg: CustomComplicationConfig, slots: readonly ShareSlot[], uses: ReadonlyMap<string, string[]>, layouts: ResolvedAll) {
+    if (slots.length === 0) {
+      return html`<div class="xf-lead">${uiIcon("info")}<span>This design reads no entities, so there is nothing to replace.</span></div>`;
+    }
+    const ctx = describeContext(this.host());
+    const clear = () => { this.shareFocus = undefined; };
+    return html`<div class="xf-stack">
+      <div class="xf-label">Name the entities they will pick <span class="xf-count">${slots.length}</span></div>
+      <div class="xf-rows" @pointerleave=${(e: Event) => this.leaveRows(e, clear)} @focusout=${(e: Event) => this.leaveRows(e, clear)}>
+        ${slots.map((slot) => {
+          const ids = uses.get(slot.placeholderId) ?? [];
+          const now = entityRefFrom(this.hass.states, slot.originalId).displayName;
+          const set = () => { this.shareFocus = slot.placeholderId; };
+          return html`<div class="xf-row ${this.shareFocus === slot.placeholderId ? "on" : ""}" @pointerenter=${set} @focusin=${set}>
+            <span class="ent-ico xf-dom">${domainIcon(slot.domain)}</span>
+            <div class="xf-main">
+              <input type="text" maxlength="40" aria-label=${`Name for ${slot.placeholderId}`} .value=${slot.label}
+                @input=${(e: Event) => this.setShareLabel(slot.placeholderId, (e.target as HTMLInputElement).value)} />
+              <div class="xf-now">${uiIcon("lock")}<span>Now: <b>${now || slot.originalId}</b></span><span class="mono">${slot.originalId}</span><span>· only you see this</span></div>
+              ${ids.length > 0 ? this.layerTags(cfg, layouts, ids, ctx) : html`<div class="xf-sub">${slot.where.join(", ")}</div>`}
+            </div>
+          </div>`;
+        })}
       </div>
-      <div class="hint">These names are all the other side has while it picks its own entities, so say what each one is for.</div>`,
-    { cls: "xfer-slots" });
+    </div>`;
+  }
+
+  private setShareMode(mode: "share" | "backup") {
+    this.shareMode = mode;
+    this.shareNote = "";
+    this.shareFocus = undefined;
+    this.shareCopied = undefined;
+    this.shareLinkShown = false;
   }
 
   private setShareLabel(placeholderId: string, label: string) {
@@ -5750,6 +5956,9 @@ export class WristAssistantPanel extends LitElement {
     this.shareNote = "";
     this.shareTextOpen = false;
     this.shareLink = undefined;
+    this.shareLinkShown = false;
+    this.shareCopied = undefined;
+    this.shareFocus = undefined;
     void this.updateComplete.then(() => {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.share-dialog");
       if (dialog && !dialog.open) dialog.showModal();
@@ -5796,6 +6005,10 @@ export class WristAssistantPanel extends LitElement {
     this.galleryConfirmDelete = undefined;
     this.galleryGroupNames = new Map();
     this.galleryValueNames = new Map();
+    this.galleryTab = "new";
+    this.galleryStep = 1;
+    this.galleryReplaces = undefined;
+    this.galleryFocus = undefined;
     void this.updateComplete.then(() => {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.gallery-dialog");
       if (dialog && !dialog.open) dialog.showModal();
@@ -5883,7 +6096,11 @@ export class WristAssistantPanel extends LitElement {
     this.galleryError = "";
     try {
       const key = await this.ensureGalleryKey();
-      await submitToGallery(galleryFetch, key, { ...buildGallerySubmission(cfg, slots, meta, overrides), previews: this.galleryPreviews });
+      await submitToGallery(galleryFetch, key, {
+        ...buildGallerySubmission(cfg, slots, meta, overrides),
+        previews: this.galleryPreviews,
+        ...(this.galleryReplaces ? { replaces: this.galleryReplaces.id } : {}),
+      });
       this.gallerySent = true;
       writeGalleryNickname(meta.authorName.trim());
       void this.loadGalleryUploads();
@@ -5909,6 +6126,8 @@ export class WristAssistantPanel extends LitElement {
       const key = await this.ensureGalleryKey();
       await deleteMyUpload(galleryFetch, key, id);
       this.galleryUploads = this.galleryUploads?.filter((u) => u.id !== id);
+      // Read again: deleting an upload can take its waiting versions with it.
+      void this.loadGalleryUploads();
     } catch (err) {
       this.galleryUploadsError = err instanceof GalleryError ? galleryErrorMessage(err) : "Could not delete it. Try again.";
     } finally {
@@ -5924,127 +6143,321 @@ export class WristAssistantPanel extends LitElement {
     this.galleryTags = next;
   }
 
+  /**
+   * Post to online gallery: two tabs over one dialog. New walks through three
+   * steps (the listing, the public text, the promise and Send); My uploads
+   * lists what this home has sent, with Update and Delete.
+   */
   private renderGalleryDialog() {
     const cfg = this.draft?.config;
     if (!cfg) return nothing;
-    const slots = this.currentShareSlots();
-    const overrides = this.galleryOverrides();
-    const blockers = galleryBlockers(cfg, slots, this.galleryMeta(), this.knownDomains(), overrides);
-    const publicFields = galleryPublicFields(cfg, slots, overrides);
-    const locked = this.gallerySending || this.gallerySent;
-    const ready = blockers.length === 0 && this.galleryConfirmed && this.galleryPreviews !== undefined && !locked;
-    const why = this.gallerySent ? "Already sent"
-      : blockers.length > 0 ? blockers[0]!
-      : this.galleryPreviews === undefined ? "Drawing the preview pictures"
-      : !this.galleryConfirmed ? "Tick the box above first"
-      : "Send it for review";
-    const previews = this.galleryPreviews;
-    return html`<dialog class="gallery-dialog" @close=${() => { this.galleryOpen = false; }}>
-      <div class="new-head">
-        <h2>Share to gallery</h2>
-        <span class="spacer"></span>
-        <button class="icon" title="Close" aria-label="Close" @click=${() => this.closeGalleryDialog()}>${uiIcon("close")}</button>
-      </div>
-      <div class="xfer-body">
-        <div class="xfer-callout">
-          <span class="swatch">${uiIcon("info")}</span>
-          <span class="gal-lead">The gallery on wrist-assistant.com is public. After a review, anyone can find this complication there and add it to their own Home Assistant. Your entities are replaced by the slots you named in Share.</span>
-        </div>
-        ${this.dialogCard("Listing", "text", SECTION_COLOR.content, html`
-          <label class="field">
-            <span>Title</span>
-            <input type="text" maxlength=${GALLERY_LIMITS.title} .value=${this.galleryTitle} ?disabled=${locked}
-              @input=${(e: Event) => { this.galleryTitle = (e.target as HTMLInputElement).value; }} />
-          </label>
-          <label class="field">
-            <span>Description</span>
-            <textarea rows="3" maxlength=${GALLERY_LIMITS.description} .value=${this.galleryDescription} ?disabled=${locked}
-              @input=${(e: Event) => { this.galleryDescription = (e.target as HTMLTextAreaElement).value; }}></textarea>
-          </label>
-          <div class="field list-field">
-            <span>Tags</span>
-            <div class="gal-tags">
-              ${GALLERY_TAGS.map((tag) => {
-                const on = this.galleryTags.has(tag);
-                return html`<button class="pk-chip ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
-                  ?disabled=${locked || (!on && this.galleryTags.size >= GALLERY_LIMITS.tags)}
-                  @click=${() => this.toggleGalleryTag(tag)}>${GALLERY_TAG_LABEL[tag]}</button>`;
-              })}
-            </div>
-            <div class="hint">Up to ${GALLERY_LIMITS.tags}, so people can find it.</div>
-          </div>
-          <label class="field">
-            <span>Nickname</span>
-            <input type="text" maxlength=${GALLERY_LIMITS.authorName} placeholder="Optional" .value=${this.galleryNickname} ?disabled=${locked}
-              @input=${(e: Event) => { this.galleryNickname = (e.target as HTMLInputElement).value; }} />
-            <div class="hint">Shown beside it in the gallery. Leave it empty to post without a name.</div>
-          </label>`)}
-        ${this.dialogCard("Preview", "image", SECTION_COLOR.look, html`
-          <div class="gal-previews">
-            ${previews === undefined
-              ? html`<span class="hint">Drawing…</span>`
-              : previews.length === 0
-                ? html`<span class="hint">${this.galleryPreviewNote || "Inline has no picture, so this one goes without."}</span>`
-                : previews.map((p) => html`<img alt=${`${p.family} preview`} src=${`data:image/png;base64,${p.png}`} />`)}
-          </div>
-          <div class="hint">Drawn with your current values. Picture layers are left out.</div>`)}
-        ${this.dialogCard("This will be public", "show", SECTION_COLOR.states, html`
-          <ul class="gal-public">
-            ${publicFields.map((g) => html`<li class="fgroup"><b>${g.label}</b>${g.rows
-              ? g.rows.map((row) => html`<div class="gal-name">
-                ${row.kind === "slot" ? html`<span class="sid" title=${row.id}>${row.id}</span>` : nothing}
-                <input type="text" maxlength=${row.kind === "slot" ? 40 : nothing} .value=${row.value} placeholder=${row.original}
-                  aria-label=${`${g.label}: ${row.kind === "slot" ? row.id : row.original}`} ?disabled=${locked}
-                  @input=${(e: Event) => this.setGalleryName(row, (e.target as HTMLInputElement).value)} />
-              </div>`)
-              : g.values.map((v) => html`<div class="gal-val">${v}</div>`)}</li>`)}
-          </ul>
-          <div class="hint">Read it through. Anything here that names a person, a place or a device in your home will be posted as written. Group and shared value names changed here apply to the gallery copy only, and an empty one keeps its name. Slot labels are the ones from Share.</div>
-          <label class="field check gal-confirm">
-            <span>I made this and it has no private information</span>
-            <input type="checkbox" .checked=${this.galleryConfirmed} ?disabled=${locked}
-              @change=${(e: Event) => { this.galleryConfirmed = (e.target as HTMLInputElement).checked; }} />
-          </label>`)}
-        ${blockers.length > 0 ? html`<div class="banner warn gal-blockers"><ul>${blockers.map((b) => html`<li>${b}</li>`)}</ul></div>` : nothing}
-        ${this.renderGalleryUploads()}
-      </div>
-      <div class="xfer-foot">
-        ${this.gallerySent
-          ? html`<span class="note">Sent. It will show in the gallery after review.</span>`
-          : this.galleryError !== "" ? html`<span class="note err">${this.galleryError}</span>` : nothing}
-        <span class="spacer"></span>
-        <button class="small" @click=${() => this.closeGalleryDialog()}>Close</button>
-        <button class="primary" ?disabled=${!ready} title=${why}
-          @click=${() => void this.sendToGallery()}>${this.gallerySending ? "Sending…" : this.gallerySent ? "Sent" : "Send"}</button>
-      </div>
+    const rows = this.galleryUploads ? galleryUploadRows(this.galleryUploads) : undefined;
+    const tab = this.galleryTab;
+    const tabs = html`<div class="seg xf-tabs" role="group" aria-label="Gallery view">
+      <button class=${tab === "new" ? "on" : ""} aria-pressed=${tab === "new" ? "true" : "false"} @click=${() => this.setGalleryTab("new")}>New</button>
+      <button class=${tab === "mine" ? "on" : ""} aria-pressed=${tab === "mine" ? "true" : "false"} @click=${() => this.setGalleryTab("mine")}>My uploads<span class="xf-count">${rows === undefined ? "…" : rows.length}</span></button>
+    </div>`;
+    return html`<dialog class="gallery-dialog xf" @close=${() => { this.galleryOpen = false; }}>
+      ${this.dialogHead("Post to online gallery",
+        html`<a class="xf-galink" href=${GALLERY_PAGE} target="_blank" rel="noopener">wrist-assistant.com/gallery</a>`,
+        () => this.closeGalleryDialog(), tabs)}
+      ${tab === "mine" ? this.renderGalleryUploads(rows) : this.gallerySent ? this.renderGallerySent() : this.renderGallerySteps(cfg)}
     </dialog>`;
   }
 
+  /** Switching to New after a send starts a fresh one, and pressing New
+   * leaves an Update for a plain new upload. */
+  private setGalleryTab(tab: "new" | "mine") {
+    if (tab === "new") {
+      if (this.gallerySent) {
+        this.gallerySent = false;
+        this.galleryStep = 1;
+        this.galleryConfirmed = false;
+        this.galleryError = "";
+      }
+      if (this.galleryTab === "new") this.galleryReplaces = undefined;
+    }
+    this.galleryTab = tab;
+    this.galleryFocus = undefined;
+    this.galleryConfirmDelete = undefined;
+  }
+
+  private goGalleryStep(step: 1 | 2 | 3) {
+    this.galleryStep = step;
+    this.galleryFocus = undefined;
+  }
+
+  /** Update on an upload: the same three steps, sent as its new version. */
+  private startGalleryUpdate(u: GalleryUpload) {
+    this.galleryReplaces = { id: u.id, title: u.title };
+    this.galleryTitle = u.title.slice(0, GALLERY_LIMITS.title);
+    this.galleryTab = "new";
+    this.galleryStep = 1;
+    this.gallerySent = false;
+    this.galleryConfirmed = false;
+    this.galleryError = "";
+    this.galleryFocus = undefined;
+    this.galleryConfirmDelete = undefined;
+  }
+
+  private renderGallerySent() {
+    return html`<div class="xfer-body"><div class="xf-done">
+      <span class="big">${uiIcon("check")}</span>
+      <b>Sent for review</b>
+      <p>${this.galleryReplaces
+        ? "The new version goes up after it is approved. Until then the old one stays."
+        : "It shows in the gallery after it is approved. Check My uploads for its status."}</p>
+      <div class="btns">
+        <button class="small" @click=${() => this.setGalleryTab("mine")}>My uploads</button>
+        <button class="primary" @click=${() => this.closeGalleryDialog()}>Done</button>
+      </div>
+    </div></div>`;
+  }
+
+  private renderGallerySteps(cfg: CustomComplicationConfig) {
+    const slots = this.currentShareSlots();
+    const overrides = this.galleryOverrides();
+    const known = this.knownDomains();
+    const blockers = galleryBlockersByStep(cfg, slots, this.galleryMeta(), known, overrides);
+    const step = this.galleryStep;
+    const detailsOk = blockers.details.length === 0;
+    const all = [...blockers.details, ...blockers.send];
+    const ready = all.length === 0 && this.galleryConfirmed && this.galleryPreviews !== undefined && !this.gallerySending;
+    const why = all.length > 0 ? all[0]!
+      : this.galleryPreviews === undefined ? "Drawing the preview pictures"
+      : !this.galleryConfirmed ? "Turn on the switch first"
+      : "Send it for review";
+    const names = ["Details", "Check public text", "Send"];
+    const steps = html`<nav class="xf-steps" aria-label="Steps">${names.map((label, i) => {
+      const n = (i + 1) as 1 | 2 | 3;
+      return html`<button class="xf-step ${n < step ? "past" : ""}" aria-current=${n === step ? "step" : nothing}
+        ?disabled=${n > 1 && !detailsOk} @click=${() => this.goGalleryStep(n)}>
+        <i>${n < step ? uiIcon("check") : n}</i>${label}</button>`;
+    })}</nav>`;
+    const body = step === 1
+      ? this.renderGalleryDetails(blockers.details)
+      : step === 2 ? this.renderGalleryPublic(cfg, slots, overrides, known) : this.renderGallerySend(cfg, slots, all);
+    return html`${steps}
+      <div class="xfer-body">
+        ${this.galleryReplaces ? html`<div class="xf-banner">${uiIcon("info")}<span>New version of <b>${this.galleryReplaces.title}</b>. The link and votes stay. The old version stays up until this one is approved.</span></div>` : nothing}
+        ${body}
+      </div>
+      <div class="xfer-foot">
+        ${step === 1
+          ? html`<button class="ghost" @click=${() => this.closeGalleryDialog()}>Back to Share</button>`
+          : html`<button class="ghost" @click=${() => this.goGalleryStep((step - 1) as 1 | 2)}>Back</button>`}
+        <span class="spacer"></span>
+        ${step < 3
+          ? html`<button class="primary" ?disabled=${!detailsOk} title=${detailsOk ? "Next step" : blockers.details[0]!}
+              @click=${() => this.goGalleryStep((step + 1) as 2 | 3)}>Next${uiIcon("arrow")}</button>`
+          : html`<button class="primary" ?disabled=${!ready} title=${why}
+              @click=${() => void this.sendToGallery()}>${this.gallerySending ? "Sending…" : "Send for review"}</button>`}
+      </div>`;
+  }
+
+  /** Step 1: the listing, beside the card it makes in the gallery. */
+  private renderGalleryDetails(problems: readonly string[]) {
+    const tags = this.galleryTags;
+    return html`<div class="xf-two">
+      <div class="xf-stack xf-form">
+        <label class="xf-f"><span class="xf-label">Title</span>
+          <input type="text" maxlength=${GALLERY_LIMITS.title} .value=${this.galleryTitle}
+            @input=${(e: Event) => { this.galleryTitle = (e.target as HTMLInputElement).value; }} /></label>
+        <label class="xf-f"><span class="xf-label">Description <span class="r">Optional</span></span>
+          <textarea rows="2" maxlength=${GALLERY_LIMITS.description} .value=${this.galleryDescription}
+            @input=${(e: Event) => { this.galleryDescription = (e.target as HTMLTextAreaElement).value; }}></textarea></label>
+        <div class="xf-f"><span class="xf-label">Tags <span class="r">${tags.size} of ${GALLERY_LIMITS.tags}</span></span>
+          <div class="gal-tags">
+            ${GALLERY_TAGS.map((tag) => {
+              const on = tags.has(tag);
+              return html`<button class="pk-chip ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+                ?disabled=${!on && tags.size >= GALLERY_LIMITS.tags}
+                @click=${() => this.toggleGalleryTag(tag)}>${GALLERY_TAG_LABEL[tag]}</button>`;
+            })}
+          </div></div>
+        <label class="xf-f"><span class="xf-label">Your name <span class="r">Optional</span></span>
+          <input type="text" maxlength=${GALLERY_LIMITS.authorName} .value=${this.galleryNickname}
+            @input=${(e: Event) => { this.galleryNickname = (e.target as HTMLInputElement).value; }} /></label>
+        ${problems.length > 0 ? html`<ul class="xf-blockers" role="alert">${problems.map((p) => html`<li>${p}</li>`)}</ul>` : nothing}
+      </div>
+      <div>${this.galleryCard()}<div class="xf-caption">How it looks in the gallery</div></div>
+    </div>`;
+  }
+
+  /** The gallery's card for this upload: its first preview picture, the
+   * title, the name and the tags, as they are now. */
+  private galleryCard() {
+    const previews = this.galleryPreviews;
+    const nick = this.galleryNickname.trim();
+    return html`<div class="xf-gcard">
+      <div class="img">${previews === undefined
+        ? html`<span class="hint">Drawing…</span>`
+        : previews[0]
+          ? html`<img alt="Gallery picture" src=${`data:image/png;base64,${previews[0].png}`} />`
+          : html`<span class="hint">${this.galleryPreviewNote || "No picture for this shape"}</span>`}</div>
+      <div class="meta">
+        <b>${this.galleryTitle.trim() || "Untitled"}</b>
+        <span>${nick ? `by ${nick}` : "No name"}</span>
+        ${this.galleryTags.size > 0 ? html`<span class="tg">${[...this.galleryTags].map((t) => html`<em>${GALLERY_TAG_LABEL[t]}</em>`)}</span>` : nothing}
+      </div>
+    </div>`;
+  }
+
+  /**
+   * Step 2: every piece of text that becomes public, in the amber box, with
+   * the names the author can change for the gallery copy. Pointing at a row
+   * that belongs to layers picks them out in the preview, which is drawn the
+   * way the gallery picture is: scrubbed, with picture layers left out.
+   */
+  private renderGalleryPublic(cfg: CustomComplicationConfig, slots: readonly ShareSlot[], overrides: GalleryOverrides, known: ReadonlySet<string>) {
+    const fields = galleryPublicFields(cfg, slots, overrides);
+    const gate = (_id: string, domain: string) => known.has(domain);
+    const rows: { key: string; label: string; name: string; ids: string[]; control: unknown }[] = [];
+    const title = this.galleryTitle.trim() || "Untitled";
+    rows.push({ key: "title", label: "Title", name: title, ids: [], control: html`<div class="xf-pill">${title}</div>` });
+    const nameInput = (row: GalleryNameRow, label: string, typed: string | undefined) => {
+      const edited = typed !== undefined && typed.trim() !== "" && typed.trim() !== row.original;
+      return html`<input type="text" maxlength=${row.kind === "slot" ? 40 : nothing} aria-label=${`${label}: ${row.original}`}
+          .value=${typed ?? row.value} placeholder=${row.original} ?disabled=${this.gallerySending}
+          @input=${(e: Event) => this.setGalleryName(row, (e.target as HTMLInputElement).value)} />
+        ${edited ? html`<span class="xf-edited">Edited. Your own copy keeps “${row.original}”.</span>` : nothing}`;
+    };
+    for (const group of fields) {
+      if (group.rows) {
+        for (const row of group.rows) {
+          if (row.kind === "group") {
+            rows.push({ key: `g:${row.id}`, label: "Group name", name: row.value, ids: groupMembers(cfg, row.id).map((el) => el.payload.id),
+              control: nameInput(row, "Group name", this.galleryGroupNames.get(row.id)) });
+          } else if (row.kind === "shared") {
+            rows.push({ key: `v:${row.id}`, label: "Shared value name", name: row.value, ids: sharedValueLayerIds(cfg, row.id),
+              control: nameInput(row, "Shared value name", this.galleryValueNames.get(row.id)) });
+          } else {
+            const slot = slots.find((s) => s.placeholderId === row.id);
+            rows.push({ key: `e:${row.id}`, label: "Entity name", name: row.value, ids: slot ? entityLayerIds(cfg, slot.originalId, gate) : [],
+              control: nameInput(row, "Entity name", undefined) });
+          }
+        }
+        continue;
+      }
+      const layerNames = group.label === "Layer names";
+      group.values.forEach((value, i) => {
+        const ids = layerNames
+          ? cfg.elements.filter((el) => !isAttachedTap(cfg, el) && el.payload.name?.trim() === value).map((el) => el.payload.id)
+          : [];
+        rows.push({ key: `t:${group.label}:${i}`, label: PUBLIC_ROW_LABEL[group.label] ?? group.label, name: value, ids,
+          control: html`<div class="xf-pill ${layerNames ? "" : "mono"}">${value}</div>` });
+      });
+    }
+    const focused = rows.find((r) => r.key === this.galleryFocus);
+    const renamed = applyGalleryOverrides(cfg, overrides);
+    const scrubbed = scrubForShare(renamed, slots);
+    const layouts = resolveAll(withoutImageLayers(scrubbed), galleryPreviewContext(cfg, scrubbed, slots, {
+      entityState: (id) => this.entityStateFor(id, "", false),
+      templateResults: this.templateResults,
+      historySeries: this.historySeries,
+    }));
+    // The tags draw the layers as the author knows them, pictures included.
+    const drawn: ResolvedAll = focused && focused.ids.length > 0 ? resolveAll(cfg, this.buildContext(), this.forced) : {};
+    const family = this.dialogFamily(cfg);
+    const ctx = describeContext(this.host());
+    const clear = () => { this.galleryFocus = undefined; };
+    return html`
+      <div class="xf-lead warn">${uiIcon("info")}<span>Everyone can read these. Change anything that names a person, a place or a device.</span></div>
+      ${this.dialogPreview(layouts, family, focused?.ids ?? [],
+        focused && focused.ids.length > 0 ? html`Where <b>${focused.name}</b> is` : family ? familyTitle(family) : "",
+        "Point at a name to see where it is")}
+      <div class="xf-pub" @pointerleave=${(e: Event) => this.leaveRows(e, clear)} @focusout=${(e: Event) => this.leaveRows(e, clear)}>
+        ${rows.map((row) => {
+          const on = row.key === this.galleryFocus && row.ids.length > 0;
+          const set = () => { this.galleryFocus = row.key; };
+          return html`<div class="kv ${on ? "on" : ""}" @pointerenter=${set} @focusin=${set}>
+            <span class="k">${row.label}</span>
+            <div class="v">${row.control}${on ? this.layerTags(cfg, drawn, row.ids, ctx) : nothing}</div>
+          </div>`;
+        })}
+      </div>
+      <div class="hint">Names changed here are for the gallery copy only, and an empty one keeps its own name. Entity names are the ones from Share.</div>`;
+  }
+
+  /** Step 3: what has been taken care of, the promise, and anything that still
+   * stops the upload. */
+  private renderGallerySend(cfg: CustomComplicationConfig, slots: readonly ShareSlot[], problems: readonly string[]) {
+    const tags = this.galleryTags.size;
+    const pictures = cfg.elements.some((el) => el.kind === "image");
+    return html`<div class="xf-two">
+      <div class="xf-stack xf-form">
+        <div class="xf-checks">
+          <div>${uiIcon("check")}<span>${tags === 0 ? "Title, no tags" : `Title and ${tags === 1 ? "1 tag" : `${tags} tags`}`}</span></div>
+          <div>${uiIcon("check")}<span>${slots.length > 0 ? "Your entities are removed" : "It reads none of your entities"}</span></div>
+          <div>${uiIcon("check")}<span>${pictures ? "Picture layers are left out of the preview" : "The preview shows your current values"}</span></div>
+        </div>
+        <label class="xf-switch">
+          <input type="checkbox" .checked=${this.galleryConfirmed} ?disabled=${this.gallerySending}
+            @change=${(e: Event) => { this.galleryConfirmed = (e.target as HTMLInputElement).checked; }} />
+          <span class="s"><b>I made this</b><span>And it has no private information.</span></span>
+        </label>
+        ${problems.length > 0 ? html`<ul class="xf-blockers" role="alert">${problems.map((p) => html`<li>${p}</li>`)}</ul>` : nothing}
+        ${this.galleryError !== "" ? html`<div class="xf-blockers" role="alert">${this.galleryError}</div>` : nothing}
+      </div>
+      <div>${this.galleryCard()}</div>
+    </div>`;
+  }
+
   /** What this home has sent before, newest as the gallery orders it. */
-  private renderGalleryUploads() {
-    const items = this.galleryUploads;
-    return this.dialogCard("My gallery uploads", "layers", SECTION_COLOR.place, html`
-      ${this.galleryUploadsError !== "" ? html`<div class="hint err gal-err">${this.galleryUploadsError}</div>` : nothing}
-      ${items === undefined
+  private renderGalleryUploads(rows: readonly GalleryUploadRow[] | undefined) {
+    return html`<div class="xfer-body">
+      ${this.galleryUploadsError !== "" ? html`<div class="xf-blockers" role="alert">${this.galleryUploadsError}</div>` : nothing}
+      ${rows === undefined
         ? html`<div class="hint">Loading…</div>`
-        : items.length === 0
-          ? this.galleryUploadsError === "" ? html`<div class="hint">Nothing sent from this Home Assistant yet.</div>` : nothing
-          : html`<div class="fgroup xfer-rows">${items.map((u) => {
-            const asking = this.galleryConfirmDelete === u.id;
-            const deleting = this.galleryDeleting === u.id;
-            return html`<div class="gal-up">
-              <div class="srow">
-                <b>${u.title}</b>
-                <span class="gal-status ${u.status}">${GALLERY_STATUS_LABEL[u.status] ?? u.status}</span>
-                <span class="spacer"></span>
-                ${asking && !deleting ? html`<button class="small" @click=${() => { this.galleryConfirmDelete = undefined; }}>Keep</button>` : nothing}
-                <button class="small ${asking ? "danger" : ""}" ?disabled=${this.galleryDeleting !== undefined}
-                  title=${asking ? "Removes it from the gallery for good" : "Remove it from the gallery"}
-                  @click=${() => void this.deleteGalleryUpload(u.id)}>${deleting ? "Deleting…" : asking ? "Delete for good" : "Delete"}</button>
-              </div>
-              ${u.status === "rejected" && u.rejectReason ? html`<div class="hint">Reason: ${u.rejectReason}</div>` : nothing}
-            </div>`;
-          })}</div>`}`, { cls: "gal-mine" });
+        : rows.length === 0
+          ? this.galleryUploadsError === "" ? html`<div class="xf-lead">${uiIcon("info")}<span>Nothing sent from this Home Assistant yet.</span></div>` : nothing
+          : html`<div class="xf-rows">${rows.map((row) => this.renderUploadRow(row))}</div>`}
+      <div class="xf-lead">${uiIcon("info")}<span><b>Update</b> sends this complication as a new version. The link and votes stay. <b>Delete</b> removes it for everyone.</span></div>
+    </div>`;
+  }
+
+  /** One upload, with any new version of it that has not gone up yet. */
+  private renderUploadRow(row: GalleryUploadRow) {
+    const u = row.upload;
+    return html`<div class="xf-up">
+      <span class="xf-up-thumb">${u.previewUrl ? html`<img src=${u.previewUrl} alt="" loading="lazy" />` : nothing}</span>
+      <div class="xf-main">
+        <div class="xf-up-t"><b>${u.title}</b>${this.uploadStatus(u)}</div>
+        <div class="sub">${galleryUploadSubline(u)}</div>
+      </div>
+      <div class="xf-up-acts">
+        ${row.canUpdate ? html`<button class="small" title="Send this complication as a new version of it"
+          @click=${() => this.startGalleryUpdate(u)}>Update</button>` : nothing}
+        ${this.uploadDelete(u, false)}
+      </div>
+      ${row.updates.map((v) => html`<div class="xf-up-v">
+        <div class="xf-main">
+          <div class="xf-up-t">${this.uploadStatus(v)}</div>
+          <div class="sub">${galleryUploadSubline(v)}</div>
+        </div>
+        <div class="xf-up-acts">${this.uploadDelete(v, true)}</div>
+      </div>`)}
+    </div>`;
+  }
+
+  private uploadStatus(u: GalleryUpload) {
+    return html`<span class="gal-status ${isPendingUpdate(u) ? "pending" : u.status}">${galleryStatusLabel(u)}</span>`;
+  }
+
+  /** Delete asks again in place; a new version is withdrawn rather than deleted. */
+  private uploadDelete(u: GalleryUpload, version: boolean) {
+    const busy = this.galleryDeleting !== undefined;
+    if (this.galleryConfirmDelete === u.id || this.galleryDeleting === u.id) {
+      const deleting = this.galleryDeleting === u.id;
+      return html`${deleting ? nothing : html`<button class="small" @click=${() => { this.galleryConfirmDelete = undefined; }}>Keep</button>`}
+        <button class="small danger" ?disabled=${busy}
+          title=${version ? "Withdraws this new version. The one in the gallery stays." : "Removes it from the gallery for everyone"}
+          @click=${() => void this.deleteGalleryUpload(u.id)}>${deleting ? "Deleting…" : version ? "Withdraw it" : "Delete for good"}</button>`;
+    }
+    return html`<button class="icon danger" ?disabled=${busy}
+      title=${version ? "Withdraw this new version" : "Delete it from the gallery"}
+      aria-label=${version ? `Withdraw the new version of ${u.title}` : `Delete ${u.title}`}
+      @click=${() => void this.deleteGalleryUpload(u.id)}>${uiIcon("delete")}</button>`;
   }
 
   /**
@@ -6057,23 +6470,24 @@ export class WristAssistantPanel extends LitElement {
    * it goes second. Only when that fails too does the user get the keys named:
    * the text stays selected, so one shortcut finishes the job.
    */
-  private async copyShareText(text: string, from = "dialog.share-dialog textarea", done = "Copied.") {
+  private async copyShareText(text: string, kind: "text" | "link") {
+    this.shareNote = "";
     try {
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(text);
-        this.shareNote = done;
+        this.flashShare(kind);
         return;
       }
     } catch {
       // Refused or unavailable; the selection below works either way.
     }
-    // The text box is folded away by default, and a hidden box has nothing
-    // to select.
-    if (from === "dialog.share-dialog textarea" && !this.shareTextOpen) {
-      this.shareTextOpen = true;
-      await this.updateComplete;
-    }
-    const area =this.renderRoot.querySelector<HTMLTextAreaElement | HTMLInputElement>(from);
+    // A hidden box has nothing to select: the text is folded away in its
+    // disclosure, and the link field only shows for this.
+    if (kind === "text") this.shareTextOpen = true;
+    else this.shareLinkShown = true;
+    await this.updateComplete;
+    const area = this.renderRoot.querySelector<HTMLTextAreaElement | HTMLInputElement>(
+      kind === "text" ? "dialog.share-dialog textarea.xfer-text" : "dialog.share-dialog input.xfer-link");
     area?.focus();
     area?.select();
     let copied = false;
@@ -6082,21 +6496,27 @@ export class WristAssistantPanel extends LitElement {
     } catch {
       copied = false;
     }
-    this.shareNote = copied ? done : "Press Cmd+C or Ctrl+C to copy.";
+    if (copied) this.flashShare(kind);
+    else this.shareNote = "Press Cmd+C or Ctrl+C to copy.";
+  }
+
+  /** A tile's "copied" or "saved" moment, gone again after a breath. */
+  private flashShare(kind: "text" | "link" | "file") {
+    this.shareCopied = kind;
+    window.clearTimeout(this.shareCopiedTimer);
+    this.shareCopiedTimer = window.setTimeout(() => { this.shareCopied = undefined; }, 1600);
   }
 
   /**
-   * Build a link to this panel with the text in its hash, show it, and copy it
-   * the same way as the text. The field is drawn before the copy so the
-   * fallback has something to select. The address is this Home Assistant's;
-   * on another home the Import dialog reads the same link pasted in.
+   * Build a link to this panel with the text in its hash and copy it the same
+   * way as the text. The address is this Home Assistant's; on another home the
+   * Import dialog reads the same link pasted in.
    */
   private async copyShareLink(text: string) {
     const payload = await encodeShareLink(text);
     const url = shareLinkUrl(`${window.location.origin}${window.location.pathname}`, payload);
     this.shareLink = { text, url };
-    await this.updateComplete;
-    await this.copyShareText(url, "dialog.share-dialog input.xfer-link", "Link copied.");
+    await this.copyShareText(url, "link");
   }
 
   /** Save the text as a file: a Blob and one click on a link nobody sees. The
@@ -6112,7 +6532,8 @@ export class WristAssistantPanel extends LitElement {
     link.click();
     // Freed on the next turn: revoking in this one can beat the download to it.
     window.setTimeout(() => URL.revokeObjectURL(url), 0);
-    this.shareNote = `Saved as ${name}.`;
+    this.shareNote = "";
+    this.flashShare("file");
   }
 
   /**
@@ -6126,94 +6547,105 @@ export class WristAssistantPanel extends LitElement {
   private renderImportDialog() {
     const parse = this.importParse;
     const cfg = parse?.ok ? parse.config : undefined;
-    const rows = cfg ? unresolvedEntities(cfg, this.hass.states) : [];
-    const problem = importProblem({
-      parsed: cfg !== undefined,
-      name: this.importName,
-      taken: this.takenNames(),
-      unchosen: this.unchosenCount(rows),
-    });
-    const folded = importTextFolded(parse, this.importTextShown);
-    return html`<dialog class="import-dialog ${this.importDrop ? "dropping" : ""}" @keydown=${this.importKeys} @close=${() => this.importClosed()}
-      @dragenter=${this.importDragEnter} @dragover=${this.importDragOver} @dragleave=${this.importDragLeave} @drop=${this.importDropped}>
-      <div class="new-head">
-        <h2>Import a complication</h2>
-        <span class="spacer"></span>
-        <button class="icon" title="Cancel" aria-label="Cancel" @click=${() => this.closeImportDialog()}>${uiIcon("close")}</button>
-      </div>
-      <div class="xfer-body">
-        ${folded
-          // Parsed text folds to the card's header, so the preview and the
-          // pickers lead.
-          ? this.dialogCard("Shared text loaded", "braces", SECTION_COLOR.place, nothing, {
-              tool: html`<button type="button" class="small" @click=${() => { this.importTextShown = true; }}>Show text</button>`,
-            })
-          : this.dialogCard("Shared text", "braces", SECTION_COLOR.place, html`
-            <textarea class="xfer-text xfer-well" rows="8" placeholder="Paste the shared text or a share link here"
-              aria-label="Shared complication text or link" .value=${this.importText}
-              @input=${(e: Event) => this.setImportText((e.target as HTMLTextAreaElement).value)}></textarea>
-            <div class="xfer-file">
-              <button type="button" class="small"
-                @click=${(e: Event) => (e.currentTarget as HTMLElement).parentElement?.querySelector<HTMLInputElement>("input[type=file]")?.click()}>Choose a file</button>
-              <span class="hint">or drop one on this dialog</span>
-              <input type="file" hidden accept=".json,application/json,text/plain"
-                @change=${(e: Event) => void this.readImportFile(e)} />
-            </div>
-            ${parse && !parse.ok ? html`<div class="hint err xfer-problem" role="alert">${parse.error}</div>` : nothing}`, {
-              tool: cfg ? html`<button type="button" class="small" @click=${() => { this.importTextShown = false; }}>Hide text</button>` : nothing,
-            })}
-        ${!folded && this.importText.trim() === ""
-          ? html`<div class="xfer-callout">
-              <span class="swatch">${uiIcon("info")}</span>
-              <span>Find designs other people made at <a href="https://wrist-assistant.com/gallery/" target="_blank" rel="noopener">wrist-assistant.com/gallery</a>.</span>
-            </div>`
-          : nothing}
-        ${cfg ? this.renderImportPreview(cfg, rows) : nothing}
-        ${cfg ? this.renderImportDetails(cfg, rows) : nothing}
-      </div>
-      <div class="xfer-foot">
-        <span class="spacer"></span>
-        <button class="small" @click=${() => this.closeImportDialog()}>Cancel</button>
-        <button class="primary" ?disabled=${problem !== undefined}
-          title=${problem ?? "Save it to this watch and open it in the editor"} @click=${() => void this.doImport()}>Import</button>
-      </div>
-      ${this.importDrop ? html`<div class="xfer-drop" aria-hidden="true"><span>Drop to read the file</span></div>` : nothing}
+    return html`<dialog class="import-dialog xf ${this.importDrop ? "dropping" : ""}" @keydown=${this.importKeys} @close=${() => this.importClosed()}
+      @dragenter=${this.importDragEnter} @dragover=${this.importDragOver} @dragleave=${this.importDragLeave} @drop=${this.importDropped}
+      @paste=${this.importPasted}>
+      ${this.dialogHead("Import", "", () => this.closeImportDialog())}
+      ${cfg ? this.renderImportLoaded(cfg) : this.renderImportEmpty()}
+      ${cfg && this.importDrop ? html`<div class="xfer-drop" aria-hidden="true"><span>Drop to read the file</span></div>` : nothing}
     </dialog>`;
   }
 
-  /** What the pasted text turned out to be, before anything is picked: each
-   * shape it has drawn small, its name, and how much the rest of the dialog
-   * is going to ask. Under it, what to call the copy. */
-  private renderImportPreview(cfg: CustomComplicationConfig, rows: readonly UnresolvedEntity[]) {
-    const facts = importFacts(cfg, rows);
-    const layers = facts.layers === 1 ? "1 layer" : `${facts.layers} layers`;
-    const slots = facts.slots === 0 ? "no entities to choose" : facts.slots === 1 ? "1 entity to choose" : `${facts.slots} entities to choose`;
-    const missing = facts.missing === 0 ? "" : ` · ${facts.missing} not in your Home Assistant`;
-    // Drawn with the picks applied, so a chart reads the entity chosen for it
-    // and its history rather than a placeholder nobody has.
-    const preview = this.importPreview();
-    const name = this.importName.trim();
-    const taken = name !== "" && this.takenNames().has(name.toLowerCase());
-    return this.dialogCard("Complication", "watch", SECTION_COLOR.complication, html`
-      <div class="xfer-preview">
-        <div class="xfer-arts">${preview
-          ? this.renderConfigArts(preview.config, preview.entities, supportedFamilies(cfg), "pk-art xfer-art", this.importHistory)
-          : nothing}</div>
-        <div class="xfer-facts">
-          <b>${cfg.name.trim() || "Untitled"}</b>
-          <span>${facts.families.join(" · ")}</span>
-          <span>${layers} · ${slots}${missing}</span>
+  /** Nothing loaded yet: one place to paste or drop, a way to type the text,
+   * and the gallery for anyone who came here without a share. */
+  private renderImportEmpty() {
+    const parse = this.importParse;
+    // Text that did not read as a complication stays on screen to fix.
+    const typing = this.importTextShown || this.importText.trim() !== "";
+    return html`<div class="xfer-body">
+      <div class="xf-drop ${this.importDrop ? "over" : ""}">
+        <span class="big">${uiIcon("paste")}</span>
+        <b>Paste a share link</b>
+        <p>Press <kbd>${MULTI_KEY === "Cmd" ? "⌘" : "Ctrl"}</kbd> <kbd>V</kbd> anywhere here, or drop a file.</p>
+        <div class="btns">
+          <button class="primary xf-paste" @click=${() => void this.pasteImport()}>Paste</button>
+          <button class="small"
+            @click=${(e: Event) => (e.currentTarget as HTMLElement).parentElement?.querySelector<HTMLInputElement>("input[type=file]")?.click()}>Choose a file</button>
+          <input type="file" hidden accept=".json,application/json,text/plain" @change=${(e: Event) => void this.readImportFile(e)} />
         </div>
       </div>
-      <div class="field">
-        <span>Name</span>
-        <input type="text" maxlength="60" aria-label="Complication name" aria-invalid=${taken ? "true" : "false"}
-          .value=${this.importName}
-          @input=${(e: Event) => { this.importName = (e.target as HTMLInputElement).value; }} />
-        ${taken
-          ? html`<div class="hint err">A complication on this watch already has that name.</div>`
-          : html`<div class="hint">Import saves it to this watch and opens it in the editor.</div>`}
-      </div>`);
+      ${parse && !parse.ok ? html`<div class="hint err xfer-problem" role="alert">${parse.error}</div>` : nothing}
+      ${typing
+        ? html`<textarea class="xfer-text xf-typed" rows="6" placeholder="Paste or type the shared text or a share link"
+            aria-label="Shared complication text or link" .value=${this.importText}
+            @input=${(e: Event) => this.setImportText((e.target as HTMLTextAreaElement).value)}></textarea>`
+        : html`<button class="link xf-type" @click=${() => void this.revealImportText()}>Type the text instead</button>`}
+      <a class="xf-galtile" href=${GALLERY_PAGE} target="_blank" rel="noopener">
+        <span class="ic">${uiIcon("globe")}</span>
+        <span class="t"><b>Browse the online gallery</b><span>Ready-made complications from other people</span></span>
+        ${uiIcon("arrow")}
+      </a>
+    </div>
+    <div class="xfer-foot">
+      <span class="spacer"></span>
+      <button class="small" @click=${() => this.closeImportDialog()}>Cancel</button>
+    </div>`;
+  }
+
+  /**
+   * A complication loaded: its picture, its name, and a row per entity this
+   * home has to answer for. The picture is drawn with the picks so far, so a
+   * chart reads the entity chosen for it and its history. Importing with rows
+   * left open is allowed; they can be picked in the editor later.
+   */
+  private renderImportLoaded(cfg: CustomComplicationConfig) {
+    const rows = unresolvedEntities(cfg, this.hass.states);
+    const known = this.knownDomains();
+    const preview = this.importPreview();
+    const layouts: ResolvedAll = preview ? this.configLayouts(preview.config, preview.entities, this.importHistory) : {};
+    const uses = new Map(rows.map((row) => [row.entityId, entityLayerIds(cfg, row.entityId, (id, domain) => isPlaceholderId(id) || known.has(domain))]));
+    const required = rows.filter((row) => row.required);
+    const picked = required.filter((row) => this.importMap.has(row.entityId)).length;
+    const focus = rows.find((row) => row.entityId === this.importFocus);
+    const family = this.dialogFamily(cfg);
+    const name = this.importName.trim();
+    const takenNames = this.takenNames();
+    const taken = name !== "" && takenNames.has(name.toLowerCase());
+    const problem = importProblem({ parsed: true, name: this.importName, taken: takenNames, unchosen: 0 });
+    const clear = () => { this.importFocus = undefined; };
+    return html`<div class="xfer-body">
+      <div class="xf-hero">
+        ${this.dialogPreview(layouts, family, focus ? uses.get(focus.entityId) ?? [] : [],
+          focus ? html`Uses <b>${focus.label}</b>` : family ? familyTitle(family) : "", "")}
+        <div class="xf-stack">
+          <label class="xf-f"><span class="xf-label">Name</span>
+            <input type="text" maxlength="60" aria-invalid=${taken ? "true" : "false"} .value=${this.importName}
+              @input=${(e: Event) => { this.importName = (e.target as HTMLInputElement).value; }} /></label>
+          ${taken ? html`<div class="hint err">A complication on this watch already has that name.</div>` : nothing}
+          <div class="xf-sub">${familyWords(supportedFamilies(cfg))} · ${layerCountWords(cfg)}</div>
+        </div>
+      </div>
+      ${rows.length === 0
+        ? html`<div class="xf-lead">${uiIcon("check")}<span>Every entity this design reads is already in your Home Assistant.</span></div>`
+        : html`<div class="xf-stack">
+          <div class="xf-label">Pick your entities${required.length > 0 ? html`<span class="r">${picked} of ${required.length}</span>` : nothing}</div>
+          ${required.length > 0 ? html`<div class="xf-bar" role="progressbar" aria-valuemin="0" aria-valuemax=${required.length} aria-valuenow=${picked}>
+            <i style=${`width:${(picked / required.length) * 100}%`}></i></div>` : nothing}
+          <div class="xf-rows" @pointerleave=${(e: Event) => this.leaveRows(e, clear)} @focusout=${(e: Event) => this.leaveRows(e, clear)}>
+            ${rows.map((row) => this.renderImportRow(row, cfg, layouts, uses.get(row.entityId) ?? []))}
+          </div>
+          ${picked < required.length ? html`<div class="xf-lead">${uiIcon("info")}<span>You can import now and pick the rest later.</span></div>` : nothing}
+        </div>`}
+      ${hasInstanceFilters(cfg)
+        ? html`<div class="xf-lead warn">${uiIcon("info")}<span>This design filters by areas, labels or floors from the sender's home. Check its aggregate layers after import.</span></div>`
+        : nothing}
+    </div>
+    <div class="xfer-foot">
+      <button class="ghost" @click=${() => this.startImportOver()}>Start over</button>
+      <span class="spacer"></span>
+      <button class="primary" ?disabled=${problem !== undefined}
+        title=${problem ?? "Save it to this watch and open it in the editor"} @click=${() => void this.doImport()}>Import and save</button>
+    </div>`;
   }
 
   /** Whether a drag carries something the Import dialog can read. */
@@ -6259,39 +6691,67 @@ export class WristAssistantPanel extends LitElement {
     this.setImportText(text);
   };
 
-  /** Required rows nobody has answered yet. */
-  private unchosenCount(rows: readonly UnresolvedEntity[]): number {
-    return rows.filter((r) => r.required && !this.importMap.has(r.entityId)).length;
-  }
-
-  /** The last card, once the text has turned into a document: the entities it
-   * reads that this home has to answer for. */
-  private renderImportDetails(cfg: CustomComplicationConfig, rows: readonly UnresolvedEntity[]) {
-    return this.dialogCard("Entities", "content", SECTION_COLOR.content, html`
-      ${rows.length === 0
-        ? html`<div class="hint">Every entity this design reads is already in your Home Assistant.</div>`
-        : html`<div class="fgroup xfer-rows">${rows.map((row) => this.renderImportRow(row))}</div>`}
-      ${hasInstanceFilters(cfg)
-        ? html`<div class="hint warn">This design filters by areas, labels or floors from the sender's home. Check its aggregate layers after import.</div>`
-        : nothing}`);
-  }
-
-  /** One entity the design asks about. A slot has to be answered; a real id
-   * this house happens not to have right now does not, because the entity may
-   * be back tomorrow and blanking it helps nobody. */
-  private renderImportRow(row: UnresolvedEntity) {
+  /** One entity the design asks about: its type, the sender's name for it,
+   * the layers that read it, and the picker. A slot is counted in the
+   * progress; a real id this house happens not to have right now is not,
+   * because the entity may be back tomorrow and blanking it helps nobody. */
+  private renderImportRow(row: UnresolvedEntity, cfg: CustomComplicationConfig, layouts: ResolvedAll, ids: readonly string[]) {
     const chosen = this.importMap.get(row.entityId);
-    return html`<div class="xfer-ent">
-      ${entityField({ hass: this.hass }, row.label, chosen ?? NO_ENTITY,
-        (ref) => this.setImportEntity(row.entityId, ref),
-        importEntityKey(row.entityId),
-        { compact: true, domain: row.domain, needed: row.required && chosen === undefined })}
-      <div class="hint">${row.where.join(", ")}</div>
-      <div class="hint">${row.required
-        ? "Choose the entity this design should read."
-        : "Not in your Home Assistant right now; leave it to keep the id."}</div>
+    const set = () => { this.importFocus = row.entityId; };
+    return html`<div class="xf-row pick ${this.importFocus === row.entityId ? "on" : ""}" @pointerenter=${set} @focusin=${set}>
+      <span class="ent-ico xf-dom">${domainIcon(row.domain)}</span>
+      <div class="xf-main">
+        <div class="xf-name">${row.label}${chosen ? html`<span class="xf-done" title="Picked">${uiIcon("check")}</span>` : nothing}</div>
+        ${ids.length > 0 ? this.layerTags(cfg, layouts, ids) : html`<div class="xf-sub">${row.where.join(", ")}</div>`}
+        ${row.required ? nothing : html`<div class="xf-sub">Not in your Home Assistant right now. Leave it empty to keep the id.</div>`}
+        <div class="xf-picker">${entityField({ hass: this.hass }, row.label, chosen ?? NO_ENTITY,
+          (ref) => this.setImportEntity(row.entityId, ref),
+          importEntityKey(row.entityId),
+          { compact: true, domain: row.domain, needed: row.required && chosen === undefined })}</div>
+      </div>
     </div>`;
   }
+
+  /** Paste reads the clipboard. A browser that will not hand it over (plain
+   * http, a refused permission) gets the text box instead, focused, so the
+   * keyboard paste works. */
+  private async pasteImport() {
+    let text = "";
+    try {
+      text = await navigator.clipboard.readText();
+    } catch {
+      text = "";
+    }
+    if (text.trim() === "") {
+      await this.revealImportText();
+      return;
+    }
+    this.setImportText(text);
+  }
+
+  private async revealImportText() {
+    this.importTextShown = true;
+    await this.updateComplete;
+    this.renderRoot.querySelector<HTMLTextAreaElement>("dialog.import-dialog textarea.xf-typed")?.focus();
+  }
+
+  /** A paste anywhere in the empty dialog loads it: a file as a file, text as
+   * text. A paste into a text box is that box's own. */
+  private importPasted = (e: ClipboardEvent) => {
+    if (this.importParse?.ok) return;
+    const target = e.composedPath()[0];
+    if (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) return;
+    const file = e.clipboardData?.files?.[0];
+    if (file) {
+      e.preventDefault();
+      void this.readImportBlob(file);
+      return;
+    }
+    const text = e.clipboardData?.getData("text/plain") ?? "";
+    if (text.trim() === "") return;
+    e.preventDefault();
+    this.setImportText(text);
+  };
 
   private setImportEntity(entityId: string, ref: EntityRef) {
     const next = new Map(this.importMap);
@@ -6441,7 +6901,8 @@ export class WristAssistantPanel extends LitElement {
         parsed: true,
         name: this.importName,
         taken: this.takenNames(),
-        unchosen: this.unchosenCount(rows),
+        // Open rows do not stop it: they can be picked in the editor later.
+        unchosen: 0,
       });
       if (problem !== undefined) return;
       e.preventDefault();
@@ -6486,21 +6947,38 @@ export class WristAssistantPanel extends LitElement {
   private openImportDialog() {
     if (!this.hass.user?.is_admin || this.freeSlot() < 0) return;
     this.importOpen = true;
+    this.resetImportState();
+    void this.updateComplete.then(() => {
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.import-dialog");
+      if (!dialog) return;
+      if (!dialog.open) dialog.showModal();
+      // On Paste, so Enter pastes and a keyboard paste lands in the dialog.
+      dialog.querySelector<HTMLButtonElement>("button.xf-paste")?.focus();
+    });
+  }
+
+  /** Everything the Import dialog holds, back to the empty drop area. */
+  private resetImportState() {
     this.importText = "";
     this.importParse = undefined;
     this.importName = "";
     this.importMap = new Map();
     this.importTextShown = false;
+    this.importFocus = undefined;
     this.importHistory = new Map();
     this.importHistoryAsked = undefined;
     this.importPreviewCache = undefined;
     this.importDrop = false;
     this.importDragDepth = 0;
+    if (this.importHistoryTimer) window.clearTimeout(this.importHistoryTimer);
+    this.importHistoryTimer = undefined;
+    this.importHistoryRun += 1;
+  }
+
+  private startImportOver() {
+    this.resetImportState();
     void this.updateComplete.then(() => {
-      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.import-dialog");
-      if (!dialog) return;
-      if (!dialog.open) dialog.showModal();
-      dialog.querySelector<HTMLTextAreaElement>("textarea")?.focus();
+      this.renderRoot.querySelector<HTMLButtonElement>("dialog.import-dialog button.xf-paste")?.focus();
     });
   }
 

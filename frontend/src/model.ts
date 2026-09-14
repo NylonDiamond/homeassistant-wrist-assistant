@@ -6100,6 +6100,90 @@ export function documentEntityUses(
   return out;
 }
 
+/**
+ * The drawing layers that read one entity, in document order.
+ *
+ * A layer counts when its own value, a text part, a rule test, or its attached
+ * tap names the entity, and when it reads a shared value that does (however
+ * many shared values deep). An attached tap stands for its owner, since the
+ * tap is never a row of its own. A layer in a group counts like any other: the
+ * group draws nothing itself.
+ *
+ * `freeTextId` gates quoted ids in templates and service data the same way it
+ * does for `documentEntityUses`.
+ */
+export function entityLayerIds(
+  cfg: CustomComplicationConfig,
+  entityId: string,
+  freeTextId?: (entityId: string, domain: string) => boolean,
+): string[] {
+  const layers = new Set<string>();
+  const values = new Set<string>();
+  const hit = (site: EntitySite) => {
+    if (site.kind === "named" && site.valueId !== undefined) values.add(site.valueId.toUpperCase());
+    else if (site.layerId !== undefined) layers.add(site.layerId);
+  };
+  const visitor: DocumentVisitor = {
+    ref: (ref, site) => {
+      if (ref.entityId === entityId) hit(site);
+      return undefined;
+    },
+  };
+  if (freeTextId) {
+    visitor.text = (text, site) => {
+      for (const id of quotedEntityIds(text)) {
+        if (id === entityId && freeTextId(id, id.split(".")[0] ?? "")) hit(site);
+      }
+      return text;
+    };
+  }
+  walkDocument(cfg, visitor);
+  // Shared values reading shared values: follow the chain until it stops growing.
+  for (let grew = values.size > 0; grew;) {
+    grew = false;
+    forEachValue(cfg, (v, site) => {
+      if (v.kind.kind !== "named" || !values.has(v.kind.id.toUpperCase())) return;
+      if (site.kind === "named" && site.valueId !== undefined) {
+        const id = site.valueId.toUpperCase();
+        if (!values.has(id)) { values.add(id); grew = true; }
+      } else if (site.layerId !== undefined) {
+        layers.add(site.layerId);
+      }
+    });
+  }
+  return layerIdsInOrder(cfg, layers);
+}
+
+/** The drawing layers that read one shared value, directly or through another. */
+export function sharedValueLayerIds(cfg: CustomComplicationConfig, valueId: string): string[] {
+  const values = new Set([valueId.toUpperCase()]);
+  const layers = new Set<string>();
+  for (let grew = true; grew;) {
+    grew = false;
+    forEachValue(cfg, (v, site) => {
+      if (v.kind.kind !== "named" || !values.has(v.kind.id.toUpperCase())) return;
+      if (site.kind === "named" && site.valueId !== undefined) {
+        const id = site.valueId.toUpperCase();
+        if (!values.has(id)) { values.add(id); grew = true; }
+      } else if (site.layerId !== undefined) {
+        layers.add(site.layerId);
+      }
+    });
+  }
+  return layerIdsInOrder(cfg, layers);
+}
+
+/** Hit layer ids as drawing layers, in document order: an attached tap
+ * becomes its owner, and a free tap stays itself. */
+function layerIdsInOrder(cfg: CustomComplicationConfig, hits: ReadonlySet<string>): string[] {
+  const owners = new Set<string>();
+  for (const el of cfg.elements) {
+    if (!hits.has(el.payload.id)) continue;
+    owners.add(isAttachedTap(cfg, el) && el.kind === "tap" ? el.payload.attachedTo! : el.payload.id);
+  }
+  return cfg.elements.map((el) => el.payload.id).filter((id) => owners.has(id));
+}
+
 // ── rule construction ─────────────────────────────────────────────────────
 
 export type RuleTarget = Element["kind"] | "layout";

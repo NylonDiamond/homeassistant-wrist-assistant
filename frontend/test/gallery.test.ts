@@ -18,14 +18,21 @@ import { supportedFamilies } from "../src/layouts.js";
 import {
   type GalleryFetch,
   type GalleryMeta,
+  type GalleryUpload,
   GALLERY_API_BASE,
   GalleryError,
   buildGallerySubmission,
   deleteMyUpload,
   galleryBlockers,
+  galleryBlockersByStep,
   galleryErrorMessage,
   galleryPublicFields,
+  galleryStatusLabel,
+  galleryUploadRows,
+  galleryUploadSubline,
   listMyUploads,
+  readGalleryUpload,
+  resolvePreviewUrl,
   submitToGallery,
   unquotedEntityIds,
 } from "../src/gallery.js";
@@ -250,6 +257,73 @@ describe("galleryBlockers", () => {
   });
 });
 
+describe("galleryBlockersByStep", () => {
+  it("puts what was typed under Details and the rest under Send", () => {
+    const cfg = livingRoom();
+    const domains = domainsOf(cfg);
+    const empty = galleryBlockersByStep(cfg, shareSlots(cfg, domains), { ...META, title: " ", authorName: "x".repeat(41) }, domains);
+    expect(empty.details).toContain("Give it a title.");
+    expect(empty.details.some((s) => s.includes("nickname"))).toBe(true);
+    expect(empty.send).toEqual([]);
+
+    const filtered = fixtureConfig("aggregates.json");
+    const fd = domainsOf(filtered);
+    const out = galleryBlockersByStep(filtered, shareSlots(filtered, fd), META, fd);
+    expect(out.details).toEqual([]);
+    expect(out.send.some((s) => s.includes("area, label or floor"))).toBe(true);
+    expect([...out.details, ...out.send]).toEqual(galleryBlockers(filtered, shareSlots(filtered, fd), META, fd));
+  });
+});
+
+describe("my uploads", () => {
+  const upload = (over: Partial<GalleryUpload>): GalleryUpload => ({
+    id: "x", title: "T", status: "approved", rejectReason: null, createdAt: "", voteCount: 0,
+    replacesId: null, updatedAt: null, importCount: 0, previewUrl: null, ...over,
+  });
+
+  it("reads either spelling and resolves a relative preview address", () => {
+    const base = "https://wrist-assistant.com/api/gallery";
+    expect(readGalleryUpload({ id: "a", title: "A", status: "pending", replaces_id: "z", import_count: 3, preview_url: "previews/a.png", updated_at: "u" }, base))
+      .toMatchObject({ replacesId: "z", importCount: 3, updatedAt: "u", previewUrl: "https://wrist-assistant.com/api/gallery/previews/a.png" });
+    expect(readGalleryUpload({ id: "b", replacesId: "y", importCount: 2, previewUrl: "https://cdn.example/b.png" }, base))
+      .toMatchObject({ replacesId: "y", importCount: 2, previewUrl: "https://cdn.example/b.png" });
+    expect(readGalleryUpload({ title: "no id" }, base)).toBeUndefined();
+    expect(resolvePreviewUrl("/api/gallery/previews/c.png", base)).toBe("https://wrist-assistant.com/api/gallery/previews/c.png");
+  });
+
+  it("hangs new versions under the upload they replace, and offers Update only when nothing waits", () => {
+    const items = [
+      upload({ id: "b", status: "pending", replacesId: "a" }),
+      upload({ id: "c", status: "rejected", replacesId: "a", rejectReason: "Names a street" }),
+      upload({ id: "a", title: "Door ring" }),
+      upload({ id: "d", status: "pending", replacesId: "gone" }),
+      upload({ id: "e", title: "Solar", voteCount: 12, importCount: 31 }),
+      upload({ id: "f", status: "rejected" }),
+      upload({ id: "g", status: "rejected", replacesId: "h" }),
+      upload({ id: "h", title: "Tried again" }),
+    ];
+    const rows = galleryUploadRows(items);
+    expect(rows.map((r) => r.upload.id)).toEqual(["a", "d", "e", "f", "h"]);
+    const byId = new Map(rows.map((r) => [r.upload.id, r]));
+    expect(byId.get("a")!.updates.map((u) => u.id)).toEqual(["b", "c"]);
+    expect(byId.get("a")!.canUpdate).toBe(false);
+    expect(byId.get("d")!.canUpdate).toBe(false);
+    expect(byId.get("e")!.canUpdate).toBe(true);
+    expect(byId.get("f")!.canUpdate).toBe(false);
+    // A turned-down new version does not stop another try.
+    expect(byId.get("h")!.canUpdate).toBe(true);
+  });
+
+  it("words each state", () => {
+    expect(galleryStatusLabel(upload({ status: "pending", replacesId: "a" }))).toBe("New version in review");
+    expect(galleryStatusLabel(upload({ status: "rejected", replacesId: "a" }))).toBe("New version not approved");
+    expect(galleryStatusLabel(upload({ status: "pending" }))).toBe("Waiting for review");
+    expect(galleryUploadSubline(upload({ voteCount: 12, importCount: 31 }))).toBe("12 votes · added 31 times");
+    expect(galleryUploadSubline(upload({ voteCount: 1, importCount: 1 }))).toBe("1 vote · added once");
+    expect(galleryUploadSubline(upload({ status: "rejected", rejectReason: "Blurry" }))).toBe("Blurry");
+  });
+});
+
 describe("unquotedEntityIds", () => {
   const domains = new Set(["sensor", "sun"]);
 
@@ -302,7 +376,9 @@ describe("gallery calls", () => {
   it("lists and deletes the uploader's own items", async () => {
     const items = [{ id: "a", title: "T", status: "rejected", rejectReason: "Blurry", createdAt: "2026-09-13T00:00:00Z", voteCount: 0 }];
     const list = stub(200, { items });
-    expect(await listMyUploads(list.fetch, "key", "https://staging.example/api/gallery")).toEqual(items);
+    expect(await listMyUploads(list.fetch, "key", "https://staging.example/api/gallery")).toEqual([
+      { ...items[0], replacesId: null, updatedAt: null, importCount: 0, previewUrl: null },
+    ]);
     expect(list.calls[0]!.url).toBe("https://staging.example/api/gallery/mine");
     expect(list.calls[0]!.init.method).toBe("GET");
     expect(list.calls[0]!.init.headers["X-Gallery-Key"]).toBe("key");
@@ -341,7 +417,7 @@ describe("gallery calls", () => {
   });
 
   it("reads every contract code, and a page that is not JSON as a server error", async () => {
-    for (const code of ["bad_json", "too_large", "schema_too_new", "bad_png", "not_found", "forbidden"] as const) {
+    for (const code of ["bad_json", "too_large", "schema_too_new", "bad_png", "not_found", "not_updatable", "forbidden"] as const) {
       const { fetch } = stub(400, { error: code });
       expect((await failed(listMyUploads(fetch, "key"))).code).toBe(code);
     }
@@ -354,6 +430,27 @@ describe("gallery calls", () => {
     const err = await failed(deleteMyUpload(fetch, "key", "a"));
     expect(err.code).toBe("network");
     expect(galleryErrorMessage(err)).toMatch(/Could not reach the gallery/);
+  });
+
+  it("sends a new version with the upload it replaces, and a new item without the key", async () => {
+    const update = stub(201, { id: "b2", status: "pending", replaces: "a1" });
+    const out = await submitToGallery(update.fetch, "key", { ...submission(), replaces: "a1" });
+    expect(out).toEqual({ id: "b2", status: "pending", replaces: "a1" });
+    expect(JSON.parse(update.calls[0]!.init.body!).replaces).toBe("a1");
+
+    const fresh = stub(201, { id: "c3", status: "pending" });
+    await submitToGallery(fresh.fetch, "key", { ...submission(), replaces: "" });
+    expect(JSON.parse(fresh.calls[0]!.init.body!)).not.toHaveProperty("replaces");
+  });
+
+  it("explains an update the gallery will not take", async () => {
+    const { fetch } = stub(409, { error: "not_updatable" });
+    const err = await failed(submitToGallery(fetch, "key", { ...submission(), replaces: "a1" }));
+    expect(err.code).toBe("not_updatable");
+    expect(galleryErrorMessage(err)).toMatch(/in the gallery before it can be updated/);
+    const missing = stub(404, { error: "not_found" });
+    expect((await failed(submitToGallery(missing.fetch, "key", { ...submission(), replaces: "zz" }))).code).toBe("not_found");
+    expect(galleryErrorMessage(new GalleryError("invalid_field", 400, "replaces"))).toBe("The gallery did not accept the upload to update.");
   });
 
   it("refuses a body over 1 MB before sending it", async () => {

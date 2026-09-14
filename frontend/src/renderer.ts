@@ -153,6 +153,13 @@ export interface RenderOptions {
   /** More layers to tint the same way: the members of a group row the pointer
    * rests on in the Layers list. */
   hoverIds?: readonly string[];
+  /**
+   * Dim everything except these layers, and ring each of them in the panel's
+   * accent. The Share and gallery dialogs use it to show where an entity or a
+   * name is used. The holes sit on the same outline box the selection and the
+   * hit box use, turned the way the layer is, so they match what is drawn.
+   */
+  spotlightIds?: readonly string[];
   /** Draw resize handles on the highlighted element (active family only). */
   handles?: boolean;
   /** Editor affordance: outline tap layers, which the watch never draws. */
@@ -1871,6 +1878,8 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
       <path d=${shell} fill="#000000" />
       ${tinted(bezel, "accent", tint)}
       ${curvedMode ? tinted(main, "accent", tint) : main}
+      ${curvedMode ? nothing : spotlight(elements, design, options.spotlightIds, `${uid}-spot`, ctx.quad.width, ctx.quad.height,
+        `translate(${slotX} ${slotY}) scale(${fit.scale * tileScale})`)}
     </svg>`;
   }
 
@@ -1896,7 +1905,47 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
     </g>
     ${tinted(chrome, "plain", tint)}
     <g transform="translate(${fit.x} ${fit.y}) scale(${fit.scale})">${handleLayer(elements, design, options, charts)}</g>
+    ${spotlight(elements, design, options.spotlightIds, `${uid}-spot`, canvas.width, canvas.height, `translate(${fit.x} ${fit.y}) scale(${fit.scale})`)}
   </svg>`;
+}
+
+/**
+ * The boxes a spotlight cuts out, in design-box points: each named layer's
+ * outline box (what its selection and hit box use) and the turn it is drawn
+ * at. Layers the layout does not draw are skipped.
+ */
+export function spotlightBoxes(elements: readonly ResolvedElement[], design: CanvasSize, ids: readonly string[]): { box: Box; rotation: number }[] {
+  return elements
+    .filter((el) => ids.includes(el.id) && el.kind !== "tap")
+    .map((el) => {
+      const frame = frameBox(el, design);
+      const box = layerOutline(el, frame);
+      return { box: { ...box, cx: frame.cx, cy: frame.cy }, rotation: el.frame.rotationDegrees };
+    });
+}
+
+/** Everything but the named layers pushed back under a dark veil, with an
+ * accent ring round each one. `transform` maps design points into the SVG. */
+function spotlight(elements: readonly ResolvedElement[], design: CanvasSize, ids: readonly string[] | undefined,
+  maskId: string, width: number, height: number, transform: string) {
+  if (ids === undefined || ids.length === 0) return nothing;
+  const boxes = spotlightBoxes(elements, design, ids);
+  const shape = (b: { box: Box; rotation: number }, attrs: "hole" | "ring") => {
+    const { box, rotation } = b;
+    const turn = `rotate(${rotation} ${box.cx} ${box.cy})`;
+    return attrs === "hole"
+      ? svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} rx="2" fill="#000000" transform=${turn} />`
+      : svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} rx="2" fill="none" transform=${turn}
+          style="stroke: var(--wa-accent, #7b6cff)" stroke-width="2" vector-effect="non-scaling-stroke" />`;
+  };
+  return svg`<g class="spotlight" pointer-events="none">
+    <defs><mask id=${maskId} maskUnits="userSpaceOnUse" x="0" y="0" width=${width} height=${height}>
+      <rect width=${width} height=${height} fill="#ffffff" />
+      <g transform=${transform}>${boxes.map((b) => shape(b, "hole"))}</g>
+    </mask></defs>
+    <rect width=${width} height=${height} fill="#000000" fill-opacity="0.62" mask=${`url(#${maskId})`} />
+    <g transform=${transform}>${boxes.map((b) => shape(b, "ring"))}</g>
+  </g>`;
 }
 
 /** The selected layer's resize handles, for the pass drawn above the slot clip. */

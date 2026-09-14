@@ -15,7 +15,7 @@ export type UiIconName =
   | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "plus"
   | "lock" | "unlock" | "folder" | "ungroup" | "watch"
   | "compact" | "expanded" | "search" | "undo" | "redo" | "expand" | "left" | "right"
-  | "braces" | "link" | "info";
+  | "braces" | "link" | "info" | "globe" | "download" | "check" | "arrow" | "paste";
 
 function shape(name: UiIconName) {
   switch (name) {
@@ -77,6 +77,21 @@ function shape(name: UiIconName) {
     // A note to read first, for the callouts in the Share and Import dialogs.
     case "info":
       return svg`<circle cx="12" cy="12" r="8.5" /><path d="M12 11V16.5" /><path d="M12 7.6V7.8" />`;
+    // The public gallery on the web.
+    case "globe":
+      return svg`<circle cx="12" cy="12" r="8.5" /><path d="M3.5 12H20.5" /><path d="M12 3.5c2.5 3 2.5 14 0 17M12 3.5c-2.5 3-2.5 14 0 17" />`;
+    // Save as a file.
+    case "download":
+      return svg`<path d="M12 4V15" /><path d="M7 10L12 15L17 10" /><path d="M5 20H19" />`;
+    // Done: a copy that landed, a step that is finished.
+    case "check":
+      return svg`<path d="M5 12.5L9.5 17L19 7.5" />`;
+    // Onwards: the next step, a link that leaves the panel.
+    case "arrow":
+      return svg`<path d="M5 12H19" /><path d="M13 6L19 12L13 18" />`;
+    // A clipboard, for pasting a share in.
+    case "paste":
+      return svg`<rect x="6" y="4.5" width="12" height="16" rx="2" /><path d="M9 4.5V3.5H15V4.5" /><path d="M9 11H15M9 15H13" />`;
     // The app mark in the header: a watch case with its band stubs.
     case "watch":
       return svg`<rect x="6" y="6.5" width="12" height="11" rx="3" /><path d="M9 6.5L9.6 3H14.4L15 6.5M9 17.5L9.6 21H14.4L15 17.5" />`;
