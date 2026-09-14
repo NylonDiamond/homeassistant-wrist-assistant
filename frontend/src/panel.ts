@@ -1415,7 +1415,6 @@ export class WristAssistantPanel extends LitElement {
     .xf-pub input[type=text] { width: 100%; box-sizing: border-box; background: var(--wa-card); }
     .xf-pill { font-size: 12px; padding: 5px 8px; border-radius: 6px; background: var(--wa-card); border: 1px solid var(--wa-line); overflow-wrap: anywhere; white-space: pre-wrap; }
     .xf-pill.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .xf-edited { font-size: 11px; color: var(--wa-val); }
     .xf-checks { display: grid; gap: 6px; }
     .xf-checks > div { display: flex; align-items: center; gap: 8px; font-size: 13px; }
     .xf-checks svg.ui-icon { width: 15px; height: 15px; flex: none; color: var(--wa-ent); }
@@ -6046,13 +6045,10 @@ export class WristAssistantPanel extends LitElement {
     head: { label: string; value: string }): PublicRow[] {
     const fields = galleryPublicFields(cfg, slots, overrides);
     const gate = (_id: string, domain: string) => known.has(domain);
-    const box = (label: string, original: string, typed: string | undefined, set: (value: string) => void, maxlength?: number) => {
-      const edited = typed !== undefined && typed.trim() !== "" && typed.trim() !== original;
-      return html`<input type="text" maxlength=${maxlength ?? nothing} aria-label=${`${label}: ${original}`}
+    const box = (label: string, original: string, typed: string | undefined, set: (value: string) => void, maxlength?: number) =>
+      html`<input type="text" maxlength=${maxlength ?? nothing} aria-label=${`${label}: ${original}`}
           .value=${typed ?? original} placeholder=${original} ?disabled=${this.gallerySending}
-          @input=${(e: Event) => set((e.target as HTMLInputElement).value)} />
-        ${edited ? html`<span class="xf-edited">Edited. Your own copy keeps “${original}”.</span>` : nothing}`;
-    };
+          @input=${(e: Event) => set((e.target as HTMLInputElement).value)} />`;
     const rows: PublicRow[] = [{ key: "head", label: head.label, name: head.value, ids: [],
       control: box(head.label, cfg.name.trim(), this.shareName === "" ? undefined : this.shareName, (v) => { this.shareName = v; }) }];
     const nameInput = (row: GalleryNameRow, label: string, typed: string | undefined) =>
@@ -6093,7 +6089,7 @@ export class WristAssistantPanel extends LitElement {
       // the design, so it is changed on the layer, not renamed here.
       group.values.forEach((value, i) => {
         rows.push({ key: `t:${group.label}:${i}`, label: PUBLIC_ROW_LABEL[group.label] ?? group.label, name: value, ids: [],
-          control: html`<div class="xf-pill mono">${value}</div><span class="xf-edited">Change this on the layer.</span>` });
+          control: html`<div class="xf-pill mono">${value}</div>` });
       });
     }
     return rows;
