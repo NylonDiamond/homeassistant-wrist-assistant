@@ -69,6 +69,17 @@ export function familiesFor(owner: DeviceOwnerLike | null | undefined): FamilyKi
   });
 }
 
+/** Shapes the New dialog shows as coming soon: named and drawn, but not yet
+ * pickable. Only Extra Large, only for a phone that already gets the other
+ * Home Screen shapes, and only while `XLARGE_OFFERED` is false. A watch, or a
+ * phone too old for the Home Screen at all, sees nothing here; a promise about
+ * a screen the device does not have would just confuse. */
+export function comingSoonFamilies(owner: DeviceOwnerLike | null | undefined): FamilyKind[] {
+  if (XLARGE_OFFERED) return [];
+  if (deviceKindOf(owner) !== "iphone") return [];
+  return watchSupportsShapes(owner?.app_version, MIN_IPHONE_VERSION_FOR_HOME_SCREEN) ? ["xlarge"] : [];
+}
+
 export function isDrawable(family: FamilyKind): family is DrawableFamily {
   return (DRAWABLE_FAMILIES as FamilyKind[]).includes(family);
 }
@@ -94,6 +105,9 @@ export interface ShapeGroup {
    * group and a heading would just repeat the field's own label. */
   label?: string;
   families: FamilyKind[];
+  /** Shapes drawn after `families` as greyed-out cards that cannot be picked
+   * yet. Only ever set on the Home Screen group. */
+  comingSoon?: FamilyKind[];
 }
 
 /**
@@ -103,13 +117,16 @@ export interface ShapeGroup {
  * that mixes Circular with Small reads as six sizes of one thing when they are
  * two different screens, so each screen gets its own heading. The Home Screen
  * comes first: it is the bigger canvas and the one a phone owner most often
- * opens the dialog for. Order within a group follows `families`.
+ * opens the dialog for. Order within a group follows `families`. `comingSoon`
+ * (see `comingSoonFamilies`) lands at the end of the Home Screen group.
  */
-export function shapeGroups(families: readonly FamilyKind[]): ShapeGroup[] {
+export function shapeGroups(families: readonly FamilyKind[], comingSoon: readonly FamilyKind[] = []): ShapeGroup[] {
   const home = families.filter(isHomeFamily);
-  if (home.length === 0) return [{ families: [...families] }];
+  if (home.length === 0 && comingSoon.length === 0) return [{ families: [...families] }];
   const lock = families.filter((f) => !isHomeFamily(f));
-  const groups: ShapeGroup[] = [{ label: "Home Screen", families: home }];
+  const homeGroup: ShapeGroup = { label: "Home Screen", families: home };
+  if (comingSoon.length > 0) homeGroup.comingSoon = [...comingSoon];
+  const groups: ShapeGroup[] = [homeGroup];
   if (lock.length > 0) groups.push({ label: "Lock Screen", families: lock });
   return groups;
 }

@@ -9,6 +9,7 @@ import {
   canRemoveFamily,
   familiesFor,
   familyContentSummary,
+  comingSoonFamilies,
   familyNote,
   shapeGroups,
   firstDrawable,
@@ -297,6 +298,27 @@ describe("shapeGroups", () => {
 
   it("labels a home-only list so the heading still says where the shapes live", () => {
     expect(shapeGroups(["small"])).toEqual([{ label: "Home Screen", families: ["small"] }]);
+  });
+
+  it("puts coming-soon shapes at the end of the Home Screen group", () => {
+    expect(shapeGroups(["rectangular", "small"], ["xlarge"])).toEqual([
+      { label: "Home Screen", families: ["small"], comingSoon: ["xlarge"] },
+      { label: "Lock Screen", families: ["rectangular"] },
+    ]);
+  });
+});
+
+describe("comingSoonFamilies", () => {
+  it("promises Extra Large to a phone that already has the Home Screen shapes", () => {
+    expect(comingSoonFamilies(NEW_PHONE)).toEqual(XLARGE_OFFERED ? [] : ["xlarge"]);
+  });
+
+  it("promises nothing to a watch", () => {
+    expect(comingSoonFamilies({ device_kind: "watch", app_version: "9.9.9" })).toEqual([]);
+  });
+
+  it("promises nothing to a phone too old for the Home Screen", () => {
+    expect(comingSoonFamilies({ device_kind: "iphone", app_version: "2.7.0" })).toEqual([]);
   });
 });
 

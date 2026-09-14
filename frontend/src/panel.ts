@@ -95,7 +95,7 @@ import {
   resolveAll,
 } from "./resolver.js";
 import { CASES, FACE_TINTS, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, phoneCaseForScreenSize, renderLayerThumb, renderLayout, slotFor, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type PreviewCase } from "./renderer.js";
-import { addFamily, canRemoveFamily, familiesFor, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, keepFamilies, removeFamily, shapeGroups, supportedFamilies } from "./layouts.js";
+import { addFamily, canRemoveFamily, comingSoonFamilies, familiesFor, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, keepFamilies, removeFamily, shapeGroups, supportedFamilies } from "./layouts.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { deviceKindOf, deviceNoun, deviceSupportsShapes, updateDeviceMessage } from "./version.js";
 import { makeIconProvider } from "./icons.js";
@@ -1283,6 +1283,10 @@ export class WristAssistantPanel extends LitElement {
     /* The condition under a shape's name: small, quiet, and on its own line, so
        "Extra Large" still reads as the name of the shape. */
     .shape-card-note { font-size: 10px; font-weight: 500; line-height: 1.25; opacity: .8; text-align: center; }
+    /* A shape that is announced but not yet pickable: same card, dimmed, no
+       hover lift, so it reads as a place in the row rather than a choice. */
+    .shape-card.soon { opacity: .45; cursor: default; }
+    .shape-card.soon:hover { border-color: var(--wa-line); color: var(--wa-muted); }
     .shape-dots { display: inline-flex; gap: 3px; align-items: center; flex: none; }
     .shape-dot { width: 14px; height: 10px; border-radius: 2px; background: currentColor; opacity: .3; display: inline-block; }
     .shape-dot.circular { width: 10px; border-radius: 50%; }
@@ -5839,7 +5843,7 @@ export class WristAssistantPanel extends LitElement {
         <div class="field new-shapes">
           <span>Shape</span>
           <div class="shape-groups" role="radiogroup" aria-label="Shape">
-            ${shapeGroups(this.ownerFamilies).map((group) => html`<div class="shape-group">
+            ${shapeGroups(this.ownerFamilies, comingSoonFamilies(this.selectedOwner)).map((group) => html`<div class="shape-group">
               ${group.label ? html`<span class="shape-group-label">${group.label}</span>` : nothing}
               <div class="shape-cards">
                 ${group.families.map((f) => html`<button type="button" role="radio" class="shape-card ${this.newFamily === f ? "on" : ""}"
@@ -5848,6 +5852,12 @@ export class WristAssistantPanel extends LitElement {
                   ${familyArt(f)}
                   <span class="shape-card-name">${familyTitle(f)}</span>
                   ${familyNote(f) ? html`<span class="shape-card-note">${familyNote(f)}</span>` : nothing}
+                </button>`)}
+                ${(group.comingSoon ?? []).map((f) => html`<button type="button" role="radio" class="shape-card soon" disabled
+                  aria-checked="false" aria-disabled="true" title="Coming soon">
+                  ${familyArt(f)}
+                  <span class="shape-card-name">${familyTitle(f)}</span>
+                  <span class="shape-card-note">Coming soon${familyNote(f) ? html`<br />${familyNote(f)}` : nothing}</span>
                 </button>`)}
               </div>
             </div>`)}
