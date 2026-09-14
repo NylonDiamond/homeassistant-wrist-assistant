@@ -109,6 +109,21 @@ export function removeFamily(cfg: CustomComplicationConfig, family: FamilyKind):
   cfg.schemaVersion = schemaVersionFor(cfg);
 }
 
+/**
+ * A copy with only the shapes in `keep`, each dropped one removed the way
+ * `removeFamily` removes it, layers included. Share and Import use it to send
+ * or take part of a design. A `keep` that names none of the document's shapes
+ * would empty the set, so it returns the copy whole instead. The document
+ * passed in is never touched.
+ */
+export function keepFamilies(cfg: CustomComplicationConfig, keep: readonly FamilyKind[]): CustomComplicationConfig {
+  const next = structuredClone(cfg);
+  const have = supportedFamilies(next);
+  if (!have.some((f) => keep.includes(f))) return next;
+  for (const family of have) if (!keep.includes(family)) removeFamily(next, family);
+  return next;
+}
+
 /** What removing a shape would throw away, for the confirmation. Empty when
  * the layout holds nothing the user typed, in which case no confirmation is
  * needed. */

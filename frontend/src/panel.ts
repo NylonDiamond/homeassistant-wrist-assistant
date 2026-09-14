@@ -95,7 +95,7 @@ import {
   resolveAll,
 } from "./resolver.js";
 import { CASES, FACE_TINTS, REFERENCE_CASE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, renderLayerThumb, renderLayout, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type WatchCase } from "./renderer.js";
-import { ALL_FAMILIES, addFamily, canRemoveFamily, familyContentSummary, firstDrawable, isDrawable, removeFamily, supportedFamilies } from "./layouts.js";
+import { ALL_FAMILIES, addFamily, canRemoveFamily, familyContentSummary, firstDrawable, isDrawable, keepFamilies, removeFamily, supportedFamilies } from "./layouts.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { updateWatchMessage, watchSupportsShapes } from "./version.js";
 import { makeIconProvider } from "./icons.js";
@@ -225,6 +225,19 @@ function writeGalleryNickname(name: string): void {
 
 /** How the gallery dialog names each read-only kind of public text, one row
  * per piece. */
+/** One line of the public name check, in Share and in gallery step 2. */
+interface PublicRow {
+  key: string;
+  label: string;
+  /** The name as it will be read, for the preview caption. */
+  name: string;
+  /** The layers it belongs to: spotlit in the preview, listed as tags. */
+  ids: string[];
+  control: unknown;
+  /** What an entity is in this home, shown with the private tags. */
+  now?: unknown;
+}
+
 const PUBLIC_ROW_LABEL: Record<string, string> = {
   "Layer names": "Layer name",
   "Template text": "Template text",
@@ -706,6 +719,13 @@ export class WristAssistantPanel extends LitElement {
   @state() private shareOpen = false;
   @state() private shareMode: "share" | "backup" = "share";
   @state() private shareLabels: ReadonlyMap<string, string> = new Map();
+  /** The shapes Share sends. Undefined sends every shape the document has. */
+  @state() private shareFamilies?: ReadonlySet<FamilyKind>;
+  /** Group and shared value names changed for shared copies only, by id: the
+   * link, the file and the gallery all take them. Cleared each time Share
+   * opens; the draft keeps its own names. */
+  @state() private shareGroupNames: ReadonlyMap<string, string> = new Map();
+  @state() private shareValueNames: ReadonlyMap<string, string> = new Map();
   /** What the Share dialog's footer last had to say. Empty most of the time:
    * it speaks when a copy or a download landed, and when this browser has no
    * clipboard to write to and the text has been selected instead. */
@@ -719,8 +739,8 @@ export class WristAssistantPanel extends LitElement {
   /** The link field shows only when the link could not reach the clipboard,
    * so there is something on screen to select and copy by hand. */
   @state() private shareLinkShown = false;
-  /** The slot row the pointer or the focus is in, by placeholder id. The
-   * preview dims everything but the layers that read it. */
+  /** The public name row the pointer or the focus is in, by row key. The
+   * preview dims everything but the layers that use it. */
   @state() private shareFocus?: string;
   /** The Share to gallery dialog, opened from Share. The slots and their
    * labels are the Share dialog's, so what is sent is what Share shows. */
@@ -732,10 +752,6 @@ export class WristAssistantPanel extends LitElement {
   @state() private galleryReplaces?: { id: string; title: string };
   /** The public text row the pointer or the focus is in. */
   @state() private galleryFocus?: string;
-  /** Group and shared value names changed for the gallery copy only, by id.
-   * Cleared each time the dialog opens; the draft keeps its own names. */
-  @state() private galleryGroupNames: ReadonlyMap<string, string> = new Map();
-  @state() private galleryValueNames: ReadonlyMap<string, string> = new Map();
   /** Waits out typing in a slot label before the pictures are drawn again,
    * since they print the labels. */
   private galleryRedrawTimer?: number;
@@ -767,6 +783,8 @@ export class WristAssistantPanel extends LitElement {
   @state() private importParse?: ImportParse;
   @state() private importName = "";
   @state() private importMap: ReadonlyMap<string, EntityRef> = new Map();
+  /** The shapes Import takes. Undefined takes every shape the text has. */
+  @state() private importFamilies?: ReadonlySet<FamilyKind>;
   /** A file is being dragged over the Import dialog. */
   @state() private importDrop = false;
   /** Enter and leave fire for every child a drag crosses, so the highlight
@@ -790,6 +808,7 @@ export class WristAssistantPanel extends LitElement {
   private importPreviewCache?: {
     parse: ImportParse;
     map: ReadonlyMap<string, EntityRef>;
+    families: ReadonlySet<FamilyKind> | undefined;
     config: CustomComplicationConfig;
     entities: EntityRef[];
   };
@@ -1378,8 +1397,11 @@ export class WristAssistantPanel extends LitElement {
     .xf-pub .kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; align-items: start; padding: 6px; border-radius: 8px; transition: background-color .12s ease-out; }
     .xf-pub .kv.on { background: var(--wa-sel-bg); }
     .xf-legend { display: grid; gap: 6px; }
-    .xf-mine { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
-    .xf-mine > svg.ui-icon { width: 13px; height: 13px; flex: none; color: var(--wa-muted); }
+    .xf-mine { display: flex; align-items: flex-start; gap: 6px; margin-top: 6px; }
+    .xf-mine > svg.ui-icon { width: 13px; height: 13px; flex: none; margin-top: 4px; color: var(--wa-muted); }
+    .xf-mine-b { display: grid; gap: 6px; min-width: 0; }
+    .xf-shapes .pk-chip { display: inline-flex; align-items: center; gap: 4px; }
+    .xf-shapes .pk-chip svg.ui-icon { width: 12px; height: 12px; }
     .xf-pub .kv > .k { font-size: 12px; color: var(--wa-muted); padding-top: 6px; }
     .xf-pub .kv > .v { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
     .xf-pub input[type=text] { width: 100%; box-sizing: border-box; background: var(--wa-card); }
@@ -5758,7 +5780,7 @@ export class WristAssistantPanel extends LitElement {
   /** The open document's slots, with whatever the author has renamed applied.
    * Only the edited labels are held, so the rest follow the document. */
   private currentShareSlots(): ShareSlot[] {
-    const cfg = this.draft?.config;
+    const cfg = this.shareConfig();
     if (!cfg) return [];
     return shareSlots(cfg, this.knownDomains()).map((slot) => {
       const label = this.shareLabels.get(slot.placeholderId);
@@ -5775,17 +5797,21 @@ export class WristAssistantPanel extends LitElement {
    * here and nothing is stored: this dialog only reads.
    */
   private renderShareDialog() {
-    const cfg = this.draft?.config;
-    if (!cfg) return nothing;
+    const whole = this.draft?.config;
+    const cfg = this.shareConfig();
+    if (!whole || !cfg) return nothing;
     const slots = this.currentShareSlots();
     const share = this.shareMode === "share";
-    const text = exportText(cfg, this.shareMode, slots);
+    const text = share
+      ? exportText(applyGalleryOverrides(cfg, this.shareNameOverrides()), "share", slots)
+      : exportText(cfg, "backup");
     const link = this.shareLink?.text === text ? this.shareLink : undefined;
-    const known = this.knownDomains();
     const layouts = resolveAll(cfg, this.buildContext(), this.forced);
-    const uses = new Map(slots.map((slot) => [slot.placeholderId, entityLayerIds(cfg, slot.originalId, (_id, domain) => known.has(domain))]));
-    const focus = share ? slots.find((slot) => slot.placeholderId === this.shareFocus) : undefined;
-    const spot = focus ? uses.get(focus.placeholderId) ?? [] : [];
+    const rows = share
+      ? this.publicNameRows(cfg, slots, this.knownDomains(), this.shareNameOverrides(), { label: "Name", value: cfg.name.trim() || "Untitled" })
+      : [];
+    const focused = rows.find((row) => row.key === this.shareFocus);
+    const spot = focused?.ids ?? [];
     const family = this.dialogFamily(cfg);
     const admin = this.hass.user?.is_admin === true;
     const copied = this.shareCopied;
@@ -5793,8 +5819,9 @@ export class WristAssistantPanel extends LitElement {
       ${this.dialogHead(`Share “${cfg.name.trim() || "Untitled"}”`, `${familyWords(supportedFamilies(cfg))} · ${layerCountWords(cfg)}`, () => this.closeShareDialog())}
       <div class="xfer-body">
         ${this.dialogPreview(layouts, family, spot,
-          focus ? html`Uses <b>${focus.label}</b>` : family ? familyTitle(family) : "",
-          share && slots.length > 0 ? "Point at an entity to see where it is" : "")}
+          focused && spot.length > 0 ? html`Where <b>${focused.name}</b> is` : family ? familyTitle(family) : "",
+          rows.some((row) => row.ids.length > 0) ? "Point at a name to see where it is" : "")}
+        ${this.familyChips(supportedFamilies(whole), this.shareFamilies, (next) => this.setShareFamilies(next), "Shapes to share")}
         <div class="xf-stack">
           <div class="seg wide xf-modes" role="group" aria-label="What to share">
             <button class=${share ? "on" : ""} aria-pressed=${share ? "true" : "false"} @click=${() => this.setShareMode("share")}>${uiIcon("globe")}<span>Share with others</span></button>
@@ -5803,7 +5830,10 @@ export class WristAssistantPanel extends LitElement {
           <div class="xf-lead ${share ? "" : "warn"}">${uiIcon(share ? "info" : "lock")}
             <span>${share ? "Your entities are removed. The other person picks their own." : "Exact copy with your entities. Keep it for yourself or this home."}</span></div>
         </div>
-        ${share ? this.renderShareSlots(cfg, slots, uses, layouts) : nothing}
+        ${share ? html`<div class="xf-stack">
+          <div class="xf-label">What they can read</div>
+          ${this.renderPublicRows(cfg, rows, this.shareFocus, (key) => { this.shareFocus = key; }, "share")}
+        </div>` : nothing}
         <div class="xf-stack">
           <div class="xf-acts">
             <button class="xf-act" ?disabled=${!share || !admin} aria-haspopup="dialog"
@@ -5906,40 +5936,129 @@ export class WristAssistantPanel extends LitElement {
     clear();
   }
 
+  /** The open document with only the shapes chosen in Share. Everything the
+   * Share and gallery dialogs send or show is read from this copy. */
+  private shareConfig(): CustomComplicationConfig | undefined {
+    const cfg = this.draft?.config;
+    if (!cfg || this.shareFamilies === undefined) return cfg;
+    return keepFamilies(cfg, [...this.shareFamilies]);
+  }
+
+  /** The group and shared value names changed for shared copies. */
+  private shareNameOverrides(): GalleryOverrides {
+    return { groupNames: this.shareGroupNames, valueNames: this.shareValueNames };
+  }
+
+  private setShareFamilies(next: ReadonlySet<FamilyKind>) {
+    this.shareFamilies = next;
+    this.shareFocus = undefined;
+    this.shareNote = "";
+    this.shareLinkShown = false;
+  }
+
   /**
-   * One row per entity the design reads: its type, the name the other side
-   * will pick by, what it is here (which only the author sees), and the layers
-   * that read it.
-   *
-   * The name is the only editable thing, and it is all the reader has to go on
-   * when they choose what to point it at, so "Sensor 1" is worth replacing
-   * with "the one on the porch".
+   * Chips for the shapes a document has, so Share can send and Import can
+   * take only some of them. The last shape on cannot be turned off, and a
+   * document with one shape has nothing to choose.
    */
-  private renderShareSlots(cfg: CustomComplicationConfig, slots: readonly ShareSlot[], uses: ReadonlyMap<string, string[]>, layouts: ResolvedAll) {
-    if (slots.length === 0) {
-      return html`<div class="xf-lead">${uiIcon("info")}<span>This design reads no entities, so there is nothing to replace.</span></div>`;
+  private familyChips(have: readonly FamilyKind[], chosen: ReadonlySet<FamilyKind> | undefined, set: (next: ReadonlySet<FamilyKind>) => void, label: string) {
+    if (have.length < 2) return nothing;
+    const on = (f: FamilyKind) => chosen === undefined || chosen.has(f);
+    const count = have.filter(on).length;
+    return html`<div class="xf-f xf-shapes"><span class="xf-label">${label}<span class="r">${count} of ${have.length}</span></span>
+      <div class="gal-tags" role="group" aria-label=${label}>${have.map((f) => {
+        const lit = on(f);
+        const last = lit && count === 1;
+        return html`<button class="pk-chip ${lit ? "on" : ""}" aria-pressed=${lit ? "true" : "false"} ?disabled=${last}
+          title=${last ? "At least one shape stays on" : lit ? `Leave ${familyTitle(f)} out` : `Put ${familyTitle(f)} back`}
+          @click=${() => {
+            const next = new Set(have.filter(on));
+            if (lit) next.delete(f);
+            else next.add(f);
+            set(next);
+          }}>${lit ? uiIcon("check") : nothing}${familyTitle(f)}</button>`;
+      })}</div></div>`;
+  }
+
+  /**
+   * The public name check, one row per piece of text a shared copy carries:
+   * the name or title, then entity, group and shared value names to edit, and
+   * layer names and other text to read. Share and gallery step 2 both show it,
+   * over the same names, so a change in one is in the other.
+   */
+  private publicNameRows(cfg: CustomComplicationConfig, slots: readonly ShareSlot[], known: ReadonlySet<string>, overrides: GalleryOverrides,
+    head: { label: string; value: string }): PublicRow[] {
+    const fields = galleryPublicFields(cfg, slots, overrides);
+    const gate = (_id: string, domain: string) => known.has(domain);
+    const rows: PublicRow[] = [{ key: "head", label: head.label, name: head.value, ids: [], control: html`<div class="xf-pill">${head.value}</div>` }];
+    const nameInput = (row: GalleryNameRow, label: string, typed: string | undefined) => {
+      const edited = typed !== undefined && typed.trim() !== "" && typed.trim() !== row.original;
+      return html`<input type="text" maxlength=${row.kind === "slot" ? 40 : nothing} aria-label=${`${label}: ${row.original}`}
+          .value=${typed ?? row.value} placeholder=${row.original} ?disabled=${this.gallerySending}
+          @input=${(e: Event) => this.setPublicName(row, (e.target as HTMLInputElement).value)} />
+        ${edited ? html`<span class="xf-edited">Edited. Your own copy keeps “${row.original}”.</span>` : nothing}`;
+    };
+    for (const group of fields) {
+      if (group.rows) {
+        for (const row of group.rows) {
+          if (row.kind === "group") {
+            rows.push({ key: `g:${row.id}`, label: "Group name", name: row.value, ids: groupMembers(cfg, row.id).map((el) => el.payload.id),
+              control: nameInput(row, "Group name", this.shareGroupNames.get(row.id)) });
+          } else if (row.kind === "shared") {
+            rows.push({ key: `v:${row.id}`, label: "Shared value name", name: row.value, ids: sharedValueLayerIds(cfg, row.id),
+              control: nameInput(row, "Shared value name", this.shareValueNames.get(row.id)) });
+          } else {
+            const slot = slots.find((s) => s.placeholderId === row.id);
+            const now = slot ? entityRefFrom(this.hass.states, slot.originalId).displayName : "";
+            rows.push({ key: `e:${row.id}`, label: "Entity name", name: row.value, ids: slot ? entityLayerIds(cfg, slot.originalId, gate) : [],
+              control: nameInput(row, "Entity name", undefined),
+              now: slot ? html`<div class="xf-now"><span>Now: <b>${now || slot.originalId}</b></span><span class="mono">${slot.originalId}</span></div>` : undefined });
+          }
+        }
+        continue;
+      }
+      const layerNames = group.label === "Layer names";
+      group.values.forEach((value, i) => {
+        const ids = layerNames
+          ? cfg.elements.filter((el) => !isAttachedTap(cfg, el) && el.payload.name?.trim() === value).map((el) => el.payload.id)
+          : [];
+        rows.push({ key: `t:${group.label}:${i}`, label: PUBLIC_ROW_LABEL[group.label] ?? group.label, name: value, ids,
+          control: html`<div class="xf-pill ${layerNames ? "" : "mono"}">${value}</div>` });
+      });
     }
+    return rows;
+  }
+
+  /** The public name check as markup: what is public and what is private,
+   * then the rows in the amber box. Pointing at a row sets `focus`. */
+  private renderPublicRows(cfg: CustomComplicationConfig, rows: readonly PublicRow[], focus: string | undefined,
+    setFocus: (key: string | undefined) => void, audience: "share" | "gallery", preview: unknown = nothing) {
+    // The tags draw the layers as the author knows them, pictures included.
+    const drawn: ResolvedAll = rows.some((r) => r.ids.length > 0) ? resolveAll(cfg, this.buildContext(), this.forced) : {};
     const ctx = describeContext(this.host());
-    const clear = () => { this.shareFocus = undefined; };
-    return html`<div class="xf-stack">
-      <div class="xf-label">Name the entities they will pick <span class="xf-count">${slots.length}</span></div>
-      <div class="xf-rows" @pointerleave=${(e: Event) => this.leaveRows(e, clear)} @focusout=${(e: Event) => this.leaveRows(e, clear)}>
-        ${slots.map((slot) => {
-          const ids = uses.get(slot.placeholderId) ?? [];
-          const now = entityRefFrom(this.hass.states, slot.originalId).displayName;
-          const set = () => { this.shareFocus = slot.placeholderId; };
-          return html`<div class="xf-row ${this.shareFocus === slot.placeholderId ? "on" : ""}" @pointerenter=${set} @focusin=${set}>
-            <span class="ent-ico xf-dom">${domainIcon(slot.domain)}</span>
-            <div class="xf-main">
-              <input type="text" maxlength="40" aria-label=${`Name for ${slot.placeholderId}`} .value=${slot.label}
-                @input=${(e: Event) => this.setShareLabel(slot.placeholderId, (e.target as HTMLInputElement).value)} />
-              <div class="xf-now">${uiIcon("lock")}<span>Now: <b>${now || slot.originalId}</b></span><span class="mono">${slot.originalId}</span><span>· only you see this</span></div>
-              ${ids.length > 0 ? this.layerTags(cfg, layouts, ids, ctx) : html`<div class="xf-sub">${slot.where.join(", ")}</div>`}
-            </div>
+    const clear = () => setFocus(undefined);
+    const who = audience === "share" ? "Whoever gets the link or the file can read them" : "Everyone can read them";
+    return html`
+      <div class="xf-legend">
+        <div class="xf-lead warn">${uiIcon("globe")}<span><b>The boxes are public.</b> ${who}, so change anything that names a person, a place or a device.</span></div>
+        <div class="xf-lead">${uiIcon("lock")}<span><b>Everything under a box is only for you.</b> It shows what the name is in your home and which layers use it. It is never sent.</span></div>
+      </div>
+      ${preview}
+      <div class="xf-pub" @pointerleave=${(e: Event) => this.leaveRows(e, clear)} @focusout=${(e: Event) => this.leaveRows(e, clear)}>
+        ${rows.map((row) => {
+          const on = row.key === focus && row.ids.length > 0;
+          const set = () => setFocus(row.key);
+          const mine = row.ids.length > 0 || row.now !== undefined;
+          return html`<div class="kv ${on ? "on" : ""}" @pointerenter=${set} @focusin=${set}>
+            <span class="k">${row.label}</span>
+            <div class="v">${row.control}${mine
+              ? html`<div class="xf-mine" title="Only you see this. It is not sent.">${uiIcon("lock")}<div class="xf-mine-b">
+                  ${row.now ?? nothing}${row.ids.length > 0 ? this.layerTags(cfg, drawn, row.ids, ctx) : nothing}</div></div>`
+              : nothing}</div>
           </div>`;
         })}
       </div>
-    </div>`;
+      <div class="hint">Names changed here are only for shared copies: the link, the file and the gallery. Your own complication keeps its names, and an empty box keeps the name it had.</div>`;
   }
 
   private setShareMode(mode: "share" | "backup") {
@@ -5961,6 +6080,9 @@ export class WristAssistantPanel extends LitElement {
     this.shareOpen = true;
     this.shareMode = "share";
     this.shareLabels = new Map();
+    this.shareFamilies = undefined;
+    this.shareGroupNames = new Map();
+    this.shareValueNames = new Map();
     this.shareNote = "";
     this.shareTextOpen = false;
     this.shareLink = undefined;
@@ -5997,7 +6119,7 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private openGalleryDialog() {
-    const cfg = this.draft?.config;
+    const cfg = this.shareConfig();
     if (!cfg || !this.hass.user?.is_admin) return;
     this.galleryOpen = true;
     this.galleryTitle = cfg.name.trim().slice(0, GALLERY_LIMITS.title);
@@ -6011,8 +6133,6 @@ export class WristAssistantPanel extends LitElement {
     this.galleryPreviews = undefined;
     this.galleryPreviewNote = "";
     this.galleryConfirmDelete = undefined;
-    this.galleryGroupNames = new Map();
-    this.galleryValueNames = new Map();
     this.galleryTab = "new";
     this.galleryStep = 1;
     this.galleryReplaces = undefined;
@@ -6026,19 +6146,21 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** The renames that apply to the gallery copy: the title as its name, and
-   * the group and shared value names changed in this dialog. */
+   * the group and shared value names changed in Share or here. */
   private galleryOverrides(): GalleryOverrides {
-    return { name: this.galleryTitle, groupNames: this.galleryGroupNames, valueNames: this.galleryValueNames };
+    return { name: this.galleryTitle, ...this.shareNameOverrides() };
   }
 
-  /** A name typed into the public list. Slot labels are the Share dialog's own,
-   * and the pictures print them, so those are drawn again once typing stops. */
-  private setGalleryName(row: GalleryNameRow, value: string) {
+  /** A name typed into the public list, in Share or in the gallery. Slot
+   * labels print on the gallery pictures, so those are drawn again once
+   * typing stops while the gallery is open. */
+  private setPublicName(row: GalleryNameRow, value: string) {
     if (row.kind === "slot") {
       this.setShareLabel(row.id, value);
+      if (!this.galleryOpen) return;
       window.clearTimeout(this.galleryRedrawTimer);
       this.galleryRedrawTimer = window.setTimeout(() => {
-        const cfg = this.draft?.config;
+        const cfg = this.shareConfig();
         if (!cfg || !this.galleryOpen || this.gallerySent) return;
         this.galleryPreviews = undefined;
         this.galleryPreviewNote = "";
@@ -6046,10 +6168,10 @@ export class WristAssistantPanel extends LitElement {
       }, 500);
       return;
     }
-    const next = new Map(row.kind === "group" ? this.galleryGroupNames : this.galleryValueNames);
+    const next = new Map(row.kind === "group" ? this.shareGroupNames : this.shareValueNames);
     next.set(row.id, value);
-    if (row.kind === "group") this.galleryGroupNames = next;
-    else this.galleryValueNames = next;
+    if (row.kind === "group") this.shareGroupNames = next;
+    else this.shareValueNames = next;
   }
 
   private closeGalleryDialog() {
@@ -6094,7 +6216,7 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private async sendToGallery() {
-    const cfg = this.draft?.config;
+    const cfg = this.shareConfig();
     if (!cfg || this.gallerySending || this.gallerySent || !this.galleryConfirmed || this.galleryPreviews === undefined) return;
     const slots = this.currentShareSlots();
     const meta = this.galleryMeta();
@@ -6157,7 +6279,7 @@ export class WristAssistantPanel extends LitElement {
    * lists what this home has sent, with Update and Delete.
    */
   private renderGalleryDialog() {
-    const cfg = this.draft?.config;
+    const cfg = this.shareConfig();
     if (!cfg) return nothing;
     const rows = this.galleryUploads ? galleryUploadRows(this.galleryUploads) : undefined;
     const tab = this.galleryTab;
@@ -6319,44 +6441,8 @@ export class WristAssistantPanel extends LitElement {
    * picture layers as stand-ins.
    */
   private renderGalleryPublic(cfg: CustomComplicationConfig, slots: readonly ShareSlot[], overrides: GalleryOverrides, known: ReadonlySet<string>) {
-    const fields = galleryPublicFields(cfg, slots, overrides);
-    const gate = (_id: string, domain: string) => known.has(domain);
-    const rows: { key: string; label: string; name: string; ids: string[]; control: unknown }[] = [];
     const title = this.galleryTitle.trim() || "Untitled";
-    rows.push({ key: "title", label: "Title", name: title, ids: [], control: html`<div class="xf-pill">${title}</div>` });
-    const nameInput = (row: GalleryNameRow, label: string, typed: string | undefined) => {
-      const edited = typed !== undefined && typed.trim() !== "" && typed.trim() !== row.original;
-      return html`<input type="text" maxlength=${row.kind === "slot" ? 40 : nothing} aria-label=${`${label}: ${row.original}`}
-          .value=${typed ?? row.value} placeholder=${row.original} ?disabled=${this.gallerySending}
-          @input=${(e: Event) => this.setGalleryName(row, (e.target as HTMLInputElement).value)} />
-        ${edited ? html`<span class="xf-edited">Edited. Your own copy keeps “${row.original}”.</span>` : nothing}`;
-    };
-    for (const group of fields) {
-      if (group.rows) {
-        for (const row of group.rows) {
-          if (row.kind === "group") {
-            rows.push({ key: `g:${row.id}`, label: "Group name", name: row.value, ids: groupMembers(cfg, row.id).map((el) => el.payload.id),
-              control: nameInput(row, "Group name", this.galleryGroupNames.get(row.id)) });
-          } else if (row.kind === "shared") {
-            rows.push({ key: `v:${row.id}`, label: "Shared value name", name: row.value, ids: sharedValueLayerIds(cfg, row.id),
-              control: nameInput(row, "Shared value name", this.galleryValueNames.get(row.id)) });
-          } else {
-            const slot = slots.find((s) => s.placeholderId === row.id);
-            rows.push({ key: `e:${row.id}`, label: "Entity name", name: row.value, ids: slot ? entityLayerIds(cfg, slot.originalId, gate) : [],
-              control: nameInput(row, "Entity name", undefined) });
-          }
-        }
-        continue;
-      }
-      const layerNames = group.label === "Layer names";
-      group.values.forEach((value, i) => {
-        const ids = layerNames
-          ? cfg.elements.filter((el) => !isAttachedTap(cfg, el) && el.payload.name?.trim() === value).map((el) => el.payload.id)
-          : [];
-        rows.push({ key: `t:${group.label}:${i}`, label: PUBLIC_ROW_LABEL[group.label] ?? group.label, name: value, ids,
-          control: html`<div class="xf-pill ${layerNames ? "" : "mono"}">${value}</div>` });
-      });
-    }
+    const rows = this.publicNameRows(cfg, slots, known, overrides, { label: "Title", value: title });
     const focused = rows.find((r) => r.key === this.galleryFocus);
     const renamed = applyGalleryOverrides(cfg, overrides);
     const scrubbed = scrubForShare(renamed, slots);
@@ -6365,32 +6451,11 @@ export class WristAssistantPanel extends LitElement {
       templateResults: this.templateResults,
       historySeries: this.historySeries,
     }));
-    // The tags draw the layers as the author knows them, pictures included.
-    const drawn: ResolvedAll = rows.some((r) => r.ids.length > 0) ? resolveAll(cfg, this.buildContext(), this.forced) : {};
     const family = this.dialogFamily(cfg);
-    const ctx = describeContext(this.host());
-    const clear = () => { this.galleryFocus = undefined; };
-    return html`
-      <div class="xf-legend">
-        <div class="xf-lead warn">${uiIcon("globe")}<span><b>The boxes are public.</b> Everyone can read them, so change anything that names a person, a place or a device.</span></div>
-        <div class="xf-lead">${uiIcon("lock")}<span><b>The tags under a box are only for you.</b> They show which of your layers use the name. They are never sent.</span></div>
-      </div>
-      ${this.dialogPreview(layouts, family, focused?.ids ?? [],
-        focused && focused.ids.length > 0 ? html`Where <b>${focused.name}</b> is` : family ? familyTitle(family) : "",
-        "Point at a name to see where it is", true)}
-      <div class="xf-pub" @pointerleave=${(e: Event) => this.leaveRows(e, clear)} @focusout=${(e: Event) => this.leaveRows(e, clear)}>
-        ${rows.map((row) => {
-          const on = row.key === this.galleryFocus && row.ids.length > 0;
-          const set = () => { this.galleryFocus = row.key; };
-          return html`<div class="kv ${on ? "on" : ""}" @pointerenter=${set} @focusin=${set}>
-            <span class="k">${row.label}</span>
-            <div class="v">${row.control}${row.ids.length > 0
-              ? html`<div class="xf-mine" title="Only you see this. It is not sent.">${uiIcon("lock")}${this.layerTags(cfg, drawn, row.ids, ctx)}</div>`
-              : nothing}</div>
-          </div>`;
-        })}
-      </div>
-      <div class="hint">Names changed here are for the gallery copy only, and an empty one keeps its own name. Entity names are the ones from Share.</div>`;
+    const preview = this.dialogPreview(layouts, family, focused?.ids ?? [],
+      focused && focused.ids.length > 0 ? html`Where <b>${focused.name}</b> is` : family ? familyTitle(family) : "",
+      "Point at a name to see where it is", true);
+    return this.renderPublicRows(cfg, rows, this.galleryFocus, (key) => { this.galleryFocus = key; }, "gallery", preview);
   }
 
   /** Step 3: what has been taken care of, the promise, and anything that still
@@ -6558,9 +6623,21 @@ export class WristAssistantPanel extends LitElement {
    * waits for a button. Nothing is created until Import, and Import saves it
    * straight away, so leaving the page afterwards does not lose it.
    */
-  private renderImportDialog() {
+  /** The pasted document with only the shapes chosen in Import. */
+  private importConfig(): CustomComplicationConfig | undefined {
     const parse = this.importParse;
-    const cfg = parse?.ok ? parse.config : undefined;
+    if (!parse?.ok) return undefined;
+    return this.importFamilies === undefined ? parse.config : keepFamilies(parse.config, [...this.importFamilies]);
+  }
+
+  private setImportFamilies(next: ReadonlySet<FamilyKind>) {
+    this.importFamilies = next;
+    this.importFocus = undefined;
+    this.scheduleImportHistory();
+  }
+
+  private renderImportDialog() {
+    const cfg = this.importConfig();
     return html`<dialog class="import-dialog xf ${this.importDrop ? "dropping" : ""}" @keydown=${this.importKeys} @close=${() => this.importClosed()}
       @dragenter=${this.importDragEnter} @dragover=${this.importDragOver} @dragleave=${this.importDragLeave} @drop=${this.importDropped}
       @paste=${this.importPasted}>
@@ -6615,6 +6692,8 @@ export class WristAssistantPanel extends LitElement {
   private renderImportLoaded(cfg: CustomComplicationConfig) {
     const rows = unresolvedEntities(cfg, this.hass.states);
     const known = this.knownDomains();
+    const parse = this.importParse;
+    const have = supportedFamilies(parse?.ok ? parse.config : cfg);
     const preview = this.importPreview();
     const layouts: ResolvedAll = preview ? this.configLayouts(preview.config, preview.entities, this.importHistory) : {};
     const uses = new Map(rows.map((row) => [row.entityId, entityLayerIds(cfg, row.entityId, (id, domain) => isPlaceholderId(id) || known.has(domain))]));
@@ -6636,7 +6715,8 @@ export class WristAssistantPanel extends LitElement {
             <input type="text" maxlength="60" aria-invalid=${taken ? "true" : "false"} .value=${this.importName}
               @input=${(e: Event) => { this.importName = (e.target as HTMLInputElement).value; }} /></label>
           ${taken ? html`<div class="hint err">A complication on this watch already has that name.</div>` : nothing}
-          <div class="xf-sub">${familyWords(supportedFamilies(cfg))} · ${layerCountWords(cfg)}</div>
+          ${this.familyChips(have, this.importFamilies, (next) => this.setImportFamilies(next), "Shapes to import")}
+          <div class="xf-sub">${have.length < 2 ? `${familyWords(have)} · ` : ""}${layerCountWords(cfg)}</div>
         </div>
       </div>
       ${rows.length === 0
@@ -6784,15 +6864,15 @@ export class WristAssistantPanel extends LitElement {
     const parse = this.importParse;
     if (!parse?.ok) return undefined;
     const cached = this.importPreviewCache;
-    if (cached && cached.parse === parse && cached.map === this.importMap) return cached;
-    const config = remapEntities(parse.config, this.importMap);
+    if (cached && cached.parse === parse && cached.map === this.importMap && cached.families === this.importFamilies) return cached;
+    const config = remapEntities(this.importConfig() ?? parse.config, this.importMap);
     let entities: EntityRef[];
     try {
       entities = [...compile(config).entities.values()];
     } catch {
       entities = [];
     }
-    this.importPreviewCache = { parse, map: this.importMap, config, entities };
+    this.importPreviewCache = { parse, map: this.importMap, families: this.importFamilies, config, entities };
     return this.importPreviewCache;
   }
 
@@ -6812,6 +6892,7 @@ export class WristAssistantPanel extends LitElement {
     if (link !== undefined) {
       this.importParse = undefined;
       this.importMap = new Map();
+      this.importFamilies = undefined;
       this.importName = "";
       void decodeShareLink(link).then((decoded) => {
         if (this.importText !== text) return;
@@ -6826,11 +6907,13 @@ export class WristAssistantPanel extends LitElement {
     this.scheduleImportHistory();
     if (!parse?.ok) {
       this.importMap = new Map();
+      this.importFamilies = undefined;
       this.importName = "";
       return;
     }
     if (JSON.stringify(parse.config) === before) return;
     this.importMap = new Map();
+    this.importFamilies = undefined;
     this.importName = suggestImportName(parse.config.name, this.takenNames());
   }
 
@@ -6906,8 +6989,7 @@ export class WristAssistantPanel extends LitElement {
     handleEvent: (e: Event) => {
       if ((e as KeyboardEvent).key !== "Enter") return;
       if (e.target instanceof HTMLTextAreaElement) return;
-      const parse = this.importParse;
-      const cfg = parse?.ok ? parse.config : undefined;
+      const cfg = this.importConfig();
       if (!cfg) return;
       const rows = unresolvedEntities(cfg, this.hass.states);
       if (rows.some((row) => entitySearchOpen(importEntityKey(row.entityId)))) return;
@@ -6942,9 +7024,9 @@ export class WristAssistantPanel extends LitElement {
    * document is still there to save again.
    */
   private async doImport() {
-    const parse = this.importParse;
-    if (!parse?.ok) return;
-    const cfg = remapEntities(parse.config, this.importMap);
+    const base = this.importConfig();
+    if (!base) return;
+    const cfg = remapEntities(base, this.importMap);
     cfg.id = newId();
     cfg.name = this.importName.trim();
     cfg.slotIndex = this.freeSlot();
@@ -6977,6 +7059,7 @@ export class WristAssistantPanel extends LitElement {
     this.importParse = undefined;
     this.importName = "";
     this.importMap = new Map();
+    this.importFamilies = undefined;
     this.importTextShown = false;
     this.importFocus = undefined;
     this.importHistory = new Map();

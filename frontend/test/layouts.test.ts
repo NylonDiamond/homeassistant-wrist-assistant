@@ -8,6 +8,7 @@ import {
   canRemoveFamily,
   familyContentSummary,
   firstDrawable,
+  keepFamilies,
   missingFamilies,
   removeFamily,
   blankInline,
@@ -94,6 +95,29 @@ describe("addFamily", () => {
     addFamily(cfg, "inline");
     addFamily(cfg, "rectangular");
     expect(cfg.supportedFamilies).toEqual(["rectangular", "corner", "inline"]);
+  });
+});
+
+describe("keepFamilies", () => {
+  it("returns a copy with only the chosen shapes and leaves the document alone", () => {
+    const cfg = newConfig("X", 0, ["rectangular", "circular", "corner", "inline"]);
+    const kept = keepFamilies(cfg, ["circular", "inline"]);
+    expect(kept.supportedFamilies).toEqual(["circular", "inline"]);
+    expect(Object.keys(kept.perFamily)).toEqual(["circular"]);
+    expect(kept.inline).toBeDefined();
+    expect(cfg.supportedFamilies).toEqual(["rectangular", "circular", "corner", "inline"]);
+  });
+
+  it("drops Inline when it is not kept", () => {
+    const kept = keepFamilies(newConfig("X", 0, ["rectangular", "inline"]), ["rectangular"]);
+    expect(kept.supportedFamilies).toEqual(["rectangular"]);
+    expect(kept.inline).toBeUndefined();
+  });
+
+  it("keeps the whole document rather than empty the set", () => {
+    const cfg = newConfig("X", 0, ["rectangular", "circular"]);
+    expect(keepFamilies(cfg, []).supportedFamilies).toEqual(["rectangular", "circular"]);
+    expect(keepFamilies(cfg, ["corner"]).supportedFamilies).toEqual(["rectangular", "circular"]);
   });
 });
 
