@@ -379,6 +379,8 @@ function pressInsideLayer(svg: SVGSVGElement, id: string, e: PointerEvent): bool
 /** Input types that hold no text, so nothing is lost by letting the panel's
  * own shortcuts through while one of them has the focus. */
 const NON_TEXT_INPUTS = /^(range|checkbox|radio|color|button|submit|reset|file|image)$/;
+/** How far the pointer travels, CSS px, before a press on a group or a pick is a drag and not a click. */
+const DRAG_SLOP = 3;
 const MULTI_KEY = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "Cmd" : "Ctrl";
 /** How a shortcut is written in a tooltip: ⌘D on a Mac, Ctrl+D elsewhere. */
 const KEY_MOD = MULTI_KEY === "Cmd" ? "⌘" : "Ctrl+";
@@ -4589,10 +4591,21 @@ export class WristAssistantPanel extends LitElement {
     const bounds: NormalizedFrame = { x: x0, y: y0, width: x1 - x0, height: y1 - y0, rotationDegrees: 0 };
     const round = (n: number) => Math.round(n * 1000) / 1000;
     this.cancelGesture?.();
+    // A plain click sends a pointermove too, of zero distance, between the press
+    // and the release (seen in Chrome 2026-09-13). Counting any move as a drag
+    // meant a click never reached `onClick`, so a pick or a group stayed picked.
+    // A few pixels of travel is what makes it a drag. Added before the gesture's
+    // own listener, so it has decided by the time that one reports a frame.
     let moved = false;
-    this.cancelGesture = beginGesture(svg, this.gestureCanvas(family), e, { elementId: key, frame: bounds, ...this.snapTarget(family) }, {
+    const track = (ev: PointerEvent) => {
+      if (ev.pointerId === e.pointerId && Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) > DRAG_SLOP) moved = true;
+    };
+    svg.addEventListener("pointermove", track);
+    const stopTracking = () => svg.removeEventListener("pointermove", track);
+    const cancel = beginGesture(svg, this.gestureCanvas(family), e, { elementId: key, frame: bounds, ...this.snapTarget(family) }, {
       onFrame: (_id, f, done) => {
-        if (!done) moved = true;
+        if (done) stopTracking();
+        if (!done && !moved) return;
         if (done && !moved && onClick !== undefined) {
           onClick();
           this.cancelGesture = undefined;
@@ -4609,6 +4622,10 @@ export class WristAssistantPanel extends LitElement {
         }
       },
     });
+    this.cancelGesture = () => {
+      stopTracking();
+      cancel();
+    };
   }
 
   /**
