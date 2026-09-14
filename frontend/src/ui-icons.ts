@@ -15,7 +15,7 @@ export type UiIconName =
   | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "plus"
   | "lock" | "unlock" | "folder" | "ungroup" | "watch"
   | "compact" | "expanded" | "search" | "undo" | "redo" | "expand" | "left" | "right"
-  | "braces" | "link";
+  | "braces" | "link" | "info";
 
 function shape(name: UiIconName) {
   switch (name) {
@@ -74,6 +74,9 @@ function shape(name: UiIconName) {
     // A setting that follows another one until it is given its own value.
     case "link":
       return svg`<path d="M10.2 13.8L13.8 10.2" /><path d="M10.8 6.9l1.35-1.35a3.6 3.6 0 0 1 5.1 5.1l-1.35 1.35" /><path d="M13.2 17.1l-1.35 1.35a3.6 3.6 0 0 1-5.1-5.1l1.35-1.35" />`;
+    // A note to read first, for the callouts in the Share and Import dialogs.
+    case "info":
+      return svg`<circle cx="12" cy="12" r="8.5" /><path d="M12 11V16.5" /><path d="M12 7.6V7.8" />`;
     // The app mark in the header: a watch case with its band stubs.
     case "watch":
       return svg`<rect x="6" y="6.5" width="12" height="11" rx="3" /><path d="M9 6.5L9.6 3H14.4L15 6.5M9 17.5L9.6 21H14.4L15 17.5" />`;

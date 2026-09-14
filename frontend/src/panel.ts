@@ -102,7 +102,7 @@ import { SymbolBrowser } from "./symbols.js";
 import { Draft, draftStatus } from "./draft.js";
 import { ScrollFades } from "./scroll-fade.js";
 import { statesSummary } from "./states.js";
-import { uiIcon } from "./ui-icons.js";
+import { type UiIconName, uiIcon } from "./ui-icons.js";
 import { isHiddenDocument, splitHidden, withHidden } from "./model.js";
 
 /** Where an older panel kept hidden picker rows, per watch, in this browser.
@@ -1192,47 +1192,82 @@ export class WristAssistantPanel extends LitElement {
       display: flex; flex-direction: column;
     }
     dialog.share-dialog::backdrop, dialog.import-dialog::backdrop, dialog.gallery-dialog::backdrop { background: rgba(0,0,0,.45); }
-    .xfer-body { padding: 14px 18px 4px; overflow: auto; flex: 1 1 auto; min-height: 0; }
-    .xfer-body .field { display: flex; flex-direction: column; align-items: stretch; gap: 5px; }
-    .xfer-body .field > span { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
-    .xfer-body .field + .field { margin-top: 14px; }
-    .xfer-modes { display: flex; flex-direction: column; gap: 8px; }
-    .xfer-mode { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; cursor: pointer; }
-    .xfer-mode input { flex: none; margin: 3px 0 0; accent-color: var(--wa-accent); }
-    .xfer-mode b { font-weight: 600; }
-    .xfer-mode .hint { display: block; margin: 1px 0 0; }
+    /* The body scrolls between a head and a foot that stay put. It holds the
+       inspector's own cards (.sec, pinned open), so a dialog reads the way a
+       layer's settings do: one tinted box per subject, label-left rows, and
+       rows that belong together in a hairline .fgroup. Most of these cards
+       hold a list rather than rows, so their loose notes run the full width. */
+    .xfer-body {
+      padding: 12px 14px 14px; overflow: auto; flex: 1 1 auto; min-height: 0;
+      display: flex; flex-direction: column; gap: 10px; container: xfer / inline-size;
+    }
+    .xfer-body > .sec { margin: 0; flex: none; }
+    .xfer-sec { --wa-col: 0px; }
+    .xfer-sec .sec-b { padding-bottom: 12px; }
+    .xfer-sec .sec-h > :is(button.small, button.link) { flex: none; margin-left: auto; font-size: 12px; }
+    .xfer-sec .sec-b .field { padding: 2px 0; }
+    /* A row's note stays under its control, not under its title. */
+    .xfer-sec .field > .hint { grid-column: 2; margin: 0 0 2px; }
+    /* Rows in one box, parted by hairlines in the card's colour. */
+    .fgroup.xfer-rows { padding: 0 8px; }
+    .xfer-rows > * + * { border-top: 1px solid color-mix(in srgb, var(--c) 16%, transparent); }
+    /* A note for the whole dialog rather than one card: a tinted strip wearing
+       the same mark as a card header. */
+    .xfer-callout {
+      --c: var(--wa-accent);
+      display: flex; align-items: flex-start; gap: 9px; padding: 9px 12px; border-radius: 9px; flex: none;
+      font-size: 12px; line-height: 1.45; color: var(--wa-ink);
+      background: color-mix(in srgb, var(--c) 7%, var(--wa-card));
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 24%, var(--wa-card));
+    }
+    .xfer-callout > span:last-child { min-width: 0; }
+    /* Share or Backup as two tiles side by side: each choice has a sentence
+       that needs reading before picking it. */
+    .xfer-modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding-top: 2px; }
+    .xfer-mode {
+      display: flex; gap: 8px; align-items: flex-start; padding: 9px 10px; border-radius: 8px; cursor: pointer; font-size: 12.5px;
+      background: var(--wa-card); box-shadow: inset 0 0 0 1px var(--wa-line-strong);
+      transition: box-shadow .12s ease-out, background-color .12s ease-out;
+    }
+    .xfer-mode:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 55%, var(--wa-line-strong)); }
+    .xfer-mode.on { background: color-mix(in srgb, var(--c) 10%, var(--wa-card)); box-shadow: inset 0 0 0 1.5px var(--c); }
+    .xfer-mode:has(input:focus-visible) { box-shadow: inset 0 0 0 1.5px var(--c), var(--wa-ring); }
+    .xfer-mode input { flex: none; margin: 2px 0 0; accent-color: var(--c); }
+    .xfer-mode b { font-weight: 650; }
+    .xfer-mode .hint { display: block; margin: 2px 0 0; }
     /* The document itself. Monospace and never wrapped: a wrapped line reads as
        a line break that is not in the text, and this text gets pasted. */
     .xfer-text {
-      width: 100%; box-sizing: border-box; resize: vertical; white-space: pre; overflow: auto;
+      display: block; width: 100%; box-sizing: border-box; resize: vertical; white-space: pre; overflow: auto;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.45;
+      border-color: transparent; border-radius: 7px; background: var(--wa-field);
     }
-    /* One slot per row: the id the reader will see, the label they will read
-       beside it, and underneath, every place in the design that uses it. */
-    .xfer-slot { padding: 8px 0; border-top: 1px solid var(--wa-line); }
-    .xfer-slot:first-child { border-top: 0; }
-    .xfer-slot .srow { display: flex; align-items: center; gap: 10px; }
+    /* Where a document is pasted or dropped: a dashed well, lit along with the
+       dialog while a file is over it. */
+    .xfer-text.xfer-well {
+      padding: 10px 12px; border: 1.5px dashed color-mix(in srgb, var(--c) 45%, var(--wa-line-strong));
+      background: color-mix(in srgb, var(--c) 4%, var(--wa-card));
+    }
+    dialog.import-dialog.dropping .xfer-well { border-color: var(--wa-accent); }
+    /* One slot per row: the id the reader will see, in a title column wide
+       enough for one, the label they will read beside it, and under the label
+       every place in the design that uses it. */
+    .xfer-slots { --wa-lab: 132px; }
     .xfer-slot .sid {
-      flex: none; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
-      color: var(--wa-ent); min-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+      color: var(--wa-ent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    .xfer-slot .srow input[type=text] { flex: 1 1 auto; min-width: 0; }
-    .xfer-slot .hint { margin: 3px 0 0; }
-    .xfer-file { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .xfer-file { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
     .xfer-file .hint { margin: 0; }
-    .xfer-file .spacer { flex: 1; }
-    /* Parsed text folded to one row, so the preview and the pickers lead. */
-    .xfer-folded { display: flex; align-items: center; gap: 8px; }
-    .xfer-folded .hint { margin: 0; flex: 1; }
     .xfer-problem { white-space: pre-line; }
-    .xfer-link { width: 100%; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    .xfer-link { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .xfer-text + .xfer-link-field { margin-top: 8px; }
     /* What the pasted text turned out to be: each shape drawn small, beside
        its name and the counts that matter before importing. */
     .xfer-preview {
-      display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; padding: 10px 12px;
-      border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-panel);
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 8px; padding: 10px 12px;
+      border-radius: 8px; background: var(--wa-field);
     }
-    .xfer-preview + .field { margin-top: 14px; }
     .xfer-arts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .pk-art.xfer-art { width: auto; min-width: 48px; max-width: 150px; height: 56px; }
     .pk-art.xfer-art svg { max-height: 56px; }
@@ -1247,44 +1282,69 @@ export class WristAssistantPanel extends LitElement {
     }
     .xfer-drop span { padding: 8px 14px; border-radius: 8px; background: var(--wa-card); }
     .link-note { margin: 4px 12px 0; display: flex; align-items: center; gap: 10px; }
-    .xfer-ent { padding: 10px 0; border-top: 1px solid var(--wa-line); }
-    .xfer-ent:first-child { border-top: 0; padding-top: 2px; }
-    .xfer-ent .hint { margin: 4px 0 0; }
-    .xfer-foot { display: flex; align-items: center; gap: 8px; padding: 14px 18px 16px; border-top: 1px solid var(--wa-line); flex: none; }
+    /* One entity per row: the search beside its title, its notes under the
+       search. */
+    .xfer-ent { padding: 4px 0 6px; }
+    .xfer-ent > .hint { margin: 2px 0 0 calc(var(--wa-lab) + 8px); }
+    .xfer-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 18px 14px; border-top: 1px solid var(--wa-line); flex: none; }
     .xfer-foot .spacer { flex: 1; }
     .xfer-foot .note { font-size: 12px; color: var(--wa-muted); }
     .xfer-foot .note.err, .gal-err { color: var(--error-color, #db4437); }
-    /* Share to gallery. The public list is the part to read before sending:
+    /* Share's other ways out sit together, set off from Copy by a hairline. */
+    .xfer-acts { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; padding-right: 8px; border-right: 1px solid var(--wa-line); }
+    /* Share to gallery. The public card is the part to read before sending:
        every piece of free text in the upload, grouped, in the text's own
        characters, so nothing reads as tidier than what will be posted. */
-    /* Scoped so the plain .hint margin, declared further down, does not win. */
-    .xfer-body .gal-lead { margin: 0 0 16px; }
-    button.link.xfer-show { align-self: flex-start; font-size: 12px; }
     .gal-name { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
-    .gal-name input[type=text] { flex: 1 1 auto; min-width: 0; }
+    .gal-name input[type=text] {
+      flex: 1 1 auto; min-width: 0; height: 26px; min-height: 26px; padding: 0 8px; font-size: 12px;
+      border-radius: 6px; border-color: transparent; background-color: var(--wa-field);
+    }
     .gal-name .sid {
       flex: none; max-width: 45%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
       color: var(--wa-ent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    .xfer-body .gal-mine { margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--wa-line); }
-    .gal-tags { display: flex; flex-wrap: wrap; gap: 6px; }
-    .gal-previews { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 56px; }
+    .gal-tags { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0; }
+    .gal-previews { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 56px; padding: 10px; border-radius: 8px; background: var(--wa-field); }
+    .gal-previews .hint { margin: 0; }
     .gal-previews img { height: 56px; width: auto; max-width: 100%; border-radius: 8px; background: #000; }
-    .gal-public { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
-    .gal-public li > b { display: block; font-size: 12px; font-weight: 600; color: var(--wa-muted); margin-bottom: 2px; }
+    .gal-public { margin: 0; padding: 0; list-style: none; }
+    .gal-public > li.fgroup { padding: 6px 8px 8px; }
+    .gal-public li > b { display: block; font-size: 11.5px; font-weight: 600; color: var(--wa-muted); margin-bottom: 3px; }
     .gal-public .gal-val {
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
       white-space: pre-wrap; overflow-wrap: anywhere;
     }
-    .gal-blockers { margin-top: 14px; }
+    .gal-blockers { flex: none; }
     .gal-blockers ul { margin: 0; padding-left: 18px; }
-    .gal-confirm { margin-top: 14px; }
+    /* The promise closes the card it is about: the words left, the switch right. */
+    .xfer-sec .field.gal-confirm {
+      grid-template-columns: minmax(0, 1fr) auto; margin-top: 8px; padding-top: 10px;
+      border-top: 1px solid color-mix(in srgb, var(--c) 24%, transparent);
+    }
+    .xfer-sec .field.gal-confirm > span { color: var(--wa-ink); font-size: 12.5px; font-weight: 600; }
+    .xfer-sec .field.gal-confirm:has(> input:disabled) > span { color: var(--wa-muted); }
+    .gal-up { padding: 7px 0; }
     .gal-up .srow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .gal-up .spacer { flex: 1; }
-    .gal-up b { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
-    .gal-status { font-size: 12px; color: var(--wa-muted); }
-    .gal-status.approved { color: var(--wa-accent); }
-    .gal-status.rejected { color: var(--error-color, #db4437); }
+    .gal-up b { font-weight: 600; font-size: 12.5px; overflow-wrap: anywhere; }
+    .gal-up .hint { margin: 3px 0 0; }
+    .gal-status {
+      font-size: 11px; font-weight: 600; line-height: 18px; padding: 0 8px; border-radius: 999px; white-space: nowrap;
+      color: var(--wa-muted); background: var(--wa-field);
+    }
+    .gal-status.approved { color: var(--wa-accent); background: color-mix(in srgb, var(--wa-accent) 14%, transparent); }
+    .gal-status.rejected { color: var(--error-color, #db4437); background: color-mix(in srgb, var(--error-color, #db4437) 12%, transparent); }
+    /* A narrow dialog stacks its rows the way a narrow inspector does: the
+       title on its own line, the control under it. A switch keeps its words
+       beside it. */
+    @container xfer (max-width: 440px) {
+      .xfer-modes { grid-template-columns: minmax(0, 1fr); }
+      dialog .xfer-sec .sec-b .field:not(.check) { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+      dialog .xfer-sec .sec-b .field:not(.check) > * { grid-column: 1 / -1; }
+      dialog .xfer-sec .sec-b .field:not(.check) > span:first-child { padding-top: 0; }
+      dialog .xfer-sec .xfer-ent > .hint { margin-left: 0; }
+    }
 
     /* Three columns with a draggable gutter between each pair. The side widths
        come in as custom properties already fitted to the measured panel width
@@ -2110,11 +2170,11 @@ export class WristAssistantPanel extends LitElement {
     .sec-h.pinned { cursor: default; }
     .sec-h.pinned:hover { background: transparent; }
     .sec-h:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--c); }
-    .sec-h .swatch {
+    :is(.sec-h, .xfer-callout) .swatch {
       width: 18px; height: 18px; border-radius: 5px; border: 0; flex: none; display: grid; place-items: center;
       background: color-mix(in srgb, var(--c) 22%, transparent); color: var(--c);
     }
-    .sec-h .swatch svg { width: 11px; height: 11px; stroke-width: 2.2; }
+    :is(.sec-h, .xfer-callout) .swatch svg { width: 11px; height: 11px; stroke-width: 2.2; }
     /* Title and summary on one line: the summary is what the card says while
        it is shut, so it belongs beside the title, not under it. */
     .sec-h .tt { display: flex; flex-direction: row; align-items: center; gap: 8px; min-width: 0; flex: 1; }
@@ -5589,11 +5649,13 @@ export class WristAssistantPanel extends LitElement {
     const slots = this.currentShareSlots();
     const text = exportText(cfg, this.shareMode, slots);
     const link = this.shareLink?.text === text ? this.shareLink : undefined;
-    const mode = (value: "share" | "backup", title: string, blurb: string) => html`<label class="xfer-mode">
+    const mode = (value: "share" | "backup", title: string, blurb: string) => html`<label class="xfer-mode ${this.shareMode === value ? "on" : ""}">
       <input type="radio" name="wa-share-mode" .checked=${this.shareMode === value}
         @change=${() => { this.shareMode = value; this.shareNote = ""; }} />
       <span><b>${title}</b><span class="hint">${blurb}</span></span>
     </label>`;
+    const textToggle = html`<button class="link xfer-show" aria-expanded=${this.shareTextOpen ? "true" : "false"}
+      @click=${() => { this.shareTextOpen = !this.shareTextOpen; }}>${this.shareTextOpen ? "Hide text" : "Show text"}</button>`;
     return html`<dialog class="share-dialog" @close=${() => { this.shareOpen = false; }}>
       <div class="new-head">
         <h2>Share this complication</h2>
@@ -5601,40 +5663,51 @@ export class WristAssistantPanel extends LitElement {
         <button class="icon" title="Close" aria-label="Close" @click=${() => this.closeShareDialog()}>${uiIcon("close")}</button>
       </div>
       <div class="xfer-body">
-        <div class="field">
-          <span>What to share</span>
-          <div class="xfer-modes">
-            ${mode("share", "Share", "Entity ids and friendly names are replaced by numbered slots, so nothing about your home travels with it. Whoever imports it picks their own entities.")}
-            ${mode("backup", "Backup", "An exact copy, your entity ids and names included. For your own records, or another watch in this home.")}
-          </div>
-        </div>
+        ${this.dialogCard("What to share", "link", SECTION_COLOR.complication, html`<div class="xfer-modes">
+          ${mode("share", "Share", "Entity ids and friendly names are replaced by numbered slots, so nothing about your home travels with it. Whoever imports it picks their own entities.")}
+          ${mode("backup", "Backup", "An exact copy, your entity ids and names included. For your own records, or another watch in this home.")}
+        </div>`)}
         ${this.shareMode === "share" ? this.renderShareSlots(slots) : nothing}
-        <div class="field">
-          <button class="link xfer-show" aria-expanded=${this.shareTextOpen ? "true" : "false"}
-            @click=${() => { this.shareTextOpen = !this.shareTextOpen; }}>${this.shareTextOpen ? "Hide text" : "Show text"}</button>
+        ${this.dialogCard("Text", "braces", SECTION_COLOR.place, this.shareTextOpen || link ? html`
           ${this.shareTextOpen
             ? html`<textarea class="xfer-text" rows="14" readonly aria-label="The text to share" .value=${text}></textarea>`
             : nothing}
-        </div>
-        ${link ? html`<div class="field">
-          <span>Link</span>
-          <input class="xfer-link" type="text" readonly aria-label="Share link" .value=${link.url}
-            @focus=${(e: Event) => (e.target as HTMLInputElement).select()} />
-          <div class="hint">Opening it on this Home Assistant fills in the Import dialog. Someone on another home pastes it into their own Import dialog instead.</div>
-        </div>` : nothing}
+          ${link ? html`<div class="field xfer-link-field">
+            <span>Link</span>
+            <input class="xfer-link" type="text" readonly aria-label="Share link" .value=${link.url}
+              @focus=${(e: Event) => (e.target as HTMLInputElement).select()} />
+            <div class="hint">Opening it on this Home Assistant fills in the Import dialog. Someone on another home pastes it into their own Import dialog instead.</div>
+          </div>` : nothing}` : nothing, { tool: textToggle })}
       </div>
       <div class="xfer-foot">
+        <button class="small" @click=${() => this.closeShareDialog()}>Close</button>
         ${this.shareNote === "" ? nothing : html`<span class="note">${this.shareNote}</span>`}
         <span class="spacer"></span>
-        <button class="small" @click=${() => this.closeShareDialog()}>Close</button>
-        ${this.hass.user?.is_admin ? html`<button class="small" aria-haspopup="dialog"
-          title="Send it to the public gallery on wrist-assistant.com, with the entities replaced as in Share"
-          @click=${() => this.openGalleryDialog()}>Share to gallery</button>` : nothing}
-        <button class="small" @click=${() => this.downloadShareText(text)}>Download</button>
-        <button class="small" title="A link that opens Import with this text filled in" @click=${() => void this.copyShareLink(text)}>Copy link</button>
+        <span class="xfer-acts">
+          ${this.hass.user?.is_admin ? html`<button class="small" aria-haspopup="dialog"
+            title="Send it to the public gallery on wrist-assistant.com, with the entities replaced as in Share"
+            @click=${() => this.openGalleryDialog()}>Share to gallery</button>` : nothing}
+          <button class="small" @click=${() => this.downloadShareText(text)}>Download</button>
+          <button class="small" title="A link that opens Import with this text filled in" @click=${() => void this.copyShareLink(text)}>Copy link</button>
+        </span>
         <button class="primary" @click=${() => void this.copyShareText(text)}>Copy</button>
       </div>
     </dialog>`;
+  }
+
+  /** One card in the Share, gallery and Import dialogs: the inspector's
+   * section box, pinned open, with an optional control at the end of its
+   * header. Passing `nothing` as the body leaves just the header row. */
+  private dialogCard(title: string, icon: UiIconName, color: string, body: unknown,
+    opts: { cls?: string; tool?: unknown } = {}) {
+    return html`<section class="sec xfer-sec ${opts.cls ?? ""}" style=${`--c:${color}`}>
+      <div class="sec-h pinned">
+        <span class="swatch">${uiIcon(icon)}</span>
+        <span class="tt"><h4>${title}</h4></span>
+        ${opts.tool ?? nothing}
+      </div>
+      ${body === nothing ? nothing : html`<div class="sec-b">${body}</div>`}
+    </section>`;
   }
 
   /**
@@ -5647,22 +5720,20 @@ export class WristAssistantPanel extends LitElement {
    */
   private renderShareSlots(slots: readonly ShareSlot[]) {
     if (slots.length === 0) {
-      return html`<div class="hint">This design reads no entities, so there is nothing to replace.</div>`;
+      return this.dialogCard("Slots", "content", SECTION_COLOR.content,
+        html`<div class="hint">This design reads no entities, so there is nothing to replace.</div>`);
     }
-    return html`<div class="field">
-      <span>Slots</span>
-      <div>
-        ${slots.map((slot) => html`<div class="xfer-slot">
-          <div class="srow">
-            <span class="sid" title=${slot.placeholderId}>${slot.placeholderId}</span>
-            <input type="text" maxlength="40" aria-label=${`Label for ${slot.placeholderId}`} .value=${slot.label}
-              @input=${(e: Event) => this.setShareLabel(slot.placeholderId, (e.target as HTMLInputElement).value)} />
-          </div>
+    return this.dialogCard("Slots", "content", SECTION_COLOR.content, html`
+      <div class="fgroup xfer-rows">
+        ${slots.map((slot) => html`<div class="field xfer-slot">
+          <span class="sid" title=${slot.placeholderId}>${slot.placeholderId}</span>
+          <input type="text" maxlength="40" aria-label=${`Label for ${slot.placeholderId}`} .value=${slot.label}
+            @input=${(e: Event) => this.setShareLabel(slot.placeholderId, (e.target as HTMLInputElement).value)} />
           <div class="hint">${slot.where.join(", ")}</div>
         </div>`)}
       </div>
-      <div class="hint">These names are all the other side has while it picks its own entities, so say what each one is for.</div>
-    </div>`;
+      <div class="hint">These names are all the other side has while it picks its own entities, so say what each one is for.</div>`,
+    { cls: "xfer-slots" });
   }
 
   private setShareLabel(placeholderId: string, label: string) {
@@ -5875,37 +5946,40 @@ export class WristAssistantPanel extends LitElement {
         <button class="icon" title="Close" aria-label="Close" @click=${() => this.closeGalleryDialog()}>${uiIcon("close")}</button>
       </div>
       <div class="xfer-body">
-        <div class="hint gal-lead">The gallery on wrist-assistant.com is public. After a review, anyone can find this complication there and add it to their own Home Assistant. Your entities are replaced by the slots you named in Share.</div>
-        <label class="field">
-          <span>Title</span>
-          <input type="text" maxlength=${GALLERY_LIMITS.title} .value=${this.galleryTitle} ?disabled=${locked}
-            @input=${(e: Event) => { this.galleryTitle = (e.target as HTMLInputElement).value; }} />
-        </label>
-        <label class="field">
-          <span>Description</span>
-          <textarea rows="3" maxlength=${GALLERY_LIMITS.description} .value=${this.galleryDescription} ?disabled=${locked}
-            @input=${(e: Event) => { this.galleryDescription = (e.target as HTMLTextAreaElement).value; }}></textarea>
-        </label>
-        <div class="field">
-          <span>Tags</span>
-          <div class="gal-tags">
-            ${GALLERY_TAGS.map((tag) => {
-              const on = this.galleryTags.has(tag);
-              return html`<button class="pk-chip ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
-                ?disabled=${locked || (!on && this.galleryTags.size >= GALLERY_LIMITS.tags)}
-                @click=${() => this.toggleGalleryTag(tag)}>${GALLERY_TAG_LABEL[tag]}</button>`;
-            })}
-          </div>
-          <div class="hint">Up to ${GALLERY_LIMITS.tags}, so people can find it.</div>
+        <div class="xfer-callout">
+          <span class="swatch">${uiIcon("info")}</span>
+          <span class="gal-lead">The gallery on wrist-assistant.com is public. After a review, anyone can find this complication there and add it to their own Home Assistant. Your entities are replaced by the slots you named in Share.</span>
         </div>
-        <label class="field">
-          <span>Nickname</span>
-          <input type="text" maxlength=${GALLERY_LIMITS.authorName} placeholder="Optional" .value=${this.galleryNickname} ?disabled=${locked}
-            @input=${(e: Event) => { this.galleryNickname = (e.target as HTMLInputElement).value; }} />
-          <div class="hint">Shown beside it in the gallery. Leave it empty to post without a name.</div>
-        </label>
-        <div class="field">
-          <span>Preview</span>
+        ${this.dialogCard("Listing", "text", SECTION_COLOR.content, html`
+          <label class="field">
+            <span>Title</span>
+            <input type="text" maxlength=${GALLERY_LIMITS.title} .value=${this.galleryTitle} ?disabled=${locked}
+              @input=${(e: Event) => { this.galleryTitle = (e.target as HTMLInputElement).value; }} />
+          </label>
+          <label class="field">
+            <span>Description</span>
+            <textarea rows="3" maxlength=${GALLERY_LIMITS.description} .value=${this.galleryDescription} ?disabled=${locked}
+              @input=${(e: Event) => { this.galleryDescription = (e.target as HTMLTextAreaElement).value; }}></textarea>
+          </label>
+          <div class="field list-field">
+            <span>Tags</span>
+            <div class="gal-tags">
+              ${GALLERY_TAGS.map((tag) => {
+                const on = this.galleryTags.has(tag);
+                return html`<button class="pk-chip ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+                  ?disabled=${locked || (!on && this.galleryTags.size >= GALLERY_LIMITS.tags)}
+                  @click=${() => this.toggleGalleryTag(tag)}>${GALLERY_TAG_LABEL[tag]}</button>`;
+              })}
+            </div>
+            <div class="hint">Up to ${GALLERY_LIMITS.tags}, so people can find it.</div>
+          </div>
+          <label class="field">
+            <span>Nickname</span>
+            <input type="text" maxlength=${GALLERY_LIMITS.authorName} placeholder="Optional" .value=${this.galleryNickname} ?disabled=${locked}
+              @input=${(e: Event) => { this.galleryNickname = (e.target as HTMLInputElement).value; }} />
+            <div class="hint">Shown beside it in the gallery. Leave it empty to post without a name.</div>
+          </label>`)}
+        ${this.dialogCard("Preview", "image", SECTION_COLOR.look, html`
           <div class="gal-previews">
             ${previews === undefined
               ? html`<span class="hint">Drawing…</span>`
@@ -5913,12 +5987,10 @@ export class WristAssistantPanel extends LitElement {
                 ? html`<span class="hint">${this.galleryPreviewNote || "Inline has no picture, so this one goes without."}</span>`
                 : previews.map((p) => html`<img alt=${`${p.family} preview`} src=${`data:image/png;base64,${p.png}`} />`)}
           </div>
-          <div class="hint">Drawn with your current values. Picture layers are left out.</div>
-        </div>
-        <div class="field">
-          <span>This will be public</span>
+          <div class="hint">Drawn with your current values. Picture layers are left out.</div>`)}
+        ${this.dialogCard("This will be public", "show", SECTION_COLOR.states, html`
           <ul class="gal-public">
-            ${publicFields.map((g) => html`<li><b>${g.label}</b>${g.rows
+            ${publicFields.map((g) => html`<li class="fgroup"><b>${g.label}</b>${g.rows
               ? g.rows.map((row) => html`<div class="gal-name">
                 ${row.kind === "slot" ? html`<span class="sid" title=${row.id}>${row.id}</span>` : nothing}
                 <input type="text" maxlength=${row.kind === "slot" ? 40 : nothing} .value=${row.value} placeholder=${row.original}
@@ -5928,13 +6000,12 @@ export class WristAssistantPanel extends LitElement {
               : g.values.map((v) => html`<div class="gal-val">${v}</div>`)}</li>`)}
           </ul>
           <div class="hint">Read it through. Anything here that names a person, a place or a device in your home will be posted as written. Group and shared value names changed here apply to the gallery copy only, and an empty one keeps its name. Slot labels are the ones from Share.</div>
-        </div>
+          <label class="field check gal-confirm">
+            <span>I made this and it has no private information</span>
+            <input type="checkbox" .checked=${this.galleryConfirmed} ?disabled=${locked}
+              @change=${(e: Event) => { this.galleryConfirmed = (e.target as HTMLInputElement).checked; }} />
+          </label>`)}
         ${blockers.length > 0 ? html`<div class="banner warn gal-blockers"><ul>${blockers.map((b) => html`<li>${b}</li>`)}</ul></div>` : nothing}
-        <label class="xfer-mode gal-confirm">
-          <input type="checkbox" .checked=${this.galleryConfirmed} ?disabled=${locked}
-            @change=${(e: Event) => { this.galleryConfirmed = (e.target as HTMLInputElement).checked; }} />
-          <span>I made this and it has no private information</span>
-        </label>
         ${this.renderGalleryUploads()}
       </div>
       <div class="xfer-foot">
@@ -5952,17 +6023,16 @@ export class WristAssistantPanel extends LitElement {
   /** What this home has sent before, newest as the gallery orders it. */
   private renderGalleryUploads() {
     const items = this.galleryUploads;
-    return html`<div class="field gal-mine">
-      <span>My gallery uploads</span>
-      ${this.galleryUploadsError !== "" ? html`<div class="hint gal-err">${this.galleryUploadsError}</div>` : nothing}
+    return this.dialogCard("My gallery uploads", "layers", SECTION_COLOR.place, html`
+      ${this.galleryUploadsError !== "" ? html`<div class="hint err gal-err">${this.galleryUploadsError}</div>` : nothing}
       ${items === undefined
         ? html`<div class="hint">Loading…</div>`
         : items.length === 0
           ? this.galleryUploadsError === "" ? html`<div class="hint">Nothing sent from this Home Assistant yet.</div>` : nothing
-          : html`<div>${items.map((u) => {
+          : html`<div class="fgroup xfer-rows">${items.map((u) => {
             const asking = this.galleryConfirmDelete === u.id;
             const deleting = this.galleryDeleting === u.id;
-            return html`<div class="xfer-ent gal-up">
+            return html`<div class="gal-up">
               <div class="srow">
                 <b>${u.title}</b>
                 <span class="gal-status ${u.status}">${GALLERY_STATUS_LABEL[u.status] ?? u.status}</span>
@@ -5974,8 +6044,7 @@ export class WristAssistantPanel extends LitElement {
               </div>
               ${u.status === "rejected" && u.rejectReason ? html`<div class="hint">Reason: ${u.rejectReason}</div>` : nothing}
             </div>`;
-          })}</div>`}
-    </div>`;
+          })}</div>`}`, { cls: "gal-mine" });
   }
 
   /**
@@ -6074,28 +6143,31 @@ export class WristAssistantPanel extends LitElement {
       </div>
       <div class="xfer-body">
         ${folded
-          ? html`<div class="xfer-folded">
-              <span class="hint">Shared text loaded</span>
-              <button type="button" class="small" @click=${() => { this.importTextShown = true; }}>Show text</button>
+          // Parsed text folds to the card's header, so the preview and the
+          // pickers lead.
+          ? this.dialogCard("Shared text loaded", "braces", SECTION_COLOR.place, nothing, {
+              tool: html`<button type="button" class="small" @click=${() => { this.importTextShown = true; }}>Show text</button>`,
+            })
+          : this.dialogCard("Shared text", "braces", SECTION_COLOR.place, html`
+            <textarea class="xfer-text xfer-well" rows="8" placeholder="Paste the shared text or a share link here"
+              aria-label="Shared complication text or link" .value=${this.importText}
+              @input=${(e: Event) => this.setImportText((e.target as HTMLTextAreaElement).value)}></textarea>
+            <div class="xfer-file">
+              <button type="button" class="small"
+                @click=${(e: Event) => (e.currentTarget as HTMLElement).parentElement?.querySelector<HTMLInputElement>("input[type=file]")?.click()}>Choose a file</button>
+              <span class="hint">or drop one on this dialog</span>
+              <input type="file" hidden accept=".json,application/json,text/plain"
+                @change=${(e: Event) => void this.readImportFile(e)} />
+            </div>
+            ${parse && !parse.ok ? html`<div class="hint err xfer-problem" role="alert">${parse.error}</div>` : nothing}`, {
+              tool: cfg ? html`<button type="button" class="small" @click=${() => { this.importTextShown = false; }}>Hide text</button>` : nothing,
+            })}
+        ${!folded && this.importText.trim() === ""
+          ? html`<div class="xfer-callout">
+              <span class="swatch">${uiIcon("info")}</span>
+              <span>Find designs other people made at <a href="https://wrist-assistant.com/gallery/" target="_blank" rel="noopener">wrist-assistant.com/gallery</a>.</span>
             </div>`
-          : html`<div class="field">
-          <span>Shared text</span>
-          <textarea class="xfer-text" rows="8" placeholder="Paste the shared text or a share link here"
-            aria-label="Shared complication text or link" .value=${this.importText}
-            @input=${(e: Event) => this.setImportText((e.target as HTMLTextAreaElement).value)}></textarea>
-          <div class="xfer-file">
-            <button type="button" class="small"
-              @click=${(e: Event) => (e.currentTarget as HTMLElement).parentElement?.querySelector<HTMLInputElement>("input[type=file]")?.click()}>Choose a file</button>
-            <span class="hint">or drop one on this dialog</span>
-            ${cfg ? html`<span class="spacer"></span><button type="button" class="small" @click=${() => { this.importTextShown = false; }}>Hide text</button>` : nothing}
-            <input type="file" hidden accept=".json,application/json,text/plain"
-              @change=${(e: Event) => void this.readImportFile(e)} />
-          </div>
-          ${this.importText.trim() === ""
-            ? html`<div class="hint">Find designs other people made at <a href="https://wrist-assistant.com/gallery/" target="_blank" rel="noopener">wrist-assistant.com/gallery</a>.</div>`
-            : nothing}
-        </div>`}
-        ${parse && !parse.ok ? html`<div class="hint err xfer-problem" role="alert">${parse.error}</div>` : nothing}
+          : nothing}
         ${cfg ? this.renderImportPreview(cfg, rows) : nothing}
         ${cfg ? this.renderImportDetails(cfg, rows) : nothing}
       </div>
@@ -6111,7 +6183,7 @@ export class WristAssistantPanel extends LitElement {
 
   /** What the pasted text turned out to be, before anything is picked: each
    * shape it has drawn small, its name, and how much the rest of the dialog
-   * is going to ask. */
+   * is going to ask. Under it, what to call the copy. */
   private renderImportPreview(cfg: CustomComplicationConfig, rows: readonly UnresolvedEntity[]) {
     const facts = importFacts(cfg, rows);
     const layers = facts.layers === 1 ? "1 layer" : `${facts.layers} layers`;
@@ -6120,16 +6192,28 @@ export class WristAssistantPanel extends LitElement {
     // Drawn with the picks applied, so a chart reads the entity chosen for it
     // and its history rather than a placeholder nobody has.
     const preview = this.importPreview();
-    return html`<div class="xfer-preview">
-      <div class="xfer-arts">${preview
-        ? this.renderConfigArts(preview.config, preview.entities, supportedFamilies(cfg), "pk-art xfer-art", this.importHistory)
-        : nothing}</div>
-      <div class="xfer-facts">
-        <b>${cfg.name.trim() || "Untitled"}</b>
-        <span>${facts.families.join(" · ")}</span>
-        <span>${layers} · ${slots}${missing}</span>
+    const name = this.importName.trim();
+    const taken = name !== "" && this.takenNames().has(name.toLowerCase());
+    return this.dialogCard("Complication", "watch", SECTION_COLOR.complication, html`
+      <div class="xfer-preview">
+        <div class="xfer-arts">${preview
+          ? this.renderConfigArts(preview.config, preview.entities, supportedFamilies(cfg), "pk-art xfer-art", this.importHistory)
+          : nothing}</div>
+        <div class="xfer-facts">
+          <b>${cfg.name.trim() || "Untitled"}</b>
+          <span>${facts.families.join(" · ")}</span>
+          <span>${layers} · ${slots}${missing}</span>
+        </div>
       </div>
-    </div>`;
+      <div class="field">
+        <span>Name</span>
+        <input type="text" maxlength="60" aria-label="Complication name" aria-invalid=${taken ? "true" : "false"}
+          .value=${this.importName}
+          @input=${(e: Event) => { this.importName = (e.target as HTMLInputElement).value; }} />
+        ${taken
+          ? html`<div class="hint err">A complication on this watch already has that name.</div>`
+          : html`<div class="hint">Import saves it to this watch and opens it in the editor.</div>`}
+      </div>`);
   }
 
   /** Whether a drag carries something the Import dialog can read. */
@@ -6180,30 +6264,16 @@ export class WristAssistantPanel extends LitElement {
     return rows.filter((r) => r.required && !this.importMap.has(r.entityId)).length;
   }
 
-  /** Everything below the paste box, once the text has turned into a document:
-   * what to call it, what it turned out to be, and its entities. */
+  /** The last card, once the text has turned into a document: the entities it
+   * reads that this home has to answer for. */
   private renderImportDetails(cfg: CustomComplicationConfig, rows: readonly UnresolvedEntity[]) {
-    const name = this.importName.trim();
-    const taken = name !== "" && this.takenNames().has(name.toLowerCase());
-    return html`
-      <div class="field">
-        <span>Name</span>
-        <input type="text" maxlength="60" aria-label="Complication name" aria-invalid=${taken ? "true" : "false"}
-          .value=${this.importName}
-          @input=${(e: Event) => { this.importName = (e.target as HTMLInputElement).value; }} />
-      </div>
-      ${taken
-        ? html`<div class="hint err">A complication on this watch already has that name.</div>`
-        : html`<div class="hint">Import saves it to this watch and opens it in the editor.</div>`}
+    return this.dialogCard("Entities", "content", SECTION_COLOR.content, html`
       ${rows.length === 0
         ? html`<div class="hint">Every entity this design reads is already in your Home Assistant.</div>`
-        : html`<div class="field">
-            <span>Entities</span>
-            <div>${rows.map((row) => this.renderImportRow(row))}</div>
-          </div>`}
+        : html`<div class="fgroup xfer-rows">${rows.map((row) => this.renderImportRow(row))}</div>`}
       ${hasInstanceFilters(cfg)
         ? html`<div class="hint warn">This design filters by areas, labels or floors from the sender's home. Check its aggregate layers after import.</div>`
-        : nothing}`;
+        : nothing}`);
   }
 
   /** One entity the design asks about. A slot has to be answered; a real id
