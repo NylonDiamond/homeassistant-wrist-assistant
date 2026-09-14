@@ -719,8 +719,10 @@ export class WristAssistantPanel extends LitElement {
   @state() private shareOpen = false;
   @state() private shareMode: "share" | "backup" = "share";
   @state() private shareLabels: ReadonlyMap<string, string> = new Map();
-  /** The shapes Share sends. Undefined sends every shape the document has. */
-  @state() private shareFamilies?: ReadonlySet<FamilyKind>;
+  /** The shapes picked in Share. Empty when it opens, so the author chooses. */
+  @state() private shareFamilies: ReadonlySet<FamilyKind> = new Set();
+  /** Layers a Share or gallery name row points at, lit in the Layers list. */
+  @state() private dialogLitIds: readonly string[] = [];
   /** Group and shared value names changed for shared copies only, by id: the
    * link, the file and the gallery all take them. Cleared each time Share
    * opens; the draft keeps its own names. */
@@ -1397,6 +1399,19 @@ export class WristAssistantPanel extends LitElement {
     .xf-pub .kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; align-items: start; padding: 6px; border-radius: 8px; transition: background-color .12s ease-out; }
     .xf-pub .kv.on { background: var(--wa-sel-bg); }
     .xf-legend { display: grid; gap: 6px; }
+    .xf-sec { --sc: var(--wa-accent); display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 12px; border-radius: var(--wa-r-md);
+      background: color-mix(in srgb, var(--sc) 7%, var(--wa-card)); border: 1px solid color-mix(in srgb, var(--sc) 34%, var(--wa-line)); }
+    .xf-sec.s-shapes { --sc: #26a69a; }
+    .xf-sec.s-names { --sc: var(--wa-val); }
+    .xf-sec.s-send { --sc: #4a7fe8; }
+    .xf-sec > h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; font-weight: 600; color: var(--wa-ink); }
+    .xf-sec > h3 > i { display: inline-grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: 999px;
+      font-style: normal; font-size: 11px; font-weight: 700; color: #fff; background: var(--sc); }
+    .xf-sec.s-names > h3 > i { color: var(--wa-card); }
+    .xf-sec > h3 .r { margin-left: auto; display: inline-flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 500; color: var(--wa-muted); }
+    .xf-sec-b { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+    .xf-sec.locked > .xf-sec-b { opacity: .45; }
+    .xf-sec.s-names .xf-pub { background: var(--wa-card); }
     .xf-mine { display: flex; align-items: flex-start; gap: 6px; margin-top: 6px; }
     .xf-mine > svg.ui-icon { width: 13px; height: 13px; flex: none; margin-top: 4px; color: var(--wa-muted); }
     .xf-mine-b { display: grid; gap: 6px; min-width: 0; }
@@ -1713,6 +1728,7 @@ export class WristAssistantPanel extends LitElement {
     .layer.hl { background: var(--wa-sel-bg); box-shadow: inset 0 0 0 1px var(--wa-sel-ring); }
     .layer:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .layer.pick { box-shadow: inset 0 0 0 2px var(--wa-accent); }
+    .layer.lit { background: var(--wa-sel-bg); box-shadow: inset 0 0 0 2px var(--wa-accent); }
     /* A member of the selected group: lit in the folder's colour, without
        the selected row's ring, so the group reads as one block. */
     .layer.held { background: color-mix(in srgb, ${unsafeCSS(SECTION_COLOR.group)} 12%, var(--wa-panel)); }
@@ -5800,6 +5816,9 @@ export class WristAssistantPanel extends LitElement {
     const whole = this.draft?.config;
     const cfg = this.shareConfig();
     if (!whole || !cfg) return nothing;
+    const have = supportedFamilies(whole);
+    const picked = this.sharePicked();
+    const ready = picked.length > 0;
     const slots = this.currentShareSlots();
     const share = this.shareMode === "share";
     const text = share
@@ -5807,7 +5826,7 @@ export class WristAssistantPanel extends LitElement {
       : exportText(cfg, "backup");
     const link = this.shareLink?.text === text ? this.shareLink : undefined;
     const layouts = resolveAll(cfg, this.buildContext(), this.forced);
-    const rows = share
+    const rows = share && ready
       ? this.publicNameRows(cfg, slots, this.knownDomains(), this.shareNameOverrides(), { label: "Name", value: cfg.name.trim() || "Untitled" })
       : [];
     const focused = rows.find((row) => row.key === this.shareFocus);
@@ -5815,54 +5834,84 @@ export class WristAssistantPanel extends LitElement {
     const family = this.dialogFamily(cfg);
     const admin = this.hass.user?.is_admin === true;
     const copied = this.shareCopied;
-    return html`<dialog class="share-dialog xf ${this.galleryOpen ? "under" : ""}" @close=${() => { this.shareOpen = false; }}>
-      ${this.dialogHead(`Share “${cfg.name.trim() || "Untitled"}”`, `${familyWords(supportedFamilies(cfg))} · ${layerCountWords(cfg)}`, () => this.closeShareDialog())}
+    let n = 0;
+    const who = this.shareSection(++n, "s-who", "Who is it for", html`
+      <div class="seg wide xf-modes" role="group" aria-label="Who is it for">
+        <button class=${share ? "on" : ""} aria-pressed=${share ? "true" : "false"} @click=${() => this.setShareMode("share")}>${uiIcon("globe")}<span>Share with others</span></button>
+        <button class=${share ? "" : "on"} aria-pressed=${share ? "false" : "true"} @click=${() => this.setShareMode("backup")}>${uiIcon("lock")}<span>Backup for me</span></button>
+      </div>
+      <div class="xf-lead ${share ? "" : "warn"}">${uiIcon(share ? "info" : "lock")}
+        <span>${share ? "Your entities are removed. The other person picks their own." : "Exact copy with your entities. Keep it for yourself or this home."}</span></div>`);
+    const all = picked.length === have.length;
+    const shapes = have.length < 2 ? nothing : this.shareSection(++n, "s-shapes", "Pick the shapes", html`
+      ${this.familyChips(have, (f) => this.shareFamilies.has(f), (next) => this.setShareFamilies(next), false)}
+      ${ready ? nothing : html`<div class="xf-lead">${uiIcon("info")}<span>Only the shapes you pick go in the copy. Pick at least one.</span></div>`}`,
+      html`${picked.length} of ${have.length}<button class="link" @click=${() => this.setShareFamilies(new Set(all ? [] : have))}>${all ? "None" : "All"}</button>`);
+    const names = !share ? nothing : this.shareSection(++n, "s-names", "Check what they can read",
+      ready
+        ? this.renderPublicRows(cfg, rows, this.shareFocus, (key) => this.pointAtRow(rows, key, (k) => { this.shareFocus = k; }), "share")
+        : html`<div class="hint">Pick a shape first.</div>`,
+      nothing, !ready);
+    const send = this.shareSection(++n, "s-send", "Send it", html`
+      <div class="xf-acts">
+        <button class="xf-act" ?disabled=${!share || !admin || !ready} aria-haspopup="dialog"
+          @click=${() => this.openGalleryDialog()}>
+          <span class="ic">${uiIcon("globe")}</span><b>Post to online gallery</b>
+          <span>${!share ? "Only shares can go" : admin ? "Everyone can find it, after review" : "Needs a Home Assistant administrator"}</span>
+        </button>
+        <button class="xf-act ${copied === "link" ? "flash" : ""}" ?disabled=${!ready} @click=${() => void this.copyShareLink(text)}>
+          <span class="ic">${uiIcon(copied === "link" ? "check" : "link")}</span><b>${copied === "link" ? "Link copied" : "Copy link"}</b>
+          <span>Opens in their own Home Assistant</span>
+        </button>
+        <button class="xf-act ${copied === "file" ? "flash" : ""}" ?disabled=${!ready} title=${`Saves ${exportFileName(cfg)}`} @click=${() => this.downloadShareText(text)}>
+          <span class="ic">${uiIcon(copied === "file" ? "check" : "download")}</span><b>${copied === "file" ? "Saved" : "Download"}</b>
+          <span>A .json file</span>
+        </button>
+      </div>
+      ${link && this.shareLinkShown ? html`<input class="xfer-link" type="text" readonly aria-label="Share link" .value=${link.url}
+        @focus=${(e: Event) => (e.target as HTMLInputElement).select()} />` : nothing}
+      ${this.shareNote === "" ? nothing : html`<div class="hint xf-note" role="status">${this.shareNote}</div>`}
+      <a class="xf-galink" href=${GALLERY_PAGE} target="_blank" rel="noopener">${uiIcon("globe")}<span>See the online gallery</span>${uiIcon("arrow")}</a>
+      <details class="xf-raw" .open=${this.shareTextOpen}
+        @toggle=${(e: Event) => { this.shareTextOpen = (e.target as HTMLDetailsElement).open; }}>
+        <summary>${uiIcon("right")}<span>Share text</span></summary>
+        <textarea class="xfer-text" rows="10" readonly aria-label="The text to share" .value=${text}></textarea>
+        <button class="link" @click=${() => void this.copyShareText(text, "text")}>${copied === "text" ? "Copied" : "Copy text"}</button>
+      </details>`, nothing, !ready);
+    return html`<dialog class="share-dialog xf ${this.galleryOpen ? "under" : ""}" @close=${() => { this.shareOpen = false; this.pointAtRow([], undefined, () => undefined); }}>
+      ${this.dialogHead(`Share “${cfg.name.trim() || "Untitled"}”`, `${ready ? familyWords(picked) : "No shapes picked yet"} · ${layerCountWords(cfg)}`, () => this.closeShareDialog())}
       <div class="xfer-body">
         ${this.dialogPreview(layouts, family, spot,
           focused && spot.length > 0 ? html`Where <b>${focused.name}</b> is` : family ? familyTitle(family) : "",
           rows.some((row) => row.ids.length > 0) ? "Point at a name to see where it is" : "")}
-        ${this.familyChips(supportedFamilies(whole), this.shareFamilies, (next) => this.setShareFamilies(next), "Shapes to share")}
-        <div class="xf-stack">
-          <div class="seg wide xf-modes" role="group" aria-label="What to share">
-            <button class=${share ? "on" : ""} aria-pressed=${share ? "true" : "false"} @click=${() => this.setShareMode("share")}>${uiIcon("globe")}<span>Share with others</span></button>
-            <button class=${share ? "" : "on"} aria-pressed=${share ? "false" : "true"} @click=${() => this.setShareMode("backup")}>${uiIcon("lock")}<span>Backup for me</span></button>
-          </div>
-          <div class="xf-lead ${share ? "" : "warn"}">${uiIcon(share ? "info" : "lock")}
-            <span>${share ? "Your entities are removed. The other person picks their own." : "Exact copy with your entities. Keep it for yourself or this home."}</span></div>
-        </div>
-        ${share ? html`<div class="xf-stack">
-          <div class="xf-label">What they can read</div>
-          ${this.renderPublicRows(cfg, rows, this.shareFocus, (key) => { this.shareFocus = key; }, "share")}
-        </div>` : nothing}
-        <div class="xf-stack">
-          <div class="xf-acts">
-            <button class="xf-act" ?disabled=${!share || !admin} aria-haspopup="dialog"
-              @click=${() => this.openGalleryDialog()}>
-              <span class="ic">${uiIcon("globe")}</span><b>Post to online gallery</b>
-              <span>${!share ? "Only shares can go" : admin ? "Everyone can find it, after review" : "Needs a Home Assistant administrator"}</span>
-            </button>
-            <button class="xf-act ${copied === "link" ? "flash" : ""}" @click=${() => void this.copyShareLink(text)}>
-              <span class="ic">${uiIcon(copied === "link" ? "check" : "link")}</span><b>${copied === "link" ? "Link copied" : "Copy link"}</b>
-              <span>Opens in their own Home Assistant</span>
-            </button>
-            <button class="xf-act ${copied === "file" ? "flash" : ""}" title=${`Saves ${exportFileName(cfg)}`} @click=${() => this.downloadShareText(text)}>
-              <span class="ic">${uiIcon(copied === "file" ? "check" : "download")}</span><b>${copied === "file" ? "Saved" : "Download"}</b>
-              <span>A .json file</span>
-            </button>
-          </div>
-          ${link && this.shareLinkShown ? html`<input class="xfer-link" type="text" readonly aria-label="Share link" .value=${link.url}
-            @focus=${(e: Event) => (e.target as HTMLInputElement).select()} />` : nothing}
-          ${this.shareNote === "" ? nothing : html`<div class="hint xf-note" role="status">${this.shareNote}</div>`}
-          <a class="xf-galink" href=${GALLERY_PAGE} target="_blank" rel="noopener">${uiIcon("globe")}<span>See the online gallery</span>${uiIcon("arrow")}</a>
-        </div>
-        <details class="xf-raw" .open=${this.shareTextOpen}
-          @toggle=${(e: Event) => { this.shareTextOpen = (e.target as HTMLDetailsElement).open; }}>
-          <summary>${uiIcon("right")}<span>Share text</span></summary>
-          <textarea class="xfer-text" rows="10" readonly aria-label="The text to share" .value=${text}></textarea>
-          <button class="link" @click=${() => void this.copyShareText(text, "text")}>${copied === "text" ? "Copied" : "Copy text"}</button>
-        </details>
+        ${who}${shapes}${names}${send}
       </div>
     </dialog>`;
+  }
+
+  /** One numbered step of the Share dialog, in its own colour. A locked step
+   * waits on an earlier one: it shows, faded, and takes no input. */
+  private shareSection(n: number, tone: string, title: string, body: unknown, right: unknown = nothing, locked = false) {
+    return html`<section class="xf-sec ${tone} ${locked ? "locked" : ""}">
+      <h3><i>${n}</i><span>${title}</span>${right === nothing ? nothing : html`<span class="r">${right}</span>`}</h3>
+      <div class="xf-sec-b" ?inert=${locked}>${body}</div>
+    </section>`;
+  }
+
+  /**
+   * A name row in Share or the gallery pointed at, or let go. The dialog's
+   * preview picks out its layers, and so do the Layers list and the canvas
+   * behind the dialog, with the lit row scrolled into view.
+   */
+  private pointAtRow(rows: readonly PublicRow[], key: string | undefined, set: (key: string | undefined) => void) {
+    set(key);
+    const ids = key === undefined ? [] : rows.find((r) => r.key === key)?.ids ?? [];
+    this.listHoverIds = ids;
+    this.dialogLitIds = ids;
+    if (ids.length === 0) return;
+    void this.updateComplete.then(() => {
+      this.renderRoot.querySelector<HTMLElement>(".layer.lit")?.scrollIntoView({ block: "nearest" });
+    });
   }
 
   /** The head every transfer dialog shares: a title, a line under it, any
@@ -5940,8 +5989,19 @@ export class WristAssistantPanel extends LitElement {
    * Share and gallery dialogs send or show is read from this copy. */
   private shareConfig(): CustomComplicationConfig | undefined {
     const cfg = this.draft?.config;
-    if (!cfg || this.shareFamilies === undefined) return cfg;
-    return keepFamilies(cfg, [...this.shareFamilies]);
+    if (!cfg) return cfg;
+    const picked = this.sharePicked();
+    // Nothing picked yet still draws the whole design; every way out waits.
+    if (picked.length === 0 || picked.length === supportedFamilies(cfg).length) return cfg;
+    return keepFamilies(cfg, picked);
+  }
+
+  /** The shapes Share will send. A document with one shape needs no pick. */
+  private sharePicked(): FamilyKind[] {
+    const cfg = this.draft?.config;
+    if (!cfg) return [];
+    const have = supportedFamilies(cfg);
+    return have.length < 2 ? have : have.filter((f) => this.shareFamilies.has(f));
   }
 
   /** The group and shared value names changed for shared copies. */
@@ -5951,33 +6011,30 @@ export class WristAssistantPanel extends LitElement {
 
   private setShareFamilies(next: ReadonlySet<FamilyKind>) {
     this.shareFamilies = next;
-    this.shareFocus = undefined;
+    this.pointAtRow([], undefined, (k) => { this.shareFocus = k; });
     this.shareNote = "";
     this.shareLinkShown = false;
   }
 
   /**
    * Chips for the shapes a document has, so Share can send and Import can
-   * take only some of them. The last shape on cannot be turned off, and a
-   * document with one shape has nothing to choose.
+   * take only some of them. With `keepOne`, the last shape on cannot be
+   * turned off.
    */
-  private familyChips(have: readonly FamilyKind[], chosen: ReadonlySet<FamilyKind> | undefined, set: (next: ReadonlySet<FamilyKind>) => void, label: string) {
-    if (have.length < 2) return nothing;
-    const on = (f: FamilyKind) => chosen === undefined || chosen.has(f);
-    const count = have.filter(on).length;
-    return html`<div class="xf-f xf-shapes"><span class="xf-label">${label}<span class="r">${count} of ${have.length}</span></span>
-      <div class="gal-tags" role="group" aria-label=${label}>${have.map((f) => {
-        const lit = on(f);
-        const last = lit && count === 1;
-        return html`<button class="pk-chip ${lit ? "on" : ""}" aria-pressed=${lit ? "true" : "false"} ?disabled=${last}
-          title=${last ? "At least one shape stays on" : lit ? `Leave ${familyTitle(f)} out` : `Put ${familyTitle(f)} back`}
-          @click=${() => {
-            const next = new Set(have.filter(on));
-            if (lit) next.delete(f);
-            else next.add(f);
-            set(next);
-          }}>${lit ? uiIcon("check") : nothing}${familyTitle(f)}</button>`;
-      })}</div></div>`;
+  private familyChips(have: readonly FamilyKind[], isOn: (f: FamilyKind) => boolean, set: (next: ReadonlySet<FamilyKind>) => void, keepOne: boolean) {
+    const count = have.filter(isOn).length;
+    return html`<div class="gal-tags xf-shapes" role="group" aria-label="Shapes">${have.map((f) => {
+      const lit = isOn(f);
+      const last = keepOne && lit && count === 1;
+      return html`<button class="pk-chip ${lit ? "on" : ""}" aria-pressed=${lit ? "true" : "false"} ?disabled=${last}
+        title=${last ? "At least one shape stays on" : lit ? `Leave ${familyTitle(f)} out` : `Put ${familyTitle(f)} in`}
+        @click=${() => {
+          const next = new Set(have.filter(isOn));
+          if (lit) next.delete(f);
+          else next.add(f);
+          set(next);
+        }}>${lit ? uiIcon("check") : nothing}${familyTitle(f)}</button>`;
+    })}</div>`;
   }
 
   /**
@@ -6064,7 +6121,7 @@ export class WristAssistantPanel extends LitElement {
   private setShareMode(mode: "share" | "backup") {
     this.shareMode = mode;
     this.shareNote = "";
-    this.shareFocus = undefined;
+    this.pointAtRow([], undefined, (k) => { this.shareFocus = k; });
     this.shareCopied = undefined;
     this.shareLinkShown = false;
   }
@@ -6080,7 +6137,7 @@ export class WristAssistantPanel extends LitElement {
     this.shareOpen = true;
     this.shareMode = "share";
     this.shareLabels = new Map();
-    this.shareFamilies = undefined;
+    this.shareFamilies = new Set();
     this.shareGroupNames = new Map();
     this.shareValueNames = new Map();
     this.shareNote = "";
@@ -6120,7 +6177,8 @@ export class WristAssistantPanel extends LitElement {
 
   private openGalleryDialog() {
     const cfg = this.shareConfig();
-    if (!cfg || !this.hass.user?.is_admin) return;
+    if (!cfg || !this.hass.user?.is_admin || this.sharePicked().length === 0) return;
+    this.pointAtRow([], undefined, (k) => { this.shareFocus = k; });
     this.galleryOpen = true;
     this.galleryTitle = cfg.name.trim().slice(0, GALLERY_LIMITS.title);
     this.galleryDescription = "";
@@ -6287,7 +6345,7 @@ export class WristAssistantPanel extends LitElement {
       <button class=${tab === "new" ? "on" : ""} aria-pressed=${tab === "new" ? "true" : "false"} @click=${() => this.setGalleryTab("new")}>New</button>
       <button class=${tab === "mine" ? "on" : ""} aria-pressed=${tab === "mine" ? "true" : "false"} @click=${() => this.setGalleryTab("mine")}>My uploads<span class="xf-count">${rows === undefined ? "…" : rows.length}</span></button>
     </div>`;
-    return html`<dialog class="gallery-dialog xf" @close=${() => { this.galleryOpen = false; }}>
+    return html`<dialog class="gallery-dialog xf" @close=${() => { this.galleryOpen = false; this.pointAtRow([], undefined, (k) => { this.galleryFocus = k; }); }}>
       ${this.dialogHead("Post to online gallery",
         html`<a class="xf-galink" href=${GALLERY_PAGE} target="_blank" rel="noopener">wrist-assistant.com/gallery</a>`,
         () => this.closeGalleryDialog(), tabs)}
@@ -6455,7 +6513,7 @@ export class WristAssistantPanel extends LitElement {
     const preview = this.dialogPreview(layouts, family, focused?.ids ?? [],
       focused && focused.ids.length > 0 ? html`Where <b>${focused.name}</b> is` : family ? familyTitle(family) : "",
       "Point at a name to see where it is", true);
-    return this.renderPublicRows(cfg, rows, this.galleryFocus, (key) => { this.galleryFocus = key; }, "gallery", preview);
+    return this.renderPublicRows(cfg, rows, this.galleryFocus, (key) => this.pointAtRow(rows, key, (k) => { this.galleryFocus = k; }), "gallery", preview);
   }
 
   /** Step 3: what has been taken care of, the promise, and anything that still
@@ -6715,7 +6773,8 @@ export class WristAssistantPanel extends LitElement {
             <input type="text" maxlength="60" aria-invalid=${taken ? "true" : "false"} .value=${this.importName}
               @input=${(e: Event) => { this.importName = (e.target as HTMLInputElement).value; }} /></label>
           ${taken ? html`<div class="hint err">A complication on this watch already has that name.</div>` : nothing}
-          ${this.familyChips(have, this.importFamilies, (next) => this.setImportFamilies(next), "Shapes to import")}
+          ${have.length < 2 ? nothing : html`<div class="xf-f"><span class="xf-label">Shapes to import<span class="r">${supportedFamilies(cfg).length} of ${have.length}</span></span>
+            ${this.familyChips(have, (f) => this.importFamilies === undefined || this.importFamilies.has(f), (next) => this.setImportFamilies(next), true)}</div>`}
           <div class="xf-sub">${have.length < 2 ? `${familyWords(have)} · ` : ""}${layerCountWords(cfg)}</div>
         </div>
       </div>
@@ -7467,7 +7526,7 @@ export class WristAssistantPanel extends LitElement {
       const states = statesSummary(el.payload.rules);
       const pointed = this.picking && this.pickHoverId === id;
       const d = this.rowDrag(id, edit);
-      return html`<div class="layer ${hl ? "hl" : ""} ${held ? "held" : ""} ${pointed ? "pick" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""} ${rich ? "rich" : ""}"
+      return html`<div class="layer ${hl ? "hl" : ""} ${held ? "held" : ""} ${pointed ? "pick" : ""} ${this.dialogLitIds.includes(id) ? "lit" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""} ${rich ? "rich" : ""}"
         style=${`--k:${KIND_COLOR[el.kind]}`} tabindex="0" draggable=${d.draggable}
         @pointerenter=${() => { this.listHoverIds = [id]; }}
         @pointerleave=${() => this.leaveRow([id])}
