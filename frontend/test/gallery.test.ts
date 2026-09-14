@@ -36,7 +36,7 @@ import {
   submitToGallery,
   unquotedEntityIds,
 } from "../src/gallery.js";
-import { galleryPreviewContext, withoutImageLayers } from "../src/preview-png.js";
+import { galleryPreviewContext, withPicturePlaceholders } from "../src/preview-png.js";
 
 function livingRoom(): CustomComplicationConfig {
   const parsed = parseImportText(readFileSync(join(__dirname, "fixtures-share", "living-room-backup.json"), "utf8"), 6);
@@ -491,11 +491,12 @@ describe("preview context", () => {
     }
   });
 
-  it("leaves picture layers and their timestamps out", () => {
+  it("keeps picture layers as stand-ins and leaves their timestamps out", () => {
     const cfg = fixtureConfig("image_time_layer.json");
-    expect(cfg.elements.some((el) => el.kind === "image")).toBe(true);
-    const out = withoutImageLayers(cfg);
-    expect(out.elements.some((el) => el.kind === "image" || el.kind === "imageTime")).toBe(false);
-    expect(cfg.elements.some((el) => el.kind === "image")).toBe(true);
+    expect(cfg.elements.some((el) => el.kind === "imageTime")).toBe(true);
+    const out = withPicturePlaceholders(cfg);
+    expect(out.elements.some((el) => el.kind === "image")).toBe(true);
+    expect(out.elements.some((el) => el.kind === "imageTime")).toBe(false);
+    expect(cfg.elements.some((el) => el.kind === "imageTime")).toBe(true);
   });
 });

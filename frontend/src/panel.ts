@@ -195,7 +195,7 @@ import {
   listMyUploads,
   submitToGallery,
 } from "./gallery.js";
-import { galleryPreviewContext, renderGalleryPreviews, withoutImageLayers } from "./preview-png.js";
+import { galleryPreviewContext, renderGalleryPreviews, withPicturePlaceholders } from "./preview-png.js";
 import { domainIcon } from "./domain-icons.js";
 
 /** The gallery calls go through the browser's own fetch. */
@@ -6310,9 +6310,10 @@ export class WristAssistantPanel extends LitElement {
 
   /**
    * Step 2: every piece of text that becomes public, in the amber box, with
-   * the names the author can change for the gallery copy. Pointing at a row
-   * that belongs to layers picks them out in the preview, which is drawn the
-   * way the gallery picture is: scrubbed, with picture layers left out.
+   * the names the author can change for the gallery copy. Every row that
+   * belongs to layers lists them; pointing at it picks them out in the
+   * preview, which is drawn the way the gallery picture is: scrubbed, with
+   * picture layers as stand-ins.
    */
   private renderGalleryPublic(cfg: CustomComplicationConfig, slots: readonly ShareSlot[], overrides: GalleryOverrides, known: ReadonlySet<string>) {
     const fields = galleryPublicFields(cfg, slots, overrides);
@@ -6356,13 +6357,13 @@ export class WristAssistantPanel extends LitElement {
     const focused = rows.find((r) => r.key === this.galleryFocus);
     const renamed = applyGalleryOverrides(cfg, overrides);
     const scrubbed = scrubForShare(renamed, slots);
-    const layouts = resolveAll(withoutImageLayers(scrubbed), galleryPreviewContext(cfg, scrubbed, slots, {
+    const layouts = resolveAll(withPicturePlaceholders(scrubbed), galleryPreviewContext(cfg, scrubbed, slots, {
       entityState: (id) => this.entityStateFor(id, "", false),
       templateResults: this.templateResults,
       historySeries: this.historySeries,
     }));
     // The tags draw the layers as the author knows them, pictures included.
-    const drawn: ResolvedAll = focused && focused.ids.length > 0 ? resolveAll(cfg, this.buildContext(), this.forced) : {};
+    const drawn: ResolvedAll = rows.some((r) => r.ids.length > 0) ? resolveAll(cfg, this.buildContext(), this.forced) : {};
     const family = this.dialogFamily(cfg);
     const ctx = describeContext(this.host());
     const clear = () => { this.galleryFocus = undefined; };
@@ -6377,7 +6378,7 @@ export class WristAssistantPanel extends LitElement {
           const set = () => { this.galleryFocus = row.key; };
           return html`<div class="kv ${on ? "on" : ""}" @pointerenter=${set} @focusin=${set}>
             <span class="k">${row.label}</span>
-            <div class="v">${row.control}${on ? this.layerTags(cfg, drawn, row.ids, ctx) : nothing}</div>
+            <div class="v">${row.control}${row.ids.length > 0 ? this.layerTags(cfg, drawn, row.ids, ctx) : nothing}</div>
           </div>`;
         })}
       </div>
@@ -6394,7 +6395,7 @@ export class WristAssistantPanel extends LitElement {
         <div class="xf-checks">
           <div>${uiIcon("check")}<span>${tags === 0 ? "Title, no tags" : `Title and ${tags === 1 ? "1 tag" : `${tags} tags`}`}</span></div>
           <div>${uiIcon("check")}<span>${slots.length > 0 ? "Your entities are removed" : "It reads none of your entities"}</span></div>
-          <div>${uiIcon("check")}<span>${pictures ? "Picture layers are left out of the preview" : "The preview shows your current values"}</span></div>
+          <div>${uiIcon("check")}<span>${pictures ? "Pictures show as a stand-in, never your photo" : "The preview shows your current values"}</span></div>
         </div>
         <label class="xf-switch">
           <input type="checkbox" .checked=${this.galleryConfirmed} ?disabled=${this.gallerySending}

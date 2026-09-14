@@ -6,11 +6,13 @@
 // name. Only the author's live values are copied across, onto the placeholder
 // ids, so the picture shows real numbers instead of dashes.
 //
-// Picture layers are left out. A picture is a camera frame, a person's avatar
-// or album art from this house, served from this Home Assistant with an access
-// token in its address. Drawing it would put a private photo into a public
-// preview, and the canvas would refuse to export it anyway, since the image
-// comes from another origin.
+// Picture layers draw as the stand-in the watch shows before its first fetch:
+// a faint box with a camera, person or photo glyph. A picture is a camera
+// frame, a person's avatar or album art from this house, served from this Home
+// Assistant with an access token in its address. Drawing it would put a
+// private photo into a public preview, and the canvas would refuse to export
+// it anyway, since the image comes from another origin. The copied states
+// carry no picture address, so the renderer falls back to the stand-in.
 
 import { render, type TemplateResult } from "lit";
 import {
@@ -41,11 +43,12 @@ export interface PreviewSource {
   historySeries: ReadonlyMap<string, string>;
 }
 
-/** The scrubbed document without its picture layers, nor the timestamps that
- * sit on them. */
-export function withoutImageLayers(cfg: CustomComplicationConfig): CustomComplicationConfig {
+/** The scrubbed document ready for a public picture: picture layers stay, to
+ * be drawn as stand-ins, but the timestamps on them go, since a stand-in has
+ * no time to show. */
+export function withPicturePlaceholders(cfg: CustomComplicationConfig): CustomComplicationConfig {
   const next = structuredClone(cfg);
-  next.elements = next.elements.filter((el) => el.kind !== "image" && el.kind !== "imageTime");
+  next.elements = next.elements.filter((el) => el.kind !== "imageTime");
   return next;
 }
 
@@ -119,7 +122,7 @@ export async function renderGalleryPreviews(
 ): Promise<GalleryPreview[]> {
   const scrubbed = scrubForShare(cfg, slots);
   const ctx = galleryPreviewContext(cfg, scrubbed, slots, source);
-  const layouts = resolveAll(withoutImageLayers(scrubbed), ctx);
+  const layouts = resolveAll(withPicturePlaceholders(scrubbed), ctx);
   const out: GalleryPreview[] = [];
   for (const family of DRAWABLE_FAMILIES) {
     const drawable = family as DrawableFamily;
