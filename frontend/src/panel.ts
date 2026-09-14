@@ -159,7 +159,6 @@ import {
   isPlaceholderId,
   parseImportText,
   remapEntities,
-  scrubForShare,
   shareLinkInText,
   shareLinkPayload,
   shareLinkUrl,
@@ -195,7 +194,7 @@ import {
   listMyUploads,
   submitToGallery,
 } from "./gallery.js";
-import { galleryPreviewContext, renderGalleryPreviews, withPicturePlaceholders } from "./preview-png.js";
+import { renderGalleryPreviews } from "./preview-png.js";
 import { domainIcon } from "./domain-icons.js";
 
 /** The gallery calls go through the browser's own fetch. */
@@ -235,7 +234,6 @@ interface PublicRow {
   ids: string[];
   control: unknown;
   /** What an entity is in this home, shown with the private tags. */
-  now?: unknown;
 }
 
 const PUBLIC_ROW_LABEL: Record<string, string> = {
@@ -749,11 +747,10 @@ export class WristAssistantPanel extends LitElement {
   @state() private galleryOpen = false;
   /** New upload or the uploads list, and which of the three steps New is on. */
   @state() private galleryTab: "new" | "mine" = "new";
-  @state() private galleryStep: 1 | 2 | 3 = 1;
+  @state() private galleryStep: 1 | 2 = 1;
   /** The approved upload this one is sent as a new version of. */
   @state() private galleryReplaces?: { id: string; title: string };
   /** The public text row the pointer or the focus is in. */
-  @state() private galleryFocus?: string;
   /** Waits out typing in a slot label before the pictures are drawn again,
    * since they print the labels. */
   private galleryRedrawTimer?: number;
@@ -1320,10 +1317,6 @@ export class WristAssistantPanel extends LitElement {
     .xf-row .ent-ico.xf-dom { background: var(--wa-ent-bg); color: var(--wa-ent); margin-top: 1px; }
     .xf-main { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
     .xf-main > input[type=text] { width: 100%; box-sizing: border-box; }
-    .xf-now { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 6px; font-size: 12px; color: var(--wa-muted); }
-    .xf-now svg.ui-icon { width: 12px; height: 12px; flex: none; }
-    .xf-now b { color: var(--wa-ink); font-weight: 550; }
-    .xf-now .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; overflow-wrap: anywhere; }
     .xf-uses { display: flex; flex-wrap: wrap; gap: 6px; }
     .xf-use { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; font-size: 12px; padding: 2px 8px 2px 2px; border-radius: 7px; border: 1px solid var(--wa-line); background: var(--wa-raised); }
     .xf-use .xf-lt { width: 34px; height: 20px; flex: none; border-radius: 4px; overflow: hidden; background: #000; line-height: 0; }
@@ -1398,7 +1391,6 @@ export class WristAssistantPanel extends LitElement {
     .xf-pub { display: grid; gap: 4px; padding: 8px; border-radius: var(--wa-r-md); background: var(--wa-val-bg); border: 1px solid color-mix(in srgb, var(--wa-val) 40%, var(--wa-line)); }
     .xf-pub .kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; align-items: start; padding: 6px; border-radius: 8px; transition: background-color .12s ease-out; }
     .xf-pub .kv.on { background: var(--wa-sel-bg); }
-    .xf-legend { display: grid; gap: 6px; }
     .xf-sec { --sc: var(--wa-accent); display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 12px; border-radius: var(--wa-r-md);
       background: color-mix(in srgb, var(--sc) 7%, var(--wa-card)); border: 1px solid color-mix(in srgb, var(--sc) 34%, var(--wa-line)); }
     .xf-sec.s-shapes { --sc: #26a69a; }
@@ -1412,9 +1404,6 @@ export class WristAssistantPanel extends LitElement {
     .xf-sec-b { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
     .xf-sec.locked > .xf-sec-b { opacity: .45; }
     .xf-sec.s-names .xf-pub { background: var(--wa-card); }
-    .xf-mine { display: flex; align-items: flex-start; gap: 6px; margin-top: 6px; }
-    .xf-mine > svg.ui-icon { width: 13px; height: 13px; flex: none; margin-top: 4px; color: var(--wa-muted); }
-    .xf-mine-b { display: grid; gap: 6px; min-width: 0; }
     .xf-shapes .pk-chip { display: inline-flex; align-items: center; gap: 4px; }
     .xf-shapes .pk-chip svg.ui-icon { width: 12px; height: 12px; }
     .xf-pub .kv > .k { font-size: 12px; color: var(--wa-muted); padding-top: 6px; }
@@ -5847,9 +5836,9 @@ export class WristAssistantPanel extends LitElement {
       ${this.familyChips(have, (f) => this.shareFamilies.has(f), (next) => this.setShareFamilies(next), false)}
       ${ready ? nothing : html`<div class="xf-lead">${uiIcon("info")}<span>Only the shapes you pick go in the copy. Pick at least one.</span></div>`}`,
       html`${picked.length} of ${have.length}<button class="link" @click=${() => this.setShareFamilies(new Set(all ? [] : have))}>${all ? "None" : "All"}</button>`);
-    const names = !share ? nothing : this.shareSection(++n, "s-names", "Check what they can read",
+    const names = !share ? nothing : this.shareSection(++n, "s-names", "Public names",
       ready
-        ? this.renderPublicRows(cfg, rows, this.shareFocus, (key) => this.pointAtRow(rows, key, (k) => { this.shareFocus = k; }), "share")
+        ? this.renderPublicRows(rows, this.shareFocus, (key) => this.pointAtRow(rows, key, (k) => { this.shareFocus = k; }))
         : html`<div class="hint">Pick a shape first.</div>`,
       nothing, !ready);
     const send = this.shareSection(++n, "s-send", "Send it", html`
@@ -5907,7 +5896,8 @@ export class WristAssistantPanel extends LitElement {
     set(key);
     const ids = key === undefined ? [] : rows.find((r) => r.key === key)?.ids ?? [];
     this.listHoverIds = ids;
-    this.dialogLitIds = ids;
+    // A group's name row lights the group's own row too, not only its layers.
+    this.dialogLitIds = key?.startsWith("g:") ? [key.slice(2), ...ids] : ids;
     if (ids.length === 0) return;
     void this.updateComplete.then(() => {
       this.renderRoot.querySelector<HTMLElement>(".layer.lit")?.scrollIntoView({ block: "nearest" });
@@ -6066,10 +6056,8 @@ export class WristAssistantPanel extends LitElement {
               control: nameInput(row, "Shared value name", this.shareValueNames.get(row.id)) });
           } else {
             const slot = slots.find((s) => s.placeholderId === row.id);
-            const now = slot ? entityRefFrom(this.hass.states, slot.originalId).displayName : "";
             rows.push({ key: `e:${row.id}`, label: "Entity name", name: row.value, ids: slot ? entityLayerIds(cfg, slot.originalId, gate) : [],
-              control: nameInput(row, "Entity name", undefined),
-              now: slot ? html`<div class="xf-now"><span>Now: <b>${now || slot.originalId}</b></span><span class="mono">${slot.originalId}</span></div>` : undefined });
+              control: nameInput(row, "Entity name", undefined) });
           }
         }
         continue;
@@ -6086,36 +6074,23 @@ export class WristAssistantPanel extends LitElement {
     return rows;
   }
 
-  /** The public name check as markup: what is public and what is private,
-   * then the rows in the amber box. Pointing at a row sets `focus`. */
-  private renderPublicRows(cfg: CustomComplicationConfig, rows: readonly PublicRow[], focus: string | undefined,
-    setFocus: (key: string | undefined) => void, audience: "share" | "gallery", preview: unknown = nothing) {
-    // The tags draw the layers as the author knows them, pictures included.
-    const drawn: ResolvedAll = rows.some((r) => r.ids.length > 0) ? resolveAll(cfg, this.buildContext(), this.forced) : {};
-    const ctx = describeContext(this.host());
+  /** The public names as markup, one row each. Pointing at a row sets
+   * `focus`, which lights its layers behind the dialog. */
+  private renderPublicRows(rows: readonly PublicRow[], focus: string | undefined, setFocus: (key: string | undefined) => void) {
     const clear = () => setFocus(undefined);
-    const who = audience === "share" ? "Whoever gets the link or the file can read them" : "Everyone can read them";
     return html`
-      <div class="xf-legend">
-        <div class="xf-lead warn">${uiIcon("globe")}<span><b>The boxes are public.</b> ${who}, so change anything that names a person, a place or a device.</span></div>
-        <div class="xf-lead">${uiIcon("lock")}<span><b>Everything under a box is only for you.</b> It shows what the name is in your home and which layers use it. It is never sent.</span></div>
-      </div>
-      ${preview}
+      <div class="xf-lead">${uiIcon("info")}<span>These names go with the copy. Point at one to see where it is. Change any you want to keep to yourself.</span></div>
       <div class="xf-pub" @pointerleave=${(e: Event) => this.leaveRows(e, clear)} @focusout=${(e: Event) => this.leaveRows(e, clear)}>
         ${rows.map((row) => {
           const on = row.key === focus && row.ids.length > 0;
           const set = () => setFocus(row.key);
-          const mine = row.ids.length > 0 || row.now !== undefined;
           return html`<div class="kv ${on ? "on" : ""}" @pointerenter=${set} @focusin=${set}>
             <span class="k">${row.label}</span>
-            <div class="v">${row.control}${mine
-              ? html`<div class="xf-mine" title="Only you see this. It is not sent.">${uiIcon("lock")}<div class="xf-mine-b">
-                  ${row.now ?? nothing}${row.ids.length > 0 ? this.layerTags(cfg, drawn, row.ids, ctx) : nothing}</div></div>`
-              : nothing}</div>
+            <div class="v">${row.control}</div>
           </div>`;
         })}
       </div>
-      <div class="hint">Names changed here are only for shared copies: the link, the file and the gallery. Your own complication keeps its names, and an empty box keeps the name it had.</div>`;
+      <div class="hint">Your own complication keeps its names. An empty box keeps the name it had.</div>`;
   }
 
   private setShareMode(mode: "share" | "backup") {
@@ -6194,7 +6169,6 @@ export class WristAssistantPanel extends LitElement {
     this.galleryTab = "new";
     this.galleryStep = 1;
     this.galleryReplaces = undefined;
-    this.galleryFocus = undefined;
     void this.updateComplete.then(() => {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.gallery-dialog");
       if (dialog && !dialog.open) dialog.showModal();
@@ -6345,7 +6319,7 @@ export class WristAssistantPanel extends LitElement {
       <button class=${tab === "new" ? "on" : ""} aria-pressed=${tab === "new" ? "true" : "false"} @click=${() => this.setGalleryTab("new")}>New</button>
       <button class=${tab === "mine" ? "on" : ""} aria-pressed=${tab === "mine" ? "true" : "false"} @click=${() => this.setGalleryTab("mine")}>My uploads<span class="xf-count">${rows === undefined ? "…" : rows.length}</span></button>
     </div>`;
-    return html`<dialog class="gallery-dialog xf" @close=${() => { this.galleryOpen = false; this.pointAtRow([], undefined, (k) => { this.galleryFocus = k; }); }}>
+    return html`<dialog class="gallery-dialog xf" @close=${() => { this.galleryOpen = false; this.pointAtRow([], undefined, () => undefined); }}>
       ${this.dialogHead("Post to online gallery",
         html`<a class="xf-galink" href=${GALLERY_PAGE} target="_blank" rel="noopener">wrist-assistant.com/gallery</a>`,
         () => this.closeGalleryDialog(), tabs)}
@@ -6366,13 +6340,11 @@ export class WristAssistantPanel extends LitElement {
       if (this.galleryTab === "new") this.galleryReplaces = undefined;
     }
     this.galleryTab = tab;
-    this.galleryFocus = undefined;
     this.galleryConfirmDelete = undefined;
   }
 
-  private goGalleryStep(step: 1 | 2 | 3) {
+  private goGalleryStep(step: 1 | 2) {
     this.galleryStep = step;
-    this.galleryFocus = undefined;
   }
 
   /** Update on an upload: the same three steps, sent as its new version. */
@@ -6384,7 +6356,6 @@ export class WristAssistantPanel extends LitElement {
     this.gallerySent = false;
     this.galleryConfirmed = false;
     this.galleryError = "";
-    this.galleryFocus = undefined;
     this.galleryConfirmDelete = undefined;
   }
 
@@ -6415,16 +6386,14 @@ export class WristAssistantPanel extends LitElement {
       : this.galleryPreviews === undefined ? "Drawing the preview pictures"
       : !this.galleryConfirmed ? "Turn on the switch first"
       : "Send it for review";
-    const names = ["Details", "Check public text", "Send"];
+    const names = ["Details", "Send"];
     const steps = html`<nav class="xf-steps" aria-label="Steps">${names.map((label, i) => {
-      const n = (i + 1) as 1 | 2 | 3;
+      const n = (i + 1) as 1 | 2;
       return html`<button class="xf-step ${n < step ? "past" : ""}" aria-current=${n === step ? "step" : nothing}
         ?disabled=${n > 1 && !detailsOk} @click=${() => this.goGalleryStep(n)}>
         <i>${n < step ? uiIcon("check") : n}</i>${label}</button>`;
     })}</nav>`;
-    const body = step === 1
-      ? this.renderGalleryDetails(blockers.details)
-      : step === 2 ? this.renderGalleryPublic(cfg, slots, overrides, known) : this.renderGallerySend(cfg, slots, all);
+    const body = step === 1 ? this.renderGalleryDetails(blockers.details) : this.renderGallerySend(cfg, slots, all);
     return html`${steps}
       <div class="xfer-body">
         ${this.galleryReplaces ? html`<div class="xf-banner">${uiIcon("info")}<span>New version of <b>${this.galleryReplaces.title}</b>. The link and votes stay. The old version stays up until this one is approved.</span></div>` : nothing}
@@ -6433,11 +6402,11 @@ export class WristAssistantPanel extends LitElement {
       <div class="xfer-foot">
         ${step === 1
           ? html`<button class="ghost" @click=${() => this.closeGalleryDialog()}>Back to Share</button>`
-          : html`<button class="ghost" @click=${() => this.goGalleryStep((step - 1) as 1 | 2)}>Back</button>`}
+          : html`<button class="ghost" @click=${() => this.goGalleryStep(1)}>Back</button>`}
         <span class="spacer"></span>
-        ${step < 3
+        ${step === 1
           ? html`<button class="primary" ?disabled=${!detailsOk} title=${detailsOk ? "Next step" : blockers.details[0]!}
-              @click=${() => this.goGalleryStep((step + 1) as 2 | 3)}>Next${uiIcon("arrow")}</button>`
+              @click=${() => this.goGalleryStep(2)}>Next${uiIcon("arrow")}</button>`
           : html`<button class="primary" ?disabled=${!ready} title=${why}
               @click=${() => void this.sendToGallery()}>${this.gallerySending ? "Sending…" : "Send for review"}</button>`}
       </div>`;
@@ -6491,32 +6460,7 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
   }
 
-  /**
-   * Step 2: every piece of text that becomes public, in the amber box, with
-   * the names the author can change for the gallery copy. Every row that
-   * belongs to layers lists them; pointing at it picks them out in the
-   * preview, which is drawn the way the gallery picture is: scrubbed, with
-   * picture layers as stand-ins.
-   */
-  private renderGalleryPublic(cfg: CustomComplicationConfig, slots: readonly ShareSlot[], overrides: GalleryOverrides, known: ReadonlySet<string>) {
-    const title = this.galleryTitle.trim() || "Untitled";
-    const rows = this.publicNameRows(cfg, slots, known, overrides, { label: "Title", value: title });
-    const focused = rows.find((r) => r.key === this.galleryFocus);
-    const renamed = applyGalleryOverrides(cfg, overrides);
-    const scrubbed = scrubForShare(renamed, slots);
-    const layouts = resolveAll(withPicturePlaceholders(scrubbed), galleryPreviewContext(cfg, scrubbed, slots, {
-      entityState: (id) => this.entityStateFor(id, "", false),
-      templateResults: this.templateResults,
-      historySeries: this.historySeries,
-    }));
-    const family = this.dialogFamily(cfg);
-    const preview = this.dialogPreview(layouts, family, focused?.ids ?? [],
-      focused && focused.ids.length > 0 ? html`Where <b>${focused.name}</b> is` : family ? familyTitle(family) : "",
-      "Point at a name to see where it is", true);
-    return this.renderPublicRows(cfg, rows, this.galleryFocus, (key) => this.pointAtRow(rows, key, (k) => { this.galleryFocus = k; }), "gallery", preview);
-  }
-
-  /** Step 3: what has been taken care of, the promise, and anything that still
+  /** Step 2: what has been taken care of, the promise, and anything that still
    * stops the upload. */
   private renderGallerySend(cfg: CustomComplicationConfig, slots: readonly ShareSlot[], problems: readonly string[]) {
     const tags = this.galleryTags.size;
@@ -7582,7 +7526,7 @@ export class WristAssistantPanel extends LitElement {
         return "drop-into";
       };
       const memberIds = members.map((m) => m.payload.id);
-      return html`<div class="layer group ${hl ? "hl" : ""} ${rich ? "rich" : ""}" style=${`--k:${SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
+      return html`<div class="layer group ${hl ? "hl" : ""} ${this.dialogLitIds.includes(g.id) ? "lit" : ""} ${rich ? "rich" : ""}" style=${`--k:${SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
         @pointerenter=${() => { this.listHoverIds = memberIds; }}
         @pointerleave=${() => this.leaveRow(memberIds)}
         @click=${() => { this.multi = new Set(); this.inspect = { kind: "group", id: g.id }; }}

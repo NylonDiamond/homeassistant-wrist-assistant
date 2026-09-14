@@ -13,6 +13,7 @@ import {
   groupOf,
   newConfig,
   newElement,
+  nextGroupName,
   packGroups,
   parseConfig,
   removeElement,
@@ -44,6 +45,17 @@ describe("layer groups", () => {
     expect(groupMembers(cfg, gid).map((e) => e.payload.id)).toEqual([shape, icon]);
     expect(groupOf(cfg, shape)?.name).toBe("Dial");
     expect(groupOf(cfg, text)).toBeUndefined();
+  });
+
+  it("names a new group Group 1, Group 2, taking the lowest free number", () => {
+    const { cfg, ids } = config();
+    const [shape, text, icon, gauge] = ids as [string, string, string, string];
+    const a = createGroup(cfg, [shape, text])!;
+    const b = createGroup(cfg, [icon, gauge])!;
+    expect(cfg.groups!.find((g) => g.id === a)?.name).toBe("Group 1");
+    expect(cfg.groups!.find((g) => g.id === b)?.name).toBe("Group 2");
+    ungroup(cfg, a);
+    expect(nextGroupName(cfg)).toBe("Group 1");
   });
 
   it("refuses a group of one", () => {

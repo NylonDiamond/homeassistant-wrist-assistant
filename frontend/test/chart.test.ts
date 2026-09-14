@@ -871,7 +871,7 @@ describe("adding a chart's numbers in the editor", () => {
     expect(label.payload.value.kind).toEqual({ kind: "chartStat", layer: id, stat: "top" });
     const group = groupOf(cfg, id);
     expect(group).toBeDefined();
-    expect(group!.name).toBe("Prices");
+    expect(group!.name).toBe("Group 1");
     // Unlocked, so the new number can be dragged into place without towing
     // the chart. Selecting the group row still moves everything together.
     expect(group!.locked).toBe(false);
@@ -969,7 +969,7 @@ describe("reading the built-in numbers forward", () => {
       expect(l.payload.frame.x + l.payload.frame.width).toBeLessThanOrEqual(1);
     }
     const group = groupOf(cfg, chartId)!;
-    expect(group.name).toBe("Prices");
+    expect(group.name).toBe("Group 1");
     expect(groupMembers(cfg, group.id)).toHaveLength(4);
   });
 

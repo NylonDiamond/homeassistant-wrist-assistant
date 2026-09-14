@@ -2782,13 +2782,6 @@ export function chartLabelsOf(cfg: CustomComplicationConfig, chartId: string): E
     el.kind === "text" && el.payload.value.kind.kind === "chartStat" && el.payload.value.kind.layer === chartId);
 }
 
-/** What a chart's group is called when one is made for it: the entity's name
- * when the chart reads one, else plain "Chart". */
-function chartGroupName(cfg: CustomComplicationConfig, chart: Element): string {
-  const ref = valueEntity(cfg, primaryValue(chart))?.ref;
-  return ref?.displayName || ref?.entityId || (chart.kind === "image" ? "Picture" : chart.kind === "timeline" ? "Timeline" : "Chart");
-}
-
 /** Put a layer into the chart's group, making the group when the chart has
  * none. The group starts unlocked: a number is added to be dragged into
  * place, and a locked group would drag the chart along with it. Selecting
@@ -2799,7 +2792,7 @@ function joinChartGroup(cfg: CustomComplicationConfig, chart: Element, memberId:
     setGroup(cfg, memberId, existing.id);
     return;
   }
-  const gid = createGroup(cfg, [chart.payload.id, memberId], chartGroupName(cfg, chart));
+  const gid = createGroup(cfg, [chart.payload.id, memberId]);
   const group = cfg.groups?.find((g) => g.id === gid);
   if (group) group.locked = false;
 }
@@ -4183,9 +4176,19 @@ export function packGroups(cfg: CustomComplicationConfig): void {
   syncAttachedTaps(cfg);
 }
 
+/** The name a new group gets: "Group 1", "Group 2" and so on, the lowest
+ * number no group has. Never an entity's name, so a new group carries nothing
+ * from the home into a shared copy. */
+export function nextGroupName(cfg: Pick<CustomComplicationConfig, "groups">): string {
+  const taken = new Set((cfg.groups ?? []).map((g) => g.name.trim()));
+  let n = 1;
+  while (taken.has(`Group ${n}`)) n++;
+  return `Group ${n}`;
+}
+
 /** Make a group of these layers. Members already in another group leave it.
  * Returns the new group's id, or undefined when fewer than two layers qualify. */
-export function createGroup(cfg: CustomComplicationConfig, ids: readonly string[], name = "Group"): string | undefined {
+export function createGroup(cfg: CustomComplicationConfig, ids: readonly string[], name = nextGroupName(cfg)): string | undefined {
   const members = cfg.elements.filter((e) => ids.includes(e.payload.id) && !isAttachedTap(cfg, e));
   if (members.length < 2) return undefined;
   const group: LayerGroup = { id: newId(), name, locked: true };
