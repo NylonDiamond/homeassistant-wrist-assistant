@@ -20,7 +20,7 @@ import { type ShareSlot, exportText, hasInstanceFilters, isPlaceholderId, scrubF
 import { supportedFamilies } from "./layouts.js";
 
 /** Where the gallery lives. The one place to change for testing on staging. */
-export const GALLERY_API_BASE = "https://wrist-assistant.com/api/gallery";
+export const GALLERY_API_BASE = "https://wrist-assistant-gallery-staging.wrist-assistant.workers.dev/api/gallery";
 
 /** The shapes the gallery files a complication under: the panel's own. */
 export const GALLERY_FAMILIES: readonly FamilyKind[] = ["rectangular", "circular", "corner", "inline"];
