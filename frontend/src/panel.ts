@@ -1767,6 +1767,9 @@ export class WristAssistantPanel extends LitElement {
       height: auto; max-width: 100%;
       box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 20px 50px rgba(0,0,0,.45);
     }
+    /* Resize handles sit just outside a layer's corners, so on a layer at the
+       slot edge they reach past the face. */
+    .preview > svg.complication { overflow: visible; }
     .preview.rectangular svg { width: 100%; max-width: 900px; }
     .preview.circular svg { width: min(100%, 440px); border-radius: 50%; }
     .preview.corner svg { width: min(100%, 420px); background: #2c2c2e; }

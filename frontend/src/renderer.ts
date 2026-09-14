@@ -1494,7 +1494,12 @@ function chartsById(elements: readonly ResolvedElement[]): Map<string, ResolvedC
   return out;
 }
 
-function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderOptions, charts: ReadonlyMap<string, ResolvedChart> = new Map(), tintPrefix?: string) {
+/**
+ * One layer, or with `part` "handles" only its resize handles. The handles are
+ * drawn in a pass of their own, above the slot clip, so a handle on a layer
+ * that touches the slot edge still shows past that edge.
+ */
+function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderOptions, charts: ReadonlyMap<string, ResolvedChart> = new Map(), tintPrefix?: string, part: "body" | "handles" = "body") {
   if (el.isHidden && !options.showHidden) return nothing;
   const review = options.tapReview === true;
   const showTaps = options.tapAreas === true || review;
@@ -1516,7 +1521,7 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
   const box = frameBox(el, canvas);
   const labelled = review && (!inFocusView || focused);
   let body;
-  switch (el.kind) {
+  if (part === "body") switch (el.kind) {
     case "text": body = renderText(el, box); break;
     case "icon": body = renderIcon(el, box, options.icons); break;
     case "gauge": body = renderGauge(el, box); break;
@@ -1577,9 +1582,14 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
           fill="#FFFFFF" stroke="#0A84FF" stroke-width="0.5" style="cursor:${corner}-resize" />`,
       )
     : nothing;
+  if (part === "handles") {
+    return handles === nothing
+      ? nothing
+      : svg`<g data-element-id=${el.id} opacity=${opacity} transform="rotate(${el.frame.rotationDegrees} ${box.cx} ${box.cy})">${handles}</g>`;
+  }
   return svg`<g data-element-id=${el.id} opacity=${opacity} style=${draggable ? "cursor:move" : el.kind === "chartDots" ? "cursor:pointer" : nothing}
     pointer-events=${el.kind === "chartGrid" ? "none" : nothing}
-    transform="rotate(${el.frame.rotationDegrees} ${box.cx} ${box.cy})">${hit}${body}${hover}${highlight}${handles}</g>`;
+    transform="rotate(${el.frame.rotationDegrees} ${box.cx} ${box.cy})">${hit}${body}${hover}${highlight}</g>`;
 }
 
 /**
@@ -1852,6 +1862,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
         <circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} fill="none"
           stroke="rgba(255,255,255,0.22)" stroke-width=${0.75 * s} stroke-dasharray=${`${2 * s} ${2 * s}`} />
         ${tinted(chrome, "plain", tint)}
+        <g transform="scale(${fit.scale * tileScale})">${handleLayer(elements, design, options, charts)}</g>
       </g>`;
     }
     return svg`<svg viewBox=${`0 0 ${ctx.quad.width} ${ctx.quad.height}`} xmlns="http://www.w3.org/2000/svg" class="complication corner"
@@ -1884,7 +1895,15 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
       </g>
     </g>
     ${tinted(chrome, "plain", tint)}
+    <g transform="translate(${fit.x} ${fit.y}) scale(${fit.scale})">${handleLayer(elements, design, options, charts)}</g>
   </svg>`;
+}
+
+/** The selected layer's resize handles, for the pass drawn above the slot clip. */
+function handleLayer(elements: readonly ResolvedElement[], design: CanvasSize, options: RenderOptions, charts: ReadonlyMap<string, ResolvedChart>) {
+  if (options.handles !== true || options.highlightId === undefined) return nothing;
+  const el = elements.find((e) => e.id === options.highlightId);
+  return el === undefined ? nothing : renderElement(el, design, options, charts, undefined, "handles");
 }
 
 export interface ThumbOptions {
