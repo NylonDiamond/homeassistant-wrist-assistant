@@ -105,6 +105,23 @@ describe("buildGallerySubmission", () => {
     expect(body.shareText).not.toContain("Jane");
     expect(cfg).toEqual(before);
   });
+
+  it("renames layers in the copy only, and an empty name keeps the original", () => {
+    const cfg = livingRoom();
+    const [a, b] = cfg.elements as [typeof cfg.elements[number], typeof cfg.elements[number]];
+    a.payload.name = "Jane's lamp";
+    b.payload.name = "Clock";
+    const before = structuredClone(cfg);
+    const body = buildGallerySubmission(cfg, [], META, {
+      layerNames: new Map([[a.payload.id, "Lamp"], [b.payload.id, " "]]),
+    });
+    const sent = JSON.parse(body.shareText) as { elements: { payload: { name?: string } }[] };
+    const names = sent.elements.map((el) => el.payload.name);
+    expect(names).toContain("Lamp");
+    expect(names).toContain("Clock");
+    expect(body.shareText).not.toContain("Jane");
+    expect(cfg).toEqual(before);
+  });
 });
 
 describe("galleryPublicFields", () => {

@@ -114,6 +114,8 @@ export interface GalleryOverrides {
   name?: string;
   groupNames?: ReadonlyMap<string, string>;
   valueNames?: ReadonlyMap<string, string>;
+  /** Keyed by layer id. */
+  layerNames?: ReadonlyMap<string, string>;
 }
 
 /** A copy of the document with the gallery's renames applied. */
@@ -124,6 +126,10 @@ export function applyGalleryOverrides(cfg: CustomComplicationConfig, overrides: 
   next.name = pick(next.name, overrides.name);
   for (const g of next.groups ?? []) g.name = pick(g.name, overrides.groupNames?.get(g.id));
   for (const n of next.values) n.name = pick(n.name, overrides.valueNames?.get(n.id));
+  for (const el of next.elements) {
+    const wanted = overrides.layerNames?.get(el.payload.id);
+    if (el.payload.name !== undefined && wanted !== undefined) el.payload.name = pick(el.payload.name, wanted);
+  }
   return next;
 }
 

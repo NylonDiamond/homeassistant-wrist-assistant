@@ -726,6 +726,11 @@ export class WristAssistantPanel extends LitElement {
    * opens; the draft keeps its own names. */
   @state() private shareGroupNames: ReadonlyMap<string, string> = new Map();
   @state() private shareValueNames: ReadonlyMap<string, string> = new Map();
+  /** The complication's name for shared copies; empty keeps its own. */
+  @state() private shareName = "";
+  /** Layer names for shared copies, keyed by the layer's own name, so one box
+   * renames every layer that shares it. */
+  @state() private shareLayerNames: ReadonlyMap<string, string> = new Map();
   /** What the Share dialog's footer last had to say. Empty most of the time:
    * it speaks when a copy or a download landed, and when this browser has no
    * clipboard to write to and the text has been selected instead. */
@@ -758,7 +763,6 @@ export class WristAssistantPanel extends LitElement {
   @state() private galleryDescription = "";
   @state() private galleryTags: ReadonlySet<GalleryTag> = new Set();
   @state() private galleryNickname = "";
-  @state() private galleryConfirmed = false;
   /** Undefined while the pictures are being drawn. */
   @state() private galleryPreviews?: GalleryPreview[];
   @state() private galleryPreviewNote = "";
@@ -1415,10 +1419,6 @@ export class WristAssistantPanel extends LitElement {
     .xf-checks { display: grid; gap: 6px; }
     .xf-checks > div { display: flex; align-items: center; gap: 8px; font-size: 13px; }
     .xf-checks svg.ui-icon { width: 15px; height: 15px; flex: none; color: var(--wa-ent); }
-    .xf-switch { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--wa-line); border-radius: var(--wa-r-md); cursor: pointer; }
-    .xf-switch input[type=checkbox] { flex: none; margin: 0; }
-    .xf-switch .s b { display: block; font-weight: 600; font-size: 13px; }
-    .xf-switch .s span { font-size: 12px; color: var(--wa-muted); }
     .xf-done { display: grid; justify-items: center; text-align: center; gap: 8px; padding: 24px 8px; }
     .xf-done .big { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; background: var(--wa-ent-bg); color: var(--wa-ent); }
     .xf-done .big svg.ui-icon { width: 24px; height: 24px; }
@@ -5994,9 +5994,18 @@ export class WristAssistantPanel extends LitElement {
     return have.length < 2 ? have : have.filter((f) => this.shareFamilies.has(f));
   }
 
-  /** The group and shared value names changed for shared copies. */
+  /** The names changed for shared copies: the complication, groups, shared
+   * values and layers. */
   private shareNameOverrides(): GalleryOverrides {
-    return { groupNames: this.shareGroupNames, valueNames: this.shareValueNames };
+    const layerNames = new Map<string, string>();
+    const cfg = this.draft?.config;
+    if (cfg && this.shareLayerNames.size > 0) {
+      for (const el of cfg.elements) {
+        const wanted = el.payload.name === undefined ? undefined : this.shareLayerNames.get(el.payload.name.trim());
+        if (wanted !== undefined) layerNames.set(el.payload.id, wanted);
+      }
+    }
+    return { name: this.shareName, groupNames: this.shareGroupNames, valueNames: this.shareValueNames, layerNames };
   }
 
   private setShareFamilies(next: ReadonlySet<FamilyKind>) {
@@ -6037,14 +6046,18 @@ export class WristAssistantPanel extends LitElement {
     head: { label: string; value: string }): PublicRow[] {
     const fields = galleryPublicFields(cfg, slots, overrides);
     const gate = (_id: string, domain: string) => known.has(domain);
-    const rows: PublicRow[] = [{ key: "head", label: head.label, name: head.value, ids: [], control: html`<div class="xf-pill">${head.value}</div>` }];
-    const nameInput = (row: GalleryNameRow, label: string, typed: string | undefined) => {
-      const edited = typed !== undefined && typed.trim() !== "" && typed.trim() !== row.original;
-      return html`<input type="text" maxlength=${row.kind === "slot" ? 40 : nothing} aria-label=${`${label}: ${row.original}`}
-          .value=${typed ?? row.value} placeholder=${row.original} ?disabled=${this.gallerySending}
-          @input=${(e: Event) => this.setPublicName(row, (e.target as HTMLInputElement).value)} />
-        ${edited ? html`<span class="xf-edited">Edited. Your own copy keeps “${row.original}”.</span>` : nothing}`;
+    const box = (label: string, original: string, typed: string | undefined, set: (value: string) => void, maxlength?: number) => {
+      const edited = typed !== undefined && typed.trim() !== "" && typed.trim() !== original;
+      return html`<input type="text" maxlength=${maxlength ?? nothing} aria-label=${`${label}: ${original}`}
+          .value=${typed ?? original} placeholder=${original} ?disabled=${this.gallerySending}
+          @input=${(e: Event) => set((e.target as HTMLInputElement).value)} />
+        ${edited ? html`<span class="xf-edited">Edited. Your own copy keeps “${original}”.</span>` : nothing}`;
     };
+    const rows: PublicRow[] = [{ key: "head", label: head.label, name: head.value, ids: [],
+      control: box(head.label, cfg.name.trim(), this.shareName === "" ? undefined : this.shareName, (v) => { this.shareName = v; }) }];
+    const nameInput = (row: GalleryNameRow, label: string, typed: string | undefined) =>
+      box(label, row.original, typed ?? (row.value === row.original ? undefined : row.value),
+        (v) => this.setPublicName(row, v), row.kind === "slot" ? 40 : undefined);
     for (const group of fields) {
       if (group.rows) {
         for (const row of group.rows) {
@@ -6062,13 +6075,25 @@ export class WristAssistantPanel extends LitElement {
         }
         continue;
       }
-      const layerNames = group.label === "Layer names";
+      if (group.label === "Layer names") {
+        // Read off the document's own names, so a renamed box still finds its layers.
+        const names: string[] = [];
+        for (const el of cfg.elements) {
+          const name = el.payload.name?.trim();
+          if (name && !isAttachedTap(cfg, el) && !names.includes(name)) names.push(name);
+        }
+        for (const name of names) {
+          const ids = cfg.elements.filter((el) => !isAttachedTap(cfg, el) && el.payload.name?.trim() === name).map((el) => el.payload.id);
+          rows.push({ key: `l:${name}`, label: "Layer name", name, ids,
+            control: box("Layer name", name, this.shareLayerNames.get(name), (v) => this.setShareLayerName(name, v)) });
+        }
+        continue;
+      }
+      // What a layer draws, such as typed text or chart numbers. It is part of
+      // the design, so it is changed on the layer, not renamed here.
       group.values.forEach((value, i) => {
-        const ids = layerNames
-          ? cfg.elements.filter((el) => !isAttachedTap(cfg, el) && el.payload.name?.trim() === value).map((el) => el.payload.id)
-          : [];
-        rows.push({ key: `t:${group.label}:${i}`, label: PUBLIC_ROW_LABEL[group.label] ?? group.label, name: value, ids,
-          control: html`<div class="xf-pill ${layerNames ? "" : "mono"}">${value}</div>` });
+        rows.push({ key: `t:${group.label}:${i}`, label: PUBLIC_ROW_LABEL[group.label] ?? group.label, name: value, ids: [],
+          control: html`<div class="xf-pill mono">${value}</div><span class="xf-edited">Change this on the layer.</span>` });
       });
     }
     return rows;
@@ -6079,7 +6104,7 @@ export class WristAssistantPanel extends LitElement {
   private renderPublicRows(rows: readonly PublicRow[], focus: string | undefined, setFocus: (key: string | undefined) => void) {
     const clear = () => setFocus(undefined);
     return html`
-      <div class="xf-lead">${uiIcon("info")}<span>These names go with the copy. Point at one to see where it is. Change any you want to keep to yourself.</span></div>
+      <div class="xf-lead">${uiIcon("info")}<span>Others can see these names. Change the names of layers and groups here before you share, if you want.</span></div>
       <div class="xf-pub" @pointerleave=${(e: Event) => this.leaveRows(e, clear)} @focusout=${(e: Event) => this.leaveRows(e, clear)}>
         ${rows.map((row) => {
           const on = row.key === focus && row.ids.length > 0;
@@ -6115,6 +6140,8 @@ export class WristAssistantPanel extends LitElement {
     this.shareFamilies = new Set();
     this.shareGroupNames = new Map();
     this.shareValueNames = new Map();
+    this.shareName = "";
+    this.shareLayerNames = new Map();
     this.shareNote = "";
     this.shareTextOpen = false;
     this.shareLink = undefined;
@@ -6155,11 +6182,10 @@ export class WristAssistantPanel extends LitElement {
     if (!cfg || !this.hass.user?.is_admin || this.sharePicked().length === 0) return;
     this.pointAtRow([], undefined, (k) => { this.shareFocus = k; });
     this.galleryOpen = true;
-    this.galleryTitle = cfg.name.trim().slice(0, GALLERY_LIMITS.title);
+    this.galleryTitle = (this.shareName.trim() || cfg.name.trim()).slice(0, GALLERY_LIMITS.title);
     this.galleryDescription = "";
     this.galleryTags = new Set();
     this.galleryNickname = readGalleryNickname();
-    this.galleryConfirmed = false;
     this.gallerySending = false;
     this.gallerySent = false;
     this.galleryError = "";
@@ -6180,7 +6206,13 @@ export class WristAssistantPanel extends LitElement {
   /** The renames that apply to the gallery copy: the title as its name, and
    * the group and shared value names changed in Share or here. */
   private galleryOverrides(): GalleryOverrides {
-    return { name: this.galleryTitle, ...this.shareNameOverrides() };
+    return { ...this.shareNameOverrides(), name: this.galleryTitle };
+  }
+
+  private setShareLayerName(name: string, value: string) {
+    const next = new Map(this.shareLayerNames);
+    next.set(name, value);
+    this.shareLayerNames = next;
   }
 
   /** A name typed into the public list, in Share or in the gallery. Slot
@@ -6249,7 +6281,7 @@ export class WristAssistantPanel extends LitElement {
 
   private async sendToGallery() {
     const cfg = this.shareConfig();
-    if (!cfg || this.gallerySending || this.gallerySent || !this.galleryConfirmed || this.galleryPreviews === undefined) return;
+    if (!cfg || this.gallerySending || this.gallerySent || this.galleryPreviews === undefined) return;
     const slots = this.currentShareSlots();
     const meta = this.galleryMeta();
     const overrides = this.galleryOverrides();
@@ -6334,7 +6366,6 @@ export class WristAssistantPanel extends LitElement {
       if (this.gallerySent) {
         this.gallerySent = false;
         this.galleryStep = 1;
-        this.galleryConfirmed = false;
         this.galleryError = "";
       }
       if (this.galleryTab === "new") this.galleryReplaces = undefined;
@@ -6354,7 +6385,6 @@ export class WristAssistantPanel extends LitElement {
     this.galleryTab = "new";
     this.galleryStep = 1;
     this.gallerySent = false;
-    this.galleryConfirmed = false;
     this.galleryError = "";
     this.galleryConfirmDelete = undefined;
   }
@@ -6381,10 +6411,9 @@ export class WristAssistantPanel extends LitElement {
     const step = this.galleryStep;
     const detailsOk = blockers.details.length === 0;
     const all = [...blockers.details, ...blockers.send];
-    const ready = all.length === 0 && this.galleryConfirmed && this.galleryPreviews !== undefined && !this.gallerySending;
+    const ready = all.length === 0 && this.galleryPreviews !== undefined && !this.gallerySending;
     const why = all.length > 0 ? all[0]!
       : this.galleryPreviews === undefined ? "Drawing the preview pictures"
-      : !this.galleryConfirmed ? "Turn on the switch first"
       : "Send it for review";
     const names = ["Details", "Send"];
     const steps = html`<nav class="xf-steps" aria-label="Steps">${names.map((label, i) => {
@@ -6472,11 +6501,6 @@ export class WristAssistantPanel extends LitElement {
           <div>${uiIcon("check")}<span>${slots.length > 0 ? "Your entities are removed" : "It reads none of your entities"}</span></div>
           <div>${uiIcon("check")}<span>${pictures ? "Pictures show as a stand-in, never your photo" : "The preview shows your current values"}</span></div>
         </div>
-        <label class="xf-switch">
-          <input type="checkbox" .checked=${this.galleryConfirmed} ?disabled=${this.gallerySending}
-            @change=${(e: Event) => { this.galleryConfirmed = (e.target as HTMLInputElement).checked; }} />
-          <span class="s"><b>I made this</b><span>And it has no private information.</span></span>
-        </label>
         ${problems.length > 0 ? html`<ul class="xf-blockers" role="alert">${problems.map((p) => html`<li>${p}</li>`)}</ul>` : nothing}
         ${this.galleryError !== "" ? html`<div class="xf-blockers" role="alert">${this.galleryError}</div>` : nothing}
       </div>
