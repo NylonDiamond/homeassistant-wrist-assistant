@@ -36,7 +36,7 @@ MAX_PER_OWNER = 8
 MAX_SLOTS = 64
 MAX_LAYERS = 64
 MAX_BYTES = 4096
-MAX_SCHEMA = 7
+MAX_SCHEMA = 8
 
 
 class _FakeStore:
@@ -658,10 +658,196 @@ def test_home_screen_document_below_schema_seven_names_the_version(mod):
     assert "7" in str(err.value)
 
 
-def test_the_shipped_schema_ceiling_is_seven():
+# ── the list layer ─────────────────────────────────────────────────────────
+
+
+def _item_value(field: str = "title") -> dict:
+    """A value that reads a field of the row being drawn."""
+    return {"kind": {"kind": "item", "field": field}}
+
+
+def _list_stat_value(layer: str = "L1", stat: str = "count") -> dict:
+    """A value that reads a settled list's count, the `chartStat` pattern."""
+    return {"kind": {"kind": "listStat", "layer": layer, "stat": stat}}
+
+
+def _list_element(**payload_overrides) -> dict:
+    payload = {
+        "id": "L1",
+        "source": {"kind": "calendar", "entities": ["calendar.work"], "hours": 24},
+        "rows": 4,
+        "template": [
+            {"kind": "text", "payload": {"id": "R1", "value": _item_value()}},
+        ],
+    }
+    payload.update(payload_overrides)
+    return {"kind": "list", "payload": payload}
+
+
+def test_a_list_document_saves_at_schema_eight(mod):
+    store = _new(mod)
+    doc = _doc(schemaVersion=8, elements=[_list_element()])
+    rec = store.save(OWNER, doc, base_revision=None, updated_by="t")
+    assert rec.document["elements"][0]["kind"] == "list"
+    assert rec.document["schemaVersion"] == 8
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        # Every source kind the contract lists, Jinja-rendered and fetched.
+        dict(source={"kind": "entities", "scope": {"entities": ["light.a"]}}),
+        dict(source={"kind": "attribute", "entityId": "group.x", "attribute": "entity_id"}),
+        dict(source={"kind": "template", "value": "{{ [] | to_json }}"}),
+        dict(source={"kind": "todo", "entities": ["todo.shopping"], "status": "open"}),
+        dict(source={"kind": "forecast", "entity": "weather.home", "type": "hourly"}),
+        # The row count and the template are both optional.
+        dict(rows=None, template=None),
+        dict(rows=1),
+        dict(rows=12),
+        dict(template=[]),
+        dict(template=[{"kind": k, "payload": {}} for k in
+                       ("text", "icon", "shape", "gauge", "image", "tap", "text", "icon")]),
+        # An unhashable kind is not a forbidden kind; the deeper checks belong
+        # to the resolvers, so the layer rides along rather than 500ing here.
+        dict(template=[{"kind": {"nested": True}, "payload": {}}]),
+    ],
+)
+def test_valid_list_layers_are_accepted(mod, overrides):
+    store = _new(mod)
+    element = _list_element()
+    for key, value in overrides.items():
+        if value is None:
+            element["payload"].pop(key, None)
+        else:
+            element["payload"][key] = value
+    rec = store.save(
+        OWNER,
+        _doc(schemaVersion=8, elements=[element]),
+        base_revision=None,
+        updated_by="t",
+    )
+    assert rec.revision == 1
+
+
+@pytest.mark.parametrize(
+    "element",
+    [
+        # A list with no payload at all.
+        {"kind": "list"},
+        {"kind": "list", "payload": []},
+        # The source is what decides which items are drawn; a list without one
+        # would draw nothing, and one naming a source no client knows is a
+        # document from a future the store must not pass through.
+        _list_element(source=None),
+        _list_element(source="calendar"),
+        _list_element(source={"kind": "logbook", "area": "kitchen"}),
+        _list_element(source={}),
+        # Rows are cells, clamped 1..12 everywhere else too.
+        _list_element(rows=0),
+        _list_element(rows=13),
+        _list_element(rows=True),
+        _list_element(rows="4"),
+        # Nesting: a list inside a row has no cell arithmetic and no item
+        # scope, and is the one shape the decoder cannot be made to survive.
+        _list_element(template=[_list_element()]),
+        # The chart family draws from its own fetched key, not from an item.
+        _list_element(template=[{"kind": "chart", "payload": {}}]),
+        _list_element(template=[{"kind": "timeline", "payload": {}}]),
+        _list_element(template=[{"kind": "chartTimes", "payload": {}}]),
+        _list_element(template=[{"kind": "chartDots", "payload": {}}]),
+        _list_element(template=[{"kind": "chartGrid", "payload": {}}]),
+        _list_element(template=[{"kind": "imageTime", "payload": {}}]),
+        # Eight layers a row, twelve rows: 96 leaves is where the budget ends.
+        _list_element(template=[{"kind": "text", "payload": {}}] * 9),
+        _list_element(template={"kind": "text"}),
+        _list_element(template=[{"kind": "text"}, "text"]),
+        # A hand-written document can put an object where a kind name belongs.
+        # Membership in a frozenset raises TypeError on one of those, and a
+        # validator must answer "invalid" rather than 500 the panel.
+        _list_element(source={"kind": {"nested": True}}),
+        _list_element(source={"kind": ["calendar"]}),
+    ],
+)
+def test_invalid_list_layers_are_refused(mod, element):
+    store = _new(mod)
+    with pytest.raises(mod.ComplicationValidationError):
+        store.save(
+            OWNER,
+            _doc(schemaVersion=8, elements=[element]),
+            base_revision=None,
+            updated_by="t",
+        )
+    assert store.token == 0
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        # The layer itself.
+        dict(elements=[_list_element()]),
+        # An `item` value in a row template, which is the whole point of one.
+        dict(elements=[{"kind": "text", "payload": {"parts": [{"value": _item_value()}]}}]),
+        # A `listStat` header outside the list, the `chartStat` pattern.
+        dict(elements=[{"kind": "text", "payload": {"value": _list_stat_value()}}]),
+        # A rule that reads the count, so "All done" can show at zero.
+        dict(elements=[{"kind": "text", "payload": {
+            "rules": [{"test": {"left": _list_stat_value(), "op": "eq", "right": "0"}}],
+        }}]),
+        # The top-level value pool.
+        dict(values=[{"id": "V1", "value": _item_value()}]),
+        # The Inline shape's text.
+        dict(schemaVersion=6, supportedFamilies=["inline"], inline={"value": _item_value()}),
+    ],
+)
+def test_a_document_that_mentions_a_list_needs_schema_eight(mod, overrides):
+    """An app on 7 fails the document whole on the unknown value kind and
+    shows "update the app". That is the intended behaviour, so the version has
+    to say 8 rather than leaving the app to find out."""
+    store = _new(mod)
+    doc = _doc(**overrides)
+    assert doc["schemaVersion"] < 8
+    with pytest.raises(mod.ComplicationValidationError) as err:
+        store.save(OWNER, doc, base_revision=None, updated_by="t")
+    assert "8" in str(err.value)
+    assert store.token == 0
+
+
+def test_an_item_value_at_schema_eight_is_fine_anywhere(mod):
+    store = _new(mod)
+    doc = _doc(
+        schemaVersion=8,
+        elements=[
+            _list_element(),
+            {"kind": "text", "payload": {"value": _list_stat_value()}},
+        ],
+        values=[{"id": "V1", "value": _item_value("start")}],
+    )
+    rec = store.save(OWNER, doc, base_revision=None, updated_by="t")
+    assert rec.revision == 1
+
+
+def test_an_ordinary_document_still_saves_below_schema_eight(mod):
+    """The walk must not find a list where there is none: every document
+    written before this change keeps saving at the version it carries."""
+    store = _new(mod)
+    doc = _doc(
+        schemaVersion=7,
+        supportedFamilies=["small"],
+        elements=[
+            {"kind": "text", "payload": {"value": {"kind": {"kind": "literal", "value": "x"}}}},
+            {"kind": "chart", "payload": {"id": "C1"}},
+        ],
+        values=[{"id": "V1", "value": {"kind": {"kind": "entityState", "entityId": "light.a"}}}],
+    )
+    rec = store.save(OWNER, doc, base_revision=None, updated_by="t")
+    assert rec.document["schemaVersion"] == 7
+
+
+def test_the_shipped_schema_ceiling_is_eight():
     """The store test stubs the constant, so read the real one too. Both the
     websocket listing and the v2 delta reply hand this number to their client,
-    and a phone will not save a Home Screen document until it reads 7."""
+    and a panel will not save a list document until it reads 8."""
     const = (
         Path(__file__).resolve().parents[1]
         / "custom_components"
@@ -676,7 +862,7 @@ def test_the_shipped_schema_ceiling_is_seven():
         for target in node.targets
         if isinstance(target, ast.Name)
     }
-    assert values["COMPLICATION_MAX_SCHEMA_VERSION"] == MAX_SCHEMA == 7
+    assert values["COMPLICATION_MAX_SCHEMA_VERSION"] == MAX_SCHEMA == 8
 
     for name in ("complication_ws.py", "wa_v2_views.py"):
         source = (const.parent / name).read_text()

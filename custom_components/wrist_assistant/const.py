@@ -100,7 +100,12 @@ GALLERY_KEY_STORAGE_VERSION = 1
 # A document naming any of them must say 7, so an app that predates them skips
 # it with "needs app update" rather than drawing a shape it does not know.
 # A document with only watch shapes keeps the version it would have had.
-COMPLICATION_MAX_SCHEMA_VERSION = 7
+# v8 adds the list layer, which draws a row template once per item of a source,
+# and with it the `item` and `listStat` value kinds. An app that predates them
+# cannot draw a row at all and would fail the document on the unknown value
+# kind, so anything carrying one must say 8 and be skipped with "needs app
+# update" instead. A document with no list and no item value keeps its version.
+COMPLICATION_MAX_SCHEMA_VERSION = 8
 COMPLICATION_MAX_DOCUMENT_BYTES = 256 * 1024
 COMPLICATION_MAX_LAYERS = 64
 # Slot indices 0..COMPLICATION_MAX_SLOTS-1 map onto ComplicationStableSlot on

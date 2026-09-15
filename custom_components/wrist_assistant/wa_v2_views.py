@@ -77,6 +77,10 @@ from .history_series import (
     normalize_entities,
     normalize_mode,
 )
+from .list_items import (
+    ListItemsError,
+    async_list_items,
+)
 from .statistics_series import (
     RECORDER_UNAVAILABLE,
     StatisticsSeriesError,
@@ -947,6 +951,45 @@ async def _op_statistics(ctx: _OpContext) -> Response:
         status = 503 if str(err) == RECORDER_UNAVAILABLE else 502
         return ctx.signed_json({"ok": False, "error": str(err)}, status=status)
     return ctx.signed_json({"entity_id": entity_id, "series": series})
+
+
+async def _op_list(ctx: _OpContext) -> Response:
+    """Calendar, to-do or forecast rows for a complication's list layer.
+
+    Payload shape:
+        {
+          "source":    "calendar" | "todo" | "forecast",
+          "entities":  [<entity_id>, ...],   # calendar and todo, up to 5
+          "entity_id": "<entity_id>",        # forecast, the flat form
+          "hours":     <int>?,   # calendar window, 1..336, default 24
+          "status":    "open" | "done" | "all"?,   # todo, default open
+          "sort":      "list" | "due"?,            # todo, default list
+          "type":      "hourly" | "daily" | "twiceDaily"?,  # forecast
+          "limit":     <int>?,   # the layer's row count, clamped to 12
+        }
+
+    Reply:
+        {"items": [{...}, ...], "total": 7}
+
+    `total` is the count before the slice, so a layer reading `listStat total`
+    can say "7 events" while drawing four of them. The rows come back sorted,
+    with strings capped and every timestamp in unix seconds; everything
+    time-relative (a countdown, how overdue something is) is computed on the
+    watch from its own clock, so a cached list stays right between fetches.
+
+    The three Jinja sources (`entities`, `attribute`, `template`) are not
+    served here. They ride in the face's rendered value document, which the
+    watch already fetches, and asking for one is a 400 rather than a silently
+    empty list.
+    """
+    try:
+        fetched = await async_list_items(ctx.hass, ctx.payload)
+    except ListItemsError as err:
+        return ctx.signed_json({"ok": False, "error": str(err)}, status=400)
+    except HomeAssistantError as err:
+        _LOGGER.warning("op=list failed: %s", err)
+        return ctx.signed_json({"ok": False, "error": str(err)}, status=502)
+    return ctx.signed_json({"items": fetched.items, "total": fetched.total})
 
 
 async def _op_states_batch(ctx: _OpContext) -> Response:
@@ -3192,6 +3235,7 @@ _OP_HANDLERS: dict[str, Any] = {
     "state": _op_state,
     "history": _op_history,
     "statistics": _op_statistics,
+    "list": _op_list,
     "states_batch": _op_states_batch,
     "info": _op_info,
     "snapshot": _op_snapshot,

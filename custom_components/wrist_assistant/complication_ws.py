@@ -30,6 +30,13 @@ Commands:
                                                                 minutes,
                                                                 period,
                                                                 type}}}
+    wrist_assistant/complications/list_items
+                                              {requests: {key: {source,
+                                                                entities |
+                                                                entity_id,
+                                                                hours | status |
+                                                                sort | type,
+                                                                limit}}}
     wrist_assistant/gallery_key
 
 ``save`` is all-or-nothing: the browser submits the whole document plus the
@@ -57,6 +64,7 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.components.websocket_api import ActiveConnection
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.template import Template, TemplateError
@@ -79,6 +87,13 @@ from .history_series import (
     normalize_combine,
     normalize_mode,
 )
+from .list_items import (
+    FORECAST_TYPES,
+    SORTS,
+    STATUSES,
+    ListItemsError,
+    async_list_items,
+)
 from .statistics_series import (
     PERIODS,
     STAT_TYPES,
@@ -100,6 +115,7 @@ _CMD_MOVE_OWNER = f"{DOMAIN}/complications/move_owner"
 _CMD_RENDER = f"{DOMAIN}/complications/render_values"
 _CMD_HISTORY = f"{DOMAIN}/complications/history_series"
 _CMD_STATISTICS = f"{DOMAIN}/complications/statistics_series"
+_CMD_LIST_ITEMS = f"{DOMAIN}/complications/list_items"
 _CMD_NUDGE = f"{DOMAIN}/complications/nudge"
 _CMD_WATCH_STATUS = f"{DOMAIN}/complications/watch_status"
 _CMD_FORGET = f"{DOMAIN}/devices/forget"
@@ -202,6 +218,7 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_render_values)
     websocket_api.async_register_command(hass, ws_history_series)
     websocket_api.async_register_command(hass, ws_statistics_series)
+    websocket_api.async_register_command(hass, ws_list_items)
     websocket_api.async_register_command(hass, ws_nudge)
     websocket_api.async_register_command(hass, ws_watch_status)
     websocket_api.async_register_command(hass, ws_forget_device)
@@ -920,4 +937,62 @@ async def ws_statistics_series(
             results[key] = {"ok": False, "error": str(err)}
             continue
         results[key] = {"ok": True, "series": series}
+    connection.send_result(msg["id"], {"results": results})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_LIST_ITEMS,
+        vol.Required("requests"): {
+            str: {
+                # Checked in the handler rather than with `vol.In`, so a
+                # source this command does not serve comes back as that one
+                # key's error instead of failing the whole message.
+                vol.Required("source"): str,
+                vol.Optional("entities"): [str],
+                vol.Optional("entity_id"): str,
+                vol.Optional("hours"): int,
+                vol.Optional("status"): vol.In(list(STATUSES)),
+                vol.Optional("sort"): vol.In(list(SORTS)),
+                vol.Optional("type"): vol.In(list(FORECAST_TYPES)),
+                vol.Optional("limit"): int,
+            }
+        },
+    }
+)
+@websocket_api.async_response
+async def ws_list_items(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Calendar, to-do and forecast rows for the preview's list layers.
+
+    The third sibling of ``history_series`` and ``statistics_series``, and the
+    same bargain: the browser runs the module the watch's signed ``op=list``
+    runs, so the rows the editor lays out are the rows the wrist draws, capped
+    and sorted the same way.
+
+    Only the three service-backed sources come through here. A list whose
+    source is ``entities``, ``attribute`` or ``template`` is Jinja, and its
+    items arrive with the rest of the face's rendered values through
+    ``render_values``; asking for one here is a panel bug worth seeing, so it
+    comes back as that key's error rather than quietly returning nothing.
+
+    Keys are the caller's own; the reply mirrors them. Each resolves
+    independently, so one calendar the user has since removed does not blank
+    the other lists: ``{key: {ok, items, total}}`` or
+    ``{key: {ok: false, error}}``. ``total`` is the count before the row slice,
+    which is what a ``listStat total`` draws.
+    """
+    results: dict[str, dict[str, Any]] = {}
+    for key, request in msg["requests"].items():
+        try:
+            fetched = await async_list_items(hass, request)
+        except ListItemsError as err:
+            results[key] = {"ok": False, "error": str(err)}
+            continue
+        except HomeAssistantError as err:
+            results[key] = {"ok": False, "error": str(err)}
+            continue
+        results[key] = {"ok": True, "items": fetched.items, "total": fetched.total}
     connection.send_result(msg["id"], {"results": results})

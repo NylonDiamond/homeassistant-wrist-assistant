@@ -96,6 +96,44 @@ _FAMILY_SCHEMA_VERSION = 6
 # of them must say 7 so an older app skips it instead of drawing a document
 # whose shapes it cannot render.
 _HOME_FAMILY_SCHEMA_VERSION = 7
+# First schema that knows the list layer and the two value kinds that read it.
+# An app that predates them fails the whole document on the unknown value kind,
+# which is the intended behaviour ("update the app"), so the version must say
+# so rather than leaving the app to discover it.
+_LIST_SCHEMA_VERSION = 8
+# The list layer's own limits. Cells are the frame divided evenly, so the row
+# count is what decides how many items are drawn and how small each one is; a
+# template past eight layers is 96 leaves at twelve rows, which is where a
+# watch's render budget stops being theoretical.
+_LIST_MAX_TEMPLATE_LAYERS = 8
+_LIST_MAX_ROWS = 12
+# The sources a list may name. Three are rendered as Jinja alongside the rest
+# of the face's values; three are fetched by `list_items.py`.
+_LIST_SOURCE_KINDS = frozenset(
+    {"entities", "attribute", "template", "calendar", "todo", "forecast"}
+)
+# Layer kinds a row template may not hold. `list` is the nesting refusal: a
+# list of lists has no cell arithmetic and no item scope that means anything.
+# The chart family is refused because a chart's data arrives by its own key and
+# has nothing per-item to draw.
+_LIST_FORBIDDEN_TEMPLATE_KINDS = frozenset(
+    {
+        "list",
+        "chart",
+        "timeline",
+        "chartTimes",
+        "chartDots",
+        "chartGrid",
+        "imageTime",
+    }
+)
+# The two value kinds that only exist because a list does: `item` reads a field
+# of the row being resolved, `listStat` reads a settled list's count.
+_LIST_VALUE_KINDS = frozenset({"item", "listStat"})
+# A hostile document could nest objects far deeper than any editor writes. The
+# walk below is iterative and budgeted rather than recursive, so a deep or wide
+# document is refused on size (above) instead of exhausting the stack here.
+_LIST_WALK_NODE_BUDGET = 20000
 # 0..COMPLICATION_MAX_SLOTS-1 into `ComplicationStableSlot` on the watch.
 _SLOT_RANGE = range(COMPLICATION_MAX_SLOTS)
 # Slots the original 8-slot pool covered. A document using a slot above these
@@ -355,6 +393,110 @@ def _validate_uuid(value: Any, what: str) -> str:
         raise ComplicationValidationError(f"{what} is not a UUID") from err
 
 
+def _validate_list_elements(elements: list[Any]) -> bool:
+    """Check every list layer, and say whether the document has one.
+
+    Only the top level is walked, because a list inside a row template is
+    refused here: there is no second level to reach. What is checked is the
+    shape a hostile document could use to make a watch draw something the
+    editor would never write, which is the row template (its size and the
+    kinds in it), the row count, and the source kind. Everything deeper
+    belongs to the Swift and TypeScript resolvers, which share fixtures.
+    """
+    found = False
+    for element in elements:
+        if not isinstance(element, dict) or element.get("kind") != "list":
+            continue
+        found = True
+        payload = element.get("payload")
+        if not isinstance(payload, dict):
+            raise ComplicationValidationError("a list layer needs a payload object")
+
+        # Every `in` below is guarded by an `isinstance` check: a hand-written
+        # document can put an object where a kind name belongs, and set
+        # membership raises TypeError on one of those rather than answering
+        # "invalid".
+        source = payload.get("source")
+        source_kind = source.get("kind") if isinstance(source, dict) else None
+        if not isinstance(source_kind, str) or source_kind not in _LIST_SOURCE_KINDS:
+            raise ComplicationValidationError(
+                "a list layer's source.kind must be one of "
+                + ", ".join(sorted(_LIST_SOURCE_KINDS))
+            )
+
+        rows = payload.get("rows")
+        if rows is not None:
+            if (
+                isinstance(rows, bool)
+                or not isinstance(rows, int)
+                or not 1 <= rows <= _LIST_MAX_ROWS
+            ):
+                raise ComplicationValidationError(
+                    f"a list layer's rows must be 1..{_LIST_MAX_ROWS}"
+                )
+
+        template = payload.get("template")
+        if template is None:
+            continue
+        if not isinstance(template, list):
+            raise ComplicationValidationError(
+                "a list layer's template must be a list of layers"
+            )
+        if len(template) > _LIST_MAX_TEMPLATE_LAYERS:
+            raise ComplicationValidationError(
+                "a list layer's template exceeds "
+                f"{_LIST_MAX_TEMPLATE_LAYERS} layers"
+            )
+        for layer in template:
+            if not isinstance(layer, dict):
+                raise ComplicationValidationError(
+                    "a list layer's template must contain objects"
+                )
+            kind = layer.get("kind")
+            if isinstance(kind, str) and kind in _LIST_FORBIDDEN_TEMPLATE_KINDS:
+                raise ComplicationValidationError(
+                    f"a list layer's template must not hold a {kind} layer"
+                )
+    return found
+
+
+def _mentions_list_values(document: dict[str, Any]) -> bool:
+    """Whether anything in the document is an ``item`` or ``listStat`` value.
+
+    Envelope level, not a resolver. It walks the subtrees a value can sit in
+    (the layers, and so their rules, parts and row templates; the top-level
+    value pool; the Inline object; the per-family map) and looks for the kind
+    marker. One is enough to fix the schema version, so it stops at the first.
+
+    Iterative and budgeted rather than recursive: a document deep enough to
+    exhaust the budget is refused on size a few lines further down, and a
+    validator must answer "invalid" rather than blow up with a 500 the panel
+    cannot render.
+    """
+    stack: list[Any] = [
+        document.get("elements"),
+        document.get("values"),
+        document.get("inline"),
+        document.get("perFamily"),
+    ]
+    budget = _LIST_WALK_NODE_BUDGET
+    while stack and budget > 0:
+        node = stack.pop()
+        budget -= 1
+        if isinstance(node, dict):
+            kind = node.get("kind")
+            # A `Value` holds its kind object under the same key, so most of
+            # what this sees is a dict rather than a name. `in` on a frozenset
+            # raises TypeError for one of those, and a validator must answer
+            # "invalid", never blow up with a 500 the panel cannot render.
+            if isinstance(kind, str) and kind in _LIST_VALUE_KINDS:
+                return True
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+    return False
+
+
 def validate_document(document: Any) -> dict[str, Any]:
     """Check the envelope-level shape of a complication document.
 
@@ -450,6 +592,15 @@ def validate_document(document: Any) -> dict[str, Any]:
         )
     if any(not isinstance(e, dict) for e in elements):
         raise ComplicationValidationError("document.elements must contain objects")
+
+    has_list = _validate_list_elements(elements)
+    if (has_list or _mentions_list_values(document)) and (
+        schema_version < _LIST_SCHEMA_VERSION
+    ):
+        raise ComplicationValidationError(
+            "document with a list layer, or an item or listStat value, "
+            f"requires schemaVersion {_LIST_SCHEMA_VERSION} or newer"
+        )
 
     try:
         encoded = json.dumps(document, separators=(",", ":"))

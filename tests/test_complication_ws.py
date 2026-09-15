@@ -111,6 +111,10 @@ def _loaded_modules():
             HomeAssistant=type("HomeAssistant", (), {}),
             callback=lambda f: f,
         )
+        _stub(
+            "homeassistant.exceptions",
+            HomeAssistantError=type("HomeAssistantError", (Exception,), {}),
+        )
         _stub("homeassistant.helpers")
         _stub("homeassistant.helpers.device_registry", async_get=lambda hass: hass.devices)
         _stub("homeassistant.helpers.entity_registry", async_get=lambda hass: hass.entities)
@@ -169,6 +173,14 @@ def _loaded_modules():
             STAT_TYPES=("mean",),
             StatisticsSeriesError=type("StatisticsSeriesError", (Exception,), {}),
             async_statistics_series=None,
+        )
+        _stub(
+            f"{_PKG}.list_items",
+            FORECAST_TYPES=("hourly", "daily", "twiceDaily"),
+            SORTS=("list", "due"),
+            STATUSES=("open", "done", "all"),
+            ListItemsError=type("ListItemsError", (Exception,), {}),
+            async_list_items=None,
         )
         # The gallery key is fetched only by the share-to-gallery command,
         # which no test here calls.

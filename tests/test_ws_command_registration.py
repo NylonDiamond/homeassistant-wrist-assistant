@@ -43,6 +43,7 @@ _ADMIN_ONLY = {
     "ws_render_values",
     "ws_history_series",
     "ws_statistics_series",
+    "ws_list_items",
     "ws_gallery_key",
 }
 
