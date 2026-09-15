@@ -9,7 +9,17 @@ import {
   calendarLookAhead,
   calendarLookAheadIn,
   calendarLookAheadMax,
+  calendarLookAheadShown,
 } from "../src/model.js";
+
+describe("calendarLookAheadShown", () => {
+  it("shows the hours in a picked unit exactly, so a week on Hours reads 168", () => {
+    expect(calendarLookAheadShown(168, "hours")).toBe(168);
+    expect(calendarLookAheadShown(168, "days")).toBe(7);
+    expect(calendarLookAheadShown(36, "days")).toBe(1.5);
+    expect(calendarLookAheadShown(100, "weeks")).toBe(0.6);
+  });
+});
 
 describe("calendarLookAhead", () => {
   it("shows the biggest unit that divides the hours", () => {

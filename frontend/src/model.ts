@@ -2949,6 +2949,13 @@ export function calendarLookAheadIn(hours: number, unit: CalendarLookAheadUnit):
   return Math.min(calendarLookAheadMax(unit), Math.max(1, whole));
 }
 
+/** The hours as a number of one unit, exactly, for the box that shows a unit
+ * the author picked: 36 hours in days is 1.5, so the box never lies about the
+ * span while the switch is on a unit that does not divide it. */
+export function calendarLookAheadShown(hours: number, unit: CalendarLookAheadUnit): number {
+  return Math.round((clampCalendarHours(hours) / HOURS_PER[unit]) * 100) / 100;
+}
+
 /** The entity references a source names, in the order the walker meets them.
  * An `entities` source with a filter scope names none: the filter is areas,
  * labels and floors, which are not entities. */
