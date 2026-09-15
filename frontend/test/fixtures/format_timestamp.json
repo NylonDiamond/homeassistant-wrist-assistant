@@ -1,0 +1,188 @@
+{
+  "name": "Timestamp format",
+  "description": "The four `timestamp` styles on the same instant. The key is written only when it is set, so every document saved before it existed is byte for byte the one it always was, and an app that does not know the key prints the seconds instead of failing. The style runs after `duration` and `relativeTime` and only when the raw value parses as a number, so a field that is already text is left alone. The printed strings are deliberately not pinned here: they carry the device's locale and clock, and each side pins its own in its own unit tests.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "EEEEEEEE-0000-4000-8000-000000000480",
+    "name": "Timestamp format",
+    "slotIndex": 12,
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000481",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "1700002800"
+            },
+            "format": {
+              "timestamp": "clock"
+            }
+          },
+          "fontSize": 13,
+          "fontWeight": "regular",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.05,
+            "width": 0.9,
+            "height": 0.2,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000482",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "1700002800"
+            },
+            "format": {
+              "timestamp": "date"
+            }
+          },
+          "fontSize": 13,
+          "fontWeight": "regular",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.28,
+            "width": 0.9,
+            "height": 0.2,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000483",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "1700002800"
+            },
+            "format": {
+              "timestamp": "weekday"
+            }
+          },
+          "fontSize": 13,
+          "fontWeight": "regular",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.51,
+            "width": 0.9,
+            "height": 0.2,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000484",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "1700002800"
+            },
+            "format": {
+              "timestamp": "dateTime"
+            }
+          },
+          "fontSize": 13,
+          "fontWeight": "regular",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.7400000000000001,
+            "width": 0.9,
+            "height": 0.2,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "borderWidth": 2,
+        "cornerBodyShape": "wedge"
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {},
+    "templateResults": {},
+    "nowMs": 1700000000000,
+    "locale": "en-US",
+    "timeZone": "UTC"
+  },
+  "expectedCompiled": {
+    "entities": [],
+    "expressionKeys": [],
+    "listKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000481",
+          "kind": "text",
+          "fontSize": 13,
+          "colorHex": "#FFFFFF"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000482",
+          "kind": "text",
+          "fontSize": 13,
+          "text": "Nov 14",
+          "colorHex": "#FFFFFF"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000483",
+          "kind": "text",
+          "fontSize": 13,
+          "text": "Tue",
+          "colorHex": "#FFFFFF"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000484",
+          "kind": "text",
+          "fontSize": 13,
+          "colorHex": "#FFFFFF"
+        }
+      ]
+    }
+  }
+}

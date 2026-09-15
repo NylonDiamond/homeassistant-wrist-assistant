@@ -1,0 +1,326 @@
+{
+  "name": "Entity list",
+  "description": "The `entities` source, compiled to the Jinja both sides emit character for character. The scope is the aggregate's own, so \"3 lights on\" and the list of those three lights can never be two different questions. `unavailable` and `unknown` are dropped before the state filter runs, the rows are sorted by state as numbers with the non-numeric ones after, `descending` reverses both halves, and the two `attr.` names the row reads are the only attributes the dict carries. The slice to `rows` and the pre-slice `total` both happen on the server, so what arrives is one small answer. The document here is the contract: the key is the FNV-1a of the text, so a single character of drift gives the panel and the watch different keys for the same list.",
+  "config": {
+    "schemaVersion": 8,
+    "id": "EEEEEEEE-0000-4000-8000-000000000400",
+    "name": "Entity list",
+    "slotIndex": 4,
+    "supportedFamilies": [
+      "rectangular",
+      "large"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "list",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000401",
+          "source": {
+            "kind": "entities",
+            "scope": {
+              "kind": "filter",
+              "domains": [
+                "light"
+              ],
+              "areaIds": [
+                "kitchen"
+              ],
+              "labelIds": [],
+              "floorIds": []
+            },
+            "stateFilter": {
+              "kind": "isOn"
+            },
+            "sort": "state",
+            "descending": true,
+            "attributes": [
+              "brightness",
+              "color_temp"
+            ]
+          },
+          "template": [
+            {
+              "kind": "text",
+              "payload": {
+                "id": "EEEEEEEE-0000-4000-8000-000000000402",
+                "value": {
+                  "kind": {
+                    "kind": "item",
+                    "field": "name"
+                  }
+                },
+                "fontSize": 13,
+                "fontWeight": "regular",
+                "colorSlot": {
+                  "baseColorHex": "#FFFFFF"
+                },
+                "rules": [],
+                "frame": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 0.7,
+                  "height": 1,
+                  "rotationDegrees": 0
+                },
+                "isHidden": false
+              }
+            },
+            {
+              "kind": "text",
+              "payload": {
+                "id": "EEEEEEEE-0000-4000-8000-000000000403",
+                "value": {
+                  "kind": {
+                    "kind": "item",
+                    "field": "attr.brightness"
+                  }
+                },
+                "fontSize": 13,
+                "fontWeight": "regular",
+                "colorSlot": {
+                  "baseColorHex": "#8E8E93"
+                },
+                "rules": [],
+                "frame": {
+                  "x": 0.7,
+                  "y": 0,
+                  "width": 0.3,
+                  "height": 1,
+                  "rotationDegrees": 0
+                },
+                "isHidden": false
+              }
+            }
+          ],
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.08,
+            "width": 0.9,
+            "height": 0.84,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "borderWidth": 2,
+        "cornerBodyShape": "wedge"
+      },
+      "large",
+      {
+        "borderWidth": 2,
+        "cornerBodyShape": "wedge"
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {},
+    "templateResults": {
+      "e_69325b5445ceaf24": "{\"items\":[{\"entityId\":\"light.floor_lamp\",\"name\":\"Floor lamp\",\"state\":\"on\",\"unit\":null,\"domain\":\"light\",\"deviceClass\":null,\"area\":\"Kitchen\",\"lastChanged\":1699999400,\"n\":null,\"attr.brightness\":254,\"attr.color_temp\":366},{\"entityId\":\"light.reading\",\"name\":\"Reading light\",\"state\":\"on\",\"unit\":null,\"domain\":\"light\",\"deviceClass\":null,\"area\":\"Kitchen\",\"lastChanged\":1699998000,\"n\":null,\"attr.brightness\":120,\"attr.color_temp\":300}],\"total\":5}"
+    }
+  },
+  "expectedCompiled": {
+    "entities": [],
+    "expressionKeys": [
+      "e_69325b5445ceaf24"
+    ],
+    "listKeys": [],
+    "document": "{% set v_e_69325b5445ceaf24 %}{% set ns = namespace(items=[]) %}{% for s in ((expand(area_entities('kitchen')) | selectattr('domain', 'in', ['light']))) | rejectattr('state', 'in', ['unavailable', 'unknown']) | selectattr('state', 'eq', 'on') %}{% set ns.items = ns.items + [{'entityId': s.entity_id, 'name': s.name[:120], 'state': s.state[:120], 'unit': s.attributes.get('unit_of_measurement'), 'domain': s.domain, 'deviceClass': s.attributes.get('device_class'), 'area': area_name(s.entity_id), 'lastChanged': (as_timestamp(s.last_changed) | round(0)), 'n': (s.state | float(none)), 'attr.brightness': s.attributes.get('brightness'), 'attr.color_temp': s.attributes.get('color_temp')}] %}{% endfor %}{% set sorted = ((ns.items | rejectattr('n', 'none') | sort(attribute='n', reverse=true) | list) + (ns.items | selectattr('n', 'none') | sort(attribute='state', reverse=true) | list)) %}{{ {'items': sorted[:4], 'total': (sorted | count)} | to_json }}{% endset %}\n{{ { \"e_69325b5445ceaf24\": v_e_69325b5445ceaf24 } | to_json }}"
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000401",
+          "kind": "list",
+          "cells": [
+            {
+              "frame": {
+                "x": 0,
+                "y": 0,
+                "width": 1,
+                "height": 0.223,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000402",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 0.7,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Floor lamp",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 13
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000403",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.7,
+                    "y": 0,
+                    "width": 0.3,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "254",
+                  "colorHex": "#8E8E93",
+                  "fontSize": 13
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.259,
+                "width": 1,
+                "height": 0.223,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000402",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 0.7,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Reading light",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 13
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000403",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.7,
+                    "y": 0,
+                    "width": 0.3,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "120",
+                  "colorHex": "#8E8E93",
+                  "fontSize": 13
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "large": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000401",
+          "kind": "list",
+          "cells": [
+            {
+              "frame": {
+                "x": 0,
+                "y": 0,
+                "width": 1,
+                "height": 0.245,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000402",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 0.7,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Floor lamp",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 13
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000403",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.7,
+                    "y": 0,
+                    "width": 0.3,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "254",
+                  "colorHex": "#8E8E93",
+                  "fontSize": 13
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.252,
+                "width": 1,
+                "height": 0.245,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000402",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 0.7,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Reading light",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 13
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000403",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.7,
+                    "y": 0,
+                    "width": 0.3,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "120",
+                  "colorHex": "#8E8E93",
+                  "fontSize": 13
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

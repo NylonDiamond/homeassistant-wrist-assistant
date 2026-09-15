@@ -1,0 +1,827 @@
+{
+  "name": "Forecast list",
+  "description": "Six hours laid out across a tile: the time, the condition icon and the temperature, one cell per hour. `direction: across` makes the cells run left to right and `columns` is not read at all, a row across being one line by definition. The icon is never on the wire: each side maps `condition` to its own glyph from the same table, so a drift fails a test rather than showing a different picture on the watch than in the editor. Twenty-four hours were found and six are drawn, which is what `total` records.",
+  "config": {
+    "schemaVersion": 8,
+    "id": "EEEEEEEE-0000-4000-8000-000000000450",
+    "name": "Forecast list",
+    "slotIndex": 9,
+    "supportedFamilies": [
+      "rectangular",
+      "medium"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "list",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000451",
+          "source": {
+            "kind": "forecast",
+            "entityId": "weather.home",
+            "displayName": "Home",
+            "domain": "weather"
+          },
+          "rows": 6,
+          "template": [
+            {
+              "kind": "text",
+              "payload": {
+                "id": "EEEEEEEE-0000-4000-8000-000000000452",
+                "value": {
+                  "kind": {
+                    "kind": "item",
+                    "field": "time"
+                  },
+                  "format": {
+                    "timestamp": "clock"
+                  }
+                },
+                "fontSize": 9,
+                "fontWeight": "regular",
+                "colorSlot": {
+                  "baseColorHex": "#8E8E93"
+                },
+                "rules": [],
+                "frame": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1,
+                  "height": 0.3,
+                  "rotationDegrees": 0
+                },
+                "isHidden": false
+              }
+            },
+            {
+              "kind": "icon",
+              "payload": {
+                "id": "EEEEEEEE-0000-4000-8000-000000000453",
+                "symbol": {
+                  "kind": {
+                    "kind": "item",
+                    "field": "icon"
+                  }
+                },
+                "size": 11,
+                "colorSlot": {
+                  "baseColorHex": "#FFFFFF"
+                },
+                "rules": [],
+                "frame": {
+                  "x": 0.2,
+                  "y": 0.32,
+                  "width": 0.6,
+                  "height": 0.36,
+                  "rotationDegrees": 0
+                },
+                "isHidden": false
+              }
+            },
+            {
+              "kind": "text",
+              "payload": {
+                "id": "EEEEEEEE-0000-4000-8000-000000000454",
+                "value": {
+                  "kind": {
+                    "kind": "item",
+                    "field": "temperature"
+                  },
+                  "format": {
+                    "decimals": 0,
+                    "useEntityUnit": true
+                  }
+                },
+                "fontSize": 11,
+                "fontWeight": "regular",
+                "colorSlot": {
+                  "baseColorHex": "#FFFFFF"
+                },
+                "rules": [],
+                "frame": {
+                  "x": 0,
+                  "y": 0.7,
+                  "width": 1,
+                  "height": 0.3,
+                  "rotationDegrees": 0
+                },
+                "isHidden": false
+              }
+            }
+          ],
+          "rules": [],
+          "frame": {
+            "x": 0.02,
+            "y": 0.15,
+            "width": 0.96,
+            "height": 0.7,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "direction": "across",
+          "gap": 3
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "borderWidth": 2,
+        "cornerBodyShape": "wedge"
+      },
+      "medium",
+      {
+        "borderWidth": 2,
+        "cornerBodyShape": "wedge"
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {},
+    "listItems": {
+      "forecast|weather.home|hourly": "{\"items\":[{\"time\":1700000000,\"condition\":\"partlycloudy\",\"temperature\":14.2,\"unit\":\"\\u00b0C\",\"precipitationProbability\":5,\"isDaytime\":true},{\"time\":1700003600,\"condition\":\"cloudy\",\"temperature\":13.8,\"unit\":\"\\u00b0C\",\"precipitationProbability\":10,\"isDaytime\":true},{\"time\":1700007200,\"condition\":\"rainy\",\"temperature\":13.1,\"unit\":\"\\u00b0C\",\"precipitationProbability\":60,\"isDaytime\":true},{\"time\":1700010800,\"condition\":\"rainy\",\"temperature\":12.6,\"unit\":\"\\u00b0C\",\"precipitationProbability\":80,\"isDaytime\":true},{\"time\":1700014400,\"condition\":\"cloudy\",\"temperature\":12.0,\"unit\":\"\\u00b0C\",\"precipitationProbability\":30,\"isDaytime\":true},{\"time\":1700018000,\"condition\":\"clear-night\",\"temperature\":11.4,\"unit\":\"\\u00b0C\",\"precipitationProbability\":0,\"isDaytime\":false}],\"total\":24}"
+    }
+  },
+  "expectedCompiled": {
+    "entities": [],
+    "expressionKeys": [],
+    "listKeys": [
+      "forecast|weather.home|hourly"
+    ]
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000451",
+          "kind": "list",
+          "cells": [
+            {
+              "frame": {
+                "x": 0,
+                "y": 0,
+                "width": 0.152,
+                "height": 1,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000452",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "colorHex": "#8E8E93",
+                  "fontSize": 9
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000453",
+                  "kind": "icon",
+                  "frame": {
+                    "x": 0.2,
+                    "y": 0.32,
+                    "width": 0.6,
+                    "height": 0.36,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "symbol": "cloud.sun.fill",
+                  "colorHex": "#FFFFFF"
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000454",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.7,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "14°C",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 11
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0.17,
+                "y": 0,
+                "width": 0.152,
+                "height": 1,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000452",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "colorHex": "#8E8E93",
+                  "fontSize": 9
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000453",
+                  "kind": "icon",
+                  "frame": {
+                    "x": 0.2,
+                    "y": 0.32,
+                    "width": 0.6,
+                    "height": 0.36,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "symbol": "cloud.fill",
+                  "colorHex": "#FFFFFF"
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000454",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.7,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "14°C",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 11
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0.339,
+                "y": 0,
+                "width": 0.152,
+                "height": 1,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000452",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "colorHex": "#8E8E93",
+                  "fontSize": 9
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000453",
+                  "kind": "icon",
+                  "frame": {
+                    "x": 0.2,
+                    "y": 0.32,
+                    "width": 0.6,
+                    "height": 0.36,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "symbol": "cloud.rain.fill",
+                  "colorHex": "#FFFFFF"
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000454",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.7,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "13°C",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 11
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0.509,
+                "y": 0,
+                "width": 0.152,
+                "height": 1,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000452",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "colorHex": "#8E8E93",
+                  "fontSize": 9
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000453",
+                  "kind": "icon",
+                  "frame": {
+                    "x": 0.2,
+                    "y": 0.32,
+                    "width": 0.6,
+                    "height": 0.36,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "symbol": "cloud.rain.fill",
+                  "colorHex": "#FFFFFF"
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000454",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.7,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "13°C",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 11
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0.678,
+                "y": 0,
+                "width": 0.152,
+                "height": 1,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000452",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "colorHex": "#8E8E93",
+                  "fontSize": 9
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000453",
+                  "kind": "icon",
+                  "frame": {
+                    "x": 0.2,
+                    "y": 0.32,
+                    "width": 0.6,
+                    "height": 0.36,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "symbol": "cloud.fill",
+                  "colorHex": "#FFFFFF"
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000454",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.7,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "12°C",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 11
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0.848,
+                "y": 0,
+                "width": 0.152,
+                "height": 1,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000452",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "colorHex": "#8E8E93",
+                  "fontSize": 9
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000453",
+                  "kind": "icon",
+                  "frame": {
+                    "x": 0.2,
+                    "y": 0.32,
+                    "width": 0.6,
+                    "height": 0.36,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "symbol": "moon.stars.fill",
+                  "colorHex": "#FFFFFF"
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000454",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.7,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "11°C",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 11
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "medium": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000451",
+          "kind": "list",
+          "cells": [
+            {
+              "frame": {
+                "x": 0,
+                "y": 0,
+                "width": 0.159,
+                "height": 1,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000452",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "colorHex": "#8E8E93",
+                  "fontSize": 9
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000453",
+                  "kind": "icon",
+                  "frame": {
+                    "x": 0.2,
+                    "y": 0.32,
+                    "width": 0.6,
+                    "height": 0.36,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "symbol": "cloud.sun.fill",
+                  "colorHex": "#FFFFFF"
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000454",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.7,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "14°C",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 11
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0.168,
+                "y": 0,
+                "width": 0.159,
+                "height": 1,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000452",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "colorHex": "#8E8E93",
+                  "fontSize": 9
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000453",
+                  "kind": "icon",
+                  "frame": {
+                    "x": 0.2,
+                    "y": 0.32,
+                    "width": 0.6,
+                    "height": 0.36,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "symbol": "cloud.fill",
+                  "colorHex": "#FFFFFF"
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000454",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.7,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "14°C",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 11
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0.336,
+                "y": 0,
+                "width": 0.159,
+                "height": 1,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000452",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "colorHex": "#8E8E93",
+                  "fontSize": 9
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000453",
+                  "kind": "icon",
+                  "frame": {
+                    "x": 0.2,
+                    "y": 0.32,
+                    "width": 0.6,
+                    "height": 0.36,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "symbol": "cloud.rain.fill",
+                  "colorHex": "#FFFFFF"
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000454",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.7,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "13°C",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 11
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0.505,
+                "y": 0,
+                "width": 0.159,
+                "height": 1,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000452",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "colorHex": "#8E8E93",
+                  "fontSize": 9
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000453",
+                  "kind": "icon",
+                  "frame": {
+                    "x": 0.2,
+                    "y": 0.32,
+                    "width": 0.6,
+                    "height": 0.36,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "symbol": "cloud.rain.fill",
+                  "colorHex": "#FFFFFF"
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000454",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.7,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "13°C",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 11
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0.673,
+                "y": 0,
+                "width": 0.159,
+                "height": 1,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000452",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "colorHex": "#8E8E93",
+                  "fontSize": 9
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000453",
+                  "kind": "icon",
+                  "frame": {
+                    "x": 0.2,
+                    "y": 0.32,
+                    "width": 0.6,
+                    "height": 0.36,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "symbol": "cloud.fill",
+                  "colorHex": "#FFFFFF"
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000454",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.7,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "12°C",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 11
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0.841,
+                "y": 0,
+                "width": 0.159,
+                "height": 1,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000452",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "colorHex": "#8E8E93",
+                  "fontSize": 9
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000453",
+                  "kind": "icon",
+                  "frame": {
+                    "x": 0.2,
+                    "y": 0.32,
+                    "width": 0.6,
+                    "height": 0.36,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "symbol": "moon.stars.fill",
+                  "colorHex": "#FFFFFF"
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000454",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.7,
+                    "width": 1,
+                    "height": 0.3,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "11°C",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 11
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

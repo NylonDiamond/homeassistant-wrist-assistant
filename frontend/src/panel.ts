@@ -22,6 +22,9 @@ import {
   type HistoryReadings,
   fetchStatisticsSeries,
   seriesRequests,
+  collectListResults,
+  fetchListItems,
+  listItemsRequests,
   renderTemplates,
   saveRecord,
   subscribeChanges,
@@ -95,7 +98,7 @@ import {
   resolveAll,
 } from "./resolver.js";
 import { CASES, FACE_TINTS, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, phoneCaseForScreenSize, renderLayerThumb, renderLayout, slotFor, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type PreviewCase } from "./renderer.js";
-import { addFamily, canRemoveFamily, comingSoonFamilies, familiesFor, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, removeFamily, shapeGroups, supportedFamilies } from "./layouts.js";
+import { addFamily, canRemoveFamily, comingSoonFamilies, familiesFor, familyAllowsKind, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, removeFamily, shapeGroups, supportedFamilies } from "./layouts.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { deviceKindOf, deviceNoun, deviceSupportsShapes, updateDeviceMessage } from "./version.js";
 import { makeIconProvider } from "./icons.js";
@@ -127,6 +130,7 @@ import {
   describeContext,
   describeValue,
   effectivePlacement,
+  elementIn,
   entityField,
   entityRefFrom,
   entitySearchOpen,
@@ -141,9 +145,12 @@ import {
   copyShapeLayout,
   type DescribeContext,
   pickedCommon,
+  rowStageConfig,
   setPlacement,
+  syncListAttributes,
   shownCount,
 } from "./editors.js";
+import { sampleListItem, withListSeeds } from "./list-seeds.js";
 import { type PresetEnv, type PresetKind, LAYER_PRESETS, applyPreset, presetSpec } from "./presets.js";
 import {
   type ImportParse,
@@ -595,6 +602,13 @@ export class WristAssistantPanel extends LitElement {
   @state() private historySeries = new Map<string, string>();
   /** Every-reading fetches' counts, by the same key, from the same fetch. */
   @state() private historyReadings = new Map<string, HistoryReadings>();
+  /** Calendar events, to-do items and forecasts for the service-backed list
+   * layers, by the readable list key. Fetched on the templates' own clock:
+   * neither an agenda nor a forecast moves faster than that, and each entry is
+   * a service call rather than a state read. */
+  @state() private listItems = new Map<string, string>();
+  /** The list whose row is being designed on the canvas, if any. */
+  @state() private rowEditListId?: string;
   @state() private templateError?: string;
   @state() private templateFetchedAt?: number;
   @state() private forced: ForcedBranches = new Map();
@@ -3453,7 +3467,7 @@ export class WristAssistantPanel extends LitElement {
    * the ones hidden here, which are not on the face to line up with.
    */
   private guideTarget(family: DrawableFamily, moving: readonly string[]): { guides?: Guides } {
-    const cfg = this.draft?.config;
+    const cfg = this.canvasConfig();
     if (!this.snapLayers) return {};
     const others = cfg === undefined ? [] : ownedElements(cfg, family)
       .filter((el) => !moving.includes(el.payload.id) && !isAttachedTap(cfg, el))
@@ -3745,7 +3759,7 @@ export class WristAssistantPanel extends LitElement {
    * the selected layer, else the selected group's members. Rows only; an
    * attached tap goes with its owner. */
   private selectedIds(): string[] {
-    const cfg = this.draft?.config;
+    const cfg = this.canvasConfig();
     if (!cfg) return [];
     if (this.multi.size > 0) return [...this.multi].filter((id) => cfg.elements.some((el) => el.payload.id === id));
     const ins = this.inspect;
@@ -3769,6 +3783,21 @@ export class WristAssistantPanel extends LitElement {
   private deleteSelection(): boolean {
     const ids = this.selectedIds();
     if (!this.canEdit || ids.length === 0) return false;
+    // A row layer is not in `elements`, so `removeElement` would find nothing.
+    // It is taken out of its list's template instead, and the list's attribute
+    // list follows it out.
+    const list = this.rowEditList();
+    if (list) {
+      this.mutate((c) => {
+        const target = c.elements.find((e) => e.payload.id === list.payload.id);
+        if (target?.kind !== "list") return;
+        target.payload.template = target.payload.template.filter((r) => !ids.includes(r.payload.id));
+        syncListAttributes(target.payload);
+      });
+      this.multi = new Set();
+      this.inspect = { kind: "layer", id: list.payload.id };
+      return true;
+    }
     this.mutate((c) => { for (const id of ids) removeElement(c, id); });
     this.multi = new Set();
     this.inspect = { kind: "general" };
@@ -3778,7 +3807,9 @@ export class WristAssistantPanel extends LitElement {
   private copySelection(): boolean {
     const cfg = this.draft?.config;
     const ids = this.selectedIds();
-    if (!cfg || ids.length === 0) return false;
+    // Copying a row layer would paste a layer of the document, which is not
+    // what a row is. Nothing is copied while a row is being designed.
+    if (!cfg || ids.length === 0 || this.rowEditList()) return false;
     this.clipboard = copyElements(cfg, ids, this.canvasFamily);
     return true;
   }
@@ -4219,7 +4250,7 @@ export class WristAssistantPanel extends LitElement {
       forced: this.forced,
       setForced: (ruleId, branch) => this.setForced(ruleId, branch),
       activeFamily: this.activeFamily,
-      setActiveFamily: (family) => { this.activeFamily = family; this.inspect = { kind: "family" }; },
+      setActiveFamily: (family) => { this.setRowEdit(undefined); this.activeFamily = family; this.inspect = { kind: "family" }; },
       addFamily: (family) => this.addShape(family),
       savedName: this.savedName,
       tapAreaShown: this.showTaps,
@@ -4237,7 +4268,54 @@ export class WristAssistantPanel extends LitElement {
       beginGesture: () => this.draft?.beginGesture(),
       copiedPosition: this.copiedPosition,
       copyPosition: (position) => { this.copiedPosition = position; },
+      ...(this.rowEditList() ? { rowEditListId: this.rowEditListId! } : {}),
+      setRowEdit: (listId) => this.setRowEdit(listId),
     };
+  }
+
+  /**
+   * Turn the preview into one cell of a list, or back into the whole face.
+   *
+   * Leaving puts the selection back on the list itself: the layer that was
+   * selected is a row layer, which is nothing the face can show, so leaving it
+   * selected would leave the inspector editing something the canvas no longer
+   * draws.
+   */
+  private setRowEdit(listId: string | undefined) {
+    if (this.rowEditListId === listId) return;
+    const leaving = this.rowEditListId;
+    this.cancelGesture?.();
+    this.multi = new Set();
+    this.rowEditListId = listId;
+    if (listId === undefined && leaving !== undefined) this.inspect = { kind: "layer", id: leaving };
+  }
+
+  /** The list whose row is being designed, if it is still there. A list
+   * deleted while its row was open drops the mode rather than drawing a stage
+   * for a layer that is gone. */
+  private rowEditList(): Extract<CElement, { kind: "list" }> | undefined {
+    const id = this.rowEditListId;
+    if (id === undefined) return undefined;
+    const el = this.draft?.config.elements.find((e) => e.payload.id === id);
+    return el?.kind === "list" ? el : undefined;
+  }
+
+  /**
+   * The document the canvas draws: the complication, or one cell of a list
+   * scaled up while its row is being designed.
+   *
+   * Everything the canvas does afterwards reads this rather than the draft, so
+   * a press, a drag, a nudge and the layer outlines all agree about what is on
+   * screen. The edits they make still go to the draft, where the row really
+   * lives.
+   */
+  private canvasConfig(): CustomComplicationConfig | undefined {
+    const cfg = this.draft?.config;
+    if (!cfg) return undefined;
+    const list = this.rowEditList();
+    if (!list) return cfg;
+    const sample = sampleListItem(list.payload, this.templateResults, this.listItems, Date.now() / 1000);
+    return rowStageConfig(cfg, list.payload.id, this.canvasFamily, sample?.fields) ?? cfg;
   }
 
   /** Open or shut one inspector card. With one card open (the default), a
@@ -4574,6 +4652,31 @@ export class WristAssistantPanel extends LitElement {
     }
   }
 
+  /**
+   * Calendar events, to-do items and forecasts for the list layers that need a
+   * service call, by the readable list key.
+   *
+   * On the templates' clock, beside the recorder fetch and for the same
+   * reasons: an agenda does not change faster than that, and each key is a
+   * service call. Rebuilt rather than merged, so a list whose calendar the
+   * author changed stops answering with the events of the old one.
+   */
+  private async refreshListItems() {
+    const cfg = this.draft?.config;
+    const wanted = cfg ? listItemsRequests(cfg) : undefined;
+    if (!wanted || Object.keys(wanted.requests).length === 0) {
+      if (this.listItems.size > 0) this.listItems = new Map();
+      return;
+    }
+    try {
+      this.listItems = collectListResults(await fetchListItems(this.hass, wanted.requests));
+    } catch {
+      // An integration too old for the command, or one busy service call: the
+      // last items stay on screen, which beats a list that blanks every time
+      // one calendar is slow.
+    }
+  }
+
   /** Two commands, one Map. The two stores answer different questions but in
    * the same shape, and the keys cannot collide, so the resolver has one place
    * to look. Issued together so a slow recorder costs one wait rather than
@@ -4629,6 +4732,7 @@ export class WristAssistantPanel extends LitElement {
 
   private async refreshTemplates() {
     void this.refreshHistorySeries();
+    void this.refreshListItems();
     const doc = this.compiled?.document;
     if (!doc) {
       this.templateResults = new Map();
@@ -4706,9 +4810,15 @@ export class WristAssistantPanel extends LitElement {
       if (entry) entityStates.set(id, entry);
     }
     const values = this.draft?.config.values ?? [];
+    // Sample items for any list nothing has answered for yet, so a row can be
+    // designed before the first fetch lands and before a calendar is picked.
+    // Only where the key is empty: "no events today" is an answer, and drawing
+    // three made-up events over it would be a lie.
+    const seeded = withListSeeds(this.draft?.config, this.templateResults, this.listItems, Date.now() / 1000);
     return {
       entityStates,
-      templateResults: this.templateResults,
+      templateResults: seeded.templateResults,
+      listItems: seeded.listItems,
       historySeries: this.historySeries,
       namedValues: withTests ? testedNamedValues(values, this.testValues) : values,
       dataAgeSeconds: this.templateFetchedAt === undefined ? undefined : (Date.now() - this.templateFetchedAt) / 1000,
@@ -5027,7 +5137,7 @@ export class WristAssistantPanel extends LitElement {
   /** The layer a preview event points at, with an attached tap sent to the
    * layer it belongs to (the same redirect a drag does). */
   private hitLayerId(e: Event): string | undefined {
-    const cfg = this.draft?.config;
+    const cfg = this.canvasConfig();
     if (!cfg) return undefined;
     const target = e.target as Element | null;
     const id = target?.closest?.("[data-element-id]")?.getAttribute("data-element-id");
@@ -5104,6 +5214,12 @@ export class WristAssistantPanel extends LitElement {
       return;
     }
     if (!this.draft || !this.canEdit) return;
+    // Lookups read what the canvas is actually drawing, which while a row is
+    // being designed is the row rather than the document. Every write still
+    // goes through `mutate`, where `setPlacement` finds a row layer inside its
+    // list's template.
+    const canvasCfg = this.canvasConfig();
+    if (!canvasCfg) return;
     if (family !== this.activeFamily) {
       this.activeFamily = family;
       return;
@@ -5114,9 +5230,9 @@ export class WristAssistantPanel extends LitElement {
     // A plain press on a picked layer moves the whole pick. A release that never
     // moved drops the pick and selects that one layer, as a plain click does.
     // A corner still resizes just the layer it belongs to.
-    const pressedId = hitId !== undefined ? selectableLayerId(this.draft.config, hitId) : undefined;
+    const pressedId = hitId !== undefined ? selectableLayerId(canvasCfg, hitId) : undefined;
     if (!multiKey && !handle && svg && this.multi.size >= 2 && pressedId !== undefined && this.multi.has(pressedId)) {
-      const ids = pickedMoveIds(this.draft.config, this.multi);
+      const ids = pickedMoveIds(canvasCfg, this.multi);
       e.preventDefault();
       if (ids.length === 0) return;
       this.beginMoveGesture(family as DrawableFamily, e, svg, ids, `drag-pick-${family}`, () => {
@@ -5130,8 +5246,8 @@ export class WristAssistantPanel extends LitElement {
     // An attached tap sits exactly over its owner and is not a layer the user
     // ever selects or drags: send the hit to the layer it belongs to, which is
     // what the author sees there. A free-standing tap is grabbed as before.
-    let id = selectableLayerId(this.draft.config, hitId);
-    let el = this.draft.config.elements.find((x) => x.payload.id === id);
+    let id = selectableLayerId(canvasCfg, hitId);
+    let el = canvasCfg.elements.find((x) => x.payload.id === id);
     if (!id || !el) return;
     if (multiKey) {
       e.preventDefault();
@@ -5145,9 +5261,9 @@ export class WristAssistantPanel extends LitElement {
     let pickOnClick: string | undefined;
     const selectedId = this.inspect.kind === "layer" ? this.inspect.id : undefined;
     if (selectedId !== undefined && selectedId !== id && !handle) {
-      const selected = this.draft.config.elements.find((x) => x.payload.id === selectedId);
+      const selected = canvasCfg.elements.find((x) => x.payload.id === selectedId);
       const movable = selected !== undefined && selected.kind !== "chartDots" && selected.kind !== "chartGrid"
-        && selected.payload.chartAnchor?.place !== "through" && groupOf(this.draft.config, selectedId)?.locked !== true;
+        && selected.payload.chartAnchor?.place !== "through" && groupOf(canvasCfg, selectedId)?.locked !== true;
       if (movable && pressInsideLayer(svg, selectedId, e)) {
         pickOnClick = id;
         id = selectedId;
@@ -5164,10 +5280,10 @@ export class WristAssistantPanel extends LitElement {
     // its members is selected, a click that never moves goes one level in and
     // selects the member under the pointer, while a drag from the same press
     // still moves the whole group.
-    const group = groupOf(this.draft.config, id);
+    const group = groupOf(canvasCfg, id);
     const groupSelected = group !== undefined && this.inspect.kind === "group" && this.inspect.id === group.id;
     if (group && (group.locked || groupSelected) && !handle) {
-      const inside = groupSelected || (this.inspect.kind === "layer" && groupOf(this.draft.config, this.inspect.id)?.id === group.id);
+      const inside = groupSelected || (this.inspect.kind === "layer" && groupOf(canvasCfg, this.inspect.id)?.id === group.id);
       this.beginGroupGesture(family as DrawableFamily, e, svg, group, inside ? id : undefined);
       return;
     }
@@ -5179,7 +5295,7 @@ export class WristAssistantPanel extends LitElement {
     // selects it and never drags it off that reading.
     if (el.payload.chartAnchor?.place === "through") return;
     e.preventDefault();
-    const frame = effectivePlacement(this.draft.config, family, el).frame;
+    const frame = effectivePlacement(canvasCfg, family, el).frame;
     const canvas = this.gestureCanvas(family as DrawableFamily);
     // A layer pinned to a chart reading is not dragged to a place, because the
     // anchor decides its place every time the chart refreshes. The same drag
@@ -5199,7 +5315,7 @@ export class WristAssistantPanel extends LitElement {
     // frame, which for a marker sits in the corner of the face. Starting there
     // made the gesture hit the face edge after a few points and stop.
     const placed = anchor !== undefined && !handle
-      ? resolveAll(this.draft.config, this.buildContext(), this.forced)[family as DrawableFamily]
+      ? resolveAll(canvasCfg, this.buildContext(), this.forced)[family as DrawableFamily]
         ?.elements.find((x) => x.id === id)?.frame
       : undefined;
     const start = placed ?? frame;
@@ -5210,7 +5326,7 @@ export class WristAssistantPanel extends LitElement {
     // Handles sit on what a layer draws (a circle's square, a line, a gauge's
     // bar or dots), so a corner drag resizes that rather than the frame around it.
     const drawn = handle !== null
-      ? resolveAll(this.draft.config, this.buildContext(), this.forced)[family as DrawableFamily]?.elements.find((x) => x.id === id)
+      ? resolveAll(canvasCfg, this.buildContext(), this.forced)[family as DrawableFamily]?.elements.find((x) => x.id === id)
       : undefined;
     // An icon draws at its own size, centred, so its corners change that size.
     // Both sides grow at once, hence half the side: the corner then stays under
@@ -5291,7 +5407,7 @@ export class WristAssistantPanel extends LitElement {
    * instead of recording a move.
    */
   private beginMoveGesture(family: DrawableFamily, e: PointerEvent, svg: SVGSVGElement, ids: readonly string[], key: string, onClick?: () => void) {
-    const cfg = this.draft?.config;
+    const cfg = this.canvasConfig();
     if (!cfg) return;
     const members = cfg.elements.filter((m) => ids.includes(m.payload.id));
     if (members.length === 0) return;
@@ -5355,7 +5471,9 @@ export class WristAssistantPanel extends LitElement {
    * scrolls.
    */
   private nudge(dx: number, dy: number, coarse: boolean): boolean {
-    const cfg = this.draft?.config;
+    // The canvas document, so the arrows move a row layer while its row is
+    // being designed. `setPlacement` writes it back into the real one.
+    const cfg = this.canvasConfig();
     // Review mode reads the face rather than moving it, and pick mode is
     // choosing a layer rather than editing one. Neither drags, so neither
     // nudges.
@@ -5419,7 +5537,7 @@ export class WristAssistantPanel extends LitElement {
    * edge of the face together instead of piling up against it.
    */
   private nudgeMany(ids: string[], family: DrawableFamily, box: { width: number; height: number }, key: string, px: number, py: number): boolean {
-    const cfg = this.draft?.config;
+    const cfg = this.canvasConfig();
     if (!cfg) return false;
     const round = (n: number) => Math.round(n * 1000) / 1000;
     const starts = new Map<string, NormalizedFrame>();
@@ -6534,6 +6652,7 @@ export class WristAssistantPanel extends LitElement {
         entityState: (id) => this.entityStateFor(id, "", false),
         templateResults: this.templateResults,
         historySeries: this.historySeries,
+        listItems: this.listItems,
       }, this.icons);
       if (run !== this.galleryPreviewRun) return;
       this.galleryPreviews = previews;
@@ -7479,6 +7598,13 @@ export class WristAssistantPanel extends LitElement {
     const full = cfg.elements.length >= 64;
     const open = this.addOpen;
     const rich = this.addDetail === "expanded";
+    // A list is offered on the wide face and the four Home Screen tiles only:
+    // a cell on a round face is not a row. The same rule picks which presets
+    // are shown, so the button and the preset can never disagree.
+    const kinds = KIND_ORDER.filter((k) => familyAllowsKind(this.activeFamily, k));
+    const offered = LAYER_PRESETS.filter((p) => p.families === undefined || p.families.includes(this.activeFamily));
+    const plain = offered.filter((p) => p.group === undefined);
+    const listy = offered.filter((p) => p.group === "list");
     const toggle = () => { this.addOpen = !this.addOpen; this.saveListView(); };
     return html`<div class="card fold" data-open=${open ? "true" : "false"}>
       <h2 class="panel-title tools fold-h" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
@@ -7486,7 +7612,7 @@ export class WristAssistantPanel extends LitElement {
         @click=${toggle}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}>
         <span class="swatch">${uiIcon("plus")}</span>Add a layer<span class="spacer"></span>
-        ${open ? nothing : html`<span class="mini">${KIND_ORDER.length} kinds · ${LAYER_PRESETS.length} presets</span>`}
+        ${open ? nothing : html`<span class="mini">${kinds.length} kinds · ${offered.length} presets</span>`}
         ${open
           ? html`<span class="tool-set" @click=${(e: Event) => e.stopPropagation()}>
               <span class="seg" role="group" aria-label="Button detail">
@@ -7502,7 +7628,7 @@ export class WristAssistantPanel extends LitElement {
       ${open
         ? html`
           <div class="add-grid ${rich ? "" : "lean"}">
-            ${KIND_ORDER.map((k) => html`<button class="add" style=${`--k:${KIND_COLOR[k]}`} ?disabled=${full} title=${`Add a blank ${KIND_LABEL[k].toLowerCase()} layer`}
+            ${kinds.map((k) => html`<button class="add" style=${`--k:${KIND_COLOR[k]}`} ?disabled=${full} title=${`Add a blank ${KIND_LABEL[k].toLowerCase()} layer`}
               @click=${() => { const el = newElement(k); this.addHere((c) => {
                 // A timeline's clock times are always a layer of their own.
                 c.elements.push(el);
@@ -7512,10 +7638,16 @@ export class WristAssistantPanel extends LitElement {
           </div>
           <div class="presets">
             <span class="presets-l">Presets</span>
-            ${LAYER_PRESETS.map((p) => html`<button class="preset" title=${p.blurb}
+            ${plain.map((p) => html`<button class="preset" title=${p.blurb}
               ?disabled=${cfg.elements.length + p.layerCount > 64}
               @click=${() => this.openPreset(p.kind)}>${p.title}</button>`)}
-          </div>`
+          </div>
+          ${listy.length === 0 ? nothing : html`<div class="presets">
+            <span class="presets-l">List</span>
+            ${listy.map((p) => html`<button class="preset" title=${p.blurb}
+              ?disabled=${cfg.elements.length + p.layerCount > 64}
+              @click=${() => this.openPreset(p.kind)}>${p.title}</button>`)}
+          </div>`}`
         : nothing}
       ${this.renderPresetDialog()}
     </div>`;
@@ -8009,6 +8141,16 @@ export class WristAssistantPanel extends LitElement {
 
   private openPreset(kind: PresetKind) {
     if (!this.canEdit) return;
+    // A preset that asks nothing is built on the click. The four scope-based
+    // list presets are these: what they need is a filter, and a filter is
+    // edited in the Source card rather than chosen from a search box.
+    if (presetSpec(kind).needsEntity === false) {
+      const env: PresetEnv = { family: this.canvasFamily };
+      let created: string | undefined;
+      this.addHere((c) => { created = applyPreset(c, kind, { entityId: "", displayName: "", domain: "" }, env); });
+      if (created) this.inspect = { kind: "layer", id: created };
+      return;
+    }
     this.presetKind = kind;
     this.presetEntity = undefined;
     void this.updateComplete.then(() => {
@@ -8069,7 +8211,7 @@ export class WristAssistantPanel extends LitElement {
    */
   private renderCanvas() {
     if (this.parseError) return html`<div class="card error">This document cannot be read: ${this.parseError}</div>`;
-    const cfg = this.draft?.config;
+    const cfg = this.canvasConfig();
     if (!cfg) return html`<div class="card"><div class="empty">Choose a complication in the picker above, or make a new one.</div></div>`;
     const layouts = resolveAll(cfg, this.buildContext(), this.forced);
     this.syncCountdownTicker(layouts);
@@ -8112,7 +8254,9 @@ export class WristAssistantPanel extends LitElement {
     const layout = layouts[family];
     if (!layout) return nothing;
     const highlightId = this.inspect.kind === "layer" ? this.inspect.id : undefined;
-    const cfg = this.draft?.config;
+    // The stage while a row is being designed, so a row layer outlines and a
+    // group of the document does not reach into a canvas it is not on.
+    const cfg = this.canvasConfig();
     // A selected group outlines every member; a selected member of a locked
     // group outlines the rest of its group too, since a drag moves them all.
     const gid = this.inspect.kind === "group" ? this.inspect.id : highlightId !== undefined && cfg ? groupOf(cfg, highlightId)?.id : undefined;
@@ -8165,7 +8309,11 @@ export class WristAssistantPanel extends LitElement {
     const ins = this.inspect;
     const sel = ins.kind === "layer" ? cfg.elements.find((e) => e.payload.id === ins.id) : undefined;
     let tail: TemplateResult | string;
-    if (this.showTaps) {
+    const designing = this.rowEditList();
+    if (designing) {
+      tail = html`one cell of <b>${layerTitle(designing, ctx)}</b>, scaled up. Drag and size the row's layers here.
+        <button class="link" @click=${() => this.setRowEdit(undefined)}>Done designing</button>`;
+    } else if (this.showTaps) {
       tail = html`Every tap area is outlined. Where two overlap, the one higher in Layers wins. Anywhere else does <b>${describeTapAction(cfg.tapAction)}</b>.`;
     } else if (this.picking) {
       tail = "Point at a layer and click it. Escape stops.";
@@ -8559,7 +8707,7 @@ export class WristAssistantPanel extends LitElement {
     if (picked !== undefined) {
       here = html`<span class="here" style="--k:var(--wa-accent)"><span class="kchip">Picked</span><span class="nm">${picked} layers</span></span>`;
     } else if (ins.kind === "layer") {
-      const el = cfg.elements.find((e) => e.payload.id === ins.id);
+      const el = elementIn(cfg, ins.id);
       if (el) {
         // Only the kind: the name is the Name row directly under the crumbs,
         // so spelling it here too said it twice. It stays in the tooltip.
@@ -8642,7 +8790,9 @@ export class WristAssistantPanel extends LitElement {
     let body: TemplateResult | typeof nothing = nothing;
     let cards = true;
     if (ins.kind === "layer") {
-      const el = cfg.elements.find((e) => e.payload.id === ins.id);
+      // `elementIn` rather than a search of `elements`: a row layer of a list
+      // is edited by these same cards and lives inside its list's template.
+      const el = elementIn(cfg, ins.id);
       if (!el) {
         this.inspect = { kind: "general" };
         return nothing;
@@ -8703,7 +8853,7 @@ export class WristAssistantPanel extends LitElement {
     const setColour = (v: string) => this.mutate((c) => {
       for (const el of picked) {
         const t = c.elements.find((e) => e.payload.id === el.payload.id);
-        if (t && t.kind !== "image" && t.kind !== "tap" && t.kind !== "timeline" && t.kind !== "chartTimes" && t.kind !== "chartDots" && t.kind !== "chartGrid" && t.kind !== "imageTime") t.payload.colorSlot.baseColorHex = v;
+        if (t && t.kind !== "image" && t.kind !== "tap" && t.kind !== "timeline" && t.kind !== "chartTimes" && t.kind !== "chartDots" && t.kind !== "chartGrid" && t.kind !== "imageTime" && t.kind !== "list") t.payload.colorSlot.baseColorHex = v;
       }
     }, "multi-colour");
     return html`

@@ -94,6 +94,14 @@ import {
   GAUGE_DEFAULT_LABEL_SIZE,
   GAUGE_DEFAULT_TICK_HEX,
   GAUGE_DEFAULT_TICK_LENGTH,
+  type ListElement,
+  type ListSource,
+  type TimestampStyle,
+  clampListGap,
+  clampListRows,
+  ITEM_PLACEHOLDER_PREFIX,
+  listGrid,
+  withPlacement,
 } from "./model.js";
 import {
   type DrawableFamily,
@@ -119,7 +127,8 @@ import {
   type ChartCurve,
   type ChartFillStyle,
 } from "./model.js";
-import { keyFor } from "./compiler.js";
+import { keyFor, listExpressionKey, listKey, normaliseScalar } from "./compiler.js";
+import { CALENDAR_ITEM_ICON, TODO_ITEM_ICON, entityItemIcon, forecastItemIcon } from "./list-icons.js";
 
 export interface EntityState {
   entityId: string;
@@ -146,6 +155,14 @@ export interface ResolveContext {
    * missing key draws an empty layer, which is what the watch does too before
    * its first fetch lands. */
   historySeries?: Map<string, string>;
+  /** The items each list drew, as the JSON text of one reply, keyed the way
+   * `historySeries` is. A Jinja-backed list is not here: its items arrive in
+   * the value document under its `e_` key like any other computed value, and
+   * the resolver reads them out of `templateResults`. A service-backed list is
+   * keyed by its readable form (`listKey`), the same string the websocket
+   * request and the reply are keyed by. A missing key draws no cells, which is
+   * what the watch does before its first fetch lands. */
+  listItems?: Map<string, string>;
   namedValues: NamedValue[];
   /** Seconds since the value cache was written; undefined = never synced. */
   dataAgeSeconds?: number;
@@ -156,6 +173,16 @@ export interface ResolveContext {
    * value typed in to test the preview. A history chart of one ends on that
    * value, so its last bar and every number read from it follow the test. */
   testedEntities?: ReadonlySet<string>;
+  /** Which locale the `timestamp` format prints in. Undefined follows the
+   * device, which is what every watch and every browser wants; a fixture that
+   * has to pin the printed text names one so the answer is the same on every
+   * machine that runs it. */
+  locale?: string;
+  /** Which zone the `timestamp` format prints in, as an IANA name ("UTC",
+   * "Europe/London"). Undefined follows the device, as it does on the wrist. A
+   * fixture pinning an hour names one as well as a locale: without it the same
+   * unix second reads as a different hour on every machine. */
+  timeZone?: string;
 }
 
 export interface ResolvedBase {
@@ -710,6 +737,26 @@ export interface ResolvedImage extends ResolvedBase {
 }
 /** A tap area after rules ran. Draws nothing on the watch; the preview outlines
  * it in edit mode. Only visibility rules apply, so opacity is always 1. */
+/** One cell of a list, and the row layers drawn inside it.
+ *
+ * `frame` is normalised inside the list's own frame, not the canvas: the
+ * renderer translates into the list's box and then draws each cell's layers
+ * against the cell. Mirrors `CustomComplication.ResolvedList.Cell` in the app
+ * repo. */
+export interface ResolvedCell {
+  frame: NormalizedFrame;
+  elements: ResolvedElement[];
+}
+
+/** A row template already drawn once per item: one cell per item, each holding
+ * the row's layers resolved against that item. Empty cells when the items have
+ * not arrived or could not be read, which is the answer a chart gives before
+ * its first fetch. Mirrors `CustomComplication.ResolvedList`. */
+export interface ResolvedList extends ResolvedBase {
+  kind: "list";
+  cells: ResolvedCell[];
+}
+
 export interface ResolvedTap extends ResolvedBase {
   kind: "tap";
   action: TapAction;
@@ -718,7 +765,7 @@ export interface ResolvedTap extends ResolvedBase {
    * preview can leave an attached tap undrawn; the watch ignores it. */
   attachedTo?: string;
 }
-export type ResolvedElement = ResolvedText | ResolvedIcon | ResolvedGauge | ResolvedChart | ResolvedTimeline | ResolvedShape | ResolvedImage | ResolvedTap | ResolvedChartTimes | ResolvedChartDots | ResolvedChartGrid | ResolvedImageTime;
+export type ResolvedElement = ResolvedText | ResolvedIcon | ResolvedGauge | ResolvedChart | ResolvedTimeline | ResolvedShape | ResolvedImage | ResolvedTap | ResolvedChartTimes | ResolvedChartDots | ResolvedChartGrid | ResolvedImageTime | ResolvedList;
 
 export interface ResolvedBezelGauge {
   value: number;
@@ -849,7 +896,36 @@ function capitalized(s: string): string {
   return s.replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 }
 
-export function formatValue(raw: string, format: ValueFormat | undefined, unit: string | undefined): string {
+/** Unix seconds printed as a time, in one of the four styles.
+ *
+ * The hour cycle is the device's, so the same document reads `9:30 AM` on one
+ * watch and `09:30` on the next, which is what the wearer set. The zone is the
+ * device's too, unless one is named: a fixture pinning an hour has to fix both
+ * or it would pass only on the machine that wrote it. A style this build does
+ * not know prints the seconds unchanged, the way an unknown typeface draws in
+ * the system one. Swift uses `Date.FormatStyle` with the same fields. */
+export function timestampString(seconds: number, style: TimestampStyle, locale?: string, timeZone?: string): string {
+  const date = new Date(seconds * 1000);
+  if (!Number.isFinite(date.getTime())) return String(seconds);
+  const zone = timeZone !== undefined ? { timeZone } : {};
+  if (style === "date") return new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", ...zone }).format(date);
+  if (style === "weekday") return new Intl.DateTimeFormat(locale, { weekday: "short", ...zone }).format(date);
+  const day = style === "dateTime" ? { weekday: "short" as const } : {};
+  const numeric = new Intl.DateTimeFormat(locale, { ...day, hour: "numeric", minute: "2-digit", ...zone });
+  // A 24-hour locale pads the hour ("09:30"), a 12-hour one does not ("9:30 AM").
+  // `Intl` leaves both unpadded under `numeric`, where `Date.FormatStyle` pads
+  // the 24-hour one, so the padding is asked for explicitly on that side.
+  if (numeric.resolvedOptions().hour12 !== false) return numeric.format(date);
+  return new Intl.DateTimeFormat(locale, { ...day, hour: "2-digit", minute: "2-digit", ...zone }).format(date);
+}
+
+export function formatValue(
+  raw: string,
+  format: ValueFormat | undefined,
+  unit: string | undefined,
+  locale?: string,
+  timeZone?: string,
+): string {
   if (formatIsEmpty(format)) return raw;
   const f = format!;
   let text = raw;
@@ -859,6 +935,10 @@ export function formatValue(raw: string, format: ValueFormat | undefined, unit: 
     text = durationString(durationValue);
   } else if (f.relativeTime && trimmedNumber !== undefined) {
     text = relativeTimeString(trimmedNumber);
+  } else if (f.timestamp !== undefined && trimmedNumber !== undefined) {
+    // After the two that also read a number, and only when the value is one: a
+    // field holding a title rather than a time prints exactly what it says.
+    text = timestampString(trimmedNumber, f.timestamp, locale, timeZone);
   } else {
     const n = leadingNumber(raw);
     if (n !== undefined) {
@@ -1255,6 +1335,204 @@ export function gaugeFraction(raw: string | undefined, min: number, max: number)
   return Math.min(1, Math.max(0, (n - min) / span));
 }
 
+// ── list items ────────────────────────────────────────────────────────────
+// One reply, parsed into rows the resolver can read fields off. Both data
+// paths end here: a Jinja source renders `{"items": [...], "total": N}` into
+// the value document, and a service source's reply is the same object, so
+// nothing past this point knows which door the items came through.
+
+/** One item of a list, already printed.
+ *
+ * A field the reply left out is absent from the map, which resolves nil and
+ * draws `--`; a field that arrived as `null` is present and empty, because
+ * "this event has no location" is an answer and "there is no such field" is
+ * not. */
+export interface ListItem {
+  fields: Map<string, string>;
+  index: number;
+}
+
+/** What one list drew, and how many there were before the slice. */
+export interface ListItems {
+  items: ListItem[];
+  total: number;
+}
+
+/** JSON with every object's keys in order, which is how a field holding an
+ * object or an array prints. Sorted so the same reply always prints the same
+ * text, whatever order the server happened to serialise it in. */
+function sortedJSON(value: unknown): string {
+  const norm = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(norm);
+    if (v !== null && typeof v === "object") {
+      const o = v as Record<string, unknown>;
+      const out: Record<string, unknown> = {};
+      for (const key of Object.keys(o).sort()) out[key] = norm(o[key]);
+      return out;
+    }
+    return v;
+  };
+  return JSON.stringify(norm(value)) ?? "";
+}
+
+/** One field as text, by schema section 6.6's rules: a string stays as it is,
+ * a bool prints `true` or `false`, a whole number under 1e15 prints as integer
+ * text, `null` is the empty string, and anything structured is its
+ * sorted-key JSON. */
+function printItemField(raw: unknown): string {
+  if (raw === null) return "";
+  if (typeof raw === "string") return raw;
+  if (typeof raw === "boolean" || typeof raw === "number") return normaliseScalar(raw);
+  return sortedJSON(raw);
+}
+
+/** The fields one raw item carries. An item that is not an object is a scalar
+ * list (a select's options, a template yielding strings), and its one field is
+ * `value`. Objects are read one level deep. */
+function itemFields(raw: unknown): Map<string, string> {
+  const fields = new Map<string, string>();
+  if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) fields.set(key, printItemField(value));
+  } else {
+    fields.set("value", printItemField(raw));
+  }
+  return fields;
+}
+
+/** Seconds out of a field that holds a unix time, or undefined when it holds
+ * anything else (a to-do with no due date sends an empty string). */
+function itemSeconds(fields: ReadonlyMap<string, string>, name: string): number | undefined {
+  const raw = fields.get(name);
+  if (raw === undefined) return undefined;
+  const n = swiftDouble(raw.trim());
+  return n === undefined || !Number.isFinite(n) ? undefined : n;
+}
+
+/**
+ * The fields worked out at resolve rather than sent: the row's position, the
+ * distances from now, and the glyph.
+ *
+ * None of these are stored, so a list cached between fetches still counts down
+ * correctly and still draws the right icon for a state that changed under it.
+ */
+function addComputedFields(fields: Map<string, string>, source: ListSource, index: number, nowSeconds: number): void {
+  fields.set("index", String(index));
+  switch (source.kind) {
+    case "entities": {
+      const changed = itemSeconds(fields, "lastChanged");
+      if (changed !== undefined) fields.set("age", String(Math.round(nowSeconds - changed)));
+      fields.set("icon", entityItemIcon(fields.get("domain") ?? "", fields.get("deviceClass") ?? "", fields.get("state") ?? ""));
+      return;
+    }
+    case "calendar": {
+      // Clamped at zero: an event that started ten minutes ago starts in no
+      // time at all, and "-600" on a face reads as a bug.
+      const start = itemSeconds(fields, "start");
+      if (start !== undefined) fields.set("startsIn", String(Math.max(0, Math.round(start - nowSeconds))));
+      const end = itemSeconds(fields, "end");
+      if (end !== undefined) fields.set("endsIn", String(Math.max(0, Math.round(end - nowSeconds))));
+      fields.set("icon", CALENDAR_ITEM_ICON);
+      return;
+    }
+    case "todo": {
+      // Not clamped: an overdue item is the one worth colouring red, and a
+      // negative number is how a rule finds it.
+      const due = itemSeconds(fields, "due");
+      if (due !== undefined) fields.set("dueIn", String(Math.round(due - nowSeconds)));
+      fields.set("icon", TODO_ITEM_ICON);
+      return;
+    }
+    case "forecast":
+      fields.set("icon", forecastItemIcon(fields.get("condition") ?? ""));
+      return;
+    default:
+      // An attribute or a template carries whatever the object holds, and
+      // nothing here knows what its fields mean.
+      return;
+  }
+}
+
+/**
+ * One reply, parsed.
+ *
+ * Either shape is accepted: the `{"items", "total"}` object both compilers
+ * emit, and a bare JSON array, which is what a raw template usually yields.
+ * An array's total is its own length and the slice happens here. Anything else
+ * is no items at all, the same answer a chart gives before its first fetch.
+ */
+export function parseListItems(text: string, rows: number, source: ListSource, nowSeconds: number): ListItems {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { items: [], total: 0 };
+  }
+  let raw: unknown[];
+  let total: number;
+  if (Array.isArray(parsed)) {
+    raw = parsed;
+    total = parsed.length;
+  } else if (parsed !== null && typeof parsed === "object" && Array.isArray((parsed as { items?: unknown }).items)) {
+    const o = parsed as { items: unknown[]; total?: unknown };
+    raw = o.items;
+    total = typeof o.total === "number" && Number.isFinite(o.total) ? Math.round(o.total) : o.items.length;
+  } else {
+    return { items: [], total: 0 };
+  }
+  const items = raw.slice(0, Math.max(0, rows)).map((entry, index) => {
+    const fields = itemFields(entry);
+    addComputedFields(fields, source, index, nowSeconds);
+    return { fields, index };
+  });
+  return { items, total: Math.max(total, items.length) };
+}
+
+/**
+ * Where each cell of a list sits inside the list's own frame.
+ *
+ * The frame is divided evenly into `rows` cells, or `rows / columns` lines of
+ * `columns` cells, whatever the item count: a list never stretches two items
+ * over four rows, so the design stays where the author put it. The gap is in
+ * design points, so it is turned into a fraction through the list's own size
+ * on this shape, and clamped so the cells never fold through each other on a
+ * frame too small to hold them.
+ */
+export function listCellFrames(el: ListElement, box: { width: number; height: number }): NormalizedFrame[] {
+  const rows = clampListRows(el.rows);
+  const { lines, columns } = listGrid(el);
+  const gap = clampListGap(el.gap);
+  const span = (count: number, points: number) => {
+    if (count <= 1) return { size: 1, step: 0 };
+    const fraction = points > 0 ? gap / points : 0;
+    const g = Math.min(fraction, 1 / (count - 1));
+    const size = (1 - g * (count - 1)) / count;
+    return { size, step: size + g };
+  };
+  const across = span(columns, Math.abs(el.frame.width) * box.width);
+  const down = span(lines, Math.abs(el.frame.height) * box.height);
+  const out: NormalizedFrame[] = [];
+  for (let i = 0; i < rows; i++) {
+    out.push({
+      x: (i % columns) * across.step,
+      y: Math.floor(i / columns) * down.step,
+      width: across.size,
+      height: down.size,
+      rotationDegrees: 0,
+    });
+  }
+  return out;
+}
+
+/** `{item.<field>}` wherever it stands in a row tap's action. The field name
+ * may carry a dot (`attr.brightness`), so anything but a brace counts. */
+const ITEM_FIELD_RE = /\{item\.([^{}]+)\}/g;
+
+/** A reference built from a substituted id: the domain comes off the id, since
+ * the domain stored beside a placeholder is the domain of nothing. */
+function entityFrom(entityId: string, displayName: string): EntityRef {
+  return { entityId, displayName, domain: entityId.split(".")[0] ?? "" };
+}
+
 // ── value resolution ──────────────────────────────────────────────────────
 
 export class Resolver {
@@ -1270,10 +1548,76 @@ export class Resolver {
    * timeline, and a timestamp layer a picture, whatever order they sit in. */
   private readonly timelineElements = new Map<string, TimelineElement>();
   private readonly imageElements = new Map<string, Extract<Element, { kind: "image" }>["payload"]>();
+  /** Every list in the document, settled, by layer id: what it drew and how
+   * many there were. Filled before any layer resolves, so a `listStat` text or
+   * a rule that tests one finds the list already decided, whichever order the
+   * two sit in. The `chartStat` pattern. */
+  private readonly lists = new Map<string, ListItems>();
+  /** Each list's cells, with its row layers already resolved per item. Filled
+   * by `resolveLayout`, which is the first moment the shape and so the cell
+   * geometry are known. */
+  private readonly listCells = new Map<string, ResolvedCell[]>();
+  /** The item a row is being resolved against, or undefined outside a row: an
+   * `item` value anywhere else is nil. */
+  private currentItem: ListItem | undefined;
 
   constructor(private readonly ctx: ResolveContext, config?: CustomComplicationConfig) {
     this.named = new Map(ctx.namedValues.map((n) => [n.id.toUpperCase(), n.value]));
-    if (config) this.settleCharts(config);
+    if (config) {
+      this.settleCharts(config);
+      // The counts, so a value resolved on its own (the editor's Now line, an
+      // Inline text) can still read a `listStat`. The cells wait for a shape.
+      this.settleListItems(config.elements);
+    }
+  }
+
+  /** Parse every list's items. Independent of the shape, so it runs before
+   * anything is drawn and a `listStat` inside a row reads a settled count. */
+  private settleListItems(elements: readonly Element[]): void {
+    this.lists.clear();
+    const nowSeconds = this.nowMs() / 1000;
+    for (const el of elements) {
+      if (el.kind !== "list") continue;
+      const text = this.listText(el.payload);
+      this.lists.set(
+        el.payload.id,
+        text === undefined ? { items: [], total: 0 } : parseListItems(text, clampListRows(el.payload.rows), el.payload.source, nowSeconds),
+      );
+    }
+  }
+
+  /** The reply one list reads its items out of, whichever door they came
+   * through, or undefined while nothing has arrived. */
+  private listText(el: ListElement): string | undefined {
+    const jinjaKey = listExpressionKey(el.source, el.rows);
+    if (jinjaKey !== undefined) return this.ctx.templateResults.get(jinjaKey);
+    const key = listKey(el.source);
+    return key === undefined ? undefined : this.ctx.listItems?.get(key);
+  }
+
+  /** Draw every list's cells for one shape: the geometry from the list's own
+   * frame, then the row template resolved once per item with that item set. */
+  private settleListCells(config: CustomComplicationConfig, elements: readonly Element[], family: FamilyKind, forced?: ForcedBranches): void {
+    this.listCells.clear();
+    const layout = config.perFamily[family];
+    const box = DESIGN_BOX[family === "inline" ? "rectangular" : family];
+    for (const el of elements) {
+      if (el.kind !== "list") continue;
+      const items = this.lists.get(el.payload.id)?.items ?? [];
+      const frames = listCellFrames(el.payload, box);
+      const cells: ResolvedCell[] = [];
+      for (let i = 0; i < items.length && i < frames.length; i++) {
+        this.currentItem = items[i];
+        // Row layers take part in the same per-shape `placements` map under
+        // their own ids, so a row can be laid out differently on rectangular
+        // and on large, and one of its layers hidden on one of them.
+        const rowElements = el.payload.template.map((row) =>
+          this.resolveElement(withPlacement(row, layout?.placements[row.payload.id]), forced, family));
+        this.currentItem = undefined;
+        cells.push({ frame: frames[i]!, elements: rowElements });
+      }
+      this.listCells.set(el.payload.id, cells);
+    }
   }
 
   /** The series a chart draws and the range it draws it against. One function
@@ -1444,6 +1788,10 @@ export class Resolver {
       const entity = this.charts.get(k.layer.toUpperCase())?.entity;
       return entity ? this.ctx.entityStates.get(entity.entityId)?.unitOfMeasurement : undefined;
     }
+    // An item's unit is a field of the item, which is where the entities
+    // source puts `unit_of_measurement` and the forecast source the weather
+    // entity's temperature unit.
+    if (k.kind === "item") return this.currentItem?.fields.get("unit");
     return undefined;
   }
 
@@ -1475,6 +1823,17 @@ export class Resolver {
         }
         break;
       }
+      case "item":
+        // Only while a row is being resolved, and only for a field the item
+        // has: anywhere else, and for a name the source never sent, nil.
+        raw = this.currentItem?.fields.get(deref.kind.field);
+        break;
+      case "listStat": {
+        // The list has already parsed its reply; this reads the number back.
+        const l = this.lists.get(deref.kind.layer.toUpperCase());
+        if (l) raw = String(deref.kind.stat === "total" ? l.total : l.items.length);
+        break;
+      }
       default: {
         // Keyed off the ORIGINAL (un-dereferenced) value.
         const key = keyFor(value, this.named);
@@ -1482,7 +1841,7 @@ export class Resolver {
       }
     }
     if (raw === undefined) return undefined;
-    return formatValue(raw, deref.format, this.directEntityUnit(deref));
+    return formatValue(raw, deref.format, this.directEntityUnit(deref), this.ctx.locale, this.ctx.timeZone);
   }
 
   private nowMs(): number {
@@ -2074,7 +2433,7 @@ export class Resolver {
           shadow: undefined,
           frame: el.payload.frame,
           opacity: 1,
-          action: el.payload.action,
+          action: this.itemAction(el.payload.action),
         };
         if (el.payload.openPageId !== undefined) out.openPageId = el.payload.openPageId;
         if (el.payload.attachedTo !== undefined) out.attachedTo = el.payload.attachedTo;
@@ -2135,7 +2494,59 @@ export class Resolver {
         };
         return out;
       }
+      case "list": {
+        // The cells were drawn by `settleListCells`, which is the only place
+        // that knows the shape. A list resolved without one (a thumbnail, a
+        // value editor) draws no cells rather than guessing at a geometry.
+        const out: ResolvedList = {
+          kind: "list",
+          ...base,
+          cells: this.listCells.get(el.payload.id) ?? [],
+        };
+        return out;
+      }
     }
+  }
+
+  /**
+   * A row tap's action with `{item.<field>}` filled in from the item being
+   * drawn.
+   *
+   * `domain` is refilled from the substituted id, because a placeholder is not
+   * an entity id and whatever domain the editor stored beside it is the
+   * domain of nothing. A placeholder naming a field the item does not have
+   * leaves the row's tap disabled: firing a service call with `{item.uid}`
+   * still in it would complete the wrong to-do, or none, and say nothing.
+   */
+  private itemAction(action: TapAction): TapAction {
+    const item = this.currentItem;
+    if (item === undefined) return action;
+    let missing = false;
+    const fill = (text: string): string => text.replace(ITEM_FIELD_RE, (whole, field: string) => {
+      const value = item.fields.get(field);
+      if (value === undefined) {
+        missing = true;
+        return whole;
+      }
+      return value;
+    });
+    const has = (text: string | undefined) => text !== undefined && text.includes(ITEM_PLACEHOLDER_PREFIX);
+    if (action.type === "callService") {
+      const target = action.target;
+      if (!has(action.serviceDataJSON) && !has(target?.entityId) && !has(target?.displayName)) return action;
+      const data = action.serviceDataJSON === undefined ? undefined : fill(action.serviceDataJSON);
+      const filled = target === undefined ? undefined : entityFrom(fill(target.entityId), fill(target.displayName));
+      if (missing) return { type: "none" };
+      return {
+        ...action,
+        ...(data !== undefined ? { serviceDataJSON: data } : {}),
+        ...(filled !== undefined ? { target: filled } : {}),
+      };
+    }
+    if (!("entityId" in action)) return action;
+    if (!has(action.entityId) && !has(action.displayName)) return action;
+    const ref = entityFrom(fill(action.entityId), fill(action.displayName));
+    return missing ? { type: "none" } : { type: action.type, ...ref };
   }
 
   resolveLayout(config: CustomComplicationConfig, family: FamilyKind, forced?: ForcedBranches): ResolvedLayout {
@@ -2150,8 +2561,15 @@ export class Resolver {
     // Dots settle before the anchors: the dots decide the chart's inset, and the
     // inset moves every reading an anchor sits on.
     const canvas = DESIGN_BOX[family === "inline" ? "rectangular" : family];
+    // Then the lists, for the same reason and in the same order the app's
+    // resolver settles them: a text outside a list that prints its count, or a
+    // rule that tests one, needs the list parsed before it resolves. The cells
+    // are drawn here too, because this is where the shape is known.
+    const placed = elementsFor(config, family);
+    this.settleListItems(placed);
+    this.settleListCells(config, placed, family, forced);
     const elements = [...placeChartAnchors(
-      settleChartDots(elementsFor(config, family).map((el) => this.resolveElement(el, forced, family)), canvas),
+      settleChartDots(placed.map((el) => this.resolveElement(el, forced, family)), canvas),
       canvas,
     )];
     const style = layout ? this.applyRules(layout.rules, forced) : new Map<StyleProperty, StyleChange>();

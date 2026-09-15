@@ -2274,6 +2274,44 @@ function tapLabelText(label: string, box: Box): string | undefined {
   return `${label.slice(0, keep).replace(/\s+$/, "")}…`;
 }
 
+/**
+ * A list's cells, and the row template drawn inside each one.
+ *
+ * The cell frames arrive normalised inside the list's own frame, so each cell
+ * becomes a box in design points and the row layers are drawn against that box
+ * as a canvas of its own: their frames are normalised 0...1 inside the cell,
+ * exactly as the resolver says. The group only translates, never scales, so a
+ * 12 pt font in a row is 12 pt whatever size the cell is, which is what the
+ * app's own `ListElementView` does.
+ *
+ * Every row layer goes through `renderElement`, so a row tap gets the same
+ * dashed outline and finger the editor draws on any tap area, a hidden row
+ * layer dims the same way, and each row layer carries its own tint group. The
+ * handles are the one thing a cell does not inherit: a row layer is dragged in
+ * the row designer, against one cell, not in the face's own canvas, where the
+ * pointer maths would be against the wrong box.
+ */
+function renderList(
+  el: Extract<ResolvedElement, { kind: "list" }>,
+  box: Box,
+  options: RenderOptions,
+  charts: ReadonlyMap<string, ResolvedChart>,
+  tintPrefix?: string,
+): TemplateResult | typeof nothing {
+  if (el.cells.length === 0) return nothing;
+  const cellOptions: RenderOptions = { ...options, handles: false };
+  return svg`${el.cells.map((cell) => {
+    const w = Math.max(0, cell.frame.width * box.w);
+    const h = Math.max(0, cell.frame.height * box.h);
+    if (w <= 0 || h <= 0) return nothing;
+    const x = box.x + cell.frame.x * box.w;
+    const y = box.y + cell.frame.y * box.h;
+    const canvas: CanvasSize = { width: w, height: h };
+    return svg`<g data-list-cell transform="translate(${x} ${y})">
+      ${cell.elements.map((row) => renderElement(row, canvas, cellOptions, charts, tintPrefix))}</g>`;
+  })}`;
+}
+
 /** The charts of a layout by id, for the dots and grid layers that draw on one. */
 function chartsById(elements: readonly ResolvedElement[]): Map<string, ResolvedChart> {
   const out = new Map<string, ResolvedChart>();
@@ -2321,6 +2359,7 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     case "shape": body = renderShape(el, box); break;
     case "image": body = renderImage(el, box, options); break;
     case "tap": body = renderTap(el, box, options.icons, showTaps, labelled ? describeTapAction(el.action) : undefined); break;
+    case "list": body = renderList(el, box, options, charts, tintPrefix); break;
   }
   // A tap box is the editor's own mark, never drawn on the watch, so it keeps
   // its colour on a tinted preview and casts no shadow.
@@ -2329,7 +2368,12 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     // than once on a page (every shape's preview), and two filters sharing an
     // id in one document is one filter.
     body = shadowed(body, `sh-${(shadowSeq += 1).toString(36)}`, el.shadow);
-    body = tinted(body, tintGroup(el.kind, options.tintSurface ?? "watch", el.accentGroup === "accent"), tintPrefix);
+    // A list draws nothing of its own, and its row layers have each already
+    // joined their own group. One filter around the whole list would repaint
+    // white row text in the accent colour, so the list adds none.
+    if (el.kind !== "list") {
+      body = tinted(body, tintGroup(el.kind, options.tintSurface ?? "watch", el.accentGroup === "accent"), tintPrefix);
+    }
   }
   // Review mode pushes the drawing back so the tap boxes are the thing you read.
   const dim = review && (el.kind !== "tap" || (inFocusView && !focused)) ? 0.35 : 1;

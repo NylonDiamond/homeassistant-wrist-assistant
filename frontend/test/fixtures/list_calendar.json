@@ -1,0 +1,401 @@
+{
+  "name": "Calendar list",
+  "description": "Two calendars merged into one list, sorted by start with the all-day event first. Jinja cannot make a service call with `return_response`, so this source goes through the integration the way history does: one `op=list` request, one reply cached under the `l_` key hashed from the readable form `calendar|<ids>|<hours>`. The row count is deliberately not part of that key, so two lists over the same calendars are one fetch. `startsIn` and the printed clock time are both computed at resolve from the stored timestamp and the context clock, never stored, so a cached list stays right between fetches.",
+  "config": {
+    "schemaVersion": 8,
+    "id": "EEEEEEEE-0000-4000-8000-000000000430",
+    "name": "Calendar list",
+    "slotIndex": 7,
+    "supportedFamilies": [
+      "rectangular",
+      "large"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "list",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000431",
+          "source": {
+            "kind": "calendar",
+            "entities": [
+              {
+                "entityId": "calendar.family",
+                "displayName": "Family",
+                "domain": "calendar"
+              },
+              {
+                "entityId": "calendar.work",
+                "displayName": "Work",
+                "domain": "calendar"
+              }
+            ],
+            "hours": 48
+          },
+          "rows": 3,
+          "template": [
+            {
+              "kind": "text",
+              "payload": {
+                "id": "EEEEEEEE-0000-4000-8000-000000000432",
+                "value": {
+                  "kind": {
+                    "kind": "item",
+                    "field": "title"
+                  }
+                },
+                "fontSize": 12,
+                "fontWeight": "regular",
+                "colorSlot": {
+                  "baseColorHex": "#FFFFFF"
+                },
+                "rules": [],
+                "frame": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 0.65,
+                  "height": 1,
+                  "rotationDegrees": 0
+                },
+                "isHidden": false
+              }
+            },
+            {
+              "kind": "text",
+              "payload": {
+                "id": "EEEEEEEE-0000-4000-8000-000000000433",
+                "value": {
+                  "kind": {
+                    "kind": "item",
+                    "field": "start"
+                  },
+                  "format": {
+                    "timestamp": "clock"
+                  }
+                },
+                "fontSize": 12,
+                "fontWeight": "regular",
+                "colorSlot": {
+                  "baseColorHex": "#8E8E93"
+                },
+                "rules": [],
+                "frame": {
+                  "x": 0.65,
+                  "y": 0,
+                  "width": 0.35,
+                  "height": 1,
+                  "rotationDegrees": 0
+                },
+                "isHidden": false
+              }
+            }
+          ],
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.05,
+            "width": 0.9,
+            "height": 0.9,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "borderWidth": 2,
+        "cornerBodyShape": "wedge"
+      },
+      "large",
+      {
+        "borderWidth": 2,
+        "cornerBodyShape": "wedge"
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {},
+    "listItems": {
+      "calendar|calendar.family,calendar.work|48": "{\"items\":[{\"title\":\"Bin collection\",\"start\":1699920000,\"end\":1700006400,\"isAllDay\":true,\"calendar\":\"Family\",\"calendarId\":\"calendar.family\"},{\"title\":\"Standup\",\"start\":1700002800,\"end\":1700004600,\"calendar\":\"Work\",\"calendarId\":\"calendar.work\",\"location\":\"Room 2\"},{\"title\":\"Dentist\",\"start\":1700035200,\"end\":1700038800,\"calendar\":\"Family\",\"calendarId\":\"calendar.family\"}],\"total\":5}"
+    },
+    "nowMs": 1700000000000,
+    "locale": "en-US",
+    "timeZone": "UTC"
+  },
+  "expectedCompiled": {
+    "entities": [],
+    "expressionKeys": [],
+    "listKeys": [
+      "calendar|calendar.family,calendar.work|48"
+    ]
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000431",
+          "kind": "list",
+          "cells": [
+            {
+              "frame": {
+                "x": 0,
+                "y": 0,
+                "width": 1,
+                "height": 0.311,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000432",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 0.65,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Bin collection",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000433",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.65,
+                    "y": 0,
+                    "width": 0.35,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "colorHex": "#8E8E93",
+                  "fontSize": 12
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.345,
+                "width": 1,
+                "height": 0.311,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000432",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 0.65,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Standup",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000433",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.65,
+                    "y": 0,
+                    "width": 0.35,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "colorHex": "#8E8E93",
+                  "fontSize": 12
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.689,
+                "width": 1,
+                "height": 0.311,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000432",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 0.65,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Dentist",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000433",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.65,
+                    "y": 0,
+                    "width": 0.35,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "colorHex": "#8E8E93",
+                  "fontSize": 12
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "large": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000431",
+          "kind": "list",
+          "cells": [
+            {
+              "frame": {
+                "x": 0,
+                "y": 0,
+                "width": 1,
+                "height": 0.329,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000432",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 0.65,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Bin collection",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000433",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.65,
+                    "y": 0,
+                    "width": 0.35,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "colorHex": "#8E8E93",
+                  "fontSize": 12
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.335,
+                "width": 1,
+                "height": 0.329,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000432",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 0.65,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Standup",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000433",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.65,
+                    "y": 0,
+                    "width": 0.35,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "colorHex": "#8E8E93",
+                  "fontSize": 12
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.671,
+                "width": 1,
+                "height": 0.329,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000432",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 0.65,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Dentist",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000433",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.65,
+                    "y": 0,
+                    "width": 0.35,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "colorHex": "#8E8E93",
+                  "fontSize": 12
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

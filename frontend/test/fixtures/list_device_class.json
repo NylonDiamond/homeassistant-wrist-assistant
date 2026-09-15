@@ -1,0 +1,820 @@
+{
+  "name": "Device class list",
+  "description": "The `entities` source narrowed to one device class. The clause sits between the `unavailable` reject and the state filter, so \"every battery sensor, lowest first\" is one picker rather than a hand-written scope per entity. Absent and blank mean every device class, and neither reaches the wire, so every document written before the key existed keys the same Jinja it always did. The row draws the entity's own icon, its name, its state with the unit the item carries, and a capsule filled to the reading over the default 0 to 100.",
+  "config": {
+    "schemaVersion": 8,
+    "id": "EEEEEEEE-0000-4000-8000-000000000490",
+    "name": "Device class list",
+    "slotIndex": 13,
+    "supportedFamilies": [
+      "rectangular",
+      "medium"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "list",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000491",
+          "source": {
+            "kind": "entities",
+            "scope": {
+              "kind": "filter",
+              "domains": [
+                "sensor"
+              ],
+              "areaIds": [],
+              "labelIds": [],
+              "floorIds": []
+            },
+            "deviceClass": "battery",
+            "sort": "state"
+          },
+          "template": [
+            {
+              "kind": "icon",
+              "payload": {
+                "id": "EEEEEEEE-0000-4000-8000-000000000492",
+                "symbol": {
+                  "kind": {
+                    "kind": "item",
+                    "field": "icon"
+                  }
+                },
+                "size": 11,
+                "colorSlot": {
+                  "baseColorHex": "#FFFFFF"
+                },
+                "rules": [],
+                "frame": {
+                  "x": 0,
+                  "y": 0.04,
+                  "width": 0.12,
+                  "height": 0.62,
+                  "rotationDegrees": 0
+                },
+                "isHidden": false
+              }
+            },
+            {
+              "kind": "text",
+              "payload": {
+                "id": "EEEEEEEE-0000-4000-8000-000000000493",
+                "value": {
+                  "kind": {
+                    "kind": "item",
+                    "field": "name"
+                  }
+                },
+                "fontSize": 12,
+                "fontWeight": "regular",
+                "colorSlot": {
+                  "baseColorHex": "#FFFFFF"
+                },
+                "rules": [],
+                "frame": {
+                  "x": 0.15,
+                  "y": 0,
+                  "width": 0.57,
+                  "height": 0.7,
+                  "rotationDegrees": 0
+                },
+                "isHidden": false
+              }
+            },
+            {
+              "kind": "text",
+              "payload": {
+                "id": "EEEEEEEE-0000-4000-8000-000000000494",
+                "value": {
+                  "kind": {
+                    "kind": "item",
+                    "field": "state"
+                  },
+                  "format": {
+                    "decimals": 0,
+                    "useEntityUnit": true
+                  }
+                },
+                "fontSize": 12,
+                "fontWeight": "regular",
+                "colorSlot": {
+                  "baseColorHex": "#8E8E93"
+                },
+                "rules": [],
+                "frame": {
+                  "x": 0.74,
+                  "y": 0,
+                  "width": 0.26,
+                  "height": 0.7,
+                  "rotationDegrees": 0
+                },
+                "isHidden": false
+              }
+            },
+            {
+              "kind": "shape",
+              "payload": {
+                "id": "EEEEEEEE-0000-4000-8000-000000000495",
+                "kind": "capsule",
+                "cornerRadius": 6,
+                "colorSlot": {
+                  "baseColorHex": "#32D74B"
+                },
+                "borderWidth": 0,
+                "level": {
+                  "value": {
+                    "kind": {
+                      "kind": "item",
+                      "field": "state"
+                    }
+                  },
+                  "trackColorHex": "#1C1C1E"
+                },
+                "rules": [],
+                "frame": {
+                  "x": 0.15,
+                  "y": 0.78,
+                  "width": 0.85,
+                  "height": 0.14,
+                  "rotationDegrees": 0
+                },
+                "isHidden": false
+              }
+            }
+          ],
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.08,
+            "width": 0.9,
+            "height": 0.84,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "borderWidth": 2,
+        "cornerBodyShape": "wedge"
+      },
+      "medium",
+      {
+        "borderWidth": 2,
+        "cornerBodyShape": "wedge"
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {},
+    "templateResults": {
+      "e_5c28c4c5790981ba": "{\"items\":[{\"entityId\":\"sensor.front_door_battery\",\"name\":\"Front door\",\"state\":\"12\",\"unit\":\"%\",\"domain\":\"sensor\",\"deviceClass\":\"battery\",\"area\":\"Hallway\",\"lastChanged\":1699996400,\"n\":12},{\"entityId\":\"sensor.back_door_battery\",\"name\":\"Back door\",\"state\":\"37\",\"unit\":\"%\",\"domain\":\"sensor\",\"deviceClass\":\"battery\",\"area\":\"Hallway\",\"lastChanged\":1699995000,\"n\":37},{\"entityId\":\"sensor.motion_battery\",\"name\":\"Kitchen motion\",\"state\":\"68\",\"unit\":\"%\",\"domain\":\"sensor\",\"deviceClass\":\"battery\",\"area\":\"Kitchen\",\"lastChanged\":1699990000,\"n\":68},{\"entityId\":\"sensor.thermostat_battery\",\"name\":\"Thermostat\",\"state\":\"91\",\"unit\":\"%\",\"domain\":\"sensor\",\"deviceClass\":\"battery\",\"area\":\"Hallway\",\"lastChanged\":1699980000,\"n\":91}],\"total\":7}"
+    }
+  },
+  "expectedCompiled": {
+    "entities": [],
+    "expressionKeys": [
+      "e_5c28c4c5790981ba"
+    ],
+    "listKeys": [],
+    "document": "{% set v_e_5c28c4c5790981ba %}{% set ns = namespace(items=[]) %}{% for s in (((states.sensor | list))) | rejectattr('state', 'in', ['unavailable', 'unknown']) | selectattr('attributes.device_class', 'eq', 'battery') %}{% set ns.items = ns.items + [{'entityId': s.entity_id, 'name': s.name[:120], 'state': s.state[:120], 'unit': s.attributes.get('unit_of_measurement'), 'domain': s.domain, 'deviceClass': s.attributes.get('device_class'), 'area': area_name(s.entity_id), 'lastChanged': (as_timestamp(s.last_changed) | round(0)), 'n': (s.state | float(none))}] %}{% endfor %}{% set sorted = ((ns.items | rejectattr('n', 'none') | sort(attribute='n', reverse=false) | list) + (ns.items | selectattr('n', 'none') | sort(attribute='state', reverse=false) | list)) %}{{ {'items': sorted[:4], 'total': (sorted | count)} | to_json }}{% endset %}\n{{ { \"e_5c28c4c5790981ba\": v_e_5c28c4c5790981ba } | to_json }}"
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000491",
+          "kind": "list",
+          "cells": [
+            {
+              "frame": {
+                "x": 0,
+                "y": 0,
+                "width": 1,
+                "height": 0.223,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000492",
+                  "kind": "icon",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.04,
+                    "width": 0.12,
+                    "height": 0.62,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "symbol": "circle",
+                  "colorHex": "#FFFFFF",
+                  "size": 11
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000493",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.15,
+                    "y": 0,
+                    "width": 0.57,
+                    "height": 0.7,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Front door",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000494",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.74,
+                    "y": 0,
+                    "width": 0.26,
+                    "height": 0.7,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "12%",
+                  "colorHex": "#8E8E93",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000495",
+                  "kind": "shape",
+                  "frame": {
+                    "x": 0.15,
+                    "y": 0.78,
+                    "width": 0.85,
+                    "height": 0.14,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "shapeKind": "capsule",
+                  "fillColorHex": "#32D74B",
+                  "borderWidth": 0,
+                  "level": {
+                    "direction": "up",
+                    "fraction": 0.12,
+                    "trackColorHex": "#1C1C1E"
+                  }
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.259,
+                "width": 1,
+                "height": 0.223,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000492",
+                  "kind": "icon",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.04,
+                    "width": 0.12,
+                    "height": 0.62,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "symbol": "circle",
+                  "colorHex": "#FFFFFF",
+                  "size": 11
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000493",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.15,
+                    "y": 0,
+                    "width": 0.57,
+                    "height": 0.7,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Back door",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000494",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.74,
+                    "y": 0,
+                    "width": 0.26,
+                    "height": 0.7,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "37%",
+                  "colorHex": "#8E8E93",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000495",
+                  "kind": "shape",
+                  "frame": {
+                    "x": 0.15,
+                    "y": 0.78,
+                    "width": 0.85,
+                    "height": 0.14,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "shapeKind": "capsule",
+                  "fillColorHex": "#32D74B",
+                  "borderWidth": 0,
+                  "level": {
+                    "direction": "up",
+                    "fraction": 0.37,
+                    "trackColorHex": "#1C1C1E"
+                  }
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.518,
+                "width": 1,
+                "height": 0.223,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000492",
+                  "kind": "icon",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.04,
+                    "width": 0.12,
+                    "height": 0.62,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "symbol": "circle",
+                  "colorHex": "#FFFFFF",
+                  "size": 11
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000493",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.15,
+                    "y": 0,
+                    "width": 0.57,
+                    "height": 0.7,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Kitchen motion",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000494",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.74,
+                    "y": 0,
+                    "width": 0.26,
+                    "height": 0.7,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "68%",
+                  "colorHex": "#8E8E93",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000495",
+                  "kind": "shape",
+                  "frame": {
+                    "x": 0.15,
+                    "y": 0.78,
+                    "width": 0.85,
+                    "height": 0.14,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "shapeKind": "capsule",
+                  "fillColorHex": "#32D74B",
+                  "borderWidth": 0,
+                  "level": {
+                    "direction": "up",
+                    "fraction": 0.68,
+                    "trackColorHex": "#1C1C1E"
+                  }
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.777,
+                "width": 1,
+                "height": 0.223,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000492",
+                  "kind": "icon",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.04,
+                    "width": 0.12,
+                    "height": 0.62,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "symbol": "circle",
+                  "colorHex": "#FFFFFF",
+                  "size": 11
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000493",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.15,
+                    "y": 0,
+                    "width": 0.57,
+                    "height": 0.7,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Thermostat",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000494",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.74,
+                    "y": 0,
+                    "width": 0.26,
+                    "height": 0.7,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "91%",
+                  "colorHex": "#8E8E93",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000495",
+                  "kind": "shape",
+                  "frame": {
+                    "x": 0.15,
+                    "y": 0.78,
+                    "width": 0.85,
+                    "height": 0.14,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "shapeKind": "capsule",
+                  "fillColorHex": "#32D74B",
+                  "borderWidth": 0,
+                  "level": {
+                    "direction": "up",
+                    "fraction": 0.91,
+                    "trackColorHex": "#1C1C1E"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "medium": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000491",
+          "kind": "list",
+          "cells": [
+            {
+              "frame": {
+                "x": 0,
+                "y": 0,
+                "width": 1,
+                "height": 0.239,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000492",
+                  "kind": "icon",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.04,
+                    "width": 0.12,
+                    "height": 0.62,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "symbol": "circle",
+                  "colorHex": "#FFFFFF",
+                  "size": 11
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000493",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.15,
+                    "y": 0,
+                    "width": 0.57,
+                    "height": 0.7,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Front door",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000494",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.74,
+                    "y": 0,
+                    "width": 0.26,
+                    "height": 0.7,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "12%",
+                  "colorHex": "#8E8E93",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000495",
+                  "kind": "shape",
+                  "frame": {
+                    "x": 0.15,
+                    "y": 0.78,
+                    "width": 0.85,
+                    "height": 0.14,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "shapeKind": "capsule",
+                  "fillColorHex": "#32D74B",
+                  "borderWidth": 0,
+                  "level": {
+                    "direction": "up",
+                    "fraction": 0.12,
+                    "trackColorHex": "#1C1C1E"
+                  }
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.254,
+                "width": 1,
+                "height": 0.239,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000492",
+                  "kind": "icon",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.04,
+                    "width": 0.12,
+                    "height": 0.62,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "symbol": "circle",
+                  "colorHex": "#FFFFFF",
+                  "size": 11
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000493",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.15,
+                    "y": 0,
+                    "width": 0.57,
+                    "height": 0.7,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Back door",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000494",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.74,
+                    "y": 0,
+                    "width": 0.26,
+                    "height": 0.7,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "37%",
+                  "colorHex": "#8E8E93",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000495",
+                  "kind": "shape",
+                  "frame": {
+                    "x": 0.15,
+                    "y": 0.78,
+                    "width": 0.85,
+                    "height": 0.14,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "shapeKind": "capsule",
+                  "fillColorHex": "#32D74B",
+                  "borderWidth": 0,
+                  "level": {
+                    "direction": "up",
+                    "fraction": 0.37,
+                    "trackColorHex": "#1C1C1E"
+                  }
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.507,
+                "width": 1,
+                "height": 0.239,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000492",
+                  "kind": "icon",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.04,
+                    "width": 0.12,
+                    "height": 0.62,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "symbol": "circle",
+                  "colorHex": "#FFFFFF",
+                  "size": 11
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000493",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.15,
+                    "y": 0,
+                    "width": 0.57,
+                    "height": 0.7,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Kitchen motion",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000494",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.74,
+                    "y": 0,
+                    "width": 0.26,
+                    "height": 0.7,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "68%",
+                  "colorHex": "#8E8E93",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000495",
+                  "kind": "shape",
+                  "frame": {
+                    "x": 0.15,
+                    "y": 0.78,
+                    "width": 0.85,
+                    "height": 0.14,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "shapeKind": "capsule",
+                  "fillColorHex": "#32D74B",
+                  "borderWidth": 0,
+                  "level": {
+                    "direction": "up",
+                    "fraction": 0.68,
+                    "trackColorHex": "#1C1C1E"
+                  }
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.761,
+                "width": 1,
+                "height": 0.239,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000492",
+                  "kind": "icon",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.04,
+                    "width": 0.12,
+                    "height": 0.62,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "symbol": "circle",
+                  "colorHex": "#FFFFFF",
+                  "size": 11
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000493",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.15,
+                    "y": 0,
+                    "width": 0.57,
+                    "height": 0.7,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Thermostat",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000494",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0.74,
+                    "y": 0,
+                    "width": 0.26,
+                    "height": 0.7,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "91%",
+                  "colorHex": "#8E8E93",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000495",
+                  "kind": "shape",
+                  "frame": {
+                    "x": 0.15,
+                    "y": 0.78,
+                    "width": 0.85,
+                    "height": 0.14,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "shapeKind": "capsule",
+                  "fillColorHex": "#32D74B",
+                  "borderWidth": 0,
+                  "level": {
+                    "direction": "up",
+                    "fraction": 0.91,
+                    "trackColorHex": "#1C1C1E"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

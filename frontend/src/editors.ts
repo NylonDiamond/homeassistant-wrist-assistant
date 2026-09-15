@@ -208,6 +208,36 @@ import {
   CHART_MAX_GRID_THICKNESS,
   chartGridLayerLines,
   chartGridThickness,
+  type AggregateScope,
+  type AggregateStateFilter,
+  type ListElement,
+  type ListSource,
+  clampCalendarHours,
+  clampListColumns,
+  clampListGap,
+  clampListRows,
+  listGrid,
+  FORECAST_TYPES,
+  LIST_DEFAULT_CALENDAR_HOURS,
+  LIST_DEFAULT_COLUMNS,
+  LIST_DEFAULT_GAP,
+  LIST_DEFAULT_ROWS,
+  LIST_DIRECTIONS,
+  LIST_MAX_COLUMNS,
+  LIST_MAX_GAP,
+  LIST_MAX_ROWS,
+  LIST_MAX_SOURCE_ENTITIES,
+  LIST_MAX_TEMPLATE,
+  LIST_MIN_CALENDAR_HOURS,
+  LIST_MIN_COLUMNS,
+  LIST_MIN_ROWS,
+  LIST_MAX_CALENDAR_HOURS,
+  LIST_SORTS,
+  LIST_SOURCE_KINDS,
+  LIST_STATS,
+  TIMESTAMP_STYLES,
+  TODO_SORTS,
+  TODO_STATUSES,
   chartPointDotSize,
   chartMarkerToIcon,
   addChartLine,
@@ -277,7 +307,8 @@ import {
   weekdayNumbers,
   weekdayOptions,
 } from "./rule-presets.js";
-import { chartNumbers, leadingNumber, timelineSamples, type ForcedBranches, type TimelineSample } from "./resolver.js";
+import { chartNumbers, leadingNumber, listCellFrames, timelineSamples, type ForcedBranches, type TimelineSample } from "./resolver.js";
+import { listItemFields } from "./list-seeds.js";
 import {
   type RichTextBlocked,
   type RichTextMoved,
@@ -395,6 +426,20 @@ export interface EditorHost {
    * in any complication opened in this tab. */
   copiedPosition?: CopiedPosition;
   copyPosition(position: CopiedPosition): void;
+  /**
+   * The list whose row is being designed right now, or undefined for the
+   * ordinary face.
+   *
+   * In that mode the preview draws one cell of that list, scaled up to the
+   * whole canvas, so the row's layers are dragged and resized with the same
+   * code every other layer uses. It is also what makes the value picker offer
+   * Item field and the tap editor offer the item placeholders: those mean
+   * nothing outside a row, and offering them everywhere would be offering a
+   * value that always draws `--`.
+   */
+  rowEditListId?: string;
+  /** Enter the mode for one list, or leave it with undefined. */
+  setRowEdit(listId: string | undefined): void;
 }
 
 /** A layer's frame lifted by Copy position, and the shape it sat on. */
@@ -416,7 +461,7 @@ export function pastedFrame(copied: CopiedPosition, to: FamilyKind, kind: CEleme
 }
 
 /** Every card id the inspector can show, for "Open all". */
-export const ALL_SECTIONS = ["content", "look", "numbers", "level", "timestamp", "tappable", "states", "placement", "corner", "placements", "shape", "symbol"] as const;
+export const ALL_SECTIONS = ["content", "look", "numbers", "row", "level", "timestamp", "tappable", "states", "placement", "corner", "placements", "shape", "symbol"] as const;
 
 // ── small controls ────────────────────────────────────────────────────────
 
@@ -2313,6 +2358,8 @@ function switchKind(current: ValueKind, kind: ValueKind["kind"]): ValueKind {
     case "jinja": return { kind, value: current.kind === "jinja" ? current.value : "{{ states('sensor.example') }}" };
     case "named": return { kind, id: "" };
     case "chartStat": return { kind, layer: "", stat: "latest" };
+    case "item": return { kind, field: current.kind === "item" ? current.field : "" };
+    case "listStat": return { kind, layer: "", stat: "count" };
   }
 }
 
@@ -2553,11 +2600,27 @@ export function placePopover(anchor: AnchorBox, size: { width: number; height: n
   return { left, top, maxHeight: room, above: flip };
 }
 
+/**
+ * The sources this value may read, for the Source picker.
+ *
+ * Two of them only exist in a place: Item field means nothing outside a row
+ * being drawn, and List count means nothing in a document with no list. Both
+ * still show while the value already holds one, so a value that came in from a
+ * shared document is never a picker with a blank selection.
+ */
+export function valueKindsFor(host: EditorHost, kind: ValueKind, opts: ValueEditorOptions): [ValueKind["kind"], string][] {
+  const out = VALUE_KINDS.filter(([k]) => opts.allowNamed !== false || k !== "named");
+  if (host.rowEditListId !== undefined || kind.kind === "item") out.push(["item", "Item field"]);
+  const lists = host.config.elements.some((e) => e.kind === "list");
+  if (lists || kind.kind === "listStat") out.push(["listStat", "List count"]);
+  return out;
+}
+
 function valueForm(host: EditorHost, value: Value, set: (v: Value) => void, opts: ValueEditorOptions): TemplateResult {
   const k = value.kind;
   const setKind = (kind: ValueKind) => set({ ...value, kind });
   const key = opts.key;
-  const kinds = VALUE_KINDS.filter(([kind]) => opts.allowNamed !== false || kind !== "named");
+  const kinds = valueKindsFor(host, k, opts);
   let body: TemplateResult | typeof nothing = nothing;
   switch (k.kind) {
     case "literal":
@@ -2614,6 +2677,22 @@ function valueForm(host: EditorHost, value: Value, set: (v: Value) => void, opts
           <div class="hint">${k.stat === "top" || k.stat === "bottom"
             ? "One end of the plot's range: what the tallest or shortest mark means. On a Fixed scale that is the Min or Max the chart was given."
             : "Read from the readings the chart draws, after any trim. Decimals follow the chart's spread; set Decimals below to override, and Add unit to print the entity's unit after it."}</div>`;
+      break;
+    }
+    case "item":
+      body = itemFieldFields(host, k, (next) => setKind(next), key);
+      break;
+    case "listStat": {
+      const ctx = describeContext(host);
+      const lists = host.config.elements.filter((e): e is Extract<CElement, { kind: "list" }> => e.kind === "list");
+      body = lists.length === 0
+        ? html`<div class="hint warn">There is no list layer yet. Add one first, then this can print how many rows it drew.</div>`
+        : html`
+          ${selectField("List", k.layer, [["", "(choose)"], ...lists.map((l): [string, string] => [l.payload.id, layerTitle(l, ctx)])], (v) => setKind({ ...k, layer: v }))}
+          ${selectField("Number", k.stat, [...LIST_STATS], (v) => setKind({ ...k, stat: v }))}
+          <div class="hint">${k.stat === "total"
+            ? "How many items there were before the list took the first few. Use it for \"4 of 12\"."
+            : "How many rows the list actually drew. Use it for a header above the list, or a rule that shows an empty state when it is 0."}</div>`;
       break;
     }
   }
@@ -2683,6 +2762,14 @@ export function formatFits(kind: ValueKind | undefined): FormatFits {
     }
     case "time":
       return { numbers: kind.timeField !== "now", textCase: false, unit: false, seconds: false };
+    // An item field can be anything the source holds: a name, a temperature, a
+    // unix time. So every control fits, the way it does for a template.
+    case "item":
+      return { numbers: true, textCase: true, unit: true, seconds: true };
+    // A count is a whole number of things, so a unit and a text case have
+    // nothing to say about it.
+    case "listStat":
+      return { numbers: true, textCase: false, unit: false, seconds: false };
   }
 }
 
@@ -2710,6 +2797,10 @@ export function whyUnresolved(host: EditorHost, value: Value): string {
       return k.kind === "entityState" ? "No reading" : "Waiting for Home Assistant";
     case "chartStat":
       return k.layer === "" ? "Pick a chart" : "The chart has no readings yet";
+    case "item":
+      return k.field === "" ? "Pick a field" : "Only while a row is drawn";
+    case "listStat":
+      return k.layer === "" ? "Pick a list" : "That list has drawn nothing yet";
     case "named": {
       if (k.id === "") return "Pick a shared value";
       const id = k.id.toUpperCase();
@@ -2797,38 +2888,679 @@ function formatEditor(format: ValueFormat | undefined, set: (f: ValueFormat) => 
       [["", "Number"], ["relativeTime", "Short"], ["duration", "Duration"]],
       (v) => upd({ relativeTime: v === "relativeTime", duration: v === "duration" }),
       { titles: { "": "300", relativeTime: "One unit: 45s, 5m, 3h", duration: "Two units: 1h 23m, 5m 0s" } }) : nothing}
+    ${selectField("Timestamp", f.timestamp ?? "", [["", "None"], ...TIMESTAMP_STYLES], (v) =>
+      upd({ timestamp: (v || undefined) as ValueFormat["timestamp"] }))}
+    ${f.timestamp === undefined
+      ? nothing
+      : html`<div class="hint">Read as a moment in time (unix seconds) and printed by the watch's own clock and locale. A value that is not a number prints exactly as it did.</div>`}
   </details>`;
 }
 
-function aggregateEditor(host: EditorHost, a: AggregateSpec, set: (a: AggregateSpec) => void, key: string) {
+/**
+ * Which entities a scope covers: a filter, or a fixed list of them.
+ *
+ * Split out of `aggregateEditor` so a list's `entities` source is edited by
+ * exactly the same control. That is the whole reason the source carries the
+ * aggregate's own scope object: "3 lights on" and the list of those three
+ * lights are the same question, and two editors for it would be two answers.
+ */
+function scopeFields(host: EditorHost, scope: AggregateScope, set: (s: AggregateScope) => void, key: string): TemplateResult {
   const csv = (list: string[]) => list.join(", ");
   const parse = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
-  const scope = a.scope;
   return html`
-    ${selectField("Function", a.function, [["count", "Count"], ["sum", "Sum"], ["average", "Average"], ["min", "Min"], ["max", "Max"]], (v) => set({ ...a, function: v }))}
     ${segField("Over", scope.kind, [["filter", "Entities matching a filter"], ["entities", "A fixed list"]], (v) =>
-      set({ ...a, scope: v === "entities" ? { kind: "entities", entities: [] } : { kind: "filter", domains: [], areaIds: [], labelIds: [], floorIds: [] } }))}
+      set(v === "entities" ? { kind: "entities", entities: [] } : { kind: "filter", domains: [], areaIds: [], labelIds: [], floorIds: [] }))}
     ${scope.kind === "filter"
       ? html`<div class="grid2">
-          ${textField("Domains", csv(scope.domains), (v) => set({ ...a, scope: { ...scope, domains: parse(v) } }), { placeholder: "light, switch" })}
-          ${textField("Area ids", csv(scope.areaIds), (v) => set({ ...a, scope: { ...scope, areaIds: parse(v) } }))}
-          ${textField("Label ids", csv(scope.labelIds), (v) => set({ ...a, scope: { ...scope, labelIds: parse(v) } }))}
-          ${textField("Floor ids", csv(scope.floorIds), (v) => set({ ...a, scope: { ...scope, floorIds: parse(v) } }))}
+          ${textField("Domains", csv(scope.domains), (v) => set({ ...scope, domains: parse(v) }), { placeholder: "light, switch" })}
+          ${textField("Area ids", csv(scope.areaIds), (v) => set({ ...scope, areaIds: parse(v) }))}
+          ${textField("Label ids", csv(scope.labelIds), (v) => set({ ...scope, labelIds: parse(v) }))}
+          ${textField("Floor ids", csv(scope.floorIds), (v) => set({ ...scope, floorIds: parse(v) }))}
         </div>`
       : html`${scope.entities.map((e, i) => html`<div class="row-inline">
-            ${entityField(host, `Entity ${i + 1}`, e, (ref) => { const list = [...scope.entities]; list[i] = ref; set({ ...a, scope: { ...scope, entities: list } }); }, `${key}-agg-${i}`, { compact: true })}
-            <button class="icon" title="Remove" @click=${() => set({ ...a, scope: { ...scope, entities: scope.entities.filter((_, j) => j !== i) } })}>${uiIcon("close")}</button>
+            ${entityField(host, `Entity ${i + 1}`, e, (ref) => { const list = [...scope.entities]; list[i] = ref; set({ ...scope, entities: list }); }, `${key}-agg-${i}`, { compact: true })}
+            <button class="icon" title="Remove" @click=${() => set({ ...scope, entities: scope.entities.filter((_, j) => j !== i) })}>${uiIcon("close")}</button>
           </div>`)}
-          <button class="small" @click=${() => set({ ...a, scope: { ...scope, entities: [...scope.entities, { entityId: "", displayName: "", domain: "" }] } })}>Add entity</button>`}
-    ${selectField("Only count when", a.stateFilter?.kind ?? "", [["", "Any state"], ["isOn", "On"], ["isOff", "Off"], ["equals", "State equals"], ["notEquals", "State does not equal"]], (v) => {
+          <button class="small" @click=${() => set({ ...scope, entities: [...scope.entities, { entityId: "", displayName: "", domain: "" }] })}>Add entity</button>`}`;
+}
+
+/** The state filter of an aggregate or of a list's `entities` source, worded
+ * by what the caller does with it. */
+function stateFilterFields(
+  label: string,
+  filter: AggregateStateFilter | undefined,
+  set: (f: AggregateStateFilter | undefined) => void,
+): TemplateResult {
+  return html`
+    ${selectField(label, filter?.kind ?? "", [["", "Any state"], ["isOn", "On"], ["isOff", "Off"], ["equals", "State equals"], ["notEquals", "State does not equal"]], (v) => {
+      if (v === "") set(undefined);
+      else if (v === "equals" || v === "notEquals") set({ kind: v, value: filter && "value" in filter ? filter.value : "" });
+      else set({ kind: v as "isOn" | "isOff" });
+    })}
+    ${filter && "value" in filter ? textField("State", filter.value, (v) => set({ kind: filter.kind as "equals", value: v })) : nothing}`;
+}
+
+function aggregateEditor(host: EditorHost, a: AggregateSpec, set: (a: AggregateSpec) => void, key: string) {
+  return html`
+    ${selectField("Function", a.function, [["count", "Count"], ["sum", "Sum"], ["average", "Average"], ["min", "Min"], ["max", "Max"]], (v) => set({ ...a, function: v }))}
+    ${scopeFields(host, a.scope, (scope) => set({ ...a, scope }), key)}
+    ${stateFilterFields("Only count when", a.stateFilter, (f) => {
       const next = { ...a };
-      if (v === "") delete next.stateFilter;
-      else if (v === "equals" || v === "notEquals") next.stateFilter = { kind: v, value: a.stateFilter && "value" in a.stateFilter ? a.stateFilter.value : "" };
-      else next.stateFilter = { kind: v as "isOn" | "isOff" };
+      if (f === undefined) delete next.stateFilter; else next.stateFilter = f;
       set(next);
     })}
-    ${a.stateFilter && "value" in a.stateFilter ? textField("State", a.stateFilter.value, (v) => set({ ...a, stateFilter: { kind: a.stateFilter!.kind as "equals", value: v } })) : nothing}
     ${a.function === "count" ? nothing : textField("Attribute (blank = state)", a.attribute ?? "", (v) => { const next = { ...a }; if (v) next.attribute = v; else delete next.attribute; set(next); })}`;
+}
+
+// ── lists ─────────────────────────────────────────────────────────────────
+// A list is three cards: where the items come from, how the cells are laid out
+// on the face, and the row that is drawn once per item. The row is designed on
+// the canvas rather than in the inspector, because a row is a picture and a
+// form is not; "Design the row" swaps the preview for one cell of the list,
+// scaled up, and everything that already drags and resizes a layer works there
+// unchanged.
+
+/** The source of the list whose row is being designed, or undefined outside
+ * that mode. */
+function rowEditSource(host: EditorHost): ListSource | undefined {
+  const id = host.rowEditListId;
+  if (id === undefined) return undefined;
+  const el = host.config.elements.find((e) => e.kind === "list" && e.payload.id === id);
+  return el?.kind === "list" ? el.payload.source : undefined;
+}
+
+/** The select's stand-in for "a field the picker does not list". */
+const ITEM_FIELD_OTHER = "__other";
+
+/**
+ * Which field of the item this value reads.
+ *
+ * A picker of the source's own fields, because a name is the one thing a row
+ * layer nearly always wants and typing `entityId` from memory is how a row
+ * ends up drawing `--`. The free box under it is for the two cases the panel
+ * cannot know: an attribute of an entities source, and whatever keys an
+ * attribute or a template happens to yield.
+ */
+function itemFieldFields(
+  host: EditorHost,
+  k: { kind: "item"; field: string },
+  set: (next: ValueKind) => void,
+  _key: string,
+): TemplateResult {
+  const source = rowEditSource(host);
+  const fields = source ? listItemFields(source) : [];
+  const listed = fields.some(([f]) => f === k.field);
+  const free = k.field !== "" && !listed;
+  const options: [string, string][] = [
+    ["", "(choose)"],
+    ...fields.map(([f, label]): [string, string] => [f, label]),
+    [ITEM_FIELD_OTHER, "Something else…"],
+  ];
+  const attrs = source?.kind === "entities";
+  return html`
+    ${source === undefined
+      ? html`<div class="hint warn">An item field only reads something while a row is being drawn. Open the list's Row card and click Design the row.</div>`
+      : nothing}
+    ${selectField("Field", free ? ITEM_FIELD_OTHER : k.field, options, (v) => {
+      if (v === ITEM_FIELD_OTHER) set({ ...k, field: attrs ? "attr." : "" });
+      else set({ ...k, field: v });
+    })}
+    ${free || (attrs && k.field.startsWith("attr."))
+      ? html`${textField(attrs ? "Attribute" : "Field name", k.field, (v) => set({ ...k, field: v.trim() }), { mono: true, placeholder: attrs ? "attr.brightness" : "title" })}
+        ${attrs ? html`<div class="hint">Write it as <code>attr.</code> and the attribute's name. The list asks Home Assistant for exactly the attributes its row reads, so adding one here adds it to the fetch.</div>` : nothing}`
+      : nothing}
+    <div class="hint">An unknown field draws <code>--</code>. A time field takes a Timestamp style under Format, and a count of seconds takes Seconds as.</div>`;
+}
+
+/** Every value a row layer holds, for the attribute sweep. Row templates may
+ * only hold text, icons, shapes, gauges, pictures and taps, so this is the
+ * whole surface. */
+function rowLayerValues(el: CElement): Value[] {
+  const out: Value[] = [];
+  const push = (v: Value | undefined) => { if (v) out.push(v); };
+  switch (el.kind) {
+    case "text":
+      push(el.payload.value);
+      for (const part of el.payload.parts ?? []) push(part.value);
+      break;
+    case "icon":
+      push(el.payload.symbol);
+      push(el.payload.level?.value);
+      push(el.payload.level?.minSource);
+      push(el.payload.level?.maxSource);
+      break;
+    case "shape":
+      push(el.payload.level?.value);
+      push(el.payload.level?.minSource);
+      push(el.payload.level?.maxSource);
+      break;
+    case "gauge":
+      push(el.payload.value);
+      push(el.payload.total);
+      push(el.payload.minSource);
+      push(el.payload.maxSource);
+      break;
+    default:
+      break;
+  }
+  for (const rule of el.payload.rules) {
+    for (const c of rule.cases) {
+      for (const t of c.when.tests) {
+        push(t.value);
+        push(t.comparison && "value" in t.comparison ? t.comparison.value : undefined);
+        push(t.comparison && "upper" in t.comparison ? t.comparison.upper : undefined);
+      }
+      for (const ch of c.then) push(ch.value);
+    }
+    for (const ch of rule.otherwise ?? []) push(ch.value);
+  }
+  return out;
+}
+
+/** `{item.attr.<name>}` wherever a row tap writes one. */
+const TAP_ATTR_RE = /\{item\.attr\.([^{}]+)\}/g;
+
+/**
+ * The attribute names a row reads, in the order they are met.
+ *
+ * `source.attributes` is not something anybody should have to keep in step by
+ * hand: it exists so the Jinja dict carries the attributes the row uses and
+ * nothing else, which is a fact about the row. So it is derived here and
+ * written on every change to the row.
+ */
+export function listAttributeNames(template: readonly CElement[]): string[] {
+  const out: string[] = [];
+  const take = (name: string) => {
+    const trimmed = name.trim();
+    if (trimmed !== "" && !out.includes(trimmed)) out.push(trimmed);
+  };
+  for (const el of template) {
+    for (const v of rowLayerValues(el)) {
+      if (v.kind.kind === "item" && v.kind.field.startsWith("attr.")) take(v.kind.field.slice(5));
+    }
+    if (el.kind !== "tap") continue;
+    const action = el.payload.action;
+    const texts = [
+      "entityId" in action ? action.entityId : "",
+      "displayName" in action ? action.displayName : "",
+      action.type === "callService" ? action.serviceDataJSON ?? "" : "",
+      action.type === "callService" ? action.target?.entityId ?? "" : "",
+    ];
+    for (const text of texts) for (const m of text.matchAll(TAP_ATTR_RE)) take(m[1] ?? "");
+  }
+  return out;
+}
+
+/** Put `source.attributes` back in step with the row. Cheap, and run after
+ * every row edit, so the two can never drift. */
+export function syncListAttributes(list: ListElement): void {
+  if (list.source.kind !== "entities") return;
+  const wanted = listAttributeNames(list.template);
+  const same = wanted.length === list.source.attributes.length
+    && wanted.every((name, i) => list.source.kind === "entities" && list.source.attributes[i] === name);
+  if (!same) list.source = { ...list.source, attributes: wanted };
+}
+
+/** What a source turns into when the kind picker changes: the entity carries
+ * over wherever both sides have one, so switching between a calendar and a
+ * to-do list never asks for the same pick twice. */
+export function switchListSource(current: ListSource, kind: ListSource["kind"]): ListSource {
+  const refs: EntityRef[] = current.kind === "calendar" || current.kind === "todo"
+    ? current.entities.filter((e) => e.entityId !== "")
+    : "entityId" in current && current.entityId !== ""
+      ? [{ entityId: current.entityId, displayName: current.displayName, domain: current.domain }]
+      : [];
+  const one: EntityRef = refs[0] ?? { entityId: "", displayName: "", domain: "" };
+  switch (kind) {
+    case "entities":
+      return current.kind === "entities" ? current : {
+        kind: "entities",
+        scope: refs.length > 0 ? { kind: "entities", entities: refs } : { kind: "filter", domains: [], areaIds: [], labelIds: [], floorIds: [] },
+        sort: "name",
+        descending: false,
+        attributes: [],
+      };
+    case "attribute":
+      return { kind: "attribute", ...one, attribute: current.kind === "attribute" ? current.attribute : "" };
+    case "template":
+      return { kind: "template", value: current.kind === "template" ? current.value : "" };
+    case "calendar":
+      return { kind: "calendar", entities: refs.slice(0, LIST_MAX_SOURCE_ENTITIES), hours: LIST_DEFAULT_CALENDAR_HOURS };
+    case "todo":
+      return { kind: "todo", entities: refs.slice(0, LIST_MAX_SOURCE_ENTITIES), status: "open", sort: "list" };
+    case "forecast":
+      return { kind: "forecast", ...one, type: "hourly" };
+  }
+}
+
+/** A short standard vocabulary per domain, offered only when Home Assistant
+ * has nothing to say: a scope whose domain holds no entity yet, or a panel
+ * opened before the states arrive. What the home really reports always wins. */
+const DEVICE_CLASS_SEEDS: Record<string, readonly string[]> = {
+  sensor: ["battery", "energy", "humidity", "illuminance", "power", "pressure", "signal_strength", "temperature"],
+  binary_sensor: ["battery", "connectivity", "door", "gas", "moisture", "motion", "occupancy", "problem", "smoke", "window"],
+  cover: ["door", "garage", "shade", "window"],
+};
+
+/** The domains a scope covers, as plain words: the filter's own list, or the
+ * domain of each entity a fixed list names. Empty means every domain. */
+function scopeDomains(scope: AggregateScope): string[] {
+  const names = scope.kind === "filter"
+    ? scope.domains
+    : scope.entities.map((e) => e.entityId.split(".")[0] ?? "");
+  return names.map((d) => d.trim().toLowerCase()).filter((d) => d !== "");
+}
+
+/**
+ * The device classes the Device class box offers under a scope.
+ *
+ * Whatever this home actually reports on the entities that scope could cover,
+ * so the list is the author's own vocabulary rather than a guess. A scope that
+ * matches nothing yet falls back to the standard names for its domains, and
+ * the box stays free text either way: a class nobody has reported can still be
+ * typed.
+ */
+export function scopeDeviceClasses(states: Record<string, HassEntityState>, scope: AggregateScope): string[] {
+  const domains = scopeDomains(scope);
+  const live = new Set<string>();
+  for (const [entityId, state] of Object.entries(states ?? {})) {
+    const domain = entityId.split(".")[0] ?? "";
+    if (domains.length > 0 && !domains.includes(domain)) continue;
+    const found = state?.attributes?.device_class;
+    if (typeof found === "string" && found.trim() !== "") live.add(found.trim());
+  }
+  if (live.size > 0) return [...live].sort();
+  const seeded = new Set<string>();
+  for (const domain of domains.length > 0 ? domains : Object.keys(DEVICE_CLASS_SEEDS)) {
+    for (const name of DEVICE_CLASS_SEEDS[domain] ?? []) seeded.add(name);
+  }
+  return [...seeded].sort();
+}
+
+/** What the Device class box writes. Blank means any, so the key goes away
+ * rather than sitting on the wire as an empty string nothing filters on. */
+export function withListDeviceClass(source: Extract<ListSource, { kind: "entities" }>, typed: string): ListSource {
+  const next = { ...source };
+  const value = typed.trim();
+  if (value === "") delete next.deviceClass; else next.deviceClass = value;
+  return next;
+}
+
+/** A list of entity pickers with an Add button, capped. Calendars and to-do
+ * lists are merged into one list, and the server takes at most five. */
+function refListField(
+  host: EditorHost,
+  label: string,
+  refs: readonly EntityRef[],
+  set: (next: EntityRef[]) => void,
+  key: string,
+  domain: string,
+): TemplateResult {
+  const full = refs.length >= LIST_MAX_SOURCE_ENTITIES;
+  return html`
+    ${refs.map((e, i) => html`<div class="row-inline">
+      ${entityField(host, `${label} ${i + 1}`, e, (ref) => { const list = [...refs]; list[i] = ref; set(list); }, `${key}-ref-${i}`, { compact: true, domain })}
+      <button class="icon" title="Remove" @click=${() => set(refs.filter((_, j) => j !== i))}>${uiIcon("close")}</button>
+    </div>`)}
+    <button class="small" ?disabled=${full} @click=${() => set([...refs, { entityId: "", displayName: "", domain: "" }])}>Add ${label.toLowerCase()}</button>
+    ${refs.length === 0 ? html`<div class="hint warn">Nothing is picked yet, so this list has nothing to draw.</div>` : nothing}
+    ${full ? html`<div class="hint">Five is the most one list may merge.</div>` : nothing}`;
+}
+
+/** The Source card of a list: which items, and everything the chosen kind of
+ * source needs to name them. */
+function listSourceFields(
+  host: EditorHost,
+  l: ListElement,
+  set: (m: (p: ListElement) => void, k?: string) => void,
+  key: string,
+): TemplateResult {
+  const source = l.source;
+  const setSource = (next: ListSource, k?: string) => set((p) => { p.source = next; syncListAttributes(p); }, k);
+  let body: TemplateResult | typeof nothing = nothing;
+  switch (source.kind) {
+    case "entities": {
+      const attrs = source.attributes;
+      const classes = scopeDeviceClasses(host.hass.states, source.scope);
+      const classListId = `wa-list-classes-${key.replace(/[^a-z0-9]/gi, "")}`;
+      body = html`
+        ${scopeFields(host, source.scope, (scope) => setSource({ ...source, scope }), `${key}-scope`)}
+        ${textField("Device class", source.deviceClass ?? "",
+          (v) => setSource(withListDeviceClass(source, v), "list-device-class"),
+          { list: classListId, placeholder: "any", mono: true, def: "" })}
+        <datalist id=${classListId}>${classes.map((c) => html`<option value=${c}></option>`)}</datalist>
+        <div class="hint">Keeps only the entities whose device class is exactly this, so a scope of sensors becomes your battery sensors. Leave it empty for any.</div>
+        ${stateFilterFields("Only when", source.stateFilter, (f) => {
+          const next = { ...source };
+          if (f === undefined) delete next.stateFilter; else next.stateFilter = f;
+          setSource(next);
+        })}
+        ${segPairField(
+          { label: "Sort by", value: source.sort, options: [...LIST_SORTS], def: "name", set: (v) => setSource({ ...source, sort: v }) },
+          { label: "Order", value: source.descending ? "down" : "up", options: [["up", "A to Z"], ["down", "Z to A"]], def: "up",
+            set: (v) => setSource({ ...source, descending: v === "down" }) })}
+        <div class="hint">Entities that are unavailable are left out, unless Only when asks for exactly that state. Sorting by state compares numbers as numbers, and puts the text ones after them.</div>
+        ${attrs.length > 0
+          ? html`<div class="field readout"><span>Attributes</span><span class="readout-v mono">${attrs.join(", ")}</span></div>
+            <div class="hint">Asked for because the row reads them. Remove the layer that reads one and it stops being fetched.</div>`
+          : nothing}`;
+      break;
+    }
+    case "attribute": {
+      const all = Object.entries(host.hass.states[source.entityId]?.attributes ?? {});
+      const listy = all.filter(([, v]) => Array.isArray(v)).map(([name]) => name).sort();
+      const listId = `wa-list-attrs-${key.replace(/[^a-z0-9]/gi, "")}`;
+      body = html`
+        ${entityField(host, "Entity", source, (ref) => setSource({ ...source, ...ref }), `${key}-attr-entity`)}
+        ${textField("Attribute", source.attribute, (v) => setSource({ ...source, attribute: v }, "list-attr"), { list: listId, mono: true })}
+        <datalist id=${listId}>${listy.map((a) => html`<option value=${a}></option>`)}</datalist>
+        <div class="hint">An attribute that holds a list: a group's members, a select's options, a media player's sources, or any sensor that carries an array. Each entry becomes a row.</div>
+        ${source.entityId !== "" && listy.length === 0
+          ? html`<div class="hint warn">None of that entity's attributes holds a list right now. The name can still be typed above.</div>`
+          : nothing}`;
+      break;
+    }
+    case "template":
+      body = html`
+        ${textArea("Template", source.value, (v) => setSource({ ...source, value: v }, "list-template"), 4)}
+        <div class="hint">Rendered by Home Assistant, the same way a template value is. It should yield a JSON array: a list of objects becomes a row each, with one field per key, and a list of plain values gives each row one field called <code>value</code>.</div>`;
+      break;
+    case "calendar":
+      body = html`
+        ${refListField(host, "Calendar", source.entities, (entities) => setSource({ ...source, entities }), `${key}-cal`, "calendar")}
+        ${numberField("Look ahead", source.hours, (v) => setSource({ ...source, hours: clampCalendarHours(v) }, "list-hours"),
+          { step: 1, min: LIST_MIN_CALENDAR_HOURS, max: LIST_MAX_CALENDAR_HOURS, def: LIST_DEFAULT_CALENDAR_HOURS, unit: "h" })}
+        <div class="hint">Events from now to that many hours ahead, merged across the calendars and sorted by when they start. An event already under way is included.</div>`;
+      break;
+    case "todo":
+      body = html`
+        ${refListField(host, "List", source.entities, (entities) => setSource({ ...source, entities }), `${key}-todo`, "todo")}
+        ${segPairField(
+          { label: "Show", value: source.status, options: [...TODO_STATUSES], def: "open", set: (v) => setSource({ ...source, status: v }) },
+          { label: "Sort by", value: source.sort, options: [...TODO_SORTS], def: "list", set: (v) => setSource({ ...source, sort: v }) })}`;
+      break;
+    case "forecast":
+      body = html`
+        ${entityField(host, "Weather", source, (ref) => setSource({ ...source, ...ref }), `${key}-fc-entity`, { domain: "weather" })}
+        ${segField("Forecast", source.type, [...FORECAST_TYPES], (v) => setSource({ ...source, type: v }), { def: "hourly" })}
+        <div class="hint">Whatever that weather entity supports. An entity with no forecast of the chosen kind draws nothing.</div>`;
+      break;
+  }
+  return html`
+    ${selectField("Items", source.kind, [...LIST_SOURCE_KINDS], (v) => setSource(switchListSource(source, v), "list-kind"))}
+    ${body}`;
+}
+
+/** How many points tall one cell is on the shape being edited. */
+export function listCellHeightPoints(l: ListElement, frame: NormalizedFrame, family: FamilyKind): number {
+  const box = DESIGN_BOX[family === "inline" ? "rectangular" : family];
+  const cell = listCellFrames({ ...l, frame }, box)[0];
+  return cell === undefined ? 0 : cell.height * Math.abs(frame.height) * box.height;
+}
+
+/** Under this a cell has no room for a line of text, which is what nearly
+ * every row starts with. */
+export const LIST_MIN_CELL_POINTS = 10;
+
+/** The Layout card of a list: how many cells, which way they run, and the gap
+ * between them. */
+function listLayoutFields(
+  host: EditorHost,
+  el: Extract<CElement, { kind: "list" }>,
+  family: FamilyKind,
+  set: (m: (p: ListElement) => void, k?: string) => void,
+): TemplateResult {
+  const l = el.payload;
+  const frame = effectivePlacement(host.config, family, el).frame;
+  const grid = listGrid(l);
+  const tall = listCellHeightPoints(l, frame, family);
+  const down = l.direction === "down";
+  return html`
+    ${numberField("Cells", l.rows, (v) => set((p) => { p.rows = clampListRows(v); syncListAttributes(p); }, "list-rows"),
+      { step: 1, min: LIST_MIN_ROWS, max: LIST_MAX_ROWS, def: LIST_DEFAULT_ROWS })}
+    ${segField("Direction", l.direction, [...LIST_DIRECTIONS], (v) => set((p) => { p.direction = v; }), { def: "down" })}
+    ${down
+      ? numberField("Columns", l.columns, (v) => set((p) => { p.columns = clampListColumns(v); }, "list-cols"),
+          { step: 1, min: LIST_MIN_COLUMNS, max: LIST_MAX_COLUMNS, def: LIST_DEFAULT_COLUMNS })
+      : nothing}
+    ${numberField("Gap", l.gap, (v) => set((p) => { p.gap = clampListGap(v); }, "list-gap"),
+      { step: 0.5, min: 0, max: LIST_MAX_GAP, def: LIST_DEFAULT_GAP, unit: "pt" })}
+    <div class="field readout"><span>Grid</span><span class="readout-v">${down
+      ? `${grid.lines} ${grid.lines === 1 ? "line" : "lines"} of ${grid.columns}`
+      : `${grid.columns} across`} · ${tall.toFixed(1)} pt tall</span></div>
+    ${tall > 0 && tall < LIST_MIN_CELL_POINTS
+      ? html`<div class="hint warn">A cell is ${tall.toFixed(1)} points tall on this shape, which is too short for a line of text. Draw fewer cells, or make the list taller.</div>`
+      : nothing}
+    <div class="hint">The frame is split into this many cells whatever the item count, so a short list leaves the design where you put it rather than stretching two items over four rows.</div>`;
+}
+
+/** The row kinds the Add buttons offer, in the order they are offered. A row
+ * holds no list, no history layer and no chart helper: those draw in a box of
+ * their own that a cell cannot give them. */
+export const LIST_ROW_KINDS: readonly CElement["kind"][] = ["text", "icon", "shape", "gauge", "image", "tap"];
+
+/**
+ * The Row card: the layers of the row, the buttons that add one, and the way
+ * into designing it on the canvas.
+ *
+ * The rows here are a list of their own rather than `layerRowList`, because
+ * that one reaches into `cfg.elements` for the layer it opens and a row layer
+ * is not there. What it offers instead is what a row needs: rename, hide,
+ * reorder, remove, and select, which in row mode puts the layer's ordinary
+ * cards in the inspector.
+ */
+function listRowCard(
+  host: EditorHost,
+  el: Extract<CElement, { kind: "list" }>,
+  set: (m: (p: ListElement) => void, k?: string) => void,
+): TemplateResult {
+  const l = el.payload;
+  const ctx = describeContext(host);
+  const designing = host.rowEditListId === l.id;
+  const full = l.template.length >= LIST_MAX_TEMPLATE;
+  const move = (i: number, by: number) => set((p) => { moveItem(p.template, i, i + by); });
+  return html`
+    <div class="chips">
+      <button class="small ${designing ? "on" : ""}" title=${designing
+        ? "Go back to the whole face"
+        : "Fill the preview with one cell of this list, so the row can be dragged and sized like any other layer"}
+        @click=${() => host.setRowEdit(designing ? undefined : l.id)}>${designing ? "Done designing" : "Design the row"}</button>
+    </div>
+    ${designing
+      ? html`<div class="hint keep">The preview is one cell of this list, scaled up. Drag and resize the row's layers there. Values can read Item field, and a tap can aim at the item it is drawn for.</div>`
+      : nothing}
+    ${l.template.length === 0
+      ? html`<div class="hint warn">The row is empty, so the list draws nothing. Add a layer below.</div>`
+      : html`<div class="chart-numbers">${repeat(l.template, (row) => row.payload.id, (row, i) => html`
+        <div class="num-row">
+          <button class="num-pick" title="Show this layer's settings"
+            @click=${() => { host.setRowEdit(l.id); host.selectLayer(row.payload.id); }}>
+            <span class="num-lead">${uiIcon(rowKindIcon(row.kind))}</span>
+            <span class="num-text"><span class="num-title">${layerTitle(row, ctx)}</span><span class="num-kind">${KIND_LABEL[row.kind]}</span></span>
+          </button>
+          <button class="icon" title=${row.payload.isHidden ? "Show this layer" : "Hide this layer"}
+            aria-label=${row.payload.isHidden ? "Show this layer" : "Hide this layer"}
+            @click=${() => set((p) => { const t = p.template[i]; if (t) t.payload.isHidden = !t.payload.isHidden; })}
+            >${uiIcon(row.payload.isHidden ? "hide" : "show")}</button>
+          <button class="icon" title="Move up" aria-label="Move up" ?disabled=${i === 0} @click=${() => move(i, -1)}>${uiIcon("up")}</button>
+          <button class="icon" title="Move down" aria-label="Move down" ?disabled=${i === l.template.length - 1} @click=${() => move(i, 1)}>${uiIcon("down")}</button>
+          <button class="icon danger" title="Remove this layer" aria-label="Remove this layer"
+            @click=${() => set((p) => { p.template.splice(i, 1); syncListAttributes(p); })}>${uiIcon("delete")}</button>
+        </div>`)}</div>`}
+    <div class="chips">
+      ${LIST_ROW_KINDS.map((kind) => html`<button class="small" ?disabled=${full}
+        title=${`Add a ${KIND_LABEL[kind].toLowerCase()} to the row`}
+        @click=${() => {
+          const row = newRowLayer(kind);
+          set((p) => { if (p.template.length < LIST_MAX_TEMPLATE) p.template.push(row); });
+          host.setRowEdit(l.id);
+          host.selectLayer(row.payload.id);
+        }}>${KIND_LABEL[kind]}</button>`)}
+    </div>
+    <div class="hint">${full
+      ? `Eight layers is the most a row may hold.`
+      : `${l.template.length} of ${LIST_MAX_TEMPLATE} layers. A row holds text, icons, shapes, gauges, uploaded pictures and taps.`}</div>`;
+}
+
+/** Which glyph stands for a row layer's kind in the row list. */
+function rowKindIcon(kind: CElement["kind"]): UiIconName {
+  return kind === "image" ? "image" : kind === "tap" ? "tap" : kind === "gauge" ? "gauge" : kind === "icon" ? "icon" : kind === "shape" ? "shape" : "text";
+}
+
+/**
+ * A fresh layer for a row.
+ *
+ * Framed to the whole cell rather than to the middle of it: a cell is already
+ * small, and a new layer that fills it is a thing the author can see and then
+ * pull in, where one sized for a face would arrive as a speck. A picture is
+ * inline only, because the row has no per-row fetch to hang a camera off.
+ */
+export function newRowLayer(kind: CElement["kind"]): CElement {
+  const el = newElement(kind);
+  el.payload.frame = { x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 };
+  if (el.kind === "text") {
+    el.payload.value = { kind: { kind: "item", field: "" } };
+    el.payload.fontSize = 11;
+  }
+  if (el.kind === "icon") {
+    el.payload.symbol = { kind: { kind: "item", field: "icon" } };
+    el.payload.size = 11;
+    el.payload.frame = { x: 0.3, y: 0.1, width: 0.4, height: 0.8, rotationDegrees: 0 };
+  }
+  if (el.kind === "image") el.payload.source = "inline";
+  if (el.kind === "gauge") el.payload.value = { kind: { kind: "item", field: "" } };
+  return el;
+}
+
+/**
+ * The document the canvas draws while a row is being designed.
+ *
+ * One cell, scaled up to the whole face: the row's layers become the layers of
+ * a throwaway document whose shape is the shape being edited, so every frame
+ * in it is already a fraction of the cell and a drag measured against the
+ * canvas writes exactly the fraction the cell wants. Nothing here is ever
+ * saved or compiled. Edits go to the real row through `elementIn`, which finds
+ * a layer inside a list's template as readily as one of the document's own.
+ *
+ * `sample` is the item the row is drawn for, live or seeded. Its fields are
+ * pasted into the copies in place of the `item` values they read, because a
+ * value only resolves to an item field while the resolver is drawing a cell
+ * and here there is no cell: the stage is one item, so the item is what the
+ * stage shows.
+ */
+export function rowStageConfig(
+  cfg: CustomComplicationConfig,
+  listId: string,
+  family: FamilyKind,
+  sample: ReadonlyMap<string, string> | undefined,
+): CustomComplicationConfig | undefined {
+  const list = cfg.elements.find((e) => e.kind === "list" && e.payload.id === listId);
+  if (list?.kind !== "list") return undefined;
+  const rows: CElement[] = structuredClone(list.payload.template) as CElement[];
+  if (sample !== undefined) for (const row of rows) fillItemValues(row, sample);
+  const ids = new Set(rows.map((r) => r.payload.id));
+  const stage: CustomComplicationConfig = {
+    ...cfg,
+    elements: rows,
+    groups: [],
+    perFamily: {},
+  };
+  // Only the row's own placements travel. The document's layers are not on the
+  // stage, and a placement for one of them would make `elementsFor` reach for
+  // a layer that is not there.
+  for (const f of DRAWABLE_FAMILIES) {
+    const layout = cfg.perFamily[f];
+    if (!layout) continue;
+    const placements: Record<string, Placement> = {};
+    for (const id of ids) {
+      const p = layout.placements[id];
+      if (p) placements[id] = structuredClone(p);
+    }
+    stage.perFamily[f] = { ...layout, placements, rules: [] };
+  }
+  // Every row layer belongs to the shape on screen, whatever the document's
+  // own layout says, so a row with no placement anywhere still draws.
+  const here = stage.perFamily[family as (typeof DRAWABLE_FAMILIES)[number]];
+  if (here) {
+    for (const row of rows) {
+      if (here.placements[row.payload.id]) continue;
+      here.placements[row.payload.id] = { frame: { ...row.payload.frame }, isHidden: row.payload.isHidden };
+    }
+  }
+  return stage;
+}
+
+/** Paste one item's fields into the copies of a row layer's values. Only the
+ * stage does this; the face resolves them properly, once per cell. */
+function fillItemValues(el: CElement, sample: ReadonlyMap<string, string>): void {
+  for (const v of rowLayerValues(el)) {
+    if (v.kind.kind !== "item") continue;
+    v.kind = { kind: "literal", value: sample.get(v.kind.field) ?? "--" };
+  }
+}
+
+/**
+ * The item placeholders a row tap may aim at, as buttons.
+ *
+ * A row tap targets the item its row was drawn for, not an entity, and
+ * `{item.entityId}` is not something anyone should have to remember the
+ * spelling of. Drawn only while a row is being designed: outside one the
+ * placeholder would never be filled in and the tap would simply not fire.
+ */
+function itemPlaceholders(host: EditorHost, insert: (text: string) => void, what: string): TemplateResult | typeof nothing {
+  const source = rowEditSource(host);
+  if (source === undefined) return nothing;
+  const fields = listItemFields(source).filter(([f]) => f !== "index" && f !== "icon");
+  if (fields.length === 0) return nothing;
+  return html`
+    <div class="chips">
+      ${fields.map(([field, label]) => html`<button class="small" title=${`Put {item.${field}} into ${what}`}
+        @click=${() => insert(`{item.${field}}`)}>${label}</button>`)}
+    </div>
+    <div class="hint">Each one is filled in per row when the tap fires. A placeholder naming a field the item does not have leaves that row's tap doing nothing.</div>`;
+}
+
+/** The words an empty state says, by what the list is of. */
+function emptyStateText(source: ListSource): string {
+  switch (source.kind) {
+    case "calendar": return "No events";
+    case "todo": return "All done";
+    case "forecast": return "No forecast";
+    default: return "Nothing to show";
+  }
+}
+
+/**
+ * Add the text that shows when a list draws nothing.
+ *
+ * A layer of the document rather than of the row: a row is drawn once per
+ * item, so a row layer cannot say "there are no items". It sits over the
+ * list's own frame, hidden, with one rule that shows it when the list's count
+ * is 0, which is exactly the shape the States table draws.
+ */
+export function addEmptyState(cfg: CustomComplicationConfig, listId: string, family: FamilyKind): string | undefined {
+  const list = cfg.elements.find((e) => e.kind === "list" && e.payload.id === listId);
+  if (list?.kind !== "list") return undefined;
+  const frame = { ...effectivePlacement(cfg, family, list).frame };
+  const el = newElement("text");
+  el.payload.frame = frame;
+  el.payload.isHidden = true;
+  if (el.kind === "text") {
+    el.payload.value = literal(emptyStateText(list.payload.source));
+    el.payload.fontSize = 12;
+    el.payload.colorSlot.baseColorHex = "#8E8E93";
+  }
+  el.payload.name = "Empty state";
+  const rule = newRule();
+  const only = rule.cases[0]!;
+  const test = only.when.tests[0]!;
+  test.value = { kind: { kind: "listStat", layer: listId, stat: "count" } };
+  test.comparison = { kind: "equals", value: literal("0") };
+  only.then = [newStyleChange("show")];
+  el.payload.rules = [rule];
+  cfg.elements.push(el);
+  setPlacement(cfg, family, el.payload.id, { frame, isHidden: true });
+  return el.payload.id;
 }
 
 // ── General ───────────────────────────────────────────────────────────────
@@ -2924,11 +3656,21 @@ function callServiceFields(
       if (ref.entityId === "") delete next.target; else next.target = ref;
       set(next, "svc-entity");
     }, `${key}-svc-entity`)}
+    ${itemPlaceholders(host, (text) => {
+      const next: CallServiceAction = { ...action };
+      next.target = { entityId: text, displayName: "", domain: "" };
+      set(next, "svc-entity");
+    }, "the target entity")}
     ${textArea("Data (JSON)", data, (v) => {
       const next: CallServiceAction = { ...action };
       if (v.trim() === "") delete next.serviceDataJSON; else next.serviceDataJSON = v;
       set(next, "svc-data");
     }, 3)}
+    ${itemPlaceholders(host, (text) => {
+      const next: CallServiceAction = { ...action };
+      next.serviceDataJSON = `${data}${text}`;
+      set(next, "svc-data");
+    }, "the data")}
     ${dataOK
       ? html`<div class="hint">Leave the data empty for a service that needs nothing else. Anything here must be a JSON object, like <code>{"brightness_pct": 50}</code>. Templates are not run.</div>`
       : html`<div class="hint warn">That is not a JSON object, so the watch will refuse the tap. It has to look like <code>{"brightness_pct": 50}</code>.</div>`}`;
@@ -3079,9 +3821,38 @@ export function effectivePlacement(cfg: CustomComplicationConfig, family: Family
   return { frame: el.payload.frame, isHidden: el.payload.isHidden, fromPlacement: false };
 }
 
+/**
+ * One layer of a document by id, whether it is a layer of the document or a
+ * layer of a list's row.
+ *
+ * Row layers are not in `cfg.elements`: they live inside their list's
+ * `template`. They take part in the same per-shape `placements` map under their
+ * own ids all the same, so every editor path that finds a layer to write to
+ * has to be able to find one of those too. Top level first, because that is
+ * what nearly every id is.
+ */
+export function elementIn(cfg: CustomComplicationConfig, id: string): CElement | undefined {
+  for (const el of cfg.elements) {
+    if (el.payload.id === id) return el;
+    if (el.kind !== "list") continue;
+    const row = el.payload.template.find((r) => r.payload.id === id);
+    if (row) return row;
+  }
+  return undefined;
+}
+
+/** The list a row layer belongs to, or undefined for a layer of the document. */
+export function listOwning(cfg: CustomComplicationConfig, rowId: string): Extract<CElement, { kind: "list" }> | undefined {
+  for (const el of cfg.elements) {
+    if (el.kind !== "list") continue;
+    if (el.payload.template.some((r) => r.payload.id === rowId)) return el;
+  }
+  return undefined;
+}
+
 /** Write a per-family placement for a layer, creating it from the effective values. */
 export function setPlacement(cfg: CustomComplicationConfig, family: FamilyKind, id: string, patch: Partial<Placement>, clearSize = false): void {
-  const el = cfg.elements.find((e) => e.payload.id === id);
+  const el = elementIn(cfg, id);
   if (!el) return;
   let layout = cfg.perFamily[family];
   if (!layout) {
@@ -3202,7 +3973,7 @@ export function flagAcross(values: readonly boolean[]): PickedFlag {
  * comes out of its own table. */
 export function elementColour(el: CElement): string | undefined {
   return el.kind === "image" || el.kind === "tap" || el.kind === "timeline" || el.kind === "chartTimes"
-    || el.kind === "chartDots" || el.kind === "chartGrid" || el.kind === "imageTime"
+    || el.kind === "chartDots" || el.kind === "chartGrid" || el.kind === "imageTime" || el.kind === "list"
     ? undefined
     : el.payload.colorSlot.baseColorHex;
 }
@@ -3322,6 +4093,10 @@ function layerShowsEntity(el: CElement): boolean {
   // this same entity, so a field above it would only repeat Entity 1.
   if (el.kind === "timeline" && el.payload.aggregate !== undefined) return false;
   if (el.kind === "chartTimes" || el.kind === "chartDots" || el.kind === "chartGrid" || el.kind === "imageTime") return false;
+  // A list names its entities in its Source card, where the kind of source
+  // decides how many there are and which domains they may come from. One
+  // field above that would ask the same question in a way the source cannot use.
+  if (el.kind === "list") return false;
   return !(el.kind === "image" && el.payload.source === "inline");
 }
 
@@ -3742,6 +4517,10 @@ export function contentSummary(host: EditorHost, el: CElement): string {
         || (el.payload.source === "camera" ? "No camera yet" : "No entity yet");
     }
     case "tap": return describeTapAction(el.payload.action);
+    case "list": {
+      const kindWord = LIST_SOURCE_KINDS.find(([k]) => k === el.payload.source.kind)?.[1] ?? el.payload.source.kind;
+      return `${kindWord} · ${clampListRows(el.payload.rows)} cells`;
+    }
     case "chartTimes": {
       const chart = host.config.elements.find((e) => e.payload.id === el.payload.chart);
       return chart?.kind === "chart" || chart?.kind === "timeline"
@@ -3785,6 +4564,7 @@ export function lookSummary(el: CElement): string | undefined {
     case "tap": return undefined;
     case "chartTimes": return `${el.payload.timeLabelCount <= 0 ? "no" : el.payload.timeLabelCount} times · ${el.payload.labelSize} pt · ${colorWords(el.payload.labelColorHex)}`;
     case "imageTime": return undefined;
+    case "list": return `${clampListRows(el.payload.rows)} cells · gap ${clampListGap(el.payload.gap)} pt`;
     case "chartDots": {
       const d = el.payload;
       return `${d.dots === "all" ? "all" : "auto"} · ${d.size === undefined ? "automatic size" : `${d.size} pt`} · ${d.colorHex === undefined ? "series colour" : colorWords(d.colorHex)}`;
@@ -4086,6 +4866,10 @@ function chartPointFields(host: EditorHost, anchor: ChartAnchor, key: string): T
  * layer is the tap. */
 export function tapCard(host: EditorHost, el: CElement): TemplateResult | typeof nothing {
   if (el.kind === "tap") return nothing;
+  // A row layer has no attached tap: an attached tap is a layer of the
+  // document sitting over its owner, and a row is drawn once per item. A row
+  // is made tappable by adding a tap to the row itself.
+  if (listOwning(host.config, el.payload.id)) return nothing;
   const id = el.payload.id;
   const attached = attachedTapsOf(host.config, id)[0];
   return card(host, "tappable", "Tap", tappableSection(host, el, `el-${id}`),
@@ -4897,9 +5681,18 @@ function richPartsEditor(
 
 export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, opts: { placement?: boolean; tap?: boolean } = {}): TemplateResult {
   const id = el.payload.id;
-  const idx = host.config.elements.findIndex((e) => e.payload.id === id);
   const key = `el-${id}`;
-  const upd = (mutate: (e: CElement) => void, k?: string) => host.update((c) => mutate(c.elements[idx]!), k ? `${key}-${k}` : undefined);
+  // Found rather than indexed: a row layer of a list is edited by these same
+  // cards, and it is not in `elements`. Every edit that follows a row layer
+  // also puts its list's attribute list back in step, because the attributes
+  // the Jinja asks for are a fact about the row.
+  const upd = (mutate: (e: CElement) => void, k?: string) => host.update((c) => {
+    const target = elementIn(c, id);
+    if (!target) return;
+    mutate(target);
+    const owner = listOwning(c, id);
+    if (owner) syncListAttributes(owner.payload);
+  }, k ? `${key}-${k}` : undefined);
   const eff = effectivePlacement(host.config, family, el);
   const f = eff.frame;
   const setFrame = (patch: Partial<NormalizedFrame>, k: string) => host.update((c) => setPlacement(c, family, id, { frame: typedFrame(f, patch) }), `${key}-${k}-${family}`);
@@ -5798,6 +6591,23 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         <div class="hint">Equal rows across the plot, never on its top or bottom edge.</div>`;
       break;
     }
+    case "list": {
+      const setList = (m: (p: ListElement) => void, k?: string) => upd((e) => m((e as typeof el).payload), k);
+      content = html`
+        ${listSourceFields(host, el.payload, setList, key)}
+        ${watchNote(host)}`;
+      look = html`
+        ${listLayoutFields(host, el, family, setList)}
+        <div class="chips">
+          <button class="small" title="Add a hidden line of text that shows only when this list has nothing to draw"
+            @click=${() => {
+              let made: string | undefined;
+              host.update((c) => { made = addEmptyState(c, id, family); });
+              if (made) host.selectLayer(made);
+            }}>Add an empty state</button>
+        </div>`;
+      break;
+    }
   }
 
   const colour = colourPlaced || elementColour(el) === undefined
@@ -5867,7 +6677,8 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         html`${look ?? nothing}${colour ?? nothing}${accent ?? nothing}${el.kind === "tap" ? nothing : layerLookFields(el, upd)}`,
         { color: SECTION_COLOR.look, icon: el.kind === "image" ? "image" : "look", ...(lookSummary(el) ? { summary: lookSummary(el)! } : {}),
           ...(lookChanged ? { reset: () => host.update((c) => {
-            restoreKeys(c.elements[idx]!.payload, base, lookKeys);
+            const target = elementIn(c, id);
+            if (target) restoreKeys(target.payload, base, lookKeys);
             if (sizedHere) setPlacement(c, family, id, {}, true);
           }) } : {}) })}
     ${el.kind === "chart" ? card(host, "numbers", "Extras", chartExtrasSection(host, el, chartMarks, chartBlocked, chartShown),
@@ -5886,6 +6697,11 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             }) }
           : {}) }) : nothing}
     ${el.kind === "timeline" || (el.kind === "image" && el.payload.source !== "inline") ? ownedExtrasCard(host, el) : nothing}
+    ${el.kind === "list"
+      ? card(host, "row", "Row", listRowCard(host, el, (m, k) => upd((e) => m((e as typeof el).payload), k)),
+          { color: SECTION_COLOR.numbers, icon: "content",
+            summary: `${el.payload.template.length} of ${LIST_MAX_TEMPLATE} layers` })
+      : nothing}
     ${layerTakesLevel(el)
       ? card(host, "level", "Fill by value", levelFields(host, el, key, upd),
           { color: SECTION_COLOR.numbers, icon: "gauge", summary: levelSummary(el),
@@ -5967,6 +6783,7 @@ const CONTENT_KEYS: Record<CElement["kind"], readonly string[]> = {
   chartDots: [],
   chartGrid: [],
   imageTime: [],
+  list: ["source", "template"],
 };
 
 /** The two look keys every drawing layer carries, whatever its kind. A tap area
@@ -6052,6 +6869,7 @@ const LOOK_KEYS: Record<CElement["kind"], readonly string[]> = {
   chartDots: ["dots", "size", "colorHex"],
   chartGrid: ["lines", "colorHex", "thickness"],
   imageTime: [],
+  list: ["rows", "direction", "columns", "gap"],
 };
 
 /**
@@ -6140,7 +6958,12 @@ export function tapActionEditor(
       p.action = tapActionForType(v, p.action);
       if (v !== "openPage") { delete p.openPageId; delete p.openPageName; }
     }))}
-    ${"entityId" in action ? entityField(host, "Target", action, (ref) => upd((p) => { p.action = { type: action.type, ...ref }; }, "tap-entity"), `${key}-tap`) : nothing}
+    ${"entityId" in action ? html`
+      ${entityField(host, "Target", action, (ref) => upd((p) => { p.action = { type: action.type, ...ref }; }, "tap-entity"), `${key}-tap`)}
+      ${itemPlaceholders(host, (text) => upd((p) => {
+        const a = p.action;
+        if ("entityId" in a) p.action = { type: a.type, entityId: text, displayName: "", domain: "" };
+      }, "tap-entity"), "the target")}` : nothing}
     ${action.type === "callService"
       ? callServiceFields(host, action, (next, k) => upd((p) => { p.action = next; }, k), `${key}-tap`)
       : nothing}
@@ -6727,6 +7550,7 @@ export function autoLayerTitle(el: CElement, ctx?: DescribeContext): string {
     case "chartDots": return "Reading dots";
     case "chartGrid": return "Grid lines";
     case "imageTime": return "Timestamp";
+    case "list": return "List";
   }
 }
 
@@ -7007,6 +7831,7 @@ export function describeFormat(format: ValueFormat | undefined): string {
   if (format.useEntityUnit) bits.push("with unit");
   if (format.relativeTime) bits.push("as relative time");
   if (format.duration) bits.push("as a duration");
+  if (format.timestamp) bits.push(`as ${(TIMESTAMP_STYLES.find(([s]) => s === format.timestamp)?.[1] ?? format.timestamp).toLowerCase()}`);
   if (format.textCase) bits.push(format.textCase === "capitalized" ? "Capitalized" : format.textCase === "upper" ? "UPPER" : "lower");
   return bits.length === 0 ? "" : ` (${bits.join(", ")})`;
 }
@@ -7026,6 +7851,8 @@ function describeValueBody(v: Value, ctx?: DescribeContext): string {
     case "aggregate": return describeAggregate(k.aggregate);
     case "time": return TIME_FIELD_WORDS[k.timeField];
     case "dataAge": return "data age";
+    case "item": return k.field ? `item ${k.field}` : "item field";
+    case "listStat": return k.stat === "total" ? "items in total" : "items shown";
     case "jinja": return k.value ? `template ${truncate(k.value, 32)}` : "template (empty)";
     case "named": {
       if (k.id === "") return "(no value chosen)";

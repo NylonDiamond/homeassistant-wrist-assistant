@@ -10,11 +10,13 @@
 import {
   type CustomComplicationConfig,
   type DrawableFamily,
+  type Element,
   type FamilyKind,
   type HomeFamily,
   type InlineLayout,
   DRAWABLE_FAMILIES,
   HOME_FAMILIES,
+  LIST_FAMILIES,
   WATCH_CANVAS_FAMILIES,
   defaultLayout,
   literal,
@@ -82,6 +84,20 @@ export function comingSoonFamilies(owner: DeviceOwnerLike | null | undefined): F
 
 export function isDrawable(family: FamilyKind): family is DrawableFamily {
   return (DRAWABLE_FAMILIES as FamilyKind[]).includes(family);
+}
+
+/**
+ * Whether a shape is offered a layer kind at all.
+ *
+ * Only the list has anything to say here: a cell on a 51 point circle is not a
+ * row, and the corner's canvas is a fifth of a face wide, so the list is
+ * offered on the wide face and the four Home Screen tiles and nowhere else
+ * (`LIST_FAMILIES`). A placement written for one of the other shapes is
+ * ignored rather than drawn, so this only decides what the Add buttons show.
+ */
+export function familyAllowsKind(family: FamilyKind, kind: Element["kind"]): boolean {
+  if (kind !== "list") return true;
+  return (LIST_FAMILIES as readonly FamilyKind[]).includes(family);
 }
 
 /** Whether a shape is one of the four iPhone Home Screen tiles. */

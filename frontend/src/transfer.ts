@@ -20,6 +20,7 @@
 //      list of what is in this one.
 
 import {
+  type AggregateScope,
   type CustomComplicationConfig,
   type EntityRef,
   auditUnknownKeys,
@@ -148,16 +149,25 @@ export function scrubForShare(cfg: CustomComplicationConfig, slots: readonly Sha
 
 /** True when an aggregate reads a scope named by area, label or floor. Those
  * ids belong to the author's Home Assistant and no picker can remap them, so
- * the import dialog says so rather than pretending the design landed whole. */
+ * the import dialog says so rather than pretending the design landed whole.
+ *
+ * A list whose items come from an `entities` source reads the same scope object
+ * an aggregate does, so it is asked the same question: "the lights in the
+ * kitchen" is a sentence about the author's house however it is drawn. */
 export function hasInstanceFilters(cfg: CustomComplicationConfig): boolean {
+  const local = (scope: AggregateScope): boolean =>
+    scope.kind === "filter" && scope.areaIds.length + scope.labelIds.length + scope.floorIds.length > 0;
   let found = false;
   forEachValue(cfg, (v) => {
     const kind = v.kind;
     if (kind.kind !== "aggregate") return;
-    const scope = kind.aggregate.scope;
-    if (scope.kind !== "filter") return;
-    if (scope.areaIds.length + scope.labelIds.length + scope.floorIds.length > 0) found = true;
+    if (local(kind.aggregate.scope)) found = true;
   });
+  for (const el of cfg.elements) {
+    if (el.kind !== "list") continue;
+    const source = el.payload.source;
+    if (source.kind === "entities" && local(source.scope)) found = true;
+  }
   return found;
 }
 

@@ -1,0 +1,412 @@
+{
+  "name": "To-do list",
+  "description": "Open items sorted by due date, with a row tap that completes the item it sits on: the action's `serviceDataJSON` carries `{item.uid}` and `{item.listId}`, which the resolver substitutes per row before the action reaches the overlay. A placeholder naming a field the item does not have leaves that row's tap disabled rather than firing a service call with the placeholder text in it. The header outside the list reads `listStat count`, which resolves after the list settles, so \"3 left\" and the three rows can never disagree. A to-do item always carries `due`, empty when it is undated.",
+  "config": {
+    "schemaVersion": 8,
+    "id": "EEEEEEEE-0000-4000-8000-000000000440",
+    "name": "To-do list",
+    "slotIndex": 8,
+    "supportedFamilies": [
+      "rectangular",
+      "large"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000444",
+          "value": {
+            "kind": {
+              "kind": "listStat",
+              "layer": "EEEEEEEE-0000-4000-8000-000000000441",
+              "stat": "count"
+            }
+          },
+          "fontSize": 12,
+          "fontWeight": "regular",
+          "colorSlot": {
+            "baseColorHex": "#8E8E93"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.02,
+            "width": 0.9,
+            "height": 0.16,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "list",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000441",
+          "source": {
+            "kind": "todo",
+            "entities": [
+              {
+                "entityId": "todo.shopping",
+                "displayName": "Shopping",
+                "domain": "todo"
+              }
+            ],
+            "sort": "due"
+          },
+          "rows": 5,
+          "template": [
+            {
+              "kind": "text",
+              "payload": {
+                "id": "EEEEEEEE-0000-4000-8000-000000000442",
+                "value": {
+                  "kind": {
+                    "kind": "item",
+                    "field": "title"
+                  }
+                },
+                "fontSize": 12,
+                "fontWeight": "regular",
+                "colorSlot": {
+                  "baseColorHex": "#FFFFFF"
+                },
+                "rules": [],
+                "frame": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1,
+                  "height": 1,
+                  "rotationDegrees": 0
+                },
+                "isHidden": false
+              }
+            },
+            {
+              "kind": "tap",
+              "payload": {
+                "id": "EEEEEEEE-0000-4000-8000-000000000443",
+                "action": {
+                  "type": "callService",
+                  "serviceDomain": "todo",
+                  "serviceName": "update_item",
+                  "serviceDataJSON": "{\"entity_id\":\"{item.listId}\",\"item\":\"{item.uid}\",\"status\":\"completed\"}"
+                },
+                "rules": [],
+                "frame": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1,
+                  "height": 1,
+                  "rotationDegrees": 0
+                },
+                "isHidden": false
+              }
+            }
+          ],
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.2,
+            "width": 0.9,
+            "height": 0.76,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "borderWidth": 2,
+        "cornerBodyShape": "wedge"
+      },
+      "large",
+      {
+        "borderWidth": 2,
+        "cornerBodyShape": "wedge"
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {},
+    "listItems": {
+      "todo|todo.shopping|open|due": "{\"items\":[{\"title\":\"Milk\",\"status\":\"open\",\"due\":\"\",\"uid\":\"a1\",\"list\":\"Shopping\",\"listId\":\"todo.shopping\"},{\"title\":\"Pay the water bill\",\"status\":\"open\",\"due\":1700006400,\"uid\":\"b2\",\"list\":\"Shopping\",\"listId\":\"todo.shopping\"},{\"title\":\"Return the drill\",\"status\":\"open\",\"due\":1700179200,\"uid\":\"c3\",\"list\":\"Shopping\",\"listId\":\"todo.shopping\"}],\"total\":3}"
+    }
+  },
+  "expectedCompiled": {
+    "entities": [],
+    "expressionKeys": [],
+    "listKeys": [
+      "todo|todo.shopping|open|due"
+    ]
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000444",
+          "kind": "text",
+          "text": "3",
+          "colorHex": "#8E8E93"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000441",
+          "kind": "list",
+          "cells": [
+            {
+              "frame": {
+                "x": 0,
+                "y": 0,
+                "width": 1,
+                "height": 0.168,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000442",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Milk",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000443",
+                  "kind": "tap",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.208,
+                "width": 1,
+                "height": 0.168,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000442",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Pay the water bill",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000443",
+                  "kind": "tap",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.416,
+                "width": 1,
+                "height": 0.168,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000442",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Return the drill",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000443",
+                  "kind": "tap",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "large": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000444",
+          "kind": "text",
+          "text": "3",
+          "colorHex": "#8E8E93"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000441",
+          "kind": "list",
+          "cells": [
+            {
+              "frame": {
+                "x": 0,
+                "y": 0,
+                "width": 1,
+                "height": 0.194,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000442",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Milk",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000443",
+                  "kind": "tap",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.201,
+                "width": 1,
+                "height": 0.194,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000442",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Pay the water bill",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000443",
+                  "kind": "tap",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.403,
+                "width": 1,
+                "height": 0.194,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000442",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Return the drill",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000443",
+                  "kind": "tap",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

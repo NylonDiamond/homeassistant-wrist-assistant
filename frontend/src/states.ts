@@ -493,6 +493,10 @@ export const DEFAULT_COLUMN: Record<string, StyleProperty> = {
   chartGrid: "visibility",
   // A timestamp's look is fixed, so hiding it is what a state can do.
   imageTime: "visibility",
+  // Every colour a list draws belongs to a row layer, so hiding the whole list
+  // is what a state on the list itself can do. A state on a row layer is an
+  // ordinary state on an ordinary layer.
+  list: "visibility",
   layout: "backgroundColor",
 };
 

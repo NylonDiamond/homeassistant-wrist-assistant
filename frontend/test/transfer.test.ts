@@ -11,6 +11,7 @@ import {
   type CustomComplicationConfig,
   type Element,
   type EntityRef,
+  type ListSource,
   type Rule,
   type TapElement,
   type Value,
@@ -36,7 +37,7 @@ import {
 
 // The integration's ceiling, `COMPLICATION_MAX_SCHEMA_VERSION`. Raise it with
 // every schema bump or the newest fixtures fail to import here.
-const MAX_SCHEMA = 7;
+const MAX_SCHEMA = 8;
 
 const fixturesDir = join(__dirname, "fixtures");
 const transferDir = join(__dirname, "fixtures-transfer");
@@ -674,22 +675,205 @@ describe("aggregate filters", () => {
   });
 });
 
+// ── a list's own entities ─────────────────────────────────────────────────
+//
+// A list names entities in two places no other layer does: inside its source,
+// which is a shape of its own per kind, and inside the row layers, which are
+// layers the document's element list never holds. A scrub that walked only the
+// document's own layers would post the author's calendars and their lights.
+
+describe("a list's source and rows", () => {
+  function listDocument(source: ListSource, template: Element[] = []): CustomComplicationConfig {
+    const cfg = newConfig("Lists", 0, ["rectangular"]);
+    const el = newElement("list") as Extract<Element, { kind: "list" }>;
+    el.payload.source = source;
+    el.payload.template = template;
+    cfg.elements = [el];
+    return cfg;
+  }
+
+  function sourceOf(cfg: CustomComplicationConfig): ListSource {
+    const el = cfg.elements[0]!;
+    if (el.kind !== "list") throw new Error("not a list");
+    return el.payload.source;
+  }
+
+  function scrubbedSource(source: ListSource): ListSource {
+    const cfg = listDocument(source);
+    return sourceOf(scrubForShare(cfg, shareSlots(cfg, KNOWN_DOMAINS)));
+  }
+
+  const ref = (entityId: string, displayName: string): EntityRef =>
+    ({ entityId, displayName, domain: entityId.split(".")[0]! });
+
+  it("replaces the entities a calendar source merges, all of them", () => {
+    const scrubbed = scrubbedSource({
+      kind: "calendar",
+      entities: [ref("calendar.work", "Work"), ref("calendar.family", "Family")],
+      hours: 24,
+    });
+    if (scrubbed.kind !== "calendar") throw new Error("not a calendar");
+    expect(scrubbed.entities.map((e) => e.entityId)).toEqual(["calendar.shared_1", "calendar.shared_2"]);
+    expect(JSON.stringify(scrubbed)).not.toContain("Family");
+  });
+
+  it("replaces the flat reference an attribute source and a forecast source carry", () => {
+    const attribute = scrubbedSource({ kind: "attribute", attribute: "options", ...ref("select.mode", "Mode") });
+    expect(attribute.kind === "attribute" ? attribute.entityId : "").toBe("select.shared_1");
+    expect(attribute.kind === "attribute" ? attribute.attribute : "").toBe("options");
+    const forecast = scrubbedSource({ kind: "forecast", type: "hourly", ...ref("weather.home", "Home") });
+    expect(forecast.kind === "forecast" ? forecast.entityId : "").toBe("weather.shared_1");
+    expect(forecast.kind === "forecast" ? forecast.type : "").toBe("hourly");
+  });
+
+  it("replaces the entities an explicit scope names, and leaves a filter scope alone", () => {
+    const explicit = scrubbedSource({
+      kind: "entities",
+      scope: { kind: "entities", entities: [ref("light.hall", "Hall")] },
+      sort: "name",
+      descending: false,
+      attributes: [],
+    });
+    const scope = explicit.kind === "entities" ? explicit.scope : undefined;
+    expect(scope?.kind === "entities" ? scope.entities[0]!.entityId : "").toBe("light.shared_1");
+
+    const filtered = scrubbedSource({
+      kind: "entities",
+      scope: { kind: "filter", domains: ["light"], areaIds: ["kitchen"], labelIds: [], floorIds: [] },
+      sort: "name",
+      descending: false,
+      attributes: [],
+    });
+    const filterScope = filtered.kind === "entities" ? filtered.scope : undefined;
+    expect(filterScope?.kind === "filter" ? filterScope.areaIds : []).toEqual(["kitchen"]);
+  });
+
+  it("rewrites a quoted id in a template source's Jinja", () => {
+    const cfg = listDocument({ kind: "template", value: "{{ states('sensor.energy') | float(0) }}" });
+    const slots = shareSlots(cfg, KNOWN_DOMAINS);
+    expect(slots.map((s) => s.originalId)).toEqual(["sensor.energy"]);
+    const scrubbed = sourceOf(scrubForShare(cfg, slots));
+    expect(scrubbed.kind === "template" ? scrubbed.value : "").toBe("{{ states('sensor.shared_1') | float(0) }}");
+  });
+
+  it("scrubs a row layer's own entity, and the reader's pick lands back on it", () => {
+    const row = newElement("text") as Extract<Element, { kind: "text" }>;
+    row.payload.value = { kind: { kind: "entityState", ...ref("sensor.outside", "Outside") } };
+    const cfg = listDocument({ kind: "template", value: "{{ [] }}" }, [row]);
+    const slots = shareSlots(cfg, KNOWN_DOMAINS);
+    expect(slots.map((s) => s.originalId)).toEqual(["sensor.outside"]);
+    const scrubbed = scrubForShare(cfg, slots);
+    expect(JSON.stringify(scrubbed)).not.toContain("sensor.outside");
+    expect(JSON.stringify(scrubbed)).not.toContain("Outside");
+
+    const mine = ref("sensor.my_thermometer", "My thermometer");
+    const landed = remapEntities(scrubbed, new Map([["sensor.shared_1", mine]]));
+    const list = landed.elements[0]!;
+    if (list.kind !== "list") throw new Error("not a list");
+    const value = (list.payload.template[0]!.payload as { value: Value }).value.kind;
+    expect(value.kind === "entityState" ? value.entityId : "").toBe("sensor.my_thermometer");
+  });
+
+  it("leaves a row tap's item placeholder alone, on the way out and on the way in", () => {
+    const tap = newElement("tap") as Extract<Element, { kind: "tap" }>;
+    tap.payload.action = { type: "toggleEntity", entityId: "{item.entityId}", displayName: "{item.name}", domain: "" };
+    const service = newElement("tap") as Extract<Element, { kind: "tap" }>;
+    service.payload.action = {
+      type: "callService",
+      serviceDomain: "todo",
+      serviceName: "update_item",
+      serviceDataJSON: '{"entity_id":"{item.listId}","item":"{item.uid}"}',
+    };
+    const cfg = listDocument({ kind: "template", value: "{{ [] }}" }, [tap, service]);
+    // Nothing to ask the reader about: a placeholder is not an entity.
+    expect(shareSlots(cfg, KNOWN_DOMAINS)).toEqual([]);
+    expect(unresolvedEntities(cfg, {})).toEqual([]);
+    const text = JSON.stringify(scrubForShare(cfg, []));
+    expect(text).toContain("{item.entityId}");
+    expect(text).toContain("{item.listId}");
+    expect(text).toContain("{item.uid}");
+  });
+
+  it("flags a source that reads the author's own areas", () => {
+    const filtered = listDocument({
+      kind: "entities",
+      scope: { kind: "filter", domains: ["light"], areaIds: ["kitchen"], labelIds: [], floorIds: [] },
+      sort: "name",
+      descending: false,
+      attributes: [],
+    });
+    expect(hasInstanceFilters(filtered)).toBe(true);
+
+    const plain = listDocument({
+      kind: "entities",
+      scope: { kind: "filter", domains: ["light"], areaIds: [], labelIds: [], floorIds: [] },
+      sort: "name",
+      descending: false,
+      attributes: [],
+    });
+    expect(hasInstanceFilters(plain)).toBe(false);
+  });
+
+  it("asks the reader for the list's own entity on the way in", () => {
+    const cfg = listDocument({
+      kind: "todo",
+      entities: [ref("todo.shopping", "Shopping")],
+      status: "open",
+      sort: "list",
+    });
+    const slots = shareSlots(cfg, KNOWN_DOMAINS);
+    const shared = parseImportText(exportText(cfg, "share", slots), MAX_SCHEMA);
+    expect(shared.ok, shared.ok ? "" : shared.error).toBe(true);
+    if (!shared.ok) return;
+    const listed = unresolvedEntities(shared.config, {});
+    expect(listed.map((u) => u.entityId)).toEqual(["todo.shared_1"]);
+    expect(listed[0]!.required).toBe(true);
+
+    const mine = ref("todo.errands", "Errands");
+    const landed = remapEntities(shared.config, new Map([["todo.shared_1", mine]]));
+    const source = sourceOf(landed);
+    expect(source.kind === "todo" ? source.entities[0] : undefined).toEqual(mine);
+  });
+});
+
 // ── the committed samples ─────────────────────────────────────────────────
 
 describe("the sample texts", () => {
   const files = readdirSync(shareDir).filter((f) => f.endsWith(".json"));
 
-  it("has one share sample and one backup sample", () => {
-    expect(files.sort()).toEqual(["living-room-backup.json", "living-room-share.json"]);
+  /** Each committed pair, and the fixture it is written from. The list one is
+   * here because a list holds entities in places no other layer does: inside a
+   * source, and inside a row's own layers. */
+  const samples: readonly { base: string; fixture: string }[] = [
+    { base: "living-room", fixture: "living_room.json" },
+    { base: "todo-list", fixture: "list_todo.json" },
+  ];
+
+  function sampleSource(fixture: string): CustomComplicationConfig {
+    return parseConfig((JSON.parse(readFileSync(join(fixturesDir, fixture), "utf8")) as { config: unknown }).config);
+  }
+
+  it("has a share sample and a backup sample for each one", () => {
+    expect(files.sort()).toEqual(samples.flatMap((s) => [`${s.base}-backup.json`, `${s.base}-share.json`]).sort());
   });
 
-  it("is still what this panel writes today", () => {
-    const source = parseConfig(
-      (JSON.parse(readFileSync(join(fixturesDir, "living_room.json"), "utf8")) as { config: unknown }).config,
-    );
-    const slots = shareSlots(source, KNOWN_DOMAINS);
-    expect(readFileSync(join(shareDir, "living-room-share.json"), "utf8")).toBe(exportText(source, "share", slots));
-    expect(readFileSync(join(shareDir, "living-room-backup.json"), "utf8")).toBe(exportText(source, "backup"));
+  for (const sample of samples) {
+    it(`${sample.base} is still what this panel writes today`, () => {
+      const source = sampleSource(sample.fixture);
+      const slots = shareSlots(source, KNOWN_DOMAINS);
+      expect(readFileSync(join(shareDir, `${sample.base}-share.json`), "utf8")).toBe(exportText(source, "share", slots));
+      expect(readFileSync(join(shareDir, `${sample.base}-backup.json`), "utf8")).toBe(exportText(source, "backup"));
+    });
+  }
+
+  it("keeps a row tap's item placeholders out of the scrub", () => {
+    const share = readFileSync(join(shareDir, "todo-list-share.json"), "utf8");
+    // The to-do list itself became a slot; the two fields a row fills in per
+    // item are not entities and are still written the way the author wrote them.
+    expect(share).toContain("todo.shared_1");
+    expect(share).toContain("{item.listId}");
+    expect(share).toContain("{item.uid}");
+    expect(share).not.toContain("todo.shopping");
   });
 
   it("carries placeholders in the share sample and real ids in the backup one", () => {

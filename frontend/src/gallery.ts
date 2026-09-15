@@ -15,7 +15,6 @@ import {
   type FamilyKind,
   type Rule,
   type Value,
-  forEachValue,
   inlineImageBytes,
   mapFreeText,
 } from "./model.js";
@@ -262,7 +261,13 @@ export function galleryPublicFields(
 
   const groupRows: GalleryNameRow[] = [];
   const sharedRows: GalleryNameRow[] = [];
-  for (const el of scrubbed.elements) pushUnique(layers, el.payload.name);
+  // A row layer's name is a layer name like any other: it is the author's own
+  // writing and it travels with the document, so it belongs in the list the
+  // author is shown rather than under "Other text".
+  for (const el of scrubbed.elements) {
+    pushUnique(layers, el.payload.name);
+    if (el.kind === "list") for (const row of el.payload.template) pushUnique(layers, row.payload.name);
+  }
   (scrubbed.groups ?? []).forEach((g, i) => {
     pushUnique(groupNames, g.name);
     groupRows.push({ kind: "group", id: g.id, value: g.name, original: cfg.groups?.[i]?.name ?? g.name });
@@ -275,10 +280,11 @@ export function galleryPublicFields(
   const slotRows: GalleryNameRow[] = slots.map((slot) => ({
     kind: "slot", id: slot.placeholderId, value: slot.label, original: slot.label,
   }));
-  forEachValue(scrubbed, (v) => {
-    if (v.kind.kind === "jinja") pushUnique(templates, v.kind.value);
-  });
+  // Both kinds of author-written Jinja: a `jinja` value, and the raw text a
+  // list's `template` source is. The walker gives them the same site, so one
+  // rule covers both and neither can be added without the other.
   mapFreeText(scrubbed, (text, site) => {
+    if (site.part === "template") pushUnique(templates, text);
     if (site.part === "serviceData") pushUnique(serviceData, text);
     return text;
   });
