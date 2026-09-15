@@ -15,16 +15,23 @@ import { CANVAS, type DrawableFamily } from "./renderer.js";
 import type { HassEntityState } from "./ha-api.js";
 import { buildStatesRule, type StatesRowInput } from "./states.js";
 import {
+  type CallServiceAction,
   type Comparison,
   type CustomComplicationConfig,
   type Element,
   type EntityRef,
+  type FamilyKind,
+  type ListDirection,
+  type ListSource,
   type NormalizedFrame,
   type Rule,
   type StyleChange,
+  type TapAction,
   type Value,
   DRAWABLE_FAMILIES,
+  LIST_FAMILIES,
   defaultLayout,
+  defaultLevel,
   TOGGLEABLE_DOMAINS,
   attachTap,
   literal,
@@ -34,7 +41,10 @@ import {
   seedTimelineBands,
 } from "./model.js";
 
-export type PresetKind = "toggle" | "status" | "gauge" | "camera" | "chart" | "history" | "doorHistory";
+export type PresetKind =
+  | "toggle" | "status" | "gauge" | "camera" | "chart" | "history" | "doorHistory"
+  | "listEvents" | "listTodo" | "listHourly" | "listDaily"
+  | "listLightsOn" | "listBatteries" | "listRecent" | "listScenes";
 
 export interface PresetSpec {
   kind: PresetKind;
@@ -47,8 +57,17 @@ export interface PresetSpec {
   domains?: readonly string[];
   /** Float entities whose state reads as a number to the top of the search. */
   preferNumeric?: boolean;
-  /** How many layers it adds, for the 64-layer cap. */
+  /** How many layers it adds, for the 64-layer cap. A list counts as one: its
+   * row layers live inside it and are not layers of the shape. */
   layerCount: number;
+  /** Which group of buttons it sits in. */
+  group?: "list";
+  /** False for a preset that asks nothing: it is built the moment the button
+   * is clicked, because a scope filter is edited afterwards rather than
+   * chosen up front. Defaults to true. */
+  needsEntity?: boolean;
+  /** Only offered on these shapes. Undefined means every shape with a canvas. */
+  families?: readonly FamilyKind[];
 }
 
 export const LAYER_PRESETS: readonly PresetSpec[] = [
@@ -98,6 +117,78 @@ export const LAYER_PRESETS: readonly PresetSpec[] = [
     blurb: "The camera's latest snapshot, filling the face.",
     domains: ["camera"],
     layerCount: 1,
+  },
+  {
+    kind: "listEvents",
+    title: "Next events",
+    blurb: "The next three events from one calendar, each with the time it starts.",
+    domains: ["calendar"],
+    layerCount: 1,
+    group: "list",
+    families: LIST_FAMILIES,
+  },
+  {
+    kind: "listTodo",
+    title: "To-do",
+    blurb: "Open items from one list. Tap a row to complete it.",
+    domains: ["todo"],
+    layerCount: 1,
+    group: "list",
+    families: LIST_FAMILIES,
+  },
+  {
+    kind: "listHourly",
+    title: "Hourly forecast",
+    blurb: "Six hours across the face: the time, the weather and the temperature.",
+    domains: ["weather"],
+    layerCount: 1,
+    group: "list",
+    families: LIST_FAMILIES,
+  },
+  {
+    kind: "listDaily",
+    title: "Daily forecast",
+    blurb: "Five days across the face: the day, the weather, the high and the low.",
+    domains: ["weather"],
+    layerCount: 1,
+    group: "list",
+    families: LIST_FAMILIES,
+  },
+  {
+    kind: "listLightsOn",
+    title: "Lights on",
+    blurb: "Every light that is on, one per row. Tap a row to turn that light off.",
+    layerCount: 1,
+    group: "list",
+    needsEntity: false,
+    families: LIST_FAMILIES,
+  },
+  {
+    kind: "listBatteries",
+    title: "Low batteries",
+    blurb: "Your battery sensors, emptiest first, each with a bar that runs down as it does.",
+    layerCount: 1,
+    group: "list",
+    needsEntity: false,
+    families: LIST_FAMILIES,
+  },
+  {
+    kind: "listRecent",
+    title: "Recent activity",
+    blurb: "Whatever changed most recently, newest first, with how long ago it was.",
+    layerCount: 1,
+    group: "list",
+    needsEntity: false,
+    families: LIST_FAMILIES,
+  },
+  {
+    kind: "listScenes",
+    title: "Scenes grid",
+    blurb: "Your scenes as a two by two grid. Tap a cell to run that scene.",
+    layerCount: 1,
+    group: "list",
+    needsEntity: false,
+    families: LIST_FAMILIES,
   },
 ];
 
@@ -574,6 +665,212 @@ export function addCameraLayer(cfg: CustomComplicationConfig, ref: EntityRef, en
   return el.payload.id;
 }
 
+// ── list presets ──────────────────────────────────────────────────────────
+// A list is one layer with a row inside it, so each of these builds a source,
+// a layout and a working row template in one go. Row frames are fractions of
+// the cell, never of the face, and the row layers carry their own point sizes
+// rather than a per-shape placement: a row laid out for one shape only would
+// draw nothing on the others.
+
+/** The list's own box on the face: nearly all of it, with a hair of margin so
+ * the top and bottom rows are not against the bezel. */
+function listGeometry(): NormalizedFrame {
+  return { x: 0.04, y: 0.06, width: 0.92, height: 0.88, rotationDegrees: 0 };
+}
+
+function itemValue(field: string, format?: Value["format"]): Value {
+  const value: Value = { kind: { kind: "item", field } };
+  if (format) value.format = format;
+  return value;
+}
+
+/** One text row layer: a frame inside the cell, a value, a size and an
+ * alignment. Everything a row is made of, in one line at the call site. */
+function rowText(
+  value: Value,
+  frame: { x: number; y: number; width: number; height: number },
+  opts: { size?: number; align?: "leading" | "center" | "trailing"; colorHex?: string; weight?: "regular" | "semibold" } = {},
+): Element {
+  const el = layerOf("text");
+  el.payload.value = value;
+  el.payload.frame = { ...frame, rotationDegrees: 0 };
+  el.payload.fontSize = opts.size ?? 11;
+  if (opts.weight) el.payload.fontWeight = opts.weight;
+  if (opts.align && opts.align !== "center") el.payload.alignment = opts.align;
+  if (opts.colorHex) el.payload.colorSlot.baseColorHex = opts.colorHex;
+  return el;
+}
+
+/** One icon row layer reading the item's own glyph. */
+function rowIcon(frame: { x: number; y: number; width: number; height: number }, size = 11): Element {
+  const el = layerOf("icon");
+  el.payload.symbol = itemValue("icon");
+  el.payload.frame = { ...frame, rotationDegrees: 0 };
+  el.payload.size = size;
+  return el;
+}
+
+/** One shape row layer filled by the item's own reading, the way a tank is:
+ * a battery at 12 shows a tenth of the capsule and one at 95 nearly all of it.
+ * The scale is 0 to 100, which is what a percentage reads on. */
+function rowLevel(
+  value: Value,
+  frame: { x: number; y: number; width: number; height: number },
+  colorHex: string,
+): Element {
+  const el = layerOf("shape");
+  el.payload.kind = "capsule";
+  el.payload.borderWidth = 0;
+  el.payload.frame = { ...frame, rotationDegrees: 0 };
+  el.payload.colorSlot.baseColorHex = colorHex;
+  el.payload.level = { ...defaultLevel(value), direction: "right" };
+  return el;
+}
+
+/** One tap row layer covering the whole cell. */
+function rowTap(action: TapAction): Element {
+  const el = layerOf("tap");
+  el.payload.action = action;
+  el.payload.frame = { x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 };
+  return el;
+}
+
+/** Build a list layer, put it on the shape being edited and return its id. */
+function addList(
+  cfg: CustomComplicationConfig,
+  env: PresetEnv,
+  source: ListSource,
+  layout: { rows: number; direction?: ListDirection; columns?: number; gap?: number },
+  template: Element[],
+): string {
+  const el = layerOf("list");
+  el.payload.source = source;
+  el.payload.rows = layout.rows;
+  if (layout.direction) el.payload.direction = layout.direction;
+  if (layout.columns !== undefined) el.payload.columns = layout.columns;
+  if (layout.gap !== undefined) el.payload.gap = layout.gap;
+  el.payload.template = template;
+  placeLayer(cfg, el, env.family, () => ({ frame: listGeometry() }));
+  cfg.elements.push(el);
+  return el.payload.id;
+}
+
+/** The next few events, each with the time it starts. */
+export function addEventsList(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  return addList(cfg, env, { kind: "calendar", entities: [withDomain(ref)], hours: 24 }, { rows: 3 }, [
+    rowText(itemValue("title"), { x: 0, y: 0, width: 0.68, height: 1 }, { align: "leading" }),
+    rowText(itemValue("start", { timestamp: "clock" }), { x: 0.7, y: 0, width: 0.3, height: 1 },
+      { align: "trailing", colorHex: MUTED_HEX }),
+  ]);
+}
+
+/** Open items, with a tap that completes the one it is on. */
+export function addTodoList(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  const full = withDomain(ref);
+  const complete: CallServiceAction = {
+    type: "callService",
+    serviceDomain: "todo",
+    serviceName: "update_item",
+    serviceDataJSON: `{"entity_id": "{item.listId}", "item": "{item.uid}", "status": "completed"}`,
+  };
+  return addList(cfg, env, { kind: "todo", entities: [full], status: "open", sort: "list" }, { rows: 4 }, [
+    rowIcon({ x: 0, y: 0.1, width: 0.14, height: 0.8 }, 10),
+    rowText(itemValue("title"), { x: 0.18, y: 0, width: 0.82, height: 1 }, { align: "leading" }),
+    rowTap(complete),
+  ]);
+}
+
+/** Six hours across the face. */
+export function addHourlyForecastList(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  return addList(cfg, env, { kind: "forecast", ...withDomain(ref), type: "hourly" },
+    { rows: 6, direction: "across", gap: 1 }, [
+      rowText(itemValue("time", { timestamp: "clock" }), { x: 0, y: 0, width: 1, height: 0.3 },
+        { size: 9, colorHex: MUTED_HEX }),
+      rowIcon({ x: 0.15, y: 0.34, width: 0.7, height: 0.32 }, 12),
+      rowText(itemValue("temperature", { decimals: 0, suffix: "°" }), { x: 0, y: 0.7, width: 1, height: 0.3 }, { size: 10 }),
+    ]);
+}
+
+/** Five days across the face, each with a high and a low. */
+export function addDailyForecastList(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  return addList(cfg, env, { kind: "forecast", ...withDomain(ref), type: "daily" },
+    { rows: 5, direction: "across", gap: 1 }, [
+      rowText(itemValue("time", { timestamp: "weekday" }), { x: 0, y: 0, width: 1, height: 0.26 },
+        { size: 9, colorHex: MUTED_HEX }),
+      rowIcon({ x: 0.18, y: 0.3, width: 0.64, height: 0.28 }, 12),
+      rowText(itemValue("temperature", { decimals: 0, suffix: "°" }), { x: 0, y: 0.6, width: 1, height: 0.22 }, { size: 10 }),
+      rowText(itemValue("templow", { decimals: 0, suffix: "°" }), { x: 0, y: 0.8, width: 1, height: 0.2 },
+        { size: 9, colorHex: MUTED_HEX }),
+    ]);
+}
+
+/** Every light that is on, with a tap that turns that one off. */
+export function addLightsOnList(cfg: CustomComplicationConfig, env: PresetEnv): string {
+  const source: ListSource = {
+    kind: "entities",
+    scope: { kind: "filter", domains: ["light"], areaIds: [], labelIds: [], floorIds: [] },
+    stateFilter: { kind: "isOn" },
+    sort: "name",
+    descending: false,
+    attributes: [],
+  };
+  return addList(cfg, env, source, { rows: 4 }, [
+    rowIcon({ x: 0, y: 0.1, width: 0.14, height: 0.8 }, 10),
+    rowText(itemValue("name"), { x: 0.18, y: 0, width: 0.82, height: 1 }, { align: "leading" }),
+    rowTap({ type: "toggleEntity", entityId: "{item.entityId}", displayName: "", domain: "" }),
+  ]);
+}
+
+/** Battery sensors, emptiest first, each with a bar that runs down as it does. */
+export function addBatteriesList(cfg: CustomComplicationConfig, env: PresetEnv): string {
+  const source: ListSource = {
+    kind: "entities",
+    scope: { kind: "filter", domains: ["sensor"], areaIds: [], labelIds: [], floorIds: [] },
+    deviceClass: "battery",
+    sort: "state",
+    descending: false,
+    attributes: [],
+  };
+  return addList(cfg, env, source, { rows: 4 }, [
+    rowLevel(itemValue("state"), { x: 0, y: 0.34, width: 0.14, height: 0.32 }, ACCENT_HEX),
+    rowText(itemValue("name"), { x: 0.18, y: 0, width: 0.5, height: 1 }, { align: "leading" }),
+    rowText(itemValue("state", { decimals: 0, useEntityUnit: true }), { x: 0.7, y: 0, width: 0.3, height: 1 },
+      { align: "trailing" }),
+  ]);
+}
+
+/** Whatever changed most recently, with how long ago it was. */
+export function addRecentList(cfg: CustomComplicationConfig, env: PresetEnv): string {
+  const source: ListSource = {
+    kind: "entities",
+    scope: { kind: "filter", domains: [], areaIds: [], labelIds: [], floorIds: [] },
+    sort: "lastChanged",
+    descending: true,
+    attributes: [],
+  };
+  return addList(cfg, env, source, { rows: 4 }, [
+    rowText(itemValue("name"), { x: 0, y: 0, width: 0.7, height: 1 }, { align: "leading" }),
+    rowText(itemValue("age", { relativeTime: true }), { x: 0.72, y: 0, width: 0.28, height: 1 },
+      { align: "trailing", colorHex: MUTED_HEX }),
+  ]);
+}
+
+/** Scenes as a grid, one tap per cell. */
+export function addScenesList(cfg: CustomComplicationConfig, env: PresetEnv): string {
+  const source: ListSource = {
+    kind: "entities",
+    scope: { kind: "filter", domains: ["scene"], areaIds: [], labelIds: [], floorIds: [] },
+    sort: "name",
+    descending: false,
+    attributes: [],
+  };
+  return addList(cfg, env, source, { rows: 4, columns: 2, gap: 3 }, [
+    rowIcon({ x: 0.34, y: 0.06, width: 0.32, height: 0.44 }, 12),
+    rowText(itemValue("name"), { x: 0, y: 0.54, width: 1, height: 0.46 }, { size: 9 }),
+    rowTap({ type: "runScene", entityId: "{item.entityId}", displayName: "", domain: "" }),
+  ]);
+}
+
 /** Run one preset and return the id of the layer to select afterwards. */
 export function applyPreset(
   cfg: CustomComplicationConfig,
@@ -589,5 +886,13 @@ export function applyPreset(
     case "history": return addHistoryChart(cfg, ref, env);
     case "doorHistory": return addDoorHistory(cfg, ref, env);
     case "camera": return addCameraLayer(cfg, ref, env);
+    case "listEvents": return addEventsList(cfg, ref, env);
+    case "listTodo": return addTodoList(cfg, ref, env);
+    case "listHourly": return addHourlyForecastList(cfg, ref, env);
+    case "listDaily": return addDailyForecastList(cfg, ref, env);
+    case "listLightsOn": return addLightsOnList(cfg, env);
+    case "listBatteries": return addBatteriesList(cfg, env);
+    case "listRecent": return addRecentList(cfg, env);
+    case "listScenes": return addScenesList(cfg, env);
   }
 }

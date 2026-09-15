@@ -1,0 +1,319 @@
+{
+  "name": "Attribute list",
+  "description": "A list-valued attribute of one entity, twice: once holding objects (a departures sensor, where every key of the object is a field the row can read) and once holding plain strings (a media player's source list, where the single field is `value`). The guard in the emitted Jinja is the whole trick: `state_attr` answers null for a missing entity, a string for a text attribute and a dict for an object, and iterating any of those would either fail the document or draw one row per character.",
+  "config": {
+    "schemaVersion": 8,
+    "id": "EEEEEEEE-0000-4000-8000-000000000410",
+    "name": "Attribute list",
+    "slotIndex": 5,
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "list",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000411",
+          "source": {
+            "kind": "attribute",
+            "entityId": "sensor.departures",
+            "displayName": "Departures",
+            "domain": "sensor",
+            "attribute": "next"
+          },
+          "rows": 3,
+          "template": [
+            {
+              "kind": "text",
+              "payload": {
+                "id": "EEEEEEEE-0000-4000-8000-000000000413",
+                "value": {
+                  "kind": {
+                    "kind": "item",
+                    "field": "line"
+                  }
+                },
+                "fontSize": 12,
+                "fontWeight": "regular",
+                "colorSlot": {
+                  "baseColorHex": "#FFFFFF"
+                },
+                "rules": [],
+                "frame": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1,
+                  "height": 1,
+                  "rotationDegrees": 0
+                },
+                "isHidden": false
+              }
+            }
+          ],
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.05,
+            "width": 0.9,
+            "height": 0.45,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "list",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000412",
+          "source": {
+            "kind": "attribute",
+            "entityId": "media_player.lounge",
+            "displayName": "Lounge",
+            "domain": "media_player",
+            "attribute": "source_list"
+          },
+          "template": [
+            {
+              "kind": "text",
+              "payload": {
+                "id": "EEEEEEEE-0000-4000-8000-000000000414",
+                "value": {
+                  "kind": {
+                    "kind": "item",
+                    "field": "value"
+                  }
+                },
+                "fontSize": 12,
+                "fontWeight": "regular",
+                "colorSlot": {
+                  "baseColorHex": "#FFFFFF"
+                },
+                "rules": [],
+                "frame": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1,
+                  "height": 1,
+                  "rotationDegrees": 0
+                },
+                "isHidden": false
+              }
+            }
+          ],
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.55,
+            "width": 0.9,
+            "height": 0.4,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "borderWidth": 2,
+        "cornerBodyShape": "wedge"
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {},
+    "templateResults": {
+      "e_cb540c402015143d": "{\"items\":[{\"line\":\"17\",\"destination\":\"Central\",\"due\":\"4 min\"},{\"line\":\"63\",\"destination\":\"Harbour\",\"due\":\"11 min\"}],\"total\":2}",
+      "e_d912cc2d66baa4ae": "{\"items\":[\"TV\",\"Radio\",\"Bluetooth\",\"Spotify\"],\"total\":4}"
+    }
+  },
+  "expectedCompiled": {
+    "entities": [],
+    "expressionKeys": [
+      "e_cb540c402015143d",
+      "e_d912cc2d66baa4ae"
+    ],
+    "listKeys": [],
+    "document": "{% set v_e_cb540c402015143d %}{% set a = state_attr('sensor.departures', 'next') %}{% if a is string or a is mapping or a is not iterable %}{% set a = [] %}{% endif %}{% set a = a | list %}{{ {'items': a[:3], 'total': (a | count)} | to_json }}{% endset %}\n{% set v_e_d912cc2d66baa4ae %}{% set a = state_attr('media_player.lounge', 'source_list') %}{% if a is string or a is mapping or a is not iterable %}{% set a = [] %}{% endif %}{% set a = a | list %}{{ {'items': a[:4], 'total': (a | count)} | to_json }}{% endset %}\n{{ { \"e_cb540c402015143d\": v_e_cb540c402015143d, \"e_d912cc2d66baa4ae\": v_e_d912cc2d66baa4ae } | to_json }}"
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000411",
+          "kind": "list",
+          "cells": [
+            {
+              "frame": {
+                "x": 0,
+                "y": 0,
+                "width": 1,
+                "height": 0.288,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000413",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "17",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.356,
+                "width": 1,
+                "height": 0.288,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000413",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "63",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000412",
+          "kind": "list",
+          "cells": [
+            {
+              "frame": {
+                "x": 0,
+                "y": 0,
+                "width": 1,
+                "height": 0.193,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000414",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "TV",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.269,
+                "width": 1,
+                "height": 0.193,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000414",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Radio",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.538,
+                "width": 1,
+                "height": 0.193,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000414",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Bluetooth",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.807,
+                "width": 1,
+                "height": 0.193,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000414",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Spotify",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

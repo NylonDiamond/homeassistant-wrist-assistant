@@ -1,0 +1,131 @@
+{
+  "dataSources": [],
+  "elements": [
+    {
+      "kind": "text",
+      "payload": {
+        "colorSlot": {
+          "baseColorHex": "#8E8E93"
+        },
+        "fontSize": 12,
+        "fontWeight": "regular",
+        "frame": {
+          "height": 0.16,
+          "rotationDegrees": 0,
+          "width": 0.9,
+          "x": 0.05,
+          "y": 0.02
+        },
+        "id": "EEEEEEEE-0000-4000-8000-000000000444",
+        "isHidden": false,
+        "rules": [],
+        "value": {
+          "kind": {
+            "kind": "listStat",
+            "layer": "EEEEEEEE-0000-4000-8000-000000000441",
+            "stat": "count"
+          }
+        }
+      }
+    },
+    {
+      "kind": "list",
+      "payload": {
+        "frame": {
+          "height": 0.76,
+          "rotationDegrees": 0,
+          "width": 0.9,
+          "x": 0.05,
+          "y": 0.2
+        },
+        "id": "EEEEEEEE-0000-4000-8000-000000000441",
+        "isHidden": false,
+        "rows": 5,
+        "rules": [],
+        "source": {
+          "entities": [
+            {
+              "displayName": "Shopping",
+              "domain": "todo",
+              "entityId": "todo.shopping"
+            }
+          ],
+          "kind": "todo",
+          "sort": "due"
+        },
+        "template": [
+          {
+            "kind": "text",
+            "payload": {
+              "colorSlot": {
+                "baseColorHex": "#FFFFFF"
+              },
+              "fontSize": 12,
+              "fontWeight": "regular",
+              "frame": {
+                "height": 1,
+                "rotationDegrees": 0,
+                "width": 1,
+                "x": 0,
+                "y": 0
+              },
+              "id": "EEEEEEEE-0000-4000-8000-000000000442",
+              "isHidden": false,
+              "rules": [],
+              "value": {
+                "kind": {
+                  "field": "title",
+                  "kind": "item"
+                }
+              }
+            }
+          },
+          {
+            "kind": "tap",
+            "payload": {
+              "action": {
+                "serviceDataJSON": "{\"entity_id\":\"{item.listId}\",\"item\":\"{item.uid}\",\"status\":\"completed\"}",
+                "serviceDomain": "todo",
+                "serviceName": "update_item",
+                "type": "callService"
+              },
+              "frame": {
+                "height": 1,
+                "rotationDegrees": 0,
+                "width": 1,
+                "x": 0,
+                "y": 0
+              },
+              "id": "EEEEEEEE-0000-4000-8000-000000000443",
+              "isHidden": false,
+              "rules": []
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "name": "To-do list",
+  "perFamily": [
+    "rectangular",
+    {
+      "borderWidth": 2,
+      "cornerBodyShape": "wedge"
+    },
+    "large",
+    {
+      "borderWidth": 2,
+      "cornerBodyShape": "wedge"
+    }
+  ],
+  "refreshMinutes": 15,
+  "schemaVersion": 8,
+  "supportedFamilies": [
+    "rectangular",
+    "large"
+  ],
+  "tapAction": {
+    "type": "refresh"
+  },
+  "values": []
+}

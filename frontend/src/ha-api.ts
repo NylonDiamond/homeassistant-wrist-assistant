@@ -32,7 +32,8 @@ export interface HassLike {
   themes?: { darkMode?: boolean };
 }
 
-import { type CustomComplicationConfig, type OccupiedSlot, chartHistoryRequests, chartStatisticsRequests } from "./model.js";
+import { type CustomComplicationConfig, type ListRequestSpec, type OccupiedSlot, chartHistoryRequests, chartStatisticsRequests } from "./model.js";
+import { listRequests } from "./compiler.js";
 import type { DeviceKind } from "./version.js";
 
 export interface OwnerSummary {
@@ -353,6 +354,59 @@ export interface StatisticsSeriesRequest {
   period: string;
   type: string;
   gaps?: true;
+}
+
+/** What one list key came back as: the items and how many there were before
+ * the slice, or the reason the service call failed. The history commands'
+ * shape, so a failed key blanks that list and leaves every other one alone. */
+export type ListItemsResult =
+  | { ok: true; items: unknown[]; total: number }
+  | { ok: false; error: string };
+
+/**
+ * Calendar events, to-do items and weather forecasts for the preview's list
+ * layers, one entry per readable list key.
+ *
+ * The same bargain `fetchHistorySeries` makes: these need service calls with
+ * `return_response`, which the browser could make itself, but then the panel's
+ * merge, sort and caps and the watch's would be two implementations of one
+ * answer. The integration runs the module the signed `op=list` runs, so the
+ * preview draws what the wrist draws.
+ */
+export async function fetchListItems(
+  hass: HassLike,
+  requests: Record<string, ListRequestSpec>,
+): Promise<Record<string, ListItemsResult>> {
+  if (Object.keys(requests).length === 0) return {};
+  const reply = await hass.connection.sendMessagePromise<{
+    results: Record<string, ListItemsResult>;
+  }>({ type: `${D}/list_items`, requests });
+  return reply.results;
+}
+
+/** The list fetches one document needs, keyed the way the reply comes back and
+ * the way the resolver reads it. `signature` is the question as text, so a
+ * caller can tell a changed question from the same one asked again. */
+export function listItemsRequests(cfg: CustomComplicationConfig): {
+  requests: Record<string, ListRequestSpec>;
+  signature: string;
+} {
+  const requests: Record<string, ListRequestSpec> = {};
+  for (const [key, spec] of listRequests(cfg)) requests[key] = spec;
+  return { requests, signature: JSON.stringify(requests) };
+}
+
+/** Folds the command's results into the Map the resolver reads. A failed key
+ * lands nowhere, so that list keeps whatever it had rather than blanking every
+ * time one calendar is slow. The stored text is the reply as the watch caches
+ * it, which is the one shape `parseListItems` reads. */
+export function collectListResults(results: Record<string, ListItemsResult>): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [key, result] of Object.entries(results)) {
+    if (!result.ok) continue;
+    out.set(key, JSON.stringify({ items: result.items, total: result.total }));
+  }
+  return out;
 }
 
 /** Both commands' request bodies for one document, keyed as the resolver

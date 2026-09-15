@@ -155,6 +155,18 @@ function sample(kind: LayerKind): TemplateResult {
       return svg`<g stroke="var(--k)" stroke-width="1.4" opacity=".7">
         <path d="M10 12H110M10 23H110M10 34H110" />
       </g>`;
+    // Three rows of the same shape, which is the whole idea: one row template
+    // drawn once per item, with a glyph, a word and a reading in each.
+    case "list":
+      return svg`<g font-family=${FONT}>
+        <g fill="var(--k)"><circle cx="14" cy="12" r="3.2" /><circle cx="14" cy="23" r="3.2" /><circle cx="14" cy="34" r="3.2" /></g>
+        <g fill=${DIM} font-size="9">
+          <text x="24" y="15">Kitchen</text><text x="24" y="26">Hall</text><text x="24" y="37">Porch</text>
+        </g>
+        <g fill="var(--k)" font-size="9" text-anchor="end">
+          <text x="108" y="15">21°</text><text x="108" y="26">19°</text><text x="108" y="37">12°</text>
+        </g>
+      </g>`;
     // The timestamp chip on its own.
     case "imageTime":
       return svg`<g>

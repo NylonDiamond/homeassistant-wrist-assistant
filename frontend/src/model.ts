@@ -99,6 +99,12 @@ export function lockedOccupied(recordSlots: Iterable<number>, occupied: readonly
 /** The schema a document must carry for its content. Mirrors
  * `CustomComplicationConfig.schemaVersion(for:)` in the app.
  *
+ * 8 when the document carries a `list` layer, or an `item` or `listStat` value
+ * anywhere in it. An app on 7 meets an element kind and a value kind it has no
+ * code for, and an unknown value kind fails a whole document, so it must
+ * refuse the record whole and show "update the app" rather than draw a face
+ * with holes in it.
+ *
  * 7 when the document names any iPhone Home Screen shape, which an app that
  * predates them cannot draw at all.
  *
@@ -108,11 +114,25 @@ export function lockedOccupied(recordSlots: Iterable<number>, occupied: readonly
  * it must skip the document ("needs app update") instead. Otherwise 5 above
  * slot 7 (an old app's slot-id parser rejects ids past 8) and 4 below, so an
  * unchanged document stays byte-stable for old apps. */
-export function schemaVersionFor(cfg: Pick<CustomComplicationConfig, "slotIndex" | "supportedFamilies" | "inline">): number {
+export function schemaVersionFor(cfg: CustomComplicationConfig): number {
+  if (documentNeedsLists(cfg)) return 8;
   if (HOME_FAMILIES.some((f) => cfg.supportedFamilies.includes(f))) return 7;
   const missesCanvasShape = WATCH_CANVAS_FAMILIES.some((f) => !cfg.supportedFamilies.includes(f));
   if (missesCanvasShape || cfg.supportedFamilies.includes("inline") || cfg.inline !== undefined) return 6;
   return cfg.slotIndex > 7 ? 5 : 4;
+}
+
+/** Whether anything in the document needs schema 8: a list layer, or a value
+ * only a resolver that settles lists can read. Every `Value` is walked, row
+ * layers and the parts of a rich text included, because one `item` field in a
+ * rule on a row is enough to fail the document on an app that predates them. */
+function documentNeedsLists(cfg: CustomComplicationConfig): boolean {
+  if (cfg.elements.some((el) => el.kind === "list")) return true;
+  let found = false;
+  forEachValue(cfg, (v) => {
+    if (v.kind.kind === "item" || v.kind.kind === "listStat") found = true;
+  });
+  return found;
 }
 
 export type FontWeight = "regular" | "medium" | "semibold" | "bold";
@@ -378,8 +398,27 @@ export interface ValueFormat {
    * ("1h 23m"). Exclusive with `relativeTime`, and applied first if a document
    * somehow carries both. */
   duration?: boolean;
+  /** Read the value as unix seconds and print it as a time. Runs after
+   * `duration` and `relativeTime`, and only when the raw value parses as a
+   * number, so a value that is not a time prints exactly what it always did.
+   * Written only when set, so every document saved before this key is byte
+   * identical. See `TimestampStyle`. */
+  timestamp?: TimestampStyle;
   textCase?: TextCase;
 }
+
+/** How a `timestamp` format prints its seconds. `clock` is `9:30 AM` or
+ * `09:30` by the device's own clock, `date` is `15 Sep`, `weekday` is `Mon`,
+ * and `dateTime` is the two together. Mirrors `CustomComplication.ValueFormat.Timestamp`
+ * in the app repo. */
+export type TimestampStyle = "clock" | "date" | "weekday" | "dateTime";
+
+export const TIMESTAMP_STYLES: readonly [TimestampStyle, string][] = [
+  ["clock", "Time"],
+  ["date", "Date"],
+  ["weekday", "Weekday"],
+  ["dateTime", "Weekday and time"],
+];
 
 export type AggregateScope =
   | { kind: "entities"; entities: EntityRef[] }
@@ -412,7 +451,25 @@ export type ValueKind =
    * id. Local: the resolver settles the chart first and reads the number back.
    * This is how a chart's numbers are ordinary text layers rather than a
    * feature of the chart, so they sit anywhere and take every text style. */
-  | { kind: "chartStat"; layer: string; stat: ChartStat };
+  | { kind: "chartStat"; layer: string; stat: ChartStat }
+  /** One field of the item a list row is being drawn for. Local, like
+   * `chartStat`: nothing is compiled or fetched for it, the resolver sets the
+   * current item before it resolves a row and reads the field back. Anywhere
+   * outside a row it is nil, drawn as `--`. */
+  | { kind: "item"; field: string }
+  /** A number read off a `list` layer in the same document, by the list's id:
+   * how many items it drew (`count`) or how many there were before the slice
+   * (`total`). The `chartStat` pattern again, so a header outside the list can
+   * say "4 left" and a rule can show an empty-state text at zero. */
+  | { kind: "listStat"; layer: string; stat: ListStat };
+
+/** What a `listStat` reads. An unknown spelling reads as `count`. */
+export type ListStat = "count" | "total";
+
+export const LIST_STATS: readonly [ListStat, string][] = [
+  ["count", "Items shown"],
+  ["total", "Items in total"],
+];
 
 export interface Value {
   kind: ValueKind;
@@ -2666,6 +2723,214 @@ export interface ImageTimeElement extends Omit<ElementBase, "colorSlot"> {
   image: string;
 }
 
+// ── list ──────────────────────────────────────────────────────────────────
+// One layer that draws a row template once per item of a source. The source is
+// either a Jinja expression the integration already renders with the rest of
+// the value document (entities, an attribute, raw Jinja) or a service-backed
+// fetch only the integration can make (calendar events, to-do items, a weather
+// forecast). Row layers are ordinary layers: their values may be `item`
+// fields, their rules read `item` fields, and their taps may target the item.
+// See docs/custom_complication_list_layer.md in the app repo for the wire
+// contract both repos build against.
+
+/** Which way the cells run. `down` stacks them top to bottom in `columns`
+ * wide lines, `across` lays them left to right in one line and ignores
+ * `columns`. An unknown spelling reads as `down`. */
+export type ListDirection = "down" | "across";
+
+export const LIST_DIRECTIONS: readonly [ListDirection, string][] = [
+  ["down", "Down"],
+  ["across", "Across"],
+];
+
+/** How an `entities` source orders what it found. `state` compares as numbers
+ * when both states parse, and numeric items come before text ones. */
+export type ListSort = "name" | "state" | "lastChanged";
+
+export const LIST_SORTS: readonly [ListSort, string][] = [
+  ["name", "Name"],
+  ["state", "State"],
+  ["lastChanged", "Last changed"],
+];
+
+/** Which to-do items a `todo` source asks for. `open` is `needs_action`,
+ * `done` is `completed`. */
+export type TodoStatus = "open" | "done" | "all";
+
+export const TODO_STATUSES: readonly [TodoStatus, string][] = [
+  ["open", "To do"],
+  ["done", "Done"],
+  ["all", "Everything"],
+];
+
+/** How a `todo` source orders its items: the order the list itself holds, or
+ * by due date. */
+export type TodoSort = "list" | "due";
+
+export const TODO_SORTS: readonly [TodoSort, string][] = [
+  ["list", "List order"],
+  ["due", "Due"],
+];
+
+/** Which forecast a `forecast` source asks the weather entity for.
+ * `twiceDaily` is Home Assistant's `twice_daily`. */
+export type ForecastType = "hourly" | "daily" | "twiceDaily";
+
+export const FORECAST_TYPES: readonly [ForecastType, string][] = [
+  ["hourly", "Hourly"],
+  ["daily", "Daily"],
+  ["twiceDaily", "Twice daily"],
+];
+
+/**
+ * Where a list's items come from.
+ *
+ * The first three compile to one Jinja expression that lands in the value
+ * document like any other computed value, keyed `e_<fnv1a64>`; the last three
+ * are a `ListSpec` the integration serves, keyed by its readable form
+ * (`listKey`). Both paths end as one JSON string the resolver parses, so
+ * nothing past the fetch knows which door the items came through.
+ *
+ * `attribute` and `forecast` carry their entity flat, the way the
+ * `entityAttribute` value kind does, rather than nested under a key.
+ */
+export type ListSource =
+  | {
+      kind: "entities";
+      /** The aggregate scope object, unchanged, so "3 lights on" and the list
+       * of them can never drift apart. */
+      scope: AggregateScope;
+      /** Keeps only the entities whose `device_class` attribute is exactly
+       * this. Absent, or blank, keeps every one of them: "battery sensors" and
+       * "door sensors" are a scope plus one word, not a template. */
+      deviceClass?: string;
+      stateFilter?: AggregateStateFilter;
+      sort: ListSort;
+      descending: boolean;
+      /** The attribute names the row template reads, so the Jinja dict carries
+       * those and nothing else. Each one becomes an `attr.<name>` item field. */
+      attributes: string[];
+    }
+  | ({ kind: "attribute"; attribute: string } & EntityRef)
+  | { kind: "template"; value: string }
+  | { kind: "calendar"; entities: EntityRef[]; hours: number }
+  | { kind: "todo"; entities: EntityRef[]; status: TodoStatus; sort: TodoSort }
+  | ({ kind: "forecast"; type: ForecastType } & EntityRef);
+
+export const LIST_SOURCE_KINDS: readonly [ListSource["kind"], string][] = [
+  ["entities", "Entities"],
+  ["attribute", "Attribute"],
+  ["template", "Template"],
+  ["calendar", "Calendar"],
+  ["todo", "To-do list"],
+  ["forecast", "Forecast"],
+];
+
+/** Cells drawn, whatever the item count. */
+export const LIST_MIN_ROWS = 1;
+export const LIST_MAX_ROWS = 12;
+export const LIST_DEFAULT_ROWS = 4;
+/** Cells per line when the list runs `down`. */
+export const LIST_MIN_COLUMNS = 1;
+export const LIST_MAX_COLUMNS = 4;
+export const LIST_DEFAULT_COLUMNS = 1;
+/** Space between cells, in design-box points. */
+export const LIST_DEFAULT_GAP = 2;
+export const LIST_MAX_GAP = 12;
+/** The most layers one row may hold. */
+export const LIST_MAX_TEMPLATE = 8;
+/** Calendars or to-do lists one source may merge. */
+export const LIST_MAX_SOURCE_ENTITIES = 5;
+/** How far ahead a calendar source may look, in hours. */
+export const LIST_MIN_CALENDAR_HOURS = 1;
+export const LIST_MAX_CALENDAR_HOURS = 336;
+export const LIST_DEFAULT_CALENDAR_HOURS = 24;
+
+/** The kinds a row template may never hold. A list inside a list has no
+ * meaning, and the three history layers plus the chart helpers all draw in a
+ * box of their own that a cell cannot give them. A template carrying one of
+ * these is refused by the audit and dropped by the decoder, so a hostile
+ * document never reaches a watch. */
+export const LIST_TEMPLATE_BANNED_KINDS: readonly string[] =
+  ["list", "chart", "timeline", "chartTimes", "chartDots", "chartGrid", "imageTime"];
+
+/** The shapes a list is offered on. Not the round ones and not Inline: a cell
+ * on a 51 point circle is not a row, and a placement written for one of those
+ * shapes is ignored rather than drawn. */
+export const LIST_FAMILIES: readonly FamilyKind[] = ["rectangular", "small", "medium", "large", "xlarge"];
+
+/**
+ * A row template drawn once per item.
+ *
+ * No `colorSlot`: the colours live on the row layers. Rules on the list itself
+ * apply `opacity`, `rotation` and `visibility` only, as on a timeline. Mirrors
+ * `CustomComplication.ListElement` in the app repo.
+ */
+export interface ListElement extends Omit<ElementBase, "colorSlot"> {
+  source: ListSource;
+  /** Cells drawn, 1...12. The frame is divided evenly into this many cells
+   * whatever the item count, so a short list leaves the design where the
+   * author put it rather than stretching two items over four rows. */
+  rows: number;
+  direction: ListDirection;
+  /** Cells per line, 1...4, `down` only. Cells fill row-major, so `rows` 6 and
+   * `columns` 2 is a three by two grid. */
+  columns: number;
+  /** Space between cells, in design-box points. */
+  gap: number;
+  /** The row, at most `LIST_MAX_TEMPLATE` layers. Frames are normalised 0...1
+   * inside the cell. */
+  template: Element[];
+}
+
+/** One row's cells per line and lines per list, for `direction` and `columns`
+ * as they stand. Shared by the resolver's cell geometry and the editor's
+ * cell-height warning, so the two cannot disagree about the grid. */
+export function listGrid(el: Pick<ListElement, "rows" | "direction" | "columns">): { lines: number; columns: number } {
+  const rows = clampListRows(el.rows);
+  if (el.direction === "across") return { lines: 1, columns: rows };
+  const columns = Math.min(clampListColumns(el.columns), rows);
+  return { lines: Math.ceil(rows / columns), columns };
+}
+
+export function clampListRows(raw: unknown): number {
+  const n = typeof raw === "number" && Number.isFinite(raw) ? Math.round(raw) : LIST_DEFAULT_ROWS;
+  return Math.min(LIST_MAX_ROWS, Math.max(LIST_MIN_ROWS, n));
+}
+
+export function clampListColumns(raw: unknown): number {
+  const n = typeof raw === "number" && Number.isFinite(raw) ? Math.round(raw) : LIST_DEFAULT_COLUMNS;
+  return Math.min(LIST_MAX_COLUMNS, Math.max(LIST_MIN_COLUMNS, n));
+}
+
+export function clampListGap(raw: unknown): number {
+  const n = typeof raw === "number" && Number.isFinite(raw) ? raw : LIST_DEFAULT_GAP;
+  return Math.min(LIST_MAX_GAP, Math.max(0, n));
+}
+
+export function clampCalendarHours(raw: unknown): number {
+  const n = typeof raw === "number" && Number.isFinite(raw) ? Math.round(raw) : LIST_DEFAULT_CALENDAR_HOURS;
+  return Math.min(LIST_MAX_CALENDAR_HOURS, Math.max(LIST_MIN_CALENDAR_HOURS, n));
+}
+
+/** The entity references a source names, in the order the walker meets them.
+ * An `entities` source with a filter scope names none: the filter is areas,
+ * labels and floors, which are not entities. */
+export function listSourceEntities(source: ListSource): EntityRef[] {
+  switch (source.kind) {
+    case "entities":
+      return source.scope.kind === "entities" ? source.scope.entities : [];
+    case "attribute":
+    case "forecast":
+      return [{ entityId: source.entityId, displayName: source.displayName, domain: source.domain }];
+    case "calendar":
+    case "todo":
+      return source.entities;
+    case "template":
+      return [];
+  }
+}
+
 export type Element =
   | { kind: "text"; payload: TextElement }
   | { kind: "icon"; payload: IconElement }
@@ -2678,7 +2943,8 @@ export type Element =
   | { kind: "chartTimes"; payload: ChartTimesElement }
   | { kind: "chartDots"; payload: ChartDotsElement }
   | { kind: "chartGrid"; payload: ChartGridElement }
-  | { kind: "imageTime"; payload: ImageTimeElement };
+  | { kind: "imageTime"; payload: ImageTimeElement }
+  | { kind: "list"; payload: ListElement };
 
 export interface Placement {
   frame: NormalizedFrame;
@@ -2791,9 +3057,33 @@ export function describeTapAction(action: TapAction): string {
   return target ? `${label}: ${target}` : label;
 }
 
+/**
+ * One service-backed list fetch, in the shape both the panel's
+ * `wrist_assistant/complications/list_items` request and the watch's signed
+ * `op=list` body use, so the integration reads one spelling. `entity_id` keeps
+ * Home Assistant's own word because it goes straight into the service call;
+ * everything else is the panel's.
+ *
+ * `limit` is the list's `rows`; the server clamps it to 12 and slices after
+ * sorting. Mirrors `CustomComplication.ListSpec` in the app repo.
+ */
+export interface ListRequestSpec {
+  source: "calendar" | "todo" | "forecast";
+  /** calendar and todo: the entity ids, in the order the source lists them. */
+  entities?: string[];
+  /** forecast: the weather entity. */
+  entity_id?: string;
+  hours?: number;
+  status?: TodoStatus;
+  sort?: TodoSort;
+  type?: ForecastType;
+  limit: number;
+}
+
 export type DataSource =
   | ({ kind: "entity" } & EntityRef)
-  | { kind: "template"; value: string };
+  | { kind: "template"; value: string }
+  | ({ kind: "list" } & ListRequestSpec);
 
 /** The Inline shape's whole layout: one line of text and an optional symbol.
  * The watch draws `symbol label: value`, value alone when the face is narrow.
@@ -2903,6 +3193,9 @@ function parseFormat(o: unknown): ValueFormat | undefined {
   if (o.useEntityUnit === true) f.useEntityUnit = true;
   if (o.relativeTime === true) f.relativeTime = true;
   if (o.duration === true) f.duration = true;
+  // An unknown style reads as absent, so a panel that predates a new spelling
+  // prints the seconds rather than refusing the document.
+  if (TIMESTAMP_STYLES.some(([s]) => s === o.timestamp)) f.timestamp = o.timestamp as TimestampStyle;
   if (o.textCase === "upper" || o.textCase === "lower" || o.textCase === "capitalized") f.textCase = o.textCase;
   return formatIsEmpty(f) ? undefined : f;
 }
@@ -2918,6 +3211,7 @@ export function formatIsEmpty(f: ValueFormat | undefined): boolean {
     !f.useEntityUnit &&
     !f.relativeTime &&
     !f.duration &&
+    f.timestamp === undefined &&
     f.textCase === undefined
   );
 }
@@ -2974,6 +3268,14 @@ function parseValueKind(o: J): ValueKind {
         kind: "chartStat",
         layer: str(o.layer).toUpperCase(),
         stat: CHART_STATS.some(([s]) => s === o.stat) ? (o.stat as ChartStat) : "latest",
+      };
+    case "item":
+      return { kind: "item", field: str(o.field) };
+    case "listStat":
+      return {
+        kind: "listStat",
+        layer: str(o.layer).toUpperCase(),
+        stat: o.stat === "total" ? "total" : "count",
       };
     default:
       throw new ConfigParseError(`unknown value kind ${String(o.kind)}`);
@@ -3189,6 +3491,73 @@ function parseTimelineAggregate(raw: unknown): TimelineAggregate | undefined {
   }
   if (entities.length === 0) return undefined;
   return { entities, combine: raw.combine === "all" ? "all" : TIMELINE_DEFAULT_COMBINE };
+}
+
+/** A reference that tolerates a half-written source: a picker the author has
+ * not filled in yet writes a blank id, and that is a source waiting for an
+ * entity rather than a document nobody can open. */
+function readEntityRef(o: unknown): EntityRef {
+  const j = isObject(o) ? o : {};
+  const ref: EntityRef = { entityId: str(j.entityId), displayName: str(j.displayName), domain: str(j.domain) };
+  if (typeof j.iconName === "string") ref.iconName = j.iconName;
+  return ref;
+}
+
+/** Every named entity of a calendar or to-do source, blanks dropped. Not
+ * capped here: the cap is the picker's and the server's, and truncating on the
+ * way in would quietly lose a calendar from a document written elsewhere. */
+function readEntityRefs(raw: unknown): EntityRef[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map(readEntityRef).filter((r) => r.entityId !== "");
+}
+
+/**
+ * Where a list's items come from.
+ *
+ * An unknown `source.kind` reads as the empty `entities` source rather than
+ * throwing: a newer panel may name a source this build has no code for, and a
+ * list drawing nothing is a better answer than a document that will not open.
+ * The audit still reports the keys it did not know, so such a document opens
+ * read-only and cannot be saved back with the source flattened.
+ */
+function parseListSource(raw: unknown): ListSource {
+  const o = isObject(raw) ? raw : {};
+  const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  switch (o.kind) {
+    case "attribute":
+      return { kind: "attribute", ...readEntityRef(o), attribute: str(o.attribute) };
+    case "template":
+      return { kind: "template", value: str(o.value) };
+    case "calendar":
+      return { kind: "calendar", entities: readEntityRefs(o.entities), hours: clampCalendarHours(o.hours) };
+    case "todo":
+      return {
+        kind: "todo",
+        entities: readEntityRefs(o.entities),
+        status: pickEnum(optStr(o.status), TODO_STATUSES, "open"),
+        sort: pickEnum(optStr(o.sort), TODO_SORTS, "list"),
+      };
+    case "forecast":
+      return { kind: "forecast", ...readEntityRef(o), type: pickEnum(optStr(o.type), FORECAST_TYPES, "hourly") };
+    default: {
+      // The aggregate's own scope and state filter, read by the aggregate's own
+      // parser, so the two can never disagree about what a scope is.
+      const spec = parseAggregate({ scope: o.scope, stateFilter: o.stateFilter });
+      const source: ListSource = {
+        kind: "entities",
+        scope: spec.scope,
+        sort: pickEnum(optStr(o.sort), LIST_SORTS, "name"),
+        descending: o.descending === true,
+        attributes: strings(o.attributes),
+      };
+      // A blank device class is no device class: the box the editor offers is
+      // free text, and an author who cleared it means "any".
+      const deviceClass = str(o.deviceClass).trim();
+      if (deviceClass !== "") source.deviceClass = deviceClass;
+      if (spec.stateFilter) source.stateFilter = spec.stateFilter;
+      return source;
+    }
+  }
 }
 
 /** A layer's shadow, clamped the way the app clamps it. An object with no
@@ -3558,6 +3927,27 @@ function parseElementKind(raw: unknown): Element {
           lines: chartGridLayerLines(p.lines),
           colorHex: chartGridColorHex(p.colorHex),
           thickness: chartGridThickness(p.thickness),
+        },
+      };
+    }
+    case "list": {
+      const { colorSlot: _unused, ...base } = parseElementBase(p, "#FFFFFF");
+      // A banned kind inside a template is dropped rather than drawn: the
+      // audit reports it, so the document opens read-only and the flattened
+      // form is never saved back over the author's.
+      const template = (Array.isArray(p.template) ? p.template : [])
+        .filter((e) => isObject(e) && !LIST_TEMPLATE_BANNED_KINDS.includes(String(e.kind)))
+        .map(parseElement);
+      return {
+        kind: "list",
+        payload: {
+          ...base,
+          source: parseListSource(p.source),
+          rows: clampListRows(p.rows),
+          direction: p.direction === "across" ? "across" : "down",
+          columns: clampListColumns(p.columns),
+          gap: clampListGap(p.gap),
+          template,
         },
       };
     }
@@ -4494,6 +4884,9 @@ function encodeFormat(f: ValueFormat): J {
   if (f.useEntityUnit) o.useEntityUnit = true;
   if (f.relativeTime) o.relativeTime = true;
   if (f.duration) o.duration = true;
+  // Written only when set, so every value formatted before this key existed
+  // encodes exactly the bytes it always did.
+  if (f.timestamp !== undefined) o.timestamp = f.timestamp;
   if (f.textCase !== undefined) o.textCase = f.textCase;
   return o;
 }
@@ -4525,6 +4918,8 @@ function encodeValueKind(k: ValueKind): J {
     case "jinja": return { kind: "jinja", value: k.value };
     case "named": return { kind: "named", id: k.id };
     case "chartStat": return { kind: "chartStat", layer: k.layer, stat: k.stat };
+    case "item": return { kind: "item", field: k.field };
+    case "listStat": return { kind: "listStat", layer: k.layer, stat: k.stat };
   }
 }
 
@@ -4997,6 +5392,75 @@ function encodeElementKind(el: Element): J {
       if (thickness !== CHART_GRID_LINE_WIDTH) o.thickness = encNum(thickness);
       return { kind: "chartGrid", payload: o };
     }
+    case "list": {
+      const l = el.payload;
+      const o: J = {
+        id: l.id,
+        rules: encodeRules(l.rules),
+        frame: encodeFrame(l.frame),
+        isHidden: l.isHidden,
+      };
+      // Both are on `ElementBase` and both change what a list draws, so they
+      // are written the way a tap writes them.
+      if (l.opacity !== undefined && l.opacity !== 1) o.opacity = encNum(l.opacity);
+      if (l.shadow !== undefined) {
+        o.shadow = { colorHex: l.shadow.colorHex, radius: encNum(l.shadow.radius), dx: encNum(l.shadow.dx), dy: encNum(l.shadow.dy) };
+      }
+      o.source = encodeListSource(l.source);
+      // Every layout key is omitted at its default, so a plain four-row list
+      // writes the source and the row and nothing else.
+      const rows = clampListRows(l.rows);
+      if (rows !== LIST_DEFAULT_ROWS) o.rows = rows;
+      if (l.direction === "across") o.direction = "across";
+      const columns = clampListColumns(l.columns);
+      if (columns !== LIST_DEFAULT_COLUMNS) o.columns = columns;
+      const gap = clampListGap(l.gap);
+      if (gap !== LIST_DEFAULT_GAP) o.gap = encNum(gap);
+      if (l.template.length > 0) o.template = l.template.map(encodeElement);
+      return { kind: "list", payload: o };
+    }
+  }
+}
+
+/** One source as written: the keys that source has, each only when it says
+ * something other than its default. */
+function encodeListSource(s: ListSource): J {
+  switch (s.kind) {
+    case "entities": {
+      const o: J = { kind: "entities", scope: encodeAggregate({ function: "count", scope: s.scope }).scope as J };
+      const deviceClass = (s.deviceClass ?? "").trim();
+      if (deviceClass !== "") o.deviceClass = deviceClass;
+      if (s.stateFilter) {
+        o.stateFilter = s.stateFilter.kind === "equals" || s.stateFilter.kind === "notEquals"
+          ? { kind: s.stateFilter.kind, value: s.stateFilter.value }
+          : { kind: s.stateFilter.kind };
+      }
+      if (s.sort !== "name") o.sort = s.sort;
+      if (s.descending) o.descending = true;
+      if (s.attributes.length > 0) o.attributes = [...s.attributes];
+      return o;
+    }
+    case "attribute":
+      return { kind: "attribute", ...encodeEntityRef(s), attribute: s.attribute };
+    case "template":
+      return { kind: "template", value: s.value };
+    case "calendar": {
+      const o: J = { kind: "calendar", entities: s.entities.map(encodeEntityRef) };
+      const hours = clampCalendarHours(s.hours);
+      if (hours !== LIST_DEFAULT_CALENDAR_HOURS) o.hours = hours;
+      return o;
+    }
+    case "todo": {
+      const o: J = { kind: "todo", entities: s.entities.map(encodeEntityRef) };
+      if (s.status !== "open") o.status = s.status;
+      if (s.sort !== "list") o.sort = s.sort;
+      return o;
+    }
+    case "forecast": {
+      const o: J = { kind: "forecast", ...encodeEntityRef(s) };
+      if (s.type !== "hourly") o.type = s.type;
+      return o;
+    }
   }
 }
 
@@ -5053,6 +5517,23 @@ function encodeTapAction(t: TapAction): J {
   return { type: t.type };
 }
 
+/** One derived data source as written. A list source carries the same keys the
+ * websocket request and the watch's signed `op=list` body carry, each only
+ * when the source it came from has it. */
+function encodeDataSource(d: DataSource): J {
+  if (d.kind === "template") return { kind: "template", value: d.value };
+  if (d.kind === "entity") return { kind: "entity", ...encodeEntityRef(d) };
+  const o: J = { kind: "list", source: d.source };
+  if (d.entities !== undefined) o.entities = [...d.entities];
+  if (d.entity_id !== undefined) o.entity_id = d.entity_id;
+  if (d.hours !== undefined) o.hours = d.hours;
+  if (d.status !== undefined) o.status = d.status;
+  if (d.sort !== undefined) o.sort = d.sort;
+  if (d.type !== undefined) o.type = d.type;
+  o.limit = d.limit;
+  return o;
+}
+
 function encodeInline(i: InlineLayout): J {
   const o: J = {};
   if (i.label !== undefined) o.label = i.label;
@@ -5078,7 +5559,7 @@ export function encodeConfig(cfg: CustomComplicationConfig): J {
     elements: cfg.elements.map(encodeElement),
     supportedFamilies: cfg.supportedFamilies,
     perFamily,
-    dataSources: cfg.dataSources.map((d) => (d.kind === "template" ? { kind: "template", value: d.value } : { kind: "entity", ...encodeEntityRef(d) })),
+    dataSources: cfg.dataSources.map(encodeDataSource),
     tapAction: encodeTapAction(cfg.tapAction),
   };
   if (cfg.inline !== undefined) o.inline = encodeInline(cfg.inline);
@@ -5258,7 +5739,7 @@ const K = {
   inline: ["label", "value", "symbol", "countdown"],
   named: ["id", "name", "value"],
   value: ["kind", "format"],
-  format: ["decimals", "multiply", "offset", "prefix", "suffix", "useEntityUnit", "relativeTime", "duration", "textCase"],
+  format: ["decimals", "multiply", "offset", "prefix", "suffix", "useEntityUnit", "relativeTime", "duration", "timestamp", "textCase"],
   entityRef: ["entityId", "displayName", "domain", "iconName"],
   aggregate: ["function", "scope", "stateFilter", "attribute"],
   scope: ["kind", "entities", "domains", "areaIds", "labelIds", "floorIds"],
@@ -5338,6 +5819,9 @@ const K = {
   // filling the frame). Listed so a document saved while it existed still
   // opens; nothing decodes it, and it leaves the wire on the next save.
   imageTime: ["image", "size"],
+  // A row template drawn once per item. `template` holds whole elements, so it
+  // is audited the way `$.elements` is, one level deeper.
+  list: ["source", "rows", "direction", "columns", "gap", "template"],
   colorSlot: ["baseColorHex"],
   rule: ["id", "cases", "otherwise", "partId"],
   case: ["id", "when", "then"],
@@ -5367,6 +5851,19 @@ const VALUE_KIND_KEYS: Record<string, string[]> = {
   jinja: ["kind", "value"],
   named: ["kind", "id"],
   chartStat: ["kind", "layer", "stat"],
+  item: ["kind", "field"],
+  listStat: ["kind", "layer", "stat"],
+};
+
+/** One key list per `source.kind`, the way `VALUE_KIND_KEYS` reads a value.
+ * `attribute` and `forecast` carry their entity flat. */
+const LIST_SOURCE_KEYS: Record<string, string[]> = {
+  entities: ["kind", "scope", "deviceClass", "stateFilter", "sort", "descending", "attributes"],
+  attribute: ["kind", ...K.entityRef, "attribute"],
+  template: ["kind", "value"],
+  calendar: ["kind", "entities", "hours"],
+  todo: ["kind", "entities", "status", "sort"],
+  forecast: ["kind", ...K.entityRef, "type"],
 };
 
 export function auditUnknownKeys(raw: unknown): string[] {
@@ -5453,9 +5950,27 @@ export function auditUnknownKeys(raw: unknown): string[] {
       if (isObject(v)) value(v.value, `$.values[${i}].value`);
     });
   }
-  if (Array.isArray(raw.elements)) {
-    raw.elements.forEach((e, i) => {
-      const ep = `$.elements[${i}]`;
+  /** One list source, by the keys the kind it names has. */
+  const listSource = (o: unknown, path: string) => {
+    if (!isObject(o)) return;
+    const kind = typeof o.kind === "string" ? o.kind : "";
+    check(o, LIST_SOURCE_KEYS[kind] ?? ["kind"], path);
+    if (kind === "entities") {
+      check(o.scope, K.scope, `${path}.scope`);
+      if (isObject(o.scope) && Array.isArray(o.scope.entities)) {
+        o.scope.entities.forEach((r, i) => check(r, K.entityRef, `${path}.scope.entities[${i}]`));
+      }
+      check(o.stateFilter, K.stateFilter, `${path}.stateFilter`);
+    }
+    if ((kind === "calendar" || kind === "todo") && Array.isArray(o.entities)) {
+      o.entities.forEach((r, i) => check(r, K.entityRef, `${path}.entities[${i}]`));
+    }
+  };
+  /** One element, and the row layers of a list under it. A row layer is an
+   * element like any other, so it is audited by the same rules: unknown keys
+   * in a row would be lost on the next save exactly as unknown keys at the top
+   * level would. */
+  const element = (e: unknown, ep: string) => {
       check(e, K.elementEnvelope, ep);
       if (!isObject(e) || !isObject(e.payload)) return;
       const kind = typeof e.kind === "string" ? e.kind : "";
@@ -5485,7 +6000,23 @@ export function auditUnknownKeys(raw: unknown): string[] {
       }
       if (kind === "image") check(e.payload.entity, K.entityRef, `${ep}.payload.entity`);
       if (kind === "tap") check(e.payload.action, K.tapAction, `${ep}.payload.action`);
-    });
+      if (kind === "list") {
+        listSource(e.payload.source, `${ep}.payload.source`);
+        const template = Array.isArray(e.payload.template) ? e.payload.template : [];
+        // A row that nests a list, or holds one of the layers that draw in a box
+        // of their own, is refused: the decoder drops it, so saving the document
+        // back would silently lose it. The same finding as an unknown key, and
+        // it opens the document read-only for the same reason.
+        if (template.length > LIST_MAX_TEMPLATE) out.push(`${ep}.payload.template.length`);
+        template.forEach((row, j) => {
+          const rp = `${ep}.payload.template[${j}]`;
+          if (isObject(row) && LIST_TEMPLATE_BANNED_KINDS.includes(String(row.kind))) out.push(`${rp}.kind`);
+          else element(row, rp);
+        });
+      }
+  };
+  if (Array.isArray(raw.elements)) {
+    raw.elements.forEach((e, i) => element(e, `$.elements[${i}]`));
   }
   const layouts: [string, unknown][] = [];
   if (Array.isArray(raw.perFamily)) {
@@ -5675,6 +6206,30 @@ export function newElement(kind: Element["kind"]): Element {
         payload: { ...b, chart: "", lines: CHART_DEFAULT_GRID_LINES, colorHex: CHART_DEFAULT_GRID_HEX, thickness: CHART_GRID_LINE_WIDTH },
       };
     }
+    // An empty scope and an empty row: the source card and the row card are
+    // both the first thing the author fills in, and a list of made-up entities
+    // would draw rows that look like data.
+    case "list": {
+      const { colorSlot: _unused, ...b } = base("#FFFFFF");
+      return {
+        kind,
+        payload: {
+          ...b,
+          source: {
+            kind: "entities",
+            scope: { kind: "filter", domains: [], areaIds: [], labelIds: [], floorIds: [] },
+            sort: "name",
+            descending: false,
+            attributes: [],
+          },
+          rows: LIST_DEFAULT_ROWS,
+          direction: "down",
+          columns: LIST_DEFAULT_COLUMNS,
+          gap: LIST_DEFAULT_GAP,
+          template: [],
+        },
+      };
+    }
   }
 }
 
@@ -5707,6 +6262,9 @@ export function elementSize(el: Element): number | undefined {
     case "chartGrid": return undefined;
     // The chip's text size is its own `size`, never a per-shape override.
     case "imageTime": return undefined;
+    // A list's cells fill its frame, and every point-valued setting in a row
+    // belongs to the row layer, so the list itself has no size of its own.
+    case "list": return undefined;
   }
 }
 
@@ -5772,21 +6330,26 @@ export function refitPlacement(p: Placement, from: FamilyKind, to: FamilyKind, k
   return next;
 }
 
+/** One layer with one shape's placement applied: the frame, whether the shape
+ * hides it, and the size for the four kinds that have one. Shared by
+ * `elementsFor` and the resolver's row layers, which take part in the same
+ * `placements` map under their own ids. */
+export function withPlacement(el: Element, placement: Placement | undefined): Element {
+  if (!placement) return el;
+  const payload = { ...el.payload, frame: placement.frame, isHidden: placement.isHidden };
+  if (placement.size !== undefined) {
+    if (el.kind === "text") (payload as TextElement).fontSize = placement.size;
+    else if (el.kind === "icon") (payload as IconElement).size = placement.size;
+    else if (el.kind === "gauge") (payload as GaugeElement).lineWidth = placement.size;
+    else if (el.kind === "chart") (payload as ChartElement).lineWidth = placement.size;
+  }
+  return { kind: el.kind, payload } as Element;
+}
+
 export function elementsFor(config: CustomComplicationConfig, family: FamilyKind): Element[] {
   const layout = config.perFamily[family];
   if (!layout || Object.keys(layout.placements).length === 0) return config.elements;
-  return config.elements.map((el) => {
-    const placement = layout.placements[el.payload.id];
-    if (!placement) return el;
-    const payload = { ...el.payload, frame: placement.frame, isHidden: placement.isHidden };
-    if (placement.size !== undefined) {
-      if (el.kind === "text") (payload as TextElement).fontSize = placement.size;
-      else if (el.kind === "icon") (payload as IconElement).size = placement.size;
-      else if (el.kind === "gauge") (payload as GaugeElement).lineWidth = placement.size;
-      else if (el.kind === "chart") (payload as ChartElement).lineWidth = placement.size;
-    }
-    return { kind: el.kind, payload } as Element;
-  });
+  return config.elements.map((el) => withPlacement(el, layout.placements[el.payload.id]));
 }
 
 /** The value a layer shows (shapes have none). An image reads its camera's state,
@@ -5809,6 +6372,9 @@ export function primaryValue(el: Element): Value | undefined {
     case "chartDots": return undefined;
     case "chartGrid": return undefined;
     case "imageTime": return undefined;
+    // A list has no one value: every value it draws belongs to a row layer,
+    // and its items come from `source` rather than from a `Value`.
+    case "list": return undefined;
   }
 }
 
@@ -6169,6 +6735,13 @@ export function removeElement(cfg: CustomComplicationConfig, id: string): void {
     if (el.kind === "chart" && el.payload.scaleFrom === id) delete el.payload.scaleFrom;
   }
   for (const family of DRAWABLE_FAMILIES) delete cfg.perFamily[family]?.placements[id];
+  // A list's row layers hold placements of their own, keyed by their own ids.
+  // Nothing else can reach them once the list is gone, so they go with it.
+  if (gone?.kind === "list") {
+    for (const row of gone.payload.template) {
+      for (const family of DRAWABLE_FAMILIES) delete cfg.perFamily[family]?.placements[row.payload.id];
+    }
+  }
   syncAttachedTaps(cfg);
   pruneGroups(cfg);
   // The chart's group was made when its first extra joined, so the last extra
@@ -6313,14 +6886,19 @@ export function copyElements(cfg: CustomComplicationConfig, ids: readonly string
     for (const label of chartLabelsOf(cfg, id)) take(label.payload.id);
   }
   const elements = cfg.elements.filter((el) => wanted.has(el.payload.id)).map((el) => structuredClone(el));
+  // A copied list brings its row layers' placements too: they are keyed by the
+  // row ids in the same map, and a copy that left them behind would paste a
+  // row laid out for no shape at all.
+  const placedIds = elements.flatMap((el) =>
+    el.kind === "list" ? [el.payload.id, ...el.payload.template.map((r) => r.payload.id)] : [el.payload.id]);
   const placements: LayerClip["placements"] = {};
   for (const family of DRAWABLE_FAMILIES) {
     const layout = cfg.perFamily[family];
     if (!layout) continue;
     const out: Record<string, Placement> = {};
-    for (const el of elements) {
-      const p = layout.placements[el.payload.id];
-      if (p) out[el.payload.id] = structuredClone(p);
+    for (const id of placedIds) {
+      const p = layout.placements[id];
+      if (p) out[id] = structuredClone(p);
     }
     if (Object.keys(out).length > 0) placements[family] = out;
   }
@@ -6390,7 +6968,12 @@ export function pasteElementsOnto(cfg: CustomComplicationConfig, clip: LayerClip
  */
 export function pasteElements(cfg: CustomComplicationConfig, clip: LayerClip, opts: { nudge?: boolean } = {}): string[] {
   const idMap = new Map<string, string>();
-  for (const el of clip.elements) idMap.set(el.payload.id, newId());
+  for (const el of clip.elements) {
+    idMap.set(el.payload.id, newId());
+    // A row layer is not a layer of the document, but it has an id of its own
+    // and a placement under it, so a copy needs a fresh one the same way.
+    if (el.kind === "list") for (const row of el.payload.template) idMap.set(row.payload.id, newId());
+  }
   const here = new Set(cfg.elements.map((el) => el.payload.id));
   const nudge = opts.nudge !== false && clip.elements.some((el) => here.has(el.payload.id));
   const shift = (f: NormalizedFrame): NormalizedFrame => nudge
@@ -6449,6 +7032,14 @@ export function pasteElements(cfg: CustomComplicationConfig, clip: LayerClip, op
       if (chart) copy.payload.chartAnchor.layer = chart;
       else if (!here.has(copy.payload.chartAnchor.layer)) delete copy.payload.chartAnchor;
     }
+    // Row layers keep their frames, which are fractions of a cell rather than
+    // of the canvas: nudging one would move a row inside its cell.
+    if (copy.kind === "list") {
+      for (const row of copy.payload.template) {
+        const fresh = idMap.get(row.payload.id);
+        if (fresh) row.payload.id = fresh;
+      }
+    }
     copy.payload.frame = shift(copy.payload.frame);
     clones.push(copy);
   }
@@ -6469,13 +7060,20 @@ export function pasteElements(cfg: CustomComplicationConfig, clip: LayerClip, op
     else delete el.payload.groupId;
   }
   cfg.elements.push(...clones);
+  const landedIds = new Set(clones.map((el) => el.payload.id));
+  // A row layer's frame is a fraction of its cell, not of the canvas, so the
+  // paste nudge must not reach it: the list moves, the row stays where the
+  // author put it inside the row.
+  const rowIds = new Set(clones.flatMap((el) => (el.kind === "list" ? el.payload.template.map((r) => r.payload.id) : [])));
   for (const family of DRAWABLE_FAMILIES) {
     const from = clip.placements[family];
     const layout = cfg.perFamily[family];
     if (!from || !layout) continue;
     for (const [oldId, p] of Object.entries(from)) {
       const id = idMap.get(oldId);
-      if (id && clones.some((el) => el.payload.id === id)) layout.placements[id] = { ...structuredClone(p), frame: shift(p.frame) };
+      if (id === undefined) continue;
+      if (rowIds.has(id)) layout.placements[id] = structuredClone(p);
+      else if (landedIds.has(id)) layout.placements[id] = { ...structuredClone(p), frame: shift(p.frame) };
     }
   }
   syncAttachedTaps(cfg);
@@ -6804,7 +7402,9 @@ export type SitePart =
   | "bezelText" | "curvedText" | "bezelGauge" | "bezelGaugeMin" | "bezelGaugeMax"
   | "template" | "serviceData" | "textPart"
   // One of the entities a merged timeline combines, past the first.
-  | "timelineGroup";
+  | "timelineGroup"
+  // Where a list's items come from, and one layer of its row.
+  | "listSource" | "listRow";
 
 /** Where in the document a `Value` sits, in enough detail to name it in words. */
 export interface ValueSite {
@@ -6839,6 +7439,7 @@ const SITE_KIND_WORD: Record<Element["kind"], string> = {
   chartDots: "chart dots",
   chartGrid: "chart grid",
   imageTime: "timestamp",
+  list: "list",
 };
 
 function upperFirst(s: string): string {
@@ -6851,6 +7452,11 @@ export function describeSite(site: EntitySite): string {
   if (site.part === "serviceData") return "Service data";
   const word = site.layerKind === undefined ? "" : SITE_KIND_WORD[site.layerKind];
   const named = site.layerName ? `${word} "${site.layerName}"` : word;
+  // A row layer says which list it belongs to rather than naming itself: on a
+  // share the reader wants "Row of list", not the name of a layer that only
+  // exists inside one.
+  if (site.part === "listSource") return `Items of ${named}`;
+  if (site.part === "listRow") return named === "" ? "List row" : `Row of ${named}`;
   switch (site.kind) {
     case "named":
       return site.valueName ? `Shared value "${site.valueName}"` : "Shared value";
@@ -6895,6 +7501,17 @@ export function describeSite(site: EntitySite): string {
  * and `value.attr` is not. The caller still decides which hits count, because
  * `'3.5'` fits this shape too. */
 const QUOTED_ENTITY_RE = /(['"])([a-z0-9_]+\.[a-z0-9_]+)\1/g;
+
+/** The prefix a row tap writes where an entity id would go: `{item.entityId}`,
+ * `{item.listId}`, whatever field the row targets. The resolver substitutes it
+ * per row, so it is a placeholder rather than an id, and every walk that reads
+ * ids (a share's scrubber, an import's remapper, `documentEntityUses`) has to
+ * leave it exactly as it is. */
+export const ITEM_PLACEHOLDER_PREFIX = "{item.";
+
+export function isItemPlaceholder(text: string): boolean {
+  return text.startsWith(ITEM_PLACEHOLDER_PREFIX);
+}
 
 /** Every quoted entity id in one string, in order, with repeats kept. */
 export function quotedEntityIds(text: string): string[] {
@@ -6976,7 +7593,7 @@ function walkDocument(cfg: CustomComplicationConfig, visit: DocumentVisitor): vo
 
   const onTapAction = (action: TapAction, site: EntitySite, set: (a: TapAction) => void): void => {
     if (action.type === "callService") {
-      if (visit.ref && action.target !== undefined && action.target.entityId !== "") {
+      if (visit.ref && action.target !== undefined && !isItemPlaceholder(action.target.entityId) && action.target.entityId !== "") {
         const next = visit.ref(entityRefCopy(action.target), site);
         if (next) action.target = next;
       }
@@ -6987,6 +7604,10 @@ function walkDocument(cfg: CustomComplicationConfig, visit: DocumentVisitor): vo
       return;
     }
     if (!visit.ref || !("entityId" in action) || action.entityId === "") return;
+    // A row tap targets its item, not an entity: `{item.entityId}` is filled in
+    // per row at resolve. It is not an id, so a share must not scrub it and an
+    // import must not remap it.
+    if (isItemPlaceholder(action.entityId)) return;
     const next = visit.ref(entityRefCopy(action), site);
     if (next) set({ type: action.type, ...next });
   };
@@ -6995,13 +7616,11 @@ function walkDocument(cfg: CustomComplicationConfig, visit: DocumentVisitor): vo
     onValue(named.value, { kind: "named", valueId: named.id, valueName: named.name });
   }
 
-  for (const el of cfg.elements) {
-    const base: ValueSite = {
-      kind: "layer",
-      layerId: el.payload.id,
-      layerKind: el.kind,
-      layerName: layerNameOf(cfg, el),
-    };
+  /** One layer and everything hanging off it. Called for the document's own
+   * layers, and again for each row layer of a list, with `base` naming the
+   * list rather than the row: a row layer is not a layer of the document, so a
+   * share table that named it would point at something nobody can select. */
+  const onElement = (el: Element, base: ValueSite): void => {
     if (el.kind === "image") {
       if (visit.ref) {
         const next = visit.ref(entityRefCopy(el.payload.entity), { ...base, kind: "image" });
@@ -7051,9 +7670,68 @@ function walkDocument(cfg: CustomComplicationConfig, visit: DocumentVisitor): vo
           if (next) group[i] = next.entityId;
         }
       }
+      // Where a list's items come from, then the row itself. The source names
+      // entities the document is asking about, so a share has to scrub them and
+      // an import has to remap them, exactly as it does a layer's own value.
+      if (el.kind === "list") {
+        onListSource(el.payload.source, { ...base, part: "listSource" });
+        const rowSite: ValueSite = { ...base, part: "listRow" };
+        for (const row of el.payload.template) onElement(row, rowSite);
+      }
     }
     const ruleSite: ValueSite = { ...base, kind: "rule" };
     for (const v of ruleValues(el.payload.rules)) onValue(v, ruleSite);
+  };
+
+  /** The entity references and free text a list source holds. A `filter` scope
+   * names areas, labels and floors rather than entities, so it has none. */
+  const onListSource = (source: ListSource, site: ValueSite): void => {
+    if (source.kind === "template") {
+      if (visit.text) {
+        const next = visit.text(source.value, { ...site, part: "template" });
+        if (next !== source.value) source.value = next;
+      }
+      return;
+    }
+    if (!visit.ref) return;
+    const replace = (ref: EntityRef, set: (r: EntityRef) => void) => {
+      if (ref.entityId === "") return;
+      const next = visit.ref!(entityRefCopy(ref), site);
+      if (next) set(next);
+    };
+    switch (source.kind) {
+      case "entities":
+        if (source.scope.kind === "entities") {
+          const list = source.scope.entities;
+          for (let i = 0; i < list.length; i++) replace(list[i]!, (r) => { list[i] = r; });
+        }
+        return;
+      case "calendar":
+      case "todo": {
+        const list = source.entities;
+        for (let i = 0; i < list.length; i++) replace(list[i]!, (r) => { list[i] = r; });
+        return;
+      }
+      case "attribute":
+      case "forecast":
+        replace(source, (r) => {
+          source.entityId = r.entityId;
+          source.displayName = r.displayName;
+          source.domain = r.domain;
+          if (r.iconName !== undefined) source.iconName = r.iconName;
+          else delete source.iconName;
+        });
+        return;
+    }
+  };
+
+  for (const el of cfg.elements) {
+    onElement(el, {
+      kind: "layer",
+      layerId: el.payload.id,
+      layerKind: el.kind,
+      layerName: layerNameOf(cfg, el),
+    });
   }
 
   // Every layout, not only the supported ones. `compile()` skips a layout whose
@@ -7336,6 +8014,9 @@ export const RULE_TARGET_PROPERTIES: Record<RuleTarget, StyleProperty[]> = {
   chartGrid: ["opacity", "visibility"],
   // No colour: the chip's look is fixed, as it was inside the picture.
   imageTime: ["opacity", "rotation", "visibility"],
+  // The timeline's three, for the timeline's reason: every colour a list draws
+  // belongs to a row layer, and each row layer takes rules of its own.
+  list: ["opacity", "rotation", "visibility"],
   layout:["backgroundColor", "borderColor", "borderWidth", "text"],
 };
 

@@ -1,0 +1,176 @@
+{
+  "name": "Empty list",
+  "description": "Nothing to draw, and the layer that says so. The reply is a real reply with no items in it, which is not the same thing as a list that has not been fetched yet, and both draw zero cells. The \"All done\" text is hidden by default and shown by a rule on `listStat count` equals 0, which is the empty-state helper the panel's list card writes for you. `listStat` resolves after the list settles, so the text can never claim the list is empty while rows are on screen.",
+  "config": {
+    "schemaVersion": 8,
+    "id": "EEEEEEEE-0000-4000-8000-000000000470",
+    "name": "Empty list",
+    "slotIndex": 11,
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "list",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000471",
+          "source": {
+            "kind": "todo",
+            "entities": [
+              {
+                "entityId": "todo.chores",
+                "displayName": "Chores",
+                "domain": "todo"
+              }
+            ]
+          },
+          "template": [
+            {
+              "kind": "text",
+              "payload": {
+                "id": "EEEEEEEE-0000-4000-8000-000000000472",
+                "value": {
+                  "kind": {
+                    "kind": "item",
+                    "field": "title"
+                  }
+                },
+                "fontSize": 12,
+                "fontWeight": "regular",
+                "colorSlot": {
+                  "baseColorHex": "#FFFFFF"
+                },
+                "rules": [],
+                "frame": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1,
+                  "height": 1,
+                  "rotationDegrees": 0
+                },
+                "isHidden": false
+              }
+            }
+          ],
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.05,
+            "width": 0.9,
+            "height": 0.9,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000473",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "All done"
+            }
+          },
+          "fontSize": 15,
+          "fontWeight": "regular",
+          "colorSlot": {
+            "baseColorHex": "#30D158"
+          },
+          "rules": [
+            {
+              "id": "EEEEEEEE-0000-4000-8000-000000000474",
+              "cases": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000475",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "EEEEEEEE-0000-4000-8000-000000000476",
+                        "value": {
+                          "kind": {
+                            "kind": "listStat",
+                            "layer": "EEEEEEEE-0000-4000-8000-000000000471",
+                            "stat": "count"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "equals",
+                          "value": {
+                            "kind": {
+                              "kind": "literal",
+                              "value": "0"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    {
+                      "kind": "show"
+                    }
+                  ]
+                }
+              ],
+              "otherwise": []
+            }
+          ],
+          "frame": {
+            "x": 0.05,
+            "y": 0.4,
+            "width": 0.9,
+            "height": 0.2,
+            "rotationDegrees": 0
+          },
+          "isHidden": true
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "borderWidth": 2,
+        "cornerBodyShape": "wedge"
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {},
+    "listItems": {
+      "todo|todo.chores|open|list": "{\"items\":[],\"total\":0}"
+    }
+  },
+  "expectedCompiled": {
+    "entities": [],
+    "expressionKeys": [],
+    "listKeys": [
+      "todo|todo.chores|open|list"
+    ]
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000471",
+          "kind": "list",
+          "cells": []
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000473",
+          "kind": "text",
+          "text": "All done",
+          "colorHex": "#30D158"
+        }
+      ]
+    }
+  }
+}

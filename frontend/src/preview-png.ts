@@ -25,7 +25,7 @@ import {
   forEachValue,
   timelineHistoryKey,
 } from "./model.js";
-import { keyFor } from "./compiler.js";
+import { keyFor, listExpressionKey, listKey } from "./compiler.js";
 import { type EntityState, type ResolveContext, resolveAll } from "./resolver.js";
 import { type DrawableFamily, type IconProvider, renderLayout } from "./renderer.js";
 import { type ShareSlot, scrubForShare } from "./transfer.js";
@@ -41,6 +41,10 @@ export interface PreviewSource {
   entityState(entityId: string): EntityState | undefined;
   templateResults: ReadonlyMap<string, string>;
   historySeries: ReadonlyMap<string, string>;
+  /** The replies the service-backed lists came back with, by their readable
+   * key. Absent draws those lists empty, which is what a document whose items
+   * have not arrived yet draws anyway. */
+  listItems?: ReadonlyMap<string, string>;
 }
 
 /** The scrubbed document ready for a public picture: picture layers stay, to
@@ -91,11 +95,16 @@ export function galleryPreviewContext(
   }
 
   const historySeries = new Map<string, string>();
-  const copySeries = (oldKey: string | undefined, newKey: string | undefined) => {
-    if (oldKey === undefined || newKey === undefined) return;
-    const series = source.historySeries.get(oldKey);
-    if (series !== undefined) historySeries.set(newKey, series);
-  };
+  const listItems = new Map<string, string>();
+  const copy = (from: ReadonlyMap<string, string>, into: Map<string, string>) =>
+    (oldKey: string | undefined, newKey: string | undefined) => {
+      if (oldKey === undefined || newKey === undefined) return;
+      const text = from.get(oldKey);
+      if (text !== undefined) into.set(newKey, text);
+    };
+  const copySeries = copy(source.historySeries, historySeries);
+  const copyListText = copy(source.templateResults, templateResults);
+  const copyListReply = copy(source.listItems ?? new Map(), listItems);
   for (let i = 0; i < Math.min(cfg.elements.length, scrubbed.elements.length); i++) {
     const a = cfg.elements[i]!;
     const b = scrubbed.elements[i]!;
@@ -104,10 +113,18 @@ export function galleryPreviewContext(
       copySeries(chartStatisticsKey(a.payload), chartStatisticsKey(b.payload));
     } else if (a.kind === "timeline" && b.kind === "timeline") {
       copySeries(timelineHistoryKey(a.payload), timelineHistoryKey(b.payload));
+    } else if (a.kind === "list" && b.kind === "list") {
+      // A list's items are not a value, so the pairing above cannot carry them:
+      // a Jinja source is keyed by its own expression, which the scrub rewrote,
+      // and a service source by its readable key, which names the entities the
+      // scrub replaced. Both are paired here so the picture shows the rows the
+      // author is looking at rather than an empty frame.
+      copyListText(listExpressionKey(a.payload.source, a.payload.rows), listExpressionKey(b.payload.source, b.payload.rows));
+      copyListReply(listKey(a.payload.source), listKey(b.payload.source));
     }
   }
 
-  return { entityStates, templateResults, historySeries, namedValues: scrubbed.values };
+  return { entityStates, templateResults, historySeries, listItems, namedValues: scrubbed.values };
 }
 
 /**

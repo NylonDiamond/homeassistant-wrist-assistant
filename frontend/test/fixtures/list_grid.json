@@ -1,0 +1,524 @@
+{
+  "name": "Room grid",
+  "description": "Six cells in two columns, filled row-major, so the frame is a three by two grid of rooms whatever the item count: a list of four leaves the last two cells empty rather than stretching four rooms over six boxes. The large tile lays the same row out differently and hides the name line entirely, which is what per-family placement of a ROW layer means: a row layer is keyed in the placements map by its own id, exactly like a top-level layer, and the resolver applies the shape's placement to it before anything is drawn.",
+  "config": {
+    "schemaVersion": 8,
+    "id": "EEEEEEEE-0000-4000-8000-000000000460",
+    "name": "Room grid",
+    "slotIndex": 10,
+    "supportedFamilies": [
+      "rectangular",
+      "large"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "list",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000461",
+          "source": {
+            "kind": "entities",
+            "scope": {
+              "kind": "entities",
+              "entities": [
+                {
+                  "entityId": "sensor.kitchen_temperature",
+                  "displayName": "Kitchen",
+                  "domain": "sensor"
+                },
+                {
+                  "entityId": "sensor.study_temperature",
+                  "displayName": "Study",
+                  "domain": "sensor"
+                },
+                {
+                  "entityId": "sensor.bedroom_temperature",
+                  "displayName": "Bedroom",
+                  "domain": "sensor"
+                },
+                {
+                  "entityId": "sensor.hall_temperature",
+                  "displayName": "Hall",
+                  "domain": "sensor"
+                }
+              ]
+            }
+          },
+          "rows": 6,
+          "template": [
+            {
+              "kind": "text",
+              "payload": {
+                "id": "EEEEEEEE-0000-4000-8000-000000000462",
+                "value": {
+                  "kind": {
+                    "kind": "item",
+                    "field": "name"
+                  }
+                },
+                "fontSize": 9,
+                "fontWeight": "regular",
+                "colorSlot": {
+                  "baseColorHex": "#8E8E93"
+                },
+                "rules": [],
+                "frame": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1,
+                  "height": 0.45,
+                  "rotationDegrees": 0
+                },
+                "isHidden": false
+              }
+            },
+            {
+              "kind": "text",
+              "payload": {
+                "id": "EEEEEEEE-0000-4000-8000-000000000463",
+                "value": {
+                  "kind": {
+                    "kind": "item",
+                    "field": "state"
+                  },
+                  "format": {
+                    "decimals": 1,
+                    "suffix": "°"
+                  }
+                },
+                "fontSize": 15,
+                "fontWeight": "regular",
+                "colorSlot": {
+                  "baseColorHex": "#FFFFFF"
+                },
+                "rules": [],
+                "frame": {
+                  "x": 0,
+                  "y": 0.45,
+                  "width": 1,
+                  "height": 0.55,
+                  "rotationDegrees": 0
+                },
+                "isHidden": false
+              }
+            }
+          ],
+          "rules": [],
+          "frame": {
+            "x": 0.04,
+            "y": 0.06,
+            "width": 0.92,
+            "height": 0.88,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "columns": 2,
+          "gap": 4
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "borderWidth": 2,
+        "cornerBodyShape": "wedge"
+      },
+      "large",
+      {
+        "placements": {
+          "EEEEEEEE-0000-4000-8000-000000000462": {
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 1,
+              "height": 0.4,
+              "rotationDegrees": 0
+            },
+            "isHidden": true
+          },
+          "EEEEEEEE-0000-4000-8000-000000000463": {
+            "frame": {
+              "x": 0,
+              "y": 0.4,
+              "width": 1,
+              "height": 0.6,
+              "rotationDegrees": 0
+            },
+            "size": 22
+          }
+        },
+        "borderWidth": 2,
+        "cornerBodyShape": "wedge"
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {},
+    "templateResults": {
+      "e_a7d8933afd0226b": "{\"items\":[{\"entityId\":\"sensor.bedroom_temperature\",\"name\":\"Bedroom\",\"state\":\"18.4\",\"unit\":\"\\u00b0C\",\"domain\":\"sensor\",\"deviceClass\":\"temperature\",\"area\":\"Bedroom\",\"lastChanged\":1699999900,\"n\":18.4},{\"entityId\":\"sensor.hall_temperature\",\"name\":\"Hall\",\"state\":\"19.1\",\"unit\":\"\\u00b0C\",\"domain\":\"sensor\",\"deviceClass\":\"temperature\",\"area\":\"Hall\",\"lastChanged\":1699999880,\"n\":19.1},{\"entityId\":\"sensor.kitchen_temperature\",\"name\":\"Kitchen\",\"state\":\"21.7\",\"unit\":\"\\u00b0C\",\"domain\":\"sensor\",\"deviceClass\":\"temperature\",\"area\":\"Kitchen\",\"lastChanged\":1699999860,\"n\":21.7},{\"entityId\":\"sensor.study_temperature\",\"name\":\"Study\",\"state\":\"20.2\",\"unit\":\"\\u00b0C\",\"domain\":\"sensor\",\"deviceClass\":\"temperature\",\"area\":\"Study\",\"lastChanged\":1699999840,\"n\":20.2}],\"total\":4}"
+    }
+  },
+  "expectedCompiled": {
+    "entities": [],
+    "expressionKeys": [
+      "e_a7d8933afd0226b"
+    ],
+    "listKeys": [],
+    "document": "{% set v_e_a7d8933afd0226b %}{% set ns = namespace(items=[]) %}{% for s in (expand(['sensor.kitchen_temperature', 'sensor.study_temperature', 'sensor.bedroom_temperature', 'sensor.hall_temperature'])) | rejectattr('state', 'in', ['unavailable', 'unknown']) %}{% set ns.items = ns.items + [{'entityId': s.entity_id, 'name': s.name[:120], 'state': s.state[:120], 'unit': s.attributes.get('unit_of_measurement'), 'domain': s.domain, 'deviceClass': s.attributes.get('device_class'), 'area': area_name(s.entity_id), 'lastChanged': (as_timestamp(s.last_changed) | round(0)), 'n': (s.state | float(none))}] %}{% endfor %}{% set sorted = (ns.items | sort(attribute='name', reverse=false) | list) %}{{ {'items': sorted[:6], 'total': (sorted | count)} | to_json }}{% endset %}\n{{ { \"e_a7d8933afd0226b\": v_e_a7d8933afd0226b } | to_json }}"
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000461",
+          "kind": "list",
+          "cells": [
+            {
+              "frame": {
+                "x": 0,
+                "y": 0,
+                "width": 0.488,
+                "height": 0.287,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000462",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 0.45,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Bedroom",
+                  "colorHex": "#8E8E93",
+                  "fontSize": 9
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000463",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.45,
+                    "width": 1,
+                    "height": 0.55,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "18.4°",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 15
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0.512,
+                "y": 0,
+                "width": 0.488,
+                "height": 0.287,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000462",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 0.45,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Hall",
+                  "colorHex": "#8E8E93",
+                  "fontSize": 9
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000463",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.45,
+                    "width": 1,
+                    "height": 0.55,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "19.1°",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 15
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.356,
+                "width": 0.488,
+                "height": 0.287,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000462",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 0.45,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Kitchen",
+                  "colorHex": "#8E8E93",
+                  "fontSize": 9
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000463",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.45,
+                    "width": 1,
+                    "height": 0.55,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "21.7°",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 15
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0.512,
+                "y": 0.356,
+                "width": 0.488,
+                "height": 0.287,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000462",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 0.45,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Study",
+                  "colorHex": "#8E8E93",
+                  "fontSize": 9
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000463",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.45,
+                    "width": 1,
+                    "height": 0.55,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "20.2°",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 15
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "large": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000461",
+          "kind": "list",
+          "cells": [
+            {
+              "frame": {
+                "x": 0,
+                "y": 0,
+                "width": 0.494,
+                "height": 0.325,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000462",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 0.4,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": true,
+                  "text": "Bedroom",
+                  "colorHex": "#8E8E93",
+                  "fontSize": 9
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000463",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.4,
+                    "width": 1,
+                    "height": 0.6,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "18.4°",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 22
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0.506,
+                "y": 0,
+                "width": 0.494,
+                "height": 0.325,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000462",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 0.4,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": true,
+                  "text": "Hall",
+                  "colorHex": "#8E8E93",
+                  "fontSize": 9
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000463",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.4,
+                    "width": 1,
+                    "height": 0.6,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "19.1°",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 22
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.338,
+                "width": 0.494,
+                "height": 0.325,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000462",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 0.4,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": true,
+                  "text": "Kitchen",
+                  "colorHex": "#8E8E93",
+                  "fontSize": 9
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000463",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.4,
+                    "width": 1,
+                    "height": 0.6,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "21.7°",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 22
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0.506,
+                "y": 0.338,
+                "width": 0.494,
+                "height": 0.325,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000462",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 0.4,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": true,
+                  "text": "Study",
+                  "colorHex": "#8E8E93",
+                  "fontSize": 9
+                },
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000463",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0.4,
+                    "width": 1,
+                    "height": 0.6,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "20.2°",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 22
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

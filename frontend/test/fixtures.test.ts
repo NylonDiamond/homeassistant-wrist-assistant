@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { DRAWABLE_FAMILIES, type DrawableFamily, chartHistoryRequests, chartStatisticsRequests, parseConfig } from "../src/model.js";
-import { compile } from "../src/compiler.js";
+import { compile, listRequests } from "../src/compiler.js";
 import { resolveAll, type EntityState, type ForcedBranches, type ResolveContext, type ResolvedElement } from "../src/resolver.js";
 
 const dir = join(__dirname, "fixtures");
@@ -24,7 +24,22 @@ interface Fixture {
      * `chartStatisticsKey`). Both land in the one Map, exactly as the panel
      * folds the two websocket replies into one. */
     historySeries?: Record<string, string>;
+    /** One list reply per readable key (`calendar|<ids>|<hours>` and the
+     * rest), as the JSON text the integration sent. A Jinja-backed list is not
+     * here: its items arrive in `templateResults` under its `e_` key. */
+    listItems?: Record<string, string>;
     dataAgeSeconds?: number;
+    /** Epoch milliseconds, for a fixture whose rows count down to something.
+     * Without one the clock is the machine's and nothing time-relative could
+     * be pinned. */
+    nowMs?: number;
+    /** Forced on the `timestamp` format so a printed time reads the same on
+     * every machine. Absent follows the device, which is the real behaviour. */
+    locale?: string;
+    /** The zone that format prints in, as an IANA name ("UTC"). Named
+     * alongside the locale by any fixture that pins an hour: the locale alone
+     * decides the words, the zone decides the number. */
+    timeZone?: string;
   };
   expectedCompiled?: {
     entities: string[];
@@ -34,6 +49,8 @@ interface Fixture {
     historyKeys?: string[];
     /** The `entity|minutes|period|type` keys it should ask for statistics. */
     statisticsKeys?: string[];
+    /** The readable keys it should ask `list_items` for. */
+    listKeys?: string[];
   };
   expected: Record<string, { bezelText?: string | null; elements: Record<string, unknown>[] } & Record<string, unknown>> & {
     /** The Inline shape (schema 6). null for a key means "absent", as elsewhere. */
@@ -55,17 +72,23 @@ function contextFor(fx: Fixture): ResolveContext {
   const namedValues = parseConfig(fx.config).values;
   return {
     entityStates,
-    templateResults: new Map(Object.entries(fx.inputs.templateResults)),
+    templateResults: new Map(Object.entries(fx.inputs.templateResults ?? {})),
     historySeries: new Map(Object.entries(fx.inputs.historySeries ?? {})),
+    listItems: new Map(Object.entries(fx.inputs.listItems ?? {})),
     namedValues,
     dataAgeSeconds: fx.inputs.dataAgeSeconds,
+    ...(fx.inputs.nowMs !== undefined ? { nowMs: fx.inputs.nowMs } : {}),
+    ...(fx.inputs.locale !== undefined ? { locale: fx.inputs.locale } : {}),
+    ...(fx.inputs.timeZone !== undefined ? { timeZone: fx.inputs.timeZone } : {}),
   };
 }
 
 /** Compare only the keys the fixture names; null in the fixture means "absent". */
 function expectSubset(actual: Record<string, unknown>, expected: Record<string, unknown>, path: string) {
   for (const [key, want] of Object.entries(expected)) {
-    if (key === "elements") continue;
+    // Both hold whole resolved layers, which are compared key by key by the
+    // callers below rather than as one object.
+    if (key === "elements" || key === "cells") continue;
     const got = actual[key];
     if (want === null) {
       expect(got, `${path}.${key}`).toBeUndefined();
@@ -75,6 +98,28 @@ function expectSubset(actual: Record<string, unknown>, expected: Record<string, 
       expect(got, `${path}.${key}`).toEqual(want);
     }
   }
+}
+
+/**
+ * A list's cells, compared the way every other resolved thing is: only the
+ * keys the fixture names, but every cell and every row layer the fixture
+ * spells has to be there and in that order.
+ */
+function expectCells(actual: unknown, expected: readonly unknown[], path: string) {
+  expect(Array.isArray(actual), `${path}.cells`).toBe(true);
+  const cells = actual as Record<string, unknown>[];
+  expect(cells.length, `${path}.cells length`).toBe(expected.length);
+  expected.forEach((raw, i) => {
+    const want = raw as Record<string, unknown>;
+    const cell = cells[i]!;
+    expectSubset(cell, want, `${path}.cells[${i}]`);
+    if (!Array.isArray(want.elements)) return;
+    const got = (cell.elements ?? []) as Record<string, unknown>[];
+    expect(got.length, `${path}.cells[${i}].elements length`).toBe(want.elements.length);
+    want.elements.forEach((wantEl, j) => {
+      expectSubset(got[j]!, wantEl as Record<string, unknown>, `${path}.cells[${i}].elements[${j}]`);
+    });
+  });
 }
 
 /**
@@ -120,6 +165,28 @@ function normalise(el: Record<string, unknown>): Record<string, unknown> {
   const labels = el.labels;
   if (Array.isArray(labels)) {
     out.labels = labels.map((l: Record<string, unknown>) => l.position);
+  }
+  // A list's cells: the frame rounded like a timeline's runs, because a third
+  // of a frame is 0.333… in both languages and printed to each one's last
+  // digit, and each cell's layers normalised the same way this function
+  // normalises a layer of the document.
+  const cells = el.cells;
+  if (Array.isArray(cells)) {
+    out.cells = cells.map((c: Record<string, unknown>) => ({
+      frame: roundFrame(c.frame),
+      elements: Array.isArray(c.elements) ? c.elements.map((e) => normalise(e as Record<string, unknown>)) : [],
+    }));
+  }
+  return out;
+}
+
+/** One frame with every fraction rounded to three decimals, finer than any
+ * watch can draw. */
+function roundFrame(frame: unknown): unknown {
+  if (frame === null || typeof frame !== "object") return frame;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(frame as Record<string, unknown>)) {
+    out[key] = typeof value === "number" ? Math.round(value * 1000) / 1000 || 0 : value;
   }
   return out;
 }
@@ -174,6 +241,9 @@ describe.each(files)("fixture %s", (file) => {
       expect(chartStatisticsRequests(config).map((r) => r.key).sort())
         .toEqual([...fx.expectedCompiled.statisticsKeys].sort());
     }
+    if (fx.expectedCompiled.listKeys !== undefined) {
+      expect([...listRequests(config).keys()].sort()).toEqual([...fx.expectedCompiled.listKeys].sort());
+    }
   });
 
   it("resolves Inline to the expected text", () => {
@@ -207,6 +277,7 @@ describe.each(files)("fixture %s", (file) => {
       }
       want.elements.forEach((wantEl, i) => {
         const gotEl = normalise(got!.elements[i] as ResolvedElement & Record<string, unknown>);
+        if (Array.isArray(wantEl.cells)) expectCells(gotEl.cells, wantEl.cells, `${family}.elements[${i}]`);
         if (wantEl.kind === "shape") {
           // The fixture names the shape kind `kind`; the resolver uses shapeKind.
           const { shapeKind, ...rest } = wantEl as { shapeKind?: string };

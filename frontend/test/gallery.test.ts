@@ -12,7 +12,7 @@ import {
   newId,
   parseConfig,
 } from "../src/model.js";
-import { keyFor } from "../src/compiler.js";
+import { keyFor, listExpressionKey, listKey } from "../src/compiler.js";
 import { exportText, parseImportText, scrubForShare, shareSlots } from "../src/transfer.js";
 import { supportedFamilies } from "../src/layouts.js";
 import {
@@ -235,6 +235,67 @@ describe("galleryPublicFields", () => {
     const groups = galleryPublicFields(cfg, slots);
     expect(group(groups, "Service data").length).toBeGreaterThan(0);
   });
+
+  // A list carries writing in two places nothing else does: the Jinja of a
+  // `template` source, and the row layers, which are not layers of the
+  // document. Both leave with the upload, so the author is shown both.
+  describe("a list", () => {
+    function withList(): { cfg: CustomComplicationConfig; slots: ReturnType<typeof shareSlots> } {
+      const cfg = livingRoom();
+      const el = newElement("list");
+      if (el.kind !== "list") throw new Error("not a list");
+      el.payload.name = "Departures";
+      el.payload.source = {
+        kind: "template",
+        value: "{{ state_attr('sensor.bus_stop', 'departures') | to_json }}",
+      };
+      const row = newElement("text");
+      if (row.kind === "text") {
+        row.payload.name = "Platform for Jane";
+        row.payload.value = { kind: { kind: "literal", value: "Leaves in" } };
+      }
+      const tap = newElement("tap");
+      if (tap.kind === "tap") {
+        tap.payload.action = {
+          type: "callService",
+          serviceDomain: "select",
+          serviceName: "select_option",
+          serviceDataJSON: '{"option":"{item.value}"}',
+        };
+      }
+      el.payload.template = [row, tap];
+      cfg.elements.push(el);
+      const slots = shareSlots(cfg, new Set([...domainsOf(cfg), "sensor"]));
+      return { cfg, slots };
+    }
+
+    it("shows a template source's Jinja, with the entity already replaced", () => {
+      const { cfg, slots } = withList();
+      const templates = group(galleryPublicFields(cfg, slots), "Template text");
+      const ours = templates.find((t) => t.includes("departures"));
+      expect(ours).toBeDefined();
+      expect(ours).toMatch(/state_attr\('sensor\.shared_\d+'/);
+      expect(templates.join("\n")).not.toContain("sensor.bus_stop");
+    });
+
+    it("names the row layers beside the document's own", () => {
+      const { cfg, slots } = withList();
+      const groups = galleryPublicFields(cfg, slots);
+      expect(group(groups, "Layer names")).toContain("Departures");
+      expect(group(groups, "Layer names")).toContain("Platform for Jane");
+      // And the name is not repeated as loose text.
+      expect(group(groups, "Other text")).not.toContain("Platform for Jane");
+    });
+
+    it("shows a row's literal text and its tap's service data", () => {
+      const { cfg, slots } = withList();
+      const groups = galleryPublicFields(cfg, slots);
+      expect(group(groups, "Other text")).toContain("Leaves in");
+      // An item placeholder is not an entity, so it goes out as it stands and
+      // is listed as the ordinary text it is.
+      expect(group(groups, "Service data")).toContain('{"option":"{item.value}"}');
+    });
+  });
 });
 
 describe("galleryBlockers", () => {
@@ -284,6 +345,34 @@ describe("galleryBlockers", () => {
     const domains = new Set([...domainsOf(cfg), "sensor"]);
     const out = galleryBlockers(cfg, shareSlots(cfg, domains), META, domains);
     expect(out.some((s) => s.includes("sensor.attic_temp"))).toBe(true);
+  });
+
+  it("refuses a list that reads entities by area", () => {
+    const cfg = livingRoom();
+    const el = newElement("list");
+    if (el.kind !== "list") throw new Error("not a list");
+    el.payload.source = {
+      kind: "entities",
+      scope: { kind: "filter", domains: ["light"], areaIds: ["kitchen"], labelIds: [], floorIds: [] },
+      sort: "name",
+      descending: false,
+      attributes: [],
+    };
+    cfg.elements.push(el);
+    const domains = domainsOf(cfg);
+    const out = galleryBlockers(cfg, shareSlots(cfg, domains), META, domains);
+    expect(out.some((s) => s.includes("area, label or floor"))).toBe(true);
+  });
+
+  it("refuses an unquoted id inside a list's own template", () => {
+    const cfg = livingRoom();
+    const el = newElement("list");
+    if (el.kind !== "list") throw new Error("not a list");
+    el.payload.source = { kind: "template", value: "{{ states.sensor.attic_feed.attributes.rows | to_json }}" };
+    cfg.elements.push(el);
+    const domains = new Set([...domainsOf(cfg), "sensor"]);
+    const out = galleryBlockers(cfg, shareSlots(cfg, domains), META, domains);
+    expect(out.some((s) => s.includes("sensor.attic_feed"))).toBe(true);
   });
 
   it("refuses a slot id the gallery's pattern does not take", () => {
@@ -531,6 +620,44 @@ describe("preview context", () => {
       expect(state?.entityPicture).toBeUndefined();
       expect(ctx.entityStates.has(slot.originalId)).toBe(false);
     }
+  });
+
+  it("carries a list's items across to the keys the scrubbed document reads", () => {
+    const cfg = livingRoom();
+    const jinja = newElement("list");
+    if (jinja.kind !== "list") throw new Error("not a list");
+    jinja.payload.source = { kind: "template", value: "{{ state_attr('sensor.bus_stop', 'departures') | to_json }}" };
+    const served = newElement("list");
+    if (served.kind !== "list") throw new Error("not a list");
+    served.payload.source = {
+      kind: "todo",
+      entities: [{ entityId: "todo.shopping", displayName: "Shopping", domain: "todo" }],
+      status: "open",
+      sort: "list",
+    };
+    cfg.elements.push(jinja, served);
+    const domains = new Set([...domainsOf(cfg), "sensor", "todo"]);
+    const slots = shareSlots(cfg, domains);
+    const scrubbed = scrubForShare(cfg, slots);
+
+    const rows = '{"items": [{"title": "Milk"}], "total": 1}';
+    const ctx = galleryPreviewContext(cfg, scrubbed, slots, {
+      entityState: () => undefined,
+      templateResults: new Map([[listExpressionKey(jinja.payload.source, jinja.payload.rows)!, rows]]),
+      historySeries: new Map(),
+      listItems: new Map([[listKey(served.payload.source)!, rows]]),
+    });
+
+    const scrubbedJinja = scrubbed.elements[scrubbed.elements.length - 2]!;
+    const scrubbedServed = scrubbed.elements[scrubbed.elements.length - 1]!;
+    if (scrubbedJinja.kind !== "list" || scrubbedServed.kind !== "list") throw new Error("not a list");
+    const newTemplateKey = listExpressionKey(scrubbedJinja.payload.source, scrubbedJinja.payload.rows)!;
+    const newListKey = listKey(scrubbedServed.payload.source)!;
+    // Both keys moved with the scrub, and the items followed them.
+    expect(newTemplateKey).not.toBe(listExpressionKey(jinja.payload.source, jinja.payload.rows));
+    expect(newListKey).toMatch(/^todo\|todo\.shared_\d+\|open\|list$/);
+    expect(ctx.templateResults.get(newTemplateKey)).toBe(rows);
+    expect(ctx.listItems?.get(newListKey)).toBe(rows);
   });
 
   it("keeps picture layers as stand-ins and leaves their timestamps out", () => {

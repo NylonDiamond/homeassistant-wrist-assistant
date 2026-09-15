@@ -76,6 +76,25 @@ describe("thumbCrop", () => {
     }
   });
 
+  it("crops a list to its whole frame, since every cell is inside it", () => {
+    const cfg = newConfig("Test", 0);
+    const list = newElement("list");
+    if (list.kind !== "list") throw new Error("not a list");
+    list.payload.frame = { x: 0.1, y: 0.1, width: 0.5, height: 0.8, rotationDegrees: 0 };
+    // The row is a text, whose own thumbnail crop narrows to its words. A list
+    // is not narrowed that way: what it draws is the whole box of cells.
+    const row = newElement("text");
+    row.payload.frame = { x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 };
+    list.payload.template = [row];
+    cfg.elements.push(list);
+    const box = CANVAS.rectangular;
+    const crop = thumbCrop(rectangular(cfg), [list.payload.id], 1);
+    expect(crop.x).toBeLessThan(0.1 * box.width);
+    expect(crop.y).toBeLessThan(0.1 * box.height);
+    expect(crop.x + crop.w).toBeGreaterThan(0.6 * box.width);
+    expect(crop.y + crop.h).toBeGreaterThan(0.9 * box.height);
+  });
+
   it("keeps a rotated layer's corners inside the crop", () => {
     const cfg = newConfig("Test", 0);
     const el = newElement("shape");

@@ -16,6 +16,7 @@ export const KIND_COLOR: Record<LayerKind, string> = {
   gauge: "#fb8c00",
   chart: "#3949ab",
   timeline: "#00897b",
+  list: "#c0ca33",
   shape: "#43a047",
   image: "#00acc1",
   tap: "#ec407a",
@@ -31,6 +32,7 @@ export const KIND_LABEL: Record<LayerKind, string> = {
   gauge: "Gauge",
   chart: "Chart",
   timeline: "Timeline",
+  list: "List",
   shape: "Shape",
   image: "Picture",
   tap: "Tap area",
@@ -43,7 +45,7 @@ export const KIND_LABEL: Record<LayerKind, string> = {
 /** The order the add buttons and the picker show the kinds in. Clock times,
  * dots, grid and a picture's timestamp are not here: they are made from their
  * layer's Extras card, never blank. */
-export const KIND_ORDER: readonly LayerKind[] = ["text", "icon", "gauge", "chart", "timeline", "shape", "image", "tap"];
+export const KIND_ORDER: readonly LayerKind[] = ["text", "icon", "gauge", "chart", "timeline", "list", "shape", "image", "tap"];
 
 /**
  * One colour per inspector card, the same on every kind of layer, so Content,

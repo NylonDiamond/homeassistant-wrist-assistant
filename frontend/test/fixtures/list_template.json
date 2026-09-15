@@ -1,0 +1,180 @@
+{
+  "name": "Template list",
+  "description": "The escape hatch: raw Jinja that yields the items itself, emitted verbatim exactly as the `jinja` value kind is. The reply names nine items and the layer draws three, which is what `total` is for: a \"6 more\" line outside the list reads `listStat total` and subtracts. A blank template compiles to nothing at all rather than to an expression that renders an empty string.",
+  "config": {
+    "schemaVersion": 8,
+    "id": "EEEEEEEE-0000-4000-8000-000000000420",
+    "name": "Template list",
+    "slotIndex": 6,
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "list",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000421",
+          "source": {
+            "kind": "template",
+            "value": "{{ state_attr('sensor.headlines', 'articles') | to_json }}"
+          },
+          "rows": 3,
+          "template": [
+            {
+              "kind": "text",
+              "payload": {
+                "id": "EEEEEEEE-0000-4000-8000-000000000422",
+                "value": {
+                  "kind": {
+                    "kind": "item",
+                    "field": "title"
+                  }
+                },
+                "fontSize": 12,
+                "fontWeight": "regular",
+                "colorSlot": {
+                  "baseColorHex": "#FFFFFF"
+                },
+                "rules": [],
+                "frame": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1,
+                  "height": 1,
+                  "rotationDegrees": 0
+                },
+                "isHidden": false
+              }
+            }
+          ],
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.05,
+            "width": 0.9,
+            "height": 0.9,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "borderWidth": 2,
+        "cornerBodyShape": "wedge"
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {},
+    "templateResults": {
+      "e_80122c2cb9d1ac7d": "{\"items\":[{\"title\":\"Storm warning extended\"},{\"title\":\"Ferry timetable changed\"},{\"title\":\"Library reopens Monday\"}],\"total\":9}"
+    }
+  },
+  "expectedCompiled": {
+    "entities": [],
+    "expressionKeys": [
+      "e_80122c2cb9d1ac7d"
+    ],
+    "listKeys": [],
+    "document": "{% set v_e_80122c2cb9d1ac7d %}{{ state_attr('sensor.headlines', 'articles') | to_json }}{% endset %}\n{{ { \"e_80122c2cb9d1ac7d\": v_e_80122c2cb9d1ac7d } | to_json }}"
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000421",
+          "kind": "list",
+          "cells": [
+            {
+              "frame": {
+                "x": 0,
+                "y": 0,
+                "width": 1,
+                "height": 0.311,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000422",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Storm warning extended",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.345,
+                "width": 1,
+                "height": 0.311,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000422",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Ferry timetable changed",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                }
+              ]
+            },
+            {
+              "frame": {
+                "x": 0,
+                "y": 0.689,
+                "width": 1,
+                "height": 0.311,
+                "rotationDegrees": 0
+              },
+              "elements": [
+                {
+                  "id": "EEEEEEEE-0000-4000-8000-000000000422",
+                  "kind": "text",
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "rotationDegrees": 0
+                  },
+                  "isHidden": false,
+                  "text": "Library reopens Monday",
+                  "colorHex": "#FFFFFF",
+                  "fontSize": 12
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
