@@ -1,0 +1,332 @@
+{
+  "name": "Text font width",
+  "description": "A text layer picks how wide its letters are cut: standard, condensed, compressed or expanded. The key is absent at the standard width, which is what every layer written before it had. A rich text part takes the layer's width unless it names its own, and a setFontWidth rule aims at the whole layer or at one part exactly as setFontDesign does. A width this build does not know reads as the standard one rather than losing the complication.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-000000000430",
+    "name": "Text font width",
+    "values": [],
+    "slotIndex": 3,
+    "elements": [
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000431",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.02,
+            "y": 0.02,
+            "width": 0.96,
+            "height": 0.22,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "Condensed"
+            }
+          },
+          "fontSize": 14,
+          "fontWeight": "regular",
+          "fontWidth": "condensed"
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000432",
+          "colorSlot": {
+            "baseColorHex": "#8E8E93"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.02,
+            "y": 0.26,
+            "width": 0.96,
+            "height": 0.22,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "Wide Tight"
+            }
+          },
+          "fontSize": 14,
+          "fontWeight": "regular",
+          "fontWidth": "expanded",
+          "parts": [
+            {
+              "id": "FFFFFFFF-0000-4000-8000-000000000431",
+              "value": {
+                "kind": {
+                  "kind": "literal",
+                  "value": "Wide "
+                }
+              }
+            },
+            {
+              "id": "FFFFFFFF-0000-4000-8000-000000000432",
+              "value": {
+                "kind": {
+                  "kind": "literal",
+                  "value": "Tight"
+                }
+              },
+              "fontWidth": "compressed"
+            }
+          ]
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000433",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [
+            {
+              "id": "DDDDDDDD-0000-4000-8000-000000000431",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000431",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "BBBBBBBB-0000-4000-8000-000000000431",
+                        "value": {
+                          "kind": {
+                            "kind": "entityState",
+                            "entityId": "switch.porch",
+                            "displayName": "Porch",
+                            "domain": "switch"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "isOff"
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    {
+                      "kind": "setFontWidth",
+                      "width": "compressed"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "frame": {
+            "x": 0.02,
+            "y": 0.5,
+            "width": 0.96,
+            "height": 0.22,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "Ruled"
+            }
+          },
+          "fontSize": 14,
+          "fontWeight": "regular"
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000434",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [
+            {
+              "id": "DDDDDDDD-0000-4000-8000-000000000432",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000432",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "BBBBBBBB-0000-4000-8000-000000000432",
+                        "value": {
+                          "kind": {
+                            "kind": "entityState",
+                            "entityId": "switch.porch",
+                            "displayName": "Porch",
+                            "domain": "switch"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "isOff"
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    {
+                      "kind": "setFontWidth",
+                      "width": "condensed"
+                    }
+                  ]
+                }
+              ],
+              "partId": "FFFFFFFF-0000-4000-8000-000000000434"
+            }
+          ],
+          "frame": {
+            "x": 0.02,
+            "y": 0.74,
+            "width": 0.96,
+            "height": 0.22,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "Kept Ruled"
+            }
+          },
+          "fontSize": 14,
+          "fontWeight": "regular",
+          "fontWidth": "expanded",
+          "parts": [
+            {
+              "id": "FFFFFFFF-0000-4000-8000-000000000433",
+              "value": {
+                "kind": {
+                  "kind": "literal",
+                  "value": "Kept "
+                }
+              }
+            },
+            {
+              "id": "FFFFFFFF-0000-4000-8000-000000000434",
+              "value": {
+                "kind": {
+                  "kind": "literal",
+                  "value": "Ruled"
+                }
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "perFamily": [],
+    "dataSources": [],
+    "tapAction": {
+      "type": "refresh"
+    },
+    "refreshMinutes": 15
+  },
+  "inputs": {
+    "entityStates": {
+      "switch.porch": {
+        "state": "off",
+        "domain": "switch"
+      }
+    },
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": [
+      "switch.porch"
+    ],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000431",
+          "kind": "text",
+          "text": "Condensed",
+          "fontDesign": "default",
+          "fontWidth": "condensed",
+          "italic": false
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000432",
+          "kind": "text",
+          "text": "Wide Tight",
+          "fontDesign": "default",
+          "fontWidth": "expanded",
+          "italic": false,
+          "parts": [
+            {
+              "text": "Wide ",
+              "fontSize": 14,
+              "fontWeight": "regular",
+              "fontDesign": "default",
+              "fontWidth": "expanded",
+              "italic": false,
+              "colorHex": "#8E8E93"
+            },
+            {
+              "text": "Tight",
+              "fontSize": 14,
+              "fontWeight": "regular",
+              "fontDesign": "default",
+              "fontWidth": "compressed",
+              "italic": false,
+              "colorHex": "#8E8E93"
+            }
+          ]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000433",
+          "kind": "text",
+          "text": "Ruled",
+          "fontDesign": "default",
+          "fontWidth": "compressed",
+          "italic": false
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000434",
+          "kind": "text",
+          "text": "Kept Ruled",
+          "fontDesign": "default",
+          "fontWidth": "expanded",
+          "italic": false,
+          "parts": [
+            {
+              "text": "Kept ",
+              "fontSize": 14,
+              "fontWeight": "regular",
+              "fontDesign": "default",
+              "fontWidth": "expanded",
+              "italic": false,
+              "colorHex": "#FFFFFF"
+            },
+            {
+              "text": "Ruled",
+              "fontSize": 14,
+              "fontWeight": "regular",
+              "fontDesign": "default",
+              "fontWidth": "condensed",
+              "italic": false,
+              "colorHex": "#FFFFFF"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

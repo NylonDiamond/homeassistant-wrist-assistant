@@ -238,6 +238,7 @@
               "fontSize": 14,
               "fontWeight": "regular",
               "fontDesign": "serif",
+              "fontWidth": "standard",
               "italic": false,
               "colorHex": "#8E8E93"
             },
@@ -246,6 +247,7 @@
               "fontSize": 14,
               "fontWeight": "regular",
               "fontDesign": "monospaced",
+              "fontWidth": "standard",
               "italic": true,
               "colorHex": "#8E8E93"
             }

@@ -499,14 +499,14 @@
           "colorHex": "#8E8E93",
           "spans": null,
           "parts": [
-            { "text": "Now ", "fontSize": 15, "fontWeight": "regular", "fontDesign": "default", "italic": false, "colorHex": "#8E8E93" },
+            { "text": "Now ", "fontSize": 15, "fontWeight": "regular", "fontDesign": "default", "fontWidth": "standard", "italic": false, "colorHex": "#8E8E93" },
             {
-              "text": "0.28", "fontSize": 21, "fontWeight": "bold", "fontDesign": "default", "italic": false, "colorHex": "#8E8E93",
+              "text": "0.28", "fontSize": 21, "fontWeight": "bold", "fontDesign": "default", "fontWidth": "standard", "italic": false, "colorHex": "#8E8E93",
               "spans": [
                 { "text": "0.28", "colorHex": "#FFD60A" }
               ]
             },
-            { "text": " €/kWh", "fontSize": 11, "fontWeight": "regular", "fontDesign": "default", "italic": false, "colorHex": "#8E8E93" }
+            { "text": " €/kWh", "fontSize": 11, "fontWeight": "regular", "fontDesign": "default", "fontWidth": "standard", "italic": false, "colorHex": "#8E8E93" }
           ]
         },
         {
@@ -519,19 +519,19 @@
           "spans": null,
           "parts": [
             {
-              "text": "18.4", "fontSize": 22, "fontWeight": "semibold", "fontDesign": "default", "italic": false, "colorHex": "#FFFFFF",
+              "text": "18.4", "fontSize": 22, "fontWeight": "semibold", "fontDesign": "default", "fontWidth": "standard", "italic": false, "colorHex": "#FFFFFF",
               "spans": [
                 { "text": "18.4", "colorHex": "#30D158" }
               ]
             },
-            { "text": "°C  ", "fontSize": 12, "fontWeight": "regular", "fontDesign": "default", "italic": false, "colorHex": "#8E8E93" },
+            { "text": "°C  ", "fontSize": 12, "fontWeight": "regular", "fontDesign": "default", "fontWidth": "standard", "italic": false, "colorHex": "#8E8E93" },
             {
-              "text": "64", "fontSize": 15, "fontWeight": "semibold", "fontDesign": "default", "italic": false, "colorHex": "#FFFFFF",
+              "text": "64", "fontSize": 15, "fontWeight": "semibold", "fontDesign": "default", "fontWidth": "standard", "italic": false, "colorHex": "#FFFFFF",
               "spans": [
                 { "text": "64", "colorHex": "#30D158" }
               ]
             },
-            { "text": "%", "fontSize": 12, "fontWeight": "regular", "fontDesign": "default", "italic": false, "colorHex": "#8E8E93" }
+            { "text": "%", "fontSize": 12, "fontWeight": "regular", "fontDesign": "default", "fontWidth": "standard", "italic": false, "colorHex": "#8E8E93" }
           ]
         },
         {
@@ -543,14 +543,14 @@
           "colorHex": "#AAAAAA",
           "spans": null,
           "parts": [
-            { "text": "EV ", "fontSize": 16, "fontWeight": "regular", "fontDesign": "default", "italic": false, "colorHex": "#AAAAAA" },
+            { "text": "EV ", "fontSize": 16, "fontWeight": "regular", "fontDesign": "default", "fontWidth": "standard", "italic": false, "colorHex": "#AAAAAA" },
             {
-              "text": "76", "fontSize": 16, "fontWeight": "bold", "fontDesign": "default", "italic": false, "colorHex": "#FF00FF",
+              "text": "76", "fontSize": 16, "fontWeight": "bold", "fontDesign": "default", "fontWidth": "standard", "italic": false, "colorHex": "#FF00FF",
               "spans": [
                 { "text": "76", "colorHex": "#30D158" }
               ]
             },
-            { "text": "%", "fontSize": 11, "fontWeight": "regular", "fontDesign": "default", "italic": false, "colorHex": "#AAAAAA" }
+            { "text": "%", "fontSize": 11, "fontWeight": "regular", "fontDesign": "default", "fontWidth": "standard", "italic": false, "colorHex": "#AAAAAA" }
           ]
         },
         {
@@ -575,9 +575,9 @@
           "text": "--5",
           "spans": null,
           "parts": [
-            { "text": "--", "fontSize": 14, "fontWeight": "regular", "fontDesign": "default", "italic": false, "colorHex": "#FFFFFF" },
-            { "text": "", "fontSize": 14, "fontWeight": "regular", "fontDesign": "default", "italic": false, "colorHex": "#FFFFFF", "spans": [] },
-            { "text": "5", "fontSize": 14, "fontWeight": "regular", "fontDesign": "default", "italic": false, "colorHex": "#FFFFFF" }
+            { "text": "--", "fontSize": 14, "fontWeight": "regular", "fontDesign": "default", "fontWidth": "standard", "italic": false, "colorHex": "#FFFFFF" },
+            { "text": "", "fontSize": 14, "fontWeight": "regular", "fontDesign": "default", "fontWidth": "standard", "italic": false, "colorHex": "#FFFFFF", "spans": [] },
+            { "text": "5", "fontSize": 14, "fontWeight": "regular", "fontDesign": "default", "fontWidth": "standard", "italic": false, "colorHex": "#FFFFFF" }
           ]
         },
         {

@@ -494,6 +494,26 @@ const FONT_FAMILY: Record<string, string> = {
 
 const fontFamilyFor = (design: string | undefined) => FONT_FAMILY[design ?? "default"] ?? FONT_FAMILY.default!;
 
+/** `font-stretch` for each letter width, as CSS percentages. The numbers are the
+ * standard widths those names carry in a variable font, which is the nearest a
+ * browser gets to the system face's own condensed, compressed and expanded cuts.
+ * Standard is left out so a layer that never asked writes no style at all. */
+const FONT_STRETCH: Record<string, string> = {
+  condensed: "75%",
+  compressed: "62.5%",
+  expanded: "125%",
+};
+
+/** The inline style a drawn run needs: fixed-width digits, a letter width, or
+ * neither. `nothing` leaves the attribute off entirely. */
+function textStyle(monospacedDigits: boolean, width: string | undefined) {
+  const bits: string[] = [];
+  if (monospacedDigits) bits.push("font-variant-numeric: tabular-nums");
+  const stretch = FONT_STRETCH[width ?? "standard"];
+  if (stretch !== undefined) bits.push(`font-stretch: ${stretch}`);
+  return bits.length > 0 ? bits.join("; ") : nothing;
+}
+
 /**
  * How much bigger than its nominal size a Material Design icon is drawn.
  *
@@ -684,7 +704,8 @@ interface ArcGlyph {
  * colours its numbers, and the layer's own look everywhere else. */
 function arcGlyphs(el: Extract<ResolvedElement, { kind: "text" }>): ArcGlyph[] {
   const layerLook: PartLook = {
-    fontSize: el.fontSize, fontWeight: el.fontWeight, fontDesign: el.fontDesign, italic: el.italic, colorHex: el.colorHex,
+    fontSize: el.fontSize, fontWeight: el.fontWeight, fontDesign: el.fontDesign,
+    fontWidth: el.fontWidth, italic: el.italic, colorHex: el.colorHex,
   };
   const drawsParts = el.parts !== undefined && el.parts.map((p) => p.text).join("") === el.text;
   const looks = drawsParts ? partLooks(el.parts!) : undefined;
@@ -747,7 +768,7 @@ function renderArcText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box)
       transform=${`translate(${at.x} ${at.y}) rotate(${p.rotation})`}
       font-family=${fontFamilyFor(look.fontDesign)} font-style=${look.italic ? "italic" : "normal"}
       font-size=${look.fontSize * layout.scale} font-weight=${FONT_WEIGHT[look.fontWeight] ?? 400}
-      style=${el.monospacedDigits ? "font-variant-numeric: tabular-nums" : nothing}
+      style=${textStyle(el.monospacedDigits, look.fontWidth)}
       fill=${a.fill} fill-opacity=${a["fill-opacity"]}>${last ? "…" : glyph.text}</text>`;
   })}`;
 }
@@ -857,6 +878,7 @@ interface PartLook {
   fontSize: number;
   fontWeight: string;
   fontDesign: string;
+  fontWidth: string;
   italic: boolean;
   colorHex: string;
 }
@@ -875,7 +897,8 @@ function partLooks(parts: readonly ResolvedTextPart[]): PartLook[] {
     for (const run of runs) {
       const look: PartLook = {
         fontSize: part.fontSize, fontWeight: part.fontWeight,
-        fontDesign: part.fontDesign, italic: part.italic, colorHex: run.colorHex,
+        fontDesign: part.fontDesign, fontWidth: part.fontWidth,
+        italic: part.italic, colorHex: run.colorHex,
       };
       for (let i = 0; i < run.text.length; i++) out.push(look);
     }
@@ -982,6 +1005,7 @@ function renderTextParts(el: Extract<ResolvedElement, { kind: "text" }>, parts: 
     const a = colorAttrs(run.look.colorHex, "fill");
     return svg`<tspan font-size=${run.look.fontSize * scale} font-weight=${FONT_WEIGHT[run.look.fontWeight] ?? 400}
       font-family=${fontFamilyFor(run.look.fontDesign)} font-style=${run.look.italic ? "italic" : "normal"}
+      style=${textStyle(false, run.look.fontWidth)}
       fill=${a.fill} fill-opacity=${a["fill-opacity"]}>${run.text}</tspan>`;
   });
   const c = colorAttrs(el.colorHex, "fill");
@@ -991,7 +1015,7 @@ function renderTextParts(el: Extract<ResolvedElement, { kind: "text" }>, parts: 
   return svg`<text x=${x} y=${box.cy + baseline} text-anchor=${anchor}
     font-family=${fontFamilyFor(el.fontDesign)} font-style=${el.italic ? "italic" : "normal"}
     font-size=${el.fontSize * scale} font-weight=${FONT_WEIGHT[el.fontWeight] ?? 400}
-    style=${el.monospacedDigits ? "font-variant-numeric: tabular-nums" : nothing}
+    style=${textStyle(el.monospacedDigits, el.fontWidth)}
     fill=${c.fill} fill-opacity=${c["fill-opacity"]}>${body}</text>`;
 }
 
@@ -1042,7 +1066,7 @@ function renderText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box) {
   return svg`<text x=${x} y=${box.cy} text-anchor=${anchor} dominant-baseline="central"
     font-family=${fontFamilyFor(el.fontDesign)} font-style=${el.italic ? "italic" : "normal"}
     font-size=${fontSize} font-weight=${FONT_WEIGHT[el.fontWeight] ?? 400}
-    style=${el.monospacedDigits ? "font-variant-numeric: tabular-nums" : nothing}
+    style=${textStyle(el.monospacedDigits, el.fontWidth)}
     fill=${c.fill} fill-opacity=${c["fill-opacity"]}>${body}</text>`;
 }
 

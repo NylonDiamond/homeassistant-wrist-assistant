@@ -49,6 +49,7 @@ export const PROPERTY_LABELS: Record<StyleProperty, string> = {
   fontSize: "Size",
   fontWeight: "Weight",
   fontDesign: "Typeface",
+  fontWidth: "Width",
   italic: "Italic",
   rotation: "Rotation",
   gaugeValue: "Gauge value",
@@ -63,7 +64,7 @@ export const PROPERTY_LABELS: Record<StyleProperty, string> = {
  * Colour, and everything else follows in the order a user would reach for it. */
 export const COLUMN_ORDER: StyleProperty[] = [
   "icon", "text", "color", "visibility", "opacity", "fontSize", "fontWeight",
-  "fontDesign", "italic",
+  "fontDesign", "fontWidth", "italic",
   "rotation", "gaugeValue", "gaugeMin", "gaugeMax", "backgroundColor",
   "borderColor", "borderWidth",
 ];
@@ -79,6 +80,7 @@ export const PROPERTY_CHANGE_KIND: Record<StyleProperty, StyleChangeKind> = {
   fontSize: "setFontSize",
   fontWeight: "setFontWeight",
   fontDesign: "setFontDesign",
+  fontWidth: "setFontWidth",
   italic: "setItalic",
   rotation: "setRotation",
   visibility: "hide",

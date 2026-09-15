@@ -327,7 +327,7 @@ describe("text parts resolution", () => {
     expect(r).not.toHaveProperty("spans");
     expect(r.parts).toEqual([{
       text: "12 34", fontSize: 14, fontWeight: "regular",
-      fontDesign: "default", italic: false, colorHex: "#FFFFFF",
+      fontDesign: "default", fontWidth: "standard", italic: false, colorHex: "#FFFFFF",
     }]);
   });
 
@@ -413,10 +413,11 @@ describe("text parts in the preview", () => {
   const draw = (cfg: CustomComplicationConfig, states: Record<string, string> = {}) =>
     flatten(renderLayout(layoutOf(cfg, states), { icons: noIcons }));
 
-  /** Each drawn run as [text, size, weight, fill]. The typeface and the slant sit
-   * between the weight and the fill, and are pinned in their own test below. */
+  /** Each drawn run as [text, size, weight, fill]. The typeface, the slant and the
+   * letter width sit between the weight and the fill, and are pinned in their own
+   * tests below; a run at the standard width writes no `style` at all. */
   const runs = (svg: string) =>
-    [...svg.matchAll(/<tspan font-size=([\d.]+) font-weight=(\d+)\s+font-family=[^\n]*?font-style=[a-z]+\s+fill=(#[0-9A-Fa-f]{6}) fill-opacity=[\d.]+>([^<]*)<\/tspan>/g)]
+    [...svg.matchAll(/<tspan font-size=([\d.]+) font-weight=(\d+)\s+font-family=[^\n]*?font-style=[a-z]+\s+(?:style=[^\n]*\s+)?fill=(#[0-9A-Fa-f]{6}) fill-opacity=[\d.]+>([^<]*)<\/tspan>/g)]
       .map((m) => [m[4]!, Number(m[1]), Number(m[2]), m[3]!] as const);
 
   it("draws each run in its own size, weight and fill, and still spells the text", () => {

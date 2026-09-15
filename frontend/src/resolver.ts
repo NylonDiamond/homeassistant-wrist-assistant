@@ -12,6 +12,7 @@ import {
   type FamilyKind,
   type FontWeight,
   type FontDesign,
+  type FontWidth,
   type LayerShadow,
   clampLayerOpacity,
   clampMinimumScale,
@@ -180,6 +181,8 @@ export interface ResolvedText extends ResolvedBase {
   lineLimit: number;
   /** The typeface, after any `setFontDesign` rule. */
   fontDesign: FontDesign;
+  /** How wide the letters are cut, after any `setFontWidth` rule. */
+  fontWidth: FontWidth;
   /** Slanted text, after any `setItalic` rule. */
   italic: boolean;
   /** How far the text may shrink before it truncates. Straight off the element. */
@@ -220,6 +223,7 @@ export interface ResolvedTextPart {
   fontSize: number;
   fontWeight: FontWeight;
   fontDesign: FontDesign;
+  fontWidth: FontWidth;
   italic: boolean;
   colorHex: string;
   /** The part's text cut into runs by its own band table, with no highlight.
@@ -1653,6 +1657,7 @@ export class Resolver {
         fontSize: this.styleNumber(style, "fontSize") ?? part.fontSize ?? layer.fontSize,
         fontWeight: style.get("fontWeight")?.weight ?? part.fontWeight ?? layer.fontWeight,
         fontDesign: style.get("fontDesign")?.design ?? part.fontDesign ?? layer.fontDesign,
+        fontWidth: style.get("fontWidth")?.width ?? part.fontWidth ?? layer.fontWidth,
         italic: style.get("italic")?.italic ?? part.italic ?? layer.italic,
         colorHex: this.styleColor(style, "color") ?? part.colorHex ?? layer.colorHex,
       };
@@ -1700,6 +1705,7 @@ export class Resolver {
           monospacedDigits: el.payload.monospacedDigits === true,
           lineLimit: Math.min(TEXT_MAX_LINES, Math.max(1, Math.round(el.payload.lineLimit ?? 1))),
           fontDesign: style.get("fontDesign")?.design ?? el.payload.fontDesign ?? "default",
+          fontWidth: style.get("fontWidth")?.width ?? el.payload.fontWidth ?? "standard",
           italic: style.get("italic")?.italic ?? el.payload.italic === true,
           minimumScale: clampMinimumScale(el.payload.minimumScale ?? TEXT_MIN_SCALE),
           alignment: el.payload.alignment ?? "center",

@@ -119,6 +119,18 @@ export type FontWeight = "regular" | "medium" | "semibold" | "bold";
 /** The typeface a text layer draws in. One to one with SwiftUI's `Font.Design`;
  * `default` is San Francisco and is never written to the wire. */
 export type FontDesign = "default" | "rounded" | "monospaced" | "serif";
+/** How wide the letters of a text layer are cut. One to one with SwiftUI's
+ * `Font.Width`; `standard` is the ordinary system width and is never written to
+ * the wire. */
+export type FontWidth = "standard" | "condensed" | "compressed" | "expanded";
+
+/** A width a document names, or undefined for a word this build does not know,
+ * which reads as standard the way an unknown typeface reads as the system face. */
+export function parseFontWidth(raw: unknown): FontWidth | undefined {
+  return raw === "standard" || raw === "condensed" || raw === "compressed" || raw === "expanded"
+    ? raw
+    : undefined;
+}
 /** How many lines a text layer may wrap onto. */
 export const TEXT_MAX_LINES = 4;
 /** How far text may shrink to fit before it truncates. 0.5 is what the watch
@@ -723,13 +735,13 @@ export interface Comparison {
 
 export type StyleProperty =
   | "color" | "opacity" | "text" | "icon" | "fontSize" | "fontWeight" | "fontDesign"
-  | "italic" | "rotation"
+  | "fontWidth" | "italic" | "rotation"
   | "visibility" | "gaugeValue" | "gaugeMin" | "gaugeMax" | "borderColor" | "borderWidth"
   | "backgroundColor";
 
 export type StyleChangeKind =
   | "setColor" | "setOpacity" | "setText" | "setIcon" | "setFontSize" | "setFontWeight"
-  | "setFontDesign" | "setItalic"
+  | "setFontDesign" | "setFontWidth" | "setItalic"
   | "setRotation" | "hide" | "show" | "setGaugeValue" | "setGaugeMin" | "setGaugeMax"
   | "setBorderColor" | "setBorderWidth" | "setBackgroundColor";
 
@@ -740,6 +752,8 @@ export interface StyleChange {
   weight?: FontWeight;
   /** `setFontDesign` only. */
   design?: FontDesign;
+  /** `setFontWidth` only. */
+  width?: FontWidth;
   /** `setItalic` only. */
   italic?: boolean;
 }
@@ -752,6 +766,7 @@ export const STYLE_PROPERTY: Record<StyleChangeKind, StyleProperty> = {
   setFontSize: "fontSize",
   setFontWeight: "fontWeight",
   setFontDesign: "fontDesign",
+  setFontWidth: "fontWidth",
   setItalic: "italic",
   setRotation: "rotation",
   hide: "visibility",
@@ -899,6 +914,9 @@ export interface TextElement extends ElementBase {
   /** The typeface. Absent means the system one, which is what every layer
    * written before this key had. */
   fontDesign?: FontDesign;
+  /** How wide the letters are cut. Absent means the standard width, which is
+   * what every layer written before this key had. */
+  fontWidth?: FontWidth;
   /** Slanted text. Absent means upright. */
   italic?: boolean;
   /** How far the text may shrink to fit its box before it truncates, as a
@@ -956,6 +974,8 @@ export interface TextPart {
   fontSize?: number;
   /** Absent means the layer's resolved typeface. */
   fontDesign?: FontDesign;
+  /** Absent means the layer's resolved letter width. */
+  fontWidth?: FontWidth;
   /** Absent means the layer's resolved slant. */
   italic?: boolean;
   /** Absent means one colour. */
@@ -2613,6 +2633,9 @@ function parseStyleChange(o: unknown): StyleChange {
     case "setFontDesign":
       c.design = (optStr(o.design) as FontDesign | undefined) ?? "default";
       break;
+    case "setFontWidth":
+      c.width = parseFontWidth(optStr(o.width)) ?? "standard";
+      break;
     case "setItalic":
       c.italic = o.italic !== false;
       break;
@@ -2701,6 +2724,8 @@ function parseTextParts(raw: unknown): TextPart[] {
     if (typeof o.fontSize === "number") part.fontSize = o.fontSize;
     const design = optStr(o.fontDesign);
     if (design === "default" || design === "rounded" || design === "monospaced" || design === "serif") part.fontDesign = design;
+    const width = parseFontWidth(optStr(o.fontWidth));
+    if (width !== undefined) part.fontWidth = width;
     if (typeof o.italic === "boolean") part.italic = o.italic;
     if (optStr(o.coloring) === "bands") part.coloring = "bands";
     const bands = parseColorBands(o.bands);
@@ -2799,6 +2824,9 @@ function parseElementKind(raw: unknown): Element {
       // forgiveness `alignment` gets below.
       const design = optStr(p.fontDesign);
       if (design === "rounded" || design === "monospaced" || design === "serif") payload.fontDesign = design;
+      // The same forgiveness for the letter width.
+      const width = parseFontWidth(optStr(p.fontWidth));
+      if (width !== undefined && width !== "standard") payload.fontWidth = width;
       if (p.italic === true) payload.italic = true;
       const minScale = clampMinimumScale(num(p.minimumScale, TEXT_MIN_SCALE));
       if (minScale !== TEXT_MIN_SCALE) payload.minimumScale = minScale;
@@ -4106,6 +4134,9 @@ function encodeStyleChange(c: StyleChange): J {
     case "setFontDesign":
       o.design = c.design ?? "default";
       break;
+    case "setFontWidth":
+      o.width = c.width ?? "standard";
+      break;
     case "setItalic":
       o.italic = c.italic !== false;
       break;
@@ -4144,6 +4175,7 @@ function encodeTextPart(p: TextPart): J {
   if (p.fontWeight !== undefined) o.fontWeight = p.fontWeight;
   if (p.fontSize !== undefined) o.fontSize = encNum(p.fontSize);
   if (p.fontDesign !== undefined) o.fontDesign = p.fontDesign;
+  if (p.fontWidth !== undefined) o.fontWidth = p.fontWidth;
   if (p.italic !== undefined) o.italic = p.italic;
   if (p.coloring !== undefined && p.coloring !== "uniform") o.coloring = p.coloring;
   if (p.bands !== undefined && p.bands.length > 0) o.bands = p.bands.map(encodeBand);
@@ -4188,6 +4220,7 @@ function encodeElementKind(el: Element): J {
       if (el.payload.monospacedDigits === true) o.monospacedDigits = true;
       if (el.payload.lineLimit !== undefined && el.payload.lineLimit > 1) o.lineLimit = el.payload.lineLimit;
       if (el.payload.fontDesign !== undefined && el.payload.fontDesign !== "default") o.fontDesign = el.payload.fontDesign;
+      if (el.payload.fontWidth !== undefined && el.payload.fontWidth !== "standard") o.fontWidth = el.payload.fontWidth;
       if (el.payload.italic === true) o.italic = true;
       if (el.payload.minimumScale !== undefined && el.payload.minimumScale !== TEXT_MIN_SCALE) {
         o.minimumScale = encNum(el.payload.minimumScale);
@@ -4777,10 +4810,10 @@ const K = {
   // A layer's drop shadow. Absent on the layer means none; present, it says all four.
   shadow: ["colorHex", "radius", "dx", "dy"],
   text: ["value", "fontSize", "fontWeight", "countdown", "monospacedDigits", "lineLimit",
-    "fontDesign", "italic", "minimumScale", "alignment",
+    "fontDesign", "fontWidth", "italic", "minimumScale", "alignment",
     "coloring", "bands", "bandAboveColorHex", "highlight", "highColorHex", "lowColorHex", "parts",
     "arc", "chartAnchor"],
-  textPart: ["id", "value", "colorHex", "fontWeight", "fontSize", "fontDesign", "italic",
+  textPart: ["id", "value", "colorHex", "fontWeight", "fontSize", "fontDesign", "fontWidth", "italic",
     "coloring", "bands", "bandAboveColorHex"],
   icon: ["symbol", "path", "size", "chartAnchor"],
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex",
@@ -4837,7 +4870,7 @@ const K = {
   condition: ["join", "tests"],
   test: ["id", "value", "comparison"],
   comparison: ["kind", "value", "upper", "pattern", "options"],
-  styleChange: ["kind", "value", "number", "weight", "design", "italic"],
+  styleChange: ["kind", "value", "number", "weight", "design", "width", "italic"],
   layout: ["placements", "bezelText", "bezelCountdown", "curvedText", "curvedColorHex", "bezelGauge", "backgroundColorHex", "backgroundFill", "cornerBodyShape", "borderColorHex", "borderWidth", "rules"],
   bezelGauge: ["value", "minValue", "maxValue", "colorHexes", "minLabel", "maxLabel"],
   placement: ["frame", "isHidden", "size"],
@@ -6750,7 +6783,7 @@ export type RuleTarget = Element["kind"] | "layout";
 
 /** Properties each target actually reads (schema §5.3). Others are stored but ignored. */
 export const RULE_TARGET_PROPERTIES: Record<RuleTarget, StyleProperty[]> = {
-  text: ["color", "opacity", "text", "fontSize", "fontWeight", "fontDesign", "italic", "rotation", "visibility"],
+  text: ["color", "opacity", "text", "fontSize", "fontWeight", "fontDesign", "fontWidth", "italic", "rotation", "visibility"],
   icon: ["color", "opacity", "icon", "fontSize", "rotation", "visibility"],
   gauge: ["color", "opacity", "gaugeValue", "gaugeMin", "gaugeMax", "rotation", "visibility"],
   // No text or size effects: a chart's content is a whole series, and swapping that
@@ -6804,11 +6837,12 @@ export function comparisonOperand(kind: ComparisonKind): "none" | "value" | "bet
   }
 }
 
-export function styleChangePayload(kind: StyleChangeKind): "none" | "value" | "number" | "weight" | "design" | "italic" {
+export function styleChangePayload(kind: StyleChangeKind): "none" | "value" | "number" | "weight" | "design" | "width" | "italic" {
   switch (kind) {
     case "hide": case "show": return "none";
     case "setFontWeight": return "weight";
     case "setFontDesign": return "design";
+    case "setFontWidth": return "width";
     case "setItalic": return "italic";
     case "setOpacity": case "setFontSize": case "setRotation": case "setGaugeMin": case "setGaugeMax": case "setBorderWidth": return "number";
     default: return "value";
@@ -6860,6 +6894,7 @@ export function newStyleChange(kind: StyleChangeKind): StyleChange {
       break;
     case "weight": c.weight = "bold"; break;
     case "design": c.design = "rounded"; break;
+    case "width": c.width = "condensed"; break;
     case "italic": c.italic = true; break;
     case "none": break;
   }

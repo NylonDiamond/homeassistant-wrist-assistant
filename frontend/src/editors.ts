@@ -27,6 +27,7 @@ import {
   type FamilyLayout,
   type FontWeight,
   type FontDesign,
+  type FontWidth,
   type LayerShadow,
   SHADOW_DEFAULT,
   SHADOW_DEFAULT_HEX,
@@ -2924,6 +2925,16 @@ const FONT_DESIGNS: [FontDesign, string][] = [
   ["default", "System"], ["rounded", "Rounded"], ["monospaced", "Mono"], ["serif", "Serif"],
 ];
 
+const FONT_WIDTHS: [FontWidth, string][] = [
+  ["standard", "Standard"], ["condensed", "Condensed"], ["compressed", "Compressed"], ["expanded", "Expanded"],
+];
+
+/** Said wherever the letter width is picked. The watch has the system face's own
+ * narrow and wide cuts; the preview only has whatever stretch the browser can
+ * synthesise, so the shapes are close rather than the same. */
+const FONT_WIDTH_HINT = html`<div class="hint">The watch draws the system face's own narrow and wide cuts.
+  The preview stretches the letters instead, so judge the shapes on the watch, not here.</div>`;
+
 /** A part's slant, as two buttons, so "follows the layer" is a state the row can
  * show the way its weight and typeface rows do. */
 const PART_ITALICS: ["off" | "on", string][] = [["off", "Upright"], ["on", "Italic"]];
@@ -4329,6 +4340,7 @@ function richPartsEditor(
   const ownSize = part.fontSize !== undefined;
   const layerWeight = FONT_WEIGHTS.find(([w]) => w === t.fontWeight)?.[1] ?? t.fontWeight;
   const layerDesign = FONT_DESIGNS.find(([d]) => d === (t.fontDesign ?? "default"))?.[1] ?? "System";
+  const layerWidth = FONT_WIDTHS.find(([w]) => w === (t.fontWidth ?? "standard"))?.[1] ?? "Standard";
   // Out of range is left alone rather than clamped, so typing 12 can pass
   // through 1 without the box jumping to 4 under the caret.
   const setSize = (n: number) => {
@@ -4396,6 +4408,11 @@ function richPartsEditor(
         ${segButtons("Typeface", part.fontDesign, FONT_DESIGNS, (v) => updPart((x) => { x.fontDesign = v; }), { inherited: t.fontDesign ?? "default" })}
       </div>
       ${part.fontDesign === "rounded" || part.fontDesign === "serif" ? FONT_DESIGN_HINT : nothing}
+      <div class="field seg-field">${fieldLabel("Width", part.fontWidth === undefined ? undefined
+          : { atDefault: false, title: `Back to the layer width (${layerWidth})`, reset: () => updPart((x) => { delete x.fontWidth; }) })}
+        ${segButtons("Width", part.fontWidth, FONT_WIDTHS, (v) => updPart((x) => { x.fontWidth = v; }), { inherited: t.fontWidth ?? "standard" })}
+      </div>
+      ${part.fontWidth !== undefined && part.fontWidth !== "standard" ? FONT_WIDTH_HINT : nothing}
       <div class="field seg-field">${fieldLabel("Italic", part.italic === undefined ? undefined
           : { atDefault: false, title: `Back to the layer slant (${t.italic === true ? "italic" : "upright"})`, reset: () => updPart((x) => { delete x.italic; }) })}
         ${segButtons("Italic", part.italic === undefined ? undefined : part.italic ? "on" : "off", PART_ITALICS,
@@ -4478,6 +4495,11 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           if (v === "default") delete p.fontDesign; else p.fontDesign = v;
         }), { def: "default" })}
         ${el.payload.fontDesign === "rounded" || el.payload.fontDesign === "serif" ? FONT_DESIGN_HINT : nothing}
+        ${segField("Width", el.payload.fontWidth ?? "standard", FONT_WIDTHS, (v) => upd((e) => {
+          const p = (e as typeof el).payload;
+          if (v === "standard") delete p.fontWidth; else p.fontWidth = v;
+        }), { def: "standard" })}
+        ${el.payload.fontWidth !== undefined && el.payload.fontWidth !== "standard" ? FONT_WIDTH_HINT : nothing}
         ${checkField("Italic", el.payload.italic === true, (v) => upd((e) => {
           const p = (e as typeof el).payload;
           if (v) p.italic = true; else delete p.italic;
@@ -5521,7 +5543,7 @@ function accentGroupRow(value: AccentGroup, set: (v: AccentGroup) => void): Temp
  * are not here: they live in its Extras card (`CHART_EXTRAS_KEYS`). */
 const LOOK_KEYS: Record<CElement["kind"], readonly string[]> = {
   text: ["fontSize", "fontWeight", "colorSlot", "alignment", "lineLimit", "monospacedDigits", "arc",
-    "fontDesign", "italic", "minimumScale",
+    "fontDesign", "fontWidth", "italic", "minimumScale",
     "coloring", "bands", "bandAboveColorHex", "highlight", "highColorHex", "lowColorHex"],
   icon: ["size", "colorSlot"],
   gauge: ["style", "lineWidth", "trackColorHex", "colorSlot", "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex", "fill", "ticks", "labels"],
@@ -6399,7 +6421,7 @@ export type { Comparison };
 const CHANGE_LABELS: Record<StyleChangeKind, string> = {
   setColor: "Set colour", setOpacity: "Set opacity", setText: "Set text", setIcon: "Set icon",
   setFontSize: "Set size", setFontWeight: "Set weight",
-  setFontDesign: "Set typeface", setItalic: "Set italic", setRotation: "Set rotation",
+  setFontDesign: "Set typeface", setFontWidth: "Set width", setItalic: "Set italic", setRotation: "Set rotation",
   hide: "Hide", show: "Show", setGaugeValue: "Set gauge value", setGaugeMin: "Set gauge min", setGaugeMax: "Set gauge max",
   setBorderColor: "Set border colour", setBorderWidth: "Set border width", setBackgroundColor: "Set background colour",
 };
@@ -6408,7 +6430,7 @@ const CHANGE_KINDS = Object.keys(CHANGE_LABELS) as StyleChangeKind[];
 
 /** What a rule aimed at one part of a rich text layer can change. Anything
  * else such a rule sets is ignored, on the watch and in the preview. */
-export const PART_RULE_PROPERTIES: readonly StyleProperty[] = ["color", "text", "fontSize", "fontWeight", "fontDesign", "italic", "visibility"];
+export const PART_RULE_PROPERTIES: readonly StyleProperty[] = ["color", "text", "fontSize", "fontWeight", "fontDesign", "fontWidth", "italic", "visibility"];
 
 /** The changes a rule can add: those its target reads, narrowed to what a
  * part reads when the rule is aimed at one. */
@@ -6767,6 +6789,9 @@ function changeBody(host: EditorHost, ch: StyleChange, upd: (m: (c: StyleChange)
   } else if (payload === "design") {
     body = html`${segField("Typeface", ch.design ?? "default", FONT_DESIGNS, (d) => upd((c) => { c.design = d; }))}
       ${FONT_DESIGN_HINT}`;
+  } else if (payload === "width") {
+    body = html`${segField("Width", ch.width ?? "standard", FONT_WIDTHS, (w) => upd((c) => { c.width = w; }))}
+      ${FONT_WIDTH_HINT}`;
   } else if (payload === "italic") {
     body = checkField("Italic", ch.italic !== false, (v) => upd((c) => { c.italic = v; }));
   }
@@ -7054,7 +7079,7 @@ function isNumberish(resolved: string | undefined): boolean {
  * where the list said it would. */
 const COLUMN_PICKER_ORDER: StyleProperty[] = [
   "icon", "text", "color", "visibility", "opacity", "fontSize", "fontWeight",
-  "fontDesign", "italic",
+  "fontDesign", "fontWidth", "italic",
   "rotation", "gaugeValue", "gaugeMin", "gaugeMax", "backgroundColor",
   "borderColor", "borderWidth",
 ];
@@ -7158,6 +7183,7 @@ function cellSummary(host: EditorHost, ch: StyleChange): TemplateResult {
   if (payload === "number") return html`<span class="cell-word mono">${ch.number ?? 0}</span>`;
   if (payload === "weight") return html`<span class="cell-word">${FONT_WEIGHTS.find(([w]) => w === (ch.weight ?? "regular"))?.[1]}</span>`;
   if (payload === "design") return html`<span class="cell-word">${FONT_DESIGNS.find(([d]) => d === (ch.design ?? "default"))?.[1]}</span>`;
+  if (payload === "width") return html`<span class="cell-word">${FONT_WIDTHS.find(([w]) => w === (ch.width ?? "standard"))?.[1]}</span>`;
   if (payload === "italic") return html`<span class="cell-word">${ch.italic === false ? "Upright" : "Italic"}</span>`;
   const v = ch.value ?? literal("");
   const fixed = v.kind.kind === "literal" ? v.kind.value : undefined;
