@@ -708,7 +708,7 @@ export class WristAssistantPanel extends LitElement {
    * held the next click on the face for most of a second after a native menu
    * closed, so a drag right after a change lagged (measured 2026-09-12: the
    * press was 650 to 900 ms old on arrival, with no long task on the page). */
-  @state() private openMenu?: "grid" | "case" | "tint";
+  @state() private openMenu?: "grid" | "case" | "tint" | "list";
   /** Alt is down. It flips snapping for a drag, so the grid lines show while
    * it is held even with Snap to grid off. */
   @state() private altHeld = false;
@@ -2212,6 +2212,13 @@ export class WristAssistantPanel extends LitElement {
     .pop-menu .row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .case-tool { position: relative; display: inline-flex; }
     .case-tool .pop-menu { left: -6px; right: auto; min-width: 150px; }
+    /* The List button's menu: a blank list first, then the ready-made ones.
+       The wrapper takes the button's grid cell so the menu hangs off it. */
+    .add-tool { position: relative; display: grid; min-width: 0; }
+    .add-tool .pop-menu { left: 0; right: auto; min-width: 210px; }
+    .add-tool .pop-menu .row { display: flex; flex-direction: column; align-items: stretch; gap: 1px; white-space: normal; }
+    .add-tool .pop-menu .row small { font-weight: 500; font-size: 11.5px; color: var(--wa-muted); }
+    .add-tool .pop-menu .sep { height: 1px; margin: 3px 6px; background: var(--wa-line); }
     button.case-pick {
       display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 6px 0 0; border: 0; border-radius: 6px;
       background: transparent; color: var(--wa-ink); font: inherit; font-weight: 500; cursor: pointer; white-space: nowrap;
@@ -6187,7 +6194,7 @@ export class WristAssistantPanel extends LitElement {
   /** Open or shut one of the preview bar's menus; opening one shuts the other.
    * A press anywhere outside the open menu's control shuts it, the same way
    * the complication picker closes. */
-  private toggleMenu(menu: "grid" | "case" | "tint", next = this.openMenu !== menu) {
+  private toggleMenu(menu: "grid" | "case" | "tint" | "list", next = this.openMenu !== menu) {
     this.openMenu = next ? menu : this.openMenu === menu ? undefined : this.openMenu;
     if (this.openMenu !== undefined) window.addEventListener("pointerdown", this.menuOutside, { capture: true });
     else window.removeEventListener("pointerdown", this.menuOutside, { capture: true });
@@ -7787,6 +7794,34 @@ export class WristAssistantPanel extends LitElement {
     const plain = offered.filter((p) => p.group === undefined);
     const listy = offered.filter((p) => p.group === "list");
     const toggle = () => { this.addOpen = !this.addOpen; this.saveListView(); };
+    const addBlank = (k: CElement["kind"]) => {
+      const el = newElement(k);
+      this.addHere((c) => {
+        // A timeline's clock times are always a layer of their own.
+        c.elements.push(el);
+        if (el.kind === "timeline") convertChartTimes(c, el.payload.id);
+      });
+      this.inspect = { kind: "layer", id: el.payload.id };
+    };
+    const addButton = (k: CElement["kind"], title: string, onClick: () => void, menu = false) => html`
+      <button class="add" style=${`--k:${KIND_COLOR[k]}`} ?disabled=${full} title=${title}
+        aria-haspopup=${menu ? "listbox" : nothing} aria-expanded=${menu ? (this.openMenu === "list" ? "true" : "false") : nothing}
+        @click=${onClick}
+        >${rich ? html`<span class="well">${addPreview(k)}</span>` : nothing}<span class="add-name">${rich ? uiIcon(k) : html`<span class="k"></span>`}<span>${KIND_LABEL[k]}</span></span></button>`;
+    // A list is the one kind that starts better from a pattern than from
+    // nothing, so its button opens a menu: a blank list first, then the
+    // ready-made ones. The list presets do not sit in the preset row below;
+    // they live here, under the button that makes lists.
+    const listMenu = html`<span class="add-tool" data-menu="list">
+      ${addButton("list", "Add a list: blank, or one of the ready-made ones", () => this.toggleMenu("list"), true)}
+      ${this.openMenu === "list" ? html`<div class="pop-menu" role="listbox" aria-label="Add a list">
+        <button class="row" role="option" @click=${() => { this.toggleMenu("list", false); addBlank("list"); }}>
+          Blank list<small>Start from nothing and design the row yourself.</small></button>
+        ${listy.length === 0 ? nothing : html`<div class="sep"></div>`}
+        ${listy.map((p) => html`<button class="row" role="option" ?disabled=${cfg.elements.length + p.layerCount > 64}
+          @click=${() => { this.toggleMenu("list", false); this.openPreset(p.kind); }}>${p.title}<small>${p.blurb}</small></button>`)}
+      </div>` : nothing}
+    </span>`;
     return html`<div class="card fold" data-open=${open ? "true" : "false"}>
       <h2 class="panel-title tools fold-h" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
         title=${open ? "Hide the add buttons" : "Show the add buttons"}
@@ -7809,26 +7844,16 @@ export class WristAssistantPanel extends LitElement {
       ${open
         ? html`
           <div class="add-grid ${rich ? "" : "lean"}">
-            ${kinds.map((k) => html`<button class="add" style=${`--k:${KIND_COLOR[k]}`} ?disabled=${full} title=${`Add a blank ${KIND_LABEL[k].toLowerCase()} layer`}
-              @click=${() => { const el = newElement(k); this.addHere((c) => {
-                // A timeline's clock times are always a layer of their own.
-                c.elements.push(el);
-                if (el.kind === "timeline") convertChartTimes(c, el.payload.id);
-              }); this.inspect = { kind: "layer", id: el.payload.id }; }}
-              >${rich ? html`<span class="well">${addPreview(k)}</span>` : nothing}<span class="add-name">${rich ? uiIcon(k) : html`<span class="k"></span>`}<span>${KIND_LABEL[k]}</span></span></button>`)}
+            ${kinds.map((k) => k === "list"
+              ? listMenu
+              : addButton(k, `Add a blank ${KIND_LABEL[k].toLowerCase()} layer`, () => addBlank(k)))}
           </div>
           <div class="presets">
             <span class="presets-l">Presets</span>
             ${plain.map((p) => html`<button class="preset" title=${p.blurb}
               ?disabled=${cfg.elements.length + p.layerCount > 64}
               @click=${() => this.openPreset(p.kind)}>${p.title}</button>`)}
-          </div>
-          ${listy.length === 0 ? nothing : html`<div class="presets">
-            <span class="presets-l">List</span>
-            ${listy.map((p) => html`<button class="preset" title=${p.blurb}
-              ?disabled=${cfg.elements.length + p.layerCount > 64}
-              @click=${() => this.openPreset(p.kind)}>${p.title}</button>`)}
-          </div>`}`
+          </div>`
         : nothing}
       ${this.renderPresetDialog()}
     </div>`;

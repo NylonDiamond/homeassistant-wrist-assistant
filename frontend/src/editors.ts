@@ -213,7 +213,12 @@ import {
   type AggregateStateFilter,
   type ListElement,
   type ListSource,
-  clampCalendarHours,
+  type CalendarLookAheadUnit,
+  CALENDAR_LOOK_AHEAD_UNITS,
+  calendarHoursFrom,
+  calendarLookAhead,
+  calendarLookAheadIn,
+  calendarLookAheadMax,
   clampListColumns,
   clampListGap,
   clampListRows,
@@ -229,10 +234,8 @@ import {
   LIST_MAX_ROWS,
   LIST_MAX_SOURCE_ENTITIES,
   LIST_MAX_TEMPLATE,
-  LIST_MIN_CALENDAR_HOURS,
   LIST_MIN_COLUMNS,
   LIST_MIN_ROWS,
-  LIST_MAX_CALENDAR_HOURS,
   LIST_SORTS,
   LIST_SOURCE_KINDS,
   LIST_STATS,
@@ -3266,13 +3269,24 @@ function listSourceFields(
         ${textArea("Template", source.value, (v) => setSource({ ...source, value: v }, "list-template"), 4)}
         <div class="hint">Rendered by Home Assistant, the same way a template value is. It should yield a JSON array: a list of objects becomes a row each, with one field per key, and a list of plain values gives each row one field called <code>value</code>.</div>`;
       break;
-    case "calendar":
+    case "calendar": {
+      // The wire carries hours. The box shows the biggest unit that divides
+      // them, and the switch re-counts the same span rather than keeping the
+      // number, so "2 weeks" turned to days reads 14, not 2.
+      const ahead = calendarLookAhead(source.hours);
+      const defaultAhead = calendarLookAhead(LIST_DEFAULT_CALENDAR_HOURS);
+      const unitShort: Record<CalendarLookAheadUnit, string> = { hours: "h", days: "d", weeks: "w" };
       body = html`
         ${refListField(host, "Calendar", source.entities, (entities) => setSource({ ...source, entities }), `${key}-cal`, "calendar")}
-        ${numberField("Look ahead", source.hours, (v) => setSource({ ...source, hours: clampCalendarHours(v) }, "list-hours"),
-          { step: 1, min: LIST_MIN_CALENDAR_HOURS, max: LIST_MAX_CALENDAR_HOURS, def: LIST_DEFAULT_CALENDAR_HOURS, unit: "h" })}
-        <div class="hint">Events from now to that many hours ahead, merged across the calendars and sorted by when they start. An event already under way is included.</div>`;
+        ${numberField("Look ahead", ahead.value, (v) => setSource({ ...source, hours: calendarHoursFrom(v ?? 1, ahead.unit) }, "list-hours"),
+          { step: 1, min: 1, max: calendarLookAheadMax(ahead.unit), unit: unitShort[ahead.unit],
+            ...(defaultAhead.unit === ahead.unit ? { def: defaultAhead.value } : {}) })}
+        ${segField("Counted in", ahead.unit, CALENDAR_LOOK_AHEAD_UNITS.map((u): [CalendarLookAheadUnit, string] => [u, u[0]!.toUpperCase() + u.slice(1)]),
+          (u) => setSource({ ...source, hours: calendarHoursFrom(calendarLookAheadIn(source.hours, u), u) }),
+          { def: defaultAhead.unit })}
+        <div class="hint">Events from now to that far ahead, up to two weeks, merged across the calendars and sorted by when they start. An event already under way is included.</div>`;
       break;
+    }
     case "todo":
       body = html`
         ${refListField(host, "List", source.entities, (entities) => setSource({ ...source, entities }), `${key}-todo`, "todo")}

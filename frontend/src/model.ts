@@ -2913,6 +2913,42 @@ export function clampCalendarHours(raw: unknown): number {
   return Math.min(LIST_MAX_CALENDAR_HOURS, Math.max(LIST_MIN_CALENDAR_HOURS, n));
 }
 
+/** The unit a calendar look-ahead is shown in. Editor only: the wire always
+ * carries hours, so a document never learns which unit it was typed in. */
+export type CalendarLookAheadUnit = "hours" | "days" | "weeks";
+export const CALENDAR_LOOK_AHEAD_UNITS: readonly CalendarLookAheadUnit[] = ["hours", "days", "weeks"];
+const HOURS_PER: Record<CalendarLookAheadUnit, number> = { hours: 1, days: 24, weeks: 168 };
+
+/** The largest number of one unit this many hours is, or hours when nothing
+ * bigger divides it: 336 reads as 2 weeks, 72 as 3 days, 30 as 30 hours. */
+export function calendarLookAhead(hours: number): { value: number; unit: CalendarLookAheadUnit } {
+  const h = clampCalendarHours(hours);
+  if (h % HOURS_PER.weeks === 0) return { value: h / HOURS_PER.weeks, unit: "weeks" };
+  if (h % HOURS_PER.days === 0) return { value: h / HOURS_PER.days, unit: "days" };
+  return { value: h, unit: "hours" };
+}
+
+/** The hours behind a number typed in one unit, kept inside the wire's
+ * limits: a value past the two-week cap lands on the cap, and nothing is
+ * shorter than one hour. */
+export function calendarHoursFrom(value: number, unit: CalendarLookAheadUnit): number {
+  const n = Number.isFinite(value) ? value : 1;
+  return clampCalendarHours(Math.round(n * HOURS_PER[unit]));
+}
+
+/** The most of a unit the look-ahead can be, so the number box can say so. */
+export function calendarLookAheadMax(unit: CalendarLookAheadUnit): number {
+  return Math.floor(LIST_MAX_CALENDAR_HOURS / HOURS_PER[unit]);
+}
+
+/** The same span, re-counted in another unit, never shorter than one of it:
+ * 36 hours read in days is 2 (a day and a half rounds up, since a look-ahead
+ * that shrinks on a unit change loses events). */
+export function calendarLookAheadIn(hours: number, unit: CalendarLookAheadUnit): number {
+  const whole = Math.ceil(clampCalendarHours(hours) / HOURS_PER[unit]);
+  return Math.min(calendarLookAheadMax(unit), Math.max(1, whole));
+}
+
 /** The entity references a source names, in the order the walker meets them.
  * An `entities` source with a filter scope names none: the filter is areas,
  * labels and floors, which are not entities. */
