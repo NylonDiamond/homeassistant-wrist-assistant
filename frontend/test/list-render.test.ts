@@ -194,16 +194,33 @@ describe("a list's row layers", () => {
 });
 
 describe("a row tap", () => {
-  it("is outlined once per row when tap areas are shown", () => {
-    const svg = draw(documentWith(rowText(2, "name"), rowTap(3)), context(), { tapAreas: true });
+  it("is outlined once per row in review mode, and the cells then take clicks", () => {
+    const svg = draw(documentWith(rowText(2, "name"), rowTap(3)), context(), { tapReview: true });
     expect([...svg.matchAll(new RegExp(`data-element-id=${uuid(3)}`, "g"))]).toHaveLength(2);
     expect([...svg.matchAll(/stroke="#FFD60A"/g)]).toHaveLength(2);
+    expect(svg).not.toContain("pointer-events=none");
+  });
+
+  it("stays off the face with plain tap areas, so a finger is not stamped on every row", () => {
+    // A free-standing tap on the face is drawn because nothing else marks it.
+    // A row tap is repeated per cell, and the Row card already names it.
+    const svg = draw(documentWith(rowText(2, "name"), rowTap(3)), context(), { tapAreas: true });
+    expect(svg).not.toContain(`data-element-id=${uuid(3)}`);
+    expect(svg).not.toContain("#FFD60A");
   });
 
   it("draws nothing at all without them, exactly as the watch does", () => {
     const svg = draw(documentWith(rowText(2, "name"), rowTap(3)), context());
     expect(svg).not.toContain(`data-element-id=${uuid(3)}`);
     expect(svg).not.toContain("#FFD60A");
+  });
+
+  it("lets a press on any row fall through to the list itself", () => {
+    // The row layers keep their ids for the hover tint, but take no pointer:
+    // a press on a row lands on the list's hit box and drags the list.
+    const svg = draw(documentWith(rowText(2, "name")), context());
+    // `flatten` pastes attribute values in unquoted.
+    expect([...svg.matchAll(/data-list-cell [^>]*pointer-events=none/g)]).toHaveLength(2);
   });
 
   it("carries the row's own filled-in action into the review label", () => {

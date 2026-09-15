@@ -2284,12 +2284,20 @@ function tapLabelText(label: string, box: Box): string | undefined {
  * 12 pt font in a row is 12 pt whatever size the cell is, which is what the
  * app's own `ListElementView` does.
  *
- * Every row layer goes through `renderElement`, so a row tap gets the same
- * dashed outline and finger the editor draws on any tap area, a hidden row
- * layer dims the same way, and each row layer carries its own tint group. The
- * handles are the one thing a cell does not inherit: a row layer is dragged in
- * the row designer, against one cell, not in the face's own canvas, where the
- * pointer maths would be against the wrong box.
+ * Every row layer goes through `renderElement`, so a hidden row layer dims the
+ * same way and each row layer carries its own tint group. Two things a cell
+ * does not inherit:
+ *
+ * - The handles and the pointer. A row layer is dragged in the row designer,
+ *   against one cell, not in the face's own canvas, where the pointer maths
+ *   would be against the wrong box. So on the face the cells take no clicks at
+ *   all, and a press on any row lands on the list's own hit box and drags the
+ *   list. Review mode is the exception: there a row tap's box is a thing you
+ *   click to read what it does.
+ * - The tap boxes. A free-standing tap on the face is drawn because nothing
+ *   else marks where it is, but a row tap is repeated in every cell, and a
+ *   finger on every row hides the row. The Row card names it; the face shows
+ *   it only in review mode, and the row designer draws it as any tap.
  */
 function renderList(
   el: Extract<ResolvedElement, { kind: "list" }>,
@@ -2299,7 +2307,8 @@ function renderList(
   tintPrefix?: string,
 ): TemplateResult | typeof nothing {
   if (el.cells.length === 0) return nothing;
-  const cellOptions: RenderOptions = { ...options, handles: false };
+  const review = options.tapReview === true;
+  const cellOptions: RenderOptions = { ...options, handles: false, tapAreas: review };
   return svg`${el.cells.map((cell) => {
     const w = Math.max(0, cell.frame.width * box.w);
     const h = Math.max(0, cell.frame.height * box.h);
@@ -2307,7 +2316,7 @@ function renderList(
     const x = box.x + cell.frame.x * box.w;
     const y = box.y + cell.frame.y * box.h;
     const canvas: CanvasSize = { width: w, height: h };
-    return svg`<g data-list-cell transform="translate(${x} ${y})">
+    return svg`<g data-list-cell transform="translate(${x} ${y})" pointer-events=${review ? nothing : "none"}>
       ${cell.elements.map((row) => renderElement(row, canvas, cellOptions, charts, tintPrefix))}</g>`;
   })}`;
 }
