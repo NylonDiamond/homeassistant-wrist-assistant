@@ -4203,7 +4203,7 @@ export class WristAssistantPanel extends LitElement {
       : nothing;
     // The phone's half of the same button: the nudge sends it another push.
     const refresh = d.refresh && this.hass.user?.is_admin
-      ? html`<button class="ghost" title="Send the phone a push so it pulls this now" @click=${() =>
+      ? html`<button class="ghost" title="Send the phone a push so it pulls this now. iOS decides when the widget redraws; opening the app or tapping the widget redraws it at once." @click=${() =>
           void this.sendToWatch()}>Refresh now</button>`
       : nothing;
     return html`<span class="send ${s.kind}" title=${d.title}>${s.kind === "sent" ? "✓ " : ""}${d.label}</span>${

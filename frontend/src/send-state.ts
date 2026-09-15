@@ -165,7 +165,7 @@ export function describeSend(
           ? {
               label: "On iPhone",
               title: pushable
-                ? "This iPhone has applied every change here. A save sends it a push, so the next one syncs in the background."
+                ? "This iPhone has applied every change here. A save sends it a push and it syncs in the background. iOS redraws the widget when it allows: opening the app or tapping the widget redraws it at once."
                 : "This iPhone has applied every change here.",
               resend: false,
               refresh: pushable,
@@ -174,7 +174,7 @@ export function describeSend(
               label: "On iPhone",
               note: `last sync ${agoWords(s.awaySeconds)}`,
               title: pushable
-                ? "This iPhone has applied every change here, as of its last sync. A save sends it a push, so the next one syncs in the background."
+                ? "This iPhone has applied every change here, as of its last sync. A save sends it a push and it syncs in the background. iOS redraws the widget when it allows: opening the app or tapping the widget redraws it at once."
                 : "This iPhone has applied every change here, as of its last sync. A save made after this reaches the lock screen when the app is opened, or on the widget's own refresh.",
               resend: false,
               refresh: pushable,
@@ -201,7 +201,7 @@ export function describeSend(
       if (s.device === "iphone") {
         return {
           label: "Sending to the phone",
-          title: "The push is on its way. The iPhone pulls in the background and confirms.",
+          title: "The push is on its way. The iPhone pulls in the background and confirms. The widget itself redraws when iOS allows, or at once when the app is opened or the widget is tapped.",
           resend: false,
           refresh: false,
         };
