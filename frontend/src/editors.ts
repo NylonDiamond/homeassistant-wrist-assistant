@@ -1178,6 +1178,9 @@ export interface EntityFieldOptions {
    * thing to fill in, so the answer to "why is my layer blank?" is marked
    * where the answer gets typed rather than only in a line of prose. */
   needed?: boolean;
+  /** Offer an x that removes the chosen entity. Off where the row beside the
+   * field already has its own remove button, so two x's never sit together. */
+  clearable?: boolean;
 }
 
 /** Whether a field's result list is open right now. The preset dialog asks so
@@ -1253,34 +1256,40 @@ export function entityField(host: Pick<EditorHost, "hass">, label: string, ref: 
     }
   };
 
-  // A chosen entity is one row: glyph, name, room and id, live state, and a
-  // pencil. The search box only shows while nothing is chosen or while the row
-  // is being changed, so the id is never printed twice.
-  const currentArea = ref.entityId ? areaLookup(host.hass)?.(ref.entityId) : undefined;
+  // A chosen entity is one row the height of a text box: glyph, name, id, live
+  // state, and an x. The search box only shows while nothing is chosen or while
+  // the row is being changed, so the id is never printed twice.
   const caption = ref.entityId === ""
     ? html`<div class="hint">Type part of a name, a room, or an id.</div>`
     : live ? nothing : html`<div class="hint warn">Not in Home Assistant right now.</div>`;
+
+  const focusSearch = (fieldEl: Element | null) =>
+    requestAnimationFrame(() => fieldEl?.querySelector<HTMLInputElement>(".ent-box input")?.focus());
 
   // Editing starts on an empty search with the old id as the placeholder, so the
   // whole list is one keystroke away and leaving without typing changes nothing.
   const edit = (e: Event) => {
     const fieldEl = (e.currentTarget as HTMLElement).closest(".entity-field");
     open(fieldEl, "");
-    requestAnimationFrame(() => fieldEl?.querySelector<HTMLInputElement>("input")?.focus());
+    focusSearch(fieldEl);
   };
 
-  const chosen = html`<button type="button" class="ent-chosen" title="Change entity" @click=${edit}>
-      <span class="ent-ico ${live && isActiveState(live.state) ? "on" : ""}">${domainIcon(ref.domain || ref.entityId.split(".")[0] || "")}</span>
-      <span class="ent-main">
-        <span class="ent-name">${live && typeof live.attributes.friendly_name === "string" ? live.attributes.friendly_name : ref.displayName || ref.entityId}</span>
-        <span class="ent-sub">
-          ${currentArea ? html`<span class="ent-area">${currentArea}</span>` : nothing}
-          <span class="ent-id mono">${ref.entityId}</span>
-        </span>
-      </span>
-      ${live ? html`<span class="ent-state">${live.state}</span>` : nothing}
-      <span class="ent-pencil">${uiIcon("edit")}</span>
-    </button>`;
+  const clearable = opts.clearable ?? true;
+  const name = live && typeof live.attributes.friendly_name === "string" ? live.attributes.friendly_name : ref.displayName || ref.entityId;
+  const chosen = html`<div class="ent-chosen">
+      <button type="button" class="ent-pick" title=${`${name}\n${ref.entityId}\nClick to change`} @click=${edit}>
+        <span class="ent-ico ${live && isActiveState(live.state) ? "on" : ""}">${domainIcon(ref.domain || ref.entityId.split(".")[0] || "")}</span>
+        <span class="ent-name">${name}</span>
+        ${name === ref.entityId ? nothing : html`<span class="ent-id mono">${ref.entityId}</span>`}
+        ${live ? html`<span class="ent-state">${live.state}</span>` : nothing}
+      </button>
+      ${clearable ? html`<button type="button" class="ent-clear" title="Remove entity" aria-label="Remove entity"
+        @click=${(e: MouseEvent) => {
+          const fieldEl = (e.currentTarget as HTMLElement).closest(".entity-field");
+          set({ entityId: "", displayName: "", domain: "" });
+          requestRerender(fieldEl);
+        }}>${uiIcon("close")}</button>` : nothing}
+    </div>`;
 
   const box = html`<div class="ent-box ${search ? "open" : ""} ${opts.needed && ref.entityId === "" ? "needs" : ""}">
       <span class="ent-glass">${uiIcon("search")}</span>
@@ -1291,19 +1300,13 @@ export function entityField(host: Pick<EditorHost, "hass">, label: string, ref: 
         @input=${(e: Event) => { const el = e.target as HTMLInputElement; open(el, el.value); }}
         @keydown=${onKey}
         @blur=${(e: FocusEvent) => { const el = e.target as HTMLInputElement; if (search) commitText(el.value); close(el); }} />
-      ${ref.entityId === "" ? nothing : html`<button type="button" class="ent-clear" title="Remove entity" aria-label="Remove entity"
-        @mousedown=${(e: MouseEvent) => e.preventDefault()}
-        @click=${(e: MouseEvent) => {
-          const el = (e.currentTarget as HTMLElement).closest(".ent-box")?.querySelector("input") ?? null;
-          set({ entityId: "", displayName: "", domain: "" });
-          entitySearches.set(key, { query: "", index: 0 });
-          requestRerender(el);
-          el?.focus();
-        }}>${uiIcon("close")}</button>`}
     </div>`;
 
+  // The anchor holds the control and its result list, so the list can float
+  // under the box, at the box's width, instead of pushing the card down.
   return html`<div class="field entity-field">
     <span>${label}</span>
+    <div class="ent-anchor">
     ${!search && ref.entityId !== "" ? chosen : box}
     ${search
       ? html`<div class="entity-results" role="listbox">
@@ -1325,7 +1328,9 @@ export function entityField(host: Pick<EditorHost, "hass">, label: string, ref: 
                 </span>
               </button>`)}
         </div>`
-      : caption}
+      : nothing}
+    </div>
+    ${search ? nothing : caption}
   </div>`;
 }
 
@@ -2199,7 +2204,7 @@ function timelineGroupFields(
             const next = timelineAggregateRows(p);
             next[i] = ref.entityId;
             writeRows(p, next);
-          }, `tagge${key}-${i}`), `${key}-agg-${i}`, { needed: entityId === "" })}
+          }, `tagge${key}-${i}`), `${key}-agg-${i}`, { needed: entityId === "", clearable: rows.length <= TIMELINE_MIN_AGGREGATE_ENTITIES })}
         ${rows.length > TIMELINE_MIN_AGGREGATE_ENTITIES
           ? html`<button class="icon" title="Remove this entity" aria-label="Remove this entity"
               @click=${() => set((p) => {
@@ -3313,6 +3318,9 @@ function layerNeedsEntity(el: CElement): boolean {
  * that carries its own bytes has nothing to name. */
 function layerShowsEntity(el: CElement): boolean {
   if (el.kind === "tap" || el.kind === "text") return false;
+  // A merged timeline names its entities in its own list, whose first row is
+  // this same entity, so a field above it would only repeat Entity 1.
+  if (el.kind === "timeline" && el.payload.aggregate !== undefined) return false;
   if (el.kind === "chartTimes" || el.kind === "chartDots" || el.kind === "chartGrid" || el.kind === "imageTime") return false;
   return !(el.kind === "image" && el.payload.source === "inline");
 }

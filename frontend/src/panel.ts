@@ -2796,7 +2796,9 @@ export class WristAssistantPanel extends LitElement {
        under the search box stays in the control column; the result list takes
        the whole width, since its rows carry a name, a room and a state. */
     .field.entity-field > :not(:first-child) { grid-column: 2; }
-    .field.entity-field > .entity-results { grid-column: 1 / -1; }
+    /* Entity 1, Entity 2 sit in rows with a remove button, and still start
+       their box at the same x as every other row in the card. */
+    .row-inline .field.entity-field { grid-template-columns: var(--wa-lab) minmax(0, 1fr); gap: 4px 8px; }
     .field.value-chip-field > button.value-chip:first-child { grid-column: 1 / -1; }
     /* A colour is one box: swatch, hex, and opacity in percent. */
     .color-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -3222,38 +3224,50 @@ export class WristAssistantPanel extends LitElement {
       70% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--wa-ent) 0%, transparent); }
       100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--wa-ent) 0%, transparent); }
     }
+    /* A chosen entity: one row in place of the search box, exactly as tall as
+       the box, so the label beside it and the rows under it never move when
+       one swaps for the other. The name reads in the ordinary ink, the id
+       after it is the quiet half and is cut first, the state sits right. The
+       row is the edit target; the x beside it removes the entity. */
+    .ent-anchor { position: relative; min-width: 0; }
+    .ent-chosen {
+      display: flex; align-items: center; height: 26px; min-width: 0; border-radius: 6px;
+      background: var(--wa-field); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ent) 22%, transparent);
+    }
+    .ent-chosen:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ent) 50%, transparent); }
+    button.ent-pick {
+      flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; gap: 7px;
+      font: inherit; font-size: 12px; text-align: left; padding: 0 8px 0 4px; border: 0; border-radius: 6px;
+      background: none; color: var(--wa-ink); cursor: pointer;
+    }
+    button.ent-pick:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--wa-accent); }
+    .ent-pick .ent-ico { width: 18px; height: 18px; border-radius: 4px; background: color-mix(in srgb, var(--wa-ent) 16%, transparent); color: var(--wa-ent); }
+    .ent-pick .ent-ico.on { background: color-mix(in srgb, var(--wa-ent) 30%, transparent); }
+    .ent-pick .ent-ico svg { width: 11px; height: 11px; }
+    .ent-pick .ent-name { flex: 0 1 auto; min-width: 3em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .ent-pick .ent-id { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--wa-muted); }
+    .ent-pick .ent-state { flex: none; max-width: 35%; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     button.ent-clear {
-      position: absolute; right: 5px; width: 22px; height: 22px; display: grid; place-items: center;
-      padding: 0; border: none; border-radius: 6px; background: none; color: var(--wa-muted); cursor: pointer;
+      flex: none; width: 24px; height: 24px; margin-right: 1px; display: grid; place-items: center;
+      padding: 0; border: none; border-radius: 5px; background: none; color: var(--wa-muted); cursor: pointer;
     }
     button.ent-clear:hover { background: var(--wa-panel); color: var(--wa-ink); }
-    button.ent-clear svg { width: 13px; height: 13px; display: block; }
-    /* A chosen entity: one row in place of the search box, the same height
-       as the box so a field does not jump when it swaps. The whole row is the
-       edit target; the pencil only says so. */
-    button.ent-chosen {
-      display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: 30px;
-      font: inherit; font-size: 12px; text-align: left; padding: 3px 6px 3px 4px; border-radius: 6px; cursor: pointer;
-      color: inherit; border: 1px solid color-mix(in srgb, var(--wa-ent) 28%, var(--wa-line)); background: var(--wa-ent-bg);
-    }
-    button.ent-chosen:hover { border-color: color-mix(in srgb, var(--wa-ent) 55%, var(--wa-line)); }
-    button.ent-chosen .ent-ico { width: 22px; height: 22px; border-radius: 5px; background: color-mix(in srgb, var(--wa-ent) 18%, transparent); color: var(--wa-ent); }
-    button.ent-chosen .ent-ico.on { background: color-mix(in srgb, var(--wa-ent) 28%, transparent); }
-    button.ent-chosen .ent-ico svg { width: 13px; height: 13px; }
-    button.ent-chosen .ent-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0; line-height: 1.25; }
-    button.ent-chosen .ent-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wa-ent); font-weight: 600; }
-    button.ent-chosen .ent-sub { display: flex; gap: 6px; min-width: 0; font-size: 10.5px; }
-    button.ent-chosen .ent-area { flex: none; color: var(--wa-muted); }
-    button.ent-chosen .ent-area + .ent-id::before { content: "·"; margin-right: 6px; opacity: .5; }
-    button.ent-chosen .ent-id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wa-ent); opacity: .7; }
-    button.ent-chosen .ent-state { flex: none; max-width: 35%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    button.ent-chosen .ent-pencil { flex: none; display: grid; place-items: center; width: 20px; height: 20px; color: var(--wa-muted); }
-    button.ent-chosen:hover .ent-pencil { color: var(--wa-ink); }
-    button.ent-chosen .ent-pencil svg { width: 13px; height: 13px; display: block; }
+    button.ent-clear svg { width: 12px; height: 12px; display: block; }
 
     .entity-results {
       border: 1px solid var(--wa-line); border-radius: 12px; margin-top: 6px; max-height: 340px; overflow: auto;
       background: var(--wa-raised); padding: 4px; box-shadow: 0 10px 28px rgba(0,0,0,.22);
+    }
+    /* In an inspector card the list floats over the rows under the box, like
+       any dropdown, rather than pushing the card taller. The card clips its
+       rounded corners, so it stops clipping while a search is open. Dialogs
+       and the value popover keep the list in the flow, where a float would
+       be cut off at their own edge. */
+    .sec:has(.ent-box.open) { overflow: visible; }
+    .sec-b .ent-anchor:not(.value-pop *) > .entity-results {
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 40; margin: 0;
+      background: var(--wa-card); border-color: var(--wa-line-strong, var(--wa-line));
+      box-shadow: 0 14px 36px rgba(0,0,0,.45);
     }
     button.ent {
       display: flex; align-items: center; gap: 10px; width: 100%; border-radius: 9px;
@@ -3272,13 +3286,13 @@ export class WristAssistantPanel extends LitElement {
     .ent-ico.on { background: color-mix(in srgb, var(--wa-accent) 20%, transparent); color: var(--wa-accent); }
     .ent-ico svg { width: 17px; height: 17px; display: block; }
     .ent .ent-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-    .ent .ent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--wa-ent); }
+    .ent .ent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--wa-ink); }
     .ent .ent-sub { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-size: 11px; }
     .ent .ent-area { flex: none; color: var(--wa-muted); }
     /* The room and the id are one line, and the id is the half that may be
        cut: the room is short and the id's tail is the least useful part. */
     .ent .ent-area + .ent-id::before { content: "·"; margin-right: 6px; opacity: .5; }
-    .ent .ent-id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wa-ent); opacity: .8; }
+    .ent .ent-id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wa-muted); }
     .ent .ent-right { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; max-width: 40%; }
     .ent .ent-type { font-size: 11px; color: var(--wa-muted); white-space: nowrap; }
     .ent .ent-state {
@@ -3304,7 +3318,7 @@ export class WristAssistantPanel extends LitElement {
        or print what it reads. Everything that shows a live value ends up
        here, so the colour never has to be repeated by hand. */
     .ent-tok { color: var(--wa-ent); font-weight: 600; }
-    .val-tok, .entity-current .ent-state, button.ent-chosen .ent-state, .vchip .val, .chart-numbers b, .hint .nums, .readout-v .nums {
+    .val-tok, .entity-current .ent-state, .ent-pick .ent-state, .vchip .val, .chart-numbers b, .hint .nums, .readout-v .nums {
       color: var(--wa-val); font-weight: 600;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .95em;
     }
