@@ -3946,8 +3946,8 @@ function textArcFields(
         }, "arc-reads"), { def: "top" })}
         <div class="hint">Drag the box to grow the circle: a radius of ${ARC_RADIUS_DEFAULT} fills it,
           and a bigger one bends the text less without moving it. Position is where the
-          middle of the text sits, 0 at the top and 90 on the right. Spread is how much of the circle the text may use; longer text shrinks,
-          then loses its tail. Spacing adds room between the letters.</div>`}
+          middle of the text sits, 0 at the top and 90 on the right. Spread is how much of the circle the text may use; longer text shrinks
+          to half size, then runs past the ends. Spacing adds room between the letters.</div>`}
     </div>`;
 }
 
