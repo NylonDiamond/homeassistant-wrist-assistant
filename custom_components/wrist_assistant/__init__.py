@@ -39,6 +39,7 @@ from .camera_stream import (
     jpeg_aspect,
 )
 from .complication_panel import async_register_panel, async_remove_panel
+from .complication_push import ComplicationPhonePush
 from .complication_store import ComplicationStore
 from .complication_ws import async_register_websocket_commands
 from .const import (
@@ -817,12 +818,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         runtime_data.apns_client = apns_client
         _LOGGER.info("APNs client ready")
 
+    # An iPhone owner parks no long-poll, so the wake above cannot reach it.
+    # This is its counterpart: a save commits, and the phone is sent one silent
+    # background push so it pulls the same records a watch is handed. Built
+    # here rather than beside the store because it needs the relay client,
+    # which only exists a few lines up.
+    complication_push = ComplicationPhonePush(
+        hass,
+        notification_store=notification_store,
+        widget_secret_store=widget_secret_store,
+        apns_client=runtime_data.apns_client,
+        complication_store=complication_store,
+    )
+    runtime_data.complication_push = complication_push
+    complication_store.async_set_push_callback(complication_push.on_commit)
+
     @callback
     def _handle_stop(_event) -> None:
         coordinator.async_shutdown()
         camera_stream_coordinator.shutdown()
         stream_token_store.shutdown()
         batch_snapshot_token_store.shutdown()
+        complication_push.shutdown()
 
     entry.async_on_unload(
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _handle_stop)
@@ -978,6 +995,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: WristAssistantConfigEnt
             data.camera_stream_coordinator.shutdown()
             data.stream_token_store.shutdown()
             data.batch_snapshot_token_store.shutdown()
+            # A reload builds a fresh one. Without this the old instance's
+            # parked timers still fire, against a relay client and a store
+            # this entry has already let go of.
+            if data.complication_push is not None:
+                data.complication_push.shutdown()
     return unload_ok
 
 

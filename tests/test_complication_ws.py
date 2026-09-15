@@ -239,6 +239,32 @@ class _Coordinator:
         self.woken.append((watch_id, renotify))
 
 
+class _Push:
+    """Stand-in for ComplicationPhonePush.
+
+    Its own rules (who is a phone, where the token is filed, the debounce and
+    the floor) are `test_complication_push.py`'s subject. What matters here is
+    only that the two commands ask it and carry its answers into the reply.
+    """
+
+    def __init__(self) -> None:
+        self.available: set[str] = set()
+        self.since: dict[str, int] = {}
+        self.pushed: list[tuple[str, str]] = []
+
+    def push_available(self, owner: str) -> bool:
+        return owner in self.available
+
+    def seconds_since_push(self, owner: str) -> int | None:
+        return self.since.get(owner)
+
+    def push_now(self, owner: str, reason: str) -> bool:
+        if owner not in self.available:
+            return False
+        self.pushed.append((owner, reason))
+        return True
+
+
 class _Connection:
     user = None
 
@@ -254,10 +280,11 @@ class _Connection:
 
 
 class _DomainData:
-    def __init__(self, store, secret_store, coordinator) -> None:
+    def __init__(self, store, secret_store, coordinator, push) -> None:
         self.complication_store = store
         self.widget_secret_store = secret_store
         self.coordinator = coordinator
+        self.complication_push = push
 
 
 class _Hass:
@@ -275,6 +302,7 @@ class _Env:
     coordinator: _Coordinator
     hass: _Hass
     secrets_mod: Any
+    push: _Push
     _slot: int = field(default=0)
 
     def _register(self, device_id: str, label: str, **extra) -> None:
@@ -330,8 +358,9 @@ def env():
         asyncio.run(store.async_load())
         secrets = secrets_mod.WidgetSecretStore(object())
         coordinator = _Coordinator()
-        hass = _Hass(_DomainData(store, secrets, coordinator))
-        yield _Env(ws, store, secrets, coordinator, hass, secrets_mod)
+        push = _Push()
+        hass = _Hass(_DomainData(store, secrets, coordinator, push))
+        yield _Env(ws, store, secrets, coordinator, hass, secrets_mod, push)
 
 
 # ── owners ───────────────────────────────────────────────────────────────
@@ -449,6 +478,31 @@ def test_watch_status_reports_seconds_since_the_last_sync(env) -> None:
     assert 0 <= status["last_sync_seconds"] < 60
 
 
+def test_watch_status_reports_whether_a_push_can_reach_this_owner(env) -> None:
+    """The panel's chip branches on it: push, or ask the user to open the app.
+
+    Null rather than 0 for a phone nothing has been sent to yet, the same
+    distinction `last_poll_seconds` draws for a watch.
+    """
+    env.add_phone("phone-1", device_name="Jesse's iPhone")
+    status = env.call(env.ws.ws_watch_status, owner_watch_id="phone-1")
+    assert status["push_available"] is False
+    assert status["last_push_seconds"] is None
+
+    env.push.available.add("phone-1")
+    env.push.since["phone-1"] = 12
+    status = env.call(env.ws.ws_watch_status, owner_watch_id="phone-1")
+    assert status["push_available"] is True
+    assert status["last_push_seconds"] == 12
+
+
+def test_watch_status_on_a_watch_owner_reports_no_push(env) -> None:
+    env.add_watch("watch-A", device_name="Apple Watch")
+    status = env.call(env.ws.ws_watch_status, owner_watch_id="watch-A")
+    assert status["push_available"] is False
+    assert status["last_push_seconds"] is None
+
+
 # ── nudge ────────────────────────────────────────────────────────────────
 
 
@@ -470,5 +524,38 @@ def test_nudge_on_an_owner_with_no_parked_poll_is_answered_not_refused(env) -> N
         "last_poll_seconds": None,
         "token": 1,
         "applied_token": 1,
+        "pushed": False,
+        "push_available": False,
     }
     assert env.coordinator.woken == [("phone-1", True)]
+    assert env.push.pushed == []
+
+
+def test_nudge_on_a_reachable_phone_sends_the_push_now(env) -> None:
+    """Refresh now is the phone's counterpart to waking a parked poll.
+
+    The reason travels with it so the app can tell a hand-pressed refresh from
+    the push a save produced, and the panel learns nothing here about whether
+    the phone acted. That arrives as the ack it already watches for.
+    """
+    env.add_phone("phone-1", device_name="Jesse's iPhone")
+    env.save_document("phone-1")
+    env.push.available.add("phone-1")
+
+    reply = env.call(env.ws.ws_nudge, owner_watch_id="phone-1")
+    assert reply["pushed"] is True
+    assert reply["push_available"] is True
+    assert env.push.pushed == [("phone-1", "refresh")]
+
+
+def test_nudge_on_a_watch_owner_pushes_nothing(env) -> None:
+    env.add_watch("watch-A", device_name="Apple Watch")
+    env.save_document("watch-A")
+    env.coordinator.polling.add("watch-A")
+
+    reply = env.call(env.ws.ws_nudge, owner_watch_id="watch-A")
+    assert reply["polling"] is True
+    assert reply["pushed"] is False
+    assert reply["push_available"] is False
+    assert env.push.pushed == []
+    assert env.coordinator.woken == [("watch-A", True)]

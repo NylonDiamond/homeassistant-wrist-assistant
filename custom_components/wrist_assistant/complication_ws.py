@@ -257,8 +257,9 @@ def ws_owners(
     the lock screen rather than mirroring the watch's. ``device_kind`` says
     which is which, and is null on an orphan row, where no store entry is left
     to ask. The panel reads it to decide which shapes to offer (no corner on a
-    phone) and what the send state can say (a phone holds no long-poll, so
-    nothing can be pushed to it). Watches sort first so the list a household
+    phone) and what the send state can say (a phone holds no long-poll, so a
+    save reaches it as a background push rather than a wake, and only when
+    this server holds its token). Watches sort first so the list a household
     with one phone and one watch sees does not reorder itself.
 
     Names come from HA's device registry first and the secret store second.
@@ -658,8 +659,11 @@ def ws_watch_status(
 
     ``last_sync_seconds`` is the phone's answer to ``last_poll_seconds``. An
     iPhone owner holds no long-poll, so ``polling`` is always false and
-    ``last_poll_seconds`` always null for one; the pull it makes when the app
-    is opened is the only thing it does that the panel can see.
+    ``last_poll_seconds`` always null for one. What reaches a phone is a
+    background push instead: ``push_available`` says whether this server holds
+    a token to send one to, and ``last_push_seconds`` says how long ago it last
+    tried. Both are false and null for a watch owner, which is woken rather
+    than pushed.
     """
     domain_data = hass.data.get(DOMAIN)
     if domain_data is None:
@@ -668,6 +672,7 @@ def ws_watch_status(
     owner = msg["owner_watch_id"]
     coordinator = domain_data.coordinator
     store = domain_data.complication_store
+    push = domain_data.complication_push
     connection.send_result(
         msg["id"],
         {
@@ -676,6 +681,15 @@ def ws_watch_status(
             "last_sync_seconds": store.seconds_since_sync(owner),
             "token": store.owner_token(owner),
             "applied_token": store.applied_token(owner),
+            # Whether a save to this owner can reach a phone at all: an iPhone
+            # owner this server holds an APNs token for. False for every watch,
+            # and false for a phone that has never registered one, which is
+            # what the panel turns into "open the app on it once".
+            "push_available": push is not None and push.push_available(owner),
+            # Seconds since the last push attempt for this owner, this HA run.
+            # Null when there has been none; the stamp is in memory with the
+            # rate limit it feeds.
+            "last_push_seconds": push.seconds_since_push(owner) if push else None,
         },
     )
 
@@ -691,19 +705,25 @@ def ws_watch_status(
 def ws_nudge(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """The panel's "Send to watch": wake the watch's parked long-poll so it
-    is handed the current token again.
+    """The panel's "Send to watch" and its "Refresh now" for a phone.
 
-    Changes nothing in the store. A watch that already applied the current
-    token gets nothing from it; the ack that turns the button green arrives
-    on the watch's next poll request either way. ``polling`` in the reply is
-    whether there was a poll to wake at all.
+    For a watch this wakes the parked long-poll so the watch is handed the
+    current token again. Changes nothing in the store: a watch that already
+    applied the current token gets nothing from it, and the ack that turns the
+    button green arrives on the watch's next poll request either way.
+    ``polling`` is whether there was a poll to wake at all.
 
-    An owner with no parked poll is answered, not refused: false in
-    ``polling`` and nothing woken. That covers a watch that is out of range
-    and every iPhone owner, which never parks a poll at all. The panel hides
-    Resend for a phone, but a stale tab that still shows it must get an answer
-    rather than an error dialog.
+    For an iPhone owner there is no poll to wake, so this sends the background
+    push instead, at once, past both of the timers a save goes through.
+    ``pushed`` is whether one was dispatched and ``push_available`` whether
+    this server holds a token to dispatch it to; both are false for a watch.
+    Nothing here waits for the phone. The relay answers later and the phone
+    acks later still, on the pull the push asks it to make, which is the same
+    ack the panel already watches for.
+
+    An owner that can be neither woken nor pushed is answered, not refused:
+    false in every flag and nothing done. That covers a watch out of range and
+    a phone that has not registered a token yet.
     """
     domain_data = hass.data.get(DOMAIN)
     if domain_data is None:
@@ -713,6 +733,8 @@ def ws_nudge(
     coordinator = domain_data.coordinator
     polling = coordinator.is_polling(owner)
     coordinator.wake_watch(owner, renotify=True)
+    push = domain_data.complication_push
+    push_available = push is not None and push.push_available(owner)
     connection.send_result(
         msg["id"],
         {
@@ -720,6 +742,8 @@ def ws_nudge(
             "last_poll_seconds": _seconds_since_poll(hass, coordinator, owner),
             "token": domain_data.complication_store.owner_token(owner),
             "applied_token": domain_data.complication_store.applied_token(owner),
+            "pushed": push.push_now(owner, "refresh") if push_available else False,
+            "push_available": push_available,
         },
     )
 

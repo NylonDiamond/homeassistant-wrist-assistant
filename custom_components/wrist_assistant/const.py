@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from .apns_client import APNsClient
     from .batch_snapshot_settings_store import BatchSnapshotSettingsStore
     from .camera_stream import CameraStreamCoordinator
+    from .complication_push import ComplicationPhonePush
     from .complication_store import ComplicationStore
     from .notification_snapshot import NotificationSnapshotStore
     from .notifications import NotificationTokenStore
@@ -51,6 +52,10 @@ class WristAssistantData:
     # only editor; the watch pulls accepted revisions itself.
     complication_store: ComplicationStore
     apns_client: APNsClient | None = field(default=None)
+    # Sends a phone owner the background push a watch owner gets as a long-poll
+    # wake. Built after the relay client is resolved, so it is None for the
+    # moment between the two and on an instance whose relay never came up.
+    complication_push: ComplicationPhonePush | None = field(default=None)
 
 
 type WristAssistantConfigEntry = ConfigEntry[WristAssistantData]

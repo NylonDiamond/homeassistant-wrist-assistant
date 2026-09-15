@@ -365,6 +365,10 @@ ChangeListener = Callable[[ComplicationChange], None]
 # Called with the owner watch id after every commit for that owner, so the
 # long-poll the watch is holding can wake and hand it the new token.
 WakeCallback = Callable[[str], None]
+# Called with the owner id and the new store token after every commit, so an
+# iPhone owner (which holds no long-poll to wake) can be sent a background
+# push instead. See ``complication_push.py``.
+PushCallback = Callable[[str, int], None]
 
 
 def _now_iso() -> str:
@@ -651,6 +655,7 @@ class ComplicationStore:
         self._token = 0
         self._listeners: list[ChangeListener] = []
         self._wake: WakeCallback | None = None
+        self._push: PushCallback | None = None
         self._store: Store = Store(
             hass, COMPLICATION_STORAGE_VERSION, COMPLICATION_STORAGE_KEY
         )
@@ -848,6 +853,26 @@ class ComplicationStore:
             self._wake(owner_watch_id)
         except Exception:
             _LOGGER.exception("Complication wake callback failed")
+
+    @callback
+    def async_set_push_callback(self, push: PushCallback | None) -> None:
+        """Install the hook that pushes a commit to a phone owner.
+
+        The sibling of :meth:`async_set_wake_callback`, for the owners that
+        park no poll to be woken. The store knows only that an owner's token
+        moved; whether that owner is a phone, whether a token for it exists
+        and how often it may be disturbed all belong to the hook. One hook,
+        set once at setup.
+        """
+        self._push = push
+
+    def _push_owner(self, owner_watch_id: str, token: int) -> None:
+        if self._push is None:
+            return
+        try:
+            self._push(owner_watch_id, token)
+        except Exception:
+            _LOGGER.exception("Complication push callback failed")
 
     # ── reads ──────────────────────────────────────────────────────────
 
@@ -1063,6 +1088,7 @@ class ComplicationStore:
             )
         )
         self._wake_owner(record.owner_watch_id)
+        self._push_owner(record.owner_watch_id, self._token)
         return record
 
     def save(
