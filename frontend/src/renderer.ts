@@ -633,16 +633,17 @@ export interface ArcTextLayout {
 /**
  * Where each glyph of a curved line sits.
  *
- * `advances` are the unscaled glyph widths in design points, in reading order.
- * The line is centred on the arc between `startAngle` and `startAngle + sweep`;
- * too long for that arc it shrinks to at most half size, and what still does not
- * fit is cut and closed with an ellipsis. A glyph sits with its centre on the
- * circle, so `inside` only decides which way up it is: bottoms toward the centre
- * when true, tops toward the centre when false.
+ * `advances` are the unscaled glyph widths in design points, in reading order,
+ * and `spacing` is the extra room between neighbours. The line is centred on
+ * `angle` and may spread `sweep` degrees around it; too long for that it shrinks
+ * to at most half size, spacing included, and what still does not fit is cut
+ * and closed with an ellipsis. A glyph sits with its centre on the circle, so
+ * `flip` only decides which way up it is: feet toward the centre when false,
+ * away from it when true.
  */
 export function arcGlyphAngles(
   advances: readonly number[],
-  arc: { radius: number; startAngle: number; sweep: number; inside: boolean },
+  arc: { radius: number; angle: number; sweep: number; spacing: number; flip: boolean },
   ellipsisAdvance: number,
 ): ArcTextLayout {
   const empty: ArcTextLayout = { scale: 1, kept: 0, truncated: false, placements: [] };
@@ -651,37 +652,40 @@ export function arcGlyphAngles(
   const sweep = arc.sweep;
   if (sweep === 0) return empty;
   const arcLength = (r * Math.abs(sweep) * Math.PI) / 180;
-  const total = advances.reduce((a, b) => a + b, 0);
+  const total = advances.reduce((a, b) => a + b, 0) + arc.spacing * (advances.length - 1);
   if (total <= 0) return empty;
   const scale = total > arcLength ? Math.max(0.5, arcLength / total) : 1;
   const widths = advances.map((a) => a * scale);
+  const gap = arc.spacing * scale;
+  const span = (ws: readonly number[]) => ws.reduce((a, b) => a + b, 0) + gap * (ws.length - 1);
   // Shrunk as far as it may go and still too long: keep whole glyphs while the
   // ellipsis still fits after them, and never fewer than one.
   let kept = widths.length;
   let truncated = false;
-  if (widths.reduce((a, b) => a + b, 0) > arcLength) {
+  if (span(widths) > arcLength) {
     truncated = true;
     const budget = arcLength - ellipsisAdvance * scale;
     let used = 0;
     kept = 0;
     for (const w of widths) {
-      if (kept > 0 && used + w > budget) break;
-      used += w;
+      const need = (kept > 0 ? gap : 0) + w;
+      if (kept > 0 && used + need > budget) break;
+      used += need;
       kept += 1;
     }
     kept = Math.max(1, kept);
   }
   const drawn = widths.slice(0, kept);
   if (truncated) drawn[drawn.length - 1] = ellipsisAdvance * scale;
-  const used = drawn.reduce((a, b) => a + b, 0);
+  const used = span(drawn);
   const dir = sweep < 0 ? -1 : 1;
   // Degrees per point on this circle, so an advance becomes a turn.
   const perPoint = 180 / (Math.PI * r);
-  let cursor = arc.startAngle + sweep / 2 - (dir * used * perPoint) / 2;
+  let cursor = arc.angle - (dir * used * perPoint) / 2;
   const placements = drawn.map((w) => {
     const angle = cursor + (dir * w * perPoint) / 2;
-    cursor += dir * w * perPoint;
-    return { angle, rotation: arc.inside ? angle : angle + 180 };
+    cursor += dir * (w + gap) * perPoint;
+    return { angle, rotation: arc.flip ? angle + 180 : angle };
   });
   return { scale, kept, truncated, placements };
 }
@@ -721,8 +725,8 @@ function arcGlyphs(el: Extract<ResolvedElement, { kind: "text" }>): ArcGlyph[] {
 }
 
 /** A curved layer's glyphs and where they land, or undefined when it draws
- * straight. One call feeds both the drawing and the selection outline, so the
- * box you click is the box you see. */
+ * straight. The circle is centred on the frame and sized by it, so the frame
+ * itself is the selection outline: the box you drag is the circle you get. */
 function arcTextLayout(el: Extract<ResolvedElement, { kind: "text" }>, box: Box) {
   if (el.arc === undefined || el.text === "") return undefined;
   const glyphs = arcGlyphs(el);
@@ -731,26 +735,6 @@ function arcTextLayout(el: Extract<ResolvedElement, { kind: "text" }>, box: Box)
   const layout = arcGlyphAngles(advances, el.arc, ARC_ELLIPSIS_EM * biggest);
   if (layout.placements.length === 0) return undefined;
   return { glyphs, layout, biggest, cx: box.cx, cy: box.cy, radius: el.arc.radius };
-}
-
-/** The box a curved line covers: the glyph centres it lands on, grown by a
- * glyph. Close enough to click, which is all the outline is for. */
-function arcTextOutline(el: Extract<ResolvedElement, { kind: "text" }>, box: Box): Box | undefined {
-  const drawn = arcTextLayout(el, box);
-  if (drawn === undefined) return undefined;
-  const pad = (drawn.biggest * drawn.layout.scale) / 2;
-  const xs: number[] = [];
-  const ys: number[] = [];
-  for (const p of drawn.layout.placements) {
-    const at = arcPoint(drawn.cx, drawn.cy, drawn.radius, p.angle);
-    xs.push(at.x);
-    ys.push(at.y);
-  }
-  const x = Math.min(...xs) - pad;
-  const y = Math.min(...ys) - pad;
-  const w = Math.max(...xs) - Math.min(...xs) + pad * 2;
-  const h = Math.max(...ys) - Math.min(...ys) + pad * 2;
-  return { x, y, w, h, cx: x + w / 2, cy: y + h / 2 };
 }
 
 /** A curved line, one `<text>` per glyph, each turned to sit on the circle. */
@@ -1787,7 +1771,6 @@ export function lineOutline(box: Box, thickness: number): Box {
  * of its frame it actually draws in. Layers that fill their frame use the frame.
  */
 export function layerOutline(el: ResolvedElement, box: Box): Box {
-  if (el.kind === "text" && el.arc !== undefined) return arcTextOutline(el, box) ?? box;
   if (el.kind === "shape") {
     if (el.shapeKind === "circle") return centredSquare(box);
     if (el.shapeKind === "line") return lineOutline(box, el.thickness);

@@ -8,10 +8,13 @@ import { nothing } from "lit";
 import {
   ARC_RADIUS_MAX,
   ARC_RADIUS_MIN,
+  ARC_SPACING_MAX,
+  ARC_SPACING_MIN,
   ARC_SWEEP_DEFAULT,
   ARC_SWEEP_MAX,
   ARC_SWEEP_MIN,
   auditUnknownKeys,
+  clampArcSpacing,
   clampArcSweep,
   encodeConfig,
   familyAllowsArcText,
@@ -65,34 +68,38 @@ const textOf = (layout: ResolvedLayout | undefined): ResolvedText =>
 describe("the arc key on the wire", () => {
   it("round-trips and writes only what is away from its default", () => {
     const cfg = curvedConfig("Kitchen", (p) => {
-      p.arc = { radius: 0.6, startAngle: 180, sweep: -90, inside: true };
+      p.arc = { radius: 0.6, angle: 135, sweep: -90, spacing: 1.5, flip: true };
     });
     const back = parseConfig(encodeConfig(cfg)).elements[0];
-    expect(back?.kind === "text" && back.payload.arc).toEqual({ radius: 0.6, startAngle: 180, sweep: -90, inside: true });
+    expect(back?.kind === "text" && back.payload.arc).toEqual({ radius: 0.6, angle: 135, sweep: -90, spacing: 1.5, flip: true });
 
     const bare = encodeConfig(curvedConfig("x", (p) => { p.arc = { radius: 0.4 }; }));
     const bareJson = JSON.stringify(bare);
     expect(bareJson).toContain("\"radius\":0.4");
-    expect(bareJson).not.toContain("startAngle");
+    expect(bareJson).not.toContain("angle");
     expect(bareJson).not.toContain("sweep");
-    expect(bareJson).not.toContain("inside");
+    expect(bareJson).not.toContain("spacing");
+    expect(bareJson).not.toContain("flip");
 
     // A straight layer writes no key at all, so a document that predates curves
     // keeps the bytes it always had.
     expect(JSON.stringify(encodeConfig(curvedConfig("x", () => {})))).not.toContain("arc");
   });
 
-  it("holds the radius and the sweep to their ranges rather than rejecting them", () => {
+  it("holds the radius, the sweep and the spacing to their ranges rather than rejecting them", () => {
     const wide = parseConfig(JSON.parse(JSON.stringify(encodeConfig(curvedConfig("x", (p) => {
-      p.arc = { radius: 9, sweep: 4 };
+      p.arc = { radius: 9, sweep: 4, spacing: 99 };
     })))));
     const arc = wide.elements[0]?.kind === "text" ? wide.elements[0].payload.arc : undefined;
     expect(arc?.radius).toBe(ARC_RADIUS_MAX);
     expect(arc?.sweep).toBe(ARC_SWEEP_MIN);
+    expect(arc?.spacing).toBe(ARC_SPACING_MAX);
 
     expect(clampArcSweep(-2000)).toBe(-ARC_SWEEP_MAX);
     expect(clampArcSweep(0)).toBe(ARC_SWEEP_DEFAULT);
     expect(clampArcSweep(Number.NaN)).toBe(ARC_SWEEP_DEFAULT);
+    expect(clampArcSpacing(-50)).toBe(ARC_SPACING_MIN);
+    expect(clampArcSpacing(Number.NaN)).toBe(0);
 
     const tight = parseConfig(JSON.parse(JSON.stringify(encodeConfig(curvedConfig("x", (p) => {
       p.arc = { radius: 0.001 };
@@ -101,7 +108,7 @@ describe("the arc key on the wire", () => {
   });
 
   it("is a key the audit knows, and its own keys are audited too", () => {
-    const good = encodeConfig(curvedConfig("x", (p) => { p.arc = { radius: 0.4, inside: true }; }));
+    const good = encodeConfig(curvedConfig("x", (p) => { p.arc = { radius: 0.4, flip: true, spacing: 1 }; }));
     expect(auditUnknownKeys(good)).toEqual([]);
 
     const bad = JSON.parse(JSON.stringify(good));
@@ -118,13 +125,22 @@ describe("which shapes curve", () => {
     expect(familyAllowsArcText("inline")).toBe(false);
   });
 
-  it("settles the radius in points against each shape's shorter side", () => {
+  it("settles the radius in points against the layer frame's shorter side", () => {
     const all = layouts("Kitchen", (p) => { p.arc = { radius: 0.5 }; });
-    // 0.5 of the circular design box's 51 point side.
-    expect(textOf(all.circular).arc).toEqual({ radius: 25.5, startAngle: 0, sweep: ARC_SWEEP_DEFAULT, inside: false });
+    // 0.5 of a full frame over the circular design box's 51 point side.
+    expect(textOf(all.circular).arc).toEqual({ radius: 25.5, angle: 0, sweep: ARC_SWEEP_DEFAULT, spacing: 0, flip: false });
     expect(textOf(all.small).arc?.radius).toBeCloseTo(0.5 * 162.67, 9);
     // The strip's shorter side is its height.
     expect(textOf(all.rectangular).arc?.radius).toBeCloseTo(0.5 * 65.5, 9);
+
+    // The frame is the circle: a box half the canvas draws a circle half the size,
+    // and the shorter side of a wide box is its height, whatever the shape.
+    const boxed = layouts("Kitchen", (p) => {
+      p.arc = { radius: 0.5 };
+      p.frame = { x: 0.25, y: 0.5, width: 0.5, height: 0.25, rotationDegrees: 0 };
+    });
+    expect(textOf(boxed.circular).arc?.radius).toBeCloseTo(0.5 * 0.25 * 51, 9);
+    expect(textOf(boxed.rectangular).arc?.radius).toBeCloseTo(0.5 * 0.25 * 65.5, 9);
   });
 
   it("never curves a countdown, which the watch ticks as one string", () => {
@@ -143,31 +159,44 @@ describe("where the glyphs land", () => {
   const radius = 180 / Math.PI;
 
   it("sits half an advance apart, centred on the arc", () => {
-    const placed = arcGlyphAngles([10, 10, 10], { radius, startAngle: 0, sweep: 120, inside: true }, 8);
+    const placed = arcGlyphAngles([10, 10, 10], { radius, angle: 60, sweep: 120, spacing: 0, flip: false }, 8);
     expect(placed.scale).toBe(1);
     expect(placed.truncated).toBe(false);
     expect(placed.placements.map((p) => p.angle)).toEqual([50, 60, 70]);
     expect(placed.placements.map((p) => p.rotation)).toEqual([50, 60, 70]);
   });
 
-  it("adds half a turn when the letters face out", () => {
-    const placed = arcGlyphAngles([10, 10, 10], { radius, startAngle: 0, sweep: 120, inside: false }, 8);
+  it("adds half a turn when the letters are flipped", () => {
+    const placed = arcGlyphAngles([10, 10, 10], { radius, angle: 60, sweep: 120, spacing: 0, flip: true }, 8);
     expect(placed.placements.map((p) => p.angle)).toEqual([50, 60, 70]);
     expect(placed.placements.map((p) => p.rotation)).toEqual([230, 240, 250]);
   });
 
   it("reads the other way round on a negative sweep", () => {
-    const placed = arcGlyphAngles([10, 10, 10], { radius, startAngle: 0, sweep: -120, inside: true }, 8);
+    const placed = arcGlyphAngles([10, 10, 10], { radius, angle: -60, sweep: -120, spacing: 0, flip: false }, 8);
     expect(placed.placements.map((p) => p.angle)).toEqual([-50, -60, -70]);
   });
 
+  it("opens a gap between neighbours and stays centred", () => {
+    // Ten points between three ten point glyphs: fifty points of line, centred on
+    // sixty, so the outer glyphs sit twenty degrees out instead of ten.
+    const placed = arcGlyphAngles([10, 10, 10], { radius, angle: 60, sweep: 120, spacing: 10, flip: false }, 8);
+    expect(placed.scale).toBe(1);
+    expect(placed.placements.map((p) => p.angle)).toEqual([40, 60, 80]);
+    // The gaps count toward the length that has to fit, so they shrink with the
+    // glyphs: fifty points on a forty degree arc is four fifths.
+    const squeezed = arcGlyphAngles([10, 10, 10], { radius, angle: 60, sweep: 40, spacing: 10, flip: false }, 8);
+    expect(squeezed.scale).toBeCloseTo(0.8, 12);
+    expect(squeezed.placements.map((p) => p.angle).map((a) => Math.round(a * 1e9) / 1e9)).toEqual([44, 60, 76]);
+  });
+
   it("shrinks to fit, then loses its tail", () => {
-    const shrunk = arcGlyphAngles(Array(12).fill(10), { radius, startAngle: 0, sweep: 90, inside: true }, 8);
+    const shrunk = arcGlyphAngles(Array(12).fill(10), { radius, angle: 45, sweep: 90, spacing: 0, flip: false }, 8);
     expect(shrunk.scale).toBeCloseTo(0.75, 12);
     expect(shrunk.truncated).toBe(false);
     expect(shrunk.placements).toHaveLength(12);
 
-    const cut = arcGlyphAngles(Array(12).fill(10), { radius, startAngle: 0, sweep: 40, inside: true }, 8);
+    const cut = arcGlyphAngles(Array(12).fill(10), { radius, angle: 20, sweep: 40, spacing: 0, flip: false }, 8);
     expect(cut.scale).toBe(0.5);
     expect(cut.truncated).toBe(true);
     expect(cut.placements.length).toBeLessThan(12);
@@ -202,14 +231,12 @@ describe("the curved preview", () => {
     expect(svg).toContain("#FF9F0A");
   });
 
-  it("puts the selection box on the arc rather than the frame", () => {
+  it("keeps the selection box on the frame, which is the circle", () => {
     const layout = layouts("ABC", (p) => { p.arc = { radius: 0.5, sweep: 30 }; }).circular!;
     const el = textOf(layout);
     const box = frameBox(el, { width: 51, height: 51 });
-    const outline = layerOutline(el, box);
-    // Three glyphs over 30 degrees at the top of a 25.5 point circle: a band far
-    // shorter than the layer's own 51 point frame, sitting above its centre.
-    expect(outline.h).toBeLessThan(box.h);
-    expect(outline.cy).toBeLessThan(box.cy);
+    // The frame sizes the circle, so the handles a drag grows it by sit on the
+    // frame rather than on the few glyphs it draws.
+    expect(layerOutline(el, box)).toEqual(box);
   });
 });

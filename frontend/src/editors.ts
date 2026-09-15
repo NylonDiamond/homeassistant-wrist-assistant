@@ -145,9 +145,12 @@ import {
   ARC_RADIUS_DEFAULT,
   ARC_RADIUS_MAX,
   ARC_RADIUS_MIN,
+  ARC_SPACING_MAX,
+  ARC_SPACING_MIN,
   ARC_SWEEP_DEFAULT,
   ARC_SWEEP_MAX,
   ARC_SWEEP_MIN,
+  clampArcSpacing,
   clampArcSweep,
   familyAllowsArcText,
   CENTERED_FRAME,
@@ -3886,7 +3889,7 @@ function gaugeRangeFields(
 }
 
 /**
- * Curved text: the Curve switch and the four numbers behind it.
+ * Curved text: the Curve switch, the four numbers behind it, and which way it reads.
  *
  * Every shape with a canvas offers it (`familyAllowsArcText`); inline has no
  * canvas, so there the whole group is absent rather than greyed out: a row that
@@ -3917,25 +3920,50 @@ function textArcFields(
       ${arc === undefined || countdown ? nothing : html`
         ${numberField("Radius", arc.radius, (v) => setArc((a) => {
           a.radius = Math.min(ARC_RADIUS_MAX, Math.max(ARC_RADIUS_MIN, v ?? ARC_RADIUS_DEFAULT));
-        }, "arc-radius"), { step: 0.05, min: ARC_RADIUS_MIN, max: ARC_RADIUS_MAX, def: ARC_RADIUS_DEFAULT })}
-        ${numberField("Start", arc.startAngle ?? 0, (v) => setArc((a) => {
+        }, "arc-radius"), { step: 0.05, min: ARC_RADIUS_MIN, max: ARC_RADIUS_MAX, unit: "of box", def: ARC_RADIUS_DEFAULT })}
+        ${numberField("Position", arc.angle ?? 0, (v) => setArc((a) => {
           const deg = v ?? 0;
-          if (deg === 0) delete a.startAngle; else a.startAngle = deg;
-        }, "arc-start"), { step: 5, min: -360, max: 360, unit: "°", def: 0 })}
-        ${numberField("Sweep", arc.sweep ?? ARC_SWEEP_DEFAULT, (v) => setArc((a) => {
-          const deg = clampArcSweep(v ?? ARC_SWEEP_DEFAULT);
+          if (deg === 0) delete a.angle; else a.angle = deg;
+        }, "arc-angle"), { step: 5, min: -360, max: 360, unit: "°", def: 0 })}
+        ${numberField("Spread", Math.abs(arc.sweep ?? ARC_SWEEP_DEFAULT), (v) => setArc((a) => {
+          const sign = (a.sweep ?? ARC_SWEEP_DEFAULT) < 0 ? -1 : 1;
+          const deg = clampArcSweep(sign * Math.abs(v ?? ARC_SWEEP_DEFAULT));
           if (deg === ARC_SWEEP_DEFAULT) delete a.sweep; else a.sweep = deg;
-        }, "arc-sweep"), { step: 5, min: -ARC_SWEEP_MAX, max: ARC_SWEEP_MAX, unit: "°", def: ARC_SWEEP_DEFAULT })}
-        ${checkField("Face in", arc.inside === true, (v) => setArc((a) => {
-          if (v) a.inside = true; else delete a.inside;
-        }, "arc-inside"), false)}
-        <div class="hint">Zero degrees is the top of the circle and a positive sweep runs
-          clockwise; a negative one runs the other way. The radius is a share of the
-          shape's shorter side, measured from the layer's centre. Face in turns the
-          letters to sit with their feet toward the middle, for a line along the bottom
-          of a ring. A line longer than its arc shrinks, then loses its tail.
-          ${ARC_SWEEP_MIN} to ${ARC_SWEEP_MAX} degrees.</div>`}
+        }, "arc-sweep"), { step: 5, min: ARC_SWEEP_MIN, max: ARC_SWEEP_MAX, unit: "°", def: ARC_SWEEP_DEFAULT })}
+        ${numberField("Spacing", arc.spacing ?? 0, (v) => setArc((a) => {
+          const pt = clampArcSpacing(v ?? 0);
+          if (pt === 0) delete a.spacing; else a.spacing = pt;
+        }, "arc-spacing"), { step: 0.5, min: ARC_SPACING_MIN, max: ARC_SPACING_MAX, unit: "pt", def: 0 })}
+        ${segField("Reads", arcReads(arc), ARC_READS_OPTIONS, (v) => setArc((a) => {
+          const size = Math.abs(a.sweep ?? ARC_SWEEP_DEFAULT);
+          const sweep = v === "bottom" ? -size : size;
+          if (sweep === ARC_SWEEP_DEFAULT) delete a.sweep; else a.sweep = sweep;
+          if (v === "bottom") a.flip = true; else delete a.flip;
+          // Text still sitting at the default spot moves to the side it now reads
+          // on, so the two clicks a bottom line needs are one.
+          if (v === "bottom" && (a.angle ?? 0) === 0) a.angle = 180;
+          if (v === "top" && a.angle === 180) delete a.angle;
+        }, "arc-reads"), { def: "top" })}
+        <div class="hint">Drag the box to grow the circle: a radius of ${ARC_RADIUS_DEFAULT} fills it.
+          Position is where the middle of the text sits, 0 at the top and 90 on the
+          right. Spread is how much of the circle the text may use; longer text shrinks,
+          then loses its tail. Spacing adds room between the letters.</div>`}
     </div>`;
+}
+
+/** The two ways a curved line reads: clockwise over the top with the letters'
+ * feet toward the centre, or anticlockwise along the bottom with the letters
+ * turned over. Either alone reads backwards or upside down, so they are one
+ * choice; a document holding another mix shows neither. */
+type ArcReads = "top" | "bottom" | "mixed";
+const ARC_READS_OPTIONS: [ArcReads, string][] = [["top", "Over the top"], ["bottom", "Along the bottom"]];
+
+export function arcReads(arc: TextArc): ArcReads {
+  const anticlockwise = (arc.sweep ?? ARC_SWEEP_DEFAULT) < 0;
+  const flipped = arc.flip === true;
+  if (!anticlockwise && !flipped) return "top";
+  if (anticlockwise && flipped) return "bottom";
+  return "mixed";
 }
 
 /**

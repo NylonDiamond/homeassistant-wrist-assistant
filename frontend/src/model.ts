@@ -651,36 +651,47 @@ export function familyAllowsArcText(family: FamilyKind): boolean {
   return ARC_TEXT_FAMILIES.includes(family);
 }
 
-/** Radius as a fraction of the shape's shorter side. 0.1 is a tight badge ring,
- * 1 hugs the shape's edge, 3 is the shallow curve a wide strip can carry. */
+/** Radius as a fraction of the layer frame's shorter side, so the box you drag
+ * is the circle you get: 0.5 just fits the box, 0.1 is a tight badge ring, 3 is
+ * the shallow curve a wide strip carries. */
 export const ARC_RADIUS_MIN = 0.1;
 export const ARC_RADIUS_MAX = 3;
-export const ARC_RADIUS_DEFAULT = 0.4;
+export const ARC_RADIUS_DEFAULT = 0.5;
 /** How much of the circle the text may be spread over, in degrees. Below ten a
  * sweep is a straight line with rounding error; a full turn is the ceiling. */
 export const ARC_SWEEP_MIN = 10;
 export const ARC_SWEEP_MAX = 360;
 export const ARC_SWEEP_DEFAULT = 120;
+/** Extra room between letters, in design points. A little negative tightens a
+ * loose face; twenty is as far apart as anything still reads as one word. */
+export const ARC_SPACING_MIN = -2;
+export const ARC_SPACING_MAX = 20;
 
 /**
  * Curved text: the layer's string laid along a circle instead of a straight
- * line. The circle is centred on the layer frame's centre.
+ * line. The circle is centred on the layer frame's centre and sized by the
+ * frame's shorter side, so dragging the frame's handles grows the circle.
  *
- * `startAngle` and `sweep` are in degrees, 0 at 12 o'clock and clockwise
- * positive, so a sweep of -90 from 0 runs anticlockwise to 9 o'clock. The text
- * is centred between `startAngle` and `startAngle + sweep`; longer than the arc
- * it shrinks the way `minimumScaleFactor(0.5)` does and then truncates.
+ * `angle` is where the middle of the text sits, in degrees, 0 at 12 o'clock and
+ * clockwise positive. `sweep` is how far round the text may spread, centred on
+ * that angle; its sign is the reading direction, so -90 reads anticlockwise.
+ * Text longer than its sweep shrinks the way `minimumScaleFactor(0.5)` does and
+ * then truncates. Letters stand with their feet toward the centre, which reads
+ * the right way up over the top; `flip` turns them over for a line along the
+ * bottom, which then also wants a negative sweep.
  * Mirrors `CustomComplication.TextElement.Arc` in the app repo.
  */
 export interface TextArc {
-  /** Fraction of the shape's shorter side, `ARC_RADIUS_MIN` to `ARC_RADIUS_MAX`. */
+  /** Fraction of the frame's shorter side, `ARC_RADIUS_MIN` to `ARC_RADIUS_MAX`. */
   radius: number;
   /** Absent means 0, the top of the circle. */
-  startAngle?: number;
+  angle?: number;
   /** Absent means `ARC_SWEEP_DEFAULT`. */
   sweep?: number;
-  /** Glyph bottoms face the centre when true, tops when false. Absent means false. */
-  inside?: boolean;
+  /** Absent means 0, the font's own spacing. */
+  spacing?: number;
+  /** Letters turned over, feet away from the centre. Absent means false. */
+  flip?: boolean;
 }
 
 /** Only `radius` is required; every other key falls back rather than throwing,
@@ -691,11 +702,13 @@ export function parseTextArc(o: unknown): TextArc | undefined {
   const radius = num(o.radius, NaN);
   if (!Number.isFinite(radius)) return undefined;
   const arc: TextArc = { radius: Math.min(ARC_RADIUS_MAX, Math.max(ARC_RADIUS_MIN, radius)) };
-  const start = num(o.startAngle, 0);
-  if (start !== 0) arc.startAngle = start;
+  const angle = num(o.angle, 0);
+  if (angle !== 0) arc.angle = angle;
   const sweep = clampArcSweep(num(o.sweep, ARC_SWEEP_DEFAULT));
   if (sweep !== ARC_SWEEP_DEFAULT) arc.sweep = sweep;
-  if (o.inside === true) arc.inside = true;
+  const spacing = clampArcSpacing(num(o.spacing, 0));
+  if (spacing !== 0) arc.spacing = spacing;
+  if (o.flip === true) arc.flip = true;
   return arc;
 }
 
@@ -707,12 +720,19 @@ export function clampArcSweep(sweep: number): number {
   return sweep < 0 ? -size : size;
 }
 
+/** The letter spacing held to its range; anything unreadable is no spacing. */
+export function clampArcSpacing(spacing: number): number {
+  if (!Number.isFinite(spacing)) return 0;
+  return Math.min(ARC_SPACING_MAX, Math.max(ARC_SPACING_MIN, spacing));
+}
+
 /** Every key but `radius` is omitted at its default, as the app's encoder does. */
 export function encodeTextArc(a: TextArc): J {
   const o: J = { radius: encNum(a.radius) };
-  if (a.startAngle !== undefined && a.startAngle !== 0) o.startAngle = encNum(a.startAngle);
+  if (a.angle !== undefined && a.angle !== 0) o.angle = encNum(a.angle);
   if (a.sweep !== undefined && a.sweep !== ARC_SWEEP_DEFAULT) o.sweep = encNum(a.sweep);
-  if (a.inside === true) o.inside = true;
+  if (a.spacing !== undefined && a.spacing !== 0) o.spacing = encNum(a.spacing);
+  if (a.flip === true) o.flip = true;
   return o;
 }
 
@@ -4804,7 +4824,7 @@ const K = {
   gaugeTicks: ["count", "length", "colorHex", "majorEvery"],
   gaugeLabels: ["show", "size", "colorHex"],
   /** What curves a text layer. Carried by `text` and by nothing else. */
-  arc: ["radius", "startAngle", "sweep", "inside"],
+  arc: ["radius", "angle", "sweep", "spacing", "flip"],
   elementEnvelope: ["kind", "payload"],
   elementBase: ["id", "colorSlot", "rules", "frame", "isHidden", "opacity", "shadow", "groupId", "name", "accentGroup"],
   // A layer's drop shadow. Absent on the layer means none; present, it says all four.

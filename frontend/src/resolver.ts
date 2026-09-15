@@ -70,6 +70,7 @@ import {
   type TextElement,
   type TextPart,
   ARC_SWEEP_DEFAULT,
+  clampArcSpacing,
   clampArcSweep,
   familyAllowsArcText,
   textColorsByValue,
@@ -207,14 +208,17 @@ export interface ResolvedText extends ResolvedBase {
    * repo. */
   arc?: ResolvedTextArc;
 }
-/** A settled arc. `startAngle` and `sweep` are degrees, 0 at 12 o'clock and
- * clockwise positive; `inside` turns the glyphs to face the centre. */
+/** A settled arc. `angle` is where the middle of the text sits and `sweep` how
+ * far round it may spread, both in degrees, 0 at 12 o'clock and clockwise
+ * positive; `spacing` is extra room between letters in design points; `flip`
+ * turns the letters over for a line along the bottom. */
 export interface ResolvedTextArc {
   /** Design-box points, from the layer frame's centre. */
   radius: number;
-  startAngle: number;
+  angle: number;
   sweep: number;
-  inside: boolean;
+  spacing: number;
+  flip: boolean;
 }
 /** One visible part of a rich text layer. Mirrors `ResolvedText.Part` in the
  * app repo, key for key. */
@@ -998,19 +1002,22 @@ export type TextValueColoring = Pick<TextElement, "coloring" | "bands" | "bandAb
  * Three things drop it: no `arc` key, a shape that is not one of
  * `ARC_TEXT_FAMILIES`, and a countdown, whose ticking string is drawn by the
  * system as one run and cannot be cut into glyphs. The radius arrives as a
- * fraction of the shape's shorter side and leaves as design-box points, so both
- * renderers place glyphs from the same number.
+ * fraction of the layer frame's shorter side and leaves as design-box points,
+ * so both renderers place glyphs from the same number and a drag on the frame's
+ * handles grows the circle.
  *
  * Mirrors `CustomComplication.resolvedArc` in the app repo.
  */
 export function resolvedTextArc(el: TextElement, family: FamilyKind): ResolvedTextArc | undefined {
   if (el.arc === undefined || el.countdown === true || !familyAllowsArcText(family)) return undefined;
   const box = DESIGN_BOX[family === "inline" ? "rectangular" : family];
+  const side = Math.max(0, Math.min(el.frame.width * box.width, el.frame.height * box.height));
   return {
-    radius: el.arc.radius * Math.min(box.width, box.height),
-    startAngle: el.arc.startAngle ?? 0,
+    radius: el.arc.radius * side,
+    angle: el.arc.angle ?? 0,
     sweep: clampArcSweep(el.arc.sweep ?? ARC_SWEEP_DEFAULT),
-    inside: el.arc.inside === true,
+    spacing: clampArcSpacing(el.arc.spacing ?? 0),
+    flip: el.arc.flip === true,
   };
 }
 
