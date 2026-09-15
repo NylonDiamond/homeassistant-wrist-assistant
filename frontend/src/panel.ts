@@ -2106,10 +2106,20 @@ export class WristAssistantPanel extends LitElement {
        over the preview and moving with it, so the tools that act on the
        selection sit next to the selection. */
     .over {
-      display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px;
+      display: flex; align-items: center; justify-content: center; flex-wrap: nowrap; gap: 6px;
+      position: sticky; top: 0; z-index: 4; justify-self: center;
       padding: 5px 8px; border-radius: 12px; font-size: 13px; max-width: 100%;
       background: color-mix(in srgb, var(--wa-raised) 92%, transparent);
       box-shadow: 0 0 0 1px var(--wa-line), 0 6px 18px rgba(0,0,0,.18);
+    }
+    /* The pill never wraps and never leaves: it sticks to the top of the stage
+       when the face is scrolled, and on a narrow canvas the two words go and
+       the glyphs stay, so every button is always there to press. */
+    .over button.pick { white-space: nowrap; }
+    @container (max-width: 560px) {
+      .over .word { display: none; }
+      .over button.pick { width: 30px; padding: 0; justify-content: center; }
+      .over button.pick .glyph { margin: 0; }
     }
     /* With snapping on, the button and its size read as one accent pill. */
     /* Opens to the left of the cog, since the cog is the pill's last button
@@ -2172,6 +2182,7 @@ export class WristAssistantPanel extends LitElement {
        sits on a work surface rather than on the card. */
     .stage {
       display: grid; justify-items: center; align-content: center; gap: 20px; padding: 20px; flex: 1 1 auto; min-height: 0; overflow: auto;
+      container-type: inline-size;
       background:
         radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--wa-accent) 10%, transparent) 0, transparent 65%),
         radial-gradient(color-mix(in srgb, var(--wa-ink) 9%, transparent) 1px, transparent 1px) 0 0 / 18px 18px;
@@ -4677,7 +4688,7 @@ export class WristAssistantPanel extends LitElement {
     return html`<button class="pick ${on ? "on" : ""}" ?disabled=${off}
       aria-pressed=${on ? "true" : "false"}
       title=${on ? "Point at the face to name a layer. Click one to select it. Escape stops." : "Point at a layer on the face to find it (Escape stops)"}
-      @click=${() => this.togglePicking()}><span class="glyph">⌖</span>${on ? "Picking…" : "Pick layer"}</button>`;
+      @click=${() => this.togglePicking()}><span class="glyph">⌖</span><span class="word">${on ? "Picking…" : "Pick layer"}</span></button>`;
   }
 
   /** The review-mode toggle. Sits beside Pick layer because both answer a
@@ -4687,7 +4698,7 @@ export class WristAssistantPanel extends LitElement {
     return html`<button class="pick ${on ? "on" : ""}" ?disabled=${!this.draft || this.parseError !== undefined}
       aria-pressed=${on ? "true" : "false"}
       title="Show every tap area, labelled with what it does, over a dimmed face. With a layer selected, only its tap area shows, and you can drag its corners to size it."
-      @click=${() => this.setShowTaps(!this.showTaps)}><span class="glyph">☞</span>Show taps</button>`;
+      @click=${() => this.setShowTaps(!this.showTaps)}><span class="glyph">☞</span><span class="word">Show taps</span></button>`;
   }
 
   /**
