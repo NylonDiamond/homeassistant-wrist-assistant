@@ -4,7 +4,7 @@
 // 160x62 rectangle scaled 2x looks like the native editor.
 
 import { svg, nothing, type TemplateResult } from "lit";
-import { gridFor } from "./interact.js";
+import { gridFor, type GuideLine } from "./interact.js";
 import {
   DESIGN_BOX,
   TIMELINE_MAX_LABEL_SIZE,
@@ -292,6 +292,9 @@ export interface RenderOptions {
   /** Editor affordance: the snap grid's step as a fraction of the face. Draws
    * faint lines over the layers, with the middle lines in the accent colour. */
   grid?: number;
+  /** Editor affordance: the smart guides the layer being dragged is sitting on
+   * right now, drawn across the face and gone again on release. */
+  guides?: readonly GuideLine[];
   /**
    * Preview a tinted surface in this colour (`#RRGGBB`). Absent draws full
    * colour. `tintSurface` says which surface; see `tintGroup` for what each
@@ -473,6 +476,21 @@ function gridLines(design: CanvasSize, step: number | undefined): TemplateResult
     lines.push(svg`<line x1="0" y1=${y} x2=${design.width} y2=${y} stroke=${strokeFor(k)} stroke-width="0.5" vector-effect="non-scaling-stroke" />`);
   }
   return svg`<g class="snap-grid" pointer-events="none">${lines}</g>`;
+}
+
+/**
+ * The smart guides a drag is sitting on, right across the face. Pink rather
+ * than the grid's blue and the selection's accent, so a line that says "this
+ * edge meets that one" is never read as a grid line that happens to be there.
+ */
+function guideOverlay(design: CanvasSize, guides: readonly GuideLine[] | undefined): TemplateResult | typeof nothing {
+  if (guides === undefined || guides.length === 0) return nothing;
+  const lines = guides.map((g) => g.axis === "x"
+    ? svg`<line x1=${g.at * design.width} y1="0" x2=${g.at * design.width} y2=${design.height}
+        stroke="#FF375F" stroke-width="1" vector-effect="non-scaling-stroke" />`
+    : svg`<line x1="0" y1=${g.at * design.height} x2=${design.width} y2=${g.at * design.height}
+        stroke="#FF375F" stroke-width="1" vector-effect="non-scaling-stroke" />`);
+  return svg`<g class="smart-guides" pointer-events="none">${lines}</g>`;
 }
 
 const FONT_WEIGHT: Record<string, number> = { regular: 400, medium: 500, semibold: 600, bold: 700 };
@@ -2539,6 +2557,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
           <g data-design-box transform="scale(${fit.scale * tileScale})">
             ${elements.map((el) => renderElement(el, design, options, charts, tint))}
             ${gridLines(design, options.grid)}
+            ${guideOverlay(design, options.guides)}
           </g>
         </g>
         <circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} fill="none"
@@ -2579,6 +2598,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
       <g data-design-box transform="translate(${fit.x} ${fit.y}) scale(${fit.scale})">
         ${elements.map((el) => renderElement(el, design, options, charts, tint))}
             ${gridLines(design, options.grid)}
+            ${guideOverlay(design, options.guides)}
       </g>
     </g>
     ${tinted(chrome, chromeGroup, tint)}
