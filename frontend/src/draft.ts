@@ -4,7 +4,7 @@
 // `baseRevision` and then `commit()`s on success (plan §"Save and conflict
 // rules").
 
-import { type CustomComplicationConfig, type FamilyKind, encodeConfig, liftChartOwnMarks, normalizeOwnership, parseConfig, syncAttachedTaps, syncFollowers } from "./model.js";
+import { type CustomComplicationConfig, type FamilyKind, encodeConfig, liftChartOwnMarks, normalizeOwnership, parseConfig, syncAttachedTaps } from "./model.js";
 import { deriveDataSources } from "./compiler.js";
 
 const HISTORY_LIMIT = 100;
@@ -84,11 +84,6 @@ export class Draft {
     // A chart's highlight, lines and times are always layers now; one saved
     // while the chart drew its own opens converted.
     liftChartOwnMarks(config);
-    // A document can also arrive following a shape it no longer has, or with a
-    // link that has drifted from its leader, from a hand-edit or an import into
-    // a document with other shapes. Put the links right before the baseline is
-    // taken, the way the two above are put right.
-    syncFollowers(config);
     this.baseline = JSON.stringify(encodeConfig(config));
   }
 
@@ -113,18 +108,13 @@ export class Draft {
     this.takeStep(coalesce);
     const next = structuredClone(this.config);
     mutate(next);
-    // Three invariants are kept in one place, so no call site has to know
-    // about any of them. A layer the change added belongs to the shape being
-    // edited and to no other; whatever the edit was, an attached tap follows
-    // its owner; and a shape that follows another still draws what that one
-    // draws. Ownership settles first, because the tap follows its owner onto
+    // Two invariants are kept in one place, so no call site has to know about
+    // either. A layer the change added belongs to the shape being edited and
+    // to no other; and whatever the edit was, an attached tap follows its
+    // owner. Ownership settles first, because the tap follows its owner onto
     // the owner's shape.
     normalizeOwnership(next, home);
     syncAttachedTaps(next);
-    // Last, because a following shape copies what the two above have settled:
-    // whatever the edit was, and wherever in the document it landed, every link
-    // is true again by the time the draft holds the result.
-    syncFollowers(next);
     this.config = next;
   }
 

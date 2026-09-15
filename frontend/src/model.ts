@@ -2321,12 +2321,6 @@ export interface FamilyLayout {
   borderColorHex?: string;
   borderWidth: number;
   rules: Rule[];
-  /** The shape this one takes its arrangement from, refitted for this canvas
-   * (`syncFollowers`). Editor-only, like `groupId`: the watch never reads it,
-   * and a document carrying one draws exactly as it would without it, because
-   * the placements it names are already written out in full. Only `placements`
-   * follow; the background, the border and the rules stay this shape's own. */
-  follows?: FamilyKind;
 }
 
 /** A raw service call: `domain.service`, an optional target entity, and service
@@ -3188,10 +3182,6 @@ function parseLayout(o: unknown): FamilyLayout {
   const backgroundFill = parseFill(l.backgroundFill);
   if (backgroundFill !== undefined) layout.backgroundFill = backgroundFill;
   if (typeof l.borderColorHex === "string") layout.borderColorHex = l.borderColorHex;
-  // A shape that cannot take part in a link, or a word that is no shape at all,
-  // reads as following nothing. Whether the leader is really there is settled
-  // by `leaderOf`, which every reader goes through.
-  if (typeof l.follows === "string" && canLink(l.follows as FamilyKind)) layout.follows = l.follows as FamilyKind;
   return layout;
 }
 
@@ -4597,7 +4587,6 @@ function encodeLayout(l: FamilyLayout): J {
   if (l.borderColorHex !== undefined) o.borderColorHex = l.borderColorHex;
   o.borderWidth = encNum(l.borderWidth);
   if (l.rules.length > 0) o.rules = encodeRules(l.rules);
-  if (l.follows !== undefined) o.follows = l.follows;
   return o;
 }
 
@@ -4902,7 +4891,7 @@ const K = {
   test: ["id", "value", "comparison"],
   comparison: ["kind", "value", "upper", "pattern", "options"],
   styleChange: ["kind", "value", "number", "weight", "design", "width", "italic"],
-  layout: ["placements", "bezelText", "bezelCountdown", "curvedText", "curvedColorHex", "bezelGauge", "backgroundColorHex", "backgroundFill", "cornerBodyShape", "borderColorHex", "borderWidth", "rules", "follows"],
+  layout: ["placements", "bezelText", "bezelCountdown", "curvedText", "curvedColorHex", "bezelGauge", "backgroundColorHex", "backgroundFill", "cornerBodyShape", "borderColorHex", "borderWidth", "rules"],
   bezelGauge: ["value", "minValue", "maxValue", "colorHexes", "minLabel", "maxLabel"],
   placement: ["frame", "isHidden", "size"],
   // The last three belong to `callService` only; the entity four are its optional
@@ -6070,18 +6059,14 @@ export function ownerFamily(cfg: CustomComplicationConfig, id: string): FamilyKi
   const el = cfg.elements.find((e) => e.payload.id === id);
   const ownerId = el && el.kind === "tap" ? el.payload.attachedTo : undefined;
   const key = ownerId ?? id;
-  return DRAWABLE_FAMILIES.find((f) =>
-    cfg.supportedFamilies.includes(f) && !isFollowing(cfg, f) && cfg.perFamily[f]?.placements[key] !== undefined);
+  return DRAWABLE_FAMILIES.find((f) => cfg.supportedFamilies.includes(f) && cfg.perFamily[f]?.placements[key] !== undefined);
 }
 
 /** The layers on one shape, in draw order. What the Layers card lists, and
  * what a shape's own copy, delete and paste work on. */
 export function ownedElements(cfg: CustomComplicationConfig, family: FamilyKind): Element[] {
   const layout = cfg.perFamily[family];
-  // A following shape draws its leader's layers and owns none of them, so it
-  // has no rows to list, nothing to copy or delete, and removing the shape
-  // takes no layer with it.
-  if (!layout || isFollowing(cfg, family)) return [];
+  if (!layout) return [];
   return cfg.elements.filter((el) => {
     const ownerId = el.kind === "tap" ? el.payload.attachedTo : undefined;
     return layout.placements[ownerId ?? el.payload.id] !== undefined;
@@ -6091,7 +6076,7 @@ export function ownedElements(cfg: CustomComplicationConfig, family: FamilyKind)
 /** How many layers a shape draws: its own, minus the ones hidden on it. */
 export function ownedShownCount(cfg: CustomComplicationConfig, family: FamilyKind): number {
   const layout = cfg.perFamily[family];
-  if (!layout || isFollowing(cfg, family)) return 0;
+  if (!layout) return 0;
   return ownedElements(cfg, family).filter((el) => !isAttachedTap(cfg, el) && !layout.placements[el.payload.id]?.isHidden).length;
 }
 
@@ -6110,10 +6095,7 @@ export function ownedShownCount(cfg: CustomComplicationConfig, family: FamilyKin
  * Idempotent. Cheap enough to run after every edit.
  */
 export function normalizeOwnership(cfg: CustomComplicationConfig, home?: FamilyKind): void {
-  // A following shape sits outside all of this. Its placements are its
-  // leader's, refitted, so counting them here would hand every one of those
-  // layers a second owner and split the design in two.
-  const families = DRAWABLE_FAMILIES.filter((f) => cfg.supportedFamilies.includes(f) && !isFollowing(cfg, f));
+  const families = DRAWABLE_FAMILIES.filter((f) => cfg.supportedFamilies.includes(f));
   if (families.length === 0) return;
   const fallback = home !== undefined && hasCanvas(home) && families.includes(home) ? home : families[0]!;
   for (const f of families) if (!cfg.perFamily[f]) cfg.perFamily[f] = defaultLayout();
@@ -6183,201 +6165,11 @@ export function normalizeOwnership(cfg: CustomComplicationConfig, home?: FamilyK
     el.payload.isHidden = true;
     for (const f of DRAWABLE_FAMILIES) {
       const layout = cfg.perFamily[f];
-      if (!layout || isFollowing(cfg, f)) continue;
+      if (!layout) continue;
       if (f === seat) layout.placements[id] = placement;
       else delete layout.placements[id];
     }
   }
-}
-
-// ── linked shapes ─────────────────────────────────────────────────────────
-// A shape can follow another (roadmap 2.3). Following is a link, not a copy:
-// the follower draws the leader's own layers, each refitted for its canvas,
-// and every edit to the leader shows up on it at once. `copyShapeLayout` is
-// the other half of the pair, taking a copy that then goes its own way.
-//
-// The one rule that makes the rest work: a following shape owns no layers.
-// Ownership (above) gives every layer exactly one shape, and a follower's
-// placements point at layers that already have an owner, so `ownedElements`
-// and `normalizeOwnership` both leave a follower alone. Detaching is what
-// turns the link into layers of its own.
-
-/** The shapes a link can join. Corner and Inline are out: Inline has no
- * canvas, and the corner's content is a bezel and a curve rather than an
- * arrangement, so there is nothing there to refit either way. */
-export const LINKABLE_FAMILIES: FamilyKind[] = DRAWABLE_FAMILIES.filter((f) => f !== "corner");
-
-/** Whether a shape can follow or be followed at all. */
-export function canLink(family: FamilyKind): boolean {
-  return LINKABLE_FAMILIES.includes(family);
-}
-
-/**
- * The shape `family` follows, or undefined when it follows nothing and when
- * the link no longer stands: a leader dropped from the document's shapes, one
- * that lost its layout, or a `follows` no rule allows. Every reader goes
- * through this rather than the raw key, so a stale one is inert until
- * `syncFollowers` clears it.
- */
-export function leaderOf(cfg: CustomComplicationConfig, family: FamilyKind): FamilyKind | undefined {
-  const leader = cfg.perFamily[family]?.follows;
-  if (leader === undefined || leader === family) return undefined;
-  if (!canLink(family) || !canLink(leader)) return undefined;
-  if (!cfg.supportedFamilies.includes(family) || !cfg.supportedFamilies.includes(leader)) return undefined;
-  return cfg.perFamily[leader] === undefined ? undefined : leader;
-}
-
-/** Whether this shape's arrangement belongs to another one, so nothing here
- * may move it. */
-export function isFollowing(cfg: CustomComplicationConfig, family: FamilyKind): boolean {
-  return leaderOf(cfg, family) !== undefined;
-}
-
-/** The shapes following this one, in schema order. */
-export function followersOf(cfg: CustomComplicationConfig, family: FamilyKind): FamilyKind[] {
-  return DRAWABLE_FAMILIES.filter((f) => leaderOf(cfg, f) === family);
-}
-
-/**
- * Whether one shape may start following another.
- *
- * A shape follows one shape and no more, and a link is never a chain: a leader
- * that follows something itself, or a shape something already follows, is not
- * on offer. Without that, an edit would have to walk a graph to know what
- * moves, and a cycle would be one typo away.
- */
-export function canFollow(cfg: CustomComplicationConfig, follower: FamilyKind, leader: FamilyKind): boolean {
-  if (follower === leader || !canLink(follower) || !canLink(leader)) return false;
-  if (!cfg.supportedFamilies.includes(follower) || !cfg.supportedFamilies.includes(leader)) return false;
-  if (cfg.perFamily[follower] === undefined || cfg.perFamily[leader] === undefined) return false;
-  if (isFollowing(cfg, leader)) return false;
-  return followersOf(cfg, follower).length === 0;
-}
-
-/** Every shape this one could be pointed at, for the Follow picker. */
-export function followChoices(cfg: CustomComplicationConfig, family: FamilyKind): FamilyKind[] {
-  return DRAWABLE_FAMILIES.filter((f) => canFollow(cfg, family, f));
-}
-
-/** Point a shape at a leader, or take it off one. A pairing no rule allows is
- * left alone rather than half applied. */
-export function setFollows(cfg: CustomComplicationConfig, family: FamilyKind, leader: FamilyKind | undefined): void {
-  if (leader === undefined) {
-    detachFamily(cfg, family);
-    return;
-  }
-  if (!canFollow(cfg, family, leader)) return;
-  const layout = cfg.perFamily[family];
-  if (!layout) return;
-  // The shape's own layers were only ever on this shape, and the link leaves
-  // no room for them: from here its placements are the leader's. They go the
-  // way removing the shape would take them, in the one undo step this is.
-  for (const el of ownedElements(cfg, family)) removeElement(cfg, el.payload.id);
-  pruneGroups(cfg);
-  layout.follows = leader;
-  syncFollowers(cfg);
-}
-
-/**
- * Break a link and leave the shape with the arrangement it was drawing.
- *
- * The placements are already the literal frames the link computed, so the
- * numbers do not change. What does change is who owns the layers: the follower
- * was drawing the leader's, and a shape on its own has to have its own, or
- * both would claim them and settling the document would pull them apart. So
- * it takes a copy, which is exactly what "copy the Rectangular layout" gives.
- */
-export function detachFamily(cfg: CustomComplicationConfig, family: FamilyKind): void {
-  const layout = cfg.perFamily[family];
-  if (!layout || layout.follows === undefined) return;
-  const leader = leaderOf(cfg, family);
-  delete layout.follows;
-  if (leader === undefined) return;
-  layout.placements = {};
-  copyShapeLayout(cfg, leader, family);
-}
-
-/**
- * Put every following shape back in step with its leader.
- *
- * Called at the one place a draft mutation lands, so a link holds after an
- * edit anywhere in the document: moving a leader's layer, adding one, deleting
- * one, renaming the complication. Also on open, so a document hand-edited
- * elsewhere comes up in step.
- *
- * A link whose leader has gone is no link: the key goes and the placements
- * stay, so the shape keeps drawing what it drew and settles as the owner of
- * those layers on the next pass.
- */
-export function syncFollowers(cfg: CustomComplicationConfig): void {
-  for (const family of DRAWABLE_FAMILIES) {
-    const layout = cfg.perFamily[family];
-    if (layout?.follows === undefined) continue;
-    const leader = leaderOf(cfg, family);
-    if (leader === undefined) {
-      delete layout.follows;
-      continue;
-    }
-    const source = cfg.perFamily[leader]!;
-    const next: Record<string, Placement> = {};
-    for (const el of cfg.elements) {
-      const p = source.placements[el.payload.id];
-      if (p === undefined) continue;
-      // The size travels even when the leader never set one, the same way a
-      // copy carries it, so the refit has something to scale for a smaller
-      // canvas rather than leaving the layer at its full size.
-      const size = p.size ?? elementSize(el);
-      const base: Placement = {
-        frame: { ...p.frame },
-        isHidden: p.isHidden,
-        ...(size !== undefined ? { size } : {}),
-      };
-      next[el.payload.id] = refitPlacement(base, leader, family, el.kind);
-    }
-    layout.placements = next;
-  }
-}
-
-/**
- * Give one shape its own copy of another shape's layers.
- *
- * A real copy, not a link: the new shape gets new layers with new ids, so
- * editing one of them afterwards changes nothing on the shape it came from.
- * Each one lands where its original sits, scaled for the canvas it arrives on.
- * What "copy the Rectangular layout" does to a shape that is still blank.
- */
-export function copyShapeLayout(cfg: CustomComplicationConfig, from: FamilyKind, to: FamilyKind): void {
-  const layout = cfg.perFamily[to] ?? (cfg.perFamily[to] = defaultLayout());
-  const source = ownedElements(cfg, from).filter((el) => !isAttachedTap(cfg, el));
-  if (source.length === 0) return;
-  const clip = copyElements(cfg, source.map((el) => el.payload.id), from);
-  const landed = pasteElements(cfg, clip, { nudge: false });
-  // Each copy arrives carrying the source shape's own placement. Refit it for
-  // this canvas, hand it to this shape, and take it off the source shape,
-  // which is what makes the copy a layer of its own rather than a second
-  // pointer at the original.
-  const sourceLayout = cfg.perFamily[from];
-  for (const id of landed) {
-    const el = cfg.elements.find((e) => e.payload.id === id);
-    if (!el) continue;
-    const src = sourceLayout?.placements[id];
-    // The size travels even when the source shape never set one, so the refit
-    // has something to scale down for the smaller canvas.
-    const size = src?.size ?? elementSize(el);
-    const base: Placement = {
-      frame: { ...(src?.frame ?? el.payload.frame) },
-      // A layer hidden on the source shape arrives hidden, so the copy is the
-      // arrangement as it stands rather than an arrangement plus whatever was
-      // switched off in it.
-      isHidden: src?.isHidden ?? false,
-      ...(size !== undefined ? { size } : {}),
-    };
-    // Left on the source shape the copy would have two owners, and settling
-    // the document would split it in two, so it comes off there.
-    for (const f of DRAWABLE_FAMILIES) if (f !== to) delete cfg.perFamily[f]?.placements[id];
-    layout.placements[id] = refitPlacement(base, from, to, el.kind);
-  }
-  normalizeOwnership(cfg, to);
 }
 
 // ── layer entity ──────────────────────────────────────────────────────────
