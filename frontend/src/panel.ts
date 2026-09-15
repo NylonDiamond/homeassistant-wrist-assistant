@@ -5479,7 +5479,19 @@ export class WristAssistantPanel extends LitElement {
     // Points, to the tenth: a nudge is an offset on the plot, not a place on the face.
     const round = (n: number) => Math.round(n * 10) / 10;
     this.cancelGesture?.();
+    // A plain click sends a pointermove too, of zero distance, between the press
+    // and the release, and the gesture reports a frame on every move and again
+    // on release. Writing that frame back made every click on a layer an edit:
+    // an undo step, an "Unsaved changes" flag, and, when the frame snapped, a
+    // layer that crept by a hair (a double click did exactly that). A few
+    // pixels of travel is what makes it a drag, the same slop the group drag
+    // uses; short of that nothing is written.
     let moved = false;
+    const track = (ev: PointerEvent) => {
+      if (ev.pointerId === e.pointerId && Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) > DRAG_SLOP) moved = true;
+    };
+    svg.addEventListener("pointermove", track);
+    const stopTracking = () => svg.removeEventListener("pointermove", track);
     // Handles sit on what a layer draws (a circle's square, a line, a gauge's
     // bar or dots), so a corner drag resizes that rather than the frame around it.
     const drawn = handle !== null
@@ -5491,7 +5503,12 @@ export class WristAssistantPanel extends LitElement {
     if (handle !== null && drawn?.kind === "icon") {
       const half = iconDrawnSide(drawn) / 2;
       const startSize = drawn.size;
-      this.cancelGesture = beginScaleDrag(svg, e, handle, { w: half, h: half }, (factor, done) => {
+      const cancelScale = beginScaleDrag(svg, e, handle, { w: half, h: half }, (factor, done) => {
+        if (done) stopTracking();
+        if (!moved) {
+          if (done) this.cancelGesture = undefined;
+          return;
+        }
         this.mutate((c) => {
           setPlacement(c, family, id, { size: Math.max(1, Math.round(startSize * factor)) });
         }, `drag-${id}-${family}`);
@@ -5500,18 +5517,24 @@ export class WristAssistantPanel extends LitElement {
           this.cancelGesture = undefined;
         }
       });
+      this.cancelGesture = () => { stopTracking(); cancelScale(); };
       return;
     }
     const resize = drawn !== undefined ? handleResize(drawn, start, canvas) : {};
-    this.cancelGesture = beginGesture(svg, canvas, e, {
+    const cancelFrame = beginGesture(svg, canvas, e, {
       elementId: id, frame: start, handle: handle ?? undefined, ...resize,
       ...(anchor === undefined ? { ...this.snapTarget(family as DrawableFamily), ...this.guideTarget(family as DrawableFamily, [id]) } : {}),
     }, {
       ...this.guideSink(),
-      onFrame: (elementId: string, f: NormalizedFrame, done: boolean) => {        if (!done) moved = true;
-        if (done && !moved && pickOnClick !== undefined) {
-          this.inspect = { kind: "layer", id: pickOnClick };
-          this.cancelGesture = undefined;
+      onFrame: (elementId: string, f: NormalizedFrame, done: boolean) => {
+        if (done) stopTracking();
+        if (!moved) {
+          // A press that never travelled is a click: it selects and writes
+          // nothing. On the selected layer's box it selects the layer on top.
+          if (done) {
+            if (pickOnClick !== undefined) this.inspect = { kind: "layer", id: pickOnClick };
+            this.cancelGesture = undefined;
+          }
           return;
         }
         this.mutate((c) => {
@@ -5536,6 +5559,7 @@ export class WristAssistantPanel extends LitElement {
         }
       },
     });
+    this.cancelGesture = () => { stopTracking(); cancelFrame(); };
   }
 
   /**
