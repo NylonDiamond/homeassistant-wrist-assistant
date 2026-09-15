@@ -134,18 +134,35 @@ export async function fetchList(hass: HassLike, owner: string) {
     /** Seconds since the watch last polled. Null when it has not polled since
      * the server started, absent from integrations older than the field. */
     last_poll_seconds?: number | null;
+    /** Whether the server holds a push token for this owner; see
+     * `fetchWatchStatus`. Absent from integrations older than the field, and
+     * from any list reply that does not carry it, in which case the panel
+     * keeps what the last status reply told it. */
+    push_available?: boolean;
+    /** Seconds since the last push attempt for this owner; see
+     * `fetchWatchStatus`. Absent under the same conditions. */
+    last_push_seconds?: number | null;
     /** Watch-app pages (id + name, watch order), per its last sync report. */
     pages?: { id: string; name: string }[];
     records: ComplicationRecord[];
   }>({ type: `${D}/list`, owner_watch_id: owner });
 }
 
-/** "Send to watch": wake the watch's parked long-poll so it is handed the
- * current token again. Changes nothing in the store. */
+/** "Send to watch", and "Refresh now" on a phone: wake the watch's parked
+ * long-poll so it is handed the current token again, or send the phone a
+ * silent push so it pulls now. Changes nothing in the store. */
 export async function nudgeWatch(hass: HassLike, owner: string) {
   return hass.connection.sendMessagePromise<{
     polling: boolean;
     last_poll_seconds?: number | null;
+    /** Whether this call actually sent a push. False for a watch owner, and
+     * for a phone with no token on file. Absent from integrations older than
+     * the field, which never push at all. */
+    pushed?: boolean;
+    /** Whether the server holds a push token for this owner, so a save can
+     * wake it. False for a watch owner. Absent from integrations older than
+     * the field. */
+    push_available?: boolean;
     token: number;
     /** Null when the watch has never acked; see `fetchList`. */
     applied_token: number | null;
@@ -163,6 +180,15 @@ export async function fetchWatchStatus(hass: HassLike, owner: string) {
      * instead of a poll: its `last_poll_seconds` is always null. Null when it
      * has never synced, absent from integrations older than the field. */
     last_sync_seconds?: number | null;
+    /** Whether the server holds a push token for this owner, so a save wakes
+     * it with a silent push. False for a watch owner, which is woken by its
+     * long poll instead. Absent from integrations older than the field, which
+     * never push at all. */
+    push_available?: boolean;
+    /** Seconds since the last push attempt for this owner, this server run.
+     * Null when there has been none, and always null for a watch owner.
+     * Absent from integrations older than the field. */
+    last_push_seconds?: number | null;
     token: number;
     /** Null when the watch has never acked; see `fetchList`. */
     applied_token: number | null;
