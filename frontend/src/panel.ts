@@ -2112,12 +2112,21 @@ export class WristAssistantPanel extends LitElement {
     .inbox select:focus-visible { box-shadow: none; }
     /* The three face toggles wrap as one block, so a narrow bar never leaves
        one of them stranded on the line above the other two. */
-    .canvas-bar .face-tools { display: inline-flex; gap: 6px; flex: none; }
+    .over .face-tools { display: inline-flex; gap: 6px; flex: none; }
     /* The line-up strip: eight glyphs with no words, so it stays one block on
        a narrow bar. A hair tighter than the toggles beside it, since the six
        aligns read as one control. */
-    .canvas-bar .align-tools { display: inline-flex; gap: 1px; flex: none; }
-    .canvas-bar .align-tools svg { width: 17px; height: 17px; }
+    .over .align-tools { display: inline-flex; gap: 1px; flex: none; }
+    .over .align-tools svg { width: 17px; height: 17px; }
+    /* The strip over the face: a small raised pill on the dotted stage, centred
+       over the preview and moving with it, so the tools that act on the
+       selection sit next to the selection. */
+    .over {
+      display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px;
+      padding: 5px 8px; border-radius: 12px; font-size: 13px; max-width: 100%;
+      background: color-mix(in srgb, var(--wa-raised) 92%, transparent);
+      box-shadow: 0 0 0 1px var(--wa-line), 0 6px 18px rgba(0,0,0,.18);
+    }
     /* With snapping on, the button and its size read as one accent pill. */
     .grid-tool { display: inline-flex; align-items: center; position: relative; }
     .grid-tool.on button.pick { border-radius: 8px 0 0 8px; padding-right: 8px; }
@@ -4746,6 +4755,20 @@ export class WristAssistantPanel extends LitElement {
    * against the box around themselves. Evening out the gaps needs three, since
    * two layers have a single gap and nothing to even it against.
    */
+  /**
+   * The strip right over the face: the three face toggles and the line-up
+   * buttons. They sit here rather than in the bar above because the face can
+   * be a long way down a tall canvas, and a tool that acts on the selection
+   * wants to be next to it.
+   */
+  private renderOver() {
+    return html`<div class="over">
+      <span class="face-tools">${this.renderPickButton()}${this.renderShowTapsButton()}${this.renderGridButton()}</span>
+      <span class="bar-sep" aria-hidden="true"></span>
+      ${this.renderAlignTools()}
+    </div>`;
+  }
+
   private renderAlignTools() {
     const n = this.arrangeIds().length;
     const off = !this.draft || this.parseError !== undefined || !isDrawable(this.activeFamily)
@@ -8085,15 +8108,12 @@ export class WristAssistantPanel extends LitElement {
             </span>
           </span>
           ${isDrawable(family) ? this.renderTintTool() : nothing}
-          <span class="bar-sep" aria-hidden="true"></span>
-          <span class="face-tools">${this.renderPickButton()}${this.renderShowTapsButton()}${this.renderGridButton()}</span>
-          <span class="bar-sep" aria-hidden="true"></span>
-          ${this.renderAlignTools()}
           <span class="spacer"></span>
           ${this.renderZoomButton()}
           </div>
         </div>
         <div class="stage">
+          ${isDrawable(family) ? this.renderOver() : nothing}
           ${isDrawable(family) ? this.renderBigPreview(family, layouts, deviceCase) : this.renderInlinePreview(layouts.inline, false)}
           ${this.renderUnder(cfg, family)}
         </div>
