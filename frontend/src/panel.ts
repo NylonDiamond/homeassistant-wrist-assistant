@@ -2112,12 +2112,14 @@ export class WristAssistantPanel extends LitElement {
       box-shadow: 0 0 0 1px var(--wa-line), 0 6px 18px rgba(0,0,0,.18);
     }
     /* With snapping on, the button and its size read as one accent pill. */
-    .snap-tool .pop-menu { left: auto; right: 0; min-width: 210px; padding: 6px; gap: 2px; }
+    /* Opens to the left of the cog, since the cog is the pill's last button
+       and the stage clips whatever runs past its edge. */
+    .case-tool.snap-tool .pop-menu { left: auto; right: 0; min-width: 260px; padding: 6px; gap: 2px; }
     .snap-menu label.row { display: flex; align-items: center; gap: 9px; cursor: pointer; padding: 6px 8px; }
     .snap-menu label.row input { margin: 0; accent-color: var(--wa-accent); }
     .snap-menu .sub { display: flex; align-items: center; gap: 8px; padding: 2px 8px 6px 33px; }
     .snap-menu .sub-label { font-size: 12px; color: var(--wa-muted); white-space: nowrap; }
-    .snap-menu .chips { display: inline-flex; gap: 3px; }
+    .snap-menu .chips { display: inline-flex; gap: 3px; flex-wrap: nowrap; }
     .snap-menu .chips button.small { min-height: 24px; padding: 0 7px; font-variant-numeric: tabular-nums; }
     .snap-menu .chips button.small.on { background: color-mix(in srgb, var(--wa-accent) 22%, transparent); color: var(--wa-ink); }
     /* The preview bar's own menus (grid size, Preview as), in place of native
