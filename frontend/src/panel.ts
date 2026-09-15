@@ -68,6 +68,10 @@ import {
   newId,
   parseConfig,
   schemaVersionFor,
+  canFollow,
+  isFollowing,
+  leaderOf,
+  setFollows,
   ownedElements,
   removeElement,
   selectableLayerId,
@@ -3698,7 +3702,7 @@ export class WristAssistantPanel extends LitElement {
    * editing one of them cannot reach the rows it came from.
    */
   private pasteClip() {
-    if (!this.canEdit || !this.clipboard) return;
+    if (!this.canEdit || !this.clipboard || this.followedLeader() !== undefined) return;
     const clip = this.clipboard;
     const family = this.canvasFamily;
     let landed: string[] = [];
@@ -3711,7 +3715,7 @@ export class WristAssistantPanel extends LitElement {
   private duplicateSelection() {
     const cfg = this.draft?.config;
     const ids = this.selectedIds();
-    if (!cfg || !this.canEdit || ids.length === 0) return;
+    if (!cfg || !this.canEdit || ids.length === 0 || this.followedLeader() !== undefined) return;
     const clip = copyElements(cfg, ids);
     let pasted: string[] = [];
     this.mutate((c) => { pasted = pasteElements(c, clip); });
@@ -4127,6 +4131,7 @@ export class WristAssistantPanel extends LitElement {
       activeFamily: this.activeFamily,
       setActiveFamily: (family) => { this.activeFamily = family; this.inspect = { kind: "family" }; },
       addFamily: (family) => this.addShape(family),
+      followShape: (family, leader) => this.followShape(family, leader),
       savedName: this.savedName,
       tapAreaShown: this.showTaps,
       showTapArea: (on) => this.setShowTaps(on),
@@ -4219,7 +4224,22 @@ export class WristAssistantPanel extends LitElement {
    * Kept as its own name so the call sites still read as "add this here",
    * even though the draft is what settles it now.
    */
+  /**
+   * The shape the leader of the shape on screen, or undefined when this shape
+   * lays itself out.
+   *
+   * A following shape holds no layers of its own: its placements are its
+   * leader's, rewritten on every edit. So a layer added, pasted or duplicated
+   * here would land somewhere the author did not look at, and the whole
+   * canvas stays read-only instead.
+   */
+  private followedLeader(): FamilyKind | undefined {
+    const cfg = this.draft?.config;
+    return cfg === undefined ? undefined : leaderOf(cfg, this.canvasFamily);
+  }
+
   private addHere(change: (c: CustomComplicationConfig) => void) {
+    if (this.followedLeader() !== undefined) return;
     this.mutate(change);
   }
 
@@ -4241,7 +4261,9 @@ export class WristAssistantPanel extends LitElement {
     // Nothing to say on a complication that has no layers at all: the Layers
     // card's own adders are the whole story there.
     if (cfg.elements.length === 0 || !isDrawable(this.activeFamily)) return nothing;
-    if (ownedElements(cfg, family).length > 0) return nothing;
+    // A shape that follows another owns no layers and is not blank: its Layers
+    // card says whose arrangement it is drawing.
+    if (ownedElements(cfg, family).length > 0 || isFollowing(cfg, family)) return nothing;
     const others = DRAWABLE_FAMILIES
       .filter((f): f is DrawableFamily => f !== family && cfg.supportedFamilies.includes(f))
       .filter((f) => shownCount(cfg, f) > 0);
@@ -4281,6 +4303,21 @@ export class WristAssistantPanel extends LitElement {
     if (lost.length > 0 && !window.confirm(`Remove the ${familyTitle(family)} shape? This deletes ${lost.join(", ")}. They are on this shape only, so nothing else in the complication loses anything.`)) return;
     this.mutate((c) => removeFamily(c, family));
     this.ensureActiveFamily();
+  }
+
+  /**
+   * Point one shape at another.
+   *
+   * The shape's own layers go, because a following shape draws its leader's
+   * and has no room for its own, so it asks the way removing a shape asks and
+   * with the same count. Cancel changes nothing.
+   */
+  private followShape(family: FamilyKind, leader: FamilyKind) {
+    const cfg = this.draft?.config;
+    if (!cfg || !canFollow(cfg, family, leader)) return;
+    const going = ownedElements(cfg, family).filter((el) => !isAttachedTap(cfg, el)).length;
+    if (going > 0 && !window.confirm(`Follow the ${familyTitle(leader)} shape? This deletes the ${going} layer${going === 1 ? "" : "s"} on the ${familyTitle(family)} shape, which draws the ${familyTitle(leader)} shape's layers instead. They are on this shape only, so nothing else in the complication loses anything.`)) return;
+    this.mutate((c) => setFollows(c, family, leader));
   }
 
   /** Answered entirely by the New dialog, which is what stops a watch filling
@@ -4987,6 +5024,16 @@ export class WristAssistantPanel extends LitElement {
       this.activeFamily = family;
       return;
     }
+    // A shape that follows another is laid out there: every frame here is
+    // recomputed from the leader on the next edit, so a drag would spring back.
+    // A press still selects, which is how a layer's other settings are reached
+    // from the shape you happen to be looking at.
+    if (isFollowing(this.draft.config, family)) {
+      const picked = this.hitLayerId(e);
+      if (picked) this.inspect = { kind: "layer", id: picked };
+      else if (hitId === undefined) this.inspect = { kind: "family" };
+      return;
+    }
     // A plain press anywhere on the face drops the pick, the way a plain
     // click on a row does. A modified press keeps it and toggles the layer hit.
     const multiKey = isMultiKey(e);
@@ -5232,10 +5279,14 @@ export class WristAssistantPanel extends LitElement {
     // choosing a layer rather than editing one. Neither drags, so neither
     // nudges.
     if (!cfg || !this.canEdit || this.showTaps || this.picking) return false;
+    const family = this.canvasFamily;
+    // Laid out by the shape it follows, so the arrows leave it where it is,
+    // exactly as a drag does. The key is not ours, so the page may still
+    // scroll under it.
+    if (isFollowing(cfg, family)) return false;
     const step = coarse ? NUDGE_COARSE : 1;
     const px = dx * step;
     const py = dy * step;
-    const family = this.canvasFamily;
     const box = DESIGN_BOX[family];
     if (this.multi.size >= 2) return this.nudgeMany([...this.multi], family, box, `nudge-multi-${family}`, px, py);
     if (this.inspect.kind === "group") {
@@ -7349,6 +7400,9 @@ export class WristAssistantPanel extends LitElement {
     // quietly put the layer on whichever canvas shape happens to be first.
     if (!isDrawable(this.activeFamily)) return nothing;
     const full = cfg.elements.length >= 64;
+    // The shape on screen follows another, so a layer added here would land on
+    // that one. The buttons go quiet and the line below says where to add.
+    const leader = this.followedLeader();
     const open = this.addOpen;
     const rich = this.addDetail === "expanded";
     const toggle = () => { this.addOpen = !this.addOpen; this.saveListView(); };
@@ -7373,8 +7427,11 @@ export class WristAssistantPanel extends LitElement {
       </h2>
       ${open
         ? html`
+          ${leader === undefined ? nothing : html`<div class="hint keep">Following ${familyTitle(leader)}: add layers on that shape.
+            They are drawn here too, scaled for this canvas. Detach in the Layers card to add them here instead.</div>`}
           <div class="add-grid ${rich ? "" : "lean"}">
-            ${KIND_ORDER.map((k) => html`<button class="add" style=${`--k:${KIND_COLOR[k]}`} ?disabled=${full} title=${`Add a blank ${KIND_LABEL[k].toLowerCase()} layer`}
+            ${KIND_ORDER.map((k) => html`<button class="add" style=${`--k:${KIND_COLOR[k]}`} ?disabled=${full || leader !== undefined}
+              title=${leader === undefined ? `Add a blank ${KIND_LABEL[k].toLowerCase()} layer` : `Following ${familyTitle(leader)}: add layers on that shape`}
               @click=${() => { const el = newElement(k); this.addHere((c) => {
                 // A timeline's clock times are always a layer of their own.
                 c.elements.push(el);
@@ -7384,8 +7441,9 @@ export class WristAssistantPanel extends LitElement {
           </div>
           <div class="presets">
             <span class="presets-l">Presets</span>
-            ${LAYER_PRESETS.map((p) => html`<button class="preset" title=${p.blurb}
-              ?disabled=${cfg.elements.length + p.layerCount > 64}
+            ${LAYER_PRESETS.map((p) => html`<button class="preset"
+              title=${leader === undefined ? p.blurb : `Following ${familyTitle(leader)}: add layers on that shape`}
+              ?disabled=${cfg.elements.length + p.layerCount > 64 || leader !== undefined}
               @click=${() => this.openPreset(p.kind)}>${p.title}</button>`)}
           </div>`
         : nothing}
@@ -7880,7 +7938,7 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private openPreset(kind: PresetKind) {
-    if (!this.canEdit) return;
+    if (!this.canEdit || this.followedLeader() !== undefined) return;
     this.presetKind = kind;
     this.presetEntity = undefined;
     void this.updateComplete.then(() => {
@@ -8247,7 +8305,9 @@ export class WristAssistantPanel extends LitElement {
         const layout = layouts[f];
         art = layout ? renderLayout(layout, { icons: this.icons, imageSizes: this.imageSizes, slot: slotFor(this.referenceCase, f) }) : nothing;
       }
-      const empty = f !== "inline" && shownCount(cfg, f) === 0 && cfg.elements.length > 0;
+      // A following shape counts none of the layers it draws as its own, so it
+      // is never the shape with nothing on it.
+      const empty = f !== "inline" && !isFollowing(cfg, f) && shownCount(cfg, f) === 0 && cfg.elements.length > 0;
       const removable = this.canEdit && canRemoveFamily(cfg, f);
       // The remove button sits beside the tab, not inside it: a button inside
       // a button is not valid markup.
