@@ -609,10 +609,6 @@ const textCharWidth = (size: number) => size * 0.55;
 // decision and is mirrored glyph for glyph by `CurvedTextLayout.place` in the
 // app repo, so a curve drawn in the panel is the curve drawn on the wrist.
 
-/** How wide the ellipsis is taken to be when a curve has to cut its text, in
- * the same em figure `truncateToBox` uses for a straight line. */
-const ARC_ELLIPSIS_EM = 0.8;
-
 export interface ArcGlyphPlacement {
   /** Where the glyph's centre sits, in degrees, 0 at 12 o'clock, clockwise. */
   angle: number;
@@ -623,10 +619,6 @@ export interface ArcGlyphPlacement {
 export interface ArcTextLayout {
   /** Shrink applied to every advance, 0.5 to 1, as `minimumScaleFactor` would. */
   scale: number;
-  /** How many of the glyphs offered are drawn; the rest were cut. */
-  kept: number;
-  /** True when the last kept glyph is replaced by an ellipsis. */
-  truncated: boolean;
   placements: ArcGlyphPlacement[];
 }
 
@@ -636,17 +628,17 @@ export interface ArcTextLayout {
  * `advances` are the unscaled glyph widths in design points, in reading order,
  * and `spacing` is the extra room between neighbours. The line is centred on
  * `angle` and may spread `sweep` degrees around it; too long for that it shrinks
- * to at most half size, spacing included, and what still does not fit is cut
- * and closed with an ellipsis. A glyph sits with its centre on the circle, so
- * `flip` only decides which way up it is: feet toward the centre when false,
- * away from it when true.
+ * to at most half size, spacing included, and past that it spills over the sweep
+ * rather than being cut: a slider that loses letters mid-drag reads as a bug,
+ * and the sweep is the space the text may have, not a box it must fit. A glyph
+ * sits with its centre on the circle, so `flip` only decides which way up it is:
+ * feet toward the centre when false, away from it when true.
  */
 export function arcGlyphAngles(
   advances: readonly number[],
   arc: { radius: number; angle: number; sweep: number; spacing: number; flip: boolean },
-  ellipsisAdvance: number,
 ): ArcTextLayout {
-  const empty: ArcTextLayout = { scale: 1, kept: 0, truncated: false, placements: [] };
+  const empty: ArcTextLayout = { scale: 1, placements: [] };
   const r = arc.radius;
   if (r <= 0 || advances.length === 0) return empty;
   const sweep = arc.sweep;
@@ -657,37 +649,17 @@ export function arcGlyphAngles(
   const scale = total > arcLength ? Math.max(0.5, arcLength / total) : 1;
   const widths = advances.map((a) => a * scale);
   const gap = arc.spacing * scale;
-  const span = (ws: readonly number[]) => ws.reduce((a, b) => a + b, 0) + gap * (ws.length - 1);
-  // Shrunk as far as it may go and still too long: keep whole glyphs while the
-  // ellipsis still fits after them, and never fewer than one.
-  let kept = widths.length;
-  let truncated = false;
-  if (span(widths) > arcLength) {
-    truncated = true;
-    const budget = arcLength - ellipsisAdvance * scale;
-    let used = 0;
-    kept = 0;
-    for (const w of widths) {
-      const need = (kept > 0 ? gap : 0) + w;
-      if (kept > 0 && used + need > budget) break;
-      used += need;
-      kept += 1;
-    }
-    kept = Math.max(1, kept);
-  }
-  const drawn = widths.slice(0, kept);
-  if (truncated) drawn[drawn.length - 1] = ellipsisAdvance * scale;
-  const used = span(drawn);
+  const used = total * scale;
   const dir = sweep < 0 ? -1 : 1;
   // Degrees per point on this circle, so an advance becomes a turn.
   const perPoint = 180 / (Math.PI * r);
   let cursor = arc.angle - (dir * used * perPoint) / 2;
-  const placements = drawn.map((w) => {
+  const placements = widths.map((w) => {
     const angle = cursor + (dir * w * perPoint) / 2;
     cursor += dir * (w + gap) * perPoint;
     return { angle, rotation: arc.flip ? angle + 180 : angle };
   });
-  return { scale, kept, truncated, placements };
+  return { scale, placements };
 }
 
 /** Where an angle lands on the circle, 0 at 12 o'clock and clockwise positive.
@@ -741,11 +713,10 @@ function arcTextLayout(el: Extract<ResolvedElement, { kind: "text" }>, box: Box)
   if (el.arc === undefined || el.text === "") return undefined;
   const glyphs = arcGlyphs(el);
   const advances = glyphs.map((g) => textCharWidth(g.look.fontSize) * g.text.length);
-  const biggest = Math.max(el.fontSize, ...glyphs.map((g) => g.look.fontSize));
-  const layout = arcGlyphAngles(advances, el.arc, ARC_ELLIPSIS_EM * biggest);
+  const layout = arcGlyphAngles(advances, el.arc);
   if (layout.placements.length === 0) return undefined;
   const centre = arcCentre(box, el.arc);
-  return { glyphs, layout, biggest, cx: centre.x, cy: centre.y, radius: el.arc.radius };
+  return { glyphs, layout, cx: centre.x, cy: centre.y, radius: el.arc.radius };
 }
 
 /** A curved line, one `<text>` per glyph, each turned to sit on the circle. */
@@ -755,7 +726,6 @@ function renderArcText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box)
   const { glyphs, layout, radius, cx, cy } = drawn;
   return svg`${layout.placements.map((p, i) => {
     const glyph = glyphs[i]!;
-    const last = layout.truncated && i === layout.placements.length - 1;
     const look = glyph.look;
     const a = colorAttrs(look.colorHex, "fill");
     const at = arcPoint(cx, cy, radius, p.angle);
@@ -764,7 +734,7 @@ function renderArcText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box)
       font-family=${fontFamilyFor(look.fontDesign)} font-style=${look.italic ? "italic" : "normal"}
       font-size=${look.fontSize * layout.scale} font-weight=${FONT_WEIGHT[look.fontWeight] ?? 400}
       style=${textStyle(el.monospacedDigits, look.fontWidth)}
-      fill=${a.fill} fill-opacity=${a["fill-opacity"]}>${last ? "…" : glyph.text}</text>`;
+      fill=${a.fill} fill-opacity=${a["fill-opacity"]}>${glyph.text}</text>`;
   })}`;
 }
 

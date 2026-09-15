@@ -177,48 +177,48 @@ describe("where the glyphs land", () => {
   const radius = 180 / Math.PI;
 
   it("sits half an advance apart, centred on the arc", () => {
-    const placed = arcGlyphAngles([10, 10, 10], { radius, angle: 60, sweep: 120, spacing: 0, flip: false }, 8);
+    const placed = arcGlyphAngles([10, 10, 10], { radius, angle: 60, sweep: 120, spacing: 0, flip: false });
     expect(placed.scale).toBe(1);
-    expect(placed.truncated).toBe(false);
     expect(placed.placements.map((p) => p.angle)).toEqual([50, 60, 70]);
     expect(placed.placements.map((p) => p.rotation)).toEqual([50, 60, 70]);
   });
 
   it("adds half a turn when the letters are flipped", () => {
-    const placed = arcGlyphAngles([10, 10, 10], { radius, angle: 60, sweep: 120, spacing: 0, flip: true }, 8);
+    const placed = arcGlyphAngles([10, 10, 10], { radius, angle: 60, sweep: 120, spacing: 0, flip: true });
     expect(placed.placements.map((p) => p.angle)).toEqual([50, 60, 70]);
     expect(placed.placements.map((p) => p.rotation)).toEqual([230, 240, 250]);
   });
 
   it("reads the other way round on a negative sweep", () => {
-    const placed = arcGlyphAngles([10, 10, 10], { radius, angle: -60, sweep: -120, spacing: 0, flip: false }, 8);
+    const placed = arcGlyphAngles([10, 10, 10], { radius, angle: -60, sweep: -120, spacing: 0, flip: false });
     expect(placed.placements.map((p) => p.angle)).toEqual([-50, -60, -70]);
   });
 
   it("opens a gap between neighbours and stays centred", () => {
     // Ten points between three ten point glyphs: fifty points of line, centred on
     // sixty, so the outer glyphs sit twenty degrees out instead of ten.
-    const placed = arcGlyphAngles([10, 10, 10], { radius, angle: 60, sweep: 120, spacing: 10, flip: false }, 8);
+    const placed = arcGlyphAngles([10, 10, 10], { radius, angle: 60, sweep: 120, spacing: 10, flip: false });
     expect(placed.scale).toBe(1);
     expect(placed.placements.map((p) => p.angle)).toEqual([40, 60, 80]);
     // The gaps count toward the length that has to fit, so they shrink with the
     // glyphs: fifty points on a forty degree arc is four fifths.
-    const squeezed = arcGlyphAngles([10, 10, 10], { radius, angle: 60, sweep: 40, spacing: 10, flip: false }, 8);
+    const squeezed = arcGlyphAngles([10, 10, 10], { radius, angle: 60, sweep: 40, spacing: 10, flip: false });
     expect(squeezed.scale).toBeCloseTo(0.8, 12);
     expect(squeezed.placements.map((p) => p.angle).map((a) => Math.round(a * 1e9) / 1e9)).toEqual([44, 60, 76]);
   });
 
-  it("shrinks to fit, then loses its tail", () => {
-    const shrunk = arcGlyphAngles(Array(12).fill(10), { radius, angle: 45, sweep: 90, spacing: 0, flip: false }, 8);
+  it("shrinks to fit, then spills over the sweep rather than losing letters", () => {
+    const shrunk = arcGlyphAngles(Array(12).fill(10), { radius, angle: 45, sweep: 90, spacing: 0, flip: false });
     expect(shrunk.scale).toBeCloseTo(0.75, 12);
-    expect(shrunk.truncated).toBe(false);
     expect(shrunk.placements).toHaveLength(12);
 
-    const cut = arcGlyphAngles(Array(12).fill(10), { radius, angle: 20, sweep: 40, spacing: 0, flip: false }, 8);
-    expect(cut.scale).toBe(0.5);
-    expect(cut.truncated).toBe(true);
-    expect(cut.placements.length).toBeLessThan(12);
-    expect(cut.placements.length).toBeGreaterThan(0);
+    // Past half size it stops shrinking and keeps every glyph: sixty points of
+    // text on a forty degree arc runs ten degrees past each end, still centred.
+    const spilt = arcGlyphAngles(Array(12).fill(10), { radius, angle: 20, sweep: 40, spacing: 0, flip: false });
+    expect(spilt.scale).toBe(0.5);
+    expect(spilt.placements).toHaveLength(12);
+    expect(spilt.placements[0]!.angle).toBeCloseTo(-7.5, 9);
+    expect(spilt.placements[11]!.angle).toBeCloseTo(47.5, 9);
   });
 
   it("runs clockwise from the top of the circle", () => {
