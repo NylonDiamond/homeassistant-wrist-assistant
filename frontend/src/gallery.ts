@@ -205,7 +205,7 @@ export interface GalleryPublicGroup {
  * way to be wrong. */
 const STRUCTURAL_KEYS = new Set([
   "id", "kind", "type", "join", "domain", "domains", "entityId", "displayName",
-  "supportedFamilies", "perFamily", "fontWeight", "weight", "fontDesign", "design",
+  "supportedFamilies", "perFamily", "follows", "fontWeight", "weight", "fontDesign", "design",
   "fontWidth", "width",
   "alignment", "style", "cornerBodyShape",
   "function", "baseline", "coloring", "highlight", "marker", "highMarker", "lowMarker", "scale",

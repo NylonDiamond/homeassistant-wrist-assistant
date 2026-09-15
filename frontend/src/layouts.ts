@@ -17,6 +17,8 @@ import {
   HOME_FAMILIES,
   WATCH_CANVAS_FAMILIES,
   defaultLayout,
+  detachFamily,
+  followersOf,
   literal,
   ownedElements,
   isAttachedTap,
@@ -223,6 +225,12 @@ export function addFamily(cfg: CustomComplicationConfig, family: FamilyKind): vo
  * empty the set. */
 export function removeFamily(cfg: CustomComplicationConfig, family: FamilyKind): void {
   if (!canRemoveFamily(cfg, family)) return;
+  if (isDrawable(family)) {
+    // Anything following this shape is drawing its layers, and those layers go
+    // with it. Detaching first leaves each follower its own copy of the
+    // arrangement, so removing one shape never blanks another.
+    for (const follower of followersOf(cfg, family)) detachFamily(cfg, follower);
+  }
   cfg.supportedFamilies = cfg.supportedFamilies.filter((f) => f !== family);
   if (isDrawable(family)) {
     for (const el of ownedElements(cfg, family)) removeElement(cfg, el.payload.id);

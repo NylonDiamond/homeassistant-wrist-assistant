@@ -163,7 +163,14 @@ import {
   setLayerEntity,
   styleChangePayload,
   switchComparison,
+  canLink,
   copyElements,
+  copyShapeLayout,
+  detachFamily,
+  followChoices,
+  followersOf,
+  leaderOf,
+  setFollows,
   isAttachedTap,
   normalizeOwnership,
   ownedElements,
@@ -339,6 +346,9 @@ export interface EditorHost {
   setActiveFamily(family: FamilyKind): void;
   /** Add a shape and seed its layout. Also makes it the active shape. */
   addFamily(family: FamilyKind): void;
+  /** Point one shape at another. Asks first when the shape has layers of its
+   * own, since a following shape draws its leader's and those would go. */
+  followShape(family: FamilyKind, leader: FamilyKind): void;
   /** The complication's name when this edit session opened, for the rename
    * note. Undefined for a brand-new complication (nothing on the watch yet). */
   savedName?: string;
@@ -2805,6 +2815,14 @@ export function shapeSizeField(
   const id = el.payload.id;
   const shared = elementSize(el) ?? opts.min;
   const value = effectivePlacement(host.config, family, el).size ?? shared;
+  // Sizes are per shape, so on a shape that follows another they come from
+  // there, scaled for this canvas. A box here would be overwritten on the next
+  // edit, so the number is read out instead.
+  const leader = leaderOf(host.config, family);
+  if (leader !== undefined) {
+    return html`<div class="field readout"><span>${label}</span>
+      <span class="readout-v">${value} pt, from the ${familyTitle(leader)} shape</span></div>`;
+  }
   return numberField(label, value,
     (v) => host.update(
       (c) => setPlacement(c, family, id, { size: Math.max(opts.min, v ?? shared) }),
@@ -2818,47 +2836,10 @@ export function shapeSizeField(
  * inspector's own callers do not have to know that. */
 export { elementSize };
 
-/**
- * Give one shape its own copy of another shape's layers.
- *
- * A real copy, not a link: the new shape gets new layers with new ids, so
- * editing one of them afterwards changes nothing on the shape it came from.
- * Each one lands where its original sits, scaled for the canvas it arrives on.
- * What "copy the Rectangular layout" does to a shape that is still blank.
- */
-export function copyShapeLayout(cfg: CustomComplicationConfig, from: FamilyKind, to: FamilyKind): void {
-  const layout = cfg.perFamily[to] ?? (cfg.perFamily[to] = defaultLayout());
-  const source = ownedElements(cfg, from).filter((el) => !isAttachedTap(cfg, el));
-  if (source.length === 0) return;
-  const clip = copyElements(cfg, source.map((el) => el.payload.id), from);
-  const landed = pasteElements(cfg, clip, { nudge: false });
-  // Each copy arrives carrying the source shape's own placement. Refit it for
-  // this canvas, hand it to this shape, and take it off the source shape,
-  // which is what makes the copy a layer of its own rather than a second
-  // pointer at the original.
-  const sourceLayout = cfg.perFamily[from];
-  for (const id of landed) {
-    const el = cfg.elements.find((e) => e.payload.id === id);
-    if (!el) continue;
-    const src = sourceLayout?.placements[id];
-    // The size travels even when the source shape never set one, so the refit
-    // has something to scale down for the smaller canvas.
-    const size = src?.size ?? elementSize(el);
-    const base: Placement = {
-      frame: { ...(src?.frame ?? el.payload.frame) },
-      // A layer hidden on the source shape arrives hidden, so the copy is the
-      // arrangement as it stands rather than an arrangement plus whatever was
-      // switched off in it.
-      isHidden: src?.isHidden ?? false,
-      ...(size !== undefined ? { size } : {}),
-    };
-    // Left on the source shape the copy would have two owners, and settling
-    // the document would split it in two, so it comes off there.
-    for (const f of DRAWABLE_FAMILIES) if (f !== to) delete cfg.perFamily[f]?.placements[id];
-    layout.placements[id] = refitPlacement(base, from, to, el.kind);
-  }
-  normalizeOwnership(cfg, to);
-}
+/** `copyShapeLayout` lives beside the link that is its opposite number, since
+ * detaching a link ends by taking exactly this copy. Re-exported here so the
+ * inspector's own callers do not have to know that. */
+export { copyShapeLayout };
 
 /** How many layers a shape actually draws: what the Layers card counts to
  * decide whether the shape is still blank. */
@@ -3481,6 +3462,25 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
   const key = `el-${id}`;
   const eff = effectivePlacement(host.config, family, el);
   const f = eff.frame;
+  // A shape that follows another is laid out there. Every number below is
+  // computed from the leader on each edit, so a control here would be undone
+  // the moment it was used: the card reads the numbers out and says where to
+  // change them.
+  const leader = leaderOf(host.config, family);
+  if (leader !== undefined) {
+    const pct = (n: number) => `${Math.round(n * 1000) / 10}%`;
+    return card(host, "placement", "Position", html`
+      <div class="hint keep">The ${familyTitle(family)} shape follows the ${familyTitle(leader)} shape, so
+        where this layer sits is decided there and scaled for this canvas. Move it on the
+        ${familyTitle(leader)} shape, or detach ${familyTitle(family)} in its Layers card to lay it out
+        here.</div>
+      <div class="field readout"><span>Position</span><span class="readout-v">${pct(f.x)}, ${pct(f.y)}</span></div>
+      <div class="field readout"><span>Size</span><span class="readout-v">${pct(f.width)} × ${pct(f.height)}</span></div>
+      ${f.rotationDegrees === 0 ? nothing
+        : html`<div class="field readout"><span>Rotation</span><span class="readout-v">${Math.round(f.rotationDegrees)}°</span></div>`}
+      <div class="field readout"><span>Hidden</span><span class="readout-v">${eff.isHidden ? "Yes" : "No"}</span></div>`,
+      { color: SECTION_COLOR.position, icon: "place", summary: `Follows ${familyTitle(leader)}` });
+  }
   const setFrame = (patch: Partial<NormalizedFrame>, k: string) => host.update((c) => setPlacement(c, family, id, { frame: typedFrame(f, patch) }), `${key}-${k}-${family}`);
   const placeChanged = !same(f, CENTERED_FRAME) || eff.isHidden;
   const anchor = el.payload.chartAnchor;
@@ -6292,6 +6292,7 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
   }
   const upd = (mutate: (l: FamilyLayout) => void, k?: string) => host.update((c) => mutate(c.perFamily[family]!), k ? `fam-${family}-${k}` : undefined);
   const placed = shownCount(host.config, family);
+  const leader = leaderOf(host.config, family);
   // Same sections as a layer, in the same order and for the same reason: a
   // shape is another object in the one inspector, not another tab.
   const home = isHomeFamily(family);
@@ -6338,10 +6339,59 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
       { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(layout.rules).replace(/\.$/, ""),
         ...(layout.rules.length > 0 ? { reset: () => upd((l) => { l.rules = []; }, "reset-states") } : {}) })}
     ${card(host, "placements", "Layers", html`
-      <div class="hint keep">${placed === 0
+      ${followRows(host, family)}
+      ${leader !== undefined ? nothing : html`<div class="hint keep">${placed === 0
         ? `Nothing is on the ${familyTitle(family)} shape. The Layers card offers a copy of another shape's whole arrangement, or you can add layers here one at a time.`
-        : `${placed} layer${placed === 1 ? " is" : "s are"} on the ${familyTitle(family)} shape. They belong to this shape alone: no other shape draws them, and editing one here cannot reach another shape.`}</div>`,
-      { color: SECTION_COLOR.position, icon: "place", summary: placed === 0 ? "Nothing on it" : `${placed} layer${placed === 1 ? "" : "s"}` })}`;
+        : `${placed} layer${placed === 1 ? " is" : "s are"} on the ${familyTitle(family)} shape. They belong to this shape alone: no other shape draws them, and editing one here cannot reach another shape.`}</div>`}`,
+      { color: SECTION_COLOR.position, icon: "place",
+        summary: leader !== undefined ? `Follows ${familyTitle(leader)}` : placed === 0 ? "Nothing on it" : `${placed} layer${placed === 1 ? "" : "s"}` })}`;
+}
+
+/**
+ * Whether this shape lays itself out or draws another shape's arrangement.
+ *
+ * A link, not a copy: the leader's own layers are drawn here as well, each
+ * refitted for this canvas, and every later edit to the leader lands here too.
+ * That is why nothing on a following shape can be moved. Detach takes a copy
+ * of what is on screen, so the shape keeps exactly what it was drawing and
+ * goes its own way with it.
+ *
+ * A shape follows one shape and never a chain, so a leader and a shape
+ * something already follows are both off the list. The corner is never on it:
+ * its content is a bezel and a curve rather than an arrangement.
+ */
+function followRows(host: EditorHost, family: FamilyKind): TemplateResult | typeof nothing {
+  const cfg = host.config;
+  if (!canLink(family)) return nothing;
+  const leader = leaderOf(cfg, family);
+  if (leader !== undefined) {
+    return html`
+      <div class="field readout"><span>Follows</span><span class="readout-v">${familyTitle(leader)}</span></div>
+      <div class="row-acts">
+        <button class="small" title=${`Keep this arrangement and make it the ${familyTitle(family)} shape's own`}
+          @click=${() => host.update((c) => detachFamily(c, family))}>Detach</button>
+      </div>
+      <div class="hint keep">This shape draws the ${familyTitle(leader)} shape's layers, scaled for this
+        canvas, and follows every change made there. Nothing here can be moved or resized. Detach keeps
+        what is on screen and turns it into layers of this shape's own.</div>`;
+  }
+  const followers = followersOf(cfg, family);
+  if (followers.length > 0) {
+    const names = followers.map(familyTitle);
+    const list = names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]!}`;
+    return html`<div class="hint keep">${list} follow${followers.length === 1 ? "s" : ""} this shape, so
+      what is here is drawn there too. A shape that is followed cannot follow another one.</div>`;
+  }
+  const choices = followChoices(cfg, family);
+  if (choices.length === 0) return nothing;
+  const options: [string, string][] = [["", "None"], ...choices.map((f): [string, string] => [f, familyTitle(f)])];
+  const own = ownedElements(cfg, family).filter((el) => !isAttachedTap(cfg, el)).length;
+  return html`
+    ${selectField("Follow", "", options, (v) => { if (v !== "") host.followShape(family, v as FamilyKind); }, { def: "" })}
+    <div class="hint">Follow a shape to draw its layers here as well, scaled for this canvas and kept in
+      step with it, instead of laying this shape out by hand. Detach later gives you a copy to edit.${own === 0
+        ? ""
+        : ` The ${own} layer${own === 1 ? "" : "s"} already on this shape ${own === 1 ? "is" : "are"} deleted, which undo takes back.`}</div>`;
 }
 
 /** The Inline shape: one line of text, no canvas. The watch draws
