@@ -73,6 +73,8 @@ from .history_series import (
     HistorySeriesError,
     async_history_series,
     clamp_points,
+    normalize_combine,
+    normalize_entities,
     normalize_mode,
 )
 from .statistics_series import (
@@ -751,7 +753,16 @@ async def _op_history(ctx: _OpContext) -> Response:
           "points":   <int>?,        # see below
           "mode":     "numeric" | "states"?,   # defaults to numeric
           "gaps":     <bool>?,       # chart form only, defaults to false
+          "entities": [<entity_id>, ...]?,     # states form only, see below
+          "combine":  "any" | "all"?,          # defaults to any
         }
+
+    With `entities`, the reply merges those entities' histories into one
+    strip instead of reading `entity_id` alone: `any` is on while at least
+    one of them is active, `all` only while every one of them is. The series
+    that comes back has exactly the shape of a single entity's states series.
+    `entity_id` may be left out when `entities` is there; up to twenty
+    entities, above which the request is refused rather than truncated.
 
     With `gaps: true`, a chart slot spent entirely `unavailable` or `unknown`
     is an empty token in the series (`12.1,,13.0`) instead of the last value
@@ -788,7 +799,17 @@ async def _op_history(ctx: _OpContext) -> Response:
     drops sub-resolution noise; `minimal_response` strips attributes (the
     chart only needs state + timestamp).
     """
+    # An aggregate timeline names its entities in `entities` and may leave
+    # `entity_id` out entirely. The first of them stands in for logging and
+    # for the reply's echo, so every other reader of this op is unchanged.
+    try:
+        group = normalize_entities(ctx.payload.get("entities"))
+    except HistorySeriesError as err:
+        return Response(status=400, text=str(err))
+
     entity_id = ctx.payload.get("entity_id")
+    if (not isinstance(entity_id, str) or not entity_id) and group:
+        entity_id = group[0]
     if not isinstance(entity_id, str) or not entity_id:
         return Response(status=400, text="entity_id required")
 
@@ -822,6 +843,8 @@ async def _op_history(ctx: _OpContext) -> Response:
                 now=window_end,
                 mode=normalize_mode(ctx.payload.get("mode")),
                 gaps=ctx.payload.get("gaps") is True,
+                entities=group,
+                combine=normalize_combine(ctx.payload.get("combine")),
             )
         except HistorySeriesError as err:
             return ctx.signed_json({"ok": False, "error": str(err)}, status=502)

@@ -15,8 +15,13 @@ import {
   TIMELINE_DEFAULT_OTHER_HEX,
   TIMELINE_HISTORY_POINTS,
   TIMELINE_MIN_LABEL_SIZE,
+  TIMELINE_MAX_AGGREGATE_ENTITIES,
   TIMELINE_NEW_LABEL_COUNT,
   timeLabelPositions,
+  timelineAggregateEntities,
+  timelineAggregateOverCap,
+  timelineAggregateRows,
+  timelineCombineHint,
   auditUnknownKeys,
   encodeConfig,
   literal,
@@ -32,6 +37,7 @@ import {
   type Element,
   type TimelineElement,
 } from "../src/model.js";
+import { historySeriesRequest } from "../src/ha-api.js";
 import { renderLayout, type IconProvider } from "../src/renderer.js";
 import { resolveAll, timelineLabels, timelineRuns, timelineSamples, type ResolvedLayout } from "../src/resolver.js";
 
@@ -780,5 +786,175 @@ describe("drawing the strip", () => {
   it("draws the times over an empty strip while the history is still coming", () => {
     const texts = timeTexts(draw("", (p) => { p.timeLabelCount = 4; p.bands = ON_OFF; }));
     expect(texts).toHaveLength(4);
+  });
+});
+
+// The merged strip: several entities fetched and combined by the integration
+// into one ordinary states series. Nothing here draws differently; what
+// changes is the question the recorder is asked, and the bytes that ask it.
+describe("combining several entities", () => {
+  const GROUP = ["binary_sensor.front_door", "binary_sensor.back_door", "binary_sensor.side_gate"];
+
+  function grouped(entities: string[], combine: "any" | "all" = "any") {
+    return timelineElement((p) => {
+      p.value = { kind: { kind: "entityState", ...DOOR } };
+      p.aggregate = { entities, combine };
+    });
+  }
+
+  it("puts the combine word and the whole list in the cache key", () => {
+    expect(timelineHistoryKey(grouped(GROUP).payload)).toBe(
+      "binary_sensor.front_door|60|120|states|any:binary_sensor.front_door,binary_sensor.back_door,binary_sensor.side_gate",
+    );
+    expect(timelineHistoryKey(grouped(GROUP, "all").payload)).toBe(
+      "binary_sensor.front_door|60|120|states|all:binary_sensor.front_door,binary_sensor.back_door,binary_sensor.side_gate",
+    );
+  });
+
+  it("leaves a single-entity timeline's key byte for byte what it was", () => {
+    expect(timelineHistoryKey(timelineElement().payload)).toBe("binary_sensor.front_door|60|120|states");
+  });
+
+  it("keeps two groups over one span apart", () => {
+    const one = timelineHistoryKey(grouped(GROUP).payload);
+    const two = timelineHistoryKey(grouped(GROUP.slice(0, 2)).payload);
+    expect(one).not.toBe(two);
+  });
+
+  it("drops blank and repeated rows before the key and the wire", () => {
+    const el = grouped(["binary_sensor.front_door", "", " binary_sensor.back_door ", "binary_sensor.front_door"]);
+    expect(timelineAggregateEntities(el.payload)).toEqual([
+      "binary_sensor.front_door",
+      "binary_sensor.back_door",
+    ]);
+    const cfg = newConfig("Grouped", 0);
+    cfg.elements.push(el);
+    const payload = (encodeConfig(cfg).elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
+    expect(payload.aggregate).toEqual({
+      entities: ["binary_sensor.front_door", "binary_sensor.back_door"],
+    });
+  });
+
+  it("sends the entities and the combine word to the recorder", () => {
+    const cfg = newConfig("Grouped", 0);
+    cfg.elements.push(grouped(GROUP, "all"));
+    const requests = chartHistoryRequests(cfg);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.entities).toEqual(GROUP);
+    expect(requests[0]!.combine).toBe("all");
+    expect(requests[0]!.mode).toBe("states");
+    expect(historySeriesRequest(requests[0]!)).toEqual({
+      entity_id: "binary_sensor.front_door",
+      minutes: 60,
+      points: 120,
+      mode: "states",
+      entities: GROUP,
+      combine: "all",
+    });
+  });
+
+  it("leaves both keys off a plain timeline's request", () => {
+    const cfg = newConfig("Plain", 0);
+    cfg.elements.push(timelineElement());
+    const body = historySeriesRequest(chartHistoryRequests(cfg)[0]!);
+    expect("entities" in body).toBe(false);
+    expect("combine" in body).toBe(false);
+  });
+
+  it("asks the recorder nothing once the list is over the cap", () => {
+    const tooMany = Array.from({ length: TIMELINE_MAX_AGGREGATE_ENTITIES + 1 }, (_, i) => `binary_sensor.d${i}`);
+    const el = grouped(tooMany);
+    expect(timelineAggregateOverCap(el.payload)).toBe(true);
+    const cfg = newConfig("Grouped", 0);
+    cfg.elements.push(el);
+    expect(chartHistoryRequests(cfg)).toEqual([]);
+  });
+
+  it("takes exactly the cap without complaint", () => {
+    const most = Array.from({ length: TIMELINE_MAX_AGGREGATE_ENTITIES }, (_, i) => `binary_sensor.d${i}`);
+    const cfg = newConfig("Grouped", 0);
+    cfg.elements.push(grouped(most));
+    expect(chartHistoryRequests(cfg)).toHaveLength(1);
+  });
+
+  it("omits the combine word at any, and writes it at all", () => {
+    const cfg = newConfig("Grouped", 0);
+    cfg.elements.push(grouped(GROUP));
+    cfg.elements.push(grouped(GROUP, "all"));
+    const payloads = (encodeConfig(cfg).elements as Record<string, unknown>[])
+      .map((e) => e.payload as Record<string, unknown>);
+    expect(payloads[0]!.aggregate).toEqual({ entities: GROUP });
+    expect(payloads[1]!.aggregate).toEqual({ entities: GROUP, combine: "all" });
+  });
+
+  it("writes no key at all when every row is still blank", () => {
+    const cfg = newConfig("Grouped", 0);
+    cfg.elements.push(grouped(["", "  "]));
+    const payload = (encodeConfig(cfg).elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
+    expect(payload.aggregate).toBeUndefined();
+  });
+
+  it("round trips through the document", () => {
+    const cfg = newConfig("Grouped", 0);
+    cfg.elements.push(grouped(GROUP, "all"));
+    const back = parseConfig(encodeConfig(cfg));
+    const el = back.elements[0]!;
+    if (el.kind !== "timeline") throw new Error("not a timeline");
+    expect(el.payload.aggregate).toEqual({ entities: GROUP, combine: "all" });
+  });
+
+  it("reads an unknown combine word as any", () => {
+    const cfg = newConfig("Grouped", 0);
+    cfg.elements.push(grouped(GROUP));
+    const raw = encodeConfig(cfg) as Record<string, unknown>;
+    const payload = (raw.elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
+    payload.aggregate = { entities: GROUP, combine: "either" };
+    const back = parseConfig(raw);
+    const el = back.elements[0]!;
+    if (el.kind !== "timeline") throw new Error("not a timeline");
+    expect(el.payload.aggregate!.combine).toBe("any");
+  });
+
+  it("is a key the audit knows, with no unknown keys of its own", () => {
+    const cfg = newConfig("Grouped", 0);
+    cfg.elements.push(grouped(GROUP, "all"));
+    expect(auditUnknownKeys(encodeConfig(cfg))).toEqual([]);
+  });
+
+  it("reports a key the aggregate object should not carry", () => {
+    const cfg = newConfig("Grouped", 0);
+    cfg.elements.push(grouped(GROUP));
+    const raw = encodeConfig(cfg) as Record<string, unknown>;
+    const payload = (raw.elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
+    (payload.aggregate as Record<string, unknown>).filter = "area";
+    expect(auditUnknownKeys(raw)).toEqual(["$.elements[0].payload.aggregate.filter"]);
+  });
+
+  it("pads the editor's rows out to the two a merge needs", () => {
+    expect(timelineAggregateRows(grouped([]).payload)).toEqual(["", ""]);
+    expect(timelineAggregateRows(grouped(["binary_sensor.a"]).payload)).toEqual(["binary_sensor.a", ""]);
+    expect(timelineAggregateRows(grouped(GROUP).payload)).toEqual(GROUP);
+  });
+
+  it("retargets the first entity when the layer is pointed somewhere else", () => {
+    const cfg = newConfig("Grouped", 0);
+    const el = grouped(GROUP);
+    cfg.elements.push(el);
+    setLayerEntity(cfg, el.payload.id, {
+      entityId: "binary_sensor.cellar_door", displayName: "Cellar door", domain: "binary_sensor",
+    });
+    const after = cfg.elements[0]!;
+    if (after.kind !== "timeline") throw new Error("not a timeline");
+    expect(after.payload.aggregate!.entities[0]).toBe("binary_sensor.cellar_door");
+    expect(after.payload.aggregate!.entities.slice(1)).toEqual(GROUP.slice(1));
+    // The table a merge reads is on and off, whatever the entity's own domain.
+    expect(after.payload.bands.map((b) => b.match)).toEqual(
+      seedTimelineBands("binary_sensor").map((b) => b.match),
+    );
+  });
+
+  it("says which way it reads its entities", () => {
+    expect(timelineCombineHint("any")).toBe("On when any of them is active");
+    expect(timelineCombineHint("all")).toBe("On when all of them are active");
   });
 });

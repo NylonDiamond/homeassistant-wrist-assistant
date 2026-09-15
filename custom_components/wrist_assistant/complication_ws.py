@@ -70,10 +70,13 @@ from .complication_store import (
 )
 from .const import COMPLICATION_MAX_SCHEMA_VERSION, DOMAIN
 from .history_series import (
+    COMBINE_ALL,
+    COMBINE_ANY,
     MODE_NUMERIC,
     MODE_STATES,
     HistorySeriesError,
     async_history_series_detail,
+    normalize_combine,
     normalize_mode,
 )
 from .statistics_series import (
@@ -802,6 +805,10 @@ def ws_render_values(
                 # state timeline asked for.
                 vol.Optional("mode"): vol.In([MODE_NUMERIC, MODE_STATES]),
                 vol.Optional("gaps", default=False): bool,
+                # An aggregate timeline: these entities merged into one strip.
+                # Absent is the single-entity query every caller made before.
+                vol.Optional("entities"): [str],
+                vol.Optional("combine"): vol.In([COMBINE_ANY, COMBINE_ALL]),
             }
         },
     }
@@ -842,6 +849,11 @@ async def ws_history_series(
                 request["points"],
                 mode=normalize_mode(request.get("mode")),
                 gaps=request["gaps"],
+                # An aggregate timeline merges these into one strip; the cap
+                # above twenty comes back as this key's own error rather than
+                # blanking the other layers' series.
+                entities=request.get("entities"),
+                combine=normalize_combine(request.get("combine")),
             )
         except HistorySeriesError as err:
             results[key] = {"ok": False, "error": str(err)}

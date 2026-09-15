@@ -16,6 +16,7 @@ import {
   type Rule,
   type Value,
   forEachValue,
+  inlineImageBytes,
   mapFreeText,
 } from "./model.js";
 import { type ShareSlot, exportText, hasInstanceFilters, isPlaceholderId, scrubForShare } from "./transfer.js";
@@ -211,7 +212,11 @@ const STRUCTURAL_KEYS = new Set([
   "function", "baseline", "coloring", "highlight", "marker", "highMarker", "lowMarker", "scale",
   "at", "place", "barCorners", "curve", "smoothing", "dots", "fillStyle", "stat", "source",
   "statType", "statPeriod", "hourCycle", "minutes", "timeField", "timestampCorner", "contentMode",
-  "symbol", "path", "serviceDomain", "serviceName", "attachedTo", "layer", "chart", "image",
+  "symbol", "path", "viewBox", "serviceDomain", "serviceName", "attachedTo", "layer", "chart", "image",
+  // An uploaded picture's bytes and their encoding. The bytes are not writing,
+  // so they do not belong under "Other text"; they get a line of their own in
+  // the list below, which says how big each one is.
+  "data", "format",
   "scaleFrom", "groupId", "partId", "areaIds", "labelIds", "floorIds",
 ]);
 
@@ -288,8 +293,16 @@ export function galleryPublicFields(
       for (const change of rule.otherwise ?? []) if (change.kind === "setIcon") symbolOf(change.value);
     }
   };
+  // Pictures the author uploaded. They are not text and no scrub can look
+  // inside them, so the step says one line per picture with its size: the
+  // author is the only one who knows what is in the frame.
+  const pictures: string[] = [];
   for (const el of scrubbed.elements) {
     if (el.kind === "icon") symbolOf(el.payload.symbol);
+    if (el.kind === "image") {
+      const bytes = inlineImageBytes(el.payload);
+      if (bytes > 0) pictures.push(`Embedded image, ${Math.max(1, Math.round(bytes / 1024))} KiB`);
+    }
     ruleSymbols(el.payload.rules);
   }
   for (const layout of Object.values(scrubbed.perFamily)) if (layout) ruleSymbols(layout.rules);
@@ -320,6 +333,7 @@ export function galleryPublicFields(
     { label: "Slot labels", values: labels, rows: slotRows },
     { label: "Template text", values: templates },
     { label: "Service data", values: serviceData },
+    { label: "Embedded pictures", values: pictures },
     { label: "Other text", values: other },
   ];
   return groups.filter((g) => g.values.length > 0);

@@ -14,6 +14,10 @@ import {
   type FontDesign,
   type FontWidth,
   type LayerShadow,
+  type Level,
+  type LevelDirection,
+  LEVEL_TRACK_FADE,
+  fadeHex,
   clampLayerOpacity,
   clampMinimumScale,
   TEXT_MAX_LINES,
@@ -94,6 +98,9 @@ import {
 import {
   type DrawableFamily,
   DRAWABLE_FAMILIES,
+  CUSTOM_SVG_SYMBOL,
+  inlineImageBytes,
+  inlineImageUrl,
   chartBarBorderWidth,
   chartBarColors,
   chartBarCorners,
@@ -245,16 +252,40 @@ export interface TextSpan {
   text: string;
   colorHex: string;
 }
+/**
+ * A level after its reading settled: how much of the layer is filled, from
+ * which edge, and what the rest is painted in.
+ *
+ * The track colour is settled here rather than at draw time, so both renderers
+ * start from one hex and a fixture can pin it. Mirrors
+ * `CustomComplication.ResolvedLevel` in the app repo.
+ */
+export interface ResolvedLevel {
+  /** 0...1. 0 when the reading is missing or is not a number, which draws the
+   * track alone. */
+  fraction: number;
+  direction: LevelDirection;
+  /** The unfilled part's colour, never absent: the level's own track colour, or
+   * the layer's colour faded. */
+  trackColorHex: string;
+}
+
 export interface ResolvedIcon extends ResolvedBase {
   kind: "icon";
   symbol: string;
   /** The SVG `d` to draw instead of an SF Symbol, when the layer's symbol is a
    * Material Design icon the author picked by hand. Absent for everything else,
    * including a symbol an entity or a rule supplied: those name SF Symbols, and
-   * the layer's stored path describes a glyph that is no longer shown. */
+   * the layer's stored path describes a glyph that is no longer shown. A path
+   * the author pasted is here too, under the same key. */
   path?: string;
+  /** The box `path` is drawn in, "minX minY width height". Absent is the
+   * catalogue's 24x24. Carried only while `path` is drawn. */
+  viewBox?: string;
   size: number;
   colorHex: string;
+  /** How far the glyph is filled. Absent draws it whole. */
+  level?: ResolvedLevel;
 }
 export interface ResolvedGauge extends ResolvedBase {
   kind: "gauge";
@@ -644,6 +675,8 @@ export interface ResolvedShape extends ResolvedBase {
   fill?: Fill;
   borderColorHex?: string;
   borderWidth: number;
+  /** How far the body is filled. Absent draws the whole shape. */
+  level?: ResolvedLevel;
 }
 export interface ResolvedImage extends ResolvedBase {
   kind: "image";
@@ -651,8 +684,13 @@ export interface ResolvedImage extends ResolvedBase {
   /** Where the pixels come from, so the placeholder can name the right kind of
    * missing picture. */
   source: ImageSource;
-  /** Preview URL (HA's entity_picture). Absent = draw the placeholder. */
+  /** Preview URL: HA's entity_picture, or the `data:` URL of an inline
+   * picture's own bytes. Absent = draw the placeholder. */
   url?: string;
+  /** The decoded size of an inline picture, in bytes. Absent for a fetched
+   * one. The editor reads it for the size next to the Upload button, and the
+   * shared fixtures pin it against the app's own decode. */
+  imageBytes?: number;
   /** Whether the watch draws the fetched-at overlay. */
   showTimestamp: boolean;
   /** The picture and timestamp settings, straight off the payload: no rule
@@ -1651,6 +1689,28 @@ export class Resolver {
   // ── elements and layouts ──────────────────────────────────────────────
 
   /**
+   * A level's reading against its scale, and the colour the unfilled part takes.
+   *
+   * Each end of the scale settles the way a gauge's does: the entity that end
+   * follows when it holds a number, then the typed-in number. A reading that is
+   * missing or is not a number is a fraction of 0, which draws the track alone;
+   * that is the honest answer, because a fill has nothing to say about a value
+   * it could not read. Mirrors `resolveLevel` in the app repo.
+   */
+  private resolveLevel(level: Level | undefined, colorHex: string): ResolvedLevel | undefined {
+    if (!level) return undefined;
+    const end = (source: Value | undefined, fixed: number): number =>
+      (source ? leadingNumber(this.resolve(source) ?? "") : undefined) ?? fixed;
+    const min = end(level.minSource, level.minValue);
+    const max = end(level.maxSource, level.maxValue);
+    return {
+      fraction: gaugeFraction(this.resolve(level.value), min, max),
+      direction: level.direction,
+      trackColorHex: level.trackColorHex ?? fadeHex(colorHex, LEVEL_TRACK_FADE),
+    };
+  }
+
+  /**
    * Every visible part of a rich text layer, in order, against the layer's
    * already resolved look.
    *
@@ -1749,9 +1809,12 @@ export class Resolver {
           ? el.payload.path
           : undefined;
         let symbol = override ?? baseSymbol;
-        // A hand-typed `mdi:` name with no path is a name nothing can draw. The
+        // A hand-typed `mdi:` name with no path is a name nothing can draw, and
+        // the custom-drawing marker is not a symbol name at all. The
         // placeholder makes the mistake visible; blank would read as a bug.
-        if (path === undefined && symbol.startsWith("mdi:")) symbol = "questionmark.circle";
+        if (path === undefined && (symbol.startsWith("mdi:") || symbol === CUSTOM_SVG_SYMBOL)) {
+          symbol = "questionmark.circle";
+        }
         const out: ResolvedIcon = {
           kind: "icon",
           ...base,
@@ -1760,6 +1823,13 @@ export class Resolver {
           colorHex: this.styleColor(style, "color") ?? el.payload.colorSlot.baseColorHex,
         };
         if (path !== undefined) out.path = path;
+        // The box goes with the path: a layer drawing an SF Symbol has no path
+        // for it to mean anything about.
+        if (path !== undefined && el.payload.viewBox !== undefined) out.viewBox = el.payload.viewBox;
+        // The track follows the colour the layer ended up in, so a rule that
+        // recolours the icon recolours both halves of it.
+        const level = this.resolveLevel(el.payload.level, out.colorHex);
+        if (level !== undefined) out.level = level;
         return out;
       }
       case "gauge": {
@@ -1953,6 +2023,14 @@ export class Resolver {
         if (ruledColor === undefined && el.payload.fill !== undefined) out.fill = el.payload.fill;
         const border = this.styleColor(style, "borderColor") ?? el.payload.borderColorHex;
         if (border !== undefined) out.borderColorHex = border;
+        // A line has no body to fill: it is the whole of what the layer draws,
+        // so filling part of it would only be a shorter line. The editor does
+        // not offer one, and a hand-written document is dropped here rather
+        // than drawn in a way the two renderers would have to agree about.
+        if (el.payload.kind !== "line") {
+          const level = this.resolveLevel(el.payload.level, out.fillColorHex);
+          if (level !== undefined) out.level = level;
+        }
         return out;
       }
       case "image": {
@@ -1973,6 +2051,14 @@ export class Resolver {
         if (hasFreeTimestamp(el.payload)) {
           out.timestampX = el.payload.timestampX;
           out.timestampY = el.payload.timestampY;
+        }
+        // An inline picture is its own source: the bytes are in the document,
+        // so the preview draws them straight and nothing is ever fetched.
+        if (el.payload.source === "inline") {
+          const inline = inlineImageUrl(el.payload);
+          if (inline !== undefined) out.url = inline;
+          out.imageBytes = inlineImageBytes(el.payload);
+          return out;
         }
         const url = this.ctx.entityStates.get(el.payload.entity.entityId)?.entityPicture;
         if (url !== undefined) out.url = url;

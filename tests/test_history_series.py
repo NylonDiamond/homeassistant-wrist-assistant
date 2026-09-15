@@ -346,3 +346,164 @@ def test_every_reading_ignores_gaps_unless_it_falls_back():
     assert values[-1] is None and None in values
     plain, _, _ = every_reading_series(many, START, END)
     assert None not in plain
+
+
+# --- Aggregate timelines: several entities merged into one strip -------------
+
+merge_state_changes = history_series.merge_state_changes
+normalize_entities = history_series.normalize_entities
+normalize_combine = history_series.normalize_combine
+split_state_history = history_series.split_state_history
+is_active = history_series.is_active
+MAX_AGGREGATE_ENTITIES = history_series.MAX_AGGREGATE_ENTITIES
+
+
+def merged(tracks, combine="any"):
+    """The merge as the wire sees it: `offset:state` pairs, coalesced."""
+    anchor, changes = merge_state_changes(tracks, START, combine)
+    return state_pairs(changes, START, anchor)
+
+
+def test_any_is_on_while_one_of_them_is_on():
+    # Two doors. The first opens at 10 and shuts at 40, the second opens at 30
+    # and shuts at 50, so "any door open" is one run from 10 to 50.
+    tracks = [
+        ("off", [(at(10), "on"), (at(40), "off")]),
+        ("off", [(at(30), "on"), (at(50), "off")]),
+    ]
+    assert merged(tracks) == [(0, "off"), (600, "on"), (3000, "off")]
+
+
+def test_all_is_on_only_while_every_one_of_them_is():
+    # The same two doors: both are open only between 30 and 40.
+    tracks = [
+        ("off", [(at(10), "on"), (at(40), "off")]),
+        ("off", [(at(30), "on"), (at(50), "off")]),
+    ]
+    assert merged(tracks, "all") == [(0, "off"), (1800, "on"), (2400, "off")]
+
+
+def test_overlapping_runs_coalesce_into_one():
+    # Three sensors taking turns with no gap between them. `any` never drops,
+    # so the strip is a single run rather than three touching ones.
+    tracks = [
+        ("off", [(at(10), "on"), (at(30), "off")]),
+        ("off", [(at(30), "on"), (at(50), "off")]),
+        ("off", [(at(50), "on"), (at(70), "off")]),
+    ]
+    assert merged(tracks) == [(0, "off"), (600, "on"), (4200, "off")]
+
+
+def test_the_active_words_are_not_only_on():
+    # A person, a lock and a washer, each with its own word for "active".
+    assert is_active("home") and is_active("unlocked") and is_active("running")
+    assert is_active(" Open ") and is_active("OPEN")
+    assert not is_active("off") and not is_active("not_home")
+    assert not is_active("unavailable") and not is_active("unknown")
+    assert not is_active(None)
+    tracks = [
+        ("not_home", [(at(20), "home")]),
+        ("home", []),
+    ]
+    assert merged(tracks, "all") == [(0, "off"), (1200, "on")]
+
+
+def test_an_entity_with_no_history_never_counts_as_active():
+    # Nothing recorded for the second entity at all: `any` still follows the
+    # first, and `all` can never be on, because an entity with no reading is
+    # not an entity that is on.
+    tracks = [("off", [(at(10), "on")]), (None, [])]
+    assert merged(tracks) == [(0, "off"), (600, "on")]
+    assert merged(tracks, "all") == [(0, "off")]
+
+
+def test_all_of_them_unavailable_is_unavailable():
+    tracks = [
+        ("on", [(at(10), "unavailable")]),
+        ("on", [(at(20), "unknown")]),
+    ]
+    # Still on while one of them reports, then a gap once neither does.
+    assert merged(tracks) == [(0, "on"), (1200, "unavailable")]
+    assert merged(tracks, "all") == [(0, "on"), (600, "off"), (1200, "unavailable")]
+
+
+def test_one_entity_offline_does_not_blank_the_strip():
+    # `any` keeps reading the entity that is still reporting.
+    tracks = [
+        ("off", [(at(10), "unavailable")]),
+        ("off", [(at(20), "on"), (at(40), "off")]),
+    ]
+    assert merged(tracks) == [(0, "off"), (1200, "on"), (2400, "off")]
+
+
+def test_no_entity_had_a_reading_before_the_window():
+    # No anchors at all, so the strip has no left edge and starts where the
+    # first change lands, exactly as a single entity's does.
+    tracks = [(None, [(at(30), "on")]), (None, [(at(45), "off")])]
+    assert merged(tracks) == [(1800, "on")]
+
+
+def test_repeated_moments_collapse():
+    # Both entities change at the same instant and the merged answer does not,
+    # so the run is one pair rather than two.
+    tracks = [
+        ("off", [(at(10), "on"), (at(20), "off")]),
+        ("off", [(at(10), "on"), (at(20), "off")]),
+    ]
+    assert merged(tracks) == [(0, "off"), (600, "on"), (1200, "off")]
+
+
+def test_an_empty_group_merges_to_nothing():
+    assert merge_state_changes([], START) == (None, [])
+
+
+def test_the_entity_list_is_cleaned():
+    assert normalize_entities(["a.b", " c.d ", "a.b", "", 7, None]) == ["a.b", "c.d"]
+    assert normalize_entities(None) == []
+    assert normalize_entities("light.kitchen") == []
+    assert normalize_entities([]) == []
+
+
+def test_more_than_twenty_entities_is_refused():
+    ok = [f"binary_sensor.d{i}" for i in range(MAX_AGGREGATE_ENTITIES)]
+    assert normalize_entities(ok) == ok
+    try:
+        normalize_entities(ok + ["binary_sensor.one_too_many"])
+    except history_series.HistorySeriesError as err:
+        assert "20" in str(err) and "21" in str(err)
+    else:
+        raise AssertionError("a 21st entity must be refused, not truncated")
+
+
+def test_duplicates_do_not_count_toward_the_cap():
+    # Twenty-one ids, one of them a repeat: nineteen distinct doors and a
+    # typo is not a request over the cap.
+    ids = [f"binary_sensor.d{i}" for i in range(20)] + ["binary_sensor.d0"]
+    assert len(normalize_entities(ids)) == 20
+
+
+def test_combine_words_fall_back_to_any():
+    assert normalize_combine("all") == "all"
+    assert normalize_combine(" All ") == "all"
+    assert normalize_combine("any") == "any"
+    assert normalize_combine(None) == "any"
+    assert normalize_combine("nonsense") == "any"
+    assert normalize_combine(7) == "any"
+
+
+class _Row:
+    """The shape `state_changes_during_period` hands back, minus the recorder."""
+
+    def __init__(self, when, state):
+        self.last_changed = when
+        self.state = state
+
+
+def test_rows_before_the_window_are_the_anchor():
+    rows = [
+        _Row(START - timedelta(minutes=5), "off"),
+        _Row(at(10), "on"),
+        _Row(at(20), None),
+        _Row(at(30), ""),
+    ]
+    assert split_state_history(rows, START) == ("off", [(at(10), "on")])

@@ -722,3 +722,70 @@ describe("the sample texts", () => {
     expect(listed.every((u) => u.required && isPlaceholderId(u.entityId))).toBe(true);
   });
 });
+
+// A merged timeline names its entities in a plain list of ids rather than in
+// references, so the walker has to reach it by itself. Without that a share
+// would scrub the first door and post the other five.
+describe("a merged timeline's entity list", () => {
+  const GROUP = ["binary_sensor.front_door", "binary_sensor.back_door", "binary_sensor.side_gate"];
+
+  function groupedDocument(): CustomComplicationConfig {
+    const cfg = newConfig("Doors", 0);
+    const el = newElement("timeline") as Extract<Element, { kind: "timeline" }>;
+    el.payload.value = {
+      kind: { kind: "entityState", entityId: GROUP[0]!, displayName: "Front door", domain: "binary_sensor" },
+    };
+    el.payload.aggregate = { entities: [...GROUP], combine: "all" };
+    cfg.elements.push(el);
+    return cfg;
+  }
+
+  function groupOf(cfg: CustomComplicationConfig): string[] {
+    const el = cfg.elements[0]!;
+    if (el.kind !== "timeline") throw new Error("not a timeline");
+    return el.payload.aggregate?.entities ?? [];
+  }
+
+  it("counts every entity in the list as a use of it", () => {
+    const uses = documentEntityUses(groupedDocument()).map((u) => u.entityId);
+    for (const entityId of GROUP) expect(uses).toContain(entityId);
+  });
+
+  it("scrubs every one of them, not only the first", () => {
+    const cfg = groupedDocument();
+    const slots = shareSlots(cfg, KNOWN_DOMAINS);
+    expect(slots).toHaveLength(3);
+    const scrubbed = scrubForShare(cfg, slots);
+    for (const entityId of groupOf(scrubbed)) expect(isPlaceholderId(entityId)).toBe(true);
+    expect(new Set(groupOf(scrubbed)).size).toBe(3);
+    // The layer's own value and the first of the list land on one placeholder.
+    const value = scrubbed.elements[0]!.payload as { value: Value };
+    const kind = value.value.kind;
+    expect(kind.kind === "entityState" ? kind.entityId : "").toBe(groupOf(scrubbed)[0]);
+    expect(JSON.stringify(scrubbed)).not.toContain("front_door");
+  });
+
+  it("remaps every one of them on import", () => {
+    const cfg = groupedDocument();
+    const scrubbed = scrubForShare(cfg, shareSlots(cfg, KNOWN_DOMAINS));
+    const placeholders = groupOf(scrubbed);
+    const ref = (entityId: string): EntityRef => ({ entityId, displayName: entityId, domain: "binary_sensor" });
+    const mapped = remapEntities(scrubbed, new Map([
+      [placeholders[0]!, ref("binary_sensor.hall_door")],
+      [placeholders[1]!, ref("binary_sensor.patio_door")],
+      [placeholders[2]!, ref("binary_sensor.shed_door")],
+    ]));
+    expect(groupOf(mapped)).toEqual([
+      "binary_sensor.hall_door", "binary_sensor.patio_door", "binary_sensor.shed_door",
+    ]);
+    expect(JSON.stringify(mapped)).not.toContain("shared_");
+  });
+
+  it("keeps the combine word through a share and an import", () => {
+    const cfg = groupedDocument();
+    const scrubbed = scrubForShare(cfg, shareSlots(cfg, KNOWN_DOMAINS));
+    const el = scrubbed.elements[0]!;
+    if (el.kind !== "timeline") throw new Error("not a timeline");
+    expect(el.payload.aggregate?.combine).toBe("all");
+  });
+});

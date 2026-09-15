@@ -154,11 +154,14 @@ def _loaded_modules():
         # their names to build its command schemas at import time.
         _stub(
             f"{_PKG}.history_series",
+            COMBINE_ANY="any",
+            COMBINE_ALL="all",
             MODE_NUMERIC="numeric",
             MODE_STATES="states",
             HistorySeriesError=type("HistorySeriesError", (Exception,), {}),
             async_history_series_detail=None,
             normalize_mode=lambda value: value,
+            normalize_combine=lambda value: value,
         )
         _stub(
             f"{_PKG}.statistics_series",

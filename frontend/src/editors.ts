@@ -102,6 +102,17 @@ import {
   type TimelineMinuteStyle,
   timelineHistoryKey,
   timelineHistoryMinutes,
+  TIMELINE_AGGREGATE_SEED_DOMAIN,
+  TIMELINE_COMBINES,
+  TIMELINE_DEFAULT_COMBINE,
+  TIMELINE_MAX_AGGREGATE_ENTITIES,
+  TIMELINE_MIN_AGGREGATE_ENTITIES,
+  type TimelineCombine,
+  seedTimelineBands,
+  timelineAggregateEntities,
+  timelineAggregateRows,
+  timelineAggregateOverCap,
+  timelineCombineHint,
   CHART_STATS,
   addChartLabel,
   addChartSeries,
@@ -206,6 +217,13 @@ import {
   type Fill,
   type FillKind,
   type FillStop,
+  type Level,
+  type LevelDirection,
+  LEVEL_DIRECTIONS,
+  LEVEL_DEFAULT_DIRECTION,
+  LEVEL_DEFAULT_MIN,
+  LEVEL_DEFAULT_MAX,
+  defaultLevel,
   type GaugeTicks,
   type GaugeLabels,
   FILL_KINDS,
@@ -270,11 +288,19 @@ import {
 } from "./rich-text.js";
 import type { HassEntityState, HassLike } from "./ha-api.js";
 import { MIN_ZOOM, familyTitle, type IconProvider } from "./renderer.js";
+import { IMAGE_UPLOAD_ACCEPT, encodeInlinePicture, formatKiB } from "./inline-image.js";
 import { CURATED_SYMBOLS, SYMBOL_CATEGORIES, SymbolBrowser, searchSymbols, type SymbolPack } from "./symbols.js";
 import { MDI_PREFIX } from "./icons.js";
 import { centerFrame, isCentered, typedFrame, type CenterAxis } from "./interact.js";
 import {
   DESIGN_BOX,
+  CUSTOM_SVG_SYMBOL,
+  IMAGE_INLINE_MAX_BYTES,
+  type IconElement,
+  type ImageSource,
+  inlineImageBytes,
+  isCustomSvgIcon,
+  parseSvgPaste,
   CHART_DEFAULT_BAR_RADIUS,
   CHART_DEFAULT_GRID_HEX,
   CHART_MAX_GRID_LINES,
@@ -390,7 +416,7 @@ export function pastedFrame(copied: CopiedPosition, to: FamilyKind, kind: CEleme
 }
 
 /** Every card id the inspector can show, for "Open all". */
-export const ALL_SECTIONS = ["content", "look", "numbers", "timestamp", "tappable", "states", "placement", "corner", "placements", "shape", "symbol"] as const;
+export const ALL_SECTIONS = ["content", "look", "numbers", "level", "timestamp", "tappable", "states", "placement", "corner", "placements", "shape", "symbol"] as const;
 
 // ── small controls ────────────────────────────────────────────────────────
 
@@ -1499,6 +1525,168 @@ function symbolField(
     ${browsePane}`;
 }
 
+/** What the last paste into a layer's Custom SVG box did, by layer id. Not
+ * part of the document and not part of undo, like the other editor notes. */
+const svgPasteNotes = new Map<string, { text: string; warn: boolean }>();
+
+/**
+ * Switch an icon layer between a catalogue symbol and a pasted drawing.
+ *
+ * Going to a drawing keeps whatever path the layer already had, so a Material
+ * Design icon is a starting point someone can edit rather than a blank box.
+ * Going back to a symbol drops the path and its box: the symbol is what draws
+ * from then on, and a stale path under it would come back on the next switch.
+ */
+function setIconDrawing(p: IconElement, to: "symbol" | "svg"): void {
+  if (to === "svg") {
+    p.symbol = literal(CUSTOM_SVG_SYMBOL);
+    return;
+  }
+  p.symbol = literal("lightbulb");
+  delete p.path;
+  delete p.viewBox;
+}
+
+/**
+ * The Custom SVG box: paste a path or whole markup, and see what landed.
+ *
+ * The box shows the `d` the document carries, so after markup goes in it says
+ * what was kept rather than what was pasted. A paste that cannot be used
+ * leaves the document alone and says why, which is the only way to tell the
+ * difference between "nothing happened" and "that is not a path".
+ */
+function customSvgFields(
+  p: IconElement,
+  set: (mutate: (p: IconElement) => void, key?: string) => void,
+): TemplateResult {
+  const note = svgPasteNotes.get(p.id);
+  const bytes = new TextEncoder().encode(p.path ?? "").length;
+  const paste = (raw: string, node: EventTarget | null) => {
+    if (raw.trim() === "") {
+      svgPasteNotes.delete(p.id);
+      set((q) => { delete q.path; delete q.viewBox; }, "svg-path");
+      return;
+    }
+    const result = parseSvgPaste(raw);
+    if (!result.ok) {
+      svgPasteNotes.set(p.id, { text: result.error, warn: true });
+      requestRerender(node);
+      return;
+    }
+    const box = result.viewBox;
+    svgPasteNotes.set(p.id, {
+      text: box === undefined
+        ? "Path taken. It draws in the standard 24 by 24 box."
+        : `Path taken, in the box ${box} the markup names.`,
+      warn: false,
+    });
+    set((q) => {
+      q.path = result.path;
+      if (box === undefined) delete q.viewBox; else q.viewBox = box;
+    }, "svg-path");
+  };
+  return html`
+    <label class="field"><span>SVG</span>
+      <textarea rows="4" class="mono" .value=${p.path ?? ""}
+        placeholder="M7 2v11h3v9l7-12h-4l4-8z  or a whole <svg …> tag"
+        @input=${(e: Event) => paste((e.target as HTMLTextAreaElement).value, e.target)}></textarea></label>
+    ${note ? html`<div class="hint ${note.warn ? "warn" : "keep"}">${note.text}</div>` : nothing}
+    ${p.path === undefined || p.path === ""
+      ? html`<div class="hint keep">Paste an SVG path's <code>d</code>, or the whole <code>&lt;svg&gt;</code> markup and the paths in it are taken. The drawing takes the layer's colour, so a flat single-colour shape is what reads on a watch face.</div>`
+      : html`<div class="field readout"><span>Size</span><span class="readout-v">${bytes} bytes${p.viewBox === undefined ? "" : ` · ${p.viewBox}`}</span></div>`}
+    <div class="hint">Only <code>&lt;path&gt;</code> elements are drawn: a circle, a rectangle or a group transform in the markup is ignored. Convert those to paths in a vector editor first.</div>`;
+}
+
+/** What the last upload into a picture layer did, by layer id. Editor state,
+ * not document state, like the Custom SVG note above. */
+const inlineImageNotes = new Map<string, { text: string; warn: boolean }>();
+
+/**
+ * Switch a picture layer between the two fetched sources and an upload.
+ *
+ * Leaving the upload drops its bytes: they are the biggest thing a layer can
+ * carry and keeping them "in case" would sit in every save of a document that
+ * no longer draws them. Going to the upload drops the entity for the same
+ * reason and one more: a layer that draws its own bytes but still names a
+ * camera would put that camera into every share and every gallery upload, for
+ * nothing. Switching between the two fetched sources keeps the entity, as it
+ * always has.
+ */
+function setImageSource(p: ImageElement, to: ImageSource): void {
+  p.source = to;
+  if (to === "inline") {
+    p.entity = { entityId: "", displayName: "", domain: "" };
+    return;
+  }
+  delete p.data;
+  delete p.format;
+}
+
+/**
+ * The Upload row of a picture layer: pick a file, see how big it ended up, or
+ * take it out again.
+ *
+ * The file is resized here, to the pixel box this layer fills, and never
+ * reaches the document at its original size: the watch draws these bytes
+ * forever, and an oversized bitmap fails a WidgetKit render whole.
+ */
+function inlineImageFields(
+  host: EditorHost,
+  img: ImageElement,
+  family: FamilyKind,
+  set: (mutate: (p: ImageElement) => void, key?: string) => void,
+): TemplateResult {
+  const note = inlineImageNotes.get(img.id);
+  const bytes = inlineImageBytes(img);
+  const pick = async (event: Event) => {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    // The same file picked twice in a row has to fire a change event both
+    // times, which it only does if the input is emptied after each pick.
+    input.value = "";
+    if (!file) return;
+    const box = DESIGN_BOX[family === "inline" ? "rectangular" : family];
+    const place = effectivePlacement(host.config, family, { kind: "image", payload: img });
+    const result = await encodeInlinePicture(file, {
+      width: place.frame.width * box.width,
+      height: place.frame.height * box.height,
+    });
+    if ("error" in result) {
+      inlineImageNotes.set(img.id, { text: result.error, warn: true });
+      requestRerender(input);
+      return;
+    }
+    inlineImageNotes.set(img.id, {
+      text: `${file.name} is in the complication at ${result.width} by ${result.height} pixels, ${formatKiB(result.bytes)}.`,
+      warn: false,
+    });
+    set((p) => {
+      p.data = result.data;
+      if (result.format === "jpeg") p.format = "jpeg"; else delete p.format;
+    }, "inline-image");
+  };
+  return html`
+    <div class="field list-field"><span>Picture</span>
+      <div class="adders">
+        <label class="small" title="Choose a picture from this device">
+          ${uiIcon("plus")}<span>${bytes > 0 ? "Replace" : "Upload"}</span>
+          <input type="file" accept=${IMAGE_UPLOAD_ACCEPT} style="display:none" @change=${pick} />
+        </label>
+        ${bytes > 0
+          ? html`<button type="button" class="small" title="Take the picture out of this complication"
+              @click=${() => {
+                inlineImageNotes.delete(img.id);
+                set((p) => { delete p.data; delete p.format; }, "inline-image");
+              }}>Remove</button>`
+          : nothing}
+        ${bytes > 0 ? html`<span class="readout-v">${formatKiB(bytes)}</span>` : nothing}
+      </div>
+    </div>
+    ${note ? html`<div class="hint ${note.warn ? "warn" : "keep"}">${note.text}</div>` : nothing}
+    ${bytes === 0 ? html`<div class="hint warn">This layer has no picture yet, so it draws a placeholder.</div>` : nothing}
+    <div class="hint">The picture travels inside the complication, so nothing is fetched and it works with no entity at all. It is resized to the layer's own size on the way in, and each one may be at most ${IMAGE_INLINE_MAX_BYTES / 1024} KB.</div>`;
+}
+
 /**
  * Whether to warn that the installed icon pack has no such symbol.
  *
@@ -1924,6 +2112,107 @@ function timelineKnownStates(samples: readonly TimelineSample[], spanSeconds: nu
     .sort((a, b) => b[1] - a[1])
     .map(([k]) => spelling.get(k) ?? k);
   return [...seen, ...noReading];
+}
+
+/** The switch that turns one strip into a merged one.
+ *
+ * Turning it on seeds the list with whatever entity the layer already names,
+ * plus a blank row for the second, and rewrites the colour table for the two
+ * states a merge answers in: the server sends `on` and `off` whatever the
+ * entities are, so a table of `open` and `closed` would match nothing. A table
+ * that already names `on` is left alone, edits and all.
+ *
+ * Turning it off drops the list and leaves everything else where it is. The
+ * layer's `value` still names the first entity, so the strip goes back to
+ * being that one entity's own.
+ */
+function timelineGroupSwitch(
+  t: TimelineElement,
+  set: (mutate: (p: TimelineElement) => void, k?: string) => void,
+  key: string,
+): TemplateResult {
+  return checkField("Combine several entities", t.aggregate !== undefined, (on) => set((p) => {
+    if (!on) {
+      delete p.aggregate;
+      return;
+    }
+    const first = p.value.kind.kind === "entityState" ? p.value.kind.entityId : "";
+    const entities = first === "" ? [] : [first];
+    p.aggregate = { entities, combine: TIMELINE_DEFAULT_COMBINE };
+    if (!p.bands.some((b) => b.match.trim().toLowerCase() === "on")) {
+      p.bands = seedTimelineBands(TIMELINE_AGGREGATE_SEED_DOMAIN);
+    }
+  }, `tagg${key}`));
+}
+
+/** The entity list, the Any / All control and what the two of them mean.
+ *
+ * The first row is the layer's `value` as well as the group's first entity:
+ * the two are written together on every edit, so an app that predates the
+ * `aggregate` key draws that one entity's strip rather than nothing.
+ */
+function timelineGroupFields(
+  host: EditorHost,
+  t: TimelineElement,
+  set: (mutate: (p: TimelineElement) => void, k?: string) => void,
+  key: string,
+): TemplateResult {
+  const rows = timelineAggregateRows(t);
+  const named = timelineAggregateEntities(t);
+  const combine = t.aggregate?.combine ?? TIMELINE_DEFAULT_COMBINE;
+  const full = rows.length >= TIMELINE_MAX_AGGREGATE_ENTITIES;
+
+  /** Write the list back, and the first entity into `value` with it. */
+  const writeRows = (p: TimelineElement, next: string[]) => {
+    p.aggregate = { entities: next, combine: p.aggregate?.combine ?? TIMELINE_DEFAULT_COMBINE };
+    const first = next.find((id) => id.trim() !== "") ?? "";
+    if (first !== "") {
+      p.value = { ...p.value, kind: { kind: "entityState", ...entityRefFrom(host.hass.states, first) } };
+    }
+  };
+
+  return html`
+    ${rows.map((entityId, i) => html`
+      <div class="row-inline">
+        ${entityField(host, `Entity ${i + 1}`, entityRefFrom(host.hass.states, entityId),
+          (ref) => set((p) => {
+            const next = timelineAggregateRows(p);
+            next[i] = ref.entityId;
+            writeRows(p, next);
+          }, `tagge${key}-${i}`), `${key}-agg-${i}`, { needed: entityId === "" })}
+        ${rows.length > TIMELINE_MIN_AGGREGATE_ENTITIES
+          ? html`<button class="icon" title="Remove this entity" aria-label="Remove this entity"
+              @click=${() => set((p) => {
+                writeRows(p, timelineAggregateRows(p).filter((_, j) => j !== i));
+              })}>${uiIcon("close")}</button>`
+          : nothing}
+      </div>`)}
+    <button class="small" ?disabled=${full}
+      title=${full
+        ? `A timeline merges at most ${TIMELINE_MAX_AGGREGATE_ENTITIES} entities`
+        : "Add another entity to this strip"}
+      @click=${() => set((p) => { writeRows(p, [...timelineAggregateRows(p), ""]); })}>Add entity</button>
+    ${segField("Combine", combine, TIMELINE_COMBINES, (v: TimelineCombine) => set((p) => {
+      p.aggregate = { entities: timelineAggregateRows(p), combine: v };
+    }), { titles: {
+        any: "On while at least one of them is active",
+        all: "On only while every one of them is active",
+      }, def: TIMELINE_DEFAULT_COMBINE })}
+    <div class="hint">${timelineCombineHint(combine)}. Home Assistant reads a door as open, a
+      person as home, a lock as unlocked and a washer as running, so one switch answers all of
+      them.</div>
+    ${named.length < TIMELINE_MIN_AGGREGATE_ENTITIES
+      ? html`<div class="hint warn">Name at least ${TIMELINE_MIN_AGGREGATE_ENTITIES} entities, or turn
+        the switch off and draw the one entity's own states.</div>`
+      : nothing}
+    ${timelineAggregateOverCap(t)
+      ? html`<div class="hint warn">A timeline merges at most ${TIMELINE_MAX_AGGREGATE_ENTITIES}
+        entities, and this one names ${named.length}. Remove ${named.length - TIMELINE_MAX_AGGREGATE_ENTITIES}
+        of them: until then the strip asks the recorder nothing and draws nothing.</div>`
+      : nothing}
+    <div class="hint">One strip for all of them: Home Assistant merges their recorded pasts into a
+      single run of on and off. The colour table below reads those two words, whatever domain the
+      entities are from.</div>`;
 }
 
 function timelineBandFields(
@@ -2995,8 +3284,17 @@ function layerEntityField(host: EditorHost, el: CElement, key: string): Template
 function layerNeedsEntity(el: CElement): boolean {
   if (el.kind === "timeline") return el.payload.value.kind.kind !== "entityState";
   if (el.kind === "chart") return el.payload.historyMinutes > 0 && el.payload.value.kind.kind !== "entityState";
-  if (el.kind === "image") return el.payload.entity.entityId === "";
+  // An uploaded picture carries its own bytes, so it needs no entity at all.
+  if (el.kind === "image") return el.payload.source !== "inline" && el.payload.entity.entityId === "";
   return false;
+}
+
+/** Whether this layer's Content card shows the entity field at all. A picture
+ * that carries its own bytes has nothing to name. */
+function layerShowsEntity(el: CElement): boolean {
+  if (el.kind === "tap" || el.kind === "text") return false;
+  if (el.kind === "chartTimes" || el.kind === "chartDots" || el.kind === "chartGrid" || el.kind === "imageTime") return false;
+  return !(el.kind === "image" && el.payload.source === "inline");
 }
 
 /** The layer's own content value, which is the part an entity pick may rewrite. */
@@ -3381,7 +3679,11 @@ export function contentSummary(host: EditorHost, el: CElement): string {
       if (textUsesParts(el.payload)) return `Rich text, ${n} part${n === 1 ? "" : "s"}`;
       return truncate(describeValue(el.payload.value, ctx), 48);
     }
-    case "icon": return truncate(describeValue(el.payload.symbol, ctx), 48);
+    // A pasted drawing's symbol is the marker, which is not a name anyone
+    // typed, so the summary says what the layer is instead.
+    case "icon": return isCustomSvgIcon(el.payload)
+      ? (el.payload.path ? "Custom SVG" : "No drawing yet")
+      : truncate(describeValue(el.payload.symbol, ctx), 48);
     case "gauge": return truncate(describeValue(el.payload.value, ctx), 48);
     // Charts drawing a past say so: the value names the entity either way, so
     // without the span the kinds of chart read identically in the list. A
@@ -3391,11 +3693,26 @@ export function contentSummary(host: EditorHost, el: CElement): string {
       `${describeValue(el.payload.value, ctx)}${chartSpanSummary(el.payload)}`,
       48
     );
-    case "timeline": return truncate(
-      `${describeValue(el.payload.value, ctx)} · ${historySpanLabel(timelineHistoryMinutes(el.payload))}`, 48);
+    case "timeline": {
+      // A merged strip says how many it merges: its value names only the first of
+      // them, so "Front door" alone would read as a strip of one door.
+      const merged = timelineAggregateEntities(el.payload).length;
+      const what = merged > 1
+        ? `${merged} entities, ${el.payload.aggregate?.combine === "all" ? "all" : "any"}`
+        : describeValue(el.payload.value, ctx);
+      return truncate(`${what} · ${historySpanLabel(timelineHistoryMinutes(el.payload))}`, 48);
+    }
     case "shape": return el.payload.kind === "roundedRectangle" ? "Rounded rectangle" : el.payload.kind;
-    case "image": return el.payload.entity.displayName || el.payload.entity.entityId
-      || (el.payload.source === "camera" ? "No camera yet" : "No entity yet");
+    case "image": {
+      // An uploaded picture names no entity, so the summary says how big it is
+      // instead: that is the only thing about it worth a line here.
+      if (el.payload.source === "inline") {
+        const bytes = inlineImageBytes(el.payload);
+        return bytes > 0 ? `Uploaded picture · ${formatKiB(bytes)}` : "No picture yet";
+      }
+      return el.payload.entity.displayName || el.payload.entity.entityId
+        || (el.payload.source === "camera" ? "No camera yet" : "No entity yet");
+    }
     case "tap": return describeTapAction(el.payload.action);
     case "chartTimes": {
       const chart = host.config.elements.find((e) => e.payload.id === el.payload.chart);
@@ -3819,9 +4136,18 @@ export type GaugeEndMode = "number" | "entity";
 
 const GAUGE_END_MODES: [GaugeEndMode, string][] = [["number", "Number"], ["entity", "Entity"]];
 
+/** The four fields a scale's two ends are made of. A gauge has them, and so
+ * does a level, so the Min and Max rows below are written once. */
+interface RangeEnds {
+  minValue: number;
+  maxValue: number;
+  minSource?: Value;
+  maxSource?: Value;
+}
+
 /** What one end of a gauge's range reads, as the stored layer says: an end with
  * a source is an entity end, and any other end is its number. */
-export function gaugeEndMode(g: GaugeElement, end: GaugeEnd): GaugeEndMode {
+export function gaugeEndMode(g: RangeEnds, end: GaugeEnd): GaugeEndMode {
   return (end === "min" ? g.minSource : g.maxSource) === undefined ? "number" : "entity";
 }
 
@@ -3830,7 +4156,7 @@ export function gaugeEndMode(g: GaugeElement, end: GaugeEnd): GaugeEndMode {
  * the number stays stored, as the entity's fallback, so switching back to
  * Number brings the old number back.
  */
-export function setGaugeEndMode(p: GaugeElement, end: GaugeEnd, mode: GaugeEndMode): void {
+export function setGaugeEndMode(p: RangeEnds, end: GaugeEnd, mode: GaugeEndMode): void {
   const key = end === "min" ? "minSource" : "maxSource";
   if (mode === "number") delete p[key];
   else if (p[key] === undefined) p[key] = { kind: { kind: "entityState", entityId: "", displayName: "", domain: "" } };
@@ -3849,10 +4175,11 @@ export function setGaugeEndMode(p: GaugeElement, end: GaugeEnd, mode: GaugeEndMo
  */
 function gaugeRangeFields(
   host: EditorHost,
-  g: GaugeElement,
+  g: RangeEnds,
   defaults: Record<GaugeEnd, number>,
   key: string,
-  setGauge: (mutate: (p: GaugeElement) => void, k?: string) => void,
+  setGauge: (mutate: (p: RangeEnds) => void, k?: string) => void,
+  what = "gauge",
 ): TemplateResult {
   const end = (which: GaugeEnd) => {
     const isMin = which === "min";
@@ -3881,11 +4208,88 @@ function gaugeRangeFields(
     return html`<div class="field gauge-end">${head}${valueEditor(host, source, (v) => setGauge((p) => {
         if (isMin) p.minSource = v; else p.maxSource = v;
       }, `${which}src`), { showResolved: true, noLabel: true, label, key: `${key}-${which}source` })}</div>
-      <div class="hint">If the entity has no number, the gauge uses ${String(stored)}.</div>`;
+      <div class="hint">If the entity has no number, the ${what} uses ${String(stored)}.</div>`;
   };
   return g.minSource === undefined && g.maxSource === undefined
     ? html`<div class="grid2 gauge-ends">${end("min")}${end("max")}</div>`
     : html`${end("min")}${end("max")}`;
+}
+
+/** The payload field the Fill by value card owns. */
+const LEVEL_KEYS = ["level"] as const;
+
+/** The Fill by value card's one-line summary: which way it fills and across
+ * what, or Off when the layer draws once. */
+function levelSummary(el: Extract<CElement, { kind: "icon" | "shape" }>): string {
+  const level = el.payload.level;
+  if (level === undefined) return "Off";
+  const direction = LEVEL_DIRECTIONS.find(([d]) => d === level.direction)?.[1] ?? "Up";
+  return `${direction}, ${level.minValue} to ${level.maxValue}`;
+}
+
+/** The layer kinds that can fill by value. A line is a shape with no body to
+ * fill, so it is left out here as well as in both renderers. */
+function layerTakesLevel(el: CElement): el is Extract<CElement, { kind: "icon" | "shape" }> {
+  if (el.kind === "icon") return true;
+  return el.kind === "shape" && el.payload.kind !== "line";
+}
+
+/**
+ * Fill by value: the switch, the reading behind it, the scale's two ends, which
+ * way the fill grows and what the empty part is painted in.
+ *
+ * The layer is drawn twice on the watch and in the preview, so everything else
+ * about it (its colour, its gradient, its rules) is still one setting and stays
+ * on its own cards. This card only says how much of the layer is coloured in.
+ */
+function levelFields(
+  host: EditorHost,
+  el: Extract<CElement, { kind: "icon" | "shape" }>,
+  key: string,
+  upd: (mutate: (e: CElement) => void, k?: string) => void,
+): TemplateResult {
+  const level = el.payload.level;
+  const setLevel = (mutate: (l: Level) => void, k?: string) => upd((e) => {
+    const p = e.payload as { level?: Level };
+    if (p.level !== undefined) mutate(p.level);
+  }, k);
+  // Switched on, a fill starts by reading whatever the layer already reads, so
+  // an icon bound to a battery sensor fills by that battery without a second
+  // entity being picked.
+  const ref = elementEntity(host.config, el);
+  const seed = () => defaultLevel(ref ? { kind: { kind: "entityState", ...ref } } : literal("50"));
+  const what = el.kind === "icon" ? "icon" : "shape";
+  return html`
+    ${checkField("Fill by value", level !== undefined, (v) => upd((e) => {
+      const p = e.payload as { level?: Level };
+      if (v) p.level = seed(); else delete p.level;
+    }, "level-on"), false)}
+    ${level === undefined
+      ? html`<div class="hint">Draws the ${what} twice: all of it in a faint track colour, then as much of it as
+          the reading fills, in its own colour. A battery icon that fills to 60%, or a tank that empties.</div>`
+      : html`
+        ${valueEditor(host, level.value, (v) => setLevel((l) => { l.value = v; }, "level-value"),
+          { showResolved: true, label: "Reading", key: `${key}-level-value` })}
+        <div class="fgroup">
+        ${gaugeRangeFields(host, level, { min: LEVEL_DEFAULT_MIN, max: LEVEL_DEFAULT_MAX },
+          `${key}-level`, (m, k) => setLevel(m, k ? `level-${k}` : "level-range"), "fill")}
+        </div>
+        <div class="fgroup">
+        ${segField("Direction", level.direction, [...LEVEL_DIRECTIONS] as [LevelDirection, string][],
+          (v) => setLevel((l) => { l.direction = v; }, "level-dir"),
+          { titles: {
+              up: "Fills from the bottom edge upward",
+              down: "Fills from the top edge downward",
+              left: "Fills from the right edge leftward",
+              right: "Fills from the left edge rightward",
+            }, def: LEVEL_DEFAULT_DIRECTION })}
+        ${colorField("Track colour", level.trackColorHex, (v) => setLevel((l) => {
+          if (v === undefined) delete l.trackColorHex; else l.trackColorHex = v;
+        }, "level-track"), true, null)}
+        <div class="hint">Off, the empty part takes the layer's own colour at a quarter strength.
+          A tinted face keeps only how see-through a colour is, so a track at full strength reads
+          there as the same colour as the fill.</div>
+        </div>`}`;
 }
 
 /**
@@ -4549,18 +4953,30 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         ${colourPlaced ? textValueColourFields(host, el.payload, setText, colourRow("Main colour")) : nothing}`;
       break;
     }
-    case "icon":
+    case "icon": {
+      const drawn = isCustomSvgIcon(el.payload) ? "svg" : "symbol";
       content = html`
-        ${valueEditor(host, el.payload.symbol, (v) => upd((e) => { (e as typeof el).payload.symbol = v; }, "symbol"), {
-          noFormat: true, showResolved: true, symbol: true, label: "Symbol", key: `${key}-symbol`,
-          setSymbolPath: (d) => upd((e) => {
-            const p = (e as typeof el).payload;
-            if (d) p.path = d; else delete p.path;
-          }, "symbol"),
-        })}
-        <div class="hint">An entity source draws that entity's own icon instead. A Material Design icon travels with the document, so a rule that swaps the icon goes back to SF Symbols.</div>`;
+        ${segField("Drawing", drawn, [["symbol", "Symbol"], ["svg", "Custom SVG"]],
+          (v) => upd((e) => { setIconDrawing((e as typeof el).payload, v); }, "icon-drawing"),
+          { titles: {
+              symbol: "An SF Symbol or a Material Design icon, by name",
+              svg: "An SVG path you paste yourself",
+            }, def: "symbol" })}
+        ${drawn === "svg"
+          ? customSvgFields(el.payload, (m, k) => upd((e) => m((e as typeof el).payload), k))
+          : html`
+            ${valueEditor(host, el.payload.symbol, (v) => upd((e) => { (e as typeof el).payload.symbol = v; }, "symbol"), {
+              noFormat: true, showResolved: true, symbol: true, label: "Symbol", key: `${key}-symbol`,
+              setSymbolPath: (d) => upd((e) => {
+                const p = (e as typeof el).payload;
+                if (d) p.path = d; else delete p.path;
+                delete p.viewBox;
+              }, "symbol"),
+            })}
+            <div class="hint">An entity source draws that entity's own icon instead. A Material Design icon travels with the document, so a rule that swaps the icon goes back to SF Symbols.</div>`}`;
       look = shapeSizeField(host, el, family, "Icon size", { step: 1, min: 4, def: baseSize("size") });
       break;
+    }
     case "gauge": {
       const g = el.payload;
       const setGauge = (m: (p: GaugeElement) => void, k?: string) => upd((e) => m((e as typeof el).payload), k);
@@ -5094,15 +5510,22 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
       const samples = timelineSamples(raw ?? "", TIMELINE_HISTORY_POINTS);
       const customSpan = spanIsCustom(id, t.historyMinutes);
       const entityId = t.value.kind.kind === "entityState" ? t.value.kind.entityId : undefined;
-      const knownStates = timelineKnownStates(samples, spanSeconds,
-        entityId === undefined ? undefined : host.hass.states[entityId]?.state,
-        entityId?.split(".")[0]);
+      const grouped = t.aggregate !== undefined;
+      const knownStates = grouped
+        ? TIMELINE_DOMAIN_STATES[TIMELINE_AGGREGATE_SEED_DOMAIN] ?? []
+        : timelineKnownStates(samples, spanSeconds,
+          entityId === undefined ? undefined : host.hass.states[entityId]?.state,
+          entityId?.split(".")[0]);
       content = html`
-        ${valueEditor(host, t.value, (v) => setTimeline((p) => { p.value = v; }, "value"),
-          { label: "States", noShare: true, key: `${key}-value` })}
-        ${namesEntity ? nothing : html`<div class="hint warn">A timeline draws an entity's recorded
-          past, so it needs one named above. A typed-in value, a template or a shared value has no
-          past to read, and this layer stays blank until States names an entity.</div>`}
+        ${timelineGroupSwitch(t, setTimeline, key)}
+        ${grouped
+          ? timelineGroupFields(host, t, setTimeline, key)
+          : html`
+            ${valueEditor(host, t.value, (v) => setTimeline((p) => { p.value = v; }, "value"),
+              { label: "States", noShare: true, key: `${key}-value` })}
+            ${namesEntity ? nothing : html`<div class="hint warn">A timeline draws an entity's recorded
+              past, so it needs one named above. A typed-in value, a template or a shared value has no
+              past to read, and this layer stays blank until States names an entity.</div>`}`}
         <div class="fgroup">
         ${historySpanPicker(id, t.historyMinutes, baseSpan, (m) => setTimeline((p) => { p.historyMinutes = m; }))}
         ${customSpan
@@ -5115,8 +5538,9 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           ? html`<div class="hint keep">Reading the history…</div>`
           : nothing}
         ${namesEntity && raw === ""
-          ? html`<div class="hint warn">Nothing recorded for this entity in that span. Either it is
-            excluded from the recorder, or it has not been seen in that long.</div>`
+          ? html`<div class="hint warn">Nothing recorded for ${grouped ? "these entities" : "this entity"}
+            in that span. Either ${grouped ? "they are" : "it is"} excluded from the recorder, or
+            ${grouped ? "none of them have" : "it has not"} been seen in that long.</div>`
           : nothing}
         </div>
         ${samples.length > 0
@@ -5185,13 +5609,24 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
       const picturePath = typeof livePicture === "string" ? livePicture : undefined;
       const externalPicture = picturePath !== undefined && !picturePath.startsWith("/");
       content = html`
-        ${segField("Source", img.source, [["camera", "Camera"], ["entityPicture", "Entity picture"]],
-          (v) => setImage((p) => { p.source = v; }),
+        ${segField("Source", img.source, [["camera", "Camera"], ["entityPicture", "Entity picture"], ["inline", "Upload"]],
+          (v) => host.update((c) => {
+            const target = c.elements.find((e) => e.payload.id === img.id);
+            if (target?.kind !== "image") return;
+            setImageSource(target.payload, v);
+            // A timestamp layer over an uploaded picture has no fetched-at time
+            // to print, so it would sit there drawing nothing. It goes with the
+            // switch, in the same undo step.
+            if (v === "inline") for (const t of imageTimesOf(c, img.id)) removeElement(c, t.payload.id);
+          }, "img-source"),
           { titles: {
               camera: "A snapshot from a camera entity",
               entityPicture: "The picture an entity already carries: a person's photo, cover art, a weather icon",
+              inline: "A picture you upload, carried in the complication itself",
             }, def: base.source as typeof img.source })}
-        ${img.source === "camera"
+        ${img.source === "inline"
+          ? inlineImageFields(host, img, family, setImage)
+          : img.source === "camera"
           ? html`
             ${img.entity.entityId && !img.entity.entityId.startsWith("camera.") ? html`<div class="hint warn">Only camera entities have snapshots, so this layer stays blank until the entity is a camera. Switch the source to Entity picture to use this entity's own photo.</div>` : nothing}
             <div class="hint">The watch fetches a snapshot on refresh and shows the cached frame in between. This preview shows the camera live.</div>`
@@ -5392,7 +5827,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
 
   return html`
     ${nameCard}
-    ${card(host, "content", "Content", html`${el.kind === "tap" || el.kind === "text" || el.kind === "chartTimes" || el.kind === "chartDots" || el.kind === "chartGrid" || el.kind === "imageTime" ? nothing : layerEntityField(host, el, key)}${content}`,
+    ${card(host, "content", "Content", html`${layerShowsEntity(el) ? layerEntityField(host, el, key) : nothing}${content}`,
       { color: SECTION_COLOR.content, icon: "content", summary: contentSummary(host, el),
         ...(contentChanged ? { reset: () => upd((e) => {
           restoreKeys(e.payload, base, contentKeys);
@@ -5422,7 +5857,12 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               if (chart) restoreKeys(chart.payload, base, CHART_EXTRAS_KEYS);
             }) }
           : {}) }) : nothing}
-    ${el.kind === "timeline" || el.kind === "image" ? ownedExtrasCard(host, el) : nothing}
+    ${el.kind === "timeline" || (el.kind === "image" && el.payload.source !== "inline") ? ownedExtrasCard(host, el) : nothing}
+    ${layerTakesLevel(el)
+      ? card(host, "level", "Fill by value", levelFields(host, el, key, upd),
+          { color: SECTION_COLOR.numbers, icon: "gauge", summary: levelSummary(el),
+            ...(anyDiffers(el.payload, base, LEVEL_KEYS) ? { reset: resetKeys(LEVEL_KEYS, "reset-level") } : {}) })
+      : nothing}
     ${card(host, "states", "States", statesEditor(host, el.payload.rules, el.kind,
       (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`, tested, textParts),
       { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(el.payload.rules).replace(/\.$/, ""),
@@ -6003,12 +6443,19 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
     }
     case "icon":
       return html`
-        ${anchor ? markerReadingFields(host, id, anchor, upd) : valueEditor(host, el.payload.symbol,
+        ${anchor
+          ? markerReadingFields(host, id, anchor, upd)
+          // A pasted drawing has no symbol name to offer: its box lives in the
+          // layer's own Content card, one click away.
+          : isCustomSvgIcon(el.payload)
+          ? customSvgFields(el.payload, (m, k) => upd((e) => { if (e.kind === "icon") m(e.payload); }, k ?? "svg-path"))
+          : valueEditor(host, el.payload.symbol,
           (v) => upd((e) => { if (e.kind === "icon") e.payload.symbol = v; }, "symbol"), {
             noFormat: true, showResolved: true, symbol: true, label: "Symbol", key: `${key}-symbol`,
             setSymbolPath: (d) => upd((e) => {
               if (e.kind !== "icon") return;
               if (d) e.payload.path = d; else delete e.payload.path;
+              delete e.payload.viewBox;
             }, "symbol"),
           })}
         <div class="grid2">
@@ -6064,8 +6511,8 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
     case "image": {
       const img = el.payload;
       return html`
-        ${segField("Source", img.source, [["camera", "Camera"], ["entityPicture", "Entity picture"]],
-          (v) => upd((e) => { if (e.kind === "image") e.payload.source = v; }, "source"), { def: base.source as typeof img.source })}
+        ${segField("Source", img.source, [["camera", "Camera"], ["entityPicture", "Entity picture"], ["inline", "Upload"]],
+          (v) => upd((e) => { if (e.kind === "image") setImageSource(e.payload, v); }, "source"), { def: base.source as typeof img.source })}
         ${segField("Picture", img.contentMode, [["fill", "Fill the frame"], ["fit", "Fit inside"]],
           (v) => upd((e) => { if (e.kind === "image") e.payload.contentMode = v; }, "mode"), { def: base.contentMode as typeof img.contentMode })}`;
     }
@@ -6227,12 +6674,15 @@ export function autoLayerTitle(el: CElement, ctx?: DescribeContext): string {
   }
   switch (el.kind) {
     case "text": return unquote(describeValue(el.payload.value, ctx));
-    case "icon": return unquote(describeValue(el.payload.symbol, ctx));
+    // The marker is not a name anyone typed, so a pasted drawing is titled for
+    // what it is rather than for `svg:custom`.
+    case "icon": return isCustomSvgIcon(el.payload) ? "Custom SVG" : unquote(describeValue(el.payload.symbol, ctx));
     case "gauge": return describeValue(el.payload.value, ctx);
     case "chart": return describeValue(el.payload.value, ctx);
     case "timeline": return describeValue(el.payload.value, ctx);
     case "shape": return el.payload.kind === "roundedRectangle" ? "Rounded rectangle" : el.payload.kind;
     case "image": {
+      if (el.payload.source === "inline") return "picture";
       const e = el.payload.entity;
       return e.displayName || e.entityId || (el.payload.source === "camera" ? "camera" : "picture");
     }

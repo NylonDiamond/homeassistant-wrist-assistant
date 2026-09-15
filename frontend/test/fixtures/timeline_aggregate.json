@@ -1,0 +1,283 @@
+{
+  "name": "Aggregate timeline",
+  "description": "Timelines built from several entities at once. The integration fetches every entity's recorded past and merges it into one ordinary states series, so the wire the watch reads is the one a single-entity strip has always read and neither renderer changes. What the document adds is the question: `aggregate` carries the entity list and the combine word, and the cache key carries both at its end so two groups over one span are two questions. `value` still names the first entity of the list, so an app that predates the key draws that one door rather than nothing. The doors strip merges three with `any` and its combine word stays off the wire at the default. The people strip merges two with `all`, which is written. The third names twenty-one entities, one over the cap the integration will merge, so it asks the recorder nothing and draws nothing rather than sending a request the server would refuse.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-0000000002E0",
+    "name": "Aggregate timeline",
+    "slotIndex": 3,
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "timeline",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002E1",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "binary_sensor.front_door",
+              "displayName": "Front door",
+              "domain": "binary_sensor"
+            }
+          },
+          "aggregate": {
+            "entities": [
+              "binary_sensor.front_door",
+              "binary_sensor.back_door",
+              "binary_sensor.side_gate"
+            ]
+          },
+          "historyMinutes": 360,
+          "bands": [
+            {
+              "id": "BBBBBBBB-0000-4000-8000-0000000002E1",
+              "match": "on",
+              "colorHex": "#FF453A"
+            },
+            {
+              "id": "BBBBBBBB-0000-4000-8000-0000000002E2",
+              "match": "off",
+              "colorHex": "#32D74B"
+            },
+            {
+              "id": "BBBBBBBB-0000-4000-8000-0000000002E3",
+              "match": "unavailable",
+              "colorHex": "#48484A"
+            }
+          ],
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.12,
+            "width": 0.9,
+            "height": 0.2,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "timeline",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002E2",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "person.jesse",
+              "displayName": "Jesse",
+              "domain": "person"
+            }
+          },
+          "aggregate": {
+            "entities": [
+              "person.jesse",
+              "person.sam"
+            ],
+            "combine": "all"
+          },
+          "historyMinutes": 180,
+          "bands": [
+            {
+              "id": "BBBBBBBB-0000-4000-8000-0000000002E4",
+              "match": "on",
+              "colorHex": "#32D74B"
+            },
+            {
+              "id": "BBBBBBBB-0000-4000-8000-0000000002E5",
+              "match": "off",
+              "colorHex": "#0A84FF"
+            }
+          ],
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.4,
+            "width": 0.9,
+            "height": 0.2,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "timeline",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002E3",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "binary_sensor.d0",
+              "displayName": "Door 0",
+              "domain": "binary_sensor"
+            }
+          },
+          "aggregate": {
+            "entities": [
+              "binary_sensor.d0",
+              "binary_sensor.d1",
+              "binary_sensor.d2",
+              "binary_sensor.d3",
+              "binary_sensor.d4",
+              "binary_sensor.d5",
+              "binary_sensor.d6",
+              "binary_sensor.d7",
+              "binary_sensor.d8",
+              "binary_sensor.d9",
+              "binary_sensor.d10",
+              "binary_sensor.d11",
+              "binary_sensor.d12",
+              "binary_sensor.d13",
+              "binary_sensor.d14",
+              "binary_sensor.d15",
+              "binary_sensor.d16",
+              "binary_sensor.d17",
+              "binary_sensor.d18",
+              "binary_sensor.d19",
+              "binary_sensor.d20"
+            ]
+          },
+          "bands": [
+            {
+              "id": "BBBBBBBB-0000-4000-8000-0000000002E6",
+              "match": "on",
+              "colorHex": "#FF453A"
+            },
+            {
+              "id": "BBBBBBBB-0000-4000-8000-0000000002E7",
+              "match": "off",
+              "colorHex": "#32D74B"
+            },
+            {
+              "id": "BBBBBBBB-0000-4000-8000-0000000002E8",
+              "match": "unavailable",
+              "colorHex": "#48484A"
+            }
+          ],
+          "rules": [],
+          "frame": {
+            "x": 0.05,
+            "y": 0.68,
+            "width": 0.9,
+            "height": 0.2,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "wedge",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {
+      "binary_sensor.front_door": {
+        "state": "on",
+        "domain": "binary_sensor"
+      },
+      "person.jesse": {
+        "state": "home",
+        "domain": "person"
+      },
+      "binary_sensor.d0": {
+        "state": "off",
+        "domain": "binary_sensor"
+      }
+    },
+    "templateResults": {},
+    "historySeries": {
+      "binary_sensor.front_door|360|120|states|any:binary_sensor.front_door,binary_sensor.back_door,binary_sensor.side_gate": "0:off 3600:on 7200:off 14400:unavailable 18000:off",
+      "person.jesse|180|120|states|all:person.jesse,person.sam": "0:off 2700:on 8100:off"
+    }
+  },
+  "expectedCompiled": {
+    "entities": [
+      "binary_sensor.front_door",
+      "person.jesse",
+      "binary_sensor.d0"
+    ],
+    "expressionKeys": [],
+    "historyKeys": [
+      "binary_sensor.front_door|360|120|states|any:binary_sensor.front_door,binary_sensor.back_door,binary_sensor.side_gate",
+      "person.jesse|180|120|states|all:person.jesse,person.sam"
+    ]
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002E1",
+          "kind": "timeline",
+          "isHidden": false,
+          "runs": [
+            {
+              "start": 0,
+              "end": 0.167,
+              "colorHex": "#32D74B"
+            },
+            {
+              "start": 0.167,
+              "end": 0.333,
+              "colorHex": "#FF453A"
+            },
+            {
+              "start": 0.333,
+              "end": 0.667,
+              "colorHex": "#32D74B"
+            },
+            {
+              "start": 0.667,
+              "end": 0.833,
+              "colorHex": "#48484A"
+            },
+            {
+              "start": 0.833,
+              "end": 1,
+              "colorHex": "#32D74B"
+            }
+          ]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002E2",
+          "kind": "timeline",
+          "isHidden": false,
+          "runs": [
+            {
+              "start": 0,
+              "end": 0.25,
+              "colorHex": "#0A84FF"
+            },
+            {
+              "start": 0.25,
+              "end": 0.75,
+              "colorHex": "#32D74B"
+            },
+            {
+              "start": 0.75,
+              "end": 1,
+              "colorHex": "#0A84FF"
+            }
+          ]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000002E3",
+          "kind": "timeline",
+          "isHidden": false,
+          "runs": []
+        }
+      ]
+    }
+  }
+}

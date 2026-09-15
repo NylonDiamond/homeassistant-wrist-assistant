@@ -1,0 +1,92 @@
+{
+  "name": "Custom SVG icon",
+  "description": "An icon layer drawing a path the author pasted rather than a catalogue glyph. The marker symbol `svg:custom` says there is no catalogue name behind the path, and `viewBox` says what box the path is drawn in: absent is the catalogue's 24x24, and a pasted drawing can name another. A marker with no path is a layer nothing can draw, so it falls back to the placeholder symbol the way a hand-typed `mdi:` name does.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-000000000031",
+    "name": "Custom SVG icon",
+    "slotIndex": 2,
+    "supportedFamilies": ["rectangular"],
+    "values": [],
+    "elements": [
+      {
+        "kind": "icon",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000311",
+          "symbol": {"kind": {"kind": "literal", "value": "svg:custom"}},
+          "path": "M12 2 L22 22 L2 22 Z",
+          "size": 16,
+          "colorSlot": {"baseColorHex": "#30D158"},
+          "rules": [],
+          "frame": {"x": 0.05, "y": 0.1, "width": 0.25, "height": 0.8, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "icon",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000312",
+          "symbol": {"kind": {"kind": "literal", "value": "svg:custom"}},
+          "path": "M8 8 H40 V40 H8 Z",
+          "viewBox": "0 0 48 48",
+          "size": 16,
+          "colorSlot": {"baseColorHex": "#0A84FF"},
+          "rules": [],
+          "frame": {"x": 0.375, "y": 0.1, "width": 0.25, "height": 0.8, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "icon",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000313",
+          "symbol": {"kind": {"kind": "literal", "value": "svg:custom"}},
+          "size": 16,
+          "colorSlot": {"baseColorHex": "#FFFFFF"},
+          "rules": [],
+          "frame": {"x": 0.7, "y": 0.1, "width": 0.25, "height": 0.8, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {"type": "refresh"}
+  },
+  "inputs": {
+    "entityStates": {},
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": [],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000311",
+          "kind": "icon",
+          "symbol": "svg:custom",
+          "path": "M12 2 L22 22 L2 22 Z",
+          "viewBox": null
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000312",
+          "kind": "icon",
+          "symbol": "svg:custom",
+          "path": "M8 8 H40 V40 H8 Z",
+          "viewBox": "0 0 48 48"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000313",
+          "kind": "icon",
+          "symbol": "questionmark.circle",
+          "path": null,
+          "viewBox": null
+        }
+      ]
+    }
+  }
+}

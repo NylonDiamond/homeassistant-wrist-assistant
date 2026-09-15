@@ -1,0 +1,92 @@
+{
+  "name": "Uploaded picture",
+  "description": "A picture layer carrying its own bytes. `source` is `inline`, `data` is base64 with no `data:` prefix, and the layer names no entity at all: there is nothing to fetch, so the `entity` key is not written. A `format` of `png` is the default and stays off the wire. The second layer is an upload with nothing in it yet, which draws the placeholder rather than anything from the picture cache. The third is an ordinary camera, unchanged, so the fetch list still has exactly one entity in it.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-000000000032",
+    "name": "Uploaded picture",
+    "slotIndex": 4,
+    "supportedFamilies": ["rectangular"],
+    "values": [],
+    "elements": [
+      {
+        "kind": "image",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000321",
+          "source": "inline",
+          "data": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR42mP476CAFTEMLQkAgYZXwZM8C00AAAAASUVORK5CYII=",
+          "rules": [],
+          "frame": {"x": 0, "y": 0, "width": 0.33, "height": 1, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "image",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000322",
+          "source": "inline",
+          "rules": [],
+          "frame": {"x": 0.33, "y": 0, "width": 0.33, "height": 1, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "image",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000323",
+          "entity": {"entityId": "camera.front", "displayName": "Front", "domain": "camera"},
+          "rules": [],
+          "frame": {"x": 0.66, "y": 0, "width": 0.34, "height": 1, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {"type": "refresh"}
+  },
+  "inputs": {
+    "entityStates": {
+      "camera.front": {"state": "idle", "domain": "camera"}
+    },
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": ["camera.front"],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000321",
+          "kind": "image",
+          "source": "inline",
+          "entityId": "",
+          "imageBytes": 74,
+          "showTimestamp": false,
+          "isHidden": false
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000322",
+          "kind": "image",
+          "source": "inline",
+          "entityId": "",
+          "imageBytes": 0,
+          "showTimestamp": false,
+          "isHidden": false
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000323",
+          "kind": "image",
+          "source": "camera",
+          "entityId": "camera.front",
+          "imageBytes": null,
+          "showTimestamp": false,
+          "isHidden": false
+        }
+      ]
+    }
+  }
+}

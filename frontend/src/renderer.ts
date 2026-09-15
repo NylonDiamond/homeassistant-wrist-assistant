@@ -11,6 +11,7 @@ import {
   TIMELINE_MIN_LABEL_SIZE,
   describeTapAction,
   imageTimeTextSize,
+  parseViewBox,
   HOME_FAMILIES,
   type DrawableFamily,
   type FamilyKind,
@@ -23,6 +24,7 @@ import {
   type LayerShadow,
   type NormalizedFrame,
   type Fill,
+  type LevelDirection,
   fillColorAt,
   gaugeLabelText,
 } from "./model.js";
@@ -33,6 +35,7 @@ import {
   type ResolvedBezelGauge,
   type ResolvedElement,
   type ResolvedLayout,
+  type ResolvedLevel,
   type ResolvedTextPart,
   type TextSpan,
   type TimelineLabel,
@@ -1849,41 +1852,127 @@ export function iconDrawnSide(el: Extract<ResolvedElement, { kind: "icon" }>): n
   return el.path !== undefined && el.path !== "" ? el.size * MDI_SIZE_FACTOR : el.size;
 }
 
+/** What one pass of a shape paints with. Three passes draw a shape that fills
+ * by value: the track, the clipped body, and the border on top of both. */
+interface ShapePaint {
+  fill: string;
+  fillOpacity: number;
+  stroke: string;
+  strokeOpacity: number;
+}
+
+/**
+ * How far a level's clip reaches past the box it measures, in design points.
+ *
+ * Big enough that the level's own edge is the only one that ever cuts the
+ * drawing: a glyph that overhangs its own box is still drawn wherever it sits
+ * on the filled side of the line.
+ */
+export const LEVEL_CLIP_REACH = 1000;
+
+/**
+ * The rectangle a level clips its layer to: the part of `box` the reading
+ * fills, measured from the edge its direction grows from. `up` fills from the
+ * bottom edge upward, `left` from the right edge leftward.
+ *
+ * Mirrors `CustomComplicationLevelMask` in the app repo, arithmetic for
+ * arithmetic.
+ */
+export function levelClipRect(
+  box: Box,
+  fraction: number,
+  direction: LevelDirection,
+): { x: number; y: number; w: number; h: number } {
+  const f = Math.min(1, Math.max(0, fraction));
+  const r = LEVEL_CLIP_REACH;
+  switch (direction) {
+    case "up":    return { x: box.x - r, y: box.y + box.h * (1 - f), w: box.w + r * 2, h: box.h * f + r };
+    case "down":  return { x: box.x - r, y: box.y - r, w: box.w + r * 2, h: r + box.h * f };
+    case "left":  return { x: box.x + box.w * (1 - f), y: box.y - r, w: box.w * f + r, h: box.h + r * 2 };
+    case "right": return { x: box.x - r, y: box.y - r, w: r + box.w * f, h: box.h + r * 2 };
+  }
+}
+
+/** One `<clipPath>` holding a level's rectangle, and the id to hand a `<g>`. */
+function levelClip(el: ResolvedElement, box: Box, level: ResolvedLevel) {
+  const id = `lv-${(levelSeq += 1).toString(36)}`;
+  // The box the level is measured in is the part of the frame the layer draws
+  // in, not the frame: a circle in a wide frame fills its own circle, and an
+  // icon fills the square its glyph is drawn at.
+  const r = levelClipRect(layerOutline(el, box), level.fraction, level.direction);
+  return {
+    id,
+    defs: svg`<defs><clipPath id=${id}><rect x=${r.x} y=${r.y} width=${r.w} height=${r.h} /></clipPath></defs>`,
+  };
+}
+
+let levelSeq = 0;
+
 function renderShape(el: Extract<ResolvedElement, { kind: "shape" }>, box: Box) {
   const paint = fillOrColor(el.fill, el.fillColorHex);
-  const fill = { fill: paint.fill, "fill-opacity": paint.opacity };
-  const defs = paint.defs === nothing ? nothing : svg`<defs>${paint.defs}</defs>`;
   const border = el.borderColorHex ? parseColor(el.borderColorHex) : undefined;
   const bw = border ? el.borderWidth : 0;
-  // strokeBorder draws inside the bounds: inset by half the stroke.
+  const body: ShapePaint = {
+    fill: paint.fill,
+    fillOpacity: paint.opacity,
+    stroke: border ? border.color : "none",
+    strokeOpacity: border ? border.opacity : 0,
+  };
+  const defs = paint.defs === nothing ? nothing : svg`<defs>${paint.defs}</defs>`;
+  if (el.level === undefined) return svg`${defs}${shapeBody(el, box, bw, body)}`;
+  // Three passes rather than two, so the border is stroked once and whole: on
+  // the filled pass it would be cut off at the level, and on the track pass the
+  // fill would be painted over it.
+  const trackColor = colorAttrs(el.level.trackColorHex, "fill");
+  const track: ShapePaint = {
+    fill: trackColor.fill as string,
+    fillOpacity: trackColor["fill-opacity"] as number,
+    stroke: "none",
+    strokeOpacity: 0,
+  };
+  const filled: ShapePaint = { ...body, stroke: "none", strokeOpacity: 0 };
+  const outline: ShapePaint = { ...body, fill: "none", fillOpacity: 0 };
+  const clip = levelClip(el, box, el.level);
+  return svg`${defs}${clip.defs}
+    ${shapeBody(el, box, bw, track)}
+    <g clip-path=${`url(#${clip.id})`}>${shapeBody(el, box, bw, filled)}</g>
+    ${border ? shapeBody(el, box, bw, outline) : nothing}`;
+}
+
+/**
+ * One pass of a shape's body, at the geometry every pass shares.
+ *
+ * The paint attributes are written out on every element rather than shared
+ * through a nested template: Lit does not splice a template into the middle of
+ * a tag, so a shared fragment silently drops every attribute in it and the
+ * shape draws in SVG's default paint, which is black (seen 2026-09-05).
+ */
+function shapeBody(el: Extract<ResolvedElement, { kind: "shape" }>, box: Box, bw: number, p: ShapePaint) {
+  // strokeBorder draws inside the bounds: inset by half the stroke. The inset is
+  // the border's whether or not this pass strokes one, so every pass of a
+  // layer that fills by value lands on exactly the same outline.
   const inset = bw / 2;
-  const stroke = border ? border.color : "none";
-  const strokeOpacity = border ? border.opacity : 0;
-  // The paint attributes are written out on every element rather than shared
-  // through a nested template: Lit does not splice a template into the middle
-  // of a tag, so a shared fragment silently drops every attribute in it and the
-  // shape draws in SVG's default paint, which is black (seen 2026-09-05).
   switch (el.shapeKind) {
     case "circle": {
       const r = Math.min(box.w, box.h) / 2 - inset;
-      return svg`${defs}<circle cx=${box.cx} cy=${box.cy} r=${Math.max(0, r)}
-        fill=${fill.fill} fill-opacity=${fill["fill-opacity"]}
-        stroke=${stroke} stroke-opacity=${strokeOpacity} stroke-width=${bw} />`;
+      return svg`<circle cx=${box.cx} cy=${box.cy} r=${Math.max(0, r)}
+        fill=${p.fill} fill-opacity=${p.fillOpacity}
+        stroke=${p.stroke} stroke-opacity=${p.strokeOpacity} stroke-width=${bw} />`;
     }
     case "capsule": {
       const r = Math.min(box.w, box.h) / 2;
-      return svg`${defs}<rect x=${box.x + inset} y=${box.y + inset} width=${Math.max(0, box.w - bw)} height=${Math.max(0, box.h - bw)} rx=${r}
-        fill=${fill.fill} fill-opacity=${fill["fill-opacity"]}
-        stroke=${stroke} stroke-opacity=${strokeOpacity} stroke-width=${bw} />`;
+      return svg`<rect x=${box.x + inset} y=${box.y + inset} width=${Math.max(0, box.w - bw)} height=${Math.max(0, box.h - bw)} rx=${r}
+        fill=${p.fill} fill-opacity=${p.fillOpacity}
+        stroke=${p.stroke} stroke-opacity=${p.strokeOpacity} stroke-width=${bw} />`;
     }
     case "roundedRectangle":
-      return svg`${defs}<rect x=${box.x + inset} y=${box.y + inset} width=${Math.max(0, box.w - bw)} height=${Math.max(0, box.h - bw)} rx=${el.cornerRadius}
-        fill=${fill.fill} fill-opacity=${fill["fill-opacity"]}
-        stroke=${stroke} stroke-opacity=${strokeOpacity} stroke-width=${bw} />`;
+      return svg`<rect x=${box.x + inset} y=${box.y + inset} width=${Math.max(0, box.w - bw)} height=${Math.max(0, box.h - bw)} rx=${el.cornerRadius}
+        fill=${p.fill} fill-opacity=${p.fillOpacity}
+        stroke=${p.stroke} stroke-opacity=${p.strokeOpacity} stroke-width=${bw} />`;
     case "rectangle":
-      return svg`${defs}<rect x=${box.x + inset} y=${box.y + inset} width=${Math.max(0, box.w - bw)} height=${Math.max(0, box.h - bw)}
-        fill=${fill.fill} fill-opacity=${fill["fill-opacity"]}
-        stroke=${stroke} stroke-opacity=${strokeOpacity} stroke-width=${bw} />`;
+      return svg`<rect x=${box.x + inset} y=${box.y + inset} width=${Math.max(0, box.w - bw)} height=${Math.max(0, box.h - bw)}
+        fill=${p.fill} fill-opacity=${p.fillOpacity}
+        stroke=${p.stroke} stroke-opacity=${p.strokeOpacity} stroke-width=${bw} />`;
     case "line": {
       // A bar down the middle of the frame's long side. The border is not drawn:
       // a line's colour is its fill, and a stroke around a 1 pt bar would only
@@ -1892,27 +1981,43 @@ function renderShape(el: Extract<ResolvedElement, { kind: "shape" }>, box: Box) 
       const t = Math.max(0, Math.min(el.thickness, along ? box.h : box.w));
       const x = along ? box.x : box.cx - t / 2;
       const y = along ? box.cy - t / 2 : box.y;
-      return svg`${defs}<rect x=${x} y=${y} width=${along ? box.w : t} height=${along ? t : box.h}
-        fill=${fill.fill} fill-opacity=${fill["fill-opacity"]} stroke="none" />`;
+      return svg`<rect x=${x} y=${y} width=${along ? box.w : t} height=${along ? t : box.h}
+        fill=${p.fill} fill-opacity=${p.fillOpacity} stroke="none" />`;
     }
   }
 }
 
 function renderIcon(el: Extract<ResolvedElement, { kind: "icon" }>, box: Box, icons: IconProvider) {
+  if (el.level === undefined) return iconGlyph(el, box, icons, el.colorHex);
+  // The whole glyph in the track colour, then the same glyph again in its own,
+  // cut off at the level.
+  const clip = levelClip(el, box, el.level);
+  return svg`${clip.defs}
+    ${iconGlyph(el, box, icons, el.level.trackColorHex)}
+    <g clip-path=${`url(#${clip.id})`}>${iconGlyph(el, box, icons, el.colorHex)}</g>`;
+}
+
+/** The icon's glyph in one colour, centred in its frame. */
+function iconGlyph(el: Extract<ResolvedElement, { kind: "icon" }>, box: Box, icons: IconProvider, colorHex: string) {
   // A Material Design icon travels as its own outline, so the preview draws
   // exactly what the document carries, the way the watch does. MDI's box is
-  // always 24 units, hence the fixed divisor.
+  // always 24 units; a drawing the author pasted says its own in `viewBox`.
+  // Fitted into the square and centred, which is what `SVGPathShape` does.
   if (el.path !== undefined && el.path !== "") {
-    const c = colorAttrs(el.colorHex, "fill");
+    const c = colorAttrs(colorHex, "fill");
     const s = el.size * MDI_SIZE_FACTOR;
-    return svg`<g transform="translate(${box.cx - s / 2} ${box.cy - s / 2}) scale(${s / 24})">
+    const vb = parseViewBox(el.viewBox);
+    const k = Math.min(s / vb.width, s / vb.height);
+    const tx = box.cx - (vb.width * k) / 2 - vb.minX * k;
+    const ty = box.cy - (vb.height * k) / 2 - vb.minY * k;
+    return svg`<g transform="translate(${tx} ${ty}) scale(${k})">
       <path d=${el.path} fill=${c.fill} fill-opacity=${c["fill-opacity"]} /></g>`;
   }
-  const glyph = icons.render(el.symbol, el.size, el.colorHex);
+  const glyph = icons.render(el.symbol, el.size, colorHex);
   if (glyph) return svg`<g transform="translate(${box.cx - el.size / 2} ${box.cy - el.size / 2})">${glyph}</g>`;
   // Missing-symbol placeholder: a dashed box with the name, so the layer is
   // still visible and the user can see which name failed to resolve.
-  const c = colorAttrs(el.colorHex, "stroke");
+  const c = colorAttrs(colorHex, "stroke");
   const s = el.size;
   return svg`
     <rect x=${box.cx - s / 2} y=${box.cy - s / 2} width=${s} height=${s} rx=${s * 0.2}
@@ -2035,6 +2140,9 @@ export function timestampChipRect(
  * avatar rather than a missing camera. */
 export function imagePlaceholderSymbol(source: ImageSource, entityId: string): string {
   if (source === "camera") return "camera.fill";
+  // An inline picture that draws nothing has bytes the decoder refused, not a
+  // fetch that has not landed, so it stands in as a picture.
+  if (source === "inline") return "photo";
   switch (entityId.split(".")[0]) {
     case "camera": return "camera.fill";
     case "person": return "person.crop.circle";
@@ -2085,7 +2193,8 @@ function renderImage(el: Extract<ResolvedElement, { kind: "image" }>, box: Box, 
   } else if (el.url) {
     content = svg`<image href=${el.url} x=${box.x} y=${box.y} width=${box.w} height=${box.h}
       preserveAspectRatio=${el.contentMode === "fit" ? "xMidYMid meet" : "xMidYMid slice"} />`;
-  } else if (options.pictureScene && ["camera.fill", "photo"].includes(imagePlaceholderSymbol(el.source, el.entityId))) {
+  } else if (options.pictureScene && el.source !== "inline"
+    && ["camera.fill", "photo"].includes(imagePlaceholderSymbol(el.source, el.entityId))) {
     content = renderPictureScene(box, `${clipId}-sky`);
   } else {
     content = svg`

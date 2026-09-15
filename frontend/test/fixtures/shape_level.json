@@ -1,0 +1,150 @@
+{
+  "name": "Shape level",
+  "description": "Fill by value on a shape layer. A tank fills upward across a sourced scale, a circle empties downward, and a gradient body still belongs to the filled part while the track stays one flat colour. A line carries a level and drops it: a line is the whole of what the layer draws, so filling part of it would only be a shorter line, and both renderers refuse it rather than disagreeing about it.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-0000000000E4",
+    "name": "Shape level",
+    "slotIndex": 0,
+    "supportedFamilies": ["rectangular"],
+    "values": [],
+    "elements": [
+      {
+        "kind": "shape",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000401",
+          "kind": "roundedRectangle",
+          "cornerRadius": 4,
+          "colorSlot": {"baseColorHex": "#0A84FF"},
+          "borderColorHex": "#FFFFFF80",
+          "borderWidth": 1,
+          "level": {
+            "value": {"kind": {"kind": "entityState", "entityId": "sensor.tank", "displayName": "Tank", "domain": "sensor"}},
+            "maxSource": {"kind": {"kind": "entityState", "entityId": "sensor.capacity", "displayName": "Capacity", "domain": "sensor"}}
+          },
+          "rules": [],
+          "frame": {"x": 0.05, "y": 0.1, "width": 0.2, "height": 0.8, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "shape",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000402",
+          "kind": "circle",
+          "cornerRadius": 6,
+          "colorSlot": {"baseColorHex": "#32D74B"},
+          "borderWidth": 1,
+          "level": {
+            "value": {"kind": {"kind": "entityState", "entityId": "sensor.humidity", "displayName": "Humidity", "domain": "sensor"}},
+            "minValue": 20,
+            "maxValue": 60,
+            "direction": "down",
+            "trackColorHex": "#1C1C1E"
+          },
+          "rules": [],
+          "frame": {"x": 0.3, "y": 0.1, "width": 0.2, "height": 0.8, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "shape",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000403",
+          "kind": "capsule",
+          "cornerRadius": 6,
+          "colorSlot": {"baseColorHex": "#FF453A"},
+          "borderWidth": 1,
+          "fill": {
+            "kind": "linear",
+            "stops": [
+              {"at": 0, "colorHex": "#FF453A"},
+              {"at": 1, "colorHex": "#FFD60A"}
+            ],
+            "angle": 90
+          },
+          "level": {
+            "value": {"kind": {"kind": "literal", "value": "75"}},
+            "direction": "left"
+          },
+          "rules": [],
+          "frame": {"x": 0.55, "y": 0.1, "width": 0.2, "height": 0.8, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "shape",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000404",
+          "kind": "line",
+          "cornerRadius": 6,
+          "thickness": 2,
+          "colorSlot": {"baseColorHex": "#FFFFFF"},
+          "borderWidth": 1,
+          "level": {"value": {"kind": {"kind": "literal", "value": "50"}}},
+          "rules": [],
+          "frame": {"x": 0.8, "y": 0.1, "width": 0.15, "height": 0.8, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {"type": "refresh"}
+  },
+  "inputs": {
+    "entityStates": {
+      "sensor.tank": {"state": "30", "domain": "sensor"},
+      "sensor.capacity": {"state": "40", "domain": "sensor"},
+      "sensor.humidity": {"state": "50", "domain": "sensor"}
+    },
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": ["sensor.capacity", "sensor.humidity", "sensor.tank"],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000401",
+          "kind": "shape",
+          "shapeKind": "roundedRectangle",
+          "fillColorHex": "#0A84FF",
+          "level": {"fraction": 0.75, "direction": "up", "trackColorHex": "#0A84FF40"}
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000402",
+          "kind": "shape",
+          "shapeKind": "circle",
+          "fillColorHex": "#32D74B",
+          "level": {"fraction": 0.75, "direction": "down", "trackColorHex": "#1C1C1E"}
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000403",
+          "kind": "shape",
+          "shapeKind": "capsule",
+          "fillColorHex": "#FF453A",
+          "fill": {
+            "kind": "linear",
+            "stops": [
+              {"at": 0, "colorHex": "#FF453A"},
+              {"at": 1, "colorHex": "#FFD60A"}
+            ],
+            "angle": 90
+          },
+          "level": {"fraction": 0.75, "direction": "left", "trackColorHex": "#FF453A40"}
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000404",
+          "kind": "shape",
+          "shapeKind": "line",
+          "fillColorHex": "#FFFFFF",
+          "level": null
+        }
+      ]
+    }
+  }
+}

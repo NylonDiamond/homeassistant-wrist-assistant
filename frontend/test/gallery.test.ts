@@ -193,6 +193,22 @@ describe("galleryPublicFields", () => {
     expect(other).toContain("Hello Jane");
   });
 
+  it("says an uploaded picture is going with it, and keeps its bytes out of the text list", () => {
+    const { cfg, slots } = withText();
+    const picture = newElement("image");
+    if (picture.kind === "image") {
+      picture.payload.source = "inline";
+      // A tiny PNG, 74 bytes: one line in the step, not a wall of base64.
+      picture.payload.data = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR42mP476CAFTEMLQkAgYZXwZM8C00AAAAASUVORK5CYII=";
+    }
+    cfg.elements.push(picture);
+    const groups = galleryPublicFields(cfg, slots);
+    expect(group(groups, "Embedded pictures")).toEqual(["Embedded image, 1 KiB"]);
+    expect(group(groups, "Other text").join(" ")).not.toContain("iVBORw0KGgo");
+    // And it really does leave with the document: the scrub keeps it.
+    expect(exportText(cfg, "share", slots)).toContain("iVBORw0KGgo");
+  });
+
   it("shows template text as it will be sent, with the entity replaced", () => {
     const { cfg, slots } = withText();
     const templates = group(galleryPublicFields(cfg, slots), "Template text");

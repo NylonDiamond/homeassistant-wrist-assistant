@@ -54,6 +54,39 @@ MODE_STATES = "states"
 # chart with gaps on draws a hole across a slot spent entirely in these.
 OUTAGE_STATES = frozenset({"unavailable", "unknown"})
 
+# The recorded states that read as "this one is on" when several entities are
+# merged into a single strip.
+#
+# Home Assistant has no one word for it: a door is `open`, a person is `home`,
+# a lock is `unlocked`, a washer is `running`. The list below is every word a
+# domain writes for the half of its range an aggregate timeline is asked
+# about, so "any door open" and "everyone home" are both one switch rather
+# than a per-domain rule. A word that is not here counts as not active, and so
+# do `unavailable` and `unknown`: an entity that is not reporting cannot be
+# said to be on.
+ACTIVE_STATES = frozenset({
+    "on",
+    "home",
+    "open",
+    "playing",
+    "unlocked",
+    "true",
+    "heating",
+    "cooling",
+    "cleaning",
+    "running",
+    "problem",
+})
+
+# How the merged strip reads its entities. `any` is "at least one of them is
+# active", `all` is "every one of them is active".
+COMBINE_ANY = "any"
+COMBINE_ALL = "all"
+
+# The most entities one merged strip may name. Each one is a separate recorder
+# query, and twenty already reads as a solid bar on a 181 point face.
+MAX_AGGREGATE_ENTITIES = 20
+
 
 class HistorySeriesError(Exception):
     """Raised when the series cannot be produced at all."""
@@ -350,6 +383,144 @@ def states_to_string(pairs: list[tuple[int, str]]) -> str:
     return " ".join(f"{offset}:{quote(state, safe='')}" for offset, state in pairs)
 
 
+def normalize_combine(raw: Any, default: str = COMBINE_ANY) -> str:
+    """Coerce a caller's combine word into one of the two we serve.
+
+    Anything unrecognised reads as `any`, which is the reading that answers
+    the common question ("is any door open") and can never claim something is
+    on when nothing is.
+    """
+    if isinstance(raw, str) and raw.strip().lower() == COMBINE_ALL:
+        return COMBINE_ALL
+    return default
+
+
+def normalize_entities(raw: Any) -> list[str]:
+    """The entity list of an aggregate request, cleaned and capped.
+
+    Blanks and non-strings are dropped, surrounding space goes, and a repeated
+    id is kept once: a list that names the same door twice is one door, not a
+    door that counts double under `all`. Anything that is not a list at all
+    reads as no list, which is the single-entity timeline of today.
+
+    Raises `HistorySeriesError` above `MAX_AGGREGATE_ENTITIES`, because a
+    request the server silently truncated would draw a strip that answers a
+    different question than the one the editor showed.
+    """
+    if not isinstance(raw, (list, tuple)):
+        return []
+    seen: list[str] = []
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        entity_id = item.strip()
+        if entity_id and entity_id not in seen:
+            seen.append(entity_id)
+    if len(seen) > MAX_AGGREGATE_ENTITIES:
+        raise HistorySeriesError(
+            f"at most {MAX_AGGREGATE_ENTITIES} entities per timeline, got {len(seen)}"
+        )
+    return seen
+
+
+def is_active(state: str | None) -> bool:
+    """Whether one recorded state reads as "this one is on".
+
+    Case and surrounding space are ignored, so an integration that capitalises
+    `Home` is read the same as one that does not. `None` is an entity with no
+    reading at all, which is never active.
+    """
+    if state is None:
+        return False
+    return state.strip().lower() in ACTIVE_STATES
+
+
+def merge_state_changes(
+    tracks: list[tuple[str | None, list[tuple[datetime, str]]]],
+    start: datetime,
+    combine: str = COMBINE_ANY,
+) -> tuple[str | None, list[tuple[datetime, str]]]:
+    """Merge several entities' histories into one entity's worth of changes.
+
+    `tracks` is one `(anchor, changes)` pair per entity, in the shape the
+    single-entity path already produces: `anchor` is the state in force when
+    the window opened (None when the recorder held nothing before it), and
+    `changes` is oldest-first inside the window.
+
+    The merge is event-wise over the union of every entity's change times,
+    which is the only way to be right: a strip built from sampled slots would
+    miss a door that was open for ten seconds between two samples.
+
+    At each moment, `any` answers `on` when at least one entity is active and
+    `all` answers `on` only when every one of them is; anything else is `off`.
+    A moment where no entity has a usable reading (every one of them
+    `unavailable`, `unknown`, or never recorded) is `unavailable`, so a gap in
+    the recording still reads as a gap rather than as "nothing was on".
+
+    Returns `(anchor, changes)` for `state_pairs`, which coalesces the runs
+    and caps them. The result has exactly the shape of one entity's states
+    series, so nothing downstream learns that several entities went into it.
+    """
+    if not tracks:
+        return None, []
+
+    current = [anchor for anchor, _ in tracks]
+    # An entity that had no reading before the window opened leaves the merged
+    # strip without a left edge of its own only when none of them had one; a
+    # single known anchor is enough to say what the merge was at offset 0.
+    anchor_state = (
+        _merged_state(current, combine)
+        if any(state is not None for state in current)
+        else None
+    )
+
+    moments = sorted({when for _, changes in tracks for when, _ in changes})
+    cursors = [0] * len(tracks)
+    merged: list[tuple[datetime, str]] = []
+    for moment in moments:
+        for index, (_, changes) in enumerate(tracks):
+            while cursors[index] < len(changes) and changes[cursors[index]][0] <= moment:
+                current[index] = changes[cursors[index]][1]
+                cursors[index] += 1
+        merged.append((moment, _merged_state(current, combine)))
+    return anchor_state, merged
+
+
+def _merged_state(states: list[str | None], combine: str) -> str:
+    """One moment of the merge. See `merge_state_changes`."""
+    if all(state is None or state.strip().lower() in OUTAGE_STATES for state in states):
+        return "unavailable"
+    if combine == COMBINE_ALL:
+        return "on" if all(is_active(state) for state in states) else "off"
+    return "on" if any(is_active(state) for state in states) else "off"
+
+
+def split_state_history(
+    raw: list[Any], start: datetime
+) -> tuple[str | None, list[tuple[datetime, str]]]:
+    """One entity's recorder rows as `(anchor, changes)`.
+
+    `unavailable` and `unknown` are ordinary states here: a door sensor that
+    lost its radio for twenty minutes has a twenty-minute run, and hiding it
+    would draw the door as whatever it was before the gap.
+
+    Rows the recorder hands back from before the window are the anchor, the
+    state in force when the window opened; the rest are the changes inside it.
+    """
+    anchor: str | None = None
+    changes: list[tuple[datetime, str]] = []
+    for state in raw:
+        when = getattr(state, "last_changed", None)
+        text = getattr(state, "state", None)
+        if when is None or not isinstance(text, str) or not text:
+            continue
+        if when < start:
+            anchor = text
+            continue
+        changes.append((when, text))
+    return anchor, changes
+
+
 class HistorySeries(NamedTuple):
     """One fetched series and, in every-reading mode, how it was produced.
 
@@ -371,13 +542,16 @@ async def async_history_series(
     now: datetime | None = None,
     mode: str = MODE_NUMERIC,
     gaps: bool = False,
+    entities: list[str] | None = None,
+    combine: str = COMBINE_ANY,
 ) -> str:
     """Fetch one entity's recent history. Returns the wire string.
 
     See `async_history_series_detail`, which this wraps.
     """
     result = await async_history_series_detail(
-        hass, entity_id, minutes, points, now=now, mode=mode, gaps=gaps
+        hass, entity_id, minutes, points, now=now, mode=mode, gaps=gaps,
+        entities=entities, combine=combine,
     )
     return result.series
 
@@ -390,8 +564,18 @@ async def async_history_series_detail(
     now: datetime | None = None,
     mode: str = MODE_NUMERIC,
     gaps: bool = False,
+    entities: list[str] | None = None,
+    combine: str = COMBINE_ANY,
 ) -> HistorySeries:
     """Fetch one entity's recent history, with how the series was produced.
+
+    `entities` merges several entities into one strip instead of reading the
+    one named by `entity_id`: every entity's history is fetched and merged
+    event-wise into a single `on` / `off` / `unavailable` series, per
+    `combine` and `merge_state_changes`. The reply has exactly the shape of a
+    single entity's states series, so the watch and the preview draw it
+    without knowing a merge happened. Read in `states` mode only: averaging
+    several entities' numbers is a different question, and no caller asks it.
 
     `gaps` affects bucketed numeric mode: slots spent entirely `unavailable`
     or `unknown` come back as empty tokens instead of carrying the last value
@@ -417,6 +601,8 @@ async def async_history_series_detail(
     minutes = clamp_minutes(minutes)
     points = clamp_points(points)
     mode = normalize_mode(mode)
+    combine = normalize_combine(combine)
+    group = normalize_entities(entities)
     end = now or datetime.now(timezone.utc)
     start = end - timedelta(minutes=minutes)
 
@@ -430,6 +616,34 @@ async def async_history_series_detail(
         raise HistorySeriesError("recorder unavailable") from err
 
     recorder = get_instance(hass)
+
+    if group and mode == MODE_STATES:
+        # One query per entity, all on the recorder's own executor thread so
+        # the event loop waits once rather than twenty times.
+        # `state_changes_during_period` takes a single entity id in every
+        # recorder version this integration supports, which is why this loops
+        # rather than passing a list.
+        def _fetch_group() -> list[list[Any]]:
+            return [
+                state_changes_during_period(
+                    hass, start, end, one, no_attributes=True
+                ).get(one, []) or []
+                for one in group
+            ]
+
+        try:
+            rows = await recorder.async_add_executor_job(_fetch_group)
+        except HomeAssistantError as err:
+            _LOGGER.warning(
+                "history series failed for %s: %s", ", ".join(group), err
+            )
+            raise HistorySeriesError(str(err)) from err
+        tracks = [split_state_history(one, start) for one in rows]
+        anchor_state, changes = merge_state_changes(tracks, start, combine)
+        return HistorySeries(
+            states_to_string(state_pairs(changes, start, anchor_state))
+        )
+
     try:
         # Keyword args via `partial`: the positional signature of
         # `state_changes_during_period` has moved between recorder versions.
@@ -452,20 +666,7 @@ async def async_history_series_detail(
     raw = states_by_entity.get(entity_id, []) or []
 
     if mode == MODE_STATES:
-        # `unavailable` and `unknown` are ordinary states here: a door sensor
-        # that lost its radio for twenty minutes has a twenty-minute run, and
-        # hiding it would draw the door as whatever it was before the gap.
-        anchor_state: str | None = None
-        changes: list[tuple[datetime, str]] = []
-        for state in raw:
-            when = getattr(state, "last_changed", None)
-            text = getattr(state, "state", None)
-            if when is None or not isinstance(text, str) or not text:
-                continue
-            if when < start:
-                anchor_state = text
-                continue
-            changes.append((when, text))
+        anchor_state, changes = split_state_history(raw, start)
         return HistorySeries(states_to_string(state_pairs(changes, start, anchor_state)))
 
     anchor: float | None = None

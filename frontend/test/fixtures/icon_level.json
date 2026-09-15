@@ -1,0 +1,162 @@
+{
+  "name": "Icon level",
+  "description": "Fill by value on an icon layer. The glyph is drawn twice, the whole of it in the track colour and as much of it as the reading fills in its own, so what both sides have to agree on is the fraction, the direction and the track colour. The track is the layer's colour at a quarter strength unless the level names one, which means a rule that recolours the icon recolours both halves of it. A reading that never synced is a fraction of zero, which draws the track alone, and the ends of the scale follow entities the way a gauge's do.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-0000000000E3",
+    "name": "Icon level",
+    "slotIndex": 0,
+    "supportedFamilies": ["rectangular"],
+    "values": [],
+    "elements": [
+      {
+        "kind": "icon",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000301",
+          "symbol": {"kind": {"kind": "literal", "value": "battery.100"}},
+          "size": 18,
+          "level": {
+            "value": {"kind": {"kind": "entityState", "entityId": "sensor.battery", "displayName": "Battery", "domain": "sensor"}}
+          },
+          "colorSlot": {"baseColorHex": "#FFFFFF"},
+          "rules": [],
+          "frame": {"x": 0.02, "y": 0.1, "width": 0.22, "height": 0.8, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "icon",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000302",
+          "symbol": {"kind": {"kind": "literal", "value": "thermometer"}},
+          "size": 18,
+          "level": {
+            "value": {"kind": {"kind": "entityState", "entityId": "sensor.tank", "displayName": "Tank", "domain": "sensor"}},
+            "minValue": 10,
+            "maxSource": {"kind": {"kind": "entityState", "entityId": "sensor.limit", "displayName": "Limit", "domain": "sensor"}},
+            "direction": "right",
+            "trackColorHex": "#0A84FF40"
+          },
+          "colorSlot": {"baseColorHex": "#0A84FF"},
+          "rules": [],
+          "frame": {"x": 0.26, "y": 0.1, "width": 0.22, "height": 0.8, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "icon",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000303",
+          "symbol": {"kind": {"kind": "literal", "value": "battery.25"}},
+          "size": 18,
+          "level": {
+            "value": {"kind": {"kind": "entityState", "entityId": "sensor.battery", "displayName": "Battery", "domain": "sensor"}},
+            "direction": "down"
+          },
+          "colorSlot": {"baseColorHex": "#FFFFFF"},
+          "rules": [
+            {
+              "id": "DDDDDDDD-0000-4000-8000-000000000301",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000301",
+                  "when": {"join": "all", "tests": []},
+                  "then": [{"kind": "setColor", "value": {"kind": {"kind": "literal", "value": "#FF453A"}}}]
+                }
+              ]
+            }
+          ],
+          "frame": {"x": 0.5, "y": 0.1, "width": 0.22, "height": 0.8, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "icon",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000304",
+          "symbol": {"kind": {"kind": "literal", "value": "mdi:flash"}},
+          "path": "M7 2v11h3v9l7-12h-4l4-8z",
+          "size": 18,
+          "level": {
+            "value": {"kind": {"kind": "entityState", "entityId": "sensor.missing", "displayName": "Missing", "domain": "sensor"}},
+            "direction": "left"
+          },
+          "colorSlot": {"baseColorHex": "#FFD60A"},
+          "rules": [],
+          "frame": {"x": 0.74, "y": 0.1, "width": 0.22, "height": 0.8, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "icon",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000305",
+          "symbol": {"kind": {"kind": "literal", "value": "bolt"}},
+          "size": 12,
+          "colorSlot": {"baseColorHex": "#32D74B"},
+          "rules": [],
+          "frame": {"x": 0.4, "y": 0.0, "width": 0.2, "height": 0.2, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {"type": "refresh"}
+  },
+  "inputs": {
+    "entityStates": {
+      "sensor.battery": {"state": "62", "domain": "sensor"},
+      "sensor.tank": {"state": "18 °C", "domain": "sensor"},
+      "sensor.limit": {"state": "30", "domain": "sensor"}
+    },
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": ["sensor.battery", "sensor.limit", "sensor.missing", "sensor.tank"],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000301",
+          "kind": "icon",
+          "symbol": "battery.100",
+          "colorHex": "#FFFFFF",
+          "level": {"fraction": 0.62, "direction": "up", "trackColorHex": "#FFFFFF40"}
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000302",
+          "kind": "icon",
+          "symbol": "thermometer",
+          "colorHex": "#0A84FF",
+          "level": {"fraction": 0.4, "direction": "right", "trackColorHex": "#0A84FF40"}
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000303",
+          "kind": "icon",
+          "symbol": "battery.25",
+          "colorHex": "#FF453A",
+          "level": {"fraction": 0.62, "direction": "down", "trackColorHex": "#FF453A40"}
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000304",
+          "kind": "icon",
+          "symbol": "mdi:flash",
+          "path": "M7 2v11h3v9l7-12h-4l4-8z",
+          "colorHex": "#FFD60A",
+          "level": {"fraction": 0, "direction": "left", "trackColorHex": "#FFD60A40"}
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000305",
+          "kind": "icon",
+          "symbol": "bolt",
+          "colorHex": "#32D74B",
+          "level": null
+        }
+      ]
+    }
+  }
+}

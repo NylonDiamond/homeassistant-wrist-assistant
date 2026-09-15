@@ -261,17 +261,26 @@ export interface HistorySeriesRequest {
   /** Empty tokens where the entity was unavailable. Sent only as true, so an
    * older server never meets the key from a chart that does not ask. */
   gaps?: true;
+  /** An aggregate timeline's entities, merged server-side into one strip.
+   * Sent only when the layer has some, so a chart and a single-entity timeline
+   * send exactly what they always sent. */
+  entities?: string[];
+  /** How those are merged. Sent beside `entities` and never on its own. */
+  combine?: "any" | "all";
 }
 
 /** The wire body of one history query, with every optional key left out at
  * its default so a plain chart sends exactly what it always sent. */
-export function historySeriesRequest(r: { entityId: string; minutes: number; points: number; mode: "numeric" | "states"; gaps: boolean }): HistorySeriesRequest {
+export function historySeriesRequest(r: { entityId: string; minutes: number; points: number; mode: "numeric" | "states"; gaps: boolean; entities?: string[]; combine?: "any" | "all" }): HistorySeriesRequest {
   return {
     entity_id: r.entityId,
     minutes: r.minutes,
     points: r.points,
     ...(r.mode === "states" ? { mode: "states" as const } : {}),
     ...(r.gaps ? { gaps: true as const } : {}),
+    ...(r.entities !== undefined && r.entities.length > 0
+      ? { entities: [...r.entities], combine: r.combine ?? "any" }
+      : {}),
   };
 }
 

@@ -638,6 +638,128 @@ function mixHex(from: string, to: string, t: number): string {
   return mixed[3] === 255 ? `#${hex[0]}${hex[1]}${hex[2]}` : `#${hex.join("")}`;
 }
 
+/**
+ * `#RRGGBB` / `#RRGGBBAA` with its alpha multiplied, the rest untouched.
+ *
+ * What a level's track is painted with when it names no colour of its own: the
+ * layer's own colour, faded. Alpha rather than a blend toward the background,
+ * because a complication has no background it can count on, and because a tinted
+ * watch face keeps alpha and throws the hue away, so the faded copy still reads
+ * as the dimmer of the two there. Mirrors `CustomComplication.fadedHex` in the
+ * app repo.
+ */
+export function fadeHex(hex: string, factor: number): string {
+  const h = hex.replace(/^#/, "");
+  const rgb = h.length >= 6 ? h.slice(0, 6).toUpperCase() : "FFFFFF";
+  const alpha = h.length >= 8 ? parseInt(h.slice(6, 8), 16) : 255;
+  const faded = Math.min(255, Math.max(0, Math.round(alpha * factor)));
+  return faded === 255 ? `#${rgb}` : `#${rgb}${faded.toString(16).padStart(2, "0").toUpperCase()}`;
+}
+
+// ── fill by value ─────────────────────────────────────────────────────────
+
+/** Which way a level grows, named after the direction it fills in: `up` starts
+ * at the bottom edge, `left` at the right one. Mirrors
+ * `CustomComplication.LevelDirection` in the app repo. */
+export type LevelDirection = "up" | "down" | "left" | "right";
+
+export const LEVEL_DIRECTIONS: readonly [LevelDirection, string][] = [
+  ["up", "Up"],
+  ["down", "Down"],
+  ["left", "Left"],
+  ["right", "Right"],
+];
+
+export const LEVEL_DEFAULT_DIRECTION: LevelDirection = "up";
+export const LEVEL_DEFAULT_MIN = 0;
+export const LEVEL_DEFAULT_MAX = 100;
+
+/** How much of the layer's colour a track keeps when the level names no track
+ * colour: a quarter, which is where the gauge's own `#FFFFFF40` track landed. */
+export const LEVEL_TRACK_FADE = 0.25;
+
+/**
+ * Fills an icon or a shape from one edge according to a reading, the way a
+ * battery icon fills or a tank empties.
+ *
+ * The layer is drawn twice: the whole of it in the track colour, then the same
+ * layer again in its own colour, cut off at the level. Everything else about the
+ * layer (its gradient, its opacity, its shadow, its rules) applies to both
+ * halves, because both halves are the layer.
+ *
+ * Absent means the layer draws once, as it always did. Mirrors
+ * `CustomComplication.Level` in the app repo.
+ */
+export interface Level {
+  /** The reading, read exactly as a gauge reads its own. */
+  value: Value;
+  /** The low end of the scale. Default 0, left off the wire at that. */
+  minValue: number;
+  /** The high end. Default 100, left off the wire at that. */
+  maxValue: number;
+  /** Where the low end comes from when it follows an entity instead of the
+   * typed-in `minValue`, exactly as on a gauge. A source that resolves to no
+   * number falls back to `minValue`. Absent means the typed-in number. */
+  minSource?: Value;
+  /** The high end, read the same way, with `maxValue` behind it. */
+  maxSource?: Value;
+  /** Which way the fill grows. Default `up`, left off the wire at that. */
+  direction: LevelDirection;
+  /** The unfilled part's colour. Absent paints it in the layer's own colour at
+   * `LEVEL_TRACK_FADE`. */
+  trackColorHex?: string;
+}
+
+/** What a level starts as when the editor's switch is turned on, reading the
+ * entity the layer already names when there is one. */
+export function defaultLevel(value: Value): Level {
+  return { value, minValue: LEVEL_DEFAULT_MIN, maxValue: LEVEL_DEFAULT_MAX, direction: LEVEL_DEFAULT_DIRECTION };
+}
+
+/** A level written by a newer panel falls back rather than throwing, matching
+ * the Swift decoder: a direction this build cannot draw fills upward. */
+function parseLevel(o: unknown): Level | undefined {
+  if (!isObject(o)) return undefined;
+  const level: Level = {
+    value: isObject(o.value) ? parseValue(o.value) : literal("50"),
+    minValue: num(o.minValue, LEVEL_DEFAULT_MIN),
+    maxValue: num(o.maxValue, LEVEL_DEFAULT_MAX),
+    direction: pickWord(o.direction, LEVEL_DIRECTIONS.map(([d]) => d), LEVEL_DEFAULT_DIRECTION),
+  };
+  if (isObject(o.minSource)) level.minSource = parseValue(o.minSource);
+  if (isObject(o.maxSource)) level.maxSource = parseValue(o.maxSource);
+  const track = optStr(o.trackColorHex);
+  if (track !== undefined && track !== "") level.trackColorHex = track;
+  return level;
+}
+
+/** The matching write. Every key but the reading is left off at its default, so
+ * a plain level on a battery icon is two keys. */
+function encodeLevel(l: Level): J {
+  const o: J = { value: encodeValue(l.value) };
+  if (l.minValue !== LEVEL_DEFAULT_MIN) o.minValue = encNum(l.minValue);
+  if (l.maxValue !== LEVEL_DEFAULT_MAX) o.maxValue = encNum(l.maxValue);
+  if (l.minSource !== undefined) o.minSource = encodeValue(l.minSource);
+  if (l.maxSource !== undefined) o.maxSource = encodeValue(l.maxSource);
+  if (l.direction !== LEVEL_DEFAULT_DIRECTION) o.direction = l.direction;
+  if (l.trackColorHex !== undefined) o.trackColorHex = l.trackColorHex;
+  return o;
+}
+
+/** Read a level onto a layer that can carry one: the two drawing kinds the app
+ * repo decodes it on, and nowhere else. A `line` shape is the exception, and it
+ * is left to the editor rather than dropped here, so a hand-written document
+ * keeps what it says. */
+function readLevel(p: J, payload: { level?: Level }): void {
+  const level = parseLevel(p.level);
+  if (level !== undefined) payload.level = level;
+}
+
+/** The matching write. A layer that fills nothing writes no key. */
+function writeLevel(payload: { level?: Level }, o: J): void {
+  if (payload.level !== undefined) o.level = encodeLevel(payload.level);
+}
+
 // ── curved text ───────────────────────────────────────────────────────────
 
 /** The shapes a text layer may curve on: every shape with a canvas. Inline has
@@ -1076,9 +1198,134 @@ export interface IconElement extends ElementBase {
   /** The SVG `d` string of a Material Design icon, against MDI's invariant
    * 24x24 viewBox. Set only when `symbol` is the literal name of an MDI icon
    * (`mdi:flash`), and carried in the document so the watch draws MDI without
-   * shipping a catalogue. Absent means the layer draws an SF Symbol. */
+   * shipping a catalogue. Absent means the layer draws an SF Symbol.
+   *
+   * A drawing the author pasted uses the same key, with `symbol` set to
+   * `CUSTOM_SVG_SYMBOL`. */
   path?: string;
+  /** The box `path` is drawn in, as SVG writes it: "minX minY width height".
+   * Absent is the catalogue's 24x24, so the key stays off the wire unless a
+   * pasted drawing needs another box. */
+  viewBox?: string;
   size: number;
+  /** Fills the glyph from one edge by a reading. Absent draws it whole. */
+  level?: Level;
+}
+
+/**
+ * The `symbol` an icon carries when its `path` is the author's own drawing
+ * rather than a catalogue glyph.
+ *
+ * It has to be a name no catalogue can produce: an SF Symbol name is a
+ * dot-separated identifier and never holds a colon, and every Material Design
+ * name starts with `mdi:`. Keeping the marker in `symbol` is what lets the
+ * icon rules stay as they are: a rule that swaps the icon, or an entity that
+ * supplies its own, still names an SF Symbol and still drops the path.
+ * Mirrors `CustomComplication.IconElement.customPathSymbol` in the app.
+ */
+export const CUSTOM_SVG_SYMBOL = "svg:custom";
+/** The box a catalogue glyph is authored in. `viewBox` is never written when
+ * it says this. Mirrors `IconElement.defaultViewBox` in the app. */
+export const ICON_DEFAULT_VIEWBOX = "0 0 24 24";
+/** The longest `path` a pasted drawing may carry, in bytes. The document has a
+ * 256 KiB cap of its own and one layer does not get to eat it. */
+export const ICON_MAX_PATH_BYTES = 8 * 1024;
+
+/** Whether this icon layer draws a path the author pasted rather than a
+ * catalogue glyph. */
+export function isCustomSvgIcon(el: IconElement): boolean {
+  return el.symbol.kind.kind === "literal" && el.symbol.kind.value === CUSTOM_SVG_SYMBOL;
+}
+
+/** `viewBox` as it belongs on the wire: undefined for nothing, for an empty
+ * string, and for the catalogue box, which is the default and is never
+ * written. Mirrors `IconElement.normalizedViewBox` in the app. */
+export function normalizeViewBox(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  const trimmed = raw.trim();
+  if (trimmed === "" || trimmed === ICON_DEFAULT_VIEWBOX) return undefined;
+  return trimmed;
+}
+
+/** The four numbers of a `viewBox`, or the catalogue's 24x24 box for anything
+ * that is not four finite numbers with an area. A damaged box still draws, the
+ * way the app's `SVGPath.viewBox` does. */
+export function parseViewBox(raw: string | undefined): { minX: number; minY: number; width: number; height: number } {
+  const fallback = { minX: 0, minY: 0, width: 24, height: 24 };
+  if (raw === undefined) return fallback;
+  const parts = raw.trim().split(/[\s,]+/).filter((s) => s !== "");
+  if (parts.length !== 4) return fallback;
+  const numbers = parts.map((p) => Number(p));
+  if (!numbers.every((n) => Number.isFinite(n))) return fallback;
+  const [minX, minY, width, height] = numbers as [number, number, number, number];
+  if (!(width > 0) || !(height > 0)) return fallback;
+  return { minX, minY, width, height };
+}
+
+/** What a pasted drawing gave us, or why it was refused. The message is shown
+ * to the author as it stands, so it says what to do next. */
+export type SvgPasteResult =
+  | { ok: true; path: string; viewBox?: string }
+  | { ok: false; error: string };
+
+/** Only the characters an SVG path can hold: the commands, digits, signs,
+ * separators, and the exponent letters. Deliberately loose, because the app's
+ * parser is the one that decides whether the path draws, and a drawing this
+ * refuses is one nobody can fix by hand. */
+const PATH_CHARACTERS = /^[MmLlHhVvCcSsQqTtAaZz0-9eE+\-.,\s]+$/;
+
+/**
+ * A pasted SVG, as the wire wants it.
+ *
+ * Takes either a bare `d` string or whole `<svg>` markup. From markup it reads
+ * the `viewBox` attribute and joins the `d` of every `<path>`, in document
+ * order; a `<circle>`, a `<rect>` or a `<g transform>` is ignored, because
+ * drawing half of a picture silently is worse than saying what happened.
+ */
+export function parseSvgPaste(raw: string): SvgPasteResult {
+  const text = raw.trim();
+  if (text === "") return { ok: false, error: "Paste an SVG path or the whole <svg> markup." };
+  const markup = text.startsWith("<");
+  const d = markup ? svgMarkupPaths(text) : text.replace(/\s+/g, " ").trim();
+  if (markup && d === "") {
+    return { ok: false, error: "That markup has no <path> in it. Only paths can be drawn on a watch face." };
+  }
+  if (!PATH_CHARACTERS.test(d)) {
+    return { ok: false, error: "That is not an SVG path: it holds characters no path command uses." };
+  }
+  if (!/[Mm]/.test(d)) return { ok: false, error: "An SVG path starts with a move command (M)." };
+  const bytes = new TextEncoder().encode(d).length;
+  if (bytes > ICON_MAX_PATH_BYTES) {
+    return {
+      ok: false,
+      error: `That drawing is ${Math.ceil(bytes / 1024)} KB of path and the limit is ${ICON_MAX_PATH_BYTES / 1024} KB. Simplify it in a vector editor first.`,
+    };
+  }
+  const viewBox = markup ? normalizeViewBox(svgMarkupViewBox(text)) : undefined;
+  return viewBox === undefined ? { ok: true, path: d } : { ok: true, path: d, viewBox };
+}
+
+/** Every `<path>`'s `d` in some SVG markup, joined into one path. Two subpaths
+ * joined this way draw exactly as they did apart, because a path's commands
+ * are absolute or relative to where the last one left off and every `d` here
+ * starts with its own move. */
+function svgMarkupPaths(markup: string): string {
+  const out: string[] = [];
+  for (const tag of markup.matchAll(/<path\b[^>]*>/gi)) {
+    const d = /\sd\s*=\s*("([^"]*)"|'([^']*)')/i.exec(tag[0]);
+    const value = (d?.[2] ?? d?.[3] ?? "").replace(/\s+/g, " ").trim();
+    if (value !== "") out.push(value);
+  }
+  return out.join(" ");
+}
+
+/** The `viewBox` of the outermost `<svg>` in some markup. */
+function svgMarkupViewBox(markup: string): string | undefined {
+  const tag = /<svg\b[^>]*>/i.exec(markup);
+  if (!tag) return undefined;
+  const box = /\sviewBox\s*=\s*("([^"]*)"|'([^']*)')/i.exec(tag[0]);
+  const value = (box?.[2] ?? box?.[3] ?? "").replace(/\s+/g, " ").trim();
+  return value === "" ? undefined : value;
 }
 
 export interface GaugeElement extends ElementBase {
@@ -1729,6 +1976,11 @@ export interface HistoryRequest {
   mode: HistoryMode;
   /** Holes where the entity was unavailable. True only for a chart that asks. */
   gaps: boolean;
+  /** The entities an aggregate timeline merges into one strip. Empty for every
+   * chart and for every single-entity timeline, and left off the wire then. */
+  entities?: string[];
+  /** How those entities are merged. Only read when `entities` has some. */
+  combine?: TimelineCombine;
 }
 
 /** Every distinct history query a config needs, deduped. What the panel sends
@@ -1760,6 +2012,10 @@ export function chartHistoryRequests(config: CustomComplicationConfig): HistoryR
       const key = timelineHistoryKey(el.payload);
       const entityId = timelineHistoryEntity(el.payload);
       if (key === undefined || entityId === undefined) continue;
+      // A group past the cap asks nothing: the editor says so where the
+      // entities are listed, and a refused request would only blank the strip.
+      if (timelineAggregateOverCap(el.payload)) continue;
+      const group = timelineAggregateEntities(el.payload);
       add({
         key,
         entityId,
@@ -1767,6 +2023,12 @@ export function chartHistoryRequests(config: CustomComplicationConfig): HistoryR
         points: TIMELINE_HISTORY_POINTS,
         mode: "states",
         gaps: false,
+        ...(group.length > 0
+          ? {
+              entities: group,
+              combine: el.payload.aggregate?.combine ?? TIMELINE_DEFAULT_COMBINE,
+            }
+          : {}),
       });
     }
   }
@@ -1826,6 +2088,9 @@ export interface TimelineElement extends Omit<ElementBase, "colorSlot"> {
    * history request, the same rule the chart follows; anything else draws
    * nothing rather than a made-up strip. */
   value: Value;
+  /** Several entities merged into this one strip. Absent is the single-entity
+   * timeline, which is what every timeline written before this key was. */
+  aggregate?: TimelineAggregate;
   /** How far back to read, in minutes. Same choices as a chart's span. */
   historyMinutes: number;
   /** The colour table, checked in order. A run takes the colour of the first
@@ -1860,6 +2125,53 @@ export interface TimelineElement extends Omit<ElementBase, "colorSlot"> {
    * and gives the strip that height back; the label keys stay, because they
    * are what the layer was copied from. Omitted at true. */
   drawsTimeLabels?: boolean;
+}
+
+/** How an aggregate strip reads its entities: on while at least one of them is
+ * active, or only while every one of them is. Mirrors
+ * `CustomComplication.HistoryCombine` in the app repo. */
+export type TimelineCombine = "any" | "all";
+
+/** Several entities drawn as one strip.
+ *
+ * Home Assistant templates cannot read history, so "any door open" cannot be a
+ * template over six door sensors: the integration fetches each entity's past
+ * and merges them into one series server-side. What arrives is one ordinary
+ * states series, so nothing in either renderer knows a merge happened.
+ *
+ * `value` on the layer keeps holding the first entity of the list, so an app
+ * that predates this key draws that one entity's strip rather than nothing.
+ * Mirrors `CustomComplication.TimelineElement.Aggregate` in the app repo. */
+export interface TimelineAggregate {
+  /** The entity ids, in the order the editor lists them. Two to twenty. */
+  entities: string[];
+  combine: TimelineCombine;
+}
+
+/** The fewest entities worth merging: one entity merged with nothing is the
+ * single-entity strip with its states flattened to on and off. */
+export const TIMELINE_MIN_AGGREGATE_ENTITIES = 2;
+/** The most the integration will merge. Past this the panel refuses rather
+ * than sending a request the server would refuse: `MAX_AGGREGATE_ENTITIES` in
+ * `history_series.py`. */
+export const TIMELINE_MAX_AGGREGATE_ENTITIES = 20;
+export const TIMELINE_DEFAULT_COMBINE: TimelineCombine = "any";
+/** Whatever a merged strip's entities are, the server sends back `on`, `off`
+ * and `unavailable`, which is the vocabulary of a binary sensor. That is the
+ * domain its colour table is seeded from. */
+export const TIMELINE_AGGREGATE_SEED_DOMAIN = "binary_sensor";
+
+export const TIMELINE_COMBINES: [TimelineCombine, string][] = [
+  ["any", "Any"],
+  ["all", "All"],
+];
+
+/** The one line under the Any / All control, which is the whole explanation
+ * the switch needs. */
+export function timelineCombineHint(combine: TimelineCombine): string {
+  return combine === "all"
+    ? "On when all of them are active"
+    : "On when any of them is active";
 }
 
 /** The clock a timeline's times are printed on. Mirrors
@@ -2003,13 +2315,52 @@ export function timelineHistoryEntity(el: TimelineElement): string | undefined {
   return el.value.kind.kind === "entityState" ? el.value.kind.entityId : undefined;
 }
 
+/** The entity ids an aggregate strip merges, cleaned the way the server cleans
+ * them: blanks dropped, repeats kept once. Empty for a single-entity timeline,
+ * which is every timeline without the key. */
+export function timelineAggregateEntities(el: TimelineElement): string[] {
+  const raw = el.aggregate?.entities ?? [];
+  const out: string[] = [];
+  for (const item of raw) {
+    const entityId = typeof item === "string" ? item.trim() : "";
+    if (entityId !== "" && !out.includes(entityId)) out.push(entityId);
+  }
+  return out;
+}
+
+/** The rows the editor draws for a merged strip: whatever is stored, padded
+ * with blanks up to the two a merge needs, so a strip that has just been
+ * switched on shows the box the second entity goes in. Blank rows never reach
+ * the wire; see the timeline encoder. */
+export function timelineAggregateRows(el: TimelineElement): string[] {
+  const rows = [...(el.aggregate?.entities ?? [])];
+  while (rows.length < TIMELINE_MIN_AGGREGATE_ENTITIES) rows.push("");
+  return rows;
+}
+
+/** True once the strip merges more entities than the integration will take.
+ * The editor says so and sends nothing, rather than letting the server refuse
+ * a request the author cannot see. */
+export function timelineAggregateOverCap(el: TimelineElement): boolean {
+  return timelineAggregateEntities(el).length > TIMELINE_MAX_AGGREGATE_ENTITIES;
+}
+
 /** The cache key for one timeline's recorder query, or undefined when it names
  * no entity. `states` is the fourth part, which is what keeps it apart from a
- * chart asking the same entity for the same span. */
+ * chart asking the same entity for the same span.
+ *
+ * An aggregate strip adds its combine word and its whole entity list at the
+ * end, so two groups over one span are two questions rather than one answer
+ * reused. A single-entity timeline's key is unchanged, down to the byte. The
+ * app hashes the same readable string in
+ * `CustomComplicationCompiler.historyReadableKey`. */
 export function timelineHistoryKey(el: TimelineElement): string | undefined {
   const entityId = timelineHistoryEntity(el);
   if (entityId === undefined) return undefined;
-  return `${entityId}|${timelineHistoryMinutes(el)}|${TIMELINE_HISTORY_POINTS}|states`;
+  const base = `${entityId}|${timelineHistoryMinutes(el)}|${TIMELINE_HISTORY_POINTS}|states`;
+  const group = timelineAggregateEntities(el);
+  if (group.length === 0) return base;
+  return `${base}|${el.aggregate?.combine ?? TIMELINE_DEFAULT_COMBINE}:${group.join(",")}`;
 }
 
 /** The colour a timeline reaches for on its own when a state has a well known
@@ -2100,6 +2451,9 @@ export interface ShapeElement extends ElementBase {
    * writing `colorSlot` as the first stop's colour, so an older watch app draws
    * the gradient's starting colour rather than nothing. */
   fill?: Fill;
+  /** Fills the body from one edge by a reading, like a tank. Absent draws the
+   * whole shape. Not offered on a `line`, which has no body to fill. */
+  level?: Level;
 }
 
 /** A picture, aspect-filled into its frame. No colorSlot: photos have no tint.
@@ -2108,20 +2462,39 @@ export interface ShapeElement extends ElementBase {
 /** Where an image layer's pixels come from. `camera` is a `camera.*` entity
  * grabbed through op=snapshot; `entityPicture` is any entity that carries an
  * `entity_picture` attribute (a person's avatar, a media player's cover art). */
-export type ImageSource = "camera" | "entityPicture";
+/** `inline` is a picture the author uploaded: its bytes are in the document,
+ * nothing is fetched and no entity is needed. */
+export type ImageSource = "camera" | "entityPicture" | "inline";
+/** How an inline picture's bytes are encoded. `png` is the default and is
+ * never written; the editor falls back to `jpeg` when PNG will not fit. */
+export type ImageFormat = "png" | "jpeg";
 /** How a snapshot meets its frame: `fill` crops it, `fit` shows all of it. */
 export type ImageContentMode = "fill" | "fit";
 export type ImageTimestampCorner = "topLeading" | "topTrailing" | "bottomLeading" | "bottomTrailing";
+
+/** The largest picture an inline layer may carry, decoded. The editor resizes
+ * and re-encodes until it fits and refuses anything bigger. Mirrors
+ * `CustomComplication.ImageElement.maximumInlineBytes` in the app. */
+export const IMAGE_INLINE_MAX_BYTES = 48 * 1024;
 
 export const IMAGE_DEFAULT_CORNER_RADIUS = 6;
 export const IMAGE_DEFAULT_TIMESTAMP_SIZE = 9;
 export const IMAGE_TIMESTAMP_CORNERS: ImageTimestampCorner[] = ["topLeading", "topTrailing", "bottomLeading", "bottomTrailing"];
 
 export interface ImageElement extends Omit<ElementBase, "colorSlot"> {
+  /** The picture's entity. An inline picture has none, and then the key is not
+   * written at all. */
   entity: EntityRef;
   /** Where the pixels come from. Encoded only when it is not `camera`, so a
    * document written before the key existed keeps its exact bytes. */
   source: ImageSource;
+  /** The picture's own bytes, base64 with no `data:` prefix, for an `inline`
+   * layer. Absent for every fetched picture, and encoded only when set.
+   * Capped at `IMAGE_INLINE_MAX_BYTES` decoded. */
+  data?: string;
+  /** How `data` is encoded. Absent is `png`, which is the default and is never
+   * written. */
+  format?: ImageFormat;
   /** Draw the fetched-at time in the picture's corner. Encoded only when true. */
   timestamp?: boolean;
   /** Every field below matches `CustomComplication.ImageElement` in the app and
@@ -2146,6 +2519,30 @@ export interface ImageElement extends Omit<ElementBase, "colorSlot"> {
    * chip near the mark instead of defaulting to the top left. */
   timestampX?: number;
   timestampY?: number;
+}
+
+/** How many bytes a base64 string decodes to, without decoding it. Padding
+ * counts down, exactly as the decoder does. */
+export function base64ByteLength(data: string): number {
+  const text = data.trim();
+  if (text === "") return 0;
+  const padding = text.endsWith("==") ? 2 : text.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor((text.length * 3) / 4) - padding);
+}
+
+/** The decoded size of a layer's inline picture, in bytes. 0 when the layer
+ * fetches its pixels or carries nothing. */
+export function inlineImageBytes(el: ImageElement): number {
+  return el.source === "inline" && el.data !== undefined ? base64ByteLength(el.data) : 0;
+}
+
+/** The `data:` URL that draws a layer's inline picture, or undefined when
+ * there is nothing to draw. The preview hands it straight to an SVG `<image>`. */
+export function inlineImageUrl(el: ImageElement): string | undefined {
+  if (el.source !== "inline") return undefined;
+  const data = el.data;
+  if (data === undefined || data === "") return undefined;
+  return `data:${el.format === "jpeg" ? "image/jpeg" : "image/png"};base64,${data}`;
 }
 
 /** Whether an image's timestamp is freely placed rather than cornered. Both
@@ -2780,6 +3177,20 @@ function parseTimelineBands(raw: unknown): TimelineBand[] {
   }));
 }
 
+/** The entity group of an aggregate timeline, or undefined when the layer has
+ * none. A key carrying no usable entity id reads as absent, which is the
+ * single-entity strip the layer's own `value` already names. */
+function parseTimelineAggregate(raw: unknown): TimelineAggregate | undefined {
+  if (!isObject(raw)) return undefined;
+  const entities: string[] = [];
+  for (const item of Array.isArray(raw.entities) ? raw.entities : []) {
+    const entityId = typeof item === "string" ? item.trim() : "";
+    if (entityId !== "" && !entities.includes(entityId)) entities.push(entityId);
+  }
+  if (entities.length === 0) return undefined;
+  return { entities, combine: raw.combine === "all" ? "all" : TIMELINE_DEFAULT_COMBINE };
+}
+
 /** A layer's shadow, clamped the way the app clamps it. An object with no
  * numbers at all still reads as a shadow: it is a layer asking for one, and a
  * radius of zero draws a hard edge rather than nothing. */
@@ -2881,6 +3292,11 @@ function parseElementKind(raw: unknown): Element {
       };
       const path = optStr(p.path);
       if (path !== undefined && path !== "") payload.path = path;
+      // Normalised on the way in, so a document that spells the catalogue box
+      // out re-encodes without it and both ports agree on the default.
+      const viewBox = normalizeViewBox(optStr(p.viewBox));
+      if (viewBox !== undefined) payload.viewBox = viewBox;
+      readLevel(p, payload);
       readChartAnchor(p, payload);
       return { kind: "icon", payload };
     }
@@ -3001,11 +3417,13 @@ function parseElementKind(raw: unknown): Element {
       };
     case "timeline": {
       const { colorSlot: _unused, ...base } = parseElementBase(p, "#FFFFFF");
+      const aggregate = parseTimelineAggregate(p.aggregate);
       return {
         kind: "timeline",
         payload: {
           ...base,
           value: isObject(p.value) ? parseValue(p.value) : literal(""),
+          ...(aggregate !== undefined ? { aggregate } : {}),
           historyMinutes: Math.max(1, Math.round(num(p.historyMinutes, TIMELINE_DEFAULT_MINUTES))),
           bands: parseTimelineBands(p.bands),
           otherColorHex: str(p.otherColorHex, TIMELINE_DEFAULT_OTHER_HEX),
@@ -3032,6 +3450,7 @@ function parseElementKind(raw: unknown): Element {
       if (typeof p.borderColorHex === "string") el.borderColorHex = p.borderColorHex;
       const shapeFill = parseFill(p.fill);
       if (shapeFill !== undefined) el.fill = shapeFill;
+      readLevel(p, el);
       readChartAnchor(p, el);
       return { kind: "shape", payload: el };
     }
@@ -3039,8 +3458,10 @@ function parseElementKind(raw: unknown): Element {
       const { colorSlot: _unused, ...base } = parseElementBase(p, "#FFFFFF");
       const el: ImageElement = {
         ...base,
-        entity: parseEntityRef(isObject(p.entity) ? p.entity : {}),
-        source: p.source === "entityPicture" ? "entityPicture" : "camera",
+        // An uploaded picture writes no entity at all, so a missing key is the
+        // empty reference rather than a parse error.
+        entity: isObject(p.entity) ? parseEntityRef(p.entity) : { entityId: "", displayName: "", domain: "" },
+        source: p.source === "entityPicture" ? "entityPicture" : p.source === "inline" ? "inline" : "camera",
         contentMode: p.contentMode === "fit" ? "fit" : "fill",
         zoom: num(p.zoom, 1),
         panX: num(p.panX, 0),
@@ -3051,6 +3472,9 @@ function parseElementKind(raw: unknown): Element {
           : "topLeading",
         timestampSize: num(p.timestampSize, IMAGE_DEFAULT_TIMESTAMP_SIZE),
       };
+      const data = optStr(p.data);
+      if (data !== undefined && data !== "") el.data = data;
+      if (p.format === "jpeg") el.format = "jpeg";
       if (p.timestamp === true) el.timestamp = true;
       // Both or neither: a lone coordinate is not a position, and treating it as
       // one would move the chip somewhere the author never put it. A half-written
@@ -4273,7 +4697,12 @@ function encodeElementKind(el: Element): J {
       // Between `symbol` and `size`, matching the app's encoder, and only when
       // set: an SF Symbol layer writes the bytes it always did.
       if (el.payload.path !== undefined && el.payload.path !== "") o.path = el.payload.path;
+      // Right after the path it belongs to, and only when it is not the
+      // catalogue box, so every MDI layer writes the bytes it always did.
+      const viewBox = normalizeViewBox(el.payload.viewBox);
+      if (viewBox !== undefined) o.viewBox = viewBox;
       o.size = encNum(el.payload.size);
+      writeLevel(el.payload, o);
       writeChartAnchor(el.payload, o);
       return { kind: "icon", payload: o };
     }
@@ -4400,6 +4829,22 @@ function encodeElementKind(el: Element): J {
         isHidden: t.isHidden,
         value: encodeValue(t.value),
       };
+      // Written only by a strip that merges several entities, so every timeline
+      // saved before this key existed is byte for byte what it was. `value`
+      // above still names the first of them, which is what an app that predates
+      // the key draws.
+      // Blank rows are the editor's own: a list being filled in has some, and
+      // a merge of nothing is not a merge, so a list with no id in it writes
+      // no key at all and the layer reads back as the single-entity strip.
+      const group = timelineAggregateEntities(t);
+      if (t.aggregate !== undefined && group.length > 0) {
+        o.aggregate = {
+          entities: group,
+          ...(t.aggregate.combine !== TIMELINE_DEFAULT_COMBINE
+            ? { combine: t.aggregate.combine }
+            : {}),
+        };
+      }
       // Same order and same "only when it differs" rule as the app's encoder, so
       // a timeline left as it was created writes the shortest payload it can.
       if (t.historyMinutes !== TIMELINE_DEFAULT_MINUTES) o.historyMinutes = Math.max(1, Math.round(t.historyMinutes));
@@ -4428,19 +4873,23 @@ function encodeElementKind(el: Element): J {
       // not a line writes exactly the bytes it always did.
       if (el.payload.thickness !== 1) o.thickness = encNum(el.payload.thickness);
       if (el.payload.fill !== undefined) o.fill = encodeFill(el.payload.fill);
+      writeLevel(el.payload, o);
       writeChartAnchor(el.payload, o);
       return { kind: "shape", payload: o };
     }
     case "image": {
       const p = el.payload;
-      const o: J = {
-        id: p.id,
-        entity: encodeEntityRef(p.entity),
-        rules: encodeRules(p.rules),
-        frame: encodeFrame(p.frame),
-        isHidden: p.isHidden,
-      };
+      const o: J = { id: p.id };
+      // An inline picture that names no entity writes no entity either: there
+      // is nothing to fetch and an empty reference would only be noise. Every
+      // fetched picture writes the key exactly as it always has.
+      if (p.source !== "inline" || p.entity.entityId !== "") o.entity = encodeEntityRef(p.entity);
+      o.rules = encodeRules(p.rules);
+      o.frame = encodeFrame(p.frame);
+      o.isHidden = p.isHidden;
       if (p.source !== "camera") o.source = p.source;
+      if (p.data !== undefined && p.data !== "") o.data = p.data;
+      if (p.format === "jpeg") o.format = "jpeg";
       if (p.timestamp === true) o.timestamp = true;
       // Same order and same "only when it differs" rule as the app's encoder,
       // so the two write the same bytes for the same document.
@@ -4820,6 +5269,8 @@ const K = {
   // `shape.fill`, `gauge.fill`, `chart.areaFill` and `layout.backgroundFill`.
   fill: ["kind", "stops", "angle"],
   fillStop: ["at", "colorHex"],
+  // What fills an icon or a shape by a reading. Carried by those two kinds only.
+  level: ["value", "minValue", "maxValue", "minSource", "maxSource", "direction", "trackColorHex"],
   // A gauge's two dial extras, each its own object on the gauge payload.
   gaugeTicks: ["count", "length", "colorHex", "majorEvery"],
   gaugeLabels: ["show", "size", "colorHex"],
@@ -4835,7 +5286,7 @@ const K = {
     "arc", "chartAnchor"],
   textPart: ["id", "value", "colorHex", "fontWeight", "fontSize", "fontDesign", "fontWidth", "italic",
     "coloring", "bands", "bandAboveColorHex"],
-  icon: ["symbol", "path", "size", "chartAnchor"],
+  icon: ["symbol", "path", "viewBox", "size", "level", "chartAnchor"],
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex",
     "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex", "total", "minSource", "maxSource",
     "fill", "ticks", "labels"],
@@ -4863,13 +5314,16 @@ const K = {
   // `timeLabels` is retired and never written, but a document saved the evening
   // it existed still carries it, and dropping it from this list would make that
   // document read as carrying a key nothing decodes.
-  timeline: ["value", "historyMinutes", "bands", "otherColorHex", "gap", "cornerRadius", "timeLabels", "labelSize", "labelColorHex", "labelsAbove", "timeLabelCount", "hourCycle", "minutes", "drawsTimeLabels"],
-  shape: ["kind", "cornerRadius", "thickness", "borderColorHex", "borderWidth", "fill", "chartAnchor"],
+  timeline: ["value", "aggregate", "historyMinutes", "bands", "otherColorHex", "gap", "cornerRadius", "timeLabels", "labelSize", "labelColorHex", "labelsAbove", "timeLabelCount", "hourCycle", "minutes", "drawsTimeLabels"],
+  // Several entities merged into one timeline strip. Carried by `timeline` and
+  // by nothing else; absent means the single-entity strip.
+  timelineAggregate: ["entities", "combine"],
+  shape: ["kind", "cornerRadius", "thickness", "borderColorHex", "borderWidth", "fill", "level", "chartAnchor"],
   // `timestampStyle` is retired (the age style, built and removed 2026-09-04).
   // It stays listed so a document saved while it existed does not read as
   // corrupt; nothing decodes it, and it leaves the wire on that document's next
   // save.
-  image: ["entity", "source", "timestamp", "contentMode", "zoom", "panX", "panY", "cornerRadius",
+  image: ["entity", "source", "data", "format", "timestamp", "contentMode", "zoom", "panX", "panY", "cornerRadius",
     "timestampCorner", "timestampSize", "timestampStyle", "timestampX", "timestampY",
     "chartAnchor"],
   // `grow` is retired (the uniform tap inflation, replaced by a resizable tap
@@ -5014,9 +5468,15 @@ export function auditUnknownKeys(raw: unknown): string[] {
       for (const fk of ["fill", "areaFill"]) if (fk in e.payload) fill(e.payload[fk], `${ep}.payload.${fk}`);
       if ("ticks" in e.payload) check(e.payload.ticks, K.gaugeTicks, `${ep}.payload.ticks`);
       if ("labels" in e.payload) check(e.payload.labels, K.gaugeLabels, `${ep}.payload.labels`);
+      if (isObject(e.payload.level)) {
+        const lp = `${ep}.payload.level`;
+        check(e.payload.level, K.level, lp);
+        for (const vk of ["value", "minSource", "maxSource"]) if (vk in e.payload.level) value(e.payload.level[vk], `${lp}.${vk}`);
+      }
       rules(e.payload.rules, `${ep}.payload.rules`);
       for (const vk of ["value", "symbol", "nowIndex", "total", "minSource", "maxSource"]) if (vk in e.payload) value(e.payload[vk], `${ep}.payload.${vk}`);
       if (kind === "text" && "arc" in e.payload) check(e.payload.arc, K.arc, `${ep}.payload.arc`);
+      if (kind === "timeline" && "aggregate" in e.payload) check(e.payload.aggregate, K.timelineAggregate, `${ep}.payload.aggregate`);
       if (kind === "text" && Array.isArray(e.payload.parts)) {
         e.payload.parts.forEach((part, j) => {
           check(part, K.textPart, `${ep}.payload.parts[${j}]`);
@@ -5339,7 +5799,11 @@ export function primaryValue(el: Element): Value | undefined {
     case "chart": return el.payload.value;
     case "timeline": return el.payload.value;
     case "shape": return undefined;
-    case "image": return { kind: { kind: "entityState", ...el.payload.entity } };
+    // An uploaded picture reads no entity: its bytes are the document's, so there
+    // is no state to fetch. Mirrors `hasPrimarySource` in the app.
+    case "image": return el.payload.source === "inline"
+      ? undefined
+      : { kind: { kind: "entityState", ...el.payload.entity } };
     case "tap": return undefined;
     case "chartTimes": return undefined;
     case "chartDots": return undefined;
@@ -6291,8 +6755,20 @@ export function setLayerEntity(
     if (next) el.payload.value = next;
     // A different entity reports different states, so the colour table is
     // written fresh for it. Picking the same entity again keeps any edits.
+    // A merged strip is the exception: whatever its entities are, the server
+    // sends back on and off, so the table is seeded for those instead.
     if (el.payload.bands.length === 0 || before !== full.entityId) {
-      el.payload.bands = seedTimelineBands(full.domain, deviceClass);
+      el.payload.bands = el.payload.aggregate !== undefined
+        ? seedTimelineBands(TIMELINE_AGGREGATE_SEED_DOMAIN)
+        : seedTimelineBands(full.domain, deviceClass);
+    }
+    // The list's first entity is what `value` names, so retargeting the layer
+    // retargets the first of the group rather than leaving the two disagreeing.
+    if (el.payload.aggregate !== undefined) {
+      el.payload.aggregate = {
+        ...el.payload.aggregate,
+        entities: el.payload.aggregate.entities.map((id, i) => (i === 0 ? full.entityId : id)),
+      };
     }
   } else if (el.kind === "image") {
     el.payload.entity = full;
@@ -6324,8 +6800,11 @@ export function setLayerEntity(
  * that hold more than one. */
 export type SitePart =
   | "total" | "nowIndex" | "gaugeMin" | "gaugeMax"
+  | "level" | "levelMin" | "levelMax"
   | "bezelText" | "curvedText" | "bezelGauge" | "bezelGaugeMin" | "bezelGaugeMax"
-  | "template" | "serviceData" | "textPart";
+  | "template" | "serviceData" | "textPart"
+  // One of the entities a merged timeline combines, past the first.
+  | "timelineGroup";
 
 /** Where in the document a `Value` sits, in enough detail to name it in words. */
 export interface ValueSite {
@@ -6381,7 +6860,11 @@ export function describeSite(site: EntitySite): string {
       if (site.part === "gaugeMin") return `Min on ${named}`;
       if (site.part === "gaugeMax") return `Max on ${named}`;
       if (site.part === "nowIndex") return `Now marker on ${named}`;
+      if (site.part === "level") return `Fill on ${named}`;
+      if (site.part === "levelMin") return `Fill min on ${named}`;
+      if (site.part === "levelMax") return `Fill max on ${named}`;
       if (site.part === "textPart") return `Part of ${named}`;
+      if (site.part === "timelineGroup") return `Combined on ${named}`;
       return `${upperFirst(word)} layer${site.layerName ? ` "${site.layerName}"` : ""}`;
     case "tap":
       return "Tap area";
@@ -6538,6 +7021,36 @@ function walkDocument(cfg: CustomComplicationConfig, visit: DocumentVisitor): vo
       if (el.kind === "gauge" && el.payload.minSource) onValue(el.payload.minSource, { ...base, part: "gaugeMin" });
       if (el.kind === "gauge" && el.payload.maxSource) onValue(el.payload.maxSource, { ...base, part: "gaugeMax" });
       if (el.kind === "chart" && el.payload.nowIndex) onValue(el.payload.nowIndex, { ...base, part: "nowIndex" });
+      // A level's reading and the two ends of its scale, in the order the
+      // compiler walks them, so an entity only a fill reads still shows up in a
+      // share and still lands in `dataSources`.
+      if (el.kind === "icon" || el.kind === "shape") {
+        const level = el.payload.level;
+        if (level) {
+          onValue(level.value, { ...base, part: "level" });
+          if (level.minSource) onValue(level.minSource, { ...base, part: "levelMin" });
+          if (level.maxSource) onValue(level.maxSource, { ...base, part: "levelMax" });
+        }
+      }
+      // A merged timeline's entity list. Plain ids rather than references, but
+      // still entities the document names: without this a share would scrub the
+      // first of them and post the other five, and an import would remap the
+      // first and leave the rest pointing at a house nobody has.
+      //
+      // After the layer's own value, so the first entity is met once with its
+      // display name and once without, and the named one wins in both tables.
+      if (el.kind === "timeline" && visit.ref && el.payload.aggregate !== undefined) {
+        const group = el.payload.aggregate.entities;
+        for (let i = 0; i < group.length; i++) {
+          const entityId = group[i] ?? "";
+          if (entityId === "") continue;
+          const next = visit.ref(
+            { entityId, displayName: "", domain: entityId.split(".")[0] ?? "" },
+            { ...base, part: "timelineGroup" },
+          );
+          if (next) group[i] = next.entityId;
+        }
+      }
     }
     const ruleSite: ValueSite = { ...base, kind: "rule" };
     for (const v of ruleValues(el.payload.rules)) onValue(v, ruleSite);

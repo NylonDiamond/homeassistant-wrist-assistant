@@ -213,6 +213,17 @@ export function compile(config: CustomComplicationConfig): Compiled {
     // Usually the built-in Hour, which costs a line of the template document
     // and no request at all.
     if (el.kind === "chart" && el.payload.nowIndex) visit(el.payload.nowIndex);
+    // An icon or a shape that fills by value reads an ordinary value, and the
+    // ends of its scale can follow entities the way a gauge's do. Nothing else
+    // fetches them, so a fill whose entity was never walked would sit empty.
+    if (el.kind === "icon" || el.kind === "shape") {
+      const level = el.payload.level;
+      if (level) {
+        visit(level.value);
+        if (level.minSource) visit(level.minSource);
+        if (level.maxSource) visit(level.maxSource);
+      }
+    }
     for (const v of ruleValues(el.payload.rules)) visit(v);
   }
   // Only the shapes the document supports: a layout left behind by a removed
