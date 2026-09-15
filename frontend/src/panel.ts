@@ -2122,9 +2122,9 @@ export class WristAssistantPanel extends LitElement {
       .over button.pick .glyph { margin: 0; }
     }
     /* With snapping on, the button and its size read as one accent pill. */
-    /* Opens to the left of the cog, since the cog is the pill's last button
-       and the stage clips whatever runs past its edge. */
-    .case-tool.snap-tool .pop-menu { left: auto; right: 0; min-width: 260px; padding: 6px; gap: 2px; }
+    /* Centred under the cog: the pill sits in the middle of the stage, so
+       this keeps the menu inside the stage's edges at every width. */
+    .case-tool.snap-tool .pop-menu { left: 50%; right: auto; transform: translateX(-50%); min-width: 260px; padding: 6px; gap: 2px; }
     .snap-menu label.row { display: flex; align-items: center; gap: 9px; cursor: pointer; padding: 6px 8px; }
     .snap-menu label.row input { margin: 0; accent-color: var(--wa-accent); }
     .snap-menu .sub { display: flex; align-items: center; gap: 8px; padding: 2px 8px 6px 33px; }
