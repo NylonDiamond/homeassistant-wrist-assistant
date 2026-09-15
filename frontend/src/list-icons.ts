@@ -134,6 +134,17 @@ const DOMAIN_FALLBACK_ICONS: Record<string, { on: string; off: string }> = {
 /** The last resort: a plain dot, for a domain nothing here names. */
 const PLAIN_ICONS = { on: "circle.fill", off: "circle" };
 
+/** A battery sensor's glyph, from its percentage: the SF battery at the
+ * nearest quarter, so 12 draws empty, 37 a quarter, 68 three quarters and 91
+ * full. Undefined when the state is not a number, which leaves the sensor on
+ * the plain dot like any other. Mirrors `batteryItemIcon` in the app. */
+function batteryItemIcon(state: string): string | undefined {
+  const n = Number(state);
+  if (!Number.isFinite(n)) return undefined;
+  const quarter = Math.min(4, Math.max(0, Math.round(n / 25)));
+  return `battery.${quarter * 25}percent`;
+}
+
 /** States that mean "this is doing something right now", which is what the
  * fallback pair reads to pick its side. The panel's own `isActiveState` list. */
 const ACTIVE_STATES = new Set([
@@ -150,8 +161,9 @@ const MISSING_STATES = new Set(["unavailable", "unknown", ""]);
  * The glyph one entity item draws.
  *
  * The state decides wherever the domain names its states, because a door that
- * is open and one that is closed are two pictures. Failing that the domain
- * decides, with the active spelling for a state that means "doing something".
+ * is open and one that is closed are two pictures. A battery sensor reads its
+ * percentage as a level. Failing that the domain decides, with the active
+ * spelling for a state that means "doing something".
  */
 export function entityItemIcon(domain: string, deviceClass: string, state: string): string {
   const d = domain.trim().toLowerCase();
@@ -161,6 +173,10 @@ export function entityItemIcon(domain: string, deviceClass: string, state: strin
   const onOff = ON_OFF_ICONS[d] ?? (d === "binary_sensor" ? BINARY_ICONS[c] ?? BINARY_DEFAULT_ICONS : undefined);
   if (onOff) return s === "off" ? onOff.off : onOff.on;
   if (d === "weather") return forecastItemIcon(s);
+  if (d === "sensor" && c === "battery") {
+    const glyph = batteryItemIcon(s);
+    if (glyph !== undefined) return glyph;
+  }
   const byState = DOMAIN_STATE_ICONS[d]?.[s];
   if (byState !== undefined) return byState;
   const pair = DOMAIN_FALLBACK_ICONS[d] ?? PLAIN_ICONS;

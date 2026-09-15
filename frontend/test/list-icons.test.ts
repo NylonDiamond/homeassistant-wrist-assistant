@@ -87,6 +87,23 @@ describe("the entity table", () => {
     expect(entityItemIcon("nonesuch", "", "active")).toBe("circle.fill");
   });
 
+  it("reads a battery sensor's percentage as a level, to the nearest quarter", () => {
+    expect(entityItemIcon("sensor", "battery", "12")).toBe("battery.0percent");
+    expect(entityItemIcon("sensor", "battery", "37")).toBe("battery.25percent");
+    expect(entityItemIcon("sensor", "battery", "50")).toBe("battery.50percent");
+    expect(entityItemIcon("sensor", "battery", "68")).toBe("battery.75percent");
+    expect(entityItemIcon("sensor", "battery", "91")).toBe("battery.100percent");
+    expect(entityItemIcon("sensor", "battery", "100")).toBe("battery.100percent");
+    // Out of range still lands on a real glyph, and words stay on the dot.
+    expect(entityItemIcon("sensor", "battery", "140")).toBe("battery.100percent");
+    expect(entityItemIcon("sensor", "battery", "-3")).toBe("battery.0percent");
+    expect(entityItemIcon("sensor", "battery", "low")).toBe("circle");
+    // The class means nothing on another domain, and a battery binary sensor
+    // keeps its own on-and-off pair.
+    expect(entityItemIcon("light", "battery", "on")).toBe("lightbulb.fill");
+    expect(entityItemIcon("binary_sensor", "battery", "on")).toBe("battery.25percent");
+  });
+
   it("says so when an entity is not reporting", () => {
     for (const state of ["unavailable", "unknown", ""]) {
       expect(entityItemIcon("light", "", state), state).toBe(UNKNOWN_ITEM_ICON);
@@ -113,6 +130,7 @@ describe("every glyph a list can draw", () => {
       names.add(entityItemIcon(domain, "", "on"));
       names.add(entityItemIcon(domain, "", "off"));
     }
+    for (const level of ["0", "25", "50", "75", "100"]) names.add(entityItemIcon("sensor", "battery", level));
     const curated = new Set(CURATED_SYMBOLS);
     expect([...names].filter((n) => !curated.has(n))).toEqual([]);
   });

@@ -214,7 +214,7 @@
                     "rotationDegrees": 0
                   },
                   "isHidden": false,
-                  "symbol": "circle",
+                  "symbol": "battery.0percent",
                   "colorHex": "#FFFFFF",
                   "size": 11
                 },
@@ -290,7 +290,7 @@
                     "rotationDegrees": 0
                   },
                   "isHidden": false,
-                  "symbol": "circle",
+                  "symbol": "battery.25percent",
                   "colorHex": "#FFFFFF",
                   "size": 11
                 },
@@ -366,7 +366,7 @@
                     "rotationDegrees": 0
                   },
                   "isHidden": false,
-                  "symbol": "circle",
+                  "symbol": "battery.75percent",
                   "colorHex": "#FFFFFF",
                   "size": 11
                 },
@@ -442,7 +442,7 @@
                     "rotationDegrees": 0
                   },
                   "isHidden": false,
-                  "symbol": "circle",
+                  "symbol": "battery.100percent",
                   "colorHex": "#FFFFFF",
                   "size": 11
                 },
@@ -528,7 +528,7 @@
                     "rotationDegrees": 0
                   },
                   "isHidden": false,
-                  "symbol": "circle",
+                  "symbol": "battery.0percent",
                   "colorHex": "#FFFFFF",
                   "size": 11
                 },
@@ -604,7 +604,7 @@
                     "rotationDegrees": 0
                   },
                   "isHidden": false,
-                  "symbol": "circle",
+                  "symbol": "battery.25percent",
                   "colorHex": "#FFFFFF",
                   "size": 11
                 },
@@ -680,7 +680,7 @@
                     "rotationDegrees": 0
                   },
                   "isHidden": false,
-                  "symbol": "circle",
+                  "symbol": "battery.75percent",
                   "colorHex": "#FFFFFF",
                   "size": 11
                 },
@@ -756,7 +756,7 @@
                     "rotationDegrees": 0
                   },
                   "isHidden": false,
-                  "symbol": "circle",
+                  "symbol": "battery.100percent",
                   "colorHex": "#FFFFFF",
                   "size": 11
                 },
