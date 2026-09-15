@@ -716,8 +716,8 @@ var vy=Object.defineProperty;var ky=Object.getOwnPropertyDescriptor;var A=(e,n,t
       ${i===void 0||a?m:h`
         ${ee("Radius",i.radius,o=>r(s=>{s.radius=Math.min(no,Math.max(to,o??Ma))},"arc-radius"),{step:.05,min:to,max:no,unit:"of box",def:Ma})}
         ${ee("Position",i.angle??0,o=>r(s=>{let l=o??0;l===0?delete s.angle:s.angle=l},"arc-angle"),{step:5,min:-360,max:360,unit:"\xB0",def:0})}
-        ${ee("Spread",Math.abs(i.sweep??Ue),o=>r(s=>{let l=(s.sweep??Ue)<0?-1:1,d=Ra(l*Math.abs(o??Ue));d===Ue?delete s.sweep:s.sweep=d},"arc-sweep"),{step:5,min:ml,max:gl,unit:"\xB0",def:Ue})}
         ${ee("Spacing",i.spacing??0,o=>r(s=>{let l=Ha(o??0);l===0?delete s.spacing:s.spacing=l},"arc-spacing"),{step:.5,min:yl,max:bl,unit:"pt",def:0})}
+        ${ee("Spread",Math.abs(i.sweep??Ue),o=>r(s=>{let l=(s.sweep??Ue)<0?-1:1,d=Ra(l*Math.abs(o??Ue));d===Ue?delete s.sweep:s.sweep=d},"arc-sweep"),{step:5,min:ml,max:gl,unit:"\xB0",def:Ue})}
         ${ae("Reads",S$(i),C$,o=>r(s=>{let l=Math.abs(s.sweep??Ue),d=o==="bottom"?-l:l;d===Ue?delete s.sweep:s.sweep=d,o==="bottom"?s.flip=!0:delete s.flip,o==="bottom"&&(s.angle??0)===0&&(s.angle=180),o==="top"&&s.angle===180&&delete s.angle},"arc-reads"),{def:"top"})}
         <div class="hint">Drag the box to grow the circle: a radius of ${Ma} fills it,
           and a bigger one bends the text less without moving it. Position is where the

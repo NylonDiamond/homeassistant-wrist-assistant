@@ -3925,15 +3925,15 @@ function textArcFields(
           const deg = v ?? 0;
           if (deg === 0) delete a.angle; else a.angle = deg;
         }, "arc-angle"), { step: 5, min: -360, max: 360, unit: "°", def: 0 })}
+        ${numberField("Spacing", arc.spacing ?? 0, (v) => setArc((a) => {
+          const pt = clampArcSpacing(v ?? 0);
+          if (pt === 0) delete a.spacing; else a.spacing = pt;
+        }, "arc-spacing"), { step: 0.5, min: ARC_SPACING_MIN, max: ARC_SPACING_MAX, unit: "pt", def: 0 })}
         ${numberField("Spread", Math.abs(arc.sweep ?? ARC_SWEEP_DEFAULT), (v) => setArc((a) => {
           const sign = (a.sweep ?? ARC_SWEEP_DEFAULT) < 0 ? -1 : 1;
           const deg = clampArcSweep(sign * Math.abs(v ?? ARC_SWEEP_DEFAULT));
           if (deg === ARC_SWEEP_DEFAULT) delete a.sweep; else a.sweep = deg;
         }, "arc-sweep"), { step: 5, min: ARC_SWEEP_MIN, max: ARC_SWEEP_MAX, unit: "°", def: ARC_SWEEP_DEFAULT })}
-        ${numberField("Spacing", arc.spacing ?? 0, (v) => setArc((a) => {
-          const pt = clampArcSpacing(v ?? 0);
-          if (pt === 0) delete a.spacing; else a.spacing = pt;
-        }, "arc-spacing"), { step: 0.5, min: ARC_SPACING_MIN, max: ARC_SPACING_MAX, unit: "pt", def: 0 })}
         ${segField("Reads", arcReads(arc), ARC_READS_OPTIONS, (v) => setArc((a) => {
           const size = Math.abs(a.sweep ?? ARC_SWEEP_DEFAULT);
           const sweep = v === "bottom" ? -size : size;
