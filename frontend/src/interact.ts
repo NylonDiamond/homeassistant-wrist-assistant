@@ -43,6 +43,12 @@ export interface GestureTarget {
    * on, snapped with it off. Undefined never snaps.
    */
   snap?: { step: Grid; on: boolean };
+  /**
+   * The other layers' lines this drag can land on, and how near counts. Read
+   * under the same switch as the grid, Alt included, so one key turns all
+   * snapping off. Undefined never guides.
+   */
+  guides?: Guides;
 }
 
 /** The grid steps the preview offers, as fractions of the face. */
@@ -158,9 +164,204 @@ export function gridNudgeFrame(frame: NormalizedFrame, dx: number, dy: number, g
   return clampFrame({ ...frame, x: next(frame.x, Math.sign(dx), g.x), y: next(frame.y, Math.sign(dy), g.y) });
 }
 
+// ── smart guides ────────────────────────────────────────────────────────
+//
+// The grid lines up a layer with the face. Guides line it up with the other
+// layers: while a drag is near one of their edges or middles it lands on it
+// exactly, and the line it landed on is drawn. Everything here works in the
+// same 0..1 fractions a frame is stored in, so a guide is one number and an
+// axis whatever the shape.
+
+/** One line a drag can land on, across the face (`x`) or down it (`y`). */
+export interface GuideLine {
+  axis: "x" | "y";
+  /** Where the line sits, as a fraction of the face. */
+  at: number;
+}
+
+/** The lines a drag may land on, and how near counts, per axis. */
+export interface Guides {
+  lines: readonly GuideLine[];
+  threshold: { x: number; y: number };
+}
+
+/** How near a guide has to be to catch a drag, in design points. Wide enough
+ * to feel helpful at any zoom, small enough that a deliberate placement one
+ * point off a neighbour still holds. */
+export const GUIDE_POINTS = 3;
+
+/**
+ * `GUIDE_POINTS` as a fraction of the face, per axis. Points rather than a
+ * flat fraction so the pull feels the same on the 181 pt wide rectangular face
+ * and the 51 pt circular one, the way `gridFor` keeps grid cells square.
+ */
+export function guideThreshold(box: { width: number; height: number }, points = GUIDE_POINTS): { x: number; y: number } {
+  return {
+    x: box.width > 0 ? points / box.width : 0,
+    y: box.height > 0 ? points / box.height : 0,
+  };
+}
+
+/**
+ * The lines `others` offer: each frame's two edges and its middle, on both
+ * axes, plus the face's own middle lines. The caller decides what belongs in
+ * `others`; the layers being dragged and the hidden ones are never in it.
+ */
+export function guideCandidates(others: readonly NormalizedFrame[]): GuideLine[] {
+  const lines: GuideLine[] = [{ axis: "x", at: 0.5 }, { axis: "y", at: 0.5 }];
+  // Three decimals, the same as a frame carries: a line a frame cannot land on
+  // exactly would leave the layer a hair off the neighbour it lined up with.
+  for (const f of others) {
+    lines.push({ axis: "x", at: round3(f.x) }, { axis: "x", at: round3(f.x + f.width / 2) }, { axis: "x", at: round3(f.x + f.width) });
+    lines.push({ axis: "y", at: round3(f.y) }, { axis: "y", at: round3(f.y + f.height / 2) }, { axis: "y", at: round3(f.y + f.height) });
+  }
+  // Layers that already line up hand in the same line several times over, and
+  // a line drawn twice is a line drawn twice as bright.
+  const seen = new Set<string>();
+  return lines.filter((l) => {
+    const key = `${l.axis}:${l.at}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** A guide a drag reached: the line, and how far to move to sit on it. */
+export interface GuideHit {
+  at: number;
+  delta: number;
+}
+
+/**
+ * The nearest line on one axis to any of `positions` (a frame's leading edge,
+ * middle and trailing edge), or undefined when none is within `threshold`.
+ * A tie goes to the earlier position, so an edge wins over a middle.
+ */
+export function nearestGuide(
+  positions: readonly number[],
+  lines: readonly GuideLine[],
+  axis: "x" | "y",
+  threshold: number,
+): GuideHit | undefined {
+  if (!(threshold > 0)) return undefined;
+  let best: GuideHit | undefined;
+  for (const p of positions) {
+    for (const line of lines) {
+      if (line.axis !== axis) continue;
+      const delta = line.at - p;
+      if (Math.abs(delta) > threshold) continue;
+      // Clearly nearer, not nearer by float dust: two lines the same distance
+      // away differ in their last bits, and without the margin which one won
+      // would come down to arithmetic noise rather than the rule above.
+      if (best === undefined || Math.abs(delta) < Math.abs(best.delta) - 1e-9) best = { at: line.at, delta };
+    }
+  }
+  return best;
+}
+
+/** Whether a frame's edges or middle sit on `line`, to float dust. */
+function onGuide(frame: NormalizedFrame, line: GuideLine): boolean {
+  const start = line.axis === "x" ? frame.x : frame.y;
+  const size = line.axis === "x" ? frame.width : frame.height;
+  return [start, start + size / 2, start + size].some((p) => Math.abs(p - line.at) < 1e-4);
+}
+
+/**
+ * A moved frame put on whatever it is near: a guide first, the grid on any
+ * axis no guide reached. A guide wins because lining a layer up with another
+ * layer is the stronger intent, and the two disagree by less than a point.
+ *
+ * Returns the lines the frame really ended on, which is what gets drawn: the
+ * clamp that keeps a layer on the face can pull it back off a guide, and a
+ * line drawn where the layer is not would be a lie.
+ */
+export function snapMoveFrame(
+  frame: NormalizedFrame,
+  grid: Grid | undefined,
+  guides: Guides | undefined,
+): { frame: NormalizedFrame; guides: GuideLine[] } {
+  let { x, y } = frame;
+  const hitX = guides && nearestGuide([frame.x, frame.x + frame.width / 2, frame.x + frame.width], guides.lines, "x", guides.threshold.x);
+  const hitY = guides && nearestGuide([frame.y, frame.y + frame.height / 2, frame.y + frame.height], guides.lines, "y", guides.threshold.y);
+  if (hitX) x = round3(frame.x + hitX.delta);
+  if (hitY) y = round3(frame.y + hitY.delta);
+  if (grid !== undefined) {
+    const gridded = snapFrameMove(frame, grid);
+    if (!hitX) x = gridded.x;
+    if (!hitY) y = gridded.y;
+  }
+  const next = clampFrame({ ...frame, x, y });
+  const landed: GuideLine[] = [];
+  if (hitX) landed.push({ axis: "x", at: hitX.at });
+  if (hitY) landed.push({ axis: "y", at: hitY.at });
+  return { frame: next, guides: landed.filter((l) => onGuide(next, l)) };
+}
+
+/**
+ * A resized frame with the edges a corner drag pulled put on a guide, and on
+ * the grid where no guide reached. `axes` limits it to the sides the resize
+ * changes, exactly as `snapFrameEdges` does.
+ */
+export function snapResizeFrame(
+  frame: NormalizedFrame,
+  handle: HandleCorner,
+  grid: Grid | undefined,
+  guides: Guides | undefined,
+  axes: { x: boolean; y: boolean } = { x: true, y: true },
+): { frame: NormalizedFrame; guides: GuideLine[] } {
+  let next = { ...frame };
+  const landed: GuideLine[] = [];
+  const free = { x: axes.x, y: axes.y };
+  if (guides !== undefined) {
+    if (axes.x) {
+      const east = handle.includes("e");
+      const hit = nearestGuide([east ? frame.x + frame.width : frame.x], guides.lines, "x", guides.threshold.x);
+      if (hit) {
+        if (east) next.width = Math.max(MIN_SIZE, round3(hit.at - next.x));
+        else {
+          const left = Math.min(round3(hit.at), frame.x + frame.width - MIN_SIZE);
+          next.width = round3(frame.x + frame.width - left);
+          next.x = left;
+        }
+        // The smallest size a drag allows can refuse the guide; then the edge
+        // is not on the line and neither the line nor the grid should claim it.
+        if (Math.abs((east ? next.x + next.width : next.x) - hit.at) < 1e-4) {
+          landed.push({ axis: "x", at: hit.at });
+          free.x = false;
+        } else {
+          next = { ...next, x: frame.x, width: frame.width };
+        }
+      }
+    }
+    if (axes.y) {
+      const south = handle.includes("s");
+      const hit = nearestGuide([south ? frame.y + frame.height : frame.y], guides.lines, "y", guides.threshold.y);
+      if (hit) {
+        if (south) next.height = Math.max(MIN_SIZE, round3(hit.at - next.y));
+        else {
+          const top = Math.min(round3(hit.at), frame.y + frame.height - MIN_SIZE);
+          next.height = round3(frame.y + frame.height - top);
+          next.y = top;
+        }
+        if (Math.abs((south ? next.y + next.height : next.y) - hit.at) < 1e-4) {
+          landed.push({ axis: "y", at: hit.at });
+          free.y = false;
+        } else {
+          next = { ...next, y: frame.y, height: frame.height };
+        }
+      }
+    }
+  }
+  if (grid !== undefined) next = snapFrameEdges(next, handle, grid, free);
+  return { frame: next, guides: landed };
+}
+
 export interface GestureCallbacks {
   /** Called with the new frame on every move, and `done` on pointer up. */
   onFrame(elementId: string, frame: NormalizedFrame, done: boolean): void;
+  /** The guides the frame is sitting on right now, empty when it sits on none
+   * and on release. Only the canvas overlay cares, so it is optional. */
+  onGuides?(lines: readonly GuideLine[]): void;
 }
 
 const MIN_SIZE = 0.04;
@@ -366,26 +567,46 @@ export function beginGesture(
 
   const round = (n: number) => Math.round(n * 1000) / 1000;
 
+  // What the canvas is drawing guide lines for right now, so a move that
+  // changes nothing sends nothing.
+  let shown: readonly GuideLine[] = [];
+  const showGuides = (lines: readonly GuideLine[]) => {
+    if (lines.length === 0 && shown.length === 0) return;
+    if (lines.length === shown.length && lines.every((l, i) => l.axis === shown[i]!.axis && l.at === shown[i]!.at)) return;
+    shown = lines;
+    cb.onGuides?.(lines);
+  };
+
   const move = (ev: PointerEvent) => {
     if (ev.pointerId !== start.pointerId) return;
     const t = travel(ev);
     const dx = t.x / canvas.width;
     const dy = t.y / canvas.height;
     let next: NormalizedFrame;
-    // Alt is read on every move, so it can be pressed or let go mid-drag.
-    const snap = target.snap !== undefined && target.snap.on !== ev.altKey ? target.snap.step : undefined;
+    // Alt is read on every move, so it can be pressed or let go mid-drag. The
+    // one switch covers the guides too: Alt is "leave it exactly where I put it".
+    const snapping = target.snap !== undefined && target.snap.on !== ev.altKey;
+    const snap = snapping ? target.snap?.step : undefined;
+    const guides = snapping ? target.guides : undefined;
+    let landed: readonly GuideLine[] = [];
     if (!target.handle) {
       next = clampFrame({ ...base, x: round(base.x + dx), y: round(base.y + dy) });
-      if (snap !== undefined) next = snapFrameMove(next, snap);
+      if (snapping) {
+        const snapped = snapMoveFrame(next, snap, guides);
+        next = snapped.frame;
+        landed = snapped.guides;
+      }
     } else if (target.square) {
       // A circle's square is square in points, which a grid in fractions of a
       // wide face cannot keep, so its corners drag freely.
       next = squareResize(base, canvas, target.handle, t);
     } else if (target.line || target.bar) {
       next = lineResize(base, canvas, target.handle, t, target.bar === true);
-      if (snap !== undefined) {
+      if (snapping) {
         const along = target.bar === true || next.width * canvas.width >= next.height * canvas.height;
-        next = snapFrameEdges(next, target.handle, snap, { x: along, y: !along });
+        const snapped = snapResizeFrame(next, target.handle, snap, guides, { x: along, y: !along });
+        next = snapped.frame;
+        landed = snapped.guides;
       }
     } else {
       let { x, y, width, height } = base;
@@ -402,9 +623,14 @@ export function beginGesture(
         y = bottom - height;
       }
       next = { ...base, x: round(x), y: round(y), width: round(width), height: round(height) };
-      if (snap !== undefined) next = snapFrameEdges(next, target.handle, snap);
+      if (snapping) {
+        const snapped = snapResizeFrame(next, target.handle, snap, guides);
+        next = snapped.frame;
+        landed = snapped.guides;
+      }
     }
     last = next;
+    showGuides(landed);
     cb.onFrame(target.elementId, next, false);
   };
   const finish = (ev: PointerEvent) => {
@@ -413,6 +639,7 @@ export function beginGesture(
     cb.onFrame(target.elementId, last, true);
   };
   const cleanup = () => {
+    showGuides([]);
     svg.removeEventListener("pointermove", move);
     svg.removeEventListener("pointerup", finish);
     svg.removeEventListener("pointercancel", finish);
