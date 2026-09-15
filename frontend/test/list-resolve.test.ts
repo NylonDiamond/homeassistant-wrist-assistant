@@ -446,6 +446,14 @@ describe("the timestamp format", () => {
     expect(timestampString(seconds, "clock", "en-GB", "UTC")).toBe("09:30");
   });
 
+  it("prints the hour on its own, keeping whatever the locale puts beside it", () => {
+    // The day period stays, or 5 AM and 5 PM would read alike; German keeps its
+    // "Uhr" for the same reason, that the pattern is the locale's own.
+    expect(timestampString(seconds, "hour", "en-US", "UTC")).toMatch(/^9\s?AM$/);
+    expect(timestampString(seconds, "hour", "en-GB", "UTC")).toBe("09");
+    expect(timestampString(seconds, "hour", "de-DE", "UTC")).toBe("09 Uhr");
+  });
+
   it("reads the hour in the zone it was given", () => {
     expect(timestampString(seconds, "clock", "en-GB", "Europe/Berlin")).toBe("11:30");
     expect(timestampString(seconds, "clock", "en-GB", "America/New_York")).toBe("05:30");

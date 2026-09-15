@@ -896,7 +896,7 @@ function capitalized(s: string): string {
   return s.replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 }
 
-/** Unix seconds printed as a time, in one of the four styles.
+/** Unix seconds printed as a time, in one of the five styles.
  *
  * The hour cycle is the device's, so the same document reads `9:30 AM` on one
  * watch and `09:30` on the next, which is what the wearer set. The zone is the
@@ -910,6 +910,12 @@ export function timestampString(seconds: number, style: TimestampStyle, locale?:
   const zone = timeZone !== undefined ? { timeZone } : {};
   if (style === "date") return new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", ...zone }).format(date);
   if (style === "weekday") return new Intl.DateTimeFormat(locale, { weekday: "short", ...zone }).format(date);
+  // The hour on its own, for a forecast column too narrow for ":00". The
+  // locale's own hour-only pattern is used rather than a hand-built one, so a
+  // 12-hour device keeps the day period it needs to tell 5 AM from 5 PM and a
+  // German one keeps its "Uhr". `Date.FormatStyle.hour()` resolves to the same
+  // pattern, padding included, so unlike `clock` no padding is asked for here.
+  if (style === "hour") return new Intl.DateTimeFormat(locale, { hour: "numeric", ...zone }).format(date);
   const day = style === "dateTime" ? { weekday: "short" as const } : {};
   const numeric = new Intl.DateTimeFormat(locale, { ...day, hour: "numeric", minute: "2-digit", ...zone });
   // A 24-hour locale pads the hour ("09:30"), a 12-hour one does not ("9:30 AM").

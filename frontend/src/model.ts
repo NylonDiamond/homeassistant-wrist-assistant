@@ -408,13 +408,15 @@ export interface ValueFormat {
 }
 
 /** How a `timestamp` format prints its seconds. `clock` is `9:30 AM` or
- * `09:30` by the device's own clock, `date` is `15 Sep`, `weekday` is `Mon`,
- * and `dateTime` is the two together. Mirrors `CustomComplication.ValueFormat.Timestamp`
- * in the app repo. */
-export type TimestampStyle = "clock" | "date" | "weekday" | "dateTime";
+ * `09:30` by the device's own clock, `hour` is the same clock with the minutes
+ * dropped (`5 PM`, `17`), `date` is `15 Sep`, `weekday` is `Mon`, and
+ * `dateTime` is the clock and the weekday together. Mirrors
+ * `CustomComplication.ValueFormat.Timestamp` in the app repo. */
+export type TimestampStyle = "clock" | "hour" | "date" | "weekday" | "dateTime";
 
 export const TIMESTAMP_STYLES: readonly [TimestampStyle, string][] = [
   ["clock", "Time"],
+  ["hour", "Hour"],
   ["date", "Date"],
   ["weekday", "Weekday"],
   ["dateTime", "Weekday and time"],
