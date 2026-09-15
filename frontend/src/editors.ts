@@ -1122,11 +1122,12 @@ export function looksLikeEntityId(text: string): boolean {
  *
  * `undefined` means keep what is already there: the text was a half finished
  * search rather than an id, so nothing should be written over a working entity.
+ * Empty text keeps it too. Editing opens on an empty search, so leaving without
+ * typing is a cancel; clearing is the field's own Remove button.
  */
 export function commitTypedEntity(text: string, ref: EntityRef, states: Record<string, HassEntityState>): EntityRef | undefined {
   const t = text.trim();
-  if (t === ref.entityId) return undefined;
-  if (t === "") return { entityId: "", displayName: "", domain: "" };
+  if (t === ref.entityId || t === "") return undefined;
   if (t in states) return entityRefFrom(states, t);
   if (looksLikeEntityId(t)) return { ...ref, entityId: t, domain: t.split(".")[0] ?? "" };
   return undefined;
@@ -1252,30 +1253,45 @@ export function entityField(host: Pick<EditorHost, "hass">, label: string, ref: 
     }
   };
 
+  // A chosen entity is one row: glyph, name, room and id, live state, and a
+  // pencil. The search box only shows while nothing is chosen or while the row
+  // is being changed, so the id is never printed twice.
   const currentArea = ref.entityId ? areaLookup(host.hass)?.(ref.entityId) : undefined;
   const caption = ref.entityId === ""
     ? html`<div class="hint">Type part of a name, a room, or an id.</div>`
-    : live
-      ? html`<div class="entity-current">
-          <span class="ent-ico ${isActiveState(live.state) ? "on" : ""}">${domainIcon(ref.domain || ref.entityId.split(".")[0] || "")}</span>
-          <span class="ent-name">${typeof live.attributes.friendly_name === "string" ? live.attributes.friendly_name : ref.entityId}</span>
-          ${currentArea ? html`<span class="ent-area">${currentArea}</span>` : nothing}
-          <span class="ent-state">${live.state}</span>
-        </div>`
-      : html`<div class="hint warn">Not in Home Assistant right now.</div>`;
+    : live ? nothing : html`<div class="hint warn">Not in Home Assistant right now.</div>`;
 
-  return html`<div class="field entity-field">
-    <span>${label}</span>
-    <div class="ent-box ${search ? "open" : ""} ${opts.needed && ref.entityId === "" ? "needs" : ""}">
+  // Editing starts on an empty search with the old id as the placeholder, so the
+  // whole list is one keystroke away and leaving without typing changes nothing.
+  const edit = (e: Event) => {
+    const fieldEl = (e.currentTarget as HTMLElement).closest(".entity-field");
+    open(fieldEl, "");
+    requestAnimationFrame(() => fieldEl?.querySelector<HTMLInputElement>("input")?.focus());
+  };
+
+  const chosen = html`<button type="button" class="ent-chosen" title="Change entity" @click=${edit}>
+      <span class="ent-ico ${live && isActiveState(live.state) ? "on" : ""}">${domainIcon(ref.domain || ref.entityId.split(".")[0] || "")}</span>
+      <span class="ent-main">
+        <span class="ent-name">${live && typeof live.attributes.friendly_name === "string" ? live.attributes.friendly_name : ref.displayName || ref.entityId}</span>
+        <span class="ent-sub">
+          ${currentArea ? html`<span class="ent-area">${currentArea}</span>` : nothing}
+          <span class="ent-id mono">${ref.entityId}</span>
+        </span>
+      </span>
+      ${live ? html`<span class="ent-state">${live.state}</span>` : nothing}
+      <span class="ent-pencil">${uiIcon("edit")}</span>
+    </button>`;
+
+  const box = html`<div class="ent-box ${search ? "open" : ""} ${opts.needed && ref.entityId === "" ? "needs" : ""}">
       <span class="ent-glass">${uiIcon("search")}</span>
       <input type="text" class="mono" role="combobox" aria-autocomplete="list" aria-expanded=${search ? "true" : "false"} autocomplete="off" spellcheck="false"
-        .value=${search ? search.query : ref.entityId}
-        placeholder="Search by name, room, or id"
-        @focus=${(e: FocusEvent) => { const el = e.target as HTMLInputElement; open(el, ref.entityId); el.select(); }}
+        .value=${search ? search.query : ""}
+        placeholder=${ref.entityId || "Search by name, room, or id"}
+        @focus=${(e: FocusEvent) => { const el = e.target as HTMLInputElement; open(el, entitySearches.get(key)?.query ?? ""); }}
         @input=${(e: Event) => { const el = e.target as HTMLInputElement; open(el, el.value); }}
         @keydown=${onKey}
         @blur=${(e: FocusEvent) => { const el = e.target as HTMLInputElement; if (search) commitText(el.value); close(el); }} />
-      ${(search ? search.query : ref.entityId) === "" ? nothing : html`<button type="button" class="ent-clear" title="Clear" aria-label="Clear"
+      ${ref.entityId === "" ? nothing : html`<button type="button" class="ent-clear" title="Remove entity" aria-label="Remove entity"
         @mousedown=${(e: MouseEvent) => e.preventDefault()}
         @click=${(e: MouseEvent) => {
           const el = (e.currentTarget as HTMLElement).closest(".ent-box")?.querySelector("input") ?? null;
@@ -1284,7 +1300,11 @@ export function entityField(host: Pick<EditorHost, "hass">, label: string, ref: 
           requestRerender(el);
           el?.focus();
         }}>${uiIcon("close")}</button>`}
-    </div>
+    </div>`;
+
+  return html`<div class="field entity-field">
+    <span>${label}</span>
+    ${!search && ref.entityId !== "" ? chosen : box}
     ${search
       ? html`<div class="entity-results" role="listbox">
           ${results.length === 0

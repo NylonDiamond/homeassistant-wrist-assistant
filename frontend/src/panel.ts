@@ -3228,6 +3228,28 @@ export class WristAssistantPanel extends LitElement {
     }
     button.ent-clear:hover { background: var(--wa-panel); color: var(--wa-ink); }
     button.ent-clear svg { width: 13px; height: 13px; display: block; }
+    /* A chosen entity: one row in place of the search box, the same height
+       as the box so a field does not jump when it swaps. The whole row is the
+       edit target; the pencil only says so. */
+    button.ent-chosen {
+      display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: 30px;
+      font: inherit; font-size: 12px; text-align: left; padding: 3px 6px 3px 4px; border-radius: 6px; cursor: pointer;
+      color: inherit; border: 1px solid color-mix(in srgb, var(--wa-ent) 28%, var(--wa-line)); background: var(--wa-ent-bg);
+    }
+    button.ent-chosen:hover { border-color: color-mix(in srgb, var(--wa-ent) 55%, var(--wa-line)); }
+    button.ent-chosen .ent-ico { width: 22px; height: 22px; border-radius: 5px; background: color-mix(in srgb, var(--wa-ent) 18%, transparent); color: var(--wa-ent); }
+    button.ent-chosen .ent-ico.on { background: color-mix(in srgb, var(--wa-ent) 28%, transparent); }
+    button.ent-chosen .ent-ico svg { width: 13px; height: 13px; }
+    button.ent-chosen .ent-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0; line-height: 1.25; }
+    button.ent-chosen .ent-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wa-ent); font-weight: 600; }
+    button.ent-chosen .ent-sub { display: flex; gap: 6px; min-width: 0; font-size: 10.5px; }
+    button.ent-chosen .ent-area { flex: none; color: var(--wa-muted); }
+    button.ent-chosen .ent-area + .ent-id::before { content: "·"; margin-right: 6px; opacity: .5; }
+    button.ent-chosen .ent-id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wa-ent); opacity: .7; }
+    button.ent-chosen .ent-state { flex: none; max-width: 35%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    button.ent-chosen .ent-pencil { flex: none; display: grid; place-items: center; width: 20px; height: 20px; color: var(--wa-muted); }
+    button.ent-chosen:hover .ent-pencil { color: var(--wa-ink); }
+    button.ent-chosen .ent-pencil svg { width: 13px; height: 13px; display: block; }
 
     .entity-results {
       border: 1px solid var(--wa-line); border-radius: 12px; margin-top: 6px; max-height: 340px; overflow: auto;
@@ -3282,7 +3304,7 @@ export class WristAssistantPanel extends LitElement {
        or print what it reads. Everything that shows a live value ends up
        here, so the colour never has to be repeated by hand. */
     .ent-tok { color: var(--wa-ent); font-weight: 600; }
-    .val-tok, .entity-current .ent-state, .vchip .val, .chart-numbers b, .hint .nums, .readout-v .nums {
+    .val-tok, .entity-current .ent-state, button.ent-chosen .ent-state, .vchip .val, .chart-numbers b, .hint .nums, .readout-v .nums {
       color: var(--wa-val); font-weight: 600;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .95em;
     }

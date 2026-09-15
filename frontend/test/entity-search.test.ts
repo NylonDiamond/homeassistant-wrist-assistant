@@ -152,8 +152,8 @@ describe("commitTypedEntity", () => {
     expect(commitTypedEntity("light.not_here_yet", ref, STATES)).toEqual({ entityId: "light.not_here_yet", displayName: "Kitchen light", domain: "light" });
   });
 
-  it("clears the entity when the field is emptied", () => {
-    expect(commitTypedEntity("   ", ref, STATES)).toEqual({ entityId: "", displayName: "", domain: "" });
+  it("keeps the entity when the search is left empty", () => {
+    expect(commitTypedEntity("   ", ref, STATES)).toBeUndefined();
   });
 });
 

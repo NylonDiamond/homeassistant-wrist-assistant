@@ -10,7 +10,7 @@
 import { type TemplateResult, html, svg } from "lit";
 
 export type UiIconName =
-  | "up" | "down" | "show" | "hide" | "duplicate" | "delete" | "close" | "reset"
+  | "up" | "down" | "show" | "hide" | "duplicate" | "delete" | "close" | "edit" | "reset"
   | "text" | "icon" | "gauge" | "chart" | "timeline" | "shape" | "image" | "tap" | "chartTimes" | "chartDots" | "chartGrid" | "imageTime"
   | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "plus"
   | "lock" | "unlock" | "folder" | "ungroup" | "watch"
@@ -136,6 +136,8 @@ function shape(name: UiIconName) {
         <path d="M10.2 11V17M13.8 11V17" />`;
     case "close":
       return svg`<path d="M6.5 6.5L17.5 17.5M17.5 6.5L6.5 17.5" />`;
+    case "edit":
+      return svg`<path d="M15.5 4.5L19.5 8.5L8.5 19.5H4.5V15.5Z" /><path d="M13 7L17 11" />`;
     case "reset":
       return svg`<path d="M4.5 12A7.5 7.5 0 1 0 7 6.4" />
         <path d="M4 3.5V7H7.5" />`;
