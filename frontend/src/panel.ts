@@ -112,7 +112,6 @@ import { isHiddenDocument, splitHidden, withHidden } from "./model.js";
 const LEGACY_PICKER_HIDDEN_PREFIX = "wrist-assistant-panel.picker-hidden.v1:";
 import { addPreview } from "./add-previews.js";
 import { GRID_STEPS, NUDGE_COARSE, beginGesture, beginPointDrag, beginScaleDrag, gridFor, gridNudgeFrame, guideCandidates, guideThreshold, nudgeFrame, nudgePoint, type Grid, type GuideLine, type Guides, type HandleCorner } from "./interact.js";
-import { alignFrames, spreadFrames, type AlignTo, type SpreadAxis } from "./arrange.js";
 import {
   type CopiedPosition,
   type EditorHost,
@@ -485,25 +484,6 @@ function pressInsideLayer(svg: SVGSVGElement, id: string, e: PointerEvent): bool
  * own shortcuts through while one of them has the focus. */
 const NON_TEXT_INPUTS = /^(range|checkbox|radio|color|button|submit|reset|file|image)$/;
 /** How far the pointer travels, CSS px, before a press on a group or a pick is a drag and not a click. */
-/** The align strip above the canvas. Each button reads two ways: with one
- * layer selected it moves that layer on the face, with a pick it lines the
- * pick up against its own box, so both tooltips are written out. */
-const ALIGN_TOOLS: readonly { to: AlignTo; icon: UiIconName; label: string; alone: string; picked: string }[] = [
-  { to: "left", icon: "alignLeft", label: "Align left", alone: "Move this layer to the left edge of the face", picked: "Line up the left edges of the picked layers" },
-  { to: "centerX", icon: "alignCenterX", label: "Align center across", alone: "Move this layer to the middle of the face, left to right", picked: "Line up the picked layers by their middles, left to right" },
-  { to: "right", icon: "alignRight", label: "Align right", alone: "Move this layer to the right edge of the face", picked: "Line up the right edges of the picked layers" },
-  { to: "top", icon: "alignTop", label: "Align top", alone: "Move this layer to the top of the face", picked: "Line up the top edges of the picked layers" },
-  { to: "middleY", icon: "alignMiddleY", label: "Align center down", alone: "Move this layer to the middle of the face, top to bottom", picked: "Line up the picked layers by their middles, top to bottom" },
-  { to: "bottom", icon: "alignBottom", label: "Align bottom", alone: "Move this layer to the bottom of the face", picked: "Line up the bottom edges of the picked layers" },
-];
-
-/** The two spread buttons. The outermost layers stay put and the rest move
- * between them, so the block keeps the span it was given. */
-const SPREAD_TOOLS: readonly { axis: SpreadAxis; icon: UiIconName; label: string; title: string }[] = [
-  { axis: "across", icon: "spreadAcross", label: "Even out the gaps across", title: "Even out the gaps between the picked layers, left to right" },
-  { axis: "down", icon: "spreadDown", label: "Even out the gaps down", title: "Even out the gaps between the picked layers, top to bottom" },
-];
-
 const DRAG_SLOP = 3;
 const MULTI_KEY = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "Cmd" : "Ctrl";
 /** How a shortcut is written in a tooltip: ⌘D on a Mac, Ctrl+D elsewhere. */
@@ -691,6 +671,10 @@ export class WristAssistantPanel extends LitElement {
   /** Whether the grid's lines are drawn. Snapping works either way; the lines
    * start hidden so a fine grid does not cover the face. */
   @state() private showGridLines = false;
+  /** Snap to the other layers' edges and middles while dragging. A browser
+   * setting like the grid, and on by default: the two work together, and a
+   * user who wants only one turns the other off in the snapping menu. */
+  @state() private snapLayers = true;
   /** The smart guides the drag under way is sitting on. Empty whenever nothing
    * is being dragged, so the lines are gone the moment the pointer is let go. */
   @state() private guides: readonly GuideLine[] = [];
@@ -699,7 +683,7 @@ export class WristAssistantPanel extends LitElement {
    * held the next click on the face for most of a second after a native menu
    * closed, so a drag right after a change lagged (measured 2026-09-12: the
    * press was 650 to 900 ms old on arrival, with no long task on the page). */
-  @state() private openMenu?: "grid" | "case" | "tint";
+  @state() private openMenu?: "snap" | "case" | "tint";
   /** Alt is down. It flips snapping for a drag, so the grid lines show while
    * it is held even with Snap to grid off. */
   @state() private altHeld = false;
@@ -2128,19 +2112,14 @@ export class WristAssistantPanel extends LitElement {
       box-shadow: 0 0 0 1px var(--wa-line), 0 6px 18px rgba(0,0,0,.18);
     }
     /* With snapping on, the button and its size read as one accent pill. */
-    .grid-tool { display: inline-flex; align-items: center; position: relative; }
-    .grid-tool.on button.pick { border-radius: 8px 0 0 8px; padding-right: 8px; }
-    button.grid-step, button.grid-lines {
-      height: 30px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
-      border: 0; border-left: 1px solid color-mix(in srgb, var(--wa-accent-ink) 30%, transparent);
-      background-color: color-mix(in srgb, var(--wa-accent) 82%, #000); color: var(--wa-accent-ink);
-    }
-    button.grid-step { padding: 0 6px 0 8px; border-radius: 0; display: inline-flex; align-items: center; gap: 3px; font-variant-numeric: tabular-nums; }
-    button.grid-step svg { width: 12px; height: 12px; opacity: .8; }
-    button.grid-lines { width: 30px; padding: 0; display: inline-grid; place-items: center; border-radius: 0 8px 8px 0; }
-    button.grid-lines[aria-pressed="false"] { color: color-mix(in srgb, var(--wa-accent-ink) 60%, transparent); }
-    button.grid-lines svg { width: 15px; height: 15px; }
-    button.grid-step:focus-visible, button.grid-lines:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .snap-tool .pop-menu { left: auto; right: 0; min-width: 210px; padding: 6px; gap: 2px; }
+    .snap-menu label.row { display: flex; align-items: center; gap: 9px; cursor: pointer; padding: 6px 8px; }
+    .snap-menu label.row input { margin: 0; accent-color: var(--wa-accent); }
+    .snap-menu .sub { display: flex; align-items: center; gap: 8px; padding: 2px 8px 6px 33px; }
+    .snap-menu .sub-label { font-size: 12px; color: var(--wa-muted); white-space: nowrap; }
+    .snap-menu .chips { display: inline-flex; gap: 3px; }
+    .snap-menu .chips button.small { min-height: 24px; padding: 0 7px; font-variant-numeric: tabular-nums; }
+    .snap-menu .chips button.small.on { background: color-mix(in srgb, var(--wa-accent) 22%, transparent); color: var(--wa-ink); }
     /* The preview bar's own menus (grid size, Preview as), in place of native
        selects, whose closing menu made Chrome on macOS hold the next click. */
     .pop-menu {
@@ -3386,22 +3365,25 @@ export class WristAssistantPanel extends LitElement {
     try {
       const raw = window.localStorage.getItem(GRID_STORE_KEY);
       if (!raw) return;
-      const saved = JSON.parse(raw) as { on?: unknown; step?: unknown; lines?: unknown };
+      const saved = JSON.parse(raw) as { on?: unknown; step?: unknown; lines?: unknown; layers?: unknown };
       if (typeof saved.on === "boolean") this.snapGrid = saved.on;
       if ((GRID_STEPS as readonly unknown[]).includes(saved.step)) this.gridStep = saved.step as number;
       if (typeof saved.lines === "boolean") this.showGridLines = saved.lines;
+      if (typeof saved.layers === "boolean") this.snapLayers = saved.layers;
     } catch {
       /* A browser with storage off keeps the defaults. */
     }
   }
 
-  private setGrid(on: boolean, step: number, lines = this.showGridLines) {    this.snapGrid = on;
+  private setGrid(on: boolean, step: number, lines = this.showGridLines, layers = this.snapLayers) {
+    this.snapGrid = on;
     this.gridStep = step;
     this.showGridLines = lines;
+    this.snapLayers = layers;
     try {
-      window.localStorage.setItem(GRID_STORE_KEY, JSON.stringify({ on, step, lines }));
+      window.localStorage.setItem(GRID_STORE_KEY, JSON.stringify({ on, step, lines, layers }));
     } catch {
-      /* Storage off: the grid still holds for this visit. */
+      /* Storage off: the settings still hold for this visit. */
     }
   }
 
@@ -3417,8 +3399,9 @@ export class WristAssistantPanel extends LitElement {
    * being dragged are left out (a layer cannot line up with itself), and so are
    * the ones hidden here, which are not on the face to line up with.
    */
-  private guideTarget(family: DrawableFamily, moving: readonly string[]): { guides: Guides } {
+  private guideTarget(family: DrawableFamily, moving: readonly string[]): { guides?: Guides } {
     const cfg = this.draft?.config;
+    if (!this.snapLayers) return {};
     const others = cfg === undefined ? [] : ownedElements(cfg, family)
       .filter((el) => !moving.includes(el.payload.id) && !isAttachedTap(cfg, el))
       .map((el) => effectivePlacement(cfg, family, el))
@@ -4763,55 +4746,47 @@ export class WristAssistantPanel extends LitElement {
    */
   private renderOver() {
     return html`<div class="over">
-      <span class="face-tools">${this.renderPickButton()}${this.renderShowTapsButton()}${this.renderGridButton()}</span>
+      <span class="face-tools">${this.renderPickButton()}${this.renderShowTapsButton()}</span>
       <span class="bar-sep" aria-hidden="true"></span>
-      ${this.renderAlignTools()}
+      <span class="face-tools">${this.renderZoomButton()}${this.renderSnapMenu()}</span>
     </div>`;
   }
 
-  private renderAlignTools() {
-    const n = this.arrangeIds().length;
-    const off = !this.draft || this.parseError !== undefined || !isDrawable(this.activeFamily)
-      || !this.canEdit || this.picking || this.showTaps;
-    const button = (icon: UiIconName, label: string, title: string, disabled: boolean, run: () => void) =>
-      html`<button class="pick only-icon" ?disabled=${off || disabled} aria-label=${label} title=${title}
-        @click=${run}>${uiIcon(icon)}</button>`;
-    return html`<span class="align-tools">
-      ${ALIGN_TOOLS.map((t) => button(t.icon, t.label, n === 1 ? t.alone : t.picked, n < 1, () => this.arrangeSelection((f) => alignFrames(f, t.to))))}
-      ${SPREAD_TOOLS.map((t) => button(t.icon, t.label, n < 3 ? `${t.title}. Pick three or more layers first.` : t.title, n < 3,
-        () => this.arrangeSelection((f) => spreadFrames(f, t.axis))))}
-    </span>`;
-  }
-
   /**
-   * The snap-to-grid toggle, and while it is on, the grid's size and whether
-   * its lines are drawn. The size is a percent of the face's shorter side;
-   * the longer side takes the same distance in points, so cells are square.
+   * The snapping menu behind the gear: snap to the grid, with its size and
+   * whether its lines are drawn, and snap to the other layers. Two switches
+   * rather than one, since some people want the grid alone, some the layers
+   * alone, and both start on. The grid size is a percent of the face's
+   * shorter side; the longer side takes the same distance in points, so cells
+   * are square.
    */
-  private renderGridButton() {
-    const on = this.snapGrid;
-    const lines = this.showGridLines;
+  private renderSnapMenu() {
     const off = !this.draft || this.parseError !== undefined || !isDrawable(this.activeFamily);
-    const eye = lines
-      ? svg`<path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" /><circle cx="8" cy="8" r="1.9" />`
-      : svg`<path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" /><path d="M2.5 13.5l11-11" />`;
-    return html`<span class="grid-tool ${on ? "on" : ""}" data-menu="grid">
-      <button class="pick ${on ? "on" : ""}" ?disabled=${off} aria-pressed=${on ? "true" : "false"}
-        title=${on ? "Layers snap to the grid when you drag them, and arrow keys move one grid step. Hold Alt to drag freely. Click to turn it off." : "Snap layers to a grid when you drag them. Without it, hold Alt while dragging to snap."}
-        @click=${() => this.setGrid(!on, this.gridStep)}><span class="glyph">▦</span>Snap to grid</button>
-      ${on ? html`<button class="grid-step" ?disabled=${off} aria-haspopup="listbox" aria-expanded=${this.openMenu === "grid" ? "true" : "false"}
-        aria-label=${`Grid size, ${this.gridStep * 100}%`} title="Grid size"
-        @click=${() => this.toggleMenu("grid")}>${this.gridStep * 100}%${uiIcon("chevron")}</button>
-      ${this.openMenu === "grid" ? html`<div class="pop-menu" role="listbox" aria-label="Grid size">
-        ${GRID_STEPS.map((step) => html`<button class="row" role="option" aria-selected=${step === this.gridStep ? "true" : "false"}
-          @click=${() => { this.toggleMenu("grid", false); this.setGrid(true, step); }}>${step * 100}%</button>`)}
+    const open = this.openMenu === "snap";
+    const grid = this.snapGrid;
+    const lines = this.showGridLines;
+    const layers = this.snapLayers;
+    const summary = grid && layers ? "grid and layers" : grid ? "grid only" : layers ? "layers only" : "off";
+    const check = (label: string, on: boolean, title: string, set: (v: boolean) => void) =>
+      html`<label class="row check" title=${title}>
+        <input type="checkbox" .checked=${on} @change=${(e: Event) => set((e.target as HTMLInputElement).checked)} />
+        <span>${label}</span>
+      </label>`;
+    return html`<span class="case-tool snap-tool ${grid || layers ? "on" : ""}" data-menu="snap">
+      <button class="pick only-icon ${grid || layers ? "on" : ""}" ?disabled=${off} aria-haspopup="menu" aria-expanded=${open ? "true" : "false"}
+        aria-label="Snapping" title=${`Snapping: ${summary}. Hold Alt while dragging to flip it.`}
+        @click=${() => this.toggleMenu("snap")}>${uiIcon("settings")}</button>
+      ${open ? html`<div class="pop-menu snap-menu" role="menu" aria-label="Snapping">
+        ${check("Snap to grid", grid, "Layers land on the grid when you drag them, and arrow keys move one grid step.", (v) => this.setGrid(v, this.gridStep))}
+        ${grid ? html`<div class="sub">
+          <span class="sub-label">Grid size</span>
+          <div class="chips">${GRID_STEPS.map((step) => html`<button class="small ${step === this.gridStep ? "on" : ""}"
+            aria-pressed=${step === this.gridStep ? "true" : "false"}
+            @click=${() => this.setGrid(true, step)}>${step * 100}%</button>`)}</div>
+        </div>
+        ${check("Show grid lines", lines, "Draw the grid on the face. Layers snap either way.", (v) => this.setGrid(true, this.gridStep, v))}` : nothing}
+        ${check("Snap to layers", layers, "Edges and middles land on the other layers' edges and middles, and on the middle of the face, with a pink line while they meet.", (v) => this.setGrid(grid, this.gridStep, lines, v))}
       </div>` : nothing}
-      <button class="grid-lines" ?disabled=${off} aria-pressed=${lines ? "true" : "false"}
-        aria-label=${lines ? "Hide the grid lines" : "Show the grid lines"}
-        title=${lines ? "Hide the grid lines. Layers still snap." : "Show the grid lines. Layers snap either way."}
-        @click=${() => this.setGrid(true, this.gridStep, !lines)}>
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${eye}</svg>
-      </button>` : nothing}
     </span>`;
   }
 
@@ -4835,7 +4810,7 @@ export class WristAssistantPanel extends LitElement {
         ${this.renderTintTool()}
         ${this.renderPickButton()}
         ${this.renderShowTapsButton()}
-        ${this.renderGridButton()}
+        ${this.renderSnapMenu()}
         <button class="pick" title="Back to the editor (Escape)" @click=${() => { this.zoomed = false; }}><span class="glyph">⤡</span>Close</button>
       </div>
       <div class="zoom-stage" style=${`--wa-ratio:${ratio}`}>
@@ -4875,11 +4850,9 @@ export class WristAssistantPanel extends LitElement {
       ["Drag a row", "Reorder the list. Drop it on a group to put it inside"],
       ["Pick layer", "Point at the face to find a layer. Click it to select it"],
       ["Show taps", "Every tap area, labelled. With a layer selected, only its tap shows and its corners drag"],
-      ["Snap to grid", "On by default at 1%. Layers snap to the grid when you drag them, and arrows move one grid step. The eye beside the size shows or hides the lines; snapping works either way"],
-      ["Smart guides", "Drag a layer near another one and its edges or middle land on that layer's, with a pink line across the face while they meet. The face's own middle lines work the same way"],
-      ["Line up", "The eight buttons above the face. With one layer selected they move it against the face; with several picked they line the pick up against its own box, or even out the gaps between three or more"],
-      ["Alt-drag", "Flips all snapping for that drag, guides and grid alike: snaps with Snap to grid off, moves freely with it on"],
-      ["Expand", "The face full-window, for small moves. Everything above works there too"],
+      ["Snapping", "The cog over the face. Snap to grid: layers land on a grid when you drag them, 1% by default, and arrows move one grid step; the lines can be drawn or hidden. Snap to layers: edges and middles land on the other layers' and on the middle of the face, with a pink line while they meet. Both start on"],
+      ["Alt-drag", "Flips snapping for that drag: a drag that would snap moves freely, and one that would not snaps to the grid"],
+      ["Expand", "The button over the face. The face full-window, for small moves. Everything above works there too"],
       ["Locked group", "Drags as one. Unlock it in its row to move layers alone"],
       ["Timestamp chip", "On a picture layer: click it to move it, pull a corner for its size"],
     ];
@@ -5418,47 +5391,6 @@ export class WristAssistantPanel extends LitElement {
     return true;
   }
 
-  // ── line up and even out ──────────────────────────────────────────────
-
-  /** The layers the align and spread buttons work on: what is selected on the
-   * shape being edited, minus the ones a drag would refuse to move. */
-  private arrangeIds(): string[] {
-    const cfg = this.draft?.config;
-    if (!cfg || !this.canEdit || this.showTaps || this.picking) return [];
-    const family = this.canvasFamily;
-    return this.selectedIds().filter((id) => {
-      const el = cfg.elements.find((x) => x.payload.id === id);
-      // A layer pinned to a chart reading is placed by its anchor rather than
-      // by its frame, so moving the frame would move nothing anyone can see.
-      return el !== undefined && el.payload.chartAnchor === undefined
-        && cfg.perFamily[family]?.placements[id] !== undefined;
-    });
-  }
-
-  /**
-   * Line the selection up, or even out its gaps. Frames go in and come back in
-   * the same order, so each one lands back on the layer it came from, and the
-   * whole set is written in one `mutate`, which is one undo step for the lot.
-   */
-  private arrangeSelection(apply: (frames: NormalizedFrame[]) => NormalizedFrame[]) {
-    const cfg = this.draft?.config;
-    const ids = this.arrangeIds();
-    if (!cfg || ids.length === 0) return;
-    const family = this.canvasFamily;
-    const frames: NormalizedFrame[] = [];
-    for (const id of ids) {
-      const el = cfg.elements.find((x) => x.payload.id === id);
-      if (el) frames.push(effectivePlacement(cfg, family, el).frame);
-    }
-    const next = apply(frames);
-    this.mutate((c) => {
-      ids.forEach((id, i) => {
-        const frame = next[i];
-        if (frame !== undefined) setPlacement(c, family, id, { frame });
-      });
-    });
-  }
-
   /**
    * The canvas gestures in one preview normalise against. Pointer deltas arrive
    * in slot points; the design box as it lands in this slot turns them into the
@@ -5902,7 +5834,7 @@ export class WristAssistantPanel extends LitElement {
   /** Open or shut one of the preview bar's menus; opening one shuts the other.
    * A press anywhere outside the open menu's control shuts it, the same way
    * the complication picker closes. */
-  private toggleMenu(menu: "grid" | "case" | "tint", next = this.openMenu !== menu) {
+  private toggleMenu(menu: "snap" | "case" | "tint", next = this.openMenu !== menu) {
     this.openMenu = next ? menu : this.openMenu === menu ? undefined : this.openMenu;
     if (this.openMenu !== undefined) window.addEventListener("pointerdown", this.menuOutside, { capture: true });
     else window.removeEventListener("pointerdown", this.menuOutside, { capture: true });
@@ -8108,8 +8040,6 @@ export class WristAssistantPanel extends LitElement {
             </span>
           </span>
           ${isDrawable(family) ? this.renderTintTool() : nothing}
-          <span class="spacer"></span>
-          ${this.renderZoomButton()}
           </div>
         </div>
         <div class="stage">
@@ -8195,7 +8125,7 @@ export class WristAssistantPanel extends LitElement {
       const g = groupOf(cfg, sel.payload.id);
       tail = g?.locked
         ? html`editing <b>${layerTitle(sel, ctx)}</b> in <b>${g.name}</b>. A drag moves the whole group; pull a corner to resize this layer. Arrow keys nudge the group.`
-        : html`editing <b>${layerTitle(sel, ctx)}</b>. Drag it, or pull a corner. Arrow keys nudge it.${this.snapGrid ? " It snaps to the grid and to the other layers. Hold Alt to drag freely." : " Hold Alt while dragging to snap to the grid and the other layers."}`;
+        : html`editing <b>${layerTitle(sel, ctx)}</b>. Drag it, or pull a corner. Arrow keys nudge it.${this.snapGrid && this.snapLayers ? " It snaps to the grid and to the other layers. Hold Alt to drag freely." : this.snapGrid ? " It snaps to the grid. Hold Alt to drag freely." : this.snapLayers ? " It snaps to the other layers. Hold Alt to drag freely." : " Hold Alt while dragging to snap to the grid."}`;
     } else {
       tail = "click a layer to edit it";
     }

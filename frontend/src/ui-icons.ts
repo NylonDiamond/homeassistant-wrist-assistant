@@ -15,9 +15,7 @@ export type UiIconName =
   | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "plus"
   | "lock" | "unlock" | "folder" | "ungroup" | "watch"
   | "compact" | "expanded" | "search" | "undo" | "redo" | "expand" | "left" | "right"
-  | "braces" | "link" | "info" | "globe" | "download" | "check" | "arrow" | "paste"
-  | "alignLeft" | "alignCenterX" | "alignRight" | "alignTop" | "alignMiddleY" | "alignBottom"
-  | "spreadAcross" | "spreadDown";
+  | "braces" | "link" | "info" | "globe" | "download" | "check" | "arrow" | "paste" | "settings";
 
 function shape(name: UiIconName) {
   switch (name) {
@@ -91,6 +89,9 @@ function shape(name: UiIconName) {
     // Onwards: the next step, a link that leaves the panel.
     case "arrow":
       return svg`<path d="M5 12H19" /><path d="M13 6L19 12L13 18" />`;
+    // A cog: settings that belong to this browser, not to the complication.
+    case "settings":
+      return svg`<circle cx="12" cy="12" r="3" /><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7" /><circle cx="12" cy="12" r="7" />`;
     // A clipboard, for pasting a share in.
     case "paste":
       return svg`<rect x="6" y="4.5" width="12" height="16" rx="2" /><path d="M9 4.5V3.5H15V4.5" /><path d="M9 11H15M9 15H13" />`;
@@ -148,26 +149,6 @@ function shape(name: UiIconName) {
       return svg`<path d="M15 14L20 9L15 4" /><path d="M20 9H9A5 5 0 0 0 9 19H12" />`;
     case "expand":
       return svg`<path d="M15 3H21V9M9 21H3V15M21 3L14 10M3 21L10 14" />`;
-    // Line up and even out, for the strip above the canvas. Each one is the
-    // line the layers land on plus two bars of different lengths against it,
-    // so the glyph says which edge without a word.
-    case "alignLeft":
-      return svg`<path d="M3.5 4V20" /><rect x="6.5" y="6" width="13.5" height="4.5" rx="1.3" /><rect x="6.5" y="13.5" width="8" height="4.5" rx="1.3" />`;
-    case "alignCenterX":
-      return svg`<path d="M12 3V21" /><rect x="5.25" y="6" width="13.5" height="4.5" rx="1.3" /><rect x="8" y="13.5" width="8" height="4.5" rx="1.3" />`;
-    case "alignRight":
-      return svg`<path d="M20.5 4V20" /><rect x="4" y="6" width="13.5" height="4.5" rx="1.3" /><rect x="9.5" y="13.5" width="8" height="4.5" rx="1.3" />`;
-    case "alignTop":
-      return svg`<path d="M4 3.5H20" /><rect x="6" y="6.5" width="4.5" height="13.5" rx="1.3" /><rect x="13.5" y="6.5" width="4.5" height="8" rx="1.3" />`;
-    case "alignMiddleY":
-      return svg`<path d="M3 12H21" /><rect x="6" y="5.25" width="4.5" height="13.5" rx="1.3" /><rect x="13.5" y="8" width="4.5" height="8" rx="1.3" />`;
-    case "alignBottom":
-      return svg`<path d="M4 20.5H20" /><rect x="6" y="4" width="4.5" height="13.5" rx="1.3" /><rect x="13.5" y="9.5" width="4.5" height="8" rx="1.3" />`;
-    // Three bars with the same gap twice over: what the button leaves behind.
-    case "spreadAcross":
-      return svg`<rect x="3" y="6" width="3.5" height="12" rx="1.3" /><rect x="10.25" y="6" width="3.5" height="12" rx="1.3" /><rect x="17.5" y="6" width="3.5" height="12" rx="1.3" />`;
-    case "spreadDown":
-      return svg`<rect x="6" y="3" width="12" height="3.5" rx="1.3" /><rect x="6" y="10.25" width="12" height="3.5" rx="1.3" /><rect x="6" y="17.5" width="12" height="3.5" rx="1.3" />`;
   }
 }
 
