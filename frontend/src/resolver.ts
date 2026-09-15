@@ -896,7 +896,14 @@ function capitalized(s: string): string {
   return s.replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 }
 
-/** Unix seconds printed as a time, in one of the five styles.
+/** What a clock-bearing timestamp leaves out. Both default to false, which is
+ * the whole clock. Mirrors `hideMinutes` and `hideDayPeriod` on `ValueFormat`. */
+export interface TimestampTrim {
+  minutes?: boolean;
+  dayPeriod?: boolean;
+}
+
+/** Unix seconds printed as a time, in one of the four styles.
  *
  * The hour cycle is the device's, so the same document reads `9:30 AM` on one
  * watch and `09:30` on the next, which is what the wearer set. The zone is the
@@ -904,25 +911,55 @@ function capitalized(s: string): string {
  * or it would pass only on the machine that wrote it. A style this build does
  * not know prints the seconds unchanged, the way an unknown typeface draws in
  * the system one. Swift uses `Date.FormatStyle` with the same fields. */
-export function timestampString(seconds: number, style: TimestampStyle, locale?: string, timeZone?: string): string {
+export function timestampString(
+  seconds: number,
+  style: TimestampStyle,
+  locale?: string,
+  timeZone?: string,
+  trim?: TimestampTrim,
+): string {
   const date = new Date(seconds * 1000);
   if (!Number.isFinite(date.getTime())) return String(seconds);
   const zone = timeZone !== undefined ? { timeZone } : {};
   if (style === "date") return new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", ...zone }).format(date);
   if (style === "weekday") return new Intl.DateTimeFormat(locale, { weekday: "short", ...zone }).format(date);
-  // The hour on its own, for a forecast column too narrow for ":00". The
-  // locale's own hour-only pattern is used rather than a hand-built one, so a
-  // 12-hour device keeps the day period it needs to tell 5 AM from 5 PM and a
-  // German one keeps its "Uhr". `Date.FormatStyle.hour()` resolves to the same
-  // pattern, padding included, so unlike `clock` no padding is asked for here.
-  if (style === "hour") return new Intl.DateTimeFormat(locale, { hour: "numeric", ...zone }).format(date);
   const day = style === "dateTime" ? { weekday: "short" as const } : {};
   const numeric = new Intl.DateTimeFormat(locale, { ...day, hour: "numeric", minute: "2-digit", ...zone });
   // A 24-hour locale pads the hour ("09:30"), a 12-hour one does not ("9:30 AM").
   // `Intl` leaves both unpadded under `numeric`, where `Date.FormatStyle` pads
   // the 24-hour one, so the padding is asked for explicitly on that side.
-  if (numeric.resolvedOptions().hour12 !== false) return numeric.format(date);
-  return new Intl.DateTimeFormat(locale, { ...day, hour: "2-digit", minute: "2-digit", ...zone }).format(date);
+  const fmt = numeric.resolvedOptions().hour12 !== false
+    ? numeric
+    : new Intl.DateTimeFormat(locale, { ...day, hour: "2-digit", minute: "2-digit", ...zone });
+  if (!trim?.minutes && !trim?.dayPeriod) return fmt.format(date);
+  return trimClockParts(fmt.formatToParts(date), trim);
+}
+
+/** The formatted clock with whole fields taken out of it.
+ *
+ * Neither `Intl.DateTimeFormat` nor `Date.FormatStyle` will print an hour with
+ * no minutes that keeps the day period, or a 12-hour time with no AM at all: a
+ * hour-only skeleton is a different pattern in every locale, and gives `17 Uhr`
+ * in German and a padded `05` in en-US. So the full clock is formatted and the
+ * unwanted fields are lifted out of it, which keeps the locale's own hour
+ * digits, separator and word order. Swift does exactly this over the runs of
+ * `Date.FormatStyle.attributedStyle`, and the two agree character for character.
+ *
+ * A field takes its separator with it: the one in front when it has one, so
+ * `5:30 PM` loses `:30` and not the space before `PM`, otherwise the one behind,
+ * which is what a locale that leads with the day period needs. */
+function trimClockParts(parts: Intl.DateTimeFormatPart[], trim: TimestampTrim): string {
+  const drop = new Set<string>([...(trim.minutes ? ["minute"] : []), ...(trim.dayPeriod ? ["dayPeriod"] : [])]);
+  const keep = parts.map(() => true);
+  parts.forEach((p, i) => {
+    if (!drop.has(p.type)) return;
+    keep[i] = false;
+    const before = parts[i - 1];
+    const after = parts[i + 1];
+    if (before?.type === "literal" && keep[i - 1]) keep[i - 1] = false;
+    else if (after?.type === "literal") keep[i + 1] = false;
+  });
+  return parts.filter((_, i) => keep[i]).map((p) => p.value).join("").trim();
 }
 
 export function formatValue(
@@ -944,7 +981,10 @@ export function formatValue(
   } else if (f.timestamp !== undefined && trimmedNumber !== undefined) {
     // After the two that also read a number, and only when the value is one: a
     // field holding a title rather than a time prints exactly what it says.
-    text = timestampString(trimmedNumber, f.timestamp, locale, timeZone);
+    text = timestampString(trimmedNumber, f.timestamp, locale, timeZone, {
+      minutes: f.hideMinutes,
+      dayPeriod: f.hideDayPeriod,
+    });
   } else {
     const n = leadingNumber(raw);
     if (n !== undefined) {

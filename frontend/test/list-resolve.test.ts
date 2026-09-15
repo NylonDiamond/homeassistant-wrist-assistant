@@ -446,12 +446,36 @@ describe("the timestamp format", () => {
     expect(timestampString(seconds, "clock", "en-GB", "UTC")).toBe("09:30");
   });
 
-  it("prints the hour on its own, keeping whatever the locale puts beside it", () => {
-    // The day period stays, or 5 AM and 5 PM would read alike; German keeps its
-    // "Uhr" for the same reason, that the pattern is the locale's own.
-    expect(timestampString(seconds, "hour", "en-US", "UTC")).toMatch(/^9\s?AM$/);
-    expect(timestampString(seconds, "hour", "en-GB", "UTC")).toBe("09");
-    expect(timestampString(seconds, "hour", "de-DE", "UTC")).toBe("09 Uhr");
+  it("leaves the minutes, the day period or both out of a clock", () => {
+    const trim = (minutes: boolean, dayPeriod: boolean, locale = "en-US") =>
+      timestampString(seconds, "clock", locale, "UTC", { minutes, dayPeriod });
+    // Dropping the minutes takes the ":" with them and leaves the space before
+    // "AM" alone, so the day period still reads.
+    expect(trim(true, false)).toMatch(/^9\s?AM$/);
+    expect(trim(false, true)).toBe("9:30");
+    expect(trim(true, true)).toBe("9");
+    // A 24-hour locale has no day period to drop, and keeps its padded hour
+    // rather than falling back to an hour-only pattern, which would say "Uhr".
+    expect(trim(true, false, "de-DE")).toBe("09");
+    expect(trim(false, true, "de-DE")).toBe("09:30");
+  });
+
+  it("leaves the weekday of a dateTime alone while trimming its clock", () => {
+    expect(timestampString(seconds, "dateTime", "en-US", "UTC", { minutes: true }))
+      .toMatch(/^Tue,? 9\s?AM$/);
+    expect(timestampString(seconds, "dateTime", "en-US", "UTC", { minutes: true, dayPeriod: true }))
+      .toMatch(/^Tue,? 9$/);
+  });
+
+  it("means nothing to a style with no clock in it", () => {
+    const both = { minutes: true, dayPeriod: true };
+    expect(timestampString(seconds, "date", "en-US", "UTC", both)).toBe("Sep 15");
+    expect(timestampString(seconds, "weekday", "en-US", "UTC", both)).toBe("Tue");
+  });
+
+  it("reads the trim off the format keys", () => {
+    const f = { timestamp: "clock" as const, hideMinutes: true, hideDayPeriod: true };
+    expect(formatValue(String(seconds), f, undefined, "en-US", "UTC")).toBe("9");
   });
 
   it("reads the hour in the zone it was given", () => {

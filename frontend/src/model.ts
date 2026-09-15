@@ -404,23 +404,36 @@ export interface ValueFormat {
    * Written only when set, so every document saved before this key is byte
    * identical. See `TimestampStyle`. */
   timestamp?: TimestampStyle;
+  /** Drop the minutes from a `clock` or `dateTime` timestamp, so `5:30 PM`
+   * reads `5 PM`. For a row too narrow to spend three characters on `:30`.
+   * Ignored by every other style. */
+  hideMinutes?: boolean;
+  /** Drop the AM/PM from a `clock` or `dateTime` timestamp, so `5:30 PM` reads
+   * `5:30`. Does nothing on a device set to a 24-hour clock, which never had
+   * one. Ignored by every other style. */
+  hideDayPeriod?: boolean;
   textCase?: TextCase;
 }
 
 /** How a `timestamp` format prints its seconds. `clock` is `9:30 AM` or
- * `09:30` by the device's own clock, `hour` is the same clock with the minutes
- * dropped (`5 PM`, `17`), `date` is `15 Sep`, `weekday` is `Mon`, and
- * `dateTime` is the clock and the weekday together. Mirrors
- * `CustomComplication.ValueFormat.Timestamp` in the app repo. */
-export type TimestampStyle = "clock" | "hour" | "date" | "weekday" | "dateTime";
+ * `09:30` by the device's own clock, `date` is `15 Sep`, `weekday` is `Mon`,
+ * and `dateTime` is the two together. Mirrors `CustomComplication.ValueFormat.Timestamp`
+ * in the app repo. `hideMinutes` and `hideDayPeriod` trim the two clock-bearing
+ * ones, so what used to want its own style is a pair of switches instead. */
+export type TimestampStyle = "clock" | "date" | "weekday" | "dateTime";
 
 export const TIMESTAMP_STYLES: readonly [TimestampStyle, string][] = [
   ["clock", "Time"],
-  ["hour", "Hour"],
   ["date", "Date"],
   ["weekday", "Weekday"],
   ["dateTime", "Weekday and time"],
 ];
+
+/** Whether a style prints a clock, and so whether the two trim switches mean
+ * anything for it. */
+export function timestampHasClock(style: TimestampStyle | undefined): boolean {
+  return style === "clock" || style === "dateTime";
+}
 
 export type AggregateScope =
   | { kind: "entities"; entities: EntityRef[] }
@@ -3247,6 +3260,8 @@ function parseFormat(o: unknown): ValueFormat | undefined {
   // An unknown style reads as absent, so a panel that predates a new spelling
   // prints the seconds rather than refusing the document.
   if (TIMESTAMP_STYLES.some(([s]) => s === o.timestamp)) f.timestamp = o.timestamp as TimestampStyle;
+  if (o.hideMinutes === true) f.hideMinutes = true;
+  if (o.hideDayPeriod === true) f.hideDayPeriod = true;
   if (o.textCase === "upper" || o.textCase === "lower" || o.textCase === "capitalized") f.textCase = o.textCase;
   return formatIsEmpty(f) ? undefined : f;
 }
@@ -3263,6 +3278,8 @@ export function formatIsEmpty(f: ValueFormat | undefined): boolean {
     !f.relativeTime &&
     !f.duration &&
     f.timestamp === undefined &&
+    !f.hideMinutes &&
+    !f.hideDayPeriod &&
     f.textCase === undefined
   );
 }
@@ -4938,6 +4955,8 @@ function encodeFormat(f: ValueFormat): J {
   // Written only when set, so every value formatted before this key existed
   // encodes exactly the bytes it always did.
   if (f.timestamp !== undefined) o.timestamp = f.timestamp;
+  if (f.hideMinutes) o.hideMinutes = true;
+  if (f.hideDayPeriod) o.hideDayPeriod = true;
   if (f.textCase !== undefined) o.textCase = f.textCase;
   return o;
 }
@@ -5790,7 +5809,7 @@ const K = {
   inline: ["label", "value", "symbol", "countdown"],
   named: ["id", "name", "value"],
   value: ["kind", "format"],
-  format: ["decimals", "multiply", "offset", "prefix", "suffix", "useEntityUnit", "relativeTime", "duration", "timestamp", "textCase"],
+  format: ["decimals", "multiply", "offset", "prefix", "suffix", "useEntityUnit", "relativeTime", "duration", "timestamp", "hideMinutes", "hideDayPeriod", "textCase"],
   entityRef: ["entityId", "displayName", "domain", "iconName"],
   aggregate: ["function", "scope", "stateFilter", "attribute"],
   scope: ["kind", "entities", "domains", "areaIds", "labelIds", "floorIds"],

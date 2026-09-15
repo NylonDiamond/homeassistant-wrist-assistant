@@ -241,6 +241,7 @@ import {
   LIST_SOURCE_KINDS,
   LIST_STATS,
   TIMESTAMP_STYLES,
+  timestampHasClock,
   TODO_SORTS,
   TODO_STATUSES,
   chartPointDotSize,
@@ -2895,6 +2896,13 @@ function formatEditor(format: ValueFormat | undefined, set: (f: ValueFormat) => 
       { titles: { "": "300", relativeTime: "One unit: 45s, 5m, 3h", duration: "Two units: 1h 23m, 5m 0s" } }) : nothing}
     ${selectField("Timestamp", f.timestamp ?? "", [["", "None"], ...TIMESTAMP_STYLES], (v) =>
       upd({ timestamp: (v || undefined) as ValueFormat["timestamp"] }))}
+    ${timestampHasClock(f.timestamp)
+      ? html`<div class="grid2">
+          ${checkField("Minutes", !f.hideMinutes, (v) => upd({ hideMinutes: !v }))}
+          ${checkField("AM/PM", !f.hideDayPeriod, (v) => upd({ hideDayPeriod: !v }))}
+        </div>
+        <div class="hint">Turn both off and 5:30 PM reads 5. AM/PM does nothing on a watch set to a 24-hour clock, which never shows one.</div>`
+      : nothing}
     ${f.timestamp === undefined
       ? nothing
       : html`<div class="hint">Read as a moment in time (unix seconds) and printed by the watch's own clock and locale. A value that is not a number prints exactly as it did.</div>`}
@@ -7859,6 +7867,8 @@ export function describeFormat(format: ValueFormat | undefined): string {
   if (format.relativeTime) bits.push("as relative time");
   if (format.duration) bits.push("as a duration");
   if (format.timestamp) bits.push(`as ${(TIMESTAMP_STYLES.find(([s]) => s === format.timestamp)?.[1] ?? format.timestamp).toLowerCase()}`);
+  if (timestampHasClock(format.timestamp) && format.hideMinutes) bits.push("no minutes");
+  if (timestampHasClock(format.timestamp) && format.hideDayPeriod) bits.push("no AM/PM");
   if (format.textCase) bits.push(format.textCase === "capitalized" ? "Capitalized" : format.textCase === "upper" ? "UPPER" : "lower");
   return bits.length === 0 ? "" : ` (${bits.join(", ")})`;
 }
