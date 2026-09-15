@@ -77,11 +77,12 @@ def local(year: int, month: int, day: int, hour: int = 0, minute: int = 0) -> in
 # ── clamps and spellings ───────────────────────────────────────────────────
 
 
-def test_the_calendar_window_clamps_to_two_weeks():
+def test_the_calendar_window_clamps_to_a_year():
     assert clamp_hours(24) == 24
     assert clamp_hours(0) == 1
     assert clamp_hours(-5) == 1
-    assert clamp_hours(10_000) == 336
+    assert clamp_hours(8784) == 8784
+    assert clamp_hours(10_000) == 8784
     assert clamp_hours("nope") == 24
     assert clamp_hours(None) == 24
 
@@ -644,14 +645,14 @@ def test_a_calendar_fetch_asks_for_the_clamped_window_and_slices_after_sorting()
     )
     result = _fetch(
         hass,
-        {"source": "calendar", "entities": [CAL_A, CAL_B], "hours": 9999, "limit": 2},
+        {"source": "calendar", "entities": [CAL_A, CAL_B], "hours": 99_999, "limit": 2},
     )
     domain, service, data, blocking, return_response = hass.services.calls[0]
     assert (domain, service) == ("calendar", "get_events")
     assert (blocking, return_response) == (True, True)
     assert data["entity_id"] == [CAL_A, CAL_B]
     assert data["start_date_time"] == NOW.isoformat()
-    assert data["end_date_time"] == (NOW + timedelta(hours=336)).isoformat()
+    assert data["end_date_time"] == (NOW + timedelta(hours=8784)).isoformat()
     # Four events found, two drawn, and the count is the one before the slice.
     assert result.total == 4
     assert [item["title"] for item in result.items] == ["Bin day", "Standup"]

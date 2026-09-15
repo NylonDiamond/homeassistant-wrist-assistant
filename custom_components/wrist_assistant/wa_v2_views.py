@@ -961,7 +961,7 @@ async def _op_list(ctx: _OpContext) -> Response:
           "source":    "calendar" | "todo" | "forecast",
           "entities":  [<entity_id>, ...],   # calendar and todo, up to 5
           "entity_id": "<entity_id>",        # forecast, the flat form
-          "hours":     <int>?,   # calendar window, 1..336, default 24
+          "hours":     <int>?,   # calendar window, 1..8784 (a year), default 24
           "status":    "open" | "done" | "all"?,   # todo, default open
           "sort":      "list" | "due"?,            # todo, default list
           "type":      "hourly" | "daily" | "twiceDaily"?,  # forecast

@@ -50,10 +50,11 @@ SERVICE_SOURCES = (SOURCE_CALENDAR, SOURCE_TODO, SOURCE_FORECAST)
 # sent one of these has picked the wrong transport, not made a typo.
 TEMPLATE_SOURCES = ("entities", "attribute", "template")
 
-# A calendar window. Two weeks is already more than any complication can draw;
-# the cap is about what a caller may ask the calendar integrations to search.
+# A calendar window. A year (366 days) is far more than any complication can
+# draw; the cap is about what a caller may ask the calendar integrations to
+# search. The panel's LIST_MAX_CALENDAR_HOURS is the same number.
 MIN_HOURS = 1
-MAX_HOURS = 336
+MAX_HOURS = 8784
 DEFAULT_HOURS = 24
 
 # Cells a list layer can hold, so the row count is also the item cap. The

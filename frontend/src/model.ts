@@ -2841,9 +2841,11 @@ export const LIST_MAX_GAP = 12;
 export const LIST_MAX_TEMPLATE = 8;
 /** Calendars or to-do lists one source may merge. */
 export const LIST_MAX_SOURCE_ENTITIES = 5;
-/** How far ahead a calendar source may look, in hours. */
+/** How far ahead a calendar source may look, in hours. A year (366 days) is
+ * the cap, and it is about what a caller may ask the calendar integrations to
+ * search, not about what a face can draw. The integration clamps to the same. */
 export const LIST_MIN_CALENDAR_HOURS = 1;
-export const LIST_MAX_CALENDAR_HOURS = 336;
+export const LIST_MAX_CALENDAR_HOURS = 8784;
 export const LIST_DEFAULT_CALENDAR_HOURS = 24;
 
 /** The kinds a row template may never hold. A list inside a list has no
@@ -2915,21 +2917,25 @@ export function clampCalendarHours(raw: unknown): number {
 
 /** The unit a calendar look-ahead is shown in. Editor only: the wire always
  * carries hours, so a document never learns which unit it was typed in. */
-export type CalendarLookAheadUnit = "hours" | "days" | "weeks";
-export const CALENDAR_LOOK_AHEAD_UNITS: readonly CalendarLookAheadUnit[] = ["hours", "days", "weeks"];
-const HOURS_PER: Record<CalendarLookAheadUnit, number> = { hours: 1, days: 24, weeks: 168 };
+export type CalendarLookAheadUnit = "hours" | "days" | "weeks" | "months";
+export const CALENDAR_LOOK_AHEAD_UNITS: readonly CalendarLookAheadUnit[] = ["hours", "days", "weeks", "months"];
+/** A month is thirty days here: the window is "about this far", and a fixed
+ * length is what lets the same document mean the same thing every day. */
+const HOURS_PER: Record<CalendarLookAheadUnit, number> = { hours: 1, days: 24, weeks: 168, months: 720 };
 
 /** The largest number of one unit this many hours is, or hours when nothing
- * bigger divides it: 336 reads as 2 weeks, 72 as 3 days, 30 as 30 hours. */
+ * bigger divides it: 720 reads as 1 month, 336 as 2 weeks, 72 as 3 days, 30
+ * as 30 hours. */
 export function calendarLookAhead(hours: number): { value: number; unit: CalendarLookAheadUnit } {
   const h = clampCalendarHours(hours);
+  if (h % HOURS_PER.months === 0) return { value: h / HOURS_PER.months, unit: "months" };
   if (h % HOURS_PER.weeks === 0) return { value: h / HOURS_PER.weeks, unit: "weeks" };
   if (h % HOURS_PER.days === 0) return { value: h / HOURS_PER.days, unit: "days" };
   return { value: h, unit: "hours" };
 }
 
 /** The hours behind a number typed in one unit, kept inside the wire's
- * limits: a value past the two-week cap lands on the cap, and nothing is
+ * limits: a value past the one-year cap lands on the cap, and nothing is
  * shorter than one hour. */
 export function calendarHoursFrom(value: number, unit: CalendarLookAheadUnit): number {
   const n = Number.isFinite(value) ? value : 1;

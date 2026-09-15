@@ -3286,7 +3286,7 @@ function listSourceFields(
       const unit = LOOK_AHEAD_UNIT_PICKED.get(l.id) ?? calendarLookAhead(source.hours).unit;
       const shown = calendarLookAheadShown(source.hours, unit);
       const defaultAhead = calendarLookAhead(LIST_DEFAULT_CALENDAR_HOURS);
-      const unitShort: Record<CalendarLookAheadUnit, string> = { hours: "h", days: "d", weeks: "w" };
+      const unitShort: Record<CalendarLookAheadUnit, string> = { hours: "h", days: "d", weeks: "w", months: "mo" };
       body = html`
         ${refListField(host, "Calendar", source.entities, (entities) => setSource({ ...source, entities }), `${key}-cal`, "calendar")}
         ${numberField("Look ahead", shown, (v) => setSource({ ...source, hours: calendarHoursFrom(v ?? 1, unit) }, "list-hours"),
@@ -3298,7 +3298,7 @@ function listSourceFields(
             setSource({ ...source, hours: calendarHoursFrom(calendarLookAheadIn(source.hours, u), u) });
           },
           { def: defaultAhead.unit })}
-        <div class="hint">Events from now to that far ahead, up to two weeks, merged across the calendars and sorted by when they start. An event already under way is included.</div>`;
+        <div class="hint">Events from now to that far ahead, up to a year, merged across the calendars and sorted by when they start. A month counts as thirty days. An event already under way is included. How many of them show is Items shown, in the Look card.</div>`;
       break;
     }
     case "todo":
@@ -3345,7 +3345,7 @@ function listLayoutFields(
   const tall = listCellHeightPoints(l, frame, family);
   const down = l.direction === "down";
   return html`
-    ${numberField("Cells", l.rows, (v) => set((p) => { p.rows = clampListRows(v); syncListAttributes(p); }, "list-rows"),
+    ${numberField("Items shown", l.rows, (v) => set((p) => { p.rows = clampListRows(v); syncListAttributes(p); }, "list-rows"),
       { step: 1, min: LIST_MIN_ROWS, max: LIST_MAX_ROWS, def: LIST_DEFAULT_ROWS })}
     ${segField("Direction", l.direction, [...LIST_DIRECTIONS], (v) => set((p) => { p.direction = v; }), { def: "down" })}
     ${down
