@@ -1,6 +1,6 @@
 {
   "name": "Curved text",
-  "description": "The `arc` key on a text layer, added 2026-09-14 and reshaped the next day so the frame is the circle. A curve is allowed on every shape with a canvas, so the same document resolves an arc on Circular, Small and Rectangular alike. The radius leaves the resolver in design-box points, a fraction of the LAYER FRAME's shorter side rather than the shape's, which is why the same 0.5 reads 25.5 on a full-frame layer over the 51 point circle and 81.335 over the 162.67 point tile, and why the half-size Kitchen frame halves it again. `angle` is where the middle of the text sits, `sweep` how far round it may spread, `spacing` extra room between letters in points, `flip` the letters turned over for a line along the bottom. The first layer pins the defaults a bare `arc` decodes to: the top of the circle, 120 degrees, no spacing, feet toward the centre. The second carries all five keys, with a sweep that runs the other way and a frame that is not the whole canvas. The third is a countdown, which the system draws as one ticking string and so never curves, whatever the document asks for. The last two sit at the ends of the ranges the editor offers: the widest radius with the shortest sweep on a half-height frame, and the tightest radius with a full turn the other way and the tightest spacing. What a document outside those ranges decodes to is pinned in each side's own unit tests, since a fixture has to round-trip byte for byte and so can only hold canonical values.",
+  "description": "The `arc` key on a text layer, added 2026-09-14 and reshaped the next day so the frame is the circle. A curve is allowed on every shape with a canvas, so the same document resolves an arc on Circular, Small and Rectangular alike. The radius leaves the resolver in design-box points, a fraction of the LAYER FRAME's shorter side rather than the shape's, which is why the same 0.5 reads 25.5 on a full-frame layer over the 51 point circle and 81.335 over the 162.67 point tile, and why the half-size Kitchen frame halves it again. `angle` is where the middle of the text sits, `sweep` how far round it may spread, `spacing` extra room between letters in points, `flip` the letters turned over for a line along the bottom, and `anchor` half the frame's shorter side, the distance at which the middle of the text sits whatever the radius, so the radius bends the text in place. The first layer pins the defaults a bare `arc` decodes to: the top of the circle, 120 degrees, no spacing, feet toward the centre. The second carries all five keys, with a sweep that runs the other way and a frame that is not the whole canvas. The third is a countdown, which the system draws as one ticking string and so never curves, whatever the document asks for. The last two sit at the ends of the ranges the editor offers: the widest radius with the shortest sweep on a half-height frame, and the tightest radius with a full turn the other way and the tightest spacing. What a document outside those ranges decodes to is pinned in each side's own unit tests, since a fixture has to round-trip byte for byte and so can only hold canonical values.",
   "config": {
     "schemaVersion": 7,
     "id": "AAAAAAAA-0000-4000-8000-0000000003A0",
@@ -112,13 +112,13 @@
           "id": "EEEEEEEE-0000-4000-8000-0000000003B1",
           "kind": "text",
           "text": "WRIST ASSISTANT",
-          "arc": { "radius": 25.5, "angle": 0, "sweep": 120, "spacing": 0, "flip": false }
+          "arc": { "radius": 25.5, "angle": 0, "sweep": 120, "spacing": 0, "flip": false, "anchor": 25.5 }
         },
         {
           "id": "EEEEEEEE-0000-4000-8000-0000000003B2",
           "kind": "text",
           "text": "Kitchen",
-          "arc": { "radius": 15.3, "angle": 135, "sweep": -90, "spacing": 1.5, "flip": true }
+          "arc": { "radius": 15.3, "angle": 135, "sweep": -90, "spacing": 1.5, "flip": true, "anchor": 12.75 }
         },
         {
           "id": "EEEEEEEE-0000-4000-8000-0000000003B3",
@@ -129,13 +129,13 @@
           "id": "EEEEEEEE-0000-4000-8000-0000000003B4",
           "kind": "text",
           "text": "Wide",
-          "arc": { "radius": 76.5, "angle": 0, "sweep": 10, "spacing": 0, "flip": false }
+          "arc": { "radius": 76.5, "angle": 0, "sweep": 10, "spacing": 0, "flip": false, "anchor": 12.75 }
         },
         {
           "id": "EEEEEEEE-0000-4000-8000-0000000003B5",
           "kind": "text",
           "text": "Tight",
-          "arc": { "radius": 5.1, "angle": 0, "sweep": -360, "spacing": -2, "flip": false }
+          "arc": { "radius": 5.1, "angle": 0, "sweep": -360, "spacing": -2, "flip": false, "anchor": 25.5 }
         }
       ]
     },
@@ -144,12 +144,12 @@
         {
           "id": "EEEEEEEE-0000-4000-8000-0000000003B1",
           "kind": "text",
-          "arc": { "radius": 81.335, "angle": 0, "sweep": 120, "spacing": 0, "flip": false }
+          "arc": { "radius": 81.335, "angle": 0, "sweep": 120, "spacing": 0, "flip": false, "anchor": 81.335 }
         },
         {
           "id": "EEEEEEEE-0000-4000-8000-0000000003B2",
           "kind": "text",
-          "arc": { "radius": 48.801, "angle": 135, "sweep": -90, "spacing": 1.5, "flip": true }
+          "arc": { "radius": 48.801, "angle": 135, "sweep": -90, "spacing": 1.5, "flip": true, "anchor": 40.6675 }
         },
         {
           "id": "EEEEEEEE-0000-4000-8000-0000000003B3",
@@ -159,12 +159,12 @@
         {
           "id": "EEEEEEEE-0000-4000-8000-0000000003B4",
           "kind": "text",
-          "arc": { "radius": 244.005, "angle": 0, "sweep": 10, "spacing": 0, "flip": false }
+          "arc": { "radius": 244.005, "angle": 0, "sweep": 10, "spacing": 0, "flip": false, "anchor": 40.6675 }
         },
         {
           "id": "EEEEEEEE-0000-4000-8000-0000000003B5",
           "kind": "text",
-          "arc": { "radius": 16.267, "angle": 0, "sweep": -360, "spacing": -2, "flip": false }
+          "arc": { "radius": 16.267, "angle": 0, "sweep": -360, "spacing": -2, "flip": false, "anchor": 81.335 }
         }
       ]
     },
@@ -174,13 +174,13 @@
           "id": "EEEEEEEE-0000-4000-8000-0000000003B1",
           "kind": "text",
           "text": "WRIST ASSISTANT",
-          "arc": { "radius": 32.75, "angle": 0, "sweep": 120, "spacing": 0, "flip": false }
+          "arc": { "radius": 32.75, "angle": 0, "sweep": 120, "spacing": 0, "flip": false, "anchor": 32.75 }
         },
         {
           "id": "EEEEEEEE-0000-4000-8000-0000000003B2",
           "kind": "text",
           "text": "Kitchen",
-          "arc": { "radius": 19.65, "angle": 135, "sweep": -90, "spacing": 1.5, "flip": true }
+          "arc": { "radius": 19.65, "angle": 135, "sweep": -90, "spacing": 1.5, "flip": true, "anchor": 16.375 }
         },
         {
           "id": "EEEEEEEE-0000-4000-8000-0000000003B3",
@@ -191,13 +191,13 @@
           "id": "EEEEEEEE-0000-4000-8000-0000000003B4",
           "kind": "text",
           "text": "Wide",
-          "arc": { "radius": 98.25, "angle": 0, "sweep": 10, "spacing": 0, "flip": false }
+          "arc": { "radius": 98.25, "angle": 0, "sweep": 10, "spacing": 0, "flip": false, "anchor": 16.375 }
         },
         {
           "id": "EEEEEEEE-0000-4000-8000-0000000003B5",
           "kind": "text",
           "text": "Tight",
-          "arc": { "radius": 6.55, "angle": 0, "sweep": -360, "spacing": -2, "flip": false }
+          "arc": { "radius": 6.55, "angle": 0, "sweep": -360, "spacing": -2, "flip": false, "anchor": 32.75 }
         }
       ]
     }

@@ -724,9 +724,19 @@ function arcGlyphs(el: Extract<ResolvedElement, { kind: "text" }>): ArcGlyph[] {
   return out;
 }
 
+/** Where the circle's centre sits: the middle of the text stays `anchor` points
+ * from the frame's centre along `angle`, so the centre slides the other way as
+ * the radius grows and the radius only bends the text. Mirrors
+ * `CurvedTextLayout.centre` in the app repo. */
+export function arcCentre(box: { cx: number; cy: number }, arc: { radius: number; angle: number; anchor: number }): { x: number; y: number } {
+  const shift = arcPoint(0, 0, arc.anchor - arc.radius, arc.angle);
+  return { x: box.cx + shift.x, y: box.cy + shift.y };
+}
+
 /** A curved layer's glyphs and where they land, or undefined when it draws
- * straight. The circle is centred on the frame and sized by it, so the frame
- * itself is the selection outline: the box you drag is the circle you get. */
+ * straight. The circle is sized by the frame and the text sits on the frame's
+ * inscribed circle, so the frame itself is the selection outline: the box you
+ * drag is the circle you get. */
 function arcTextLayout(el: Extract<ResolvedElement, { kind: "text" }>, box: Box) {
   if (el.arc === undefined || el.text === "") return undefined;
   const glyphs = arcGlyphs(el);
@@ -734,7 +744,8 @@ function arcTextLayout(el: Extract<ResolvedElement, { kind: "text" }>, box: Box)
   const biggest = Math.max(el.fontSize, ...glyphs.map((g) => g.look.fontSize));
   const layout = arcGlyphAngles(advances, el.arc, ARC_ELLIPSIS_EM * biggest);
   if (layout.placements.length === 0) return undefined;
-  return { glyphs, layout, biggest, cx: box.cx, cy: box.cy, radius: el.arc.radius };
+  const centre = arcCentre(box, el.arc);
+  return { glyphs, layout, biggest, cx: centre.x, cy: centre.y, radius: el.arc.radius };
 }
 
 /** A curved line, one `<text>` per glyph, each turned to sit on the circle. */

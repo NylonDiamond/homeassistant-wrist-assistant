@@ -213,12 +213,17 @@ export interface ResolvedText extends ResolvedBase {
  * positive; `spacing` is extra room between letters in design points; `flip`
  * turns the letters over for a line along the bottom. */
 export interface ResolvedTextArc {
-  /** Design-box points, from the layer frame's centre. */
+  /** Design-box points. */
   radius: number;
   angle: number;
   sweep: number;
   spacing: number;
   flip: boolean;
+  /** How far from the frame's centre the middle of the text sits, in design-box
+   * points: half the frame's shorter side, whatever the radius. The circle's
+   * centre moves along `angle` by `anchor - radius`, so the radius bends the
+   * text in place instead of pushing it away. */
+  anchor: number;
 }
 /** One visible part of a rich text layer. Mirrors `ResolvedText.Part` in the
  * app repo, key for key. */
@@ -1018,6 +1023,7 @@ export function resolvedTextArc(el: TextElement, family: FamilyKind): ResolvedTe
     sweep: clampArcSweep(el.arc.sweep ?? ARC_SWEEP_DEFAULT),
     spacing: clampArcSpacing(el.arc.spacing ?? 0),
     flip: el.arc.flip === true,
+    anchor: side / 2,
   };
 }
 

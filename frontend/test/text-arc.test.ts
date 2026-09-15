@@ -24,7 +24,7 @@ import {
   type Element,
   type TextElement,
 } from "../src/model.js";
-import { arcGlyphAngles, arcPoint, layerOutline, renderLayout, type IconProvider } from "../src/renderer.js";
+import { arcCentre, arcGlyphAngles, arcPoint, layerOutline, renderLayout, type IconProvider } from "../src/renderer.js";
 import { frameBox, resolveAll, type ResolvedLayout, type ResolvedText } from "../src/resolver.js";
 
 const noIcons: IconProvider = { render: () => undefined, available: () => false, names: () => undefined };
@@ -128,7 +128,7 @@ describe("which shapes curve", () => {
   it("settles the radius in points against the layer frame's shorter side", () => {
     const all = layouts("Kitchen", (p) => { p.arc = { radius: 0.5 }; });
     // 0.5 of a full frame over the circular design box's 51 point side.
-    expect(textOf(all.circular).arc).toEqual({ radius: 25.5, angle: 0, sweep: ARC_SWEEP_DEFAULT, spacing: 0, flip: false });
+    expect(textOf(all.circular).arc).toEqual({ radius: 25.5, angle: 0, sweep: ARC_SWEEP_DEFAULT, spacing: 0, flip: false, anchor: 25.5 });
     expect(textOf(all.small).arc?.radius).toBeCloseTo(0.5 * 162.67, 9);
     // The strip's shorter side is its height.
     expect(textOf(all.rectangular).arc?.radius).toBeCloseTo(0.5 * 65.5, 9);
@@ -141,6 +141,24 @@ describe("which shapes curve", () => {
     });
     expect(textOf(boxed.circular).arc?.radius).toBeCloseTo(0.5 * 0.25 * 51, 9);
     expect(textOf(boxed.rectangular).arc?.radius).toBeCloseTo(0.5 * 0.25 * 65.5, 9);
+    // The middle of the text sits half the shorter side out, whatever the radius.
+    expect(textOf(boxed.circular).arc?.anchor).toBeCloseTo(0.125 * 51, 9);
+  });
+
+  it("bends the text in place as the radius changes", () => {
+    const box = { cx: 100, cy: 100 };
+    // On the frame's own circle the centre is the frame's centre.
+    expect(arcCentre(box, { radius: 20, angle: 0, anchor: 20 })).toEqual({ x: 100, y: 100 });
+    // A flatter curve over the top pushes the centre down by the difference, so
+    // the top of the circle stays 20 points above the frame's centre.
+    const flat = arcCentre(box, { radius: 50, angle: 0, anchor: 20 });
+    expect(flat.x).toBeCloseTo(100, 9);
+    expect(flat.y).toBeCloseTo(130, 9);
+    expect(arcPoint(flat.x, flat.y, 50, 0).y).toBeCloseTo(80, 9);
+    // Along the right the shift is sideways instead.
+    const right = arcCentre(box, { radius: 10, angle: 90, anchor: 20 });
+    expect(right.x).toBeCloseTo(110, 9);
+    expect(right.y).toBeCloseTo(100, 9);
   });
 
   it("never curves a countdown, which the watch ticks as one string", () => {
