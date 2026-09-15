@@ -15,7 +15,7 @@ export type UiIconName =
   | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "plus"
   | "lock" | "unlock" | "folder" | "ungroup" | "watch"
   | "compact" | "expanded" | "search" | "undo" | "redo" | "expand" | "left" | "right"
-  | "braces" | "link" | "info" | "globe" | "download" | "check" | "arrow" | "paste" | "settings";
+  | "braces" | "link" | "info" | "globe" | "download" | "check" | "arrow" | "paste" | "guides";
 
 function shape(name: UiIconName) {
   switch (name) {
@@ -89,9 +89,9 @@ function shape(name: UiIconName) {
     // Onwards: the next step, a link that leaves the panel.
     case "arrow":
       return svg`<path d="M5 12H19" /><path d="M13 6L19 12L13 18" />`;
-    // A cog: settings that belong to this browser, not to the complication.
-    case "settings":
-      return svg`<circle cx="12" cy="12" r="3" /><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7" /><circle cx="12" cy="12" r="7" />`;
+    // Two boxes meeting on one line: what snapping to a layer leaves behind.
+    case "guides":
+      return svg`<path d="M12 3V21" /><rect x="4" y="6" width="8" height="4.5" rx="1.3" /><rect x="12" y="13.5" width="8" height="4.5" rx="1.3" />`;
     // A clipboard, for pasting a share in.
     case "paste":
       return svg`<rect x="6" y="4.5" width="12" height="16" rx="2" /><path d="M9 4.5V3.5H15V4.5" /><path d="M9 11H15M9 15H13" />`;

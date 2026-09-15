@@ -683,7 +683,7 @@ export class WristAssistantPanel extends LitElement {
    * held the next click on the face for most of a second after a native menu
    * closed, so a drag right after a change lagged (measured 2026-09-12: the
    * press was 650 to 900 ms old on arrival, with no long task on the page). */
-  @state() private openMenu?: "snap" | "case" | "tint";
+  @state() private openMenu?: "grid" | "case" | "tint";
   /** Alt is down. It flips snapping for a drag, so the grid lines show while
    * it is held even with Snap to grid off. */
   @state() private altHeld = false;
@@ -2116,22 +2116,26 @@ export class WristAssistantPanel extends LitElement {
        when the face is scrolled, and on a narrow canvas the two words go and
        the glyphs stay, so every button is always there to press. */
     .over button.pick { white-space: nowrap; }
-    @container (max-width: 560px) {
+    @container (max-width: 860px) {
       .over .word { display: none; }
       .over button.pick { width: 30px; padding: 0; justify-content: center; }
       .over button.pick .glyph { margin: 0; }
+      .over .grid-tool.on button.pick { padding-right: 0; }
     }
     /* With snapping on, the button and its size read as one accent pill. */
-    /* Centred under the cog: the pill sits in the middle of the stage, so
-       this keeps the menu inside the stage's edges at every width. */
-    .case-tool.snap-tool .pop-menu { left: 50%; right: auto; transform: translateX(-50%); min-width: 260px; padding: 6px; gap: 2px; }
-    .snap-menu label.row { display: flex; align-items: center; gap: 9px; cursor: pointer; padding: 6px 8px; }
-    .snap-menu label.row input { margin: 0; accent-color: var(--wa-accent); }
-    .snap-menu .sub { display: flex; align-items: center; gap: 8px; padding: 2px 8px 6px 33px; }
-    .snap-menu .sub-label { font-size: 12px; color: var(--wa-muted); white-space: nowrap; }
-    .snap-menu .chips { display: inline-flex; gap: 3px; flex-wrap: nowrap; }
-    .snap-menu .chips button.small { min-height: 24px; padding: 0 7px; font-variant-numeric: tabular-nums; }
-    .snap-menu .chips button.small.on { background: color-mix(in srgb, var(--wa-accent) 22%, transparent); color: var(--wa-ink); }
+    /* With the grid on, the switch and its size read as one accent pill. */
+    .grid-tool { display: inline-flex; align-items: center; position: relative; }
+    .grid-tool.on button.pick { border-radius: 8px 0 0 8px; padding-right: 8px; }
+    button.grid-step {
+      height: 30px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+      border: 0; border-left: 1px solid color-mix(in srgb, var(--wa-accent-ink) 30%, transparent);
+      background-color: color-mix(in srgb, var(--wa-accent) 82%, #000); color: var(--wa-accent-ink);
+      padding: 0 6px 0 8px; border-radius: 0 8px 8px 0; display: inline-flex; align-items: center; gap: 3px; font-variant-numeric: tabular-nums;
+    }
+    button.grid-step svg { width: 12px; height: 12px; opacity: .8; }
+    button.grid-step:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .grid-tool .pop-menu { left: 0; right: auto; }
+    button.pick .glyph svg { width: 15px; height: 15px; display: block; }
     /* The preview bar's own menus (grid size, Preview as), in place of native
        selects, whose closing menu made Chrome on macOS hold the next click. */
     .pop-menu {
@@ -4761,46 +4765,47 @@ export class WristAssistantPanel extends LitElement {
     return html`<div class="over">
       <span class="face-tools">${this.renderPickButton()}${this.renderShowTapsButton()}</span>
       <span class="bar-sep" aria-hidden="true"></span>
-      <span class="face-tools">${this.renderZoomButton()}${this.renderSnapMenu()}</span>
+      <span class="face-tools">${this.renderSnapTools()}</span>
+      <span class="bar-sep" aria-hidden="true"></span>
+      ${this.renderZoomButton()}
     </div>`;
   }
 
   /**
-   * The snapping menu behind the gear: snap to the grid, with its size and
-   * whether its lines are drawn, and snap to the other layers. Two switches
-   * rather than one, since some people want the grid alone, some the layers
-   * alone, and both start on. The grid size is a percent of the face's
-   * shorter side; the longer side takes the same distance in points, so cells
-   * are square.
+   * The snapping switches, right there in the pill rather than behind a menu:
+   * snap to the grid with its size beside it, draw the grid's lines, and snap
+   * to the other layers. Three switches, since some people want the grid
+   * alone, some the layers alone, and both start on. The grid size is a
+   * percent of the face's shorter side; the longer side takes the same
+   * distance in points, so cells are square.
    */
-  private renderSnapMenu() {
+  private renderSnapTools() {
     const off = !this.draft || this.parseError !== undefined || !isDrawable(this.activeFamily);
-    const open = this.openMenu === "snap";
     const grid = this.snapGrid;
     const lines = this.showGridLines;
     const layers = this.snapLayers;
-    const summary = grid && layers ? "grid and layers" : grid ? "grid only" : layers ? "layers only" : "off";
-    const check = (label: string, on: boolean, title: string, set: (v: boolean) => void) =>
-      html`<label class="row check" title=${title}>
-        <input type="checkbox" .checked=${on} @change=${(e: Event) => set((e.target as HTMLInputElement).checked)} />
-        <span>${label}</span>
-      </label>`;
-    return html`<span class="case-tool snap-tool ${grid || layers ? "on" : ""}" data-menu="snap">
-      <button class="pick only-icon ${grid || layers ? "on" : ""}" ?disabled=${off} aria-haspopup="menu" aria-expanded=${open ? "true" : "false"}
-        aria-label="Snapping" title=${`Snapping: ${summary}. Hold Alt while dragging to flip it.`}
-        @click=${() => this.toggleMenu("snap")}>${uiIcon("settings")}</button>
-      ${open ? html`<div class="pop-menu snap-menu" role="menu" aria-label="Snapping">
-        ${check("Snap to grid", grid, "Layers land on the grid when you drag them, and arrow keys move one grid step.", (v) => this.setGrid(v, this.gridStep))}
-        ${grid ? html`<div class="sub">
-          <span class="sub-label">Grid size</span>
-          <div class="chips">${GRID_STEPS.map((step) => html`<button class="small ${step === this.gridStep ? "on" : ""}"
-            aria-pressed=${step === this.gridStep ? "true" : "false"}
-            @click=${() => this.setGrid(true, step)}>${step * 100}%</button>`)}</div>
-        </div>
-        ${check("Show grid lines", lines, "Draw the grid on the face. Layers snap either way.", (v) => this.setGrid(true, this.gridStep, v))}` : nothing}
-        ${check("Snap to layers", layers, "Edges and middles land on the other layers' edges and middles, and on the middle of the face, with a pink line while they meet.", (v) => this.setGrid(grid, this.gridStep, lines, v))}
-      </div>` : nothing}
-    </span>`;
+    const eye = lines
+      ? svg`<path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" /><circle cx="8" cy="8" r="1.9" />`
+      : svg`<path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" /><path d="M2.5 13.5l11-11" />`;
+    return html`<span class="grid-tool ${grid ? "on" : ""}" data-menu="grid">
+      <button class="pick ${grid ? "on" : ""}" ?disabled=${off} aria-pressed=${grid ? "true" : "false"}
+        title=${grid ? "Layers land on the grid when you drag them, and arrow keys move one grid step. Hold Alt to drag freely. Click to turn it off." : "Snap layers to a grid when you drag them. Without it, hold Alt while dragging to snap."}
+        @click=${() => this.setGrid(!grid, this.gridStep)}><span class="glyph">▦</span><span class="word">Snap to grid</span></button>
+      ${grid ? html`<button class="grid-step" ?disabled=${off} aria-haspopup="listbox" aria-expanded=${this.openMenu === "grid" ? "true" : "false"}
+        aria-label=${`Grid size, ${this.gridStep * 100}%`} title="Grid size"
+        @click=${() => this.toggleMenu("grid")}>${this.gridStep * 100}%${uiIcon("chevron")}</button>
+      ${this.openMenu === "grid" ? html`<div class="pop-menu" role="listbox" aria-label="Grid size">
+        ${GRID_STEPS.map((step) => html`<button class="row" role="option" aria-selected=${step === this.gridStep ? "true" : "false"}
+          @click=${() => { this.toggleMenu("grid", false); this.setGrid(true, step); }}>${step * 100}%</button>`)}
+      </div>` : nothing}` : nothing}
+    </span>
+    <button class="pick ${lines ? "on" : ""}" ?disabled=${off} aria-pressed=${lines ? "true" : "false"}
+      title=${lines ? "Hide the grid lines. Snapping is not changed." : "Draw the grid on the face. Snapping is not changed."}
+      @click=${() => this.setGrid(grid, this.gridStep, !lines)}>
+      <span class="glyph"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${eye}</svg></span><span class="word">Grid lines</span></button>
+    <button class="pick ${layers ? "on" : ""}" ?disabled=${off} aria-pressed=${layers ? "true" : "false"}
+      title=${layers ? "Edges and middles land on the other layers' edges and middles, and on the middle of the face, with a pink line while they meet. Click to turn it off." : "Snap to the other layers' edges and middles while dragging."}
+      @click=${() => this.setGrid(grid, this.gridStep, lines, !layers)}><span class="glyph">${uiIcon("guides")}</span><span class="word">Snap to layers</span></button>`;
   }
 
   /**
@@ -4823,7 +4828,7 @@ export class WristAssistantPanel extends LitElement {
         ${this.renderTintTool()}
         ${this.renderPickButton()}
         ${this.renderShowTapsButton()}
-        ${this.renderSnapMenu()}
+        ${this.renderSnapTools()}
         <button class="pick" title="Back to the editor (Escape)" @click=${() => { this.zoomed = false; }}><span class="glyph">⤡</span>Close</button>
       </div>
       <div class="zoom-stage" style=${`--wa-ratio:${ratio}`}>
@@ -4863,7 +4868,7 @@ export class WristAssistantPanel extends LitElement {
       ["Drag a row", "Reorder the list. Drop it on a group to put it inside"],
       ["Pick layer", "Point at the face to find a layer. Click it to select it"],
       ["Show taps", "Every tap area, labelled. With a layer selected, only its tap shows and its corners drag"],
-      ["Snapping", "The cog over the face. Snap to grid: layers land on a grid when you drag them, 1% by default, and arrows move one grid step; the lines can be drawn or hidden. Snap to layers: edges and middles land on the other layers' and on the middle of the face, with a pink line while they meet. Both start on"],
+      ["Snapping", "The three switches over the face. Snap to grid: layers land on a grid when you drag them, 1% by default, and arrows move one grid step; the size sits beside it. Grid lines draws the grid. Snap to layers: edges and middles land on the other layers' and on the middle of the face, with a pink line while they meet. Both snaps start on"],
       ["Alt-drag", "Flips snapping for that drag: a drag that would snap moves freely, and one that would not snaps to the grid"],
       ["Expand", "The button over the face. The face full-window, for small moves. Everything above works there too"],
       ["Locked group", "Drags as one. Unlock it in its row to move layers alone"],
@@ -5847,7 +5852,7 @@ export class WristAssistantPanel extends LitElement {
   /** Open or shut one of the preview bar's menus; opening one shuts the other.
    * A press anywhere outside the open menu's control shuts it, the same way
    * the complication picker closes. */
-  private toggleMenu(menu: "snap" | "case" | "tint", next = this.openMenu !== menu) {
+  private toggleMenu(menu: "grid" | "case" | "tint", next = this.openMenu !== menu) {
     this.openMenu = next ? menu : this.openMenu === menu ? undefined : this.openMenu;
     if (this.openMenu !== undefined) window.addEventListener("pointerdown", this.menuOutside, { capture: true });
     else window.removeEventListener("pointerdown", this.menuOutside, { capture: true });
@@ -8094,7 +8099,7 @@ export class WristAssistantPanel extends LitElement {
       icons: this.icons, imageSizes: this.imageSizes, tapAreas: true, slot,
       highlightId: focus ?? peek ?? highlightId,
       ...(outlineIds.length > 0 && !this.showTaps && peek === undefined ? { highlightIds: outlineIds } : {}),
-      ...(this.showGridLines && (this.snapGrid || (this.altHeld && this.canEdit)) ? { grid: this.gridStep } : {}),
+      ...(this.showGridLines || (!this.snapGrid && this.altHeld && this.canEdit) ? { grid: this.gridStep } : {}),
       ...(this.guides.length > 0 && family === this.activeFamily ? { guides: this.guides } : {}),
       tapReview: this.showTaps,
       // A Home Screen tile is tinted the iPhone way: no ground of its own, and
