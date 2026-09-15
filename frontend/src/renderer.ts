@@ -2288,12 +2288,13 @@ function tapLabelText(label: string, box: Box): string | undefined {
  * same way and each row layer carries its own tint group. Two things a cell
  * does not inherit:
  *
- * - The handles and the pointer. A row layer is dragged in the row designer,
- *   against one cell, not in the face's own canvas, where the pointer maths
- *   would be against the wrong box. So on the face the cells take no clicks at
- *   all, and a press on any row lands on the list's own hit box and drags the
- *   list. Review mode is the exception: there a row tap's box is a thing you
- *   click to read what it does.
+ * - The handles. A row layer is dragged in the row designer, against one cell,
+ *   not in the face's own canvas, where the pointer maths would be against the
+ *   wrong box. The cells do take the pointer, so a double click on a row can
+ *   open the designer on the layer it landed on, and the editor sends a plain
+ *   press on a row to the list itself: the cursor says move, and a drag moves
+ *   the whole list. Review mode reads rather than moves, and there a row tap's
+ *   box is a thing you click to see what it does.
  * - The tap boxes. A free-standing tap on the face is drawn because nothing
  *   else marks where it is, but a row tap is repeated in every cell, and a
  *   finger on every row hides the row. The Row card names it; the face shows
@@ -2316,7 +2317,7 @@ function renderList(
     const x = box.x + cell.frame.x * box.w;
     const y = box.y + cell.frame.y * box.h;
     const canvas: CanvasSize = { width: w, height: h };
-    return svg`<g data-list-cell transform="translate(${x} ${y})" pointer-events=${review ? nothing : "none"}>
+    return svg`<g data-list-cell transform="translate(${x} ${y})" style=${review ? nothing : "cursor:move"}>
       ${cell.elements.map((row) => renderElement(row, canvas, cellOptions, charts, tintPrefix))}</g>`;
   })}`;
 }

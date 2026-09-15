@@ -6564,13 +6564,38 @@ export function isAttachedTap(cfg: CustomComplicationConfig, el: Element): boole
 }
 
 /**
+ * The list whose row template holds this layer, or undefined when the id names
+ * a layer of the document itself.
+ *
+ * Row layers are not in `cfg.elements`: they live inside a list's `template`,
+ * and the face draws a copy of each one in every cell.
+ */
+export function listOwningRowLayer(
+  cfg: CustomComplicationConfig,
+  id: string,
+): Extract<Element, { kind: "list" }> | undefined {
+  for (const el of cfg.elements) {
+    if (el.kind !== "list") continue;
+    if (el.payload.template.some((r) => r.payload.id === id)) return el;
+  }
+  return undefined;
+}
+
+/**
  * The layer a preview hit belongs to. An attached tap sits exactly over its
  * owner and is never a row or a selection of its own, so a hit on one answers
- * with the owner. An id the document no longer has answers undefined.
+ * with the owner. A hit on a row layer answers with the list it is a row of:
+ * the row is drawn once per cell and moved in the row designer, so on the face
+ * the thing under the finger is the list. An id the document no longer has
+ * answers undefined.
+ *
+ * While a row is being designed the canvas draws the stage, where the row's
+ * layers are the document's own top-level elements, so the row branch here only
+ * ever fires on the real face.
  */
 export function selectableLayerId(cfg: CustomComplicationConfig, hitId: string): string | undefined {
   const hit = cfg.elements.find((x) => x.payload.id === hitId);
-  if (!hit) return undefined;
+  if (!hit) return listOwningRowLayer(cfg, hitId)?.payload.id;
   if (hit.kind === "tap" && hit.payload.attachedTo !== undefined) {
     const owner = cfg.elements.find((x) => x.payload.id === hit.payload.attachedTo);
     if (owner) return owner.payload.id;

@@ -18,11 +18,13 @@ import {
   LIST_MAX_TEMPLATE,
   auditUnknownKeys,
   encodeConfig,
+  listOwningRowLayer,
   literal,
   newConfig,
   newElement,
   parseConfig,
   schemaVersionFor,
+  selectableLayerId,
 } from "../src/model.js";
 import {
   type EditorHost,
@@ -401,6 +403,32 @@ describe("finding a row layer", () => {
     expect(elementIn(cfg, row.payload.id)).toBe(row);
     expect(listOwning(cfg, row.payload.id)).toBe(el);
     expect(listOwning(cfg, el.payload.id)).toBeUndefined();
+    expect(listOwningRowLayer(cfg, row.payload.id)).toBe(el);
+  });
+
+  it("sends a press on a row to the list it is a row of", () => {
+    // A row is drawn once per cell and moved only in the row designer, so on
+    // the face the thing under the finger is the list itself: a click selects
+    // it and a drag moves the whole list.
+    const row = newRowLayer("text");
+    const tap = newRowLayer("tap");
+    const { cfg, el } = withList((p) => { p.template = [row, tap]; });
+    expect(selectableLayerId(cfg, row.payload.id)).toBe(el.payload.id);
+    expect(selectableLayerId(cfg, tap.payload.id)).toBe(el.payload.id);
+    expect(selectableLayerId(cfg, el.payload.id)).toBe(el.payload.id);
+    expect(selectableLayerId(cfg, "gone")).toBeUndefined();
+  });
+
+  it("leaves the row's own layers selectable on the stage, where they are the document", () => {
+    // The row designer draws `rowStageConfig`, whose elements are the row's
+    // layers. There the redirect must not fire, or nothing in the row could be
+    // picked up at all.
+    const row = newRowLayer("text");
+    const { cfg, el } = withList((p) => { p.template = [row]; });
+    const stage = rowStageConfig(cfg, el.payload.id, "rectangular", undefined);
+    expect(stage).toBeDefined();
+    expect(selectableLayerId(stage!, row.payload.id)).toBe(row.payload.id);
+    expect(listOwningRowLayer(stage!, row.payload.id)).toBeUndefined();
   });
 });
 

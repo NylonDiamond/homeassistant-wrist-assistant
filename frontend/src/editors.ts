@@ -176,6 +176,7 @@ import {
   switchComparison,
   copyElements,
   isAttachedTap,
+  listOwningRowLayer,
   normalizeOwnership,
   ownedElements,
   ownedShownCount,
@@ -3397,13 +3398,15 @@ function listRowCard(
           host.selectLayer(row.payload.id);
         }}>${KIND_LABEL[kind]}</button>`)}
     </div>
+    <div class="hint">Every row draws these layers with its own item. Change them once and every row follows. Double click a row on the face, or click a layer here, to design them.</div>
     <div class="hint">${full
       ? `Eight layers is the most a row may hold.`
       : `${l.template.length} of ${LIST_MAX_TEMPLATE} layers. A row holds text, icons, shapes, gauges, uploaded pictures and taps.`}</div>`;
 }
 
-/** Which glyph stands for a row layer's kind in the row list. */
-function rowKindIcon(kind: CElement["kind"]): UiIconName {
+/** Which glyph stands for a row layer's kind in the row list, and in the Layers
+ * panel where a list's rows hang under it. */
+export function rowKindIcon(kind: CElement["kind"]): UiIconName {
   return kind === "image" ? "image" : kind === "tap" ? "tap" : kind === "gauge" ? "gauge" : kind === "icon" ? "icon" : kind === "shape" ? "shape" : "text";
 }
 
@@ -3843,11 +3846,7 @@ export function elementIn(cfg: CustomComplicationConfig, id: string): CElement |
 
 /** The list a row layer belongs to, or undefined for a layer of the document. */
 export function listOwning(cfg: CustomComplicationConfig, rowId: string): Extract<CElement, { kind: "list" }> | undefined {
-  for (const el of cfg.elements) {
-    if (el.kind !== "list") continue;
-    if (el.payload.template.some((r) => r.payload.id === rowId)) return el;
-  }
-  return undefined;
+  return listOwningRowLayer(cfg, rowId);
 }
 
 /** Write a per-family placement for a layer, creating it from the effective values. */

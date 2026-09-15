@@ -72,6 +72,7 @@ import {
   parseConfig,
   schemaVersionFor,
   ownedElements,
+  listOwningRowLayer,
   removeElement,
   selectableLayerId,
   setTapOutsetFromFrame,
@@ -145,6 +146,7 @@ import {
   copyShapeLayout,
   type DescribeContext,
   pickedCommon,
+  rowKindIcon,
   rowStageConfig,
   setPlacement,
   syncListAttributes,
@@ -907,6 +909,9 @@ export class WristAssistantPanel extends LitElement {
   private debounceTimer?: number;
   private lastStatesSnapshot?: Record<string, unknown>;
   private cancelGesture?: () => void;
+  /** The id written on whatever the last press on the face landed on, so a
+   * double click that follows it still knows which row it is about. */
+  private lastPressHitId?: string;
   private keyHandler = (e: KeyboardEvent) => {
     if (e.key === "Alt") this.altHeld = true;
     this.onKey(e);
@@ -1871,13 +1876,21 @@ export class WristAssistantPanel extends LitElement {
     .layer.multi { box-shadow: inset 0 0 0 1px var(--wa-accent); }
     /* A folder row: the chevron folds it, the lock says whether it moves as
        one, and its members sit indented under a guide line. */
-    .layer.group .chev {
+    .layer .chev {
       font: inherit; background: transparent; border: 0; color: var(--wa-muted); padding: 0; cursor: pointer;
       width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; flex: none;
     }
-    .layer.group .chev:hover { background: color-mix(in srgb, var(--wa-ink) 10%, transparent); }
-    .layer.group .chev svg { width: 15px; height: 15px; transition: transform .15s ease-out; }
-    .layer.group .chev[aria-expanded="false"] svg { transform: rotate(-90deg); }
+    .layer .chev:hover { background: color-mix(in srgb, var(--wa-ink) 10%, transparent); }
+    .layer .chev svg { width: 15px; height: 15px; transition: transform .15s ease-out; }
+    .layer .chev[aria-expanded="false"] svg { transform: rotate(-90deg); }
+    /* A list's row layers. They hang under the list the way a group's members
+       hang under their folder, and they are not dragged: the grip column stays
+       empty so the names still line up with the rows above. */
+    .layer.rowkid { cursor: pointer; }
+    .layer.rowkid .grip { cursor: default; }
+    .layer.rowkid .bar { background: repeating-linear-gradient(180deg, var(--k) 0 4px, transparent 4px 7px); }
+    .layer.rowkid .rowglyph { display: grid; place-items: center; width: var(--thumb-w); color: var(--wa-muted); }
+    .layer.rowkid .rowglyph svg { width: 16px; height: 16px; }
     /* A folder shows a folder where a layer shows its picture. */
     .layer.group .folder { display: grid; place-items: center; width: var(--thumb-w); color: var(--wa-muted); }
     .layer.group .folder svg { width: 17px; height: 17px; }
@@ -2135,6 +2148,29 @@ export class WristAssistantPanel extends LitElement {
       background: color-mix(in srgb, var(--wa-raised) 92%, transparent);
       box-shadow: 0 0 0 1px var(--wa-line), 0 6px 18px rgba(0,0,0,.18);
     }
+    /* The banner that says the canvas is showing one cell of a list. Same card
+       as the tools pill, sitting above it, and it wraps rather than pushing
+       Done off the edge of a narrow canvas. */
+    .row-strip {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+      justify-self: center; max-width: 100%; font-size: 13px;
+      padding: 7px 8px 7px 10px; border-radius: 12px;
+      background: color-mix(in srgb, var(--wa-raised) 92%, transparent);
+      box-shadow: 0 0 0 1px var(--wa-line), 0 6px 18px rgba(0,0,0,.18);
+    }
+    .row-strip .row-strip-thumb {
+      width: ${THUMB_W}px; height: ${THUMB_H}px; border-radius: 4px; overflow: hidden;
+      background: #000; flex: none; display: block;
+    }
+    .row-strip .row-strip-thumb svg { display: block; width: 100%; height: 100%; }
+    .row-strip .row-strip-text { flex: 1 1 200px; min-width: 0; }
+    .row-strip button {
+      font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; flex: none;
+      height: 28px; padding: 0 14px; border-radius: 8px; border: 0;
+      background: var(--wa-accent); color: var(--wa-accent-ink);
+    }
+    .row-strip button:hover { filter: brightness(1.06); }
+    .row-strip button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     /* The pill never wraps and never leaves: it sticks to the top of the stage
        when the face is scrolled, and on a narrow canvas the two words go and
        the glyphs stay, so every button is always there to press. */
@@ -3707,7 +3743,11 @@ export class WristAssistantPanel extends LitElement {
     // a drawing app: the pick first, then the selected layer. A dialog keeps
     // its Escape (the zoomed preview closes on it).
     if (e.key === "Escape" && !inField && !dialogOpen) {
-      if (this.multi.size > 0) this.multi = new Set();
+      // The row designer first: it is a mode the canvas is in, and leaving a
+      // mode is what Escape is for. It puts the selection back on the list, so
+      // a second Escape then clears that the ordinary way.
+      if (this.rowEditList()) this.setRowEdit(undefined);
+      else if (this.multi.size > 0) this.multi = new Set();
       else if (this.inspect.kind === "layer" || this.inspect.kind === "group") this.inspect = { kind: "general" };
       return;
     }
@@ -4953,6 +4993,31 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
+   * The banner over the face while a row is being designed.
+   *
+   * The canvas showing one cell of a list, scaled up, is a mode, and a mode
+   * that is not announced reads as the face having gone wrong. So it says which
+   * list is open, what the layers on screen are, and carries the way out. It
+   * sits above the tools pill because it is the first thing to read.
+   */
+  private renderRowStrip() {
+    const list = this.rowEditList();
+    const cfg = this.draft?.config;
+    if (!list || !cfg) return nothing;
+    const ctx = describeContext(this.host());
+    // The list drawn on the real face, not on the stage: on the stage the list
+    // is not there at all, only the row it is made of.
+    const face = resolveAll(cfg, this.buildContext(), this.forced)[this.canvasFamily];
+    return html`<div class="row-strip">
+      ${face
+        ? html`<span class="row-strip-thumb">${renderLayerThumb(face, [list.payload.id], { icons: this.icons, imageSizes: this.imageSizes, width: THUMB_W, height: THUMB_H })}</span>`
+        : nothing}
+      <span class="row-strip-text">Designing the row of <b>${layerTitle(list, ctx)}</b>. Every row draws these layers.</span>
+      <button @click=${() => this.setRowEdit(undefined)}>Done</button>
+    </div>`;
+  }
+
+  /**
    * The snapping switches, right there in the pill rather than behind a menu:
    * snap to the grid with its size beside it, draw the grid's lines, and snap
    * to the other layers. Three switches, since some people want the grid
@@ -5040,7 +5105,7 @@ export class WristAssistantPanel extends LitElement {
       [`${m}G · ${s}${m}G`, "Group the pick · Ungroup"],
       [`${m}] · ${m}[`, "Bring the layer forward · Send it back"],
       [`${s}${m}H`, "Hide or show the selection in the shape being edited"],
-      ["Escape", "Drop the pick, then the selection. Also stops Pick layer and closes a dialog"],
+      ["Escape", "Leave the row designer, then drop the pick, then the selection. Also stops Pick layer and closes a dialog"],
     ];
     const mouse: [string, string][] = [
       ["Click", "A layer on the face or in the list: edit it. Drag it to move, pull a corner to resize"],
@@ -5170,13 +5235,29 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** The layer a preview event points at, with an attached tap sent to the
-   * layer it belongs to (the same redirect a drag does). */
+   * layer it belongs to and a row layer sent to its list (the same redirects a
+   * drag does). */
   private hitLayerId(e: Event): string | undefined {
     const cfg = this.canvasConfig();
     if (!cfg) return undefined;
-    const target = e.target as Element | null;
-    const id = target?.closest?.("[data-element-id]")?.getAttribute("data-element-id");
+    const id = this.rawHitId(e);
     return id ? selectableLayerId(cfg, id) : undefined;
+  }
+
+  /** The id written on the thing under the pointer, before any redirect. */
+  private rawHitId(e: Event): string | undefined {
+    const target = e.target as Element | null;
+    return target?.closest?.("[data-element-id]")?.getAttribute("data-element-id") ?? undefined;
+  }
+
+  /** The row layer the pointer is on, when the canvas is drawing the real face
+   * and the hit is one of some list's rows. Undefined while a row is being
+   * designed, where the row's layers are the canvas's own layers. */
+  private rowLayerHitId(e: Event): string | undefined {
+    const cfg = this.draft?.config;
+    if (!cfg || this.rowEditList()) return undefined;
+    const id = this.rawHitId(e);
+    return id !== undefined && listOwningRowLayer(cfg, id) ? id : undefined;
   }
 
   /** Drop the list tint, but only the one this row put up: the pointer can
@@ -5202,6 +5283,39 @@ export class WristAssistantPanel extends LitElement {
     this.inspect = { kind: "layer", id };
   }
 
+  /**
+   * A double click on a list opens its row designer.
+   *
+   * A list draws one row design once per item, and the row is the part people
+   * want to change. Landing on a row opens the designer with that row's layer
+   * selected, so the double click goes straight to the thing under the finger;
+   * landing on an empty part of the list opens it on the first layer of the
+   * row, which is the nearest thing to "open this list's design".
+   *
+   * The first click of the pair has already selected the list and may have
+   * begun a move, so the gesture is dropped: a double click is not a drag.
+   */
+  private onPreviewDoubleClick(e: MouseEvent) {
+    if (!this.canEdit || this.picking || this.showTaps || this.rowEditList()) return;
+    const cfg = this.draft?.config;
+    if (!cfg) return;
+    const hitId = this.rawHitId(e) ?? this.lastPressHitId;
+    if (hitId === undefined) return;
+    const owner = listOwningRowLayer(cfg, hitId);
+    if (owner) {
+      this.cancelGesture?.();
+      this.setRowEdit(owner.payload.id);
+      this.inspect = { kind: "layer", id: hitId };
+      return;
+    }
+    const hit = cfg.elements.find((x) => x.payload.id === hitId);
+    if (hit?.kind !== "list") return;
+    this.cancelGesture?.();
+    this.setRowEdit(hit.payload.id);
+    const first = hit.payload.template[0];
+    this.inspect = { kind: "layer", id: first ? first.payload.id : hit.payload.id };
+  }
+
   private onPreviewPointerDown(family: FamilyKind, e: PointerEvent) {    // A press on the face calls preventDefault to start a drag, which also
     // stops the browser moving focus. A control used just before (the grid
     // size menu, a number box) then kept it and went on taking the arrow keys
@@ -5222,6 +5336,11 @@ export class WristAssistantPanel extends LitElement {
     // which threw on the first move.
     const handle = (target.closest("[data-handle]")?.getAttribute("data-handle") ?? null) as HandleCorner | null;
     const hitId = target.closest("[data-element-id]")?.getAttribute("data-element-id") ?? undefined;
+    // What the press landed on, for the double click that may follow it. A
+    // drag captures the pointer on the face's own svg, and a click that comes
+    // out of a capture can be reported against the svg rather than against the
+    // thing under it, which would lose the row the double click is about.
+    this.lastPressHitId = hitId;
     // The face's own svg, not the nearest one: an icon draws its glyph as a
     // nested svg with a viewBox of its own, and a drag measured against that
     // one ran several times faster than the pointer.
@@ -5242,7 +5361,10 @@ export class WristAssistantPanel extends LitElement {
         this.beginTapBoxGesture(family as DrawableFamily, e, svg, focus, handle ?? undefined);
         return;
       }
-      const id = this.hitLayerId(e);
+      // A row tap's box leads to the row tap, not to the list it is drawn in:
+      // review is about reading one tap, and the inspector edits a row layer
+      // as readily as a layer of the document.
+      const id = this.rowLayerHitId(e) ?? this.hitLayerId(e);
       if (id) this.inspect = { kind: "layer", id };
       // Bare background: back to every tap area.
       else if (hitId === undefined) this.inspect = { kind: "general" };
@@ -7784,8 +7906,10 @@ export class WristAssistantPanel extends LitElement {
         e.dataTransfer?.setData("text/plain", id);
         if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
         const row = e.currentTarget as HTMLElement;
-        // A folder takes its members with it, so the whole block leaves.
-        const kids = row.classList.contains("group") ? row.nextElementSibling : null;
+        // A folder takes its members with it, and a list its row layers, so the
+        // whole block leaves. The block always follows the row it belongs to,
+        // which is what makes the next sibling the right thing to look at.
+        const kids = row.nextElementSibling;
         // Not this tick: hiding the drag source inside dragstart itself
         // cancels the drag in some browsers. By the next task the drag image
         // is taken and the row can go. The guard covers a drag that was over
@@ -7943,7 +8067,7 @@ export class WristAssistantPanel extends LitElement {
     // `held` marks a member of the selected group: the row lights up with
     // its folder, a step softer than the selected row itself, because a drag
     // on the face moves all of them and the list should say so.
-    const layerRow = (el: CElement, inGroup: boolean, held = false) => {
+    const layerRow = (el: CElement, inGroup: boolean, held = false, chevron: TemplateResult | typeof nothing = nothing) => {
       const id = el.payload.id;
       const hl = this.inspect.kind === "layer" && this.inspect.id === id;
       const eff = effectivePlacement(cfg, family, el);
@@ -7980,6 +8104,7 @@ export class WristAssistantPanel extends LitElement {
             <button class="icon" title=${`Duplicate (${KEY_MOD}D)`} aria-label="Duplicate" @click=${(e: Event) => { e.stopPropagation(); dup(id); }}>${uiIcon("duplicate")}</button>
             <button class="icon danger" title="Delete (Delete)" aria-label="Delete" @click=${(e: Event) => { e.stopPropagation(); del(id); }}>${uiIcon("delete")}</button>
           </span>` : nothing}
+          ${chevron}
         </span>
       </div>`;
     };
@@ -8054,9 +8179,96 @@ export class WristAssistantPanel extends LitElement {
       </div>`;
     };
 
+    // A list draws one row design once per item, so the row's layers hang under
+    // the list the way a group's members hang under their folder.
+    //
+    // They are not layers of the shape: they live in the list's `template`, and
+    // nothing on the face can be dropped among them, so these rows carry no
+    // drag of their own and no duplicate. What they do carry is what a row
+    // layer really has: reorder inside the row, hide, remove, and a click that
+    // opens the row designer on that layer, which is the only place it can be
+    // moved or sized.
+    const rowKidRow = (list: Extract<CElement, { kind: "list" }>, row: CElement, i: number) => {
+      const listId = list.payload.id;
+      const id = row.payload.id;
+      const hl = this.inspect.kind === "layer" && this.inspect.id === id;
+      const hidden = row.payload.isHidden;
+      const count = list.payload.template.length;
+      const open = () => { this.setRowEdit(listId); this.inspect = { kind: "layer", id }; };
+      // Every write lands on the real list, found again by id: while the row
+      // designer is open the canvas is drawing a throwaway copy of the row.
+      const onList = (change: (p: Extract<CElement, { kind: "list" }>["payload"]) => void) => this.mutate((c) => {
+        const target = elementIn(c, listId);
+        if (target?.kind === "list") change(target.payload);
+      });
+      // Top of the list draws last, so "bring forward" is later in the template.
+      const swap = (by: 1 | -1) => onList((p) => {
+        const a = p.template[i];
+        const b = p.template[i + by];
+        if (!a || !b) return;
+        p.template[i] = b;
+        p.template[i + by] = a;
+      });
+      return html`<div class="layer kid rowkid ${hl ? "hl" : ""} ${hidden ? "dim" : ""}"
+        style=${`--k:${KIND_COLOR[row.kind]}`} tabindex="0"
+        @pointerenter=${() => { this.listHoverIds = [id]; }}
+        @pointerleave=${() => this.leaveRow([id])}
+        @click=${() => open()}
+        @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") open(); }}>
+        <span class="grip" aria-hidden="true"></span>
+        <span class="bar"></span>
+        <span class="rowglyph">${uiIcon(rowKindIcon(row.kind))}</span>
+        <span class="name">
+          <b>${layerTitle(row, ctx)}</b>
+          <small><span class="kind">${KIND_LABEL[row.kind]}</span> · drawn in every row</small>
+        </span>
+        <span class="right">
+          <span class="badges">${hidden ? html`<span class="badge">hidden</span>` : nothing}</span>
+          ${edit ? html`<span class="acts">
+            <button class="icon" title="Bring forward in the row" aria-label="Bring forward in the row" ?disabled=${i === count - 1}
+              @click=${(e: Event) => { e.stopPropagation(); swap(1); }}>${uiIcon("up")}</button>
+            <button class="icon" title="Send back in the row" aria-label="Send back in the row" ?disabled=${i === 0}
+              @click=${(e: Event) => { e.stopPropagation(); swap(-1); }}>${uiIcon("down")}</button>
+            <button class="icon" title=${hidden ? "Show this layer" : "Hide this layer"} aria-label=${hidden ? "Show this layer" : "Hide this layer"}
+              @click=${(e: Event) => { e.stopPropagation(); onList((p) => { const x = p.template[i]; if (x) x.payload.isHidden = !x.payload.isHidden; }); }}>${uiIcon(hidden ? "hide" : "show")}</button>
+            <button class="icon danger" title="Remove this layer from the row" aria-label="Remove this layer from the row"
+              @click=${(e: Event) => {
+                e.stopPropagation();
+                onList((p) => { p.template.splice(i, 1); syncListAttributes(p); });
+                if (this.inspect.kind === "layer" && this.inspect.id === id) this.inspect = { kind: "layer", id: listId };
+              }}>${uiIcon("delete")}</button>
+          </span>` : nothing}
+        </span>
+      </div>`;
+    };
+
+    /** The fold switch on a list's own row, when it has a row to fold. */
+    const listChevron = (el: CElement) => {
+      if (el.kind !== "list" || el.payload.template.length === 0) return nothing;
+      const id = el.payload.id;
+      const open = !this.collapsed.has(id);
+      return html`<button class="chev" aria-expanded=${open ? "true" : "false"}
+        title=${open ? "Fold the row's layers" : "Unfold the row's layers"}
+        @click=${(e: Event) => {
+          e.stopPropagation();
+          const next = new Set(this.collapsed);
+          if (open) next.add(id); else next.delete(id);
+          this.collapsed = next;
+        }}>${uiIcon("chevron")}</button>`;
+    };
+
+    /** A list's row layers, top of the stack first, or nothing when it is
+     * folded or its row is still empty. */
+    const listKids = (el: CElement) => {
+      if (el.kind !== "list" || el.payload.template.length === 0) return nothing;
+      if (this.collapsed.has(el.payload.id)) return nothing;
+      const kids = el.payload.template.map((row, i) => [row, i] as const).reverse();
+      return html`<div class="group-kids rowkids">${kids.map(([row, i]) => rowKidRow(el, row, i))}</div>`;
+    };
+
     // Walk the stack from the top. A group's members sit together, so the
     // folder row goes in where its first member is met and the members
-    // follow it, indented.
+    // follow it, indented. A list's row layers follow the list the same way.
     const rows: TemplateResult[] = [];
     const seen = new Set<string>();
     for (let i = 0; i < ordered.length; i++) {
@@ -8064,7 +8276,7 @@ export class WristAssistantPanel extends LitElement {
       const gid = el.payload.groupId;
       const g = gid === undefined ? undefined : cfg.groups?.find((x) => x.id === gid);
       if (!g) {
-        rows.push(layerRow(el, false));
+        rows.push(html`${layerRow(el, false, false, listChevron(el))}${listKids(el)}`);
         continue;
       }
       if (seen.has(g.id)) continue;
@@ -8072,7 +8284,7 @@ export class WristAssistantPanel extends LitElement {
       const members = ordered.filter((e) => e.payload.groupId === g.id);
       rows.push(groupRow(g, members));
       const groupHl = this.inspect.kind === "group" && this.inspect.id === g.id;
-      if (!this.collapsed.has(g.id)) rows.push(html`<div class="group-kids">${members.map((m) => layerRow(m, true, groupHl))}</div>`);
+      if (!this.collapsed.has(g.id)) rows.push(html`<div class="group-kids">${members.map((m) => html`${layerRow(m, true, groupHl, listChevron(m))}${listKids(m)}`)}</div>`);
     }
 
     return html`<div class="card layers-card s${this.thumbStep}" style=${`--thumb-w:${thumbW}px;--thumb-h:${thumbH}px`}>
@@ -8274,6 +8486,7 @@ export class WristAssistantPanel extends LitElement {
           </div>
         </div>
         <div class="stage">
+          ${this.renderRowStrip()}
           ${isDrawable(family) ? this.renderOver() : nothing}
           ${isDrawable(family) ? this.renderBigPreview(family, layouts, deviceCase) : this.renderInlinePreview(layouts.inline, false)}
           ${this.renderUnder(cfg, family)}
@@ -8332,6 +8545,7 @@ export class WristAssistantPanel extends LitElement {
     };
     return html`<div class="preview ${family} active ${this.picking ? "picking" : ""}"
       @pointerdown=${(e: PointerEvent) => this.onPreviewPointerDown(family, e)}
+      @dblclick=${(e: MouseEvent) => this.onPreviewDoubleClick(e)}
       @pointermove=${(e: PointerEvent) => this.onPickMove(e)}
       @pointerleave=${() => { if (this.picking) this.pickHoverId = undefined; }}>
       ${renderLayout(layout, opts)}
