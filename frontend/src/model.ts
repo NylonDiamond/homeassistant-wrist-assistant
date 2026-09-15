@@ -628,21 +628,21 @@ function mixHex(from: string, to: string, t: number): string {
 
 // ── curved text ───────────────────────────────────────────────────────────
 
-/** The shapes a text layer may curve on. A corner keeps the system's own curved
- * label, a rectangular strip has no circle to follow, and the two wide Home
- * Screen tiles would bend a line nobody can read, so the row is hidden on those
- * and the resolver drops the key rather than drawing something the watch will
- * not. Mirrors `TextElement.Arc.allowedFamilies` in the app repo. */
-export const ARC_TEXT_FAMILIES: FamilyKind[] = ["circular", "small", "large"];
+/** The shapes a text layer may curve on: every shape with a canvas. Inline has
+ * no canvas, so its one line stays straight and the resolver drops the key
+ * there. A wide strip curves too: with a radius past its shorter side the arc
+ * is shallow enough to read, which is what a label over a chart wants.
+ * Mirrors `TextElement.Arc.allowedFamilies` in the app repo. */
+export const ARC_TEXT_FAMILIES: FamilyKind[] = ["circular", "rectangular", "corner", "small", "medium", "large", "xlarge"];
 
 export function familyAllowsArcText(family: FamilyKind): boolean {
   return ARC_TEXT_FAMILIES.includes(family);
 }
 
 /** Radius as a fraction of the shape's shorter side. 0.1 is a tight badge ring,
- * 1 a curve so gentle it reads almost straight. */
+ * 1 hugs the shape's edge, 3 is the shallow curve a wide strip can carry. */
 export const ARC_RADIUS_MIN = 0.1;
-export const ARC_RADIUS_MAX = 1;
+export const ARC_RADIUS_MAX = 3;
 export const ARC_RADIUS_DEFAULT = 0.4;
 /** How much of the circle the text may be spread over, in degrees. Below ten a
  * sweep is a straight line with rounding error; a full turn is the ceiling. */

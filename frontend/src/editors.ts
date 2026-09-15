@@ -1948,6 +1948,10 @@ function timelineBandFields(
       (v) => set((p) => { p.otherColorHex = v ?? TIMELINE_DEFAULT_OTHER_HEX; }, "tother"), false, TIMELINE_DEFAULT_OTHER_HEX)}`;
 }
 
+/** The line width a gauge takes when it becomes a needle dial: the pointer's
+ * width, thin enough to point. */
+const NEEDLE_LINE_WIDTH = 2;
+
 const GAUGE_STYLES: [GaugeStyle, string][] = [
   ["arc", "Arc"], ["ring", "Ring"], ["bar", "Bar"], ["dots", "Dots"], ["needle", "Needle"],
 ];
@@ -3873,9 +3877,9 @@ function gaugeRangeFields(
 /**
  * Curved text: the Curve switch and the four numbers behind it.
  *
- * Only the round shapes offer it (`familyAllowsArcText`), so the whole group is
- * absent elsewhere rather than greyed out: a row that can never be switched on
- * in this shape is a row that only asks a question. A countdown keeps the row
+ * Every shape with a canvas offers it (`familyAllowsArcText`); inline has no
+ * canvas, so there the whole group is absent rather than greyed out: a row that
+ * can never be switched on is a row that only asks a question. A countdown keeps the row
  * but greys the switch, because the watch draws a ticking timer as one
  * system-owned string and there are no glyphs to bend.
  */
@@ -4530,6 +4534,11 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             // dropped on the way out, so a ring never carries a key nothing reads.
             if (v === "dots" && p.total === undefined) p.total = seedGaugeTotal(p);
             if (v !== "dots") delete p.total;
+            // A needle is a pointer, not a band: at the ring's width it reads as
+            // a bar. Switching to it thins the line to a needle's, and switching
+            // away restores the ring width, unless the author set their own.
+            if (v === "needle" && p.style !== "needle" && p.lineWidth === (base.lineWidth as number)) p.lineWidth = NEEDLE_LINE_WIDTH;
+            if (v !== "needle" && p.style === "needle" && p.lineWidth === NEEDLE_LINE_WIDTH) p.lineWidth = base.lineWidth as number;
             p.style = v;
           }), { titles: GAUGE_STYLE_TITLES, def: base.style as typeof g.style })}
           ${dots ? nothing : shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5, def: baseSize("lineWidth") })}

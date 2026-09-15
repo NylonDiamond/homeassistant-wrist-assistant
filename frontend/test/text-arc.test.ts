@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { nothing } from "lit";
 import {
+  ARC_RADIUS_MAX,
   ARC_RADIUS_MIN,
   ARC_SWEEP_DEFAULT,
   ARC_SWEEP_MAX,
@@ -86,7 +87,7 @@ describe("the arc key on the wire", () => {
       p.arc = { radius: 9, sweep: 4 };
     })))));
     const arc = wide.elements[0]?.kind === "text" ? wide.elements[0].payload.arc : undefined;
-    expect(arc?.radius).toBe(1);
+    expect(arc?.radius).toBe(ARC_RADIUS_MAX);
     expect(arc?.sweep).toBe(ARC_SWEEP_MIN);
 
     expect(clampArcSweep(-2000)).toBe(-ARC_SWEEP_MAX);
@@ -110,21 +111,20 @@ describe("the arc key on the wire", () => {
 });
 
 describe("which shapes curve", () => {
-  it("is the circular shape and the two square-ish tiles", () => {
-    expect(familyAllowsArcText("circular")).toBe(true);
-    expect(familyAllowsArcText("small")).toBe(true);
-    expect(familyAllowsArcText("large")).toBe(true);
-    for (const family of ["rectangular", "corner", "medium", "xlarge", "inline"] as const) {
-      expect(familyAllowsArcText(family)).toBe(false);
+  it("is every shape with a canvas, and never inline", () => {
+    for (const family of ["circular", "rectangular", "corner", "small", "medium", "large", "xlarge"] as const) {
+      expect(familyAllowsArcText(family)).toBe(true);
     }
+    expect(familyAllowsArcText("inline")).toBe(false);
   });
 
-  it("settles the radius in points and drops the key everywhere else", () => {
+  it("settles the radius in points against each shape's shorter side", () => {
     const all = layouts("Kitchen", (p) => { p.arc = { radius: 0.5 }; });
     // 0.5 of the circular design box's 51 point side.
     expect(textOf(all.circular).arc).toEqual({ radius: 25.5, startAngle: 0, sweep: ARC_SWEEP_DEFAULT, inside: false });
     expect(textOf(all.small).arc?.radius).toBeCloseTo(0.5 * 162.67, 9);
-    expect(textOf(all.rectangular).arc).toBeUndefined();
+    // The strip's shorter side is its height.
+    expect(textOf(all.rectangular).arc?.radius).toBeCloseTo(0.5 * 65.5, 9);
   });
 
   it("never curves a countdown, which the watch ticks as one string", () => {

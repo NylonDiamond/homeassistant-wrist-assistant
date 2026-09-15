@@ -174,13 +174,13 @@
           "id": "EEEEEEEE-0000-4000-8000-0000000003B1",
           "kind": "text",
           "text": "WRIST ASSISTANT",
-          "arc": null
+          "arc": { "radius": 26.2, "startAngle": 0, "sweep": 120, "inside": false }
         },
         {
           "id": "EEEEEEEE-0000-4000-8000-0000000003B2",
           "kind": "text",
           "text": "Kitchen",
-          "arc": null
+          "arc": { "radius": 39.3, "startAngle": 180, "sweep": -90, "inside": true }
         },
         {
           "id": "EEEEEEEE-0000-4000-8000-0000000003B3",
@@ -191,13 +191,13 @@
           "id": "EEEEEEEE-0000-4000-8000-0000000003B4",
           "kind": "text",
           "text": "Wide",
-          "arc": null
+          "arc": { "radius": 65.5, "startAngle": 0, "sweep": 10, "inside": false }
         },
         {
           "id": "EEEEEEEE-0000-4000-8000-0000000003B5",
           "kind": "text",
           "text": "Tight",
-          "arc": null
+          "arc": { "radius": 6.55, "startAngle": 0, "sweep": -360, "inside": false }
         }
       ]
     }
