@@ -83,7 +83,7 @@ import {
   sharedValueLayerIds,
 } from "./model.js";
 import { SHARED_TEST_PREFIX, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues } from "./test-controls.js";
-import { SEND_WAIT_MS, describeSend, sendState } from "./send-state.js";
+import { describeSend, sendState, sendWaitMs } from "./send-state.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
 import {
   type EntityState,
@@ -592,6 +592,15 @@ export class WristAssistantPanel extends LitElement {
    * this is what its header chip ages itself against. Undefined from an
    * integration older than the field, or when it has never synced. */
   @state() private lastSyncSeconds?: number;
+  /** Whether the server holds a push token for this phone owner, so a save
+   * wakes it. False for a watch, and from an integration older than the
+   * field: the chip then asks for the app to be opened, as it always did. */
+  @state() private pushAvailable = false;
+  /** Seconds since the last push attempt for this owner, this server run.
+   * Null when there has been none, and when the server did not say. Kept for
+   * the chip's own use; the age on screen is still the phone's last sync,
+   * since that is the half that proves the push arrived. */
+  @state() private lastPushSeconds: number | null = null;
   /** A save or a Send tap is waiting for the watch's ack. */
   @state() private sendPending = false;
   private sendTimer?: number;
@@ -3945,6 +3954,8 @@ export class WristAssistantPanel extends LitElement {
     // previous watch's status must not be shown beside it in the meantime.
     this.sendStatusKnown = false;
     this.lastSyncSeconds = undefined;
+    this.pushAvailable = false;
+    this.lastPushSeconds = null;
     // Default the preview to this device's own case when the app reported one.
     // A manual dropdown pick survives record switches but re-defaults when a
     // different device is selected: that's the device being previewed now. The
@@ -3981,6 +3992,14 @@ export class WristAssistantPanel extends LitElement {
       this.sendStatusKnown = true;
       this.polling = reply.polling ?? false;
       this.lastPollSeconds = typeof reply.last_poll_seconds === "number" ? reply.last_poll_seconds : undefined;
+      // A list reply that carries nothing about pushes says nothing about
+      // them: every save reloads this list, so blanking the flag here would
+      // drop the chip to "open the app" for the whole status interval right
+      // after the save that sent the push.
+      if (typeof reply.push_available === "boolean") this.pushAvailable = reply.push_available;
+      if (reply.last_push_seconds !== undefined) {
+        this.lastPushSeconds = typeof reply.last_push_seconds === "number" ? reply.last_push_seconds : null;
+      }
       if (this.appliedToken === this.serverToken) this.endSendWait();
       const still = this.records.find((r) => r.id === this.selectedId);
       if (still) {
@@ -4104,6 +4123,9 @@ export class WristAssistantPanel extends LitElement {
       this.polling = reply.polling;
       this.lastPollSeconds = typeof reply.last_poll_seconds === "number" ? reply.last_poll_seconds : undefined;
       this.lastSyncSeconds = typeof reply.last_sync_seconds === "number" ? reply.last_sync_seconds : undefined;
+      // Absent on an integration older than the push: no token, so no push.
+      this.pushAvailable = reply.push_available === true;
+      this.lastPushSeconds = typeof reply.last_push_seconds === "number" ? reply.last_push_seconds : null;
       this.serverToken = reply.token;
       this.appliedToken = reply.applied_token ?? undefined;
       this.sendStatusKnown = true;
@@ -4113,8 +4135,9 @@ export class WristAssistantPanel extends LitElement {
     }
   }
 
-  /** Start (or restart) the wait for the watch's ack. Ends on the ack via
-   * the subscription, or on the timeout, whichever comes first. */
+  /** Start (or restart) the wait for the owner's ack. Ends on the ack via
+   * the subscription, or on the timeout, whichever comes first. A phone waits
+   * longer: its push is debounced, delivered by APNs, and only then pulled. */
   private beginSendWait() {
     if (this.sendTimer !== undefined) window.clearTimeout(this.sendTimer);
     this.sendPending = true;
@@ -4124,7 +4147,7 @@ export class WristAssistantPanel extends LitElement {
       // The watch may have stopped polling meanwhile; refresh so the button
       // says "not connected" rather than offering a wake that goes nowhere.
       void this.loadRecords();
-    }, SEND_WAIT_MS);
+    }, sendWaitMs(this.selectedOwner?.device_kind));
   }
 
   private endSendWait() {
@@ -4134,19 +4157,25 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** Wake the watch's parked long-poll so it is handed the current token
-   * again. The store does not change; the ack does the rest. */
+   * again, or send a phone owner the push again. The store does not change;
+   * the ack does the rest. */
   private async sendToWatch() {
     if (!this.ownerId) return;
     try {
       const reply = await nudgeWatch(this.hass, this.ownerId);
       this.polling = reply.polling;
       this.lastPollSeconds = typeof reply.last_poll_seconds === "number" ? reply.last_poll_seconds : undefined;
+      if (typeof reply.push_available === "boolean") this.pushAvailable = reply.push_available;
       this.serverToken = reply.token;
       this.appliedToken = reply.applied_token ?? undefined;
       this.sendStatusKnown = true;
-      // A watch that has never acked is not behind, it is not listening.
-      // Waiting for an ack it cannot send would only spin the chip.
-      if (typeof reply.applied_token === "number" && reply.applied_token !== reply.token) {
+      // A push that went out is worth waiting on whatever the tokens say: a
+      // phone that has never acked is reachable, unlike a watch that has not.
+      if (reply.pushed === true) {
+        this.beginSendWait();
+      } else if (typeof reply.applied_token === "number" && reply.applied_token !== reply.token) {
+        // A watch that has never acked is not behind, it is not listening.
+        // Waiting for an ack it cannot send would only spin the chip.
         this.beginSendWait();
       }
     } catch (err) {
@@ -4163,6 +4192,7 @@ export class WristAssistantPanel extends LitElement {
       lastPollSeconds: this.lastPollSeconds,
       deviceKind: this.selectedOwner?.device_kind,
       lastSyncSeconds: this.lastSyncSeconds,
+      pushAvailable: this.pushAvailable,
     });
     // Before the first reply nothing is known about this device, and the chip
     // would otherwise report the never-acked state as if it were an answer.
@@ -4171,8 +4201,13 @@ export class WristAssistantPanel extends LitElement {
     const resend = d.resend && this.hass.user?.is_admin
       ? html`<button class="ghost" title="Wake the watch again" @click=${() => void this.sendToWatch()}>Resend</button>`
       : nothing;
+    // The phone's half of the same button: the nudge sends it another push.
+    const refresh = d.refresh && this.hass.user?.is_admin
+      ? html`<button class="ghost" title="Send the phone a push so it pulls this now" @click=${() =>
+          void this.sendToWatch()}>Refresh now</button>`
+      : nothing;
     return html`<span class="send ${s.kind}" title=${d.title}>${s.kind === "sent" ? "✓ " : ""}${d.label}</span>${
-      d.note ? html`<span class="send-note" title=${d.title}>${d.note}</span>` : nothing}${resend}`;
+      d.note ? html`<span class="send-note" title=${d.title}>${d.note}</span>` : nothing}${resend}${refresh}`;
   }
 
   /** The store refuses a document whose slot is outside 0..MAX_SLOTS-1. */

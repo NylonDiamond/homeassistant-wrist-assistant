@@ -3,7 +3,15 @@
 // watch", long after the watch stopped listening.
 
 import { describe, expect, it } from "vitest";
-import { agoWords, describeSend, sendState, type SendInputs } from "../src/send-state.js";
+import {
+  PHONE_SEND_WAIT_MS,
+  SEND_WAIT_MS,
+  agoWords,
+  describeSend,
+  sendState,
+  sendWaitMs,
+  type SendInputs,
+} from "../src/send-state.js";
 
 const inputs = (over: Partial<SendInputs> = {}): SendInputs =>
   ({ token: 5, appliedToken: 5, polling: true, pending: false, ...over });
@@ -56,9 +64,10 @@ describe("sendState", () => {
   });
 });
 
-// An iPhone owner has no long poll, so it is never "sending" and never
-// "waiting": either what it holds matches, or someone opens the app.
-describe("sendState on an iPhone", () => {
+// An iPhone the server holds no push token for has no long poll and no push,
+// so it is never "sending" and never "waiting": either what it holds matches,
+// or someone opens the app.
+describe("sendState on an iPhone with no push token", () => {
   const phone = (over: Partial<SendInputs> = {}): SendInputs =>
     inputs({ deviceKind: "iphone", polling: false, ...over });
 
@@ -102,6 +111,103 @@ describe("sendState on an iPhone", () => {
       expect(sendState(inputs({ deviceKind: kind, lastSyncSeconds: 99 }))).toEqual({ kind: "sent" });
       expect(sendState(inputs({ deviceKind: kind, token: 6, appliedToken: 5, polling: true }))).toEqual({ kind: "waiting" });
       expect(sendState(inputs({ deviceKind: kind, appliedToken: undefined }))).toEqual({ kind: "unsupported" });
+    }
+  });
+});
+
+// With a push token the phone runs the watch's machine: a save pushes, the
+// app wakes in the background, pulls, and acks.
+describe("sendState on an iPhone the server can push", () => {
+  const pushPhone = (over: Partial<SendInputs> = {}): SendInputs =>
+    inputs({ deviceKind: "iphone", polling: false, pushAvailable: true, ...over });
+
+  it("is sending while the wait after a save is still running", () => {
+    const s = sendState(pushPhone({ token: 6, appliedToken: 5, pending: true }));
+    expect(s).toEqual({ kind: "sending", device: "iphone" });
+    const d = describeSend(s);
+    expect(d.label).toBe("Sending to the phone");
+    expect(d.resend).toBe(false);
+    expect(d.refresh).toBe(false);
+  });
+
+  it("is waiting once the 20 s wait has run out with no ack", () => {
+    // `pending` is the wait; the panel clears it after PHONE_SEND_WAIT_MS.
+    expect(PHONE_SEND_WAIT_MS).toBe(20_000);
+    expect(sendWaitMs("iphone")).toBe(PHONE_SEND_WAIT_MS);
+    expect(sendWaitMs("watch")).toBe(SEND_WAIT_MS);
+    expect(sendWaitMs()).toBe(SEND_WAIT_MS);
+    const s = sendState(pushPhone({ token: 6, appliedToken: 5, pending: false }));
+    expect(s).toEqual({ kind: "waiting", device: "iphone" });
+    const d = describeSend(s);
+    expect(d.label).toBe("Sent to the phone, waiting for it to sync");
+    expect(d.resend).toBe(false);
+    expect(d.refresh).toBe(true);
+  });
+
+  // A phone that has never acked is reachable, so it waits rather than asking
+  // for the app to be opened.
+  it("waits on a phone that has never acked", () => {
+    expect(sendState(pushPhone({ appliedToken: undefined }))).toEqual({ kind: "waiting", device: "iphone" });
+  });
+
+  it("is On iPhone once the ack matches the token", () => {
+    const s = sendState(pushPhone({ pending: true }));
+    expect(s).toEqual({ kind: "sent", device: "iphone", push: true });
+    const d = describeSend(s);
+    expect(d.label).toBe("On iPhone");
+    expect(d.resend).toBe(false);
+  });
+
+  it("still ages On iPhone by the last sync", () => {
+    const s = sendState(pushPhone({ lastSyncSeconds: 120 }));
+    expect(s).toEqual({ kind: "sent", awaySeconds: 120, device: "iphone", push: true });
+    expect(describeSend(s).note).toBe("last sync 2 min ago");
+  });
+
+  it("falls back to opening the app when no push token is on file", () => {
+    const s = sendState(pushPhone({ token: 6, appliedToken: 5, pending: true, pushAvailable: false }));
+    expect(s).toEqual({ kind: "openApp" });
+    const d = describeSend(s);
+    expect(d.label).toBe("Open Wrist Assistant on your iPhone to sync");
+    expect(d.title).toBe("This iPhone has no push token yet. Open Wrist Assistant on it once.");
+    expect(d.refresh).toBe(false);
+  });
+});
+
+describe("the Refresh now flag", () => {
+  const phone = (over: Partial<SendInputs> = {}): SendInputs =>
+    inputs({ deviceKind: "iphone", polling: false, ...over });
+
+  it("is offered only to an iPhone the server can push", () => {
+    // Every phone state with a token, behind or not.
+    expect(describeSend(sendState(phone({ pushAvailable: true }))).refresh).toBe(true);
+    expect(describeSend(sendState(phone({ pushAvailable: true, lastSyncSeconds: 30 }))).refresh).toBe(true);
+    expect(describeSend(sendState(phone({ pushAvailable: true, token: 6, appliedToken: 5 }))).refresh).toBe(true);
+    // The same phone without one.
+    expect(describeSend(sendState(phone())).refresh).toBe(false);
+    expect(describeSend(sendState(phone({ token: 6, appliedToken: 5 }))).refresh).toBe(false);
+  });
+
+  it("is never offered to a watch, whose button stays Resend", () => {
+    const behind = { token: 6, appliedToken: 5, pending: false };
+    for (const i of [
+      inputs(),
+      inputs({ polling: false, lastPollSeconds: 900 }),
+      inputs({ appliedToken: undefined }),
+      inputs({ ...behind, polling: true }),
+      inputs({ ...behind, polling: true, pending: true }),
+      inputs({ ...behind, polling: false }),
+    ]) {
+      expect(describeSend(sendState(i)).refresh).toBe(false);
+    }
+    expect(describeSend(sendState(inputs({ ...behind, polling: true }))).resend).toBe(true);
+  });
+
+  it("never offers a phone the watch's Resend", () => {
+    for (const push of [true, false]) {
+      for (const over of [{}, { token: 6, appliedToken: 5 }, { appliedToken: undefined }, { pending: true }]) {
+        expect(describeSend(sendState(phone({ pushAvailable: push, ...over }))).resend).toBe(false);
+      }
     }
   });
 });
