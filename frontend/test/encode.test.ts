@@ -136,7 +136,7 @@ describe("encodeConfig", () => {
     // An alignment this build does not know is a look the document asks for,
     // not a document this build cannot read, so it centres instead of failing.
     expect(back?.kind === "text" && back.payload.alignment).toBeUndefined();
-    expect(back?.kind === "text" && back.payload.lineLimit).toBe(2);
+    expect(back?.kind === "text" && back.payload.lineLimit).toBe(4);
   });
 
   it("round-trips an icon path, and the key stays absent for an SF Symbol", () => {

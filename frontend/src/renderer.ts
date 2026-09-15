@@ -20,7 +20,11 @@ import {
   type ImageSource,
   type ChartAnchor,
   type ChartAnchorPoint,
+  type LayerShadow,
   type NormalizedFrame,
+  type Fill,
+  fillColorAt,
+  gaugeLabelText,
 } from "./model.js";
 import type { ImageSizeProvider } from "./image-sizes.js";
 import type { GestureTarget } from "./interact.js";
@@ -289,10 +293,19 @@ export interface RenderOptions {
    * faint lines over the layers, with the middle lines in the accent colour. */
   grid?: number;
   /**
-   * Preview a tinted watch face in this colour (`#RRGGBB`). Absent draws full
-   * colour. See `tintGroup` for what each kind of layer turns into.
+   * Preview a tinted surface in this colour (`#RRGGBB`). Absent draws full
+   * colour. `tintSurface` says which surface; see `tintGroup` for what each
+   * kind of layer turns into.
    */
   tint?: string;
+  /**
+   * Which tinted surface `tint` is previewing. "watch" (the default) is a
+   * tinted watch face: colour is dropped and only how see-through each part is
+   * survives. "phone" is a tinted iPhone Home Screen, which is WidgetKit's
+   * `accented` mode: the tile's own ground goes, and every layer is painted in
+   * the tint at the brightness it was drawn in. Ignored without `tint`.
+   */
+  tintSurface?: TintSurface;
   /**
    * Draw a camera or photo picture that has no address as a small drawn
    * landscape instead of the watch's faint glyph box. The gallery uses it,
@@ -315,8 +328,24 @@ export interface RenderOptions {
  *   becomes alpha in the tint colour.
  *
  * Colour is dropped either way, so an opaque black fill is as bright as white.
+ *
+ * A tinted iPhone Home Screen works the other way round and has its own two
+ * groups. There the system keeps each pixel's brightness rather than its alpha,
+ * so a black fill goes and a white one stays, and paints the default group
+ * (`phonePrimary`) and the accentable group (`phoneAccent`) in two related
+ * colours. Which group a layer lands in is the document's `accentGroup`, plus
+ * the kinds the app already marks accentable for the watch.
  */
-export type TintGroup = "accent" | "plain" | "picture";
+export type TintGroup = "accent" | "plain" | "picture" | "phoneAccent" | "phonePrimary";
+
+/** The two surfaces a tinted preview can stand for. See `RenderOptions.tintSurface`. */
+export type TintSurface = "watch" | "phone";
+
+/** The groups a surface draws with, which is the set of filters it needs. */
+const TINT_GROUPS: Record<TintSurface, readonly TintGroup[]> = {
+  watch: ["accent", "plain", "picture"],
+  phone: ["phonePrimary", "phoneAccent"],
+};
 
 /** Tints to preview with, a spread of the colours watch faces offer. */
 export const FACE_TINTS: readonly { label: string; hex: string }[] = [
@@ -328,39 +357,90 @@ export const FACE_TINTS: readonly { label: string; hex: string }[] = [
   { label: "White", hex: "#FFFFFF" },
 ];
 
-export function tintGroup(kind: ResolvedElement["kind"]): TintGroup {
-  switch (kind) {
-    case "text":
-    case "imageTime":
-    case "tap":
-      return "plain";
-    case "image":
-      return "picture";
-    default:
-      return "accent";
+export function tintGroup(kind: ResolvedElement["kind"], surface: TintSurface = "watch", accented = false): TintGroup {
+  const watchAccent = kind !== "text" && kind !== "imageTime" && kind !== "tap" && kind !== "image";
+  if (surface === "phone") {
+    // The app's `.widgetAccentable()` calls are not platform-gated, so the kinds
+    // that are accentable on a watch face are accentable on a Home Screen too.
+    // The document's own `accentGroup` only ever adds to that set.
+    return accented || watchAccent ? "phoneAccent" : "phonePrimary";
   }
+  if (watchAccent || accented) return "accent";
+  return kind === "image" ? "picture" : "plain";
+}
+
+/**
+ * The accent group's colour on a tinted Home Screen, for a tint of `#RRGGBB`.
+ *
+ * The system derives two related colours from the one the user picked and paints
+ * a group in each. The lighter of the two goes to the accentable group, which is
+ * what a layer is put there for, so the preview lifts the tint halfway to white.
+ * Nothing on the wire depends on the exact figure: it is the preview's stand-in
+ * for a colour only the device can mix.
+ */
+export function accentTint(tintHex: string): string {
+  const c = parseColor(tintHex) ?? { color: "#FFFFFF", opacity: 1 };
+  const lift = (i: number) => {
+    const v = parseInt(c.color.slice(1 + i * 2, 3 + i * 2), 16);
+    return Math.round(v + (255 - v) * 0.5).toString(16).padStart(2, "0").toUpperCase();
+  };
+  return `#${lift(0)}${lift(1)}${lift(2)}`;
 }
 
 /** The `feColorMatrix` values that repaint a group, for a tint of `#RRGGBB`. */
 export function tintMatrix(group: TintGroup, tintHex: string): string {
-  const c = parseColor(tintHex) ?? { color: "#FFFFFF", opacity: 1 };
+  const hex = group === "phoneAccent" ? accentTint(tintHex) : tintHex;
+  const c = parseColor(hex) ?? { color: "#FFFFFF", opacity: 1 };
   const ch = (i: number) => (parseInt(c.color.slice(1 + i * 2, 3 + i * 2), 16) / 255).toFixed(4);
   const [r, g, b] = group === "plain" ? ["1", "1", "1"] : [ch(0), ch(1), ch(2)];
-  const alpha = group === "picture" ? "0.2126 0.7152 0.0722 0 0" : "0 0 0 1 0";
+  // A picture and the whole Home Screen keep brightness, not alpha: a dark fill
+  // goes and a bright one stays, which is what `accented` mode does to a widget.
+  const keepsBrightness = group === "picture" || group === "phoneAccent" || group === "phonePrimary";
+  const alpha = keepsBrightness ? "0.2126 0.7152 0.0722 0 0" : "0 0 0 1 0";
   return `0 0 0 0 ${r} 0 0 0 0 ${g} 0 0 0 0 ${b} ${alpha}`;
 }
 
-/** One filter per group. The region is fixed and huge, in user space, because
- * the default bounding-box region is empty for a flat line and would hide it. */
-function tintDefs(prefix: string, tintHex: string): TemplateResult {
-  const groups: TintGroup[] = ["accent", "plain", "picture"];
-  return svg`${groups.map((g) => svg`<filter id=${`${prefix}-${g}`} filterUnits="userSpaceOnUse" x="-10000" y="-10000" width="20000" height="20000"
-    color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values=${tintMatrix(g, tintHex)} /></filter>`)}`;
+/** One filter per group the surface uses. The region is fixed and huge, in user
+ * space, because the default bounding-box region is empty for a flat line and
+ * would hide it. A brightness group is composited back through what it came
+ * from, so a layer that was already see-through stays see-through. */
+function tintDefs(prefix: string, tintHex: string, surface: TintSurface): TemplateResult {
+  return svg`${TINT_GROUPS[surface].map((g) => svg`<filter id=${`${prefix}-${g}`} filterUnits="userSpaceOnUse" x="-10000" y="-10000" width="20000" height="20000"
+    color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values=${tintMatrix(g, tintHex)} />${
+      surface === "phone" ? svg`<feComposite in2="SourceGraphic" operator="in" />` : nothing}</filter>`)}`;
 }
 
 /** Wraps a drawing in its tint filter, or returns it untouched in full colour. */
 function tinted<T>(body: T, group: TintGroup, prefix: string | undefined): T | TemplateResult {
   return prefix === undefined ? body : svg`<g filter=${`url(#${prefix}-${group})`}>${body}</g>`;
+}
+
+/**
+ * A layer's drop shadow, as an `feDropShadow` filter wrapped around what the
+ * layer draws.
+ *
+ * The filter sits inside the layer's group and around the drawing only, so the
+ * selection outline, the hover tint and the hit box never pick it up. It also
+ * sits inside the tint filter, which is what makes a shadow flatten on a tinted
+ * face the way the watch flattens it: watchOS keeps only alpha, and a blurred
+ * alpha is a soft edge in the face's tint.
+ *
+ * The region is fixed and huge in user space for the reason `tintDefs` gives:
+ * the default bounding-box region is empty for a flat line and would hide it.
+ */
+let shadowSeq = 0;
+
+function shadowed<T>(body: T, id: string, shadow: LayerShadow | undefined): T | TemplateResult {
+  if (shadow === undefined) return body;
+  const c = parseColor(shadow.colorHex) ?? { color: "#000000", opacity: 1 };
+  // SVG blurs by standard deviation; SwiftUI's radius is roughly twice that, so
+  // halving it is what makes the preview read like the watch.
+  const deviation = Math.max(0, shadow.radius) / 2;
+  return svg`<filter id=${id} filterUnits="userSpaceOnUse" x="-10000" y="-10000" width="20000" height="20000"
+      color-interpolation-filters="sRGB">
+      <feDropShadow dx=${shadow.dx} dy=${shadow.dy} stdDeviation=${deviation}
+        flood-color=${c.color} flood-opacity=${c.opacity} /></filter>
+    <g filter=${`url(#${id})`}>${body}</g>`;
 }
 
 /**
@@ -398,6 +478,23 @@ function gridLines(design: CanvasSize, step: number | undefined): TemplateResult
 const FONT_WEIGHT: Record<string, number> = { regular: 400, medium: 500, semibold: 600, bold: 700 };
 
 /**
+ * The web font stack that comes closest to each `Font.Design`.
+ *
+ * Only `default` and `monospaced` have real twins in a browser: San Francisco
+ * and SF Mono ship with macOS and iOS. SF Rounded and New York do not, so those
+ * two rows are the nearest widely available shapes and the editor labels them a
+ * close match rather than pretending otherwise.
+ */
+const FONT_FAMILY: Record<string, string> = {
+  default: "-apple-system, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif",
+  rounded: "'SF Pro Rounded', 'Varela Round', 'Trebuchet MS', -apple-system, 'Helvetica Neue', sans-serif",
+  monospaced: "ui-monospace, 'SF Mono', Menlo, Monaco, 'Courier New', monospace",
+  serif: "'New York', ui-serif, Georgia, 'Times New Roman', serif",
+};
+
+const fontFamilyFor = (design: string | undefined) => FONT_FAMILY[design ?? "default"] ?? FONT_FAMILY.default!;
+
+/**
  * How much bigger than its nominal size a Material Design icon is drawn.
  *
  * An SF Symbol's `size` is a font size and its glyph is drawn larger than that
@@ -422,10 +519,238 @@ function colorAttrs(hex: string | undefined, attr: "fill" | "stroke", fallback =
   return { [attr]: c.color, [`${attr}-opacity`]: c.opacity };
 }
 
+/** One gradient's `<stop>` rows, in reading order. */
+function fillStops(fill: Fill) {
+  return [...fill.stops].sort((a, b) => a.at - b.at).map((s) => {
+    const c = parseColor(s.colorHex) ?? { color: "#FFFFFF", opacity: 1 };
+    return svg`<stop offset=${Math.max(0, Math.min(1, s.at))} stop-color=${c.color} stop-opacity=${c.opacity} />`;
+  });
+}
+
+/**
+ * A gradient as SVG: the `<defs>` entry to drop into the drawing and the paint
+ * that references it.
+ *
+ * Both are written in bounding-box units, which is the same space SwiftUI's
+ * `UnitPoint`s and `EllipticalGradient` work in, so the two sides run identical
+ * arithmetic: a linear fill's angle names a direction, 0 running left to right
+ * and 90 top to bottom, with the line crossing the box through its centre; a
+ * radial fill is the ellipse that fits the box.
+ */
+function fillPaintDefs(fill: Fill): { defs: TemplateResult; paint: string } {
+  const id = `wafill-${nextSvgIdPrefix()}`;
+  const stops = fillStops(fill);
+  if (fill.kind === "radial") {
+    return {
+      defs: svg`<radialGradient id=${id} cx="0.5" cy="0.5" r="0.5">${stops}</radialGradient>`,
+      paint: `url(#${id})`,
+    };
+  }
+  const radians = ((fill.angle ?? 0) * Math.PI) / 180;
+  const dx = Math.cos(radians) / 2;
+  const dy = Math.sin(radians) / 2;
+  return {
+    defs: svg`<linearGradient id=${id} x1=${0.5 - dx} y1=${0.5 - dy} x2=${0.5 + dx} y2=${0.5 + dy}>${stops}</linearGradient>`,
+    paint: `url(#${id})`,
+  };
+}
+
+/**
+ * A gradient wrapped around a circular scale, for a ring or an arc gauge.
+ *
+ * SVG has no angular gradient, so the sweep is drawn as a fan of short arcs,
+ * each in the colour the fill shows at its own point along the scale. Same
+ * trick the corner bezel gauge already uses, and the same look `AngularGradient`
+ * gives on the watch.
+ */
+const GAUGE_GRADIENT_SEGMENTS = 48;
+
+/** The paint attributes for a flat colour, or a gradient over the given box. */
+function fillOrColor(fill: Fill | undefined, hex: string) {
+  if (fill === undefined) {
+    const c = colorAttrs(hex, "fill");
+    return { defs: nothing as TemplateResult | typeof nothing, fill: c.fill as string, opacity: c["fill-opacity"] as number };
+  }
+  const { defs, paint } = fillPaintDefs(fill);
+  return { defs: defs as TemplateResult | typeof nothing, fill: paint, opacity: 1 };
+}
+
 /** Approximate glyph width, in points, at a given font size. The 0.55 em figure
  * is the heuristic the shrink step has always used; every width decision below
  * goes through it so one number governs wrapping, shrinking and truncation. */
 const textCharWidth = (size: number) => size * 0.55;
+
+// ── curved text ───────────────────────────────────────────────────────────
+//
+// Both renderers lay one glyph at a time along the circle rather than handing
+// the string to a text-on-a-path primitive, because the reading direction and
+// the way up are two settings here (`sweep`'s sign and `inside`), and SVG's
+// `textPath` ties them together. `arcGlyphAngles` is the whole placement
+// decision and is mirrored glyph for glyph by `CurvedTextLayout.place` in the
+// app repo, so a curve drawn in the panel is the curve drawn on the wrist.
+
+/** How wide the ellipsis is taken to be when a curve has to cut its text, in
+ * the same em figure `truncateToBox` uses for a straight line. */
+const ARC_ELLIPSIS_EM = 0.8;
+
+export interface ArcGlyphPlacement {
+  /** Where the glyph's centre sits, in degrees, 0 at 12 o'clock, clockwise. */
+  angle: number;
+  /** The turn the glyph itself takes, in degrees clockwise. */
+  rotation: number;
+}
+
+export interface ArcTextLayout {
+  /** Shrink applied to every advance, 0.5 to 1, as `minimumScaleFactor` would. */
+  scale: number;
+  /** How many of the glyphs offered are drawn; the rest were cut. */
+  kept: number;
+  /** True when the last kept glyph is replaced by an ellipsis. */
+  truncated: boolean;
+  placements: ArcGlyphPlacement[];
+}
+
+/**
+ * Where each glyph of a curved line sits.
+ *
+ * `advances` are the unscaled glyph widths in design points, in reading order.
+ * The line is centred on the arc between `startAngle` and `startAngle + sweep`;
+ * too long for that arc it shrinks to at most half size, and what still does not
+ * fit is cut and closed with an ellipsis. A glyph sits with its centre on the
+ * circle, so `inside` only decides which way up it is: bottoms toward the centre
+ * when true, tops toward the centre when false.
+ */
+export function arcGlyphAngles(
+  advances: readonly number[],
+  arc: { radius: number; startAngle: number; sweep: number; inside: boolean },
+  ellipsisAdvance: number,
+): ArcTextLayout {
+  const empty: ArcTextLayout = { scale: 1, kept: 0, truncated: false, placements: [] };
+  const r = arc.radius;
+  if (r <= 0 || advances.length === 0) return empty;
+  const sweep = arc.sweep;
+  if (sweep === 0) return empty;
+  const arcLength = (r * Math.abs(sweep) * Math.PI) / 180;
+  const total = advances.reduce((a, b) => a + b, 0);
+  if (total <= 0) return empty;
+  const scale = total > arcLength ? Math.max(0.5, arcLength / total) : 1;
+  const widths = advances.map((a) => a * scale);
+  // Shrunk as far as it may go and still too long: keep whole glyphs while the
+  // ellipsis still fits after them, and never fewer than one.
+  let kept = widths.length;
+  let truncated = false;
+  if (widths.reduce((a, b) => a + b, 0) > arcLength) {
+    truncated = true;
+    const budget = arcLength - ellipsisAdvance * scale;
+    let used = 0;
+    kept = 0;
+    for (const w of widths) {
+      if (kept > 0 && used + w > budget) break;
+      used += w;
+      kept += 1;
+    }
+    kept = Math.max(1, kept);
+  }
+  const drawn = widths.slice(0, kept);
+  if (truncated) drawn[drawn.length - 1] = ellipsisAdvance * scale;
+  const used = drawn.reduce((a, b) => a + b, 0);
+  const dir = sweep < 0 ? -1 : 1;
+  // Degrees per point on this circle, so an advance becomes a turn.
+  const perPoint = 180 / (Math.PI * r);
+  let cursor = arc.startAngle + sweep / 2 - (dir * used * perPoint) / 2;
+  const placements = drawn.map((w) => {
+    const angle = cursor + (dir * w * perPoint) / 2;
+    cursor += dir * w * perPoint;
+    return { angle, rotation: arc.inside ? angle : angle + 180 };
+  });
+  return { scale, kept, truncated, placements };
+}
+
+/** Where an angle lands on the circle, 0 at 12 o'clock and clockwise positive.
+ * `+y` is down, as everywhere else here. */
+export function arcPoint(cx: number, cy: number, r: number, degrees: number): { x: number; y: number } {
+  const rad = (degrees * Math.PI) / 180;
+  return { x: cx + r * Math.sin(rad), y: cy - r * Math.cos(rad) };
+}
+
+/** One glyph of a curved line: the character, its look, and its advance. */
+interface ArcGlyph {
+  text: string;
+  look: PartLook;
+}
+
+/** The layer's text as glyphs, each carrying the look it is drawn in: a part's
+ * size, weight and colour where the layer draws parts, a span's colour where it
+ * colours its numbers, and the layer's own look everywhere else. */
+function arcGlyphs(el: Extract<ResolvedElement, { kind: "text" }>): ArcGlyph[] {
+  const layerLook: PartLook = {
+    fontSize: el.fontSize, fontWeight: el.fontWeight, fontDesign: el.fontDesign, italic: el.italic, colorHex: el.colorHex,
+  };
+  const drawsParts = el.parts !== undefined && el.parts.map((p) => p.text).join("") === el.text;
+  const looks = drawsParts ? partLooks(el.parts!) : undefined;
+  const colours = drawsParts ? undefined : spanColours(el.text, el.spans);
+  const out: ArcGlyph[] = [];
+  let at = 0;
+  for (const ch of el.text) {
+    const look = looks?.[at] ?? (colours === undefined ? layerLook : { ...layerLook, colorHex: colours[at]! });
+    out.push({ text: ch, look });
+    at += ch.length;
+  }
+  return out;
+}
+
+/** A curved layer's glyphs and where they land, or undefined when it draws
+ * straight. One call feeds both the drawing and the selection outline, so the
+ * box you click is the box you see. */
+function arcTextLayout(el: Extract<ResolvedElement, { kind: "text" }>, box: Box) {
+  if (el.arc === undefined || el.text === "") return undefined;
+  const glyphs = arcGlyphs(el);
+  const advances = glyphs.map((g) => textCharWidth(g.look.fontSize) * g.text.length);
+  const biggest = Math.max(el.fontSize, ...glyphs.map((g) => g.look.fontSize));
+  const layout = arcGlyphAngles(advances, el.arc, ARC_ELLIPSIS_EM * biggest);
+  if (layout.placements.length === 0) return undefined;
+  return { glyphs, layout, biggest, cx: box.cx, cy: box.cy, radius: el.arc.radius };
+}
+
+/** The box a curved line covers: the glyph centres it lands on, grown by a
+ * glyph. Close enough to click, which is all the outline is for. */
+function arcTextOutline(el: Extract<ResolvedElement, { kind: "text" }>, box: Box): Box | undefined {
+  const drawn = arcTextLayout(el, box);
+  if (drawn === undefined) return undefined;
+  const pad = (drawn.biggest * drawn.layout.scale) / 2;
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (const p of drawn.layout.placements) {
+    const at = arcPoint(drawn.cx, drawn.cy, drawn.radius, p.angle);
+    xs.push(at.x);
+    ys.push(at.y);
+  }
+  const x = Math.min(...xs) - pad;
+  const y = Math.min(...ys) - pad;
+  const w = Math.max(...xs) - Math.min(...xs) + pad * 2;
+  const h = Math.max(...ys) - Math.min(...ys) + pad * 2;
+  return { x, y, w, h, cx: x + w / 2, cy: y + h / 2 };
+}
+
+/** A curved line, one `<text>` per glyph, each turned to sit on the circle. */
+function renderArcText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box) {
+  const drawn = arcTextLayout(el, box);
+  if (drawn === undefined) return nothing;
+  const { glyphs, layout, radius, cx, cy } = drawn;
+  return svg`${layout.placements.map((p, i) => {
+    const glyph = glyphs[i]!;
+    const last = layout.truncated && i === layout.placements.length - 1;
+    const look = glyph.look;
+    const a = colorAttrs(look.colorHex, "fill");
+    const at = arcPoint(cx, cy, radius, p.angle);
+    return svg`<text x="0" y="0" text-anchor="middle" dominant-baseline="central"
+      transform=${`translate(${at.x} ${at.y}) rotate(${p.rotation})`}
+      font-family=${fontFamilyFor(look.fontDesign)} font-style=${look.italic ? "italic" : "normal"}
+      font-size=${look.fontSize * layout.scale} font-weight=${FONT_WEIGHT[look.fontWeight] ?? 400}
+      style=${el.monospacedDigits ? "font-variant-numeric: tabular-nums" : nothing}
+      fill=${a.fill} fill-opacity=${a["fill-opacity"]}>${last ? "…" : glyph.text}</text>`;
+  })}`;
+}
 
 /** The anchor and the x a text layer draws from, per alignment. Mirrors the
  * app's `.frame(maxWidth: .infinity, alignment:)`: the box is the width, and
@@ -439,28 +764,33 @@ function textAnchor(alignment: "leading" | "center" | "trailing", box: Box): { a
 }
 
 /**
- * Greedy wrap onto at most two lines, the way SwiftUI breaks lines: fill the
- * first line with whole words while they fit, and the rest goes on the second.
+ * Greedy wrap onto at most `maxLines`, the way SwiftUI breaks lines: fill each
+ * line with whole words while they fit, and what is left goes on the last one.
  * Returns a single line when there is no word boundary to break on, so a long
  * unbroken string shrinks instead of splitting mid-word.
  */
-function wrapToTwoLines(text: string, budgetChars: number): string[] {
+function wrapToLines(text: string, budgetChars: number, maxLines: number): string[] {
   const words = text.split(/\s+/).filter((w) => w !== "");
-  if (words.length < 2) return [text];
-  let first = "";
-  let taken = 0;
-  // Stop one short of the end so the second line is never empty.
-  for (let i = 0; i < words.length - 1; i++) {
-    const next = first === "" ? words[i]! : `${first} ${words[i]!}`;
-    if (first !== "" && next.length > budgetChars) break;
-    first = next;
-    taken = i + 1;
+  const limit = Math.max(1, Math.min(maxLines, words.length));
+  if (limit < 2) return [text];
+  const lines: string[] = [];
+  let from = 0;
+  for (let n = 0; n < limit - 1; n++) {
+    // Leave one word for each line still to come, so no line ends up empty.
+    const last = words.length - (limit - 1 - n) - 1;
+    let line = words[from]!;
+    let taken = from + 1;
+    for (let i = from + 1; i <= last; i++) {
+      const next = `${line} ${words[i]!}`;
+      if (next.length > budgetChars) break;
+      line = next;
+      taken = i + 1;
+    }
+    lines.push(line);
+    from = taken;
   }
-  if (taken === 0) {
-    first = words[0]!;
-    taken = 1;
-  }
-  return [first, words.slice(taken).join(" ")];
+  lines.push(words.slice(from).join(" "));
+  return lines;
 }
 
 /** Truncate one line with a tail ellipsis when it still overflows the box. */
@@ -526,6 +856,8 @@ function paintLine<T>(line: string, from: number, text: string, looks: readonly 
 interface PartLook {
   fontSize: number;
   fontWeight: string;
+  fontDesign: string;
+  italic: boolean;
   colorHex: string;
 }
 
@@ -541,7 +873,10 @@ function partLooks(parts: readonly ResolvedTextPart[]): PartLook[] {
       ? part.spans
       : [{ text: part.text, colorHex: part.colorHex }];
     for (const run of runs) {
-      const look: PartLook = { fontSize: part.fontSize, fontWeight: part.fontWeight, colorHex: run.colorHex };
+      const look: PartLook = {
+        fontSize: part.fontSize, fontWeight: part.fontWeight,
+        fontDesign: part.fontDesign, italic: part.italic, colorHex: run.colorHex,
+      };
       for (let i = 0; i < run.text.length; i++) out.push(look);
     }
   }
@@ -553,27 +888,36 @@ function runsWidth(runs: readonly PartRun[], scale: number): number {
   return runs.reduce((w, r) => w + r.text.length * textCharWidth(r.look.fontSize * scale), 0);
 }
 
-/** `wrapToTwoLines`, measured character by character, because the parts of one
+/** `wrapToLines`, measured character by character, because the parts of one
  * line do not share a size. The gap a folded break leaves is one space in the
  * size of the character before the word. */
-function wrapPartsToTwoLines(text: string, looks: readonly PartLook[], boxWidth: number): string[] {
+function wrapPartsToLines(text: string, looks: readonly PartLook[], boxWidth: number, maxLines: number): string[] {
   const words = [...text.matchAll(/\S+/g)];
-  if (words.length < 2) return [text];
+  const limit = Math.max(1, Math.min(maxLines, words.length));
+  if (limit < 2) return [text];
   const size = (i: number) => looks[i]?.fontSize ?? 0;
-  let used = 0;
-  let taken = 0;
-  // Stop one short of the end so the second line is never empty. The first word
-  // is always taken, so a long unbroken one shrinks instead.
-  for (let i = 0; i < words.length - 1; i++) {
-    const start = words[i]!.index ?? 0;
-    let add = taken === 0 ? 0 : textCharWidth(size(start - 1));
-    for (let j = start; j < start + words[i]![0].length; j++) add += textCharWidth(size(j));
-    if (taken > 0 && used + add > boxWidth) break;
-    used += add;
-    taken = i + 1;
-  }
   const join = (list: RegExpExecArray[]) => list.map((m) => m[0]).join(" ");
-  return [join(words.slice(0, taken)), join(words.slice(taken))];
+  const lines: string[] = [];
+  let from = 0;
+  for (let n = 0; n < limit - 1; n++) {
+    // Leave one word for each line still to come, so no line ends up empty. The
+    // first word of a line is always taken, so a long unbroken one shrinks.
+    const last = words.length - (limit - 1 - n) - 1;
+    let used = 0;
+    let taken = from;
+    for (let i = from; i <= last; i++) {
+      const start = words[i]!.index ?? 0;
+      let add = i === from ? 0 : textCharWidth(size(start - 1));
+      for (let j = start; j < start + words[i]![0].length; j++) add += textCharWidth(size(j));
+      if (i > from && used + add > boxWidth) break;
+      used += add;
+      taken = i + 1;
+    }
+    lines.push(join(words.slice(from, taken)));
+    from = taken;
+  }
+  lines.push(join(words.slice(from)));
+  return lines;
 }
 
 /** `truncateToBox` over runs of mixed sizes: keep what fits beside an ellipsis
@@ -619,11 +963,11 @@ function truncateRuns(runs: readonly PartRun[], scale: number, boxWidth: number)
  */
 function renderTextParts(el: Extract<ResolvedElement, { kind: "text" }>, parts: readonly ResolvedTextPart[], box: Box) {
   const looks = partLooks(parts);
-  const lines = el.lineLimit === 2 && box.w > 0 ? wrapPartsToTwoLines(el.text, looks, box.w) : [el.text];
+  const lines = el.lineLimit > 1 && box.w > 0 ? wrapPartsToLines(el.text, looks, box.w, el.lineLimit) : [el.text];
   const starts = lineStarts(el.text, lines);
   const painted = lines.map((line, i) => paintLine(line, starts[i] ?? 0, el.text, looks, looks[0]!));
   const widest = Math.max(...painted.map((runs) => runsWidth(runs, 1)));
-  const scale = widest > box.w && box.w > 0 ? Math.max(0.5, box.w / widest) : 1;
+  const scale = widest > box.w && box.w > 0 ? Math.max(el.minimumScale, box.w / widest) : 1;
   const drawn = painted.map((runs) => truncateRuns(runs, scale, box.w));
   const { anchor, x } = textAnchor(el.alignment, box);
   const tallest = Math.max(0, ...drawn.flat().map((r) => r.look.fontSize)) * scale || el.fontSize * scale;
@@ -636,20 +980,25 @@ function renderTextParts(el: Extract<ResolvedElement, { kind: "text" }>, parts: 
   const step = tallest * 1.15;
   const lineBody = (runs: readonly PartRun[]) => runs.map((run) => {
     const a = colorAttrs(run.look.colorHex, "fill");
-    return svg`<tspan font-size=${run.look.fontSize * scale} font-weight=${FONT_WEIGHT[run.look.fontWeight] ?? 400} fill=${a.fill} fill-opacity=${a["fill-opacity"]}>${run.text}</tspan>`;
+    return svg`<tspan font-size=${run.look.fontSize * scale} font-weight=${FONT_WEIGHT[run.look.fontWeight] ?? 400}
+      font-family=${fontFamilyFor(run.look.fontDesign)} font-style=${run.look.italic ? "italic" : "normal"}
+      fill=${a.fill} fill-opacity=${a["fill-opacity"]}>${run.text}</tspan>`;
   });
   const c = colorAttrs(el.colorHex, "fill");
   const body = drawn.length > 1
     ? svg`${drawn.map((runs, i) => svg`<tspan x=${x} y=${box.cy + baseline + (i - (drawn.length - 1) / 2) * step}>${lineBody(runs)}</tspan>`)}`
     : lineBody(drawn[0]!);
   return svg`<text x=${x} y=${box.cy + baseline} text-anchor=${anchor}
-    font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif"
+    font-family=${fontFamilyFor(el.fontDesign)} font-style=${el.italic ? "italic" : "normal"}
     font-size=${el.fontSize * scale} font-weight=${FONT_WEIGHT[el.fontWeight] ?? 400}
     style=${el.monospacedDigits ? "font-variant-numeric: tabular-nums" : nothing}
     fill=${c.fill} fill-opacity=${c["fill-opacity"]}>${body}</text>`;
 }
 
 function renderText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box) {
+  // Curved first: the resolver only leaves an arc on a shape that draws one and
+  // never on a countdown, so everything below still reads as it did.
+  if (el.arc !== undefined) return renderArcText(el, box);
   // Rich text, unless a countdown is ticking: the resolver never pairs the two,
   // and a stale pairing should still tick rather than freeze on its parts. Parts
   // that no longer spell the text draw as plain text, the way stale spans do.
@@ -666,11 +1015,11 @@ function renderText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box) {
   // lineLimit + minimumScaleFactor(0.5): wrap first when the layer allows two
   // lines, then shrink what is still too wide down to half size, then truncate
   // the tail with an ellipsis the way SwiftUI does instead of overflowing.
-  const lines = el.lineLimit === 2 && box.w > 0
-    ? wrapToTwoLines(el.text, box.w / textCharWidth(el.fontSize))
+  const lines = el.lineLimit > 1 && box.w > 0
+    ? wrapToLines(el.text, box.w / textCharWidth(el.fontSize), el.lineLimit)
     : [el.text];
   const widest = Math.max(...lines.map((l) => l.length)) * textCharWidth(el.fontSize);
-  const scale = widest > box.w && box.w > 0 ? Math.max(0.5, box.w / widest) : 1;
+  const scale = widest > box.w && box.w > 0 ? Math.max(el.minimumScale, box.w / widest) : 1;
   const fontSize = el.fontSize * scale;
   const drawn = lines.map((l) => truncateToBox(l, fontSize, box.w));
   const { anchor, x } = textAnchor(el.alignment, box);
@@ -691,7 +1040,7 @@ function renderText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box) {
     ? svg`${drawn.map((line, i) => svg`<tspan x=${x} y=${box.cy + (i - (drawn.length - 1) / 2) * step}>${lineBody(line, i)}</tspan>`)}`
     : lineBody(drawn[0]!, 0);
   return svg`<text x=${x} y=${box.cy} text-anchor=${anchor} dominant-baseline="central"
-    font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif"
+    font-family=${fontFamilyFor(el.fontDesign)} font-style=${el.italic ? "italic" : "normal"}
     font-size=${fontSize} font-weight=${FONT_WEIGHT[el.fontWeight] ?? 400}
     style=${el.monospacedDigits ? "font-variant-numeric: tabular-nums" : nothing}
     fill=${c.fill} fill-opacity=${c["fill-opacity"]}>${body}</text>`;
@@ -716,6 +1065,15 @@ function gaugeDotLayout(el: Extract<ResolvedElement, { kind: "gauge" }>, box: Bo
   return { horizontal, count, d, span };
 }
 
+/** Where a ring, arc or needle gauge's scale starts and how far it sweeps, in
+ * the same screen-clockwise degrees the drawing is rotated by. A ring is a full
+ * turn from 12 o'clock; the arc and the needle dial share the stock watch
+ * gauge's 270 degrees with the gap at the bottom. Mirrors `gaugeDial` in the app
+ * repo. */
+export function gaugeDial(style: "ring" | "arc" | "needle"): { start: number; sweep: number } {
+  return style === "ring" ? { start: -90, sweep: 360 } : { start: 135, sweep: 270 };
+}
+
 function renderGauge(el: Extract<ResolvedElement, { kind: "gauge" }>, box: Box) {
   const fill = colorAttrs(el.colorHex, "stroke");
   const track = colorAttrs(el.trackColorHex, "stroke", "#FFFFFF");
@@ -726,46 +1084,205 @@ function renderGauge(el: Extract<ResolvedElement, { kind: "gauge" }>, box: Box) 
     const first = (horizontal ? box.cx : box.cy) - span / 2 + d / 2;
     return svg`${Array.from({ length: count }, (_, i) => {
       const at = first + i * (d + GAUGE_DOT_GAP);
-      const paint = i < el.filledCount ? fill : track;
+      // A gradient over a row of dots is one colour per dot, sampled where that
+      // dot sits along the row: a dot is one mark, and half a fade across it
+      // would read as a rendering fault rather than as a scale.
+      const paint = i < el.filledCount
+        ? (el.fill === undefined ? fill : colorAttrs(fillColorAt(el.fill, count <= 1 ? 0 : i / (count - 1)), "stroke"))
+        : track;
       return svg`<circle cx=${horizontal ? at : box.cx} cy=${horizontal ? box.cy : at} r=${d / 2}
         fill=${paint.stroke} fill-opacity=${paint["stroke-opacity"]} />`;
-    })}`;
+    })}${gaugeBarExtras(el, box)}`;
   }
   if (el.style === "bar") {
     const w = box.w;
     const fillW = Math.max(lw, w * el.fraction);
     const tickW = 1;
+    // The gradient runs the whole bar, not the filled part, so the colour at a
+    // reading does not move as the reading does.
+    const paint = fillOrColor(el.fill, el.colorHex);
     return svg`
+      ${paint.defs === nothing ? nothing : svg`<defs>${paint.defs}</defs>`}
       <rect x=${box.x} y=${box.cy - lw / 2} width=${w} height=${lw} rx=${lw / 2}
         fill=${track.stroke} fill-opacity=${track["stroke-opacity"]} />
       <rect x=${box.x} y=${box.cy - lw / 2} width=${fillW} height=${lw} rx=${lw / 2}
-        fill=${fill.stroke} fill-opacity=${fill["stroke-opacity"]} />
+        fill=${paint.fill} fill-opacity=${paint.opacity} />
       ${el.thresholdFraction === undefined
         ? nothing
         : svg`<rect x=${box.x + Math.min(w - tickW, Math.max(0, w * el.thresholdFraction - tickW / 2))}
             y=${box.cy - lw / 2} width=${tickW} height=${lw}
-            fill=${tick.stroke} fill-opacity=${tick["stroke-opacity"]} />`}`;
+            fill=${tick.stroke} fill-opacity=${tick["stroke-opacity"]} />`}
+      ${gaugeBarExtras(el, box)}`;
   }
   const side = Math.min(box.w, box.h);
   const r = Math.max(0, side / 2 - lw / 2);
   const circumference = 2 * Math.PI * r;
-  const sweep = el.style === "ring" ? 1 : 0.75;
-  // ring starts at 12 o'clock; arc starts at 135deg from 3 o'clock (bottom-left).
-  const rotate = el.style === "ring" ? -90 : 135;
+  const dial = gaugeDial(el.style);
+  const sweep = dial.sweep / 360;
+  const rotate = dial.start;
   const trackLen = circumference * sweep;
   const fillLen = circumference * sweep * el.fraction;
+  const dialExtras = svg`${gaugeTicksSvg(el, box, r, lw)}${gaugeEndLabels(el, box, r, lw)}`;
+  if (el.style === "needle") {
+    return svg`
+      <g transform="rotate(${rotate} ${box.cx} ${box.cy})">
+        <circle cx=${box.cx} cy=${box.cy} r=${r} fill="none" stroke-width=${lw} stroke-linecap="round"
+          stroke=${track.stroke} stroke-opacity=${track["stroke-opacity"]}
+          stroke-dasharray="${trackLen} ${circumference}" />
+        ${el.thresholdFraction === undefined ? nothing : gaugeTick(box, r, lw, dial.sweep * el.thresholdFraction, el.thresholdColorHex)}
+      </g>
+      ${gaugeNeedle(el, box, r, lw)}
+      ${dialExtras}`;
+  }
+  // A ring or an arc paints its fill as a fan of short arcs when it carries a
+  // gradient, which is how an angular gradient is drawn without one in SVG.
+  const arcFill = el.fill === undefined
+    ? svg`<circle cx=${box.cx} cy=${box.cy} r=${r} fill="none" stroke-width=${lw} stroke-linecap="round"
+        stroke=${fill.stroke} stroke-opacity=${fill["stroke-opacity"]}
+        stroke-dasharray="${fillLen} ${circumference}" />`
+    : gaugeGradientArc(el.fill, box, r, lw, dial, el.fraction);
   return svg`
     <g transform="rotate(${rotate} ${box.cx} ${box.cy})">
       <circle cx=${box.cx} cy=${box.cy} r=${r} fill="none" stroke-width=${lw} stroke-linecap="round"
         stroke=${track.stroke} stroke-opacity=${track["stroke-opacity"]}
         stroke-dasharray="${trackLen} ${circumference}" />
-      ${el.fraction > 0
-        ? svg`<circle cx=${box.cx} cy=${box.cy} r=${r} fill="none" stroke-width=${lw} stroke-linecap="round"
-            stroke=${fill.stroke} stroke-opacity=${fill["stroke-opacity"]}
-            stroke-dasharray="${fillLen} ${circumference}" />`
-        : nothing}
-      ${el.thresholdFraction === undefined ? nothing : gaugeTick(box, r, lw, sweep * 360 * el.thresholdFraction, el.thresholdColorHex)}
-    </g>`;
+      ${el.fraction > 0 ? arcFill : nothing}
+      ${el.thresholdFraction === undefined ? nothing : gaugeTick(box, r, lw, dial.sweep * el.thresholdFraction, el.thresholdColorHex)}
+    </g>
+    ${dialExtras}`;
+}
+
+/** The filled part of a ring or arc, drawn as a fan of short arcs so a gradient
+ * can run around it. The whole scale is sampled, not just the filled part, so
+ * the colour at a reading does not move as the reading does. Drawn inside the
+ * rotated group, so the angles here start at 0. */
+function gaugeGradientArc(fill: Fill, box: Box, r: number, lw: number, dial: { start: number; sweep: number }, fraction: number) {
+  const shown = Math.max(0, Math.min(1, fraction));
+  const segments = Math.max(1, Math.round(GAUGE_GRADIENT_SEGMENTS * shown));
+  const step = (dial.sweep * shown) / segments;
+  const at = (deg: number) => {
+    const rad = (deg * Math.PI) / 180;
+    return { x: box.cx + Math.cos(rad) * r, y: box.cy + Math.sin(rad) * r };
+  };
+  return svg`${Array.from({ length: segments }, (_, i) => {
+    // Neighbouring pieces overlap by a hair so no seam shows between them.
+    const from = at(i * step - (i === 0 ? 0 : 0.2));
+    const to = at((i + 1) * step);
+    const c = parseColor(fillColorAt(fill, ((i + 0.5) * step) / dial.sweep)) ?? { color: "#FFFFFF", opacity: 1 };
+    return svg`<path d=${`M${from.x} ${from.y} A ${r} ${r} 0 0 1 ${to.x} ${to.y}`} fill="none"
+      stroke-width=${lw} stroke-linecap=${i === 0 || i === segments - 1 ? "round" : "butt"}
+      stroke=${c.color} stroke-opacity=${c.opacity} />`;
+  })}`;
+}
+
+/** The marks around a ring, arc or needle scale. The first sits at the start of
+ * the scale and the last at its end, so `count` marks cut it into `count - 1`
+ * steps. Every `majorEvery`th mark draws 1.6 times as long. */
+function gaugeTicksSvg(el: Extract<ResolvedElement, { kind: "gauge" }>, box: Box, r: number, lw: number) {
+  if (el.tickCount <= 0) return nothing;
+  const c = colorAttrs(el.tickColorHex, "stroke");
+  const dial = gaugeDial(el.style === "ring" ? "ring" : el.style === "needle" ? "needle" : "arc");
+  const count = el.tickCount;
+  // A full ring's last mark would land on its first, so a ring spreads its marks
+  // over the whole turn instead of over the turn's two ends.
+  const steps = el.style === "ring" ? count : Math.max(1, count - 1);
+  return svg`${Array.from({ length: count }, (_, i) => {
+    const major = el.tickMajorEvery > 0 && i % el.tickMajorEvery === 0;
+    const len = el.tickLength * (major ? 1.6 : 1);
+    const rad = ((dial.start + (dial.sweep * i) / steps) * Math.PI) / 180;
+    const dx = Math.cos(rad);
+    const dy = Math.sin(rad);
+    // Just inside the track, pointing at the centre, so a mark never sits on
+    // the fill and hides part of the reading.
+    const outer = r - lw / 2 - 0.5;
+    const inner = Math.max(0, outer - len);
+    return svg`<line x1=${box.cx + dx * inner} y1=${box.cy + dy * inner}
+      x2=${box.cx + dx * outer} y2=${box.cy + dy * outer}
+      stroke-width=${major ? 1.2 : 0.8} stroke-linecap="round"
+      stroke=${c.stroke} stroke-opacity=${c["stroke-opacity"]} />`;
+  })}`;
+}
+
+/** The min and max text at the two ends of a round scale, and the reading under
+ * the pointer on a needle dial. */
+function gaugeEndLabels(el: Extract<ResolvedElement, { kind: "gauge" }>, box: Box, r: number, lw: number) {
+  if (!el.showsLabels) return nothing;
+  const c = colorAttrs(el.labelColorHex, "fill");
+  const dial = gaugeDial(el.style === "ring" ? "ring" : el.style === "needle" ? "needle" : "arc");
+  const size = el.labelSize;
+  const at = (deg: number) => {
+    const rad = (deg * Math.PI) / 180;
+    // Inside the track by the text's own height, so the ends read without
+    // pushing the layer's box out.
+    const radius = Math.max(0, r - lw / 2 - size * 0.7);
+    return { x: box.cx + Math.cos(rad) * radius, y: box.cy + Math.sin(rad) * radius + size * 0.36 };
+  };
+  const ends = el.style === "ring"
+    ? nothing
+    : svg`${[[dial.start, gaugeLabelText(el.minValue)], [dial.start + dial.sweep, gaugeLabelText(el.maxValue)]].map(([deg, text]) => {
+        const p = at(deg as number);
+        return svg`<text x=${p.x} y=${p.y} text-anchor="middle" font-size=${size} font-family=${GAUGE_TEXT_FAMILY}
+          fill=${c.fill} fill-opacity=${c["fill-opacity"]}>${text}</text>`;
+      })}`;
+  // The reading itself belongs to the needle dial: a ring or an arc already
+  // shows it by how far it is filled, and the number would sit on the fill.
+  const reading = el.style === "needle" && el.valueText !== ""
+    ? svg`<text x=${box.cx} y=${box.cy + r * 0.55 + size * 0.36} text-anchor="middle" font-size=${size * 1.2} font-weight="600" font-family=${GAUGE_TEXT_FAMILY}
+        fill=${c.fill} fill-opacity=${c["fill-opacity"]}>${el.valueText}</text>`
+    : nothing;
+  return svg`${ends}${reading}`;
+}
+
+/** The text a gauge's own labels are set in, matching the rest of the preview.
+ * A plain string, written out on every `<text>`: Lit cannot splice a template
+ * into the middle of a tag, and a shared fragment would silently drop it. */
+const GAUGE_TEXT_FAMILY = "-apple-system, 'SF Pro Text', Helvetica, Arial, sans-serif";
+
+/** The pointer of a needle dial: a line from the hub out to the reading's angle,
+ * `lineWidth` wide, with a small hub dot over its root. */
+function gaugeNeedle(el: Extract<ResolvedElement, { kind: "gauge" }>, box: Box, r: number, lw: number) {
+  const dial = gaugeDial("needle");
+  const rad = ((dial.start + dial.sweep * Math.max(0, Math.min(1, el.fraction))) * Math.PI) / 180;
+  const reach = Math.max(0, r - lw / 2 - 1);
+  // A gradient down a pointer a couple of points wide says nothing, so the
+  // pointer takes the one colour the gradient shows where it points, the way a
+  // banded gauge takes its band's colour.
+  const paint = colorAttrs(el.fill === undefined ? el.colorHex : fillColorAt(el.fill, el.fraction), "fill");
+  const hub = Math.max(1, lw * 0.8);
+  return svg`
+    <line x1=${box.cx} y1=${box.cy} x2=${box.cx + Math.cos(rad) * reach} y2=${box.cy + Math.sin(rad) * reach}
+      stroke-width=${lw} stroke-linecap="round" stroke=${paint.fill} stroke-opacity=${paint["fill-opacity"]} />
+    <circle cx=${box.cx} cy=${box.cy} r=${hub} fill=${paint.fill} fill-opacity=${paint["fill-opacity"]} />`;
+}
+
+/** What a bar or a row of dots adds: marks along the bar, and the two ends of
+ * the scale written under it. A round dial's are drawn against its arc instead. */
+function gaugeBarExtras(el: Extract<ResolvedElement, { kind: "gauge" }>, box: Box) {
+  const lw = el.style === "dots" ? gaugeDotLayout(el, box).d : el.lineWidth;
+  const marks = el.tickCount > 0
+    ? svg`${(() => {
+        const c = colorAttrs(el.tickColorHex, "stroke");
+        const steps = Math.max(1, el.tickCount - 1);
+        return Array.from({ length: el.tickCount }, (_, i) => {
+          const major = el.tickMajorEvery > 0 && i % el.tickMajorEvery === 0;
+          const len = el.tickLength * (major ? 1.6 : 1);
+          const x = box.x + (box.w * i) / steps;
+          const top = box.cy + lw / 2 + 0.5;
+          return svg`<line x1=${x} y1=${top} x2=${x} y2=${top + len}
+            stroke-width=${major ? 1.2 : 0.8} stroke-linecap="round"
+            stroke=${c.stroke} stroke-opacity=${c["stroke-opacity"]} />`;
+        });
+      })()}`
+    : nothing;
+  if (!el.showsLabels) return svg`${marks}`;
+  const c = colorAttrs(el.labelColorHex, "fill");
+  const size = el.labelSize;
+  const y = box.cy + lw / 2 + (el.tickCount > 0 ? el.tickLength * 1.6 : 0) + size;
+  return svg`${marks}
+    <text x=${box.x} y=${y} text-anchor="start" font-size=${size} font-family=${GAUGE_TEXT_FAMILY}
+      fill=${c.fill} fill-opacity=${c["fill-opacity"]}>${gaugeLabelText(el.minValue)}</text>
+    <text x=${box.x + box.w} y=${y} text-anchor="end" font-size=${size} font-family=${GAUGE_TEXT_FAMILY}
+      fill=${c.fill} fill-opacity=${c["fill-opacity"]}>${gaugeLabelText(el.maxValue)}</text>`;
 }
 
 /** The mark a ring or arc puts on its scale at the threshold: a short radial line
@@ -908,6 +1425,18 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
     return { fill: `url(#${id})`, opacity: 1 };
   };
 
+  // The area's gradient, made once and shared by every stretch of line that
+  // draws under it, so a series broken by holes still reads as one wash.
+  let areaFillPaintCache: { fill: string; opacity: number } | undefined;
+  const areaFillPaint = (fill: Fill) => {
+    if (areaFillPaintCache === undefined) {
+      const made = fillPaintDefs(fill);
+      defs.set("areaFill", made.defs);
+      areaFillPaintCache = { fill: made.paint, opacity: 1 };
+    }
+    return areaFillPaintCache;
+  };
+
   if (el.style === "bars") {
     for (let i = 0; i < g.count; i++) {
       // A hole draws no bar: the slot stays empty where the entity was unavailable.
@@ -1002,7 +1531,12 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
             body.push(svg`<path d=${quad} fill=${paint.fill} fill-opacity=${paint.opacity} stroke="none" />`);
           }
         } else {
-          const paint = fillPaint(el.fillColorHex ?? el.colorHex);
+          // A gradient under the area replaces the whole paint, `fillStyle` and
+          // the flat 28 % included: its stops carry their own alpha, so fading
+          // it again would take a colour the author chose and dim it twice.
+          const paint = el.areaFill === undefined
+            ? fillPaint(el.fillColorHex ?? el.colorHex)
+            : areaFillPaint(el.areaFill);
           const area = `${line} L${pts[pts.length - 1]!.x} ${g.baselineY} L${pts[0]!.x} ${g.baselineY} Z`;
           body.push(svg`<path d=${area} fill=${paint.fill} fill-opacity=${paint.opacity} stroke="none" />`);
         }
@@ -1229,6 +1763,7 @@ export function lineOutline(box: Box, thickness: number): Box {
  * of its frame it actually draws in. Layers that fill their frame use the frame.
  */
 export function layerOutline(el: ResolvedElement, box: Box): Box {
+  if (el.kind === "text" && el.arc !== undefined) return arcTextOutline(el, box) ?? box;
   if (el.kind === "shape") {
     if (el.shapeKind === "circle") return centredSquare(box);
     if (el.shapeKind === "line") return lineOutline(box, el.thickness);
@@ -1309,7 +1844,9 @@ export function iconDrawnSide(el: Extract<ResolvedElement, { kind: "icon" }>): n
 }
 
 function renderShape(el: Extract<ResolvedElement, { kind: "shape" }>, box: Box) {
-  const fill = colorAttrs(el.fillColorHex, "fill");
+  const paint = fillOrColor(el.fill, el.fillColorHex);
+  const fill = { fill: paint.fill, "fill-opacity": paint.opacity };
+  const defs = paint.defs === nothing ? nothing : svg`<defs>${paint.defs}</defs>`;
   const border = el.borderColorHex ? parseColor(el.borderColorHex) : undefined;
   const bw = border ? el.borderWidth : 0;
   // strokeBorder draws inside the bounds: inset by half the stroke.
@@ -1323,22 +1860,22 @@ function renderShape(el: Extract<ResolvedElement, { kind: "shape" }>, box: Box) 
   switch (el.shapeKind) {
     case "circle": {
       const r = Math.min(box.w, box.h) / 2 - inset;
-      return svg`<circle cx=${box.cx} cy=${box.cy} r=${Math.max(0, r)}
+      return svg`${defs}<circle cx=${box.cx} cy=${box.cy} r=${Math.max(0, r)}
         fill=${fill.fill} fill-opacity=${fill["fill-opacity"]}
         stroke=${stroke} stroke-opacity=${strokeOpacity} stroke-width=${bw} />`;
     }
     case "capsule": {
       const r = Math.min(box.w, box.h) / 2;
-      return svg`<rect x=${box.x + inset} y=${box.y + inset} width=${Math.max(0, box.w - bw)} height=${Math.max(0, box.h - bw)} rx=${r}
+      return svg`${defs}<rect x=${box.x + inset} y=${box.y + inset} width=${Math.max(0, box.w - bw)} height=${Math.max(0, box.h - bw)} rx=${r}
         fill=${fill.fill} fill-opacity=${fill["fill-opacity"]}
         stroke=${stroke} stroke-opacity=${strokeOpacity} stroke-width=${bw} />`;
     }
     case "roundedRectangle":
-      return svg`<rect x=${box.x + inset} y=${box.y + inset} width=${Math.max(0, box.w - bw)} height=${Math.max(0, box.h - bw)} rx=${el.cornerRadius}
+      return svg`${defs}<rect x=${box.x + inset} y=${box.y + inset} width=${Math.max(0, box.w - bw)} height=${Math.max(0, box.h - bw)} rx=${el.cornerRadius}
         fill=${fill.fill} fill-opacity=${fill["fill-opacity"]}
         stroke=${stroke} stroke-opacity=${strokeOpacity} stroke-width=${bw} />`;
     case "rectangle":
-      return svg`<rect x=${box.x + inset} y=${box.y + inset} width=${Math.max(0, box.w - bw)} height=${Math.max(0, box.h - bw)}
+      return svg`${defs}<rect x=${box.x + inset} y=${box.y + inset} width=${Math.max(0, box.w - bw)} height=${Math.max(0, box.h - bw)}
         fill=${fill.fill} fill-opacity=${fill["fill-opacity"]}
         stroke=${stroke} stroke-opacity=${strokeOpacity} stroke-width=${bw} />`;
     case "line": {
@@ -1349,7 +1886,7 @@ function renderShape(el: Extract<ResolvedElement, { kind: "shape" }>, box: Box) 
       const t = Math.max(0, Math.min(el.thickness, along ? box.h : box.w));
       const x = along ? box.x : box.cx - t / 2;
       const y = along ? box.cy - t / 2 : box.y;
-      return svg`<rect x=${x} y=${y} width=${along ? box.w : t} height=${along ? t : box.h}
+      return svg`${defs}<rect x=${x} y=${y} width=${along ? box.w : t} height=${along ? t : box.h}
         fill=${fill.fill} fill-opacity=${fill["fill-opacity"]} stroke="none" />`;
     }
   }
@@ -1671,8 +2208,14 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     case "tap": body = renderTap(el, box, options.icons, showTaps, labelled ? describeTapAction(el.action) : undefined); break;
   }
   // A tap box is the editor's own mark, never drawn on the watch, so it keeps
-  // its colour on a tinted preview.
-  if (el.kind !== "tap") body = tinted(body, tintGroup(el.kind), tintPrefix);
+  // its colour on a tinted preview and casts no shadow.
+  if (el.kind !== "tap") {
+    // One id per drawing rather than per layer: the same layer is drawn more
+    // than once on a page (every shape's preview), and two filters sharing an
+    // id in one document is one filter.
+    body = shadowed(body, `sh-${(shadowSeq += 1).toString(36)}`, el.shadow);
+    body = tinted(body, tintGroup(el.kind, options.tintSurface ?? "watch", el.accentGroup === "accent"), tintPrefix);
+  }
   // Review mode pushes the drawing back so the tap boxes are the thing you read.
   const dim = review && (el.kind !== "tap" || (inFocusView && !focused)) ? 0.35 : 1;
   const opacity = Math.min(1, Math.max(0, el.opacity)) * (el.isHidden ? 0.35 : 1) * dim;
@@ -1928,12 +2471,28 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
   const fit = fitBox(canvas, family);
   const uid = `clip-${family}-${Math.random().toString(36).slice(2, 8)}`;
   const bg = parseColor(layout.backgroundColorHex);
+  // The background's gradient, over the whole slot, beating the flat colour.
+  const bgFill = layout.backgroundFill === undefined
+    ? undefined
+    : fillPaintDefs(layout.backgroundFill);
+  const bgPaint = bgFill === undefined
+    ? (bg === undefined ? undefined : { fill: bg.color, opacity: bg.opacity })
+    : { fill: bgFill.paint, opacity: 1 };
   const border = parseColor(layout.borderColorHex);
   const bw = layout.borderWidth * fit.scale;
   const elements = layout.elements;
   const charts = chartsById(elements);
   const tint = options.tint === undefined ? undefined : `${uid}-tint`;
-  const defsTint = tint === undefined ? nothing : tintDefs(tint, options.tint!);
+  // A Home Screen tile is only ever tinted the iPhone way, and a watch shape
+  // only ever the watch way, so the shape settles the surface on its own.
+  const surface: TintSurface = options.tintSurface ?? "watch";
+  const defsTint = tint === undefined ? nothing : tintDefs(tint, options.tint!, surface);
+  // The group the tile's own chrome joins: its background, its border, and the
+  // corner's bezel ring. It is the default group on both surfaces.
+  const chromeGroup: TintGroup = surface === "phone" ? "phonePrimary" : "plain";
+  // iOS drops the widget's container background in `accented` mode, so a tinted
+  // Home Screen preview draws no background fill at all.
+  const bgDrawn = bgPaint !== undefined && !(tint !== undefined && surface === "phone");
 
   if (family === "corner") {
     // Watch-corner context preview: black screen quadrant, the content disc
@@ -1988,7 +2547,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
         : nothing;
       main = svg`<g transform="translate(${slotX} ${slotY})">
         <g clip-path=${`url(#${uid})`}>
-          ${bg ? tinted(svg`<rect width=${tile} height=${tile} fill=${bg.color} fill-opacity=${bg.opacity} />`, "plain", tint) : nothing}
+          ${bgDrawn ? tinted(svg`${bgFill === undefined ? nothing : svg`<defs>${bgFill.defs}</defs>`}<rect width=${tile} height=${tile} fill=${bgPaint!.fill} fill-opacity=${bgPaint!.opacity} />`, chromeGroup, tint) : nothing}
           <g data-design-box transform="scale(${fit.scale * tileScale})">
             ${elements.map((el) => renderElement(el, design, options, charts, tint))}
             ${gridLines(design, options.grid)}
@@ -1996,7 +2555,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
         </g>
         <circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} fill="none"
           stroke="rgba(255,255,255,0.22)" stroke-width=${0.75 * s} stroke-dasharray=${`${2 * s} ${2 * s}`} />
-        ${tinted(chrome, "plain", tint)}
+        ${tinted(chrome, chromeGroup, tint)}
         <g transform="scale(${fit.scale * tileScale})">${handleLayer(elements, design, options, charts)}</g>
       </g>`;
     }
@@ -2004,8 +2563,8 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
         width=${ctx.quad.width} height=${ctx.quad.height}>
       <defs><clipPath id=${uid}><circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} /></clipPath>${defsTint}</defs>
       <path d=${shell} fill="#000000" />
-      ${tinted(bezel, "accent", tint)}
-      ${curvedMode ? tinted(main, "accent", tint) : main}
+      ${tinted(bezel, surface === "phone" ? "phoneAccent" : "accent", tint)}
+      ${curvedMode ? tinted(main, surface === "phone" ? "phoneAccent" : "accent", tint) : main}
       ${curvedMode ? nothing : spotlight(elements, design, options.spotlightIds, `${uid}-spot`, ctx.quad.width, ctx.quad.height,
         `translate(${slotX} ${slotY}) scale(${fit.scale * tileScale})`)}
     </svg>`;
@@ -2028,13 +2587,13 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
     <defs><clipPath id=${uid}>${clip}</clipPath>${defsTint}</defs>
     <g clip-path=${`url(#${uid})`}>
       ${well}
-      ${bg ? tinted(svg`<rect width=${canvas.width} height=${canvas.height} rx=${rx} fill=${bg.color} fill-opacity=${bg.opacity} />`, "plain", tint) : nothing}
+      ${bgDrawn ? tinted(svg`${bgFill === undefined ? nothing : svg`<defs>${bgFill.defs}</defs>`}<rect width=${canvas.width} height=${canvas.height} rx=${rx} fill=${bgPaint!.fill} fill-opacity=${bgPaint!.opacity} />`, chromeGroup, tint) : nothing}
       <g data-design-box transform="translate(${fit.x} ${fit.y}) scale(${fit.scale})">
         ${elements.map((el) => renderElement(el, design, options, charts, tint))}
             ${gridLines(design, options.grid)}
       </g>
     </g>
-    ${tinted(chrome, "plain", tint)}
+    ${tinted(chrome, chromeGroup, tint)}
     <g transform="translate(${fit.x} ${fit.y}) scale(${fit.scale})">${handleLayer(elements, design, options, charts)}</g>
     ${spotlight(elements, design, options.spotlightIds, `${uid}-spot`, canvas.width, canvas.height, `translate(${fit.x} ${fit.y}) scale(${fit.scale})`)}
   </svg>`;
@@ -2166,6 +2725,12 @@ export function renderLayerThumb(layout: ResolvedLayout, ids: readonly string[],
   const design = CANVAS[family];
   const crop = thumbCrop(layout, ids, options.width / options.height);
   const bg = parseColor(layout.backgroundColorHex);
+  // The background's gradient, over the whole face, beating the flat colour.
+  const bgFill = layout.backgroundFill === undefined
+    ? undefined
+    : fillPaintDefs(layout.backgroundFill);
+  const faceFill = bgFill !== undefined ? bgFill.paint : bg ? bg.color : "#000000";
+  const faceOpacity = bgFill !== undefined ? 1 : bg ? bg.opacity : 1;
   const border = parseColor(layout.borderColorHex);
   const bw = layout.borderWidth;
   const render: RenderOptions = {
@@ -2186,11 +2751,12 @@ export function renderLayerThumb(layout: ResolvedLayout, ids: readonly string[],
       : svg`<rect x=${bw / 2} y=${bw / 2} width=${design.width - bw} height=${design.height - bw} rx=${Math.max(0, rx - bw / 2)} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${bw} />`)
     : nothing;
   const face = shape === "circle"
-    ? svg`<circle cx=${design.width / 2} cy=${design.height / 2} r=${design.width / 2} fill=${bg ? bg.color : "#000000"} fill-opacity=${bg ? bg.opacity : 1} />`
-    : svg`<rect width=${design.width} height=${design.height} rx=${rx} fill=${bg ? bg.color : "#000000"} fill-opacity=${bg ? bg.opacity : 1} />`;
+    ? svg`<circle cx=${design.width / 2} cy=${design.height / 2} r=${design.width / 2} fill=${faceFill} fill-opacity=${faceOpacity} />`
+    : svg`<rect width=${design.width} height=${design.height} rx=${rx} fill=${faceFill} fill-opacity=${faceOpacity} />`;
   return svg`<svg viewBox=${`${crop.x} ${crop.y} ${crop.w} ${crop.h}`} xmlns="http://www.w3.org/2000/svg" class="thumb ${family}"
       width=${options.width} height=${options.height} preserveAspectRatio="xMidYMid meet" aria-hidden="true">
     <rect x=${crop.x} y=${crop.y} width=${crop.w} height=${crop.h} fill="#000000" />
+    ${bgFill === undefined ? nothing : svg`<defs>${bgFill.defs}</defs>`}
     ${face}
     ${picked.map((el) => renderElement(el, design, render, chartsById(layout.elements)))}
     ${chrome}

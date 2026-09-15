@@ -1,0 +1,188 @@
+{
+  "name": "Layer shadow",
+  "description": "A layer may carry a drop shadow: a colour, a blur radius and an offset, all in design points. Absent means no shadow. A glow is the same key with both offsets at zero. The radius is clamped to 0...12 and each offset to -12...12, so a hand-written document asking for more still opens and draws what the watch can. A tap area draws nothing, so it never carries one.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-000000000410",
+    "name": "Layer shadow",
+    "values": [],
+    "slotIndex": 3,
+    "elements": [
+      {
+        "kind": "shape",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000411",
+          "colorSlot": {
+            "baseColorHex": "#0A84FF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.02,
+            "y": 0.1,
+            "width": 0.2,
+            "height": 0.8,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "shadow": {
+            "colorHex": "#000000CC",
+            "radius": 4,
+            "dx": 1,
+            "dy": 2
+          },
+          "kind": "roundedRectangle",
+          "cornerRadius": 4,
+          "borderWidth": 0,
+          "thickness": 2
+        }
+      },
+      {
+        "kind": "icon",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000412",
+          "colorSlot": {
+            "baseColorHex": "#FFD60A"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.26,
+            "y": 0.1,
+            "width": 0.2,
+            "height": 0.8,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "shadow": {
+            "colorHex": "#FFD60A",
+            "radius": 6,
+            "dx": 0,
+            "dy": 0
+          },
+          "symbol": {
+            "kind": {
+              "kind": "literal",
+              "value": "bolt.fill"
+            }
+          },
+          "size": 18
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000413",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.5,
+            "y": 0.1,
+            "width": 0.24,
+            "height": 0.8,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "shadow": {
+            "colorHex": "#FF453A",
+            "radius": 12,
+            "dx": -12,
+            "dy": 12
+          },
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "Clamped"
+            }
+          },
+          "fontSize": 12,
+          "fontWeight": "regular"
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000414",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.76,
+            "y": 0.1,
+            "width": 0.22,
+            "height": 0.8,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "Plain"
+            }
+          },
+          "fontSize": 12,
+          "fontWeight": "regular"
+        }
+      }
+    ],
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "perFamily": [],
+    "dataSources": [],
+    "tapAction": {
+      "type": "refresh"
+    },
+    "refreshMinutes": 15
+  },
+  "inputs": {
+    "entityStates": {},
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": [],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000411",
+          "kind": "shape",
+          "shadow": {
+            "colorHex": "#000000CC",
+            "radius": 4,
+            "dx": 1,
+            "dy": 2
+          }
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000412",
+          "kind": "icon",
+          "shadow": {
+            "colorHex": "#FFD60A",
+            "radius": 6,
+            "dx": 0,
+            "dy": 0
+          }
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000413",
+          "kind": "text",
+          "shadow": {
+            "colorHex": "#FF453A",
+            "radius": 12,
+            "dx": -12,
+            "dy": 12
+          }
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000414",
+          "kind": "text",
+          "shadow": null
+        }
+      ]
+    }
+  }
+}

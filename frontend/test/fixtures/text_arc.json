@@ -1,0 +1,205 @@
+{
+  "name": "Curved text",
+  "description": "The `arc` key on a text layer, added 2026-09-14. A curve is allowed on the Circular, Small and Large shapes only, so the same document resolves an arc on Circular and Small and none at all on Rectangular. The radius leaves the resolver in design-box points, a fraction of the shape's shorter side, which is why the same 0.4 reads 20.4 on a 51 point circle and 65.068 on a 162.67 point tile. The first layer pins the defaults a bare `arc` decodes to: the top of the circle, 120 degrees clockwise, letters facing out. The second carries all four keys, including a sweep that runs the other way. The third is a countdown, which the system draws as one ticking string and so never curves, whatever the document asks for. The last two sit at the ends of the ranges the editor offers: the widest radius with the shortest sweep, and the tightest radius with a full turn the other way. What a document outside those ranges decodes to is pinned in each side's own unit tests, since a fixture has to round-trip byte for byte and so can only hold canonical values.",
+  "config": {
+    "schemaVersion": 7,
+    "id": "AAAAAAAA-0000-4000-8000-0000000003A0",
+    "name": "Curved text",
+    "slotIndex": 3,
+    "supportedFamilies": [
+      "rectangular",
+      "circular",
+      "small"
+    ],
+    "values": [],
+    "perFamily": [
+      "rectangular",
+      { "cornerBodyShape": "wedge", "borderWidth": 0 },
+      "circular",
+      { "cornerBodyShape": "wedge", "borderWidth": 0 },
+      "small",
+      { "cornerBodyShape": "wedge", "borderWidth": 0 }
+    ],
+    "elements": [
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000003B1",
+          "value": { "kind": { "kind": "literal", "value": "WRIST ASSISTANT" } },
+          "fontSize": 10,
+          "fontWeight": "semibold",
+          "arc": { "radius": 0.4 },
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [],
+          "frame": { "x": 0, "y": 0, "width": 1, "height": 1, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000003B2",
+          "value": { "kind": { "kind": "literal", "value": "Kitchen" } },
+          "fontSize": 9,
+          "fontWeight": "regular",
+          "arc": { "radius": 0.6, "startAngle": 180, "sweep": -90, "inside": true },
+          "colorSlot": { "baseColorHex": "#0A84FF" },
+          "rules": [],
+          "frame": { "x": 0, "y": 0, "width": 1, "height": 1, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000003B3",
+          "value": { "kind": { "kind": "literal", "value": "idle" } },
+          "fontSize": 12,
+          "fontWeight": "regular",
+          "countdown": true,
+          "arc": { "radius": 0.5, "startAngle": 45 },
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [],
+          "frame": { "x": 0, "y": 0, "width": 1, "height": 1, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000003B4",
+          "value": { "kind": { "kind": "literal", "value": "Wide" } },
+          "fontSize": 8,
+          "fontWeight": "regular",
+          "arc": { "radius": 1, "sweep": 10 },
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [],
+          "frame": { "x": 0, "y": 0, "width": 1, "height": 1, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000003B5",
+          "value": { "kind": { "kind": "literal", "value": "Tight" } },
+          "fontSize": 8,
+          "fontWeight": "regular",
+          "arc": { "radius": 0.1, "sweep": -360 },
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [],
+          "frame": { "x": 0, "y": 0, "width": 1, "height": 1, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": { "type": "refresh" }
+  },
+  "inputs": {
+    "entityStates": {},
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": [],
+    "expressionKeys": []
+  },
+  "expected": {
+    "circular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000003B1",
+          "kind": "text",
+          "text": "WRIST ASSISTANT",
+          "arc": { "radius": 20.4, "startAngle": 0, "sweep": 120, "inside": false }
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000003B2",
+          "kind": "text",
+          "text": "Kitchen",
+          "arc": { "radius": 30.6, "startAngle": 180, "sweep": -90, "inside": true }
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000003B3",
+          "kind": "text",
+          "arc": null
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000003B4",
+          "kind": "text",
+          "text": "Wide",
+          "arc": { "radius": 51, "startAngle": 0, "sweep": 10, "inside": false }
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000003B5",
+          "kind": "text",
+          "text": "Tight",
+          "arc": { "radius": 5.1, "startAngle": 0, "sweep": -360, "inside": false }
+        }
+      ]
+    },
+    "small": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000003B1",
+          "kind": "text",
+          "arc": { "radius": 65.068, "startAngle": 0, "sweep": 120, "inside": false }
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000003B2",
+          "kind": "text",
+          "arc": { "radius": 97.602, "startAngle": 180, "sweep": -90, "inside": true }
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000003B3",
+          "kind": "text",
+          "arc": null
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000003B4",
+          "kind": "text",
+          "arc": { "radius": 162.67, "startAngle": 0, "sweep": 10, "inside": false }
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000003B5",
+          "kind": "text",
+          "arc": { "radius": 16.267, "startAngle": 0, "sweep": -360, "inside": false }
+        }
+      ]
+    },
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000003B1",
+          "kind": "text",
+          "text": "WRIST ASSISTANT",
+          "arc": null
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000003B2",
+          "kind": "text",
+          "text": "Kitchen",
+          "arc": null
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000003B3",
+          "kind": "text",
+          "arc": null
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000003B4",
+          "kind": "text",
+          "text": "Wide",
+          "arc": null
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-0000000003B5",
+          "kind": "text",
+          "text": "Tight",
+          "arc": null
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,96 @@
+{
+  "name": "Accent group",
+  "description": "A schema 7 Home Screen document where one layer asks for the accent group. A tinted Home Screen renders the widget in WidgetKit's accented mode: the tile's own ground goes, every layer keeps only how bright it was, and the system paints two groups in two related colours. `accentGroup` names which group a layer joins; it is optional and written only for the away-from-default `accent`, so the text and the shape here carry no key and resolve to the default group. The key only ever adds to the accent group, so a shape, an icon, a gauge, a chart or a timeline is accentable whether or not the document says so.",
+  "config": {
+    "schemaVersion": 7,
+    "id": "AAAAAAAA-0000-4000-8000-000000000019",
+    "name": "Accent group",
+    "slotIndex": 2,
+    "supportedFamilies": ["small"],
+    "values": [],
+    "elements": [
+      {
+        "kind": "shape",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000191",
+          "kind": "roundedRectangle",
+          "cornerRadius": 8,
+          "borderWidth": 1,
+          "colorSlot": {"baseColorHex": "#1C1C1E"},
+          "rules": [],
+          "frame": {"x": 0.05, "y": 0.05, "width": 0.9, "height": 0.9, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000192",
+          "value": {"kind": {"kind": "entityState", "entityId": "sensor.house_temp", "displayName": "House", "domain": "sensor"}},
+          "fontSize": 22,
+          "fontWeight": "bold",
+          "colorSlot": {"baseColorHex": "#FFFFFF"},
+          "rules": [],
+          "frame": {"x": 0.1, "y": 0.15, "width": 0.8, "height": 0.35, "rotationDegrees": 0},
+          "isHidden": false,
+          "accentGroup": "accent"
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000193",
+          "value": {"kind": {"kind": "literal", "value": "Living room"}},
+          "fontSize": 12,
+          "fontWeight": "regular",
+          "colorSlot": {"baseColorHex": "#98989D"},
+          "rules": [],
+          "frame": {"x": 0.1, "y": 0.6, "width": 0.8, "height": 0.25, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "small",
+      {"cornerBodyShape": "circle", "borderWidth": 0, "backgroundColorHex": "#000000"}
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {"type": "refresh"}
+  },
+  "inputs": {
+    "entityStates": {
+      "sensor.house_temp": {"state": "21.5", "unitOfMeasurement": "°C", "domain": "sensor"}
+    },
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": ["sensor.house_temp"],
+    "expressionKeys": []
+  },
+  "expected": {
+    "small": {
+      "backgroundColorHex": "#000000",
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000191",
+          "kind": "shape",
+          "shapeKind": "roundedRectangle",
+          "accentGroup": null
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000192",
+          "kind": "text",
+          "text": "21.5",
+          "accentGroup": "accent"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000193",
+          "kind": "text",
+          "text": "Living room",
+          "accentGroup": null
+        }
+      ]
+    }
+  }
+}

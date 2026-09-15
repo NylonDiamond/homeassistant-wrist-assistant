@@ -48,6 +48,8 @@ export const PROPERTY_LABELS: Record<StyleProperty, string> = {
   opacity: "Opacity",
   fontSize: "Size",
   fontWeight: "Weight",
+  fontDesign: "Typeface",
+  italic: "Italic",
   rotation: "Rotation",
   gaugeValue: "Gauge value",
   gaugeMin: "Gauge min",
@@ -61,6 +63,7 @@ export const PROPERTY_LABELS: Record<StyleProperty, string> = {
  * Colour, and everything else follows in the order a user would reach for it. */
 export const COLUMN_ORDER: StyleProperty[] = [
   "icon", "text", "color", "visibility", "opacity", "fontSize", "fontWeight",
+  "fontDesign", "italic",
   "rotation", "gaugeValue", "gaugeMin", "gaugeMax", "backgroundColor",
   "borderColor", "borderWidth",
 ];
@@ -75,6 +78,8 @@ export const PROPERTY_CHANGE_KIND: Record<StyleProperty, StyleChangeKind> = {
   icon: "setIcon",
   fontSize: "setFontSize",
   fontWeight: "setFontWeight",
+  fontDesign: "setFontDesign",
+  italic: "setItalic",
   rotation: "setRotation",
   visibility: "hide",
   gaugeValue: "setGaugeValue",
@@ -311,11 +316,12 @@ export function statesEmptyText(target: string): string {
 /** The line beside each add control under the table, so each one says what it
  * adds in the table's own words: a state is a row with a When, Otherwise is the
  * row for no match, and every other setting is a column. */
-export function statesAddNotes(target: string): { state: string; otherwise: string; column: string } {
+export function statesAddNotes(target: string): { state: string; otherwise: string; column: string; fill: string } {
   return {
     state: `When the value matches, change how this ${target === "layout" ? "shape" : "layer"} looks.`,
     otherwise: "The look when no state above matches.",
     column: "Adds a column, so every state can change it.",
+    fill: "One row per state this entity reports, ready to edit.",
   };
 }
 

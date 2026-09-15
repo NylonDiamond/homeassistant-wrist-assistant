@@ -95,7 +95,7 @@ import {
   resolveAll,
 } from "./resolver.js";
 import { CASES, FACE_TINTS, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, phoneCaseForScreenSize, renderLayerThumb, renderLayout, slotFor, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type PreviewCase } from "./renderer.js";
-import { addFamily, canRemoveFamily, comingSoonFamilies, familiesFor, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, keepFamilies, removeFamily, shapeGroups, supportedFamilies } from "./layouts.js";
+import { addFamily, canRemoveFamily, comingSoonFamilies, familiesFor, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, removeFamily, shapeGroups, supportedFamilies } from "./layouts.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { deviceKindOf, deviceNoun, deviceSupportsShapes, updateDeviceMessage } from "./version.js";
 import { makeIconProvider } from "./icons.js";
@@ -2793,6 +2793,20 @@ export class WristAssistantPanel extends LitElement {
     .color-box .alpha input { -moz-appearance: textfield; appearance: textfield; }
     .color-box .alpha input::-webkit-inner-spin-button,
     .color-box .alpha input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    /* A gradient's bar: the gradient itself, with one chip per stop sitting on
+       it where that stop is. The checkerboard behind it shows transparency, the
+       same way a colour swatch does. */
+    .fill-bar {
+      position: relative; flex: 1; min-width: 0; height: 22px; border-radius: 6px;
+      background: var(--g), repeating-conic-gradient(#c8c8c8 0 25%, #fff 0 50%) 0 0 / 8px 8px;
+      box-shadow: inset 0 0 0 1px rgba(128,128,128,.45); touch-action: none;
+    }
+    .fill-chip {
+      position: absolute; top: 50%; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px;
+      border-radius: 50%; cursor: ew-resize; touch-action: none;
+      background: var(--sw); box-shadow: 0 0 0 1.5px #fff, 0 0 0 2.5px rgba(0,0,0,.45);
+    }
+    .fill-stop-n { flex: none; width: 14px; font-size: 11px; opacity: .65; text-align: center; }
     /* A colour table: a thin bar of the bands to scale with a mark at the
        current value, then one compact row per band, lowest first. It sits in
        the control column, under the Colour row it belongs to. It is its own
@@ -4634,29 +4648,35 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * Full colour or a tinted watch face. Many faces draw complications in one
+   * Full colour or a tinted surface. Many watch faces draw complications in one
    * tint, keeping only how see-through each part is, so colour by value and
-   * dark fills can look nothing like the full colour preview. The menu shows
-   * that before the watch does.
+   * dark fills can look nothing like the full colour preview. A tinted iPhone
+   * Home Screen does the opposite: the tile's ground goes and every layer is
+   * painted in the tint at the brightness it was drawn in. Which one the menu
+   * previews follows the shape, since a Home Screen tile is never on a watch.
    */
   private renderTintTool() {
     const on = this.previewTint;
     const current = FACE_TINTS.find((t) => t.hex === on);
     const off = !this.draft || this.parseError !== undefined;
+    const phone = isHomeFamily(this.activeFamily);
+    const word = phone ? "iPhone tinted" : "tint";
     const pick = (hex: string | undefined) => { this.toggleMenu("tint", false); this.previewTint = hex; };
     return html`<span class="inbox tint-box ${on !== undefined ? "on" : ""}"
-      title="Many watch faces draw complications in one colour. Colours become the face's tint, text and background turn white, and only how see-through each part is survives.">
+      title=${phone
+        ? "A tinted Home Screen drops the tile's background and paints every layer in one colour, keeping only how bright each part was. Layers in the accent group take the lighter of the two colours."
+        : "Many watch faces draw complications in one colour. Colours become the face's tint, text and background turn white, and only how see-through each part is survives."}>
       <span class="pre">Colour</span>
       <span class="case-tool" data-menu="tint">
         <button class="case-pick" ?disabled=${off} aria-haspopup="listbox" aria-expanded=${this.openMenu === "tint" ? "true" : "false"}
-          aria-label=${`Preview colour, ${current ? `${current.label} tinted face` : "full colour"}`} @click=${() => this.toggleMenu("tint")}>
-          ${current ? html`<i class="tint-dot" style=${`--sw:${current.hex}`}></i>${current.label} tint` : "Full colour"}${uiIcon("chevron")}
+          aria-label=${`Preview colour, ${current ? `${current.label} ${phone ? "tinted Home Screen" : "tinted face"}` : "full colour"}`} @click=${() => this.toggleMenu("tint")}>
+          ${current ? html`<i class="tint-dot" style=${`--sw:${current.hex}`}></i>${current.label} ${word}` : "Full colour"}${uiIcon("chevron")}
         </button>
         ${this.openMenu === "tint" ? html`<div class="pop-menu" role="listbox" aria-label="Preview colour">
           <button class="row" role="option" aria-selected=${on === undefined ? "true" : "false"} @click=${() => pick(undefined)}>
             <i class="tint-dot full"></i>Full colour</button>
           ${FACE_TINTS.map((t) => html`<button class="row" role="option" aria-selected=${t.hex === on ? "true" : "false"}
-            @click=${() => pick(t.hex)}><i class="tint-dot" style=${`--sw:${t.hex}`}></i>${t.label} tint</button>`)}
+            @click=${() => pick(t.hex)}><i class="tint-dot" style=${`--sw:${t.hex}`}></i>${t.label} ${word}</button>`)}
         </div>` : nothing}
       </span>
     </span>`;
@@ -7992,7 +8012,11 @@ export class WristAssistantPanel extends LitElement {
       ...(outlineIds.length > 0 && !this.showTaps && peek === undefined ? { highlightIds: outlineIds } : {}),
       ...(this.showGridLines && (this.snapGrid || (this.altHeld && this.canEdit)) ? { grid: this.gridStep } : {}),
       tapReview: this.showTaps,
-      ...(this.previewTint !== undefined ? { tint: this.previewTint } : {}),
+      // A Home Screen tile is tinted the iPhone way: no ground of its own, and
+      // every layer painted in the tint at the brightness it was drawn in.
+      ...(this.previewTint !== undefined
+        ? { tint: this.previewTint, ...(isHomeFamily(family) ? { tintSurface: "phone" as const } : {}) }
+        : {}),
       ...(focus !== undefined ? { tapFocusId: focus } : {}),
       handles: this.canEdit && !this.picking && (!this.showTaps || focus !== undefined),
       // Pick mode owns the tint while it is on; otherwise the Layers list

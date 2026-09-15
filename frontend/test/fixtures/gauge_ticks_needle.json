@@ -1,0 +1,254 @@
+{
+  "name": "gauge_ticks_needle",
+  "description": "A gauge's marks, its end numbers and the needle dial. Pins what the two implementations have to agree on before either can draw a dial: the marks and the labels are settled once by the resolver, so both renderers read the same numbers; the ends of the scale come out resolved, which is what a label prints, and follow a range source rather than the typed-in number; the reading is carried as text for the number under a pointer; and an object that says nothing leaves the wire, so a gauge without marks resolves to a count of zero rather than to an absent object.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "6A11D000-0000-4000-8000-00000000D111",
+    "name": "Dials",
+    "slotIndex": 0,
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "gauge",
+        "payload": {
+          "id": "6A11D001-0000-4000-8000-000000000001",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.battery",
+              "displayName": "Battery",
+              "domain": "sensor"
+            }
+          },
+          "minValue": 0,
+          "maxValue": 100,
+          "style": "needle",
+          "lineWidth": 3,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "trackColorHex": "#FFFFFF40",
+          "ticks": {
+            "count": 11,
+            "length": 4,
+            "colorHex": "#0A84FF",
+            "majorEvery": 5
+          },
+          "labels": {
+            "show": true,
+            "size": 9,
+            "colorHex": "#FFD60A"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 0.25,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "gauge",
+        "payload": {
+          "id": "6A11D002-0000-4000-8000-000000000002",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.battery",
+              "displayName": "Battery",
+              "domain": "sensor"
+            }
+          },
+          "minValue": 0,
+          "maxValue": 100,
+          "style": "arc",
+          "lineWidth": 4,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "trackColorHex": "#FFFFFF40",
+          "ticks": {
+            "count": 20
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.25,
+            "y": 0,
+            "width": 0.25,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "gauge",
+        "payload": {
+          "id": "6A11D003-0000-4000-8000-000000000003",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "6.5"
+            }
+          },
+          "minValue": 0,
+          "maxValue": 10,
+          "style": "bar",
+          "lineWidth": 4,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "trackColorHex": "#FFFFFF40",
+          "maxSource": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.charge_limit",
+              "displayName": "Charge limit",
+              "domain": "sensor"
+            }
+          },
+          "labels": {
+            "show": true
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.5,
+            "y": 0,
+            "width": 0.25,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "gauge",
+        "payload": {
+          "id": "6A11D004-0000-4000-8000-000000000004",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "25"
+            }
+          },
+          "minValue": 0,
+          "maxValue": 100,
+          "style": "ring",
+          "lineWidth": 4,
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "trackColorHex": "#FFFFFF40",
+          "rules": [],
+          "frame": {
+            "x": 0.75,
+            "y": 0,
+            "width": 0.25,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 0,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {
+      "sensor.battery": {
+        "state": "62",
+        "domain": "sensor"
+      },
+      "sensor.charge_limit": {
+        "state": "8.5",
+        "domain": "sensor"
+      }
+    },
+    "templateResults": {},
+    "dataAgeSeconds": 0
+  },
+  "expectedCompiled": {
+    "entities": [
+      "sensor.battery",
+      "sensor.charge_limit"
+    ],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "6A11D001-0000-4000-8000-000000000001",
+          "kind": "gauge",
+          "style": "needle",
+          "fraction": 0.62,
+          "tickCount": 11,
+          "tickLength": 4,
+          "tickColorHex": "#0A84FF",
+          "tickMajorEvery": 5,
+          "showsLabels": true,
+          "labelSize": 9,
+          "labelColorHex": "#FFD60A",
+          "minValue": 0,
+          "maxValue": 100,
+          "valueText": "62"
+        },
+        {
+          "id": "6A11D002-0000-4000-8000-000000000002",
+          "kind": "gauge",
+          "style": "arc",
+          "tickCount": 20,
+          "tickLength": 3,
+          "tickColorHex": "#FFFFFF80",
+          "tickMajorEvery": 0,
+          "showsLabels": false,
+          "labelSize": 8,
+          "labelColorHex": "#FFFFFF"
+        },
+        {
+          "id": "6A11D003-0000-4000-8000-000000000003",
+          "kind": "gauge",
+          "style": "bar",
+          "tickCount": 0,
+          "showsLabels": true,
+          "labelSize": 8,
+          "labelColorHex": "#FFFFFF",
+          "minValue": 0,
+          "maxValue": 8.5,
+          "valueText": "6.5",
+          "fraction": 0.7647058823529411
+        },
+        {
+          "id": "6A11D004-0000-4000-8000-000000000004",
+          "kind": "gauge",
+          "style": "ring",
+          "tickCount": 0,
+          "tickLength": 3,
+          "tickColorHex": "#FFFFFF80",
+          "tickMajorEvery": 0,
+          "showsLabels": false,
+          "minValue": 0,
+          "maxValue": 100,
+          "valueText": "25"
+        }
+      ]
+    }
+  }
+}

@@ -116,9 +116,21 @@ export function schemaVersionFor(cfg: Pick<CustomComplicationConfig, "slotIndex"
 }
 
 export type FontWeight = "regular" | "medium" | "semibold" | "bold";
+/** The typeface a text layer draws in. One to one with SwiftUI's `Font.Design`;
+ * `default` is San Francisco and is never written to the wire. */
+export type FontDesign = "default" | "rounded" | "monospaced" | "serif";
+/** How many lines a text layer may wrap onto. */
+export const TEXT_MAX_LINES = 4;
+/** How far text may shrink to fit before it truncates. 0.5 is what the watch
+ * has always done, so it is the default and stays off the wire. */
+export const TEXT_MIN_SCALE = 0.5;
+
+export function clampMinimumScale(v: number): number {
+  return Number.isFinite(v) ? Math.min(1, Math.max(TEXT_MIN_SCALE, v)) : TEXT_MIN_SCALE;
+}
 export type TextCase = "upper" | "lower" | "capitalized";
 export type TimeField = "now" | "hour" | "minute" | "weekday" | "day" | "month" | "timestamp";
-export type GaugeStyle = "ring" | "arc" | "bar" | "dots";
+export type GaugeStyle = "ring" | "arc" | "bar" | "dots" | "needle";
 export type ChartStyle = "bars" | "line" | "area";
 export type ChartScale = "auto" | "fixed";
 export type ChartBaseline = "lowest" | "zero";
@@ -516,6 +528,182 @@ function encodeChartAnchor(a: ChartAnchor): J {
   return o;
 }
 
+/** Which way a `Fill` runs its stops. Mirrors `CustomComplication.Fill.FillKind`
+ * in the app repo. */
+export type FillKind = "linear" | "radial";
+
+export const FILL_KINDS: readonly [FillKind, string][] = [
+  ["linear", "Linear"],
+  ["radial", "Radial"],
+];
+
+/** One colour on a gradient, at a 0...1 position along it. */
+export interface FillStop {
+  at: number;
+  colorHex: string;
+}
+
+/**
+ * A gradient, used wherever a flat colour fills an area: a shape's body, a
+ * shape's background, a gauge along its track, and the area under a line or
+ * area chart.
+ *
+ * A fill beats the flat colour key beside it. The panel keeps writing that flat
+ * key as the first stop's colour, so a watch app that predates fills draws the
+ * gradient's starting colour rather than nothing at all.
+ *
+ * Mirrors `CustomComplication.Fill` in the app repo.
+ */
+export interface Fill {
+  kind: FillKind;
+  /** Two to four stops, in the order they were authored. */
+  stops: FillStop[];
+  /** Degrees, linear only: 0 runs left to right, 90 top to bottom. Absent at 0. */
+  angle?: number;
+}
+
+export const FILL_MIN_STOPS = 2;
+export const FILL_MAX_STOPS = 4;
+
+/** A fill written by a newer panel falls back rather than throwing, matching the
+ * Swift decoder: fewer than two usable stops is not a gradient, so the layer
+ * draws its flat colour instead. */
+function parseFill(o: unknown): Fill | undefined {
+  if (!isObject(o) || !Array.isArray(o.stops)) return undefined;
+  const stops: FillStop[] = [];
+  for (const raw of o.stops) {
+    if (stops.length === FILL_MAX_STOPS) break;
+    if (!isObject(raw)) continue;
+    const colorHex = optStr(raw.colorHex);
+    if (colorHex === undefined || colorHex === "") continue;
+    stops.push({ at: clamp01(num(raw.at, 0)), colorHex });
+  }
+  if (stops.length < FILL_MIN_STOPS) return undefined;
+  const fill: Fill = { kind: o.kind === "radial" ? "radial" : "linear", stops };
+  const angle = num(o.angle, 0);
+  if (fill.kind === "linear" && angle !== 0) fill.angle = angle;
+  return fill;
+}
+
+/** The matching write. The angle is omitted at zero and never written on a
+ * radial fill, which has no direction to name. */
+function encodeFill(f: Fill): J {
+  const o: J = { kind: f.kind, stops: f.stops.map((s) => ({ at: encNum(s.at), colorHex: s.colorHex })) };
+  if (f.kind === "linear" && f.angle !== undefined && f.angle !== 0) o.angle = encNum(f.angle);
+  return o;
+}
+
+/** The colour a fill shows at `t` along itself, by walking its stops. Used for a
+ * dot gauge, whose dots each take one colour, and for the flat key the panel
+ * keeps writing beside a fill. Mirrors `Fill.color(at:)` in the app repo. */
+export function fillColorAt(f: Fill, t: number): string {
+  const stops = [...f.stops].sort((a, b) => a.at - b.at);
+  const first = stops[0]!;
+  const last = stops[stops.length - 1]!;
+  if (t <= first.at) return first.colorHex;
+  if (t >= last.at) return last.colorHex;
+  for (let i = 1; i < stops.length; i++) {
+    const hi = stops[i]!;
+    const lo = stops[i - 1]!;
+    if (t > hi.at) continue;
+    const span = hi.at - lo.at;
+    return mixHex(lo.colorHex, hi.colorHex, span <= 0 ? 0 : (t - lo.at) / span);
+  }
+  return last.colorHex;
+}
+
+/** `#RRGGBB` / `#RRGGBBAA` blended channel by channel. */
+function mixHex(from: string, to: string, t: number): string {
+  const parts = (hex: string) => {
+    const h = hex.replace(/^#/, "");
+    const full = h.length === 6 ? `${h}FF` : h.padEnd(8, "F");
+    return [0, 2, 4, 6].map((i) => parseInt(full.slice(i, i + 2), 16) || 0);
+  };
+  const a = parts(from);
+  const b = parts(to);
+  const mixed = a.map((v, i) => Math.round(v + (b[i]! - v) * t));
+  const hex = mixed.map((v) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0").toUpperCase());
+  return mixed[3] === 255 ? `#${hex[0]}${hex[1]}${hex[2]}` : `#${hex.join("")}`;
+}
+
+// ── curved text ───────────────────────────────────────────────────────────
+
+/** The shapes a text layer may curve on. A corner keeps the system's own curved
+ * label, a rectangular strip has no circle to follow, and the two wide Home
+ * Screen tiles would bend a line nobody can read, so the row is hidden on those
+ * and the resolver drops the key rather than drawing something the watch will
+ * not. Mirrors `TextElement.Arc.allowedFamilies` in the app repo. */
+export const ARC_TEXT_FAMILIES: FamilyKind[] = ["circular", "small", "large"];
+
+export function familyAllowsArcText(family: FamilyKind): boolean {
+  return ARC_TEXT_FAMILIES.includes(family);
+}
+
+/** Radius as a fraction of the shape's shorter side. 0.1 is a tight badge ring,
+ * 1 a curve so gentle it reads almost straight. */
+export const ARC_RADIUS_MIN = 0.1;
+export const ARC_RADIUS_MAX = 1;
+export const ARC_RADIUS_DEFAULT = 0.4;
+/** How much of the circle the text may be spread over, in degrees. Below ten a
+ * sweep is a straight line with rounding error; a full turn is the ceiling. */
+export const ARC_SWEEP_MIN = 10;
+export const ARC_SWEEP_MAX = 360;
+export const ARC_SWEEP_DEFAULT = 120;
+
+/**
+ * Curved text: the layer's string laid along a circle instead of a straight
+ * line. The circle is centred on the layer frame's centre.
+ *
+ * `startAngle` and `sweep` are in degrees, 0 at 12 o'clock and clockwise
+ * positive, so a sweep of -90 from 0 runs anticlockwise to 9 o'clock. The text
+ * is centred between `startAngle` and `startAngle + sweep`; longer than the arc
+ * it shrinks the way `minimumScaleFactor(0.5)` does and then truncates.
+ * Mirrors `CustomComplication.TextElement.Arc` in the app repo.
+ */
+export interface TextArc {
+  /** Fraction of the shape's shorter side, `ARC_RADIUS_MIN` to `ARC_RADIUS_MAX`. */
+  radius: number;
+  /** Absent means 0, the top of the circle. */
+  startAngle?: number;
+  /** Absent means `ARC_SWEEP_DEFAULT`. */
+  sweep?: number;
+  /** Glyph bottoms face the centre when true, tops when false. Absent means false. */
+  inside?: boolean;
+}
+
+/** Only `radius` is required; every other key falls back rather than throwing,
+ * matching the Swift decoder. A sweep of zero would be a line of no length, so a
+ * magnitude under the floor is pushed out to it on the side it was written. */
+export function parseTextArc(o: unknown): TextArc | undefined {
+  if (!isObject(o)) return undefined;
+  const radius = num(o.radius, NaN);
+  if (!Number.isFinite(radius)) return undefined;
+  const arc: TextArc = { radius: Math.min(ARC_RADIUS_MAX, Math.max(ARC_RADIUS_MIN, radius)) };
+  const start = num(o.startAngle, 0);
+  if (start !== 0) arc.startAngle = start;
+  const sweep = clampArcSweep(num(o.sweep, ARC_SWEEP_DEFAULT));
+  if (sweep !== ARC_SWEEP_DEFAULT) arc.sweep = sweep;
+  if (o.inside === true) arc.inside = true;
+  return arc;
+}
+
+/** The sweep as the renderers use it: the sign is the direction, the magnitude
+ * is clamped into the range the editor offers. Zero reads as the default. */
+export function clampArcSweep(sweep: number): number {
+  if (!Number.isFinite(sweep) || sweep === 0) return ARC_SWEEP_DEFAULT;
+  const size = Math.min(ARC_SWEEP_MAX, Math.max(ARC_SWEEP_MIN, Math.abs(sweep)));
+  return sweep < 0 ? -size : size;
+}
+
+/** Every key but `radius` is omitted at its default, as the app's encoder does. */
+export function encodeTextArc(a: TextArc): J {
+  const o: J = { radius: encNum(a.radius) };
+  if (a.startAngle !== undefined && a.startAngle !== 0) o.startAngle = encNum(a.startAngle);
+  if (a.sweep !== undefined && a.sweep !== ARC_SWEEP_DEFAULT) o.sweep = encNum(a.sweep);
+  if (a.inside === true) o.inside = true;
+  return o;
+}
+
 export interface ColorSlot {
   baseColorHex: string;
 }
@@ -534,12 +722,14 @@ export interface Comparison {
 }
 
 export type StyleProperty =
-  | "color" | "opacity" | "text" | "icon" | "fontSize" | "fontWeight" | "rotation"
+  | "color" | "opacity" | "text" | "icon" | "fontSize" | "fontWeight" | "fontDesign"
+  | "italic" | "rotation"
   | "visibility" | "gaugeValue" | "gaugeMin" | "gaugeMax" | "borderColor" | "borderWidth"
   | "backgroundColor";
 
 export type StyleChangeKind =
   | "setColor" | "setOpacity" | "setText" | "setIcon" | "setFontSize" | "setFontWeight"
+  | "setFontDesign" | "setItalic"
   | "setRotation" | "hide" | "show" | "setGaugeValue" | "setGaugeMin" | "setGaugeMax"
   | "setBorderColor" | "setBorderWidth" | "setBackgroundColor";
 
@@ -548,6 +738,10 @@ export interface StyleChange {
   value?: Value;
   number?: number;
   weight?: FontWeight;
+  /** `setFontDesign` only. */
+  design?: FontDesign;
+  /** `setItalic` only. */
+  italic?: boolean;
 }
 
 export const STYLE_PROPERTY: Record<StyleChangeKind, StyleProperty> = {
@@ -557,6 +751,8 @@ export const STYLE_PROPERTY: Record<StyleChangeKind, StyleProperty> = {
   setIcon: "icon",
   setFontSize: "fontSize",
   setFontWeight: "fontWeight",
+  setFontDesign: "fontDesign",
+  setItalic: "italic",
   setRotation: "rotation",
   hide: "visibility",
   show: "visibility",
@@ -609,12 +805,72 @@ interface ElementBase {
   /** What the author calls this layer in the Layers list. Editor-only, like
    * `groupId`: absent means the list names the layer from its content. */
   name?: string;
+  /** The layer's own opacity, 0 to 1. Absent means 1. A `setOpacity` rule
+   * multiplies with this rather than replacing it, so a layer authored at 0.4
+   * and dimmed to 0.5 by a rule ends at 0.2. */
+  opacity?: number;
+  /** A drop shadow or glow behind the layer. Absent means none. */
+  shadow?: LayerShadow;
   /** Pins this layer to a reading on a chart, so it follows that reading. Only
    * text, icon, shape and image layers carry one: a gauge, a chart, a timeline
    * or a tap area pinned to a reading is not something anyone wants, and the
    * app repo gives those four kinds alone a field to decode. See `ChartAnchor`. */
   chartAnchor?: ChartAnchor;
+  /** Which colour group this layer takes on a tinted surface. Absent is
+   * `primary`, so nothing is written for the layers that never asked.
+   * See `AccentGroup`. */
+  accentGroup?: AccentGroup;
 }
+
+/**
+ * A drop shadow behind one layer. Mirrors `CustomComplication.LayerShadow` in
+ * the app repo, key for key.
+ *
+ * A glow is this with `dx` and `dy` at zero and a bright colour: the same blur
+ * under the layer instead of beside it, so there is no second key for it.
+ * Radius and offsets are design points, the same units as a text layer's
+ * `fontSize`. On a tinted face the shadow flattens with everything else, which
+ * is what the tint preview shows.
+ */
+export interface LayerShadow {
+  colorHex: string;
+  radius: number;
+  dx: number;
+  dy: number;
+}
+
+export const SHADOW_MAX_RADIUS = 12;
+export const SHADOW_MAX_OFFSET = 12;
+export const SHADOW_DEFAULT_HEX = "#000000";
+/** What the Shadow switch writes the first time it is turned on. */
+export const SHADOW_DEFAULT: LayerShadow = { colorHex: SHADOW_DEFAULT_HEX, radius: 3, dx: 0, dy: 1 };
+
+export function clampShadowRadius(v: number): number {
+  return Number.isFinite(v) ? Math.min(SHADOW_MAX_RADIUS, Math.max(0, v)) : 0;
+}
+
+export function clampShadowOffset(v: number): number {
+  return Number.isFinite(v) ? Math.min(SHADOW_MAX_OFFSET, Math.max(-SHADOW_MAX_OFFSET, v)) : 0;
+}
+
+export function clampLayerOpacity(v: number): number {
+  return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
+}
+
+/**
+ * The group a layer joins when the system draws the widget in one colour.
+ *
+ * A tinted iPhone Home Screen renders the widget in WidgetKit's `accented`
+ * mode: the container's own background is dropped, every layer keeps only how
+ * bright it was, and the system paints two groups in two related colours. The
+ * app puts a layer marked `accent` in the second group with SwiftUI's
+ * `widgetAccentable()`, so one layer can stand apart from the rest.
+ *
+ * `primary` is the default and writes nothing. It does not force a layer out of
+ * the accent group: shapes, icons, gauges, charts and timelines are accentable
+ * in the app already, for the tinted watch faces, and this key only ever adds.
+ */
+export type AccentGroup = "accent" | "primary";
 
 /**
  * A folder in the Layers list. Its members sit together in `elements` (the
@@ -638,8 +894,17 @@ export interface TextElement extends ElementBase {
   /** Fixed-width digits, so a number that ticks does not shuffle the characters
    * beside it. Absent means off. */
   monospacedDigits?: boolean;
-  /** How many lines the text may wrap onto, 1 or 2. Absent means 1. */
+  /** How many lines the text may wrap onto, 1 to 4. Absent means 1. */
   lineLimit?: number;
+  /** The typeface. Absent means the system one, which is what every layer
+   * written before this key had. */
+  fontDesign?: FontDesign;
+  /** Slanted text. Absent means upright. */
+  italic?: boolean;
+  /** How far the text may shrink to fit its box before it truncates, as a
+   * fraction of `fontSize`, 0.5 to 1. Absent means 0.5, which is what the watch
+   * has always done. */
+  minimumScale?: number;
   /** Which edge of the layer box the text sits against. Absent means center. */
   alignment?: TextAlignment;
   /** Whether the numbers inside the text take the colour of the band they fall
@@ -662,6 +927,10 @@ export interface TextElement extends ElementBase {
    * that predates parts shows instead. A countdown ignores parts, and so does a
    * layer rule that sets the text. */
   parts?: TextPart[];
+  /** Curved text: the line laid along a circle centred on the frame. Absent
+   * means a straight line, which is every text layer that never asked. Only the
+   * shapes in `ARC_TEXT_FAMILIES` draw it; elsewhere the resolver drops it. */
+  arc?: TextArc;
 }
 
 /**
@@ -685,6 +954,10 @@ export interface TextPart {
   fontWeight?: FontWeight;
   /** Absent means the layer's resolved size. */
   fontSize?: number;
+  /** Absent means the layer's resolved typeface. */
+  fontDesign?: FontDesign;
+  /** Absent means the layer's resolved slant. */
+  italic?: boolean;
   /** Absent means one colour. */
   coloring?: ChartColoring;
   /** Absent means empty. */
@@ -799,9 +1072,114 @@ export interface GaugeElement extends ElementBase {
   /** The high end of the scale, read the same way as `minSource`, with
    * `setGaugeMax` and `maxValue` on either side of it. */
   maxSource?: Value;
+  /** A gradient along the track, beating `colorSlot`. The panel keeps writing
+   * `colorSlot` as the first stop's colour, so an older watch app draws the
+   * gradient's starting colour. A banded gauge, or a rule that recolours it,
+   * still wins: both are statements about this reading, and a gradient is not. */
+  fill?: Fill;
+  /** The marks around the scale. Absent means none. */
+  ticks?: GaugeTicks;
+  /** The min and max text at the ends of the scale, and the reading under a
+   * needle. Absent means none. */
+  labels?: GaugeLabels;
+}
+
+/** The marks a gauge draws around its scale. Mirrors
+ * `CustomComplication.GaugeElement.Ticks` in the app repo. */
+export interface GaugeTicks {
+  /** How many marks, spread across the scale. 0 draws none. */
+  count: number;
+  /** How long one mark is, in design points. */
+  length: number;
+  colorHex: string;
+  /** Every Nth mark draws 1.6 times as long. 0 means none is a major. */
+  majorEvery: number;
+}
+
+/** The text a gauge puts at the ends of its scale, and under a needle. Mirrors
+ * `CustomComplication.GaugeElement.Labels` in the app repo. */
+export interface GaugeLabels {
+  show: boolean;
+  /** Text size in design points. */
+  size: number;
+  colorHex: string;
 }
 
 export const GAUGE_DEFAULT_THRESHOLD_HEX = "#FFFFFF";
+export const GAUGE_DEFAULT_TICK_HEX = "#FFFFFF80";
+export const GAUGE_DEFAULT_TICK_LENGTH = 3;
+export const GAUGE_MAX_TICKS = 60;
+export const GAUGE_MAX_TICK_LENGTH = 8;
+export const GAUGE_DEFAULT_LABEL_HEX = "#FFFFFF";
+export const GAUGE_DEFAULT_LABEL_SIZE = 8;
+export const GAUGE_MIN_LABEL_SIZE = 4;
+export const GAUGE_MAX_LABEL_SIZE = 20;
+
+/** How a gauge prints one end of its scale: at most two decimals, with trailing
+ * zeros dropped, so 0, 21.5 and 99.99 all read the way they were typed. Mirrors
+ * `GaugeElement.labelText(_:)` in the app repo, digit for digit. */
+export function gaugeLabelText(n: number): string {
+  if (!Number.isFinite(n)) return "";
+  let s = n.toFixed(2);
+  if (s.includes(".")) s = s.replace(/0+$/, "").replace(/\.$/, "");
+  return s === "-0" ? "0" : s;
+}
+
+export function defaultGaugeTicks(): GaugeTicks {
+  return { count: 0, length: GAUGE_DEFAULT_TICK_LENGTH, colorHex: GAUGE_DEFAULT_TICK_HEX, majorEvery: 0 };
+}
+
+export function defaultGaugeLabels(): GaugeLabels {
+  return { show: false, size: GAUGE_DEFAULT_LABEL_SIZE, colorHex: GAUGE_DEFAULT_LABEL_HEX };
+}
+
+/** True when the whole object says nothing, which is when it leaves the wire. */
+export function gaugeTicksAreDefault(t: GaugeTicks): boolean {
+  return t.count === 0 && t.length === GAUGE_DEFAULT_TICK_LENGTH
+    && sameHex(t.colorHex, GAUGE_DEFAULT_TICK_HEX) && t.majorEvery === 0;
+}
+
+export function gaugeLabelsAreDefault(l: GaugeLabels): boolean {
+  return !l.show && l.size === GAUGE_DEFAULT_LABEL_SIZE && sameHex(l.colorHex, GAUGE_DEFAULT_LABEL_HEX);
+}
+
+function parseGaugeTicks(o: unknown): GaugeTicks | undefined {
+  if (!isObject(o)) return undefined;
+  const t: GaugeTicks = {
+    count: Math.max(0, Math.min(GAUGE_MAX_TICKS, Math.round(num(o.count, 0)))),
+    length: Math.max(1, Math.min(GAUGE_MAX_TICK_LENGTH, num(o.length, GAUGE_DEFAULT_TICK_LENGTH))),
+    colorHex: str(o.colorHex, GAUGE_DEFAULT_TICK_HEX),
+    majorEvery: Math.max(0, Math.round(num(o.majorEvery, 0))),
+  };
+  return gaugeTicksAreDefault(t) ? undefined : t;
+}
+
+function encodeGaugeTicks(t: GaugeTicks): J {
+  const o: J = {};
+  if (t.count !== 0) o.count = Math.round(t.count);
+  if (t.length !== GAUGE_DEFAULT_TICK_LENGTH) o.length = encNum(t.length);
+  if (!sameHex(t.colorHex, GAUGE_DEFAULT_TICK_HEX)) o.colorHex = t.colorHex;
+  if (t.majorEvery !== 0) o.majorEvery = Math.round(t.majorEvery);
+  return o;
+}
+
+function parseGaugeLabels(o: unknown): GaugeLabels | undefined {
+  if (!isObject(o)) return undefined;
+  const l: GaugeLabels = {
+    show: o.show === true,
+    size: Math.max(GAUGE_MIN_LABEL_SIZE, Math.min(GAUGE_MAX_LABEL_SIZE, num(o.size, GAUGE_DEFAULT_LABEL_SIZE))),
+    colorHex: str(o.colorHex, GAUGE_DEFAULT_LABEL_HEX),
+  };
+  return gaugeLabelsAreDefault(l) ? undefined : l;
+}
+
+function encodeGaugeLabels(l: GaugeLabels): J {
+  const o: J = {};
+  if (l.show) o.show = true;
+  if (l.size !== GAUGE_DEFAULT_LABEL_SIZE) o.size = encNum(l.size);
+  if (!sameHex(l.colorHex, GAUGE_DEFAULT_LABEL_HEX)) o.colorHex = l.colorHex;
+  return o;
+}
 
 export function isChartEndMarker(raw: unknown): raw is ChartEndMarker {
   return typeof raw === "string" && (CHART_END_MARKERS as readonly string[]).includes(raw);
@@ -938,6 +1316,10 @@ export interface ChartElement extends ElementBase {
    * colour), and a band's own `fillColorHex` wins over it. A highlighted bar
    * always fills in its highlight colour. */
   fillColorHex?: string;
+  /** A gradient for the area under a line or area chart, beating `fillColorHex`.
+   * The panel keeps writing `fillColorHex` as the first stop's colour, so an
+   * older watch app fills in the gradient's starting colour. Bars ignore it. */
+  areaFill?: Fill;
   /** Width of the border drawn inside each bar's outline, in design-box points.
    * Absent or 0 draws none. Clamped 0…6 when resolved. Bars only: a line or
    * area resolves it as 0. */
@@ -1674,6 +2056,10 @@ export interface ShapeElement extends ElementBase {
   thickness: number;
   borderColorHex?: string;
   borderWidth: number;
+  /** A gradient over the shape's body, beating `colorSlot`. The panel keeps
+   * writing `colorSlot` as the first stop's colour, so an older watch app draws
+   * the gradient's starting colour rather than nothing. */
+  fill?: Fill;
 }
 
 /** A picture, aspect-filled into its frame. No colorSlot: photos have no tint.
@@ -1887,6 +2273,10 @@ export interface FamilyLayout {
   /** Corner bezel gauge; wins over bezelText when set. */
   bezelGauge?: BezelGauge;
   backgroundColorHex?: string;
+  /** A gradient behind the whole shape, beating `backgroundColorHex`. The panel
+   * keeps writing `backgroundColorHex` as the first stop's colour, so an older
+   * watch app paints the gradient's starting colour. */
+  backgroundFill?: Fill;
   cornerBodyShape: CornerBodyShape;
   borderColorHex?: string;
   borderWidth: number;
@@ -2220,6 +2610,12 @@ function parseStyleChange(o: unknown): StyleChange {
     case "setFontWeight":
       c.weight = (optStr(o.weight) as FontWeight | undefined) ?? "regular";
       break;
+    case "setFontDesign":
+      c.design = (optStr(o.design) as FontDesign | undefined) ?? "default";
+      break;
+    case "setItalic":
+      c.italic = o.italic !== false;
+      break;
     default:
       break;
   }
@@ -2303,6 +2699,9 @@ function parseTextParts(raw: unknown): TextPart[] {
     const weight = optStr(o.fontWeight);
     if (weight === "regular" || weight === "medium" || weight === "semibold" || weight === "bold") part.fontWeight = weight;
     if (typeof o.fontSize === "number") part.fontSize = o.fontSize;
+    const design = optStr(o.fontDesign);
+    if (design === "default" || design === "rounded" || design === "monospaced" || design === "serif") part.fontDesign = design;
+    if (typeof o.italic === "boolean") part.italic = o.italic;
     if (optStr(o.coloring) === "bands") part.coloring = "bands";
     const bands = parseColorBands(o.bands);
     if (bands.length > 0) part.bands = bands;
@@ -2336,15 +2735,35 @@ function parseTimelineBands(raw: unknown): TimelineBand[] {
   }));
 }
 
+/** A layer's shadow, clamped the way the app clamps it. An object with no
+ * numbers at all still reads as a shadow: it is a layer asking for one, and a
+ * radius of zero draws a hard edge rather than nothing. */
+function parseShadow(raw: unknown): LayerShadow | undefined {
+  if (!isObject(raw)) return undefined;
+  return {
+    colorHex: str(raw.colorHex, SHADOW_DEFAULT_HEX),
+    radius: clampShadowRadius(num(raw.radius, 0)),
+    dx: clampShadowOffset(num(raw.dx, 0)),
+    dy: clampShadowOffset(num(raw.dy, 0)),
+  };
+}
+
 function parseElementBase(p: J, defaultColor: string): ElementBase {
   if (typeof p.id !== "string") throw new ConfigParseError("element id is required");
-  return {
+  const base: ElementBase = {
     id: p.id.toUpperCase(),
     colorSlot: parseColorSlot(p.colorSlot, defaultColor),
     rules: parseRules(p.rules),
     frame: parseFrame(p.frame),
     isHidden: p.isHidden === true,
   };
+  // Kept only when it says something other than the default, so every layer
+  // written before these keys round-trips byte for byte.
+  const opacity = clampLayerOpacity(num(p.opacity, 1));
+  if (opacity !== 1) base.opacity = opacity;
+  const shadow = parseShadow(p.shadow);
+  if (shadow !== undefined) base.shadow = shadow;
+  return base;
 }
 
 export function parseElement(raw: unknown): Element {
@@ -2352,6 +2771,9 @@ export function parseElement(raw: unknown): Element {
   const p = (raw as J).payload as J;
   if (typeof p.groupId === "string" && p.groupId !== "") el.payload.groupId = p.groupId.toUpperCase();
   if (typeof p.name === "string" && p.name !== "") el.payload.name = p.name;
+  // Only the away-from-default value is modelled, so a document that never
+  // asked for an accent group encodes exactly the bytes it was read from.
+  if (p.accentGroup === "accent") el.payload.accentGroup = "accent";
   return el;
 }
 
@@ -2368,10 +2790,18 @@ function parseElementKind(raw: unknown): Element {
       };
       if (p.countdown === true) payload.countdown = true;
       if (p.monospacedDigits === true) payload.monospacedDigits = true;
-      // Clamped, not rejected: a count outside 1...2 is a document asking for a
+      // Clamped, not rejected: a count outside 1...4 is a document asking for a
       // look this build does not have, not a document this build cannot read.
       const lines = typeof p.lineLimit === "number" ? Math.round(p.lineLimit) : 1;
-      if (Math.min(2, Math.max(1, lines)) === 2) payload.lineLimit = 2;
+      const clampedLines = Math.min(TEXT_MAX_LINES, Math.max(1, lines));
+      if (clampedLines > 1) payload.lineLimit = clampedLines;
+      // A typeface this build does not know draws in the system one, the same
+      // forgiveness `alignment` gets below.
+      const design = optStr(p.fontDesign);
+      if (design === "rounded" || design === "monospaced" || design === "serif") payload.fontDesign = design;
+      if (p.italic === true) payload.italic = true;
+      const minScale = clampMinimumScale(num(p.minimumScale, TEXT_MIN_SCALE));
+      if (minScale !== TEXT_MIN_SCALE) payload.minimumScale = minScale;
       // An unknown spelling falls back to center, matching the Swift decoder.
       const align = optStr(p.alignment);
       if (align === "leading" || align === "trailing") payload.alignment = align;
@@ -2390,6 +2820,8 @@ function parseElementKind(raw: unknown): Element {
       if (low !== CHART_DEFAULT_LOW_HEX) payload.lowColorHex = low;
       const parts = parseTextParts(p.parts);
       if (parts.length > 0) payload.parts = parts;
+      const arc = parseTextArc(p.arc);
+      if (arc !== undefined) payload.arc = arc;
       readChartAnchor(p, payload);
       return { kind: "text", payload };
     }
@@ -2423,6 +2855,12 @@ function parseElementKind(raw: unknown): Element {
       if (isObject(p.total)) el.total = parseValue(p.total);
       if (isObject(p.minSource)) el.minSource = parseValue(p.minSource);
       if (isObject(p.maxSource)) el.maxSource = parseValue(p.maxSource);
+      const gaugeFill = parseFill(p.fill);
+      if (gaugeFill !== undefined) el.fill = gaugeFill;
+      const ticks = parseGaugeTicks(p.ticks);
+      if (ticks !== undefined) el.ticks = ticks;
+      const labels = parseGaugeLabels(p.labels);
+      if (labels !== undefined) el.labels = labels;
       return { kind: "gauge", payload: el };
     }
     case "chart":
@@ -2472,6 +2910,7 @@ function parseElementKind(raw: unknown): Element {
           // not know reads as the default, and a default stays off the payload.
           ...(chartFillStyle(p.fillStyle) !== "flat" ? { fillStyle: chartFillStyle(p.fillStyle) } : {}),
           ...(typeof p.fillColorHex === "string" ? { fillColorHex: p.fillColorHex } : {}),
+          ...(parseFill(p.areaFill) !== undefined ? { areaFill: parseFill(p.areaFill)! } : {}),
           ...(chartBarRadius(p.barRadius) !== CHART_DEFAULT_BAR_RADIUS ? { barRadius: chartBarRadius(p.barRadius) } : {}),
           ...(chartBarCorners(p.barCorners) !== "all" ? { barCorners: chartBarCorners(p.barCorners) } : {}),
           // The bar border and fill keys, each kept only when set. The width is
@@ -2543,6 +2982,8 @@ function parseElementKind(raw: unknown): Element {
         borderWidth: num(p.borderWidth, 1),
       };
       if (typeof p.borderColorHex === "string") el.borderColorHex = p.borderColorHex;
+      const shapeFill = parseFill(p.fill);
+      if (shapeFill !== undefined) el.fill = shapeFill;
       readChartAnchor(p, el);
       return { kind: "shape", payload: el };
     }
@@ -2690,6 +3131,8 @@ function parseLayout(o: unknown): FamilyLayout {
     layout.bezelGauge = gauge;
   }
   if (typeof l.backgroundColorHex === "string") layout.backgroundColorHex = l.backgroundColorHex;
+  const backgroundFill = parseFill(l.backgroundFill);
+  if (backgroundFill !== undefined) layout.backgroundFill = backgroundFill;
   if (typeof l.borderColorHex === "string") layout.borderColorHex = l.borderColorHex;
   return layout;
 }
@@ -3660,6 +4103,12 @@ function encodeStyleChange(c: StyleChange): J {
     case "setFontWeight":
       o.weight = c.weight ?? "regular";
       break;
+    case "setFontDesign":
+      o.design = c.design ?? "default";
+      break;
+    case "setItalic":
+      o.italic = c.italic !== false;
+      break;
     default:
       break;
   }
@@ -3694,6 +4143,8 @@ function encodeTextPart(p: TextPart): J {
   if (p.colorHex !== undefined) o.colorHex = p.colorHex;
   if (p.fontWeight !== undefined) o.fontWeight = p.fontWeight;
   if (p.fontSize !== undefined) o.fontSize = encNum(p.fontSize);
+  if (p.fontDesign !== undefined) o.fontDesign = p.fontDesign;
+  if (p.italic !== undefined) o.italic = p.italic;
   if (p.coloring !== undefined && p.coloring !== "uniform") o.coloring = p.coloring;
   if (p.bands !== undefined && p.bands.length > 0) o.bands = p.bands.map(encodeBand);
   if (p.bandAboveColorHex !== undefined && p.bandAboveColorHex !== CHART_DEFAULT_BAND_HIGH_HEX) o.bandAboveColorHex = p.bandAboveColorHex;
@@ -3704,23 +4155,43 @@ function encodeElement(el: Element): J {
   const o = encodeElementKind(el);
   if (el.payload.groupId !== undefined) (o.payload as J).groupId = el.payload.groupId;
   if (el.payload.name !== undefined) (o.payload as J).name = el.payload.name;
+  if (el.payload.accentGroup === "accent") (o.payload as J).accentGroup = "accent";
   return o;
 }
 
 function encodeElementKind(el: Element): J {
-  const base = (p: ElementBase): J => ({
-    id: p.id,
-    colorSlot: { baseColorHex: p.colorSlot.baseColorHex },
-    rules: encodeRules(p.rules),
-    frame: encodeFrame(p.frame),
-    isHidden: p.isHidden,
-  });
+  const base = (p: ElementBase): J => {
+    const o: J = {
+      id: p.id,
+      colorSlot: { baseColorHex: p.colorSlot.baseColorHex },
+      rules: encodeRules(p.rules),
+      frame: encodeFrame(p.frame),
+      isHidden: p.isHidden,
+    };
+    // After `isHidden`, in the app encoder's order, and only away from the
+    // default, so a layer that uses neither writes what it always did.
+    if (p.opacity !== undefined && p.opacity !== 1) o.opacity = encNum(p.opacity);
+    if (p.shadow !== undefined) {
+      o.shadow = {
+        colorHex: p.shadow.colorHex,
+        radius: encNum(p.shadow.radius),
+        dx: encNum(p.shadow.dx),
+        dy: encNum(p.shadow.dy),
+      };
+    }
+    return o;
+  };
   switch (el.kind) {
     case "text": {
       const o: J = { ...base(el.payload), value: encodeValue(el.payload.value), fontSize: encNum(el.payload.fontSize), fontWeight: el.payload.fontWeight };
       if (el.payload.countdown === true) o.countdown = true;
       if (el.payload.monospacedDigits === true) o.monospacedDigits = true;
-      if (el.payload.lineLimit === 2) o.lineLimit = 2;
+      if (el.payload.lineLimit !== undefined && el.payload.lineLimit > 1) o.lineLimit = el.payload.lineLimit;
+      if (el.payload.fontDesign !== undefined && el.payload.fontDesign !== "default") o.fontDesign = el.payload.fontDesign;
+      if (el.payload.italic === true) o.italic = true;
+      if (el.payload.minimumScale !== undefined && el.payload.minimumScale !== TEXT_MIN_SCALE) {
+        o.minimumScale = encNum(el.payload.minimumScale);
+      }
       if (el.payload.alignment !== undefined && el.payload.alignment !== "center") o.alignment = el.payload.alignment;
       // After `alignment`, in the key table's order, and only when away from the
       // default, so a text layer without colour by value writes what it always did.
@@ -3738,6 +4209,9 @@ function encodeElementKind(el: Element): J {
         o.parts = t.parts.map(encodeTextPart);
         if (textUsesParts(t)) o.value = encodeValue(richTextFallback(t.parts));
       }
+      // After `parts`, matching the app's CodingKeys order, and only on a layer
+      // that curves: a straight line writes the bytes it always did.
+      if (t.arc !== undefined) o.arc = encodeTextArc(t.arc);
       writeChartAnchor(t, o);
       return { kind: "text", payload: o };
     }
@@ -3771,6 +4245,11 @@ function encodeElementKind(el: Element): J {
       if (g.total !== undefined) o.total = encodeValue(g.total);
       if (g.minSource !== undefined) o.minSource = encodeValue(g.minSource);
       if (g.maxSource !== undefined) o.maxSource = encodeValue(g.maxSource);
+      // The gradient and the two dial extras, each off the wire unless the
+      // author asked for it, so every gauge written before them is unchanged.
+      if (g.fill !== undefined) o.fill = encodeFill(g.fill);
+      if (g.ticks !== undefined && !gaugeTicksAreDefault(g.ticks)) o.ticks = encodeGaugeTicks(g.ticks);
+      if (g.labels !== undefined && !gaugeLabelsAreDefault(g.labels)) o.labels = encodeGaugeLabels(g.labels);
       return { kind: "gauge", payload: o };
     }
     case "chart": {
@@ -3841,6 +4320,7 @@ function encodeElementKind(el: Element): J {
       const fillStyle = chartFillStyle(c.fillStyle);
       if (fillStyle !== "flat") o.fillStyle = fillStyle;
       if (c.fillColorHex !== undefined) o.fillColorHex = c.fillColorHex;
+      if (c.areaFill !== undefined) o.areaFill = encodeFill(c.areaFill);
       const barRadius = chartBarRadius(c.barRadius);
       if (barRadius !== CHART_DEFAULT_BAR_RADIUS) o.barRadius = encNum(barRadius);
       const barCorners = chartBarCorners(c.barCorners);
@@ -3894,6 +4374,7 @@ function encodeElementKind(el: Element): J {
       // Same "only when it differs" rule as the app's encoder, so a shape that is
       // not a line writes exactly the bytes it always did.
       if (el.payload.thickness !== 1) o.thickness = encNum(el.payload.thickness);
+      if (el.payload.fill !== undefined) o.fill = encodeFill(el.payload.fill);
       writeChartAnchor(el.payload, o);
       return { kind: "shape", payload: o };
     }
@@ -3939,6 +4420,18 @@ function encodeElementKind(el: Element): J {
       o.rules = encodeRules(p.rules);
       o.frame = encodeFrame(p.frame);
       o.isHidden = p.isHidden;
+      // A tap draws nothing, so neither key changes what is shown, but both are
+      // on `ElementBase` and the app's tap encoder writes them, so a document
+      // that carries one on a tap has to come back with it.
+      if (p.opacity !== undefined && p.opacity !== 1) o.opacity = encNum(p.opacity);
+      if (p.shadow !== undefined) {
+        o.shadow = {
+          colorHex: p.shadow.colorHex,
+          radius: encNum(p.shadow.radius),
+          dx: encNum(p.shadow.dx),
+          dy: encNum(p.shadow.dy),
+        };
+      }
       return { kind: "tap", payload: o };
     }
     case "chartTimes": {
@@ -4036,6 +4529,7 @@ function encodeLayout(l: FamilyLayout): J {
     o.bezelGauge = go;
   }
   if (l.backgroundColorHex !== undefined) o.backgroundColorHex = l.backgroundColorHex;
+  if (l.backgroundFill !== undefined) o.backgroundFill = encodeFill(l.backgroundFill);
   o.cornerBodyShape = l.cornerBodyShape;
   if (l.borderColorHex !== undefined) o.borderColorHex = l.borderColorHex;
   o.borderWidth = encNum(l.borderWidth);
@@ -4269,15 +4763,29 @@ const K = {
   stateFilter: ["kind", "value"],
   frame: ["x", "y", "width", "height", "rotationDegrees"],
   chartAnchor: ["layer", "at", "place", "dx", "dy"],
+  // A gradient and one of its stops. Carried by every key that fills an area:
+  // `shape.fill`, `gauge.fill`, `chart.areaFill` and `layout.backgroundFill`.
+  fill: ["kind", "stops", "angle"],
+  fillStop: ["at", "colorHex"],
+  // A gauge's two dial extras, each its own object on the gauge payload.
+  gaugeTicks: ["count", "length", "colorHex", "majorEvery"],
+  gaugeLabels: ["show", "size", "colorHex"],
+  /** What curves a text layer. Carried by `text` and by nothing else. */
+  arc: ["radius", "startAngle", "sweep", "inside"],
   elementEnvelope: ["kind", "payload"],
-  elementBase: ["id", "colorSlot", "rules", "frame", "isHidden", "groupId", "name"],
-  text: ["value", "fontSize", "fontWeight", "countdown", "monospacedDigits", "lineLimit", "alignment",
+  elementBase: ["id", "colorSlot", "rules", "frame", "isHidden", "opacity", "shadow", "groupId", "name", "accentGroup"],
+  // A layer's drop shadow. Absent on the layer means none; present, it says all four.
+  shadow: ["colorHex", "radius", "dx", "dy"],
+  text: ["value", "fontSize", "fontWeight", "countdown", "monospacedDigits", "lineLimit",
+    "fontDesign", "italic", "minimumScale", "alignment",
     "coloring", "bands", "bandAboveColorHex", "highlight", "highColorHex", "lowColorHex", "parts",
-    "chartAnchor"],
-  textPart: ["id", "value", "colorHex", "fontWeight", "fontSize", "coloring", "bands", "bandAboveColorHex"],
+    "arc", "chartAnchor"],
+  textPart: ["id", "value", "colorHex", "fontWeight", "fontSize", "fontDesign", "italic",
+    "coloring", "bands", "bandAboveColorHex"],
   icon: ["symbol", "path", "size", "chartAnchor"],
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex",
-    "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex", "total", "minSource", "maxSource"],
+    "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex", "total", "minSource", "maxSource",
+    "fill", "ticks", "labels"],
   chart: ["value", "historyMinutes", "historyPoints", "source", "statPeriod", "statType",
     "style", "limit", "takeFromEnd", "scale", "minValue", "maxValue",
     "baseline", "barGap", "lineWidth", "highlight", "highColorHex", "lowColorHex", "marker",
@@ -4286,7 +4794,7 @@ const K = {
     "drawsThreshold", "drawsNowLine", "drawsTimeLabels",
     "timeLabelCount", "labelSize", "labelColorHex", "labelsAbove", "hourCycle", "minutes",
     "highMarker", "lowMarker",
-    "curve", "fillStyle", "fillColorHex", "barRadius", "barCorners", "smoothing", "gaps",
+    "curve", "fillStyle", "fillColorHex", "areaFill", "barRadius", "barCorners", "smoothing", "gaps",
     "barBorderWidth", "barBorderColorHex", "bandAboveFillColorHex", "bandAboveBorderColorHex", "barBorderOpenBase",
     // Written only on 2026-09-12, before dots, grid and the zero line became
     // layers. `liftChartOwnMarks` reads them forward.
@@ -4303,7 +4811,7 @@ const K = {
   // it existed still carries it, and dropping it from this list would make that
   // document read as carrying a key nothing decodes.
   timeline: ["value", "historyMinutes", "bands", "otherColorHex", "gap", "cornerRadius", "timeLabels", "labelSize", "labelColorHex", "labelsAbove", "timeLabelCount", "hourCycle", "minutes", "drawsTimeLabels"],
-  shape: ["kind", "cornerRadius", "thickness", "borderColorHex", "borderWidth", "chartAnchor"],
+  shape: ["kind", "cornerRadius", "thickness", "borderColorHex", "borderWidth", "fill", "chartAnchor"],
   // `timestampStyle` is retired (the age style, built and removed 2026-09-04).
   // It stays listed so a document saved while it existed does not read as
   // corrupt; nothing decodes it, and it leaves the wire on that document's next
@@ -4329,8 +4837,8 @@ const K = {
   condition: ["join", "tests"],
   test: ["id", "value", "comparison"],
   comparison: ["kind", "value", "upper", "pattern", "options"],
-  styleChange: ["kind", "value", "number", "weight"],
-  layout: ["placements", "bezelText", "bezelCountdown", "curvedText", "curvedColorHex", "bezelGauge", "backgroundColorHex", "cornerBodyShape", "borderColorHex", "borderWidth", "rules"],
+  styleChange: ["kind", "value", "number", "weight", "design", "italic"],
+  layout: ["placements", "bezelText", "bezelCountdown", "curvedText", "curvedColorHex", "bezelGauge", "backgroundColorHex", "backgroundFill", "cornerBodyShape", "borderColorHex", "borderWidth", "rules"],
   bezelGauge: ["value", "minValue", "maxValue", "colorHexes", "minLabel", "maxLabel"],
   placement: ["frame", "isHidden", "size"],
   // The last three belong to `callService` only; the entity four are its optional
@@ -4384,6 +4892,12 @@ export function auditUnknownKeys(raw: unknown): string[] {
       if (kind === "aggregate") valueKind(o, path);
     }
     check(o.format, K.format, `${path}.format`);
+  };
+  /** A gradient and each of its stops, wherever one is carried. */
+  const fill = (o: unknown, path: string) => {
+    if (!isObject(o)) return;
+    check(o, K.fill, path);
+    if (Array.isArray(o.stops)) o.stops.forEach((s, i) => check(s, K.fillStop, `${path}.stops[${i}]`));
   };
   const changes = (list: unknown, path: string) => {
     if (!Array.isArray(list)) return;
@@ -4443,8 +4957,13 @@ export function auditUnknownKeys(raw: unknown): string[] {
       check(e.payload.colorSlot, K.colorSlot, `${ep}.payload.colorSlot`);
       check(e.payload.frame, K.frame, `${ep}.payload.frame`);
       if ("chartAnchor" in e.payload) check(e.payload.chartAnchor, K.chartAnchor, `${ep}.payload.chartAnchor`);
+      if ("shadow" in e.payload) check(e.payload.shadow, K.shadow, `${ep}.payload.shadow`);
+      for (const fk of ["fill", "areaFill"]) if (fk in e.payload) fill(e.payload[fk], `${ep}.payload.${fk}`);
+      if ("ticks" in e.payload) check(e.payload.ticks, K.gaugeTicks, `${ep}.payload.ticks`);
+      if ("labels" in e.payload) check(e.payload.labels, K.gaugeLabels, `${ep}.payload.labels`);
       rules(e.payload.rules, `${ep}.payload.rules`);
       for (const vk of ["value", "symbol", "nowIndex", "total", "minSource", "maxSource"]) if (vk in e.payload) value(e.payload[vk], `${ep}.payload.${vk}`);
+      if (kind === "text" && "arc" in e.payload) check(e.payload.arc, K.arc, `${ep}.payload.arc`);
       if (kind === "text" && Array.isArray(e.payload.parts)) {
         e.payload.parts.forEach((part, j) => {
           check(part, K.textPart, `${ep}.payload.parts[${j}]`);
@@ -4473,6 +4992,7 @@ export function auditUnknownKeys(raw: unknown): string[] {
     }
     value(l.bezelText, `${lp}.bezelText`);
     value(l.curvedText, `${lp}.curvedText`);
+    if ("backgroundFill" in l) fill(l.backgroundFill, `${lp}.backgroundFill`);
     if (isObject(l.bezelGauge)) {
       const gp = `${lp}.bezelGauge`;
       check(l.bezelGauge, K.bezelGauge, gp);
@@ -6230,7 +6750,7 @@ export type RuleTarget = Element["kind"] | "layout";
 
 /** Properties each target actually reads (schema §5.3). Others are stored but ignored. */
 export const RULE_TARGET_PROPERTIES: Record<RuleTarget, StyleProperty[]> = {
-  text: ["color", "opacity", "text", "fontSize", "fontWeight", "rotation", "visibility"],
+  text: ["color", "opacity", "text", "fontSize", "fontWeight", "fontDesign", "italic", "rotation", "visibility"],
   icon: ["color", "opacity", "icon", "fontSize", "rotation", "visibility"],
   gauge: ["color", "opacity", "gaugeValue", "gaugeMin", "gaugeMax", "rotation", "visibility"],
   // No text or size effects: a chart's content is a whole series, and swapping that
@@ -6284,10 +6804,12 @@ export function comparisonOperand(kind: ComparisonKind): "none" | "value" | "bet
   }
 }
 
-export function styleChangePayload(kind: StyleChangeKind): "none" | "value" | "number" | "weight" {
+export function styleChangePayload(kind: StyleChangeKind): "none" | "value" | "number" | "weight" | "design" | "italic" {
   switch (kind) {
     case "hide": case "show": return "none";
     case "setFontWeight": return "weight";
+    case "setFontDesign": return "design";
+    case "setItalic": return "italic";
     case "setOpacity": case "setFontSize": case "setRotation": case "setGaugeMin": case "setGaugeMax": case "setBorderWidth": return "number";
     default: return "value";
   }
@@ -6337,6 +6859,8 @@ export function newStyleChange(kind: StyleChangeKind): StyleChange {
       c.number = kind === "setOpacity" ? 0.5 : kind === "setFontSize" ? 14 : kind === "setBorderWidth" ? 2 : kind === "setGaugeMax" ? 100 : 0;
       break;
     case "weight": c.weight = "bold"; break;
+    case "design": c.design = "rounded"; break;
+    case "italic": c.italic = true; break;
     case "none": break;
   }
   return c;

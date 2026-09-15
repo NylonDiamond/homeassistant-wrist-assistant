@@ -1,0 +1,215 @@
+{
+  "name": "Layer opacity",
+  "description": "Every layer carries its own opacity, 0 to 1, absent at 1. A setOpacity rule multiplies with it rather than replacing it, so a layer authored at 0.4 and dimmed to 0.5 by a rule draws at 0.2. A number outside the range is clamped rather than rejected, so a hand-written document still opens. A tap area draws nothing and is always 1.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-000000000400",
+    "name": "Layer opacity",
+    "values": [],
+    "slotIndex": 3,
+    "elements": [
+      {
+        "kind": "shape",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000401",
+          "colorSlot": {
+            "baseColorHex": "#0A84FF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.02,
+            "y": 0.1,
+            "width": 0.2,
+            "height": 0.8,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "kind": "roundedRectangle",
+          "cornerRadius": 4,
+          "borderWidth": 0,
+          "thickness": 2
+        }
+      },
+      {
+        "kind": "shape",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000402",
+          "colorSlot": {
+            "baseColorHex": "#0A84FF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.26,
+            "y": 0.1,
+            "width": 0.2,
+            "height": 0.8,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "opacity": 0.4,
+          "kind": "roundedRectangle",
+          "cornerRadius": 4,
+          "borderWidth": 0,
+          "thickness": 2
+        }
+      },
+      {
+        "kind": "shape",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000403",
+          "colorSlot": {
+            "baseColorHex": "#0A84FF"
+          },
+          "rules": [
+            {
+              "id": "DDDDDDDD-0000-4000-8000-000000000401",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000401",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "BBBBBBBB-0000-4000-8000-000000000401",
+                        "value": {
+                          "kind": {
+                            "kind": "entityState",
+                            "entityId": "switch.porch",
+                            "displayName": "Porch",
+                            "domain": "switch"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "isOff"
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    {
+                      "kind": "setOpacity",
+                      "number": 0.5
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "frame": {
+            "x": 0.5,
+            "y": 0.1,
+            "width": 0.2,
+            "height": 0.8,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "opacity": 0.4,
+          "kind": "roundedRectangle",
+          "cornerRadius": 4,
+          "borderWidth": 0,
+          "thickness": 2
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000404",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.74,
+            "y": 0.1,
+            "width": 0.24,
+            "height": 0.8,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "Clamped"
+            }
+          },
+          "fontSize": 12,
+          "fontWeight": "regular"
+        }
+      },
+      {
+        "kind": "tap",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000405",
+          "action": {
+            "type": "refresh"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 1,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "opacity": 0.3
+        }
+      }
+    ],
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "perFamily": [],
+    "dataSources": [],
+    "tapAction": {
+      "type": "refresh"
+    },
+    "refreshMinutes": 15
+  },
+  "inputs": {
+    "entityStates": {
+      "switch.porch": {
+        "state": "off",
+        "domain": "switch"
+      }
+    },
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": [
+      "switch.porch"
+    ],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000401",
+          "kind": "shape",
+          "opacity": 1
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000402",
+          "kind": "shape",
+          "opacity": 0.4
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000403",
+          "kind": "shape",
+          "opacity": 0.2
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000404",
+          "kind": "text",
+          "opacity": 1
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000405",
+          "kind": "tap",
+          "opacity": 1
+        }
+      ]
+    }
+  }
+}

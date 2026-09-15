@@ -161,7 +161,9 @@ describe("the Changes menu on a rich text layer's rule", () => {
   });
 
   it("offers only the changes a part reads once a part is picked", () => {
-    expect(changeKindsFor("text", true)).toEqual(["setColor", "setText", "setFontSize", "setFontWeight", "hide", "show"]);
+    expect(changeKindsFor("text", true)).toEqual([
+      "setColor", "setText", "setFontSize", "setFontWeight", "setFontDesign", "setItalic", "hide", "show",
+    ]);
     expect(changeKindsFor("text")).toEqual(expect.arrayContaining(["setOpacity", "setRotation"]));
     expect(changeKindsFor("layout")).toEqual(changeKindsFor("layout", false));
   });

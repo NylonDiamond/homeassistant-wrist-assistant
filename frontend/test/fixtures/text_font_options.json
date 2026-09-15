@@ -1,0 +1,266 @@
+{
+  "name": "Text font options",
+  "description": "A text layer picks its typeface and its slant, may wrap onto up to four lines, and says how far it may shrink before it truncates. Every key is absent at its default: the system face, upright, one line, and the half-size floor the watch has always used. A rich text part takes the layer's typeface and slant unless it names its own, and setFontDesign and setItalic rules aim at the whole layer or at one part exactly as setFontWeight does. A spelling this build does not know reads as the system face rather than losing the complication, and a line count or a scale outside the range is clamped.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-000000000420",
+    "name": "Text font options",
+    "values": [],
+    "slotIndex": 3,
+    "elements": [
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000421",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.02,
+            "y": 0.02,
+            "width": 0.46,
+            "height": 0.3,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "Rounded and slanted"
+            }
+          },
+          "fontSize": 14,
+          "fontWeight": "semibold",
+          "lineLimit": 3,
+          "fontDesign": "rounded",
+          "italic": true,
+          "minimumScale": 0.8
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000422",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.52,
+            "y": 0.02,
+            "width": 0.46,
+            "height": 0.3,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "Clamped"
+            }
+          },
+          "fontSize": 14,
+          "fontWeight": "regular",
+          "lineLimit": 4
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000423",
+          "colorSlot": {
+            "baseColorHex": "#8E8E93"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.02,
+            "y": 0.36,
+            "width": 0.96,
+            "height": 0.28,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "Serif Mono"
+            }
+          },
+          "fontSize": 14,
+          "fontWeight": "regular",
+          "fontDesign": "serif",
+          "parts": [
+            {
+              "id": "FFFFFFFF-0000-4000-8000-000000000421",
+              "value": {
+                "kind": {
+                  "kind": "literal",
+                  "value": "Serif "
+                }
+              }
+            },
+            {
+              "id": "FFFFFFFF-0000-4000-8000-000000000422",
+              "value": {
+                "kind": {
+                  "kind": "literal",
+                  "value": "Mono"
+                }
+              },
+              "fontDesign": "monospaced",
+              "italic": true
+            }
+          ]
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000424",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [
+            {
+              "id": "DDDDDDDD-0000-4000-8000-000000000421",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000421",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "BBBBBBBB-0000-4000-8000-000000000421",
+                        "value": {
+                          "kind": {
+                            "kind": "entityState",
+                            "entityId": "switch.porch",
+                            "displayName": "Porch",
+                            "domain": "switch"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "isOff"
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    {
+                      "kind": "setFontDesign",
+                      "design": "monospaced"
+                    },
+                    {
+                      "kind": "setItalic",
+                      "italic": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "frame": {
+            "x": 0.02,
+            "y": 0.68,
+            "width": 0.96,
+            "height": 0.3,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "Ruled"
+            }
+          },
+          "fontSize": 14,
+          "fontWeight": "regular",
+          "fontDesign": "rounded"
+        }
+      }
+    ],
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "perFamily": [],
+    "dataSources": [],
+    "tapAction": {
+      "type": "refresh"
+    },
+    "refreshMinutes": 15
+  },
+  "inputs": {
+    "entityStates": {
+      "switch.porch": {
+        "state": "off",
+        "domain": "switch"
+      }
+    },
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": [
+      "switch.porch"
+    ],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000421",
+          "kind": "text",
+          "text": "Rounded and slanted",
+          "fontDesign": "rounded",
+          "italic": true,
+          "lineLimit": 3,
+          "minimumScale": 0.8
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000422",
+          "kind": "text",
+          "text": "Clamped",
+          "fontDesign": "default",
+          "italic": false,
+          "lineLimit": 4,
+          "minimumScale": 0.5
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000423",
+          "kind": "text",
+          "text": "Serif Mono",
+          "fontDesign": "serif",
+          "italic": false,
+          "parts": [
+            {
+              "text": "Serif ",
+              "fontSize": 14,
+              "fontWeight": "regular",
+              "fontDesign": "serif",
+              "italic": false,
+              "colorHex": "#8E8E93"
+            },
+            {
+              "text": "Mono",
+              "fontSize": 14,
+              "fontWeight": "regular",
+              "fontDesign": "monospaced",
+              "italic": true,
+              "colorHex": "#8E8E93"
+            }
+          ]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000424",
+          "kind": "text",
+          "text": "Ruled",
+          "fontDesign": "monospaced",
+          "italic": true,
+          "lineLimit": 1,
+          "minimumScale": 0.5
+        }
+      ]
+    }
+  }
+}

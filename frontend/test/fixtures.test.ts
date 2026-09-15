@@ -104,6 +104,15 @@ function normalise(el: Record<string, unknown>): Record<string, unknown> {
   if (Array.isArray(values)) {
     out.values = values.map((v: unknown) => (typeof v === "number" ? Math.round(v * 1e6) / 1e6 || 0 : v));
   }
+  // A curve's radius is a fraction of a shape's side, which each side's floating
+  // point prints to its own last digit (0.4 of a 51 point circle is 20.4 here and
+  // 20.400000000000002 in binary). The fixture carries it rounded to six decimals,
+  // finer than any watch can draw, and both runners round before comparing.
+  const arc = el.arc;
+  if (arc !== null && typeof arc === "object" && "radius" in arc) {
+    const a = arc as { radius: number };
+    out.arc = { ...a, radius: Math.round(a.radius * 1e6) / 1e6 };
+  }
   // A row of clock times is compared by where its times land, not by what they
   // read: a printed time carries the machine's own zone and locale, so a fixture
   // pinning one would pass on the Mac that wrote it and nowhere else. How a time

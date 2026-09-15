@@ -6,6 +6,7 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import {
+  type AccentGroup,
   type AggregateSpec,
   type BezelGauge,
   type CallServiceAction,
@@ -25,6 +26,17 @@ import {
   type FamilyKind,
   type FamilyLayout,
   type FontWeight,
+  type FontDesign,
+  type LayerShadow,
+  SHADOW_DEFAULT,
+  SHADOW_DEFAULT_HEX,
+  SHADOW_MAX_OFFSET,
+  SHADOW_MAX_RADIUS,
+  TEXT_MIN_SCALE,
+  clampLayerOpacity,
+  clampMinimumScale,
+  clampShadowOffset,
+  clampShadowRadius,
   type TextAlignment,
   type GaugeElement,
   type GaugeStyle,
@@ -42,6 +54,7 @@ import {
   type StyleProperty,
   type TapAction,
   type TapElement,
+  type TextArc,
   type TextElement,
   type TextPart,
   type TimeField,
@@ -128,6 +141,14 @@ import {
   literalPartText,
   syncRichTextFallback,
   textUsesParts,
+  ARC_RADIUS_DEFAULT,
+  ARC_RADIUS_MAX,
+  ARC_RADIUS_MIN,
+  ARC_SWEEP_DEFAULT,
+  ARC_SWEEP_MAX,
+  ARC_SWEEP_MIN,
+  clampArcSweep,
+  familyAllowsArcText,
   CENTERED_FRAME,
   newCase,
   newElement,
@@ -178,6 +199,27 @@ import {
   chartAnchorIsColumn,
   setChartNow,
   setChartThreshold,
+  type Fill,
+  type FillKind,
+  type FillStop,
+  type GaugeTicks,
+  type GaugeLabels,
+  FILL_KINDS,
+  FILL_MIN_STOPS,
+  FILL_MAX_STOPS,
+  fillColorAt,
+  defaultGaugeTicks,
+  defaultGaugeLabels,
+  gaugeTicksAreDefault,
+  gaugeLabelsAreDefault,
+  GAUGE_DEFAULT_TICK_HEX,
+  GAUGE_DEFAULT_TICK_LENGTH,
+  GAUGE_MAX_TICKS,
+  GAUGE_MAX_TICK_LENGTH,
+  GAUGE_DEFAULT_LABEL_HEX,
+  GAUGE_DEFAULT_LABEL_SIZE,
+  GAUGE_MIN_LABEL_SIZE,
+  GAUGE_MAX_LABEL_SIZE,
 } from "./model.js";
 import {
   type StatesTable,
@@ -187,6 +229,7 @@ import {
   PROPERTY_LABELS,
   TABLE_COMPARISONS,
   addStateRow,
+  buildStatesRule,
   cellChange,
   isNumericComparison,
   looksBinary,
@@ -202,6 +245,7 @@ import {
   tableShape,
   whenText,
 } from "./states.js";
+import { seedEntityOf, seedStates, seedStatesRows } from "./states-seeds.js";
 import {
   type RulePresetKind,
   RULE_PRESETS,
@@ -719,6 +763,131 @@ export function colorField(label: string, value: string | undefined, set: (v: st
       ${optional ? html`<input type="checkbox" title="Enabled" aria-label=${`${label} on`} .checked=${value !== undefined} @change=${(e: Event) => set((e.target as HTMLInputElement).checked ? composeColor(rgb, alpha) : undefined)} />` : nothing}
       ${colorBox(label, value, set, off)}
     </div></div>`;
+}
+
+/** The CSS a gradient's preview bar paints itself with, so the bar shows the
+ * same thing the drawing does. Radial reads as a soft centre rather than as the
+ * circle it draws, which is enough to tell the two apart at bar size. */
+function fillPreviewCss(fill: Fill): string {
+  const stops = [...fill.stops].sort((a, b) => a.at - b.at)
+    .map((s) => `${s.colorHex} ${Math.round(Math.max(0, Math.min(1, s.at)) * 100)}%`).join(", ");
+  return fill.kind === "radial"
+    ? `radial-gradient(circle at 50% 50%, ${stops})`
+    : `linear-gradient(90deg, ${stops})`;
+}
+
+/** A gradient with its stops in reading order and no two on top of each other,
+ * which is what every control below edits and what the renderer draws. */
+function sortedFill(fill: Fill): Fill {
+  return { ...fill, stops: [...fill.stops].sort((a, b) => a.at - b.at) };
+}
+
+/**
+ * The gradient row: a switch, the bar with one draggable chip per stop, the
+ * kind, the angle, and each stop's own colour.
+ *
+ * `seed` is what the gradient starts from when it is switched on, which is
+ * always the flat colour the layer already draws: switching it on should change
+ * nothing until a stop is moved. `set` is handed the whole gradient, or
+ * `undefined` when it is switched off; the caller keeps the flat colour beside
+ * it written as the first stop, so an older watch app draws that instead.
+ */
+export function fillField(
+  label: string,
+  value: Fill | undefined,
+  set: (v: Fill | undefined) => void,
+  seed: () => Fill,
+): TemplateResult {
+  const on = value !== undefined;
+  const fill = value;
+  const row = html`<div class="field color">${fieldLabel(label, {
+      atDefault: !on, title: "Back to one flat colour", reset: () => set(undefined),
+    })}
+    <div class="color-row">
+      <input type="checkbox" title="Enabled" aria-label=${`${label} on`} .checked=${on}
+        @change=${(e: Event) => set((e.target as HTMLInputElement).checked ? sortedFill(seed()) : undefined)} />
+      ${fill === undefined
+        ? html`<span class="hint">One flat colour</span>`
+        : html`<span class="fill-bar" style=${`--g:${fillPreviewCss(fill)}`} title="Drag a chip to move that colour">
+            ${fill.stops.map((s, i) => html`<span class="fill-chip" style=${`left:${Math.round(Math.max(0, Math.min(1, s.at)) * 100)}%;--sw:${s.colorHex}`}
+              @pointerdown=${fillChipDrag(fill, i, set)}></span>`)}
+          </span>`}
+    </div></div>`;
+  if (fill === undefined) return row;
+  const stops = fill.stops;
+  const withStops = (next: FillStop[]) => set(sortedFill({ ...fill, stops: next }));
+  return html`${row}
+    <div class="grid2">
+      ${segField("Gradient", fill.kind, FILL_KINDS as [FillKind, string][], (v) => {
+        const next: Fill = { ...fill, kind: v };
+        // A radial fill has no direction, so its angle leaves the wire with it.
+        if (v === "radial") delete next.angle;
+        set(sortedFill(next));
+      }, { def: "linear" })}
+      ${fill.kind === "linear"
+        ? numberField("Angle", fill.angle ?? 0, (v) => {
+            const next: Fill = { ...fill };
+            const a = v ?? 0;
+            if (a === 0) delete next.angle; else next.angle = a;
+            set(sortedFill(next));
+          }, { step: 5, def: 0, unit: "°" })
+        : nothing}
+    </div>
+    ${stops.map((s, i) => html`<div class="field color band-row">
+      <span class="fill-stop-n">${i + 1}</span>
+      <div class="color-row">
+        ${colorBox(`Stop ${i + 1}`, s.colorHex, (v) => withStops(stops.map((x, j) => (j === i ? { ...x, colorHex: v ?? "#FFFFFF" } : x))))}
+        ${numberInput(Math.round(s.at * 100), (v) => withStops(stops.map((x, j) => (j === i ? { ...x, at: Math.max(0, Math.min(1, (v ?? 0) / 100)) } : x))),
+          { step: 1, min: 0, max: 100, unit: "%", ariaLabel: `Stop ${i + 1} position` })}
+        <button class="small" title="Remove this colour" ?disabled=${stops.length <= FILL_MIN_STOPS}
+          @click=${() => withStops(stops.filter((_, j) => j !== i))}>−</button>
+      </div></div>`)}
+    ${stops.length < FILL_MAX_STOPS
+      ? html`<button class="small" @click=${() => {
+          // A new stop lands halfway along the widest gap and takes the colour
+          // already showing there, so adding one changes nothing on its own.
+          const sorted = [...stops].sort((a, b) => a.at - b.at);
+          let at = 0.5;
+          let widest = -1;
+          for (let i = 1; i < sorted.length; i++) {
+            const gap = sorted[i]!.at - sorted[i - 1]!.at;
+            if (gap > widest) { widest = gap; at = (sorted[i]!.at + sorted[i - 1]!.at) / 2; }
+          }
+          withStops([...stops, { at, colorHex: fillColorAt(fill, at) }]);
+        }}>Add a colour</button>`
+      : html`<div class="hint">A gradient takes at most ${FILL_MAX_STOPS} colours.</div>`}`;
+}
+
+/** Dragging one chip along the bar: the pointer's place across the bar is the
+ * stop's new position. Pointer capture keeps the drag alive past the bar's
+ * edges, the way every other drag in the panel does. */
+function fillChipDrag(fill: Fill, index: number, set: (v: Fill) => void) {
+  return (e: PointerEvent) => {
+    const chip = e.currentTarget as HTMLElement;
+    const bar = chip.parentElement;
+    if (!bar) return;
+    e.preventDefault();
+    chip.setPointerCapture(e.pointerId);
+    let latest = fill;
+    const move = (ev: PointerEvent) => {
+      const box = bar.getBoundingClientRect();
+      if (box.width <= 0) return;
+      const at = Math.max(0, Math.min(1, (ev.clientX - box.left) / box.width));
+      latest = { ...fill, stops: fill.stops.map((s, j) => (j === index ? { ...s, at } : s)) };
+      set(latest);
+    };
+    const up = () => {
+      chip.removeEventListener("pointermove", move);
+      chip.removeEventListener("pointerup", up);
+      chip.removeEventListener("pointercancel", up);
+      // Sorted only when the drag ends, so a chip dragged past its neighbour
+      // does not swap rows under the pointer mid-drag.
+      set(sortedFill(latest));
+    };
+    chip.addEventListener("pointermove", move);
+    chip.addEventListener("pointerup", up);
+    chip.addEventListener("pointercancel", up);
+  };
 }
 
 /** A stored colour as its controls show it: the swatch, the six digits the
@@ -1780,13 +1949,14 @@ function timelineBandFields(
 }
 
 const GAUGE_STYLES: [GaugeStyle, string][] = [
-  ["arc", "Arc"], ["ring", "Ring"], ["bar", "Bar"], ["dots", "Dots"],
+  ["arc", "Arc"], ["ring", "Ring"], ["bar", "Bar"], ["dots", "Dots"], ["needle", "Needle"],
 ];
 const GAUGE_STYLE_TITLES: Record<string, string> = {
   arc: "A 270° arc, open at the bottom",
   ring: "A full circle",
   bar: "A straight bar",
   dots: "One dot per unit, the first few filled",
+  needle: "A dial with a pointer at the reading",
 };
 
 /** The Total a dot gauge starts with.
@@ -2746,9 +2916,31 @@ const FONT_WEIGHTS: [FontWeight, string][] = [["regular", "Regular"], ["medium",
 
 const TEXT_ALIGNMENTS: [TextAlignment, string][] = [["leading", "Left"], ["center", "Center"], ["trailing", "Right"]];
 
+const FONT_DESIGNS: [FontDesign, string][] = [
+  ["default", "System"], ["rounded", "Rounded"], ["monospaced", "Mono"], ["serif", "Serif"],
+];
+
+/** A part's slant, as two buttons, so "follows the layer" is a state the row can
+ * show the way its weight and typeface rows do. */
+const PART_ITALICS: ["off" | "on", string][] = [["off", "Upright"], ["on", "Italic"]];
+
+/** Said wherever the typeface is picked. Only the system face and the mono one
+ * have real twins in a browser, so the preview is honest about the other two
+ * rather than letting someone lay a face out against the wrong shapes. */
+const FONT_DESIGN_HINT = html`<div class="hint">The watch draws SF Rounded and New York.
+  The preview has no web copy of either, so it shows the closest match: judge the shapes on the watch, not here.</div>`;
+
 /** The line counts a text layer offers. Kept as strings because the segmented
  * control is a string control; the payload stores the number. */
-const TEXT_LINE_LIMITS: ["1" | "2", string][] = [["1", "1"], ["2", "2"]];
+const TEXT_LINE_LIMITS: ["1" | "2" | "3" | "4", string][] = [["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"]];
+
+/** An entity's device class, which nothing in the document holds. A timeline
+ * reads it to know whether a binary sensor is a door before it seeds its colour
+ * table, and a states table reads it for the same reason. */
+function deviceClassOf(host: EditorHost, entityId: string): string | undefined {
+  const dc = host.hass.states[entityId]?.attributes?.device_class;
+  return typeof dc === "string" ? dc : undefined;
+}
 
 /**
  * The one Entity field at the top of a drawing layer.
@@ -2768,15 +2960,9 @@ function layerEntityField(host: EditorHost, el: CElement, key: string): Template
   // picture can come from any domain, so that one is unrestricted.
   const cameraOnly = el.kind === "image" && el.payload.source === "camera";
   const opts: EntityFieldOptions = { ...(cameraOnly ? { domain: "camera" } : {}), needed: layerNeedsEntity(el) };
-  // Only a timeline reads this, to know whether a binary sensor is a door
-  // before it seeds its colour table. Nothing in the document holds it.
-  const deviceClassOf = (entityId: string) => {
-    const dc = host.hass.states[entityId]?.attributes?.device_class;
-    return typeof dc === "string" ? dc : undefined;
-  };
   return html`
     ${entityField(host, cameraOnly ? "Camera" : "Entity", ref,
-      (next) => host.update((c) => setLayerEntity(c, id, next, deviceClassOf(next.entityId)), `${key}-entity`), `${key}-layer-entity`, opts)}
+      (next) => host.update((c) => setLayerEntity(c, id, next, deviceClassOf(host, next.entityId)), `${key}-entity`), `${key}-layer-entity`, opts)}
     <div class="hint ${layerNeedsEntity(el) ? "warn" : ""}">${layerEntityNote(el, uses)}</div>`;
 }
 
@@ -3685,6 +3871,59 @@ function gaugeRangeFields(
 }
 
 /**
+ * Curved text: the Curve switch and the four numbers behind it.
+ *
+ * Only the round shapes offer it (`familyAllowsArcText`), so the whole group is
+ * absent elsewhere rather than greyed out: a row that can never be switched on
+ * in this shape is a row that only asks a question. A countdown keeps the row
+ * but greys the switch, because the watch draws a ticking timer as one
+ * system-owned string and there are no glyphs to bend.
+ */
+function textArcFields(
+  t: TextElement,
+  family: FamilyKind,
+  set: (mutate: (p: TextElement) => void, k?: string) => void,
+): TemplateResult | typeof nothing {
+  if (!familyAllowsArcText(family)) return nothing;
+  const arc = t.arc;
+  const countdown = t.countdown === true;
+  const setArc = (mutate: (a: TextArc) => void, k?: string) => set((p) => {
+    if (p.arc !== undefined) mutate(p.arc);
+  }, k);
+  return html`
+    <div class="fgroup">
+      ${checkField("Curve", arc !== undefined, (v) => set((p) => {
+        if (v) p.arc = { radius: ARC_RADIUS_DEFAULT };
+        else delete p.arc;
+      }, "arc"), false, { disabled: countdown })}
+      ${countdown
+        ? html`<div class="hint">A countdown ticks as one piece of system text, which cannot be bent around a circle. Turn the countdown off to curve this layer.</div>`
+        : nothing}
+      ${arc === undefined || countdown ? nothing : html`
+        ${numberField("Radius", arc.radius, (v) => setArc((a) => {
+          a.radius = Math.min(ARC_RADIUS_MAX, Math.max(ARC_RADIUS_MIN, v ?? ARC_RADIUS_DEFAULT));
+        }, "arc-radius"), { step: 0.05, min: ARC_RADIUS_MIN, max: ARC_RADIUS_MAX, def: ARC_RADIUS_DEFAULT })}
+        ${numberField("Start", arc.startAngle ?? 0, (v) => setArc((a) => {
+          const deg = v ?? 0;
+          if (deg === 0) delete a.startAngle; else a.startAngle = deg;
+        }, "arc-start"), { step: 5, min: -360, max: 360, unit: "°", def: 0 })}
+        ${numberField("Sweep", arc.sweep ?? ARC_SWEEP_DEFAULT, (v) => setArc((a) => {
+          const deg = clampArcSweep(v ?? ARC_SWEEP_DEFAULT);
+          if (deg === ARC_SWEEP_DEFAULT) delete a.sweep; else a.sweep = deg;
+        }, "arc-sweep"), { step: 5, min: -ARC_SWEEP_MAX, max: ARC_SWEEP_MAX, unit: "°", def: ARC_SWEEP_DEFAULT })}
+        ${checkField("Face in", arc.inside === true, (v) => setArc((a) => {
+          if (v) a.inside = true; else delete a.inside;
+        }, "arc-inside"), false)}
+        <div class="hint">Zero degrees is the top of the circle and a positive sweep runs
+          clockwise; a negative one runs the other way. The radius is a share of the
+          shape's shorter side, measured from the layer's centre. Face in turns the
+          letters to sit with their feet toward the middle, for a line along the bottom
+          of a ring. A line longer than its arc shrinks, then loses its tail.
+          ${ARC_SWEEP_MIN} to ${ARC_SWEEP_MAX} degrees.</div>`}
+    </div>`;
+}
+
+/**
  * A text layer's colour by value: the chart's Colour and Highlight fields, read
  * against the numbers in the text instead of a series. Every key is optional on
  * a text layer, so each field deletes its key when it goes back to the default
@@ -4085,6 +4324,7 @@ function richPartsEditor(
   const mode = partColourMode(part);
   const ownSize = part.fontSize !== undefined;
   const layerWeight = FONT_WEIGHTS.find(([w]) => w === t.fontWeight)?.[1] ?? t.fontWeight;
+  const layerDesign = FONT_DESIGNS.find(([d]) => d === (t.fontDesign ?? "default"))?.[1] ?? "System";
   // Out of range is left alone rather than clamped, so typing 12 can pass
   // through 1 without the box jumping to 4 under the caret.
   const setSize = (n: number) => {
@@ -4146,6 +4386,16 @@ function richPartsEditor(
       <div class="field seg-field">${fieldLabel("Weight", part.fontWeight === undefined ? undefined
           : { atDefault: false, title: `Back to the layer weight (${layerWeight})`, reset: () => updPart((x) => { delete x.fontWeight; }) })}
         ${segButtons("Weight", part.fontWeight, FONT_WEIGHTS, (v) => updPart((x) => { x.fontWeight = v; }), { inherited: t.fontWeight })}
+      </div>
+      <div class="field seg-field">${fieldLabel("Typeface", part.fontDesign === undefined ? undefined
+          : { atDefault: false, title: `Back to the layer typeface (${layerDesign})`, reset: () => updPart((x) => { delete x.fontDesign; }) })}
+        ${segButtons("Typeface", part.fontDesign, FONT_DESIGNS, (v) => updPart((x) => { x.fontDesign = v; }), { inherited: t.fontDesign ?? "default" })}
+      </div>
+      ${part.fontDesign === "rounded" || part.fontDesign === "serif" ? FONT_DESIGN_HINT : nothing}
+      <div class="field seg-field">${fieldLabel("Italic", part.italic === undefined ? undefined
+          : { atDefault: false, title: `Back to the layer slant (${t.italic === true ? "italic" : "upright"})`, reset: () => updPart((x) => { delete x.italic; }) })}
+        ${segButtons("Italic", part.italic === undefined ? undefined : part.italic ? "on" : "off", PART_ITALICS,
+          (v) => updPart((x) => { x.italic = v === "on"; }), { inherited: t.italic === true ? "on" : "off" })}
       </div>
       <label class="field num part-size">${fieldLabel("Font size", ownSize
           ? { atDefault: false, title: `Back to the layer size (${layerSize} pt)`, reset: () => updPart((x) => { delete x.fontSize; }) }
@@ -4215,16 +4465,33 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             const p = (e as typeof el).payload;
             if (v === "center") delete p.alignment; else p.alignment = v;
           }) },
-          { label: "Lines", value: el.payload.lineLimit === 2 ? "2" : "1", options: TEXT_LINE_LIMITS, def: "1", set: (v) => upd((e) => {
+          { label: "Lines", value: String(el.payload.lineLimit ?? 1) as "1" | "2" | "3" | "4", options: TEXT_LINE_LIMITS, def: "1", set: (v) => upd((e) => {
             const p = (e as typeof el).payload;
-            if (v === "2") p.lineLimit = 2; else delete p.lineLimit;
+            if (v === "1") delete p.lineLimit; else p.lineLimit = Number(v);
           }) })}
+        ${segField("Typeface", el.payload.fontDesign ?? "default", FONT_DESIGNS, (v) => upd((e) => {
+          const p = (e as typeof el).payload;
+          if (v === "default") delete p.fontDesign; else p.fontDesign = v;
+        }), { def: "default" })}
+        ${el.payload.fontDesign === "rounded" || el.payload.fontDesign === "serif" ? FONT_DESIGN_HINT : nothing}
+        ${checkField("Italic", el.payload.italic === true, (v) => upd((e) => {
+          const p = (e as typeof el).payload;
+          if (v) p.italic = true; else delete p.italic;
+        }), base.italic === true)}
         ${checkField("Mono digits", el.payload.monospacedDigits === true, (v) => upd((e) => {
           const p = (e as typeof el).payload;
           if (v) p.monospacedDigits = true; else delete p.monospacedDigits;
         }), base.monospacedDigits === true)}
         ${el.payload.monospacedDigits ? html`<div class="hint">Digits take the same width, so a number that ticks does not shuffle what sits beside it.</div>` : nothing}
+        ${sliderField("Shrink to fit", el.payload.minimumScale ?? TEXT_MIN_SCALE, (v) => upd((e) => {
+          const p = (e as typeof el).payload;
+          const n = clampMinimumScale(v);
+          if (n === TEXT_MIN_SCALE) delete p.minimumScale; else p.minimumScale = n;
+        }, "minscale"), { min: TEXT_MIN_SCALE, max: 1, step: 0.05, def: TEXT_MIN_SCALE, format: (v) => `${Math.round(v * 100)}%` })}
+        <div class="hint">How small the text may go to fit its box before it is cut off with an ellipsis.
+          100% never shrinks.</div>
         </div>
+        ${textArcFields(el.payload, family, setText)}
         ${colourPlaced ? textValueColourFields(host, el.payload, setText, colourRow("Main colour")) : nothing}`;
       break;
     }
@@ -4274,6 +4541,13 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           if (v === "bands" && p.bands.length === 0) p.bands = seedBands([p.minValue, p.maxValue]);
         }), { def: base.coloring as typeof g.coloring })}
         ${colourRow("Main colour")}
+        ${g.coloring === "bands" ? nothing : fillField("Gradient", g.fill, (v) => setGauge((p) => {
+          if (v === undefined) { delete p.fill; return; }
+          p.fill = v;
+          // The flat colour keeps the gradient's first stop, so a watch app that
+          // predates fills draws where the gradient starts rather than nothing.
+          p.colorSlot.baseColorHex = fillColorAt(v, 0);
+        }, "fill"), () => ({ kind: "linear", stops: [{ at: 0, colorHex: g.colorSlot.baseColorHex }, { at: 1, colorHex: g.colorSlot.baseColorHex }] }))}
         ${g.coloring === "bands" ? html`
           <div class="hint">Checked lowest first, so each row only says where it ends. The
             gauge takes the colour of the row its reading falls in, and a reading past the
@@ -4281,6 +4555,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           ${bandTableFields(g, g.colorSlot.baseColorHex, setGauge, chartNumbers(host.resolve(g.value) ?? "")[0])}`
           : nothing}
         </div>
+        ${gaugeDialFields(g, setGauge)}
         ${dots ? nothing : html`
           <div class="fgroup">
           <div class="grid2">
@@ -4561,6 +4836,13 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           <div class="fgroup">
           ${colourRows.fill === undefined ? nothing : chartColourField(colourRows.fill, c.fillColorHex,
             (v) => setChart((p) => { if (v === undefined) delete p.fillColorHex; else p.fillColorHex = v; }, "fillcol"))}
+          ${c.style === "bars" ? nothing : fillField("Area gradient", c.areaFill, (v) => setChart((p) => {
+            if (v === undefined) { delete p.areaFill; return; }
+            p.areaFill = v;
+            p.fillColorHex = fillColorAt(v, 0);
+          }, "areafill"), () => ({ kind: "linear", stops: [
+            { at: 0, colorHex: c.fillColorHex ?? c.colorSlot.baseColorHex },
+            { at: 1, colorHex: c.fillColorHex ?? c.colorSlot.baseColorHex }] }))}
           ${checkField("Border", c.barBorderWidth !== undefined,
             (v) => setChart((p) => { if (v) p.barBorderWidth = 1; else delete p.barBorderWidth; }), false)}
           ${c.barBorderWidth === undefined ? nothing : html`
@@ -4822,6 +5104,12 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         ? numberField("Thickness", el.payload.thickness, (v) => upd((e) => { (e as typeof el).payload.thickness = v ?? 1; }, "thick"), { step: 0.5, min: 0.5, def: base.thickness as number, unit: "pt" })
         : html`
         <div class="fgroup">
+        ${fillField("Gradient", el.payload.fill, (v) => upd((e) => {
+          const p = (e as typeof el).payload;
+          if (v === undefined) { delete p.fill; return; }
+          p.fill = v;
+          p.colorSlot.baseColorHex = fillColorAt(v, 0);
+        }, "fill"), () => ({ kind: "linear", stops: [{ at: 0, colorHex: el.payload.colorSlot.baseColorHex }, { at: 1, colorHex: el.payload.colorSlot.baseColorHex }] }))}
         ${colorField("Border colour", el.payload.borderColorHex, (v) => upd((e) => { if (v === undefined) delete (e as typeof el).payload.borderColorHex; else (e as typeof el).payload.borderColorHex = v; }, "border"), true, null)}
         ${el.payload.borderColorHex !== undefined ? numberField("Border width", el.payload.borderWidth, (v) => upd((e) => { (e as typeof el).payload.borderWidth = v ?? 1; }, "bw"), { step: 0.5, min: 0, def: base.borderWidth as number, unit: "pt" }) : nothing}
         </div>`;
@@ -4994,6 +5282,15 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
     ? undefined
     : colourRow(el.kind === "shape" ? "Fill colour" : el.kind === "text" && textUsesParts(el.payload) ? "Layer colour" : "Colour");
 
+  // Which of the two colours a tinted Home Screen paints this layer in. Only on
+  // a document that has a Home Screen shape, and never on a tap area, which
+  // draws nothing to paint.
+  const accent = el.kind !== "tap" && host.config.supportedFamilies.some(isHomeFamily)
+    ? accentGroupRow(el.payload.accentGroup ?? "primary", (v) => upd((e) => {
+        if (v === "accent") e.payload.accentGroup = "accent"; else delete e.payload.accentGroup;
+      }, "accent-group"))
+    : undefined;
+
   // A layer already bound to an entity is what a new states table tests, so the
   // entity is asked for once at the top of this editor and never again.
   const ref = elementEntity(host.config, el);
@@ -5004,7 +5301,9 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
   // layer says; look is how it is drawn. Per-shape size overrides count as
   // look too, since that is the box they are typed into.
   const contentKeys = CONTENT_KEYS[el.kind];
-  const lookKeys = LOOK_KEYS[el.kind];
+  // Opacity and the shadow belong to the Look card of every drawing layer, so
+  // they join that card's reset and its changed dot.
+  const lookKeys = el.kind === "tap" ? LOOK_KEYS[el.kind] : [...LOOK_KEYS[el.kind], ...LAYER_LOOK_KEYS];
   const contentChanged = anyDiffers(el.payload, base, contentKeys);
   const sizeKey = el.kind === "text" ? "fontSize" : el.kind === "icon" ? "size" : el.kind === "gauge" || el.kind === "chart" ? "lineWidth" : undefined;
   const sizedHere = host.config.perFamily[family]?.placements[id]?.size !== undefined;
@@ -5041,8 +5340,9 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           // Parts going with the reset leave no part for a state to aim at.
           if (e.kind === "text") dropPartIds(e.payload.rules);
         }, "reset-content") } : {}) })}
-    ${look === undefined && colour === undefined ? nothing
-      : card(host, "look", el.kind === "image" ? "Picture" : "Look", html`${look ?? nothing}${colour ?? nothing}`,
+    ${look === undefined && colour === undefined && accent === undefined && el.kind === "tap" ? nothing
+      : card(host, "look", el.kind === "image" ? "Picture" : "Look",
+        html`${look ?? nothing}${colour ?? nothing}${accent ?? nothing}${el.kind === "tap" ? nothing : layerLookFields(el, upd)}`,
         { color: SECTION_COLOR.look, icon: el.kind === "image" ? "image" : "look", ...(lookSummary(el) ? { summary: lookSummary(el)! } : {}),
           ...(lookChanged ? { reset: () => host.update((c) => {
             restoreKeys(c.elements[idx]!.payload, base, lookKeys);
@@ -5142,16 +5442,83 @@ const CONTENT_KEYS: Record<CElement["kind"], readonly string[]> = {
   imageTime: [],
 };
 
+/** The two look keys every drawing layer carries, whatever its kind. A tap area
+ * draws nothing, so it has neither row and neither key. */
+const LAYER_LOOK_KEYS = ["opacity", "shadow"] as const;
+
+/**
+ * Opacity and the shadow, the two rows every drawing layer shows at the foot of
+ * its Look card.
+ *
+ * The shadow is one switch and four rows rather than a card of its own: a glow
+ * is the same four numbers with no offset, so splitting them would be two names
+ * for one thing.
+ */
+function layerLookFields(
+  el: CElement,
+  upd: (mutate: (e: CElement) => void, k?: string) => void,
+): TemplateResult {
+  const p = el.payload;
+  const shadow = p.shadow;
+  const setShadow = (mutate: (s: LayerShadow) => void, k?: string) => upd((e) => {
+    const next: LayerShadow = { ...(e.payload.shadow ?? SHADOW_DEFAULT) };
+    mutate(next);
+    e.payload.shadow = next;
+  }, k);
+  // A glow on small text turns to mush on the watch, so the row says so. It
+  // never blocks: a 9 pt label with a faint glow is still a look someone means.
+  const smallGlow = el.kind === "text" && shadow !== undefined
+    && shadow.dx === 0 && shadow.dy === 0 && shadow.radius > 0 && el.payload.fontSize < 10;
+  return html`
+    <div class="fgroup">
+    ${sliderField("Opacity", p.opacity ?? 1, (v) => upd((e) => {
+      const n = clampLayerOpacity(v);
+      if (n === 1) delete e.payload.opacity; else e.payload.opacity = n;
+    }, "opacity"), { min: 0, max: 1, step: 0.05, def: 1, format: (v) => `${Math.round(v * 100)}%` })}
+    ${checkField("Shadow", shadow !== undefined, (v) => upd((e) => {
+      if (v) e.payload.shadow = { ...SHADOW_DEFAULT }; else delete e.payload.shadow;
+    }, "shadow-on"), false)}
+    ${shadow === undefined ? nothing : html`
+      ${colorField("Shadow colour", shadow.colorHex, (v) => setShadow((s) => { s.colorHex = v ?? SHADOW_DEFAULT_HEX; }, "shcol"),
+        false, SHADOW_DEFAULT_HEX)}
+      ${sliderField("Blur", shadow.radius, (v) => setShadow((s) => { s.radius = clampShadowRadius(v); }, "shrad"),
+        { min: 0, max: SHADOW_MAX_RADIUS, step: 0.5, def: SHADOW_DEFAULT.radius, unit: "pt" })}
+      <div class="grid2">
+        ${numberField("Offset X", shadow.dx, (v) => setShadow((s) => { s.dx = clampShadowOffset(v ?? 0); }, "shdx"),
+          { step: 0.5, min: -SHADOW_MAX_OFFSET, max: SHADOW_MAX_OFFSET, def: SHADOW_DEFAULT.dx, unit: "pt" })}
+        ${numberField("Offset Y", shadow.dy, (v) => setShadow((s) => { s.dy = clampShadowOffset(v ?? 0); }, "shdy"),
+          { step: 0.5, min: -SHADOW_MAX_OFFSET, max: SHADOW_MAX_OFFSET, def: SHADOW_DEFAULT.dy, unit: "pt" })}
+      </div>
+      <div class="hint">Both offsets at zero makes a glow. On a tinted face the shadow takes the tint, like every other colour.</div>
+      ${smallGlow ? html`<div class="hint warn">A glow under text this small reads as a smudge on the watch.</div>` : nothing}`}
+    </div>`;
+}
+
+/**
+ * The Look card's accent-group row, for a document that has a Home Screen shape.
+ *
+ * A tinted Home Screen paints the whole tile in one colour and gives an
+ * accentable layer the lighter of the two, which is the only way to keep a layer
+ * apart from the rest there. It changes nothing in full colour, and on the watch
+ * it only ever adds a layer to a group most kinds are in already, so the row
+ * says what it is for rather than pretending to be a general setting.
+ */
+function accentGroupRow(value: AccentGroup, set: (v: AccentGroup) => void): TemplateResult {
+  return html`${segField("Tinted group", value, [["primary", "Default"], ["accent", "Accent"]], (v) => set(v), { def: "primary" })}
+    <div class="hint">On a tinted Home Screen the accent group takes the lighter of the two colours. Full colour is unchanged.</div>`;
+}
+
 /** The payload fields the Look card owns, per kind. A chart's marks on the plot
  * are not here: they live in its Extras card (`CHART_EXTRAS_KEYS`). */
 const LOOK_KEYS: Record<CElement["kind"], readonly string[]> = {
-  text: ["fontSize", "fontWeight", "colorSlot", "alignment", "lineLimit", "monospacedDigits",
+  text: ["fontSize", "fontWeight", "colorSlot", "alignment", "lineLimit", "monospacedDigits", "arc",
+    "fontDesign", "italic", "minimumScale",
     "coloring", "bands", "bandAboveColorHex", "highlight", "highColorHex", "lowColorHex"],
   icon: ["size", "colorSlot"],
-  gauge: ["style", "lineWidth", "trackColorHex", "colorSlot", "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex"],
-  chart: ["style", "scale", "minValue", "maxValue", "baseline", "barGap", "lineWidth", "coloring", "bands", "bandAboveColorHex", "fillBands", "curve", "fillStyle", "fillColorHex", "barRadius", "barCorners", "barBorderWidth", "barBorderColorHex", "bandAboveFillColorHex", "bandAboveBorderColorHex", "barBorderOpenBase", "scaleFrom", "colorSlot"],
+  gauge: ["style", "lineWidth", "trackColorHex", "colorSlot", "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex", "fill", "ticks", "labels"],
+  chart: ["style", "scale", "minValue", "maxValue", "baseline", "barGap", "lineWidth", "coloring", "bands", "bandAboveColorHex", "fillBands", "curve", "fillStyle", "fillColorHex", "areaFill", "barRadius", "barCorners", "barBorderWidth", "barBorderColorHex", "bandAboveFillColorHex", "bandAboveBorderColorHex", "barBorderOpenBase", "scaleFrom", "colorSlot"],
   timeline: ["bands", "otherColorHex", "gap", "cornerRadius"],
-  shape: ["colorSlot", "borderColorHex", "borderWidth", "thickness"],
+  shape: ["colorSlot", "borderColorHex", "borderWidth", "thickness", "fill"],
   image: ["contentMode", "zoom", "panX", "panY", "cornerRadius"],
   tap: [],
   chartTimes: ["timeLabelCount", "labelSize", "labelColorHex", "hourCycle", "minutes"],
@@ -5159,6 +5526,59 @@ const LOOK_KEYS: Record<CElement["kind"], readonly string[]> = {
   chartGrid: ["lines", "colorHex", "thickness"],
   imageTime: [],
 };
+
+/**
+ * A gauge's marks and end text: the two objects that turn a bare fill into a
+ * dial you can read a number off.
+ *
+ * Both stay off the wire until the author asks for them, so each is written back
+ * whole and dropped again the moment it says nothing (`gaugeTicksAreDefault`,
+ * `gaugeLabelsAreDefault`). Offered on every style: a bar and a row of dots draw
+ * their marks along the bar and their two ends underneath it.
+ */
+function gaugeDialFields(g: GaugeElement, setGauge: (m: (p: GaugeElement) => void, k?: string) => void): TemplateResult {
+  const ticks = g.ticks ?? defaultGaugeTicks();
+  const labels = g.labels ?? defaultGaugeLabels();
+  const setTicks = (m: (t: GaugeTicks) => void, k?: string) => setGauge((p) => {
+    const next = { ...(p.ticks ?? defaultGaugeTicks()) };
+    m(next);
+    if (gaugeTicksAreDefault(next)) delete p.ticks; else p.ticks = next;
+  }, k);
+  const setLabels = (m: (l: GaugeLabels) => void, k?: string) => setGauge((p) => {
+    const next = { ...(p.labels ?? defaultGaugeLabels()) };
+    m(next);
+    if (gaugeLabelsAreDefault(next)) delete p.labels; else p.labels = next;
+  }, k);
+  return html`
+    <div class="fgroup">
+    <div class="grid2">
+      ${numberField("Marks", ticks.count, (v) => setTicks((t) => { t.count = Math.max(0, Math.min(GAUGE_MAX_TICKS, Math.round(v ?? 0))); }, "tickn"),
+        { step: 1, min: 0, max: GAUGE_MAX_TICKS, def: 0 })}
+      ${ticks.count > 0
+        ? numberField("Mark length", ticks.length, (v) => setTicks((t) => { t.length = Math.max(1, Math.min(GAUGE_MAX_TICK_LENGTH, v ?? GAUGE_DEFAULT_TICK_LENGTH)); }, "ticklen"),
+            { step: 0.5, min: 1, max: GAUGE_MAX_TICK_LENGTH, def: GAUGE_DEFAULT_TICK_LENGTH, unit: "pt" })
+        : nothing}
+    </div>
+    ${ticks.count > 0 ? html`
+      ${colorField("Mark colour", ticks.colorHex, (v) => setTicks((t) => { t.colorHex = v ?? GAUGE_DEFAULT_TICK_HEX; }, "tickcol"), false, GAUGE_DEFAULT_TICK_HEX)}
+      ${numberField("Long every", ticks.majorEvery, (v) => setTicks((t) => { t.majorEvery = Math.max(0, Math.round(v ?? 0)); }, "tickmaj"),
+        { step: 1, min: 0, def: 0 })}
+      <div class="hint">Marks are spread across the scale. Long every 5 draws every fifth one
+        half as long again, which is what makes a dial countable. 0 draws them all the same.</div>`
+      : nothing}
+    </div>
+    <div class="fgroup">
+    ${checkField("End numbers", labels.show, (v) => setLabels((l) => { l.show = v; }, "lblshow"), false)}
+    ${labels.show ? html`
+      <div class="grid2">
+        ${numberField("Text size", labels.size, (v) => setLabels((l) => { l.size = Math.max(GAUGE_MIN_LABEL_SIZE, Math.min(GAUGE_MAX_LABEL_SIZE, v ?? GAUGE_DEFAULT_LABEL_SIZE)); }, "lblsize"),
+          { step: 0.5, min: GAUGE_MIN_LABEL_SIZE, max: GAUGE_MAX_LABEL_SIZE, def: GAUGE_DEFAULT_LABEL_SIZE, unit: "pt" })}
+        ${colorField("Text colour", labels.colorHex, (v) => setLabels((l) => { l.colorHex = v ?? GAUGE_DEFAULT_LABEL_HEX; }, "lblcol"), false, GAUGE_DEFAULT_LABEL_HEX)}
+      </div>
+      <div class="hint">Min and max at the two ends of the scale${g.style === "needle" ? ", and the reading itself under the pointer" : ""}.</div>`
+      : nothing}
+    </div>`;
+}
 
 /** The Chart row of a layer that draws on a chart: the chart's name as a button
  * that selects it, or None once it is gone. */
@@ -5825,23 +6245,32 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
     true,
     null,
   );
+  const backgroundGradient = fillField("Background gradient", layout.backgroundFill, (v) => upd((l) => {
+    if (v === undefined) { delete l.backgroundFill; return; }
+    l.backgroundFill = v;
+    l.backgroundColorHex = fillColorAt(v, 0);
+  }, "bgfill"), () => ({ kind: "linear", stops: [
+    { at: 0, colorHex: layout.backgroundColorHex ?? "#000000" },
+    { at: 1, colorHex: layout.backgroundColorHex ?? "#000000" }] }));
   return html`
     ${card(host, "look", `${familyTitle(family)} shape`, html`
-      ${home ? nothing : background}
+      ${home ? nothing : html`${background}${backgroundGradient}`}
       <div class="fgroup">
       ${colorField("Border colour", layout.borderColorHex, (v) => upd((l) => { if (v === undefined) delete l.borderColorHex; else l.borderColorHex = v; }, "border"), true, null)}
       ${numberField("Border width", layout.borderWidth, (v) => upd((l) => { l.borderWidth = v ?? 2; }, "bw"), { step: 0.5, min: 0, def: 2, unit: "pt" })}
       </div>`,
       { color: SECTION_COLOR.look, icon: "shape", summary: `${bg} · ${border}`,
-        ...(layout.backgroundColorHex !== undefined || layout.borderColorHex !== undefined || layout.borderWidth !== 2
-          ? { reset: () => upd((l) => { delete l.backgroundColorHex; delete l.borderColorHex; l.borderWidth = 2; }, "reset-look") } : {}) })}
+        ...(layout.backgroundColorHex !== undefined || layout.backgroundFill !== undefined || layout.borderColorHex !== undefined || layout.borderWidth !== 2
+          ? { reset: () => upd((l) => { delete l.backgroundColorHex; delete l.backgroundFill; delete l.borderColorHex; l.borderWidth = 2; }, "reset-look") } : {}) })}
     ${home ? card(host, "home", "Home Screen", html`
       ${background}
+      ${backgroundGradient}
       <div class="hint">The tile is drawn edge to edge: this colour fills every point of it, and the design is laid out inside the ${familyTitle(family)} box.</div>
       <div class="hint keep">iOS 18 lets a user tint the whole Home Screen. The system then drops the background and draws the design in two tones, so check that it still reads without its colours.</div>
       ${familyNote(family) ? html`<div class="hint keep">${familyTitle(family)} needs ${familyNote(family)}. An iPhone on an older version is not offered this size when adding a widget, and every other size still draws.</div>` : nothing}`,
       { color: SECTION_COLOR.look, icon: "shape", summary: bg,
-        ...(layout.backgroundColorHex !== undefined ? { reset: () => upd((l) => { delete l.backgroundColorHex; }, "reset-home") } : {}) }) : nothing}
+        ...(layout.backgroundColorHex !== undefined || layout.backgroundFill !== undefined
+          ? { reset: () => upd((l) => { delete l.backgroundColorHex; delete l.backgroundFill; }, "reset-home") } : {}) }) : nothing}
     ${family === "corner" ? card(host, "corner", "Corner content", cornerEditor(host, layout, upd),
       { color: SECTION_COLOR.content, icon: "content", summary: layout.curvedText ? "Big curved text" : "Layer canvas",
         ...(layout.curvedText !== undefined || layout.bezelText !== undefined || layout.bezelGauge !== undefined
@@ -5960,7 +6389,8 @@ export type { Comparison };
 
 const CHANGE_LABELS: Record<StyleChangeKind, string> = {
   setColor: "Set colour", setOpacity: "Set opacity", setText: "Set text", setIcon: "Set icon",
-  setFontSize: "Set size", setFontWeight: "Set weight", setRotation: "Set rotation",
+  setFontSize: "Set size", setFontWeight: "Set weight",
+  setFontDesign: "Set typeface", setItalic: "Set italic", setRotation: "Set rotation",
   hide: "Hide", show: "Show", setGaugeValue: "Set gauge value", setGaugeMin: "Set gauge min", setGaugeMax: "Set gauge max",
   setBorderColor: "Set border colour", setBorderWidth: "Set border width", setBackgroundColor: "Set background colour",
 };
@@ -5969,7 +6399,7 @@ const CHANGE_KINDS = Object.keys(CHANGE_LABELS) as StyleChangeKind[];
 
 /** What a rule aimed at one part of a rich text layer can change. Anything
  * else such a rule sets is ignored, on the watch and in the preview. */
-export const PART_RULE_PROPERTIES: readonly StyleProperty[] = ["color", "text", "fontSize", "fontWeight", "visibility"];
+export const PART_RULE_PROPERTIES: readonly StyleProperty[] = ["color", "text", "fontSize", "fontWeight", "fontDesign", "italic", "visibility"];
 
 /** The changes a rule can add: those its target reads, narrowed to what a
  * part reads when the rule is aimed at one. */
@@ -6325,6 +6755,11 @@ function changeBody(host: EditorHost, ch: StyleChange, upd: (m: (c: StyleChange)
     body = numberField(label, ch.number ?? 0, (n) => upd((c) => { c.number = n ?? 0; }, "number"), opts);
   } else if (payload === "weight") {
     body = segField("Weight", ch.weight ?? "regular", FONT_WEIGHTS, (w) => upd((c) => { c.weight = w; }));
+  } else if (payload === "design") {
+    body = html`${segField("Typeface", ch.design ?? "default", FONT_DESIGNS, (d) => upd((c) => { c.design = d; }))}
+      ${FONT_DESIGN_HINT}`;
+  } else if (payload === "italic") {
+    body = checkField("Italic", ch.italic !== false, (v) => upd((c) => { c.italic = v; }));
   }
   return body;
 }
@@ -6343,6 +6778,9 @@ const advancedRules = new Set<string>();
 const pickedColumns = new Map<string, Set<StyleProperty>>();
 /** The column a "Remove column" click is waiting for confirmation on. */
 const pendingColumnRemoval = new Map<string, StyleProperty>();
+/** Tables where "Fill from the entity" is waiting for confirmation, because the
+ * fill replaces rows that are already there. */
+const pendingStatesFill = new Set<string>();
 /** What the header chip says before the first row exists. A table with no rows
  * has nowhere to store the value being tested, and inventing an empty rule to
  * hold it would put a rule on the watch that does nothing. */
@@ -6493,6 +6931,26 @@ function statesTable(
   const pendingRemoval = pendingColumnRemoval.get(key);
   const spare = COLUMN_PICKER_ORDER.filter((p) => offered.includes(p) && !columns.includes(p));
 
+  // Fill from the entity: one row per state the domain is known to report, with
+  // an icon and a colour (`states-seeds.ts`). Only the cells this kind of layer
+  // reads are written, so a shape gets colours and no icons.
+  const seedEntity = seedEntityOf(tested);
+  const seedCells = { icon: offered.includes("icon"), color: offered.includes("color") };
+  const seeds = seedEntity && (seedCells.icon || seedCells.color)
+    ? seedStates(seedEntity.domain, deviceClassOf(host, seedEntity.entityId))
+    : [];
+  const hasRows = table.rows.length > 0 || table.otherwise !== undefined;
+  const fill = () => {
+    pendingStatesFill.delete(key);
+    pendingPartTargets.delete(key);
+    upd((rs) => {
+      const rule = buildStatesRule(tested ?? literal(""), seedStatesRows(seeds, seedCells), undefined, rs[0]?.id);
+      if (partId !== undefined) rule.partId = partId;
+      rs.length = 0;
+      rs.push(rule);
+    }, "fill");
+  };
+
   return html`
     <div class="states">
       ${valueEditor(host, tested ?? literal(""), setTested, { label: "Testing", showResolved: true, key: `${key}-lhs` })}
@@ -6529,9 +6987,20 @@ function statesTable(
         }}>Remove</button>
         <button class="small" @click=${(e: Event) => { pendingColumnRemoval.delete(key); requestRerender(e.target); }}>Cancel</button>
       </div>`}
+      ${!pendingStatesFill.has(key) ? nothing : html`<div class="hint warn confirm-row">
+        Fill from the entity? The ${table.rows.length} state${table.rows.length === 1 ? "" : "s"} in this table ${table.rows.length === 1 ? "is" : "are"} replaced by one row per state a ${seedEntity?.domain.replace(/_/g, " ")} reports.
+        <button class="danger small" @click=${(e: Event) => { requestRerender(e.target); fill(); }}>Fill</button>
+        <button class="small" @click=${(e: Event) => { pendingStatesFill.delete(key); requestRerender(e.target); }}>Cancel</button>
+      </div>`}
       <div class="states-add">
         <button class="small" title="Add a row to the table: a value to match under When, and the look it gets" @click=${addRow}>${uiIcon("plus")}<span>Add a state</span></button>
         <span class="states-add-note">${statesAddNotes(target).state}</span>
+        ${seeds.length === 0 ? nothing : html`<button class="small" title=${`Write one row per state a ${seedEntity!.domain.replace(/_/g, " ")} reports, each with an icon and a colour`}
+          @click=${(e: Event) => {
+            if (hasRows) { pendingStatesFill.add(key); requestRerender(e.target); return; }
+            fill();
+          }}>${uiIcon("plus")}<span>Fill from the entity</span></button>
+        <span class="states-add-note">${statesAddNotes(target).fill}</span>`}
         ${table.otherwise === undefined
           ? html`<button class="small" title="Add an Otherwise row at the bottom of the table" @click=${() => upd((rs) => setOtherwise(rs, true))}>${uiIcon("plus")}<span>Add otherwise</span></button>
             <span class="states-add-note">${statesAddNotes(target).otherwise}</span>`
@@ -6576,6 +7045,7 @@ function isNumberish(resolved: string | undefined): boolean {
  * where the list said it would. */
 const COLUMN_PICKER_ORDER: StyleProperty[] = [
   "icon", "text", "color", "visibility", "opacity", "fontSize", "fontWeight",
+  "fontDesign", "italic",
   "rotation", "gaugeValue", "gaugeMin", "gaugeMax", "backgroundColor",
   "borderColor", "borderWidth",
 ];
@@ -6678,6 +7148,8 @@ function cellSummary(host: EditorHost, ch: StyleChange): TemplateResult {
   const payload = styleChangePayload(ch.kind);
   if (payload === "number") return html`<span class="cell-word mono">${ch.number ?? 0}</span>`;
   if (payload === "weight") return html`<span class="cell-word">${FONT_WEIGHTS.find(([w]) => w === (ch.weight ?? "regular"))?.[1]}</span>`;
+  if (payload === "design") return html`<span class="cell-word">${FONT_DESIGNS.find(([d]) => d === (ch.design ?? "default"))?.[1]}</span>`;
+  if (payload === "italic") return html`<span class="cell-word">${ch.italic === false ? "Upright" : "Italic"}</span>`;
   const v = ch.value ?? literal("");
   const fixed = v.kind.kind === "literal" ? v.kind.value : undefined;
   if (COLOR_KINDS.includes(ch.kind)) {

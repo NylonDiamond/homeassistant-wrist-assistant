@@ -11,6 +11,12 @@ import {
   type Element,
   type FamilyKind,
   type FontWeight,
+  type FontDesign,
+  type LayerShadow,
+  clampLayerOpacity,
+  clampMinimumScale,
+  TEXT_MAX_LINES,
+  TEXT_MIN_SCALE,
   type ChartBaseline,
   chartEndMarkers,
   type ChartEndMarker,
@@ -62,6 +68,9 @@ import {
   CHART_DEFAULT_LOW_HEX,
   type TextElement,
   type TextPart,
+  ARC_SWEEP_DEFAULT,
+  clampArcSweep,
+  familyAllowsArcText,
   textColorsByValue,
   textUsesParts,
   clockTime,
@@ -74,6 +83,11 @@ import {
   chartAnchorIsColumn,
   TIMELINE_MIN_LABEL_SIZE,
   TIMELINE_MAX_LABEL_SIZE,
+  type Fill,
+  GAUGE_DEFAULT_LABEL_HEX,
+  GAUGE_DEFAULT_LABEL_SIZE,
+  GAUGE_DEFAULT_TICK_HEX,
+  GAUGE_DEFAULT_TICK_LENGTH,
 } from "./model.js";
 import {
   type DrawableFamily,
@@ -140,10 +154,16 @@ export interface ResolvedBase {
   isHidden: boolean;
   frame: NormalizedFrame;
   opacity: number;
+  /** The drop shadow behind this layer, straight off the element. Absent means
+   * none, which is every layer that never asked for one. */
+  shadow?: LayerShadow;
   /** The chart reading this layer follows, carried through so the renderer can
    * put it over that reading. The frame here is still the author's: the anchor
    * only ever decides where it lands, and the width and height stay theirs. */
   chartAnchor?: ChartAnchor;
+  /** Set only on a layer the document put in the accent group, so the tinted
+   * preview can paint it in the accent colour. Absent is the default group. */
+  accentGroup?: "accent";
 }
 export interface ResolvedText extends ResolvedBase {
   kind: "text";
@@ -156,8 +176,14 @@ export interface ResolvedText extends ResolvedBase {
   countdownEnd?: number;
   /** Fixed-width digits, straight off the element. No rule changes it. */
   monospacedDigits: boolean;
-  /** 1 or 2. Straight off the element. */
+  /** 1 to 4. Straight off the element. */
   lineLimit: number;
+  /** The typeface, after any `setFontDesign` rule. */
+  fontDesign: FontDesign;
+  /** Slanted text, after any `setItalic` rule. */
+  italic: boolean;
+  /** How far the text may shrink before it truncates. Straight off the element. */
+  minimumScale: number;
   /** Which edge of the layer box the text sits against. Straight off the element. */
   alignment: TextAlignment;
   /** The text cut into runs of one colour, when the layer colours its numbers by
@@ -170,6 +196,22 @@ export interface ResolvedText extends ResolvedBase {
    * their texts joined, the layer's size, weight and colour are what a part set
    * to the layer's look takes, and `spans` is absent. */
   parts?: ResolvedTextPart[];
+  /** Curved text, already settled against the shape: `radius` is in design-box
+   * points rather than the wire's fraction, so the renderers do no shape maths
+   * of their own. Absent on every straight layer, on every shape outside
+   * `ARC_TEXT_FAMILIES`, and on a countdown, which ticks as one system-drawn
+   * string and cannot be cut into glyphs. Mirrors `ResolvedText.Arc` in the app
+   * repo. */
+  arc?: ResolvedTextArc;
+}
+/** A settled arc. `startAngle` and `sweep` are degrees, 0 at 12 o'clock and
+ * clockwise positive; `inside` turns the glyphs to face the centre. */
+export interface ResolvedTextArc {
+  /** Design-box points, from the layer frame's centre. */
+  radius: number;
+  startAngle: number;
+  sweep: number;
+  inside: boolean;
 }
 /** One visible part of a rich text layer. Mirrors `ResolvedText.Part` in the
  * app repo, key for key. */
@@ -177,6 +219,8 @@ export interface ResolvedTextPart {
   text: string;
   fontSize: number;
   fontWeight: FontWeight;
+  fontDesign: FontDesign;
+  italic: boolean;
   colorHex: string;
   /** The part's text cut into runs by its own band table, with no highlight.
    * Absent when the part is one colour. */
@@ -215,6 +259,26 @@ export interface ResolvedGauge extends ResolvedBase {
    * here so the renderer never parses a value. */
   dotCount: number;
   filledCount: number;
+  /** The gradient along the track, absent when the gauge draws one flat colour.
+   * A band's colour or a rule's colour drops it: both are statements about this
+   * reading, and a gradient is not. */
+  fill?: Fill;
+  /** The marks around the scale. `tickCount` 0 draws none. */
+  tickCount: number;
+  tickLength: number;
+  tickColorHex: string;
+  tickMajorEvery: number;
+  /** The end text and, on a needle, the reading under the pointer. */
+  showsLabels: boolean;
+  labelSize: number;
+  labelColorHex: string;
+  /** The ends of the scale as resolved, so a label can print them without
+   * repeating the range maths. */
+  minValue: number;
+  maxValue: number;
+  /** The reading as text, for the label under a needle. Empty when the gauge's
+   * value resolved to nothing. */
+  valueText: string;
 }
 /** A chart with its series already parsed and its scale already decided.
  * Mirrors `CustomComplication.ResolvedChart` in the app repo. */
@@ -259,6 +323,8 @@ export interface ResolvedChart extends ResolvedBase {
   fillStyle: ChartFillStyle;
   /** The fill's own colour; absent fills in the series or band colour. */
   fillColorHex?: string;
+  /** The gradient under a line or area, beating `fillColorHex`. Bars ignore it. */
+  areaFill?: Fill;
   /** A bar's corner radius as stored (default 1.2), clamped to the bar when drawn. */
   barRadius: number;
   /** Which corners of a bar are rounded. */
@@ -559,6 +625,10 @@ export interface ResolvedShape extends ResolvedBase {
   /** Only read for the `line` kind. */
   thickness: number;
   fillColorHex: string;
+  /** The gradient over the body, absent when the shape draws one flat colour. A
+   * rule that recoloured the shape drops it: the rule is a statement about this
+   * moment and the gradient is not. */
+  fill?: Fill;
   borderColorHex?: string;
   borderWidth: number;
 }
@@ -620,6 +690,9 @@ export interface ResolvedLayout {
   /** Corner bezel gauge; wins over bezelText. */
   bezelGauge?: ResolvedBezelGauge;
   backgroundColorHex?: string;
+  /** The gradient behind the whole shape, beating `backgroundColorHex`. A shape
+   * rule that set the background colour drops it. */
+  backgroundFill?: Fill;
   cornerBodyShape: CornerBodyShape;
   borderColorHex?: string;
   borderWidth: number;
@@ -914,6 +987,29 @@ export type TextValueColoring = Pick<TextElement, "coloring" | "bands" | "bandAb
  *
  * Mirrors `CustomComplication.textSpans` in Swift.
  */
+/**
+ * The layer's arc settled against the shape it is being drawn in, or undefined
+ * when it does not curve here.
+ *
+ * Three things drop it: no `arc` key, a shape that is not one of
+ * `ARC_TEXT_FAMILIES`, and a countdown, whose ticking string is drawn by the
+ * system as one run and cannot be cut into glyphs. The radius arrives as a
+ * fraction of the shape's shorter side and leaves as design-box points, so both
+ * renderers place glyphs from the same number.
+ *
+ * Mirrors `CustomComplication.resolvedArc` in the app repo.
+ */
+export function resolvedTextArc(el: TextElement, family: FamilyKind): ResolvedTextArc | undefined {
+  if (el.arc === undefined || el.countdown === true || !familyAllowsArcText(family)) return undefined;
+  const box = DESIGN_BOX[family === "inline" ? "rectangular" : family];
+  return {
+    radius: el.arc.radius * Math.min(box.width, box.height),
+    startAngle: el.arc.startAngle ?? 0,
+    sweep: clampArcSweep(el.arc.sweep ?? ARC_SWEEP_DEFAULT),
+    inside: el.arc.inside === true,
+  };
+}
+
 export function textValueSpans(text: string, colorHex: string, el: TextValueColoring): TextSpan[] {
   const tokens = numberTokens(text);
   const values = tokens.map((t) => t.value);
@@ -1556,6 +1652,8 @@ export class Resolver {
         text: this.styleText(style, "text") ?? this.resolve(part.value) ?? "--",
         fontSize: this.styleNumber(style, "fontSize") ?? part.fontSize ?? layer.fontSize,
         fontWeight: style.get("fontWeight")?.weight ?? part.fontWeight ?? layer.fontWeight,
+        fontDesign: style.get("fontDesign")?.design ?? part.fontDesign ?? layer.fontDesign,
+        italic: style.get("italic")?.italic ?? part.italic ?? layer.italic,
         colorHex: this.styleColor(style, "color") ?? part.colorHex ?? layer.colorHex,
       };
       if (part.coloring === "bands" && (part.bands?.length ?? 0) > 0) {
@@ -1566,7 +1664,7 @@ export class Resolver {
     return out;
   }
 
-  resolveElement(el: Element, forced?: ForcedBranches): ResolvedElement {
+  resolveElement(el: Element, forced?: ForcedBranches, family: FamilyKind = "rectangular"): ResolvedElement {
     const p = el.payload;
     // On a text layer a rule aimed at a part belongs to that part and never to
     // the layer, whether or not the layer is drawing parts right now, so a rule
@@ -1578,9 +1676,13 @@ export class Resolver {
     const isHidden = visibility ? visibility.kind === "hide" : p.isHidden;
     const rotation = this.styleNumber(style, "rotation");
     const frame = rotation === undefined ? p.frame : { ...p.frame, rotationDegrees: rotation };
-    const opacity = this.styleNumber(style, "opacity") ?? 1;
+    // The layer's own opacity times whatever a rule asked for, so a rule reads
+    // as "half as bright as this layer normally is".
+    const opacity = clampLayerOpacity((p.opacity ?? 1) * (this.styleNumber(style, "opacity") ?? 1));
     const base: ResolvedBase = { id: p.id, isHidden, frame, opacity };
+    if (p.shadow !== undefined) base.shadow = p.shadow;
     if (p.chartAnchor !== undefined) base.chartAnchor = p.chartAnchor;
+    if (p.accentGroup === "accent") base.accentGroup = "accent";
     switch (el.kind) {
       case "text": {
         const countdownEnd = el.payload.countdown ? this.countdownEnd(el.payload.value) : undefined;
@@ -1596,10 +1698,15 @@ export class Resolver {
           fontWeight: style.get("fontWeight")?.weight ?? el.payload.fontWeight,
           colorHex: this.styleColor(style, "color") ?? el.payload.colorSlot.baseColorHex,
           monospacedDigits: el.payload.monospacedDigits === true,
-          lineLimit: el.payload.lineLimit === 2 ? 2 : 1,
+          lineLimit: Math.min(TEXT_MAX_LINES, Math.max(1, Math.round(el.payload.lineLimit ?? 1))),
+          fontDesign: style.get("fontDesign")?.design ?? el.payload.fontDesign ?? "default",
+          italic: style.get("italic")?.italic ?? el.payload.italic === true,
+          minimumScale: clampMinimumScale(el.payload.minimumScale ?? TEXT_MIN_SCALE),
           alignment: el.payload.alignment ?? "center",
         };
         if (countdownEnd !== undefined) out.countdownEnd = countdownEnd;
+        const arc = resolvedTextArc(el.payload, family);
+        if (arc !== undefined) out.arc = arc;
         if (rich) {
           // The layer's own colour by value is ignored: each part carries its
           // own table, and the layer's would colour numbers across parts.
@@ -1651,10 +1758,16 @@ export class Resolver {
         // A band names its own colour, so it wins over a rule that recolours the
         // gauge: the rule says the layer is in an unusual state, the table says
         // where this reading sits, and the table is the more specific statement.
-        let colorHex = this.styleColor(style, "color") ?? g.colorSlot.baseColorHex;
-        if (g.coloring === "bands" && g.bands.length > 0 && reading !== undefined) {
-          colorHex = chartBandColor(reading, chartSortedBands(g), g.bandAboveColorHex);
+        const ruledColor = this.styleColor(style, "color");
+        let colorHex = ruledColor ?? g.colorSlot.baseColorHex;
+        const banded = g.coloring === "bands" && g.bands.length > 0 && reading !== undefined;
+        if (banded) {
+          colorHex = chartBandColor(reading!, chartSortedBands(g), g.bandAboveColorHex);
         }
+        // A gradient says how the track looks, not what the reading is, so a
+        // band's colour or a rule's colour is the more specific statement and
+        // drops it. Mirrors `resolveGauge` in the app repo.
+        const fill = banded || ruledColor !== undefined ? undefined : g.fill;
 
         // How many dots, and how many filled. M is `total` when it resolves to a
         // number, else the range itself; both are rounded, clamped and capped.
@@ -1675,7 +1788,18 @@ export class Resolver {
           thresholdColorHex: g.thresholdColorHex,
           dotCount,
           filledCount: clampCount(reading ?? 0, 0, dotCount),
+          tickCount: g.ticks?.count ?? 0,
+          tickLength: g.ticks?.length ?? GAUGE_DEFAULT_TICK_LENGTH,
+          tickColorHex: g.ticks?.colorHex ?? GAUGE_DEFAULT_TICK_HEX,
+          tickMajorEvery: g.ticks?.majorEvery ?? 0,
+          showsLabels: g.labels?.show === true,
+          labelSize: g.labels?.size ?? GAUGE_DEFAULT_LABEL_SIZE,
+          labelColorHex: g.labels?.colorHex ?? GAUGE_DEFAULT_LABEL_HEX,
+          minValue: min,
+          maxValue: max,
+          valueText: raw ?? "",
         };
+        if (fill !== undefined) out.fill = fill;
         // Out of range draws nothing rather than sticking to an end, where it
         // would read as a threshold the reading had already met.
         if (g.thresholdValue !== undefined && max !== min) {
@@ -1721,6 +1845,9 @@ export class Resolver {
           smoothing: chartSmoothing(c.smoothing) ?? "off",
           fillStyle: chartFillStyle(c.fillStyle),
           ...(c.fillColorHex !== undefined ? { fillColorHex: c.fillColorHex } : {}),
+          // Carried as authored: a chart's own colour rules recolour the line,
+          // not the area under it, so nothing here drops the gradient.
+          ...(c.areaFill !== undefined && c.style !== "bars" ? { areaFill: c.areaFill } : {}),
           barRadius: chartBarRadius(c.barRadius),
           barCorners: chartBarCorners(c.barCorners),
           barBorderWidth: chartBarBorderWidth(c),
@@ -1792,15 +1919,19 @@ export class Resolver {
         return out;
       }
       case "shape": {
+        const ruledColor = this.styleColor(style, "color");
         const out: ResolvedShape = {
           kind: "shape",
           ...base,
           shapeKind: el.payload.kind,
           cornerRadius: el.payload.cornerRadius,
           thickness: el.payload.thickness,
-          fillColorHex: this.styleColor(style, "color") ?? el.payload.colorSlot.baseColorHex,
+          fillColorHex: ruledColor ?? el.payload.colorSlot.baseColorHex,
           borderWidth: this.styleNumber(style, "borderWidth") ?? el.payload.borderWidth,
         };
+        // A rule that recoloured the shape drops the gradient; otherwise the
+        // rule would look like it did nothing. Mirrors `resolveShape` in Swift.
+        if (ruledColor === undefined && el.payload.fill !== undefined) out.fill = el.payload.fill;
         const border = this.styleColor(style, "borderColor") ?? el.payload.borderColorHex;
         if (border !== undefined) out.borderColorHex = border;
         return out;
@@ -1830,10 +1961,12 @@ export class Resolver {
       }
       case "tap": {
         // Mirrors resolveTap in the app: visibility is the only rule that applies,
-        // the frame's own rotation stays, opacity is always 1.
+        // the frame's own rotation stays, opacity is always 1 and there is no
+        // shadow, because a tap area draws nothing to cast one.
         const out: ResolvedTap = {
           kind: "tap",
           ...base,
+          shadow: undefined,
           frame: el.payload.frame,
           opacity: 1,
           action: el.payload.action,
@@ -1913,7 +2046,7 @@ export class Resolver {
     // inset moves every reading an anchor sits on.
     const canvas = DESIGN_BOX[family === "inline" ? "rectangular" : family];
     const elements = [...placeChartAnchors(
-      settleChartDots(elementsFor(config, family).map((el) => this.resolveElement(el, forced)), canvas),
+      settleChartDots(elementsFor(config, family).map((el) => this.resolveElement(el, forced, family)), canvas),
       canvas,
     )];
     const style = layout ? this.applyRules(layout.rules, forced) : new Map<StyleProperty, StyleChange>();
@@ -1954,8 +2087,14 @@ export class Resolver {
         out.bezelGauge = gauge;
       }
     }
-    const bg = this.styleColor(style, "backgroundColor") ?? layout?.backgroundColorHex;
+    const ruledBackground = this.styleColor(style, "backgroundColor");
+    const bg = ruledBackground ?? layout?.backgroundColorHex;
     if (bg !== undefined) out.backgroundColorHex = bg;
+    // A shape rule that set the background drops the gradient, the same way a
+    // layer rule drops a shape's own fill.
+    if (ruledBackground === undefined && layout?.backgroundFill !== undefined) {
+      out.backgroundFill = layout.backgroundFill;
+    }
     const border = this.styleColor(style, "borderColor") ?? layout?.borderColorHex;
     if (border !== undefined) out.borderColorHex = border;
     return out;

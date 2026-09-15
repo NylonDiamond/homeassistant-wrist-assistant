@@ -1,0 +1,527 @@
+{
+  "name": "fills_gradient",
+  "description": "The shared Fill type on all four keys that carry one: a shape's body, a gauge's track, the area under a chart, and the shape's background. Pins the three decisions the two implementations could disagree about. A fill beats the flat colour beside it, and the flat colour is still written as the gradient's first stop so an older app draws something sensible. A rule that recolours a layer drops its gradient, and so does a gauge's colour table, because both say something about this reading and a gradient does not. A gradient on a bars chart is not an area fill and resolves to nothing.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "5F11A000-0000-4000-8000-00000000F111",
+    "name": "Gradients",
+    "slotIndex": 0,
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "shape",
+        "payload": {
+          "id": "5F110001-0000-4000-8000-000000000001",
+          "kind": "roundedRectangle",
+          "cornerRadius": 6,
+          "colorSlot": {
+            "baseColorHex": "#FF453A"
+          },
+          "borderWidth": 1,
+          "fill": {
+            "kind": "linear",
+            "stops": [
+              {
+                "at": 0,
+                "colorHex": "#FF453A"
+              },
+              {
+                "at": 1,
+                "colorHex": "#0A84FF"
+              }
+            ],
+            "angle": 90
+          },
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 0.2,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "shape",
+        "payload": {
+          "id": "5F110002-0000-4000-8000-000000000002",
+          "kind": "circle",
+          "cornerRadius": 6,
+          "colorSlot": {
+            "baseColorHex": "#32D74B"
+          },
+          "borderWidth": 1,
+          "fill": {
+            "kind": "radial",
+            "stops": [
+              {
+                "at": 0,
+                "colorHex": "#32D74B"
+              },
+              {
+                "at": 0.5,
+                "colorHex": "#FFD60A"
+              },
+              {
+                "at": 1,
+                "colorHex": "#FF375F80"
+              }
+            ]
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.2,
+            "y": 0,
+            "width": 0.2,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "shape",
+        "payload": {
+          "id": "5F110003-0000-4000-8000-000000000003",
+          "kind": "rectangle",
+          "cornerRadius": 6,
+          "colorSlot": {
+            "baseColorHex": "#FF453A"
+          },
+          "borderWidth": 1,
+          "fill": {
+            "kind": "linear",
+            "stops": [
+              {
+                "at": 0,
+                "colorHex": "#FF453A"
+              },
+              {
+                "at": 1,
+                "colorHex": "#0A84FF"
+              }
+            ]
+          },
+          "rules": [
+            {
+              "id": "5F1100E1-0000-4000-8000-0000000000E1",
+              "cases": [
+                {
+                  "id": "5F1100C1-0000-4000-8000-0000000000C1",
+                  "when": {
+                    "join": "all",
+                    "tests": []
+                  },
+                  "then": [
+                    {
+                      "kind": "setColor",
+                      "value": {
+                        "kind": {
+                          "kind": "literal",
+                          "value": "#BF5AF2"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "frame": {
+            "x": 0.4,
+            "y": 0,
+            "width": 0.2,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "gauge",
+        "payload": {
+          "id": "5F110004-0000-4000-8000-000000000004",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.battery",
+              "displayName": "Battery",
+              "domain": "sensor"
+            }
+          },
+          "minValue": 0,
+          "maxValue": 100,
+          "style": "arc",
+          "lineWidth": 4,
+          "colorSlot": {
+            "baseColorHex": "#32D74B"
+          },
+          "trackColorHex": "#FFFFFF40",
+          "fill": {
+            "kind": "linear",
+            "stops": [
+              {
+                "at": 0,
+                "colorHex": "#32D74B"
+              },
+              {
+                "at": 1,
+                "colorHex": "#FF453A"
+              }
+            ]
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.6,
+            "y": 0,
+            "width": 0.2,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "gauge",
+        "payload": {
+          "id": "5F110005-0000-4000-8000-000000000005",
+          "value": {
+            "kind": {
+              "kind": "entityState",
+              "entityId": "sensor.battery",
+              "displayName": "Battery",
+              "domain": "sensor"
+            }
+          },
+          "minValue": 0,
+          "maxValue": 100,
+          "style": "ring",
+          "lineWidth": 4,
+          "colorSlot": {
+            "baseColorHex": "#32D74B"
+          },
+          "trackColorHex": "#FFFFFF40",
+          "coloring": "bands",
+          "bands": [
+            {
+              "id": "5F1100B1-0000-4000-8000-0000000000B1",
+              "upTo": 20,
+              "colorHex": "#FF453A"
+            },
+            {
+              "id": "5F1100B2-0000-4000-8000-0000000000B2",
+              "upTo": 50,
+              "colorHex": "#FF9F0A"
+            }
+          ],
+          "bandAboveColorHex": "#32D74B",
+          "fill": {
+            "kind": "linear",
+            "stops": [
+              {
+                "at": 0,
+                "colorHex": "#32D74B"
+              },
+              {
+                "at": 1,
+                "colorHex": "#FF453A"
+              }
+            ]
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.8,
+            "y": 0,
+            "width": 0.2,
+            "height": 0.5,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "5F110006-0000-4000-8000-000000000006",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "10,20,30,40"
+            }
+          },
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "style": "area",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "zero",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "fillColorHex": "#0A84FF",
+          "areaFill": {
+            "kind": "linear",
+            "stops": [
+              {
+                "at": 0,
+                "colorHex": "#0A84FF"
+              },
+              {
+                "at": 1,
+                "colorHex": "#0A84FF00"
+              }
+            ],
+            "angle": 90
+          },
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 0.5,
+            "height": 0.4,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "chart",
+        "payload": {
+          "id": "5F110007-0000-4000-8000-000000000007",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": "10,20,30,40"
+            }
+          },
+          "historyMinutes": 0,
+          "historyPoints": 24,
+          "style": "bars",
+          "limit": 0,
+          "takeFromEnd": false,
+          "scale": "auto",
+          "minValue": 0,
+          "maxValue": 100,
+          "baseline": "zero",
+          "barGap": 1.5,
+          "lineWidth": 2,
+          "highlight": "none",
+          "highColorHex": "#FF6B35",
+          "lowColorHex": "#32D74B",
+          "marker": "none",
+          "coloring": "uniform",
+          "bands": [],
+          "bandAboveColorHex": "#FF453A",
+          "fillBands": false,
+          "areaFill": {
+            "kind": "linear",
+            "stops": [
+              {
+                "at": 0,
+                "colorHex": "#0A84FF"
+              },
+              {
+                "at": 1,
+                "colorHex": "#0A84FF00"
+              }
+            ]
+          },
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.5,
+            "y": 0,
+            "width": 0.5,
+            "height": 0.4,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "backgroundColorHex": "#1C1C1E",
+        "backgroundFill": {
+          "kind": "linear",
+          "stops": [
+            {
+              "at": 0,
+              "colorHex": "#1C1C1E"
+            },
+            {
+              "at": 1,
+              "colorHex": "#3A3A3C"
+            }
+          ],
+          "angle": 45
+        },
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 0,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {
+      "sensor.battery": {
+        "state": "62",
+        "domain": "sensor"
+      }
+    },
+    "templateResults": {},
+    "dataAgeSeconds": 0
+  },
+  "expectedCompiled": {
+    "entities": [
+      "sensor.battery"
+    ],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "backgroundColorHex": "#1C1C1E",
+      "backgroundFill": {
+        "kind": "linear",
+        "stops": [
+          {
+            "at": 0,
+            "colorHex": "#1C1C1E"
+          },
+          {
+            "at": 1,
+            "colorHex": "#3A3A3C"
+          }
+        ],
+        "angle": 45
+      },
+      "elements": [
+        {
+          "id": "5F110001-0000-4000-8000-000000000001",
+          "kind": "shape",
+          "fillColorHex": "#FF453A",
+          "fill": {
+            "kind": "linear",
+            "stops": [
+              {
+                "at": 0,
+                "colorHex": "#FF453A"
+              },
+              {
+                "at": 1,
+                "colorHex": "#0A84FF"
+              }
+            ],
+            "angle": 90
+          }
+        },
+        {
+          "id": "5F110002-0000-4000-8000-000000000002",
+          "kind": "shape",
+          "fillColorHex": "#32D74B",
+          "fill": {
+            "kind": "radial",
+            "stops": [
+              {
+                "at": 0,
+                "colorHex": "#32D74B"
+              },
+              {
+                "at": 0.5,
+                "colorHex": "#FFD60A"
+              },
+              {
+                "at": 1,
+                "colorHex": "#FF375F80"
+              }
+            ]
+          }
+        },
+        {
+          "id": "5F110003-0000-4000-8000-000000000003",
+          "kind": "shape",
+          "fillColorHex": "#BF5AF2",
+          "fill": null
+        },
+        {
+          "id": "5F110004-0000-4000-8000-000000000004",
+          "kind": "gauge",
+          "style": "arc",
+          "fraction": 0.62,
+          "colorHex": "#32D74B",
+          "fill": {
+            "kind": "linear",
+            "stops": [
+              {
+                "at": 0,
+                "colorHex": "#32D74B"
+              },
+              {
+                "at": 1,
+                "colorHex": "#FF453A"
+              }
+            ]
+          }
+        },
+        {
+          "id": "5F110005-0000-4000-8000-000000000005",
+          "kind": "gauge",
+          "style": "ring",
+          "colorHex": "#32D74B",
+          "fill": null
+        },
+        {
+          "id": "5F110006-0000-4000-8000-000000000006",
+          "kind": "chart",
+          "style": "area",
+          "fillColorHex": "#0A84FF",
+          "areaFill": {
+            "kind": "linear",
+            "stops": [
+              {
+                "at": 0,
+                "colorHex": "#0A84FF"
+              },
+              {
+                "at": 1,
+                "colorHex": "#0A84FF00"
+              }
+            ],
+            "angle": 90
+          }
+        },
+        {
+          "id": "5F110007-0000-4000-8000-000000000007",
+          "kind": "chart",
+          "style": "bars",
+          "areaFill": null
+        }
+      ]
+    }
+  }
+}
