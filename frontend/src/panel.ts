@@ -2312,7 +2312,7 @@ export class WristAssistantPanel extends LitElement {
       display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border-radius: 10px;
       background: var(--wa-input); box-shadow: inset 0 0 0 1px var(--wa-line);
     }
-    .shape-seg button.tab { height: 30px; padding: 0 10px; border-radius: 8px; }
+    .shape-seg button.tab { height: 34px; padding: 0 10px; border-radius: 8px; }
     .shape-adds { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; }
     .shape-adds button.tab { height: 28px; padding: 0 9px; gap: 5px; font-weight: 500; }
     .shape-adds button.tab svg { width: 12px; height: 12px; }
@@ -2348,8 +2348,16 @@ export class WristAssistantPanel extends LitElement {
     button.tab:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.tab.off { border: 1px dashed var(--wa-line-strong); color: color-mix(in srgb, var(--wa-muted) 80%, var(--wa-card)); }
     button.tab small { font-weight: 500; opacity: .75; }
-    .tab .art { display: grid; place-items: center; flex: none; height: 16px; }
-    .tab .art svg { display: block; max-height: 16px; max-width: 34px; width: auto; height: auto; background: #000; border-radius: 3px; }
+    /* A shape's own render, drawn on the black a watch face and a Lock Screen
+       are. On the dark skin that plate is all but invisible against the bar
+       behind it, so every plate carries a hairline ring. The ring is a
+       box-shadow rather than a border because a shadow follows the radius each
+       shape sets below, and a circular tab needs a circular ring. */
+    .tab .art { display: grid; place-items: center; flex: none; height: 18px; }
+    .tab .art svg {
+      display: block; max-height: 18px; max-width: 38px; width: auto; height: auto;
+      background: #000; border-radius: 3px; box-shadow: 0 0 0 1px var(--wa-line-strong);
+    }
     .tab.circular .art svg { border-radius: 50%; }
     .tab.corner .art svg { background: #2c2c2e; }
     /* The tab pictures are small, so the Home Screen tiles take a share of
@@ -2358,13 +2366,13 @@ export class WristAssistantPanel extends LitElement {
     .tab.medium .art svg { border-radius: 7.7% / 16.3%; }
     .tab.large .art svg { border-radius: 7.7% / 7.4%; }
     .tab.xlarge .art svg { border-radius: 7.7% / 4.8%; }
-    .tab .art .inline-line { font-size: 8px; padding: 2px 5px; min-width: 0; display: inline-flex; align-items: center; gap: 3px; border-radius: 999px; background: #000; color: #fff; }
-    .tab .art .inline-line svg { background: transparent; border-radius: 0; }
+    .tab .art .inline-line { font-size: 8px; padding: 2px 5px; min-width: 0; display: inline-flex; align-items: center; gap: 3px; border-radius: 999px; background: #000; color: #fff; box-shadow: 0 0 0 1px var(--wa-line-strong); }
+    .tab .art .inline-line svg { background: transparent; border-radius: 0; box-shadow: none; }
     /* The Control Center tab draws a mock tile rather than a face, so the art
        rules above (a black ground, a rounded corner, a 16px cap) must not
        reach its glyph: the tile carries its own tint and corner. */
     .tab.control .art { height: 20px; }
-    .tab.control .art svg { background: transparent; border-radius: 0; max-height: none; max-width: none; }
+    .tab.control .art svg { background: transparent; border-radius: 0; box-shadow: none; max-height: none; max-width: none; }
     /* The remove button rides beside its tab and only while the pointer is on it. */
     .tab-wrap .tab-x { opacity: 0; pointer-events: none; margin-left: -4px; }
     .tab-wrap:hover .tab-x, .tab-wrap .tab-x:focus-visible { opacity: .7; pointer-events: auto; }
@@ -6384,7 +6392,9 @@ export class WristAssistantPanel extends LitElement {
     if (families.length === 0 && control) {
       return html`<span class="shape-none" title="A control in Control Center, and no widget">Control</span>`;
     }
-    return html`<span class="shape-dots">${this.ownerFamilies.map((f) => html`<span class="shape-dot ${f} ${families.includes(f) ? "on" : ""}" title=${familyTitle(f)}></span>`)}</span>`;
+    // Biggest first, so a row of dots and the shape bar under it read left to
+    // right in the same order.
+    return html`<span class="shape-dots">${biggestFirst(this.ownerFamilies).map((f) => html`<span class="shape-dot ${f} ${families.includes(f) ? "on" : ""}" title=${familyTitle(f)}></span>`)}</span>`;
   }
 
   /** The shape filter appears only past this many rows. Under it the whole
@@ -9507,7 +9517,11 @@ export class WristAssistantPanel extends LitElement {
 
   private renderHaveTabs(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
     const have = cfg.supportedFamilies;
-    return this.ownerFamilies.filter((f) => have.includes(f)).map((f) => {
+    // Biggest canvas first, the way the New dialog lists shapes and the way
+    // they are worth drawing: the big one is the design, the small ones are
+    // what is left of it. The bar reading Small, Medium, Large put the work in
+    // the reverse of the order it happens in.
+    return biggestFirst(this.ownerFamilies.filter((f) => have.includes(f))).map((f) => {
       // While the Control Center tab is up no shape is being edited, so no
       // shape tab is pressed either.
       const active = f === this.activeFamily && !this.inControlView;
