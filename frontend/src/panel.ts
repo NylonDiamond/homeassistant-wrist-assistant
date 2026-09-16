@@ -3198,7 +3198,9 @@ export class WristAssistantPanel extends LitElement {
     .states-table tr.state-row:hover td { background: var(--wa-panel); }
     .states-table tr.state-row.forced td { background: var(--wa-panel); }
     .states-table tr.state-row.forced td { background: color-mix(in srgb, var(--wa-states) 18%, transparent); }
-    .states-table td.when { white-space: nowrap; }
+    /* When shrinks to its controls, so the first setting's column and its
+       header start right after it rather than far across the table. */
+    .states-table :is(th, td).when { width: 1%; white-space: nowrap; }
     .states-table td.acts { width: 1%; white-space: nowrap; }
     .states-table td.acts button.icon { opacity: 0; }
     .states-table tr:hover td.acts button.icon, .states-table td.acts button.icon:focus-visible { opacity: .8; }
@@ -3216,14 +3218,23 @@ export class WristAssistantPanel extends LitElement {
       border: 1px solid var(--wa-line); background: var(--wa-card); color: inherit;
     }
     input.cellin.num { width: 64px; }
-    button.more { font-size: 12px; opacity: .5; }
+    button.more { width: 22px; height: 22px; opacity: .45; }
+    button.more svg { width: 13px; height: 13px; }
+    button.more:hover { opacity: .9; }
     button.cell {
-      display: inline-flex; align-items: center; gap: 6px; max-width: 190px;
+      display: inline-flex; align-items: center; gap: 6px; max-width: 190px; min-height: 26px;
       font: inherit; font-size: 13px; text-align: left; padding: 3px 6px; border-radius: 6px;
       border: 1px solid transparent; background: transparent; color: inherit; cursor: pointer;
     }
     button.cell:hover { border-color: var(--wa-line); background: var(--wa-card); }
-    button.cell.empty { opacity: .45; font-style: italic; }
+    /* An empty cell is a ghost of what it would set, not a word: a dashed
+       swatch, a faint icon, or a short dashed box. Hovering brings it up. */
+    button.cell.empty { opacity: .4; }
+    button.cell.empty:hover { opacity: .8; }
+    .swatch.ghost { background: transparent; border: 1px dashed var(--wa-line-strong); }
+    .ghost-icon { display: inline-flex; }
+    .ghost-icon svg { width: 14px; height: 14px; }
+    .ghost-box { display: inline-block; width: 26px; height: 12px; border-radius: 3px; border: 1px dashed var(--wa-line-strong); }
     .cell-word { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .swatch { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--wa-line); flex: none; }
     button.cell svg { display: block; }
@@ -3234,19 +3245,21 @@ export class WristAssistantPanel extends LitElement {
     }
     .states-switch { display: flex; align-items: baseline; gap: 8px; margin-top: 8px; }
     .states-switch .hint { margin: 0; }
-    /* The add controls under a states table, each with its one line of what it
-       adds. A narrow inspector puts the line under its control. */
-    .states > .states-add { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 5px 10px; margin: 8px 0 2px var(--wa-col); }
-    .states-add > :is(button.small, select.chip-add) { justify-self: start; }
-    .states-add-note { font-size: 11.5px; line-height: 1.35; color: var(--wa-muted); }
-    .sec-b .states-add select.chip-add {
-      width: auto; flex: none; height: 26px; min-height: 26px; padding: 0 22px 0 9px; border-radius: 8px;
-      border: 1px dashed var(--wa-line-strong); background-color: transparent; font-size: 12px; font-weight: 600;
+    /* The add controls under a states table: one strip of buttons, each with
+       its explanation in its tooltip, so the table is the loudest thing here. */
+    .states > .states-add { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 2px var(--wa-col); }
+    /* The column menu: the settings a state can still change, one per line. */
+    .col-menu {
+      position: fixed; inset: auto; margin: 0; padding: 4px; border-radius: 10px; border: 1px solid var(--wa-line-strong);
+      background: var(--wa-card); color: var(--wa-ink); box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
+      min-width: 140px;
     }
-    @container insp (max-width: 360px) {
-      .states > .states-add { grid-template-columns: minmax(0, 1fr); gap: 2px; }
-      .states-add-note { margin-bottom: 5px; }
+    .col-menu:popover-open { display: flex; flex-direction: column; }
+    .col-menu button {
+      font: inherit; font-size: 13px; text-align: left; padding: 6px 10px; border-radius: 6px;
+      border: none; background: transparent; color: inherit; cursor: pointer;
     }
+    .col-menu button:hover, .col-menu button:focus-visible { background: var(--wa-panel); outline: none; }
     .confirm-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .value-chip-field.compact { margin: 0; }
     .value-chip-field.compact button.value-chip { padding: 3px 8px; font-size: 13px; max-width: 190px; }

@@ -297,7 +297,6 @@ import {
   setOtherwise,
   setTestedValue,
   shownColumns,
-  statesAddNotes,
   statesEmptyText,
   statesSummary,
   tableShape,
@@ -7048,7 +7047,8 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             ...(anyDiffers(el.payload, base, LEVEL_KEYS) ? { reset: resetKeys(LEVEL_KEYS, "reset-level") } : {}) })
       : nothing}
     ${card(host, "states", "States", statesEditor(host, el.payload.rules, el.kind,
-      (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`, tested, textParts),
+      (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`, tested, textParts,
+      { colorByValue: colorsByValue(el) }),
       { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(el.payload.rules).replace(/\.$/, ""),
         ...(el.payload.rules.length > 0 ? { reset: () => upd((e) => { e.payload.rules = []; }) } : {}) })}
     ${opts.placement === false ? nothing : placementCard(host, el, family)}
@@ -8520,6 +8520,21 @@ const pendingTestValues = new Map<string, Value>();
  * `parts` is a rich text layer's parts: with them, each rule says whether it
  * changes the whole text or one part.
  */
+/** Whether a layer's colour already follows its value through a band table
+ * (a chart's, a gauge's or a text's "By value"). The resolver lets that band
+ * win over a Colour rule, so a States table on such a layer has no Colour
+ * column to offer: setting one would draw nothing. */
+export function colorsByValue(el: CElement): boolean {
+  const p = el.payload as { coloring?: string; bands?: unknown[] };
+  return p.coloring === "bands" && (p.bands?.length ?? 0) > 0;
+}
+
+export interface StatesEditorOptions {
+  /** The layer's colour follows its own band table, so Colour is not offered
+   * as a column and one already in the table is flagged as drawing nothing. */
+  colorByValue?: boolean;
+}
+
 export function statesEditor(
   host: EditorHost,
   rules: Rule[],
@@ -8528,6 +8543,7 @@ export function statesEditor(
   key: string,
   defaultValue?: Value,
   parts?: readonly TextPart[],
+  options: StatesEditorOptions = {},
 ): TemplateResult {
   const shape = tableShape(rules);
   const advanced = !shape.ok || advancedRules.has(key);
@@ -8540,7 +8556,7 @@ export function statesEditor(
       </div>
       ${rulesEditor(host, rules, target, locate, key, parts)}`;
   }
-  return statesTable(host, shape.table, rules[0], target, locate, key, defaultValue, parts);
+  return statesTable(host, shape.table, rules[0], target, locate, key, defaultValue, parts, options);
 }
 
 function statesTable(
@@ -8552,6 +8568,7 @@ function statesTable(
   key: string,
   defaultValue?: Value,
   parts?: readonly TextPart[],
+  options: StatesEditorOptions = {},
 ): TemplateResult {
   const upd = (mutate: (rules: Rule[]) => void, k?: string) =>
     host.update((c) => { const r = locate(c); if (r) mutate(r); }, k ? `${key}-${k}` : undefined);
@@ -8566,10 +8583,15 @@ function statesTable(
   const numberMode = table.numberMode
     || (fresh && tested !== undefined && !looksBinary(tested) && isNumberish(host.resolve(tested)));
 
+  // A layer whose colour follows its own bands reads no Colour rule, so the
+  // column is not offered, and a fresh table starts on the next useful one.
+  const colorByValue = options.colorByValue === true;
   const allowed = RULE_TARGET_PROPERTIES[target];
   const picked = pickedColumns.get(key) ?? new Set<StyleProperty>();
-  const seed = table.columns.length === 0 && picked.size === 0 ? [DEFAULT_COLUMN[target]] : [];
+  const defaultColumn = DEFAULT_COLUMN[target] === "color" && colorByValue ? "visibility" : DEFAULT_COLUMN[target];
+  const seed = table.columns.length === 0 && picked.size === 0 ? [defaultColumn] : [];
   const columns = shownColumns(table.columns, [...picked, ...seed.filter((p): p is StyleProperty => p !== undefined)], allowed);
+  const colorIgnored = colorByValue && columns.includes("color");
 
   // On a rich text layer the states can aim at one part. A part reads only
   // some columns, so only those are offered; a column already in the table
@@ -8577,8 +8599,12 @@ function statesTable(
   const pendingPart = pendingPartTargets.get(key);
   const partId = rule ? rule.partId : parts?.some((p) => p.id === pendingPart) ? pendingPart : undefined;
   const forPart = parts !== undefined && partId !== undefined;
-  const offered = forPart ? allowed.filter((p) => PART_RULE_PROPERTIES.includes(p)) : allowed;
+  const offered = (forPart ? allowed.filter((p) => PART_RULE_PROPERTIES.includes(p)) : allowed)
+    .filter((p) => !(colorByValue && p === "color"));
   const partIgnores = forPart ? columns.filter((p) => !PART_RULE_PROPERTIES.includes(p)) : [];
+  // A new row or Otherwise starts with a colour when the table shows Colour,
+  // so the first thing on screen is a working rule rather than empty cells.
+  const seedColor = columns.includes("color") && !colorIgnored;
   const setPart = (id: string, node: EventTarget | null) => {
     if (!rule) {
       if (id) pendingPartTargets.set(key, id); else pendingPartTargets.delete(key);
@@ -8609,7 +8635,7 @@ function statesTable(
   const addRow = () => {
     pendingPartTargets.delete(key);
     upd((rs) => {
-      addStateRow(rs, tested ?? literal(""), numberMode);
+      addStateRow(rs, tested ?? literal(""), numberMode, seedColor);
       if (partId !== undefined && rs[0] && rs[0].partId === undefined) rs[0].partId = partId;
     });
   };
@@ -8700,6 +8726,7 @@ function statesTable(
         </tbody>
       </table></div>
       ${partIgnores.length === 0 ? nothing : html`<div class="hint warn">A part ignores ${joinWords(partIgnores.map((p) => PROPERTY_LABELS[p]))}. Pick Whole text to use ${partIgnores.length === 1 ? "it" : "them"}.</div>`}
+      ${!colorIgnored ? nothing : html`<div class="hint warn">Colour is set by value above, so the Colour column here draws nothing. Switch Colour to One colour to use it, or remove the column.</div>`}
       ${pendingRemoval === undefined ? nothing : html`<div class="hint warn confirm-row">
         Remove the ${PROPERTY_LABELS[pendingRemoval]} column? Its ${countColumnUses(table, pendingRemoval)} value${countColumnUses(table, pendingRemoval) === 1 ? "" : "s"} are deleted from every state.
         <button class="danger small" @click=${(e: Event) => {
@@ -8716,32 +8743,16 @@ function statesTable(
         <button class="small" @click=${(e: Event) => { pendingStatesFill.delete(key); requestRerender(e.target); }}>Cancel</button>
       </div>`}
       <div class="states-add">
-        <button class="small" title="Add a row to the table: a value to match under When, and the look it gets" @click=${addRow}>${uiIcon("plus")}<span>Add a state</span></button>
-        <span class="states-add-note">${statesAddNotes(target).state}</span>
-        ${seeds.length === 0 ? nothing : html`<button class="small" title=${`Write one row per state a ${seedEntity!.domain.replace(/_/g, " ")} reports, each with an icon and a colour`}
+        <button class="small" title="Add a row: when the value matches, this ${target === "layout" ? "shape" : "layer"} changes how it looks" @click=${addRow}>${uiIcon("plus")}<span>Add a state</span></button>
+        ${seeds.length === 0 ? nothing : html`<button class="small" title=${`Write one row per state a ${seedEntity!.domain.replace(/_/g, " ")} reports, each with an icon and a colour, ready to edit`}
           @click=${(e: Event) => {
             if (hasRows) { pendingStatesFill.add(key); requestRerender(e.target); return; }
             fill();
-          }}>${uiIcon("plus")}<span>Fill from the entity</span></button>
-        <span class="states-add-note">${statesAddNotes(target).fill}</span>`}
+          }}>${uiIcon("plus")}<span>Fill from the entity</span></button>`}
         ${table.otherwise === undefined
-          ? html`<button class="small" title="Add an Otherwise row at the bottom of the table" @click=${() => upd((rs) => setOtherwise(rs, true))}>${uiIcon("plus")}<span>Add otherwise</span></button>
-            <span class="states-add-note">${statesAddNotes(target).otherwise}</span>`
+          ? html`<button class="small" title="Add an Otherwise row at the bottom: the look when no state above matches" @click=${() => upd((rs) => setOtherwise(rs, true, seedColor))}>${uiIcon("plus")}<span>Add otherwise</span></button>`
           : nothing}
-        ${spare.length === 0 ? nothing : html`<select class="chip-add" title="Add a column to the table" aria-label="Change another setting" @change=${(e: Event) => {
-          const sel = e.target as HTMLSelectElement;
-          const p = sel.value as StyleProperty | "";
-          sel.value = "";
-          if (!p) return;
-          const set = pickedColumns.get(key) ?? new Set<StyleProperty>();
-          set.add(p);
-          pickedColumns.set(key, set);
-          requestRerender(sel);
-        }}>
-          <option value="" selected>Change another setting…</option>
-          ${spare.map((p) => html`<option value=${p}>${PROPERTY_LABELS[p]}</option>`)}
-        </select>
-        <span class="states-add-note">${statesAddNotes(target).column}</span>`}
+        ${spare.length === 0 ? nothing : columnMenu(key, spare)}
       </div>
       ${forced === "live" ? nothing : html`<div class="field"><span>Preview</span>
         <div class="row-acts"><button class="small" @click=${() => rule && host.setForced(rule.id, "live")}>Back to live</button></div>
@@ -8754,6 +8765,26 @@ function statesTable(
         <button class="link" @click=${(e: Event) => { advancedRules.add(key); requestRerender(e.target); }}>Advanced</button>
         <span class="hint">Several rules, several tests per state, or a regular expression.</span>
       </div>
+    </div>`;
+}
+
+/** The "Add a column" control under a states table: a button and a small menu
+ * of the settings this layer can still change per state. Each pick adds a
+ * column of empty cells; nothing is written until a cell is. */
+function columnMenu(key: string, spare: readonly StyleProperty[]): TemplateResult {
+  const id = popoverId(`${key}-columns`);
+  const pick = (p: StyleProperty, node: EventTarget | null) => {
+    const set = pickedColumns.get(key) ?? new Set<StyleProperty>();
+    set.add(p);
+    pickedColumns.set(key, set);
+    requestRerender(node);
+  };
+  return html`
+    <button type="button" class="small" popovertarget=${id} aria-haspopup="menu"
+      title="Add a column, so every state can change one more setting">${uiIcon("plus")}<span>Add a column</span></button>
+    <div class="col-menu" id=${id} popover role="menu" aria-label="Add a column" @toggle=${onValuePopoverToggle}>
+      ${spare.map((p) => html`<button type="button" role="menuitem" popovertarget=${id} popovertargetaction="hide"
+        @click=${(e: Event) => pick(p, e.target)}>${PROPERTY_LABELS[p]}</button>`)}
     </div>`;
 }
 
@@ -8826,11 +8857,14 @@ function statesCell(
   const ch = cellChange(changes, property);
   const id = popoverId(key);
   if (!ch) {
-    return html`<button type="button" class="cell empty" title=${`Set ${PROPERTY_LABELS[property]} for this state`}
+    // An empty cell is the most common cell in a table, so it stays quiet: a
+    // ghost of the thing it would set, and the word "unchanged" in its tooltip
+    // rather than printed down every column.
+    return html`<button type="button" class="cell empty" title=${`${PROPERTY_LABELS[property]} unchanged. Click to set it for this state.`}
       @click=${(e: Event) => {
         updChanges((list) => { list.push(newStyleChange(PROPERTY_CHANGE_KIND[property])); });
         openPopoverSoon(e.target, id);
-      }}>unchanged</button>`;
+      }}>${emptyCellGhost(property)}</button>`;
   }
   const upd = (m: (c: StyleChange) => void, k?: string) => updChanges((list) => {
     const target = list.find((x) => STYLE_PROPERTY[x.kind] === property);
@@ -8861,6 +8895,16 @@ function statesCell(
           }}>Leave ${label.toLowerCase()} unchanged</button>`
         : nothing}
     </div>`;
+}
+
+/** What an empty cell shows: the outline of what it would set. A colour cell
+ * is an empty swatch, an icon cell a faint star, and everything else a short
+ * dashed box, so a column of empty cells reads as "nothing here" at a glance. */
+function emptyCellGhost(property: StyleProperty): TemplateResult {
+  const kind = PROPERTY_CHANGE_KIND[property];
+  if (COLOR_KINDS.includes(kind)) return html`<span class="swatch ghost"></span>`;
+  if (property === "icon") return html`<span class="ghost-icon">${uiIcon("icon")}</span>`;
+  return html`<span class="ghost-box"></span>`;
 }
 
 /** What a filled cell shows: a colour swatch, a symbol and its name, or the
@@ -8963,7 +9007,7 @@ function compactValue(
   return html`<span class="rhs">
     <input class="cellin ${numeric ? "num" : ""}" type=${numeric ? "number" : "text"} .value=${text} placeholder=${placeholder}
       @input=${onInput((val) => set({ ...v, kind: { kind: "literal", value: val } }))} />
-    <button type="button" class="icon more" popovertarget=${id} title="Compare with an entity or a template instead">…</button>
+    <button type="button" class="icon more" popovertarget=${id} aria-label="Compare with an entity instead" title="Compare with an entity or a template instead of a number">${uiIcon("link")}</button>
     ${valuePopover(host, id, label, v, set, opts)}
   </span>`;
 }

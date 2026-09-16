@@ -315,18 +315,6 @@ export function statesEmptyText(target: string): string {
   return `No states yet. This ${target === "layout" ? "shape" : "layer"} looks the same whatever the value is.`;
 }
 
-/** The line beside each add control under the table, so each one says what it
- * adds in the table's own words: a state is a row with a When, Otherwise is the
- * row for no match, and every other setting is a column. */
-export function statesAddNotes(target: string): { state: string; otherwise: string; column: string; fill: string } {
-  return {
-    state: `When the value matches, change how this ${target === "layout" ? "shape" : "layer"} looks.`,
-    otherwise: "The look when no state above matches.",
-    column: "Adds a column, so every state can change it.",
-    fill: "One row per state this entity reports, ready to edit.",
-  };
-}
-
 // ── editing ───────────────────────────────────────────────────────────────
 // The table edits the live `Rule[]` a layer already holds rather than
 // recompiling one from a model, so ids stay put, undo sees one step per edit,
@@ -350,14 +338,29 @@ function pruneEmpty(rules: Rule[]): void {
   if (rule && rule.cases.length === 0 && rule.otherwise === undefined) rules.length = 0;
 }
 
-/** Add a state below the last one, testing the same value. */
-export function addStateRow(rules: Rule[], value: Value, numberMode: boolean): void {
+/** The colour a new row starts with when the table has a Colour column, so a
+ * table does something from its first row instead of showing a grid of empty
+ * cells. Number bands run red, amber, green from the top; on and off read as
+ * green and grey; Otherwise is green, the "all is well" of a band table. Any
+ * of them is one click to change. */
+const SEED_BAND_HEXES = ["#FF453A", "#FF9F0A", "#30D158"];
+export function seedRowColor(comparison: Comparison, index: number): StyleChange {
+  const hex = comparison.kind === "isOn" ? "#30D158"
+    : comparison.kind === "isOff" ? "#8E8E93"
+    : SEED_BAND_HEXES[Math.min(index, SEED_BAND_HEXES.length - 1)]!;
+  return { kind: "setColor", value: literal(hex) };
+}
+
+/** Add a state below the last one, testing the same value. With `seedColor`
+ * the row starts with a colour (`seedRowColor`) rather than an empty cell. */
+export function addStateRow(rules: Rule[], value: Value, numberMode: boolean, seedColor = false): void {
   const rule = tableRule(rules);
   const previous = rule.cases[rule.cases.length - 1]?.when.tests[0]?.comparison;
+  const comparison = nextComparison(previous, numberMode);
   rule.cases.push({
     id: newId(),
-    when: { join: "all", tests: [{ id: newId(), value: structuredClone(value), comparison: nextComparison(previous, numberMode) }] },
-    then: [],
+    when: { join: "all", tests: [{ id: newId(), value: structuredClone(value), comparison }] },
+    then: seedColor ? [seedRowColor(comparison, rule.cases.length)] : [],
   });
 }
 
@@ -375,9 +378,11 @@ export function moveStateRow(rules: Rule[], from: number, to: number): void {
   if (row) cases.splice(to, 0, row);
 }
 
-export function setOtherwise(rules: Rule[], on: boolean): void {
+/** Turn the Otherwise row on or off. With `seedColor` a new Otherwise starts
+ * green, the colour a band table shows when no band above matched. */
+export function setOtherwise(rules: Rule[], on: boolean, seedColor = false): void {
   if (on) {
-    tableRule(rules).otherwise = [];
+    tableRule(rules).otherwise = seedColor ? [{ kind: "setColor", value: literal("#30D158") }] : [];
     return;
   }
   const rule = rules[0];
