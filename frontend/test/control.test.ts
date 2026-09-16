@@ -35,7 +35,8 @@ import { compile } from "../src/compiler.js";
 import { addFamily, canRemoveFamily, removeFamily } from "../src/layouts.js";
 import { scrubForShare, shareSlots } from "../src/transfer.js";
 import { type ResolveContext, resolveControl } from "../src/resolver.js";
-import { type EditorHost, controlCard, generalEditor } from "../src/editors.js";
+import { type EditorHost, controlCard, controlTapEdit, generalEditor } from "../src/editors.js";
+import { ACCENT_HEX, seedControlFromEntity } from "../src/presets.js";
 import { MIN_VERSION_FOR_CONTROL_CENTER, deviceSupportsControls } from "../src/version.js";
 import type { HassLike } from "../src/ha-api.js";
 import type { IconProvider } from "../src/renderer.js";
@@ -354,6 +355,166 @@ describe("the Show in Control Center switch", () => {
     const cfg = newConfig("   ", 0);
     expect(defaultControlSpec(cfg).title).toEqual(literal("Control"));
   });
+
+  it("writes no status text, so nothing flashes until the author asks for it", () => {
+    // The switch in the card is what seeds "Done"; a control nobody has
+    // touched should press silently rather than flash a word it made up.
+    const cfg = newConfig("Kitchen lamp", 0);
+    expect("status" in defaultControlSpec(cfg)).toBe(false);
+    setControlShown(cfg, true);
+    expect(cfg.control!.status).toBeUndefined();
+  });
+});
+
+// ── seeding from the target ───────────────────────────────────────────────
+//
+// Picking the entity is the one thing an author cannot be spared, so it pays
+// for the rows under it. The rule everything here checks: a row the panel
+// wrote may be rewritten, a row a person wrote may not.
+
+describe("seedControlFromEntity", () => {
+  const lamp = { entityId: "light.kitchen", displayName: "Kitchen lamp", domain: "light" };
+  const door = { entityId: "lock.front", displayName: "Front door", domain: "lock" };
+  const rosie = { entityId: "vacuum.rosie", displayName: "Rosie", domain: "vacuum" };
+
+  /** A control as the switch leaves it: the document's name, the generic
+   * symbol, no state, no tint. */
+  function fresh(over: Partial<ControlSpec> = {}): ControlSpec {
+    const cfg = newConfig("Kitchen lamp", 0);
+    setControlShown(cfg, true);
+    return { ...cfg.control!, ...over };
+  }
+
+  it("fills a light's title, state, symbols and tint", () => {
+    const seeded = seedControlFromEntity(fresh(), lamp, undefined, "Kitchen lamp");
+    expect(seeded.title).toEqual(literal("Kitchen lamp"));
+    expect(seeded.state).toEqual({ kind: { kind: "entityState", entityId: "light.kitchen", displayName: "Kitchen lamp", domain: "light" } });
+    expect(seeded.symbol).toBe("lightbulb.fill");
+    expect(seeded.symbolOff).toBe("lightbulb");
+    // The Toggle button preset's accent, so a control and a layer pointed at
+    // one light are the same colour.
+    expect(seeded.tintColorHex).toBe(ACCENT_HEX);
+  });
+
+  it("takes a lock's two faces the right way round", () => {
+    const seeded = seedControlFromEntity(fresh(), door, undefined, "Kitchen lamp");
+    expect(seeded.title).toEqual(literal("Front door"));
+    expect(seeded.symbol).toBe("lock.fill");
+    expect(seeded.symbolOff).toBe("lock.open.fill");
+  });
+
+  it("leaves no off symbol for a domain whose two faces are one glyph", () => {
+    const light = seedControlFromEntity(fresh(), lamp, undefined, "Kitchen lamp");
+    expect(light.symbolOff).toBe("lightbulb");
+    const seeded = seedControlFromEntity(light,
+      { entityId: "switch.desk", displayName: "Desk", domain: "switch" }, lamp, "Kitchen lamp");
+    expect(seeded.symbol).toBe("power");
+    // A blank off symbol is how the card spells "one symbol on both faces",
+    // which is the pair's own answer for a domain with no filled sibling.
+    expect(seeded.symbolOff).toBeUndefined();
+  });
+
+  it("keeps the symbols it has for a domain the table does not name", () => {
+    const seeded = seedControlFromEntity(fresh(), rosie, undefined, "Kitchen lamp");
+    expect(seeded.symbol).toBe(CONTROL_DEFAULT_SYMBOL);
+    expect(seeded.symbolOff).toBeUndefined();
+    // The rest is still worth having: a name and a state are not guesses.
+    expect(seeded.title).toEqual(literal("Rosie"));
+    expect(seeded.state).toEqual({ kind: { kind: "entityState", entityId: "vacuum.rosie", displayName: "Rosie", domain: "vacuum" } });
+  });
+
+  it("never touches a title somebody typed", () => {
+    const typed = seedControlFromEntity(fresh({ title: literal("Bedside") }), lamp, undefined, "Kitchen lamp");
+    expect(typed.title).toEqual(literal("Bedside"));
+    // A template is nobody's default either.
+    const template = seedControlFromEntity(fresh({ title: { kind: { kind: "jinja", value: "{{ 1 }}" } } }), lamp, undefined, "Kitchen lamp");
+    expect(template.title.kind.kind).toBe("jinja");
+    // The rows the author left alone are still filled in.
+    expect(typed.symbol).toBe("lightbulb.fill");
+  });
+
+  it("replaces the last pick's seed and keeps the hand edits beside it", () => {
+    const first = seedControlFromEntity(fresh(), lamp, undefined, "Kitchen lamp");
+    const edited: ControlSpec = { ...first, symbolOff: "moon", valueLabel: literal("42 W") };
+    const second = seedControlFromEntity(edited, door, lamp, "Kitchen lamp");
+    expect(second.title).toEqual(literal("Front door"));
+    expect(second.state).toEqual({ kind: { kind: "entityState", entityId: "lock.front", displayName: "Front door", domain: "lock" } });
+    expect(second.symbol).toBe("lock.fill");
+    // Typed by hand between the two picks, so it stands.
+    expect(second.symbolOff).toBe("moon");
+    // The value line is never seeded, so it survives either way.
+    expect(second.valueLabel).toEqual(literal("42 W"));
+  });
+
+  it("gives a scene a name and a symbol and no state at all", () => {
+    const button = fresh({ kind: "button", action: { type: "runScene", entityId: "", displayName: "", domain: "scene" } });
+    const seeded = seedControlFromEntity(button, { entityId: "scene.movie", displayName: "Movie night", domain: "scene" },
+      undefined, "Kitchen lamp");
+    expect(seeded.title).toEqual(literal("Movie night"));
+    expect(seeded.symbol).toBe("sparkles");
+    expect(seeded.symbolOff).toBeUndefined();
+    // A scene cannot be off, so there is nothing for a state to read.
+    expect(seeded.state).toBeUndefined();
+  });
+
+  it("seeds nothing at all when the target is cleared", () => {
+    const seeded = seedControlFromEntity(fresh(), lamp, undefined, "Kitchen lamp");
+    expect(seedControlFromEntity(seeded, { entityId: "", displayName: "", domain: "" }, lamp)).toEqual(seeded);
+  });
+
+  it("returns a new spec rather than editing the one it was handed", () => {
+    const before = fresh();
+    seedControlFromEntity(before, lamp, undefined, "Kitchen lamp");
+    expect(before.title).toEqual(literal("Kitchen lamp"));
+    expect(before.symbol).toBe(CONTROL_DEFAULT_SYMBOL);
+    expect(before.state).toBeUndefined();
+  });
+});
+
+describe("the card's Target picker", () => {
+  /** The document the card edits, with the control switched on. */
+  function document(): CustomComplicationConfig {
+    const cfg = newConfig("Kitchen lamp", 0);
+    setControlShown(cfg, true);
+    return cfg;
+  }
+
+  it("seeds the rows under it when the picked entity changes", () => {
+    const cfg = document();
+    controlTapEdit(cfg, (p) => {
+      p.action = { type: "toggleEntity", entityId: "light.kitchen", displayName: "Kitchen lamp", domain: "light" };
+    });
+    expect(cfg.control!.symbol).toBe("lightbulb.fill");
+    expect(cfg.control!.state).toEqual({ kind: { kind: "entityState", entityId: "light.kitchen", displayName: "Kitchen lamp", domain: "light" } });
+  });
+
+  it("seeds from a service call's target too", () => {
+    const cfg = document();
+    controlTapEdit(cfg, (p) => {
+      p.action = { type: "callService", serviceDomain: "lock", serviceName: "open", target: { entityId: "lock.front", displayName: "Front door", domain: "lock" } };
+    });
+    expect(cfg.control!.title).toEqual(literal("Front door"));
+    expect(cfg.control!.symbol).toBe("lock.fill");
+  });
+
+  it("leaves everything alone when the edit is not a new entity", () => {
+    const cfg = document();
+    controlTapEdit(cfg, (p) => {
+      p.action = { type: "toggleEntity", entityId: "light.kitchen", displayName: "Kitchen lamp", domain: "light" };
+    });
+    cfg.control!.title = literal("Bedside");
+    // The same entity under a new action type: the target carried over, so
+    // there is nothing to seed and nothing to overwrite.
+    controlTapEdit(cfg, (p) => {
+      p.action = { type: "runScript", entityId: "light.kitchen", displayName: "Kitchen lamp", domain: "light" };
+    });
+    expect(cfg.control!.title).toEqual(literal("Bedside"));
+    // Clearing the row seeds nothing either.
+    controlTapEdit(cfg, (p) => {
+      p.action = { type: "toggleEntity", entityId: "", displayName: "", domain: "" };
+    });
+    expect(cfg.control!.symbol).toBe("lightbulb.fill");
+  });
 });
 
 describe("the control's place in the document walk", () => {
@@ -500,13 +661,36 @@ describe("the Control Center card", () => {
     // its own title line goes with the chip, so only the rows this file can
     // see are named here.
     for (const label of ["Show in Control Center", "Kind", "Value line", "State",
-      "Symbol", "Symbol when off", "Colour", "Tint", "Status text", "On press"]) {
+      "Symbol", "Symbol when off", "Color", "Tint", "Status text", "On press", "Target"]) {
       expect(markup, label).toContain(label);
     }
     // The action row is a press in Control Center, never a tap on a face.
     expect(markup).not.toContain("Tap action");
     // The title row is really there: it is editing the document's own name.
     expect(markup).toContain("Lamp");
+  });
+
+  it("asks for the entity before the rows the entity fills in", () => {
+    const cfg = newConfig("Lamp", 0);
+    cfg.tapAction = { type: "toggleEntity", entityId: "light.kitchen", displayName: "Kitchen", domain: "light" };
+    setControlShown(cfg, true);
+    cfg.control!.valueLabel = literal("42 W");
+    cfg.control!.state = literal("on");
+    cfg.control!.status = literal("Done");
+    const markup = flatten(controlCard(host(cfg)));
+    // Kind, then the action and its target, then everything the target seeds.
+    // Title, Value line, State and Status text are `valueEditor` rows whose
+    // own title line goes with the chip outside a browser, so each is found
+    // by the switch or the hint that introduces it.
+    // Each row is found by a string only it has: "State" is also a piece of
+    // the Target row's `entityState` chip, and "Color" a piece of a colour
+    // attribute, so those two are looked for by their hints.
+    const order = ["Show in Control Center", "Kind", "On press", "Target",
+      "The name on the tile", "Value line", "What the toggle reads", "Symbol",
+      "Symbol when off", "One colour paints the tint", "Tint", "Status text"];
+    const at = order.map((label) => markup.indexOf(label));
+    expect(at.filter((i) => i < 0), order.filter((_, i) => at[i]! < 0).join(", ")).toEqual([]);
+    expect(at, order.join(" < ")).toEqual([...at].sort((a, b) => a - b));
   });
 
   it("warns about a toggle with no state, without refusing to save it", () => {

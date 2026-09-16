@@ -304,6 +304,7 @@ import {
   whenText,
 } from "./states.js";
 import { seedEntityOf, seedStates, seedStatesRows } from "./states-seeds.js";
+import { seedControlFromEntity } from "./presets.js";
 import {
   type RulePresetKind,
   RULE_PRESETS,
@@ -3968,10 +3969,38 @@ function controlSummary(host: EditorHost, spec: ControlSpec | undefined): string
 }
 
 /**
+ * One edit from the control's action form, seed included.
+ *
+ * A pick that moves the control to another entity fills in the rows under it
+ * that nobody has typed in, which is what makes the entity worth asking for
+ * first. The seed hangs here rather than inside `tapActionEditor` because the
+ * control is the only surface with rows to seed: a tap layer has none.
+ *
+ * Nothing is seeded when the entity did not change (switching the action type
+ * carries the target over), and nothing when the target is cleared: an author
+ * emptying the row is not asking for a fresh guess.
+ */
+export function controlTapEdit(cfg: CustomComplicationConfig, mutate: (p: TapActionHolder) => void): void {
+  const control = cfg.control;
+  if (control === undefined) return;
+  const before = tapTarget(control.action);
+  mutate(control);
+  const after = tapTarget(control.action);
+  if (after === undefined || after.entityId.trim() === "") return;
+  if (before !== undefined && before.entityId === after.entityId) return;
+  cfg.control = seedControlFromEntity(control, after, before, cfg.name);
+}
+
+/**
  * The Control Center card's body: one switch, then the ten rows behind it.
  *
  * Everything waits behind the switch, because most documents will never carry
  * a control and the card should read as one line until someone wants one.
+ *
+ * The rows run entity first: Kind, then the action and its target, then
+ * everything the target can fill in. Picking the target seeds the title, the
+ * state, the symbols and the tint (`seedControlFromEntity`), so a control is
+ * usually finished by the third row and the rest is there to adjust.
  */
 function controlSection(host: EditorHost): TemplateResult {
   const spec = host.config.control;
@@ -4013,21 +4042,34 @@ function controlSection(host: EditorHost): TemplateResult {
     if (table.bandAboveColorHex !== CHART_DEFAULT_BAND_HIGH_HEX) c.bandAboveColorHex = table.bandAboveColorHex;
     else delete c.bandAboveColorHex;
   }, k);
+  const setTap = (mutate: (p: TapActionHolder) => void, k?: string) =>
+    host.update((cfg) => { controlTapEdit(cfg, mutate); }, k ? `control-${k}` : undefined);
   return html`
     ${controlPreview(host, spec)}
     ${switchRow}
     <div class="hint keep">Shows the last synced value.</div>
     <div class="fgroup">
     ${segField("Kind", spec.kind, CONTROL_KINDS, (v) => set((c) => { c.kind = v; }), { def: "toggle" })}
+    <div class="hint">A toggle shows on or off and flips it. A button runs the action and shows nothing.</div>
+    </div>
+    <div class="fgroup">
+    ${tapActionEditor(host, spec, setTap, "control", CONTROL_TAP_TYPES, "On press")}
+    ${forcedToButton
+      ? html`<div class="hint warn">${describeTapAction(spec.action)} cannot be switched off again, so this control acts as a button however the Kind row is set.</div>`
+      : nothing}
+    <div class="hint">A control is one press in Control Center, so it runs the same actions a tap does minus the ones that need the app open on a page.</div>
+    </div>
+    <div class="fgroup">
     ${valueEditor(host, spec.title, (v) => set((c) => { c.title = v; }, "title"),
       { showResolved: true, label: "Title", key: "control-title" })}
+    <div class="hint">The name on the tile. Reads a value, so it can show a sensor or a template.</div>
     ${checkField("Value line", spec.valueLabel !== undefined, (v) => set((c) => {
       if (v) c.valueLabel = literal("--"); else delete c.valueLabel;
     }))}
     ${spec.valueLabel === undefined ? nothing : valueEditor(host, spec.valueLabel,
       (v) => set((c) => { c.valueLabel = v; }, "valueline"),
       { showResolved: true, label: "Value line", key: "control-valueline" })}
-    <div class="hint">The smaller line under the title. Leave it off for a control that is only a title.</div>
+    <div class="hint">A second, smaller line under the title. A reading, a unit, or anything the title does not say.</div>
     </div>
     ${spec.kind === "button" ? nothing : html`
     <div class="fgroup">
@@ -4038,32 +4080,36 @@ function controlSection(host: EditorHost): TemplateResult {
       { showResolved: true, label: "State", key: "control-state" })}
     ${spec.state === undefined
       ? html`<div class="hint warn">A toggle with no state cannot tell on from off, so it always draws as off. Give it the entity whose state it follows.</div>`
-      : html`<div class="hint">Read as on for <code>on</code>, <code>open</code>, <code>unlocked</code>, <code>home</code>, <code>playing</code>, <code>heat</code> and <code>cool</code>. Anything else is off.</div>`}
+      : html`<div class="hint">What the toggle reads to know if it is on. One of <code>on</code>, <code>open</code>, <code>unlocked</code>, <code>home</code>, <code>playing</code>, <code>heat</code> or <code>cool</code> counts as on.</div>`}
     </div>`}
     <div class="fgroup">
     ${symbolField(host, spec.symbol, (v) => set((c) => { c.symbol = v; }, "symbol"), "control-symbol",
       undefined, "Symbol", false)}
-    ${effective === "button" ? nothing : html`
+    ${effective === "button"
+      ? html`<div class="hint">The icon on the tile.</div>`
+      : html`
       ${symbolField(host, spec.symbolOff ?? "", (v) => set((c) => {
         if (v) c.symbolOff = v; else delete c.symbolOff;
       }, "symboloff"), "control-symbol-off", undefined, "Symbol when off", false)}
-      <div class="hint">Drawn while the state reads off. Leave it blank to keep the one symbol on both faces.</div>`}
+      <div class="hint">The icon on the tile. Symbol when off is drawn while a toggle reads off. Leave it blank to keep the one symbol on both faces.</div>`}
     </div>
     <div class="fgroup">
-    ${segField("Colour", spec.coloring, CHART_COLORINGS, (v) => set((c) => {
+    ${segField("Color", spec.coloring, CHART_COLORINGS, (v) => set((c) => {
       c.coloring = v;
       // Seeded from whatever the control reads right now, as a chart's table
       // is, so the switch paints something the moment it is flipped.
       if (v === "bands" && c.bands.length === 0) c.bands = seedBands(chartNumbers(host.resolve(matched) ?? ""));
     }), { def: "uniform" })}
+    <div class="hint">One colour paints the tint you pick. By value picks a colour from the reading, band by band.</div>
     ${colorField("Tint", spec.tintColorHex, (v) => set((c) => {
       if (v === undefined) delete c.tintColorHex; else c.tintColorHex = v;
     }, "tint"), true, null)}
+    <div class="hint">Off uses the system colour. A toggle paints the tint only while it reads on. A button always paints it.</div>
     ${spec.coloring === "bands" ? html`
-      <div class="hint">The tint takes the colour of the band the reading falls in. Without a number to read, the flat colour above stands.</div>
       ${bandTableFields({ bands: spec.bands, bandAboveColorHex: spec.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX },
-        spec.tintColorHex ?? CONTROL_MOCK_TINT, setBands, numbers.length === 1 ? numbers[0] : undefined)}`
-      : html`<div class="hint">Leave the tint off for the system colour. A toggle paints it only while it reads on; a button always does.</div>`}
+        spec.tintColorHex ?? CONTROL_MOCK_TINT, setBands, numbers.length === 1 ? numbers[0] : undefined)}
+      <div class="hint">The tint takes the colour of the band the reading falls in. Without a number to read, the flat colour above stands.</div>`
+      : nothing}
     </div>
     <div class="fgroup">
     ${checkField("Status text", spec.status !== undefined, (v) => set((c) => {
@@ -4071,14 +4117,7 @@ function controlSection(host: EditorHost): TemplateResult {
     }))}
     ${spec.status === undefined ? nothing : valueEditor(host, spec.status, (v) => set((c) => { c.status = v; }, "status"),
       { showResolved: true, label: "Status text", key: "control-status" })}
-    <div class="hint">What Control Center flashes over the tile after a press.</div>
-    </div>
-    <div class="fgroup">
-    ${tapActionEditor(host, spec, (mutate, k) => set((c) => mutate(c), k), "control", CONTROL_TAP_TYPES, "On press")}
-    ${forcedToButton
-      ? html`<div class="hint warn">${describeTapAction(spec.action)} cannot be switched off again, so this control acts as a button however the Kind row is set.</div>`
-      : nothing}
-    <div class="hint">A control is one press in Control Center, so it runs the same actions a tap does minus the ones that need the app open on a page.</div>
+    <div class="hint">What Control Center flashes over the tile after a press. Off means no flash.</div>
     </div>`;
 }
 

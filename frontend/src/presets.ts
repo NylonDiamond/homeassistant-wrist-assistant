@@ -17,6 +17,7 @@ import { buildStatesRule, type StatesRowInput } from "./states.js";
 import {
   type CallServiceAction,
   type Comparison,
+  type ControlSpec,
   type CustomComplicationConfig,
   type Element,
   type EntityRef,
@@ -28,8 +29,10 @@ import {
   type StyleChange,
   type TapAction,
   type Value,
+  CONTROL_DEFAULT_SYMBOL,
   DRAWABLE_FAMILIES,
   LIST_FAMILIES,
+  controlEffectiveKind,
   defaultLayout,
   defaultLevel,
   TOGGLEABLE_DOMAINS,
@@ -207,7 +210,7 @@ export interface PresetEnv {
 
 /** Amber reads as "live" on a black face; the grey is the system's secondary
  * label colour, which is what an off thing should look like. */
-const ACCENT_HEX = "#FF9F0A";
+export const ACCENT_HEX = "#FF9F0A";
 const MUTED_HEX = "#8E8E93";
 
 /** The three band colours of a gauge, lowest reading first. Every hex here is
@@ -279,7 +282,14 @@ const DOMAIN_SYMBOLS: Record<string, SymbolPair> = {
 export function toggleSymbols(ref: EntityRef): SymbolPair {
   const own = ref.iconName?.trim();
   if (own) return { off: own, on: own };
-  return DOMAIN_SYMBOLS[domainOf(ref)] ?? { off: "circle", on: "circle.fill" };
+  return domainSymbolPair(ref) ?? { off: "circle", on: "circle.fill" };
+}
+
+/** The table's pair for one entity's domain, or nothing for a domain it does
+ * not name. The lookup behind `toggleSymbols`, exported for a caller that has
+ * to tell "the table knows this domain" from "the table has no opinion". */
+export function domainSymbolPair(ref: EntityRef): SymbolPair | undefined {
+  return DOMAIN_SYMBOLS[domainOf(ref)];
 }
 
 /**
@@ -304,6 +314,83 @@ function domainOf(ref: EntityRef): string {
 
 function withDomain(ref: EntityRef): EntityRef {
   return { ...ref, domain: domainOf(ref) };
+}
+
+// ── Control Center ────────────────────────────────────────────────────────
+
+/** The name a seeded control prints: the entity's own, or its id when Home
+ * Assistant gave it none. */
+function entityTitle(ref: EntityRef): string {
+  return ref.displayName.trim() || ref.entityId.trim();
+}
+
+/** Whether a title is one nobody typed, so a pick may replace it: blank, the
+ * word `defaultControlSpec` falls back to, the document's own name, or the name
+ * the previous entity seeded. A template or an entity read is the author's by
+ * definition and always stands. */
+function titleIsSpare(title: Value, documentName: string | undefined, previous: EntityRef | undefined): boolean {
+  if (title.kind.kind !== "literal") return false;
+  const text = title.kind.value.trim();
+  if (text === "" || text === "Control") return true;
+  if (documentName !== undefined && text === documentName.trim()) return true;
+  return previous !== undefined && text === entityTitle(previous);
+}
+
+/** Whether a state row still reads the entity the action pointed at before. */
+function statesEntity(state: Value | undefined, previous: EntityRef | undefined): boolean {
+  if (state === undefined || previous === undefined) return false;
+  return state.kind.kind === "entityState" && state.kind.entityId === previous.entityId;
+}
+
+/**
+ * The Control Center rows the target entity can fill in: the title, the state a
+ * toggle reads, the two symbols and the tint.
+ *
+ * Pure, and deliberately shy. A row is written only while it is still at its
+ * default or still holds what the previous entity seeded, so picking a second
+ * entity moves everything the panel wrote and nothing the author typed.
+ * `previous` is the entity the action pointed at before this pick; without it
+ * only the defaults are replaced. The value line, the status text and the kind
+ * are never touched: nothing here can guess what a second line should say, and
+ * the other two are decisions rather than details.
+ *
+ * The symbols and the tint are the Toggle button preset's own, so a control and
+ * a layer pointed at one light look alike. A domain `DOMAIN_SYMBOLS` does not
+ * name keeps the symbols it has rather than being handed a plain dot, which
+ * would be a worse guess than the one already there.
+ */
+export function seedControlFromEntity(
+  spec: ControlSpec,
+  ref: EntityRef,
+  previous?: EntityRef,
+  documentName?: string,
+): ControlSpec {
+  if (ref.entityId.trim() === "") return spec;
+  // A blank previous entity is no previous entity: every row still at its
+  // default is fair game, and nothing matches a seed that never happened.
+  const was = previous !== undefined && previous.entityId.trim() !== "" ? previous : undefined;
+  const next: ControlSpec = { ...spec };
+  const toggle = controlEffectiveKind(next) === "toggle";
+  if (titleIsSpare(next.title, documentName, was)) next.title = literal(entityTitle(ref));
+  // A button has no state to read, so it is never given one: a scene cannot be
+  // off. An existing state is left where it is, the same as the card does when
+  // the Kind row changes.
+  if (toggle && (next.state === undefined || statesEntity(next.state, was))) next.state = entityStateValue(ref);
+  const pair = domainSymbolPair(ref);
+  if (pair !== undefined) {
+    const before = was === undefined ? undefined : domainSymbolPair(was);
+    if (next.symbol.trim() === "" || next.symbol === CONTROL_DEFAULT_SYMBOL
+      || (before !== undefined && next.symbol === before.on)) next.symbol = pair.on;
+    if (toggle && (next.symbolOff === undefined || (before !== undefined && next.symbolOff === before.off))) {
+      // One symbol on both faces is the pair's own answer for a domain with no
+      // filled sibling, and the card spells that as a blank off symbol.
+      if (pair.off === pair.on) delete next.symbolOff; else next.symbolOff = pair.off;
+    }
+  }
+  // One accent for every domain, which is the toggle preset's rule too, so
+  // "still the accent" and "never set" are the same test.
+  if (next.tintColorHex === undefined || next.tintColorHex === ACCENT_HEX) next.tintColorHex = ACCENT_HEX;
+  return next;
 }
 
 // ── gauge range ───────────────────────────────────────────────────────────

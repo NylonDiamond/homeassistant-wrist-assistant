@@ -9344,9 +9344,10 @@ export class WristAssistantPanel extends LitElement {
     const host = this.host();
     const ins = this.inspect;
     const editable = this.canEdit ? "" : "pointer-events:none;opacity:.6";
-    // On the Control Center tab the control is the subject, so its card
-    // comes first and stays open, and the line about clicking a layer goes:
-    // there are no layers in this view to click. That tab is the only view a
+    // On the Control Center tab the control is the subject, so its card stays
+    // open, and the line about clicking a layer goes: there are no layers in
+    // this view to click. The name still comes first, above it, because a
+    // document is named before it is anything else. That tab is the only view a
     // document with no shape has, so it answers here whatever `inspect` says.
     const control = this.inControlView;
     if (ins.kind === "general" || control) {
@@ -9358,7 +9359,7 @@ export class WristAssistantPanel extends LitElement {
         ${this.complicationHead(cfg)}
         <div class="insp-body" style=${editable} @change=${() => this.draft?.endGesture()}>
           ${control
-            ? html`${controlCard(host, { alwaysOpen: true })}${complication}`
+            ? html`${complication}${controlCard(host, { alwaysOpen: true })}`
             : html`${complication}${controlCard(host)}
               <p class="insp-note">Click a layer ${deviceKindOf(this.selectedOwner) === "iphone" ? "on the preview" : "on the watch"} or in the list to edit it. The shape's own background and border are the bottom row of the list.</p>`}
         </div>`;
