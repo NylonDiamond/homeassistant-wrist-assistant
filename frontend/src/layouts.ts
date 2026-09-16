@@ -116,36 +116,80 @@ export function familyNote(family: FamilyKind): string | undefined {
   return family === "xlarge" ? "iOS 27 and later" : undefined;
 }
 
-/** One labelled group of shape cards in the New dialog. */
-export interface ShapeGroup {
-  /** The heading over the group, or undefined when the dialog has only one
-   * group and a heading would just repeat the field's own label. */
-  label?: string;
+/**
+ * Where a shape lives on the device.
+ *
+ * The New dialog asks this before it asks for a shape, because "Home Screen"
+ * is somewhere the owner has stood and "Small" is not. The same grouping is
+ * what the editor's Add a shape panel lists under, so a shape is found the
+ * same way whether it is picked at the start or added afterwards.
+ */
+export type ShapePlace = "home" | "lock" | "watch";
+
+/** One place, with the shapes it holds on this device. */
+export interface PlaceGroup {
+  place: ShapePlace;
+  /** The place's own name, as the card and the panel heading read it. */
+  label: string;
+  /** The shapes, biggest canvas first (see `biggestFirst`). */
   families: FamilyKind[];
-  /** Shapes drawn after `families` as greyed-out cards that cannot be picked
-   * yet. Only ever set on the Home Screen group. */
-  comingSoon?: FamilyKind[];
+  /** Shapes named but not pickable yet, listed after `families`. Only ever
+   * Extra Large, and only ever on the Home Screen. */
+  comingSoon: FamilyKind[];
 }
 
 /**
- * The New dialog's shape cards, split by where the shape lives on the
- * device. A watch has one place, the face, so its shapes stay in one unlabelled
- * run. A phone has two, the Lock Screen and the Home Screen, and a card grid
- * that mixes Circular with Small reads as six sizes of one thing when they are
- * two different screens, so each screen gets its own heading. The Home Screen
- * comes first: it is the bigger canvas and the one a phone owner most often
- * opens the dialog for. Order within a group follows `families`. `comingSoon`
- * (see `comingSoonFamilies`) lands at the end of the Home Screen group.
+ * Every shape from the biggest canvas down to the smallest.
+ *
+ * This is both the order shapes are listed in and the order they are worth
+ * building in: a layout drawn for the big canvas can be trimmed to fit a small
+ * one, where the reverse leaves a design with a hole in it. Nothing copies
+ * between shapes on its own, so the order is the whole of the advice.
  */
-export function shapeGroups(families: readonly FamilyKind[], comingSoon: readonly FamilyKind[] = []): ShapeGroup[] {
-  const home = families.filter(isHomeFamily);
-  if (home.length === 0 && comingSoon.length === 0) return [{ families: [...families] }];
-  const lock = families.filter((f) => !isHomeFamily(f));
-  const homeGroup: ShapeGroup = { label: "Home Screen", families: home };
-  if (comingSoon.length > 0) homeGroup.comingSoon = [...comingSoon];
-  const groups: ShapeGroup[] = [homeGroup];
-  if (lock.length > 0) groups.push({ label: "Lock Screen", families: lock });
-  return groups;
+const BIGGEST_FIRST: readonly FamilyKind[] = ["xlarge", "large", "medium", "small", "rectangular", "circular", "corner", "inline"];
+
+export function biggestFirst(families: readonly FamilyKind[]): FamilyKind[] {
+  return [...families].sort((a, b) => BIGGEST_FIRST.indexOf(a) - BIGGEST_FIRST.indexOf(b));
+}
+
+/** The place a shape lives in on this device. The four watch shapes are the
+ * Lock Screen's on a phone and the face's on a watch, so the owner decides. */
+export function placeOf(family: FamilyKind, owner: DeviceOwnerLike | null | undefined): ShapePlace {
+  if (isHomeFamily(family)) return "home";
+  return deviceKindOf(owner) === "iphone" ? "lock" : "watch";
+}
+
+/** The place's name, as every heading and card in the panel reads it. */
+export function placeTitle(place: ShapePlace): string {
+  switch (place) {
+    case "home": return "Home Screen";
+    case "lock": return "Lock Screen";
+    case "watch": return "Watch face";
+  }
+}
+
+/**
+ * The places this device has, each with its shapes biggest first.
+ *
+ * The Home Screen comes first on a phone: it is the bigger canvas and the one
+ * a phone owner most often opens the dialog for. A watch has one place, so the
+ * dialog draws a single card and opens it straight away. A place with nothing
+ * in it is left out rather than drawn empty, which is what keeps a phone too
+ * old for the Home Screen from being shown a screen it has no slot for.
+ */
+export function placeGroups(
+  owner: DeviceOwnerLike | null | undefined,
+  families: readonly FamilyKind[],
+  comingSoon: readonly FamilyKind[] = [],
+): PlaceGroup[] {
+  const out: PlaceGroup[] = [];
+  for (const place of ["home", "lock", "watch"] as const) {
+    const mine = biggestFirst(families.filter((f) => placeOf(f, owner) === place));
+    const soon = biggestFirst(comingSoon.filter((f) => placeOf(f, owner) === place));
+    if (mine.length === 0 && soon.length === 0) continue;
+    out.push({ place, label: placeTitle(place), families: mine, comingSoon: soon });
+  }
+  return out;
 }
 
 /**

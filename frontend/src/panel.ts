@@ -68,7 +68,6 @@ import {
   timelineHistoryKey,
   timelineHistoryMinutes,
   newConfig,
-  newControlConfig,
   newElement,
   convertChartTimes,
   newId,
@@ -104,9 +103,9 @@ import {
   resolveControl,
 } from "./resolver.js";
 import { CASES, FACE_TINTS, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, phoneCaseForScreenSize, renderLayerThumb, renderLayout, slotFor, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type PreviewCase } from "./renderer.js";
-import { addFamily, canRemoveControl, canRemoveFamily, comingSoonFamilies, controlNoteLines, familiesFor, familyAllowsKind, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, opensInControlView, removeFamily, shapeGroups, supportedFamilies } from "./layouts.js";
+import { type ShapePlace, addFamily, biggestFirst, canRemoveControl, canRemoveFamily, comingSoonFamilies, controlNoteLines, familiesFor, familyAllowsKind, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, opensInControlView, placeGroups, placeOf, placeTitle, removeFamily, supportedFamilies } from "./layouts.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
-import { deviceKindOf, deviceNoun, deviceSupportsControls, deviceSupportsShapes, updateDeviceMessage } from "./version.js";
+import { type DeviceOwnerLike, deviceKindOf, deviceNoun, deviceSupportsControls, deviceSupportsShapes, updateDeviceMessage } from "./version.js";
 import { makeIconProvider } from "./icons.js";
 import { makeImageSizeProvider } from "./image-sizes.js";
 import { SymbolBrowser } from "./symbols.js";
@@ -360,46 +359,158 @@ function headerArrow(): TemplateResult {
     stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h13" /><path d="M12 6l6 6-6 6" /></svg></span>`;
 }
 
+/** The iPhone body every phone drawing sits in: case, screen, Dynamic Island.
+ * The case and the screen are theme variables rather than `currentColor`, so
+ * the device stays a quiet grey object while the slot inside it is the one
+ * thing that lights up when a card is picked. */
+function phoneBody(inner: unknown): TemplateResult {
+  return html`<svg class="shape-art phone" viewBox="0 0 44 64" aria-hidden="true">
+    <rect x="5" y="1.5" width="34" height="61" rx="8.5" fill="var(--wa-art-case)" />
+    <rect x="7" y="3.5" width="30" height="57" rx="7" fill="var(--wa-art-screen)" />
+    <rect x="17" y="5.5" width="10" height="3" rx="1.5" fill="var(--wa-art-case)" />
+    ${inner}
+  </svg>`;
+}
+
+/** The Apple Watch body: case, screen, the crown and the side button. The two
+ * nubs on the right are most of what makes it read as a watch rather than a
+ * small phone at this size. */
+function watchBody(inner: unknown): TemplateResult {
+  return html`<svg class="shape-art watch" viewBox="0 0 60 64" aria-hidden="true">
+    <rect x="51" y="21" width="4.5" height="11" rx="2.25" fill="var(--wa-art-case)" />
+    <rect x="51.5" y="35" width="3.4" height="8" rx="1.7" fill="var(--wa-art-case)" />
+    <rect x="8" y="4" width="44" height="52" rx="14.5" fill="var(--wa-art-case)" />
+    <rect x="10.5" y="6.5" width="39" height="47" rx="12.5" fill="var(--wa-art-screen)" />
+    ${inner}
+  </svg>`;
+}
+
 /**
- * A shape drawn where it sits on the device: the screen as a rounded outline,
+ * A shape drawn where it sits on the device: the device in its own outline,
  * the slot filled inside it.
  *
  * The names alone say nothing to anyone who has not already learned them, and
- * "Corner" in particular is a place rather than a shape. A picture of the face
- * answers both at once.
+ * "Corner" in particular is a place rather than a shape. A picture of the
+ * device answers both at once, and answers it the way the gallery on the site
+ * draws the same complication, so a card here and a card there read as one
+ * product rather than two.
  *
- * The four Home Screen tiles are drawn on a grid of four columns and six rows,
- * the way iOS lays a Home Screen page out, so Small against Large against
- * Extra Large reads as how much of a page each one takes.
+ * A phone draws its Lock Screen shapes under a clock and its Home Screen tiles
+ * on the page's own grid of four columns and six rows, so Small against Large
+ * against Extra Large reads as how much of a page each one takes.
  */
-function familyArt(family: FamilyKind): TemplateResult {
-  const screen = svg`<rect x="3" y="2" width="38" height="48" rx="11" fill="none" stroke="currentColor" stroke-opacity=".55" stroke-width="1.5" />`;
-  // A Home Screen tile on the page's own grid of four columns and six rows:
-  // small is 2 by 2, medium 4 by 2, large 4 by 4 and extra large the whole 4
-  // by 6 page.
-  const tile = (w: number, h: number) => svg`<rect x=${22 - w / 2} y=${26 - h / 2} width=${w} height=${h} rx="3.5" fill="currentColor" />`;
-  let slot;
-  switch (family) {
-    case "rectangular": slot = svg`<rect x="8" y="21" width="28" height="10" rx="3" fill="currentColor" />`; break;
-    case "circular": slot = svg`<circle cx="22" cy="26" r="8" fill="currentColor" />`; break;
-    case "corner": slot = svg`<path d="M9 18a9 9 0 0 1 9-9" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
-              <circle cx="11.5" cy="11.5" r="3" fill="currentColor" />`; break;
-    case "small": slot = tile(13, 13); break;
-    case "medium": slot = tile(28, 13); break;
-    case "large": slot = tile(28, 28); break;
-    case "xlarge": slot = tile(28, 42); break;
-    default: slot = svg`<rect x="10" y="7" width="24" height="5" rx="2.5" fill="currentColor" />`;
+function familyArt(family: FamilyKind, phone: boolean): TemplateResult {
+  // A Home Screen tile, 2 by 2 icons for small, 4 by 2 for medium, 4 by 4 for
+  // large and the whole 4 by 6 page for extra large.
+  const tile = (x: number, y: number, w: number, h: number) => svg`<rect x=${x} y=${y} width=${w} height=${h} rx="3.5" fill="currentColor" />`;
+  if (phone) {
+    // The clock the Lock Screen shapes sit under. Without it Rectangular and
+    // Inline are two grey bars at different heights.
+    const clock = svg`<rect x="12" y="13" width="20" height="9" rx="2.5" fill="var(--wa-art-dim)" />`;
+    switch (family) {
+      case "small": return phoneBody(tile(16, 27, 12, 13.5));
+      case "medium": return phoneBody(tile(9.5, 27, 25, 13.5));
+      case "large": return phoneBody(tile(9.5, 20, 25, 27.5));
+      case "xlarge": return phoneBody(tile(9.5, 12, 25, 44));
+      case "circular": return phoneBody(svg`${clock}<circle cx="22" cy="31" r="6.5" fill="currentColor" />`);
+      case "inline": return phoneBody(svg`${clock}<rect x="11" y="25" width="22" height="4.5" rx="2.25" fill="currentColor" />`);
+      default: return phoneBody(svg`${clock}<rect x="9.5" y="26" width="25" height="9" rx="3" fill="currentColor" />`);
+    }
   }
-  return html`<svg class="shape-art" viewBox="0 0 44 52" aria-hidden="true">${screen}${slot}</svg>`;
+  // The watch face's own clock, top right, except under Corner, which lives
+  // there, and under Inline, which is the line above the time.
+  const time = (y: number) => svg`<rect x="31" y=${y} width="15" height="5" rx="2.5" fill="var(--wa-art-dim)" />`;
+  switch (family) {
+    case "circular": return watchBody(svg`${time(10)}<circle cx="30" cy="31" r="8.5" fill="currentColor" />`);
+    case "corner": return watchBody(svg`${time(34)}<path d="M15.5 23a10 10 0 0 1 10-10" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" />
+      <circle cx="17.5" cy="15" r="3.4" fill="currentColor" />`);
+    case "inline": return watchBody(svg`<rect x="16" y="10" width="28" height="5" rx="2.5" fill="currentColor" />
+      <rect x="21" y="23" width="18" height="9" rx="3" fill="var(--wa-art-dim)" />`);
+    default: return watchBody(svg`${time(10)}<rect x="15" y="24" width="30" height="11" rx="3.5" fill="currentColor" />`);
+  }
 }
 
-/** The New dialog's Control Center tile, drawn like the shapes: the phone
- * outline with one Control Center tile on it and a symbol dot inside. */
-function controlArt(): TemplateResult {
-  const screen = svg`<rect x="3" y="2" width="38" height="48" rx="11" fill="none" stroke="currentColor" stroke-opacity=".55" stroke-width="1.5" />`;
-  const tile = svg`<rect x="13" y="17" width="18" height="18" rx="5" fill="currentColor" />
-    <circle cx="22" cy="26" r="3.5" fill="var(--wa-raised)" />`;
-  return html`<svg class="shape-art" viewBox="0 0 44 52" aria-hidden="true">${screen}${tile}</svg>`;
+/** The Control Center tile, drawn like the shapes: the device with one control
+ * on it, its symbol punched out of the middle, and the tiles under it left
+ * grey so the one that is yours stands out. */
+function controlArt(phone: boolean): TemplateResult {
+  const tile = (x: number, y: number, side: number) => svg`<rect x=${x} y=${y} width=${side} height=${side} rx="5.5" fill="currentColor" />
+    <circle cx=${x + side / 2} cy=${y + side / 2} r="3.2" fill="var(--wa-art-screen)" />`;
+  if (phone) {
+    return phoneBody(svg`${tile(13, 11, 18)}
+      <rect x="13" y="33" width="18" height="4" rx="2" fill="var(--wa-art-dim)" />
+      <rect x="13" y="39" width="18" height="4" rx="2" fill="var(--wa-art-dim)" />`);
+  }
+  return watchBody(svg`${tile(21, 16, 18)}
+    <rect x="21" y="38" width="18" height="4.5" rx="2.25" fill="var(--wa-art-dim)" />`);
+}
+
+/**
+ * The whole device, with one place on it lit: the picture on a place card in
+ * the New dialog.
+ *
+ * Bigger than the shape art and drawn with the screen's furniture around it (a
+ * page of app icons, a clock, a grid of controls), because the question this
+ * card answers is "where on my phone does this end up", and that is answered
+ * by what surrounds the lit part rather than by the lit part itself.
+ */
+function placeArt(place: ShapePlace): TemplateResult {
+  const icons = (y: number) => svg`<rect x="7.5" y=${y} width="5.5" height="5.5" rx="1.8" fill="var(--wa-art-dim)" />
+    <rect x="15" y=${y} width="5.5" height="5.5" rx="1.8" fill="var(--wa-art-dim)" />
+    <rect x="22.5" y=${y} width="5.5" height="5.5" rx="1.8" fill="var(--wa-art-dim)" />
+    <rect x="30" y=${y} width="5.5" height="5.5" rx="1.8" fill="var(--wa-art-dim)" />`;
+  const body = (inner: unknown) => html`<svg class="place-art" viewBox="0 0 44 80" aria-hidden="true">
+    <rect x="2" y="2" width="40" height="76" rx="9.5" fill="var(--wa-art-case)" />
+    <rect x="4" y="4" width="36" height="72" rx="7.5" fill="var(--wa-art-screen)" />
+    <rect x="17" y="6" width="10" height="3" rx="1.5" fill="var(--wa-art-case)" />
+    ${inner}
+  </svg>`;
+  if (place === "home") {
+    return body(svg`<rect x="7.5" y="13" width="29" height="13" rx="3.5" fill="currentColor" />
+      ${icons(30)}${icons(39)}${icons(48)}
+      <rect x="6" y="60" width="32" height="12" rx="4.5" fill="var(--wa-art-dock)" />`);
+  }
+  if (place === "lock") {
+    return body(svg`<rect x="15" y="12" width="14" height="3" rx="1.5" fill="var(--wa-art-dim)" />
+      <rect x="11" y="18" width="22" height="12" rx="3.5" fill="var(--wa-art-clock)" />
+      <rect x="7.5" y="34" width="29" height="10" rx="3.5" fill="currentColor" />
+      <circle cx="12" cy="68" r="4.5" fill="var(--wa-art-dim)" />
+      <circle cx="32" cy="68" r="4.5" fill="var(--wa-art-dim)" />`);
+  }
+  // The watch face, for a watch owner: one place, drawn as the device itself.
+  return html`<svg class="place-art watch" viewBox="0 0 60 64" aria-hidden="true">
+    <rect x="51" y="21" width="4.5" height="11" rx="2.25" fill="var(--wa-art-case)" />
+    <rect x="51.5" y="35" width="3.4" height="8" rx="1.7" fill="var(--wa-art-case)" />
+    <rect x="8" y="4" width="44" height="52" rx="14.5" fill="var(--wa-art-case)" />
+    <rect x="10.5" y="6.5" width="39" height="47" rx="12.5" fill="var(--wa-art-screen)" />
+    <rect x="31" y="10" width="15" height="5" rx="2.5" fill="var(--wa-art-clock)" />
+    <rect x="15" y="24" width="30" height="11" rx="3.5" fill="currentColor" />
+  </svg>`;
+}
+
+/** The Control Center place card: the grid of tiles, one of them yours. */
+function controlPlaceArt(): TemplateResult {
+  return html`<svg class="place-art" viewBox="0 0 44 80" aria-hidden="true">
+    <rect x="2" y="2" width="40" height="76" rx="9.5" fill="var(--wa-art-case)" />
+    <rect x="4" y="4" width="36" height="72" rx="7.5" fill="var(--wa-art-blur)" />
+    <rect x="17" y="6" width="10" height="3" rx="1.5" fill="var(--wa-art-case)" />
+    <rect x="7.5" y="14" width="13" height="13" rx="4.5" fill="currentColor" />
+    <circle cx="14" cy="20.5" r="3" fill="var(--wa-art-blur)" />
+    <rect x="23.5" y="14" width="13" height="13" rx="4.5" fill="var(--wa-art-dim)" />
+    <rect x="7.5" y="31" width="13" height="13" rx="4.5" fill="var(--wa-art-dim)" />
+    <rect x="23.5" y="31" width="13" height="13" rx="4.5" fill="var(--wa-art-dim)" />
+    <rect x="7.5" y="48" width="6" height="24" rx="3" fill="var(--wa-art-dim)" />
+    <rect x="16" y="48" width="6" height="24" rx="3" fill="var(--wa-art-dim)" />
+    <rect x="25.5" y="48" width="11" height="11" rx="3.5" fill="var(--wa-art-dim)" />
+    <rect x="25.5" y="61" width="11" height="11" rx="3.5" fill="var(--wa-art-dim)" />
+  </svg>`;
+}
+
+/** The tick a picked shape card carries, top right. A border alone is easy to
+ * miss in a grid of eight, and the count in the footer has to add up to
+ * something the eye can find. */
+function pickTick(): TemplateResult {
+  return html`<span class="pick-tick" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg></span>`;
 }
 
 /** The mock tile in the Control Center shape tab, CSS px. Sized to the row of
@@ -799,10 +910,18 @@ export class WristAssistantPanel extends LitElement {
    * name nothing else on this watch uses sits beside a shape someone picked. */
   @state() private newOpen = false;
   @state() private newName = "";
-  @state() private newFamily?: FamilyKind;
-  /** The dialog's Control Center tile. On its own it makes a document of the
-   * default shape with the control switched on; beside a shape it adds the
-   * control to that shape's document. */
+  /** The shapes ticked in the dialog, in no particular order: `biggestFirst`
+   * decides what the document is built with. A set rather than one shape
+   * because a complication that is going to be Large and Medium is worth
+   * saying in one go, and because nothing about the second shape is a
+   * different question from the first. */
+  @state() private newFamilies: ReadonlySet<FamilyKind> = new Set();
+  /** Which place card is open. The picks of a place you leave are kept and
+   * counted on its card, so switching tabs never loses an answer. */
+  @state() private newPlace?: ShapePlace | "control";
+  /** The dialog's Control Center tile. On its own it makes a document of no
+   * shape with the control switched on; beside a shape it adds the control to
+   * that shape's document. */
   @state() private newControl = false;
   /** The Share dialog is open, which mode it is in, and the labels the author
    * has renamed. Labels are keyed by placeholder id and only hold the edited
@@ -1043,6 +1162,17 @@ export class WristAssistantPanel extends LitElement {
       --wa-val: #9a5b00;
       --wa-ent-bg: color-mix(in srgb, var(--wa-ent) 12%, transparent);
       --wa-val-bg: color-mix(in srgb, var(--wa-val) 14%, transparent);
+      /* The little drawn devices in the New dialog and the Add a shape panel.
+         The device stays a quiet object in every theme and the slot inside it
+         is drawn in currentColor, so picking a card lights the slot alone.
+         A screen is dark in both themes, the way Apple's own pickers draw one:
+         a white rectangle reads as a piece of paper. */
+      --wa-art-case: #cfc9bd;
+      --wa-art-screen: #26241f;
+      --wa-art-dim: #45413a;
+      --wa-art-clock: #5d584f;
+      --wa-art-dock: #322f2a;
+      --wa-art-blur: #2f2c27;
       --wa-r-sm: 8px;
       --wa-r-md: 12px;
       --wa-r-lg: 16px;
@@ -1075,6 +1205,12 @@ export class WristAssistantPanel extends LitElement {
       --wa-val: #ffc45c;
       --wa-ent-bg: color-mix(in srgb, var(--wa-ent) 14%, transparent);
       --wa-val-bg: color-mix(in srgb, var(--wa-val) 16%, transparent);
+      --wa-art-case: #2b2f3d;
+      --wa-art-screen: #05060a;
+      --wa-art-dim: #232734;
+      --wa-art-clock: #3a3f52;
+      --wa-art-dock: #14161f;
+      --wa-art-blur: #0f1119;
       --wa-shadow-pop: 0 16px 48px rgba(0,0,0,.6);
       color-scheme: dark;
       scrollbar-color: rgba(255,255,255,.14) transparent;
@@ -1320,7 +1456,7 @@ export class WristAssistantPanel extends LitElement {
        window rather than hanging off the button, because it asks two questions
        and refuses until both are answered. */
     dialog.new-dialog {
-      width: min(430px, calc(100vw - 32px)); padding: 0;
+      width: min(520px, calc(100vw - 32px)); padding: 0;
       border: 1px solid var(--wa-line); border-radius: 12px;
       background: var(--wa-card); color: var(--wa-ink);
       box-shadow: 0 12px 40px rgba(0,0,0,.4);
@@ -1336,21 +1472,53 @@ export class WristAssistantPanel extends LitElement {
     .new-body .field > span { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
     .new-body { padding: 14px 18px 4px; }
     .new-body .field.new-shapes { margin-top: 14px; }
-    .new-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 18px 16px; }
+    /* The running count sits opposite the buttons, so what Create is about to
+       make is readable without moving the eye to the button itself. */
+    .new-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 18px 16px; }
+    .new-count { flex: 1; font-size: 12px; color: var(--wa-muted); }
     /* Auto-fit rather than four fixed columns: a watch owner has four shape
        cards and a phone owner up to seven, so the grid takes as many as the
        dialog's width allows and wraps the rest onto another row. */
     .shape-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 8px; }
-    /* A phone's shapes come in two runs, Lock Screen and Home Screen, each
-       under its own quiet heading; a watch has one run and no heading. */
-    .shape-groups { display: flex; flex-direction: column; gap: 12px; }
-    .shape-group { display: flex; flex-direction: column; gap: 6px; }
-    .shape-group-label { font-size: 11px; font-weight: 600; color: var(--wa-muted); }
+    /* The three place cards: where on the device this ends up. They behave as
+       tabs, so leaving one keeps its picks, and its count says so. */
+    .place-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 9px; }
+    .place-card {
+      position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px;
+      cursor: pointer; font: inherit; font-size: 13px; padding: 12px 6px 10px; color: var(--wa-muted);
+      border: 1px solid var(--wa-line); border-radius: 13px; background: var(--wa-raised);
+      transition: border-color .12s ease-out, background-color .12s ease-out, color .12s ease-out;
+    }
+    .place-card:hover { border-color: var(--wa-line-strong); color: var(--wa-ink); }
+    .place-card:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    /* Open, not picked: the card whose shapes the panel below is showing. A
+       place with picks in it that is not open still says so with its count. */
+    .place-card.open { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-ink); }
+    .place-card.has { color: var(--wa-ink); }
+    .place-card .place-art { width: 46px; height: 84px; display: block; color: var(--wa-accent); }
+    .place-card-name { font-weight: 600; color: var(--wa-ink); }
+    .place-count {
+      position: absolute; top: 7px; right: 7px; min-width: 18px; height: 18px; box-sizing: border-box;
+      padding: 0 5px; display: flex; align-items: center; justify-content: center; border-radius: 9px;
+      background: var(--wa-accent); color: var(--wa-accent-ink); font-size: 11px; font-weight: 700;
+    }
+    /* The open place's shapes, in a box tied to the card above by its accent
+       edge, so the panel reads as that card's contents rather than a new
+       question. */
+    .pick-panel {
+      margin-top: 12px; padding: 12px 12px 10px; border-radius: 13px;
+      border: 1px solid var(--wa-sel-ring); background: var(--wa-sel-bg);
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .pick-panel .hint { margin: 0; }
+    .pick-head { display: flex; align-items: baseline; gap: 8px; }
+    .pick-title { flex: 1; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--wa-accent); }
+    .pick-order { font-size: 11px; font-weight: 600; color: var(--wa-muted); }
     /* Not one of them starts picked. A tinted default reads as a
        recommendation, and the shape is the one thing about a complication
        that cannot be changed later without moving every layer. */
     .shape-card {
-      display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer;
+      position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer;
       font: inherit; font-size: 11.5px; padding: 10px 4px 8px; color: var(--wa-muted);
       border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-raised);
       transition: border-color .12s ease-out, background-color .12s ease-out, color .12s ease-out;
@@ -1358,7 +1526,19 @@ export class WristAssistantPanel extends LitElement {
     .shape-card:hover { border-color: var(--wa-line-strong); color: var(--wa-ink); }
     .shape-card:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .shape-card.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-ink); }
-    .shape-card .shape-art { width: 34px; height: 40px; display: block; }
+    .shape-card .shape-art { width: 30px; height: 44px; display: block; }
+    /* The watch art is wider than it is tall next to the phone's, because the
+       crown and the button hang off its right edge. */
+    .shape-card .shape-art.watch { width: 42px; height: 45px; }
+    /* The tick on a picked card, and the empty ring that holds its place so
+       nothing shifts when one is ticked. */
+    .pick-tick {
+      position: absolute; top: 6px; right: 6px; width: 16px; height: 16px; box-sizing: border-box;
+      display: flex; align-items: center; justify-content: center; border-radius: 50%;
+      background: var(--wa-accent); color: var(--wa-accent-ink);
+    }
+    .pick-tick svg { width: 10px; height: 10px; }
+    .pick-tick.off { background: transparent; border: 1px solid var(--wa-line-strong); }
     .shape-card-name { font-weight: 600; }
     /* The condition under a shape's name: small, quiet, and on its own line, so
        "Extra Large" still reads as the name of the shape. */
@@ -2133,9 +2313,26 @@ export class WristAssistantPanel extends LitElement {
       background: var(--wa-input); box-shadow: inset 0 0 0 1px var(--wa-line);
     }
     .shape-seg button.tab { height: 30px; padding: 0 10px; border-radius: 8px; }
-    .shape-adds { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+    .shape-adds { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; }
     .shape-adds button.tab { height: 28px; padding: 0 9px; gap: 5px; font-weight: 500; }
     .shape-adds button.tab svg { width: 12px; height: 12px; }
+    .shape-adds button.tab.add-shape { height: 30px; padding: 0 11px; font-weight: 600; }
+    .shape-spare { font-size: 11.5px; color: var(--wa-muted); }
+    /* Every shape this complication could still have, under the same place
+       headings the New dialog uses. A panel rather than a row because the
+       headings are the point, and a row of nine cards with three headings in
+       it is wider than the bar it hangs off. */
+    .add-menu {
+      position: fixed; inset: auto; margin: 0; width: min(370px, calc(100vw - 24px)); padding: 12px;
+      border: 1px solid var(--wa-line-strong); border-radius: var(--wa-r-md);
+      background: var(--wa-panel); color: var(--wa-ink); box-shadow: var(--wa-shadow-pop);
+    }
+    .add-menu:popover-open { display: flex; flex-direction: column; gap: 12px; }
+    .add-group { display: flex; flex-direction: column; gap: 7px; }
+    .add-group-label { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--wa-muted); }
+    /* Three to a row here, not the dialog's auto-fit: the panel is narrower
+       than the dialog and a fourth column would squeeze the names. */
+    .add-menu .shape-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .canvas-bar .hint { margin: 0; }
     /* Shape tabs: one per family, drawn with a real picture of what that shape
        holds. A family the complication does not have is a dashed invitation. */
@@ -4752,14 +4949,15 @@ export class WristAssistantPanel extends LitElement {
   /** Answered entirely by the New dialog, which is what stops a watch filling
    * with documents that all read "New complication" on the wrist. */
   private createNew() {
-    const family = this.newFamily;
+    // Biggest first, so the shape the author lands on is the one worth drawing
+    // first: the rest are trimmed down from it, never grown out of it.
+    const families = biggestFirst([...this.newFamilies].filter((f) => this.ownerFamilies.includes(f)));
     const name = this.newName.trim();
-    if ((!family && !this.newControl) || name === "" || this.newNameProblem() !== undefined) return;
+    if ((families.length === 0 && !this.newControl) || name === "" || this.newNameProblem() !== undefined) return;
     this.closeNewDialog();
     const slot = this.freeSlot();
-    const config = this.newControl
-      ? newControlConfig(name, slot, family)
-      : newConfig(name, slot, [family as FamilyKind]);
+    const config = newConfig(name, slot, families);
+    if (this.newControl) setControlShown(config, true);
     if (!this.startNew(config)) return;
     // The author asked for a control, so its tab is the one up on arrival and
     // its card is the one open.
@@ -6498,19 +6696,53 @@ export class WristAssistantPanel extends LitElement {
     return undefined;
   }
 
+  /** The places this device has, plus the Control Center when the app on it is
+   * new enough to draw one. The dialog and the editor's Add a shape panel list
+   * the same things in the same order, from here. */
+  private newPlaces() {
+    return placeGroups(this.selectedOwner, this.ownerFamilies, comingSoonFamilies(this.selectedOwner));
+  }
+
+  /** How many shapes of a place are ticked, for the count on its card. */
+  private pickedIn(place: ShapePlace): number {
+    let n = 0;
+    for (const f of this.newFamilies) if (placeOf(f, this.selectedOwner) === place) n += 1;
+    return n;
+  }
+
+  /** The place whose shapes the dialog opens on: the only one a watch has, and
+   * the Home Screen on a phone, which is the bigger canvas and the one a phone
+   * owner most often opens the dialog for. */
+  private firstPlace(): ShapePlace | "control" | undefined {
+    const groups = this.newPlaces();
+    if (groups.length > 0) return groups[0]!.place;
+    return deviceSupportsControls(this.selectedOwner?.app_version) ? "control" : undefined;
+  }
+
   /**
-   * The New complication dialog: a name, then a shape, then Create.
+   * The New complication dialog: a name, where it lives, and which shapes of
+   * that place to start with.
    *
-   * Nothing is preselected. The old popover tinted Rectangular as though it
-   * were the answer, which is a choice made for the author by a button that
-   * looked like a recommendation, and it named every complication the same
-   * thing. Create stays dead until both questions have real answers.
+   * Nothing is preselected among the shapes. The old popover tinted
+   * Rectangular as though it were the answer, which is a choice made for the
+   * author by a button that looked like a recommendation. The place, on the
+   * other hand, is opened for them: a card that opens nothing until it is
+   * clicked hides the real question behind a second click, and a watch has only
+   * one place to open anyway.
+   *
+   * Shapes are ticked rather than chosen, because a complication meant for
+   * Large and Medium is one answer, not two visits. They are listed biggest
+   * first, and the line under them says the quiet part out loud: each shape is
+   * its own design and nothing copies across on its own.
    */
   private renderNewDialog() {
     const nameProblem = this.newNameProblem();
     const named = this.newName.trim() !== "";
     const controls = deviceSupportsControls(this.selectedOwner?.app_version);
-    const ready = named && nameProblem === undefined && (this.newFamily !== undefined || this.newControl);
+    const groups = this.newPlaces();
+    const open = this.newPlace ?? this.firstPlace();
+    const count = this.newFamilies.size + (this.newControl ? 1 : 0);
+    const ready = named && nameProblem === undefined && count > 0;
     return html`<dialog class="new-dialog" @keydown=${this.newKeys} @close=${() => { this.newOpen = false; }}>
       <div class="new-head">
         <h2>New complication</h2>
@@ -6530,60 +6762,118 @@ export class WristAssistantPanel extends LitElement {
             ? "This is the name the Lock Screen customise screen and the Home Screen widget picker show, so make it one you will recognise there."
             : "This is what the name shows on the watch face picker, so make it one you will recognise there."}</div>`}
         <div class="field new-shapes">
-          <span>Shape</span>
-          <div class="shape-groups" role="radiogroup" aria-label="Shape">
-            ${shapeGroups(this.ownerFamilies, comingSoonFamilies(this.selectedOwner)).map((group) => html`<div class="shape-group">
-              ${group.label ? html`<span class="shape-group-label">${group.label}</span>` : nothing}
-              <div class="shape-cards">
-                ${group.families.map((f) => html`<button type="button" role="radio" class="shape-card ${this.newFamily === f ? "on" : ""}"
-                  aria-checked=${this.newFamily === f ? "true" : "false"}
-                  @click=${() => { this.newFamily = f; }}>
-                  ${familyArt(f)}
-                  <span class="shape-card-name">${familyTitle(f)}</span>
-                  ${familyNote(f) ? html`<span class="shape-card-note">${familyNote(f)}</span>` : nothing}
-                </button>`)}
-                ${(group.comingSoon ?? []).map((f) => html`<button type="button" role="radio" class="shape-card soon" disabled
-                  aria-checked="false" aria-disabled="true" title="Coming soon">
-                  ${familyArt(f)}
-                  <span class="shape-card-name">${familyTitle(f)}</span>
-                  <span class="shape-card-note">Coming soon${familyNote(f) ? html`<br />${familyNote(f)}` : nothing}</span>
-                </button>`)}
-              </div>
-            </div>`)}
-            ${controls ? html`<div class="shape-group">
-              <span class="shape-group-label">Control Center</span>
-              <div class="shape-cards">
-                <button type="button" role="checkbox" class="shape-card ${this.newControl ? "on" : ""}"
-                  aria-checked=${this.newControl ? "true" : "false"}
-                  @click=${() => { this.newControl = !this.newControl; }}>
-                  ${controlArt()}
-                  <span class="shape-card-name">Control</span>
-                  <span class="shape-card-note">Toggle or button</span>
-                </button>
-              </div>
-            </div>` : nothing}
+          <span>Where does it live?</span>
+          <div class="place-cards" role="tablist" aria-label="Where does it live?">
+            ${groups.map((group) => this.renderPlaceCard(group.place, group.label, placeArt(group.place), this.pickedIn(group.place), open === group.place))}
+            ${controls ? this.renderPlaceCard("control", "Control Center", controlPlaceArt(), this.newControl ? 1 : 0, open === "control") : nothing}
           </div>
         </div>
-        <div class="hint">${this.newControl && this.newFamily === undefined
-          ? (deviceKindOf(this.selectedOwner) === "iphone"
-            ? "A control has no shape. Add a Lock Screen or Home Screen widget beside it later if you want one."
-            : "A control has no shape. Add a watch face shape beside it later if you want one.")
-          : "Start with one shape. More can be added under the preview later."}</div>
+        ${open === undefined ? nothing : open === "control"
+          ? this.renderControlPanel()
+          : this.renderShapePanel(groups.find((g) => g.place === open))}
       </div>
       <div class="new-foot">
+        <span class="new-count">${WristAssistantPanel.pickedWords(count, this.newFamilies, this.selectedOwner)}</span>
         <button class="small" @click=${() => this.closeNewDialog()}>Cancel</button>
         <button class="primary" ?disabled=${!ready}
-          title=${ready ? "Make it" : !named ? "Give it a name first" : nameProblem ? nameProblem : controls ? "Pick a shape or Control first" : "Pick a shape first"}
-          @click=${() => this.createNew()}>Create</button>
+          title=${ready ? "Make it" : !named ? "Give it a name first" : nameProblem ? nameProblem : controls ? "Tick a shape or the control first" : "Tick a shape first"}
+          @click=${() => this.createNew()}>${count > 1 ? `Create ${count} shapes` : "Create"}</button>
       </div>
     </dialog>`;
+  }
+
+  /** One place card: the device with that place lit, its name, and the count
+   * of what is ticked inside it. The count is the whole reason a place you
+   * leave does not feel lost. */
+  private renderPlaceCard(place: ShapePlace | "control", label: string, art: TemplateResult, picked: number, open: boolean) {
+    return html`<button type="button" role="tab" class="place-card ${open ? "open" : ""} ${picked > 0 ? "has" : ""}"
+      aria-selected=${open ? "true" : "false"} aria-controls="pick-panel"
+      title=${`Shapes on the ${label}`}
+      @click=${() => { this.newPlace = place; }}>
+      ${art}
+      <span class="place-card-name">${label}</span>
+      ${picked > 0 ? html`<span class="place-count" aria-label=${`${picked} picked`}>${picked}</span>` : nothing}
+    </button>`;
+  }
+
+  /** The open place's shapes, ticked rather than chosen. */
+  private renderShapePanel(group: ReturnType<WristAssistantPanel["newPlaces"]>[number] | undefined) {
+    if (!group) return nothing;
+    const big = group.place === "home" ? "Biggest first" : "Widest first";
+    const word = group.place === "home" ? "size" : "shape";
+    return html`<div class="pick-panel" id="pick-panel" role="tabpanel">
+      <div class="pick-head">
+        <span class="pick-title">${group.label} ${group.place === "home" ? "sizes" : "shapes"}</span>
+        <span class="pick-order">${big}</span>
+      </div>
+      <div class="shape-cards" role="group" aria-label=${`${group.label} shapes`}>
+        ${group.families.map((f) => {
+          const on = this.newFamilies.has(f);
+          return html`<button type="button" role="checkbox" class="shape-card ${on ? "on" : ""}"
+            aria-checked=${on ? "true" : "false"}
+            @click=${() => this.toggleNewFamily(f)}>
+            ${familyArt(f, deviceKindOf(this.selectedOwner) === "iphone")}
+            <span class="shape-card-name">${familyTitle(f)}</span>
+            ${on ? pickTick() : html`<span class="pick-tick off" aria-hidden="true"></span>`}
+          </button>`;
+        })}
+        ${group.comingSoon.map((f) => html`<button type="button" role="checkbox" class="shape-card soon" disabled
+          aria-checked="false" aria-disabled="true" title="Coming soon">
+          ${familyArt(f, deviceKindOf(this.selectedOwner) === "iphone")}
+          <span class="shape-card-name">${familyTitle(f)}</span>
+          <span class="shape-card-note">Coming soon${familyNote(f) ? html`<br />${familyNote(f)}` : nothing}</span>
+        </button>`)}
+      </div>
+      <div class="hint">Every ${word} is its own design. Nothing copies across on its own, so build the ${group.place === "home" ? "biggest" : "widest"} one first and trim it down for the smaller ones.</div>
+    </div>`;
+  }
+
+  /** The Control Center card's own panel: one tick, and what it means when it
+   * is the only thing ticked. */
+  private renderControlPanel() {
+    return html`<div class="pick-panel" id="pick-panel" role="tabpanel">
+      <div class="pick-head"><span class="pick-title">Control Center</span></div>
+      <div class="shape-cards" role="group" aria-label="Control Center">
+        <button type="button" role="checkbox" class="shape-card ${this.newControl ? "on" : ""}"
+          aria-checked=${this.newControl ? "true" : "false"}
+          @click=${() => { this.newControl = !this.newControl; }}>
+          ${controlArt(deviceKindOf(this.selectedOwner) === "iphone")}
+          <span class="shape-card-name">Control</span>
+          <span class="shape-card-note">Toggle or button</span>
+          ${this.newControl ? pickTick() : html`<span class="pick-tick off" aria-hidden="true"></span>`}
+        </button>
+      </div>
+      <div class="hint">${this.newControl && this.newFamilies.size === 0
+        ? (deviceKindOf(this.selectedOwner) === "iphone"
+          ? "A control has no shape, so this complication appears in Control Center and nowhere else. Tick a Lock Screen or Home Screen shape beside it if you want one."
+          : "A control has no shape, so this complication appears in Control Center and nowhere else. Tick a watch face shape beside it if you want one.")
+        : "A control sits beside the shapes rather than instead of them."}</div>
+    </div>`;
+  }
+
+  /** Tick or untick a shape in the New dialog. */
+  private toggleNewFamily(family: FamilyKind) {
+    const next = new Set(this.newFamilies);
+    if (!next.delete(family)) next.add(family);
+    this.newFamilies = next;
+  }
+
+  /** The footer's running count, which is what stops Create being a surprise.
+   * Silent at nothing picked: an empty footer is quieter than a zero. */
+  private static pickedWords(count: number, families: ReadonlySet<FamilyKind>, owner: DeviceOwnerLike | null | undefined): string {
+    if (count === 0) return "";
+    const places = new Set<ShapePlace>();
+    for (const f of families) places.add(placeOf(f, owner));
+    if (places.size > 1) return `${count} picked, across ${places.size} places.`;
+    return count === 1 ? "1 picked." : `${count} picked.`;
   }
 
   private openNewDialog() {
     if (this.freeSlot() < 0) return;
     this.newOpen = true;
     this.newName = "";
-    this.newFamily = undefined;
+    this.newFamilies = new Set();
+    this.newPlace = undefined;
     this.newControl = false;
     void this.updateComplete.then(() => {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.new-dialog");
@@ -6603,7 +6893,7 @@ export class WristAssistantPanel extends LitElement {
    * own is an answer to the second one. */
   private newKeys = (e: KeyboardEvent) => {
     if (e.key !== "Enter") return;
-    if (this.newName.trim() === "" || (this.newFamily === undefined && !this.newControl) || this.newNameProblem() !== undefined) return;
+    if (this.newName.trim() === "" || (this.newFamilies.size === 0 && !this.newControl) || this.newNameProblem() !== undefined) return;
     e.preventDefault();
     this.createNew();
   };
@@ -9138,12 +9428,81 @@ export class WristAssistantPanel extends LitElement {
     const have = cfg.supportedFamilies;
     const missing = this.ownerFamilies.filter((f) => !have.includes(f));
     const addsControl = cfg.control === undefined && deviceSupportsControls(this.selectedOwner?.app_version);
+    const spare = missing.length + (addsControl ? 1 : 0);
     return html`<div class="shape-seg" role="group" aria-label="Shapes">${this.renderHaveTabs(cfg, layouts)}${this.renderControlTab(cfg)}</div>
-      ${missing.length > 0 || addsControl ? html`<span class="shape-adds">${missing.map((f) => html`<button class="tab off ${f}" ?disabled=${!this.canEdit}
-        title=${`Add the ${familyTitle(f)} shape`} @click=${() => this.addShape(f)}>${uiIcon("plus")}${familyTitle(f)}</button>`)}
-        ${addsControl ? html`<button class="tab off control" ?disabled=${!this.canEdit}
-          title="Add a Control Center control, beside whatever the complication already draws"
-          @click=${() => this.addControl()}>${uiIcon("plus")}Control Center</button>` : nothing}</span>` : nothing}`;
+      ${spare > 0 ? html`<span class="shape-adds">
+        <button class="tab off add-shape" ?disabled=${!this.canEdit} popovertarget="add-shapes"
+          title="Add another shape, or the Control Center control">${uiIcon("plus")}Add a shape</button>
+        <span class="shape-spare">${spare === 1 ? "1 more available" : `${spare} more available`}</span>
+        <div id="add-shapes" popover="auto" class="add-menu" @beforetoggle=${this.placeAddMenu}>
+          ${this.renderAddGroups(missing, addsControl)}
+        </div>
+      </span>` : nothing}`;
+  }
+
+  /**
+   * What the Add a shape panel offers, under the same place headings the New
+   * dialog uses.
+   *
+   * The row this replaced laid every missing shape out in one line, so a phone
+   * owner read "+ Rectangular + Circular + Inline + Small + Large" and had no
+   * way to tell that the first three are the Lock Screen and the last two the
+   * Home Screen. Grouping is the whole point; the panel is only where the
+   * grouping fits.
+   */
+  private renderAddGroups(missing: readonly FamilyKind[], addsControl: boolean) {
+    const phone = deviceKindOf(this.selectedOwner) === "iphone";
+    return html`${placeGroups(this.selectedOwner, missing, comingSoonFamilies(this.selectedOwner)).map((group) => html`<div class="add-group">
+        <span class="add-group-label">${group.label}</span>
+        <div class="shape-cards">
+          ${group.families.map((f) => html`<button type="button" class="shape-card" title=${`Add the ${familyTitle(f)} shape`}
+            @click=${() => { this.closeAddMenu(); this.addShape(f); }}>
+            ${familyArt(f, phone)}
+            <span class="shape-card-name">${familyTitle(f)}</span>
+          </button>`)}
+          ${group.comingSoon.map((f) => html`<button type="button" class="shape-card soon" disabled aria-disabled="true" title="Coming soon">
+            ${familyArt(f, phone)}
+            <span class="shape-card-name">${familyTitle(f)}</span>
+            <span class="shape-card-note">Coming soon</span>
+          </button>`)}
+        </div>
+      </div>`)}
+      ${addsControl ? html`<div class="add-group">
+        <span class="add-group-label">Control Center</span>
+        <div class="shape-cards">
+          <button type="button" class="shape-card" title="Add a Control Center control, beside whatever the complication already draws"
+            @click=${() => { this.closeAddMenu(); this.addControl(); }}>
+            ${controlArt(phone)}
+            <span class="shape-card-name">Control</span>
+          </button>
+        </div>
+      </div>` : nothing}`;
+  }
+
+  /**
+   * Put the Add a shape panel under the button that opened it.
+   *
+   * A popover is drawn in the top layer, so it is laid out against the viewport
+   * rather than the bar it belongs to, and CSS anchor positioning is not in
+   * every browser Home Assistant runs in yet. Measuring the button on the way
+   * open is the version that works everywhere. It is clamped to the viewport so
+   * a bar scrolled to the right edge does not push the panel off screen.
+   */
+  private placeAddMenu = (e: Event) => {
+    if ((e as unknown as { newState?: string }).newState !== "open") return;
+    const panel = e.currentTarget as HTMLElement;
+    const button = this.renderRoot.querySelector<HTMLElement>("button.add-shape");
+    if (!button) return;
+    const box = button.getBoundingClientRect();
+    const width = Math.min(370, window.innerWidth - 24);
+    panel.style.left = `${Math.max(12, Math.min(box.left, window.innerWidth - width - 12))}px`;
+    panel.style.top = `${box.bottom + 6}px`;
+  };
+
+  /** Close the panel before the shape lands, so the bar the author is watching
+   * redraws with nothing floating over it. */
+  private closeAddMenu() {
+    this.renderRoot.querySelector<HTMLElement>("#add-shapes")?.hidePopover();
   }
 
   private renderHaveTabs(cfg: CustomComplicationConfig, layouts: ResolvedAll) {

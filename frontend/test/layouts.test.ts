@@ -11,7 +11,10 @@ import {
   familyContentSummary,
   comingSoonFamilies,
   familyNote,
-  shapeGroups,
+  biggestFirst,
+  placeGroups,
+  placeOf,
+  placeTitle,
   firstDrawable,
   isHomeFamily,
   keepFamilies,
@@ -282,28 +285,68 @@ describe("helpers", () => {
 // The note is read straight, not through familiesFor: Extra Large is hidden
 // from every owner while its design box is a placeholder, so the only way to
 // check the line the card would carry is to ask for it.
-describe("shapeGroups", () => {
-  it("keeps a watch's shapes in one run with no heading", () => {
-    expect(shapeGroups(["rectangular", "circular", "corner", "inline"])).toEqual([
-      { families: ["rectangular", "circular", "corner", "inline"] },
+describe("biggestFirst", () => {
+  it("runs from the whole page down to the thinnest line, whatever order it is given", () => {
+    expect(biggestFirst(["inline", "small", "xlarge", "medium", "large"]))
+      .toEqual(["xlarge", "large", "medium", "small", "inline"]);
+    expect(biggestFirst(["inline", "corner", "circular", "rectangular"]))
+      .toEqual(["rectangular", "circular", "corner", "inline"]);
+  });
+
+  it("leaves the caller's array alone", () => {
+    const given = ["small", "large"] as const;
+    biggestFirst(given);
+    expect(given).toEqual(["small", "large"]);
+  });
+});
+
+describe("placeOf", () => {
+  // The same four shapes are the face's on a watch and the Lock Screen's on a
+  // phone, so the owner is what decides, never the shape alone.
+  it("reads the four shared shapes as the face on a watch and the Lock Screen on a phone", () => {
+    expect(placeOf("rectangular", { device_kind: "watch" })).toBe("watch");
+    expect(placeOf("corner", { device_kind: "watch" })).toBe("watch");
+    expect(placeOf("rectangular", NEW_PHONE)).toBe("lock");
+  });
+
+  it("reads a tile as the Home Screen on either device", () => {
+    expect(placeOf("medium", NEW_PHONE)).toBe("home");
+    expect(placeOf("medium", { device_kind: "watch" })).toBe("home");
+  });
+});
+
+describe("placeTitle", () => {
+  it("names the three places the way the cards and headings read them", () => {
+    expect(placeTitle("home")).toBe("Home Screen");
+    expect(placeTitle("lock")).toBe("Lock Screen");
+    expect(placeTitle("watch")).toBe("Watch face");
+  });
+});
+
+describe("placeGroups", () => {
+  it("gives a watch one place, holding its four shapes widest first", () => {
+    expect(placeGroups({ device_kind: "watch" }, ["inline", "corner", "circular", "rectangular"])).toEqual([
+      { place: "watch", label: "Watch face", families: ["rectangular", "circular", "corner", "inline"], comingSoon: [] },
     ]);
   });
 
-  it("splits a phone's shapes into Home Screen first, then Lock Screen", () => {
-    expect(shapeGroups(["rectangular", "circular", "inline", "small", "medium", "large"])).toEqual([
-      { label: "Home Screen", families: ["small", "medium", "large"] },
-      { label: "Lock Screen", families: ["rectangular", "circular", "inline"] },
+  it("splits a phone into Home Screen first, then Lock Screen, each biggest first", () => {
+    expect(placeGroups(NEW_PHONE, ["rectangular", "circular", "inline", "small", "medium", "large"])).toEqual([
+      { place: "home", label: "Home Screen", families: ["large", "medium", "small"], comingSoon: [] },
+      { place: "lock", label: "Lock Screen", families: ["rectangular", "circular", "inline"], comingSoon: [] },
     ]);
   });
 
-  it("labels a home-only list so the heading still says where the shapes live", () => {
-    expect(shapeGroups(["small"])).toEqual([{ label: "Home Screen", families: ["small"] }]);
+  it("leaves out a place this device has nothing in", () => {
+    expect(placeGroups(NEW_PHONE, ["small"])).toEqual([
+      { place: "home", label: "Home Screen", families: ["small"], comingSoon: [] },
+    ]);
   });
 
-  it("puts coming-soon shapes at the end of the Home Screen group", () => {
-    expect(shapeGroups(["rectangular", "small"], ["xlarge"])).toEqual([
-      { label: "Home Screen", families: ["small"], comingSoon: ["xlarge"] },
-      { label: "Lock Screen", families: ["rectangular"] },
+  it("carries a coming-soon shape in its own place, not among the pickable ones", () => {
+    expect(placeGroups(NEW_PHONE, ["rectangular", "small"], ["xlarge"])).toEqual([
+      { place: "home", label: "Home Screen", families: ["small"], comingSoon: ["xlarge"] },
+      { place: "lock", label: "Lock Screen", families: ["rectangular"], comingSoon: [] },
     ]);
   });
 });
