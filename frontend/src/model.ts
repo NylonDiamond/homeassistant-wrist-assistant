@@ -5722,8 +5722,11 @@ function encodeControl(c: ControlSpec): J {
   o.symbol = c.symbol;
   if (c.symbolOff !== undefined) o.symbolOff = c.symbolOff;
   if (c.tintColorHex !== undefined) o.tintColorHex = c.tintColorHex;
-  o.coloring = c.coloring;
-  o.bands = c.bands.map(encodeBand);
+  // Same "only when it differs" rule the layers' colour tables follow, and the
+  // one the app's `ControlSpec.encode` follows: a flat tint writes neither key,
+  // so the bytes match whichever side last saved the document.
+  if (c.coloring !== "uniform") o.coloring = c.coloring;
+  if (c.bands.length > 0) o.bands = c.bands.map(encodeBand);
   if (c.bandAboveColorHex !== undefined) o.bandAboveColorHex = c.bandAboveColorHex;
   if (c.status !== undefined) o.status = encodeValue(c.status);
   o.action = encodeTapAction(c.action);
@@ -6327,26 +6330,51 @@ export function defaultControlSpec(cfg: CustomComplicationConfig): ControlSpec {
   };
 }
 
+/**
+ * Whether the document has to name at least one shape.
+ *
+ * `supportedFamilies` may be empty if and only if there is a control (decided
+ * 2026-09-15). A control stands on its own: such a document appears in Control
+ * Center, in no widget picker, and that is a whole complication. Anything else
+ * with no shape would draw nowhere at all, so its last shape stays.
+ *
+ * The one place this rule is written. Everything that would otherwise repeat
+ * "unless it has a control" reads it from here.
+ */
+export function shapesRequired(cfg: Pick<CustomComplicationConfig, "control">): boolean {
+  return cfg.control === undefined;
+}
+
+/** A document that is nothing but its control: legal only because of the
+ * control, so the control cannot be switched off and the Control Center tab is
+ * the only view it has. */
+export function controlOnly(cfg: Pick<CustomComplicationConfig, "control" | "supportedFamilies">): boolean {
+  return cfg.control !== undefined && cfg.supportedFamilies.length === 0;
+}
+
 /** The "Show in Control Center" switch, as the one mutation behind it: on
  * writes the default control, off takes the whole key away. Flipping it on
  * over a control that is already there leaves it alone, so a stray click on an
- * already-on switch cannot wipe the author's work. */
+ * already-on switch cannot wipe the author's work.
+ *
+ * Off is refused on a document with no shape: the control is the only thing it
+ * shows, and clearing the key would leave a complication that draws nowhere.
+ * The panel's switch says so rather than taking the click. */
 export function setControlShown(cfg: CustomComplicationConfig, shown: boolean): void {
-  if (!shown) { delete cfg.control; return; }
+  if (!shown) {
+    if (controlOnly(cfg)) return;
+    delete cfg.control;
+    return;
+  }
   if (cfg.control === undefined) cfg.control = defaultControlSpec(cfg);
 }
 
-/** The shape a document made from the New dialog's Control Center tile gets
- * when the author picked none. The OS refuses a document with no shape, and a
- * control always rides a document, so one has to be chosen for them. Circular
- * is the smallest and exists on the watch and the iPhone alike. */
-export const CONTROL_DEFAULT_FAMILY: FamilyKind = "circular";
-
-/** What the New dialog makes when its Control Center tile is on: a normal
- * document of one shape (the picked one, else `CONTROL_DEFAULT_FAMILY`) with
- * the control switched on, so the card opens ready to fill. */
+/** What the New dialog makes when its Control Center tile is on: the control
+ * switched on, and the shape the author picked beside it, if they picked one.
+ * The tile alone makes a control and no shape, which is a complication in
+ * Control Center and nowhere else. */
 export function newControlConfig(name: string, slotIndex: number, family?: FamilyKind): CustomComplicationConfig {
-  const cfg = newConfig(name, slotIndex, [family ?? CONTROL_DEFAULT_FAMILY]);
+  const cfg = newConfig(name, slotIndex, family === undefined ? [] : [family]);
   setControlShown(cfg, true);
   return cfg;
 }

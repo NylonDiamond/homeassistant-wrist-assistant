@@ -41,6 +41,7 @@ import {
   attachedTapsOf,
   auditUnknownKeys,
   controlEffectiveKind,
+  controlOnly,
   describeTapAction,
   duplicateElement,
   copyElements,
@@ -341,6 +342,13 @@ type PickerRow =
 function familiesOf(record: ComplicationRecord): string[] {
   const raw = record.document?.supportedFamilies;
   return Array.isArray(raw) ? raw.filter((f): f is string => typeof f === "string") : [];
+}
+
+/** Whether a stored document carries a Control Center control, read the same
+ * way: a row with no shapes says "Control" only when there is one. */
+function hasControlOf(record: ComplicationRecord): boolean {
+  const raw = record.document?.control;
+  return raw !== null && typeof raw === "object";
 }
 
 /** The step from one header question to the next. Drawn rather than typed so
@@ -1368,6 +1376,8 @@ export class WristAssistantPanel extends LitElement {
     .shape-dot.large { width: 11px; height: 11px; border-radius: 3px; }
     .shape-dot.xlarge { width: 8px; height: 13px; border-radius: 3px; }
     .shape-dot.on { opacity: 1; }
+    /* What stands in for the dots on a complication that is only a control. */
+    .shape-none { font-size: 11px; opacity: .7; white-space: nowrap; flex: none; }
 
     /* Share, Post to online gallery and Import share one look: a head with a
        title and a close button, a body that scrolls between it and a foot
@@ -3929,6 +3939,11 @@ export class WristAssistantPanel extends LitElement {
    */
   private pasteClip() {
     if (!this.canEdit || !this.clipboard) return;
+    // A document with no shape has no canvas for a layer to land on, and a
+    // layer nothing draws would be invisible and unreachable. Add a shape
+    // first; the tab bar's adders are on screen.
+    const cfg = this.draft?.config;
+    if (cfg && cfg.supportedFamilies.length === 0) return;
     const clip = this.clipboard;
     const family = this.canvasFamily;
     let landed: string[] = [];
@@ -4513,6 +4528,15 @@ export class WristAssistantPanel extends LitElement {
   private ensureActiveFamily() {
     const cfg = this.draft?.config;
     if (!cfg) return;
+    // A control-only document has no shape to be on. Its control is the only
+    // view it has, so the tab goes up and nothing is selected; `activeFamily`
+    // keeps whatever it held, which nothing reads while there are no shapes and
+    // which the next `+ Shape` replaces.
+    if (controlOnly(cfg)) {
+      this.controlView = true;
+      if (this.inspect.kind !== "general") this.inspect = { kind: "general" };
+      return;
+    }
     const offered = this.ownerFamilies;
     if (cfg.supportedFamilies.includes(this.activeFamily) && offered.includes(this.activeFamily)) return;
     this.activeFamily = supportedFamilies(cfg).find((f) => offered.includes(f)) ?? offered[0] ?? "rectangular";
@@ -4527,11 +4551,17 @@ export class WristAssistantPanel extends LitElement {
    * moves the inspector off "general", and that click is how someone leaves
    * this view. So the three conditions live here instead of in a dozen places
    * that would each have to remember to clear the flag.
+   *
+   * A document with no shape is the exception, and needs neither the flag nor
+   * an empty selection: it has no other view to be in, no canvas to draw and no
+   * layer to click, so the control stays up whatever else happens.
    */
   private get inControlView(): boolean {
-    if (!this.controlView || this.inspect.kind !== "general") return false;
-    if (this.draft?.config.control === undefined) return false;
-    return deviceSupportsControls(this.selectedOwner?.app_version);
+    const cfg = this.draft?.config;
+    if (cfg?.control === undefined) return false;
+    if (!deviceSupportsControls(this.selectedOwner?.app_version)) return false;
+    if (controlOnly(cfg)) return true;
+    return this.controlView && this.inspect.kind === "general";
   }
 
   /** The Control Center tab, clicked. */
@@ -4614,8 +4644,17 @@ export class WristAssistantPanel extends LitElement {
   private removeShape(family: FamilyKind) {
     const cfg = this.draft?.config;
     if (!cfg || !canRemoveFamily(cfg, family)) return;
+    // Taking the last shape off a document with a control leaves a control and
+    // nothing else, which is worth saying out loud even when the shape holds
+    // nothing: the complication disappears from every widget picker.
+    const last = cfg.supportedFamilies.length === 1;
     const lost = familyContentSummary(cfg, family);
-    if (lost.length > 0 && !window.confirm(`Remove the ${familyTitle(family)} shape? This deletes ${lost.join(", ")}. They are on this shape only, so nothing else in the complication loses anything.`)) return;
+    const asked = last
+      ? `Remove the ${familyTitle(family)} shape? It is the last one, so the complication keeps its Control Center control and stops appearing in any widget picker.${lost.length > 0 ? ` This deletes ${lost.join(", ")}.` : ""} A shape can be added again at any time.`
+      : lost.length > 0
+        ? `Remove the ${familyTitle(family)} shape? This deletes ${lost.join(", ")}. They are on this shape only, so nothing else in the complication loses anything.`
+        : undefined;
+    if (asked !== undefined && !window.confirm(asked)) return;
     this.mutate((c) => removeFamily(c, family));
     this.ensureActiveFamily();
   }
@@ -6049,7 +6088,14 @@ export class WristAssistantPanel extends LitElement {
     return rows.sort((a, b) => a.slot - b.slot);
   }
 
-  private shapeDots(families: readonly string[]) {
+  /** The shapes a row's complication draws, as one dot each. A document with
+   * no shape at all has a control and nothing else, so the word stands where
+   * the dots would: a row of dots with none lit would read as a complication
+   * that draws nothing. */
+  private shapeDots(families: readonly string[], control = false) {
+    if (families.length === 0 && control) {
+      return html`<span class="shape-none" title="A control in Control Center, and no widget">Control</span>`;
+    }
     return html`<span class="shape-dots">${this.ownerFamilies.map((f) => html`<span class="shape-dot ${f} ${families.includes(f) ? "on" : ""}" title=${familyTitle(f)}></span>`)}</span>`;
   }
 
@@ -6085,6 +6131,9 @@ export class WristAssistantPanel extends LitElement {
     const entry = this.recordPreview(record);
     if (!entry) return html`<span class="pk-art"></span>`;
     const cfg = entry.config;
+    // A document with no shape has no picture: the row says "Control" where
+    // the shape dots go, and a face drawn empty would only look broken.
+    if (cfg.supportedFamilies.length === 0) return html`<span class="pk-art"></span>`;
     // With a filter on, every row draws the shape being filtered for, so the
     // pictures answer the question the filter asked.
     const filtered = this.pickerFilter !== "all" && cfg.supportedFamilies.includes(this.pickerFilter)
@@ -6155,7 +6204,7 @@ export class WristAssistantPanel extends LitElement {
     return html`<div class="picker">
       <button id="wa-picker" aria-haspopup="listbox" aria-expanded=${this.pickerOpen ? "true" : "false"} title="Choose a complication"
         @click=${() => this.togglePicker()}>
-        ${this.shapeDots(families)}
+        ${this.shapeDots(families, d?.config.control !== undefined)}
         <span class="pk-name">${name}</span>
         ${d && d.baseRevision === null ? html`<span class="pk-rev">unsaved</span>` : nothing}
         ${uiIcon("chevron")}
@@ -6165,7 +6214,7 @@ export class WristAssistantPanel extends LitElement {
         ${all.length === 0 && !(d && d.baseRevision === null) ? html`<div class="empty">No complications for this ${this.deviceWord} yet.</div>` : nothing}
         ${all.length > 0 && rows.length === 0 ? html`<div class="empty">Nothing on this ${this.deviceWord} has a ${filter === "all" ? "" : familyTitle(filter)} shape.</div>` : nothing}
         ${split.shown.map((row) => this.renderPickerRow(row))}
-        ${d && d.baseRevision === null ? html`<div class="row" aria-current="true"><span class="pk-art"></span><span class="pk-name">${name}</span>${this.shapeDots(families)}<span class="pk-badge">unsaved</span></div>` : nothing}
+        ${d && d.baseRevision === null ? html`<div class="row" aria-current="true"><span class="pk-art"></span><span class="pk-name">${name}</span>${this.shapeDots(families, d.config.control !== undefined)}<span class="pk-badge">unsaved</span></div>` : nothing}
         ${split.hidden.length > 0 ? html`
           <button type="button" class="pk-hidden-head" aria-expanded=${this.pickerHiddenOpen ? "true" : "false"}
             @click=${() => { this.pickerHiddenOpen = !this.pickerHiddenOpen; }}>
@@ -6205,7 +6254,7 @@ export class WristAssistantPanel extends LitElement {
         @click=${() => { this.togglePicker(false); this.selectRecord(record); }}>
         ${this.renderRowArt(record)}
         <span class="pk-name">${recName}</span>
-        ${this.shapeDots(familiesOf(record))}
+        ${this.shapeDots(familiesOf(record), hasControlOf(record))}
       </button>
       <span class="pk-acts">
         ${confirming
@@ -6426,7 +6475,9 @@ export class WristAssistantPanel extends LitElement {
           </div>
         </div>
         <div class="hint">${this.newControl && this.newFamily === undefined
-          ? "A control rides a normal complication, so this one gets the Circular shape until you pick another. More shapes can be added under the preview later."
+          ? (deviceKindOf(this.selectedOwner) === "iphone"
+            ? "A control has no shape. Add a Lock Screen or Home Screen widget beside it later if you want one."
+            : "A control has no shape. Add a watch face shape beside it later if you want one.")
           : "Start with one shape. More can be added under the preview later."}</div>
       </div>
       <div class="new-foot">
@@ -6458,10 +6509,11 @@ export class WristAssistantPanel extends LitElement {
     else this.newOpen = false;
   }
 
-  /** Enter creates, once both questions have been answered. */
+  /** Enter creates, once both questions have been answered. A control on its
+   * own is an answer to the second one. */
   private newKeys = (e: KeyboardEvent) => {
     if (e.key !== "Enter") return;
-    if (this.newName.trim() === "" || this.newFamily === undefined || this.newNameProblem() !== undefined) return;
+    if (this.newName.trim() === "" || (this.newFamily === undefined && !this.newControl) || this.newNameProblem() !== undefined) return;
     e.preventDefault();
     this.createNew();
   };
@@ -6510,7 +6562,10 @@ export class WristAssistantPanel extends LitElement {
     if (!whole || !cfg) return nothing;
     const have = supportedFamilies(whole);
     const picked = this.sharePicked();
-    const ready = picked.length > 0;
+    // A document with no shape has nothing to pick: its control is the whole
+    // design, so there is no shape step and Share is ready as it opens. The
+    // gallery still turns it away, since the gallery is browsed by shape.
+    const ready = picked.length > 0 || have.length === 0;
     const slots = this.currentShareSlots();
     const share = this.shareMode === "share";
     const text = share
@@ -6571,7 +6626,11 @@ export class WristAssistantPanel extends LitElement {
         <button class="link" @click=${() => void this.copyShareText(text, "text")}>${copied === "text" ? "Copied" : "Copy text"}</button>
       </details>`, nothing, !ready);
     return html`<dialog class="share-dialog xf ${this.galleryOpen ? "under" : ""}" @close=${() => { this.shareOpen = false; this.pointAtRow([], undefined, () => undefined); }}>
-      ${this.dialogHead(`Share “${cfg.name.trim() || "Untitled"}”`, `${ready ? familyWords(picked) : "No shapes picked yet"} · ${layerCountWords(cfg)}`, () => this.closeShareDialog())}
+      ${this.dialogHead(`Share “${cfg.name.trim() || "Untitled"}”`,
+        have.length === 0
+          ? "A Control Center control, and no shape"
+          : `${ready ? familyWords(picked) : "No shapes picked yet"} · ${layerCountWords(cfg)}`,
+        () => this.closeShareDialog())}
       <div class="xfer-body">
         ${this.dialogPreview(layouts, family, spot,
           focused && spot.length > 0 ? html`Where <b>${focused.name}</b> is` : family ? familyTitle(family) : "",
@@ -7452,7 +7511,9 @@ export class WristAssistantPanel extends LitElement {
           ${taken ? html`<div class="hint err">A complication on this ${this.deviceWord} already has that name.</div>` : nothing}
           ${have.length < 2 ? nothing : html`<div class="xf-f"><span class="xf-label">Shapes to import<span class="r">${supportedFamilies(cfg).length} of ${have.length}</span></span>
             ${this.familyChips(have, (f) => this.importFamilies === undefined || this.importFamilies.has(f), (next) => this.setImportFamilies(next), true)}</div>`}
-          <div class="xf-sub">${have.length < 2 ? `${familyWords(have)} · ` : ""}${layerCountWords(cfg)}</div>
+          <div class="xf-sub">${have.length === 0 && cfg.control !== undefined
+            ? "A Control Center control, and no shape"
+            : html`${have.length < 2 ? `${familyWords(have)} · ` : ""}${layerCountWords(cfg)}`}</div>
         </div>
       </div>
       ${rows.length === 0
@@ -8519,12 +8580,17 @@ export class WristAssistantPanel extends LitElement {
    *
    * Both of those act on the shape being edited, and a control is not a shape.
    * Left standing they would offer to put a text layer on something that draws
-   * no layers, so they go and this says why, along with the reason the shape
-   * tab next to Control Center is still there.
+   * no layers, so they go and this says why. The second line is about the
+   * shapes: which one the face shows, or, on a document that has none, that a
+   * shape can be added.
    */
   private renderControlHasNoLayers() {
+    const cfg = this.draft?.config;
+    // No shape at all: there is no tab to explain, so the note offers one
+    // instead of saying which one stays.
+    const shape = cfg && supportedFamilies(cfg).length === 0 ? undefined : familyTitle(this.activeFamily);
     const [note, shapeLine] = controlNoteLines(
-      familyTitle(this.activeFamily),
+      shape,
       deviceKindOf(this.selectedOwner) === "iphone",
     );
     return html`<div class="card">
@@ -9005,7 +9071,11 @@ export class WristAssistantPanel extends LitElement {
           <span class="lbl">${familyTitle(f)}</span>${empty ? html`<small>nothing shown</small>` : nothing}
         </button>
         ${this.canEdit ? html`<button class="icon danger tab-x" ?disabled=${!removable}
-          title=${removable ? `Remove the ${familyTitle(f)} shape` : "The only shape. Add another before removing it."}
+          title=${!removable
+            ? "The only shape. Add another before removing it."
+            : have.length === 1
+              ? `Remove the ${familyTitle(f)} shape, leaving the Control Center control on its own`
+              : `Remove the ${familyTitle(f)} shape`}
           aria-label=${`Remove the ${familyTitle(f)} shape`}
           @click=${(e: Event) => { e.stopPropagation(); this.removeShape(f); }}>${uiIcon("delete")}</button>` : nothing}
       </span>`;
@@ -9274,12 +9344,15 @@ export class WristAssistantPanel extends LitElement {
     const host = this.host();
     const ins = this.inspect;
     const editable = this.canEdit ? "" : "pointer-events:none;opacity:.6";
-    if (ins.kind === "general") {
-      // On the Control Center tab the control is the subject, so its card
-      // comes first and stays open, and the line about clicking a layer goes:
-      // there are no layers in this view to click.
-      const control = this.inControlView;
-      const complication = card(host, "complication", "Complication", generalEditor(host),
+    // On the Control Center tab the control is the subject, so its card
+    // comes first and stays open, and the line about clicking a layer goes:
+    // there are no layers in this view to click. That tab is the only view a
+    // document with no shape has, so it answers here whatever `inspect` says.
+    const control = this.inControlView;
+    if (ins.kind === "general" || control) {
+      // Refresh, the tap action and the flash belong to the shapes, so on the
+      // control's tab the card is the name alone.
+      const complication = card(host, "complication", "Complication", generalEditor(host, { nameOnly: control }),
         { color: SECTION_COLOR.complication, icon: "watch", alwaysOpen: true });
       return html`
         ${this.complicationHead(cfg)}

@@ -354,6 +354,7 @@ import {
   type ControlSpec,
   CONTROL_ACTION_TYPES,
   controlEffectiveKind,
+  controlOnly,
   setControlShown,
 } from "./model.js";
 import { chartSmoothed, chartSeriesWithHoles, resolveControl, type ResolveContext } from "./resolver.js";
@@ -3744,7 +3745,16 @@ export function nameChangedFromWatch(savedName: string | undefined, name: string
   return savedName !== undefined && name.trim() !== "" && name.trim() !== savedName.trim();
 }
 
-export function generalEditor(host: EditorHost): TemplateResult {
+/**
+ * The Complication card: the settings that belong to the whole document.
+ *
+ * `nameOnly` is for the Control Center tab, where three of the four rows would
+ * be about something the view is not showing. Refresh, the tap action and the
+ * flash are what a shape does on the face; a control has its own action row and
+ * is drawn from the last sync whatever Refresh says. The name is shared, and it
+ * is the title a new control borrows, so it stays.
+ */
+export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean } = {}): TemplateResult {
   const cfg = host.config;
   const tap = cfg.tapAction;
   // The watch face picker caches each complication's name per widget kind and
@@ -3757,6 +3767,16 @@ export function generalEditor(host: EditorHost): TemplateResult {
   // opening the editor never silently changes it.
   if (!REFRESH_CHOICES.includes(refresh)) refreshOptions.push([String(refresh), refreshLabel(refresh)]);
   const flashOn = cfg.showSuccessFlash ?? true;
+  const renamedNote = renamed
+    ? html`<div class="hint warn">After you change a complication name, let the change sync to the watch, then re-select the complication in the watch's complication picker. Otherwise the list starts to look wrong.</div>`
+    : nothing;
+  if (opts.nameOnly === true) {
+    return html`
+      <div class="gen-row">
+        ${textField("Name", cfg.name, (v) => host.update((c) => { c.name = v; }, "name"))}
+      </div>
+      ${renamedNote}`;
+  }
   // One row each: name, refresh, tap action, flash. Anything a tap action
   // needs beyond its type (an entity, a page, a service) follows the tap row.
   return html`
@@ -3780,7 +3800,7 @@ export function generalEditor(host: EditorHost): TemplateResult {
         </div>
       </div>
     </div>
-    ${renamed ? html`<div class="hint warn">After you change a complication name, let the change sync to the watch, then re-select the complication in the watch's complication picker. Otherwise the list starts to look wrong.</div>` : nothing}
+    ${renamedNote}
     ${"entityId" in tap ? entityField(host, "Target", tap, (ref) => host.update((c) => { c.tapAction = { type: tap.type, ...ref }; }, "tap-entity"), "general-tap") : nothing}
     ${tap.type === "callService"
       ? callServiceFields(host, tap, (next, k) => host.update((c) => { c.tapAction = next; }, k), "general-tap")
@@ -3956,12 +3976,20 @@ function controlSummary(host: EditorHost, spec: ControlSpec | undefined): string
 function controlSection(host: EditorHost): TemplateResult {
   const spec = host.config.control;
   const shown = spec !== undefined;
+  // A document with no shape is nothing but its control, so the switch has
+  // nothing to fall back to: it stays on and says why. `setControlShown`
+  // refuses the same change, so a click that gets past the disabled input
+  // changes nothing either.
+  const only = controlOnly(host.config);
   const set = (mutate: (c: ControlSpec) => void, k?: string) => host.update((cfg) => {
     if (cfg.control) mutate(cfg.control);
   }, k ? `control-${k}` : undefined);
-  const switchRow = checkField("Show in Control Center", shown, (v) => host.update((cfg) => {
+  const switchRow = html`${checkField("Show in Control Center", shown, (v) => host.update((cfg) => {
     setControlShown(cfg, v);
-  }));
+  }), undefined, { disabled: only })}
+    ${only
+      ? html`<div class="hint">This complication has no shape, so the control is all it is. Add a shape first to switch it off.</div>`
+      : nothing}`;
   if (spec === undefined) {
     return html`
       ${switchRow}
@@ -4046,7 +4074,7 @@ function controlSection(host: EditorHost): TemplateResult {
     <div class="hint">What Control Center flashes over the tile after a press.</div>
     </div>
     <div class="fgroup">
-    ${tapActionEditor(host, spec, (mutate, k) => set((c) => mutate(c), k), "control", CONTROL_TAP_TYPES)}
+    ${tapActionEditor(host, spec, (mutate, k) => set((c) => mutate(c), k), "control", CONTROL_TAP_TYPES, "On press")}
     ${forcedToButton
       ? html`<div class="hint warn">${describeTapAction(spec.action)} cannot be switched off again, so this control acts as a button however the Kind row is set.</div>`
       : nothing}
@@ -4069,7 +4097,12 @@ export function controlCard(host: EditorHost, opts: { alwaysOpen?: boolean } = {
   return card(host, "control", "Control Center", controlSection(host),
     { color: SECTION_COLOR.tap, icon: "tap", summary: controlSummary(host, spec),
       ...(opts.alwaysOpen === true ? { alwaysOpen: true } : {}),
-      ...(spec !== undefined ? { reset: () => host.update((c) => { setControlShown(c, false); }) } : {}) });
+      // No reset dot on a document with no shape: the control is the only
+      // thing it shows, so there is nothing to reset it to. The switch row
+      // says so.
+      ...(spec !== undefined && !controlOnly(host.config)
+        ? { reset: () => host.update((c) => { setControlShown(c, false); }) }
+        : {}) });
 }
 
 // ── Shared values (named values in the document) ─────────────────────────
@@ -7242,7 +7275,9 @@ export type TapActionHolder = Pick<TapElement, "action" | "openPageId" | "openPa
  *
  * `types` narrows the picker for a surface that cannot run everything: a
  * control is a one-shot press in Control Center, so it passes
- * `CONTROL_ACTION_TYPES` and keeps the same labels.
+ * `CONTROL_ACTION_TYPES` and keeps the same labels. `label` renames the row
+ * for a surface where "tap" is the wrong word: a control is pressed, not
+ * tapped, and it is not on the face at all.
  */
 export function tapActionEditor(
   host: EditorHost,
@@ -7250,10 +7285,11 @@ export function tapActionEditor(
   upd: (mutate: (p: TapActionHolder) => void, k?: string) => void,
   key: string,
   types: [TapAction["type"], string][] = LAYER_TAP_TYPES,
+  label = "Tap action",
 ): TemplateResult {
   const action = tap.action;
   return html`
-    ${selectField("Tap action", action.type, types, (v) => upd((p) => {
+    ${selectField(label, action.type, types, (v) => upd((p) => {
       p.action = tapActionForType(v, p.action);
       if (v !== "openPage") { delete p.openPageId; delete p.openPageName; }
     }))}

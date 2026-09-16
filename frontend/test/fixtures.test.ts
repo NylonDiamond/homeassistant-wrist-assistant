@@ -52,6 +52,12 @@ interface Fixture {
     /** The readable keys it should ask `list_items` for. */
     listKeys?: string[];
   };
+  /**
+   * One block per thing the fixture pins, each optional: every check below
+   * returns early when its block is absent. A control-only fixture names no
+   * shape block at all (`supportedFamilies` is empty, which is legal exactly
+   * when there is a control), so `control` alone is a complete expectation.
+   */
   expected: Record<string, { bezelText?: string | null; elements: Record<string, unknown>[] } & Record<string, unknown>> & {
     /** The Inline shape (schema 6). null for a key means "absent", as elsewhere. */
     inline?: Record<string, unknown>;

@@ -437,11 +437,15 @@ function joinWords(words: readonly string[]): string {
  * One line saying what the pasted text turned out to be: how many layers, and
  * which shapes. Enough to catch "that is not the one I copied" before any
  * entity has been picked.
+ *
+ * A document with no shape and a control is a whole complication of its own,
+ * and counting its layers would say nothing, so it says what it is instead.
  */
 export function importSummary(cfg: CustomComplicationConfig): string {
   const layers = cfg.elements.length;
   const count = layers === 1 ? "1 layer" : `${layers} layers`;
   const families = supportedFamilies(cfg);
+  if (families.length === 0 && cfg.control !== undefined) return "A Control Center control, and no shape";
   return families.length === 0 ? count : `${count}, ${joinWords(families)}`;
 }
 

@@ -1,0 +1,51 @@
+{
+  "name": "control_only",
+  "description": "A document that carries nothing but a Control Center control: `supportedFamilies` is empty, there are no `perFamily` entries and no layers. Decided 2026-09-15, a document may have no shapes exactly when it has a `control`, so this is a whole complication whose only surface is Control Center. Both ports must draw it in no shape, count it for no widget kind and offer it in no shape picker, while the control itself resolves like any other: the title is a literal, the value line reads a sensor through its format, the tint is the flat `tintColorHex` because the colouring is the default flat one (an omitted `coloring` key), and the kind is button, so there is no state to read and `isOn` is false. `expectedCompiled` lists the sensor the value line reads, which is the whole point of walking a control with no shape gate: nothing else in this document asks for a reading. The scene the action runs is not a reading and stays out, the same as `tapAction`.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-0000000000C2",
+    "name": "Evening",
+    "values": [],
+    "slotIndex": 7,
+    "elements": [],
+    "supportedFamilies": [],
+    "perFamily": [],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {"type": "refresh"},
+    "control": {
+      "kind": "button",
+      "title": {"kind": {"kind": "literal", "value": "Evening"}},
+      "valueLabel": {
+        "kind": {"kind": "entityState", "entityId": "sensor.living_room_lux", "displayName": "Living room light level", "domain": "sensor"},
+        "format": {"decimals": 0, "suffix": " lx"}
+      },
+      "symbol": "moon.stars.fill",
+      "tintColorHex": "#BF5AF2",
+      "status": {"kind": {"kind": "literal", "value": "Evening"}},
+      "action": {"type": "runScene", "entityId": "scene.evening", "displayName": "Evening", "domain": "scene"}
+    }
+  },
+  "inputs": {
+    "entityStates": {
+      "sensor.living_room_lux": {"state": "18", "domain": "sensor"}
+    },
+    "templateResults": {},
+    "dataAgeSeconds": 0
+  },
+  "expectedCompiled": {
+    "entities": ["sensor.living_room_lux"],
+    "expressionKeys": []
+  },
+  "expected": {
+    "control": {
+      "kind": "button",
+      "title": "Evening",
+      "valueLabel": "18 lx",
+      "status": "Evening",
+      "symbol": "moon.stars.fill",
+      "tintColorHex": "#BF5AF2",
+      "isOn": false
+    }
+  }
+}

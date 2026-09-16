@@ -25,6 +25,7 @@ import {
   pruneGroups,
   removeElement,
   schemaVersionFor,
+  shapesRequired,
 } from "./model.js";
 import {
   type DeviceOwnerLike,
@@ -185,9 +186,13 @@ export function firstDrawable(cfg: Pick<CustomComplicationConfig, "supportedFami
   return DRAWABLE_FAMILIES.find((f) => cfg.supportedFamilies.includes(f));
 }
 
-/** A shape can go only while another remains: the set is never empty. */
-export function canRemoveFamily(cfg: Pick<CustomComplicationConfig, "supportedFamilies">, family: FamilyKind): boolean {
-  return cfg.supportedFamilies.includes(family) && cfg.supportedFamilies.length > 1;
+/** A shape can go while another remains, and the last one can go too when the
+ * document has a control: what is left then is a complication in Control
+ * Center and in no widget picker. Without a control the set is never emptied,
+ * since a document with no shape would draw nowhere at all. */
+export function canRemoveFamily(cfg: Pick<CustomComplicationConfig, "supportedFamilies" | "control">, family: FamilyKind): boolean {
+  if (!cfg.supportedFamilies.includes(family)) return false;
+  return cfg.supportedFamilies.length > 1 || !shapesRequired(cfg);
 }
 
 /**
@@ -235,8 +240,9 @@ export function addFamily(cfg: CustomComplicationConfig, family: FamilyKind): vo
 
 /** Remove a shape, its layout and its layers in one step, so the set and the
  * document never disagree. The layers go with it because they were only ever
- * on this shape; nothing else in the complication is drawing them. Refuses to
- * empty the set. */
+ * on this shape; nothing else in the complication is drawing them. Refuses
+ * whatever `canRemoveFamily` refuses, which on a document with no control
+ * means it never empties the set. */
 export function removeFamily(cfg: CustomComplicationConfig, family: FamilyKind): void {
   if (!canRemoveFamily(cfg, family)) return;
   cfg.supportedFamilies = cfg.supportedFamilies.filter((f) => f !== family);
@@ -254,8 +260,9 @@ export function removeFamily(cfg: CustomComplicationConfig, family: FamilyKind):
  * A copy with only the shapes in `keep`, each dropped one removed the way
  * `removeFamily` removes it, layers included. Share and Import use it to send
  * or take part of a design. A `keep` that names none of the document's shapes
- * would empty the set, so it returns the copy whole instead. The document
- * passed in is never touched.
+ * would send a design with nothing in it, so it returns the copy whole
+ * instead; that covers a control-only document, whose set is already empty and
+ * comes back untouched. The document passed in is never touched.
  */
 export function keepFamilies(cfg: CustomComplicationConfig, keep: readonly FamilyKind[]): CustomComplicationConfig {
   const next = structuredClone(cfg);
@@ -312,15 +319,19 @@ export function opensInControlView(cfg: Pick<CustomComplicationConfig, "control"
 
 /**
  * The note that stands where the layer tools were, as its two lines: what
- * draws a control, then why the shape tab beside it is still there.
+ * draws a control, then what the shapes beside it do.
  *
- * `shapeName` is the shape that stays, already titled. `phone` picks the
- * surface that shape shows up on, since the same sentence has to be true on a
- * watch face and on an iPhone lock screen.
+ * `shapeName` is the shape that stays, already titled, and undefined on a
+ * document that has no shape at all: there the second line offers one instead
+ * of explaining one. `phone` picks the surface a shape shows up on, since the
+ * same sentence has to be true on a watch face and on an iPhone lock screen.
  */
-export function controlNoteLines(shapeName: string, phone: boolean): [string, string] {
+export function controlNoteLines(shapeName: string | undefined, phone: boolean): [string, string] {
+  const surface = phone ? "Lock Screen" : "watch face";
   return [
     "A control has no layers. Control Center draws it from the title, symbol, tint, value line and status on the right.",
-    `The ${shapeName} tab is what the ${phone ? "Lock Screen" : "watch face"} shows; a complication always keeps at least one shape.`,
+    shapeName === undefined
+      ? `This complication has no widget. Add a shape above if you want one on the ${surface}.`
+      : `The ${shapeName} tab is what the ${surface} shows; a complication always keeps at least one shape.`,
   ];
 }

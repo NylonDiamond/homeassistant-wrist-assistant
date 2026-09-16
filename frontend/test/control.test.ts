@@ -24,16 +24,18 @@ import {
   documentEntityUses,
   encodeConfig,
   literal,
-  CONTROL_DEFAULT_FAMILY,
+  controlOnly,
   newConfig,
   newControlConfig,
   parseConfig,
   setControlShown,
+  shapesRequired,
 } from "../src/model.js";
 import { compile } from "../src/compiler.js";
+import { addFamily, canRemoveFamily, removeFamily } from "../src/layouts.js";
 import { scrubForShare, shareSlots } from "../src/transfer.js";
 import { type ResolveContext, resolveControl } from "../src/resolver.js";
-import { type EditorHost, controlCard } from "../src/editors.js";
+import { type EditorHost, controlCard, generalEditor } from "../src/editors.js";
 import { MIN_VERSION_FOR_CONTROL_CENTER, deviceSupportsControls } from "../src/version.js";
 import type { HassLike } from "../src/ha-api.js";
 import type { IconProvider } from "../src/renderer.js";
@@ -110,7 +112,10 @@ describe("the control on the wire", () => {
     expect("control" in doc).toBe(false);
   });
 
-  it("leaves out every absent optional", () => {
+  it("leaves out every absent optional, and the flat colouring with them", () => {
+    // `coloring` and `bands` follow the same rule every layer's colour table
+    // follows, and the rule the app's encoder follows: a flat tint writes
+    // neither key, whichever side saved the document last.
     expect(roundTrip({
       kind: "button",
       title: { kind: { kind: "literal", value: "Movie night" } },
@@ -122,8 +127,6 @@ describe("the control on the wire", () => {
       kind: "button",
       title: { kind: { kind: "literal", value: "Movie night" } },
       symbol: "film",
-      coloring: "uniform",
-      bands: [],
       action: { type: "runScene", entityId: "scene.movie", displayName: "Movie", domain: "scene" },
     });
   });
@@ -497,9 +500,11 @@ describe("the Control Center card", () => {
     // its own title line goes with the chip, so only the rows this file can
     // see are named here.
     for (const label of ["Show in Control Center", "Kind", "Value line", "State",
-      "Symbol", "Symbol when off", "Colour", "Tint", "Status text", "Tap action"]) {
+      "Symbol", "Symbol when off", "Colour", "Tint", "Status text", "On press"]) {
       expect(markup, label).toContain(label);
     }
+    // The action row is a press in Control Center, never a tap on a face.
+    expect(markup).not.toContain("Tap action");
     // The title row is really there: it is editing the document's own name.
     expect(markup).toContain("Lamp");
   });
@@ -530,6 +535,23 @@ describe("the Control Center card", () => {
     expect(markup).toContain("42 W");
   });
 
+  it("keeps the switch on, and says why, while the control is all there is", () => {
+    const cfg = newControlConfig("Lamp", 0);
+    const markup = flatten(controlCard(host(cfg)));
+    expect(markup).toContain("This complication has no shape, so the control is all it is. Add a shape first to switch it off.");
+    // The switch is disabled rather than refusing the click silently, and the
+    // mutation behind it refuses the same change anyway.
+    expect(markup).toContain("?disabled=true");
+    setControlShown(cfg, false);
+    expect(cfg.control).toBeDefined();
+  });
+
+  it("switches off as usual once the document has a shape", () => {
+    const cfg = newControlConfig("Lamp", 0, "circular");
+    const markup = flatten(controlCard(host(cfg)));
+    expect(markup).not.toContain("Add a shape first to switch it off");
+  });
+
   it("offers only the actions a control may run", () => {
     const cfg = newConfig("Lamp", 0);
     setControlShown(cfg, true);
@@ -542,11 +564,13 @@ describe("the Control Center card", () => {
 });
 
 describe("the New dialog's Control Center tile", () => {
-  it("makes a document of the default shape with the control on", () => {
+  it("makes a document that is nothing but the control", () => {
     const cfg = newControlConfig("Kitchen lamp", 4);
     expect(cfg.name).toBe("Kitchen lamp");
     expect(cfg.slotIndex).toBe(4);
-    expect(cfg.supportedFamilies).toEqual([CONTROL_DEFAULT_FAMILY]);
+    expect(cfg.supportedFamilies).toEqual([]);
+    expect(cfg.perFamily).toEqual({});
+    expect(cfg.inline).toBeUndefined();
     expect(cfg.control).toBeDefined();
     expect(cfg.control?.kind).toBe("toggle");
     expect(cfg.control?.title).toEqual(literal("Kitchen lamp"));
@@ -564,5 +588,99 @@ describe("the New dialog's Control Center tile", () => {
     const { control: _control, id: _a, ...rest } = withControl;
     const { id: _b, ...plainRest } = plain;
     expect(rest).toEqual(plainRest);
+  });
+});
+
+// ── a control that stands alone ──────────────────────────────────────────
+//
+// `supportedFamilies` may be empty if and only if there is a control (decided
+// 2026-09-15). One helper says so and everything else reads it, so these tests
+// are the rule itself rather than a sample of the places it is applied.
+
+describe("the empty shape set", () => {
+  it("is allowed only by a control", () => {
+    expect(shapesRequired(newConfig("Lamp", 0))).toBe(true);
+    expect(shapesRequired(newControlConfig("Lamp", 0))).toBe(false);
+  });
+
+  it("reads as control-only when there is a control and no shape", () => {
+    expect(controlOnly(newControlConfig("Lamp", 0))).toBe(true);
+    // A control beside a shape is an extra, not a mode.
+    expect(controlOnly(newControlConfig("Lamp", 0, "circular"))).toBe(false);
+    expect(controlOnly(newConfig("Lamp", 0, []))).toBe(false);
+  });
+
+  it("lets the last shape go when there is a control, and not otherwise", () => {
+    const plain = newConfig("Lamp", 0, ["circular"]);
+    expect(canRemoveFamily(plain, "circular")).toBe(false);
+    const withControl = newControlConfig("Lamp", 0, "circular");
+    expect(canRemoveFamily(withControl, "circular")).toBe(true);
+    // A shape the document does not have is still not removable either way.
+    expect(canRemoveFamily(withControl, "medium")).toBe(false);
+  });
+
+  it("empties the set through removeFamily, layers and layout included", () => {
+    const cfg = newControlConfig("Lamp", 0, "circular");
+    removeFamily(cfg, "circular");
+    expect(cfg.supportedFamilies).toEqual([]);
+    expect(cfg.perFamily.circular).toBeUndefined();
+    expect(cfg.control).toBeDefined();
+  });
+
+  it("keeps two shapes removable one after the other, down to none", () => {
+    const cfg = newControlConfig("Lamp", 0, "circular");
+    addFamily(cfg, "rectangular");
+    removeFamily(cfg, "rectangular");
+    removeFamily(cfg, "circular");
+    expect(cfg.supportedFamilies).toEqual([]);
+  });
+
+  it("refuses to switch the control off while it is all the document is", () => {
+    const cfg = newControlConfig("Lamp", 0);
+    setControlShown(cfg, false);
+    expect(cfg.control, "the switch cannot empty a document").toBeDefined();
+    // With a shape to fall back on it clears the key as it always did.
+    addFamily(cfg, "circular");
+    setControlShown(cfg, false);
+    expect(cfg.control).toBeUndefined();
+  });
+
+  it("round trips through the wire with the key order untouched", () => {
+    const cfg = newControlConfig("Kitchen lamp", 6);
+    const once = encodeConfig(cfg);
+    const twice = encodeConfig(parseConfig(once));
+    expect(JSON.stringify(twice)).toBe(JSON.stringify(once));
+    const raw = once as Record<string, unknown>;
+    expect(raw.supportedFamilies).toEqual([]);
+    expect(raw.perFamily).toEqual([]);
+    expect(raw.control).toBeDefined();
+    expect(auditUnknownKeys(raw)).toEqual([]);
+  });
+
+  it("parses a stored document that names no shape", () => {
+    const raw = encodeConfig(newControlConfig("Kitchen lamp", 6));
+    const parsed = parseConfig(JSON.parse(JSON.stringify(raw)));
+    expect(parsed.supportedFamilies).toEqual([]);
+    expect(parsed.perFamily).toEqual({});
+    expect(parsed.control?.symbol).toBe(CONTROL_DEFAULT_SYMBOL);
+  });
+});
+
+describe("the Complication card on the control's tab", () => {
+  it("is the name alone: refresh, the tap action and the flash are the shapes'", () => {
+    const cfg = newControlConfig("Kitchen lamp", 0);
+    const markup = flatten(generalEditor(host(cfg), { nameOnly: true }));
+    expect(markup).toContain("Name");
+    expect(markup).not.toContain("Refresh");
+    expect(markup).not.toContain("Tap action");
+    expect(markup).not.toContain("Flash");
+  });
+
+  it("is every row again on a shape's tab", () => {
+    const cfg = newControlConfig("Kitchen lamp", 0, "circular");
+    const markup = flatten(generalEditor(host(cfg)));
+    for (const label of ["Name", "Refresh", "Tap action", "Flash"]) {
+      expect(markup, label).toContain(label);
+    }
   });
 });
