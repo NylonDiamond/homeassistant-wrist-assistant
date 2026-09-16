@@ -196,6 +196,21 @@ export function canRemoveFamily(cfg: Pick<CustomComplicationConfig, "supportedFa
 }
 
 /**
+ * The other side of `canRemoveFamily`: the control can go while the document
+ * still draws a shape.
+ *
+ * A control-only document is legal only because of its control, so taking it
+ * away would leave a complication that shows nowhere at all. The tab's remove
+ * button is disabled there and says to add a shape first, and
+ * `setControlShown` refuses the same change, so a click that gets past the
+ * button changes nothing either.
+ */
+export function canRemoveControl(cfg: Pick<CustomComplicationConfig, "supportedFamilies" | "control">): boolean {
+  if (cfg.control === undefined) return false;
+  return cfg.supportedFamilies.length > 0;
+}
+
+/**
  * A new Inline layout starts empty.
  *
  * It used to copy the first text layer's value, on the theory that a

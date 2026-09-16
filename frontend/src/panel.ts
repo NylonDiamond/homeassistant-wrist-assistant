@@ -74,6 +74,7 @@ import {
   newId,
   parseConfig,
   schemaVersionFor,
+  setControlShown,
   ownedElements,
   listOwningRowLayer,
   removeElement,
@@ -103,7 +104,7 @@ import {
   resolveControl,
 } from "./resolver.js";
 import { CASES, FACE_TINTS, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, phoneCaseForScreenSize, renderLayerThumb, renderLayout, slotFor, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type PreviewCase } from "./renderer.js";
-import { addFamily, canRemoveFamily, comingSoonFamilies, controlNoteLines, familiesFor, familyAllowsKind, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, opensInControlView, removeFamily, shapeGroups, supportedFamilies } from "./layouts.js";
+import { addFamily, canRemoveControl, canRemoveFamily, comingSoonFamilies, controlNoteLines, familiesFor, familyAllowsKind, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, opensInControlView, removeFamily, shapeGroups, supportedFamilies } from "./layouts.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { deviceKindOf, deviceNoun, deviceSupportsControls, deviceSupportsShapes, updateDeviceMessage } from "./version.js";
 import { makeIconProvider } from "./icons.js";
@@ -4661,6 +4662,42 @@ export class WristAssistantPanel extends LitElement {
     this.ensureActiveFamily();
   }
 
+  /**
+   * "+ Control Center" in the shape bar, clicked.
+   *
+   * One undoable change, then the view moves to the thing that was just made,
+   * which is what `addShape` does for a shape. The card's help needs no help
+   * from here: `helpSections` starts the session with the control card's help
+   * on, so the card the author lands on already explains its rows, and a "?"
+   * they pressed to hide them earlier is a choice worth keeping.
+   */
+  private addControl() {
+    const cfg = this.draft?.config;
+    if (!cfg || cfg.control !== undefined) return;
+    if (!deviceSupportsControls(this.selectedOwner?.app_version)) return;
+    this.mutate((c) => { setControlShown(c, true); });
+    this.openControlView();
+  }
+
+  /**
+   * The x on the Control Center tab, clicked.
+   *
+   * Always asks, unlike a shape, whose confirmation is skipped when the shape
+   * holds nothing: every control was written by hand, so there is always
+   * something to lose. The tab is up while the x is reachable, so the view has
+   * to move afterwards, and a document that has a removable control has a
+   * shape to move to.
+   */
+  private removeControl() {
+    const cfg = this.draft?.config;
+    if (!cfg || !canRemoveControl(cfg)) return;
+    const named = describeValue(cfg.control!.title, describeContext(this.host())).trim();
+    if (!window.confirm(`Remove the Control Center control${named === "" ? "" : ` "${named}"`}? This deletes the control alone, so every shape keeps its layers, and a control can be added again at any time.`)) return;
+    this.mutate((c) => { setControlShown(c, false); });
+    this.controlView = false;
+    this.ensureActiveFamily();
+  }
+
   /** Answered entirely by the New dialog, which is what stops a watch filling
    * with documents that all read "New complication" on the wrist. */
   private createNew() {
@@ -9041,13 +9078,21 @@ export class WristAssistantPanel extends LitElement {
    * The shapes the complication has, as one segmented control, and after it
    * the shapes it could add, as small dashed buttons. Kept apart so the control
    * reads as "which one am I editing" and the adds as a separate offer.
+   *
+   * The Control Center control is last in both halves: a tab while the
+   * document has one, an adder while it does not, because it is added and
+   * removed exactly like a shape (decided 2026-09-16).
    */
   private renderShapeTabs(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
     const have = cfg.supportedFamilies;
     const missing = this.ownerFamilies.filter((f) => !have.includes(f));
+    const addsControl = cfg.control === undefined && deviceSupportsControls(this.selectedOwner?.app_version);
     return html`<div class="shape-seg" role="group" aria-label="Shapes">${this.renderHaveTabs(cfg, layouts)}${this.renderControlTab(cfg)}</div>
-      ${missing.length > 0 ? html`<span class="shape-adds">${missing.map((f) => html`<button class="tab off ${f}" ?disabled=${!this.canEdit}
-        title=${`Add the ${familyTitle(f)} shape`} @click=${() => this.addShape(f)}>${uiIcon("plus")}${familyTitle(f)}</button>`)}</span>` : nothing}`;
+      ${missing.length > 0 || addsControl ? html`<span class="shape-adds">${missing.map((f) => html`<button class="tab off ${f}" ?disabled=${!this.canEdit}
+        title=${`Add the ${familyTitle(f)} shape`} @click=${() => this.addShape(f)}>${uiIcon("plus")}${familyTitle(f)}</button>`)}
+        ${addsControl ? html`<button class="tab off control" ?disabled=${!this.canEdit}
+          title="Add a Control Center control, beside whatever the complication already draws"
+          @click=${() => this.addControl()}>${uiIcon("plus")}Control Center</button>` : nothing}</span>` : nothing}`;
   }
 
   private renderHaveTabs(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
@@ -9090,20 +9135,24 @@ export class WristAssistantPanel extends LitElement {
    *
    * It is a tab rather than a card in the inspector alone because a control is
    * one of the things this document shows, in the same sense the shapes are,
-   * and because the layer tools are noise while it is being written. There is
-   * no remove button: the card's own switch is how a control goes away, and a
-   * second way to delete it in the tab bar would be a second thing to explain.
+   * and because the layer tools are noise while it is being written. It carries
+   * the shape tabs' own x, because the control goes the way a shape goes.
    */
   private renderControlTab(cfg: CustomComplicationConfig) {
     const spec = cfg.control;
     if (spec === undefined || !deviceSupportsControls(this.selectedOwner?.app_version)) return nothing;
     const active = this.inControlView;
+    const removable = this.canEdit && canRemoveControl(cfg);
     return html`<span class="tab-wrap">
       <button class="tab control" aria-pressed=${active ? "true" : "false"} title="Edit the Control Center control"
         @click=${() => this.openControlView()}>
         <span class="art">${controlTile(this.host(), spec, CONTROL_TAB_TILE_SIDE)}</span>
         <span class="lbl">Control Center</span>
       </button>
+      ${this.canEdit ? html`<button class="icon danger tab-x" ?disabled=${!removable}
+        title=${removable ? "Remove the Control Center control" : "The only one. Add a shape before removing it."}
+        aria-label="Remove the Control Center control"
+        @click=${(e: Event) => { e.stopPropagation(); this.removeControl(); }}>${uiIcon("delete")}</button>` : nothing}
     </span>`;
   }
 
@@ -9351,6 +9400,10 @@ export class WristAssistantPanel extends LitElement {
     // this view to click. The name still comes first, above it, because a
     // document is named before it is anything else. That tab is the only view a
     // document with no shape has, so it answers here whatever `inspect` says.
+    //
+    // The card is on that tab and nowhere else. A shape view is about the
+    // shape, and a card for something that draws in Control Center was one
+    // more thing to read past on every document that will never have one.
     const control = this.inControlView;
     if (ins.kind === "general" || control) {
       // Refresh, the tap action and the flash belong to the shapes, so on the
@@ -9362,7 +9415,7 @@ export class WristAssistantPanel extends LitElement {
         <div class="insp-body" style=${editable} @change=${() => this.draft?.endGesture()}>
           ${control
             ? html`${complication}${controlCard(host, { alwaysOpen: true })}`
-            : html`${complication}${controlCard(host)}
+            : html`${complication}
               <p class="insp-note">Click a layer ${deviceKindOf(this.selectedOwner) === "iphone" ? "on the preview" : "on the watch"} or in the list to edit it. The shape's own background and border are the bottom row of the list.</p>`}
         </div>`;
     }

@@ -355,8 +355,6 @@ import {
   type ControlSpec,
   CONTROL_ACTION_TYPES,
   controlEffectiveKind,
-  controlOnly,
-  setControlShown,
 } from "./model.js";
 import { chartSmoothed, chartSeriesWithHoles, resolveControl, type ResolveContext } from "./resolver.js";
 import { familyNote, isHomeFamily } from "./layouts.js";
@@ -3992,39 +3990,22 @@ export function controlTapEdit(cfg: CustomComplicationConfig, mutate: (p: TapAct
 }
 
 /**
- * The Control Center card's body: one switch, then the ten rows behind it.
+ * The Control Center card's body: the mock tile, then the ten rows that write
+ * the control.
  *
- * Everything waits behind the switch, because most documents will never carry
- * a control and the card should read as one line until someone wants one.
+ * There is no switch. The control is added and removed in the shape bar, the
+ * way a shape is (decided 2026-09-16), so this card only ever draws a control
+ * that is already there and the body starts at Kind.
  *
  * The rows run entity first: Kind, then the action and its target, then
  * everything the target can fill in. Picking the target seeds the title, the
  * state, the symbols and the tint (`seedControlFromEntity`), so a control is
  * usually finished by the third row and the rest is there to adjust.
  */
-function controlSection(host: EditorHost): TemplateResult {
-  const spec = host.config.control;
-  const shown = spec !== undefined;
-  // A document with no shape is nothing but its control, so the switch has
-  // nothing to fall back to: it stays on and says why. `setControlShown`
-  // refuses the same change, so a click that gets past the disabled input
-  // changes nothing either.
-  const only = controlOnly(host.config);
+function controlSection(host: EditorHost, spec: ControlSpec): TemplateResult {
   const set = (mutate: (c: ControlSpec) => void, k?: string) => host.update((cfg) => {
     if (cfg.control) mutate(cfg.control);
   }, k ? `control-${k}` : undefined);
-  const switchRow = html`${checkField("Show in Control Center", shown, (v) => host.update((cfg) => {
-    setControlShown(cfg, v);
-  }), undefined, { disabled: only })}
-    ${only
-      ? html`<div class="hint">This complication has no shape, so the control is all it is. Add a shape first to switch it off.</div>`
-      : nothing}`;
-  if (spec === undefined) {
-    return html`
-      ${switchRow}
-      <div class="hint keep">Shows the last synced value.</div>
-      <div class="hint">A control is an extra, never a mode: the document keeps every shape it already draws, and the control rides along beside them.</div>`;
-  }
   const effective = controlEffectiveKind(spec);
   const forcedToButton = spec.kind === "toggle" && effective === "button";
   // The number the band table is read against, and the row the table marks:
@@ -4046,7 +4027,6 @@ function controlSection(host: EditorHost): TemplateResult {
     host.update((cfg) => { controlTapEdit(cfg, mutate); }, k ? `control-${k}` : undefined);
   return html`
     ${controlPreview(host, spec)}
-    ${switchRow}
     <div class="hint keep">Shows the last synced value.</div>
     <div class="fgroup">
     ${segField("Kind", spec.kind, CONTROL_KINDS, (v) => set((c) => { c.kind = v; }), { def: "toggle" })}
@@ -4122,9 +4102,14 @@ function controlSection(host: EditorHost): TemplateResult {
 }
 
 /**
- * The document's Control Center control, as a card beside the document's own
- * settings. Hidden for an app too old to draw one: the key would save and
- * simply never appear anywhere.
+ * The document's Control Center control, as the card on its own tab. Hidden
+ * for an app too old to draw one: the key would save and simply never appear
+ * anywhere.
+ *
+ * Nothing at all on a document with no control, because the card has no way to
+ * make one: "+ Control Center" in the shape bar is what adds it and the tab's
+ * x is what takes it away, exactly as a shape is added and removed. That is
+ * also why there is no reset dot here, which used to be a second way out.
  *
  * `alwaysOpen` is for the Control Center tab on the canvas, where this card is
  * the whole subject of the view and folding it away would leave the column
@@ -4133,15 +4118,10 @@ function controlSection(host: EditorHost): TemplateResult {
 export function controlCard(host: EditorHost, opts: { alwaysOpen?: boolean } = {}): TemplateResult | typeof nothing {
   if (!deviceSupportsControls(host.watchAppVersion)) return nothing;
   const spec = host.config.control;
-  return card(host, "control", "Control Center", controlSection(host),
+  if (spec === undefined) return nothing;
+  return card(host, "control", "Control Center", controlSection(host, spec),
     { color: SECTION_COLOR.tap, icon: "tap", summary: controlSummary(host, spec),
-      ...(opts.alwaysOpen === true ? { alwaysOpen: true } : {}),
-      // No reset dot on a document with no shape: the control is the only
-      // thing it shows, so there is nothing to reset it to. The switch row
-      // says so.
-      ...(spec !== undefined && !controlOnly(host.config)
-        ? { reset: () => host.update((c) => { setControlShown(c, false); }) }
-        : {}) });
+      ...(opts.alwaysOpen === true ? { alwaysOpen: true } : {}) });
 }
 
 // ── Shared values (named values in the document) ─────────────────────────

@@ -13,13 +13,14 @@ import { describe, expect, it } from "vitest";
 import { html, nothing } from "lit";
 import {
   type CustomComplicationConfig,
+  controlOnly,
   literal,
   newConfig,
   newControlConfig,
   newElement,
   setControlShown,
 } from "../src/model.js";
-import { controlNoteLines, opensInControlView } from "../src/layouts.js";
+import { addFamily, canRemoveControl, controlNoteLines, opensInControlView } from "../src/layouts.js";
 import { CONTROL_TILE_SIDE, type EditorHost, controlTile } from "../src/editors.js";
 import { type ResolveContext } from "../src/resolver.js";
 import { SymbolBrowser } from "../src/symbols.js";
@@ -206,6 +207,39 @@ describe("which tab a document opens on", () => {
 
   it("opens on a shape for a document with no control at all", () => {
     expect(opensInControlView(newConfig("Kitchen lamp", 0))).toBe(false);
+  });
+});
+
+// ── the two conditions the tab bar reads ─────────────────────────────────
+//
+// The bar draws the Control Center tab while there is a control and the adder
+// while there is not, and `controlOnly` is what forces the control view on a
+// document that has no other view. Both transitions the panel has to survive
+// are these two functions over a config, so they are checked here rather than
+// inside a Lit render nothing can reach.
+
+describe("the tab bar after the control or a shape changes", () => {
+  it("stops forcing the control view once a shape is added, and keeps the control", () => {
+    const cfg = newControlConfig("Kitchen lamp", 0);
+    expect(controlOnly(cfg)).toBe(true);
+    expect(canRemoveControl(cfg)).toBe(false);
+    addFamily(cfg, "circular");
+    // The view is free to move to the new shape's tab, and the control tab
+    // stays in the bar beside it.
+    expect(controlOnly(cfg)).toBe(false);
+    expect(cfg.control).toBeDefined();
+    expect(canRemoveControl(cfg)).toBe(true);
+  });
+
+  it("leaves the shapes alone when the control is removed, so the bar still has tabs", () => {
+    const cfg = newControlConfig("Kitchen lamp", 0, "circular");
+    setControlShown(cfg, false);
+    expect(cfg.control).toBeUndefined();
+    expect(cfg.supportedFamilies).toEqual(["circular"]);
+    // Nothing to show the control view for, and nothing to remove: the bar
+    // draws "+ Control Center" instead.
+    expect(opensInControlView(cfg)).toBe(false);
+    expect(canRemoveControl(cfg)).toBe(false);
   });
 });
 

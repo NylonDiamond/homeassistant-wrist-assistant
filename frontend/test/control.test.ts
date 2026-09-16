@@ -1,6 +1,6 @@
 // The document's Control Center control: the wire, the two pure readings the
-// app shares with the panel, the resolver, and the switch that writes and
-// clears the key.
+// app shares with the panel, the resolver, and the mutation that writes and
+// clears the key, which the shape bar's adder and the tab's x both run.
 //
 // The bytes matter most. A Swift `ControlSpec` decodes the same object, so a
 // key this side writes in a different order, or writes when it should be
@@ -27,12 +27,13 @@ import {
   controlOnly,
   newConfig,
   newControlConfig,
+  newElement,
   parseConfig,
   setControlShown,
   shapesRequired,
 } from "../src/model.js";
 import { compile } from "../src/compiler.js";
-import { addFamily, canRemoveFamily, removeFamily } from "../src/layouts.js";
+import { addFamily, canRemoveControl, canRemoveFamily, removeFamily } from "../src/layouts.js";
 import { scrubForShare, shareSlots } from "../src/transfer.js";
 import { type ResolveContext, resolveControl } from "../src/resolver.js";
 import { type EditorHost, controlCard, controlTapEdit, generalEditor } from "../src/editors.js";
@@ -305,7 +306,15 @@ describe("resolveControl", () => {
   });
 });
 
-describe("the Show in Control Center switch", () => {
+// ── adding and removing the control ──────────────────────────────────────
+//
+// The control is added and removed exactly like a shape (decided 2026-09-16):
+// "+ Control Center" in the shape bar makes one, the tab's x takes it away.
+// Both run `setControlShown`, and what the x is allowed to do is
+// `canRemoveControl`, so those two are the whole rule and the panel is only
+// the buttons on top of them.
+
+describe("adding and removing the control", () => {
   it("writes a control that borrows the document's name and tap action", () => {
     const cfg = newConfig("Kitchen lamp", 0);
     cfg.tapAction = { type: "toggleEntity", entityId: "light.kitchen", displayName: "Kitchen", domain: "light" };
@@ -341,6 +350,34 @@ describe("the Show in Control Center switch", () => {
     cfg.control!.symbol = "fan";
     setControlShown(cfg, true);
     expect(cfg.control!.symbol).toBe("fan");
+  });
+
+  it("leaves every shape and layer where it was, so the control is an extra", () => {
+    const cfg = newConfig("Kitchen lamp", 0, ["circular", "rectangular"]);
+    cfg.elements.push(newElement("text"));
+    const before = structuredClone(cfg);
+    setControlShown(cfg, true);
+    expect(cfg.control).toBeDefined();
+    delete cfg.control;
+    expect(cfg).toEqual(before);
+  });
+
+  it("lets the x remove the control while a shape is left to draw", () => {
+    expect(canRemoveControl(newControlConfig("Lamp", 0, "circular"))).toBe(true);
+    // Nothing else to show: the control is what makes the document legal, so
+    // the x is disabled and says to add a shape first.
+    expect(canRemoveControl(newControlConfig("Lamp", 0))).toBe(false);
+    // No control, nothing to remove. The bar draws the adder instead.
+    expect(canRemoveControl(newConfig("Lamp", 0, ["circular"]))).toBe(false);
+  });
+
+  it("keeps the x usable once a shape is added back to a control-only document", () => {
+    const cfg = newControlConfig("Lamp", 0);
+    expect(canRemoveControl(cfg)).toBe(false);
+    addFamily(cfg, "circular");
+    expect(canRemoveControl(cfg)).toBe(true);
+    setControlShown(cfg, false);
+    expect(cfg.control).toBeUndefined();
   });
 
   it("takes the whole key away when it goes off, so nothing is left on the wire", () => {
@@ -642,13 +679,25 @@ describe("the Control Center card", () => {
     expect(controlCard(host(newConfig("Lamp", 0), { watchAppVersion: "2.7.0" }))).toBe(nothing);
   });
 
-  it("is one switch and a hint until the control is switched on", () => {
-    const markup = flatten(controlCard(host(newConfig("Lamp", 0))));
-    expect(markup).toContain("Show in Control Center");
+  it("is nothing at all on a document with no control", () => {
+    // The card cannot make a control any more, so a document without one has
+    // no card: "+ Control Center" in the shape bar is the way in. The panel
+    // draws the card on the control's tab only, and that tab exists only while
+    // there is a control, so this is the same rule twice over.
+    expect(controlCard(host(newConfig("Lamp", 0)))).toBe(nothing);
+  });
+
+  it("starts at Kind, with no switch to turn the control off", () => {
+    const cfg = newConfig("Lamp", 0);
+    setControlShown(cfg, true);
+    const markup = flatten(controlCard(host(cfg)));
+    expect(markup).not.toContain("Show in Control Center");
+    expect(markup).not.toContain("A control is an extra, never a mode");
+    // The first hint still says how fresh the reading is, and the first row is
+    // Kind. Never the word live: the control is exactly as fresh as the last
+    // pull.
     expect(markup).toContain("Shows the last synced value.");
-    expect(markup).not.toContain("Symbol when off");
-    // Never the word live: the control is exactly as fresh as the last pull.
-    expect(markup.toLowerCase()).not.toContain("live");
+    expect(markup.indexOf("Shows the last synced value.")).toBeLessThan(markup.indexOf("Kind"));
   });
 
   it("shows every row once the control is on", () => {
@@ -660,7 +709,7 @@ describe("the Control Center card", () => {
     // a browser with popover support that widget draws its form in place and
     // its own title line goes with the chip, so only the rows this file can
     // see are named here.
-    for (const label of ["Show in Control Center", "Kind", "Value line", "State",
+    for (const label of ["Kind", "Value line", "State",
       "Symbol", "Symbol when off", "Color", "Tint", "Status text", "On press", "Target"]) {
       expect(markup, label).toContain(label);
     }
@@ -685,7 +734,7 @@ describe("the Control Center card", () => {
     // Each row is found by a string only it has: "State" is also a piece of
     // the Target row's `entityState` chip, and "Color" a piece of a colour
     // attribute, so those two are looked for by their hints.
-    const order = ["Show in Control Center", "Kind", "On press", "Target",
+    const order = ["Kind", "On press", "Target",
       "The name on the tile", "Value line", "What the toggle reads", "Symbol",
       "Symbol when off", "One colour paints the tint", "Tint", "Status text"];
     const at = order.map((label) => markup.indexOf(label));
@@ -719,21 +768,16 @@ describe("the Control Center card", () => {
     expect(markup).toContain("42 W");
   });
 
-  it("keeps the switch on, and says why, while the control is all there is", () => {
+  it("says nothing about switching a control-only document's control off", () => {
+    // That sentence went with the switch. What is left is the tab's disabled
+    // x, whose own title says to add a shape first, and the mutation behind it
+    // still refuses the change.
     const cfg = newControlConfig("Lamp", 0);
     const markup = flatten(controlCard(host(cfg)));
-    expect(markup).toContain("This complication has no shape, so the control is all it is. Add a shape first to switch it off.");
-    // The switch is disabled rather than refusing the click silently, and the
-    // mutation behind it refuses the same change anyway.
-    expect(markup).toContain("?disabled=true");
+    expect(markup).not.toContain("Add a shape first");
+    expect(canRemoveControl(cfg)).toBe(false);
     setControlShown(cfg, false);
     expect(cfg.control).toBeDefined();
-  });
-
-  it("switches off as usual once the document has a shape", () => {
-    const cfg = newControlConfig("Lamp", 0, "circular");
-    const markup = flatten(controlCard(host(cfg)));
-    expect(markup).not.toContain("Add a shape first to switch it off");
   });
 
   it("offers only the actions a control may run", () => {

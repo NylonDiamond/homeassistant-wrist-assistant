@@ -6352,14 +6352,19 @@ export function controlOnly(cfg: Pick<CustomComplicationConfig, "control" | "sup
   return cfg.control !== undefined && cfg.supportedFamilies.length === 0;
 }
 
-/** The "Show in Control Center" switch, as the one mutation behind it: on
- * writes the default control, off takes the whole key away. Flipping it on
- * over a control that is already there leaves it alone, so a stray click on an
- * already-on switch cannot wipe the author's work.
+/** Adding and removing the control, as the one mutation behind both: on writes
+ * the default control, off takes the whole key away. On over a control that is
+ * already there leaves it alone, so a second click on the adder cannot wipe
+ * the author's work.
+ *
+ * The panel runs this from "+ Control Center" in the shape bar and from the
+ * Control Center tab's x, the way it adds and removes a shape, and the New
+ * dialog's Control tile runs it through `newControlConfig`.
  *
  * Off is refused on a document with no shape: the control is the only thing it
  * shows, and clearing the key would leave a complication that draws nowhere.
- * The panel's switch says so rather than taking the click. */
+ * The tab's x is disabled there and says to add a shape first, rather than
+ * taking the click. */
 export function setControlShown(cfg: CustomComplicationConfig, shown: boolean): void {
   if (!shown) {
     if (controlOnly(cfg)) return;
