@@ -431,10 +431,10 @@ function plainValue(v: Value | undefined): string {
 export function whenText(c: Comparison, describe: (v: Value) => string = plainValue): string {
   const lhs = () => describe(c.value ?? literal(""));
   switch (c.kind) {
-    case "lessThan": return `below ${lhs()}`;
-    case "lessOrEqual": return `${lhs()} or below`;
-    case "greaterThan": return `above ${lhs()}`;
-    case "greaterOrEqual": return `${lhs()} or above`;
+    case "lessThan": return `less than ${lhs()}`;
+    case "lessOrEqual": return `at most ${lhs()}`;
+    case "greaterThan": return `greater than ${lhs()}`;
+    case "greaterOrEqual": return `at least ${lhs()}`;
     case "between": return `${lhs()} to ${describe(c.upper ?? literal(""))}`;
     case "timeBetween": return `${lhs()} to ${describe(c.upper ?? literal(""))}`;
     case "matchesRegex": return `matches ${c.pattern || "?"}`;

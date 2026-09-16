@@ -8976,12 +8976,15 @@ function whenCell(host: EditorHost, c: Comparison, key: string, upd: (m: (c: Com
  * read once it has a number in it, so choosing one is choosing a sentence. */
 function tableComparisonLabel(kind: ComparisonKind): string {
   switch (kind) {
-    case "lessThan": return "below…";
-    case "lessOrEqual": return "…or below";
-    case "between": return "between…";
-    case "greaterOrEqual": return "…or above";
-    case "greaterThan": return "above…";
-    default: return COMPARISON_LABELS[kind];
+    case "lessThan": return "Less than";
+    case "lessOrEqual": return "At most";
+    case "between": return "Between";
+    case "greaterOrEqual": return "At least";
+    case "greaterThan": return "Greater than";
+    default: {
+      const label = COMPARISON_LABELS[kind];
+      return label.charAt(0).toUpperCase() + label.slice(1);
+    }
   }
 }
 

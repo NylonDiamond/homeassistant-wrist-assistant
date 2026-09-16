@@ -3192,7 +3192,8 @@ export class WristAssistantPanel extends LitElement {
     .states-table th > :is(span, button) { vertical-align: middle; }
     .states-table th:hover button.icon, .states-table th button.icon:focus-visible { opacity: .7; }
     .states-table th.acts { width: 1%; }
-    .states-table td { padding: 3px 6px; border-bottom: 1px solid var(--wa-line); vertical-align: middle; }
+    .states-table td { padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--wa-line) 55%, transparent); vertical-align: middle; }
+    .states-table tbody tr:last-child td { border-bottom: none; }
     .states-table td.empty-row { opacity: .6; padding: 12px 6px; border-bottom: none; }
     .states-table tr.state-row { cursor: pointer; }
     .states-table tr.state-row:hover td { background: var(--wa-panel); }
@@ -3206,27 +3207,39 @@ export class WristAssistantPanel extends LitElement {
     .states-table tr:hover td.acts button.icon, .states-table td.acts button.icon:focus-visible { opacity: .8; }
     .row-flag { display: inline-block; width: 12px; color: var(--success-color, #43a047); font-size: 11px; }
     tr.forced .row-flag { color: color-mix(in srgb, var(--wa-states) 70%, var(--wa-ink)); }
-    .when-cell { display: inline-flex; align-items: center; gap: 4px; }
-    .when-cell select.when-op { font: inherit; font-size: 12px; padding: 2px 4px; border-radius: 6px; border: 1px solid transparent; background: transparent; color: inherit; }
-    .when-cell select.when-op:hover { border-color: var(--wa-line); }
-    .when-and { opacity: .6; font-size: 12px; }
-    .when-otherwise { opacity: .75; font-style: italic; }
+    /* A row reads as one sentence of controls, drawn the way the band rows
+       above a chart draw theirs: the comparison is a chip with a chevron, the
+       number a quiet mono box, and a set cell the same box again. */
+    .when-cell { display: inline-flex; align-items: center; gap: 6px; }
+    .when-cell select.when-op {
+      font: inherit; font-size: 12px; font-weight: 500; height: 26px; padding: 0 22px 0 8px; border-radius: 6px;
+      border: 1px solid transparent; background-color: var(--wa-field); color: inherit;
+      background-size: 12px; background-position: right 5px center;
+    }
+    .when-cell select.when-op:hover { border-color: var(--wa-line-strong); }
+    .when-and { color: var(--wa-muted); font-size: 12px; }
+    .when-otherwise { display: inline-block; padding-left: 8px; line-height: 26px; color: var(--wa-muted); font-style: italic; }
     .rhs { display: inline-flex; align-items: center; gap: 2px; }
     .rhs .value-chip-field { margin: 0; }
     input.cellin {
-      font: inherit; font-size: 13px; width: 90px; padding: 3px 6px; border-radius: 6px;
-      border: 1px solid var(--wa-line); background: var(--wa-card); color: inherit;
+      font: inherit; font-size: 12px; width: 90px; height: 26px; min-height: 26px; padding: 0 6px; border-radius: 6px;
+      border: 1px solid transparent; background: var(--wa-field); color: inherit; box-shadow: none;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums;
     }
-    input.cellin.num { width: 64px; }
+    input.cellin:hover:not(:disabled) { border-color: var(--wa-line-strong); }
+    input.cellin.num { width: 64px; -moz-appearance: textfield; appearance: textfield; }
+    input.cellin.num::-webkit-inner-spin-button, input.cellin.num::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     button.more { width: 22px; height: 22px; opacity: .45; }
     button.more svg { width: 13px; height: 13px; }
     button.more:hover { opacity: .9; }
     button.cell {
-      display: inline-flex; align-items: center; gap: 6px; max-width: 190px; min-height: 26px;
-      font: inherit; font-size: 13px; text-align: left; padding: 3px 6px; border-radius: 6px;
+      display: inline-flex; align-items: center; gap: 6px; max-width: 190px; height: 26px;
+      font: inherit; font-size: 12px; font-weight: 500; text-align: left; padding: 0 8px; border-radius: 6px;
       border: 1px solid transparent; background: transparent; color: inherit; cursor: pointer;
     }
-    button.cell:hover { border-color: var(--wa-line); background: var(--wa-card); }
+    button.cell.filled { background: var(--wa-field); }
+    button.cell:hover { border-color: var(--wa-line-strong); }
+    button.cell .cell-word.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
     /* An empty cell is a ghost of what it would set, not a word: a dashed
        swatch, a faint icon, or a short dashed box. Hovering brings it up. */
     button.cell.empty { opacity: .55; }

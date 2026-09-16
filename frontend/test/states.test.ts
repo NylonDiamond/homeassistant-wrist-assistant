@@ -157,7 +157,7 @@ describe("tableShape", () => {
     expect(shape.ok).toBe(true);
     if (!shape.ok) return;
     expect(shape.table.numberMode).toBe(true);
-    expect(shape.table.rows.map((r) => whenText(r.comparison))).toEqual(["below 20", "20 to 50", "above 50"]);
+    expect(shape.table.rows.map((r) => whenText(r.comparison))).toEqual(["less than 20", "20 to 50", "greater than 50"]);
   });
 
   it("treats hide and show as one Visible column", () => {
@@ -234,11 +234,11 @@ describe("compileTable", () => {
 describe("whenText", () => {
   it("reads numeric rows as thresholds", () => {
     const cases: [Comparison, string][] = [
-      [{ kind: "lessThan", value: literal("20") }, "below 20"],
-      [{ kind: "lessOrEqual", value: literal("20") }, "20 or below"],
+      [{ kind: "lessThan", value: literal("20") }, "less than 20"],
+      [{ kind: "lessOrEqual", value: literal("20") }, "at most 20"],
       [{ kind: "between", value: literal("20"), upper: literal("50") }, "20 to 50"],
-      [{ kind: "greaterOrEqual", value: literal("50") }, "50 or above"],
-      [{ kind: "greaterThan", value: literal("50") }, "above 50"],
+      [{ kind: "greaterOrEqual", value: literal("50") }, "at least 50"],
+      [{ kind: "greaterThan", value: literal("50") }, "greater than 50"],
     ];
     for (const [c, text] of cases) expect(whenText(c)).toBe(text);
   });
@@ -250,7 +250,7 @@ describe("whenText", () => {
   });
 
   it("uses the caller's own words for a value it cannot read", () => {
-    expect(whenText({ kind: "greaterThan", value: kitchen() }, () => "Kitchen light")).toBe("above Kitchen light");
+    expect(whenText({ kind: "greaterThan", value: kitchen() }, () => "Kitchen light")).toBe("greater than Kitchen light");
   });
 });
 
@@ -331,7 +331,7 @@ describe("editing", () => {
     const shape = tableShape(rules);
     expect(shape.ok).toBe(true);
     if (!shape.ok) return;
-    expect(shape.table.rows.map((r) => whenText(r.comparison))).toEqual(["above 50", "below 20", "20 to 50"]);
+    expect(shape.table.rows.map((r) => whenText(r.comparison))).toEqual(["greater than 50", "less than 20", "20 to 50"]);
   });
 
   it("points every row at a new value in one edit", () => {
