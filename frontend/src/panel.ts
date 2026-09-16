@@ -412,20 +412,26 @@ function familyArt(family: FamilyKind, phone: boolean): TemplateResult {
       case "medium": return phoneBody(tile(9.5, 27, 25, 13.5));
       case "large": return phoneBody(tile(9.5, 20, 25, 27.5));
       case "xlarge": return phoneBody(tile(9.5, 12, 25, 44));
-      case "circular": return phoneBody(svg`${clock}<circle cx="22" cy="31" r="6.5" fill="currentColor" />`);
+      // A circular widget is one of a row of them under the clock, never a dot
+      // on its own in the middle of the screen. Its neighbours are what say so.
+      case "circular": return phoneBody(svg`${clock}
+        <circle cx="12" cy="30" r="4" fill="var(--wa-art-dim)" />
+        <circle cx="22" cy="30" r="4" fill="currentColor" />
+        <circle cx="32" cy="30" r="4" fill="var(--wa-art-dim)" />`);
       case "inline": return phoneBody(svg`${clock}<rect x="11" y="25" width="22" height="4.5" rx="2.25" fill="currentColor" />`);
       default: return phoneBody(svg`${clock}<rect x="9.5" y="26" width="25" height="9" rx="3" fill="currentColor" />`);
     }
   }
   // The watch face's own clock, top right, except under Corner, which lives
-  // there, and under Inline, which is the line above the time.
+  // there, and under Inline, which sits along the bottom of the face.
   const time = (y: number) => svg`<rect x="31" y=${y} width="15" height="5" rx="2.5" fill="var(--wa-art-dim)" />`;
   switch (family) {
-    case "circular": return watchBody(svg`${time(10)}<circle cx="30" cy="31" r="8.5" fill="currentColor" />`);
+    // Circular goes in a corner of the face, not its middle: the middle is
+    // where the hands are.
+    case "circular": return watchBody(svg`${time(10)}<circle cx="20.5" cy="21" r="8" fill="currentColor" />`);
     case "corner": return watchBody(svg`${time(34)}<path d="M15.5 23a10 10 0 0 1 10-10" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" />
       <circle cx="17.5" cy="15" r="3.4" fill="currentColor" />`);
-    case "inline": return watchBody(svg`<rect x="16" y="10" width="28" height="5" rx="2.5" fill="currentColor" />
-      <rect x="21" y="23" width="18" height="9" rx="3" fill="var(--wa-art-dim)" />`);
+    case "inline": return watchBody(svg`${time(10)}<rect x="18" y="44" width="24" height="5" rx="2.5" fill="currentColor" />`);
     default: return watchBody(svg`${time(10)}<rect x="15" y="24" width="30" height="11" rx="3.5" fill="currentColor" />`);
   }
 }
@@ -441,8 +447,12 @@ function controlArt(phone: boolean): TemplateResult {
       <rect x="13" y="33" width="18" height="4" rx="2" fill="var(--wa-art-dim)" />
       <rect x="13" y="39" width="18" height="4" rx="2" fill="var(--wa-art-dim)" />`);
   }
-  return watchBody(svg`${tile(21, 16, 18)}
-    <rect x="21" y="38" width="18" height="4.5" rx="2.25" fill="var(--wa-art-dim)" />`);
+  // Two columns of buttons, the way the watch draws Control Center, with the
+  // top left one yours.
+  return watchBody(svg`${tile(15.75, 15.75, 13)}
+    <rect x="31.25" y="15.75" width="13" height="13" rx="4.5" fill="var(--wa-art-dim)" />
+    <rect x="15.75" y="31.25" width="13" height="13" rx="4.5" fill="var(--wa-art-dim)" />
+    <rect x="31.25" y="31.25" width="13" height="13" rx="4.5" fill="var(--wa-art-dim)" />`);
 }
 
 /**
@@ -513,19 +523,21 @@ function controlPlaceArt(phone: boolean): TemplateResult {
       <rect x="25.5" y="61" width="11" height="11" rx="3.5" fill="var(--wa-art-dim)" />
     </svg>`;
   }
-  // watchOS: round buttons packed across the face, the way Control Center on
-  // the wrist draws them.
-  const dot = (cx: number, cy: number) => svg`<circle cx=${cx} cy=${cy} r="5.6" fill="var(--wa-art-dim)" />`;
+  // watchOS: two columns of big rounded buttons filling the face, with the
+  // battery pill above them. Not a scatter of circles, which is what the first
+  // version of this drawing guessed at.
+  const pad = (x: number, y: number) => svg`<rect x=${x} y=${y} width="12" height="12" rx="4.5" fill="var(--wa-art-dim)" />`;
   return html`<svg class="place-art watch" viewBox="0 0 60 64" aria-hidden="true">
     <rect x="51" y="21" width="4.5" height="11" rx="2.25" fill="var(--wa-art-case)" />
     <rect x="51.5" y="35" width="3.4" height="8" rx="1.7" fill="var(--wa-art-case)" />
     <rect x="8" y="4" width="44" height="52" rx="14.5" fill="var(--wa-art-case)" />
     <rect x="10.5" y="6.5" width="39" height="47" rx="12.5" fill="var(--wa-art-blur)" />
-    <circle cx="21" cy="18" r="5.6" fill="currentColor" />
-    <circle cx="21" cy="18" r="2.4" fill="var(--wa-art-blur)" />
-    ${dot(33.5, 16)}${dot(43.5, 24)}
-    ${dot(17.5, 30)}${dot(30, 29)}${dot(41, 37)}
-    ${dot(22, 42)}${dot(34, 42)}
+    <rect x="26.5" y="8.5" width="7" height="3" rx="1.5" fill="var(--wa-art-dim)" />
+    <rect x="16.75" y="14" width="12" height="12" rx="4.5" fill="currentColor" />
+    <circle cx="22.75" cy="20" r="2.6" fill="var(--wa-art-blur)" />
+    ${pad(31.25, 14)}
+    ${pad(16.75, 28)}${pad(31.25, 28)}
+    ${pad(16.75, 42)}${pad(31.25, 42)}
   </svg>`;
 }
 
@@ -1537,6 +1549,9 @@ export class WristAssistantPanel extends LitElement {
       display: flex; flex-direction: column; gap: 10px;
     }
     .pick-panel .hint { margin: 0; }
+    /* Control Center's panel is the words alone: a tighter gap, because there
+       is no grid of cards between the heading and the sentence. */
+    .pick-panel.words { gap: 6px; }
     .pick-head { display: flex; align-items: baseline; gap: 8px; }
     .pick-title { flex: 1; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--wa-accent); }
     .pick-order { font-size: 11px; font-weight: 600; color: var(--wa-muted); }
@@ -6800,8 +6815,27 @@ export class WristAssistantPanel extends LitElement {
         <div class="field new-shapes">
           <span>Where does it live?</span>
           <div class="place-cards" role="tablist" aria-label="Where does it live?">
-            ${groups.map((group) => this.renderPlaceCard(group.place, group.label, placeArt(group.place), this.pickedIn(group.place), open === group.place))}
-            ${controls ? this.renderPlaceCard("control", "Control Center", controlPlaceArt(deviceKindOf(this.selectedOwner) === "iphone"), this.newControl ? 1 : 0, open === "control") : nothing}
+            ${groups.map((group) => this.renderPlaceCard({
+              label: group.label,
+              art: placeArt(group.place),
+              open: open === group.place,
+              picked: this.pickedIn(group.place),
+              click: () => { this.newPlace = group.place; },
+            }))}
+            ${controls ? this.renderPlaceCard({
+              label: "Control Center",
+              art: controlPlaceArt(deviceKindOf(this.selectedOwner) === "iphone"),
+              open: open === "control",
+              ticked: this.newControl,
+              // Control Center holds one thing, so the card is the choice: the
+              // first click opens it and turns it on, and a second click on the
+              // open card turns it off again. A card that only opened a panel
+              // holding a single card underneath asked the same question twice.
+              click: () => {
+                if (open === "control") this.newControl = !this.newControl;
+                else { this.newPlace = "control"; this.newControl = true; }
+              },
+            }) : nothing}
           </div>
         </div>
         ${open === undefined ? nothing : open === "control"
@@ -6818,17 +6852,26 @@ export class WristAssistantPanel extends LitElement {
     </dialog>`;
   }
 
-  /** One place card: the device with that place lit, its name, and the count
-   * of what is ticked inside it. The count is the whole reason a place you
-   * leave does not feel lost. */
-  private renderPlaceCard(place: ShapePlace | "control", label: string, art: TemplateResult, picked: number, open: boolean) {
-    return html`<button type="button" role="tab" class="place-card ${open ? "open" : ""} ${picked > 0 ? "has" : ""}"
-      aria-selected=${open ? "true" : "false"} aria-controls="pick-panel"
-      title=${`Shapes on the ${label}`}
-      @click=${() => { this.newPlace = place; }}>
-      ${art}
-      <span class="place-card-name">${label}</span>
-      ${picked > 0 ? html`<span class="place-count" aria-label=${`${picked} picked`}>${picked}</span>` : nothing}
+  /**
+   * One place card: the device with that place lit, its name, and what is
+   * ticked inside it.
+   *
+   * A place holding shapes carries a count, which is the whole reason a place
+   * you leave does not feel lost. Control Center holds one thing, so it
+   * carries a tick instead and the card is the answer.
+   */
+  private renderPlaceCard(o: { label: string; art: TemplateResult; open: boolean; picked?: number; ticked?: boolean; click: () => void }) {
+    const picked = o.picked ?? 0;
+    const on = o.ticked === true || picked > 0;
+    return html`<button type="button" role="tab" class="place-card ${o.open ? "open" : ""} ${on ? "has" : ""}"
+      aria-selected=${o.open ? "true" : "false"} aria-controls="pick-panel"
+      title=${o.ticked === undefined ? `Shapes on the ${o.label}` : "A toggle or a button in Control Center"}
+      @click=${o.click}>
+      ${o.art}
+      <span class="place-card-name">${o.label}</span>
+      ${o.ticked !== undefined
+        ? (o.ticked ? pickTick() : nothing)
+        : picked > 0 ? html`<span class="place-count" aria-label=${`${picked} picked`}>${picked}</span>` : nothing}
     </button>`;
   }
 
@@ -6864,26 +6907,24 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
   }
 
-  /** The Control Center card's own panel: one tick, and what it means when it
-   * is the only thing ticked. */
+  /**
+   * What the Control Center card has to say for itself: the words, and nothing
+   * else.
+   *
+   * Every other place opens a panel of shapes to pick between. Control Center
+   * has one thing in it, so a panel holding a single card under a card that
+   * already showed the same thing asked the question twice. The card above is
+   * the answer, and this is the explanation under it.
+   */
   private renderControlPanel() {
-    return html`<div class="pick-panel" id="pick-panel" role="tabpanel">
+    const phone = deviceKindOf(this.selectedOwner) === "iphone";
+    return html`<div class="pick-panel words" id="pick-panel" role="tabpanel">
       <div class="pick-head"><span class="pick-title">Control Center</span></div>
-      <div class="shape-cards" role="group" aria-label="Control Center">
-        <button type="button" role="checkbox" class="shape-card ${this.newControl ? "on" : ""}"
-          aria-checked=${this.newControl ? "true" : "false"}
-          @click=${() => { this.newControl = !this.newControl; }}>
-          ${controlArt(deviceKindOf(this.selectedOwner) === "iphone")}
-          <span class="shape-card-name">Control</span>
-          <span class="shape-card-note">Toggle or button</span>
-          ${this.newControl ? pickTick() : html`<span class="pick-tick off" aria-hidden="true"></span>`}
-        </button>
-      </div>
-      <div class="hint">${this.newControl && this.newFamilies.size === 0
-        ? (deviceKindOf(this.selectedOwner) === "iphone"
-          ? "A control has no shape, so this complication appears in Control Center and nowhere else. Tick a Lock Screen or Home Screen shape beside it if you want one."
-          : "A control has no shape, so this complication appears in Control Center and nowhere else. Tick a watch face shape beside it if you want one.")
-        : "A control sits beside the shapes rather than instead of them."}</div>
+      <div class="hint">A toggle or a button, on ${phone ? "the Control Center page and the Lock Screen's bottom corners" : "the Control Center that swipes up from the watch face"}. ${this.newControl
+        ? (this.newFamilies.size === 0
+          ? "With no shape ticked beside it, this complication appears there and nowhere else."
+          : "It sits beside the shapes rather than instead of them.")
+        : "Click the card above to add one."}</div>
     </div>`;
   }
 
