@@ -1497,6 +1497,10 @@ function symbolTile(host: EditorHost, name: string, selected: boolean, pick: (n:
  * path alongside it, because the watch has no MDI catalogue to look a name up
  * in. Only the icon layer takes one: a rule's `setIcon` and the inline symbol
  * have nowhere to keep a path, so they stay SF Symbols.
+ *
+ * `defaultOpen` is whether the grid shows before anyone has touched this
+ * field. A layer's symbol is most of what the layer is, so its grid starts
+ * open; a symbol that is one row of a long properties sheet passes false.
  */
 function symbolField(
   host: EditorHost,
@@ -1505,9 +1509,10 @@ function symbolField(
   key: string,
   setPath?: (d: string | undefined) => void,
   label = "Symbol",
+  defaultOpen = true,
 ): TemplateResult {
   const browser = host.symbols;
-  const open = browser.isOpen(key);
+  const open = browser.isOpen(key, defaultOpen);
   const query = browser.query(key);
   const listed = host.icons.names();
   const pack = listed ?? [];
@@ -1608,7 +1613,7 @@ function symbolField(
           }
         })} /></label>
     ${missing ? html`<div class="hint warn">The installed icon pack has no <code>${current}</code>, so the preview shows a placeholder. The watch still draws it if the name is a real SF Symbol.</div>` : nothing}
-    <button type="button" class="link" @click=${() => browser.toggle(key)}>${open ? "Hide symbols" : "Browse symbols"}</button>
+    <button type="button" class="link" @click=${() => browser.toggle(key, defaultOpen)}>${open ? "Hide symbols" : "Browse symbols"}</button>
     ${browsePane}`;
 }
 
@@ -3844,11 +3849,16 @@ const CONTROL_KINDS: [ControlKind, string][] = [["toggle", "Toggle"], ["button",
 const CONTROL_TAP_TYPES: [TapAction["type"], string][] =
   TAP_ACTION_LABELS.filter(([t]) => CONTROL_ACTION_TYPES.includes(t));
 
-/** The side of the mock tile, in CSS pixels. A control is a rounded square in
- * Control Center, so one number says the whole shape; the radius is the
- * fraction of the side iOS draws. */
-const CONTROL_TILE_SIDE = 82;
+/** The side of the mock tile in the card, in CSS pixels. A control is a
+ * rounded square in Control Center, so one number says the whole shape; the
+ * radius is the fraction of the side iOS draws. */
+export const CONTROL_TILE_SIDE = 82;
 const CONTROL_TILE_RADIUS = 0.26;
+
+/** Under this side the tile draws its glyph alone. Everything on a control is
+ * sized off the tile, so a shape-tab-sized copy would carry a title two pixels
+ * tall: a smear that says less than the empty space does. */
+const CONTROL_TILE_TEXT_FROM = 40;
 
 /** What the mock paints a control that names no colour: the system blue an
  * untinted control draws with. Never written to the document. */
@@ -3870,10 +3880,16 @@ function onTintInk(hex: string): string {
  * The mock Control Center tile: the resolved symbol, title and value line, in
  * the resolved tint, at the proportion the OS draws.
  *
- * Small and plain on purpose. A control is not a canvas, so a big preview
- * would promise a layout that cannot be authored.
+ * `side` is the whole tile in CSS pixels and every measurement inside it is a
+ * fraction of that, so one function draws the shape tab's thumbnail, the
+ * card's preview and the stage's big copy. They cannot drift, which matters
+ * more here than anywhere else in the panel: a control has no renderer to
+ * check it against, so this drawing is the only picture of it there is.
+ *
+ * Nothing at all until there is a context to resolve in, the same as a face
+ * preview before the first template answer lands.
  */
-function controlPreview(host: EditorHost, spec: ControlSpec): TemplateResult | typeof nothing {
+export function controlTile(host: EditorHost, spec: ControlSpec, side = CONTROL_TILE_SIDE): TemplateResult | typeof nothing {
   const context = host.resolveContext?.();
   if (context === undefined) return nothing;
   const control = resolveControl(spec, context, host.config);
@@ -3882,26 +3898,45 @@ function controlPreview(host: EditorHost, spec: ControlSpec): TemplateResult | t
   const lit = control.kind === "button" || control.isOn;
   const tint = control.tintColorHex ?? CONTROL_MOCK_TINT;
   const ink = lit ? onTintInk(tint) : "#FFFFFF";
-  const glyph = host.icons.render(control.symbol || "questionmark", 24, ink);
-  const tile = `width:${CONTROL_TILE_SIDE}px;height:${CONTROL_TILE_SIDE}px;box-sizing:border-box;`
-    + `border-radius:${Math.round(CONTROL_TILE_SIDE * CONTROL_TILE_RADIUS)}px;padding:9px;`
-    + `display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;`
+  const text = side >= CONTROL_TILE_TEXT_FROM;
+  const px = (fraction: number) => Math.round(side * fraction);
+  const glyphSize = text ? px(0.293) : px(0.5);
+  const glyph = host.icons.render(control.symbol || "questionmark", glyphSize, ink);
+  const box = `width:${side}px;height:${side}px;box-sizing:border-box;`
+    + `border-radius:${px(CONTROL_TILE_RADIUS)}px;padding:${px(0.11)}px;`
+    + `display:flex;flex-direction:column;overflow:hidden;`
+    + `justify-content:${text ? "space-between" : "center"};align-items:${text ? "stretch" : "center"};`
     + `background:${lit ? tint : "rgba(120,120,128,0.32)"};color:${ink};`;
+  const clip = "overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+  return html`<span style=${box}>
+      <span style=${`display:block;height:${glyphSize}px;line-height:0`}>${glyph ?? nothing}</span>
+      ${text
+        ? html`<span style="display:block;min-width:0">
+            <span style=${`display:block;font-size:${px(0.122)}px;font-weight:600;line-height:1.2;${clip}`}>${control.title}</span>
+            ${control.valueLabel === undefined
+              ? nothing
+              : html`<span style=${`display:block;font-size:${px(0.11)}px;opacity:.7;line-height:1.2;${clip}`}>${control.valueLabel}</span>`}
+          </span>`
+        : nothing}
+    </span>`;
+}
+
+/**
+ * The tile as one row of the card, with what a press flashes under it.
+ *
+ * Small and plain on purpose. A control is not a canvas, so a big preview in
+ * the card would promise a layout that cannot be authored. The Control Center
+ * tab on the canvas is where the big copy lives.
+ */
+function controlPreview(host: EditorHost, spec: ControlSpec): TemplateResult | typeof nothing {
+  const context = host.resolveContext?.();
+  if (context === undefined) return nothing;
+  const status = resolveControl(spec, context, host.config).status;
   return html`<div class="field readout"><span>In Control Center</span>
-    <span class="readout-v">
-      <span style=${tile}>
-        <span style="display:block;height:24px;line-height:0">${glyph ?? nothing}</span>
-        <span style="display:block;min-width:0">
-          <span style="display:block;font-size:10px;font-weight:600;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${control.title}</span>
-          ${control.valueLabel === undefined
-            ? nothing
-            : html`<span style="display:block;font-size:9px;opacity:.7;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${control.valueLabel}</span>`}
-        </span>
-      </span>
-    </span></div>
-    ${control.status === undefined
+    <span class="readout-v">${controlTile(host, spec)}</span></div>
+    ${status === undefined
       ? nothing
-      : html`<div class="field readout"><span>On a press</span><span class="readout-v">${control.status}</span></div>`}`;
+      : html`<div class="field readout"><span>On a press</span><span class="readout-v">${status}</span></div>`}`;
 }
 
 /** The one line the card shows while it is shut: what the control is, or that
@@ -3978,11 +4013,12 @@ function controlSection(host: EditorHost): TemplateResult {
       : html`<div class="hint">Read as on for <code>on</code>, <code>open</code>, <code>unlocked</code>, <code>home</code>, <code>playing</code>, <code>heat</code> and <code>cool</code>. Anything else is off.</div>`}
     </div>`}
     <div class="fgroup">
-    ${symbolField(host, spec.symbol, (v) => set((c) => { c.symbol = v; }, "symbol"), "control-symbol")}
+    ${symbolField(host, spec.symbol, (v) => set((c) => { c.symbol = v; }, "symbol"), "control-symbol",
+      undefined, "Symbol", false)}
     ${effective === "button" ? nothing : html`
       ${symbolField(host, spec.symbolOff ?? "", (v) => set((c) => {
         if (v) c.symbolOff = v; else delete c.symbolOff;
-      }, "symboloff"), "control-symbol-off", undefined, "Symbol when off")}
+      }, "symboloff"), "control-symbol-off", undefined, "Symbol when off", false)}
       <div class="hint">Drawn while the state reads off. Leave it blank to keep the one symbol on both faces.</div>`}
     </div>
     <div class="fgroup">
@@ -4022,12 +4058,17 @@ function controlSection(host: EditorHost): TemplateResult {
  * The document's Control Center control, as a card beside the document's own
  * settings. Hidden for an app too old to draw one: the key would save and
  * simply never appear anywhere.
+ *
+ * `alwaysOpen` is for the Control Center tab on the canvas, where this card is
+ * the whole subject of the view and folding it away would leave the column
+ * empty.
  */
-export function controlCard(host: EditorHost): TemplateResult | typeof nothing {
+export function controlCard(host: EditorHost, opts: { alwaysOpen?: boolean } = {}): TemplateResult | typeof nothing {
   if (!deviceSupportsControls(host.watchAppVersion)) return nothing;
   const spec = host.config.control;
   return card(host, "control", "Control Center", controlSection(host),
     { color: SECTION_COLOR.tap, icon: "tap", summary: controlSummary(host, spec),
+      ...(opts.alwaysOpen === true ? { alwaysOpen: true } : {}),
       ...(spec !== undefined ? { reset: () => host.update((c) => { setControlShown(c, false); }) } : {}) });
 }
 

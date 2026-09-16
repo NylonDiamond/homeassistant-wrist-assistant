@@ -40,6 +40,7 @@ import {
   MAX_SLOTS,
   attachedTapsOf,
   auditUnknownKeys,
+  controlEffectiveKind,
   describeTapAction,
   duplicateElement,
   copyElements,
@@ -98,9 +99,10 @@ import {
   timelineSamples,
   countdownRemainingString,
   resolveAll,
+  resolveControl,
 } from "./resolver.js";
 import { CASES, FACE_TINTS, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, phoneCaseForScreenSize, renderLayerThumb, renderLayout, slotFor, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type PreviewCase } from "./renderer.js";
-import { addFamily, canRemoveFamily, comingSoonFamilies, familiesFor, familyAllowsKind, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, removeFamily, shapeGroups, supportedFamilies } from "./layouts.js";
+import { addFamily, canRemoveFamily, comingSoonFamilies, controlNoteLines, familiesFor, familyAllowsKind, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, opensInControlView, removeFamily, shapeGroups, supportedFamilies } from "./layouts.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { deviceKindOf, deviceNoun, deviceSupportsControls, deviceSupportsShapes, updateDeviceMessage } from "./version.js";
 import { makeIconProvider } from "./icons.js";
@@ -125,11 +127,13 @@ import {
   ALL_SECTIONS,
   SCRUB_END,
   SCRUB_START,
+  CONTROL_TILE_SIDE,
   card,
   colorField,
   colorWords,
   contentSummary,
   controlCard,
+  controlTile,
   describeContext,
   describeValue,
   effectivePlacement,
@@ -388,6 +392,11 @@ function controlArt(): TemplateResult {
     <circle cx="22" cy="26" r="3.5" fill="var(--wa-raised)" />`;
   return html`<svg class="shape-art" viewBox="0 0 44 52" aria-hidden="true">${screen}${tile}</svg>`;
 }
+
+/** The mock tile in the Control Center shape tab, CSS px. Sized to the row of
+ * shape art beside it, which is 16px tall; a tile this small draws its symbol
+ * alone, so it reads as a control without pretending to be readable. */
+const CONTROL_TAB_TILE_SIDE = 20;
 
 const COL_LEFT_DEFAULT = 300;
 const COL_RIGHT_DEFAULT = 360;
@@ -726,6 +735,16 @@ export class WristAssistantPanel extends LitElement {
   /** Groups folded shut in the Layers list. List state only, never saved. */
   @state() private collapsed: ReadonlySet<string> = new Set();
   @state() private activeFamily: FamilyKind = "rectangular";
+  /**
+   * The Control Center tab is the one being edited, in place of a shape.
+   *
+   * Its own flag rather than a value of `activeFamily`, which many places read
+   * as "which canvas am I on" and would have to learn a case that has no
+   * canvas at all. Read through `inControlView`, never directly: that getter is
+   * what makes a control that is switched off, or a layer selected anywhere,
+   * put the shape back.
+   */
+  @state() private controlView = false;
   /** Pick mode: the pointer names the layer under it instead of dragging it,
    * the way a browser inspector picks a node. One click selects and ends it. */
   @state() private picking = false;
@@ -2131,6 +2150,11 @@ export class WristAssistantPanel extends LitElement {
     .tab.xlarge .art svg { border-radius: 7.7% / 4.8%; }
     .tab .art .inline-line { font-size: 8px; padding: 2px 5px; min-width: 0; display: inline-flex; align-items: center; gap: 3px; border-radius: 999px; background: #000; color: #fff; }
     .tab .art .inline-line svg { background: transparent; border-radius: 0; }
+    /* The Control Center tab draws a mock tile rather than a face, so the art
+       rules above (a black ground, a rounded corner, a 16px cap) must not
+       reach its glyph: the tile carries its own tint and corner. */
+    .tab.control .art { height: 20px; }
+    .tab.control .art svg { background: transparent; border-radius: 0; max-height: none; max-width: none; }
     /* The remove button rides beside its tab and only while the pointer is on it. */
     .tab-wrap .tab-x { opacity: 0; pointer-events: none; margin-left: -4px; }
     .tab-wrap:hover .tab-x, .tab-wrap .tab-x:focus-visible { opacity: .7; pointer-events: auto; }
@@ -2299,6 +2323,11 @@ export class WristAssistantPanel extends LitElement {
     }
     .preview.inline .inline-line svg { display: inline-block; margin: 0; background: transparent; border-radius: 0; }
     .preview.inline .inline-line.missing { color: #999; font-style: italic; }
+    /* The big mock tile on the stage, where a face would be. It takes the same
+       drop shadow the faces take, so it sits on the work surface rather than
+       floating over it. */
+    .control-big { display: grid; place-items: center; }
+    .control-big > span { box-shadow: 0 20px 50px rgba(0,0,0,.45); }
     /* The line under the face: which shape, how big, and what a drag does. The
        size is set in mono, because it is a measurement rather than prose. */
     .under {
@@ -3698,6 +3727,11 @@ export class WristAssistantPanel extends LitElement {
         // The row under the pointer belonged to the old selection's inspector.
         this.rowHoverId = undefined;
       }
+      // Selecting anything at all is a move off the Control Center tab: that
+      // tab draws no layers, so whatever was clicked belongs to a shape. Done
+      // here rather than at each call site, since a layer is selected from the
+      // list, the face, the keyboard, a paste and a preset.
+      if (this.inspect.kind !== "general") this.controlView = false;
     }
   }
 
@@ -4133,6 +4167,7 @@ export class WristAssistantPanel extends LitElement {
       }
       this.recompile();
       this.ensureActiveFamily();
+      this.startView(this.draft.config);
     } catch (err) {
       this.parseError = errText(err);
     }
@@ -4152,6 +4187,7 @@ export class WristAssistantPanel extends LitElement {
     this.draft = new Draft(config, null);
     this.recompile();
     this.ensureActiveFamily();
+    this.startView(config);
     this.scheduleTemplates(0);
     return true;
   }
@@ -4483,6 +4519,36 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
+   * Whether the Control Center tab is what the three columns are showing.
+   *
+   * The flag alone is not the answer. There has to be a control to draw, the
+   * device's app has to be new enough to have one at all, and nothing may be
+   * selected: a click on a layer in any column, on the face or in the list,
+   * moves the inspector off "general", and that click is how someone leaves
+   * this view. So the three conditions live here instead of in a dozen places
+   * that would each have to remember to clear the flag.
+   */
+  private get inControlView(): boolean {
+    if (!this.controlView || this.inspect.kind !== "general") return false;
+    if (this.draft?.config.control === undefined) return false;
+    return deviceSupportsControls(this.selectedOwner?.app_version);
+  }
+
+  /** The Control Center tab, clicked. */
+  private openControlView() {
+    this.setRowEdit(undefined);
+    this.picking = false;
+    this.controlView = true;
+    this.inspect = { kind: "general" };
+  }
+
+  /** Which tab a freshly opened document starts on. A control-only document
+   * starts on its control; everything else starts on a shape. */
+  private startView(cfg: CustomComplicationConfig) {
+    this.controlView = opensInControlView(cfg);
+  }
+
+  /**
    * Run a change that adds layers. Whatever it adds lands on the shape being
    * edited, because that is where a layer with no shape of its own goes.
    *
@@ -4541,6 +4607,7 @@ export class WristAssistantPanel extends LitElement {
     if (!this.ownerFamilies.includes(family)) return;
     this.mutate((c) => addFamily(c, family));
     this.activeFamily = family;
+    this.controlView = false;
     this.inspect = { kind: "family" };
   }
 
@@ -4565,8 +4632,12 @@ export class WristAssistantPanel extends LitElement {
       ? newControlConfig(name, slot, family)
       : newConfig(name, slot, [family as FamilyKind]);
     if (!this.startNew(config)) return;
-    // The author asked for a control, so its card is the one open on arrival.
-    if (this.newControl) this.openSections = new Set(["control"]);
+    // The author asked for a control, so its tab is the one up on arrival and
+    // its card is the one open.
+    if (this.newControl) {
+      this.openSections = new Set(["control"]);
+      this.controlView = true;
+    }
   }
 
   private setForced(ruleId: string, branch: { caseId: string } | "otherwise" | "live") {
@@ -5881,7 +5952,9 @@ export class WristAssistantPanel extends LitElement {
       ${this.watchSupported
         ? html`<div class="layout cols-${fit.columns}"
               style="--wa-left:${fit.left}px;--wa-right:${fit.right}px">
-            <div class="column left">${this.renderAddLayer()}${this.renderLayers()}${this.renderSharedValues()}</div>
+            <div class="column left">${this.inControlView
+              ? this.renderControlHasNoLayers()
+              : html`${this.renderAddLayer()}${this.renderLayers()}`}${this.renderSharedValues()}</div>
             ${this.renderGutter("left")}
             <div class="column canvas">${this.renderBanners()}${this.renderCanvas()}</div>
             ${this.renderGutter("right")}
@@ -8441,6 +8514,27 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
+   * The left column while the Control Center tab is up, in place of the
+   * add-layer palette and the layer list.
+   *
+   * Both of those act on the shape being edited, and a control is not a shape.
+   * Left standing they would offer to put a text layer on something that draws
+   * no layers, so they go and this says why, along with the reason the shape
+   * tab next to Control Center is still there.
+   */
+  private renderControlHasNoLayers() {
+    const [note, shapeLine] = controlNoteLines(
+      familyTitle(this.activeFamily),
+      deviceKindOf(this.selectedOwner) === "iphone",
+    );
+    return html`<div class="card">
+      <h2 class="panel-title"><span class="swatch">${uiIcon("layers")}</span>Layers</h2>
+      <div class="empty">${note}</div>
+      <div class="hint">${shapeLine}</div>
+    </div>`;
+  }
+
+  /**
    * The one question a preset asks: which entity is this about.
    *
    * A preset with no entity would be a broken thing on the face, so it is
@@ -8551,6 +8645,21 @@ export class WristAssistantPanel extends LitElement {
     this.syncCountdownTicker(layouts);
     const deviceCase = this.currentCase();
     const family = this.activeFamily;
+    // The Control Center tab: the shape tabs stay, since they are how anyone
+    // gets back to a face, and everything else on the bar and the stage is a
+    // layer tool with no layers to act on.
+    if (this.inControlView) {
+      return html`
+        <div class="card canvas-card">
+          <div class="canvas-bar">
+            <div class="bar-row shapes">${this.renderShapeTabs(cfg, layouts)}</div>
+          </div>
+          <div class="stage">${this.renderControlStage(cfg)}</div>
+        </div>
+        <div class="under-grid">
+          ${this.renderValuesRow()}
+        </div>`;
+    }
     return html`
       <div class="card canvas-card">
         <div class="canvas-bar">
@@ -8637,6 +8746,32 @@ export class WristAssistantPanel extends LitElement {
       @pointerleave=${() => { if (this.picking) this.pickHoverId = undefined; }}>
       ${renderLayout(layout, opts)}
     </div>`;
+  }
+
+  /**
+   * The stage while the Control Center tab is up: one big mock tile, and the
+   * same kind of caption a shape gets.
+   *
+   * The same `controlTile` the card and the tab draw, three times the card's
+   * size. Big because this is the whole of what a control looks like, and the
+   * card's thumbnail is too small to judge a title against a tint in.
+   */
+  private renderControlStage(cfg: CustomComplicationConfig) {
+    const spec = cfg.control;
+    if (spec === undefined) return nothing;
+    const host = this.host();
+    const context = host.resolveContext?.();
+    const status = context === undefined ? undefined : resolveControl(spec, context, cfg).status;
+    return html`
+      <div class="control-big">${controlTile(host, spec, CONTROL_TILE_SIDE * 3)}</div>
+      <div class="under">
+        <b>Control Center</b>
+        <span class="dot">·</span>
+        <span class="tail">${controlEffectiveKind(spec) === "toggle" ? "Toggle" : "Button"}</span>
+      </div>
+      ${status === undefined
+        ? nothing
+        : html`<div class="under"><span class="tail">A press flashes <b>${status}</b> over the tile.</span></div>`}`;
   }
 
   /** The line under the preview: which shape, its size, and what a drag does now. */
@@ -8842,7 +8977,7 @@ export class WristAssistantPanel extends LitElement {
   private renderShapeTabs(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
     const have = cfg.supportedFamilies;
     const missing = this.ownerFamilies.filter((f) => !have.includes(f));
-    return html`<div class="shape-seg" role="group" aria-label="Shapes">${this.renderHaveTabs(cfg, layouts)}</div>
+    return html`<div class="shape-seg" role="group" aria-label="Shapes">${this.renderHaveTabs(cfg, layouts)}${this.renderControlTab(cfg)}</div>
       ${missing.length > 0 ? html`<span class="shape-adds">${missing.map((f) => html`<button class="tab off ${f}" ?disabled=${!this.canEdit}
         title=${`Add the ${familyTitle(f)} shape`} @click=${() => this.addShape(f)}>${uiIcon("plus")}${familyTitle(f)}</button>`)}</span>` : nothing}`;
   }
@@ -8850,7 +8985,9 @@ export class WristAssistantPanel extends LitElement {
   private renderHaveTabs(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
     const have = cfg.supportedFamilies;
     return this.ownerFamilies.filter((f) => have.includes(f)).map((f) => {
-      const active = f === this.activeFamily;
+      // While the Control Center tab is up no shape is being edited, so no
+      // shape tab is pressed either.
+      const active = f === this.activeFamily && !this.inControlView;
       let art: TemplateResult | typeof nothing;
       if (f === "inline") art = this.renderInlinePreview(layouts.inline, true);
       else {
@@ -8863,7 +9000,7 @@ export class WristAssistantPanel extends LitElement {
       // a button is not valid markup.
       return html`<span class="tab-wrap">
         <button class="tab ${f}" aria-pressed=${active ? "true" : "false"} title=${`Edit the ${familyTitle(f)} shape`}
-          @click=${() => { this.activeFamily = f; if (f === "inline" && this.inspect.kind === "layer") this.inspect = { kind: "family" }; }}>
+          @click=${() => { this.activeFamily = f; this.controlView = false; if (f === "inline" && this.inspect.kind === "layer") this.inspect = { kind: "family" }; }}>
           <span class="art">${art}</span>
           <span class="lbl">${familyTitle(f)}</span>${empty ? html`<small>nothing shown</small>` : nothing}
         </button>
@@ -8873,6 +9010,29 @@ export class WristAssistantPanel extends LitElement {
           @click=${(e: Event) => { e.stopPropagation(); this.removeShape(f); }}>${uiIcon("delete")}</button>` : nothing}
       </span>`;
     });
+  }
+
+  /**
+   * The Control Center tab, last in the segmented control: a shape that draws
+   * no layers.
+   *
+   * It is a tab rather than a card in the inspector alone because a control is
+   * one of the things this document shows, in the same sense the shapes are,
+   * and because the layer tools are noise while it is being written. There is
+   * no remove button: the card's own switch is how a control goes away, and a
+   * second way to delete it in the tab bar would be a second thing to explain.
+   */
+  private renderControlTab(cfg: CustomComplicationConfig) {
+    const spec = cfg.control;
+    if (spec === undefined || !deviceSupportsControls(this.selectedOwner?.app_version)) return nothing;
+    const active = this.inControlView;
+    return html`<span class="tab-wrap">
+      <button class="tab control" aria-pressed=${active ? "true" : "false"} title="Edit the Control Center control"
+        @click=${() => this.openControlView()}>
+        <span class="art">${controlTile(this.host(), spec, CONTROL_TAB_TILE_SIDE)}</span>
+        <span class="lbl">Control Center</span>
+      </button>
+    </span>`;
   }
 
   /**
@@ -9115,13 +9275,19 @@ export class WristAssistantPanel extends LitElement {
     const ins = this.inspect;
     const editable = this.canEdit ? "" : "pointer-events:none;opacity:.6";
     if (ins.kind === "general") {
+      // On the Control Center tab the control is the subject, so its card
+      // comes first and stays open, and the line about clicking a layer goes:
+      // there are no layers in this view to click.
+      const control = this.inControlView;
+      const complication = card(host, "complication", "Complication", generalEditor(host),
+        { color: SECTION_COLOR.complication, icon: "watch", alwaysOpen: true });
       return html`
         ${this.complicationHead(cfg)}
         <div class="insp-body" style=${editable} @change=${() => this.draft?.endGesture()}>
-          ${card(host, "complication", "Complication", generalEditor(host),
-            { color: SECTION_COLOR.complication, icon: "watch", alwaysOpen: true })}
-          ${controlCard(host)}
-          <p class="insp-note">Click a layer ${deviceKindOf(this.selectedOwner) === "iphone" ? "on the preview" : "on the watch"} or in the list to edit it. The shape's own background and border are the bottom row of the list.</p>
+          ${control
+            ? html`${controlCard(host, { alwaysOpen: true })}${complication}`
+            : html`${complication}${controlCard(host)}
+              <p class="insp-note">Click a layer ${deviceKindOf(this.selectedOwner) === "iphone" ? "on the preview" : "on the watch"} or in the list to edit it. The shape's own background and border are the bottom row of the list.</p>`}
         </div>`;
     }
     let body: TemplateResult | typeof nothing = nothing;

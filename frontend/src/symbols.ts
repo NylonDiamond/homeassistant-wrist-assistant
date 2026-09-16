@@ -249,12 +249,23 @@ export type SymbolPack = "sf" | "mdi";
 
 export class SymbolBrowser {
   /**
-   * Every symbol field shows its grid, so the state worth keeping is which ones
-   * the user has folded away. Pictures are the whole point of the picker and a
-   * name field alone gives no clue what it will draw, so the grid is not
+   * A layer's symbol field shows its grid, so the state worth keeping is which
+   * ones the user has folded away. Pictures are the whole point of the picker
+   * and a name field alone gives no clue what it will draw, so the grid is not
    * something to go looking for behind a button.
    */
   private collapsed = new Set<string>();
+  /**
+   * The other half, for a field that starts shut: which grids the user has
+   * opened. A field says which way it starts (`defaultOpen`), and these two
+   * sets record only the fields that have been moved off that default, so a
+   * key never has to be seeded to be read.
+   *
+   * The Control Center card is what needs it. Its two symbol fields sit in a
+   * properties sheet of a dozen rows, and two open grids there push every row
+   * below them off the screen.
+   */
+  private expanded = new Set<string>();
   /** Per field, because several grids are on screen at once and a search typed
    * into one must not disturb the others. */
   private browsing = new Map<string, BrowseState>();
@@ -267,13 +278,24 @@ export class SymbolBrowser {
     this.recent = SymbolBrowser.loadRecent();
   }
 
-  isOpen(key: string): boolean {
-    return !this.collapsed.has(key);
+  /** Whether one field's grid is showing. `defaultOpen` is how that field
+   * starts, for a key nobody has touched yet. */
+  isOpen(key: string, defaultOpen = true): boolean {
+    if (this.collapsed.has(key)) return false;
+    if (this.expanded.has(key)) return true;
+    return defaultOpen;
   }
 
-  toggle(key: string) {
-    if (this.collapsed.has(key)) this.collapsed.delete(key);
-    else this.collapsed.add(key);
+  /** Flip one field's grid. Pass the same `defaultOpen` the field reads with,
+   * or the first click on a field that starts shut would do nothing. */
+  toggle(key: string, defaultOpen = true) {
+    if (this.isOpen(key, defaultOpen)) {
+      this.expanded.delete(key);
+      this.collapsed.add(key);
+    } else {
+      this.collapsed.delete(key);
+      this.expanded.add(key);
+    }
     this.onChange();
   }
 

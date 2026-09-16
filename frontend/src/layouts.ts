@@ -289,3 +289,38 @@ export function familyContentSummary(cfg: CustomComplicationConfig, family: Fami
   if (layout.backgroundColorHex || layout.borderColorHex) out.push("the background or border");
   return out;
 }
+
+// ── The Control Center tab ────────────────────────────────────────────────
+//
+// A control is not a shape, but it is edited like one: it takes a tab in the
+// canvas card's shape bar, and while that tab is up the layer tools step
+// aside, because a control has no layers for them to act on. These two are the
+// decisions that view needs, kept pure so they can be read in a test.
+
+/**
+ * Whether a document opens on its Control Center tab rather than on a shape.
+ *
+ * Only a document that is nothing but a control: it has one, and no shape has
+ * a single layer. That is what the New dialog's Control tile makes, and
+ * landing such a document on an empty canvas with an add-layer palette beside
+ * it would point the author at the one thing they did not ask for. A document
+ * with layers opens on its layers, control or not.
+ */
+export function opensInControlView(cfg: Pick<CustomComplicationConfig, "control" | "elements">): boolean {
+  return cfg.control !== undefined && cfg.elements.length === 0;
+}
+
+/**
+ * The note that stands where the layer tools were, as its two lines: what
+ * draws a control, then why the shape tab beside it is still there.
+ *
+ * `shapeName` is the shape that stays, already titled. `phone` picks the
+ * surface that shape shows up on, since the same sentence has to be true on a
+ * watch face and on an iPhone lock screen.
+ */
+export function controlNoteLines(shapeName: string, phone: boolean): [string, string] {
+  return [
+    "A control has no layers. Control Center draws it from the title, symbol, tint, value line and status on the right.",
+    `The ${shapeName} tab is what the ${phone ? "Lock Screen" : "watch face"} shows; a complication always keeps at least one shape.`,
+  ];
+}
