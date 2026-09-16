@@ -3229,8 +3229,8 @@ export class WristAssistantPanel extends LitElement {
     button.cell:hover { border-color: var(--wa-line); background: var(--wa-card); }
     /* An empty cell is a ghost of what it would set, not a word: a dashed
        swatch, a faint icon, or a short dashed box. Hovering brings it up. */
-    button.cell.empty { opacity: .4; }
-    button.cell.empty:hover { opacity: .8; }
+    button.cell.empty { opacity: .55; }
+    button.cell.empty:hover { opacity: .9; }
     .swatch.ghost { background: transparent; border: 1px dashed var(--wa-line-strong); }
     .ghost-icon { display: inline-flex; }
     .ghost-icon svg { width: 14px; height: 14px; }
