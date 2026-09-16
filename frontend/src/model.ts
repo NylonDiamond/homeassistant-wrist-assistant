@@ -6336,6 +6336,21 @@ export function setControlShown(cfg: CustomComplicationConfig, shown: boolean): 
   if (cfg.control === undefined) cfg.control = defaultControlSpec(cfg);
 }
 
+/** The shape a document made from the New dialog's Control Center tile gets
+ * when the author picked none. The OS refuses a document with no shape, and a
+ * control always rides a document, so one has to be chosen for them. Circular
+ * is the smallest and exists on the watch and the iPhone alike. */
+export const CONTROL_DEFAULT_FAMILY: FamilyKind = "circular";
+
+/** What the New dialog makes when its Control Center tile is on: a normal
+ * document of one shape (the picked one, else `CONTROL_DEFAULT_FAMILY`) with
+ * the control switched on, so the card opens ready to fill. */
+export function newControlConfig(name: string, slotIndex: number, family?: FamilyKind): CustomComplicationConfig {
+  const cfg = newConfig(name, slotIndex, [family ?? CONTROL_DEFAULT_FAMILY]);
+  setControlShown(cfg, true);
+  return cfg;
+}
+
 export function newElement(kind: Element["kind"]): Element {
   const base = (color: string): ElementBase => ({ id: newId(), colorSlot: { baseColorHex: color }, rules: [], frame: { ...CENTERED_FRAME }, isHidden: false });
   switch (kind) {

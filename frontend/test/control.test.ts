@@ -24,7 +24,9 @@ import {
   documentEntityUses,
   encodeConfig,
   literal,
+  CONTROL_DEFAULT_FAMILY,
   newConfig,
+  newControlConfig,
   parseConfig,
   setControlShown,
 } from "../src/model.js";
@@ -536,5 +538,31 @@ describe("the Control Center card", () => {
     expect(markup).toContain("Run a scene");
     expect(markup).not.toContain("Open the page");
     expect(markup).not.toContain("Add a to-do");
+  });
+});
+
+describe("the New dialog's Control Center tile", () => {
+  it("makes a document of the default shape with the control on", () => {
+    const cfg = newControlConfig("Kitchen lamp", 4);
+    expect(cfg.name).toBe("Kitchen lamp");
+    expect(cfg.slotIndex).toBe(4);
+    expect(cfg.supportedFamilies).toEqual([CONTROL_DEFAULT_FAMILY]);
+    expect(cfg.control).toBeDefined();
+    expect(cfg.control?.kind).toBe("toggle");
+    expect(cfg.control?.title).toEqual(literal("Kitchen lamp"));
+  });
+
+  it("keeps a shape the author picked beside the tile", () => {
+    const cfg = newControlConfig("Kitchen lamp", 4, "medium");
+    expect(cfg.supportedFamilies).toEqual(["medium"]);
+    expect(cfg.control).toBeDefined();
+  });
+
+  it("is otherwise the same document the plain path makes", () => {
+    const plain = newConfig("Kitchen lamp", 4, ["circular"]);
+    const withControl = newControlConfig("Kitchen lamp", 4, "circular");
+    const { control: _control, id: _a, ...rest } = withControl;
+    const { id: _b, ...plainRest } = plain;
+    expect(rest).toEqual(plainRest);
   });
 });

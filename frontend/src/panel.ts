@@ -66,6 +66,7 @@ import {
   timelineHistoryKey,
   timelineHistoryMinutes,
   newConfig,
+  newControlConfig,
   newElement,
   convertChartTimes,
   newId,
@@ -101,7 +102,7 @@ import {
 import { CASES, FACE_TINTS, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, phoneCaseForScreenSize, renderLayerThumb, renderLayout, slotFor, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type PreviewCase } from "./renderer.js";
 import { addFamily, canRemoveFamily, comingSoonFamilies, familiesFor, familyAllowsKind, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, removeFamily, shapeGroups, supportedFamilies } from "./layouts.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
-import { deviceKindOf, deviceNoun, deviceSupportsShapes, updateDeviceMessage } from "./version.js";
+import { deviceKindOf, deviceNoun, deviceSupportsControls, deviceSupportsShapes, updateDeviceMessage } from "./version.js";
 import { makeIconProvider } from "./icons.js";
 import { makeImageSizeProvider } from "./image-sizes.js";
 import { SymbolBrowser } from "./symbols.js";
@@ -377,6 +378,15 @@ function familyArt(family: FamilyKind): TemplateResult {
     default: slot = svg`<rect x="10" y="7" width="24" height="5" rx="2.5" fill="currentColor" />`;
   }
   return html`<svg class="shape-art" viewBox="0 0 44 52" aria-hidden="true">${screen}${slot}</svg>`;
+}
+
+/** The New dialog's Control Center tile, drawn like the shapes: the phone
+ * outline with one Control Center tile on it and a symbol dot inside. */
+function controlArt(): TemplateResult {
+  const screen = svg`<rect x="3" y="2" width="38" height="48" rx="11" fill="none" stroke="currentColor" stroke-opacity=".55" stroke-width="1.5" />`;
+  const tile = svg`<rect x="13" y="17" width="18" height="18" rx="5" fill="currentColor" />
+    <circle cx="22" cy="26" r="3.5" fill="var(--wa-raised)" />`;
+  return html`<svg class="shape-art" viewBox="0 0 44 52" aria-hidden="true">${screen}${tile}</svg>`;
 }
 
 const COL_LEFT_DEFAULT = 300;
@@ -760,6 +770,10 @@ export class WristAssistantPanel extends LitElement {
   @state() private newOpen = false;
   @state() private newName = "";
   @state() private newFamily?: FamilyKind;
+  /** The dialog's Control Center tile. On its own it makes a document of the
+   * default shape with the control switched on; beside a shape it adds the
+   * control to that shape's document. */
+  @state() private newControl = false;
   /** The Share dialog is open, which mode it is in, and the labels the author
    * has renamed. Labels are keyed by placeholder id and only hold the edited
    * ones, so the defaults follow the document as it is edited underneath. */
@@ -4544,9 +4558,15 @@ export class WristAssistantPanel extends LitElement {
   private createNew() {
     const family = this.newFamily;
     const name = this.newName.trim();
-    if (!family || name === "" || this.newNameProblem() !== undefined) return;
+    if ((!family && !this.newControl) || name === "" || this.newNameProblem() !== undefined) return;
     this.closeNewDialog();
-    this.startNew(newConfig(name, this.freeSlot(), [family]));
+    const slot = this.freeSlot();
+    const config = this.newControl
+      ? newControlConfig(name, slot, family)
+      : newConfig(name, slot, [family as FamilyKind]);
+    if (!this.startNew(config)) return;
+    // The author asked for a control, so its card is the one open on arrival.
+    if (this.newControl) this.openSections = new Set(["control"]);
   }
 
   private setForced(ruleId: string, branch: { caseId: string } | "otherwise" | "live") {
@@ -6277,7 +6297,8 @@ export class WristAssistantPanel extends LitElement {
   private renderNewDialog() {
     const nameProblem = this.newNameProblem();
     const named = this.newName.trim() !== "";
-    const ready = named && nameProblem === undefined && this.newFamily !== undefined;
+    const controls = deviceSupportsControls(this.selectedOwner?.app_version);
+    const ready = named && nameProblem === undefined && (this.newFamily !== undefined || this.newControl);
     return html`<dialog class="new-dialog" @keydown=${this.newKeys} @close=${() => { this.newOpen = false; }}>
       <div class="new-head">
         <h2>New complication</h2>
@@ -6317,14 +6338,28 @@ export class WristAssistantPanel extends LitElement {
                 </button>`)}
               </div>
             </div>`)}
+            ${controls ? html`<div class="shape-group">
+              <span class="shape-group-label">Control Center</span>
+              <div class="shape-cards">
+                <button type="button" role="checkbox" class="shape-card ${this.newControl ? "on" : ""}"
+                  aria-checked=${this.newControl ? "true" : "false"}
+                  @click=${() => { this.newControl = !this.newControl; }}>
+                  ${controlArt()}
+                  <span class="shape-card-name">Control</span>
+                  <span class="shape-card-note">Toggle or button</span>
+                </button>
+              </div>
+            </div>` : nothing}
           </div>
         </div>
-        <div class="hint">Start with one shape. More can be added under the preview later.</div>
+        <div class="hint">${this.newControl && this.newFamily === undefined
+          ? "A control rides a normal complication, so this one gets the Circular shape until you pick another. More shapes can be added under the preview later."
+          : "Start with one shape. More can be added under the preview later."}</div>
       </div>
       <div class="new-foot">
         <button class="small" @click=${() => this.closeNewDialog()}>Cancel</button>
         <button class="primary" ?disabled=${!ready}
-          title=${ready ? "Make it" : !named ? "Give it a name first" : nameProblem ? nameProblem : "Pick a shape first"}
+          title=${ready ? "Make it" : !named ? "Give it a name first" : nameProblem ? nameProblem : controls ? "Pick a shape or Control first" : "Pick a shape first"}
           @click=${() => this.createNew()}>Create</button>
       </div>
     </dialog>`;
@@ -6335,6 +6370,7 @@ export class WristAssistantPanel extends LitElement {
     this.newOpen = true;
     this.newName = "";
     this.newFamily = undefined;
+    this.newControl = false;
     void this.updateComplete.then(() => {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.new-dialog");
       if (!dialog) return;
