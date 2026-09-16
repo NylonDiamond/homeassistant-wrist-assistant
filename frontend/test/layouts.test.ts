@@ -1,7 +1,7 @@
 // Adding and removing shapes, as pure functions over the config.
 
 import { describe, expect, it } from "vitest";
-import { type Value, encodeConfig, literal, newConfig, newElement, newRule, parseConfig, schemaVersionFor } from "../src/model.js";
+import { type FamilyKind, type Value, encodeConfig, literal, newConfig, newElement, newRule, parseConfig, schemaVersionFor } from "../src/model.js";
 import {
   ALL_FAMILIES,
   XLARGE_OFFERED,
@@ -17,9 +17,11 @@ import {
   placeTitle,
   firstDrawable,
   isHomeFamily,
+  isResizableSet,
   keepFamilies,
   missingFamilies,
   removeFamily,
+  resizableNote,
   blankInline,
   supportedFamilies,
 } from "../src/layouts.js";
@@ -77,6 +79,27 @@ describe("familiesFor", () => {
 
   it("knows which shapes are Home Screen tiles", () => {
     expect(ALL_FAMILIES.filter(isHomeFamily)).toEqual(["small", "medium", "large", "xlarge"]);
+  });
+});
+
+describe("resizableNote", () => {
+  it("says nothing for one size, and Extra Large never counts", () => {
+    expect(resizableNote([])).toBeUndefined();
+    expect(resizableNote(["small"])).toBeUndefined();
+    expect(resizableNote(["small", "xlarge"])).toBeUndefined();
+    expect(resizableNote(["large", "rectangular", "circular"])).toBeUndefined();
+    expect(isResizableSet(["medium", "large"])).toBe(true);
+  });
+
+  it("names the missing size for two of the three, and none for all three", () => {
+    expect(resizableNote(["small", "medium"])).toContain("Large shows a placeholder");
+    expect(resizableNote(["medium", "large"])).toContain("Small shows a placeholder");
+    expect(resizableNote(["small", "medium", "large"])).not.toContain("placeholder");
+    expect(resizableNote(["small", "medium", "large", "xlarge"])).toContain("Long press");
+  });
+
+  it("reads a Set the same as an array, which is what the New dialog holds", () => {
+    expect(resizableNote(new Set<FamilyKind>(["small", "large"]))).toContain("Medium shows a placeholder");
   });
 });
 
