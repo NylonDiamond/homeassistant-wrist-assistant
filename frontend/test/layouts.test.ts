@@ -91,15 +91,14 @@ describe("resizableNote", () => {
     expect(isResizableSet(["medium", "large"])).toBe(true);
   });
 
-  it("names the missing size for two of the three, and none for all three", () => {
-    expect(resizableNote(["small", "medium"])).toContain("Large shows a placeholder");
-    expect(resizableNote(["medium", "large"])).toContain("Small shows a placeholder");
-    expect(resizableNote(["small", "medium", "large"])).not.toContain("placeholder");
+  it("says the sizes travel together for any two or three of them", () => {
+    expect(resizableNote(["small", "medium"])).toContain("Long press");
+    expect(resizableNote(["medium", "large"])).toContain("Long press");
     expect(resizableNote(["small", "medium", "large", "xlarge"])).toContain("Long press");
   });
 
   it("reads a Set the same as an array, which is what the New dialog holds", () => {
-    expect(resizableNote(new Set<FamilyKind>(["small", "large"]))).toContain("Medium shows a placeholder");
+    expect(resizableNote(new Set<FamilyKind>(["small", "large"]))).toContain("Long press");
   });
 });
 
