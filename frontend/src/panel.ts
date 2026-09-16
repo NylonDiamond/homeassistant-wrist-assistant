@@ -657,8 +657,10 @@ export class WristAssistantPanel extends LitElement {
    * to the first card whenever something else is selected (willUpdate). */
   @state() private openSections: ReadonlySet<string> = new Set(["content"]);
   /** The inspector cards showing their help text, by card id. Not stored:
-   * help is something asked for now, not a setting. */
-  @state() private helpSections: ReadonlySet<string> = new Set();
+   * help is something asked for now, not a setting. The Control Center card
+   * starts with its help on, because its rows are new and each one needs a
+   * sentence; its "?" hides them for the rest of the session. */
+  @state() private helpSections: ReadonlySet<string> = new Set(["control"]);
   /** A drag on a number's title is one undo step, however many edits it makes. */
   private readonly scrubStart = () => this.draft?.beginGesture();
   private readonly scrubEnd = () => this.draft?.endGesture();
