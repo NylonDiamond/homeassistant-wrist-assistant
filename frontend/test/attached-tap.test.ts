@@ -12,9 +12,11 @@ import {
   attachTap,
   attachedTapsOf,
   auditUnknownKeys,
+  TAP_ACTION_LABELS,
   defaultAttachedTapAction,
   describeTapAction,
   serviceDataIsValid,
+  tapActionNote,
   tapNeedsEntity,
   detachTaps,
   duplicateElement,
@@ -680,6 +682,54 @@ describe("call a service", () => {
     expect(serviceDataIsValid("[1, 2]")).toBe(false);
     expect(serviceDataIsValid("42")).toBe(false);
     expect(serviceDataIsValid("{brightness_pct: 50}")).toBe(false);
+  });
+});
+
+describe("refresh every complication", () => {
+  it("sits right after the plain refresh in every picker", () => {
+    const types = TAP_ACTION_LABELS.map(([t]) => t);
+    expect(types.indexOf("refreshAll")).toBe(types.indexOf("refresh") + 1);
+    expect(TAP_ACTION_LABELS.find(([t]) => t === "refreshAll")?.[1]).toBe("Refresh every complication");
+  });
+
+  it("carries no entity, whatever the picker was on before", () => {
+    const toggle: TapAction = { type: "toggleEntity", entityId: "light.kitchen", displayName: "Kitchen", domain: "light" };
+    expect(tapActionForType("refreshAll", toggle)).toEqual({ type: "refreshAll" });
+    expect(tapNeedsEntity("refreshAll")).toBe(false);
+    expect(describeTapAction({ type: "refreshAll" })).toBe("Refresh every complication");
+  });
+
+  it("is the only type with a note under the picker", () => {
+    const note = tapActionNote("refreshAll");
+    expect(note).toContain("every Wrist Assistant complication");
+    expect(note).toContain("older app");
+    for (const [type] of TAP_ACTION_LABELS) {
+      if (type !== "refreshAll") expect(tapActionNote(type), type).toBeUndefined();
+    }
+  });
+
+  it("round-trips on the wire, on the document and on a layer", () => {
+    const cfg = newConfig("X", 0);
+    cfg.tapAction = { type: "refreshAll" };
+    const el = newElement("tap");
+    if (el.kind === "tap") el.payload.action = { type: "refreshAll" };
+    cfg.elements = [el];
+
+    const enc = encodeConfig(cfg) as Record<string, unknown>;
+    expect(auditUnknownKeys(enc)).toEqual([]);
+    expect(enc.tapAction).toEqual({ type: "refreshAll" });
+    const back = parseConfig(enc);
+    expect(back.tapAction).toEqual({ type: "refreshAll" });
+    const layer = back.elements[0];
+    expect(layer?.kind === "tap" && layer.payload.action).toEqual({ type: "refreshAll" });
+    expect(encodeConfig(back)).toEqual(enc);
+  });
+
+  it("leaves a type neither side knows reading as nothing", () => {
+    const cfg = newConfig("X", 0);
+    const enc = encodeConfig(cfg) as Record<string, unknown>;
+    enc.tapAction = { type: "refreshEverythingEverywhere" };
+    expect(parseConfig(enc).tapAction).toEqual({ type: "none" });
   });
 });
 

@@ -3066,7 +3066,7 @@ export interface CallServiceAction {
 }
 
 export type TapAction =
-  | { type: "none" | "refresh" | "openApp" | "openPage" | "openRoomPage" | "timerStartPause" | "timerCancel" }
+  | { type: "none" | "refresh" | "refreshAll" | "openApp" | "openPage" | "openRoomPage" | "timerStartPause" | "timerCancel" }
   | ({ type: "toggleEntity" | "runScene" | "runScript" | "addTodo" | "runHTTPAction" } & EntityRef)
   | CallServiceAction;
 
@@ -3100,7 +3100,8 @@ export function serviceDataIsValid(json: string | undefined): boolean {
  * boxes with the same words in review mode, and the renderer cannot import the
  * editors (they already import it). */
 export const TAP_ACTION_LABELS: [TapAction["type"], string][] = [
-  ["refresh", "Refresh"], ["none", "Nothing"], ["openApp", "Open the app"], ["openPage", "Open the page"], ["openRoomPage", "Open the room page"],
+  ["refresh", "Refresh"], ["refreshAll", "Refresh every complication"],
+  ["none", "Nothing"], ["openApp", "Open the app"], ["openPage", "Open the page"], ["openRoomPage", "Open the room page"],
   ["timerStartPause", "Timer start / pause"], ["timerCancel", "Timer cancel"],
   ["toggleEntity", "Toggle an entity"], ["runScene", "Run a scene"], ["runScript", "Run a script"], ["addTodo", "Add a to-do"], ["runHTTPAction", "Run an HTTP action"],
   ["callService", "Call a service"],
@@ -3119,6 +3120,21 @@ export function describeTapAction(action: TapAction): string {
   if (!("entityId" in action)) return label;
   const target = action.displayName || action.entityId;
   return target ? `${label}: ${target}` : label;
+}
+
+/** The line under a tap picker for the types that need a word of explanation,
+ * or undefined for the ones whose label already says everything. Kept beside
+ * the labels so every picker shows the same sentence: the document's tap, a
+ * tap layer's, and an attached tap's.
+ *
+ * Only `refreshAll` has one today. A watch reads a tap type it does not know
+ * as doing nothing, so the second sentence is the whole warning an older watch
+ * needs: the tap saves and syncs either way, and starts working once that
+ * watch is updated. */
+export function tapActionNote(type: TapAction["type"]): string | undefined {
+  if (type !== "refreshAll") return undefined;
+  return "Refreshes every Wrist Assistant complication on the watch face, not just this one."
+    + " On a watch running an older app this tap does nothing.";
 }
 
 /**
@@ -4190,7 +4206,7 @@ function parseControl(raw: J): ControlSpec {
 function parseTapAction(raw: unknown): TapAction {
   if (!isObject(raw) || typeof raw.type !== "string") return { type: "none" };
   switch (raw.type) {
-    case "none": case "refresh": case "openApp": case "openPage": case "openRoomPage":
+    case "none": case "refresh": case "refreshAll": case "openApp": case "openPage": case "openRoomPage":
     case "timerStartPause": case "timerCancel":
       return { type: raw.type };
     case "toggleEntity": case "runScene": case "runScript": case "addTodo": case "runHTTPAction":
@@ -6313,8 +6329,8 @@ export function newConfig(name: string, slotIndex: number, families: FamilyKind[
  * It borrows what the document already says about itself, so switching the
  * card on gives something that reads right before anything is edited: the
  * document's name as the title, and its own tap action when a control is
- * allowed to run it. A tap a control cannot run (a refresh, a page, a timer)
- * falls back to a toggle with no entity picked yet.
+ * allowed to run it. A tap a control cannot run (either refresh, a page, a
+ * timer) falls back to a toggle with no entity picked yet.
  */
 export function defaultControlSpec(cfg: CustomComplicationConfig): ControlSpec {
   const action: TapAction = controlActionAllowed(cfg.tapAction.type)

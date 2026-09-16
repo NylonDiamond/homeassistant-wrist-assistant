@@ -207,7 +207,7 @@ describe("controlEffectiveKind", () => {
 
   it("allows the six actions a control may run and no others", () => {
     expect(CONTROL_ACTION_TYPES).toEqual(["toggleEntity", "runScene", "runScript", "callService", "runHTTPAction", "openApp"]);
-    for (const refused of ["refresh", "none", "openPage", "openRoomPage", "timerStartPause", "timerCancel", "addTodo"] as const) {
+    for (const refused of ["refresh", "refreshAll", "none", "openPage", "openRoomPage", "timerStartPause", "timerCancel", "addTodo"] as const) {
       expect(controlActionAllowed(refused), refused).toBe(false);
     }
   });
@@ -334,6 +334,13 @@ describe("adding and removing the control", () => {
     expect(cfg.tapAction.type).toBe("refresh");
     setControlShown(cfg, true);
     expect(cfg.control!.action).toEqual({ type: "toggleEntity", entityId: "", displayName: "", domain: "" });
+
+    // The face-wide refresh is no more runnable from Control Center than the
+    // single one is.
+    const all = newConfig("Weather", 0);
+    all.tapAction = { type: "refreshAll" };
+    setControlShown(all, true);
+    expect(all.control!.action).toEqual({ type: "toggleEntity", entityId: "", displayName: "", domain: "" });
   });
 
   it("does not share the document's tap action object with the control", () => {

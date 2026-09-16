@@ -14,6 +14,7 @@ from contextlib import nullcontext
 from dataclasses import dataclass, field
 from io import BytesIO
 import logging
+from typing import Any
 from aiohttp.web import Request, Response, StreamResponse
 
 # NOTE: Pillow (PIL) is imported lazily inside _process_frame / _process_snapshot
@@ -654,14 +655,44 @@ BATCH_GRAB_RETRY_DELAY = 1.0
 MAX_BATCH_SNAPSHOT_CAMERAS = 50
 
 
+def batch_snapshot_box(width_raw: Any, max_height_raw: Any) -> tuple[int, int]:
+    """The bounding box one camera of a batch is fitted into.
+
+    `max_height_raw` is optional. Left out, or junk, the box is square: the
+    width on both sides, which is what every batch caller asked for before the
+    key existed and what the watch's camera tiles still want. A caller that
+    sends one gets it bounded against this op's own ceiling rather than the
+    single snapshot's 300px tier, because a batch already takes widths up to
+    `MAX_WIDTH` and a height clamped below the width would shrink the tile
+    that asked for today's square box.
+    """
+
+    def _bound(value: Any, default: int) -> int:
+        try:
+            v = int(value) if value is not None else default
+        except (TypeError, ValueError):
+            v = default
+        return max(MIN_WIDTH, min(MAX_WIDTH, v))
+
+    width = _bound(width_raw, DEFAULT_WIDTH)
+    if max_height_raw is None:
+        return width, width
+    return width, _bound(max_height_raw, width)
+
+
 async def run_batch_snapshot_stream(
     hass: HomeAssistant,
     request: Request,
-    cameras: list[tuple[str, int]],
+    cameras: list[tuple[str, int, int]],
     quality: int,
     concurrency: int = DEFAULT_BATCH_SNAPSHOT_CONCURRENCY,
 ) -> StreamResponse:
     """Stream resized JPEG snapshots for many cameras over one connection.
+
+    `cameras` is (entity_id, width, max_height) per camera, the last two being
+    the bounding box the image is fitted into with its aspect kept. A caller
+    that wants the square box every watch tile has always got passes the width
+    twice.
 
     Each camera is grabbed concurrently (bounded by `concurrency`; 0 = unlimited,
     the default) and written to the multipart response *as it completes* — fast
@@ -695,7 +726,9 @@ async def run_batch_snapshot_stream(
     )
     boundary = BATCH_SNAPSHOT_BOUNDARY.encode()
 
-    async def _grab(entity_id: str, width: int) -> tuple[str, bytes | None]:
+    async def _grab(
+        entity_id: str, width: int, max_height: int
+    ) -> tuple[str, bytes | None]:
         async with limiter:
             for attempt in range(BATCH_GRAB_RETRIES + 1):
                 try:
@@ -706,7 +739,9 @@ async def run_batch_snapshot_stream(
                             image.content,
                             ViewportState(),
                             width,
-                            width,  # square bounding box; tile crops to fit
+                            # Square when the caller sent no max_height; the
+                            # tile crops to fit either way.
+                            max_height,
                             quality,
                             SNAPSHOT_MAX_BYTES,
                         )
@@ -742,8 +777,8 @@ async def run_batch_snapshot_stream(
                 + data + b"\r\n"
             )
 
-    pending = {entity_id for entity_id, _ in cameras}
-    tasks = [asyncio.create_task(_grab(eid, w)) for eid, w in cameras]
+    pending = {entity_id for entity_id, _, _ in cameras}
+    tasks = [asyncio.create_task(_grab(eid, w, h)) for eid, w, h in cameras]
     try:
         # Writes happen ONLY in this single consumer loop → serialized on the one
         # response; grabs run concurrently under the semaphore.

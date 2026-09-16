@@ -145,12 +145,14 @@ class StreamTokenStore:
 class BatchSnapshotTokenEntry:
     """A pending batch-snapshot stream bound to a single token.
 
-    `cameras` is a list of (entity_id, width) pairs fixed at mint time, so a
-    leaked token can't be repointed at other cameras mid-stream.
+    `cameras` is a list of (entity_id, width, max_height) triples fixed at
+    mint time, so a leaked token can't be repointed at other cameras
+    mid-stream. `max_height` equals `width` for a caller that asked for the
+    square bounding box, which is every caller that sends no `max_height`.
     """
 
     watch_id: str
-    cameras: list[tuple[str, int]]
+    cameras: list[tuple[str, int, int]]
     quality: int
     expires_at: float
     consumed: bool = False
@@ -174,7 +176,7 @@ class BatchSnapshotTokenStore:
         self,
         *,
         watch_id: str,
-        cameras: list[tuple[str, int]],
+        cameras: list[tuple[str, int, int]],
         quality: int,
         ttl_seconds: float,
         now: float | None = None,

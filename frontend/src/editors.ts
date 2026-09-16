@@ -134,6 +134,7 @@ import {
   TAP_ACTION_LABELS,
   describeTapAction,
   serviceDataIsValid,
+  tapActionNote,
   tapNeedsEntity,
   tapPointSize,
   attachTap,
@@ -3657,6 +3658,14 @@ export function tapActionForType(type: TapAction["type"], current: TapAction): T
   return { type: type as "refresh" };
 }
 
+/** The line under a tap picker for a type that needs one, or nothing. Every
+ * picker renders this, so the sentence is written once, in the model, beside
+ * the labels themselves. */
+function tapNote(type: TapAction["type"]): TemplateResult | typeof nothing {
+  const note = tapActionNote(type);
+  return note === undefined ? nothing : html`<div class="hint">${note}</div>`;
+}
+
 /** Domain, service and data for the common calls, so the usual ones are one
  * click rather than two fields of typing. The list mirrors the app's control
  * action catalogue: the same services the Control a Device step offers. */
@@ -3799,6 +3808,7 @@ export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean } = {
       </div>
     </div>
     ${renamedNote}
+    ${tapNote(tap.type)}
     ${"entityId" in tap ? entityField(host, "Target", tap, (ref) => host.update((c) => { c.tapAction = { type: tap.type, ...ref }; }, "tap-entity"), "general-tap") : nothing}
     ${tap.type === "callService"
       ? callServiceFields(host, tap, (next, k) => host.update((c) => { c.tapAction = next; }, k), "general-tap")
@@ -7312,6 +7322,7 @@ export function tapActionEditor(
       p.action = tapActionForType(v, p.action);
       if (v !== "openPage") { delete p.openPageId; delete p.openPageName; }
     }))}
+    ${tapNote(action.type)}
     ${"entityId" in action ? html`
       ${entityField(host, "Target", action, (ref) => upd((p) => { p.action = { type: action.type, ...ref }; }, "tap-entity"), `${key}-tap`)}
       ${itemPlaceholders(host, (text) => upd((p) => {

@@ -531,9 +531,9 @@ def test_run_batch_snapshot_stream_emits_progressive_parts() -> None:
         cs.async_get_image = _fake_get_image
 
         cameras = [
-            ("camera.front", 220),
-            ("camera.side", 220),
-            ("camera.broken", 220),  # always fails → error part
+            ("camera.front", 220, 220),
+            ("camera.side", 220, 220),
+            ("camera.broken", 220, 220),  # always fails → error part
         ]
         resp = asyncio.run(
             cs.run_batch_snapshot_stream(_FakeHass(), object(), cameras, 80)
@@ -547,7 +547,7 @@ def test_run_batch_snapshot_stream_emits_progressive_parts() -> None:
         assert body.endswith(b"--wasnap--\r\n")
 
         # Every camera is addressed by entity_id (routing is by header).
-        for entity_id, _ in cameras:
+        for entity_id, _, _ in cameras:
             assert f"X-Entity-Id: {entity_id}".encode() in body
 
         # The two good cameras carry ok JPEG parts; the broken one is an error.
@@ -566,7 +566,7 @@ def test_run_batch_snapshot_stream_all_failures_still_closes() -> None:
 
         cs.async_get_image = _always_fail
 
-        cameras = [("camera.a", 200), ("camera.b", 200)]
+        cameras = [("camera.a", 200, 200), ("camera.b", 200, 200)]
         resp = asyncio.run(
             cs.run_batch_snapshot_stream(_FakeHass(), object(), cameras, 80)
         )
@@ -597,7 +597,7 @@ def test_run_batch_snapshot_stream_caps_concurrency() -> None:
 
         cs.async_get_image = _slow_get_image
 
-        cameras = [(f"camera.c{i}", 200) for i in range(6)]
+        cameras = [(f"camera.c{i}", 200, 200) for i in range(6)]
         resp = asyncio.run(
             cs.run_batch_snapshot_stream(
                 _FakeHass(), object(), cameras, 80, concurrency=2
@@ -628,7 +628,7 @@ def test_run_batch_snapshot_stream_unlimited_concurrency() -> None:
 
         cs.async_get_image = _slow_get_image
 
-        cameras = [(f"camera.c{i}", 200) for i in range(6)]
+        cameras = [(f"camera.c{i}", 200, 200) for i in range(6)]
         resp = asyncio.run(
             cs.run_batch_snapshot_stream(
                 _FakeHass(), object(), cameras, 80, concurrency=0
@@ -637,6 +637,86 @@ def test_run_batch_snapshot_stream_unlimited_concurrency() -> None:
 
         assert max_inflight == 6  # all grabbed in parallel, no cap
         assert resp.body.count(b"X-WA-Status: ok\r\n") == 6
+
+
+def test_batch_snapshot_box_is_square_unless_a_height_is_asked_for() -> None:
+    """A spec with no ``max_height`` must keep the box it has today.
+
+    Every shipped watch app sends width alone, and the tiles are drawn from a
+    square box. Filling the height in from anything but the width (the single
+    snapshot's 300px tier, say) would silently resize every camera tile on
+    every watch already out there.
+    """
+    with _fresh_camera_stream("cs_box") as cs:
+        assert cs.batch_snapshot_box(220, None) == (220, 220)
+        assert cs.batch_snapshot_box(None, None) == (
+            cs.DEFAULT_WIDTH,
+            cs.DEFAULT_WIDTH,
+        )
+        # A width above the single snapshot's tier still gets its own height.
+        assert cs.batch_snapshot_box(600, None) == (600, 600)
+
+        # An asked-for height is honored, and bounded by this op's own range.
+        assert cs.batch_snapshot_box(220, 90) == (220, 90)
+        assert cs.batch_snapshot_box(220, 1) == (220, cs.MIN_WIDTH)
+        assert cs.batch_snapshot_box(220, 99_999) == (220, cs.MAX_WIDTH)
+        assert cs.batch_snapshot_box(99_999, 100) == (cs.MAX_WIDTH, 100)
+
+        # Junk falls back to the width, which is the square box again.
+        assert cs.batch_snapshot_box(220, "tall") == (220, 220)
+        assert cs.batch_snapshot_box("wide", None) == (
+            cs.DEFAULT_WIDTH,
+            cs.DEFAULT_WIDTH,
+        )
+
+
+def test_run_batch_snapshot_stream_passes_each_camera_s_bounding_box() -> None:
+    """The third element of a camera is the height half of the box.
+
+    The watch's camera tiles send no `max_height` and the op fills in the
+    width, which is the square box every tile has always been given. A caller
+    that wants a wide strip sends its own, and it has to arrive as the second
+    size argument of `_process_snapshot` or the image comes back the old shape
+    and nothing fails loudly.
+    """
+    with _fresh_camera_stream("cs_batch_box") as cs:
+        cs.StreamResponse = _RecordingStreamResponse
+        cs.BATCH_GRAB_RETRY_DELAY = 0.0
+        jpeg = _test_jpeg(640, 480)
+
+        async def _get_image(hass, entity_id, timeout=5):  # noqa: ANN001
+            return types.SimpleNamespace(content=jpeg)
+
+        cs.async_get_image = _get_image
+
+        boxes: dict[str, tuple[int, int]] = {}
+        entity_of_call: list[str] = ["camera.square", "camera.strip"]
+        real_process = cs._process_snapshot
+
+        def _recording_process(data, viewport, width, max_height, quality, max_bytes):  # noqa: ANN001
+            boxes[entity_of_call.pop(0) if entity_of_call else "?"] = (
+                width,
+                max_height,
+            )
+            return real_process(data, viewport, width, max_height, quality, max_bytes)
+
+        cs._process_snapshot = _recording_process
+
+        cameras = [
+            # Square: what the op builds when a spec carries no max_height.
+            ("camera.square", 220, 220),
+            ("camera.strip", 220, 90),
+        ]
+        resp = asyncio.run(
+            # concurrency=1 so the two grabs are ordered and the recorder can
+            # name which camera it saw.
+            cs.run_batch_snapshot_stream(
+                _FakeHass(), object(), cameras, 80, concurrency=1
+            )
+        )
+
+        assert boxes == {"camera.square": (220, 220), "camera.strip": (220, 90)}
+        assert resp.body.count(b"X-WA-Status: ok\r\n") == 2
 
 
 # ── Draft-mode (DCT-scaled) decode ────────────────────────────────────────

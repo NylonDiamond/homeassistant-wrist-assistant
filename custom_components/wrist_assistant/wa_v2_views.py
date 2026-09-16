@@ -14,7 +14,10 @@ Endpoints registered here:
   Service-style ops (todo / calendar / weather / notify / tts / conversation
   / assist_satellite / mass_search / etc.) all go through `op=service` with
   optional `return_response: true` since they're just service calls — there's
-  no need for a separate op per HA service.
+  no need for a separate op per HA service. `op=bundle` answers a whole watch
+  face's text sources at once (template, states, history, statistics, lists)
+  so a face-wide refresh is one signed request rather than one per source per
+  complication; the readers behind it live in `bundle_ops`.
 
 * `POST /api/wrist_assistant/v2/delta` — long-poll wrapper around the existing
   delta coordinator. Same payload, same gzip path, same response body as the
@@ -50,8 +53,6 @@ import os
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -65,27 +66,20 @@ from homeassistant.core import HomeAssistant, ServiceResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceNotFound
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import instance_id as ha_instance_id
-from homeassistant.helpers.template import Template, TemplateError
 
 from .audio_upload import CLEANUP_AGE_SECONDS, MAX_UPLOAD_SIZE
+from .bundle_ops import (
+    BundleRequestError,
+    OpError,
+    async_history_result,
+    async_list_result,
+    async_run_bundle,
+    async_state_result,
+    async_statistics_result,
+    async_template_result,
+    normalize_bundle_request,
+)
 from .camera_devices import build_camera_device_groups, resolve_stream_sibling
-from .history_series import (
-    HistorySeriesError,
-    async_history_series,
-    clamp_points,
-    normalize_combine,
-    normalize_entities,
-    normalize_mode,
-)
-from .list_items import (
-    ListItemsError,
-    async_list_items,
-)
-from .statistics_series import (
-    RECORDER_UNAVAILABLE,
-    StatisticsSeriesError,
-    async_statistics_series,
-)
 from .camera_stream import (
     DEFAULT_FPS,
     DEFAULT_QUALITY,
@@ -109,6 +103,7 @@ from .camera_stream import (
     _process_frame,
     _process_snapshot,
     _UNSET,
+    batch_snapshot_box,
     capture_notification_snapshot,
     jpeg_aspect,
     run_batch_snapshot_stream,
@@ -715,281 +710,94 @@ async def _op_service(ctx: _OpContext) -> Response:
         return ctx.signed_json({"ok": False, "error": str(err)}, status=502)
 
 
+def _op_failed(ctx: _OpContext, err: OpError) -> Response:
+    """Answer a core reader's failure the way the single op always has.
+
+    A core reader in `bundle_ops` raises rather than building a Response, so
+    the bundle can put the message in `errors` instead. `OpError` carries the
+    status and, when the single op signed a JSON body for that failure, the
+    body itself; a plain-text refusal carries none.
+    """
+    if err.body is None:
+        return Response(status=err.status, text=str(err))
+    return ctx.signed_json(err.body, status=err.status)
+
+
 async def _op_state(ctx: _OpContext) -> Response:
-    """Single-entity state read."""
-    entity_id = ctx.payload.get("entity_id")
-    if not isinstance(entity_id, str) or not entity_id:
-        return Response(status=400, text="entity_id required")
-
-    state = ctx.hass.states.get(entity_id)
-    if state is None:
-        return ctx.signed_json(
-            {"found": False, "entity_id": entity_id}, status=404
-        )
-
-    return ctx.signed_json(
-        {
-            "found": True,
-            "entity_id": state.entity_id,
-            "state": state.state,
-            "attributes": dict(state.attributes),
-            "last_updated": state.last_updated.isoformat()
-            if state.last_updated
-            else None,
-        }
-    )
-
-
-# Cap entries server-side so a flappy sensor over a wide window can't blow
-# past the watch's budget. ~500 points renders cleanly in Charts and gzips
-# down to a couple KB.
-MAX_HISTORY_ENTRIES = 500
+    """Single-entity state read. Shape: `bundle_ops.async_state_result`."""
+    try:
+        result = await async_state_result(ctx.hass, ctx.payload)
+    except OpError as err:
+        return _op_failed(ctx, err)
+    return ctx.signed_json(result)
 
 
 async def _op_history(ctx: _OpContext) -> Response:
     """Single-entity state-change history for the watch's chart view.
 
-    Payload shape:
-        {
-          "entity_id": "<entity_id>",
-          "start_ms": <epoch ms>,
-          "end_ms":   <epoch ms>?,   # defaults to now
-          "points":   <int>?,        # see below
-          "mode":     "numeric" | "states"?,   # defaults to numeric
-          "gaps":     <bool>?,       # chart form only, defaults to false
-          "entities": [<entity_id>, ...]?,     # states form only, see below
-          "combine":  "any" | "all"?,          # defaults to any
-        }
-
-    With `entities`, the reply merges those entities' histories into one
-    strip instead of reading `entity_id` alone: `any` is on while at least
-    one of them is active, `all` only while every one of them is. The series
-    that comes back has exactly the shape of a single entity's states series.
-    `entity_id` may be left out when `entities` is there; up to twenty
-    entities, above which the request is refused rather than truncated.
-
-    With `gaps: true`, a chart slot spent entirely `unavailable` or `unknown`
-    is an empty token in the series (`12.1,,13.0`) instead of the last value
-    carried forward. Only exactly `true` turns it on.
-
-    With `points`, the reply is a complication chart's series instead of a
-    state log: the window is cut into that many equal slots, the numeric
-    states in each are averaged, and the result comes back as one string:
-
-        {"entity_id": "<entity_id>", "series": "3068,3070,3071"}
-
-    That form exists because a chart needs about twenty numbers and a busy
-    sensor logs thousands of rows. Bucketing here keeps the difference off
-    the watch's radio. The log form below is unchanged and still serves the
-    watch's own history screen.
-
-    With `mode: "states"` the same request answers a state timeline instead:
-    nothing is read as a number, and the series is `offset:state` pairs, the
-    offsets being seconds since the window opened.
-
-        {"entity_id": "<entity_id>", "series": "0:off 1200:on 1860:off"}
-
-    Response shape (compact, designed for cheap decode on watch):
-        {
-          "entity_id": "<entity_id>",
-          "entries": [
-            {"s": "<state>", "t": <epoch_ms>},
-            ...
-          ]
-        }
-
-    Backed by recorder's in-process `state_changes_during_period` — no
-    WebSocket round-trip, no HTTP hop inside HA. `significant_changes_only`
-    drops sub-resolution noise; `minimal_response` strips attributes (the
-    chart only needs state + timestamp).
+    Payload and reply shapes: `bundle_ops.async_history_result`.
     """
-    # An aggregate timeline names its entities in `entities` and may leave
-    # `entity_id` out entirely. The first of them stands in for logging and
-    # for the reply's echo, so every other reader of this op is unchanged.
     try:
-        group = normalize_entities(ctx.payload.get("entities"))
-    except HistorySeriesError as err:
-        return Response(status=400, text=str(err))
-
-    entity_id = ctx.payload.get("entity_id")
-    if (not isinstance(entity_id, str) or not entity_id) and group:
-        entity_id = group[0]
-    if not isinstance(entity_id, str) or not entity_id:
-        return Response(status=400, text="entity_id required")
-
-    start_raw = ctx.payload.get("start_ms")
-    if not isinstance(start_raw, (int, float)):
-        return Response(status=400, text="start_ms required")
-    try:
-        start = datetime.fromtimestamp(start_raw / 1000.0, tz=timezone.utc)
-    except (ValueError, OSError, OverflowError):
-        return Response(status=400, text="start_ms invalid")
-
-    end: datetime | None = None
-    end_raw = ctx.payload.get("end_ms")
-    if isinstance(end_raw, (int, float)):
-        try:
-            end = datetime.fromtimestamp(end_raw / 1000.0, tz=timezone.utc)
-        except (ValueError, OSError, OverflowError):
-            return Response(status=400, text="end_ms invalid")
-
-    # Chart form. The window is already known, so the span is derived from it
-    # rather than re-sent, and the shared module does the rest.
-    if ctx.payload.get("points") is not None:
-        window_end = end or datetime.now(timezone.utc)
-        minutes = max(1, int((window_end - start).total_seconds() // 60))
-        try:
-            series = await async_history_series(
-                ctx.hass,
-                entity_id,
-                minutes,
-                clamp_points(ctx.payload.get("points")),
-                now=window_end,
-                mode=normalize_mode(ctx.payload.get("mode")),
-                gaps=ctx.payload.get("gaps") is True,
-                entities=group,
-                combine=normalize_combine(ctx.payload.get("combine")),
-            )
-        except HistorySeriesError as err:
-            return ctx.signed_json({"ok": False, "error": str(err)}, status=502)
-        return ctx.signed_json({"entity_id": entity_id, "series": series})
-
-    try:
-        from homeassistant.components.recorder import get_instance
-        from homeassistant.components.recorder.history import (
-            state_changes_during_period,
-        )
-    except ImportError:
-        return ctx.signed_json(
-            {"ok": False, "error": "recorder unavailable"}, status=503
-        )
-
-    recorder = get_instance(ctx.hass)
-    try:
-        # Keyword args via `partial` — `state_changes_during_period`'s
-        # positional signature changed across recorder versions, so binding
-        # by name keeps us safe. Defaults give us oldest-first ordering,
-        # no row limit (we cap below), and the start-of-window anchor state
-        # so the chart has a leftmost data point. `no_attributes=True` is
-        # the only override — we never use attributes here.
-        states_by_entity = await recorder.async_add_executor_job(
-            partial(
-                state_changes_during_period,
-                ctx.hass,
-                start,
-                end,
-                entity_id,
-                no_attributes=True,
-            )
-        )
-    except HomeAssistantError as err:
-        _LOGGER.warning("op=history failed for %s: %s", entity_id, err)
-        return ctx.signed_json({"ok": False, "error": str(err)}, status=502)
-
-    raw = states_by_entity.get(entity_id, []) or []
-    # Most recent N — chart only needs the tail of the window.
-    if len(raw) > MAX_HISTORY_ENTRIES:
-        raw = raw[-MAX_HISTORY_ENTRIES:]
-
-    entries = []
-    for s in raw:
-        last_changed = getattr(s, "last_changed", None)
-        if last_changed is None:
-            continue
-        entries.append(
-            {
-                "s": s.state,
-                "t": int(last_changed.timestamp() * 1000),
-            }
-        )
-
-    return ctx.signed_json({"entity_id": entity_id, "entries": entries})
+        result = await async_history_result(ctx.hass, ctx.payload)
+    except OpError as err:
+        return _op_failed(ctx, err)
+    return ctx.signed_json(result)
 
 
 async def _op_statistics(ctx: _OpContext) -> Response:
     """Long-term statistics for a complication chart, as one series string.
 
-    Payload shape:
-        {
-          "entity_id": "<entity_id>",
-          "minutes":   <int>?,    # span, rolling back from now
-          "period":    "5minute" | "hour" | "day" | "week" | "month"?,
-          "type":      "mean" | "min" | "max" | "change" | "sum"?,
-          "gaps":      <bool>?,   # defaults to false
-        }
-
-    With `gaps: true`, a missing period and a row with no value are empty
-    tokens (`0.42,,0.38`) instead of carried or zero-filled.
-
-    Reply:
-        {"entity_id": "<entity_id>", "series": "0.42,0.51,0.38"}
-
-    A separate op rather than a mode on ``history``: ``_op_history`` already
-    multiplexes two reply shapes on whether ``points`` is present, and the
-    two questions share no parameters beyond the entity. The reply shape is
-    the chart series form on purpose, so the watch's draw path does not care
-    which of the two produced it.
-
-    Unlike history, the span is not derived from a window the caller sends.
-    Statistics are never purged, so there is no "start of what we still have"
-    for the caller to compute; it asks for a span and the module clamps it.
+    Payload and reply shapes: `bundle_ops.async_statistics_result`.
     """
-    entity_id = ctx.payload.get("entity_id")
-    if not isinstance(entity_id, str) or not entity_id:
-        return Response(status=400, text="entity_id required")
-
     try:
-        series = await async_statistics_series(
-            ctx.hass,
-            entity_id,
-            ctx.payload.get("minutes"),
-            ctx.payload.get("period"),
-            ctx.payload.get("type"),
-            gaps=ctx.payload.get("gaps") is True,
-        )
-    except StatisticsSeriesError as err:
-        status = 503 if str(err) == RECORDER_UNAVAILABLE else 502
-        return ctx.signed_json({"ok": False, "error": str(err)}, status=status)
-    return ctx.signed_json({"entity_id": entity_id, "series": series})
+        result = await async_statistics_result(ctx.hass, ctx.payload)
+    except OpError as err:
+        return _op_failed(ctx, err)
+    return ctx.signed_json(result)
 
 
 async def _op_list(ctx: _OpContext) -> Response:
     """Calendar, to-do or forecast rows for a complication's list layer.
 
-    Payload shape:
-        {
-          "source":    "calendar" | "todo" | "forecast",
-          "entities":  [<entity_id>, ...],   # calendar and todo, up to 5
-          "entity_id": "<entity_id>",        # forecast, the flat form
-          "hours":     <int>?,   # calendar window, 1..8784 (a year), default 24
-          "status":    "open" | "done" | "all"?,   # todo, default open
-          "sort":      "list" | "due"?,            # todo, default list
-          "type":      "hourly" | "daily" | "twiceDaily"?,  # forecast
-          "limit":     <int>?,   # the layer's row count, clamped to 12
-        }
-
-    Reply:
-        {"items": [{...}, ...], "total": 7}
-
-    `total` is the count before the slice, so a layer reading `listStat total`
-    can say "7 events" while drawing four of them. The rows come back sorted,
-    with strings capped and every timestamp in unix seconds; everything
-    time-relative (a countdown, how overdue something is) is computed on the
-    watch from its own clock, so a cached list stays right between fetches.
-
-    The three Jinja sources (`entities`, `attribute`, `template`) are not
-    served here. They ride in the face's rendered value document, which the
-    watch already fetches, and asking for one is a 400 rather than a silently
-    empty list.
+    Payload and reply shapes: `bundle_ops.async_list_result`.
     """
     try:
-        fetched = await async_list_items(ctx.hass, ctx.payload)
-    except ListItemsError as err:
-        return ctx.signed_json({"ok": False, "error": str(err)}, status=400)
-    except HomeAssistantError as err:
-        _LOGGER.warning("op=list failed: %s", err)
-        return ctx.signed_json({"ok": False, "error": str(err)}, status=502)
-    return ctx.signed_json({"items": fetched.items, "total": fetched.total})
+        result = await async_list_result(ctx.hass, ctx.payload)
+    except OpError as err:
+        return _op_failed(ctx, err)
+    return ctx.signed_json(result)
+
+
+async def _op_bundle(ctx: _OpContext) -> Response:
+    """Every text source on one watch face, in a single signed round trip.
+
+    A face-wide refresh asks each complication's sources at once instead of
+    one signed request per source per complication. Body:
+
+        {
+          "template":   "<jinja source>"?,
+          "states":     ["<entity_id>", ...]?,
+          "history":    [{"key": "<opaque>", ...history payload...}, ...]?,
+          "statistics": [{"key": "<opaque>", ...statistics payload...}, ...]?,
+          "lists":      [{"key": "<opaque>", ...list payload...}, ...]?
+        }
+
+    Every item's payload is exactly what its single op takes, and every
+    answer is exactly what its single op returns, because both call the same
+    reader in `bundle_ops`. The keys are the caller's own and come back
+    untouched. Reply shape and the `errors` map: `async_run_bundle`.
+
+    A malformed request (a section that is not an array, an item with no key,
+    a repeated key, more items than the caps allow) is a 400 and nothing
+    runs. A single item that fails is not: it lands in `errors` and the rest
+    of the face still draws.
+    """
+    try:
+        asked = normalize_bundle_request(ctx.payload)
+    except BundleRequestError as err:
+        return Response(status=400, text=str(err))
+
+    return ctx.signed_json(await async_run_bundle(ctx.hass, asked))
 
 
 async def _op_states_batch(ctx: _OpContext) -> Response:
@@ -1373,28 +1181,16 @@ async def _op_get_stream_entity(ctx: _OpContext) -> Response:
 async def _op_template(ctx: _OpContext) -> Response:
     """Render a Jinja template. Body: {template, variables?}.
 
-    Renders with `parse_result` left on, so `result` can be a number, a bool
-    or an object rather than a string; the client flattens it to text
-    (`CodingUtilities.homeAssistantTemplateResult`). The panel's
-    `render_values` command renders the same way and flattens it server-side,
-    so the editor preview reads the string the watch reads.
+    Payload and reply shapes: `bundle_ops.async_template_result`. The single
+    op answers the native render; `op=bundle` flattens it to text first,
+    because a bundled face wants one string per complication rather than five
+    JSON types.
     """
-    template_str = ctx.payload.get("template")
-    variables = ctx.payload.get("variables")
-    if not isinstance(template_str, str) or not template_str:
-        return Response(status=400, text="template required")
-    if variables is not None and not isinstance(variables, dict):
-        return Response(status=400, text="variables must be an object")
-
     try:
-        tpl = Template(template_str, ctx.hass)
-        result = tpl.async_render(variables=variables)
-    except TemplateError as err:
-        return ctx.signed_json(
-            {"ok": False, "error": str(err)}, status=400
-        )
-
-    return ctx.signed_json({"ok": True, "result": result})
+        result = await async_template_result(ctx.hass, ctx.payload)
+    except OpError as err:
+        return _op_failed(ctx, err)
+    return ctx.signed_json(result)
 
 
 async def _op_services_list(ctx: _OpContext) -> Response:
@@ -2312,8 +2108,14 @@ async def _op_snapshots_open(ctx: _OpContext) -> Response:
     """Mint a single-use token for a progressive batch-snapshot stream.
 
     Body:
-        { "cameras": [ {"entity_id": "camera.x", "width": 220}, ... ],
+        { "cameras": [ {"entity_id": "camera.x", "width": 220,
+                        "max_height": 140}, ... ],
           "quality": 75 }
+
+    `max_height` is optional and bounds the other side of the box the image is
+    fitted into. Left out, the box stays square (`width` on both sides), which
+    is what every caller before it asked for and what the watch's camera tiles
+    still want.
 
     Returns a relative URL the watch fetches immediately; the multipart stream
     flushes each camera's JPEG as it's ready. See run_batch_snapshot_stream.
@@ -2326,7 +2128,7 @@ async def _op_snapshots_open(ctx: _OpContext) -> Response:
         ctx.payload.get("quality"), SNAPSHOT_DEFAULT_QUALITY, MIN_QUALITY, MAX_QUALITY
     )
 
-    cameras: list[tuple[str, int]] = []
+    cameras: list[tuple[str, int, int]] = []
     seen: set[str] = set()
     for spec in raw[:MAX_BATCH_SNAPSHOT_CAMERAS]:
         if not isinstance(spec, dict):
@@ -2339,8 +2141,12 @@ async def _op_snapshots_open(ctx: _OpContext) -> Response:
             or ctx.hass.states.get(entity_id) is None
         ):
             continue
-        width = _bound_int(spec.get("width"), DEFAULT_WIDTH, MIN_WIDTH, MAX_WIDTH)
-        cameras.append((entity_id, width))
+        # The bounding box lives next to the size constants in camera_stream,
+        # which is also what lets it be checked without a Home Assistant.
+        width, max_height = batch_snapshot_box(
+            spec.get("width"), spec.get("max_height")
+        )
+        cameras.append((entity_id, width, max_height))
         seen.add(entity_id)
 
     if not cameras:
@@ -3236,6 +3042,9 @@ _OP_HANDLERS: dict[str, Any] = {
     "history": _op_history,
     "statistics": _op_statistics,
     "list": _op_list,
+    # One request for a whole face's text sources. Every section is answered
+    # by the same reader the single op above calls.
+    "bundle": _op_bundle,
     "states_batch": _op_states_batch,
     "info": _op_info,
     "snapshot": _op_snapshot,
