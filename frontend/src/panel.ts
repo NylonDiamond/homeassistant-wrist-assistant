@@ -136,6 +136,7 @@ import {
   controlCard,
   controlDevice,
   controlHeadline,
+  controlStateWord,
   controlTile,
   controlTileShapes,
   describeContext,
@@ -9312,9 +9313,11 @@ export class WristAssistantPanel extends LitElement {
       <div class="under">
         <b>Control Center</b>
         <span class="dot">·</span>
-        <span class="tail">${phone
-          ? `${kind}. A circle in the grid, or the wide tile when it is given two columns.`
-          : `${kind}. The watch prints the title and value line above the grid, not on the tile.`}</span>
+        <span class="tail">${control === undefined || controlStateWord(control) === undefined
+          ? `${kind}.`
+          : html`${kind}, reads <b>${controlStateWord(control)}</b>.`} ${phone
+          ? "A circle in the grid, or the wide tile when it is given two columns."
+          : "The watch prints the title and value line above the grid, not on the tile."}</span>
       </div>
       ${status === undefined
         ? nothing

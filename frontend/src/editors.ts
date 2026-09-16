@@ -3981,8 +3981,21 @@ export function controlDevice(host: EditorHost): DeviceKind {
  * the title alone.
  */
 export function controlHeadline(control: ResolvedControl): string {
-  const value = control.valueLabel ?? (control.kind === "toggle" ? (control.isOn ? "On" : "Off") : undefined);
+  const value = controlValueLine(control);
   return value === undefined ? control.title : `${control.title}: ${value}`;
+}
+
+/** The line under the title as the device draws it: the value line, or for a
+ * toggle with none the On or Off the app's toggle prints in that slot. A
+ * button with none has no line. */
+export function controlValueLine(control: ResolvedControl): string | undefined {
+  return control.valueLabel ?? (control.kind === "toggle" ? (control.isOn ? "On" : "Off") : undefined);
+}
+
+/** The word for a toggle's state, for the rows and lines that say it. Nothing
+ * for a button, which has none. */
+export function controlStateWord(control: ResolvedControl): string | undefined {
+  return control.kind === "toggle" ? (control.isOn ? "On" : "Off") : undefined;
 }
 
 /** `hex` moved `amount` of the way to white, as `#RRGGBB`. The watch draws a
@@ -4072,9 +4085,9 @@ export function controlTile(host: EditorHost, spec: ControlSpec, shape: ControlT
       ${wide
         ? html`<span style="display:block;min-width:0;flex:1 1 auto">
             <span style=${`${clamp};font-size:${px(0.17)}px;font-weight:600;line-height:1.1;color:${paint.title}`}>${control.title}</span>
-            ${control.valueLabel === undefined
+            ${controlValueLine(control) === undefined
               ? nothing
-              : html`<span style=${`display:block;font-size:${px(0.15)}px;line-height:1.2;color:${paint.value};overflow:hidden;text-overflow:ellipsis;white-space:nowrap`}>${control.valueLabel}</span>`}
+              : html`<span style=${`display:block;font-size:${px(0.15)}px;line-height:1.2;color:${paint.value};overflow:hidden;text-overflow:ellipsis;white-space:nowrap`}>${controlValueLine(control)}</span>`}
           </span>`
         : nothing}
     </span>`;
@@ -4099,8 +4112,12 @@ function controlPreview(host: EditorHost, spec: ControlSpec): TemplateResult | t
   if (context === undefined) return nothing;
   const control = resolveControl(spec, context, host.config);
   const watch = controlDevice(host) === "watch";
+  const state = controlStateWord(control);
   return html`<div class="field readout"><span>In Control Center</span>
     <span class="readout-v">${controlTiles(host, spec)}</span></div>
+    ${state === undefined
+      ? nothing
+      : html`<div class="field readout"><span>Reads</span><span class="readout-v">${state}${control.isOn ? ", so the tile is lit" : ", so the tile is dark"}</span></div>`}
     ${watch
       ? html`<div class="field readout"><span>Above the tiles</span><span class="readout-v">${controlHeadline(control)}</span></div>`
       : nothing}

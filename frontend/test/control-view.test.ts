@@ -201,6 +201,15 @@ describe("the mock Control Center tile", () => {
     }
   });
 
+  it("prints On or Off under the title of a toggle with no value line, as the app does", () => {
+    const cfg = withControl();
+    cfg.control!.state = literal("on");
+    delete cfg.control!.valueLabel;
+    expect(flatten(controlTile(host(cfg), cfg.control!, "phoneWide"))).toContain(">On<");
+    cfg.control!.state = literal("off");
+    expect(flatten(controlTile(host(cfg), cfg.control!, "phoneWide"))).toContain(">Off<");
+  });
+
   it("resolves a title that reads an entity", () => {
     const cfg = withControl();
     cfg.control!.title = {
