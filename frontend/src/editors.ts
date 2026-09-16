@@ -3992,6 +3992,17 @@ export function controlValueLine(control: ResolvedControl): string | undefined {
   return control.valueLabel ?? (control.kind === "toggle" ? (control.isOn ? "On" : "Off") : undefined);
 }
 
+/**
+ * Whether the device prints this control's status on a press. The iPhone
+ * prints it for a toggle and a button alike. The watch prints it for a toggle
+ * only: a button's never shows, however the app attaches it (checked on a
+ * watch 2026-09-16, after a restart). So the rows that write and preview the
+ * status hide for a watch button, and the key stays in the document untouched.
+ */
+export function controlStatusShows(host: EditorHost, spec: ControlSpec): boolean {
+  return controlDevice(host) === "iphone" || controlEffectiveKind(spec) === "toggle";
+}
+
 /** The word for a toggle's state, for the rows and lines that say it. Nothing
  * for a button, which has none. */
 export function controlStateWord(control: ResolvedControl): string | undefined {
@@ -4121,7 +4132,7 @@ function controlPreview(host: EditorHost, spec: ControlSpec): TemplateResult | t
     ${watch
       ? html`<div class="field readout"><span>Above the tiles</span><span class="readout-v">${controlHeadline(control)}</span></div>`
       : nothing}
-    ${control.status === undefined
+    ${control.status === undefined || !controlStatusShows(host, spec)
       ? nothing
       : html`<div class="field readout"><span>On a press</span><span class="readout-v">${control.status}</span></div>`}`;
 }
@@ -4259,14 +4270,16 @@ function controlSection(host: EditorHost, spec: ControlSpec): TemplateResult {
       <div class="hint">The tint takes the colour of the band the reading falls in. Without a number to read, the flat colour above stands.</div>`
       : nothing}
     </div>
-    <div class="fgroup">
+    ${controlStatusShows(host, spec) ? html`<div class="fgroup">
     ${checkField("Status text", spec.status !== undefined, (v) => set((c) => {
       if (v) c.status = literal("Done"); else delete c.status;
     }))}
     ${spec.status === undefined ? nothing : valueEditor(host, spec.status, (v) => set((c) => { c.status = v; }, "status"),
       { showResolved: true, label: "Status text", key: "control-status" })}
     <div class="hint">What Control Center flashes over the tile after a press. Off means no flash.</div>
-    </div>`;
+    </div>` : html`<div class="fgroup">
+    <div class="hint keep">The watch prints no status text for a button, only for a toggle. Switch the kind to Toggle to set one.</div>
+    </div>`}`;
 }
 
 /**

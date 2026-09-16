@@ -137,6 +137,7 @@ import {
   controlDevice,
   controlHeadline,
   controlStateWord,
+  controlStatusShows,
   controlTile,
   controlTileShapes,
   describeContext,
@@ -9319,7 +9320,7 @@ export class WristAssistantPanel extends LitElement {
           ? "A circle in the grid, or the wide tile when it is given two columns."
           : "The watch prints the title and value line above the grid, not on the tile."}</span>
       </div>
-      ${status === undefined
+      ${status === undefined || !controlStatusShows(host, spec)
         ? nothing
         : html`<div class="under"><span class="tail">A press flashes <b>${status}</b> over the tile.</span></div>`}`;
   }

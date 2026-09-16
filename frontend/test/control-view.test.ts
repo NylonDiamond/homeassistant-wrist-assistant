@@ -21,7 +21,7 @@ import {
   setControlShown,
 } from "../src/model.js";
 import { addFamily, canRemoveControl, controlNoteLines, opensInControlView } from "../src/layouts.js";
-import { CONTROL_TILE_SIDE, type EditorHost, controlDevice, controlHeadline, controlTile, controlTileShapes } from "../src/editors.js";
+import { CONTROL_TILE_SIDE, type EditorHost, controlDevice, controlHeadline, controlStatusShows, controlTile, controlTileShapes } from "../src/editors.js";
 import { type ResolveContext, type ResolvedControl } from "../src/resolver.js";
 import { SymbolBrowser } from "../src/symbols.js";
 import type { HassLike } from "../src/ha-api.js";
@@ -242,6 +242,17 @@ describe("the mock Control Center tile", () => {
   it("is nothing at all before there is a context to resolve in", () => {
     const cfg = withControl();
     expect(controlTile(host(cfg, { resolveContext: undefined }), cfg.control!, "watchPill")).toBe(nothing);
+  });
+});
+
+describe("whether the device prints the status on a press", () => {
+  it("is yes on the iPhone for both kinds, and on the watch for a toggle only", () => {
+    const cfg = withControl();
+    expect(controlStatusShows(host(cfg), cfg.control!)).toBe(true);
+    expect(controlStatusShows(host(cfg, { deviceKind: "iphone" }), cfg.control!)).toBe(true);
+    cfg.control!.kind = "button";
+    expect(controlStatusShows(host(cfg), cfg.control!)).toBe(false);
+    expect(controlStatusShows(host(cfg, { deviceKind: "iphone" }), cfg.control!)).toBe(true);
   });
 });
 
