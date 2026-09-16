@@ -358,9 +358,9 @@ import {
   CONTROL_ACTION_TYPES,
   controlEffectiveKind,
 } from "./model.js";
-import { chartSmoothed, chartSeriesWithHoles, resolveControl, type ResolveContext } from "./resolver.js";
+import { chartSmoothed, chartSeriesWithHoles, resolveControl, type ResolveContext, type ResolvedControl } from "./resolver.js";
 import { familyNote, isHomeFamily, resizableNote } from "./layouts.js";
-import { deviceSupportsControls, watchVersionNote } from "./version.js";
+import { type DeviceKind, deviceSupportsControls, watchVersionNote } from "./version.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import {
   CHART_DRAW_EXTRAS, CHART_READINGS, type ChartDrawExtra, type ChartSample, type ExtraKey, type ExtraOwner,
@@ -388,6 +388,9 @@ export interface EditorHost {
    * "Needs Wrist Assistant X.Y" notes under newer controls. Absent or null when
    * it has not reported, which shows no note. */
   watchAppVersion?: string | null;
+  /** Which device the document is edited for. The Control Center mock draws
+   * the shapes that device has. Absent in a test host, which draws the watch. */
+  deviceKind?: DeviceKind;
   /** Mutate the draft. `coalesce` groups rapid edits of one control into one undo step. */
   update(mutate: (cfg: CustomComplicationConfig) => void, coalesce?: string): void;
   endGesture(): void;
@@ -3935,13 +3938,12 @@ const CONTROL_KINDS: [ControlKind, string][] = [["toggle", "Toggle"], ["button",
 const CONTROL_TAP_TYPES: [TapAction["type"], string][] =
   TAP_ACTION_LABELS.filter(([t]) => CONTROL_ACTION_TYPES.includes(t));
 
-/** The side of the mock tile in the card, in CSS pixels. A control is a
- * rounded square in Control Center, so one number says the whole shape; the
- * radius is the fraction of the side iOS draws. */
+/** The height of the mock tile in the card, in CSS pixels. Every shape a
+ * control takes is sized off its height (a watch pill, an iPhone circle, an
+ * iPhone wide pill), so one number says the whole drawing. */
 export const CONTROL_TILE_SIDE = 82;
-const CONTROL_TILE_RADIUS = 0.26;
 
-/** Under this side the tile draws its glyph alone. Everything on a control is
+/** Under this height a tile draws its glyph alone. Everything on a control is
  * sized off the tile, so a shape-tab-sized copy would carry a title two pixels
  * tall: a smear that says less than the empty space does. */
 const CONTROL_TILE_TEXT_FROM = 40;
@@ -3950,24 +3952,99 @@ const CONTROL_TILE_TEXT_FROM = 40;
  * untinted control draws with. Never written to the document. */
 const CONTROL_MOCK_TINT = "#0A84FF";
 
-/** Black or white over a tint, whichever reads. The tile is the one place the
- * panel paints text and a glyph straight onto a colour the author picked, so
- * it cannot just always use white. */
-function onTintInk(hex: string): string {
-  const { valid, rgb } = colorParts(hex);
-  if (!valid) return "#FFFFFF";
-  const h = rgb.slice(1);
-  const part = (at: number) => parseInt(h.slice(at, at + 2), 16) / 255;
-  const luminance = 0.2126 * part(0) + 0.7152 * part(2) + 0.0722 * part(4);
-  return luminance > 0.6 ? "#000000" : "#FFFFFF";
+/**
+ * The shapes a control takes in Control Center, one drawing each.
+ *
+ * Checked against the devices 2026-09-16, not guessed. The watch draws a wide
+ * pill with the symbol alone, and prints the title and value line above the
+ * grid of tiles. The iPhone draws a circle in the grid, or a wide pill when the
+ * control is given two columns, and puts the title and value line inside the
+ * wide one. Neither device draws a rounded square, which is what the first
+ * version of this mock guessed at.
+ */
+export type ControlTileShape = "watchPill" | "phoneCircle" | "phoneWide";
+
+/** The shapes a device draws, in the order the card shows them. */
+export function controlTileShapes(device: DeviceKind): ControlTileShape[] {
+  return device === "iphone" ? ["phoneCircle", "phoneWide"] : ["watchPill"];
+}
+
+/** The device the host edits for; a test host that names none is a watch. */
+export function controlDevice(host: EditorHost): DeviceKind {
+  return host.deviceKind ?? "watch";
 }
 
 /**
- * The mock Control Center tile: the resolved symbol, title and value line, in
- * the resolved tint, at the proportion the OS draws.
+ * The line the watch prints above its tiles for this control: the title, then
+ * the value line after a colon. A toggle with no value line gets On or Off,
+ * which is what the app's toggle draws in that slot; a button with none gets
+ * the title alone.
+ */
+export function controlHeadline(control: ResolvedControl): string {
+  const value = control.valueLabel ?? (control.kind === "toggle" ? (control.isOn ? "On" : "Off") : undefined);
+  return value === undefined ? control.title : `${control.title}: ${value}`;
+}
+
+/** `hex` moved `amount` of the way to white, as `#RRGGBB`. The watch draws a
+ * lit tile's symbol in a pale cast of the tint rather than in white. */
+function towardWhite(hex: string, amount: number): string {
+  const { valid, rgb } = colorParts(hex);
+  if (!valid) return "#FFFFFF";
+  const h = rgb.slice(1);
+  const part = (at: number) => parseInt(h.slice(at, at + 2), 16);
+  const mix = (c: number) => Math.round(c + (255 - c) * amount).toString(16).padStart(2, "0");
+  return `#${mix(part(0))}${mix(part(2))}${mix(part(4))}`.toUpperCase();
+}
+
+/** How a tile paints, settled once per drawing: the ground, its edge, the
+ * symbol's colour, and the two text colours the wide phone tile needs. */
+interface TilePaint {
+  background: string;
+  border: string;
+  glyph: string;
+  title: string;
+  value: string;
+}
+
+function tilePaint(shape: ControlTileShape, control: ResolvedControl): TilePaint {
+  const tint = control.tintColorHex ?? CONTROL_MOCK_TINT;
+  const dark = "rgba(120,120,128,0.36)";
+  const darkEdge = "1px solid rgba(255,255,255,0.12)";
+  if (shape === "watchPill") {
+    // A lit toggle fills with the tint. A button sits on a dark ground washed
+    // with the tint and rimmed in it, the way the watch's own buttons do.
+    if (control.kind === "toggle" && control.isOn) {
+      return { background: tint, border: "1px solid transparent", glyph: towardWhite(tint, 0.72), title: "", value: "" };
+    }
+    if (control.kind === "button") {
+      return {
+        background: `color-mix(in srgb, ${tint} 30%, #2c2c2e)`,
+        border: `1px solid color-mix(in srgb, ${tint} 55%, transparent)`,
+        glyph: towardWhite(tint, 0.72), title: "", value: "",
+      };
+    }
+    return { background: dark, border: darkEdge, glyph: "#E5E5EA", title: "", value: "" };
+  }
+  // The iPhone: a lit toggle goes white and paints the tint on the symbol
+  // only. Off, and a button, keep the dark ground; the button's symbol still
+  // takes the tint.
+  if (control.kind === "toggle" && control.isOn) {
+    return { background: "#FFFFFF", border: "1px solid transparent", glyph: tint, title: "#000000", value: "rgba(60,60,67,0.6)" };
+  }
+  return {
+    background: dark, border: darkEdge,
+    glyph: control.kind === "button" ? tint : "#FFFFFF",
+    title: "#FFFFFF", value: "rgba(235,235,245,0.6)",
+  };
+}
+
+/**
+ * The mock Control Center tile: the resolved symbol, and on the wide iPhone
+ * tile the title and value line too, in the resolved tint, at the proportion
+ * the device draws.
  *
- * `side` is the whole tile in CSS pixels and every measurement inside it is a
- * fraction of that, so one function draws the shape tab's thumbnail, the
+ * `side` is the tile's height in CSS pixels and every measurement inside it is
+ * a fraction of that, so one function draws the shape tab's thumbnail, the
  * card's preview and the stage's big copy. They cannot drift, which matters
  * more here than anywhere else in the panel: a control has no renderer to
  * check it against, so this drawing is the only picture of it there is.
@@ -3975,40 +4052,43 @@ function onTintInk(hex: string): string {
  * Nothing at all until there is a context to resolve in, the same as a face
  * preview before the first template answer lands.
  */
-export function controlTile(host: EditorHost, spec: ControlSpec, side = CONTROL_TILE_SIDE): TemplateResult | typeof nothing {
+export function controlTile(host: EditorHost, spec: ControlSpec, shape: ControlTileShape, side = CONTROL_TILE_SIDE): TemplateResult | typeof nothing {
   const context = host.resolveContext?.();
   if (context === undefined) return nothing;
   const control = resolveControl(spec, context, host.config);
-  // A toggle paints its tint only while it reads on, which is what Control
-  // Center does; a button has no off state, so it is always tinted.
-  const lit = control.kind === "button" || control.isOn;
-  const tint = control.tintColorHex ?? CONTROL_MOCK_TINT;
-  const ink = lit ? onTintInk(tint) : "#FFFFFF";
-  const text = side >= CONTROL_TILE_TEXT_FROM;
+  const paint = tilePaint(shape, control);
   const px = (fraction: number) => Math.round(side * fraction);
-  const glyphSize = text ? px(0.293) : px(0.5);
-  const glyph = host.icons.render(control.symbol || "questionmark", glyphSize, ink);
-  const box = `width:${side}px;height:${side}px;box-sizing:border-box;`
-    + `border-radius:${px(CONTROL_TILE_RADIUS)}px;padding:${px(0.11)}px;`
-    + `display:flex;flex-direction:column;overflow:hidden;`
-    + `justify-content:${text ? "space-between" : "center"};align-items:${text ? "stretch" : "center"};`
-    + `background:${lit ? tint : "rgba(120,120,128,0.32)"};color:${ink};`;
-  const clip = "overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
-  return html`<span style=${box}>
-      <span style=${`display:block;height:${glyphSize}px;line-height:0`}>${glyph ?? nothing}</span>
-      ${text
-        ? html`<span style="display:block;min-width:0">
-            <span style=${`display:block;font-size:${px(0.122)}px;font-weight:600;line-height:1.2;${clip}`}>${control.title}</span>
+  const wide = shape === "phoneWide" && side >= CONTROL_TILE_TEXT_FROM;
+  const width = shape === "watchPill" ? px(1.6) : shape === "phoneWide" ? px(2.35) : side;
+  const glyphSize = shape === "watchPill" ? px(0.46) : shape === "phoneCircle" ? px(0.44) : px(0.5);
+  const glyph = host.icons.render(control.symbol || "questionmark", glyphSize, paint.glyph);
+  const box = `width:${width}px;height:${side}px;box-sizing:border-box;`
+    + `border-radius:${Math.ceil(side / 2)}px;display:flex;align-items:center;overflow:hidden;`
+    + (wide ? `justify-content:flex-start;gap:${px(0.14)}px;padding:0 ${px(0.16)}px 0 ${px(0.2)}px;` : "justify-content:center;")
+    + `background:${paint.background};border:${paint.border};color:${paint.glyph};`;
+  const clamp = "display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere";
+  return html`<span style=${box} data-shape=${shape}>
+      <span style=${`display:block;flex:none;height:${glyphSize}px;line-height:0`}>${glyph ?? nothing}</span>
+      ${wide
+        ? html`<span style="display:block;min-width:0;flex:1 1 auto">
+            <span style=${`${clamp};font-size:${px(0.17)}px;font-weight:600;line-height:1.1;color:${paint.title}`}>${control.title}</span>
             ${control.valueLabel === undefined
               ? nothing
-              : html`<span style=${`display:block;font-size:${px(0.11)}px;opacity:.7;line-height:1.2;${clip}`}>${control.valueLabel}</span>`}
+              : html`<span style=${`display:block;font-size:${px(0.15)}px;line-height:1.2;color:${paint.value};overflow:hidden;text-overflow:ellipsis;white-space:nowrap`}>${control.valueLabel}</span>`}
           </span>`
         : nothing}
     </span>`;
 }
 
+/** Every shape the edited device draws, side by side at one height. */
+export function controlTiles(host: EditorHost, spec: ControlSpec, side = CONTROL_TILE_SIDE): TemplateResult {
+  const tiles = controlTileShapes(controlDevice(host)).map((shape) => controlTile(host, spec, shape, side));
+  return html`<span style=${`display:inline-flex;align-items:center;gap:${Math.round(side * 0.15)}px;flex-wrap:wrap`}>${tiles}</span>`;
+}
+
 /**
- * The tile as one row of the card, with what a press flashes under it.
+ * The tiles as rows of the card, with what the watch prints above them and
+ * what a press flashes.
  *
  * Small and plain on purpose. A control is not a canvas, so a big preview in
  * the card would promise a layout that cannot be authored. The Control Center
@@ -4017,12 +4097,16 @@ export function controlTile(host: EditorHost, spec: ControlSpec, side = CONTROL_
 function controlPreview(host: EditorHost, spec: ControlSpec): TemplateResult | typeof nothing {
   const context = host.resolveContext?.();
   if (context === undefined) return nothing;
-  const status = resolveControl(spec, context, host.config).status;
+  const control = resolveControl(spec, context, host.config);
+  const watch = controlDevice(host) === "watch";
   return html`<div class="field readout"><span>In Control Center</span>
-    <span class="readout-v">${controlTile(host, spec)}</span></div>
-    ${status === undefined
+    <span class="readout-v">${controlTiles(host, spec)}</span></div>
+    ${watch
+      ? html`<div class="field readout"><span>Above the tiles</span><span class="readout-v">${controlHeadline(control)}</span></div>`
+      : nothing}
+    ${control.status === undefined
       ? nothing
-      : html`<div class="field readout"><span>On a press</span><span class="readout-v">${status}</span></div>`}`;
+      : html`<div class="field readout"><span>On a press</span><span class="readout-v">${control.status}</span></div>`}`;
 }
 
 /** The one line the card shows while it is shut: what the control is, or that

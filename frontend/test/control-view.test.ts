@@ -21,8 +21,8 @@ import {
   setControlShown,
 } from "../src/model.js";
 import { addFamily, canRemoveControl, controlNoteLines, opensInControlView } from "../src/layouts.js";
-import { CONTROL_TILE_SIDE, type EditorHost, controlTile } from "../src/editors.js";
-import { type ResolveContext } from "../src/resolver.js";
+import { CONTROL_TILE_SIDE, type EditorHost, controlDevice, controlHeadline, controlTile, controlTileShapes } from "../src/editors.js";
+import { type ResolveContext, type ResolvedControl } from "../src/resolver.js";
 import { SymbolBrowser } from "../src/symbols.js";
 import type { HassLike } from "../src/ha-api.js";
 import type { IconProvider } from "../src/renderer.js";
@@ -142,22 +142,63 @@ describe("a symbol field that starts shut", () => {
 });
 
 describe("the mock Control Center tile", () => {
-  it("draws the resolved title and symbol at the card's size", () => {
-    const markup = flatten(controlTile(host(withControl()), withControl().control!));
-    expect(markup).toContain("Kitchen lamp");
+  it("draws the watch as a pill with the symbol alone, at the card's height", () => {
+    const markup = flatten(controlTile(host(withControl()), withControl().control!, "watchPill"));
     expect(markup).toContain("lightbulb.fill");
-    expect(markup).toContain(`width:${CONTROL_TILE_SIDE}px`);
+    expect(markup).not.toContain("Kitchen lamp");
+    expect(markup).toContain(`height:${CONTROL_TILE_SIDE}px`);
+    expect(markup).toContain(`width:${Math.round(CONTROL_TILE_SIDE * 1.6)}px`);
   });
 
-  it("draws the same title and symbol at the stage's size, everything scaled", () => {
-    const big = CONTROL_TILE_SIDE * 3;
+  it("draws the iPhone's wide tile with the title inside, and its circle without", () => {
     const cfg = withControl();
-    const markup = flatten(controlTile(host(cfg), cfg.control!, big));
-    expect(markup).toContain("Kitchen lamp");
+    const wide = flatten(controlTile(host(cfg), cfg.control!, "phoneWide"));
+    expect(wide).toContain("Kitchen lamp");
+    expect(wide).toContain("lightbulb.fill");
+    expect(wide).toContain(`width:${Math.round(CONTROL_TILE_SIDE * 2.35)}px`);
+    const circle = flatten(controlTile(host(cfg), cfg.control!, "phoneCircle"));
+    expect(circle).not.toContain("Kitchen lamp");
+    expect(circle).toContain(`width:${CONTROL_TILE_SIDE}px`);
+  });
+
+  it("draws the same symbol at the stage's size, everything scaled", () => {
+    const big = CONTROL_TILE_SIDE * 2;
+    const cfg = withControl();
+    const markup = flatten(controlTile(host(cfg), cfg.control!, "watchPill", big));
     expect(markup).toContain("lightbulb.fill");
-    expect(markup).toContain(`width:${big}px`);
-    // The glyph grows with the tile rather than staying at the card's 24px.
-    expect(markup).toContain(`data-size=${Math.round(big * 0.293)}`);
+    expect(markup).toContain(`height:${big}px`);
+    // The glyph grows with the tile rather than staying at the card's size.
+    expect(markup).toContain(`data-size=${Math.round(big * 0.46)}`);
+  });
+
+  it("lists one shape for a watch and two for an iPhone", () => {
+    expect(controlTileShapes("watch")).toEqual(["watchPill"]);
+    expect(controlTileShapes("iphone")).toEqual(["phoneCircle", "phoneWide"]);
+    expect(controlDevice(host(withControl()))).toBe("watch");
+    expect(controlDevice(host(withControl(), { deviceKind: "iphone" }))).toBe("iphone");
+  });
+
+  it("paints a lit iPhone toggle white with the tint on the symbol, and a lit watch toggle in the tint", () => {
+    const cfg = withControl();
+    cfg.control!.state = literal("on");
+    cfg.control!.tintColorHex = "#FF9F0A";
+    const phone = flatten(controlTile(host(cfg), cfg.control!, "phoneCircle"));
+    expect(phone).toContain("background:#FFFFFF");
+    expect(phone).toContain("color:#FF9F0A");
+    const watch = flatten(controlTile(host(cfg), cfg.control!, "watchPill"));
+    expect(watch).toContain("background:#FF9F0A");
+    expect(watch).not.toContain("color:#FF9F0A");
+  });
+
+  it("keeps the dark ground while a toggle reads off, on both devices", () => {
+    const cfg = withControl();
+    cfg.control!.state = literal("off");
+    cfg.control!.tintColorHex = "#FF9F0A";
+    for (const shape of ["watchPill", "phoneCircle", "phoneWide"] as const) {
+      const markup = flatten(controlTile(host(cfg), cfg.control!, shape));
+      expect(markup).not.toContain("background:#FF9F0A");
+      expect(markup).not.toContain("background:#FFFFFF");
+    }
   });
 
   it("resolves a title that reads an entity", () => {
@@ -168,6 +209,7 @@ describe("the mock Control Center tile", () => {
     const markup = flatten(controlTile(
       host(cfg, { resolveContext: () => context({ "sensor.power": "42" }) }),
       cfg.control!,
+      "phoneWide",
     ));
     expect(markup).toContain("42");
   });
@@ -176,21 +218,40 @@ describe("the mock Control Center tile", () => {
     const cfg = withControl();
     cfg.control!.symbolOff = "lightbulb";
     cfg.control!.state = literal("off");
-    const markup = flatten(controlTile(host(cfg), cfg.control!));
+    const markup = flatten(controlTile(host(cfg), cfg.control!, "watchPill"));
     expect(markup).toContain("lightbulb");
     expect(markup).not.toContain("lightbulb.fill");
   });
 
   it("drops the words at shape-tab size, where they would be two pixels tall", () => {
     const cfg = withControl();
-    const markup = flatten(controlTile(host(cfg), cfg.control!, 20));
+    const markup = flatten(controlTile(host(cfg), cfg.control!, "phoneWide", 20));
     expect(markup).toContain("lightbulb.fill");
     expect(markup).not.toContain("Kitchen lamp");
   });
 
   it("is nothing at all before there is a context to resolve in", () => {
     const cfg = withControl();
-    expect(controlTile(host(cfg, { resolveContext: undefined }), cfg.control!)).toBe(nothing);
+    expect(controlTile(host(cfg, { resolveContext: undefined }), cfg.control!, "watchPill")).toBe(nothing);
+  });
+});
+
+describe("the line the watch prints above its tiles", () => {
+  const resolved = (over: Partial<ResolvedControl>): ResolvedControl => ({
+    kind: "toggle", title: "Kitchen lamp", symbol: "lightbulb", isOn: false, ...over,
+  });
+
+  it("is the title, a colon, then the value line", () => {
+    expect(controlHeadline(resolved({ valueLabel: "42 W" }))).toBe("Kitchen lamp: 42 W");
+  });
+
+  it("falls back to On or Off for a toggle with no value line, which is what the app draws there", () => {
+    expect(controlHeadline(resolved({ isOn: true }))).toBe("Kitchen lamp: On");
+    expect(controlHeadline(resolved({ isOn: false }))).toBe("Kitchen lamp: Off");
+  });
+
+  it("is the title alone for a button with no value line", () => {
+    expect(controlHeadline(resolved({ kind: "button" }))).toBe("Kitchen lamp");
   });
 });
 

@@ -134,7 +134,10 @@ import {
   colorWords,
   contentSummary,
   controlCard,
+  controlDevice,
+  controlHeadline,
   controlTile,
+  controlTileShapes,
   describeContext,
   describeValue,
   effectivePlacement,
@@ -2585,8 +2588,14 @@ export class WristAssistantPanel extends LitElement {
     /* The big mock tile on the stage, where a face would be. It takes the same
        drop shadow the faces take, so it sits on the work surface rather than
        floating over it. */
-    .control-big { display: grid; place-items: center; }
+    .control-big { display: grid; place-items: center; gap: 22px; }
+    .control-big.phone { grid-auto-flow: column; gap: 36px; }
     .control-big > span { box-shadow: 0 20px 50px rgba(0,0,0,.45); }
+    /* What the watch prints above its grid: white, centred, two lines at most. */
+    .control-big .cc-head {
+      max-width: 300px; text-align: center; color: #fff; font-size: 22px; font-weight: 500; line-height: 1.2;
+      display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere;
+    }
     /* The line under the face: which shape, how big, and what a drag does. The
        size is set in mono, because it is a measurement rather than prose. */
     .under {
@@ -4668,6 +4677,7 @@ export class WristAssistantPanel extends LitElement {
       pages: this.pages,
       documents: this.documentList(),
       watchAppVersion: this.selectedOwner?.app_version,
+      deviceKind: deviceKindOf(this.selectedOwner),
       update: (m, c) => this.mutate(m, c),
       endGesture: () => this.draft?.endGesture(),
       resolve: (v: Value) => resolver.resolve(v),
@@ -9287,13 +9297,24 @@ export class WristAssistantPanel extends LitElement {
     if (spec === undefined) return nothing;
     const host = this.host();
     const context = host.resolveContext?.();
-    const status = context === undefined ? undefined : resolveControl(spec, context, cfg).status;
+    const control = context === undefined ? undefined : resolveControl(spec, context, cfg);
+    const status = control?.status;
+    const phone = controlDevice(host) === "iphone";
+    const kind = controlEffectiveKind(spec) === "toggle" ? "Toggle" : "Button";
+    // The watch prints the title and value line above its grid, so the stage
+    // draws that line over the pill, big and white, the way the watch does.
+    // The iPhone has two sizes of one control, so both stand side by side.
     return html`
-      <div class="control-big">${controlTile(host, spec, CONTROL_TILE_SIDE * 3)}</div>
+      <div class=${`control-big ${phone ? "phone" : "watch"}`}>
+        ${phone || control === undefined ? nothing : html`<div class="cc-head">${controlHeadline(control)}</div>`}
+        ${controlTileShapes(controlDevice(host)).map((shape) => controlTile(host, spec, shape, CONTROL_TILE_SIDE * 2))}
+      </div>
       <div class="under">
         <b>Control Center</b>
         <span class="dot">·</span>
-        <span class="tail">${controlEffectiveKind(spec) === "toggle" ? "Toggle" : "Button"}</span>
+        <span class="tail">${phone
+          ? `${kind}. A circle in the grid, or the wide tile when it is given two columns.`
+          : `${kind}. The watch prints the title and value line above the grid, not on the tile.`}</span>
       </div>
       ${status === undefined
         ? nothing
@@ -9640,7 +9661,7 @@ export class WristAssistantPanel extends LitElement {
     return html`<span class="tab-wrap">
       <button class="tab control" aria-pressed=${active ? "true" : "false"} title="Edit the Control Center control"
         @click=${() => this.openControlView()}>
-        <span class="art">${controlTile(this.host(), spec, CONTROL_TAB_TILE_SIDE)}</span>
+        <span class="art">${controlTile(this.host(), spec, controlTileShapes(deviceKindOf(this.selectedOwner))[0]!, CONTROL_TAB_TILE_SIDE)}</span>
         <span class="lbl">Control Center</span>
       </button>
       ${this.canEdit ? html`<button class="icon danger tab-x" ?disabled=${!removable}
