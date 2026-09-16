@@ -3531,8 +3531,10 @@ ${IE(d)}`}}delete s.hidden;let l=Ss(a);if(l.length>0){let c=l.slice(0,3).join(",
        an empty state, a step that is required) always shows. A value popover
        keeps its hints, since it has no "?" of its own to ask with. */
     .sec[data-help="off"] > .sec-b .hint:not(.warn):not(.err):not(.keep):not(.value-pop .hint) { display: none; }
+    /* Shown help is quiet text, not a box: italic and muted, so a card with a
+       sentence under every row still reads as one form (Jesse, 2026-09-16). */
     .sec[data-help="on"] > .sec-b .hint:not(.warn):not(.err):not(.keep):not(.value-pop .hint) {
-      padding: 6px 9px; border-radius: 7px; background: var(--wa-field); color: var(--wa-ink);
+      padding: 0 2px; font-style: italic; color: var(--wa-muted);
     }
     /* An open card with no help text in it has nothing for its "?" to show. */
     .sec[data-open="true"][data-help="off"]:not(:has(> .sec-b .hint:not(.warn):not(.err):not(.keep):not(.value-pop .hint))) button.sec-help { display: none; }
