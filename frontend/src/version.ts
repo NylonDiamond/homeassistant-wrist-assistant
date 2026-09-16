@@ -48,6 +48,31 @@ export const MIN_IPHONE_VERSION_FOR_LOCK_SCREEN = "2.8.0";
  * release as the lock screen, so the two gates are the same version today. */
 export const MIN_IPHONE_VERSION_FOR_HOME_SCREEN = "2.8.0";
 
+/** First app version, on either device, that draws a document's Control
+ * Center control. The panel hides the Control Center card below it, since a
+ * control saved against an app with no control widget would simply never
+ * appear. Same release as the editor's own gate today, so the card is shown to
+ * everyone the panel already opens for; bump it when the control ships in a
+ * later release, or set it to null to hide the card everywhere while the app
+ * half is unbuilt. */
+export const MIN_VERSION_FOR_CONTROL_CENTER: string | null = "2.8.0";
+
+/** Whether this device's app draws a Control Center control. A version that
+ * has not been reported reads as new enough: the panel only opens for a device
+ * at or above its own gate, so guessing "too old" there would hide the card
+ * from an orphan that is really fine. */
+export function deviceSupportsControls(
+  appVersion: string | null | undefined,
+  minimum: string | null = MIN_VERSION_FOR_CONTROL_CENTER,
+): boolean {
+  if (minimum === null) return false;
+  const need = parseVersion(minimum);
+  if (!need) return false;
+  const have = parseVersion(appVersion);
+  if (!have) return true;
+  return compareVersions(have, need) >= 0;
+}
+
 /** Which device owns a set of records. Absent on the wire means a watch:
  * every owner was one before phones could own records. Null on an orphan,
  * which has no registered device left to ask. */

@@ -423,6 +423,18 @@ export function compile(config: CustomComplicationConfig): Compiled {
     for (const v of ruleValues(layout.rules)) visit(v);
   }
   if (config.supportedFamilies.includes("inline") && config.inline) visit(config.inline.value);
+  // The Control Center control, if the document carries one. No shape gate: a
+  // control is not a shape, and the device draws it whichever shapes the
+  // document lists. Nothing else fetches these, so a control whose title reads
+  // an entity would sit on "--" for ever without this. Its action is not
+  // visited, for the same reason a tap action is not: firing it needs no state.
+  const control = config.control;
+  if (control) {
+    visit(control.title);
+    if (control.valueLabel) visit(control.valueLabel);
+    if (control.state) visit(control.state);
+    if (control.status) visit(control.status);
+  }
 
   const compiled: Compiled = { entities, expressions };
   if (expressions.size > 0) compiled.document = buildDocument(expressions);

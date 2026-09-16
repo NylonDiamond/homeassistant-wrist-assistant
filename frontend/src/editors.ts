@@ -350,10 +350,15 @@ import {
   type ChartCurve,
   type ChartDotsMode,
   type ChartFillStyle,
+  type ControlKind,
+  type ControlSpec,
+  CONTROL_ACTION_TYPES,
+  controlEffectiveKind,
+  setControlShown,
 } from "./model.js";
-import { chartSmoothed, chartSeriesWithHoles } from "./resolver.js";
+import { chartSmoothed, chartSeriesWithHoles, resolveControl, type ResolveContext } from "./resolver.js";
 import { familyNote, isHomeFamily } from "./layouts.js";
-import { watchVersionNote } from "./version.js";
+import { deviceSupportsControls, watchVersionNote } from "./version.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import {
   CHART_DRAW_EXTRAS, CHART_READINGS, type ChartDrawExtra, type ChartSample, type ExtraKey, type ExtraOwner,
@@ -382,6 +387,11 @@ export interface EditorHost {
   endGesture(): void;
   /** Resolved text for a value, for the "current value" line. */
   resolve(value: Value): string | undefined;
+  /** The whole context behind `resolve`, for the one card that settles
+   * something bigger than a string: the Control Center tile goes through
+   * `resolveControl`, so the mock cannot drift from what the device draws.
+   * Absent in a test host, which then draws no tile. */
+  resolveContext?(): ResolveContext;
   /** Whether a countdown on this value would tick: a timer, or a future time. */
   canCountDown(value: Value): boolean;
   /** The fetched recorder series for one chart's history query, by
@@ -1493,7 +1503,8 @@ function symbolField(
   symbol: string,
   set: (v: string) => void,
   key: string,
-  setPath?: (d: string | undefined) => void
+  setPath?: (d: string | undefined) => void,
+  label = "Symbol",
 ): TemplateResult {
   const browser = host.symbols;
   const open = browser.isOpen(key);
@@ -1584,7 +1595,7 @@ function symbolField(
   }
 
   return html`
-    <label class="field"><span>Symbol</span>
+    <label class="field"><span>${label}</span>
       <input type="text" class="mono" .value=${symbol} placeholder="lightbulb.fill"
         @input=${onInput(typed)} @change=${onInput((v) => {
           // A typed name only joins the recents list once it is known to be
@@ -3817,6 +3828,207 @@ function pageChoiceField(host: EditorHost, pageId: string | undefined, pageName:
     set(v, host.pages.find((p) => p.id === v)?.name);
   })}
   ${current ? nothing : html`<div class="hint keep">Without a page the tap falls back to the complication list.</div>`}`;
+}
+
+// ── Control Center ────────────────────────────────────────────────────────
+// One control per document, edited as a properties sheet rather than as a
+// face. Control Center draws a title, a value line, a symbol and a tint, and
+// the OS gives us nothing else to draw into: there is no layer list here and
+// there never can be. The mock tile at the top of the card goes through the
+// same `resolveControl` the device uses, so it cannot drift from the wrist.
+
+const CONTROL_KINDS: [ControlKind, string][] = [["toggle", "Toggle"], ["button", "Button"]];
+
+/** The actions a control may run, in the order and under the names every
+ * other tap picker uses. */
+const CONTROL_TAP_TYPES: [TapAction["type"], string][] =
+  TAP_ACTION_LABELS.filter(([t]) => CONTROL_ACTION_TYPES.includes(t));
+
+/** The side of the mock tile, in CSS pixels. A control is a rounded square in
+ * Control Center, so one number says the whole shape; the radius is the
+ * fraction of the side iOS draws. */
+const CONTROL_TILE_SIDE = 82;
+const CONTROL_TILE_RADIUS = 0.26;
+
+/** What the mock paints a control that names no colour: the system blue an
+ * untinted control draws with. Never written to the document. */
+const CONTROL_MOCK_TINT = "#0A84FF";
+
+/** Black or white over a tint, whichever reads. The tile is the one place the
+ * panel paints text and a glyph straight onto a colour the author picked, so
+ * it cannot just always use white. */
+function onTintInk(hex: string): string {
+  const { valid, rgb } = colorParts(hex);
+  if (!valid) return "#FFFFFF";
+  const h = rgb.slice(1);
+  const part = (at: number) => parseInt(h.slice(at, at + 2), 16) / 255;
+  const luminance = 0.2126 * part(0) + 0.7152 * part(2) + 0.0722 * part(4);
+  return luminance > 0.6 ? "#000000" : "#FFFFFF";
+}
+
+/**
+ * The mock Control Center tile: the resolved symbol, title and value line, in
+ * the resolved tint, at the proportion the OS draws.
+ *
+ * Small and plain on purpose. A control is not a canvas, so a big preview
+ * would promise a layout that cannot be authored.
+ */
+function controlPreview(host: EditorHost, spec: ControlSpec): TemplateResult | typeof nothing {
+  const context = host.resolveContext?.();
+  if (context === undefined) return nothing;
+  const control = resolveControl(spec, context, host.config);
+  // A toggle paints its tint only while it reads on, which is what Control
+  // Center does; a button has no off state, so it is always tinted.
+  const lit = control.kind === "button" || control.isOn;
+  const tint = control.tintColorHex ?? CONTROL_MOCK_TINT;
+  const ink = lit ? onTintInk(tint) : "#FFFFFF";
+  const glyph = host.icons.render(control.symbol || "questionmark", 24, ink);
+  const tile = `width:${CONTROL_TILE_SIDE}px;height:${CONTROL_TILE_SIDE}px;box-sizing:border-box;`
+    + `border-radius:${Math.round(CONTROL_TILE_SIDE * CONTROL_TILE_RADIUS)}px;padding:9px;`
+    + `display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;`
+    + `background:${lit ? tint : "rgba(120,120,128,0.32)"};color:${ink};`;
+  return html`<div class="field readout"><span>In Control Center</span>
+    <span class="readout-v">
+      <span style=${tile}>
+        <span style="display:block;height:24px;line-height:0">${glyph ?? nothing}</span>
+        <span style="display:block;min-width:0">
+          <span style="display:block;font-size:10px;font-weight:600;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${control.title}</span>
+          ${control.valueLabel === undefined
+            ? nothing
+            : html`<span style="display:block;font-size:9px;opacity:.7;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${control.valueLabel}</span>`}
+        </span>
+      </span>
+    </span></div>
+    ${control.status === undefined
+      ? nothing
+      : html`<div class="field readout"><span>On a press</span><span class="readout-v">${control.status}</span></div>`}`;
+}
+
+/** The one line the card shows while it is shut: what the control is, or that
+ * there is none. */
+function controlSummary(host: EditorHost, spec: ControlSpec | undefined): string {
+  if (spec === undefined) return "Off";
+  const kind = controlEffectiveKind(spec) === "toggle" ? "Toggle" : "Button";
+  return `${kind} · ${truncate(describeValue(spec.title, describeContext(host)), 32)}`;
+}
+
+/**
+ * The Control Center card's body: one switch, then the ten rows behind it.
+ *
+ * Everything waits behind the switch, because most documents will never carry
+ * a control and the card should read as one line until someone wants one.
+ */
+function controlSection(host: EditorHost): TemplateResult {
+  const spec = host.config.control;
+  const shown = spec !== undefined;
+  const set = (mutate: (c: ControlSpec) => void, k?: string) => host.update((cfg) => {
+    if (cfg.control) mutate(cfg.control);
+  }, k ? `control-${k}` : undefined);
+  const switchRow = checkField("Show in Control Center", shown, (v) => host.update((cfg) => {
+    setControlShown(cfg, v);
+  }));
+  if (spec === undefined) {
+    return html`
+      ${switchRow}
+      <div class="hint keep">Shows the last synced value.</div>
+      <div class="hint">A control is an extra, never a mode: the document keeps every shape it already draws, and the control rides along beside them.</div>`;
+  }
+  const effective = controlEffectiveKind(spec);
+  const forcedToButton = spec.kind === "toggle" && effective === "button";
+  // The number the band table is read against, and the row the table marks:
+  // the value line when there is one, since that is the reading on screen,
+  // then the state, then the title.
+  const matched = spec.valueLabel ?? spec.state ?? spec.title;
+  const numbers = spec.coloring === "bands" ? chartNumbers(host.resolve(matched) ?? "") : [];
+  // The shared table editor wants a table that is always there; this holds the
+  // control's optional colour keys for the length of one edit, the way a text
+  // layer's colour by value does.
+  const setBands = (mutate: (p: BandedLayer) => void, k?: string) => set((c) => {
+    const table: BandedLayer = { bands: c.bands, bandAboveColorHex: c.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX };
+    mutate(table);
+    c.bands = table.bands;
+    if (table.bandAboveColorHex !== CHART_DEFAULT_BAND_HIGH_HEX) c.bandAboveColorHex = table.bandAboveColorHex;
+    else delete c.bandAboveColorHex;
+  }, k);
+  return html`
+    ${controlPreview(host, spec)}
+    ${switchRow}
+    <div class="hint keep">Shows the last synced value.</div>
+    <div class="fgroup">
+    ${segField("Kind", spec.kind, CONTROL_KINDS, (v) => set((c) => { c.kind = v; }), { def: "toggle" })}
+    ${valueEditor(host, spec.title, (v) => set((c) => { c.title = v; }, "title"),
+      { showResolved: true, label: "Title", key: "control-title" })}
+    ${checkField("Value line", spec.valueLabel !== undefined, (v) => set((c) => {
+      if (v) c.valueLabel = literal("--"); else delete c.valueLabel;
+    }))}
+    ${spec.valueLabel === undefined ? nothing : valueEditor(host, spec.valueLabel,
+      (v) => set((c) => { c.valueLabel = v; }, "valueline"),
+      { showResolved: true, label: "Value line", key: "control-valueline" })}
+    <div class="hint">The smaller line under the title. Leave it off for a control that is only a title.</div>
+    </div>
+    ${spec.kind === "button" ? nothing : html`
+    <div class="fgroup">
+    ${checkField("State", spec.state !== undefined, (v) => set((c) => {
+      if (v) c.state = literal("on"); else delete c.state;
+    }))}
+    ${spec.state === undefined ? nothing : valueEditor(host, spec.state, (v) => set((c) => { c.state = v; }, "state"),
+      { showResolved: true, label: "State", key: "control-state" })}
+    ${spec.state === undefined
+      ? html`<div class="hint warn">A toggle with no state cannot tell on from off, so it always draws as off. Give it the entity whose state it follows.</div>`
+      : html`<div class="hint">Read as on for <code>on</code>, <code>open</code>, <code>unlocked</code>, <code>home</code>, <code>playing</code>, <code>heat</code> and <code>cool</code>. Anything else is off.</div>`}
+    </div>`}
+    <div class="fgroup">
+    ${symbolField(host, spec.symbol, (v) => set((c) => { c.symbol = v; }, "symbol"), "control-symbol")}
+    ${effective === "button" ? nothing : html`
+      ${symbolField(host, spec.symbolOff ?? "", (v) => set((c) => {
+        if (v) c.symbolOff = v; else delete c.symbolOff;
+      }, "symboloff"), "control-symbol-off", undefined, "Symbol when off")}
+      <div class="hint">Drawn while the state reads off. Leave it blank to keep the one symbol on both faces.</div>`}
+    </div>
+    <div class="fgroup">
+    ${segField("Colour", spec.coloring, CHART_COLORINGS, (v) => set((c) => {
+      c.coloring = v;
+      // Seeded from whatever the control reads right now, as a chart's table
+      // is, so the switch paints something the moment it is flipped.
+      if (v === "bands" && c.bands.length === 0) c.bands = seedBands(chartNumbers(host.resolve(matched) ?? ""));
+    }), { def: "uniform" })}
+    ${colorField("Tint", spec.tintColorHex, (v) => set((c) => {
+      if (v === undefined) delete c.tintColorHex; else c.tintColorHex = v;
+    }, "tint"), true, null)}
+    ${spec.coloring === "bands" ? html`
+      <div class="hint">The tint takes the colour of the band the reading falls in. Without a number to read, the flat colour above stands.</div>
+      ${bandTableFields({ bands: spec.bands, bandAboveColorHex: spec.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX },
+        spec.tintColorHex ?? CONTROL_MOCK_TINT, setBands, numbers.length === 1 ? numbers[0] : undefined)}`
+      : html`<div class="hint">Leave the tint off for the system colour. A toggle paints it only while it reads on; a button always does.</div>`}
+    </div>
+    <div class="fgroup">
+    ${checkField("Status text", spec.status !== undefined, (v) => set((c) => {
+      if (v) c.status = literal("Done"); else delete c.status;
+    }))}
+    ${spec.status === undefined ? nothing : valueEditor(host, spec.status, (v) => set((c) => { c.status = v; }, "status"),
+      { showResolved: true, label: "Status text", key: "control-status" })}
+    <div class="hint">What Control Center flashes over the tile after a press.</div>
+    </div>
+    <div class="fgroup">
+    ${tapActionEditor(host, spec, (mutate, k) => set((c) => mutate(c), k), "control", CONTROL_TAP_TYPES)}
+    ${forcedToButton
+      ? html`<div class="hint warn">${describeTapAction(spec.action)} cannot be switched off again, so this control acts as a button however the Kind row is set.</div>`
+      : nothing}
+    <div class="hint">A control is one press in Control Center, so it runs the same actions a tap does minus the ones that need the app open on a page.</div>
+    </div>`;
+}
+
+/**
+ * The document's Control Center control, as a card beside the document's own
+ * settings. Hidden for an app too old to draw one: the key would save and
+ * simply never appear anywhere.
+ */
+export function controlCard(host: EditorHost): TemplateResult | typeof nothing {
+  if (!deviceSupportsControls(host.watchAppVersion)) return nothing;
+  const spec = host.config.control;
+  return card(host, "control", "Control Center", controlSection(host),
+    { color: SECTION_COLOR.tap, icon: "tap", summary: controlSummary(host, spec),
+      ...(spec !== undefined ? { reset: () => host.update((c) => { setControlShown(c, false); }) } : {}) });
 }
 
 // ── Shared values (named values in the document) ─────────────────────────
@@ -6976,20 +7188,31 @@ const CHART_EXTRAS_KEYS = ["highlight", "highColorHex", "lowColorHex", "marker",
 
 // ── Tappable ──────────────────────────────────────────────────────────────
 
+/** What the action form edits: an action, and the page an openPage action
+ * opens. A tap layer is one of these; so is the document's Control Center
+ * control, which is not a layer at all. */
+export type TapActionHolder = Pick<TapElement, "action" | "openPageId" | "openPageName">;
+
 /**
  * The action form behind a tap: what it does, the entity it does it to, and
  * the page picker for Open the page. Shared by a free-standing tap layer's own
- * editor and by the Tappable section below, so the two can never drift apart.
+ * editor, by the Tappable section below and by the Control Center card, so
+ * they can never drift apart.
+ *
+ * `types` narrows the picker for a surface that cannot run everything: a
+ * control is a one-shot press in Control Center, so it passes
+ * `CONTROL_ACTION_TYPES` and keeps the same labels.
  */
 export function tapActionEditor(
   host: EditorHost,
-  tap: TapElement,
-  upd: (mutate: (p: TapElement) => void, k?: string) => void,
+  tap: TapActionHolder,
+  upd: (mutate: (p: TapActionHolder) => void, k?: string) => void,
   key: string,
+  types: [TapAction["type"], string][] = LAYER_TAP_TYPES,
 ): TemplateResult {
   const action = tap.action;
   return html`
-    ${selectField("Tap action", action.type, LAYER_TAP_TYPES, (v) => upd((p) => {
+    ${selectField("Tap action", action.type, types, (v) => upd((p) => {
       p.action = tapActionForType(v, p.action);
       if (v !== "openPage") { delete p.openPageId; delete p.openPageName; }
     }))}

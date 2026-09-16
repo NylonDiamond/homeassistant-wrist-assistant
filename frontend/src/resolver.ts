@@ -33,6 +33,10 @@ import {
   type ImageSource,
   type ImageTimestampCorner,
   type InlineLayout,
+  type ControlKind,
+  type ControlSpec,
+  controlEffectiveKind,
+  controlIsOn,
   type NamedValue,
   type NormalizedFrame,
   type Rule,
@@ -2691,6 +2695,73 @@ export function resolveInline(inline: InlineLayout, ctx: ResolveContext, config?
   if (inline.label) out.label = inline.label;
   if (inline.symbol) out.symbol = inline.symbol;
   if (countdownEnd !== undefined) out.countdownEnd = countdownEnd;
+  return out;
+}
+
+/** A Control Center control, resolved. Mirrors `resolveControl` in the app
+ * repo: the six values through the same path a layer's text takes, the symbol
+ * for the state it settled on, and the tint after the band table. */
+export interface ResolvedControl {
+  kind: ControlKind;
+  title: string;
+  /** The smaller line under the title. Absent when the control has none, or
+   * when its value settled on nothing. */
+  valueLabel?: string;
+  /** What Control Center flashes on a press, on the same rule. */
+  status?: string;
+  symbol: string;
+  /** Absent means the control keeps the system tint, which is what Control
+   * Center draws for an untinted control. */
+  tintColorHex?: string;
+  /** Whether a toggle reads as on right now. Always false for a button, which
+   * has no state to read. */
+  isOn: boolean;
+}
+
+/**
+ * One control, settled against the cached data.
+ *
+ * `config` stands in as the layer list the same way `resolveInline` uses it: a
+ * control has no canvas, so a title that prints a chart's number has to find
+ * the chart through the document.
+ */
+export function resolveControl(spec: ControlSpec, ctx: ResolveContext, config?: CustomComplicationConfig): ResolvedControl {
+  const r = new Resolver(ctx, config);
+  const kind = controlEffectiveKind(spec);
+  // A line the author asked for that settles on nothing is left out rather
+  // than drawn as "--": Control Center gives the space back to the title.
+  const line = (value: Value | undefined): string | undefined => {
+    if (value === undefined) return undefined;
+    const text = r.resolve(value);
+    return text === undefined || text === "" ? undefined : text;
+  };
+  const title = r.resolve(spec.title) ?? "--";
+  const valueLabel = line(spec.valueLabel);
+  // A button has no state, so nothing reads it: its symbol and its tint are
+  // the on ones, which is the only thing a fire-and-forget press can draw.
+  const stateText = kind === "toggle" ? line(spec.state) : undefined;
+  const isOn = kind === "toggle" ? controlIsOn(stateText) : false;
+  const out: ResolvedControl = {
+    kind,
+    title,
+    symbol: kind === "toggle" && !isOn && spec.symbolOff !== undefined && spec.symbolOff !== ""
+      ? spec.symbolOff
+      : spec.symbol,
+    isOn,
+  };
+  if (valueLabel !== undefined) out.valueLabel = valueLabel;
+  const status = line(spec.status);
+  if (status !== undefined) out.status = status;
+  // The band table, read exactly as a gauge or a text layer reads it: sorted
+  // once, lowest first, first match wins, `bandAboveColorHex` past the end.
+  // The number comes from the value line when there is one, since that is the
+  // reading on screen, then the state, then the title.
+  const banded = spec.coloring === "bands" && spec.bands.length > 0;
+  const reading = banded ? leadingNumber(valueLabel ?? stateText ?? title) : undefined;
+  const tint = reading !== undefined
+    ? chartBandColor(reading, chartSortedBands(spec), spec.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX)
+    : spec.tintColorHex;
+  if (tint !== undefined) out.tintColorHex = tint;
   return out;
 }
 

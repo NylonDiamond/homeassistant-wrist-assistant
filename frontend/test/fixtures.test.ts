@@ -8,7 +8,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { DRAWABLE_FAMILIES, type DrawableFamily, chartHistoryRequests, chartStatisticsRequests, parseConfig } from "../src/model.js";
 import { compile, listRequests } from "../src/compiler.js";
-import { resolveAll, type EntityState, type ForcedBranches, type ResolveContext, type ResolvedElement } from "../src/resolver.js";
+import { resolveAll, resolveControl, type EntityState, type ForcedBranches, type ResolveContext, type ResolvedElement } from "../src/resolver.js";
 
 const dir = join(__dirname, "fixtures");
 const files = readdirSync(dir).filter((f) => f.endsWith(".json"));
@@ -55,6 +55,10 @@ interface Fixture {
   expected: Record<string, { bezelText?: string | null; elements: Record<string, unknown>[] } & Record<string, unknown>> & {
     /** The Inline shape (schema 6). null for a key means "absent", as elsewhere. */
     inline?: Record<string, unknown>;
+    /** The document's Control Center control, resolved. Not a shape and not a
+     * layer: a control is a properties sheet the OS draws, so it is checked on
+     * its own. null for a key means "absent", as elsewhere. */
+    control?: Record<string, unknown>;
   };
 }
 
@@ -252,6 +256,14 @@ describe.each(files)("fixture %s", (file) => {
     const got = resolveAll(config, contextFor(fx)).inline;
     expect(got, "inline").toBeDefined();
     expectSubset(got as unknown as Record<string, unknown>, want, "inline");
+  });
+
+  it("resolves the Control Center control to the expected values", () => {
+    const want = fx.expected.control;
+    if (!want) return;
+    expect(config.control, "the fixture's config carries a control").toBeDefined();
+    const got = resolveControl(config.control!, contextFor(fx), config);
+    expectSubset(got as unknown as Record<string, unknown>, want, "control");
   });
 
   // Every canvas shape, the four iPhone Home Screen tiles included, so a

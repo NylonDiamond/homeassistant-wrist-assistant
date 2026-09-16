@@ -3161,6 +3161,79 @@ export interface InlineLayout {
   countdown?: boolean;
 }
 
+// ── Control Center ────────────────────────────────────────────────────────
+// A document can carry one Control Center control. It is not a canvas: the OS
+// draws a title, a value line, a symbol and a tint, and nothing else. So the
+// spec below is a properties sheet rather than a layout, and the app declares
+// one `ControlWidgetToggle` or `ControlWidgetButton` per platform from it.
+// Mirrors `ControlSpec` in the app repo.
+
+export type ControlKind = "toggle" | "button";
+
+/** The actions a control may run. The whole tap set is too wide: a control is
+ * a one-shot press in Control Center, so nothing that wants a watch page, a
+ * timer or a to-do is offered. */
+export const CONTROL_ACTION_TYPES: readonly TapAction["type"][] =
+  ["toggleEntity", "runScene", "runScript", "callService", "runHTTPAction", "openApp"];
+
+/** The actions a toggle can run. Anything else makes the control a button,
+ * whatever its `kind` says: a scene has nothing to switch off. */
+export const CONTROL_TOGGLE_ACTION_TYPES: readonly TapAction["type"][] =
+  ["toggleEntity", "callService"];
+
+/** The states `control.state` reads as on. Deliberately its own short list
+ * rather than the wider `ACTIVE_STATES` the list icons use: a control has two
+ * faces, and "opening" or "returning" is neither of them. */
+const CONTROL_ON_STATES: ReadonlySet<string> =
+  new Set(["on", "open", "unlocked", "home", "playing", "heat", "cool"]);
+
+/** The symbol a new control starts with: the generic switch, which reads as a
+ * control on both faces before the author picks anything. */
+export const CONTROL_DEFAULT_SYMBOL = "switch.2";
+
+/** One Control Center control, carried by the document it belongs to.
+ *
+ * Every text part is a `Value`, so a control can print the same live reading a
+ * layer does. The colour keys are the layers' own: a flat `tintColorHex`, or
+ * the band table under `coloring: "bands"`. */
+export interface ControlSpec {
+  kind: ControlKind;
+  title: Value;
+  /** The smaller line under the title. Absent means the title alone. */
+  valueLabel?: Value;
+  /** Toggle only: read as on when it settles on one of `CONTROL_ON_STATES`. */
+  state?: Value;
+  symbol: string;
+  /** Toggle only: the symbol while the state reads off. Absent keeps `symbol`. */
+  symbolOff?: string;
+  tintColorHex?: string;
+  coloring: ChartColoring;
+  bands: ChartBand[];
+  /** Colour past the last band. Absent means the chart's default. */
+  bandAboveColorHex?: string;
+  /** What Control Center flashes on a press. Absent means nothing. */
+  status?: Value;
+  action: TapAction;
+}
+
+/** Whether a control may run this action at all. */
+export function controlActionAllowed(type: TapAction["type"]): boolean {
+  return CONTROL_ACTION_TYPES.includes(type);
+}
+
+/** What the control really draws as: a toggle only when it says toggle and its
+ * action can switch something off again, else a button. The app reads this, not
+ * `kind`, so a half-finished control still draws. */
+export function controlEffectiveKind(spec: Pick<ControlSpec, "kind" | "action">): ControlKind {
+  return spec.kind === "toggle" && CONTROL_TOGGLE_ACTION_TYPES.includes(spec.action.type) ? "toggle" : "button";
+}
+
+/** Whether a resolved state reads as on. Trimmed and lowercased first; a
+ * missing or unrecognised state is off, never an error. */
+export function controlIsOn(raw: string | undefined): boolean {
+  return raw !== undefined && CONTROL_ON_STATES.has(raw.trim().toLowerCase());
+}
+
 export interface CustomComplicationConfig {
   schemaVersion: number;
   id: string;
@@ -3188,6 +3261,10 @@ export interface CustomComplicationConfig {
   /** Kept out of the watch's complication picker. A face already using it
    * keeps drawing it. Only ever true: writers omit the key when shown. */
   hidden?: true;
+  /** The document's Control Center control. Absent means the document has
+   * none, which is every document written before this key. It never changes
+   * what the document draws: the control is an extra, not a mode. */
+  control?: ControlSpec;
 }
 
 // ── parsing ───────────────────────────────────────────────────────────────
@@ -4089,6 +4166,27 @@ function parseInline(raw: J): InlineLayout {
   return out;
 }
 
+/** The document's control as written. Every optional part is read only when
+ * it is really there, so a control saved half finished opens rather than
+ * reading as corrupt, the same rule the rest of this parser follows. */
+function parseControl(raw: J): ControlSpec {
+  const out: ControlSpec = {
+    kind: raw.kind === "button" ? "button" : "toggle",
+    title: isObject(raw.title) ? parseValue(raw.title) : literal(""),
+    symbol: str(raw.symbol, CONTROL_DEFAULT_SYMBOL),
+    coloring: raw.coloring === "bands" ? "bands" : "uniform",
+    bands: parseColorBands(raw.bands),
+    action: parseTapAction(raw.action),
+  };
+  if (isObject(raw.valueLabel)) out.valueLabel = parseValue(raw.valueLabel);
+  if (isObject(raw.state)) out.state = parseValue(raw.state);
+  if (typeof raw.symbolOff === "string") out.symbolOff = raw.symbolOff;
+  if (typeof raw.tintColorHex === "string") out.tintColorHex = raw.tintColorHex;
+  if (typeof raw.bandAboveColorHex === "string") out.bandAboveColorHex = raw.bandAboveColorHex;
+  if (isObject(raw.status)) out.status = parseValue(raw.status);
+  return out;
+}
+
 function parseTapAction(raw: unknown): TapAction {
   if (!isObject(raw) || typeof raw.type !== "string") return { type: "none" };
   switch (raw.type) {
@@ -4151,6 +4249,7 @@ export function parseConfig(raw: unknown): CustomComplicationConfig {
     tapAction: parseTapAction(raw.tapAction),
   };
   if (isObject(raw.inline)) cfg.inline = parseInline(raw.inline);
+  if (isObject(raw.control)) cfg.control = parseControl(raw.control);
   const rm = optNum(raw.refreshMinutes);
   if (rm !== undefined) cfg.refreshMinutes = rm;
   if (typeof raw.openPageId === "string") cfg.openPageId = raw.openPageId;
@@ -5613,6 +5712,24 @@ function encodeInline(i: InlineLayout): J {
   return o;
 }
 
+/** The document's control as written, in the key order the app's encoder uses,
+ * so a document that came from the watch round-trips byte for byte. An absent
+ * optional writes no key at all. */
+function encodeControl(c: ControlSpec): J {
+  const o: J = { kind: c.kind, title: encodeValue(c.title) };
+  if (c.valueLabel !== undefined) o.valueLabel = encodeValue(c.valueLabel);
+  if (c.state !== undefined) o.state = encodeValue(c.state);
+  o.symbol = c.symbol;
+  if (c.symbolOff !== undefined) o.symbolOff = c.symbolOff;
+  if (c.tintColorHex !== undefined) o.tintColorHex = c.tintColorHex;
+  o.coloring = c.coloring;
+  o.bands = c.bands.map(encodeBand);
+  if (c.bandAboveColorHex !== undefined) o.bandAboveColorHex = c.bandAboveColorHex;
+  if (c.status !== undefined) o.status = encodeValue(c.status);
+  o.action = encodeTapAction(c.action);
+  return o;
+}
+
 export function encodeConfig(cfg: CustomComplicationConfig): J {
   const perFamily: unknown[] = [];
   // Inline has no canvas layout, so it never appears in perFamily.
@@ -5642,6 +5759,7 @@ export function encodeConfig(cfg: CustomComplicationConfig): J {
     o.groups = cfg.groups.map((g) => ({ id: g.id, name: g.name, locked: g.locked }));
   }
   if (cfg.hidden === true) o.hidden = true;
+  if (cfg.control !== undefined) o.control = encodeControl(cfg.control);
   return o;
 }
 
@@ -5804,9 +5922,13 @@ export function setGroup(cfg: CustomComplicationConfig, elementId: string, group
 // non-empty and tells the user which paths it does not understand.
 
 const K = {
-  config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "inline", "dataSources", "refreshMinutes", "tapAction", "openPageId", "openPageName", "showSuccessFlash", "successFlashColorHex", "groups", "hidden"],
+  config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "inline", "dataSources", "refreshMinutes", "tapAction", "openPageId", "openPageName", "showSuccessFlash", "successFlashColorHex", "groups", "hidden", "control"],
   group: ["id", "name", "locked"],
   inline: ["label", "value", "symbol", "countdown"],
+  // The document's Control Center control. Its own object at the top level,
+  // and the only place these keys appear.
+  control: ["kind", "title", "valueLabel", "state", "symbol", "symbolOff", "tintColorHex",
+    "coloring", "bands", "bandAboveColorHex", "status", "action"],
   named: ["id", "name", "value"],
   value: ["kind", "format"],
   format: ["decimals", "multiply", "offset", "prefix", "suffix", "useEntityUnit", "relativeTime", "duration", "timestamp", "hideMinutes", "hideDayPeriod", "textCase"],
@@ -6120,6 +6242,13 @@ export function auditUnknownKeys(raw: unknown): string[] {
     check(raw.inline, K.inline, "$.inline");
     value(raw.inline.value, "$.inline.value");
   }
+  if (isObject(raw.control)) {
+    check(raw.control, K.control, "$.control");
+    for (const vk of ["title", "valueLabel", "state", "status"]) {
+      if (vk in raw.control) value(raw.control[vk], `$.control.${vk}`);
+    }
+    check(raw.control.action, K.tapAction, "$.control.action");
+  }
   // `dataSources` is deliberately not audited. It is the one derived part of
   // the document: `Draft.encoded()` throws away whatever was there and
   // recomputes it from the layers on every save, so an unfamiliar key in it
@@ -6173,6 +6302,38 @@ export function newConfig(name: string, slotIndex: number, families: FamilyKind[
   if (families.includes("inline")) cfg.inline = { value: literal("Text") };
   cfg.schemaVersion = schemaVersionFor(cfg);
   return cfg;
+}
+
+/**
+ * The control a document gets the moment it is switched on.
+ *
+ * It borrows what the document already says about itself, so switching the
+ * card on gives something that reads right before anything is edited: the
+ * document's name as the title, and its own tap action when a control is
+ * allowed to run it. A tap a control cannot run (a refresh, a page, a timer)
+ * falls back to a toggle with no entity picked yet.
+ */
+export function defaultControlSpec(cfg: CustomComplicationConfig): ControlSpec {
+  const action: TapAction = controlActionAllowed(cfg.tapAction.type)
+    ? structuredClone(cfg.tapAction)
+    : { type: "toggleEntity", entityId: "", displayName: "", domain: "" };
+  return {
+    kind: "toggle",
+    title: literal(cfg.name.trim() || "Control"),
+    symbol: CONTROL_DEFAULT_SYMBOL,
+    coloring: "uniform",
+    bands: [],
+    action,
+  };
+}
+
+/** The "Show in Control Center" switch, as the one mutation behind it: on
+ * writes the default control, off takes the whole key away. Flipping it on
+ * over a control that is already there leaves it alone, so a stray click on an
+ * already-on switch cannot wipe the author's work. */
+export function setControlShown(cfg: CustomComplicationConfig, shown: boolean): void {
+  if (!shown) { delete cfg.control; return; }
+  if (cfg.control === undefined) cfg.control = defaultControlSpec(cfg);
 }
 
 export function newElement(kind: Element["kind"]): Element {
@@ -7496,6 +7657,8 @@ export type SitePart =
   | "level" | "levelMin" | "levelMax"
   | "bezelText" | "curvedText" | "bezelGauge" | "bezelGaugeMin" | "bezelGaugeMax"
   | "template" | "serviceData" | "textPart"
+  // The three parts of a Control Center control past its title.
+  | "controlValue" | "controlState" | "controlStatus"
   // One of the entities a merged timeline combines, past the first.
   | "timelineGroup"
   // Where a list's items come from, and one layer of its row.
@@ -7503,7 +7666,7 @@ export type SitePart =
 
 /** Where in the document a `Value` sits, in enough detail to name it in words. */
 export interface ValueSite {
-  kind: "named" | "layer" | "rule" | "layout" | "inline";
+  kind: "named" | "layer" | "rule" | "layout" | "inline" | "control";
   /** Named value, for kind "named". */
   valueId?: string;
   valueName?: string;
@@ -7585,6 +7748,13 @@ export function describeSite(site: EntitySite): string {
     }
     case "inline":
       return "Inline";
+    case "control":
+      switch (site.part) {
+        case "controlValue": return "Control Center value line";
+        case "controlState": return "Control Center state";
+        case "controlStatus": return "Control Center status text";
+        default: return "Control Center";
+      }
   }
 }
 
@@ -7854,6 +8024,19 @@ function walkDocument(cfg: CustomComplicationConfig, visit: DocumentVisitor): vo
   }
 
   if (cfg.inline) onValue(cfg.inline.value, { kind: "inline" });
+  // The Control Center control. Not a shape and not a layer, so it is walked
+  // on its own: its four values and its action name the author's entities
+  // exactly as a layer's do, and a share that skipped them would post them in
+  // public.
+  const control = cfg.control;
+  if (control) {
+    const site: ValueSite = { kind: "control" };
+    onValue(control.title, site);
+    if (control.valueLabel) onValue(control.valueLabel, { ...site, part: "controlValue" });
+    if (control.state) onValue(control.state, { ...site, part: "controlState" });
+    if (control.status) onValue(control.status, { ...site, part: "controlStatus" });
+    onTapAction(control.action, site, (a) => { control.action = a; });
+  }
   onTapAction(cfg.tapAction, { kind: "documentTap" }, (a) => { cfg.tapAction = a; });
 }
 

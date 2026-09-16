@@ -128,6 +128,7 @@ import {
   colorField,
   colorWords,
   contentSummary,
+  controlCard,
   describeContext,
   describeValue,
   effectivePlacement,
@@ -4324,6 +4325,7 @@ export class WristAssistantPanel extends LitElement {
       update: (m, c) => this.mutate(m, c),
       endGesture: () => this.draft?.endGesture(),
       resolve: (v: Value) => resolver.resolve(v),
+      resolveContext: () => this.buildContext(),
       canCountDown: (v: Value) => resolver.canCountDown(v),
       historySeries: (key: string) => this.historySeries.get(key),
       historyReadings: (key: string) => this.historyReadings.get(key),
@@ -9082,6 +9084,7 @@ export class WristAssistantPanel extends LitElement {
         <div class="insp-body" style=${editable} @change=${() => this.draft?.endGesture()}>
           ${card(host, "complication", "Complication", generalEditor(host),
             { color: SECTION_COLOR.complication, icon: "watch", alwaysOpen: true })}
+          ${controlCard(host)}
           <p class="insp-note">Click a layer ${deviceKindOf(this.selectedOwner) === "iphone" ? "on the preview" : "on the watch"} or in the list to edit it. The shape's own background and border are the bottom row of the list.</p>
         </div>`;
     }

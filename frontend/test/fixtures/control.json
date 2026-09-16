@@ -1,0 +1,82 @@
+{
+  "name": "control",
+  "description": "A document that carries a Control Center control. The control is an extra, never a mode: the document still draws its one circular shape from its one text layer, and `control` sits beside `tapAction` as an optional top-level key. Kind toggle with a `toggleEntity` action stays a toggle, so the state is read: `light.kitchen` is `on`, which is one of the truthy words, so the control draws `symbol` rather than `symbolOff`. The tint comes from the band table read against the value line (42 falls in the up-to-50 band, so orange beats the flat `tintColorHex`). The compiler walks the control's title, value line, state and status the way it walks a layer, with no shape gate, so `expectedCompiled` lists the label and brightness entities beside the lamp. The action is not a reading and stays out, the same as `tapAction`.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-0000000000C0",
+    "name": "Kitchen lamp",
+    "values": [],
+    "slotIndex": 6,
+    "elements": [
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-0000000000C1",
+          "value": {"kind": {"kind": "entityState", "entityId": "light.kitchen", "displayName": "Kitchen lamp", "domain": "light"}},
+          "fontSize": 14,
+          "fontWeight": "regular",
+          "colorSlot": {"baseColorHex": "#FFFFFF"},
+          "rules": [],
+          "frame": {"x": 0.1, "y": 0.1, "width": 0.8, "height": 0.8, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      }
+    ],
+    "supportedFamilies": ["circular"],
+    "perFamily": [
+      "circular", {"cornerBodyShape": "circle", "borderWidth": 2}
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {"type": "refresh"},
+    "control": {
+      "kind": "toggle",
+      "title": {"kind": {"kind": "entityState", "entityId": "input_text.kitchen_label", "displayName": "Kitchen label", "domain": "input_text"}},
+      "valueLabel": {
+        "kind": {"kind": "entityState", "entityId": "sensor.kitchen_brightness", "displayName": "Kitchen brightness", "domain": "sensor"},
+        "format": {"decimals": 0, "suffix": "%"}
+      },
+      "state": {"kind": {"kind": "entityState", "entityId": "light.kitchen", "displayName": "Kitchen lamp", "domain": "light"}},
+      "symbol": "lightbulb.fill",
+      "symbolOff": "lightbulb",
+      "tintColorHex": "#FFCC00",
+      "coloring": "bands",
+      "bands": [
+        {"id": "CCCCCCCC-0000-4000-8000-0000000000B1", "upTo": 20, "colorHex": "#FF453A"},
+        {"id": "CCCCCCCC-0000-4000-8000-0000000000B2", "upTo": 50, "colorHex": "#FF9F0A"}
+      ],
+      "bandAboveColorHex": "#32D74B",
+      "status": {"kind": {"kind": "literal", "value": "Kitchen lamp"}},
+      "action": {"type": "toggleEntity", "entityId": "light.kitchen", "displayName": "Kitchen lamp", "domain": "light"}
+    }
+  },
+  "inputs": {
+    "entityStates": {
+      "light.kitchen": {"state": "on", "domain": "light"},
+      "input_text.kitchen_label": {"state": "Kitchen lamp", "domain": "input_text"},
+      "sensor.kitchen_brightness": {"state": "42", "domain": "sensor"}
+    },
+    "templateResults": {},
+    "dataAgeSeconds": 0
+  },
+  "expectedCompiled": {
+    "entities": ["input_text.kitchen_label", "light.kitchen", "sensor.kitchen_brightness"],
+    "expressionKeys": []
+  },
+  "expected": {
+    "circular": {
+      "elements": [
+        {"id": "EEEEEEEE-0000-4000-8000-0000000000C1", "kind": "text", "text": "on", "isHidden": false}
+      ]
+    },
+    "control": {
+      "kind": "toggle",
+      "title": "Kitchen lamp",
+      "valueLabel": "42%",
+      "status": "Kitchen lamp",
+      "symbol": "lightbulb.fill",
+      "tintColorHex": "#FF9F0A",
+      "isOn": true
+    }
+  }
+}
