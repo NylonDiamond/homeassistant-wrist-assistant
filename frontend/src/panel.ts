@@ -488,21 +488,44 @@ function placeArt(place: ShapePlace): TemplateResult {
   </svg>`;
 }
 
-/** The Control Center place card: the grid of tiles, one of them yours. */
-function controlPlaceArt(): TemplateResult {
-  return html`<svg class="place-art" viewBox="0 0 44 80" aria-hidden="true">
-    <rect x="2" y="2" width="40" height="76" rx="9.5" fill="var(--wa-art-case)" />
-    <rect x="4" y="4" width="36" height="72" rx="7.5" fill="var(--wa-art-blur)" />
-    <rect x="17" y="6" width="10" height="3" rx="1.5" fill="var(--wa-art-case)" />
-    <rect x="7.5" y="14" width="13" height="13" rx="4.5" fill="currentColor" />
-    <circle cx="14" cy="20.5" r="3" fill="var(--wa-art-blur)" />
-    <rect x="23.5" y="14" width="13" height="13" rx="4.5" fill="var(--wa-art-dim)" />
-    <rect x="7.5" y="31" width="13" height="13" rx="4.5" fill="var(--wa-art-dim)" />
-    <rect x="23.5" y="31" width="13" height="13" rx="4.5" fill="var(--wa-art-dim)" />
-    <rect x="7.5" y="48" width="6" height="24" rx="3" fill="var(--wa-art-dim)" />
-    <rect x="16" y="48" width="6" height="24" rx="3" fill="var(--wa-art-dim)" />
-    <rect x="25.5" y="48" width="11" height="11" rx="3.5" fill="var(--wa-art-dim)" />
-    <rect x="25.5" y="61" width="11" height="11" rx="3.5" fill="var(--wa-art-dim)" />
+/**
+ * The Control Center place card: the device's own Control Center, one tile
+ * yours and the rest grey.
+ *
+ * Both devices have one and they look nothing alike: iOS lays out a page of
+ * square tiles and sliders, watchOS a scatter of round buttons. A watch owner
+ * shown the iPhone version is being told about a screen they do not have.
+ */
+function controlPlaceArt(phone: boolean): TemplateResult {
+  if (phone) {
+    return html`<svg class="place-art" viewBox="0 0 44 80" aria-hidden="true">
+      <rect x="2" y="2" width="40" height="76" rx="9.5" fill="var(--wa-art-case)" />
+      <rect x="4" y="4" width="36" height="72" rx="7.5" fill="var(--wa-art-blur)" />
+      <rect x="17" y="6" width="10" height="3" rx="1.5" fill="var(--wa-art-case)" />
+      <rect x="7.5" y="14" width="13" height="13" rx="4.5" fill="currentColor" />
+      <circle cx="14" cy="20.5" r="3" fill="var(--wa-art-blur)" />
+      <rect x="23.5" y="14" width="13" height="13" rx="4.5" fill="var(--wa-art-dim)" />
+      <rect x="7.5" y="31" width="13" height="13" rx="4.5" fill="var(--wa-art-dim)" />
+      <rect x="23.5" y="31" width="13" height="13" rx="4.5" fill="var(--wa-art-dim)" />
+      <rect x="7.5" y="48" width="6" height="24" rx="3" fill="var(--wa-art-dim)" />
+      <rect x="16" y="48" width="6" height="24" rx="3" fill="var(--wa-art-dim)" />
+      <rect x="25.5" y="48" width="11" height="11" rx="3.5" fill="var(--wa-art-dim)" />
+      <rect x="25.5" y="61" width="11" height="11" rx="3.5" fill="var(--wa-art-dim)" />
+    </svg>`;
+  }
+  // watchOS: round buttons packed across the face, the way Control Center on
+  // the wrist draws them.
+  const dot = (cx: number, cy: number) => svg`<circle cx=${cx} cy=${cy} r="5.6" fill="var(--wa-art-dim)" />`;
+  return html`<svg class="place-art watch" viewBox="0 0 60 64" aria-hidden="true">
+    <rect x="51" y="21" width="4.5" height="11" rx="2.25" fill="var(--wa-art-case)" />
+    <rect x="51.5" y="35" width="3.4" height="8" rx="1.7" fill="var(--wa-art-case)" />
+    <rect x="8" y="4" width="44" height="52" rx="14.5" fill="var(--wa-art-case)" />
+    <rect x="10.5" y="6.5" width="39" height="47" rx="12.5" fill="var(--wa-art-blur)" />
+    <circle cx="21" cy="18" r="5.6" fill="currentColor" />
+    <circle cx="21" cy="18" r="2.4" fill="var(--wa-art-blur)" />
+    ${dot(33.5, 16)}${dot(43.5, 24)}
+    ${dot(17.5, 30)}${dot(30, 29)}${dot(41, 37)}
+    ${dot(22, 42)}${dot(34, 42)}
   </svg>`;
 }
 
@@ -1496,6 +1519,9 @@ export class WristAssistantPanel extends LitElement {
     .place-card.open { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-ink); }
     .place-card.has { color: var(--wa-ink); }
     .place-card .place-art { width: 46px; height: 84px; display: block; color: var(--wa-accent); }
+    /* A watch is wider than it is tall. Left in the phone's tall slot the
+       drawing shrinks to fit the width and lands half the size of the card. */
+    .place-card .place-art.watch { width: 76px; height: 81px; }
     .place-card-name { font-weight: 600; color: var(--wa-ink); }
     .place-count {
       position: absolute; top: 7px; right: 7px; min-width: 18px; height: 18px; box-sizing: border-box;
@@ -6775,7 +6801,7 @@ export class WristAssistantPanel extends LitElement {
           <span>Where does it live?</span>
           <div class="place-cards" role="tablist" aria-label="Where does it live?">
             ${groups.map((group) => this.renderPlaceCard(group.place, group.label, placeArt(group.place), this.pickedIn(group.place), open === group.place))}
-            ${controls ? this.renderPlaceCard("control", "Control Center", controlPlaceArt(), this.newControl ? 1 : 0, open === "control") : nothing}
+            ${controls ? this.renderPlaceCard("control", "Control Center", controlPlaceArt(deviceKindOf(this.selectedOwner) === "iphone"), this.newControl ? 1 : 0, open === "control") : nothing}
           </div>
         </div>
         ${open === undefined ? nothing : open === "control"
