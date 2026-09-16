@@ -23,6 +23,7 @@ import {
   type AggregateScope,
   type CustomComplicationConfig,
   type EntityRef,
+  type TapAction,
   auditUnknownKeys,
   ConfigParseError,
   documentEntityUses,
@@ -111,6 +112,16 @@ export function shareSlots(cfg: CustomComplicationConfig, knownDomains: Readonly
   return [...slots.values()];
 }
 
+/** The picked complications of a refresh tap are document ids on the author's
+ * watch, so on the wire the tap keeps its type and loses its picks. The reader
+ * sees "none picked" and chooses their own; "all placed" carries over as is,
+ * because it names nothing. */
+function scrubRefreshTargets(action: TapAction): TapAction {
+  if (action.type !== "refreshAll" || action.targets === undefined) return action;
+  const { targets: _dropped, ...rest } = action;
+  return rest;
+}
+
 /**
  * A copy of the document with nothing local left in it.
  *
@@ -137,11 +148,13 @@ export function scrubForShare(cfg: CustomComplicationConfig, slots: readonly Sha
   delete next.openPageId;
   delete next.openPageName;
   if (next.tapAction.type === "openPage") next.tapAction = { type: "none" };
+  next.tapAction = scrubRefreshTargets(next.tapAction);
   for (const el of next.elements) {
     if (el.kind !== "tap") continue;
     delete el.payload.openPageId;
     delete el.payload.openPageName;
     if (el.payload.action.type === "openPage") el.payload.action = { type: "none" };
+    el.payload.action = scrubRefreshTargets(el.payload.action);
   }
   next.dataSources = [];
   return next;

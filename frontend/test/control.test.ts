@@ -335,8 +335,8 @@ describe("adding and removing the control", () => {
     setControlShown(cfg, true);
     expect(cfg.control!.action).toEqual({ type: "toggleEntity", entityId: "", displayName: "", domain: "" });
 
-    // The face-wide refresh is no more runnable from Control Center than the
-    // single one is.
+    // The refresh that reaches other complications is no more runnable from
+    // Control Center than the single one is.
     const all = newConfig("Weather", 0);
     all.tapAction = { type: "refreshAll" };
     setControlShown(all, true);
@@ -606,6 +606,18 @@ describe("the control's place in the document walk", () => {
     expect(ids).not.toContain("light.kitchen");
     expect(ids).not.toContain("sensor.lamp_power");
     expect((shared.control!.action as { entityId: string }).entityId).toMatch(/^light\.shared_\d+$/);
+  });
+
+  it("drops the picked complications of a refresh tap on a share, keeping all placed", () => {
+    const picked = withControl();
+    picked.tapAction = { type: "refreshAll", targets: ["AAAA", "BBBB"] };
+    const sharedPicked = scrubForShare(picked, shareSlots(picked, new Set(["light", "sensor"])));
+    expect(sharedPicked.tapAction).toEqual({ type: "refreshAll" });
+
+    const all = withControl();
+    all.tapAction = { type: "refreshAll", allPlaced: true };
+    const sharedAll = scrubForShare(all, shareSlots(all, new Set(["light", "sensor"])));
+    expect(sharedAll.tapAction).toEqual({ type: "refreshAll", allPlaced: true });
   });
 });
 

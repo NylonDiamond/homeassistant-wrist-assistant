@@ -685,27 +685,99 @@ describe("call a service", () => {
   });
 });
 
-describe("refresh every complication", () => {
+describe("refresh complications", () => {
   it("sits right after the plain refresh in every picker", () => {
     const types = TAP_ACTION_LABELS.map(([t]) => t);
     expect(types.indexOf("refreshAll")).toBe(types.indexOf("refresh") + 1);
-    expect(TAP_ACTION_LABELS.find(([t]) => t === "refreshAll")?.[1]).toBe("Refresh every complication");
+    expect(TAP_ACTION_LABELS.find(([t]) => t === "refreshAll")?.[1]).toBe("Refresh complications");
   });
 
   it("carries no entity, whatever the picker was on before", () => {
     const toggle: TapAction = { type: "toggleEntity", entityId: "light.kitchen", displayName: "Kitchen", domain: "light" };
     expect(tapActionForType("refreshAll", toggle)).toEqual({ type: "refreshAll" });
     expect(tapNeedsEntity("refreshAll")).toBe(false);
-    expect(describeTapAction({ type: "refreshAll" })).toBe("Refresh every complication");
+    expect(describeTapAction({ type: "refreshAll" })).toBe("Refresh complications: none picked");
   });
 
-  it("is the only type with a note under the picker", () => {
-    const note = tapActionNote("refreshAll");
-    expect(note).toContain("every Wrist Assistant complication");
-    expect(note).toContain("older app");
+  it("keeps what is picked when the picker leaves refreshAll and comes back", () => {
+    const all: TapAction = { type: "refreshAll", allPlaced: true };
+    expect(tapActionForType("refreshAll", all)).toEqual({ type: "refreshAll", allPlaced: true });
+
+    const some: TapAction = { type: "refreshAll", targets: ["A1", "B2"] };
+    const kept = tapActionForType("refreshAll", some);
+    expect(kept).toEqual({ type: "refreshAll", targets: ["A1", "B2"] });
+    // A copy, so editing the new action cannot reach back into the old one.
+    expect((kept as { targets?: string[] }).targets).not.toBe(some.targets);
+
+    // Coming from any other type starts with nothing picked.
+    expect(tapActionForType("refreshAll", { type: "refresh" })).toEqual({ type: "refreshAll" });
+  });
+
+  it("says what it reaches, in the label and in the note", () => {
+    expect(describeTapAction({ type: "refreshAll", allPlaced: true })).toBe("Refresh complications: all placed");
+    expect(describeTapAction({ type: "refreshAll", targets: ["A1", "B2"] })).toBe("Refresh complications: 2 picked");
+
+    const all = tapActionNote({ type: "refreshAll", allPlaced: true });
+    expect(all).toContain("every Wrist Assistant complication placed on the watch");
+    const some = tapActionNote({ type: "refreshAll", targets: ["A1", "B2"] });
+    expect(some).toContain("the 2 picked below");
+    const none = tapActionNote({ type: "refreshAll" });
+    expect(none).toContain("Nothing is picked");
+    // The warning for an older watch is in every variant.
+    for (const note of [all, some, none]) expect(note).toContain("older app");
+  });
+
+  it("is the only action with a note under the picker", () => {
     for (const [type] of TAP_ACTION_LABELS) {
-      if (type !== "refreshAll") expect(tapActionNote(type), type).toBeUndefined();
+      if (type === "refreshAll") continue;
+      expect(tapActionNote({ type } as TapAction), type).toBeUndefined();
     }
+  });
+
+  it("reads all three shapes off the wire", () => {
+    const read = (action: unknown): TapAction => {
+      const cfg = newConfig("X", 0);
+      const enc = encodeConfig(cfg) as Record<string, unknown>;
+      enc.tapAction = action;
+      return parseConfig(enc).tapAction;
+    };
+    expect(read({ type: "refreshAll" })).toEqual({ type: "refreshAll" });
+    expect(read({ type: "refreshAll", allPlaced: true })).toEqual({ type: "refreshAll", allPlaced: true });
+    expect(read({ type: "refreshAll", targets: ["a1", "b2"] })).toEqual({ type: "refreshAll", targets: ["A1", "B2"] });
+
+    // Ids arrive the way an id is stored: trimmed, uppercased, each one once.
+    expect(read({ type: "refreshAll", targets: [" a1 ", "A1", "b2", "", 7, null] }))
+      .toEqual({ type: "refreshAll", targets: ["A1", "B2"] });
+
+    // allPlaced wins, so the ids beside it are dropped rather than kept dead.
+    expect(read({ type: "refreshAll", allPlaced: true, targets: ["A1"] }))
+      .toEqual({ type: "refreshAll", allPlaced: true });
+
+    // Anything but true is nothing picked, and so is a targets list that is not
+    // a list of ids at all.
+    expect(read({ type: "refreshAll", allPlaced: false })).toEqual({ type: "refreshAll" });
+    expect(read({ type: "refreshAll", allPlaced: "yes" })).toEqual({ type: "refreshAll" });
+    expect(read({ type: "refreshAll", targets: "A1" })).toEqual({ type: "refreshAll" });
+    expect(read({ type: "refreshAll", targets: [] })).toEqual({ type: "refreshAll" });
+  });
+
+  it("writes neither key unless it says something", () => {
+    const cfg = newConfig("X", 0);
+    cfg.tapAction = { type: "refreshAll", targets: ["A1", "B2"] };
+    const enc = encodeConfig(cfg) as Record<string, unknown>;
+    expect(auditUnknownKeys(enc)).toEqual([]);
+    expect(enc.tapAction).toEqual({ type: "refreshAll", targets: ["A1", "B2"] });
+    expect(encodeConfig(parseConfig(enc))).toEqual(enc);
+
+    cfg.tapAction = { type: "refreshAll", allPlaced: true };
+    const encAll = encodeConfig(cfg) as Record<string, unknown>;
+    expect(auditUnknownKeys(encAll)).toEqual([]);
+    expect(encAll.tapAction).toEqual({ type: "refreshAll", allPlaced: true });
+
+    // Empty is empty: nothing picked is byte-identical to a document written
+    // before either key existed.
+    cfg.tapAction = { type: "refreshAll", targets: [] };
+    expect((encodeConfig(cfg) as Record<string, unknown>).tapAction).toEqual({ type: "refreshAll" });
   });
 
   it("round-trips on the wire, on the document and on a layer", () => {

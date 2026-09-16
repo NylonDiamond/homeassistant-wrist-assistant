@@ -4420,6 +4420,7 @@ export class WristAssistantPanel extends LitElement {
       icons: this.icons,
       symbols: this.symbols,
       pages: this.pages,
+      documents: this.documentList(),
       watchAppVersion: this.selectedOwner?.app_version,
       update: (m, c) => this.mutate(m, c),
       endGesture: () => this.draft?.endGesture(),
@@ -4454,6 +4455,25 @@ export class WristAssistantPanel extends LitElement {
       ...(this.rowEditList() ? { rowEditListId: this.rowEditListId! } : {}),
       setRowEdit: (listId) => this.setRowEdit(listId),
     };
+  }
+
+  /**
+   * The complications on the selected watch, id and name, for the "Refresh
+   * complications" tap's picker.
+   *
+   * A deleted record is a tombstone, so it is left out along with anything that
+   * carries no document at all. The list request already asks for one owner, but
+   * the owner is checked again here: a picked id belongs to one watch, and a
+   * watch must never be offered another device's.
+   */
+  private documentList(): { id: string; name: string }[] {
+    return this.records
+      .filter((r) => !r.deleted && r.document !== null)
+      .filter((r) => r.ownerWatchId === "" || r.ownerWatchId === this.ownerId)
+      .map((r) => {
+        const name = typeof r.document?.name === "string" ? r.document.name.trim() : "";
+        return { id: r.id.toUpperCase(), name: name === "" ? "Unnamed" : name };
+      });
   }
 
   /**

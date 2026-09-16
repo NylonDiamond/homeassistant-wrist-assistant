@@ -3065,8 +3065,30 @@ export interface CallServiceAction {
   target?: EntityRef;
 }
 
+/**
+ * The tap that refreshes more than the complication it sits on.
+ *
+ * The tapped complication always refreshes itself, so this says what else goes
+ * with it. `allPlaced` is every Wrist Assistant complication placed on the
+ * watch; `targets` is the documents the author picked, by id, uppercase and
+ * deduplicated the way `parseConfig` stores an id. `allPlaced` wins: when it is
+ * true nothing writes `targets` at all.
+ *
+ * Both keys are optional, and neither is written unless it says something, so a
+ * document saved before this existed still reads as a plain `{"type":
+ * "refreshAll"}` and still parses.
+ */
+export interface RefreshAllAction {
+  type: "refreshAll";
+  /** Document ids, uppercase and deduplicated. Absent when nothing is picked. */
+  targets?: string[];
+  /** Written only when true. */
+  allPlaced?: boolean;
+}
+
 export type TapAction =
-  | { type: "none" | "refresh" | "refreshAll" | "openApp" | "openPage" | "openRoomPage" | "timerStartPause" | "timerCancel" }
+  | { type: "none" | "refresh" | "openApp" | "openPage" | "openRoomPage" | "timerStartPause" | "timerCancel" }
+  | RefreshAllAction
   | ({ type: "toggleEntity" | "runScene" | "runScript" | "addTodo" | "runHTTPAction" } & EntityRef)
   | CallServiceAction;
 
@@ -3100,7 +3122,7 @@ export function serviceDataIsValid(json: string | undefined): boolean {
  * boxes with the same words in review mode, and the renderer cannot import the
  * editors (they already import it). */
 export const TAP_ACTION_LABELS: [TapAction["type"], string][] = [
-  ["refresh", "Refresh"], ["refreshAll", "Refresh every complication"],
+  ["refresh", "Refresh"], ["refreshAll", "Refresh complications"],
   ["none", "Nothing"], ["openApp", "Open the app"], ["openPage", "Open the page"], ["openRoomPage", "Open the room page"],
   ["timerStartPause", "Timer start / pause"], ["timerCancel", "Timer cancel"],
   ["toggleEntity", "Toggle an entity"], ["runScene", "Run a scene"], ["runScript", "Run a script"], ["addTodo", "Add a to-do"], ["runHTTPAction", "Run an HTTP action"],
@@ -3117,9 +3139,35 @@ export function describeTapAction(action: TapAction): string {
     const call = [action.serviceDomain, action.serviceName].filter((s) => s !== "").join(".");
     return call === "" ? label : `${label}: ${call}`;
   }
+  if (action.type === "refreshAll") {
+    // What the tap reaches is the whole point of this one, so it says so even
+    // when nothing is picked and the tap is just a plain refresh.
+    if (action.allPlaced === true) return `${label}: all placed`;
+    const count = action.targets?.length ?? 0;
+    return count > 0 ? `${label}: ${count} picked` : `${label}: none picked`;
+  }
   if (!("entityId" in action)) return label;
   const target = action.displayName || action.entityId;
   return target ? `${label}: ${target}` : label;
+}
+
+/** One document ticked or unticked in a refreshAll tap's picker, as the whole
+ * next action. Ticking an id that is already there changes nothing, and an
+ * empty list drops the key rather than writing `[]`, so the picker can never
+ * save a shape the parser would read back differently.
+ *
+ * `allPlaced` is the other control and it wins, so while it is on this changes
+ * nothing: a list beside it would never be written anyway. */
+export function refreshTargetsWith(action: RefreshAllAction, id: string, on: boolean): RefreshAllAction {
+  if (action.allPlaced === true) return { type: "refreshAll", allPlaced: true };
+  const wanted = id.trim().toUpperCase();
+  const current = action.targets ?? [];
+  const targets = on
+    ? (wanted === "" || current.includes(wanted) ? [...current] : [...current, wanted])
+    : current.filter((t) => t !== wanted);
+  const next: RefreshAllAction = { type: "refreshAll" };
+  if (targets.length > 0) next.targets = targets;
+  return next;
 }
 
 /** The line under a tap picker for the types that need a word of explanation,
@@ -3127,14 +3175,21 @@ export function describeTapAction(action: TapAction): string {
  * the labels so every picker shows the same sentence: the document's tap, a
  * tap layer's, and an attached tap's.
  *
- * Only `refreshAll` has one today. A watch reads a tap type it does not know
- * as doing nothing, so the second sentence is the whole warning an older watch
- * needs: the tap saves and syncs either way, and starts working once that
- * watch is updated. */
-export function tapActionNote(type: TapAction["type"]): string | undefined {
-  if (type !== "refreshAll") return undefined;
-  return "Refreshes every Wrist Assistant complication on the watch face, not just this one."
-    + " On a watch running an older app this tap does nothing.";
+ * Only `refreshAll` has one today, and it takes the whole action rather than
+ * its type because the sentence follows what is picked. A watch reads a tap
+ * type it does not know as doing nothing, so the second sentence is the whole
+ * warning an older watch needs: the tap saves and syncs either way, and starts
+ * working once that watch is updated. */
+export function tapActionNote(action: TapAction): string | undefined {
+  if (action.type !== "refreshAll") return undefined;
+  const older = " On a watch running an older app this tap does nothing.";
+  if (action.allPlaced === true) {
+    return "Refreshes every Wrist Assistant complication placed on the watch, not just this one." + older;
+  }
+  const count = action.targets?.length ?? 0;
+  if (count > 0) return `Refreshes this complication and the ${count} picked below.` + older;
+  return "Nothing is picked, so this tap only refreshes this complication."
+    + " Pick all placed complications or some below." + older;
 }
 
 /**
@@ -4203,12 +4258,39 @@ function parseControl(raw: J): ControlSpec {
   return out;
 }
 
+/** The document ids a refreshAll tap names, cleaned the one way: strings only,
+ * trimmed, blanks dropped, uppercased the way `parseConfig` stores an id, and
+ * each id kept once in the order it was written. */
+function parseRefreshTargets(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "string") continue;
+    const id = entry.trim().toUpperCase();
+    if (id === "" || out.includes(id)) continue;
+    out.push(id);
+  }
+  return out;
+}
+
 function parseTapAction(raw: unknown): TapAction {
   if (!isObject(raw) || typeof raw.type !== "string") return { type: "none" };
   switch (raw.type) {
-    case "none": case "refresh": case "refreshAll": case "openApp": case "openPage": case "openRoomPage":
+    case "none": case "refresh": case "openApp": case "openPage": case "openRoomPage":
     case "timerStartPause": case "timerCancel":
       return { type: raw.type };
+    case "refreshAll": {
+      // Both keys are optional, so `{"type": "refreshAll"}` written before
+      // either existed still reads as the tap that refreshes only itself.
+      const out: RefreshAllAction = { type: "refreshAll" };
+      if (raw.allPlaced === true) {
+        out.allPlaced = true;
+        return out;
+      }
+      const targets = parseRefreshTargets(raw.targets);
+      if (targets.length > 0) out.targets = targets;
+      return out;
+    }
     case "toggleEntity": case "runScene": case "runScript": case "addTodo": case "runHTTPAction":
       return { type: raw.type, ...parseEntityRef(raw) };
     case "callService": {
@@ -5698,6 +5780,17 @@ function encodeTapAction(t: TapAction): J {
     if (t.target !== undefined && t.target.entityId !== "") Object.assign(o, encodeEntityRef(t.target));
     return o;
   }
+  if (t.type === "refreshAll") {
+    // Neither key is written unless it says something, so a tap with nothing
+    // picked is byte-identical to one written before either key existed.
+    const o: J = { type: t.type };
+    if (t.allPlaced === true) {
+      o.allPlaced = true;
+      return o;
+    }
+    if (t.targets !== undefined && t.targets.length > 0) o.targets = [...t.targets];
+    return o;
+  }
   if ("entityId" in t) return { type: t.type, ...encodeEntityRef(t) };
   return { type: t.type };
 }
@@ -6043,10 +6136,11 @@ const K = {
   layout: ["placements", "bezelText", "bezelCountdown", "curvedText", "curvedColorHex", "bezelGauge", "backgroundColorHex", "backgroundFill", "cornerBodyShape", "borderColorHex", "borderWidth", "rules"],
   bezelGauge: ["value", "minValue", "maxValue", "colorHexes", "minLabel", "maxLabel"],
   placement: ["frame", "isHidden", "size"],
-  // The last three belong to `callService` only; the entity four are its optional
-  // target, the same keys every entity action uses.
+  // The three service keys belong to `callService` only; the entity four are its
+  // optional target, the same keys every entity action uses. The last two belong
+  // to `refreshAll` alone: what else that tap refreshes.
   tapAction: ["type", "entityId", "displayName", "domain", "iconName",
-    "serviceDomain", "serviceName", "serviceDataJSON"],
+    "serviceDomain", "serviceName", "serviceDataJSON", "targets", "allPlaced"],
   // No `dataSource` list: `auditUnknownKeys` deliberately does not look at
   // `dataSources` at all. See the note at the end of that function.
 };

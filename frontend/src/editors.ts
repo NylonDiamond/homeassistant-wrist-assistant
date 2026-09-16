@@ -53,6 +53,7 @@ import {
   type StyleChange,
   type StyleChangeKind,
   type StyleProperty,
+  type RefreshAllAction,
   type TapAction,
   type TapElement,
   type TextArc,
@@ -133,6 +134,7 @@ import {
   STYLE_PROPERTY,
   TAP_ACTION_LABELS,
   describeTapAction,
+  refreshTargetsWith,
   serviceDataIsValid,
   tapActionNote,
   tapNeedsEntity,
@@ -378,6 +380,10 @@ export interface EditorHost {
   /** Watch-app pages (id + name, watch order) from the watch's last sync
    * report; feeds the "Open the page" tap-action picker. */
   pages: { id: string; name: string }[];
+  /** Every complication this watch has on this server, id and name, for the
+   * "Refresh complications" tap's picker. Ids are uppercase, the way a document
+   * stores its own. Absent in a test host, which the picker reads as empty. */
+  documents?: { id: string; name: string }[];
   /** The Wrist Assistant version the edited watch last reported, for the
    * "Needs Wrist Assistant X.Y" notes under newer controls. Absent or null when
    * it has not reported, which shows no note. */
@@ -3654,16 +3660,65 @@ export function tapActionForType(type: TapAction["type"], current: TapAction): T
     if (ref.entityId !== "") out.target = ref;
     return out;
   }
+  if (type === "refreshAll") {
+    // What this tap refreshes is the author's work, not a side effect of the
+    // type, so switching away and back inside the picker keeps it.
+    if (current.type !== "refreshAll") return { type: "refreshAll" };
+    const out: RefreshAllAction = { type: "refreshAll" };
+    if (current.allPlaced === true) out.allPlaced = true;
+    else if (current.targets !== undefined && current.targets.length > 0) out.targets = [...current.targets];
+    return out;
+  }
   if (tapNeedsEntity(type)) return { type: type as "toggleEntity", ...ref };
   return { type: type as "refresh" };
 }
 
-/** The line under a tap picker for a type that needs one, or nothing. Every
+/** The line under a tap picker for an action that needs one, or nothing. Every
  * picker renders this, so the sentence is written once, in the model, beside
  * the labels themselves. */
-function tapNote(type: TapAction["type"]): TemplateResult | typeof nothing {
-  const note = tapActionNote(type);
+function tapNote(action: TapAction): TemplateResult | typeof nothing {
+  const note = tapActionNote(action);
   return note === undefined ? nothing : html`<div class="hint">${note}</div>`;
+}
+
+/**
+ * Which complications a "Refresh complications" tap reaches: all the ones
+ * placed on the watch, or the ones ticked below.
+ *
+ * The document being edited is never in the list. It always refreshes itself,
+ * whatever is picked, and a hint says so rather than leaving a box that would
+ * do nothing either way. A picked id the watch no longer has stays in the list
+ * under a plain name so it can be unticked; dropping it silently would edit the
+ * author's choice on their behalf.
+ */
+function refreshTargetsField(
+  host: EditorHost,
+  action: RefreshAllAction,
+  set: (next: RefreshAllAction) => void,
+): TemplateResult {
+  const all = action.allPlaced === true;
+  const picked = action.targets ?? [];
+  const selfId = host.config.id.toUpperCase();
+  const others = (host.documents ?? [])
+    .map((d) => ({ id: d.id.toUpperCase(), name: d.name }))
+    .filter((d) => d.id !== selfId)
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  const missing = picked.filter((id) => !others.some((d) => d.id === id));
+
+  const pick = (id: string, on: boolean) => set(refreshTargetsWith(action, id, on));
+  const pickAll = (on: boolean) => set(on ? { type: "refreshAll", allPlaced: true } : { type: "refreshAll" });
+
+  if (all) return html`${checkField("All placed complications", true, pickAll)}`;
+  const rows = [
+    ...others.map((d) => checkField(d.name || "Unnamed", picked.includes(d.id), (on) => pick(d.id, on))),
+    ...missing.map((id) => checkField("Unknown complication (deleted)", true, (on) => pick(id, on))),
+  ];
+  return html`
+    ${checkField("All placed complications", false, pickAll)}
+    ${rows.length === 0
+      ? html`<div class="hint keep">No other complications on this watch yet.</div>`
+      : html`${rows}
+        <div class="hint keep">This complication always refreshes itself, so it is not in the list.</div>`}`;
 }
 
 /** Domain, service and data for the common calls, so the usual ones are one
@@ -3808,7 +3863,10 @@ export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean } = {
       </div>
     </div>
     ${renamedNote}
-    ${tapNote(tap.type)}
+    ${tapNote(tap)}
+    ${tap.type === "refreshAll"
+      ? refreshTargetsField(host, tap, (next) => host.update((c) => { c.tapAction = next; }))
+      : nothing}
     ${"entityId" in tap ? entityField(host, "Target", tap, (ref) => host.update((c) => { c.tapAction = { type: tap.type, ...ref }; }, "tap-entity"), "general-tap") : nothing}
     ${tap.type === "callService"
       ? callServiceFields(host, tap, (next, k) => host.update((c) => { c.tapAction = next; }, k), "general-tap")
@@ -7322,7 +7380,10 @@ export function tapActionEditor(
       p.action = tapActionForType(v, p.action);
       if (v !== "openPage") { delete p.openPageId; delete p.openPageName; }
     }))}
-    ${tapNote(action.type)}
+    ${tapNote(action)}
+    ${action.type === "refreshAll"
+      ? refreshTargetsField(host, action, (next) => upd((p) => { p.action = next; }))
+      : nothing}
     ${"entityId" in action ? html`
       ${entityField(host, "Target", action, (ref) => upd((p) => { p.action = { type: action.type, ...ref }; }, "tap-entity"), `${key}-tap`)}
       ${itemPlaceholders(host, (text) => upd((p) => {
