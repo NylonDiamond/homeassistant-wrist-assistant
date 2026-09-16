@@ -581,6 +581,38 @@ def test_invalid_documents_are_refused(mod, mutate):
     assert store.token == 0
 
 
+def _control() -> dict:
+    return {
+        "kind": "button",
+        "title": {"kind": {"kind": "literal", "value": "Movie night"}},
+        "symbol": "film",
+        "action": {"type": "runScene", "entityId": "scene.movie", "displayName": "Movie", "domain": "scene"},
+    }
+
+
+def test_control_only_document_is_accepted(mod):
+    """A control is drawn by Control Center, so a document that carries one
+    may have no shapes at all (decided 2026-09-15). Empty stays refused
+    without a control, which the parametrized case above still checks."""
+    store = _new(mod)
+    doc = _doc(schemaVersion=8, supportedFamilies=[], elements=[], control=_control())
+    store.save(OWNER, doc, base_revision=None, updated_by="t")
+    saved = store.list(OWNER)[0].document
+    assert saved["supportedFamilies"] == []
+    assert saved["control"]["kind"] == "button"
+
+
+@pytest.mark.parametrize(
+    "control",
+    [None, "button", ["button"], 7],
+)
+def test_empty_shapes_need_a_real_control(mod, control):
+    store = _new(mod)
+    doc = _doc(schemaVersion=8, supportedFamilies=[], elements=[], control=control)
+    with pytest.raises(mod.ComplicationValidationError):
+        store.save(OWNER, doc, base_revision=None, updated_by="t")
+
+
 def test_open_page_fields_are_accepted(mod):
     """openPageId/openPageName ride along as plain optional strings."""
     store = _new(mod)

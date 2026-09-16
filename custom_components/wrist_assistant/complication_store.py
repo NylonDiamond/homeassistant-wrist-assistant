@@ -79,6 +79,9 @@ _OPTIONAL_DOCUMENT_KEYS: dict[str, type | tuple[type, ...]] = {
     "hidden": bool,
     # The Inline shape's text; present exactly when supportedFamilies has "inline".
     "inline": dict,
+    # The document's Control Center control. The only key that lets
+    # supportedFamilies be empty: a control is drawn by the OS, not by a shape.
+    "control": dict,
 }
 _CANVAS_FAMILY_KINDS = frozenset({"rectangular", "circular", "corner"})
 # The four iPhone Home Screen tile sizes (systemSmall, systemMedium,
@@ -541,12 +544,17 @@ def validate_document(document: Any) -> dict[str, Any]:
     # `f not in _FAMILY_KINDS` raises TypeError for an unhashable entry (a
     # nested list from a hand-written document), and a validator must answer
     # "invalid", never blow up with a 500 the panel cannot render.
-    if not families or any(
+    #
+    # An empty list is allowed exactly when the document carries a control:
+    # Control Center draws that one, so the document need not draw anywhere
+    # else (decided 2026-09-15). Without a control, empty stays refused.
+    has_control = isinstance(document.get("control"), dict)
+    if (not families and not has_control) or any(
         not isinstance(f, str) or f not in _FAMILY_KINDS for f in families
     ):
         raise ComplicationValidationError(
-            "document.supportedFamilies must be a non-empty list of "
-            f"{_FAMILY_KINDS_TEXT}"
+            "document.supportedFamilies must be a list of "
+            f"{_FAMILY_KINDS_TEXT}, and may be empty only with a control"
         )
     has_inline = "inline" in families
     inline = document.get("inline")
