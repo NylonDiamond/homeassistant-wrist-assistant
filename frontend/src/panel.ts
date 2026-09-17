@@ -5080,10 +5080,10 @@ export class WristAssistantPanel extends LitElement {
       this.conflict = undefined;
       this.remoteRevision = undefined;
       this.selectedId = result.record.id;
-      // Saving starts a fresh history, but the values being tried stay.
-      const tested = this.draft.testValues;
-      this.draft = Draft.fromDocument(result.record.document, result.record.revision);
-      this.draft.testValues = tested;
+      // A save moves the baseline; it does not wipe undo. `draft` is the one
+      // that was sent, which for Save a copy is the fresh copy rather than
+      // the open document, so a copy never inherits the original's undo.
+      this.draft = draft.commit(result.record.revision);
       // The saved name is the new baseline: the rename note clears until the
       // next edit. The watch still caches the picker label, but that is a
       // one-time re-pick on the wrist, not a per-save nag.

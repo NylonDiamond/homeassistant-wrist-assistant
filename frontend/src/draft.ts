@@ -199,10 +199,26 @@ export class Draft {
     return encodeConfig(cfg);
   }
 
-  /** After a successful save: the server copy is now the baseline. */
-  commit(): Draft {
+  /**
+   * After a successful save: the stored copy is the new baseline.
+   *
+   * Undo and redo survive it. A save is a milestone, not a fresh start, and
+   * throwing the stacks away meant Ctrl-Z did nothing at all right after the
+   * one moment people reach for it. What changes is the baseline and the
+   * revision, so the draft reads clean now and reads dirty again the moment
+   * an undo walks off the saved document.
+   *
+   * The values being tried come along for the same reason they walk with the
+   * undo stack: they are part of what is on screen, and saving does not
+   * change what anyone was testing.
+   */
+  commit(revision: number): Draft {
     const cfg = structuredClone(this.config);
     cfg.dataSources = deriveDataSources(cfg);
-    return new Draft(cfg, null);
+    const next = new Draft(cfg, revision);
+    next.past = this.past;
+    next.future = this.future;
+    next.testValues = this.testValues;
+    return next;
   }
 }
