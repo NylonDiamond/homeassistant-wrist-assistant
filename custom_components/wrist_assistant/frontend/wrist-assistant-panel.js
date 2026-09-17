@@ -3024,6 +3024,9 @@ ${QR(d)}`}}delete s.hidden;let l=Js(a);if(l.length>0){let c=l.slice(0,3).join(",
       background: #000; border: 0; box-sizing: border-box; display: block;
     }
     .layer .thumb svg { display: block; width: 100%; height: 100%; }
+    /* The whole-complication tap row draws nothing, so it keeps the column the
+       other rows line up on and shows no black tile where a picture would be. */
+    .layer .thumb.blank { background: none; }
     .layer.dim .thumb { opacity: .6; }
     .layer .name { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
     .layer .name b { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
@@ -5683,6 +5686,7 @@ ${QR(d)}`}}delete s.hidden;let l=Js(a);if(l.length>0){let c=l.slice(0,3).join(",
       <div class="layers">
       ${J}
       </div>
+      ${this.renderDocumentTapRow(t,i)}
       <div class="layer pinned ${f?"hl":""}" style=${`--k:${le.place}`} tabindex="0" title="The shape is always the bottom layer"
         @click=${()=>{this.inspect={kind:"family"}}}
         @keydown=${L=>{L.key==="Enter"&&(this.inspect={kind:"family"})}}
@@ -5697,14 +5701,13 @@ ${QR(d)}`}}delete s.hidden;let l=Js(a);if(l.length>0){let c=l.slice(0,3).join(",
         </span>
         <span class="right"><span class="badges"><span class="badge">always bottom</span></span></span>
       </div>
-      ${this.renderDocumentTapRow(t,i)}
     </div>`}renderDocumentTapRow(t,i){let a=t.tapAction.type==="none",r=()=>{this.inspect={kind:"general"}};return h`<div class="layer pinned" style=${`--k:${Ze.tap}`} tabindex="0"
       title="What a tap does anywhere no tap area covers. Click to change it."
       @click=${r}
       @keydown=${o=>{o.key==="Enter"&&r()}}>
       <span class="grip">${F("tap")}</span>
       <span class="bar"></span>
-      <span class="thumb"></span>
+      <span class="thumb blank"></span>
       <span class="name">
         <b>Whole complication</b>
         <small><span class="kind">Tap</span> · ${Rt(t.tapAction)}</small>

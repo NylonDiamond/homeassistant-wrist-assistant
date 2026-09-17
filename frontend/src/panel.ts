@@ -2376,6 +2376,9 @@ export class WristAssistantPanel extends LitElement {
       background: #000; border: 0; box-sizing: border-box; display: block;
     }
     .layer .thumb svg { display: block; width: 100%; height: 100%; }
+    /* The whole-complication tap row draws nothing, so it keeps the column the
+       other rows line up on and shows no black tile where a picture would be. */
+    .layer .thumb.blank { background: none; }
     .layer.dim .thumb { opacity: .6; }
     .layer .name { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
     .layer .name b { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
@@ -10522,6 +10525,7 @@ export class WristAssistantPanel extends LitElement {
       <div class="layers">
       ${rows}
       </div>
+      ${this.renderDocumentTapRow(cfg, edit)}
       <div class="layer pinned ${shapeHl ? "hl" : ""}" style=${`--k:${SECTION_COLOR.place}`} tabindex="0" title="The shape is always the bottom layer"
         @click=${() => { this.inspect = { kind: "family" }; }}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "family" }; }}
@@ -10545,15 +10549,17 @@ export class WristAssistantPanel extends LitElement {
         </span>
         <span class="right"><span class="badges"><span class="badge">always bottom</span></span></span>
       </div>
-      ${this.renderDocumentTapRow(cfg, edit)}
     </div>`;
   }
 
   /**
-   * The last row of the list: what a tap does anywhere no tap area covers.
+   * What a tap does anywhere no tap area covers, as a row of the list.
    *
-   * It is not a layer and draws nothing, so it has no thumb, no grip and no
-   * drag. It is here because the list was silent about it: a document is born
+   * It sits above the shape rather than below it, because the shape's badge
+   * says "always bottom" and a row under that would call it a liar. The shape
+   * is the floor of what the document draws; this row is not a layer at all.
+   *
+   * It draws nothing, so it has no thumb picture, no grip and no drag. It is here because the list was silent about it: a document is born
    * with `tapAction: refresh`, the setting lives two cards away on the
    * Complication card, and a user who had ticked Tappable on nothing at all
    * still had a complication that answered a tap. The row says where that
@@ -10573,7 +10579,7 @@ export class WristAssistantPanel extends LitElement {
       @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") open(); }}>
       <span class="grip">${uiIcon("tap")}</span>
       <span class="bar"></span>
-      <span class="thumb"></span>
+      <span class="thumb blank"></span>
       <span class="name">
         <b>Whole complication</b>
         <small><span class="kind">Tap</span> · ${describeTapAction(cfg.tapAction)}</small>
