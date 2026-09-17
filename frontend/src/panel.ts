@@ -2429,6 +2429,31 @@ export class WristAssistantPanel extends LitElement {
     .card.fold .fold-h .chev { color: var(--wa-muted); flex: none; display: grid; place-items: center; transition: transform .15s ease-out; }
     .card.fold .fold-h .chev svg { width: 16px; height: 16px; }
     .card.fold[data-open="true"] .fold-h .chev { transform: rotate(180deg); }
+    /* Add a layer is the one card that makes something out of nothing, and it
+       was the quietest line on the column: a 13.5px title that looked like the
+       label over the list below it. Its header now wears the accent as a band
+       across the card, so the eye lands on it first and the fold is plainly a
+       thing to press. */
+    .card.addcard .fold-h {
+      margin: -10px -12px 8px; padding: 9px 12px; border-radius: var(--wa-r-md) var(--wa-r-md) 0 0;
+      font-size: 14.5px;
+      background: linear-gradient(180deg,
+        color-mix(in srgb, var(--wa-accent) 20%, var(--wa-card)),
+        color-mix(in srgb, var(--wa-accent) 9%, var(--wa-card)));
+      box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--wa-accent) 26%, transparent);
+    }
+    .card.addcard[data-open="false"] .fold-h { margin-bottom: -12px; border-radius: var(--wa-r-md); }
+    .card.addcard .fold-h:hover {
+      background: linear-gradient(180deg,
+        color-mix(in srgb, var(--wa-accent) 28%, var(--wa-card)),
+        color-mix(in srgb, var(--wa-accent) 15%, var(--wa-card)));
+    }
+    .card.addcard .fold-h .swatch {
+      width: 24px; height: 24px; border-radius: 7px;
+      box-shadow: 0 1px 3px color-mix(in srgb, var(--wa-accent) 55%, transparent);
+    }
+    .card.addcard .fold-h .swatch svg { width: 15px; height: 15px; }
+    .card.addcard .fold-h .chev { color: var(--wa-ink); opacity: .7; }
 
     /* As many across as fit, at about half the width the cards started at.
        The samples are drawn from a 120 unit viewBox, so a 140px card shows
@@ -2522,6 +2547,20 @@ export class WristAssistantPanel extends LitElement {
     button.preset:hover:not(:disabled) { color: var(--wa-ink); background: color-mix(in srgb, var(--wa-ink) 10%, var(--wa-panel)); }
     button.preset:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.preset:disabled { opacity: .45; cursor: default; }
+    /* Add from parts is the one press in this card that opens a library rather
+       than dropping a layer, so it is not a preset pill. It borrows Add a page's
+       button: same height, same edge, centred in its group. No plus sign, since
+       nothing is made until the dialog is answered. */
+    .presets.presets-row.parts-row { display: flex; justify-content: center; padding: 2px 0; }
+    button.part-add {
+      font: inherit; font-size: 12.5px; font-weight: 600; line-height: 1; cursor: pointer;
+      height: 34px; padding: 0 14px; border-radius: 7px;
+      border: 1px solid var(--wa-line); background: var(--wa-input); color: inherit;
+      transition: background-color .12s ease-out, border-color .12s ease-out;
+    }
+    button.part-add:hover:not(:disabled) { background: var(--wa-raised); border-color: var(--wa-line-strong); }
+    button.part-add:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    button.part-add:disabled { opacity: .45; cursor: default; }
 
     /* Layers: one row per layer, coloured by kind, the shape pinned last.
        The picture size is a variable on the list, set by the S/M/L control in
@@ -2627,6 +2666,20 @@ export class WristAssistantPanel extends LitElement {
     .layer.pinned {
       flex: none; margin: 0 -8px; padding: 0 14px 0 12px; min-height: 40px; border-radius: 0;
       border-top: 1px solid var(--wa-line);
+    }
+    /* The two rows that are not layers: what a tap does anywhere, and the
+       shape under everything. Neither can be dragged, grouped or deleted, so
+       they sit in a tray of their own below one hairline. The tray is the
+       card's own floor, full-bleed to its edges, a shade darker than the rows
+       above so the list reads as the part you can actually reorder. */
+    .pinned-set {
+      flex: none; margin: 4px -8px -8px; border-top: 1px solid var(--wa-line-strong);
+      border-radius: 0 0 var(--wa-r-md) var(--wa-r-md);
+      background: color-mix(in srgb, var(--wa-ink) 5%, transparent);
+    }
+    .pinned-set .layer.pinned { margin: 0; border-top: 0; }
+    .pinned-set .layer.pinned + .layer.pinned {
+      border-top: 1px solid color-mix(in srgb, var(--wa-line) 70%, transparent);
     }
     .layer.pinned .grip { cursor: default; }
     .layer.pinned .bar { background: repeating-linear-gradient(180deg, var(--k) 0 3px, transparent 3px 6px); }
@@ -2847,14 +2900,38 @@ export class WristAssistantPanel extends LitElement {
     .canvas-bar .spacer { flex: 1; min-width: 0; }
     /* The shapes the complication has, as one segmented control. */
     .shape-seg {
-      display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border-radius: 10px;
+      display: inline-flex; flex-wrap: wrap; gap: 5px; padding: 4px; border-radius: 11px;
       background: var(--wa-input); box-shadow: inset 0 0 0 1px var(--wa-line);
     }
-    .shape-seg button.tab { height: 34px; padding: 0 10px; border-radius: 8px; }
-    .shape-adds { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+    /* Every tab used to be transparent until it was pressed, and the pressed
+       one wore the card colour: on the dark skin that is the bar it sits in, so
+       four shapes read as one long button with no telling which was open. Each
+       tab now carries its own plate at rest, and the open one is filled with
+       the accent and ringed in it. */
+    .shape-seg button.tab {
+      height: 34px; padding: 0 10px; border-radius: 8px;
+      background: var(--wa-card); border-color: var(--wa-line);
+      color: color-mix(in srgb, var(--wa-ink) 72%, var(--wa-muted));
+    }
+    .shape-seg button.tab:hover:not(:disabled) { border-color: var(--wa-line-strong); color: var(--wa-ink); }
+    .shape-seg button.tab[aria-pressed="true"] {
+      background: color-mix(in srgb, var(--wa-accent) 22%, var(--wa-card));
+      border-color: transparent; color: var(--wa-ink); font-weight: 700;
+      box-shadow: 0 0 0 2px var(--wa-accent), 0 1px 4px rgba(0,0,0,.22);
+    }
+    .shape-adds { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-left: 4px; }
     .shape-adds button.tab { height: 28px; padding: 0 9px; gap: 5px; font-weight: 500; }
     .shape-adds button.tab svg { width: 12px; height: 12px; }
-    .shape-adds button.tab.add-shape { height: 30px; padding: 0 11px; font-weight: 600; }
+    /* Add a shape is an offer, not a tab: it keeps the dashed edge so it never
+       reads as a shape you own, but wears the accent so it is not the faintest
+       thing on the bar now that the tabs carry plates. */
+    .shape-adds button.tab.add-shape {
+      height: 30px; padding: 0 11px; font-weight: 600;
+      color: var(--wa-accent); border-color: color-mix(in srgb, var(--wa-accent) 50%, var(--wa-line-strong));
+    }
+    .shape-adds button.tab.add-shape:hover:not(:disabled) {
+      color: var(--wa-accent); background: color-mix(in srgb, var(--wa-accent) 13%, transparent);
+    }
     .shape-spare { font-size: 11.5px; color: var(--wa-muted); }
     /* Every shape this complication could still have, under the same place
        headings the New dialog uses. A panel rather than a row because the
@@ -6957,7 +7034,7 @@ export class WristAssistantPanel extends LitElement {
       ["Share", "In the top bar. Turns the open complication into text anyone can import. Your entity ids and names become numbered slots, and you can label each one."],
       ["Backup", "The other choice in Share: an exact copy, entity ids and names included. For your records, or another watch in this home."],
       ["Copy link", "A link to this panel with the text inside it. Opening it here fills in the Import dialog. On another home, paste the link into Import."],
-      ["Import", "Beside New. Paste text or a link, choose a file, or drop one on the dialog. Check the preview, choose your own entity for each slot, then Import. It opens as unsaved work and reaches the watch at the first Save."],
+      ["Import", "In the top bar, beside Share. Paste text or a link, choose a file, or drop one on the dialog. Check the preview, choose your own entity for each slot, then Import. It opens as unsaved work and reaches the watch at the first Save."],
       ["History", "In the complication's header, beside Duplicate. The last 20 saves of this complication, newest first, with a picture of the one you pick. Restore writes it back as a new revision, so the design you restored over becomes the newest entry and you can come straight back and undo it."],
       ["Parts", "A few layers kept under a name, for this home. Pick layers in the Layers list and press Save to parts; Add from parts, under the add buttons, drops them into the complication you have open. A part is stored the way a share is, so it asks which of your entities each slot is on the way in."],
     ];
@@ -8061,7 +8138,7 @@ export class WristAssistantPanel extends LitElement {
    * inches to the left. */
   private renderPickerFoot(count: number) {
     if (!this.hass.user?.is_admin) return nothing;
-    // A browsed device answers about its own slots: New here makes one there.
+    // A browsed device answers about its own slots: New makes one there.
     const browsed = this.browsing ? this.browseList : undefined;
     const full = browsed
       ? freeSlotFrom(browsed.records.map((r) => Number(r.document?.slotIndex ?? -1)), browsed.occupied) < 0
@@ -8072,7 +8149,7 @@ export class WristAssistantPanel extends LitElement {
         : `${count} complication${count === 1 ? "" : "s"} on this ${this.pickerDeviceWord}`}</span>
       <button type="button" class="new-btn primary" ?disabled=${full || this.ownerBusy}
         title=${full ? `This ${this.pickerDeviceWord} has no free slot. Delete a complication first.` : `Make a new complication on this ${this.pickerDeviceWord}`}
-        @click=${() => void this.newFromPicker()}>${uiIcon("plus")}<span>New here</span></button>
+        @click=${() => void this.newFromPicker()}>${uiIcon("plus")}<span>New</span></button>
     </div>`;
   }
 
@@ -8221,20 +8298,20 @@ export class WristAssistantPanel extends LitElement {
   };
 
   /**
-   * The New complication button, beside the list rather than inside it. It
-   * opens the dialog below; nothing is made until that dialog is answered.
+   * Import, beside the picker. It answers the same question New does from the
+   * other end: this is the second way a complication appears on a watch, and it
+   * needs the same free slot.
    *
-   * Import sits next to it because it answers the same question from the other
-   * end: this is the second way a complication appears on a watch, and it needs
-   * the same free slot New does.
+   * New itself is not here. It used to sit in this row as well, which put two
+   * buttons on the bar for one decision and asked the author to choose a device
+   * in the picker first, then press a New two inches away that landed on
+   * whichever device the header happened to be on. The picker's own New makes
+   * the device and the making one press, so the bar keeps only Import.
    */
   private renderNewButton() {
     if (!this.hass.user?.is_admin) return nothing;
     const full = this.freeSlot() < 0;
     return html`<div class="newc">
-      <button class="new-btn primary" ?disabled=${full} aria-haspopup="dialog" aria-expanded=${this.newOpen ? "true" : "false"}
-        title=${full ? `This ${this.deviceWord} has no free slot. Delete a complication first.` : "Make a new complication"}
-        @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New</span></button>
       <button class="new-btn" ?disabled=${full} aria-haspopup="dialog" aria-expanded=${this.importOpen ? "true" : "false"}
         title=${full ? `This ${this.deviceWord} has no free slot. Delete a complication first.` : "Paste a complication somebody shared"}
         @click=${() => this.openImportDialog()}><span>Import</span></button>
@@ -10525,7 +10602,7 @@ export class WristAssistantPanel extends LitElement {
         title=${card.blurb}
         @click=${() => addBlank(card)}
         >${rich ? html`<span class="well">${addPreview(card.kind, card.variant)}</span>` : nothing}<span class="add-name"><span class="k"></span><span>${card.title}</span></span></button>`;
-    return html`<div class="card fold tinted" data-open=${open ? "true" : "false"}>
+    return html`<div class="card fold tinted addcard" data-open=${open ? "true" : "false"}>
       <h2 class="panel-title tools fold-h" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
         title=${open ? "Hide the add buttons" : "Show the add buttons"}
         @click=${toggle}
@@ -10559,8 +10636,8 @@ export class WristAssistantPanel extends LitElement {
           <div class="add-group">
             <div class="presets presets-head"><span class="presets-l">Saved</span>
               <span class="presets-n">layers you kept earlier</span></div>
-            <div class="presets presets-row">
-              <button class="preset" ?disabled=${full}
+            <div class="presets presets-row parts-row">
+              <button class="part-add" ?disabled=${full}
                 title="Layers you kept earlier, ready to drop onto this shape"
                 @click=${() => void this.openPartsDialog()}>Add from parts</button>
             </div>
@@ -11126,6 +11203,7 @@ export class WristAssistantPanel extends LitElement {
       <div class="layers">
       ${rows}
       </div>
+      <div class="pinned-set">
       ${this.renderDocumentTapRow(cfg)}
       <div class="layer pinned ${shapeHl ? "hl" : ""}" style=${`--k:${SECTION_COLOR.place}`} tabindex="0" title="The shape is always the bottom layer"
         @click=${() => { this.inspect = { kind: "family" }; }}
@@ -11149,6 +11227,7 @@ export class WristAssistantPanel extends LitElement {
           <small><span class="kind">Background</span> · ${shapeMeta}</small>
         </span>
         <span class="right"><span class="badges"><span class="badge">always bottom</span></span></span>
+      </div>
       </div>
     </div>`;
   }
