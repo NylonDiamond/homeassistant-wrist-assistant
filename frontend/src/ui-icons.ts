@@ -13,7 +13,7 @@ export type UiIconName =
   | "up" | "down" | "show" | "hide" | "duplicate" | "delete" | "close" | "reset"
   | "text" | "icon" | "gauge" | "chart" | "timeline" | "list" | "shape" | "image" | "tap" | "chartTimes" | "chartDots" | "chartGrid" | "imageTime"
   | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "plus"
-  | "lock" | "unlock" | "folder" | "ungroup" | "watch"
+  | "lock" | "unlock" | "folder" | "ungroup" | "watch" | "phone"
   | "compact" | "expanded" | "search" | "undo" | "redo" | "expand" | "left" | "right"
   | "braces" | "link" | "info" | "globe" | "download" | "check" | "arrow" | "paste" | "guides";
 
@@ -102,6 +102,10 @@ function shape(name: UiIconName) {
     // The app mark in the header: a watch case with its band stubs.
     case "watch":
       return svg`<rect x="6" y="6.5" width="12" height="11" rx="3" /><path d="M9 6.5L9.6 3H14.4L15 6.5M9 17.5L9.6 21H14.4L15 17.5" />`;
+    // The watch's partner in the device list: a phone body with its speaker
+    // slot, drawn at the same weight so the two rows read as one set.
+    case "phone":
+      return svg`<rect x="6" y="2.5" width="12" height="19" rx="3" /><path d="M10.5 5.5H13.5" />`;
     // The Layers list's row-detail switch: tight lines against taller cards.
     case "compact":
       return svg`<path d="M4 6.5H20M4 12H20M4 17.5H20" />`;

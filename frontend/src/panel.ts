@@ -846,6 +846,10 @@ export class WristAssistantPanel extends LitElement {
   @state() private pickerHiddenOpen = false;
   /** The picker row asking "Really delete", by record id. */
   @state() private pickerConfirmDelete?: string;
+  /** A device has been picked and its complications are still on the way. The
+   * picker stays open across the switch, so without this the pane beside the
+   * device list would show the previous device's rows until the reply landed. */
+  @state() private ownerBusy = false;
   /** Entity states typed in under the preview, standing in for the live ones
    * so the other states can be seen without waiting for the house. Never
    * saved; cleared by Back to live. */
@@ -1340,17 +1344,15 @@ export class WristAssistantPanel extends LitElement {
       z-index: 20;
     }
     /* The step from one header question to the next. The header reads left to
-       right as a route: choose a watch,
-       then choose a complication, or make one. The arrows carry that, so they
-       are drawn in ink rather than in the hairline grey they used to wear,
-       where they were all but invisible against the bar. */
+       right as a route: open the one you are on, or make one. Choosing the
+       device used to be its own step here; it is inside the picker now, beside
+       the list it decides. The arrow carries what is left of the route, so it
+       is drawn in ink rather than in the hairline grey it used to wear, where
+       it was all but invisible against the bar. */
     header .hstep { color: var(--wa-muted); display: grid; place-items: center; flex: none; margin: 0 2px; }
     header .hstep svg { width: 20px; height: 20px; display: block; }
     header .hor { font-size: 12px; color: var(--wa-muted); flex: none; margin: 0 2px; }
     header .spacer { flex: 1; }
-    header label { font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; color: var(--wa-muted); }
-    header label.pick-label { margin-right: -2px; }
-    header label select { max-width: 220px; }
     .toolbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
     /* Two boxes, one shape: a white pill with a hairline ring, holding a run of
        quiet controls with 1px dividers between the groups inside it. */
@@ -1536,6 +1538,65 @@ export class WristAssistantPanel extends LitElement {
     .pk-chip:disabled { opacity: .35; cursor: default; }
     .pk-chip.on { border-color: var(--wa-accent); color: var(--wa-ink); background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
     .pk-count { font-size: 10.5px; opacity: .65; font-weight: 400; }
+
+    /* The picker's button, carrying both answers: the device in small type over
+       the complication, so the bar says where you are without the header
+       spending a second control and two labels on saying it. */
+    .picker > button.pk-open { height: 40px; min-width: 264px; max-width: 360px; padding: 0 8px; gap: 8px; }
+    .picker .pk-open-ico { flex: none; display: grid; place-items: center; color: var(--wa-muted); }
+    .picker .pk-open-ico svg { width: 18px; height: 18px; opacity: 1; }
+    .pk-open-lines { display: flex; flex-direction: column; align-items: stretch; flex: 1; min-width: 0; line-height: 1.25; }
+    .pk-open-dev {
+      font-size: 10.5px; font-weight: 500; color: var(--wa-muted); text-align: left;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .pk-open-row { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+
+    /* Two panes, one surface: devices on the left, that device's complications
+       on the right. Only the panes scroll, so the shape filter and the New line
+       stay put while a long list moves under them. */
+    .picker .menu.two {
+      width: min(760px, calc(100vw - 24px)); max-height: 64vh; padding: 0; overflow: hidden;
+      display: grid; grid-template-columns: 236px minmax(0, 1fr);
+    }
+    /* On a phone-width panel there is no room beside the list, so the devices
+       take a short scrolling strip above it instead of a column. */
+    .picker .menu.two.narrow { grid-template-columns: minmax(0, 1fr); }
+    .pk-devs { overflow: auto; padding: 6px; background: var(--wa-panel); border-right: 1px solid var(--wa-line); }
+    .picker .menu.two.narrow .pk-devs { border-right: 0; border-bottom: 1px solid var(--wa-line); max-height: 152px; }
+    .pk-dev-head {
+      font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+      color: var(--wa-muted); padding: 8px 8px 4px;
+    }
+    .pk-dev {
+      display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; font: inherit; font-size: 13px;
+      background: transparent; border: 0; color: inherit; padding: 6px 8px; border-radius: 8px; cursor: pointer;
+    }
+    .pk-dev:hover { background: var(--wa-card); }
+    .pk-dev:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .pk-dev.on { background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
+    .pk-dev-ico { flex: none; display: grid; place-items: center; color: var(--wa-muted); }
+    .pk-dev-ico svg { width: 17px; height: 17px; }
+    .pk-dev.on .pk-dev-ico { color: var(--wa-ink); }
+    .pk-dev-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+    .pk-dev-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pk-dev-note { font-size: 11px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* A device holding nothing stays in the list: it is still somewhere a new
+       complication can go. It reads quiet so the ones with work on them lead. */
+    .pk-dev.bare:not(.on) .pk-dev-name { color: var(--wa-muted); }
+    .pk-dev-count {
+      flex: none; font-size: 11px; color: var(--wa-muted); background: var(--wa-card);
+      border-radius: 999px; padding: 1px 7px; min-width: 22px; text-align: center;
+    }
+    .pk-dev.on .pk-dev-count { color: var(--wa-ink); }
+    .pk-comps { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+    .pk-comps .pk-filter { margin-bottom: 0; padding: 8px 10px; }
+    .pk-rows { flex: 1; min-height: 0; overflow: auto; padding: 6px; }
+    .pk-foot {
+      display: flex; align-items: center; gap: 8px; flex: none; padding: 8px 10px;
+      border-top: 1px solid var(--wa-line); background: var(--wa-panel);
+    }
+    .pk-foot-hint { flex: 1; min-width: 0; font-size: 11.5px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     /* New complication: its own button beside the list, because making one was
        a row buried under every complication that already existed. */
@@ -4478,9 +4539,18 @@ export class WristAssistantPanel extends LitElement {
       this.previewCase = (phone ? REFERENCE_PHONE : REFERENCE_CASE).label;
     }
     this.clearDraft();
-    await this.unsubscribe?.();
-    this.unsubscribe = await subscribeChanges(this.hass, ownerId, () => void this.loadRecords());
-    await this.loadRecords();
+    // The previous device's list must not stand in for this one's while the
+    // reply is on the way: the picker is open across the switch and would read
+    // as though the new device already held those complications.
+    this.records = [];
+    this.ownerBusy = true;
+    try {
+      await this.unsubscribe?.();
+      this.unsubscribe = await subscribeChanges(this.hass, ownerId, () => void this.loadRecords());
+      await this.loadRecords();
+    } finally {
+      this.ownerBusy = false;
+    }
   }
 
   private async loadRecords() {
@@ -6408,14 +6478,6 @@ export class WristAssistantPanel extends LitElement {
     const rec = this.records.find((r) => r.id === this.selectedId);
     return html`
       <header>
-        <label>${this.owners.some((o) => deviceKindOf(o) === "iphone") ? "Choose device" : "Choose watch"}
-          <select @change=${(e: Event) => void this.selectOwner((e.target as HTMLSelectElement).value)}>
-            ${ownersByKind(this.owners).map((o) => html`<option value=${o.owner_watch_id} ?selected=${o.owner_watch_id === this.ownerId}>
-              ${ownerLabel(o)} (${o.complication_count})</option>`)}
-          </select>
-        </label>
-        ${headerArrow()}
-        <label class="pick-label" for="wa-picker">Choose complication</label>
         ${this.renderPicker()}
         ${this.hass.user?.is_admin ? html`<span class="hor" aria-hidden="true">or</span>${headerArrow()}` : nothing}
         ${this.renderNewButton()}
@@ -6647,7 +6709,83 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
   }
 
+  /**
+   * The header's one picker: which device, and which of that device's
+   * complications. It used to be two controls, a plain `select` for the device
+   * and this menu for the complication, and the select was the one nobody
+   * found: a small grey box at the far left, holding the question that decides
+   * everything the rest of the header offers.
+   *
+   * So both questions share one button and one surface. The button says where
+   * you are, device above complication. The surface answers them side by side:
+   * devices down the left, the picked device's complications down the right.
+   * Picking a device leaves the surface open, because the list beside it is the
+   * answer to that pick, and a device with nothing on it says so there rather
+   * than looking like a dead end.
+   */
   private renderPicker() {
+    const d = this.draft;
+    const name = d ? (d.config.name.trim() || "Untitled") : "No complication";
+    const families = d ? d.config.supportedFamilies : [];
+    const owner = this.selectedOwner;
+    // The revision is not shown here: it meant nothing to anyone reading the
+    // list. The inspector's summary still carries it.
+    return html`<div class="picker">
+      <button id="wa-picker" class="pk-open" aria-haspopup="dialog" aria-expanded=${this.pickerOpen ? "true" : "false"}
+        title="Choose a device and a complication" @click=${() => this.togglePicker()}>
+        <span class="pk-open-ico">${uiIcon(deviceKindOf(owner) === "iphone" ? "phone" : "watch")}</span>
+        <span class="pk-open-lines">
+          <span class="pk-open-dev">${owner ? ownerLabel(owner) : "No device"}</span>
+          <span class="pk-open-row">
+            <span class="pk-name">${name}</span>
+            ${d && d.baseRevision === null ? html`<span class="pk-rev">unsaved</span>` : nothing}
+          </span>
+        </span>
+        ${this.shapeDots(families, d?.config.control !== undefined)}
+        ${uiIcon("chevron")}
+      </button>
+      ${this.pickerOpen ? html`<div class="menu two ${this.narrow ? "narrow" : ""}" role="dialog"
+        aria-label="Choose a device and a complication">
+        ${this.renderPickerDevices()}
+        ${this.renderPickerList()}
+      </div>` : nothing}
+    </div>`;
+  }
+
+  /** The picker's left pane: every device this home knows, watches first, each
+   * with what it is holding. A device with no complications stays in the list
+   * and reads quiet rather than being hidden, because it is still somewhere a
+   * new complication can go. */
+  private renderPickerDevices() {
+    const groups = ownerGroups(this.owners);
+    // One kind of device needs no headings; the pane is then just a list.
+    const heads = groups.length > 1;
+    return html`<div class="pk-devs" role="listbox" aria-label="Device">
+      ${this.owners.length === 0 ? html`<div class="empty">No devices yet.</div>` : nothing}
+      ${groups.map((g) => html`${heads ? html`<div class="pk-dev-head">${g.label}</div>` : nothing}
+        ${g.owners.map((o) => this.renderPickerDevice(o))}`)}
+    </div>`;
+  }
+
+  private renderPickerDevice(owner: OwnerSummary) {
+    const open = owner.owner_watch_id === this.ownerId;
+    const lines = ownerLines(owner);
+    const count = owner.complication_count;
+    return html`<button type="button" class="pk-dev ${open ? "on" : ""} ${count === 0 ? "bare" : ""}"
+      role="option" aria-selected=${open ? "true" : "false"}
+      @click=${() => { if (!open) void this.selectOwner(owner.owner_watch_id); }}>
+      <span class="pk-dev-ico">${uiIcon(deviceKindOf(owner) === "iphone" ? "phone" : "watch")}</span>
+      <span class="pk-dev-meta">
+        <span class="pk-dev-name">${lines.name}</span>
+        ${lines.note ? html`<span class="pk-dev-note">${lines.note}</span>` : nothing}
+      </span>
+      <span class="pk-dev-count" title=${`${count} complication${count === 1 ? "" : "s"}`}>${count}</span>
+    </button>`;
+  }
+
+  /** The picker's right pane: the picked device's complications, under the
+   * shape filter and over the line that makes a new one where you are. */
+  private renderPickerList() {
     const d = this.draft;
     const name = d ? (d.config.name.trim() || "Untitled") : "No complication";
     const families = d ? d.config.supportedFamilies : [];
@@ -6659,31 +6797,41 @@ export class WristAssistantPanel extends LitElement {
     // Hidden rows go to a folded section at the bottom. The open complication
     // never does, so it can always be picked again.
     const split = splitHidden(rows, (row) => (row.kind === "record" ? { id: row.record.id, hidden: this.rowHidden(row.record) } : undefined), this.selectedId);
-    // The revision is not shown here: it meant nothing to anyone reading the
-    // list. The inspector's summary still carries it.
-    return html`<div class="picker">
-      <button id="wa-picker" aria-haspopup="listbox" aria-expanded=${this.pickerOpen ? "true" : "false"} title="Choose a complication"
-        @click=${() => this.togglePicker()}>
-        ${this.shapeDots(families, d?.config.control !== undefined)}
-        <span class="pk-name">${name}</span>
-        ${d && d.baseRevision === null ? html`<span class="pk-rev">unsaved</span>` : nothing}
-        ${uiIcon("chevron")}
-      </button>
-      ${this.pickerOpen ? html`<div class="menu" role="listbox">
-        ${all.length >= WristAssistantPanel.FILTER_FROM_ROWS ? this.renderPickerFilter(all) : nothing}
-        ${all.length === 0 && !(d && d.baseRevision === null) ? html`<div class="empty">No complications for this ${this.deviceWord} yet.</div>` : nothing}
-        ${all.length > 0 && rows.length === 0 ? html`<div class="empty">Nothing on this ${this.deviceWord} has a ${filter === "all" ? "" : familyTitle(filter)} shape.</div>` : nothing}
-        ${split.shown.map((row) => this.renderPickerRow(row))}
-        ${d && d.baseRevision === null ? html`<div class="row" aria-current="true"><span class="pk-art"></span><span class="pk-name">${name}</span>${this.shapeDots(families, d.config.control !== undefined)}<span class="pk-badge">unsaved</span></div>` : nothing}
-        ${split.hidden.length > 0 ? html`
-          <button type="button" class="pk-hidden-head" aria-expanded=${this.pickerHiddenOpen ? "true" : "false"}
-            @click=${() => { this.pickerHiddenOpen = !this.pickerHiddenOpen; }}>
-            ${uiIcon("chevron")}<span>Hidden (${split.hidden.length})</span>
-          </button>
-          ${this.pickerHiddenOpen ? html`
-            <div class="pk-note">These do not show in the ${this.deviceWord}'s own list of complications. A face or widget that already has one keeps it.</div>
-            ${split.hidden.map((row) => this.renderPickerRow(row))}` : nothing}` : nothing}
-      </div>` : nothing}
+    return html`<div class="pk-comps">
+      ${!this.ownerBusy && all.length >= WristAssistantPanel.FILTER_FROM_ROWS ? this.renderPickerFilter(all) : nothing}
+      <div class="pk-rows">
+        ${this.ownerBusy
+          ? html`<div class="empty">Loading…</div>`
+          : html`${all.length === 0 && !(d && d.baseRevision === null) ? html`<div class="empty">No complications for this ${this.deviceWord} yet.</div>` : nothing}
+            ${all.length > 0 && rows.length === 0 ? html`<div class="empty">Nothing on this ${this.deviceWord} has a ${filter === "all" ? "" : familyTitle(filter)} shape.</div>` : nothing}
+            ${split.shown.map((row) => this.renderPickerRow(row))}
+            ${d && d.baseRevision === null ? html`<div class="row" aria-current="true"><span class="pk-art"></span><span class="pk-name">${name}</span>${this.shapeDots(families, d.config.control !== undefined)}<span class="pk-badge">unsaved</span></div>` : nothing}
+            ${split.hidden.length > 0 ? html`
+              <button type="button" class="pk-hidden-head" aria-expanded=${this.pickerHiddenOpen ? "true" : "false"}
+                @click=${() => { this.pickerHiddenOpen = !this.pickerHiddenOpen; }}>
+                ${uiIcon("chevron")}<span>Hidden (${split.hidden.length})</span>
+              </button>
+              ${this.pickerHiddenOpen ? html`
+                <div class="pk-note">These do not show in the ${this.deviceWord}'s own list of complications. A face or widget that already has one keeps it.</div>
+                ${split.hidden.map((row) => this.renderPickerRow(row))}` : nothing}` : nothing}`}
+      </div>
+      ${this.renderPickerFoot(all.length)}
+    </div>`;
+  }
+
+  /** The bottom line of the picker's right pane: what this device is holding,
+   * and a New that lands on the device the pane is showing rather than on
+   * whichever one the header happened to be on. */
+  private renderPickerFoot(count: number) {
+    if (!this.hass.user?.is_admin) return nothing;
+    const full = this.freeSlot() < 0;
+    return html`<div class="pk-foot">
+      <span class="pk-foot-hint">${this.ownerBusy
+        ? nothing
+        : `${count} complication${count === 1 ? "" : "s"} on this ${this.deviceWord}`}</span>
+      <button type="button" class="new-btn primary" ?disabled=${full || this.ownerBusy}
+        title=${full ? `This ${this.deviceWord} has no free slot. Delete a complication first.` : `Make a new complication on this ${this.deviceWord}`}
+        @click=${() => { this.togglePicker(false); this.openNewDialog(); }}>${uiIcon("plus")}<span>New here</span></button>
     </div>`;
   }
 
@@ -10803,10 +10951,41 @@ export function ownerLabel(o: OwnerSummary): string {
  * way too; doing it here as well means a mixed reply still reads as two
  * groups rather than an interleaved list. */
 export function ownersByKind(owners: readonly OwnerSummary[]): OwnerSummary[] {
-  return [
-    ...owners.filter((o) => deviceKindOf(o) !== "iphone"),
-    ...owners.filter((o) => deviceKindOf(o) === "iphone"),
-  ];
+  return ownerGroups(owners).flatMap((g) => g.owners);
+}
+
+/**
+ * One device as the picker's list draws it: the name on its own line, and what
+ * tells it apart from the device under it on a second, quieter one.
+ *
+ * `ownerLabel` says the same things on one line, for the places that have only
+ * one line to say them on, and it stays the wording of the header's button. A
+ * watch's second line is the phone it is paired with, which is the only thing
+ * separating two watches both called "Apple Watch"; a phone's is the word
+ * iPhone, unless its own name already reads as one.
+ */
+export function ownerLines(o: OwnerSummary): { name: string; note?: string } {
+  const name = o.device_name ?? o.owner_watch_id;
+  // A watch id no device answers for any more outranks both: it says why the
+  // complications under it cannot be sent anywhere.
+  if (o.is_orphan) return { name, note: "no longer registered" };
+  if (deviceKindOf(o) === "iphone") return { name, note: /iphone/i.test(name) ? undefined : "iPhone" };
+  return { name, note: o.paired_iphone_name ? `paired with ${o.paired_iphone_name}` : undefined };
+}
+
+/**
+ * The picker's device list, cut into the groups it draws headings for. The
+ * order is `ownersByKind`'s: watches first, then phones, each group left as the
+ * server gave it. A home with only one kind of device gets one group, and the
+ * picker then draws no heading at all rather than a heading over everything.
+ */
+export function ownerGroups(owners: readonly OwnerSummary[]): { label: string; owners: OwnerSummary[] }[] {
+  const watches = owners.filter((o) => deviceKindOf(o) !== "iphone");
+  const phones = owners.filter((o) => deviceKindOf(o) === "iphone");
+  const groups: { label: string; owners: OwnerSummary[] }[] = [];
+  if (watches.length > 0) groups.push({ label: watches.length === 1 ? "Watch" : "Watches", owners: watches });
+  if (phones.length > 0) groups.push({ label: phones.length === 1 ? "iPhone" : "iPhones", owners: phones });
+  return groups;
 }
 
 /**
