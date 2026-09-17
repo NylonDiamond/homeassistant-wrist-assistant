@@ -4817,7 +4817,9 @@ ${bR(d)}`}}delete s.hidden;let l=_s(a);if(l.length>0){let c=l.slice(0,3).join(",
             @click=${()=>{this.pickerHiddenOpen=!this.pickerHiddenOpen}}>
             ${H("chevron")}<span>Hidden (${l.hidden.length})</span>
           </button>
-          ${this.pickerHiddenOpen?l.hidden.map(c=>this.renderPickerRow(c)):m}`:m}
+          ${this.pickerHiddenOpen?h`
+            <div class="pk-note">These do not show in the ${this.deviceWord}'s own list of complications. A face or widget that already has one keeps it.</div>
+            ${l.hidden.map(c=>this.renderPickerRow(c))}`:m}`:m}
       </div>`:m}
     </div>`}renderPickerRow(t){if(t.kind!=="record")return h`<button type="button" class="row locked" role="option" aria-disabled="true" title=${t.title}
           @click=${()=>{this.pickerNote=this.pickerNote===t.slot?void 0:t.slot}}>

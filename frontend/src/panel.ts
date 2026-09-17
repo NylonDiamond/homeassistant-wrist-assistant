@@ -6680,7 +6680,9 @@ export class WristAssistantPanel extends LitElement {
             @click=${() => { this.pickerHiddenOpen = !this.pickerHiddenOpen; }}>
             ${uiIcon("chevron")}<span>Hidden (${split.hidden.length})</span>
           </button>
-          ${this.pickerHiddenOpen ? split.hidden.map((row) => this.renderPickerRow(row)) : nothing}` : nothing}
+          ${this.pickerHiddenOpen ? html`
+            <div class="pk-note">These do not show in the ${this.deviceWord}'s own list of complications. A face or widget that already has one keeps it.</div>
+            ${split.hidden.map((row) => this.renderPickerRow(row))}` : nothing}` : nothing}
       </div>` : nothing}
     </div>`;
   }
