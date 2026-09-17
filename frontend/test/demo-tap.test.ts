@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import type { NormalizedFrame, TapAction } from "../src/model.js";
 import { newConfig } from "../src/model.js";
 import type { ResolvedElement, ResolvedLayout, ResolvedTap } from "../src/resolver.js";
-import { actionAt, runTapAction, tapAt, type DemoHooks } from "../src/demo.js";
+import { actionAt, hitAt, runTapAction, tapAt, type DemoHooks } from "../src/demo.js";
 import type { HassLike } from "../src/ha-api.js";
 
 function frame(x: number, y: number, width: number, height: number): NormalizedFrame {
@@ -108,8 +108,39 @@ describe("the tap under a press", () => {
     const cfg = newConfig("demo", 0);
     cfg.tapAction = { type: "openApp" };
     const l = layout([tap("t1", frame(0, 0, 0.2, 0.2), { type: "refresh" })]);
-    expect(actionAt(cfg, l, { x: 0.1, y: 0.1 })).toEqual({ action: { type: "refresh" }, tapId: "t1" });
+    expect(actionAt(cfg, l, { x: 0.1, y: 0.1 })).toEqual({
+      action: { type: "refresh" }, tapId: "t1", frame: frame(0, 0, 0.2, 0.2),
+    });
+    // Nothing to ring: the watch flashes the whole complication instead.
     expect(actionAt(cfg, l, { x: 0.9, y: 0.9 })).toEqual({ action: { type: "openApp" } });
+  });
+});
+
+describe("the box the success flash rings", () => {
+  it("is the tap's own frame for a tap on the face", () => {
+    const l = layout([tap("t1", frame(0.1, 0.2, 0.3, 0.4), { type: "refresh" })]);
+    expect(hitAt(l, { x: 0.2, y: 0.3 })?.frame).toEqual(frame(0.1, 0.2, 0.3, 0.4));
+  });
+
+  it("is the pressed row's own box, not the row layer's box in its cell", () => {
+    // The list fills the bottom half. Two rows. The row's button is inset in
+    // its row, so the flash has to land on that row and nowhere else. The
+    // numbers are the watch's `listRowFrame` worked by hand.
+    const rowTap = (id: string) => tap(id, frame(0.1, 0.25, 0.8, 0.5),
+      { type: "toggleEntity", entityId: `light.${id}`, displayName: id, domain: "light" });
+    const list: ResolvedElement = {
+      kind: "list", id: "list", isHidden: false, opacity: 1,
+      frame: frame(0, 0.5, 1, 0.5),
+      cells: [
+        { frame: frame(0, 0, 1, 0.5), elements: [rowTap("one")] },
+        { frame: frame(0, 0.5, 1, 0.5), elements: [rowTap("two")] },
+      ],
+    };
+    const l = layout([list]);
+    // Second row: y = 0.5 + (0.5 + 0.25 * 0.5) * 0.5 = 0.8125, height = 0.5 * 0.5 * 0.5.
+    expect(hitAt(l, { x: 0.5, y: 0.85 })?.frame).toEqual(frame(0.1, 0.8125, 0.8, 0.125));
+    // First row: same box half a list higher.
+    expect(hitAt(l, { x: 0.5, y: 0.6 })?.frame).toEqual(frame(0.1, 0.5625, 0.8, 0.125));
   });
 });
 

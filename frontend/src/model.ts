@@ -3806,6 +3806,14 @@ export function settleArrivedPages(cfg: CustomComplicationConfig, arrived: Reado
   }
 }
 
+/**
+ * The success-flash colour a custom complication uses when the document names
+ * none. The watch's own fallback for customs is SwiftUI's system green (app
+ * repo `customSuccessFlashColor`), drawn in the dark appearance a watch face
+ * always uses. Presets fall back to grey instead; this is the custom one.
+ */
+export const CUSTOM_FLASH_DEFAULT = "#30D158";
+
 export interface CustomComplicationConfig {
   schemaVersion: number;
   id: string;
@@ -3826,7 +3834,9 @@ export interface CustomComplicationConfig {
   openPageId?: string;
   /** Display name of that page when chosen; cosmetic label for the picker. */
   openPageName?: string;
+  /** Ring the complication when a tap's action works. Absent means on. */
   showSuccessFlash?: boolean;
+  /** The colour of that ring. Absent means `CUSTOM_FLASH_DEFAULT`. */
   successFlashColorHex?: string;
   /** Layer groups (editor-only). Encoded only when there is at least one. */
   groups?: LayerGroup[];

@@ -33,6 +33,14 @@ function holds(frame: NormalizedFrame, p: FacePoint): boolean {
     && p.y >= frame.y && p.y <= frame.y + frame.height;
 }
 
+/** A tap a press landed on, with its frame in fractions of the whole face.
+ * The frame is what the success flash rings, so a row tap's frame is mapped
+ * out of its row and up into the face first. */
+export interface DemoHit {
+  tap: ResolvedTap;
+  frame: NormalizedFrame;
+}
+
 /**
  * The tap under a point, or undefined when the point misses every one.
  *
@@ -45,15 +53,20 @@ function holds(frame: NormalizedFrame, p: FacePoint): boolean {
  * face.
  */
 export function tapAt(layout: ResolvedLayout, p: FacePoint): ResolvedTap | undefined {
+  return hitAt(layout, p)?.tap;
+}
+
+/** The same lookup, keeping the frame the flash needs. */
+export function hitAt(layout: ResolvedLayout, p: FacePoint): DemoHit | undefined {
   return tapIn(layout.elements, p);
 }
 
-function tapIn(elements: readonly ResolvedElement[], p: FacePoint): ResolvedTap | undefined {
+function tapIn(elements: readonly ResolvedElement[], p: FacePoint): DemoHit | undefined {
   for (let i = elements.length - 1; i >= 0; i--) {
     const el = elements[i];
     if (!el || el.isHidden) continue;
     if (el.kind === "tap") {
-      if (holds(el.frame, p)) return el;
+      if (holds(el.frame, p)) return { tap: el, frame: el.frame };
       continue;
     }
     if (el.kind !== "list") continue;
@@ -70,7 +83,20 @@ function tapIn(elements: readonly ResolvedElement[], p: FacePoint): ResolvedTap 
       };
       if (inner.x < 0 || inner.x > 1 || inner.y < 0 || inner.y > 1) continue;
       const hit = tapIn(cell.elements, inner);
-      if (hit) return hit;
+      // The row's own box, carried back up into the face, the way the watch's
+      // `listRowFrame` places a row button's flash.
+      if (hit) {
+        return {
+          tap: hit.tap,
+          frame: {
+            x: el.frame.x + (cell.frame.x + hit.frame.x * cell.frame.width) * el.frame.width,
+            y: el.frame.y + (cell.frame.y + hit.frame.y * cell.frame.height) * el.frame.height,
+            width: hit.frame.width * cell.frame.width * el.frame.width,
+            height: hit.frame.height * cell.frame.height * el.frame.height,
+            rotationDegrees: hit.frame.rotationDegrees,
+          },
+        };
+      }
     }
   }
   return undefined;
@@ -81,14 +107,17 @@ function tapIn(elements: readonly ResolvedElement[], p: FacePoint): ResolvedTap 
  * whole-complication action when the point lands on bare face. The same
  * fallback the watch applies, and the reason a face with no tap layers at all
  * still does something when you press it.
+ *
+ * `frame` is the tap's box for the flash to ring. Absent means the press fell
+ * through, and the watch rings the whole complication instead.
  */
 export function actionAt(
   cfg: CustomComplicationConfig,
   layout: ResolvedLayout,
   p: FacePoint,
-): { action: TapAction; tapId?: string } {
-  const hit = tapAt(layout, p);
-  if (hit) return { action: hit.action, tapId: hit.id };
+): { action: TapAction; tapId?: string; frame?: NormalizedFrame } {
+  const hit = hitAt(layout, p);
+  if (hit) return { action: hit.tap.action, tapId: hit.tap.id, frame: hit.frame };
   return { action: cfg.tapAction };
 }
 

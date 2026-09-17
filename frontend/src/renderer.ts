@@ -319,6 +319,87 @@ export interface RenderOptions {
    * People and media keep their glyph.
    */
   pictureScene?: boolean;
+  /**
+   * Demo mode: the success flash the watch paints once a tap's action lands.
+   * Absent draws nothing, which is every other caller.
+   */
+  flash?: FlashSpec;
+}
+
+/**
+ * The success flash, as the watch paints it: a stroke, not a wash. The app's
+ * `customSuccessFlashIndicator` (app repo
+ * `WristAssistant Widgets/CustomComplicationViewHelpers.swift`) rings the whole
+ * complication in the flash colour, or rings just the tap area that fired when
+ * it knows which one it was. Nothing about it is on the wire; the panel plays
+ * it so a demo tap looks like a watch tap.
+ */
+export interface FlashSpec {
+  /** `#RRGGBB`. */
+  color: string;
+  /** The tap layer's frame, in design-box fractions of the whole face. A tap
+   * inside a list row is mapped out of its row first, the way the watch's own
+   * `tapFrame(layerId:)` does. Absent rings the whole complication. */
+  frame?: NormalizedFrame;
+}
+
+/** The watch's flash sizes, in slot points, copied from the app's overlays so
+ * the demo's line is the weight a wrist sees. */
+const FLASH = {
+  /** Circular and corner: a ring on the system's own circular mask. */
+  circleStroke: 2.5,
+  /** Rectangular: the watch slot's rounded corner. */
+  rectRadius: 10,
+  rectStroke: 1.5,
+  /** The iPhone Home Screen tiles, where a hairline is lost across the tile. */
+  tileRadius: 22,
+  tileStroke: 3,
+  /** One tap area's box. */
+  tapRadius: 3,
+  tapStroke: 1.5,
+  /** Under this on its shorter side, a tap area is tinted as well as ringed,
+   * because a hairline round a fingertip-sized box is easy to miss. */
+  tapFillBelow: 20,
+} as const;
+
+/**
+ * The ring around one tap area. `place` maps design-box points into the SVG:
+ * the same offset and scale the drawing itself is placed with, so the ring
+ * lands exactly on the area that was pressed.
+ */
+function flashTapRing(frame: NormalizedFrame, color: string, design: CanvasSize, place: { x: number; y: number; scale: number }) {
+  const w = Math.max(0, frame.width * design.width * place.scale);
+  const h = Math.max(0, frame.height * design.height * place.scale);
+  const x = place.x + frame.x * design.width * place.scale;
+  const y = place.y + frame.y * design.height * place.scale;
+  const sw = FLASH.tapStroke * place.scale;
+  const r = FLASH.tapRadius * place.scale;
+  const turn = `rotate(${frame.rotationDegrees} ${x + w / 2} ${y + h / 2})`;
+  return svg`<g class="wa-flash" pointer-events="none" transform=${turn}>
+    ${Math.min(w, h) < FLASH.tapFillBelow * place.scale
+      ? svg`<rect x=${x} y=${y} width=${w} height=${h} rx=${r} fill=${color} fill-opacity="0.3" />`
+      : nothing}
+    <rect x=${x + sw / 2} y=${y + sw / 2} width=${Math.max(0, w - sw)} height=${Math.max(0, h - sw)}
+      rx=${Math.max(0, r - sw / 2)} fill="none" stroke=${color} stroke-width=${sw} />
+  </g>`;
+}
+
+/**
+ * The ring around the whole complication, in the shape the system masks that
+ * family to. The stroke sits on the edge rather than inside it, the way
+ * SwiftUI's `.stroke` does, so the outer half is clipped away exactly as it is
+ * on the wrist.
+ */
+function flashShapeRing(family: DrawableFamily, color: string, canvas: CanvasSize, scale: number) {
+  if (family === "circular" || family === "corner") {
+    const side = Math.min(canvas.width, canvas.height);
+    return svg`<circle class="wa-flash" pointer-events="none" cx=${canvas.width / 2} cy=${canvas.height / 2}
+      r=${side / 2} fill="none" stroke=${color} stroke-width=${FLASH.circleStroke * scale} />`;
+  }
+  const tile = isHomeTile(family);
+  return svg`<rect class="wa-flash" pointer-events="none" width=${canvas.width} height=${canvas.height}
+    rx=${(tile ? FLASH.tileRadius : FLASH.rectRadius) * scale} fill="none" stroke=${color}
+    stroke-width=${(tile ? FLASH.tileStroke : FLASH.rectStroke) * scale} />`;
 }
 
 /**
@@ -2737,6 +2818,15 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
       ${curvedMode ? tinted(main, surface === "phone" ? "phoneAccent" : "accent", tint) : main}
       ${curvedMode ? nothing : spotlight(elements, design, options.spotlightIds, `${uid}-spot`, ctx.quad.width, ctx.quad.height,
         `translate(${slotX} ${slotY}) scale(${fit.scale * tileScale})`)}
+      ${options.flash === undefined
+        ? nothing
+        : options.flash.frame === undefined
+          // The corner's flash rings the content disc, not the screen quadrant
+          // the preview draws around it: the widget is only the disc.
+          ? svg`<circle class="wa-flash" pointer-events="none" cx=${slotX + tile / 2} cy=${slotY + tile / 2}
+              r=${tile / 2} fill="none" stroke=${options.flash.color} stroke-width=${FLASH.circleStroke * s} />`
+          : flashTapRing(options.flash.frame, options.flash.color, design,
+              { x: slotX, y: slotY, scale: fit.scale * tileScale })}
     </svg>`;
   }
 
@@ -2767,6 +2857,11 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
     ${tinted(chrome, chromeGroup, tint)}
     <g transform="translate(${fit.x} ${fit.y}) scale(${fit.scale})">${handleLayer(elements, design, options, charts)}</g>
     ${spotlight(elements, design, options.spotlightIds, `${uid}-spot`, canvas.width, canvas.height, `translate(${fit.x} ${fit.y}) scale(${fit.scale})`)}
+    ${options.flash === undefined
+      ? nothing
+      : options.flash.frame === undefined
+        ? flashShapeRing(family, options.flash.color, canvas, fit.scale)
+        : flashTapRing(options.flash.frame, options.flash.color, design, { x: fit.x, y: fit.y, scale: fit.scale })}
   </svg>`;
 }
 

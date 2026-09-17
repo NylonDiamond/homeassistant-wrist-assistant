@@ -130,6 +130,7 @@ import {
   hasFreeTimestamp,
   isZeroOutset,
   nearestTimestampCorner,
+  CUSTOM_FLASH_DEFAULT,
   RULE_TARGET_PROPERTIES,
   STYLE_PROPERTY,
   TAP_ACTION_LABELS,
@@ -3989,9 +3990,10 @@ export function pagesCardFields(host: EditorHost, page: number): TemplateResult 
     </div>`;
 }
 
-/** What the swatch shows while no colour is stored: the watch's own fallback,
- * a mid grey. Nothing is written until the user picks a colour. */
-const FLASH_DEFAULT = "#808080";
+/** What the swatch shows while no colour is stored: the watch's own fallback
+ * for a custom complication. Nothing is written until the user picks a
+ * colour. */
+const FLASH_DEFAULT = CUSTOM_FLASH_DEFAULT;
 
 /** Refresh choices, in minutes. 0 means the watch never refreshes on a timer.
  * watchOS wakes a complication at most every 15 minutes, and the watch rounds

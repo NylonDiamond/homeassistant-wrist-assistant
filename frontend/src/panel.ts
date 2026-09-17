@@ -44,6 +44,7 @@ import {
   type NormalizedFrame,
   type OccupiedSlot,
   type Value,
+  CUSTOM_FLASH_DEFAULT,
   MAX_SLOTS,
   attachedTapsOf,
   auditUnknownKeys,
@@ -1128,6 +1129,9 @@ export class WristAssistantPanel extends LitElement {
    * flash rather than left in place, because a CSS animation on an element
    * that never left carries on instead of starting again. */
   @state() private demoFlashOn = false;
+  /** Which box the flash rings: the tap area that fired, or the whole
+   * complication when the press fell through to the document's own action. */
+  @state() private demoFlashFrame?: NormalizedFrame;
   private demoFlashTimer?: number;
   /** The keys-and-mouse help is open. */
   @state() private helpOpen = false;
@@ -3615,14 +3619,19 @@ export class WristAssistantPanel extends LitElement {
     /* Demo mode. The stage is plain black rather than the zoom stage's dotted
        ground: the watch's own surround is black, and a grid behind the face
        would be one more editor mark in the one view that has none. */
+    /* A panel over the editor, not a second screen. The editor stays visible
+       round it, dimmed, so it is obvious the demo is a thing you are looking
+       through and can close, rather than somewhere you have gone. */
     dialog.demo-dialog {
-      width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; margin: 0; padding: 0; border: 0;
-      background: var(--wa-bg, #111); color: var(--wa-ink);
+      width: min(560px, 92vw); max-width: 92vw; max-height: 88vh; margin: auto;
+      padding: 0; border: 1px solid var(--wa-line); border-radius: 14px;
+      background: var(--wa-card); color: var(--wa-ink);
       display: flex; flex-direction: column; overflow: hidden;
+      box-shadow: 0 24px 64px rgba(0,0,0,.55);
     }
-    dialog.demo-dialog::backdrop { background: rgba(0,0,0,.75); }
+    dialog.demo-dialog::backdrop { background: rgba(0,0,0,.55); }
     .demo-bar, .demo-foot {
-      display: flex; align-items: center; gap: 10px; padding: 10px 16px; flex: none;
+      display: flex; align-items: center; gap: 10px; padding: 9px 14px; flex: none;
       background: var(--wa-card);
     }
     .demo-bar { border-bottom: 1px solid var(--wa-line); }
@@ -3630,29 +3639,35 @@ export class WristAssistantPanel extends LitElement {
     .demo-bar .spacer { flex: 1; min-width: 0; }
     .demo-title { font-size: 13px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .demo-title b { color: var(--wa-ink); font-weight: 600; }
-    .demo-stage { flex: 1 1 auto; min-height: 0; display: grid; place-items: center; padding: 24px; background: #000; }
-    /* Bigger than life but nowhere near the zoomed preview's full width: a
-       mouse needs room to aim at a tap area the size of a fingertip, and a
-       complication blown across the window stops reading as a wrist. */
+    .demo-stage { flex: 1 1 auto; min-height: 0; display: grid; place-items: center; padding: 20px; background: #000; }
+    /* Bigger than life, because a mouse needs room to aim at a tap area the
+       size of a fingertip, but inside a dialog that still leaves the editor
+       showing on every side. */
     .demo-face {
       position: relative; line-height: 0; cursor: pointer;
-      width: min(640px, 62vw, 100%, calc((100vh - 190px) * var(--wa-ratio, 1)));
+      width: min(100%, calc((66vh - 150px) * var(--wa-ratio, 1)));
     }
-    .demo-face svg { width: 100%; height: auto; max-width: none; display: block; }
-    /* The success flash: the wash of colour the watch paints over the whole
-       complication once an action lands. */
-    .demo-flash {
-      position: absolute; inset: 0; border-radius: 10px; pointer-events: none;
-      background: var(--flash, #808080);
-      animation: wa-demo-flash 700ms ease-out forwards;
-    }
+    /* The system's own mask for each shape, the same one the preview uses. A
+       square circular face would be the first thing a demo got wrong. */
+    .demo-face svg { width: 100%; height: auto; max-width: none; display: block; border-radius: 18px; }
+    .demo-face.circular svg { border-radius: 50%; }
+    .demo-face.corner svg { border-radius: 0; }
+    .demo-face.small svg { border-radius: 16.3%; }
+    .demo-face.medium svg { border-radius: 7.7% / 16.3%; }
+    .demo-face.large svg { border-radius: 7.7% / 7.4%; }
+    .demo-face.xlarge svg { border-radius: 7.7% / 4.8%; }
+    /* The success flash is drawn inside the picture (renderer.ts FlashSpec),
+       because the watch's flash is a stroke on the complication's own shape.
+       All that is left here is letting it fade rather than blink out. */
+    .demo-face .wa-flash { animation: wa-demo-flash 700ms ease-out forwards; }
     @keyframes wa-demo-flash {
       0% { opacity: 0; }
-      18% { opacity: .55; }
+      12% { opacity: 1; }
+      70% { opacity: 1; }
       100% { opacity: 0; }
     }
     @media (prefers-reduced-motion: reduce) {
-      .demo-flash { animation: none; opacity: .3; }
+      .demo-face .wa-flash { animation: none; }
     }
     .demo-pages { display: inline-flex; gap: 5px; flex: none; }
     .demo-pages i { width: 6px; height: 6px; border-radius: 50%; background: var(--wa-line); }
@@ -6487,8 +6502,11 @@ export class WristAssistantPanel extends LitElement {
 
   private closeDemo() {
     this.stopTour();
+    window.clearTimeout(this.demoFlashTimer);
     this.demoing = false;
     this.demoNote = undefined;
+    this.demoFlashOn = false;
+    this.demoFlashFrame = undefined;
   }
 
   /**
@@ -6509,6 +6527,7 @@ export class WristAssistantPanel extends LitElement {
     const ratio = family === "corner" ? 104 / 124 : slot.width / slot.height;
     const pages = usesPages(cfg) ? this.pageCount() : 1;
     const note = this.demoNote;
+    const flashOn = (cfg.showSuccessFlash ?? true) && this.demoFlashOn;
     const opts = {
       icons: this.icons,
       imageSizes: this.imageSizes,
@@ -6516,8 +6535,15 @@ export class WristAssistantPanel extends LitElement {
       ...(this.previewTint !== undefined
         ? { tint: this.previewTint, ...(isHomeFamily(family) ? { tintSurface: "phone" as const } : {}) }
         : {}),
+      ...(flashOn
+        ? {
+          flash: {
+            color: (cfg.successFlashColorHex ?? CUSTOM_FLASH_DEFAULT).slice(0, 7),
+            ...(this.demoFlashFrame !== undefined ? { frame: this.demoFlashFrame } : {}),
+          },
+        }
+        : {}),
     };
-    const flashOn = cfg.showSuccessFlash ?? true;
     return html`<dialog class="demo-dialog" @close=${() => this.closeDemo()}>
       <div class="demo-bar">
         <span class="demo-title">Demo <b>${cfg.name || "this complication"}</b> on ${deviceCase.label}</span>
@@ -6529,9 +6555,6 @@ export class WristAssistantPanel extends LitElement {
         <div class="demo-face ${family}" style=${`--wa-ratio:${ratio}`}
           @pointerdown=${(e: PointerEvent) => void this.onDemoTap(cfg, family, layout, e)}>
           ${renderLayout(layout, opts)}
-          ${flashOn && this.demoFlashOn
-            ? html`<i class="demo-flash" style=${`--flash:${(cfg.successFlashColorHex ?? "#808080").slice(0, 7)}`}></i>`
-            : nothing}
         </div>
       </div>
       <div class="demo-foot">
@@ -6559,7 +6582,7 @@ export class WristAssistantPanel extends LitElement {
     e.preventDefault();
     const point = this.demoPoint(family, e);
     if (!point) return;
-    const { action } = actionAt(cfg, layout, point);
+    const { action, frame } = actionAt(cfg, layout, point);
     // A tap during a tour takes over from the page on screen, which is the
     // watch's own rule, so the tour stops before the action runs.
     this.stopTour();
@@ -6575,16 +6598,18 @@ export class WristAssistantPanel extends LitElement {
       },
     });
     this.demoNote = outcome;
-    if (outcome.kind === "did") void this.flashDemo();
+    if (outcome.kind === "did") void this.flashDemo(frame);
   }
 
-  /** Play the success flash the watch plays after an action lands. Off first,
-   * then on once lit has taken the last one out, so a second tap inside the
-   * flash still reads as a second flash. */
-  private async flashDemo() {
+  /** Play the success flash the watch plays after an action lands: a stroke
+   * round the tap area that fired, or round the whole complication when the
+   * press fell through. Off first, then on once lit has taken the last one
+   * out, so a second tap inside the flash still reads as a second flash. */
+  private async flashDemo(frame?: NormalizedFrame) {
     window.clearTimeout(this.demoFlashTimer);
     this.demoFlashOn = false;
     await this.updateComplete;
+    this.demoFlashFrame = frame;
     this.demoFlashOn = true;
     this.demoFlashTimer = window.setTimeout(() => { this.demoFlashOn = false; }, DEMO_FLASH_MS);
   }
@@ -6649,7 +6674,7 @@ export class WristAssistantPanel extends LitElement {
       ["Drag a row", "Reorder the list. Drop it on a group to put it inside"],
       ["Pick layer", "Point at the face to find a layer. Click it to select it"],
       ["Show taps", "Every tap area, labelled. With a layer selected, only its tap shows and its corners drag"],
-      ["Demo", "The face alone, drawn the way the watch draws it, with no grid, no handles and no tap boxes. Press it and the tap really runs: pages turn, data refreshes, a toggle really toggles. The actions that live on the watch (opening the app, the timers) say what they would do instead. Escape closes"],
+      ["Demo", "The face alone, drawn the way the watch draws it, with no grid, no handles and no tap boxes. Press it and the tap really runs: pages turn, data refreshes, a toggle really toggles, and the success flash rings what was pressed exactly as it does on the wrist. The actions that live on the watch (opening the app, the timers) say what they would do instead. Escape closes"],
       ["Snapping", "The three switches over the face. Snap to grid: layers land on a grid when you drag them, 1% by default, and arrows move one grid step; the size sits beside it. Grid lines draws the grid. Snap to layers: edges and middles land on the other layers' and on the middle of the face, with a pink line while they meet. Both snaps start on"],
       ["Alt-drag", "Flips snapping for that drag: a drag that would snap moves freely, and one that would not snaps to the grid"],
       ["Expand", "The button over the face. The face full-window, for small moves. Everything above works there too"],
