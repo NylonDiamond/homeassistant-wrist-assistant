@@ -2798,10 +2798,11 @@ export class WristAssistantPanel extends LitElement {
       border-left: 1px solid color-mix(in srgb, var(--wa-accent-ink) 25%, transparent);
     }
     .page-row .page-tab .page-trash svg.ui-icon { width: 13px; height: 13px; }
-    /* Red, because it is the one control on the row that takes something
-       away; the number beside it only looks. */
-    .page-row .page-tab .page-trash { color: #FF453A; background: color-mix(in srgb, #FF453A 14%, transparent); }
-    .page-row .page-tab .page-trash:hover { background: color-mix(in srgb, #FF453A 32%, transparent); }
+    /* Red on the plain input ground, not on the accent: it is the one control
+       on the row that takes something away, and it should not look like part
+       of the page it deletes. */
+    .page-row .page-tab .page-trash { color: #FF453A; background: var(--wa-input); }
+    .page-row .page-tab .page-trash:hover { background: color-mix(in srgb, #FF453A 22%, var(--wa-input)); }
     .page-row .page-act.page-play.on { background: var(--wa-accent); color: var(--wa-accent-ink); border-color: transparent; }
     .page-row .page-tab button:focus-visible { outline: none; box-shadow: inset var(--wa-ring); }
     /* + and − beside the tabs, and Add a page in their place before there are
@@ -6060,8 +6061,8 @@ export class WristAssistantPanel extends LitElement {
       // page it changes, and never beside a tab you are about to click.
       if (!on || !opts.trash) return tab;
       const gone = spec.count > 2
-        ? `Remove page ${page}. Its layers move to page ${page > 1 ? page - 1 : 1}, later pages move down one, and nothing is dropped.`
-        : `Remove page ${page}, which turns pages off. Every layer stays and goes back to the one face.`;
+        ? `Delete page ${page} and the ${count === 1 ? "layer" : `${count} layers`} on it. Later pages move down one. Layers on every page stay.`
+        : `Delete page ${page} and the ${count === 1 ? "layer" : `${count} layers`} on it, which turns pages off. Layers on every page stay.`;
       return html`<span class="page-tab on">${tab}<button class="page-trash" title=${gone} aria-label=${gone}
         @click=${() => { this.mutate((c) => { removePage(c, page); }); this.showPage(Math.max(1, page - 1)); }}>${uiIcon("delete")}</button></span>`;
     });
@@ -6069,11 +6070,11 @@ export class WristAssistantPanel extends LitElement {
 
   /**
    * The Pages row of the Layers card, under the header: the same tabs as the
-   * strip over the canvas, on a row of their own. The list is at the other end
-   * of the screen from the canvas and both show one page at a time, and a row
-   * the width of the card is hard to miss where a few digits in the header were
-   * not. It also carries + and − for the pages themselves, and ? for the help,
-   * because this is where pages are confusing: the list just changed under you.
+   * one place pages are switched, added and deleted. A row the width of the
+   * card is hard to miss where a few digits in the header were not. It carries
+   * the tabs, the trash on the pressed one, Play for a tour, + and ? for the
+   * help, because this is where pages are confusing: the list just changed
+   * under you.
    *
    * Without pages it is one button, Add a page, which pins what is there to
    * page 1 and opens an empty page 2 (`startPages`).
@@ -6243,7 +6244,7 @@ export class WristAssistantPanel extends LitElement {
       ["Turning pages on", "Add a page under the Layers list. What you have now becomes page 1 and an empty page 2 opens. The Pages select in the Complication card does the same, but leaves your layers on every page for you to sort out."],
       ["One page at a time", "The canvas and the Layers list show one page. The Pages row under the Layers header says which, and clicking a number switches both. [ and ] do the same from the keyboard."],
       ["Which page a layer is on", "Each layer sits on one page or on every page. Set it on the layer, in its Position card. A layer you add lands on the page you are looking at. A background, a border or a label that belongs everywhere goes on Every page."],
-      ["+ and the trash", "In the Pages row. + adds an empty page at the end, up to four. The trash on the pressed page removes that page: its layers move to the page before it, later pages move down one, and nothing is dropped. Undo puts it back."],
+      ["+ and the trash", "In the Pages row. + adds an empty page at the end, up to four. The trash on the pressed page deletes that page and the layers on it; later pages move down one, and layers on every page stay. Undo puts it back."],
       ["Moving between pages on the watch", "A tap has to say so. Set the complication's tap action, or a tap layer's, to Next page or Previous page. A tap with any other action does its own job and leaves the page alone, so a page can still hold buttons. The page stays where it was left."],
       ["The tour", "Set a tap action to Play the page tour and one tap plays every page once, then returns to page 1. The Complication card then shows a hold time per page; a tour lasts the sum of them. The Play button in the Pages row plays it on the canvas with the same timing. A tap during a tour on the watch stops it."],
       ["What the watch needs", "A complication with pages needs the Wrist Assistant app that understands them. An older app refuses the whole complication and asks for an update rather than drawing every page on top of each other."],

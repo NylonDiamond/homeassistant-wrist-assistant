@@ -3683,23 +3683,24 @@ export function startPages(cfg: CustomComplicationConfig): number {
 }
 
 /**
- * Take one page away, keeping its layers.
+ * Take one page away, layers and all.
  *
- * The removed page's layers move to the page before it (to the new page 1
- * when page 1 itself goes), every later page shifts down one, and the dwell
- * list loses that page's entry. Down to one page, pages go off altogether,
- * which unpins every layer the way `setPageCount` does. Nothing is ever
- * dropped, so the whole thing is one undo away.
+ * The layers pinned to the removed page go with it (through `removeElement`,
+ * so a chart's numbers, an attached tap and a group's membership go the way
+ * they always do), every later page shifts down one, and the dwell list loses
+ * that page's entry. Layers on every page are untouched. Down to one page,
+ * pages go off altogether, which unpins every layer the way `setPageCount`
+ * does. Deleting a page is one undo away, like deleting a layer.
  */
 export function removePage(cfg: CustomComplicationConfig, page: number): void {
   const spec = pagesSpecOf(cfg);
   if (page < 1 || page > spec.count) return;
-  const landing = page > 1 ? page - 1 : 1;
+  for (const id of cfg.elements.filter((el) => el.payload.page === page).map((el) => el.payload.id)) {
+    removeElement(cfg, id);
+  }
   for (const el of cfg.elements) {
     const own = el.payload.page;
-    if (own === undefined) continue;
-    if (own === page) el.payload.page = landing;
-    else if (own > page) el.payload.page = own - 1;
+    if (own !== undefined && own > page) el.payload.page = own - 1;
   }
   const dwell = [...spec.dwell];
   if (page <= dwell.length) dwell.splice(page - 1, 1);

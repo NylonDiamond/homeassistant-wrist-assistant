@@ -837,24 +837,38 @@ describe("adding and removing pages from the Layers card", () => {
     expect(usesPages(cfg)).toBe(true);
   });
 
-  it("removes a middle page, moving its layers back and later pages down", () => {
+  it("deletes a middle page with its layers and moves later pages down", () => {
     const cfg = pagedConfig({ count: 4, mode: "tour", dwell: [1, 2, 3, 4] });
     const onThree = newElement("text");
     onThree.payload.page = 3;
     const onFour = newElement("text");
     onFour.payload.page = 4;
     cfg.elements.push(onThree, onFour);
+    const twoId = cfg.elements[2]!.payload.id;
     removePage(cfg, 2);
-    // Shared stays shared, page 1 stays, page 2's layer lands on page 1,
-    // page 3 becomes 2 and page 4 becomes 3. Page 2's hold is gone.
-    expect(cfg.elements.map((el) => el.payload.page)).toEqual([undefined, 1, 1, 2, 3]);
+    // Shared stays shared, page 1 stays, page 2's layer is gone, page 3
+    // becomes 2 and page 4 becomes 3. Page 2's hold is gone too.
+    expect(cfg.elements.some((el) => el.payload.id === twoId)).toBe(false);
+    expect(cfg.elements.map((el) => el.payload.page)).toEqual([undefined, 1, 2, 3]);
     expect(cfg.pages).toEqual({ count: 3, mode: "tour", dwell: [1, 3, 4] });
   });
 
-  it("removes page 1 by landing its layers on the new page 1", () => {
+  it("takes an attached tap with its owner when the page goes", () => {
+    const cfg = pagedConfig({ count: 3, mode: "tap", dwell: [] });
+    const owner = cfg.elements[2]!; // on page 2
+    const tap = newElement("tap") as Extract<Element, { kind: "tap" }>;
+    tap.payload.attachedTo = owner.payload.id;
+    cfg.elements.push(tap);
+    syncAttachedTaps(cfg);
+    removePage(cfg, 2);
+    expect(cfg.elements.some((el) => el.payload.id === tap.payload.id)).toBe(false);
+    expect(cfg.elements).toHaveLength(2);
+  });
+
+  it("deletes page 1 and its layers, so the old page 2 is the new page 1", () => {
     const cfg = pagedConfig({ count: 3, mode: "tap", dwell: [] });
     removePage(cfg, 1);
-    expect(cfg.elements.map((el) => el.payload.page)).toEqual([undefined, 1, 1]);
+    expect(cfg.elements.map((el) => el.payload.page)).toEqual([undefined, 1]);
     expect(cfg.pages?.count).toBe(2);
   });
 
@@ -862,6 +876,7 @@ describe("adding and removing pages from the Layers card", () => {
     const cfg = pagedConfig({ count: 2, mode: "tap", dwell: [] });
     removePage(cfg, 2);
     expect(cfg.pages).toBeUndefined();
+    expect(cfg.elements).toHaveLength(2);
     expect(cfg.elements.every((el) => el.payload.page === undefined)).toBe(true);
   });
 
