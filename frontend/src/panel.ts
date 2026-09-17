@@ -46,7 +46,9 @@ import {
   type OccupiedSlot,
   type Value,
   CUSTOM_FLASH_DEFAULT,
+  CUSTOM_SVG_SYMBOL,
   MAX_SLOTS,
+  literal,
   attachedTapsOf,
   auditUnknownKeys,
   controlEffectiveKind,
@@ -196,7 +198,7 @@ import {
 } from "./editors.js";
 import { sampleListItem, withListSeeds } from "./list-seeds.js";
 import { type PresetEnv, type PresetKind, type PresetSpec, LAYER_PRESETS, applyPreset, presetSpec } from "./presets.js";
-import { addPreview } from "./add-previews.js";
+import { type AddVariant, addPreview } from "./add-previews.js";
 import { presetColor, presetPreview } from "./preset-previews.js";
 import {
   type ImportParse,
@@ -849,6 +851,75 @@ export function layerListRows(
   }
   return out;
 }
+
+/**
+ * One button in the Elements grid.
+ *
+ * Most kinds are one card: press it, get one empty layer of that kind. Two
+ * kinds are more than one, because the thing the card cannot draw is where
+ * the layer reads from. `setup` runs on the fresh layer, so the card lands on
+ * a picture that is already a camera or already an upload, rather than on a
+ * picture the author then has to re-aim.
+ */
+interface AddCard {
+  kind: CElement["kind"];
+  /** The word on the card. */
+  title: string;
+  /** The card's tooltip: what pressing it makes. */
+  blurb: string;
+  /** Which sample to draw. Absent draws the kind's own sample. */
+  variant?: AddVariant;
+  /** Point the fresh layer at this card's source. */
+  setup?: (el: CElement) => void;
+}
+
+/**
+ * The kinds that are offered more than once, and what each offer makes.
+ *
+ * A picture layer carries `source`, and the three sources are not three looks:
+ * a camera is a live feed, an entity picture is whatever that entity already
+ * carries, and an upload is bytes in the document. An icon carries the same
+ * split between a catalogue glyph and a pasted drawing. Both used to be one
+ * button, which named the kind and said nothing about the choice, so the two
+ * sources nobody guessed were the two nobody used.
+ *
+ * An uploaded picture and a pasted drawing name no entity at all, so their
+ * cards clear the entity the blank layer came with. A picture that draws its
+ * own bytes but still names a camera would carry that camera into every share
+ * and every gallery upload, for nothing (`setImageSource` in `editors.ts`
+ * does the same on a later switch).
+ */
+const ADD_VARIANTS: Partial<Record<CElement["kind"], readonly AddCard[]>> = {
+  icon: [
+    { kind: "icon", title: "Icon", blurb: "Add a blank icon layer, drawn from the symbol catalogue" },
+    {
+      kind: "icon", title: "Custom SVG", variant: "iconSvg",
+      blurb: "Add a blank icon layer that draws an SVG path you paste",
+      setup: (el) => { if (el.kind === "icon") el.payload.symbol = literal(CUSTOM_SVG_SYMBOL); },
+    },
+  ],
+  image: [
+    { kind: "image", title: "Camera", variant: "imageCamera", blurb: "Add a blank picture layer that shows a camera" },
+    {
+      kind: "image", title: "Entity picture", variant: "imageEntity",
+      blurb: "Add a blank picture layer that shows the picture an entity already carries: a person's photo, cover art, a weather icon",
+      setup: (el) => {
+        if (el.kind !== "image") return;
+        el.payload.source = "entityPicture";
+        el.payload.entity = { entityId: "", displayName: "", domain: "" };
+      },
+    },
+    {
+      kind: "image", title: "Upload", variant: "imageUpload",
+      blurb: "Add a blank picture layer and upload a picture of your own into it",
+      setup: (el) => {
+        if (el.kind !== "image") return;
+        el.payload.source = "inline";
+        el.payload.entity = { entityId: "", displayName: "", domain: "" };
+      },
+    },
+  ],
+};
 
 export class WristAssistantPanel extends LitElement {
   @property({ attribute: false }) hass!: HassLike;
@@ -2421,6 +2492,9 @@ export class WristAssistantPanel extends LitElement {
     }
     .add-group:first-of-type { margin-top: 4px; }
     .presets.presets-head { margin: 0 0 6px; }
+    /* A row of pills inside a group sits right under the group's label, the
+       same way a grid of cards does. */
+    .presets.presets-row { margin-top: 0; }
     /* The line beside a group's label: what pressing one of these does, in
        four words, so the two groups tell themselves apart. */
     .presets-n { margin-left: auto; font-size: 11.5px; color: var(--wa-muted); }
@@ -10351,10 +10425,22 @@ export class WristAssistantPanel extends LitElement {
     // a cell on a round face is not a row. The same rule picks which presets
     // are shown, so the button and the preset can never disagree.
     const kinds = KIND_ORDER.filter((k) => familyAllowsKind(this.activeFamily, k));
+    // One card per offer, not one per kind. Two kinds read their content from
+    // somewhere the card cannot draw: a picture is a camera, an entity's own
+    // picture or a file, and an icon is a catalogue glyph or a drawing the
+    // author pastes. One button each said "Picture" and "Icon" and hid the
+    // rest, so the choice only appeared once the layer already existed. Each
+    // source is its own card now, with its own sample and its own name, and
+    // pressing it lands on a layer already set to that source. Looks (a
+    // gauge's five styles, a chart's three) stay in the inspector: those
+    // change how a layer draws, not where it reads from.
+    const cards: readonly AddCard[] = kinds.flatMap((k) =>
+      ADD_VARIANTS[k] ?? [{ kind: k, title: KIND_LABEL[k], blurb: `Add a blank ${KIND_LABEL[k].toLowerCase()} layer` }]);
     const offered = LAYER_PRESETS.filter((p) => p.families === undefined || p.families.includes(this.activeFamily));
     const toggle = () => { this.addOpen = !this.addOpen; this.saveListView(); };
-    const addBlank = (k: CElement["kind"]) => {
-      const el = newElement(k);
+    const addBlank = (card: AddCard) => {
+      const el = newElement(card.kind);
+      card.setup?.(el);
       this.addHere((c) => {
         // A timeline's clock times are always a layer of their own.
         c.elements.push(el);
@@ -10373,18 +10459,18 @@ export class WristAssistantPanel extends LitElement {
     // The blank kinds, in the same card as the presets: one press, one empty
     // layer, and a sample of what that kind draws so the choice is made by eye
     // rather than by knowing the word.
-    const kindCard = (k: CElement["kind"]) => html`
-      <button class="add" style=${`--k:${KIND_COLOR[k]}`} ?disabled=${full}
-        title=${`Add a blank ${KIND_LABEL[k].toLowerCase()} layer`}
-        @click=${() => addBlank(k)}
-        >${rich ? html`<span class="well">${addPreview(k)}</span>` : nothing}<span class="add-name"><span class="k"></span><span>${KIND_LABEL[k]}</span></span></button>`;
+    const kindCard = (card: AddCard) => html`
+      <button class="add" style=${`--k:${KIND_COLOR[card.kind]}`} ?disabled=${full}
+        title=${card.blurb}
+        @click=${() => addBlank(card)}
+        >${rich ? html`<span class="well">${addPreview(card.kind, card.variant)}</span>` : nothing}<span class="add-name"><span class="k"></span><span>${card.title}</span></span></button>`;
     return html`<div class="card fold tinted" data-open=${open ? "true" : "false"}>
       <h2 class="panel-title tools fold-h" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
         title=${open ? "Hide the add buttons" : "Show the add buttons"}
         @click=${toggle}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}>
         <span class="swatch">${uiIcon("plus")}</span>Add a layer<span class="spacer"></span>
-        ${open ? nothing : html`<span class="mini">${offered.length} presets · ${kinds.length} elements</span>`}
+        ${open ? nothing : html`<span class="mini">${offered.length} presets · ${cards.length} elements</span>`}
         ${open
           ? html`<span class="tool-set" @click=${(e: Event) => e.stopPropagation()}>
               <span class="seg" role="group" aria-label="Button detail">
@@ -10402,18 +10488,21 @@ export class WristAssistantPanel extends LitElement {
           <div class="add-group">
             <div class="presets presets-head"><span class="presets-l">Elements</span>
               <span class="presets-n">one empty layer</span></div>
-            <div class="add-scroll short"><div class="add-grid ${rich ? "" : "lean"}">${kinds.map(kindCard)}</div></div>
+            <div class="add-scroll short"><div class="add-grid ${rich ? "" : "lean"}">${cards.map(kindCard)}</div></div>
           </div>
           <div class="add-group">
-            <div class="presets presets-head"><span class="presets-l">Some presets</span>
+            <div class="presets presets-head"><span class="presets-l">Some random presets</span>
               <span class="presets-n">a layer or three, already set up</span></div>
             <div class="add-scroll"><div class="add-grid ${rich ? "" : "lean"}">${offered.map(presetCard)}</div></div>
           </div>
-          <div class="presets">
-            <span class="presets-l">Saved</span>
-            <button class="preset" ?disabled=${full}
-              title="Layers you kept earlier, ready to drop onto this shape"
-              @click=${() => void this.openPartsDialog()}>Add from parts</button>
+          <div class="add-group">
+            <div class="presets presets-head"><span class="presets-l">Saved</span>
+              <span class="presets-n">layers you kept earlier</span></div>
+            <div class="presets presets-row">
+              <button class="preset" ?disabled=${full}
+                title="Layers you kept earlier, ready to drop onto this shape"
+                @click=${() => void this.openPartsDialog()}>Add from parts</button>
+            </div>
           </div>`
         : nothing}
       ${this.renderPresetDialog()}

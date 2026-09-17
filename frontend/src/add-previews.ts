@@ -177,10 +177,73 @@ function sample(kind: LayerKind): TemplateResult {
 }
 
 /**
+ * A kind that the add buttons offer more than once, once per place its pixels
+ * or its glyph come from.
+ *
+ * An icon's card and a picture's card used to be one button each, and both of
+ * them hid the choice that matters most: a picture is a camera, an entity's
+ * own picture or a file the author uploads, and an icon is a catalogue glyph
+ * or a drawing they paste. The one sample on the one button could only show
+ * one of those, so the rest were invisible until the layer already existed.
+ */
+export type AddVariant = "iconSvg" | "imageCamera" | "imageEntity" | "imageUpload";
+
+/** The sample for one variant. Same 120x46 box and same `--k` colour as the
+ * plain kinds, so a variant card sits in the grid as an equal. */
+function variantSample(variant: AddVariant): TemplateResult {
+  switch (variant) {
+    // A path with its handles showing: the drawing is the author's, and it is
+    // made of points rather than picked from a list.
+    case "iconSvg":
+      return svg`<g fill="none" stroke="var(--k)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M34 34C34 18 46 10 60 18C74 26 82 20 86 12" />
+        <g fill="var(--k)" stroke="none">
+          <rect x="30" y="30" width="7" height="7" rx="1" />
+          <rect x="56" y="14" width="7" height="7" rx="1" />
+          <rect x="83" y="8" width="7" height="7" rx="1" />
+        </g>
+        <g stroke=${DIM} stroke-width="1.2" stroke-dasharray="3 3">
+          <path d="M33.5 33.5L59.5 17.5L86.5 11.5" />
+        </g>
+      </g>`;
+    // A camera body with a lens: a live feed, not a still.
+    case "imageCamera":
+      return svg`<g>
+        <rect x="28" y="12" width="64" height="27" rx="5" fill="var(--k)" fill-opacity=".16"
+          stroke="var(--k)" stroke-width="1.8" />
+        <path d="M46 12L50 7H70L74 12Z" fill="var(--k)" opacity=".55" />
+        <circle cx="60" cy="26" r="8" fill="none" stroke="var(--k)" stroke-width="1.8" />
+        <circle cx="60" cy="26" r="3.2" fill="var(--k)" opacity=".7" />
+      </g>`;
+    // A framed portrait: the picture an entity already carries.
+    case "imageEntity":
+      return svg`<g>
+        <rect x="34" y="6" width="52" height="34" rx="6" fill="var(--k)" fill-opacity=".16"
+          stroke="var(--k)" stroke-width="1.8" />
+        <circle cx="60" cy="19" r="6" fill="var(--k)" opacity=".75" />
+        <path d="M47 40C47 32 53 28 60 28C67 28 73 32 73 40Z" fill="var(--k)" opacity=".55" />
+      </g>`;
+    // A frame with a file going into it: the bytes come from the author.
+    case "imageUpload":
+      return svg`<g>
+        <rect x="28" y="7" width="64" height="32" rx="5" fill="var(--k)" fill-opacity=".16"
+          stroke="var(--k)" stroke-width="1.8" stroke-dasharray="5 4" />
+        <g fill="none" stroke="var(--k)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M60 33V15" />
+          <path d="M52 23L60 15L68 23" />
+        </g>
+      </g>`;
+  }
+}
+
+/**
  * The sample for one kind, sized by the `.add .shot` rule in the panel's
  * styles. Marked `aria-hidden`: the button's own words already name the kind,
  * and a screen reader has nothing to gain from the picture.
+ *
+ * `variant` draws one of the sources a kind can read from instead of the kind
+ * as a whole.
  */
-export function addPreview(kind: LayerKind): TemplateResult {
-  return html`<svg class="shot" viewBox="0 0 120 46" aria-hidden="true">${sample(kind)}</svg>`;
+export function addPreview(kind: LayerKind, variant?: AddVariant): TemplateResult {
+  return html`<svg class="shot" viewBox="0 0 120 46" aria-hidden="true">${variant ? variantSample(variant) : sample(kind)}</svg>`;
 }
