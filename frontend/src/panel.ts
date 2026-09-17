@@ -10545,6 +10545,46 @@ export class WristAssistantPanel extends LitElement {
         </span>
         <span class="right"><span class="badges"><span class="badge">always bottom</span></span></span>
       </div>
+      ${this.renderDocumentTapRow(cfg, edit)}
+    </div>`;
+  }
+
+  /**
+   * The last row of the list: what a tap does anywhere no tap area covers.
+   *
+   * It is not a layer and draws nothing, so it has no thumb, no grip and no
+   * drag. It is here because the list was silent about it: a document is born
+   * with `tapAction: refresh`, the setting lives two cards away on the
+   * Complication card, and a user who had ticked Tappable on nothing at all
+   * still had a complication that answered a tap. The row says where that
+   * comes from and clicking it opens the card that owns it.
+   *
+   * Its delete button does not remove the row, because there is always some
+   * answer to a tap. It sets the action to Nothing, which is the nearest thing
+   * to removing it. The button goes once the action is already Nothing, so the
+   * row never offers a delete that would change nothing.
+   */
+  private renderDocumentTapRow(cfg: CustomComplicationConfig, edit: boolean) {
+    const none = cfg.tapAction.type === "none";
+    const open = () => { this.inspect = { kind: "general" }; };
+    return html`<div class="layer pinned" style=${`--k:${KIND_COLOR.tap}`} tabindex="0"
+      title="What a tap does anywhere no tap area covers. Click to change it."
+      @click=${open}
+      @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") open(); }}>
+      <span class="grip">${uiIcon("tap")}</span>
+      <span class="bar"></span>
+      <span class="thumb"></span>
+      <span class="name">
+        <b>Whole complication</b>
+        <small><span class="kind">Tap</span> · ${describeTapAction(cfg.tapAction)}</small>
+      </span>
+      <span class="right">
+        <span class="badges">${none ? nothing : html`<span class="badge tap">tap</span>`}</span>
+        ${edit && !none ? html`<span class="acts">
+          <button class="icon danger" title="Do nothing on tap" aria-label="Do nothing on tap"
+            @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { c.tapAction = { type: "none" }; }); }}>${uiIcon("delete")}</button>
+        </span>` : nothing}
+      </span>
     </div>`;
   }
 
