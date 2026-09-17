@@ -2328,14 +2328,18 @@ export class WristAssistantPanel extends LitElement {
     /* The colour chip: the same square that marks the kind in the Layers rows
        and the inspector, at the size a button can spare. */
     button.add .k { width: 8px; height: 8px; border-radius: 2px; background: var(--k); flex: none; }
+    /* The cards are plain. Twenty-five of them, each washed in its own kind
+       colour, made the card a paint chart and drowned the samples, which are
+       the thing worth looking at. The colour is down to the name's square and
+       what the hover does. */
     button.add {
       display: flex; flex-direction: column; align-items: stretch; gap: 5px; padding: 5px 5px 6px; border-radius: 9px;
       font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; color: var(--wa-ink); white-space: nowrap;
-      background: color-mix(in srgb, var(--k) 10%, var(--wa-card)); border: 1px solid color-mix(in srgb, var(--k) 28%, transparent);
+      background: var(--wa-card); border: 1px solid var(--wa-line);
       transition: background-color .12s ease-out, border-color .12s ease-out, transform .12s ease-out, box-shadow .12s ease-out;
     }
     button.add:hover:not(:disabled) {
-      background: color-mix(in srgb, var(--k) 18%, var(--wa-card)); border-color: color-mix(in srgb, var(--k) 55%, transparent);
+      background: color-mix(in srgb, var(--k) 9%, var(--wa-card)); border-color: color-mix(in srgb, var(--k) 45%, var(--wa-line));
     }
     button.add:active:not(:disabled) { transform: translateY(1px); }
     button.add:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--k) 30%, transparent); }
@@ -2345,8 +2349,7 @@ export class WristAssistantPanel extends LitElement {
        with it. */
     button.add .well {
       display: block; width: 100%; aspect-ratio: 120 / 46; border-radius: 7px; overflow: hidden;
-      background: #000; border: 1px solid color-mix(in srgb, var(--k) 30%, var(--wa-line-strong));
-      box-sizing: border-box;
+      background: #000; border: 1px solid var(--wa-line); box-sizing: border-box;
     }
     button.add svg.shot { display: block; width: 100%; height: 100%; }
     button.add .add-name { display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; }
@@ -2359,9 +2362,18 @@ export class WristAssistantPanel extends LitElement {
        cards, each opened by a label rather than a sentence. They are the way
        out of the presets, not a second offer. */
     .presets { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
-    /* The label over the preset grid: the same word in the same place as the
-       two rows under it, so the card reads as three named groups. */
+    /* Each half of the add card is its own sunken box with its own label, so
+       an empty layer and a ready-made one are plainly two different offers
+       and not one grid of forty. */
+    .add-group {
+      margin-top: 8px; padding: 8px; border-radius: 10px;
+      background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line);
+    }
+    .add-group:first-of-type { margin-top: 4px; }
     .presets.presets-head { margin: 0 0 6px; }
+    /* The line beside a group's label: what pressing one of these does, in
+       four words, so the two groups tell themselves apart. */
+    .presets-n { margin-left: auto; font-size: 11.5px; color: var(--wa-muted); }
     .presets-l {
       margin-right: 4px; font-size: 11px; font-weight: 700; letter-spacing: .08em;
       text-transform: uppercase; color: var(--wa-muted);
@@ -3116,6 +3128,15 @@ export class WristAssistantPanel extends LitElement {
       box-shadow: 0 0 0 1px color-mix(in srgb, ${unsafeCSS(SECTION_COLOR.states)} 35%, var(--wa-card));
     }
     .card.tint-values .panel-title, .card.tint-states .panel-title { margin-bottom: 6px; }
+    /* The left column's cards wear their own colour the way the inspector's
+       sections do, so the two columns read as one set of boxes rather than
+       tinted panels on one side and plain ones on the other. The colour comes
+       from the card's own --c. */
+    .card.tinted {
+      --c: var(--wa-accent);
+      background: color-mix(in srgb, var(--c) 7%, var(--wa-card));
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--c) 24%, var(--wa-card));
+    }
     /* One value, one 30px white line: name, then what it reads. */
     .vrow {
       display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 0 8px;
@@ -6253,8 +6274,8 @@ export class WristAssistantPanel extends LitElement {
     const body = this.renderPageBody(cfg, edit);
     if (body === nothing) return nothing;
     const count = usesPages(cfg) ? pagesSpecOf(cfg).count : 1;
-    return html`<div class="card pages-card">
-      <h2 class="panel-title" style=${`--c:${SECTION_COLOR.place}`}><span class="swatch">${uiIcon("pages")}</span>Pages
+    return html`<div class="card pages-card tinted" style=${`--c:${SECTION_COLOR.place}`}>
+      <h2 class="panel-title"><span class="swatch">${uiIcon("pages")}</span>Pages
         <span class="mini">${usesPages(cfg) ? `${count} pages · one at a time` : "one complication, several pages"}</span>
         <span class="spacer"></span>
         <button class="help" title="How pages work" aria-label="How pages work"
@@ -10024,7 +10045,7 @@ export class WristAssistantPanel extends LitElement {
       <button class="add" style=${`--k:${presetColor(p.kind)}`} title=${p.blurb}
         ?disabled=${cfg.elements.length + p.layerCount > 64}
         @click=${() => this.openPreset(p.kind)}
-        >${rich ? html`<span class="well">${presetPreview(p.kind)}</span>` : nothing}<span class="add-name">${rich ? nothing : html`<span class="k"></span>`}<span>${p.title}</span></span></button>`;
+        >${rich ? html`<span class="well">${presetPreview(p.kind)}</span>` : nothing}<span class="add-name"><span class="k"></span><span>${p.title}</span></span></button>`;
     // The blank kinds, in the same card as the presets: one press, one empty
     // layer, and a sample of what that kind draws so the choice is made by eye
     // rather than by knowing the word.
@@ -10032,8 +10053,8 @@ export class WristAssistantPanel extends LitElement {
       <button class="add" style=${`--k:${KIND_COLOR[k]}`} ?disabled=${full}
         title=${`Add a blank ${KIND_LABEL[k].toLowerCase()} layer`}
         @click=${() => addBlank(k)}
-        >${rich ? html`<span class="well">${addPreview(k)}</span>` : nothing}<span class="add-name">${rich ? nothing : html`<span class="k"></span>`}<span>${KIND_LABEL[k]}</span></span></button>`;
-    return html`<div class="card fold" data-open=${open ? "true" : "false"}>
+        >${rich ? html`<span class="well">${addPreview(k)}</span>` : nothing}<span class="add-name"><span class="k"></span><span>${KIND_LABEL[k]}</span></span></button>`;
+    return html`<div class="card fold tinted" data-open=${open ? "true" : "false"}>
       <h2 class="panel-title tools fold-h" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
         title=${open ? "Hide the add buttons" : "Show the add buttons"}
         @click=${toggle}
@@ -10054,10 +10075,16 @@ export class WristAssistantPanel extends LitElement {
       </h2>
       ${open
         ? html`
-          <div class="presets presets-head"><span class="presets-l">Elements</span></div>
-          <div class="add-scroll short"><div class="add-grid ${rich ? "" : "lean"}">${kinds.map(kindCard)}</div></div>
-          <div class="presets"><span class="presets-l">Some presets</span></div>
-          <div class="add-scroll"><div class="add-grid ${rich ? "" : "lean"}">${offered.map(presetCard)}</div></div>
+          <div class="add-group">
+            <div class="presets presets-head"><span class="presets-l">Elements</span>
+              <span class="presets-n">one empty layer</span></div>
+            <div class="add-scroll short"><div class="add-grid ${rich ? "" : "lean"}">${kinds.map(kindCard)}</div></div>
+          </div>
+          <div class="add-group">
+            <div class="presets presets-head"><span class="presets-l">Some presets</span>
+              <span class="presets-n">a layer or three, already set up</span></div>
+            <div class="add-scroll"><div class="add-grid ${rich ? "" : "lean"}">${offered.map(presetCard)}</div></div>
+          </div>
           <div class="presets">
             <span class="presets-l">Saved</span>
             <button class="preset" ?disabled=${full}
@@ -10583,8 +10610,8 @@ export class WristAssistantPanel extends LitElement {
       if (!this.collapsed.has(g.id)) rows.push(html`<div class="group-kids">${row.members.map((m) => html`${layerRow(m, true, groupHl, listChevron(m))}${listKids(m)}`)}</div>`);
     }
 
-    return html`<div class="card layers-card s${this.thumbStep}" style=${`--thumb-w:${thumbW}px;--thumb-h:${thumbH}px`}>
-      <h2 class="panel-title tools" style=${`--c:${SECTION_COLOR.place}`}><span class="swatch">${uiIcon("layers")}</span>Layers
+    return html`<div class="card layers-card tinted s${this.thumbStep}" style=${`--thumb-w:${thumbW}px;--thumb-h:${thumbH}px;--c:${SECTION_COLOR.place}`}>
+      <h2 class="panel-title tools"><span class="swatch">${uiIcon("layers")}</span>Layers
         <span class="mini">top draws last</span><span class="spacer"></span>
         <span class="tool-set">
           <span class="seg" role="group" aria-label="Row detail">
