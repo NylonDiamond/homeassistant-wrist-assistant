@@ -3965,8 +3965,7 @@ export function pagesCardFields(host: EditorHost, page: number): TemplateResult 
     ${pageMoverExists(cfg) ? nothing : html`<div class="hint warn">Nothing turns the page yet.</div>`}
     <div class="page-fix">
       <span class="page-fix-l">Add to page ${page}</span>
-      ${zone("previousPage")}
-      ${zone("nextPage")}
+      <div class="page-fix-pair">${zone("previousPage")}${zone("nextPage")}</div>
       <button class="page-add whole" ?disabled=${mainIsNext} title=${mainIsNext
         ? "The complication's tap action is already Next page."
         : `Changes the complication's tap action from ${describeTapAction(cfg.tapAction)} to Next page, so a tap anywhere on the face turns it. Undo puts it back.`}

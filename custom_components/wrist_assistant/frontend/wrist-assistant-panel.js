@@ -740,8 +740,7 @@ Click to change`} @click=${S}>
     ${bm(t)?m:h`<div class="hint warn">Nothing turns the page yet.</div>`}
     <div class="page-fix">
       <span class="page-fix-l">Add to page ${n}</span>
-      ${o("previousPage")}
-      ${o("nextPage")}
+      <div class="page-fix-pair">${o("previousPage")}${o("nextPage")}</div>
       <button class="page-add whole" ?disabled=${s} title=${s?"The complication's tap action is already Next page.":`Changes the complication's tap action from ${Ot(t.tapAction)} to Next page, so a tap anywhere on the face turns it. Undo puts it back.`}
         @click=${()=>e.update(l=>{l.tapAction={type:"nextPage"}},"pages-fix-tap")}>
         <span class="page-add-i">${F("tap")}</span>
@@ -3482,14 +3481,18 @@ ${nA(d)}`}}delete s.hidden;let l=Zs(a);if(l.length>0){let c=l.slice(0,3).join(",
        away, so it sits at the foot on its own line, not beside the tabs. */
     .pages-off { display: flex; justify-content: flex-end; margin-top: 8px; }
     /* The ready-made page-turn taps: a label saying which page they land on,
-       then one full-width button each. Full width because the labels say what
-       they make in full ("Add next page tap action"), and a row of long
-       buttons on a narrow panel is a row of ellipses. */
+       then the pair side by side, left one on the left, and the whole-face
+       fallback full width under them. */
     .page-fix {
       display: flex; flex-direction: column; align-items: stretch; gap: 6px; margin-top: 10px;
       padding-top: 10px; border-top: 1px solid var(--wa-line);
     }
     .page-fix .page-fix-l { font-size: 12px; color: var(--wa-muted); margin-bottom: 2px; }
+    /* Prev and next share one row and split it evenly, the way they split the
+       face. The label inside wraps rather than trails off, so a narrow panel
+       costs a second line, never the end of the sentence. */
+    .page-fix .page-fix-pair { display: flex; gap: 6px; }
+    .page-fix .page-fix-pair .page-add { flex: 1 1 0; min-width: 0; }
     .page-fix .page-add {
       font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; text-align: left;
       display: flex; align-items: center; gap: 8px;
