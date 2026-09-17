@@ -8340,6 +8340,99 @@ export function documentEntityUses(
   return out;
 }
 
+/** One view of the document: a shape, or the Control Center control. */
+export type DocumentView = { kind: "family"; family: FamilyKind } | { kind: "control" };
+
+/**
+ * The entities and shared values one view reads, so the row under the preview
+ * can show that view's values and no other's (asked for 2026-09-16, when the
+ * Control Center tab listed the rectangular layers' entities).
+ *
+ * A shape reads what the layers it draws read, its own layout and rule values,
+ * and the document's tap. The control reads its four values and its action.
+ * Either one also reads whatever shared values those values point at, and an
+ * entity reached through a shared value counts for the view that reads it.
+ * Entities quoted inside a template count when `freeTextId` says so, gated by
+ * the caller the way `documentEntityUses` is.
+ */
+export function viewReads(
+  cfg: CustomComplicationConfig,
+  view: DocumentView,
+  freeTextId?: (entityId: string, domain: string) => boolean,
+): { entityIds: string[]; namedIds: string[] } {
+  const inView = (site: ValueSite | EntitySite): boolean => {
+    switch (site.kind) {
+      case "control":
+        return view.kind === "control";
+      // A picture's camera and a tap's action sit on their layer, so they go
+      // where the layer goes.
+      case "layer":
+      case "image":
+      case "tap": {
+        if (view.kind !== "family") return false;
+        const el = cfg.elements.find((e) => e.payload.id === site.layerId);
+        if (!el) return false;
+        const owner = el.kind === "tap" && el.payload.attachedTo !== undefined
+          ? cfg.elements.find((e) => e.payload.id === el.payload.attachedTo) ?? el
+          : el;
+        return drawsElement(cfg, view.family, owner);
+      }
+      case "layout":
+      case "rule":
+        return view.kind === "family" && site.family === view.family;
+      case "documentTap":
+      case "inline":
+        return view.kind === "family";
+      case "named":
+        return false;
+    }
+  };
+  // First the shared values the view points at, however many deep, so a
+  // second pass can count what those shared values read as the view's own.
+  const named = new Set<string>();
+  const first: DocumentVisitor = {
+    value: (v, site) => {
+      if (v.kind.kind === "named" && (inView(site) || (site.kind === "named" && site.valueId !== undefined && named.has(site.valueId)))) {
+        named.add(v.kind.id);
+      }
+    },
+  };
+  // Shared values are walked in document order, so a chain that runs
+  // backwards needs another pass; the set stops growing within a few.
+  let size = -1;
+  for (let pass = 0; pass < 4 && size !== named.size; pass++) {
+    size = named.size;
+    walkDocument(cfg, first);
+  }
+  const counts = (site: ValueSite | EntitySite) =>
+    inView(site) || (site.kind === "named" && site.valueId !== undefined && named.has(site.valueId));
+  const entityIds: string[] = [];
+  const seen = new Set<string>();
+  const add = (id: string) => {
+    if (id === "" || seen.has(id)) return;
+    seen.add(id);
+    entityIds.push(id);
+  };
+  const second: DocumentVisitor = {
+    ref: (ref, site) => {
+      if (counts(site)) add(ref.entityId);
+      return undefined;
+    },
+  };
+  if (freeTextId) {
+    second.text = (text, site) => {
+      if (counts(site)) {
+        for (const id of quotedEntityIds(text)) {
+          if (freeTextId(id, id.split(".")[0] ?? "")) add(id);
+        }
+      }
+      return text;
+    };
+  }
+  walkDocument(cfg, second);
+  return { entityIds, namedIds: [...named] };
+}
+
 /**
  * The drawing layers that read one entity, in document order.
  *

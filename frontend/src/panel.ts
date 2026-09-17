@@ -53,6 +53,8 @@ import {
   lockedOccupied,
   isAttachedTap,
   layerEntityUses,
+  type DocumentView,
+  viewReads,
   type LayerGroup,
   createGroup,
   groupMembers,
@@ -2686,6 +2688,10 @@ export class WristAssistantPanel extends LitElement {
     /* Under Layers, the list takes at most part of the column and scrolls, so
        an open value never pushes the layer rows out of sight. */
     .column.left .card.values-list { max-height: 45%; overflow-y: auto; scrollbar-width: thin; }
+    /* On the Control Center tab the layer tools are one note, so Shared
+       values sits at the foot of the column rather than right under it. */
+    .column.left.control .card.values-list { margin-top: auto; }
+    .layout.cols-1 .column.left.control .card.values-list { margin-top: 0; }
     .layout.cols-1 .column.left .card.values-list { max-height: none; overflow: visible; }
     .values-list .datum {
       padding: 0 8px; border-radius: 7px; gap: 8px;
@@ -6340,7 +6346,7 @@ export class WristAssistantPanel extends LitElement {
       ${this.watchSupported
         ? html`<div class="layout cols-${fit.columns}"
               style="--wa-left:${fit.left}px;--wa-right:${fit.right}px">
-            <div class="column left">${this.inControlView
+            <div class=${`column left ${this.inControlView ? "control" : ""}`}>${this.inControlView
               ? this.renderControlHasNoLayers()
               : html`${this.renderAddLayer()}${this.renderLayers()}`}${this.renderSharedValues()}</div>
             ${this.renderGutter("left")}
@@ -9684,15 +9690,24 @@ export class WristAssistantPanel extends LitElement {
   private renderValuesRow() {
     const cfg = this.draft?.config;
     if (!cfg) return nothing;
-    const ids = [...(this.compiled?.entities.keys() ?? [])];
-    const shared = testableSharedValues(cfg);
+    // Only what the open view reads: the shape's own layers, or the control.
+    // The compiled set is the whole document, and the Control Center tab used
+    // to list every layer's entity under a tile that reads none of them.
+    const view: DocumentView = this.inControlView ? { kind: "control" } : { kind: "family", family: this.activeFamily };
+    const compiledIds = new Set(this.compiled?.entities.keys() ?? []);
+    const reads = viewReads(cfg, view, (id) => compiledIds.has(id));
+    const ids = reads.entityIds.filter((id) => compiledIds.has(id));
+    const named = new Set(reads.namedIds);
+    const shared = testableSharedValues(cfg).filter((n) => named.has(n.id));
     const testing = this.testValues.size > 0;
     return html`<div class="card tint-states" style=${`--c:${SECTION_COLOR.states}`}>
       <h2 class="panel-title"><span class="swatch">${uiIcon("states")}</span>Values on the ${this.deviceWord}
         <span class="mini">live · slide, pick or type one to try another</span><span class="spacer"></span>
         ${testing ? html`<span class="testing-pill">Testing with your values <button @click=${() => { this.editingValue = undefined; this.applyTestValues(new Map()); }}>Back to live</button></span>` : nothing}
       </h2>
-      ${ids.length === 0 && shared.length === 0 ? html`<div class="hint">No entities yet. Give a layer an entity and its live value shows here.</div>` : html`<div class="chips values">
+      ${ids.length === 0 && shared.length === 0 ? html`<div class="hint">${this.inControlView
+        ? "The control reads no entity yet. Point its target, title or value line at one and its live value shows here."
+        : "No entities on this shape yet. Give one of its layers an entity and its live value shows here."}</div>` : html`<div class="chips values">
         ${ids.map((id) => {
           const s = this.hass.states[id];
           const name = typeof s?.attributes.friendly_name === "string" ? s.attributes.friendly_name : id;
