@@ -726,7 +726,7 @@ Click to change`} @click=${S}>
     ${i.type==="refreshAll"?aw(e,i,c=>e.update(d=>{d.tapAction=c})):m}
     ${"entityId"in i?lt(e,"Target",i,c=>e.update(d=>{d.tapAction={type:i.type,...c}},"tap-entity"),"general-tap"):m}
     ${i.type==="callService"?rw(e,i,(c,d)=>e.update(u=>{u.tapAction=c},d),"general-tap"):m}
-    ${i.type==="openPage"?cE(e):m}`}function lE(e){return`${Math.round(e*10)/10} s`}function sw(e,n){let t=e.config;if(!Be(t))return h`<div class="hint">One complication, several pages, a tap between them.</div>`;let i=Ot(t),a=i.mode==="tour",r=wm(t,1),o=s=>{let l=s==="previousPage";return h`<button class="page-add" title=${l?`A tap area over the left half of page ${n}. Tapping it shows the page before.`:`A tap area over the right half of page ${n}. Tapping it shows the next page.`}
+    ${i.type==="openPage"?cE(e):m}`}function lE(e){return`${Math.round(e*10)/10} s`}function sw(e,n){let t=e.config;if(!Be(t))return h``;let i=Ot(t),a=i.mode==="tour",r=wm(t,1),o=s=>{let l=s==="previousPage";return h`<button class="page-add" title=${l?`A tap area over the left half of page ${n}. Tapping it shows the page before.`:`A tap area over the right half of page ${n}. Tapping it shows the next page.`}
       @click=${()=>e.update(c=>{xm(c,s,n)},`pages-zone-${s}`)}>
       <span class="page-add-i">${F("tap")}${l?F("left"):F("right")}</span>
       <span>Add ${l?"prev":"next"} page tap action</span></button>`};return h`

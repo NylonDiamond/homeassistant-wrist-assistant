@@ -3923,9 +3923,9 @@ function dwellSeconds(seconds: number): string {
  */
 export function pagesCardFields(host: EditorHost, page: number): TemplateResult {
   const cfg = host.config;
-  if (!usesPages(cfg)) {
-    return html`<div class="hint">One complication, several pages, a tap between them.</div>`;
-  }
+  // Nothing under Add a page until there are pages: the button says what it
+  // does, and a line of print explaining it says the same thing twice.
+  if (!usesPages(cfg)) return html``;
   const spec = pagesSpecOf(cfg);
   const tour = spec.mode === "tour";
   // What turning pages off will do to the pinned layers, said before it
