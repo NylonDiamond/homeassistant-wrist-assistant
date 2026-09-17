@@ -394,7 +394,7 @@ export interface EditorHost {
    * report; feeds the "Open the page" tap-action picker. */
   pages: { id: string; name: string }[];
   /** Every complication this watch has on this server, id and name, for the
-   * "Refresh complications" tap's picker. Ids are uppercase, the way a document
+   * "Refresh multiple complications" tap's picker. Ids are uppercase, the way a document
    * stores its own. Absent in a test host, which the picker reads as empty. */
   documents?: { id: string; name: string }[];
   /** The Wrist Assistant version the edited watch last reported, for the
@@ -3733,14 +3733,14 @@ function tapNote(action: TapAction, pages = false): TemplateResult | typeof noth
 }
 
 /**
- * Which complications a "Refresh complications" tap reaches: all the ones
- * placed on the watch, or the ones ticked below.
+ * Which complications a "Refresh multiple complications" tap reaches: all the
+ * ones placed on the watch, or the ones ticked below.
  *
- * The document being edited is never in the list. It always refreshes itself,
- * whatever is picked, and a hint says so rather than leaving a box that would
- * do nothing either way. A picked id the watch no longer has stays in the list
- * under a plain name so it can be unticked; dropping it silently would edit the
- * author's choice on their behalf.
+ * The document being edited heads the list, marked "(current)", ticked and
+ * disabled: it always refreshes itself whatever is picked, so the row is there
+ * to say so rather than to be changed. A picked id the watch no longer has
+ * stays in the list under a plain name so it can be unticked; dropping it
+ * silently would edit the author's choice on their behalf.
  */
 function refreshTargetsField(
   host: EditorHost,
@@ -3759,17 +3759,26 @@ function refreshTargetsField(
   const pick = (id: string, on: boolean) => set(refreshTargetsWith(action, id, on));
   const pickAll = (on: boolean) => set(on ? { type: "refreshAll", allPlaced: true } : { type: "refreshAll" });
 
-  if (all) return html`${checkField("All placed complications", true, pickAll)}`;
+  if (all) {
+    return html`
+      ${checkField("All placed complications", true, pickAll)}
+      <div class="hint warn">Every placed complication is redrawn from one tap. With a lot of them,
+        or ones that draw pictures or charts, the whole round can take a while and the last ones
+        update late. Pick the few you need instead when the wait shows.</div>`;
+  }
+  const selfName = host.config.name.trim();
   const rows = [
+    checkField(`${selfName === "" ? "Unnamed" : selfName} (current)`, true, () => {}, undefined, { disabled: true }),
     ...others.map((d) => checkField(d.name || "Unnamed", picked.includes(d.id), (on) => pick(d.id, on))),
     ...missing.map((id) => checkField("Unknown complication (deleted)", true, (on) => pick(id, on))),
   ];
   return html`
     ${checkField("All placed complications", false, pickAll)}
-    ${rows.length === 0
+    ${rows}
+    ${others.length === 0 && missing.length === 0
       ? html`<div class="hint keep">No other complications on this watch yet.</div>`
-      : html`${rows}
-        <div class="hint keep">This complication always refreshes itself, so it is not in the list.</div>`}`;
+      : nothing}
+    <div class="hint keep">This complication always refreshes itself, so its box stays on.</div>`;
 }
 
 /** Domain, service and data for the common calls, so the usual ones are one

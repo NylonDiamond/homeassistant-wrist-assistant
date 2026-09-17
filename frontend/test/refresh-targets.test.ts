@@ -1,4 +1,4 @@
-// Which complications a "Refresh complications" tap reaches.
+// Which complications a "Refresh multiple complications" tap reaches.
 //
 // Two halves, both pure. `refreshTargetsWith` in the model is the whole rule
 // for one box being ticked, so the dedupe and the "never write an empty list"
@@ -126,16 +126,20 @@ describe("the picker under the tap", () => {
     expect(text.indexOf("Bedroom")).toBeLessThan(text.indexOf("kitchen"));
   });
 
-  it("leaves out the document being edited and says why", () => {
+  it("heads the list with the document being edited, marked and stuck on", () => {
     const text = picker({ type: "refreshAll" }, OTHERS);
+    expect(text).toContain("Edited (current)");
     expect(text).toContain("always refreshes itself");
-    // "Edited" is this document's own name, and its row is not offered.
-    expect(text).not.toContain(">Edited<");
+    // Its own row comes before the others, and the watch's copy of it is not
+    // offered a second time further down.
+    expect(text.indexOf("Edited (current)")).toBeLessThan(text.indexOf("Bedroom"));
+    expect(text.split("Edited").length - 1).toBe(1);
   });
 
-  it("hides the list while all placed is on", () => {
+  it("hides the list while all placed is on, and warns about the wait", () => {
     const text = picker({ type: "refreshAll", allPlaced: true }, OTHERS);
     expect(text).toContain("All placed complications");
+    expect(text).toContain("can take a while");
     expect(text).not.toContain("Bedroom");
     expect(text).not.toContain("kitchen");
   });

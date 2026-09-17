@@ -3138,7 +3138,7 @@ export function serviceDataIsValid(json: string | undefined): boolean {
  * boxes with the same words in review mode, and the renderer cannot import the
  * editors (they already import it). */
 export const TAP_ACTION_LABELS: [TapAction["type"], string][] = [
-  ["refresh", "Refresh"], ["refreshAll", "Refresh complications"],
+  ["refresh", "Refresh"], ["refreshAll", "Refresh multiple complications"],
   ["none", "Nothing"], ["openApp", "Open the app"], ["openPage", "Open the page"], ["openRoomPage", "Open the room page"],
   ["timerStartPause", "Timer start / pause"], ["timerCancel", "Timer cancel"],
   ["toggleEntity", "Toggle an entity"], ["runScene", "Run a scene"], ["runScript", "Run a script"], ["addTodo", "Add a to-do"], ["runHTTPAction", "Run an HTTP action"],

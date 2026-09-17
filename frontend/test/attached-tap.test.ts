@@ -689,14 +689,14 @@ describe("refresh complications", () => {
   it("sits right after the plain refresh in every picker", () => {
     const types = TAP_ACTION_LABELS.map(([t]) => t);
     expect(types.indexOf("refreshAll")).toBe(types.indexOf("refresh") + 1);
-    expect(TAP_ACTION_LABELS.find(([t]) => t === "refreshAll")?.[1]).toBe("Refresh complications");
+    expect(TAP_ACTION_LABELS.find(([t]) => t === "refreshAll")?.[1]).toBe("Refresh multiple complications");
   });
 
   it("carries no entity, whatever the picker was on before", () => {
     const toggle: TapAction = { type: "toggleEntity", entityId: "light.kitchen", displayName: "Kitchen", domain: "light" };
     expect(tapActionForType("refreshAll", toggle)).toEqual({ type: "refreshAll" });
     expect(tapNeedsEntity("refreshAll")).toBe(false);
-    expect(describeTapAction({ type: "refreshAll" })).toBe("Refresh complications: none picked");
+    expect(describeTapAction({ type: "refreshAll" })).toBe("Refresh multiple complications: none picked");
   });
 
   it("keeps what is picked when the picker leaves refreshAll and comes back", () => {
@@ -714,8 +714,8 @@ describe("refresh complications", () => {
   });
 
   it("says what it reaches, in the label and in the note", () => {
-    expect(describeTapAction({ type: "refreshAll", allPlaced: true })).toBe("Refresh complications: all placed");
-    expect(describeTapAction({ type: "refreshAll", targets: ["A1", "B2"] })).toBe("Refresh complications: 2 picked");
+    expect(describeTapAction({ type: "refreshAll", allPlaced: true })).toBe("Refresh multiple complications: all placed");
+    expect(describeTapAction({ type: "refreshAll", targets: ["A1", "B2"] })).toBe("Refresh multiple complications: 2 picked");
 
     const all = tapActionNote({ type: "refreshAll", allPlaced: true });
     expect(all).toContain("every Wrist Assistant complication placed on the watch");
