@@ -3589,8 +3589,9 @@ export function pageMoverExists(cfg: CustomComplicationConfig): boolean {
  * drawn over the zone still works, and the zone answers for the rest of its
  * half.
  *
- * Named, because a tap layer draws nothing and two "Tap area" rows in the
- * Layers list say nothing about which half does what.
+ * Named for what it is and which way it goes, because a tap layer draws
+ * nothing and two bare "Tap area" rows in the Layers list say nothing about
+ * which half does what.
  */
 export function addPageTurnTap(
   cfg: CustomComplicationConfig,
@@ -3600,7 +3601,7 @@ export function addPageTurnTap(
   const el = newElement("tap");
   const tap = el.payload as TapElement;
   const next = type === "nextPage";
-  tap.name = next ? "Next page" : "Back a page";
+  tap.name = next ? "Next page tap area" : "Prev page tap area";
   tap.frame = { x: next ? 0.5 : 0, y: 0, width: 0.5, height: 1, rotationDegrees: 0 };
   tap.action = { type };
   if (page !== undefined) tap.page = page;

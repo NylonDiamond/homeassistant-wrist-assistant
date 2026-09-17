@@ -2810,32 +2810,33 @@ export class WristAssistantPanel extends LitElement {
     /* Turn pages off: the one control in the card that takes the feature
        away, so it sits at the foot on its own line, not beside the tabs. */
     .pages-off { display: flex; justify-content: flex-end; margin-top: 8px; }
-    /* The ready-made page-turn zones: a label saying which page they land on,
-       then Back and Next wearing the arrows they draw on the face. Left and
-       right, in that order, so the row is the face in miniature. */
+    /* The ready-made page-turn taps: a label saying which page they land on,
+       then one full-width button each. Full width because the labels say what
+       they make in full ("Add next page tap action"), and a row of long
+       buttons on a narrow panel is a row of ellipses. */
     .page-fix {
-      display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 10px;
+      display: flex; flex-direction: column; align-items: stretch; gap: 6px; margin-top: 10px;
       padding-top: 10px; border-top: 1px solid var(--wa-line);
     }
-    .page-fix .page-fix-l { flex: 1 1 auto; font-size: 12px; color: var(--wa-muted); }
+    .page-fix .page-fix-l { font-size: 12px; color: var(--wa-muted); margin-bottom: 2px; }
     .page-fix .page-add {
-      font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; flex: none;
-      display: inline-flex; align-items: center; gap: 4px;
-      height: 28px; padding: 0 10px; border-radius: 7px;
+      font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; text-align: left;
+      display: flex; align-items: center; gap: 8px;
+      min-height: 30px; padding: 5px 10px; border-radius: 7px;
       border: 1px solid var(--wa-line); background: var(--wa-input); color: inherit;
       transition: background-color .12s ease-out, border-color .12s ease-out;
     }
-    .page-fix .page-add svg.ui-icon { width: 14px; height: 14px; }
-    .page-fix .page-add:hover { background: var(--wa-raised); border-color: var(--wa-line-strong); }
+    /* The finger and the direction travel together in one block, so the eye
+       reads "a tap, going this way" before it reads the words. */
+    .page-fix .page-add .page-add-i { flex: none; display: inline-flex; align-items: center; gap: 1px; color: var(--wa-accent); }
+    .page-fix .page-add svg.ui-icon { width: 15px; height: 15px; }
+    .page-fix .page-add:hover:not(:disabled) { background: var(--wa-raised); border-color: var(--wa-line-strong); }
     .page-fix .page-add:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    /* The one-click fallback, inside the warning's own sentence rather than a
-       button beside it: it is a suggestion, not the main way. */
-    button.linky {
-      font: inherit; font-size: inherit; font-weight: 600; cursor: pointer; padding: 0;
-      border: 0; background: none; color: var(--wa-accent); text-decoration: underline;
-    }
-    button.linky:hover { filter: brightness(1.15); }
-    button.linky:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 3px; }
+    .page-fix .page-add:disabled { opacity: .45; cursor: default; }
+    /* The whole-face one is the blunter instrument: same shape, no fill, so it
+       sits below the two tap areas rather than beside them as an equal. */
+    .page-fix .page-add.whole { background: none; color: var(--wa-muted); font-weight: 500; }
+    .page-fix .page-add.whole .page-add-i { color: var(--wa-muted); }
     /* The tour's progress, under the Pages row: one thin bar, filled by a CSS
        animation over the tour's own length, so nothing has to tick at 60 fps
        to draw it. */

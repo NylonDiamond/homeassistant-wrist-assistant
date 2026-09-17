@@ -3938,11 +3938,16 @@ export function pagesCardFields(host: EditorHost, page: number): TemplateResult 
   const zone = (type: "previousPage" | "nextPage") => {
     const back = type === "previousPage";
     return html`<button class="page-add" title=${back
-      ? `A tap on the left half of page ${page} shows the page before.`
-      : `A tap on the right half of page ${page} shows the next page.`}
+      ? `A tap area over the left half of page ${page}. Tapping it shows the page before.`
+      : `A tap area over the right half of page ${page}. Tapping it shows the next page.`}
       @click=${() => host.update((c) => { addPageTurnTap(c, type, page); }, `pages-zone-${type}`)}>
-      ${back ? uiIcon("left") : nothing}<span>${back ? "Back" : "Next"}</span>${back ? nothing : uiIcon("right")}</button>`;
+      <span class="page-add-i">${uiIcon("tap")}${back ? uiIcon("left") : uiIcon("right")}</span>
+      <span>Add ${back ? "prev" : "next"} page tap action</span></button>`;
   };
+  // The one-click alternative to a tap area: the whole face turns the page.
+  // Pointless once it is already set, so the button goes quiet rather than
+  // offering to write what is written.
+  const mainIsNext = cfg.tapAction.type === "nextPage";
   return html`
     ${tour
       ? html`<div class="hint">One tap plays every page, then back to page 1.</div>`
@@ -3957,14 +3962,18 @@ export function pagesCardFields(host: EditorHost, page: number): TemplateResult 
       <div class="hint">Tour lasts ${dwellSeconds(tourDuration(spec))}.</div>`
       : nothing}
     <div class="hint">A layer sits on one page or on every page. Set that under Position.</div>
+    ${pageMoverExists(cfg) ? nothing : html`<div class="hint warn">Nothing turns the page yet.</div>`}
     <div class="page-fix">
       <span class="page-fix-l">Add to page ${page}</span>
       ${zone("previousPage")}
       ${zone("nextPage")}
+      <button class="page-add whole" ?disabled=${mainIsNext} title=${mainIsNext
+        ? "The complication's tap action is already Next page."
+        : `Changes the complication's tap action from ${describeTapAction(cfg.tapAction)} to Next page, so a tap anywhere on the face turns it. Undo puts it back.`}
+        @click=${() => host.update((c) => { c.tapAction = { type: "nextPage" }; }, "pages-fix-tap")}>
+        <span class="page-add-i">${uiIcon("tap")}</span>
+        <span>Change the complication tap action to Next page</span></button>
     </div>
-    ${pageMoverExists(cfg) ? nothing : html`<div class="hint warn">Nothing turns the page yet. Add a zone above, or
-      <button class="linky" title=${`A tap anywhere on the face shows the next page. It replaces the face's tap action, ${describeTapAction(cfg.tapAction)}. Undo puts it back.`}
-        @click=${() => host.update((c) => { c.tapAction = { type: "nextPage" }; }, "pages-fix-tap")}>tap anywhere for next</button>.</div>`}
     <div class="pages-off">
       <button class="ghost" title=${`Back to one face. No layer is deleted.${unpin === undefined ? "" : ` ${unpin}`}`}
         @click=${() => host.update((c) => { setPageCount(c, 1); }, "pages-off")}>Turn pages off</button>

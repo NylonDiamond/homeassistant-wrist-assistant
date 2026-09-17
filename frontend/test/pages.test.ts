@@ -929,8 +929,8 @@ describe("the ready-made page-turn zones", () => {
     expect(zone(back).payload.page).toBe(2);
 
     // Named, because two "Tap area" rows say nothing about which half is which.
-    expect(zone(next).payload.name).toBe("Next page");
-    expect(zone(back).payload.name).toBe("Back a page");
+    expect(zone(next).payload.name).toBe("Next page tap area");
+    expect(zone(back).payload.name).toBe("Prev page tap area");
 
     // And the warning that offered them is answered.
     expect(pageMoverExists(cfg)).toBe(true);
@@ -947,7 +947,7 @@ describe("the ready-made page-turn zones", () => {
     addPageTurnTap(cfg, "previousPage", 2);
     const encoded = encodeConfig(cfg);
     expect(auditUnknownKeys(encoded)).toEqual([]);
-    const back = parseConfig(encoded).elements.find((el) => el.kind === "tap" && el.payload.name === "Back a page");
+    const back = parseConfig(encoded).elements.find((el) => el.kind === "tap" && el.payload.name === "Prev page tap area");
     expect(back).toBeDefined();
     expect(back!.payload.page).toBe(2);
     expect((back!.payload as { action: { type: string } }).action).toEqual({ type: "previousPage" });
