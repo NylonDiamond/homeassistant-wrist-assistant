@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   type CustomComplicationConfig,
   type Element as CElement,
+  type Rule,
   type TapElement,
   DRAWABLE_FAMILIES,
   attachedTapsOf,
@@ -34,7 +35,8 @@ import {
   presetSpec,
   toggleSymbols,
 } from "../src/presets.js";
-import { tableShape } from "../src/states.js";
+import { presetColor, presetPreview } from "../src/preset-previews.js";
+import { type StatesRow, type StatesTable, tableShape } from "../src/states.js";
 import { colorWords } from "../src/editors.js";
 import { CURATED_SYMBOLS } from "../src/symbols.js";
 import type { HassEntityState } from "../src/ha-api.js";
@@ -372,5 +374,177 @@ describe("every preset", () => {
 
   it("has a spec behind every kind", () => {
     for (const spec of LAYER_PRESETS) expect(presetSpec(spec.kind)).toBe(spec);
+  });
+});
+
+// ── the stacked presets ───────────────────────────────────────────────────
+// Nine presets that each build a small finished thing from one entity. What is
+// worth checking is the part a later edit cannot recover: the value each layer
+// reads, and the rule that makes it change.
+
+describe("the stacked presets", () => {
+  const SENSOR = { entityId: "sensor.phone_battery", displayName: "Phone battery", domain: "sensor" };
+
+  function build(kind: Parameters<typeof applyPreset>[1], ref = SENSOR): { cfg: CustomComplicationConfig; id: string } {
+    const cfg = config();
+    const id = applyPreset(cfg, kind, ref, { family: "rectangular" });
+    return { cfg, id };
+  }
+
+  /** The rows a rule reads as, or a throw with the reason it does not. Every
+   * preset here is built through `buildStatesRule`, so a rule that will not
+   * shape into a table is a preset the states editor cannot show. */
+  function tableOf(rules: readonly Rule[]): StatesTable {
+    const shape = tableShape([...rules]);
+    if (!shape.ok) throw new Error(shape.reason);
+    return shape.table;
+  }
+
+  /** The literal text a row's first change writes. */
+  function wrote(row: StatesRow): string {
+    const kind = row.changes[0]!.value!.kind;
+    return kind.kind === "literal" ? kind.value : "";
+  }
+
+  it("gives every preset a card colour and a sample", () => {
+    for (const preset of LAYER_PRESETS) {
+      expect(presetColor(preset.kind), preset.kind).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(() => presetPreview(preset.kind), preset.kind).not.toThrow();
+    }
+  });
+
+  it("names a layer count that matches what each preset actually adds", () => {
+    for (const preset of LAYER_PRESETS) {
+      if (preset.families !== undefined && !preset.families.includes("rectangular")) continue;
+      const cfg = config();
+      const ref = preset.domains
+        ? { entityId: `${preset.domains[0]}.thing`, displayName: "Thing", domain: preset.domains[0]! }
+        : SENSOR;
+      applyPreset(cfg, preset.kind, ref, { family: "rectangular" });
+      expect(cfg.elements.length, preset.kind).toBe(preset.layerCount);
+    }
+  });
+
+  it("pins a battery ring to 0-100 on the red-to-green ramp whatever the entity says", () => {
+    const { cfg, id } = build("battery");
+    const gauge = layer(cfg, id);
+    if (gauge.kind !== "gauge") throw new Error("wrong kind");
+    expect(gauge.payload.minValue).toBe(0);
+    expect(gauge.payload.maxValue).toBe(100);
+    expect(tableOf(gauge.payload.rules).rows.map(wrote)).toEqual([...ALARM_LOW_RAMP]);
+    // The number in the middle is its own layer, so it can be moved or deleted.
+    const text = cfg.elements.find((e) => e.kind === "text");
+    expect(text?.payload.value.format).toEqual({ decimals: 0, suffix: "%" });
+  });
+
+  it("draws a sparkline under the reading, muted and unmarked", () => {
+    const { cfg } = build("sparkline");
+    const chart = cfg.elements.find((e) => e.kind === "chart");
+    if (chart?.kind !== "chart") throw new Error("no chart");
+    expect(chart.payload.historyMinutes).toBe(360);
+    expect(chart.payload.style).toBe("line");
+    expect(chart.payload.highlight).toBe("none");
+    // The chart is pushed first, so the number draws over it.
+    expect(cfg.elements[0]!.kind).toBe("chart");
+    expect(cfg.elements[1]!.kind).toBe("text");
+  });
+
+  it("reads an age in seconds and prints it as a relative time", () => {
+    const { cfg, id } = build("lastChanged");
+    const el = layer(cfg, id);
+    if (el.kind !== "text") throw new Error("wrong kind");
+    expect(el.payload.value.kind).toEqual({ kind: "entityAge", ...SENSOR });
+    expect(el.payload.value.format).toEqual({ relativeTime: true });
+  });
+
+  it("writes Home and Away rather than printing not_home", () => {
+    const person = { entityId: "person.sam", displayName: "Sam", domain: "person" };
+    const { cfg } = build("person", person);
+    const word = cfg.elements.find((e) => e.kind === "text");
+    expect(tableOf(word!.payload.rules).rows.map(wrote)).toEqual(["Home", "Away"]);
+  });
+
+  it("makes a countdown that ticks and a tap that starts it", () => {
+    const timer = { entityId: "timer.pasta", displayName: "Pasta", domain: "timer" };
+    const { cfg, id } = build("timer", timer);
+    const el = layer(cfg, id);
+    if (el.kind !== "text") throw new Error("wrong kind");
+    expect(el.payload.countdown).toBe(true);
+    expect(el.payload.monospacedDigits).toBe(true);
+    const taps = cfg.elements.filter((e): e is CElement & { kind: "tap"; payload: TapElement } => e.kind === "tap");
+    expect(taps.map((t) => t.payload.action)).toEqual([{ type: "timerStartPause" }]);
+  });
+
+  it("covers every alarm mode with one startsWith, and stays inside the states table", () => {
+    const alarm = { entityId: "alarm_control_panel.house", displayName: "House", domain: "alarm_control_panel" };
+    const { cfg, id } = build("alarm", alarm);
+    const table = tableOf(layer(cfg, id).payload.rules);
+    expect(table.rows.map((r) => r.comparison.kind)).toEqual(["equals", "equals", "equals", "startsWith", "equals"]);
+    expect(table.rows.map(wrote)).toEqual(["Triggered", "Arming", "Arming", "Armed", "Off"]);
+  });
+
+  it("reads the weather's temperature off the attribute, not the state", () => {
+    const weather = { entityId: "weather.home", displayName: "Home", domain: "weather" };
+    const { cfg, id } = build("weatherNow", weather);
+    const temp = layer(cfg, id);
+    if (temp.kind !== "text") throw new Error("wrong kind");
+    expect(temp.payload.value.kind).toEqual({ kind: "entityAttribute", ...weather, attribute: "temperature" });
+    const icon = cfg.elements.find((e) => e.kind === "icon");
+    // Every symbol the condition table can reach is one the picker draws.
+    for (const row of tableOf(icon!.payload.rules).rows) expect(CURATED_SYMBOLS).toContain(wrote(row));
+  });
+
+  it("templates the sun times, because the clock format only reads a number", () => {
+    const sun = { entityId: "sun.sun", displayName: "Sun", domain: "sun" };
+    const { cfg } = build("sunTimes", sun);
+    const times = cfg.elements.filter((e) => e.kind === "text");
+    expect(times).toHaveLength(2);
+    for (const t of times) {
+      expect(t.payload.value.kind).toMatchObject({ kind: "jinja" });
+      expect(t.payload.value.format).toEqual({ timestamp: "clock" });
+    }
+    expect((times[0]!.payload.value.kind as { value: string }).value).toContain("next_rising");
+    expect((times[1]!.payload.value.kind as { value: string }).value).toContain("next_setting");
+  });
+
+  it("counts what is on without being given an entity", () => {
+    const cfg = config();
+    const id = applyPreset(cfg, "openCount", { entityId: "", displayName: "", domain: "" }, { family: "rectangular" });
+    const count = layer(cfg, id);
+    if (count.kind !== "text") throw new Error("wrong kind");
+    expect(count.payload.value.kind).toEqual({
+      kind: "aggregate",
+      aggregate: {
+        function: "count",
+        scope: { kind: "filter", domains: ["binary_sensor"], areaIds: [], labelIds: [], floorIds: [] },
+        stateFilter: { kind: "isOn" },
+      },
+    });
+    expect(presetSpec("openCount").needsEntity).toBe(false);
+  });
+
+  it("colours the Who is home rows off the item, so one rule covers everybody", () => {
+    const cfg = config();
+    const id = applyPreset(cfg, "listWhoHome", { entityId: "", displayName: "", domain: "" }, { family: "rectangular" });
+    const list = layer(cfg, id);
+    if (list.kind !== "list") throw new Error("wrong kind");
+    expect(list.payload.direction).toBe("across");
+    for (const row of list.payload.template) {
+      expect(tableOf(row.payload.rules).value?.kind).toEqual({ kind: "item", field: "state" });
+    }
+  });
+
+  it("survives a round trip through the encoder with no unknown keys", () => {
+    for (const preset of LAYER_PRESETS) {
+      if (preset.families !== undefined && !preset.families.includes("rectangular")) continue;
+      const cfg = config();
+      const ref = preset.domains
+        ? { entityId: `${preset.domains[0]}.thing`, displayName: "Thing", domain: preset.domains[0]! }
+        : SENSOR;
+      applyPreset(cfg, preset.kind, ref, { family: "rectangular" });
+      const encoded = encodeConfig(cfg);
+      expect(auditUnknownKeys(encoded), preset.kind).toEqual([]);
+      expect(() => parseConfig(encoded), preset.kind).not.toThrow();
+    }
   });
 });

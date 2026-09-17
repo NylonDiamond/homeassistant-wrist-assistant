@@ -682,10 +682,10 @@ describe("the list presets", () => {
   const listPresets = LAYER_PRESETS.filter((p) => p.group === "list");
   const CALENDAR = { entityId: "calendar.home", displayName: "Home", domain: "calendar" };
 
-  it("is the eight the plan named", () => {
+  it("is the nine the plan named", () => {
     expect(listPresets.map((p) => p.title)).toEqual([
       "Next events", "To-do", "Hourly forecast", "Daily forecast",
-      "Lights on", "Low batteries", "Recent activity", "Scenes grid",
+      "Lights on", "Low batteries", "Recent activity", "Scenes grid", "Who is home",
     ]);
   });
 
@@ -749,6 +749,7 @@ describe("the list presets", () => {
     expect(needs).toEqual({
       listEvents: true, listTodo: true, listHourly: true, listDaily: true,
       listLightsOn: false, listBatteries: false, listRecent: false, listScenes: false,
+      listWhoHome: false,
     });
   });
 

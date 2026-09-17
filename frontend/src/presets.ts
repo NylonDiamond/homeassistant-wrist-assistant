@@ -46,8 +46,10 @@ import {
 
 export type PresetKind =
   | "toggle" | "status" | "gauge" | "camera" | "chart" | "history" | "doorHistory"
+  | "battery" | "sparkline" | "lastChanged" | "person" | "timer" | "alarm"
+  | "weatherNow" | "sunTimes" | "openCount"
   | "listEvents" | "listTodo" | "listHourly" | "listDaily"
-  | "listLightsOn" | "listBatteries" | "listRecent" | "listScenes";
+  | "listLightsOn" | "listBatteries" | "listRecent" | "listScenes" | "listWhoHome";
 
 export interface PresetSpec {
   kind: PresetKind;
@@ -122,6 +124,69 @@ export const LAYER_PRESETS: readonly PresetSpec[] = [
     layerCount: 1,
   },
   {
+    kind: "battery",
+    title: "Battery ring",
+    blurb: "A ring that empties as the battery does, red when low and green when full, with the percentage in the middle.",
+    domains: ["sensor"],
+    preferNumeric: true,
+    layerCount: 2,
+  },
+  {
+    kind: "sparkline",
+    title: "Reading and sparkline",
+    blurb: "The reading now, big, with the last six hours drawn as a faint line under it.",
+    preferNumeric: true,
+    layerCount: 2,
+  },
+  {
+    kind: "lastChanged",
+    title: "Last changed",
+    blurb: "How long ago the entity last changed, with its name above. For anything you want to know is still being reported.",
+    layerCount: 2,
+  },
+  {
+    kind: "person",
+    title: "Person",
+    blurb: "A house while they are home and a walker while they are out, green or grey, with the word under it.",
+    domains: ["person", "device_tracker"],
+    layerCount: 2,
+  },
+  {
+    kind: "timer",
+    title: "Countdown timer",
+    blurb: "The time left on a timer, ticking on the watch. Tap it to start or pause.",
+    domains: ["timer"],
+    layerCount: 3,
+  },
+  {
+    kind: "alarm",
+    title: "Alarm state",
+    blurb: "One word for the alarm: green armed, amber arming, red triggered, grey off.",
+    domains: ["alarm_control_panel"],
+    layerCount: 2,
+  },
+  {
+    kind: "weatherNow",
+    title: "Weather now",
+    blurb: "The temperature outside, with a symbol for the weather above it.",
+    domains: ["weather"],
+    layerCount: 2,
+  },
+  {
+    kind: "sunTimes",
+    title: "Sun times",
+    blurb: "The next sunrise and the next sunset, each on its own line. Pick your sun entity.",
+    domains: ["sun"],
+    layerCount: 4,
+  },
+  {
+    kind: "openCount",
+    title: "Open now",
+    blurb: "How many of your binary sensors are on right now, big. Narrow it to your doors and windows by area or label in the Source card.",
+    layerCount: 2,
+    needsEntity: false,
+  },
+  {
     kind: "listEvents",
     title: "Next events",
     blurb: "The next three events from one calendar, each with the time it starts.",
@@ -188,6 +253,15 @@ export const LAYER_PRESETS: readonly PresetSpec[] = [
     kind: "listScenes",
     title: "Scenes grid",
     blurb: "Your scenes as a two by two grid. Tap a cell to run that scene.",
+    layerCount: 1,
+    group: "list",
+    needsEntity: false,
+    families: LIST_FAMILIES,
+  },
+  {
+    kind: "listWhoHome",
+    title: "Who is home",
+    blurb: "Everyone in your home, across the face. Green while they are home, dimmed while they are out.",
     layerCount: 1,
     group: "list",
     needsEntity: false,
@@ -507,6 +581,76 @@ function timelineNameGeometry(family: DrawableFamily): PresetGeometry {
   };
 }
 
+/**
+ * One band of a stacked preset: a small label over a big reading over a small
+ * caption.
+ *
+ * Six of the presets draw that same three-band stack, and each of the three
+ * canvases is a different shape, so the band is a fraction of the face and the
+ * point size is read back out of it. A size worked out from the band can never
+ * be taller than the band it sits in, which is what a fixed size on the 34x34
+ * corner canvas always was.
+ */
+function bandGeometry(family: DrawableFamily, y: number, height: number, factor: number, max: number): PresetGeometry {
+  const canvas = CANVAS[family];
+  return {
+    frame: { x: 0.06, y, width: 0.88, height, rotationDegrees: 0 },
+    size: clamp(Math.round(canvas.height * height * factor), 7, max),
+  };
+}
+
+/** The reading itself: the middle band, and the biggest thing on the face. */
+function mainBandGeometry(family: DrawableFamily): PresetGeometry {
+  return bandGeometry(family, 0.32, 0.38, 0.82, 26);
+}
+
+/** The line under the reading: the entity's name, or one word about it. */
+function captionBandGeometry(family: DrawableFamily): PresetGeometry {
+  return bandGeometry(family, 0.72, 0.18, 0.8, 13);
+}
+
+/** The line over the reading. Same size as the caption, so a preset that uses
+ * both reads as one reading between two quiet lines. */
+function labelBandGeometry(family: DrawableFamily): PresetGeometry {
+  return bandGeometry(family, 0.12, 0.18, 0.8, 13);
+}
+
+/** The number inside a ring: a box across the middle of the arc, wide enough
+ * for three digits and a percent sign. */
+function ringCentreGeometry(family: DrawableFamily): PresetGeometry {
+  const canvas = CANVAS[family];
+  const side = Math.min(canvas.width, canvas.height) * 0.46;
+  return { frame: centredFrame(family, side * 1.5, side), size: clamp(Math.round(side * 0.6), 8, 22) };
+}
+
+/** A sparkline's own strip: the bottom third, under the reading it belongs to.
+ * Narrower than a chart preset's band, because here the chart is the
+ * background and the number is the subject. */
+function sparkChartGeometry(): PresetGeometry {
+  return { frame: { x: 0.06, y: 0.58, width: 0.88, height: 0.32, rotationDegrees: 0 }, size: 2 };
+}
+
+/** The reading over a sparkline: taller and higher than the ordinary main
+ * band, since the strip below it takes the room the caption would have. */
+function sparkValueGeometry(family: DrawableFamily): PresetGeometry {
+  return bandGeometry(family, 0.12, 0.42, 0.85, 30);
+}
+
+/** One of the two rows the Sun times preset draws: a symbol on the left and a
+ * time beside it. `top` is the sunrise row. */
+function sunRowGeometry(family: DrawableFamily, top: boolean, icon: boolean): PresetGeometry {
+  const canvas = CANVAS[family];
+  const y = top ? 0.2 : 0.54;
+  const height = 0.26;
+  const size = clamp(Math.round(canvas.height * height * (icon ? 0.85 : 0.8)), 8, 20);
+  return {
+    frame: icon
+      ? { x: 0.12, y, width: 0.22, height, rotationDegrees: 0 }
+      : { x: 0.38, y, width: 0.5, height, rotationDegrees: 0 },
+    size,
+  };
+}
+
 function cameraGeometry(): PresetGeometry {
   return { frame: { x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 } };
 }
@@ -752,6 +896,324 @@ export function addCameraLayer(cfg: CustomComplicationConfig, ref: EntityRef, en
   return el.payload.id;
 }
 
+// ── stacked presets ───────────────────────────────────────────────────────
+// Six presets that draw the same three bands: a quiet line, one big reading,
+// and a quiet line under it. They share `mainBandGeometry` and friends so a
+// battery and an alarm sit at the same height on the same face.
+
+/** The green a good state wears, and the red and amber beside it. The same
+ * three hexes the gauge ramps use, so a preset never invents a fourth green. */
+const GOOD_HEX = ALARM_LOW_RAMP[2];
+const WARN_HEX = ALARM_LOW_RAMP[1];
+const BAD_HEX = ALARM_LOW_RAMP[0];
+
+function setTextTo(text: string): StyleChange {
+  const change = newStyleChange("setText");
+  change.value = literal(text);
+  return change;
+}
+
+function setOpacityTo(fraction: number): StyleChange {
+  const change = newStyleChange("setOpacity");
+  change.number = fraction;
+  return change;
+}
+
+/** One quiet line of text, placed in one of the stack's bands. Used for a name
+ * over a reading and for a word under one. */
+function addQuietLine(
+  cfg: CustomComplicationConfig,
+  value: Value,
+  env: PresetEnv,
+  geometry: (family: DrawableFamily) => PresetGeometry,
+): string {
+  const el = layerOf("text");
+  el.payload.value = value;
+  el.payload.colorSlot.baseColorHex = MUTED_HEX;
+  placeLayer(cfg, el, env.family, geometry);
+  cfg.elements.push(el);
+  return el.payload.id;
+}
+
+/** The name to print for an entity: its own, or its id when it has none. */
+function refLabel(ref: EntityRef): Value {
+  return literal(ref.displayName.trim() || ref.entityId);
+}
+
+/**
+ * A ring that empties as a battery does, with the percentage inside it.
+ *
+ * The Sensor gauge preset would draw the arc, but it reads the entity's own
+ * range and its own device class, and a battery sensor that never states
+ * either would come out on the neutral ramp with an arbitrary scale. This one
+ * knows what it is for: 0 to 100, and red at the empty end, whatever the
+ * entity says about itself. The number in the middle is a second layer rather
+ * than a feature of the gauge, so it can be moved, restyled or deleted.
+ */
+export function addBatteryRing(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  const range = { min: 0, max: 100 };
+  const gauge = layerOf("gauge");
+  gauge.payload.value = entityStateValue(ref);
+  gauge.payload.minValue = range.min;
+  gauge.payload.maxValue = range.max;
+  gauge.payload.rules = [gaugeBandRule(ref, range, ALARM_LOW_RAMP)];
+  placeLayer(cfg, gauge, env.family, gaugeGeometry);
+  cfg.elements.push(gauge);
+
+  const text = layerOf("text");
+  text.payload.value = { kind: { kind: "entityState", ...withDomain(ref) }, format: { decimals: 0, suffix: "%" } };
+  text.payload.fontWeight = "semibold";
+  text.payload.rules = [gaugeBandRule(ref, range, ALARM_LOW_RAMP)];
+  placeLayer(cfg, text, env.family, ringCentreGeometry);
+  cfg.elements.push(text);
+  return gauge.payload.id;
+}
+
+/**
+ * The reading now, with where it has been drawn faintly under it.
+ *
+ * The History chart preset draws the line and nothing else, which answers
+ * "how has it moved" but not "what is it". This is the other way round: the
+ * number is the subject and the line is context, so the chart is muted, gets
+ * no highlights and takes the bottom third. The chart goes in first because
+ * the list draws in order and the number belongs on top.
+ */
+export function addSparkline(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  const chart = layerOf("chart");
+  chart.payload.value = { kind: { kind: "entityState", ...withDomain(ref) } };
+  chart.payload.historyMinutes = 360;
+  chart.payload.historyPoints = 24;
+  chart.payload.style = "line";
+  chart.payload.colorSlot.baseColorHex = MUTED_HEX;
+  placeLayer(cfg, chart, env.family, sparkChartGeometry);
+  cfg.elements.push(chart);
+
+  const text = layerOf("text");
+  text.payload.value = entityStateValue(ref, env.state);
+  text.payload.fontWeight = "semibold";
+  placeLayer(cfg, text, env.family, sparkValueGeometry);
+  cfg.elements.push(text);
+  return text.payload.id;
+}
+
+/**
+ * How long ago the entity last changed, with its name over it.
+ *
+ * `entityAge` resolves to a number of seconds, and `relativeTime` is what
+ * turns that into "2h ago", the same pair the Recent activity list uses on
+ * every row.
+ */
+export function addLastChanged(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  addQuietLine(cfg, refLabel(ref), env, labelBandGeometry);
+  const el = layerOf("text");
+  el.payload.value = { kind: { kind: "entityAge", ...withDomain(ref) }, format: { relativeTime: true } };
+  el.payload.fontWeight = "semibold";
+  placeLayer(cfg, el, env.family, mainBandGeometry);
+  cfg.elements.push(el);
+  return el.payload.id;
+}
+
+/**
+ * Whether one person is home: a house or a walker, and the word under it.
+ *
+ * The word is set by the rule rather than printed raw, because Home Assistant
+ * says `not_home`, which is not a word anybody wants on their wrist. A person
+ * in a named zone falls through both cases and prints the zone, which is
+ * better than either word.
+ */
+export function addPersonTile(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  const home = entityStateValue(ref);
+  const icon = layerOf("icon");
+  icon.payload.symbol = literal("figure.walk");
+  icon.payload.colorSlot.baseColorHex = MUTED_HEX;
+  icon.payload.rules = [buildStatesRule(home, [
+    { comparison: { kind: "equals", value: literal("home") }, changes: [setIconTo("house.fill"), setColorTo(GOOD_HEX)] },
+  ], [setIconTo("figure.walk"), setColorTo(MUTED_HEX)])];
+  placeLayer(cfg, icon, env.family, mainBandGeometry);
+  cfg.elements.push(icon);
+
+  const word = layerOf("text");
+  word.payload.value = entityStateValue(ref);
+  word.payload.colorSlot.baseColorHex = MUTED_HEX;
+  word.payload.rules = [buildStatesRule(entityStateValue(ref), [
+    { comparison: { kind: "equals", value: literal("home") }, changes: [setTextTo("Home")] },
+    { comparison: { kind: "equals", value: literal("not_home") }, changes: [setTextTo("Away")] },
+  ])];
+  placeLayer(cfg, word, env.family, captionBandGeometry);
+  cfg.elements.push(word);
+  return icon.payload.id;
+}
+
+/**
+ * A timer's remaining time, ticking, with a tap that starts and pauses it.
+ *
+ * `countdown` is what makes the watch tick the label itself rather than wait
+ * for the next push: the resolver reads the timer's `finishes_at` and counts
+ * to it. Monospaced digits stop the seconds shuffling the minutes sideways
+ * once a second.
+ */
+export function addCountdownTimer(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  const el = layerOf("text");
+  el.payload.value = { kind: { kind: "entityState", ...withDomain(ref) } };
+  el.payload.countdown = true;
+  el.payload.monospacedDigits = true;
+  el.payload.fontWeight = "semibold";
+  placeLayer(cfg, el, env.family, mainBandGeometry);
+  cfg.elements.push(el);
+  addQuietLine(cfg, refLabel(ref), env, captionBandGeometry);
+  // After the placement, the same way the toggle preset does it: attachTap
+  // re-runs the sync and copies the per-shape frames onto the tap.
+  attachTap(cfg, el.payload.id, { type: "timerStartPause" });
+  return el.payload.id;
+}
+
+/**
+ * One word for the alarm, in a colour that says what it means.
+ *
+ * Every arming mode starts `armed_`, so one `startsWith` covers home, away,
+ * night and vacation without four rows. The rows are checked top to bottom and
+ * the first match wins, so triggered, arming and pending are listed before it:
+ * all three would otherwise be nothing at all, and `arming` does not start
+ * with `armed_`.
+ *
+ * Arming and pending are two rows saying the same thing rather than one "is
+ * one of", because the states table cannot draw an "is one of" row, and a
+ * preset whose own rule falls through to the Advanced editor is a preset
+ * nobody can edit where they found it.
+ */
+export function addAlarmState(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  addQuietLine(cfg, refLabel(ref), env, labelBandGeometry);
+  const el = layerOf("text");
+  el.payload.value = entityStateValue(ref);
+  el.payload.fontWeight = "semibold";
+  el.payload.colorSlot.baseColorHex = MUTED_HEX;
+  el.payload.rules = [buildStatesRule(entityStateValue(ref), [
+    { comparison: { kind: "equals", value: literal("triggered") }, changes: [setTextTo("Triggered"), setColorTo(BAD_HEX)] },
+    { comparison: { kind: "equals", value: literal("arming") }, changes: [setTextTo("Arming"), setColorTo(WARN_HEX)] },
+    { comparison: { kind: "equals", value: literal("pending") }, changes: [setTextTo("Arming"), setColorTo(WARN_HEX)] },
+    { comparison: { kind: "startsWith", value: literal("armed") }, changes: [setTextTo("Armed"), setColorTo(GOOD_HEX)] },
+    { comparison: { kind: "equals", value: literal("disarmed") }, changes: [setTextTo("Off"), setColorTo(MUTED_HEX)] },
+  ])];
+  placeLayer(cfg, el, env.family, mainBandGeometry);
+  cfg.elements.push(el);
+  return el.payload.id;
+}
+
+/**
+ * The weather outside: a symbol for the condition, the temperature under it.
+ *
+ * A weather entity's state is its condition word, so the symbol comes from a
+ * rule over that word rather than from the entity's own icon, which the watch
+ * never sees. Sleet and hail share the snow symbol: the set the watch draws
+ * from has no sibling for either, and a wrong glyph is worse than a near one.
+ * The temperature is an attribute, not the state, which is why this cannot be
+ * a Status text.
+ */
+export function addWeatherNow(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  const condition = entityStateValue(ref);
+  const icon = layerOf("icon");
+  icon.payload.symbol = literal("cloud.fill");
+  icon.payload.rules = [buildStatesRule(condition,
+    WEATHER_SYMBOLS.map(([state, symbol]) => ({
+      comparison: { kind: "equals" as const, value: literal(state) },
+      changes: [setIconTo(symbol)],
+    })),
+    [setIconTo("cloud.fill")])];
+  placeLayer(cfg, icon, env.family, (family) => bandGeometry(family, 0.1, 0.3, 0.95, 26));
+  cfg.elements.push(icon);
+
+  const temp = layerOf("text");
+  temp.payload.value = {
+    kind: { kind: "entityAttribute", ...withDomain(ref), attribute: "temperature" },
+    format: { decimals: 0, suffix: "°" },
+  };
+  temp.payload.fontWeight = "semibold";
+  placeLayer(cfg, temp, env.family, (family) => bandGeometry(family, 0.44, 0.4, 0.85, 30));
+  cfg.elements.push(temp);
+  return temp.payload.id;
+}
+
+/** Home Assistant's weather conditions, and the symbol each one draws. Every
+ * name here is in `symbols.ts`, so none of them can land as a placeholder. */
+const WEATHER_SYMBOLS: readonly (readonly [string, string])[] = [
+  ["sunny", "sun.max.fill"],
+  ["clear-night", "moon.stars.fill"],
+  ["partlycloudy", "cloud.sun.fill"],
+  ["cloudy", "cloud.fill"],
+  ["fog", "cloud.fog.fill"],
+  ["rainy", "cloud.rain.fill"],
+  ["pouring", "cloud.heavyrain.fill"],
+  ["lightning", "cloud.bolt.fill"],
+  ["lightning-rainy", "cloud.bolt.rain.fill"],
+  ["snowy", "cloud.snow.fill"],
+  ["snowy-rainy", "cloud.snow.fill"],
+  ["hail", "cloud.snow.fill"],
+  ["windy", "wind"],
+  ["windy-variant", "wind"],
+  ["exceptional", "exclamationmark.triangle.fill"],
+];
+
+/**
+ * The next sunrise and the next sunset, one line each.
+ *
+ * The times come through a template rather than straight off the attribute,
+ * because `next_rising` is an ISO string and the clock format only reads a
+ * number of seconds. `as_timestamp` on the server is the shortest way to hand
+ * the watch what it can print.
+ */
+export function addSunTimes(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  const at = (attribute: string): Value => ({
+    kind: { kind: "jinja", value: `{{ (as_timestamp(state_attr('${ref.entityId}', '${attribute}')) | int) }}` },
+    format: { timestamp: "clock" },
+  });
+  const row = (symbol: string, attribute: string, top: boolean): string => {
+    const icon = layerOf("icon");
+    icon.payload.symbol = literal(symbol);
+    icon.payload.colorSlot.baseColorHex = ACCENT_HEX;
+    placeLayer(cfg, icon, env.family, (family) => sunRowGeometry(family, top, true));
+    cfg.elements.push(icon);
+
+    const text = layerOf("text");
+    text.payload.value = at(attribute);
+    text.payload.alignment = "leading";
+    placeLayer(cfg, text, env.family, (family) => sunRowGeometry(family, top, false));
+    cfg.elements.push(text);
+    return text.payload.id;
+  };
+  const rise = row("sunrise.fill", "next_rising", true);
+  row("sunset.fill", "next_setting", false);
+  return rise;
+}
+
+/**
+ * How many things are on right now, as one number.
+ *
+ * It asks for nothing, the same way Lights on and Recent activity do: what it
+ * needs is a scope, and a scope is narrowed in the Source card afterwards
+ * rather than searched for up front. It starts on every binary sensor because
+ * that is where doors and windows live in most homes, and an aggregate takes
+ * areas, labels and floors but not a device class, so the narrowing is by
+ * room or by label.
+ */
+export function addOpenCount(cfg: CustomComplicationConfig, env: PresetEnv): string {
+  const el = layerOf("text");
+  el.payload.value = {
+    kind: {
+      kind: "aggregate",
+      aggregate: {
+        function: "count",
+        scope: { kind: "filter", domains: ["binary_sensor"], areaIds: [], labelIds: [], floorIds: [] },
+        stateFilter: { kind: "isOn" },
+      },
+    },
+  };
+  el.payload.fontWeight = "semibold";
+  placeLayer(cfg, el, env.family, mainBandGeometry);
+  cfg.elements.push(el);
+  addQuietLine(cfg, literal("open"), env, captionBandGeometry);
+  return el.payload.id;
+}
+
 // ── list presets ──────────────────────────────────────────────────────────
 // A list is one layer with a row inside it, so each of these builds a source,
 // a layout and a working row template in one go. Row frames are fractions of
@@ -958,6 +1420,39 @@ export function addScenesList(cfg: CustomComplicationConfig, env: PresetEnv): st
   ]);
 }
 
+/**
+ * Everyone in the home, across the face, dimmed while they are out.
+ *
+ * The rules read `item.state`, which the resolver fills in per row: the same
+ * layer is resolved once for each person, so one rule colours all of them. The
+ * symbol is fixed rather than the person's own icon, because a row of
+ * identical figures reads as a row of people and a row of different glyphs
+ * does not.
+ */
+export function addWhoHomeList(cfg: CustomComplicationConfig, env: PresetEnv): string {
+  const source: ListSource = {
+    kind: "entities",
+    scope: { kind: "filter", domains: ["person"], areaIds: [], labelIds: [], floorIds: [] },
+    sort: "name",
+    descending: false,
+    attributes: [],
+  };
+  const homeRule = (): Rule => buildStatesRule(itemValue("state"), [
+    { comparison: { kind: "equals", value: literal("home") }, changes: [setColorTo(GOOD_HEX)] },
+  ], [setColorTo(MUTED_HEX), setOpacityTo(0.45)]);
+
+  const figure = layerOf("icon");
+  figure.payload.symbol = literal("person.fill");
+  figure.payload.frame = { x: 0.2, y: 0.06, width: 0.6, height: 0.46, rotationDegrees: 0 };
+  figure.payload.size = 14;
+  figure.payload.rules = [homeRule()];
+
+  const name = rowText(itemValue("name"), { x: 0, y: 0.58, width: 1, height: 0.42 }, { size: 9 });
+  name.payload.rules = [homeRule()];
+
+  return addList(cfg, env, source, { rows: 4, direction: "across", gap: 2 }, [figure, name]);
+}
+
 /** Run one preset and return the id of the layer to select afterwards. */
 export function applyPreset(
   cfg: CustomComplicationConfig,
@@ -973,6 +1468,15 @@ export function applyPreset(
     case "history": return addHistoryChart(cfg, ref, env);
     case "doorHistory": return addDoorHistory(cfg, ref, env);
     case "camera": return addCameraLayer(cfg, ref, env);
+    case "battery": return addBatteryRing(cfg, ref, env);
+    case "sparkline": return addSparkline(cfg, ref, env);
+    case "lastChanged": return addLastChanged(cfg, ref, env);
+    case "person": return addPersonTile(cfg, ref, env);
+    case "timer": return addCountdownTimer(cfg, ref, env);
+    case "alarm": return addAlarmState(cfg, ref, env);
+    case "weatherNow": return addWeatherNow(cfg, ref, env);
+    case "sunTimes": return addSunTimes(cfg, ref, env);
+    case "openCount": return addOpenCount(cfg, env);
     case "listEvents": return addEventsList(cfg, ref, env);
     case "listTodo": return addTodoList(cfg, ref, env);
     case "listHourly": return addHourlyForecastList(cfg, ref, env);
@@ -981,5 +1485,6 @@ export function applyPreset(
     case "listBatteries": return addBatteriesList(cfg, env);
     case "listRecent": return addRecentList(cfg, env);
     case "listScenes": return addScenesList(cfg, env);
+    case "listWhoHome": return addWhoHomeList(cfg, env);
   }
 }

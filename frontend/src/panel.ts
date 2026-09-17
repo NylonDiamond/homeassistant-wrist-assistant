@@ -143,7 +143,6 @@ import { isHiddenDocument, splitHidden, withHidden } from "./model.js";
 /** Where an older panel kept hidden picker rows, per watch, in this browser.
  * The flag lives on the document now; the old keys are cleared once on load. */
 const LEGACY_PICKER_HIDDEN_PREFIX = "wrist-assistant-panel.picker-hidden.v1:";
-import { addPreview } from "./add-previews.js";
 import { GRID_STEPS, NUDGE_COARSE, beginGesture, beginPointDrag, beginScaleDrag, gridFor, gridNudgeFrame, guideCandidates, guideThreshold, nudgeFrame, nudgePoint, type Grid, type GuideLine, type Guides, type HandleCorner } from "./interact.js";
 import {
   type CopiedPosition,
@@ -192,7 +191,8 @@ import {
   shownCount,
 } from "./editors.js";
 import { sampleListItem, withListSeeds } from "./list-seeds.js";
-import { type PresetEnv, type PresetKind, LAYER_PRESETS, applyPreset, presetSpec } from "./presets.js";
+import { type PresetEnv, type PresetKind, type PresetSpec, LAYER_PRESETS, applyPreset, presetSpec } from "./presets.js";
+import { presetColor, presetPreview } from "./preset-previews.js";
 import {
   type ImportParse,
   type ShareSlot,
@@ -964,8 +964,8 @@ export class WristAssistantPanel extends LitElement {
    * the Layers list rises to the top of the column, which is where anyone
    * past their first face wants it. */
   @state() private addOpen = true;
-  /** How the add buttons are drawn. Expanded carries a sample of what each
-   * kind draws; compact drops the samples for a row of tinted chips. */
+  /** How the preset cards are drawn. Expanded carries a sample of what each
+   * preset builds; compact drops the samples for a list of tinted names. */
   @state() private addDetail: LayerDetail = "expanded";
   /** Layers picked with Cmd/Ctrl-click, in the list or on the preview, waiting to be grouped. */
   @state() private multi: ReadonlySet<string> = new Set();
@@ -2282,8 +2282,8 @@ export class WristAssistantPanel extends LitElement {
        buttons, and at a third of the column it was too small to tell a gauge
        from a chart without reading the name under it. */
     .add-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-    /* Compact: the samples go and every button becomes one 34px line, a colour
-       chip and a name, so eight kinds take four short rows. */
+    /* Compact: the samples go and every card becomes one 34px line, a colour
+       chip and a name, so two dozen presets scan in a column. */
     .add-grid.lean button.add {
       flex-direction: row; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 8px;
       background: var(--wa-card); border-color: var(--wa-line);
@@ -2315,8 +2315,9 @@ export class WristAssistantPanel extends LitElement {
     button.add svg.shot { display: block; width: 100%; height: 100%; }
     button.add .add-name { display: flex; align-items: center; justify-content: center; gap: 6px; }
     button.add svg.ui-icon { color: var(--k); width: 14px; height: 14px; flex: none; }
-    /* The presets are one wrapped row under the kinds, opened by a label
-       rather than a sentence: they are a shortcut, not a second offer. */
+    /* The blank kinds and the saved parts: wrapped rows under the preset
+       cards, each opened by a label rather than a sentence. They are the way
+       out of the presets, not a second offer. */
     .presets { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
     .presets-l {
       margin-right: 4px; font-size: 11px; font-weight: 700; letter-spacing: .08em;
@@ -2328,6 +2329,14 @@ export class WristAssistantPanel extends LitElement {
       transition: color .12s ease-out, background-color .12s ease-out;
     }
     button.preset:hover:not(:disabled) { color: var(--wa-ink); background: color-mix(in srgb, var(--wa-ink) 10%, var(--wa-panel)); }
+    button.preset:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    button.preset:disabled { opacity: .45; cursor: default; }
+    /* A blank-layer chip carries the kind's colour square, the same one the
+       Layers rows and the inspector use, so a chip and the row it will make
+       are plainly the same kind. */
+    button.preset.kind { display: inline-flex; align-items: center; gap: 7px; }
+    button.preset .k { width: 8px; height: 8px; border-radius: 2px; background: var(--k); flex: none; }
+    button.preset.kind:hover:not(:disabled) { background: color-mix(in srgb, var(--k) 16%, var(--wa-panel)); }
 
     /* Layers: one row per layer, coloured by kind, the shape pinned last.
        The picture size is a variable on the list, set by the S/M/L control in
@@ -2968,13 +2977,6 @@ export class WristAssistantPanel extends LitElement {
     .pop-menu .row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .case-tool { position: relative; display: inline-flex; }
     .case-tool .pop-menu { left: -6px; right: auto; min-width: 150px; }
-    /* The List button's menu: a blank list first, then the ready-made ones.
-       The wrapper takes the button's grid cell so the menu hangs off it. */
-    .add-tool { position: relative; display: grid; min-width: 0; }
-    .add-tool .pop-menu { left: 0; right: auto; min-width: 210px; }
-    .add-tool .pop-menu .row { display: flex; flex-direction: column; align-items: stretch; gap: 1px; white-space: normal; }
-    .add-tool .pop-menu .row small { font-weight: 500; font-size: 11.5px; color: var(--wa-muted); }
-    .add-tool .pop-menu .sep { height: 1px; margin: 3px 6px; background: var(--wa-line); }
     button.case-pick {
       display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 6px 0 0; border: 0; border-radius: 6px;
       background: transparent; color: var(--wa-ink); font: inherit; font-weight: 500; cursor: pointer; white-space: nowrap;
@@ -9934,12 +9936,25 @@ export class WristAssistantPanel extends LitElement {
 
   // ── left column ───────────────────────────────────────────────────────
 
-  /** One tinted button per kind, and the presets under them. Above the
-   * list on purpose: adding a layer never moves the button just pressed.
+  /** One tinted card per preset, and the blank kinds as chips under them.
+   * Above the list on purpose: adding a layer never moves the button just
+   * pressed.
    *
-   * The card folds, and its buttons have the same two densities the Layers
-   * list has. Both choices are remembered per browser, because the person who
-   * has built five faces already knows what a gauge looks like and wants the
+   * Presets first, because a preset is the finished thing and a blank kind is
+   * the expert path. It used to be the other way round: eight kind buttons
+   * with pictures, and the presets as a row of pill-shaped words underneath.
+   * That asked the author to know the schema's vocabulary before they could
+   * start, and it described "Door history" and "Recent activity" with nothing
+   * but their names, which read alike and draw nothing alike. The cards carry
+   * a sample each (`preset-previews.ts`), so the choice is made by eye.
+   *
+   * The list presets sit in the grid with the rest rather than inside the
+   * List button's menu. A menu was where they went when they had no picture
+   * to show; now they have one, and the List chip below makes a blank one.
+   *
+   * The card folds, and the cards have the same two densities the Layers list
+   * has. Both choices are remembered per browser, because the person who has
+   * built five faces already knows what a gauge looks like and wants the
    * room, and the person on their first one does not. */
   private renderAddLayer() {
     const cfg = this.draft?.config;
@@ -9955,8 +9970,6 @@ export class WristAssistantPanel extends LitElement {
     // are shown, so the button and the preset can never disagree.
     const kinds = KIND_ORDER.filter((k) => familyAllowsKind(this.activeFamily, k));
     const offered = LAYER_PRESETS.filter((p) => p.families === undefined || p.families.includes(this.activeFamily));
-    const plain = offered.filter((p) => p.group === undefined);
-    const listy = offered.filter((p) => p.group === "list");
     const toggle = () => { this.addOpen = !this.addOpen; this.saveListView(); };
     const addBlank = (k: CElement["kind"]) => {
       const el = newElement(k);
@@ -9967,32 +9980,28 @@ export class WristAssistantPanel extends LitElement {
       });
       this.inspect = { kind: "layer", id: el.payload.id };
     };
-    const addButton = (k: CElement["kind"], title: string, onClick: () => void, menu = false) => html`
-      <button class="add" style=${`--k:${KIND_COLOR[k]}`} ?disabled=${full} title=${title}
-        aria-haspopup=${menu ? "listbox" : nothing} aria-expanded=${menu ? (this.openMenu === "list" ? "true" : "false") : nothing}
-        @click=${onClick}
-        >${rich ? html`<span class="well">${addPreview(k)}</span>` : nothing}<span class="add-name">${rich ? uiIcon(k) : html`<span class="k"></span>`}<span>${KIND_LABEL[k]}</span></span></button>`;
-    // A list is the one kind that starts better from a pattern than from
-    // nothing, so its button opens a menu: a blank list first, then the
-    // ready-made ones. The list presets do not sit in the preset row below;
-    // they live here, under the button that makes lists.
-    const listMenu = html`<span class="add-tool" data-menu="list">
-      ${addButton("list", "Add a list: blank, or one of the ready-made ones", () => this.toggleMenu("list"), true)}
-      ${this.openMenu === "list" ? html`<div class="pop-menu" role="listbox" aria-label="Add a list">
-        <button class="row" role="option" @click=${() => { this.toggleMenu("list", false); addBlank("list"); }}>
-          Blank list<small>Start from nothing and design the row yourself.</small></button>
-        ${listy.length === 0 ? nothing : html`<div class="sep"></div>`}
-        ${listy.map((p) => html`<button class="row" role="option" ?disabled=${cfg.elements.length + p.layerCount > 64}
-          @click=${() => { this.toggleMenu("list", false); this.openPreset(p.kind); }}>${p.title}<small>${p.blurb}</small></button>`)}
-      </div>` : nothing}
-    </span>`;
+    // One card per preset: the sample, then the name. The same markup the kind
+    // buttons used to carry, so the two densities and every hover, focus and
+    // disabled rule are shared rather than written twice.
+    const presetCard = (p: PresetSpec) => html`
+      <button class="add" style=${`--k:${presetColor(p.kind)}`} title=${p.blurb}
+        ?disabled=${cfg.elements.length + p.layerCount > 64}
+        @click=${() => this.openPreset(p.kind)}
+        >${rich ? html`<span class="well">${presetPreview(p.kind)}</span>` : nothing}<span class="add-name">${rich ? nothing : html`<span class="k"></span>`}<span>${p.title}</span></span></button>`;
+    // The blank kinds, as chips: one press, one empty layer, no sample. They
+    // are the way out of the presets rather than the way in, so they take a
+    // line rather than a grid.
+    const kindChip = (k: CElement["kind"]) => html`
+      <button class="preset kind" style=${`--k:${KIND_COLOR[k]}`} ?disabled=${full}
+        title=${`Add a blank ${KIND_LABEL[k].toLowerCase()} layer`}
+        @click=${() => addBlank(k)}><span class="k"></span>${KIND_LABEL[k]}</button>`;
     return html`<div class="card fold" data-open=${open ? "true" : "false"}>
       <h2 class="panel-title tools fold-h" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
         title=${open ? "Hide the add buttons" : "Show the add buttons"}
         @click=${toggle}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}>
         <span class="swatch">${uiIcon("plus")}</span>Add a layer<span class="spacer"></span>
-        ${open ? nothing : html`<span class="mini">${kinds.length} kinds · ${offered.length} presets</span>`}
+        ${open ? nothing : html`<span class="mini">${offered.length} presets · ${kinds.length} blank kinds</span>`}
         ${open
           ? html`<span class="tool-set" @click=${(e: Event) => e.stopPropagation()}>
               <span class="seg" role="group" aria-label="Button detail">
@@ -10007,16 +10016,10 @@ export class WristAssistantPanel extends LitElement {
       </h2>
       ${open
         ? html`
-          <div class="add-grid ${rich ? "" : "lean"}">
-            ${kinds.map((k) => k === "list"
-              ? listMenu
-              : addButton(k, `Add a blank ${KIND_LABEL[k].toLowerCase()} layer`, () => addBlank(k)))}
-          </div>
+          <div class="add-grid ${rich ? "" : "lean"}">${offered.map(presetCard)}</div>
           <div class="presets">
-            <span class="presets-l">Presets</span>
-            ${plain.map((p) => html`<button class="preset" title=${p.blurb}
-              ?disabled=${cfg.elements.length + p.layerCount > 64}
-              @click=${() => this.openPreset(p.kind)}>${p.title}</button>`)}
+            <span class="presets-l">Blank</span>
+            ${kinds.map(kindChip)}
           </div>
           <div class="presets">
             <span class="presets-l">Saved</span>
