@@ -910,8 +910,8 @@ const ADD_VARIANTS: Partial<Record<CElement["kind"], readonly AddCard[]>> = {
       },
     },
     {
-      kind: "image", title: "Upload", variant: "imageUpload",
-      blurb: "Add a blank picture layer and upload a picture of your own into it",
+      kind: "image", title: "Custom image", variant: "imageUpload",
+      blurb: "Add a blank picture layer and put a picture of your own into it",
       setup: (el) => {
         if (el.kind !== "image") return;
         el.payload.source = "inline";
@@ -1698,6 +1698,16 @@ export class WristAssistantPanel extends LitElement {
     input[type=text]:hover:not(:disabled), input[type=number]:hover:not(:disabled), textarea:hover:not(:disabled) { border-color: var(--wa-line-strong); }
     input[type=text]:focus-visible, input[type=number]:focus-visible, input[type=search]:focus-visible, textarea:focus-visible { outline: none; border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
     input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--wa-muted) 70%, transparent); }
+    /* A box that is the one thing left to do. An empty Custom SVG layer draws
+       nothing at all, and a field that looks like every other field does not
+       say so: the dashed accent border points at where to paste before the
+       hint under it is read. The tint goes as soon as something lands. */
+    input.needs, textarea.needs {
+      border-color: color-mix(in srgb, var(--wa-accent) 60%, var(--wa-line));
+      border-style: dashed;
+      background: color-mix(in srgb, var(--wa-accent) 8%, var(--wa-input));
+    }
+    input.needs:focus-visible, textarea.needs:focus-visible { border-style: solid; }
     /* Every checkbox is a switch: a pill that slides, tinted by the section
        it sits in, since a tick box is the one control that still looked like
        a form from 2009. */

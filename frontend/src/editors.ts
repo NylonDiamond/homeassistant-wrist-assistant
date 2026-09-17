@@ -1712,7 +1712,7 @@ function customSvgFields(
   };
   return html`
     <label class="field"><span>SVG</span>
-      <textarea rows="4" class="mono" .value=${p.path ?? ""}
+      <textarea rows="4" class="mono ${(p.path ?? "") === "" ? "needs" : ""}" .value=${p.path ?? ""}
         placeholder="M7 2v11h3v9l7-12h-4l4-8z  or a whole <svg …> tag"
         @input=${(e: Event) => paste((e.target as HTMLTextAreaElement).value, e.target)}></textarea></label>
     ${note ? html`<div class="hint ${note.warn ? "warn" : "keep"}">${note.text}</div>` : nothing}
@@ -1790,13 +1790,19 @@ function inlineImageFields(
       if (result.format === "jpeg") p.format = "jpeg"; else delete p.format;
     }, "inline-image");
   };
+  // A real button, not a styled `<label>`. The label carried the button's
+  // class and none of its rules (every one of them names `button.small`), so
+  // it drew as bare text with the plus sign wrapping onto its own line. The
+  // button opens the hidden input beside it, the same way the import card's
+  // "Choose a file" does.
   return html`
     <div class="field list-field"><span>Picture</span>
       <div class="adders">
-        <label class="small" title="Choose a picture from this device">
+        <button type="button" class="small" title="Choose a picture from this device"
+          @click=${(e: Event) => (e.currentTarget as HTMLElement).parentElement?.querySelector<HTMLInputElement>("input[type=file]")?.click()}>
           ${uiIcon("plus")}<span>${bytes > 0 ? "Replace" : "Upload"}</span>
-          <input type="file" accept=${IMAGE_UPLOAD_ACCEPT} style="display:none" @change=${pick} />
-        </label>
+        </button>
+        <input type="file" accept=${IMAGE_UPLOAD_ACCEPT} hidden @change=${pick} />
         ${bytes > 0
           ? html`<button type="button" class="small" title="Take the picture out of this complication"
               @click=${() => {
@@ -7111,7 +7117,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
       const picturePath = typeof livePicture === "string" ? livePicture : undefined;
       const externalPicture = picturePath !== undefined && !picturePath.startsWith("/");
       content = html`
-        ${segField("Source", img.source, [["camera", "Camera"], ["entityPicture", "Entity picture"], ["inline", "Upload"]],
+        ${segField("Source", img.source, [["camera", "Camera"], ["entityPicture", "Entity picture"], ["inline", "Custom image"]],
           (v) => host.update((c) => {
             const target = c.elements.find((e) => e.payload.id === img.id);
             if (target?.kind !== "image") return;
@@ -8062,7 +8068,7 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
     case "image": {
       const img = el.payload;
       return html`
-        ${segField("Source", img.source, [["camera", "Camera"], ["entityPicture", "Entity picture"], ["inline", "Upload"]],
+        ${segField("Source", img.source, [["camera", "Camera"], ["entityPicture", "Entity picture"], ["inline", "Custom image"]],
           (v) => upd((e) => { if (e.kind === "image") setImageSource(e.payload, v); }, "source"), { def: base.source as typeof img.source })}
         ${segField("Picture", img.contentMode, [["fill", "Fill the frame"], ["fit", "Fit inside"]],
           (v) => upd((e) => { if (e.kind === "image") e.payload.contentMode = v; }, "mode"), { def: base.contentMode as typeof img.contentMode })}`;
