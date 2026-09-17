@@ -2210,7 +2210,7 @@ ${bR(d)}`}}delete s.hidden;let l=_s(a);if(l.length>0){let c=l.slice(0,3).join(",
     /* The complication picker: one dropdown in the header instead of a list
        down the side, because the list was read once per session and the space
        it held is worth more to the layers. */
-    .picker { position: relative; }
+    .picker { position: relative; --wa-pk-art-h: 44px; }
     .picker > button {
       display: inline-flex; align-items: center; gap: 10px; font: inherit; font-size: 13px; font-weight: 700;
       height: 34px; padding: 0 10px 0 8px; border-radius: 9px; cursor: pointer; color: var(--wa-ink);
@@ -2230,6 +2230,7 @@ ${bR(d)}`}}delete s.hidden;let l=_s(a);if(l.length>0){let c=l.slice(0,3).join(",
     .picker .menu .row {
       display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; font: inherit; font-size: 13.5px;
       background: transparent; border: 0; color: inherit; padding: 7px 10px; border-radius: 9px; cursor: pointer;
+      min-height: calc(var(--wa-pk-art-h) + 14px);
     }
     .picker .menu .row:hover { background: var(--wa-panel); }
     .picker .menu .row[aria-current="true"] { background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
@@ -2242,6 +2243,7 @@ ${bR(d)}`}}delete s.hidden;let l=_s(a);if(l.length>0){let c=l.slice(0,3).join(",
     .picker .menu .row.rec > .pick {
       display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; text-align: left; font: inherit;
       background: transparent; border: 0; color: inherit; padding: 7px 4px 7px 10px; border-radius: 9px; cursor: pointer;
+      min-height: calc(var(--wa-pk-art-h) + 14px);
     }
     .picker .menu .row.rec > .pick:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .picker .menu .row.rec.dim > .pick { opacity: .5; }
@@ -2258,9 +2260,13 @@ ${bR(d)}`}}delete s.hidden;let l=_s(a);if(l.length>0){let c=l.slice(0,3).join(",
     .picker .menu .pk-hidden-head svg { width: 14px; height: 14px; transition: transform .12s ease-out; }
     .picker .menu .pk-hidden-head[aria-expanded="true"] svg { transform: rotate(90deg); }
     /* The row picture: the complication drawn as the watch draws it, in a
-       fixed box so every name in the list still starts on the same column. */
-    .pk-art { width: 100px; height: 44px; flex: none; display: grid; place-items: center; pointer-events: none; }
-    .pk-art svg { display: block; max-width: 100%; max-height: 44px; width: auto; height: auto; background: #000; border-radius: 5px; }
+       fixed box so every name in the list still starts on the same column.
+       Its height is the variable on .picker rather than a number here, because
+       the rows holding it are buttons, and a button does not grow for a child
+       taller than its own text: they have to take the same height as a
+       min-height of their own, and the two must never drift apart. */
+    .pk-art { width: 100px; height: var(--wa-pk-art-h); flex: none; display: grid; place-items: center; pointer-events: none; }
+    .pk-art svg { display: block; max-width: 100%; max-height: var(--wa-pk-art-h); width: auto; height: auto; background: #000; border-radius: 5px; }
     .pk-art.circular svg { border-radius: 50%; }
     .pk-art.corner svg { background: #2c2c2e; }
     /* A Home Screen tile is rounded far harder than a lock screen slot, so its
