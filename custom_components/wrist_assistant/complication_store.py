@@ -21,6 +21,12 @@ Codable ``CustomComplicationConfig`` JSON the Apple clients already understand,
 stored byte-for-byte as the editor submitted it. This module validates the
 envelope (owner, UUID, revision, schema version, size, layer count, JSON types)
 and refuses anything it cannot vouch for; it never rewrites the document.
+
+Each record also keeps a short save history: the last few documents a save
+replaced, so the panel can look at an earlier revision and put it back. That
+history is storage only. It never reaches a client replica, because
+``as_dict`` is the sync shape and the history rides in ``as_storage_dict``
+instead, which only :meth:`ComplicationStore._serialize` calls.
 """
 
 from __future__ import annotations
@@ -30,7 +36,7 @@ import json
 import logging
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -152,6 +158,11 @@ _PRESET_NAME_MAX_CHARS = 80
 # A watch could not plausibly have more pages than this; cap the report so a
 # malformed one cannot bloat the store.
 _PAGE_MAX_ENTRIES = 100
+
+# Past revisions kept per record, oldest dropped. Twenty is far more undo than
+# anyone reaches for and still bounded: with the document cap at 256 KiB and
+# 64 records per owner the worst case is arithmetic rather than a surprise.
+COMPLICATION_HISTORY_LIMIT = 20
 
 
 def _clean_page_entries(entries: list[Any]) -> list[dict[str, Any]]:
@@ -303,6 +314,87 @@ class ComplicationNotFoundError(ComplicationStoreError):
 
 
 @dataclass
+class ComplicationHistoryEntry:
+    """One past revision of a record: what a later save replaced.
+
+    ``revision`` and ``saved_at`` are the replaced record's own, so an entry
+    reads as "this is what revision N looked like" rather than "this is when
+    someone went back to it".
+    """
+
+    revision: int
+    saved_at: str
+    updated_by: str
+    document: dict[str, Any]
+
+    def as_dict(self) -> dict[str, Any]:
+        """The storage shape, document included."""
+        return {
+            "revision": self.revision,
+            "savedAt": self.saved_at,
+            "updatedBy": self.updated_by,
+            "document": self.document,
+        }
+
+    def summary(self) -> dict[str, Any]:
+        """What the panel's history list draws: no document body.
+
+        ``name``, ``layers`` and ``families`` are the facts the list needs to
+        tell two entries apart; the panel words them itself. The body is
+        fetched one entry at a time, for the preview.
+        """
+        elements = self.document.get("elements")
+        families = self.document.get("supportedFamilies")
+        name = self.document.get("name")
+        return {
+            "revision": self.revision,
+            "savedAt": self.saved_at,
+            "updatedBy": self.updated_by,
+            "name": name if isinstance(name, str) else "",
+            "layers": len(elements) if isinstance(elements, list) else 0,
+            "families": [f for f in families if isinstance(f, str)]
+            if isinstance(families, list)
+            else [],
+        }
+
+    @classmethod
+    def from_dict(cls, raw: Any) -> ComplicationHistoryEntry | None:
+        """One entry off disk, or ``None`` for anything unusable.
+
+        Junk drops rather than refuses: a history entry is a convenience, and
+        a hand-edited storage file must not cost someone their complications.
+        """
+        if not isinstance(raw, dict):
+            return None
+        revision = raw.get("revision")
+        document = raw.get("document")
+        if isinstance(revision, bool) or not isinstance(revision, int):
+            return None
+        if not isinstance(document, dict):
+            return None
+        saved_at = raw.get("savedAt", "")
+        updated_by = raw.get("updatedBy", "")
+        return cls(
+            revision=revision,
+            saved_at=saved_at if isinstance(saved_at, str) else "",
+            updated_by=updated_by if isinstance(updated_by, str) else "",
+            document=document,
+        )
+
+
+def _clean_history_entries(entries: Any) -> list[ComplicationHistoryEntry]:
+    """Normalize a stored history list: oldest first, capped, junk dropped."""
+    if not isinstance(entries, list):
+        return []
+    cleaned = [
+        entry
+        for raw in entries
+        if (entry := ComplicationHistoryEntry.from_dict(raw)) is not None
+    ]
+    return cleaned[-COMPLICATION_HISTORY_LIMIT:]
+
+
+@dataclass
 class ComplicationRecord:
     """One stored complication plus its sync envelope."""
 
@@ -314,8 +406,12 @@ class ComplicationRecord:
     updated_by: str
     deleted: bool
     document: dict[str, Any] | None
+    # Past revisions, oldest first. Storage only: it is not part of
+    # :meth:`as_dict`, which is the shape every replica reads.
+    history: list[ComplicationHistoryEntry] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
+        """The sync shape. Every client replica reads exactly this."""
         return {
             "id": self.id,
             "ownerWatchId": self.owner_watch_id,
@@ -326,6 +422,18 @@ class ComplicationRecord:
             "deleted": self.deleted,
             "document": self.document,
         }
+
+    def as_storage_dict(self) -> dict[str, Any]:
+        """The sync shape plus the save history, for the storage file alone.
+
+        The history would double the size of every sync reply and no client
+        has any use for it, so the two shapes are deliberately different and
+        only ``_serialize`` calls this one.
+        """
+        stored = self.as_dict()
+        if self.history:
+            stored["history"] = [entry.as_dict() for entry in self.history]
+        return stored
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> ComplicationRecord | None:
@@ -339,6 +447,9 @@ class ComplicationRecord:
                 updated_by=str(raw.get("updatedBy", "")),
                 deleted=bool(raw.get("deleted", False)),
                 document=raw.get("document"),
+                # Absent from every file written before save history existed,
+                # which is the common case on the first load after an update.
+                history=_clean_history_entries(raw.get("history")),
             )
         except (KeyError, TypeError, ValueError):
             return None
@@ -766,7 +877,7 @@ class ComplicationStore:
             "applied": dict(self._applied),
             "last_sync": dict(self._last_sync),
             "records": [
-                record.as_dict()
+                record.as_storage_dict()
                 for by_id in self._records.values()
                 for record in by_id.values()
             ],
@@ -1060,6 +1171,31 @@ class ComplicationStore:
     def get(self, owner_watch_id: str, record_id: str) -> ComplicationRecord | None:
         return self._records.get(owner_watch_id, {}).get(record_id)
 
+    def history(
+        self, owner_watch_id: str, record_id: str
+    ) -> list[ComplicationHistoryEntry]:
+        """This record's past revisions, newest first.
+
+        The current revision is not in it. It is the one the editor has open,
+        so listing it would offer to restore what is already there.
+        """
+        record = self.get(owner_watch_id, record_id)
+        if record is None:
+            return []
+        return list(reversed(record.history))
+
+    def history_entry(
+        self, owner_watch_id: str, record_id: str, revision: int
+    ) -> ComplicationHistoryEntry | None:
+        """One past revision of one record, or ``None``."""
+        record = self.get(owner_watch_id, record_id)
+        if record is None:
+            return None
+        for entry in record.history:
+            if entry.revision == revision:
+                return entry
+        return None
+
     def is_empty(self, owner_watch_id: str) -> bool:
         return not any(
             not r.deleted for r in self._records.get(owner_watch_id, {}).values()
@@ -1081,6 +1217,28 @@ class ComplicationStore:
         )
 
     # ── writes ─────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _remember(record: ComplicationRecord) -> None:
+        """File the record's current document as a past revision.
+
+        Called on the way into a save that replaces it, so an entry is what
+        that revision looked like rather than when someone reached back for
+        it. A tombstone has no document to remember, so reviving one adds
+        nothing: its history is whatever was already there.
+        """
+        if record.document is None:
+            return
+        record.history.append(
+            ComplicationHistoryEntry(
+                revision=record.revision,
+                saved_at=record.updated_at,
+                updated_by=record.updated_by,
+                document=record.document,
+            )
+        )
+        if len(record.history) > COMPLICATION_HISTORY_LIMIT:
+            del record.history[: len(record.history) - COMPLICATION_HISTORY_LIMIT]
 
     def _commit(self, record: ComplicationRecord) -> ComplicationRecord:
         self._token += 1
@@ -1154,6 +1312,9 @@ class ComplicationStore:
                 f"{base_revision}",
                 existing,
             )
+        # The document about to be replaced becomes a past revision, before
+        # anything on the record moves.
+        self._remember(existing)
         existing.revision += 1
         existing.updated_by = updated_by
         existing.deleted = False
@@ -1236,6 +1397,10 @@ class ComplicationStore:
                 updated_by=updated_by,
                 deleted=False,
                 document=document,
+                # A tombstone this revives keeps the revisions it had. The
+                # complication is the same one coming back, and losing its
+                # past to a recovery would be the worst moment to lose it.
+                history=list(existing.history) if existing is not None else [],
             )
             committed.append(self._commit(record))
         return committed
@@ -1322,6 +1487,11 @@ class ComplicationStore:
                         # The two rows must not share one mutable document.
                         document=copy.deepcopy(source_record.document),
                         deleted=False,
+                        # The design moved, so its past moves with it. Copied
+                        # rather than handed over for the same reason the
+                        # document is: the source row still exists as a
+                        # tombstone until it is purged.
+                        history=copy.deepcopy(source_record.history),
                     )
                 )
             )

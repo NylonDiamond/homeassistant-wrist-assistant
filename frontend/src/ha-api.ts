@@ -224,6 +224,69 @@ export async function deleteRecord(
   });
 }
 
+/** One past revision of a complication, as the history list draws it. No
+ * document body: the list only needs enough to tell two entries apart, and
+ * the preview fetches the one entry it is showing. */
+export interface SaveHistoryEntry {
+  /** The revision this entry is a picture of, not the one that replaced it. */
+  revision: number;
+  /** ISO-8601 UTC of when that revision was saved. */
+  savedAt: string;
+  /** Who saved it, in the `ha-panel:Name` shape the record uses. */
+  updatedBy: string;
+  name: string;
+  layers: number;
+  families: string[];
+}
+
+/** Past revisions of one complication, newest first. The revision the record
+ * is on now is not among them: it is the one the editor has open. */
+export async function fetchSaveHistory(hass: HassLike, owner: string, id: string) {
+  return hass.connection.sendMessagePromise<{
+    owner_watch_id: string;
+    complication_id: string;
+    revision: number;
+    entries: SaveHistoryEntry[];
+  }>({ type: `${D}/history`, owner_watch_id: owner, complication_id: id });
+}
+
+/** One past revision's document, for the history dialog's preview. */
+export async function fetchSaveHistoryEntry(
+  hass: HassLike,
+  owner: string,
+  id: string,
+  revision: number,
+) {
+  return hass.connection.sendMessagePromise<{
+    entry: SaveHistoryEntry & { document: Record<string, unknown> };
+  }>({
+    type: `${D}/history_get`,
+    owner_watch_id: owner,
+    complication_id: id,
+    revision,
+  });
+}
+
+/** Put a past revision back, as a new revision of its own. Nothing rewinds,
+ * so undoing a restore is another restore rather than a special case.
+ * `baseRevision` is the revision the editor has open, so someone else saving
+ * first comes back as the usual conflict. */
+export async function restoreSaveHistory(
+  hass: HassLike,
+  owner: string,
+  id: string,
+  revision: number,
+  baseRevision: number | null,
+) {
+  return hass.connection.sendMessagePromise<SaveResult & { restored_revision?: number }>({
+    type: `${D}/history_restore`,
+    owner_watch_id: owner,
+    complication_id: id,
+    revision,
+    base_revision: baseRevision,
+  });
+}
+
 /** Hand every live record of one watch to another watch. Admin only. */
 export async function moveOwner(hass: HassLike, source: string, target: string) {
   return hass.connection.sendMessagePromise<{

@@ -1418,3 +1418,194 @@ def test_async_remove_wipes_the_store_and_its_file(mod):
     assert store.last_sync_at(OWNER) is None
     # Uninstall is clean: a re-added integration comes back with nothing.
     assert _new(mod).owners() == []
+
+
+# ── save history ───────────────────────────────────────────────────────────
+
+
+def test_a_save_files_the_document_it_replaced(mod):
+    store = _new(mod)
+    doc = _doc(name="v1")
+    store.save(OWNER, doc, base_revision=None, updated_by="alice")
+    # A brand-new record has nothing behind it yet.
+    assert store.history(OWNER, doc["id"]) == []
+
+    store.save(OWNER, dict(doc, name="v2"), base_revision=1, updated_by="bob")
+    entries = store.history(OWNER, doc["id"])
+    assert [e.revision for e in entries] == [1]
+    assert entries[0].document["name"] == "v1"
+    assert entries[0].updated_by == "alice"
+    assert entries[0].saved_at != ""
+    # The record itself is on the new revision, which is never in the list.
+    assert store.get(OWNER, doc["id"]).document["name"] == "v2"
+
+
+def test_history_is_newest_first(mod):
+    store = _new(mod)
+    doc = _doc(name="v1")
+    store.save(OWNER, doc, base_revision=None, updated_by="t")
+    for n in range(2, 5):
+        store.save(OWNER, dict(doc, name=f"v{n}"), base_revision=n - 1, updated_by="t")
+    assert [e.revision for e in store.history(OWNER, doc["id"])] == [3, 2, 1]
+    assert [e.document["name"] for e in store.history(OWNER, doc["id"])] == [
+        "v3",
+        "v2",
+        "v1",
+    ]
+
+
+def test_history_keeps_the_last_twenty_and_drops_the_oldest(mod):
+    store = _new(mod)
+    doc = _doc(name="v1")
+    store.save(OWNER, doc, base_revision=None, updated_by="t")
+    limit = mod.COMPLICATION_HISTORY_LIMIT
+    for n in range(2, limit + 5):
+        store.save(OWNER, dict(doc, name=f"v{n}"), base_revision=n - 1, updated_by="t")
+    entries = store.history(OWNER, doc["id"])
+    assert len(entries) == limit
+    # Newest first, and the four oldest revisions have gone.
+    assert entries[0].revision == limit + 3
+    assert entries[-1].revision == 4
+
+
+def test_a_history_summary_carries_no_document(mod):
+    store = _new(mod)
+    doc = _doc(name="Garage")
+    store.save(OWNER, doc, base_revision=None, updated_by="kim")
+    store.save(OWNER, dict(doc, name="Garage 2"), base_revision=1, updated_by="sam")
+    summary = store.history(OWNER, doc["id"])[0].summary()
+    # Who saved revision 1, not who replaced it.
+    assert summary == {
+        "revision": 1,
+        "savedAt": summary["savedAt"],
+        "updatedBy": "kim",
+        "name": "Garage",
+        "layers": 1,
+        "families": ["rectangular", "circular", "corner"],
+    }
+    assert "document" not in summary
+
+
+def test_history_never_reaches_the_sync_shape(mod):
+    """as_dict is what every replica reads; the bodies must not be in it."""
+    store = _new(mod)
+    doc = _doc()
+    store.save(OWNER, doc, base_revision=None, updated_by="t")
+    record = store.save(OWNER, dict(doc, name="v2"), base_revision=1, updated_by="t")
+    assert "history" not in record.as_dict()
+    assert "history" in record.as_storage_dict()
+
+
+def test_history_survives_a_restart(mod):
+    store = _new(mod)
+    doc = _doc(name="v1")
+    store.save(OWNER, doc, base_revision=None, updated_by="t")
+    store.save(OWNER, dict(doc, name="v2"), base_revision=1, updated_by="t")
+
+    reloaded = _new(mod)
+    entries = reloaded.history(OWNER, doc["id"])
+    assert [e.revision for e in entries] == [1]
+    assert entries[0].document["name"] == "v1"
+
+
+def test_a_store_written_before_save_history_loads_clean(mod):
+    store = _new(mod)
+    doc = _doc()
+    store.save(OWNER, doc, base_revision=None, updated_by="t")
+    # What an older integration's file looks like: no history key anywhere.
+    for record in _FakeStore.saved["records"]:
+        record.pop("history", None)
+    assert all("history" not in r for r in _FakeStore.saved["records"])
+
+    reloaded = _new(mod)
+    assert reloaded.history(OWNER, doc["id"]) == []
+    assert reloaded.get(OWNER, doc["id"]).document["name"] == "Garage"
+    # And the next save starts the history off normally.
+    reloaded.save(OWNER, dict(doc, name="v2"), base_revision=1, updated_by="t")
+    assert [e.revision for e in reloaded.history(OWNER, doc["id"])] == [1]
+
+
+def test_junk_history_entries_drop_rather_than_lose_the_record(mod):
+    store = _new(mod)
+    doc = _doc()
+    store.save(OWNER, doc, base_revision=None, updated_by="t")
+    store.save(OWNER, dict(doc, name="v2"), base_revision=1, updated_by="t")
+    for record in _FakeStore.saved["records"]:
+        record["history"] = [
+            "not an entry",
+            {"revision": "one", "document": {}},
+            {"revision": 1, "document": "not a document"},
+            {"revision": 1, "savedAt": "2026-09-16T00:00:00Z", "document": {"name": "v1"}},
+        ]
+
+    reloaded = _new(mod)
+    entries = reloaded.history(OWNER, doc["id"])
+    assert [e.revision for e in entries] == [1]
+    assert reloaded.get(OWNER, doc["id"]).document["name"] == "v2"
+
+
+def test_history_entry_finds_one_revision(mod):
+    store = _new(mod)
+    doc = _doc(name="v1")
+    store.save(OWNER, doc, base_revision=None, updated_by="t")
+    store.save(OWNER, dict(doc, name="v2"), base_revision=1, updated_by="t")
+    store.save(OWNER, dict(doc, name="v3"), base_revision=2, updated_by="t")
+    assert store.history_entry(OWNER, doc["id"], 1).document["name"] == "v1"
+    assert store.history_entry(OWNER, doc["id"], 2).document["name"] == "v2"
+    assert store.history_entry(OWNER, doc["id"], 3) is None
+    assert store.history_entry(OWNER, str(uuid.uuid4()).upper(), 1) is None
+
+
+def test_restoring_an_old_body_writes_a_new_revision(mod):
+    """Nothing rewinds: the restore is a save, so undoing it is another one."""
+    store = _new(mod)
+    doc = _doc(name="v1")
+    store.save(OWNER, doc, base_revision=None, updated_by="t")
+    store.save(OWNER, dict(doc, name="v2"), base_revision=1, updated_by="t")
+
+    old = store.history_entry(OWNER, doc["id"], 1)
+    restored = store.save(
+        OWNER, copy.deepcopy(old.document), base_revision=2, updated_by="t"
+    )
+    assert restored.revision == 3
+    assert restored.document["name"] == "v1"
+    # The revision the restore replaced is now the newest entry, so the
+    # restore itself can be undone the same way.
+    assert [e.revision for e in store.history(OWNER, doc["id"])] == [2, 1]
+    assert store.history_entry(OWNER, doc["id"], 2).document["name"] == "v2"
+
+
+def test_a_tombstone_keeps_its_history_and_a_revive_does_not_add_one(mod):
+    store = _new(mod)
+    doc = _doc(name="v1")
+    store.save(OWNER, doc, base_revision=None, updated_by="t")
+    store.save(OWNER, dict(doc, name="v2"), base_revision=1, updated_by="t")
+    store.delete(OWNER, doc["id"], base_revision=2, updated_by="t")
+    assert [e.revision for e in store.history(OWNER, doc["id"])] == [1]
+
+    # Reviving the id has no document to remember, so nothing is added.
+    store.save(OWNER, dict(doc, name="v4"), base_revision=3, updated_by="t")
+    assert [e.revision for e in store.history(OWNER, doc["id"])] == [1]
+
+
+def test_restore_of_an_empty_owner_keeps_a_tombstones_history(mod):
+    store = _new(mod)
+    doc = _doc(name="v1")
+    store.save(OWNER, doc, base_revision=None, updated_by="t")
+    store.save(OWNER, dict(doc, name="v2"), base_revision=1, updated_by="t")
+    store.delete(OWNER, doc["id"], base_revision=2, updated_by="t")
+
+    store.restore(OWNER, [dict(doc, name="from watch")], updated_by="t")
+    assert [e.revision for e in store.history(OWNER, doc["id"])] == [1]
+
+
+def test_moving_a_watch_takes_the_history_with_it(mod):
+    store = _new(mod)
+    doc = _doc(name="v1")
+    store.save(OWNER, doc, base_revision=None, updated_by="t")
+    store.save(OWNER, dict(doc, name="v2"), base_revision=1, updated_by="t")
+
+    store.move_owner(OWNER, OTHER, updated_by="t")
+    entries = store.history(OTHER, doc["id"])
+    assert [e.revision for e in entries] == [1]
+    assert entries[0].document["name"] == "v1"

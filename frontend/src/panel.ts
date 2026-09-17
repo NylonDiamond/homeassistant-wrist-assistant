@@ -17,6 +17,10 @@ import {
   moveOwner,
   nudgeWatch,
   fetchWatchStatus,
+  type SaveHistoryEntry,
+  fetchSaveHistory,
+  fetchSaveHistoryEntry,
+  restoreSaveHistory,
   fetchHistorySeries,
   collectSeriesResults,
   type HistoryReadings,
@@ -89,7 +93,7 @@ import {
   sharedValueLayerIds,
 } from "./model.js";
 import { SHARED_TEST_PREFIX, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues } from "./test-controls.js";
-import { describeSend, sendState, sendWaitMs } from "./send-state.js";
+import { agoWords, describeSend, sendState, sendWaitMs } from "./send-state.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
 import {
   type EntityState,
@@ -1069,6 +1073,23 @@ export class WristAssistantPanel extends LitElement {
     config: CustomComplicationConfig;
     entities: EntityRef[];
   };
+  /** The History dialog: the open complication's past revisions, the entry
+   * being looked at, and its document once the server has handed it over.
+   * Bodies are fetched one at a time, so the list itself stays small even for
+   * a design with twenty saves behind it. */
+  @state() private historyOpen = false;
+  @state() private historyEntries: SaveHistoryEntry[] = [];
+  /** The revision the list has selected, which is the one drawn. */
+  @state() private historyPick?: number;
+  @state() private historyDoc?: CustomComplicationConfig;
+  @state() private historyBusy = false;
+  @state() private historyNote?: string;
+  /** The Restore button was pressed with unsaved work in the editor, so it is
+   * asking first. A confirm inside the dialog, not a browser prompt. */
+  @state() private historyConfirm = false;
+  /** Counts body fetches, so a slow reply about an entry nobody is looking at
+   * any more is dropped rather than drawn. */
+  private historyRun = 0;
   /** The link the Share dialog last built and the text it holds. A link for
    * different text is not shown. */
   @state() private shareLink?: { text: string; url: string };
@@ -1799,6 +1820,15 @@ export class WristAssistantPanel extends LitElement {
     .gal-status.approved { color: var(--wa-ent); background: var(--wa-ent-bg); }
     .gal-status.pending { color: var(--wa-val); background: var(--wa-val-bg); }
     .gal-status.rejected { color: var(--error-color, #db4437); background: color-mix(in srgb, var(--error-color, #db4437) 12%, transparent); }
+    /* History: one row per earlier save, the picked one lit. A button rather
+       than a div, so the keyboard walks the list the way it walks any list. */
+    .hs-rows { max-height: 260px; overflow: auto; }
+    button.hs-row { font: inherit; color: inherit; text-align: left; width: 100%; box-sizing: border-box; border: 0; background: none; cursor: pointer; align-items: center; }
+    button.hs-row:hover { background: var(--wa-raised); }
+    button.hs-row.on { background: var(--wa-sel-bg); }
+    button.hs-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .hs-rev { display: grid; place-items: center; width: 30px; height: 24px; border-radius: 7px; font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; background: var(--wa-field); color: var(--wa-muted); }
+    button.hs-row.on .hs-rev { background: var(--wa-accent); color: var(--wa-accent-ink); }
     /* Import: one dashed drop area until something is loaded. */
     .xf-drop { display: grid; justify-items: center; gap: 10px; padding: 28px 16px; text-align: center; border: 1.5px dashed var(--wa-line-strong); border-radius: var(--wa-r-lg); transition: border-color .15s ease-out, background-color .15s ease-out; }
     .xf-drop.over { border-color: var(--wa-accent); background: var(--wa-sel-bg); }
@@ -5674,6 +5704,7 @@ export class WristAssistantPanel extends LitElement {
       ["Backup", "The other choice in Share: an exact copy, entity ids and names included. For your records, or another watch in this home."],
       ["Copy link", "A link to this panel with the text inside it. Opening it here fills in the Import dialog. On another home, paste the link into Import."],
       ["Import", "Beside New. Paste text or a link, choose a file, or drop one on the dialog. Check the preview, choose your own entity for each slot, then Import. It opens as unsaved work and reaches the watch at the first Save."],
+      ["History", "In the complication's header, beside Duplicate. The last 20 saves of this complication, newest first, with a picture of the one you pick. Restore writes it back as a new revision, so the design you restored over becomes the newest entry and you can come straight back and undo it."],
     ];
     const rows = (list: [string, string][]) => list.map(([k, what]) => html`<tr><th scope="row"><kbd>${k}</kbd></th><td>${what}</td></tr>`);
     const section = (title: string, list: [string, string][]) => html`<section>
@@ -6343,6 +6374,7 @@ export class WristAssistantPanel extends LitElement {
       ${this.shareOpen ? this.renderShareDialog() : nothing}
       ${this.galleryOpen ? this.renderGalleryDialog() : nothing}
       ${this.importOpen ? this.renderImportDialog() : nothing}
+      ${this.historyOpen ? this.renderHistoryDialog() : nothing}
       ${this.watchSupported
         ? html`<div class="layout cols-${fit.columns}"
               style="--wa-left:${fit.left}px;--wa-right:${fit.right}px">
@@ -8369,6 +8401,194 @@ export class WristAssistantPanel extends LitElement {
     this.importHistoryRun += 1;
   }
 
+  // ── save history ──────────────────────────────────────────────────────
+
+  /**
+   * Earlier saves of the open complication.
+   *
+   * The list is revisions only, with no document bodies: one body arrives at
+   * a time, for the entry being looked at. Restoring writes that body back as
+   * a new revision through the ordinary save path, so nothing is ever lost by
+   * looking, and putting a restore back is one more Restore.
+   */
+  private renderHistoryDialog() {
+    const entries = this.historyEntries;
+    const picked = this.historyPick;
+    const cfg = this.historyDoc;
+    const layouts: ResolvedAll = cfg ? this.configLayouts(cfg, this.historyEntities(cfg)) : {};
+    const family = cfg ? this.dialogFamily(cfg) : undefined;
+    const dirty = this.draft?.dirty === true;
+    const name = this.draft?.config.name.trim() || "Untitled";
+    return html`<dialog class="history-dialog xf" @close=${() => this.historyClosed()}>
+      ${this.dialogHead(`History of “${name}”`,
+        this.draft?.baseRevision === null || this.draft?.baseRevision === undefined
+          ? ""
+          : `Revision ${this.draft.baseRevision} is open`,
+        () => this.closeHistoryDialog())}
+      <div class="xfer-body">
+        ${this.historyNote === undefined ? nothing : html`<div class="hint err" role="alert">${this.historyNote}</div>`}
+        ${entries.length === 0
+          ? html`<div class="xf-lead">${uiIcon("info")}<span>No earlier saves yet. Every save from now on leaves the revision it replaced here.</span></div>`
+          : html`
+            <div class="xf-hero">
+              ${cfg
+                ? this.dialogPreview(layouts, family, [],
+                    picked === undefined ? "" : `Revision ${picked}`, "")
+                : html`<div class="xf-prev-wrap"><div class="xf-prev"></div>
+                    <div class="xf-prev-cap"><span>${this.historyBusy ? "Loading" : "Pick a revision"}</span></div></div>`}
+              <div class="xf-stack">
+                <span class="xf-label">Earlier saves<span class="r">${entries.length}</span></span>
+                <div class="xf-sub">Restoring writes the old design back as a new revision. Nothing is thrown away, so you can come straight back here and undo it.</div>
+              </div>
+            </div>
+            <div class="xf-rows hs-rows">
+              ${entries.map((entry) => this.renderHistoryRow(entry))}
+            </div>`}
+      </div>
+      <div class="xfer-foot">
+        ${this.historyConfirm
+          ? html`<span class="xf-sub">Your unsaved changes to this complication go.</span>
+            <span class="spacer"></span>
+            <button class="small" @click=${() => { this.historyConfirm = false; }}>Cancel</button>
+            <button class="primary" @click=${() => void this.restoreHistory()}>Discard and restore</button>`
+          : html`<span class="spacer"></span>
+            <button class="small" @click=${() => this.closeHistoryDialog()}>Close</button>
+            <button class="primary" ?disabled=${picked === undefined || this.historyBusy || !this.canEdit}
+              title=${picked === undefined ? "Pick a revision first" : `Put revision ${picked} back as a new revision`}
+              @click=${() => { if (dirty) this.historyConfirm = true; else void this.restoreHistory(); }}>Restore</button>`}
+      </div>
+    </dialog>`;
+  }
+
+  /** One past revision: what it was called, how long ago and who saved it. */
+  private renderHistoryRow(entry: SaveHistoryEntry) {
+    const on = this.historyPick === entry.revision;
+    const shapes = entry.families.filter((f) => f !== "inline").length;
+    const parts = [
+      `${entry.layers} ${entry.layers === 1 ? "layer" : "layers"}`,
+      shapes > 0 ? `${shapes} ${shapes === 1 ? "shape" : "shapes"}` : "",
+      savedByWords(entry.updatedBy),
+    ].filter((part) => part !== "");
+    return html`<button class="xf-row hs-row ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+      @click=${() => void this.pickHistory(entry.revision)}>
+      <span class="hs-rev">${entry.revision}</span>
+      <span class="xf-main">
+        <span class="xf-name">${entry.name || "Untitled"}</span>
+        <span class="xf-sub">${savedAgoWords(entry.savedAt)} · ${parts.join(" · ")}</span>
+      </span>
+    </button>`;
+  }
+
+  /** The entities a history document reads, so its preview draws live states.
+   * A document that will not compile draws with none rather than refusing. */
+  private historyEntities(cfg: CustomComplicationConfig): EntityRef[] {
+    try {
+      return [...compile(cfg).entities.values()];
+    } catch {
+      return [];
+    }
+  }
+
+  private async openHistoryDialog() {
+    const id = this.selectedId;
+    if (!this.ownerId || !id || this.draft?.baseRevision === null) return;
+    this.historyOpen = true;
+    this.historyEntries = [];
+    this.historyPick = undefined;
+    this.historyDoc = undefined;
+    this.historyNote = undefined;
+    this.historyConfirm = false;
+    this.historyBusy = true;
+    void this.updateComplete.then(() => {
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.history-dialog");
+      if (dialog && !dialog.open) dialog.showModal();
+    });
+    try {
+      const reply = await fetchSaveHistory(this.hass, this.ownerId, id);
+      // The dialog may have been shut, or another complication opened, while
+      // the reply was on its way.
+      if (!this.historyOpen || this.selectedId !== id) return;
+      this.historyEntries = reply.entries;
+      this.historyBusy = false;
+      // The newest entry is what anyone came here for, so it is drawn first.
+      const newest = reply.entries[0];
+      if (newest !== undefined) await this.pickHistory(newest.revision);
+    } catch (err) {
+      this.historyBusy = false;
+      this.historyNote = errText(err);
+    }
+  }
+
+  /** Draw one entry: its body is fetched the first time it is picked. */
+  private async pickHistory(revision: number) {
+    const id = this.selectedId;
+    if (!this.ownerId || !id) return;
+    this.historyPick = revision;
+    this.historyDoc = undefined;
+    this.historyNote = undefined;
+    this.historyBusy = true;
+    const run = ++this.historyRun;
+    try {
+      const reply = await fetchSaveHistoryEntry(this.hass, this.ownerId, id, revision);
+      if (run !== this.historyRun || !this.historyOpen) return;
+      this.historyDoc = parseConfig(reply.entry.document);
+    } catch (err) {
+      if (run !== this.historyRun) return;
+      this.historyNote = errText(err);
+    } finally {
+      if (run === this.historyRun) this.historyBusy = false;
+    }
+  }
+
+  /** Put the picked revision back, then open what came back in the editor. */
+  private async restoreHistory() {
+    const id = this.selectedId;
+    const revision = this.historyPick;
+    if (!this.ownerId || !id || revision === undefined || !this.canEdit) return;
+    this.historyConfirm = false;
+    this.historyBusy = true;
+    this.historyNote = undefined;
+    try {
+      const result = await restoreSaveHistory(this.hass, this.ownerId, id, revision,
+        this.draft?.baseRevision ?? null);
+      if (!result.ok || !result.record) {
+        if (result.error === "conflict") {
+          // The panel already has a screen for this; it is the same conflict
+          // a save meets, so it is answered in the same place.
+          this.conflict = { current: result.current ?? null, message: result.message ?? "Someone else saved this complication first." };
+          this.closeHistoryDialog();
+          return;
+        }
+        this.historyNote = result.message ?? result.error ?? "Restore failed";
+        return;
+      }
+      this.closeHistoryDialog();
+      this.conflict = undefined;
+      this.remoteRevision = undefined;
+      this.openRecord(result.record);
+      this.beginSendWait();
+      await this.loadRecords();
+    } catch (err) {
+      this.historyNote = errText(err);
+    } finally {
+      this.historyBusy = false;
+    }
+  }
+
+  private closeHistoryDialog() {
+    const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.history-dialog");
+    if (dialog?.open) dialog.close();
+    else this.historyClosed();
+  }
+
+  /** However the dialog shut, a body fetch still on its way has nowhere to go. */
+  private historyClosed() {
+    this.historyOpen = false;
+    this.historyConfirm = false;
+    this.historyBusy = false;
+    this.historyRun += 1;
+  }
+
   private renderBanners() {
     const out: TemplateResult[] = [];
     const orphan = this.renderOrphanBanner();
@@ -9898,6 +10118,9 @@ export class WristAssistantPanel extends LitElement {
       <span class="comp-acts">
         <button class="ghost" @click=${() => this.openRaw()}>Raw JSON</button>
         ${this.canEdit ? html`
+          ${this.draft?.baseRevision === null ? nothing : html`
+            <button class="ghost" aria-haspopup="dialog" aria-expanded=${this.historyOpen ? "true" : "false"}
+              title="Earlier saves of this complication" @click=${() => void this.openHistoryDialog()}>History</button>`}
           <button class="ghost" @click=${() => this.duplicate()}>Duplicate</button>
           ${this.confirmDelete
             ? html`<button class="ghost danger" @click=${() => void this.deleteCurrent()}>Really delete</button><button class="ghost" @click=${() => { this.confirmDelete = false; }}>Cancel</button>`
@@ -10092,6 +10315,23 @@ export class WristAssistantPanel extends LitElement {
 
 function errText(err: unknown): string {
   return String((err as { message?: string })?.message ?? err);
+}
+
+/** How long ago a history entry was saved, from its ISO stamp. A stamp that
+ * will not parse reads as "saved", since a date nobody can read is worse than
+ * no date at all. */
+function savedAgoWords(savedAt: string): string {
+  const at = Date.parse(savedAt);
+  if (Number.isNaN(at)) return "Saved";
+  return `Saved ${agoWords(Math.max(0, (Date.now() - at) / 1000))}`;
+}
+
+/** Who saved a revision. The store writes `ha-panel:Name`; the prefix is
+ * plumbing, so only the name is shown, and an entry with no name at all says
+ * nothing rather than "by". */
+function savedByWords(updatedBy: string): string {
+  const who = updatedBy.startsWith("ha-panel:") ? updatedBy.slice("ha-panel:".length) : updatedBy;
+  return who.trim() === "" ? "" : `by ${who.trim()}`;
 }
 
 /** Watch name plus the iPhone it is paired to, which is what tells two

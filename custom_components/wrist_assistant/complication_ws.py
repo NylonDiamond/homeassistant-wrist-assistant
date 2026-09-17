@@ -17,6 +17,12 @@ Commands:
     wrist_assistant/complications/save        {owner_watch_id, document, base_revision?}
     wrist_assistant/complications/delete      {owner_watch_id, id, base_revision?}
     wrist_assistant/complications/subscribe   {owner_watch_id?}
+    wrist_assistant/complications/history     {owner_watch_id, complication_id}
+    wrist_assistant/complications/history_get {owner_watch_id, complication_id,
+                                               revision}
+    wrist_assistant/complications/history_restore
+                                              {owner_watch_id, complication_id,
+                                               revision, base_revision?}
     wrist_assistant/complications/move_owner  {source_owner_watch_id,
                                                target_owner_watch_id}
     wrist_assistant/complications/watch_status {owner_watch_id}
@@ -44,6 +50,13 @@ revision it loaded. A mismatch returns error code ``conflict`` with the
 current record so the panel can offer reload / save-as-copy / discard. There
 is deliberately no force flag; last-write-wins is not a path that exists.
 
+The three ``history`` commands are the panel's save history: the list carries
+no document bodies, ``history_get`` fetches one for the preview, and
+``history_restore`` writes an old body back through ``save`` as a new
+revision, so putting a restore back is itself one more entry rather than a
+special case. Not to be confused with ``history_series``, which is recorder
+data for a chart.
+
 ``devices/forget`` is the odd one out: it is not a complication command at
 all, it drops a provisioned device from the widget secret store. It lives
 here because ``owners`` is what surfaces that store to a human, so the list
@@ -57,6 +70,7 @@ what lets someone delete this home's gallery uploads.
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 from typing import Any
 
 import voluptuous as vol
@@ -113,6 +127,11 @@ _CMD_DELETE = f"{DOMAIN}/complications/delete"
 _CMD_SUBSCRIBE = f"{DOMAIN}/complications/subscribe"
 _CMD_MOVE_OWNER = f"{DOMAIN}/complications/move_owner"
 _CMD_RENDER = f"{DOMAIN}/complications/render_values"
+# The save history of one record. Named apart from `_CMD_HISTORY` below, which
+# is recorder data for a chart and has nothing to do with past revisions.
+_CMD_SAVE_HISTORY = f"{DOMAIN}/complications/history"
+_CMD_SAVE_HISTORY_GET = f"{DOMAIN}/complications/history_get"
+_CMD_SAVE_HISTORY_RESTORE = f"{DOMAIN}/complications/history_restore"
 _CMD_HISTORY = f"{DOMAIN}/complications/history_series"
 _CMD_STATISTICS = f"{DOMAIN}/complications/statistics_series"
 _CMD_LIST_ITEMS = f"{DOMAIN}/complications/list_items"
@@ -183,6 +202,9 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_save)
     websocket_api.async_register_command(hass, ws_delete)
     websocket_api.async_register_command(hass, ws_subscribe)
+    websocket_api.async_register_command(hass, ws_save_history)
+    websocket_api.async_register_command(hass, ws_save_history_get)
+    websocket_api.async_register_command(hass, ws_save_history_restore)
     websocket_api.async_register_command(hass, ws_move_owner)
     websocket_api.async_register_command(hass, ws_render_values)
     websocket_api.async_register_command(hass, ws_history_series)
@@ -560,6 +582,138 @@ def ws_delete(
         _send_store_error(connection, msg["id"], err)
         return
     connection.send_result(msg["id"], {"ok": True, "record": record.as_dict()})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_SAVE_HISTORY,
+        vol.Required("owner_watch_id"): str,
+        vol.Required("complication_id"): str,
+    }
+)
+@callback
+def ws_save_history(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Past revisions of one record, newest first, with no document bodies.
+
+    The bodies are what makes a history expensive to send, and the list only
+    needs enough to tell two entries apart. The preview fetches one at a time
+    through ``history_get``.
+    """
+    store = _store(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    owner = msg["owner_watch_id"]
+    record_id = msg["complication_id"].upper()
+    record = store.get(owner, record_id)
+    if record is None:
+        connection.send_error(msg["id"], "not_found", "no such complication")
+        return
+    connection.send_result(
+        msg["id"],
+        {
+            "owner_watch_id": owner,
+            "complication_id": record_id,
+            # The revision the record is on now. It is not in `entries`: it is
+            # what the editor already has open.
+            "revision": record.revision,
+            "entries": [entry.summary() for entry in store.history(owner, record_id)],
+        },
+    )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_SAVE_HISTORY_GET,
+        vol.Required("owner_watch_id"): str,
+        vol.Required("complication_id"): str,
+        vol.Required("revision"): int,
+    }
+)
+@callback
+def ws_save_history_get(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """One past revision's document, for the history dialog's preview."""
+    store = _store(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    entry = store.history_entry(
+        msg["owner_watch_id"], msg["complication_id"].upper(), msg["revision"]
+    )
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "no such revision")
+        return
+    connection.send_result(
+        msg["id"], {"entry": {**entry.summary(), "document": entry.document}}
+    )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_SAVE_HISTORY_RESTORE,
+        vol.Required("owner_watch_id"): str,
+        vol.Required("complication_id"): str,
+        vol.Required("revision"): int,
+        vol.Optional("base_revision"): vol.Any(int, None),
+    }
+)
+@callback
+def ws_save_history_restore(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Put a past revision back, as a new one.
+
+    Nothing rewinds: the old body is saved through the ordinary ``save`` path
+    on top of the record's current revision, so the restore is a revision of
+    its own and the revision it replaced becomes the newest history entry.
+    Undoing a restore is then just another restore.
+
+    ``base_revision`` is optional and defaults to whatever the record is on.
+    A panel that sends the revision it has open gets the usual conflict reply
+    when someone else saved first.
+    """
+    store = _store(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    owner = msg["owner_watch_id"]
+    record_id = msg["complication_id"].upper()
+    current = store.get(owner, record_id)
+    if current is None:
+        connection.send_error(msg["id"], "not_found", "no such complication")
+        return
+    entry = store.history_entry(owner, record_id, msg["revision"])
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "no such revision")
+        return
+    base_revision = msg.get("base_revision")
+    if base_revision is None:
+        base_revision = current.revision
+    user = connection.user
+    updated_by = f"ha-panel:{user.name or user.id}" if user else "ha-panel"
+    try:
+        record = store.save(
+            owner,
+            # The stored entry must survive a save that mutates what it is
+            # handed, so the restore works on a copy of it.
+            deepcopy(entry.document),
+            base_revision=base_revision,
+            updated_by=updated_by,
+        )
+    except ComplicationStoreError as err:
+        _send_store_error(connection, msg["id"], err)
+        return
+    connection.send_result(
+        msg["id"],
+        {"ok": True, "record": record.as_dict(), "restored_revision": entry.revision},
+    )
 
 
 @websocket_api.require_admin

@@ -185,6 +185,9 @@ def _loaded_modules():
         # The gallery key is fetched only by the share-to-gallery command,
         # which no test here calls.
         _stub(f"{_PKG}.gallery_key_store", gallery_key_store=None)
+        # Only `ws_render_values` reaches for this, and the real one pulls in
+        # the whole bundle path; the name is what the import needs.
+        _stub(f"{_PKG}.bundle_ops", template_text=str)
 
         store_mod = _load("complication_store")
         secrets_mod = _load("widget_secret_store")
@@ -559,3 +562,155 @@ def test_nudge_on_a_watch_owner_pushes_nothing(env) -> None:
     assert reply["push_available"] is False
     assert env.push.pushed == []
     assert env.coordinator.woken == [("watch-A", True)]
+
+
+# ── save history ─────────────────────────────────────────────────────────
+
+
+def _error(env, command, **msg) -> tuple[int, str, str]:
+    """Call a command that is expected to refuse, and hand back the error."""
+    connection = _Connection()
+    msg.setdefault("id", 1)
+    command(env.hass, connection, msg)
+    assert connection.results == {}, connection.results
+    assert len(connection.errors) == 1, connection.errors
+    return connection.errors[0]
+
+
+def test_history_lists_past_revisions_newest_first_without_bodies(env) -> None:
+    env.add_watch("watch-A", device_name="Apple Watch")
+    document = env.save_document("watch-A")
+    env.store.save("watch-A", dict(document, name="v2"), base_revision=1, updated_by="t")
+    env.store.save("watch-A", dict(document, name="v3"), base_revision=2, updated_by="t")
+
+    reply = env.call(
+        env.ws.ws_save_history,
+        owner_watch_id="watch-A",
+        complication_id=document["id"],
+    )
+    assert reply["owner_watch_id"] == "watch-A"
+    assert reply["complication_id"] == document["id"]
+    # The revision the record is on now; it is deliberately not an entry.
+    assert reply["revision"] == 3
+    assert [e["revision"] for e in reply["entries"]] == [2, 1]
+    assert [e["name"] for e in reply["entries"]] == ["v2", "Garage"]
+    assert all("document" not in entry for entry in reply["entries"])
+
+
+def test_history_of_a_record_that_was_never_resaved_is_empty(env) -> None:
+    env.add_watch("watch-A", device_name="Apple Watch")
+    document = env.save_document("watch-A")
+    reply = env.call(
+        env.ws.ws_save_history,
+        owner_watch_id="watch-A",
+        complication_id=document["id"],
+    )
+    assert reply["entries"] == []
+    assert reply["revision"] == 1
+
+
+def test_history_of_an_unknown_record_is_not_found(env) -> None:
+    env.add_watch("watch-A", device_name="Apple Watch")
+    _id, code, _message = _error(
+        env,
+        env.ws.ws_save_history,
+        owner_watch_id="watch-A",
+        complication_id=str(uuid.uuid4()).upper(),
+    )
+    assert code == "not_found"
+
+
+def test_history_get_returns_one_body(env) -> None:
+    env.add_watch("watch-A", device_name="Apple Watch")
+    document = env.save_document("watch-A")
+    env.store.save("watch-A", dict(document, name="v2"), base_revision=1, updated_by="t")
+
+    reply = env.call(
+        env.ws.ws_save_history_get,
+        owner_watch_id="watch-A",
+        complication_id=document["id"],
+        revision=1,
+    )
+    assert reply["entry"]["revision"] == 1
+    assert reply["entry"]["document"]["name"] == "Garage"
+
+    _id, code, _message = _error(
+        env,
+        env.ws.ws_save_history_get,
+        owner_watch_id="watch-A",
+        complication_id=document["id"],
+        revision=9,
+    )
+    assert code == "not_found"
+
+
+def test_history_restore_writes_the_old_body_as_a_new_revision(env) -> None:
+    """Undoing a restore is another restore, not a special path."""
+    env.add_watch("watch-A", device_name="Apple Watch")
+    document = env.save_document("watch-A")
+    env.store.save("watch-A", dict(document, name="v2"), base_revision=1, updated_by="t")
+
+    reply = env.call(
+        env.ws.ws_save_history_restore,
+        owner_watch_id="watch-A",
+        complication_id=document["id"],
+        revision=1,
+    )
+    assert reply["ok"] is True
+    assert reply["restored_revision"] == 1
+    assert reply["record"]["revision"] == 3
+    assert reply["record"]["document"]["name"] == "Garage"
+    # The reply is the sync shape, so no history rides along with it.
+    assert "history" not in reply["record"]
+    # And the revision it replaced is now the newest entry.
+    listed = env.call(
+        env.ws.ws_save_history,
+        owner_watch_id="watch-A",
+        complication_id=document["id"],
+    )
+    assert [e["revision"] for e in listed["entries"]] == [2, 1]
+
+
+def test_history_restore_leaves_the_stored_entry_alone(env) -> None:
+    env.add_watch("watch-A", device_name="Apple Watch")
+    document = env.save_document("watch-A")
+    env.store.save("watch-A", dict(document, name="v2"), base_revision=1, updated_by="t")
+
+    env.call(
+        env.ws.ws_save_history_restore,
+        owner_watch_id="watch-A",
+        complication_id=document["id"],
+        revision=1,
+    )
+    entry = env.store.history_entry("watch-A", document["id"], 1)
+    assert entry.document["name"] == "Garage"
+
+
+def test_history_restore_with_a_stale_base_revision_conflicts(env) -> None:
+    env.add_watch("watch-A", device_name="Apple Watch")
+    document = env.save_document("watch-A")
+    env.store.save("watch-A", dict(document, name="v2"), base_revision=1, updated_by="t")
+
+    reply = env.call(
+        env.ws.ws_save_history_restore,
+        owner_watch_id="watch-A",
+        complication_id=document["id"],
+        revision=1,
+        base_revision=1,
+    )
+    assert reply["ok"] is False
+    assert reply["error"] == "conflict"
+    assert reply["current"]["revision"] == 2
+
+
+def test_history_restore_of_an_unknown_revision_is_not_found(env) -> None:
+    env.add_watch("watch-A", device_name="Apple Watch")
+    document = env.save_document("watch-A")
+    _id, code, _message = _error(
+        env,
+        env.ws.ws_save_history_restore,
+        owner_watch_id="watch-A",
+        complication_id=document["id"],
+        revision=1,
+    )
+    assert code == "not_found"
