@@ -55,6 +55,8 @@ import {
   type StyleProperty,
   type RefreshAllAction,
   type TapAction,
+  type TapChoice,
+  type RefreshAction,
   type TapElement,
   type TextArc,
   type TextElement,
@@ -135,8 +137,10 @@ import {
   STYLE_PROPERTY,
   TAP_ACTION_LABELS,
   tapActionLabel,
+  tapChoiceOf,
   describeTapAction,
   refreshTargetsWith,
+  refreshLayersWith,
   serviceDataIsValid,
   tapActionNote,
   tapNeedsEntity,
@@ -3664,7 +3668,7 @@ const TAP_TYPES = TAP_ACTION_LABELS;
 /** A tap layer offers everything but "Nothing": a layer that does nothing would
  * just let the tap fall through to the whole-complication action, which is what
  * deleting the layer does. */
-const LAYER_TAP_TYPES: [TapAction["type"], string][] = TAP_TYPES.filter(([t]) => t !== "none");
+const LAYER_TAP_TYPES: [TapChoice, string][] = TAP_TYPES.filter(([t]) => t !== "none");
 
 /** The whole complication does not offer "Nothing" either, for a different
  * reason: the watch cannot deliver it. A widget with no button and no
@@ -3674,14 +3678,15 @@ const LAYER_TAP_TYPES: [TapAction["type"], string][] = TAP_TYPES.filter(([t]) =>
  * skipping that action's timeline reload, which is not worth a choice of its
  * own. A document that already stores it keeps it (`generalEditor` puts it back
  * in the list), because opening the editor must never change a setting. */
-const DOC_TAP_TYPES: [TapAction["type"], string][] = LAYER_TAP_TYPES;
+const DOC_TAP_TYPES: [TapChoice, string][] = LAYER_TAP_TYPES;
 
 /** The document's tap choices, with whatever it already stores kept selectable.
  * Same rule the Refresh row follows: a value the list no longer offers stays in
  * it, so opening the editor never silently changes what the watch is doing. */
-function tapTypesFor(tap: TapAction): [TapAction["type"], string][] {
-  if (DOC_TAP_TYPES.some(([t]) => t === tap.type)) return DOC_TAP_TYPES;
-  return [...DOC_TAP_TYPES, [tap.type, tapActionLabel(tap)]];
+function tapTypesFor(tap: TapAction): [TapChoice, string][] {
+  const choice = tapChoiceOf(tap);
+  if (DOC_TAP_TYPES.some(([t]) => t === choice)) return DOC_TAP_TYPES;
+  return [...DOC_TAP_TYPES, [choice, tapActionLabel(tap)]];
 }
 
 /** The entity a tap action is aimed at, wherever it keeps it: spread flat on an
@@ -3702,8 +3707,21 @@ function tapTarget(action: TapAction): EntityRef | undefined {
  * hold their own copies of this and of the "does this type need an entity"
  * predicate.
  */
-export function tapActionForType(type: TapAction["type"], current: TapAction): TapAction {
+export function tapActionForType(type: TapChoice, current: TapAction): TapAction {
   const ref = tapTarget(current) ?? { entityId: "", displayName: "", domain: "" };
+  if (type === "refresh") {
+    // Leaving the scoped row drops the layer list rather than keeping it out of
+    // sight: the two rows differ by that key alone, so a hidden list would make
+    // the plain refresh save a shape the picker reads back as the other row.
+    return { type: "refresh" };
+  }
+  if (type === "refreshLayers") {
+    // The picks are the author's work, not a side effect of the type, so
+    // switching away and back inside the picker keeps them. Nothing picked is
+    // an empty list, which is what holds the picker on this row.
+    const keep = current.type === "refresh" ? current.layerIds : undefined;
+    return { type: "refresh", layerIds: keep === undefined ? [] : [...keep] };
+  }
   if (type === "callService") {
     const out: CallServiceAction = current.type === "callService"
       ? { ...current }
@@ -3721,7 +3739,8 @@ export function tapActionForType(type: TapAction["type"], current: TapAction): T
     return out;
   }
   if (tapNeedsEntity(type)) return { type: type as "toggleEntity", ...ref };
-  return { type: type as "refresh" };
+  // Everything left carries nothing at all.
+  return { type: type as "openApp" };
 }
 
 /** The line under a tap picker for an action that needs one, or nothing. Every
@@ -3779,6 +3798,65 @@ function refreshTargetsField(
       ? html`<div class="hint keep">No other complications on this watch yet.</div>`
       : nothing}
     <div class="hint keep">This complication always refreshes itself, so its box stays on.</div>`;
+}
+
+/**
+ * Whether a layer costs a fetch of its own, which is the only kind worth
+ * offering in the scoped-refresh picker.
+ *
+ * A picture is one signed request per layer, a chart and a timeline one recorder
+ * query each, and a calendar, to-do or forecast list one service call. Text,
+ * icons, gauges, shapes and the chart extras all ride on the single rendered
+ * document the refresh fetches anyway, so ticking one of those would save
+ * nothing and only make the list longer. An uploaded picture carries its own
+ * bytes and fetches nothing at all.
+ */
+function layerCostsAFetch(el: CElement): boolean {
+  if (el.kind === "image") return el.payload.source !== "inline";
+  if (el.kind === "chart" || el.kind === "timeline") return true;
+  if (el.kind === "list") {
+    const kind = el.payload.source.kind;
+    return kind === "calendar" || kind === "todo" || kind === "forecast";
+  }
+  return false;
+}
+
+/**
+ * Which layers a "Refresh parts of this complication" tap fetches.
+ *
+ * Only the layers that cost a fetch are listed, because those are the only ones
+ * narrowing can help: ten cameras cannot all come back inside one tap's budget,
+ * and a face that draws ten and cares about one has to be able to say so.
+ *
+ * Nothing ticked still refreshes the whole complication rather than nothing, so
+ * the empty state is safe rather than broken, and the note under the picker says
+ * so. A ticked id the document no longer has stays in the list under a plain
+ * name so it can be unticked; dropping it silently would edit the author's
+ * choice on their behalf.
+ */
+function refreshLayersField(
+  host: EditorHost,
+  action: RefreshAction,
+  set: (next: RefreshAction) => void,
+): TemplateResult {
+  const picked = action.layerIds ?? [];
+  const ctx = describeContext(host);
+  const fetches = host.config.elements
+    .filter(layerCostsAFetch)
+    .map((el) => ({ id: el.payload.id, label: `${layerTitle(el, ctx)} (${KIND_LABEL[el.kind]})` }));
+  const missing = picked.filter((id) => !fetches.some((f) => f.id === id));
+
+  const pick = (id: string, on: boolean) => set(refreshLayersWith(action, id, on));
+  if (fetches.length === 0 && missing.length === 0) {
+    return html`<div class="hint keep">No layer on this complication fetches anything of its own,
+      so there is nothing to narrow. Pictures, charts, timelines and calendar or to-do lists are
+      the ones that cost a request each.</div>`;
+  }
+  return html`
+    ${fetches.map((f) => checkField(f.label, picked.includes(f.id), (on) => pick(f.id, on)))}
+    ${missing.map((id) => checkField("Deleted layer", true, (on) => pick(id, on)))}
+    <div class="hint keep">Only the layers that fetch something of their own are listed. Text,
+      icons and gauges all arrive in one request, so narrowing them saves nothing.</div>`;
 }
 
 /** Domain, service and data for the common calls, so the usual ones are one
@@ -3905,7 +3983,7 @@ export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean } = {
     <div class="gen-row">
       ${textField("Name", cfg.name, (v) => host.update((c) => { c.name = v; }, "name"))}
       ${selectField("Refresh", String(refresh), refreshOptions, (v) => host.update((c) => { c.refreshMinutes = Number(v) || 0; }, "refresh"))}
-      ${selectField("Tap action", tap.type, tapTypesFor(tap), (v) => host.update((c) => {
+      ${selectField("Tap action", tapChoiceOf(tap), tapTypesFor(tap), (v) => host.update((c) => {
         c.tapAction = tapActionForType(v, c.tapAction);
         // Mirrors the iPhone preset editor: the chosen page belongs to the
         // openPage type; leaving it clears the choice.
@@ -3926,6 +4004,9 @@ export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean } = {
     ${tapNote(tap, usesPages(cfg))}
     ${tap.type === "refreshAll"
       ? refreshTargetsField(host, tap, (next) => host.update((c) => { c.tapAction = next; }))
+      : nothing}
+    ${tap.type === "refresh" && tap.layerIds !== undefined
+      ? refreshLayersField(host, tap, (next) => host.update((c) => { c.tapAction = next; }))
       : nothing}
     ${"entityId" in tap ? entityField(host, "Target", tap, (ref) => host.update((c) => { c.tapAction = { type: tap.type, ...ref }; }, "tap-entity"), "general-tap") : nothing}
     ${tap.type === "callService"
@@ -4064,7 +4145,7 @@ const CONTROL_KINDS: [ControlKind, string][] = [["toggle", "Toggle"], ["button",
 
 /** The actions a control may run, in the order and under the names every
  * other tap picker uses. */
-const CONTROL_TAP_TYPES: [TapAction["type"], string][] =
+const CONTROL_TAP_TYPES: [TapChoice, string][] =
   TAP_ACTION_LABELS.filter(([t]) => CONTROL_ACTION_TYPES.includes(t));
 
 /** The height of the mock tile in the card, in CSS pixels. Every shape a
@@ -7660,18 +7741,21 @@ export function tapActionEditor(
   tap: TapActionHolder,
   upd: (mutate: (p: TapActionHolder) => void, k?: string) => void,
   key: string,
-  types: [TapAction["type"], string][] = LAYER_TAP_TYPES,
+  types: [TapChoice, string][] = LAYER_TAP_TYPES,
   label = "Tap action",
 ): TemplateResult {
   const action = tap.action;
   return html`
-    ${selectField(label, action.type, types, (v) => upd((p) => {
+    ${selectField(label, tapChoiceOf(action), types, (v) => upd((p) => {
       p.action = tapActionForType(v, p.action);
       if (v !== "openPage") { delete p.openPageId; delete p.openPageName; }
     }))}
     ${tapNote(action, usesPages(host.config))}
     ${action.type === "refreshAll"
       ? refreshTargetsField(host, action, (next) => upd((p) => { p.action = next; }))
+      : nothing}
+    ${action.type === "refresh" && action.layerIds !== undefined
+      ? refreshLayersField(host, action, (next) => upd((p) => { p.action = next; }))
       : nothing}
     ${"entityId" in action ? html`
       ${entityField(host, "Target", action, (ref) => upd((p) => { p.action = { type: action.type, ...ref }; }, "tap-entity"), `${key}-tap`)}

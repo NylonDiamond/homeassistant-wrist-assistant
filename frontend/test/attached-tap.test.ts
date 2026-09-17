@@ -686,9 +686,13 @@ describe("call a service", () => {
 });
 
 describe("refresh complications", () => {
-  it("sits right after the plain refresh in every picker", () => {
+  it("heads every picker as three rows, widest last", () => {
+    // This complication, parts of it, then other complications. The order is
+    // how much each one reaches, so the list reads as one sentence.
     const types = TAP_ACTION_LABELS.map(([t]) => t);
-    expect(types.indexOf("refreshAll")).toBe(types.indexOf("refresh") + 1);
+    expect(types.slice(0, 3)).toEqual(["refresh", "refreshLayers", "refreshAll"]);
+    expect(TAP_ACTION_LABELS.find(([t]) => t === "refresh")?.[1]).toBe("Refresh this complication");
+    expect(TAP_ACTION_LABELS.find(([t]) => t === "refreshLayers")?.[1]).toBe("Refresh parts of this complication");
     expect(TAP_ACTION_LABELS.find(([t]) => t === "refreshAll")?.[1]).toBe("Refresh multiple complications");
   });
 

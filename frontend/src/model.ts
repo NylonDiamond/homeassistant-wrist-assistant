@@ -3098,12 +3098,37 @@ export interface RefreshAllAction {
   allPlaced?: boolean;
 }
 
+/**
+ * The tap that refreshes the complication it sits on.
+ *
+ * `layerIds` is how much of it. Absent is the whole document, every layer and
+ * every page, which is what this tap has always done. A list is the "Refresh
+ * parts of this complication" tap: ten cameras cannot all come back inside one
+ * tap's budget, so a face that draws ten and cares about one has to say so.
+ *
+ * An empty list is kept apart from an absent one on purpose. It is how the
+ * editor says "scoped, but nothing ticked yet", and it must survive a save or
+ * the picker would jump back to a plain refresh the next time the document is
+ * opened. Both mean the whole document to the watch: a tap that fetches
+ * nothing is a tap that looks broken.
+ *
+ * An older watch app ignores the key and refreshes everything. That is why this
+ * is a key on `refresh` rather than a tap type of its own, which such a watch
+ * would read as an unknown type and treat as a dead tap.
+ */
+export interface RefreshAction {
+  type: "refresh";
+  /** Layer ids, as the panel writes them. Absent on a plain refresh. */
+  layerIds?: string[];
+}
+
 export type TapAction =
   // `nextPage` moves this complication on one page, `previousPage` back one,
   // and `playTour` plays every page once and comes back to page 1. None of
   // them carries anything: the page belongs to the placed slot rather than to
   // the document, so the watch reads it at tap time. See `PagesSpec`.
-  | { type: "none" | "refresh" | "openApp" | "openPage" | "openRoomPage" | "timerStartPause" | "timerCancel" | "nextPage" | "previousPage" | "playTour" }
+  | { type: "none" | "openApp" | "openPage" | "openRoomPage" | "timerStartPause" | "timerCancel" | "nextPage" | "previousPage" | "playTour" }
+  | RefreshAction
   | RefreshAllAction
   | ({ type: "toggleEntity" | "runScene" | "runScript" | "addTodo" | "runHTTPAction" } & EntityRef)
   | CallServiceAction;
@@ -3133,12 +3158,31 @@ export function serviceDataIsValid(json: string | undefined): boolean {
   }
 }
 
+/**
+ * What a tap picker offers, which is one row more than the wire has types.
+ *
+ * "Refresh parts of this complication" is not a type of its own: it is a
+ * `refresh` carrying a layer list. The picker still needs a row for it, because
+ * the author picks the shape of the tap before picking the layers, so the list
+ * of rows is keyed by this rather than by `TapAction["type"]`.
+ */
+export type TapChoice = TapAction["type"] | "refreshLayers";
+
+/** The picker row an action sits on. Every tap type is its own row, except a
+ * `refresh`, which is two rows depending on whether it carries a layer list. */
+export function tapChoiceOf(action: TapAction): TapChoice {
+  if (action.type === "refresh" && action.layerIds !== undefined) return "refreshLayers";
+  return action.type;
+}
+
 /** The human name of every tap action, in the order the pickers offer them.
  * It lives here rather than beside the picker because the preview labels tap
  * boxes with the same words in review mode, and the renderer cannot import the
  * editors (they already import it). */
-export const TAP_ACTION_LABELS: [TapAction["type"], string][] = [
-  ["refresh", "Refresh this complication"], ["refreshAll", "Refresh multiple complications"],
+export const TAP_ACTION_LABELS: [TapChoice, string][] = [
+  ["refresh", "Refresh this complication"],
+  ["refreshLayers", "Refresh parts of this complication"],
+  ["refreshAll", "Refresh multiple complications"],
   ["none", "Nothing"], ["openApp", "Open the app"], ["openPage", "Open the page"], ["openRoomPage", "Open the room page"],
   ["timerStartPause", "Timer start / pause"], ["timerCancel", "Timer cancel"],
   ["toggleEntity", "Toggle an entity"], ["runScene", "Run a scene"], ["runScript", "Run a script"], ["addTodo", "Add a to-do"], ["runHTTPAction", "Run an HTTP action"],
@@ -3151,7 +3195,8 @@ export const TAP_ACTION_LABELS: [TapAction["type"], string][] = [
  * the `tap` badge on a layer row, which a long entity id would stretch out of
  * shape. `describeTapAction` is the same name plus what it acts on. */
 export function tapActionLabel(action: TapAction): string {
-  return TAP_ACTION_LABELS.find(([t]) => t === action.type)?.[1] ?? action.type;
+  const choice = tapChoiceOf(action);
+  return TAP_ACTION_LABELS.find(([t]) => t === choice)?.[1] ?? action.type;
 }
 
 /** One-line description of a tap action, for hints and for the review-mode
@@ -3169,6 +3214,11 @@ export function describeTapAction(action: TapAction): string {
     // when nothing is picked and the tap is just a plain refresh.
     if (action.allPlaced === true) return `${label}: all placed`;
     const count = action.targets?.length ?? 0;
+    return count > 0 ? `${label}: ${count} picked` : `${label}: none picked`;
+  }
+  if (action.type === "refresh" && action.layerIds !== undefined) {
+    // Same reason: how much of the complication the tap fetches is the point.
+    const count = action.layerIds.length;
     return count > 0 ? `${label}: ${count} picked` : `${label}: none picked`;
   }
   if (!("entityId" in action)) return label;
@@ -3193,6 +3243,23 @@ export function refreshTargetsWith(action: RefreshAllAction, id: string, on: boo
   const next: RefreshAllAction = { type: "refreshAll" };
   if (targets.length > 0) next.targets = targets;
   return next;
+}
+
+/** One layer ticked or unticked in a scoped refresh tap's picker, as the whole
+ * next action. Ticking an id that is already there changes nothing.
+ *
+ * Unlike `refreshTargetsWith`, an empty list is written rather than dropped:
+ * the key is what puts the picker on the "parts" row, so dropping it would move
+ * the tap back to a plain refresh the moment the last box was unticked. Both
+ * shapes refresh the whole document on the watch, so nothing breaks in the gap
+ * between unticking the last box and ticking the next. */
+export function refreshLayersWith(action: RefreshAction, id: string, on: boolean): RefreshAction {
+  const wanted = id.trim();
+  const current = action.layerIds ?? [];
+  const layerIds = on
+    ? (wanted === "" || current.includes(wanted) ? [...current] : [...current, wanted])
+    : current.filter((t) => t !== wanted);
+  return { type: "refresh", layerIds };
 }
 
 /** The line under a tap picker for the types that need a word of explanation,
@@ -3227,10 +3294,22 @@ export function tapActionNote(action: TapAction, pages = false): string | undefi
       + " complication to make the tap worth something.";
   }
   if (action.type === "refresh") {
-    // The tap is put on a layer, so it reads as if it refreshed that layer. It
-    // does not: the watch reruns the whole document and redraws the tile.
-    return "Refreshes every layer and every page of this complication, not just"
-      + " the layer the tap sits on.";
+    if (action.layerIds === undefined) {
+      // The tap is put on a layer, so it reads as if it refreshed that layer. It
+      // does not: the watch reruns the whole document and redraws the tile.
+      return "Refreshes every layer and every page of this complication, not just"
+        + " the layer the tap sits on.";
+    }
+    const older = " On a watch running an older app this tap refreshes everything instead.";
+    if (action.layerIds.length === 0) {
+      return "Nothing is ticked, so this tap still refreshes the whole complication."
+        + " Tick the layers you want it to fetch." + older;
+    }
+    // Text, icons and gauges are not listed: they all ride on one request, so
+    // ticking them would save nothing. Only the layers that cost a fetch of
+    // their own are offered, and the whole tile is redrawn either way.
+    return `Fetches only the ${action.layerIds.length} ticked below. Everything else keeps`
+      + ` what it last read, and the whole tile is redrawn.` + older;
   }
   if (action.type !== "refreshAll") return undefined;
   const older = " On a watch running an older app this tap does nothing.";
@@ -3295,12 +3374,12 @@ export type ControlKind = "toggle" | "button";
 /** The actions a control may run. The whole tap set is too wide: a control is
  * a one-shot press in Control Center, so nothing that wants a watch page, a
  * timer or a to-do is offered. */
-export const CONTROL_ACTION_TYPES: readonly TapAction["type"][] =
+export const CONTROL_ACTION_TYPES: readonly TapChoice[] =
   ["toggleEntity", "runScene", "runScript", "callService", "runHTTPAction", "openApp"];
 
 /** The actions a toggle can run. Anything else makes the control a button,
  * whatever its `kind` says: a scene has nothing to switch off. */
-export const CONTROL_TOGGLE_ACTION_TYPES: readonly TapAction["type"][] =
+export const CONTROL_TOGGLE_ACTION_TYPES: readonly TapChoice[] =
   ["toggleEntity", "callService"];
 
 /** The states `control.state` reads as on. Deliberately its own short list
@@ -4791,9 +4870,10 @@ function parseControl(raw: J): ControlSpec {
   return out;
 }
 
-/** The document ids a refreshAll tap names, cleaned the one way: strings only,
- * trimmed, blanks dropped, uppercased the way `parseConfig` stores an id, and
- * each id kept once in the order it was written. */
+/** The ids a refresh tap names, cleaned the one way: strings only, trimmed,
+ * blanks dropped, uppercased the way `parseConfig` stores an id, and each id
+ * kept once in the order it was written. Shared by the document ids a
+ * `refreshAll` names and the layer ids a scoped `refresh` names. */
 function parseRefreshTargets(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
   const out: string[] = [];
@@ -4809,11 +4889,19 @@ function parseRefreshTargets(raw: unknown): string[] {
 function parseTapAction(raw: unknown): TapAction {
   if (!isObject(raw) || typeof raw.type !== "string") return { type: "none" };
   switch (raw.type) {
-    case "none": case "refresh": case "openApp": case "openPage": case "openRoomPage":
+    case "none": case "openApp": case "openPage": case "openRoomPage":
     case "timerStartPause": case "timerCancel":
     // The page actions carry nothing, so they read back as their type alone.
     case "nextPage": case "previousPage": case "playTour":
       return { type: raw.type };
+    case "refresh": {
+      // The key is optional, so a document written before the layer picker
+      // existed still reads as the tap that refreshes everything. An empty
+      // array is kept as an empty array, not dropped: it is what holds the
+      // picker on the "parts" row while nothing is ticked.
+      if (!Array.isArray(raw.layerIds)) return { type: "refresh" };
+      return { type: "refresh", layerIds: parseRefreshTargets(raw.layerIds) };
+    }
     case "refreshAll": {
       // Both keys are optional, so `{"type": "refreshAll"}` written before
       // either existed still reads as the tap that refreshes only itself.
@@ -6363,6 +6451,16 @@ function encodeTapAction(t: TapAction): J {
     if (t.targets !== undefined && t.targets.length > 0) o.targets = [...t.targets];
     return o;
   }
+  if (t.type === "refresh") {
+    // An empty list is written, unlike the picks above. It is how the picker
+    // says "scoped, nothing ticked yet", and dropping it would move the tap
+    // back to a plain refresh the next time the document is opened. A plain
+    // refresh writes no key at all, so it stays byte-identical to one written
+    // before the picker existed.
+    const o: J = { type: t.type };
+    if (t.layerIds !== undefined) o.layerIds = [...t.layerIds];
+    return o;
+  }
   if ("entityId" in t) return { type: t.type, ...encodeEntityRef(t) };
   return { type: t.type };
 }
@@ -6723,9 +6821,10 @@ const K = {
   placement: ["frame", "isHidden", "size"],
   // The three service keys belong to `callService` only; the entity four are its
   // optional target, the same keys every entity action uses. The last two belong
-  // to `refreshAll` alone: what else that tap refreshes.
+  // to `refreshAll` alone: what else that tap refreshes. `layerIds` belongs to
+  // `refresh` alone: how much of the tapped complication it fetches.
   tapAction: ["type", "entityId", "displayName", "domain", "iconName",
-    "serviceDomain", "serviceName", "serviceDataJSON", "targets", "allPlaced"],
+    "serviceDomain", "serviceName", "serviceDataJSON", "targets", "allPlaced", "layerIds"],
   // No `dataSource` list: `auditUnknownKeys` deliberately does not look at
   // `dataSources` at all. See the note at the end of that function.
 };
