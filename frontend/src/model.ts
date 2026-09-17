@@ -3457,13 +3457,18 @@ export function usesPages(cfg: CustomComplicationConfig): boolean {
 export function pagesSpecOf(cfg: CustomComplicationConfig): PagesSpec {
   // Always a copy, never the document's own object: this is a reading, and a
   // caller that edits what it reads would be editing the document by accident.
-  if (hasPages(cfg.pages)) return { ...cfg.pages!, dwell: [...cfg.pages!.dwell] };
+  //
+  // The mode is the document's tap actions' (`pageModeFor`), never the stored
+  // key: a stored mode is what the editor last wrote from those actions, and
+  // the actions may have changed since.
+  const mode = pageModeFor(cfg);
+  if (hasPages(cfg.pages)) return { ...cfg.pages!, mode, dwell: [...cfg.pages!.dwell] };
   const pinned = cfg.elements
     .map((el) => el.payload.page)
     .filter((p): p is number => p !== undefined);
   const highest = pinned.length > 0 ? Math.max(...pinned) : 1;
   const base = cfg.pages ?? newPagesSpec(1);
-  const copy: PagesSpec = { ...base, dwell: [...base.dwell] };
+  const copy: PagesSpec = { ...base, mode, dwell: [...base.dwell] };
   if (highest <= 1) return copy;
   return { ...copy, count: clampPageCount(highest) };
 }
@@ -3560,6 +3565,23 @@ export function pageMoverExists(cfg: CustomComplicationConfig): boolean {
   return cfg.elements.some((el) => el.kind === "tap" && moves(el.payload.action.type));
 }
 
+/**
+ * How this document's pages move on, read from its tap actions rather than
+ * from a switch of its own.
+ *
+ * The watch plays a tour only when the wire says `mode: tour`, and only a
+ * `playTour` action ever starts one. The two used to be set apart, which left
+ * two dead mixes: a Tour document whose taps only move a page, and a Tap
+ * document whose Play tour action started a tour the watch refused to play.
+ * So the editor has no Mode switch. A document with a Play tour action, on
+ * itself or on any tap layer, is a tour; everything else is tap. The wire key
+ * stays, written from this, so the watch needs no change.
+ */
+export function pageModeFor(cfg: CustomComplicationConfig): PageMode {
+  if (cfg.tapAction.type === "playTour") return "tour";
+  return cfg.elements.some((el) => el.kind === "tap" && el.payload.action.type === "playTour") ? "tour" : "tap";
+}
+
 /** The pages top-level layers are pinned to past `count`, lowest first. */
 function pinnedPagesPast(cfg: CustomComplicationConfig, count: number): number[] {
   const pages = new Set<number>();
@@ -3604,7 +3626,7 @@ export function pageCountMoveNote(cfg: CustomComplicationConfig, count: number):
  * of count, trimmed to what is left, so turning pages down to 2 and back up to
  * 4 does not cost the author the timings they typed.
  */
-export function setPageCount(cfg: CustomComplicationConfig, count: number, mode?: PageMode): void {
+export function setPageCount(cfg: CustomComplicationConfig, count: number): void {
   const next = clampPageCount(count);
   if (next <= 1) {
     delete cfg.pages;
@@ -3617,7 +3639,7 @@ export function setPageCount(cfg: CustomComplicationConfig, count: number, mode?
   const base = cfg.pages;
   cfg.pages = {
     count: next,
-    mode: mode ?? base?.mode ?? "tap",
+    mode: pageModeFor(cfg),
     dwell: (base?.dwell ?? []).slice(0, next).map(clampPageDwell),
   };
 }
@@ -6273,8 +6295,10 @@ export function encodeConfig(cfg: CustomComplicationConfig): J {
   }
   if (cfg.hidden === true) o.hidden = true;
   // Only ever on the wire when there are really pages; a one-page spec carries
-  // nothing an app that never heard of pages would miss.
-  const pages = encodePagesSpec(cfg.pages);
+  // nothing an app that never heard of pages would miss. The mode is written
+  // from the tap actions (`pageModeFor`), so the watch's tour gate and the
+  // action that starts a tour can never disagree.
+  const pages = encodePagesSpec(cfg.pages === undefined ? undefined : { ...cfg.pages, mode: pageModeFor(cfg) });
   if (pages !== undefined) o.pages = pages;
   if (cfg.control !== undefined) o.control = encodeControl(cfg.control);
   return o;

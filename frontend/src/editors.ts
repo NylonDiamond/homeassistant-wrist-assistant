@@ -281,7 +281,6 @@ import {
   GAUGE_DEFAULT_LABEL_SIZE,
   GAUGE_MIN_LABEL_SIZE,
   GAUGE_MAX_LABEL_SIZE,
-  type PageMode,
   PAGES_MAX_COUNT,
   PAGE_DEFAULT_DWELL,
   PAGE_DWELL_RANGE,
@@ -3899,8 +3898,6 @@ const PAGE_COUNT_CHOICES: [string, string][] = [
   ...Array.from({ length: PAGES_MAX_COUNT - 1 }, (_, i) => [String(i + 2), String(i + 2)] as [string, string]),
 ];
 
-const PAGE_MODES: [PageMode, string][] = [["tap", "Tap"], ["tour", "Tour"]];
-
 /** Seconds as the tour line prints them: whole where it can be, one decimal
  * where the dwells do not add up to one. */
 function dwellSeconds(seconds: number): string {
@@ -3908,13 +3905,18 @@ function dwellSeconds(seconds: number): string {
 }
 
 /**
- * Pages on one complication: how many there are, how a page moves on, and, for
- * a tour, how long each one is held.
+ * Pages on one complication: how many there are and, for a tour, how long each
+ * one is held.
  *
  * The count is the whole feature's switch. Off deletes the spec and unpins
  * every layer, because a `page` left behind is a document that still says it
  * has pages. Fewer pages moves the layers past the new end onto it rather than
  * dropping them, and the line under the picker says so before it happens.
+ *
+ * There is no Mode switch. Whether the document is a tour follows its tap
+ * actions (`pageModeFor`): a Play tour action anywhere makes it one, and the
+ * hold fields appear with it. A switch of its own allowed two dead mixes, a
+ * tour nothing could start and a Play tour the watch refused to play.
  *
  * Which page a layer sits on is set on the layer, in its Position card, not
  * here: the document says how many pages there are, and each layer says which
@@ -3937,12 +3939,11 @@ function pagesFields(host: EditorHost): TemplateResult {
       face, which is what every complication was before this setting.</div>`}
     ${shrink === undefined ? nothing : html`<div class="hint">Taking a page away never drops a layer. ${shrink}</div>`}
     ${on ? html`
-      ${segField("Mode", spec.mode, PAGE_MODES, (v) => host.update((c) => { setPageCount(c, count, v); }, "pages-mode"),
-        { titles: {
-            tap: "Each tap shows the next page",
-            tour: "One tap plays every page once, then returns to page 1",
-          },
-          def: "tap" })}
+      ${tour
+        ? html`<div class="hint">A tour: one tap plays every page once, then returns to page 1. That follows the
+          Play the page tour action. Change the action to Next page for one page per tap.</div>`
+        : html`<div class="hint">Each tap shows the next page. For a tour that plays every page from one tap, set
+          the tap action to Play the page tour.</div>`}
       ${tour ? html`
         <div class="grid2">
           ${pageNumbers(spec).map((page) => numberField(`Page ${page} hold`, writtenDwell(spec, page),

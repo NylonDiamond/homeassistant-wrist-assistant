@@ -81,7 +81,7 @@
     "perFamily": [],
     "dataSources": [],
     "refreshMinutes": 15,
-    "tapAction": {"type": "refresh"}
+    "tapAction": {"type": "playTour"}
   },
   "inputs": {
     "entityStates": {

@@ -29,6 +29,7 @@ import {
   newElement,
   nextPageAfter,
   pageCountMoveNote,
+  pageModeFor,
   pageMoverExists,
   pagesSpecOf,
   parseConfig,
@@ -61,6 +62,9 @@ function pagedConfig(spec?: PagesSpec): CustomComplicationConfig {
   };
   cfg.elements = [text("Shared"), text("One", 1), text("Two", 2)];
   if (spec) cfg.pages = spec;
+  // The mode follows the tap actions, so a tour fixture carries the action
+  // that makes it one.
+  if (spec?.mode === "tour") cfg.tapAction = { type: "playTour" };
   cfg.schemaVersion = schemaVersionFor(cfg);
   return cfg;
 }
@@ -429,10 +433,45 @@ describe("changing how many pages a document has", () => {
     expect(cfg.pages).toEqual({ count: 3, mode: "tour", dwell: [1, 3, 4] });
   });
 
-  it("takes a new mode when one is given", () => {
+  it("writes the mode the tap actions say, not the one it had", () => {
     const cfg = pagedConfig({ count: 2, mode: "tap", dwell: [] });
-    setPageCount(cfg, 2, "tour");
+    cfg.tapAction = { type: "playTour" };
+    setPageCount(cfg, 2);
     expect(cfg.pages?.mode).toBe("tour");
+  });
+});
+
+describe("how a document's pages move on", () => {
+  it("is a tour when the document's own tap plays one", () => {
+    const cfg = pagedConfig({ count: 2, mode: "tap", dwell: [] });
+    cfg.tapAction = { type: "playTour" };
+    expect(pageModeFor(cfg)).toBe("tour");
+    expect(pagesSpecOf(cfg).mode).toBe("tour");
+  });
+
+  it("is a tour when any tap layer plays one", () => {
+    const cfg = pagedConfig({ count: 2, mode: "tap", dwell: [] });
+    const tap = newElement("tap") as Extract<Element, { kind: "tap" }>;
+    tap.payload.action = { type: "playTour" };
+    cfg.elements.push(tap);
+    expect(pageModeFor(cfg)).toBe("tour");
+  });
+
+  it("is tap for anything else, whatever the stored key says", () => {
+    const cfg = pagedConfig({ count: 2, mode: "tap", dwell: [] });
+    cfg.pages!.mode = "tour";
+    cfg.tapAction = { type: "nextPage" };
+    expect(pageModeFor(cfg)).toBe("tap");
+    expect(pagesSpecOf(cfg).mode).toBe("tap");
+  });
+
+  it("goes on the wire from the actions, so the watch's tour gate matches them", () => {
+    const cfg = pagedConfig({ count: 2, mode: "tap", dwell: [] });
+    cfg.pages!.mode = "tour";
+    cfg.tapAction = { type: "nextPage" };
+    expect(encodedPages(cfg)).toEqual({ count: 2, mode: "tap" });
+    cfg.tapAction = { type: "playTour" };
+    expect(encodedPages(cfg)).toEqual({ count: 2, mode: "tour" });
   });
 
   it("moves a layer past the new end onto the new last page", () => {
