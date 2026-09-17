@@ -10217,6 +10217,12 @@ export class WristAssistantPanel extends LitElement {
       const eff = effectivePlacement(cfg, family, el);
       const hidden = eff.isHidden;
       const tap = attachedTapsOf(cfg, id)[0];
+      // A tap layer is a tap, so it wears the same badge as a layer with one
+      // attached. Without it the list marked the layers that answer a press and
+      // said nothing about the rows that are nothing but a press.
+      const tapTitle = el.kind === "tap"
+        ? `Tappable · ${describeTapAction(el.payload.action)}`
+        : tap ? `Tappable · ${layerTitle(tap, ctx)}` : undefined;
       const states = statesSummary(el.payload.rules);
       const pointed = this.picking && this.pickHoverId === id;
       const d = this.rowDrag(id, edit);
@@ -10237,7 +10243,7 @@ export class WristAssistantPanel extends LitElement {
         </span>
         <span class="right">
           <span class="badges">
-            ${tap ? html`<span class="badge tap" title=${`Tappable · ${layerTitle(tap, ctx)}`}>tap</span>` : nothing}
+            ${tapTitle ? html`<span class="badge tap" title=${tapTitle}>tap</span>` : nothing}
             ${el.payload.rules.length === 0 ? nothing : html`<span class="badge states" title=${states}>${states.replace(/\.$/, "").toLowerCase()}</span>`}
             ${hidden ? html`<span class="badge">hidden</span>` : nothing}
           </span>
