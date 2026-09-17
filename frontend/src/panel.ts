@@ -2400,12 +2400,19 @@ export class WristAssistantPanel extends LitElement {
     .badge.states { color: #8a5a00; background: rgba(249,168,37,.18); }
     :host([dark]) .badge.tap { color: var(--wa-tap); background: color-mix(in srgb, var(--wa-tap) 22%, transparent); }
     :host([dark]) .badge.states { color: var(--wa-states); background: color-mix(in srgb, var(--wa-states) 22%, transparent); }
-    /* Reserved, not removed: taking the actions out of the layout made the
-       name change width the moment the pointer arrived. The badges step aside
-       for them instead, so the row keeps its width. */
+    /* The right end of a row holds one thing at a time: the badges at rest,
+       the buttons under the pointer or on the selected row. They trade places
+       rather than stand side by side, so the badges keep the right edge and
+       the row keeps its width.
+
+       The :has(.acts) guard is what keeps the swap honest. A pinned row and a
+       read-only document carry badges and no buttons, and without it hovering
+       one hid the badge and put nothing in its place. */
     .layer .acts { display: none; gap: 0; }
     .layer:hover .acts, .layer.hl .acts, .layer:focus-within .acts { display: inline-flex; }
-    .layer:hover .badges, .layer.hl .badges, .layer:focus-within .badges { display: none; }
+    .layer:hover:has(.acts) .badges,
+    .layer.hl:has(.acts) .badges,
+    .layer:focus-within:has(.acts) .badges { display: none; }
     .layer .acts button.icon { width: 24px; height: 24px; }
     .layer .acts svg.ui-icon { width: 15px; height: 15px; }
     /* The row being dragged leaves the list. The slot opening under the
@@ -2496,16 +2503,14 @@ export class WristAssistantPanel extends LitElement {
     .layer.rich .facts { display: flex; flex-wrap: wrap; gap: 2px 8px; margin-top: 2px; font-size: 11.5px; color: var(--wa-muted); }
     .layer.rich .facts .fact { white-space: nowrap; }
     .layer.rich .facts .fact b { font-weight: 600; color: var(--wa-ink); opacity: .75; }
-    /* An expanded row keeps both the badges and the buttons, so the buttons
-       cannot appear out of nothing the way they do on a compact row: arriving
-       would widen the right end, squeeze the facts, wrap them onto another
-       line and grow the row under the pointer. The buttons hold their place
-       at all times and only turn visible, and the right end never wraps, so
-       hovering changes colour and nothing else. */
+    /* An expanded row swaps its badges for its buttons, the same as a compact
+       one. It used to keep both, with the buttons held in the layout and only
+       turned invisible, so that arriving they could not widen the right end
+       and wrap the facts onto another line. That reserved width sat to the
+       right of the badges and pushed them off the edge every other row lines
+       up on, so at rest the badges read as crooked. The right end still never
+       wraps. */
     .layer.rich .right { flex-wrap: nowrap; justify-content: flex-end; gap: 4px; }
-    .layer.rich .acts { display: inline-flex; visibility: hidden; }
-    .layer.rich:hover .acts, .layer.rich.hl .acts, .layer.rich:focus-within .acts { visibility: visible; }
-    .layer.rich:hover .badges, .layer.rich.hl .badges, .layer.rich:focus-within .badges { display: inline-flex; }
     ${unsafeCSS(layerRowFolds())}
 
     /* Two small segmented controls in the Layers title: how big the row
