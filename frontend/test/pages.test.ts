@@ -17,6 +17,7 @@ import {
   PAGE_DEFAULT_DWELL,
   PAGE_DWELL_RANGE,
   auditUnknownKeys,
+  describeTapAction,
   dwellForPage,
   elementsOnPage,
   encodeConfig,
@@ -43,6 +44,7 @@ import {
   writtenDwell,
 } from "../src/model.js";
 import { type EntityState, type ResolveContext, resolveAll } from "../src/resolver.js";
+import { exportText, parseImportText } from "../src/transfer.js";
 
 /** A document with three text layers: one on every page, one on page 1, one on
  * page 2. `pages` is set only when `spec` is given, so the same builder makes
@@ -553,5 +555,36 @@ describe("whether anything can move the page", () => {
       cfg.elements.push(tap);
     }
     expect(pageMoverExists(cfg)).toBe(false);
+  });
+});
+
+describe("the version gate a paged document meets", () => {
+  // The panel has one gate, not two: a document's schema against the
+  // integration's handshake ceiling. `schemaVersionFor` puts a paged document
+  // at 9, so an integration that understands 8 refuses it on the way in the
+  // same way it refuses any other document from a newer panel. Nothing about
+  // pages needed a gate of its own.
+  it("is refused whole by an integration that stops at 8", () => {
+    const cfg = pagedConfig({ count: 2, mode: "tap", dwell: [] });
+    const parsed = parseImportText(exportText(cfg, "backup"), 8);
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.error).toContain("schema v9");
+    expect(parsed.error).toContain("update the Wrist Assistant integration");
+  });
+
+  it("goes through once the integration understands 9", () => {
+    const cfg = pagedConfig({ count: 2, mode: "tap", dwell: [] });
+    const parsed = parseImportText(exportText(cfg, "backup"), 9);
+    expect(parsed.ok).toBe(true);
+  });
+});
+
+describe("what the review overlay calls the two page taps", () => {
+  // "Show taps" labels every tap area with `describeTapAction`, so a page
+  // action that fell out of the table would draw its raw type name on the face.
+  it("names them in words", () => {
+    expect(describeTapAction({ type: "nextPage" })).toBe("Next page");
+    expect(describeTapAction({ type: "playTour" })).toBe("Play the page tour");
   });
 });

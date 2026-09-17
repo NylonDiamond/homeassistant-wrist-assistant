@@ -94,7 +94,16 @@ import {
   chartAnchorIsColumn,
   entityLayerIds,
   sharedValueLayerIds,
+  clampPageCount,
+  layerDrawsOnPage,
+  nextPageAfter,
+  pageNumbers,
+  pagesSpecOf,
+  tourDuration,
+  usesPages,
 } from "./model.js";
+import { TourPlayer } from "./tour-player.js";
+import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues } from "./test-controls.js";
 import { agoWords, describeSend, sendState, sendWaitMs } from "./send-state.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
@@ -976,6 +985,31 @@ export class WristAssistantPanel extends LitElement {
    * put the shape back.
    */
   @state() private controlView = false;
+  /**
+   * Which page of a paged document the canvas is showing, 1-based.
+   *
+   * Editor state and nothing else: it is never written to the document, and the
+   * watch keeps its own page per placed slot. It starts at 1 for every document
+   * opened, and is clamped to the document's page count after every change, so
+   * taking a document from four pages down to two can never leave the canvas
+   * showing a page that is gone.
+   */
+  @state() private page = 1;
+  /** A tour is playing in the preview. The player itself holds the timers; this
+   * is what the strip's Stop button and its progress bar are drawn from. */
+  @state() private touring = false;
+  /** Bumped once per tour, so the progress bar's animation restarts on a second
+   * press rather than carrying on from where the first one left it. */
+  @state() private tourRun = 0;
+  /** The one tour player. Its boundaries go straight to `showPage`, since these
+   * page changes are the tour rather than a user press that should stop it. */
+  private readonly tour = new TourPlayer({
+    // The selection is left alone while the tour runs: a tour is six seconds of
+    // watching, and losing the layer you were working on to it would be a
+    // surprise. It is settled once, when the tour ends or is stopped.
+    show: (page) => this.showPage(page, true),
+    done: () => { this.touring = false; this.dropOffPageSelection(); },
+  });
   /** Pick mode: the pointer names the layer under it instead of dragging it,
    * the way a browser inspector picks a node. One click selects and ends it. */
   @state() private picking = false;
@@ -2662,6 +2696,38 @@ export class WristAssistantPanel extends LitElement {
     }
     .row-strip button:hover { filter: brightness(1.06); }
     .row-strip button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    /* The page tabs: the same raised card as the row banner, sitting under it
+       when both are up, because which page is showing is read after which row
+       is being designed. */
+    .page-strip {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+      justify-self: center; max-width: 100%; font-size: 13px;
+      padding: 6px 8px; border-radius: 12px;
+      background: color-mix(in srgb, var(--wa-raised) 92%, transparent);
+      box-shadow: 0 0 0 1px var(--wa-line), 0 6px 18px rgba(0,0,0,.18);
+    }
+    .page-strip .page-strip-word { color: var(--wa-muted); font-weight: 600; font-size: 12.5px; }
+    .page-strip .page-tabs { display: inline-flex; gap: 2px; }
+    .page-strip button {
+      font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; flex: none;
+      height: 26px; min-width: 26px; padding: 0 8px; border-radius: 7px;
+      border: 1px solid var(--wa-line); background: var(--wa-input); color: inherit;
+    }
+    .page-strip button.on { background: var(--wa-accent); color: var(--wa-accent-ink); border-color: transparent; }
+    .page-strip button:hover:not(.on) { background: var(--wa-raised); }
+    .page-strip button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .page-strip button.page-act { padding: 0 12px; }
+    /* The tour's progress: one thin bar, filled by a CSS animation over the
+       tour's own length, so nothing has to tick at 60 fps to draw it. */
+    .page-strip .tour-bar {
+      flex: 1 1 60px; min-width: 40px; height: 4px; border-radius: 999px;
+      background: var(--wa-line); overflow: hidden;
+    }
+    .page-strip .tour-bar i {
+      display: block; height: 100%; width: 0; background: var(--wa-accent);
+      animation-name: wa-tour; animation-timing-function: linear; animation-fill-mode: forwards;
+    }
+    @keyframes wa-tour { from { width: 0; } to { width: 100%; } }
     /* The pill never wraps and never leaves: it sticks to the top of the stage
        when the face is scrolled, and on a narrow canvas the two words go and
        the glyphs stay, so every button is always there to press. */
@@ -4173,6 +4239,7 @@ export class WristAssistantPanel extends LitElement {
     if (this.countdownTimer !== undefined) window.clearInterval(this.countdownTimer);
     if (this.sendTimer !== undefined) window.clearTimeout(this.sendTimer);
     if (this.watchStatusTimer !== undefined) window.clearInterval(this.watchStatusTimer);
+    this.tour.stop();
     this.cancelGesture?.();
   }
 
@@ -4318,6 +4385,16 @@ export class WristAssistantPanel extends LitElement {
         this.heldArrows.add(e.key);
       }
       return;
+    }
+    // [ and ] move the page of a paged document, the way the tabs over the
+    // canvas do. Bare only, and checked above the modifier gate because ⌘[ and
+    // ⌘] are already bring forward and send back: the two never meet.
+    if ((e.key === "[" || e.key === "]") && !inField && !dialogOpen
+      && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+      if (this.stepPage(e.key === "]" ? 1 : -1)) {
+        e.preventDefault();
+        return;
+      }
     }
     const mod = e.metaKey || e.ctrlKey;
     if (!mod) return;
@@ -4633,6 +4710,10 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private clearDraft() {
+    // A different document starts on its first page, with nothing playing: the
+    // page is a reading of the document on screen, not a setting of the panel.
+    this.stopTour();
+    this.page = 1;
     this.draft = undefined;
     this.compiled = undefined;
     this.compiledDocument = undefined;
@@ -4834,6 +4915,13 @@ export class WristAssistantPanel extends LitElement {
 
   private afterMutation() {
     this.version++;
+    // Every change to the document goes through here, undo and redo included,
+    // so this is the one place the page has to be pulled back inside a document
+    // that just lost a page. A change also ends any tour: the author is editing
+    // now, and a canvas that keeps moving under the edit is a canvas fighting
+    // back.
+    this.stopTour();
+    this.clampPage();
     this.recompile();
     this.ensureActiveFamily();
   }
@@ -4902,7 +4990,9 @@ export class WristAssistantPanel extends LitElement {
       toggleSection: (id) => this.toggleSection(id),
       helpSections: this.helpSections,
       toggleHelp: (id) => this.toggleHelp(id),
-      selectLayer:(id) => { this.multi = new Set(); this.inspect = { kind: "layer", id }; },
+      // The inspector's cross-links ("Select the chart", a group's members) go
+      // to the layer's own page first, the same as a click in the Layers list.
+      selectLayer:(id) => { this.multi = new Set(); this.showPageOf(id); this.inspect = { kind: "layer", id }; },
       peekLayer: (id, on) => {
         if (on) this.rowHoverId = id;
         else if (this.rowHoverId === id) this.rowHoverId = undefined;
@@ -4978,6 +5068,108 @@ export class WristAssistantPanel extends LitElement {
     if (!list) return cfg;
     const sample = sampleListItem(list.payload, this.templateResults, this.listItems, Date.now() / 1000);
     return rowStageConfig(cfg, list.payload.id, this.canvasFamily, sample?.fields) ?? cfg;
+  }
+
+  // ── pages ─────────────────────────────────────────────────────────────
+  // The canvas shows one page at a time, the way the watch does. Which one is
+  // editor state: the document says how many pages there are and which layer
+  // sits on which, and never which one was last looked at.
+
+  /** How many pages the open document has. 1 is a document with no pages, and
+   * the page is then always 1. */
+  private pageCount(): number {
+    const cfg = this.draft?.config;
+    if (!cfg || !usesPages(cfg)) return 1;
+    return clampPageCount(pagesSpecOf(cfg).count);
+  }
+
+  /**
+   * Show a page, without touching a tour: this is what the tour itself calls.
+   *
+   * A selected layer that does not draw on the new page is dropped, and so are
+   * the picked ones. A layer that cannot be seen is an invisible drag target
+   * and an inspector editing something the canvas is not drawing, which reads
+   * as the editor having gone wrong. `keepSelection` is the tour's exception:
+   * it moves the page several times a second and settles the selection once, at
+   * the end, rather than taking it away while the author watches.
+   */
+  private showPage(page: number, keepSelection = false) {
+    const count = this.pageCount();
+    const next = Math.min(Math.max(Math.trunc(page) || 1, 1), count);
+    if (next === this.page) return;
+    this.page = next;
+    if (!keepSelection) this.dropOffPageSelection();
+  }
+
+  /** Show a page because the user asked for it, which drops any tour: a tap
+   * during a tour takes over, the same rule the watch follows. */
+  private setPage(page: number) {
+    this.stopTour();
+    this.showPage(page);
+  }
+
+  /** Drop anything selected that the showing page does not draw. Layers of the
+   * row being designed are not pages' business, so a row layer (which is not in
+   * `elements` at all) is left alone. */
+  private dropOffPageSelection() {
+    const cfg = this.draft?.config;
+    if (!cfg || !usesPages(cfg)) return;
+    const ins = this.inspect;
+    if (ins.kind === "layer") {
+      const el = cfg.elements.find((e) => e.payload.id === ins.id);
+      if (el && !layerDrawsOnPage(el, this.page)) this.inspect = { kind: "general" };
+    }
+    if (this.multi.size === 0) return;
+    const kept = [...this.multi].filter((id) => {
+      const el = cfg.elements.find((e) => e.payload.id === id);
+      return !el || layerDrawsOnPage(el, this.page);
+    });
+    if (kept.length !== this.multi.size) this.multi = new Set(kept);
+  }
+
+  /** Bring up the page a layer is pinned to. The one place the editor moves the
+   * page for the user: selecting a layer you cannot see is useless, so the list
+   * takes the canvas to it. */
+  private showPageOf(id: string) {
+    const cfg = this.draft?.config;
+    if (!cfg || !usesPages(cfg)) return;
+    const page = cfg.elements.find((e) => e.payload.id === id)?.payload.page;
+    if (page !== undefined && page !== this.page) this.setPage(page);
+  }
+
+  /** `[` and `]`: a page back or on, wrapping. */
+  private stepPage(by: 1 | -1): boolean {
+    const count = this.pageCount();
+    if (count <= 1) return false;
+    this.setPage(((this.page - 1 + by + count) % count) + 1);
+    return true;
+  }
+
+  /** Put the page back inside the document after a change. A shrink in the
+   * inspector must not leave the canvas on a page that no longer exists. */
+  private clampPage() {
+    const count = this.pageCount();
+    if (this.page > count || this.page < 1) this.showPage(this.page);
+  }
+
+  /** Play the tour in the preview, from page 1, whatever was playing. */
+  private playTour() {
+    const cfg = this.draft?.config;
+    if (!cfg || !usesPages(cfg)) return;
+    const spec = pagesSpecOf(cfg);
+    if (spec.mode !== "tour") return;
+    this.tourRun++;
+    this.touring = true;
+    this.tour.play(spec);
+  }
+
+  /** Drop a running tour and leave the page where it got to, which is the
+   * watch's rule: a tap during a tour takes over from the page on screen. */
+  private stopTour() {
+    if (!this.touring && !this.tour.playing) return;
+    this.tour.stop();
+    this.touring = false;
+    this.dropOffPageSelection();
   }
 
   /** Open or shut one inspector card. With one card open (the default), a
@@ -5097,9 +5289,25 @@ export class WristAssistantPanel extends LitElement {
    *
    * Kept as its own name so the call sites still read as "add this here",
    * even though the draft is what settles it now.
+   *
+   * On a paged document it is also where the page is settled: a layer added
+   * while page N is showing belongs to page N, for every N including 1, because
+   * that is the face the author is looking at. A layer that arrives carrying a
+   * page of its own keeps it, which is what makes a pasted part land where it
+   * was designed. Every layer is one click from "Every page" in its Position
+   * card, so the guess costs nothing when it is wrong.
    */
   private addHere(change: (c: CustomComplicationConfig) => void) {
-    this.mutate(change);
+    const paged = this.draft ? usesPages(this.draft.config) : false;
+    const before = new Set(this.draft?.config.elements.map((el) => el.payload.id) ?? []);
+    const page = this.page;
+    this.mutate((c) => {
+      change(c);
+      if (!paged) return;
+      for (const el of c.elements) {
+        if (!before.has(el.payload.id) && el.payload.page === undefined) el.payload.page = page;
+      }
+    });
   }
 
   /**
@@ -5579,7 +5787,15 @@ export class WristAssistantPanel extends LitElement {
     // Only where the key is empty: "no events today" is an answer, and drawing
     // three made-up events over it would be a lie.
     const seeded = withListSeeds(this.draft?.config, this.templateResults, this.listItems, Date.now() / 1000);
+    const cfg = this.draft?.config;
     return {
+      // The page the canvas is showing, and only for the document being edited.
+      // Every other picture of a document stays on page 1, because none of them
+      // sets `page` at all: `configContext` below draws the picker rows and the
+      // import preview, and `galleryPreviewContext` in preview-png.ts draws the
+      // share and gallery PNGs. A thumbnail of somebody else's complication has
+      // no page anyone has chosen.
+      ...(cfg && usesPages(cfg) ? { page: this.page } : {}),
       entityStates,
       templateResults: seeded.templateResults,
       listItems: seeded.listItems,
@@ -5707,6 +5923,59 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
+   * The page tabs over the face, on a paged document only.
+   *
+   * The canvas shows one page at a time because the watch does. There is no
+   * "All" tab: a face that drew every page at once would be the one picture the
+   * wrist can never produce, and the whole reason pages are a version gate is
+   * that stacking them is what a broken paged face looks like. Layers on every
+   * page simply draw on every tab.
+   *
+   * No adder either. Pages are turned on in the Complication card, which is
+   * also where they are turned off, so one switch owns the feature and this
+   * strip only ever says which page is on screen.
+   */
+  private renderPageStrip() {
+    const cfg = this.draft?.config;
+    if (!cfg || !usesPages(cfg)) return nothing;
+    // Inline is one line of text with no canvas and no pages of its own, so
+    // tabs there would offer to change a picture that is not being drawn.
+    if (!isDrawable(this.activeFamily)) return nothing;
+    const spec = pagesSpecOf(cfg);
+    const playing = this.touring;
+    const pinned = (page: number) =>
+      cfg.elements.filter((el) => el.payload.page === page && !isAttachedTap(cfg, el)).length;
+    const tourButton = html`<button class="page-act ${playing ? "on" : ""}" aria-pressed=${playing ? "true" : "false"}
+      title=${playing
+        ? "Stop the tour. The page stays where it got to, the way a tap on the watch takes over from a tour."
+        : `Play every page once here, ${Math.round(tourDuration(spec) * 10) / 10} s in all, then back to page 1. The watch plays the same boundaries from one tap.`}
+      @click=${() => { if (playing) this.stopTour(); else this.playTour(); }}>${playing ? "Stop" : "Play tour"}</button>`;
+    const nextButton = html`<button class="page-act"
+      title="Show the next page, the way a Next page tap does on the watch"
+      @click=${() => this.setPage(nextPageAfter(spec, this.page))}>Next</button>`;
+    return html`<div class="page-strip">
+      <span class="page-strip-word">Page</span>
+      <span class="page-tabs" role="group" aria-label="Page the canvas is showing">
+        ${pageNumbers(spec).map((page) => {
+          const on = page === this.page;
+          const count = pinned(page);
+          return html`<button class=${on ? "on" : ""} aria-pressed=${on ? "true" : "false"}
+            title=${`Page ${page}: ${count} layer${count === 1 ? "" : "s"}`}
+            @click=${() => this.setPage(page)}>${page}</button>`;
+        })}
+      </span>
+      ${spec.mode === "tour" ? tourButton : nextButton}
+      ${playing
+        // Keyed on the run so a second press starts the bar over: a CSS
+        // animation on the same element would otherwise carry on from where
+        // the first tour left it.
+        ? keyed(this.tourRun, html`<span class="tour-bar" aria-hidden="true"><i
+            style=${`animation-duration:${Math.max(1, Math.round(tourDuration(spec) * 1000))}ms`}></i></span>`)
+        : nothing}
+    </div>`;
+  }
+
+  /**
    * The snapping switches, right there in the pill rather than behind a menu:
    * snap to the grid with its size beside it, draw the grid's lines, and snap
    * to the other layers. Three switches, since some people want the grid
@@ -5794,6 +6063,7 @@ export class WristAssistantPanel extends LitElement {
       [`${m}G · ${s}${m}G`, "Group the pick · Ungroup"],
       [`${m}] · ${m}[`, "Bring the layer forward · Send it back"],
       [`${s}${m}H`, "Hide or show the selection in the shape being edited"],
+      ["[ · ]", "The page before · after, on a complication that has pages"],
       ["Escape", "Leave the row designer, then drop the pick, then the selection. Also stops Pick layer and closes a dialog"],
     ];
     const mouse: [string, string][] = [
@@ -5820,6 +6090,7 @@ export class WristAssistantPanel extends LitElement {
       ["Extra Large", "The full-page tile, iOS 27 and later. An iPhone on iOS 26 is not offered it when adding a widget, and everything else still draws."],
       ["A tinted Home Screen", "iOS 18 lets a user tint the whole Home Screen. The system then drops the tile background and draws the design in two tones, so a design that relies on colour alone reads differently there."],
       ["The shape itself", "The bottom row of the Layers list: its background, border and Shape states."],
+      ["Pages", "One complication, several faces, one showing at a time. Turn them on with Pages in the Complication card, then each layer sits on one page or on every page, which is what a background or a shared label wants. A tap action of Next page moves on a page, and Play the page tour plays each page in turn and returns to page 1. The strip above the canvas shows one page at a time, and [ and ] move between them."],
     ];
     const layers: [string, string][] = [
       ["Text", "A value: typed words, an entity, a template, a shared value and more. It can count down to a time."],
@@ -6721,7 +6992,9 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** What one complication resolves against when it is drawn small and is not
-   * the one being edited: its own entities read live, and nothing fetched. */
+   * the one being edited: its own entities read live, and nothing fetched.
+   * No `page`, so a paged document draws its page 1 in every picker row and in
+   * the import preview: page 1 is what the complication shows first. */
   private configContext(cfg: CustomComplicationConfig, entities: readonly EntityRef[], historySeries?: Map<string, string>): ResolveContext {
     const entityStates = new Map<string, EntityState>();
     for (const ref of entities) {
@@ -9144,7 +9417,7 @@ export class WristAssistantPanel extends LitElement {
     if (!isDrawable(family)) return;
     const part = remapEntities(pick.config, this.partMap);
     let landed: string[] = [];
-    this.mutate((c) => { landed = insertPart(c, part, family); });
+    this.addHere((c) => { landed = insertPart(c, part, family); });
     this.closePartsDialog();
     this.selectRows(landed);
   }
@@ -9610,6 +9883,11 @@ export class WristAssistantPanel extends LitElement {
       return;
     }
     this.multi = new Set();
+    // A layer pinned to another page brings that page up. This is the one place
+    // the editor moves the page for the user, and it is worth it: a selected
+    // layer the canvas does not draw cannot be dragged, sized or seen react to
+    // anything typed in the inspector.
+    this.showPageOf(id);
     this.inspect = { kind: "layer", id };
     this.pickAnchor = id;
   }
@@ -9709,9 +9987,23 @@ export class WristAssistantPanel extends LitElement {
     const scale = THUMB_STEPS[this.thumbStep];
     const thumbW = Math.round(THUMB_W * scale);
     const thumbH = Math.round(THUMB_H * scale);
-    const thumb = (ids: readonly string[]) => resolved
-      ? html`<span class="thumb">${renderLayerThumb(resolved, ids, { icons: this.icons, imageSizes: this.imageSizes, width: thumbW, height: thumbH })}</span>`
-      : html`<span class="thumb"></span>`;
+    // A layer pinned to another page is not in the showing page's resolve at
+    // all, so its row would carry an empty thumb. Each page that has a pinned
+    // layer is resolved once more, on demand: at most three extra resolves, and
+    // none at all on a document with no pages, which is nearly all of them.
+    const paged = usesPages(cfg);
+    const byPage = new Map<number, typeof resolved>();
+    const resolvedOn = (page: number | undefined) => {
+      if (!paged || page === undefined || page === this.page) return resolved;
+      if (!byPage.has(page)) byPage.set(page, resolveAll(cfg, { ...this.buildContext(), page }, this.forced)[family]);
+      return byPage.get(page);
+    };
+    const thumb = (ids: readonly string[], page?: number) => {
+      const face = resolvedOn(page);
+      return face
+        ? html`<span class="thumb">${renderLayerThumb(face, ids, { icons: this.icons, imageSizes: this.imageSizes, width: thumbW, height: thumbH })}</span>`
+        : html`<span class="thumb"></span>`;
+    };
     const rich = this.layerDetail === "expanded";
 
     // `held` marks a member of the selected group: the row lights up with
@@ -9722,11 +10014,17 @@ export class WristAssistantPanel extends LitElement {
       const hl = this.inspect.kind === "layer" && this.inspect.id === id;
       const eff = effectivePlacement(cfg, family, el);
       const hidden = eff.isHidden;
+      // A layer on another page stays in the list, dimmed and badged, for the
+      // same reason a hidden one does: the list is the shape's layers, and a
+      // row that vanishes when the page changes reads as a delete. Clicking it
+      // brings its page up (clickRow).
+      const page = paged ? el.payload.page : undefined;
+      const offPage = page !== undefined && page !== this.page;
       const tap = attachedTapsOf(cfg, id)[0];
       const states = statesSummary(el.payload.rules);
       const pointed = this.picking && this.pickHoverId === id;
       const d = this.rowDrag(id, edit);
-      return html`<div class="layer ${hl ? "hl" : ""} ${held ? "held" : ""} ${pointed ? "pick" : ""} ${this.dialogLitIds.includes(id) ? "lit" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""} ${rich ? "rich" : ""}"
+      return html`<div class="layer ${hl ? "hl" : ""} ${held ? "held" : ""} ${pointed ? "pick" : ""} ${this.dialogLitIds.includes(id) ? "lit" : ""} ${hidden || offPage ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""} ${rich ? "rich" : ""}"
         style=${`--k:${KIND_COLOR[el.kind]}`} tabindex="0" draggable=${d.draggable}
         @pointerenter=${() => { this.listHoverIds = [id]; }}
         @pointerleave=${() => this.leaveRow([id])}
@@ -9735,7 +10033,7 @@ export class WristAssistantPanel extends LitElement {
         @dragstart=${d.onStart} @dragend=${d.onEnd} @dragover=${d.onOver} @drop=${d.onDrop}>
         <span class="grip" title="Drag to reorder. Drop on a group to put it inside.">${uiIcon("grip")}</span>
         <span class="bar"></span>
-        ${thumb([id])}
+        ${thumb([id], page)}
         <span class="name">
           <b>${layerTitle(el, ctx)}</b>
           <small><span class="kind">${KIND_LABEL[el.kind]}</span> · ${layerMeta(el, resolver, this.historySeries, eff.size)}</small>
@@ -9746,6 +10044,7 @@ export class WristAssistantPanel extends LitElement {
             ${tap ? html`<span class="badge tap" title=${`Tappable · ${layerTitle(tap, ctx)}`}>tap</span>` : nothing}
             ${el.payload.rules.length === 0 ? nothing : html`<span class="badge states" title=${states}>${states.replace(/\.$/, "").toLowerCase()}</span>`}
             ${hidden ? html`<span class="badge">hidden</span>` : nothing}
+            ${offPage ? html`<span class="badge" title=${`On page ${page}`}>p${page}</span>` : nothing}
           </span>
           ${edit ? html`<span class="acts">
             <button class="icon" title=${`Bring forward (${KEY_MOD}])`} aria-label="Bring forward" @click=${(e: Event) => { e.stopPropagation(); move(id, 1); }}>${uiIcon("up")}</button>
@@ -10184,6 +10483,7 @@ export class WristAssistantPanel extends LitElement {
         </div>
         <div class="stage">
           ${this.renderRowStrip()}
+          ${this.renderPageStrip()}
           ${isDrawable(family) ? this.renderOver() : nothing}
           ${isDrawable(family) ? this.renderBigPreview(family, layouts, deviceCase) : this.renderInlinePreview(layouts.inline, false)}
           ${this.renderUnder(cfg, family)}

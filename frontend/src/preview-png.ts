@@ -64,6 +64,10 @@ export function withPicturePlaceholders(cfg: CustomComplicationConfig): CustomCo
  * removed from it: the scrub keeps the document's shape, so the nth value and
  * the nth layer on each side are the same one, and that pairing is how a
  * template result or a history series finds its new key.
+ *
+ * No `page`: a paged document is previewed on page 1 here, whatever page its
+ * author happened to be editing. A share or a gallery picture is the first
+ * thing the complication shows, and page 1 is that.
  */
 export function galleryPreviewContext(
   cfg: CustomComplicationConfig,
