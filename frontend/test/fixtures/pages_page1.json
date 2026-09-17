@@ -1,6 +1,6 @@
 {
   "name": "Pages, page 1",
-  "description": "The same three-page document as `pages.json`, with no `inputs.page` at all, which pins the default: a fixture that says nothing about pages is read at page 1. What resolves is the shared label, the page 1 reading and the tap; the page 2 reading and the page 3 icon are absent. The compiled entities are every page's, the same as in the other file, because one refresh fills every page.",
+  "description": "The same three-page document as `pages.json`, except that its tap layer moves back a page (`previousPage`) rather than on, so both resolvers prove they read that action too. There is no `inputs.page` at all, which pins the default: a fixture that says nothing about pages is read at page 1. What resolves is the shared label, the page 1 reading and the tap; the page 2 reading and the page 3 icon are absent. The compiled entities are every page's, the same as in the other file, because one refresh fills every page.",
   "config": {
     "schemaVersion": 9,
     "id": "AAAAAAAA-0000-4000-8000-000000000902",
@@ -71,7 +71,7 @@
         "kind": "tap",
         "payload": {
           "id": "EEEEEEEE-0000-4000-8000-000000000905",
-          "action": {"type": "nextPage"},
+          "action": {"type": "previousPage"},
           "rules": [],
           "frame": {"x": 0.7, "y": 0.0, "width": 0.3, "height": 1.0, "rotationDegrees": 0},
           "isHidden": false
