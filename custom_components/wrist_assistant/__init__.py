@@ -54,6 +54,7 @@ from .const import (
     WristAssistantData,
 )
 from .notification_snapshot import NotificationSnapshotStore
+from .parts_store import PartsStore
 from .snapshot_aspect_store import SnapshotAspectStore
 from .snapshot_crop_store import SnapshotCropStore
 from .snapshot_stream_store import SnapshotStreamStore
@@ -705,6 +706,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     await batch_snapshot_settings_store.async_load()
     complication_store = ComplicationStore(hass)
     await complication_store.async_load()
+    # My parts: the panel's library of saved layer sets. Nothing else reads it,
+    # so it is loaded here and handed straight to the WebSocket commands.
+    parts_store = PartsStore(hass)
+    await parts_store.async_load()
     # Custom complications ride the watch's long-poll: the owner's store
     # token on every reply, the watch's ack on every request, and a panel
     # save wakes the parked poll so the watch pulls at once.
@@ -748,6 +753,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         snapshot_aspect_store=snapshot_aspect_store,
         batch_snapshot_settings_store=batch_snapshot_settings_store,
         complication_store=complication_store,
+        parts_store=parts_store,
     )
     entry.runtime_data = runtime_data
     hass.data[DOMAIN] = runtime_data

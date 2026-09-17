@@ -38,6 +38,9 @@ Commands:
                                                                 sort | type,
                                                                 limit}}}
     wrist_assistant/gallery_key
+    wrist_assistant/complications/parts_list
+    wrist_assistant/complications/parts_save   {name, text, part_id?}
+    wrist_assistant/complications/parts_delete {part_id}
 
 ``save`` is all-or-nothing: the browser submits the whole document plus the
 revision it loaded. A mismatch returns error code ``conflict`` with the
@@ -52,6 +55,11 @@ and the way to prune it stay in one file.
 ``gallery_key`` hands the panel the random key it sends to the complication
 gallery (see ``gallery_key_store.py``). Admin-only like the rest: the key is
 what lets someone delete this home's gallery uploads.
+
+The three ``parts_*`` commands are My parts, the home's library of saved layer
+sets (see ``parts_store.py``). A part is share text, so nothing about the house
+is in one, but they are admin-only like every other command here: writing to
+this library is editing what the panel offers everybody.
 """
 
 from __future__ import annotations
@@ -101,6 +109,7 @@ from .statistics_series import (
     async_statistics_series,
 )
 from .gallery_key_store import gallery_key_store
+from .parts_store import PartsStore, PartsStoreError
 from .widget_secret_store import DEVICE_KIND_IPHONE
 
 _LOGGER = logging.getLogger(__name__)
@@ -120,6 +129,9 @@ _CMD_NUDGE = f"{DOMAIN}/complications/nudge"
 _CMD_WATCH_STATUS = f"{DOMAIN}/complications/watch_status"
 _CMD_FORGET = f"{DOMAIN}/devices/forget"
 _CMD_GALLERY_KEY = f"{DOMAIN}/gallery_key"
+_CMD_PARTS_LIST = f"{DOMAIN}/complications/parts_list"
+_CMD_PARTS_SAVE = f"{DOMAIN}/complications/parts_save"
+_CMD_PARTS_DELETE = f"{DOMAIN}/complications/parts_delete"
 
 
 def _store(hass: HomeAssistant) -> ComplicationStore | None:
@@ -127,6 +139,14 @@ def _store(hass: HomeAssistant) -> ComplicationStore | None:
     if domain_data is None:
         return None
     return domain_data.complication_store
+
+
+def _parts(hass: HomeAssistant) -> PartsStore | None:
+    """The home's My parts library, or None before the integration is ready."""
+    domain_data = hass.data.get(DOMAIN)
+    if domain_data is None:
+        return None
+    return getattr(domain_data, "parts_store", None)
 
 
 def _seconds_since_poll(hass: HomeAssistant, coordinator: Any, owner: str) -> float | None:
@@ -192,6 +212,9 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_watch_status)
     websocket_api.async_register_command(hass, ws_forget_device)
     websocket_api.async_register_command(hass, ws_gallery_key)
+    websocket_api.async_register_command(hass, ws_parts_list)
+    websocket_api.async_register_command(hass, ws_parts_save)
+    websocket_api.async_register_command(hass, ws_parts_delete)
 
 
 @websocket_api.require_admin
@@ -208,6 +231,77 @@ async def ws_gallery_key(
     """
     key = await gallery_key_store(hass).async_get_key()
     connection.send_result(msg["id"], {"key": key})
+
+
+# ── My parts ──────────────────────────────────────────────────────────────
+#
+# One library per home. A part is the share text of a few layers, so the three
+# commands below move strings and nothing else: the panel draws the picture
+# itself from the text rather than keeping a picture beside it.
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): _CMD_PARTS_LIST})
+@callback
+def ws_parts_list(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Every saved part, newest change first."""
+    store = _parts(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    connection.send_result(msg["id"], {"parts": store.list()})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_PARTS_SAVE,
+        vol.Required("name"): str,
+        vol.Required("text"): str,
+        # Absent adds a part; present replaces the one with this id, which is
+        # how both renaming and saving over a part are spelled.
+        vol.Optional("part_id"): str,
+    }
+)
+@callback
+def ws_parts_save(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    store = _parts(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    try:
+        part = store.save(msg.get("part_id"), msg["name"], msg["text"])
+    except PartsStoreError as err:
+        connection.send_error(msg["id"], err.code, err.message)
+        return
+    connection.send_result(msg["id"], {"part": part})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_PARTS_DELETE,
+        vol.Required("part_id"): str,
+    }
+)
+@callback
+def ws_parts_delete(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    store = _parts(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    try:
+        store.delete(msg["part_id"])
+    except PartsStoreError as err:
+        connection.send_error(msg["id"], err.code, err.message)
+        return
+    connection.send_result(msg["id"], {"ok": True})
 
 
 @websocket_api.require_admin

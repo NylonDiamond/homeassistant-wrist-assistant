@@ -45,6 +45,9 @@ _ADMIN_ONLY = {
     "ws_statistics_series",
     "ws_list_items",
     "ws_gallery_key",
+    "ws_parts_list",
+    "ws_parts_save",
+    "ws_parts_delete",
 }
 
 
