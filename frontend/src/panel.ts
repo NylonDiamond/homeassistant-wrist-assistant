@@ -696,6 +696,21 @@ type HelpTab = "basics" | "pages" | "keys" | "sync";
 type LayerDetail = "compact" | "expanded";
 /** How the Layers list is shown: picture size and row detail. Per browser,
  * like the column widths, and never part of the document. */
+/**
+ * The left column's three cards each wear one colour: in the band across their
+ * head, in the wash behind the card, and in the controls inside it.
+ *
+ * Add a layer keeps the accent, because it is the one card that makes
+ * something out of nothing. Layers and Pages were both drawn in the Place
+ * section's blue grey, which left the column reading as one bright card over
+ * two grey ones; they now have a colour each, far enough apart in hue that
+ * the eye finds the card it wants before it reads the title.
+ */
+const CARD_TINT = {
+  layers: "#3aa8c1",
+  pages: "#e08a4f",
+} as const;
+
 const LIST_STORE_KEY = "wrist-assistant-panel.layers.v1";
 const GRID_STORE_KEY = "wrist-assistant-panel.grid.v1";/** How tall the slot a dragged row opens is, CSS px. */
 const DROP_GAP = 34;
@@ -2429,31 +2444,38 @@ export class WristAssistantPanel extends LitElement {
     .card.fold .fold-h .chev { color: var(--wa-muted); flex: none; display: grid; place-items: center; transition: transform .15s ease-out; }
     .card.fold .fold-h .chev svg { width: 16px; height: 16px; }
     .card.fold[data-open="true"] .fold-h .chev { transform: rotate(180deg); }
-    /* Add a layer is the one card that makes something out of nothing, and it
-       was the quietest line on the column: a 13.5px title that looked like the
-       label over the list below it. Its header now wears the accent as a band
-       across the card, so the eye lands on it first and the fold is plainly a
-       thing to press. */
-    .card.addcard .fold-h {
+    /* The left column's card titles were the quietest lines on the panel:
+       13.5px over a card the same colour, so Add a layer read as the label
+       over the list below it rather than as the card that makes one. Each of
+       the three now wears its own colour as a band across the head of the
+       card, so the eye finds the card before it reads the title.
+
+       The colour is the card's own --c, the same one the wash and the title
+       swatch already take, so a card is tinted in exactly one place. */
+    .card.banded > .panel-title {
       margin: -10px -12px 8px; padding: 9px 12px; border-radius: var(--wa-r-md) var(--wa-r-md) 0 0;
       font-size: 14.5px;
       background: linear-gradient(180deg,
-        color-mix(in srgb, var(--wa-accent) 20%, var(--wa-card)),
-        color-mix(in srgb, var(--wa-accent) 9%, var(--wa-card)));
-      box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--wa-accent) 26%, transparent);
+        color-mix(in srgb, var(--c, var(--wa-accent)) 22%, var(--wa-card)),
+        color-mix(in srgb, var(--c, var(--wa-accent)) 10%, var(--wa-card)));
+      box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--c, var(--wa-accent)) 30%, transparent);
     }
-    .card.addcard[data-open="false"] .fold-h { margin-bottom: -12px; border-radius: var(--wa-r-md); }
-    .card.addcard .fold-h:hover {
-      background: linear-gradient(180deg,
-        color-mix(in srgb, var(--wa-accent) 28%, var(--wa-card)),
-        color-mix(in srgb, var(--wa-accent) 15%, var(--wa-card)));
-    }
-    .card.addcard .fold-h .swatch {
+    .card.banded > .panel-title .swatch {
       width: 24px; height: 24px; border-radius: 7px;
-      box-shadow: 0 1px 3px color-mix(in srgb, var(--wa-accent) 55%, transparent);
+      box-shadow: 0 1px 3px color-mix(in srgb, var(--c, var(--wa-accent)) 55%, transparent);
     }
-    .card.addcard .fold-h .swatch svg { width: 15px; height: 15px; }
-    .card.addcard .fold-h .chev { color: var(--wa-ink); opacity: .7; }
+    .card.banded > .panel-title .swatch svg { width: 15px; height: 15px; }
+    /* The Layers card is padded 8px at the sides, not 12px, so its band needs
+       its own reach to the edge. */
+    .card.banded.layers-card > .panel-title { margin: -10px -8px 8px; padding: 9px 10px; }
+    /* Only the folding card's head is a button, so only it lights on hover. */
+    .card.banded.fold > .panel-title:hover {
+      background: linear-gradient(180deg,
+        color-mix(in srgb, var(--c, var(--wa-accent)) 32%, var(--wa-card)),
+        color-mix(in srgb, var(--c, var(--wa-accent)) 17%, var(--wa-card)));
+    }
+    .card.banded.fold[data-open="false"] > .panel-title { margin-bottom: -12px; border-radius: var(--wa-r-md); }
+    .card.banded.fold > .panel-title .chev { color: var(--wa-ink); opacity: .7; }
 
     /* As many across as fit, at about half the width the cards started at.
        The samples are drawn from a 120 unit viewBox, so a 140px card shows
@@ -3046,17 +3068,16 @@ export class WristAssistantPanel extends LitElement {
     /* The Pages card sits between Add a layer and Layers, and holds nothing
        but its one row, so it keeps no bottom padding of its own.
 
-       Pages are the one card with a colour of their own: the blue grey the
-       Place section already wears (SECTION_COLOR.place), which is what the
-       card's own title swatch is drawn in. The purple accent belongs to the
-       selection, and a pressed page tab is not a selected layer. The fill is
-       mixed darker than the swatch so white digits on it stay readable. */
+       Pages have a colour of their own (CARD_TINT.pages), the one its band,
+       its wash and its title swatch are drawn in. The purple accent belongs to
+       the selection, and a pressed page tab is not a selected layer. The fill
+       is mixed darker than the swatch so white digits on it stay readable. */
     .pages-card {
       padding-bottom: 10px;
-      --wa-page: color-mix(in srgb, var(--wa-place) 72%, #0b1620);
+      --wa-page: color-mix(in srgb, var(--c) 72%, #0b1620);
       --wa-page-ink: #fff;
     }
-    :host([dark]) .pages-card { --wa-page: color-mix(in srgb, var(--wa-place) 82%, #0b1620); }
+    :host([dark]) .pages-card { --wa-page: color-mix(in srgb, var(--c) 82%, #0b1620); }
     .pages-card .panel-title { margin-bottom: 8px; }
     /* The page row: the tabs share the whole width, so two pages get two wide
        buttons and four get four narrower ones, and the row is a control in its
@@ -3134,7 +3155,7 @@ export class WristAssistantPanel extends LitElement {
       border-color: color-mix(in srgb, var(--wa-page) 45%, var(--wa-line));
       color: var(--wa-page);
     }
-    :host([dark]) .page-row .page-act.page-more { color: color-mix(in srgb, var(--wa-place) 55%, #fff); }
+    :host([dark]) .page-row .page-act.page-more { color: color-mix(in srgb, var(--c) 55%, #fff); }
     .page-row .page-act.page-more svg.ui-icon { width: 15px; height: 15px; display: block; }
     .page-row .page-act.page-more:hover:not(:disabled) {
       background: var(--wa-page); border-color: transparent; color: var(--wa-page-ink);
@@ -3178,7 +3199,7 @@ export class WristAssistantPanel extends LitElement {
     /* The finger and the direction travel together in one block, so the eye
        reads "a tap, going this way" before it reads the words. */
     .page-fix .page-add .page-add-i { flex: none; display: inline-flex; align-items: center; gap: 1px; color: var(--wa-page); }
-    :host([dark]) .page-fix .page-add .page-add-i { color: color-mix(in srgb, var(--wa-place) 45%, #fff); }
+    :host([dark]) .page-fix .page-add .page-add-i { color: color-mix(in srgb, var(--c) 45%, #fff); }
     .page-fix .page-add svg.ui-icon { width: 15px; height: 15px; }
     .page-fix .page-add:hover:not(:disabled) {
       background: color-mix(in srgb, var(--wa-page) 12%, var(--wa-input));
@@ -6623,7 +6644,7 @@ export class WristAssistantPanel extends LitElement {
     const body = this.renderPageBody(cfg, edit);
     if (body === nothing) return nothing;
     const count = usesPages(cfg) ? pagesSpecOf(cfg).count : 1;
-    return html`<div class="card pages-card tinted" style=${`--c:${SECTION_COLOR.place}`}>
+    return html`<div class="card pages-card tinted banded" style=${`--c:${CARD_TINT.pages}`}>
       <h2 class="panel-title"><span class="swatch">${uiIcon("pages")}</span>Pages
         <span class="mini">${usesPages(cfg) ? `${count} pages · one at a time` : "one complication, several pages"}</span>
         <span class="spacer"></span>
@@ -10602,7 +10623,7 @@ export class WristAssistantPanel extends LitElement {
         title=${card.blurb}
         @click=${() => addBlank(card)}
         >${rich ? html`<span class="well">${addPreview(card.kind, card.variant)}</span>` : nothing}<span class="add-name"><span class="k"></span><span>${card.title}</span></span></button>`;
-    return html`<div class="card fold tinted addcard" data-open=${open ? "true" : "false"}>
+    return html`<div class="card fold tinted banded" data-open=${open ? "true" : "false"}>
       <h2 class="panel-title tools fold-h" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
         title=${open ? "Hide the add buttons" : "Show the add buttons"}
         @click=${toggle}
@@ -11161,7 +11182,7 @@ export class WristAssistantPanel extends LitElement {
       if (!this.collapsed.has(g.id)) rows.push(html`<div class="group-kids">${row.members.map((m) => html`${layerRow(m, true, groupHl, listChevron(m))}${listKids(m)}`)}</div>`);
     }
 
-    return html`<div class="card layers-card tinted s${this.thumbStep}" style=${`--thumb-w:${thumbW}px;--thumb-h:${thumbH}px;--c:${SECTION_COLOR.place}`}>
+    return html`<div class="card layers-card tinted banded s${this.thumbStep}" style=${`--thumb-w:${thumbW}px;--thumb-h:${thumbH}px;--c:${CARD_TINT.layers}`}>
       <h2 class="panel-title tools"><span class="swatch">${uiIcon("layers")}</span>Layers
         <span class="mini">top draws last</span><span class="spacer"></span>
         <span class="tool-set">
