@@ -2782,14 +2782,34 @@ export class WristAssistantPanel extends LitElement {
       display: flex; align-items: center; gap: 8px; margin: 2px 0 8px;
     }
     .page-row .page-tabs { display: flex; flex: 1 1 auto; gap: 4px; min-width: 0; }
-    .page-row .page-tabs button {
-      font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; flex: 1 1 0; min-width: 0;
+    .page-row .page-tabs > button, .page-row .page-tab {
+      font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; flex: 1 1 0; min-width: 0;
       height: 26px; padding: 0 6px; border-radius: 7px;
       border: 1px solid var(--wa-line); background: var(--wa-input); color: inherit;
     }
-    .page-row .page-tabs button.on { background: var(--wa-accent); color: var(--wa-accent-ink); border-color: transparent; }
-    .page-row .page-tabs button:hover:not(.on) { background: var(--wa-raised); }
-    .page-row .page-tabs button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .page-row .page-tabs > button.on { background: var(--wa-accent); color: var(--wa-accent-ink); border-color: transparent; }
+    .page-row .page-tabs > button:hover:not(.on) { background: var(--wa-raised); }
+    .page-row .page-tabs > button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    /* The pressed page: wider than the rest, filled in the accent, and split
+       into its number and the trash for that page. The number keeps the whole
+       left of the pill so a click anywhere on it stays a page click; only the
+       icon at the right end deletes. */
+    .page-row .page-tab {
+      flex: 3 1 0; display: flex; align-items: stretch; padding: 0; overflow: hidden;
+      background: var(--wa-accent); color: var(--wa-accent-ink); border-color: transparent; cursor: default;
+    }
+    .page-row .page-tab button {
+      font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; color: inherit;
+      border: 0; background: transparent; padding: 0; margin: 0;
+    }
+    .page-row .page-tab button:first-child { flex: 1 1 auto; min-width: 0; }
+    .page-row .page-tab .page-trash {
+      flex: none; width: 28px; display: inline-flex; align-items: center; justify-content: center;
+      border-left: 1px solid color-mix(in srgb, var(--wa-accent-ink) 25%, transparent);
+    }
+    .page-row .page-tab .page-trash svg.ui-icon { width: 13px; height: 13px; }
+    .page-row .page-tab .page-trash:hover { background: color-mix(in srgb, var(--wa-accent-ink) 18%, transparent); }
+    .page-row .page-tab button:focus-visible { outline: none; box-shadow: inset var(--wa-ring); }
     /* + and − beside the tabs, and Add a page in their place before there are
        any: fixed width, so the tabs alone take the slack. */
     .page-row .page-act {
@@ -6050,16 +6070,25 @@ export class WristAssistantPanel extends LitElement {
    * screen and both show one page at a time; both read and write the same
    * `page`, so a press in either place moves both.
    */
-  private renderPageTabs(cfg: CustomComplicationConfig) {
+  private renderPageTabs(cfg: CustomComplicationConfig, opts: { trash?: boolean } = {}) {
     const spec = pagesSpecOf(cfg);
     const pinned = (page: number) =>
       cfg.elements.filter((el) => el.payload.page === page && !isAttachedTap(cfg, el)).length;
     return pageNumbers(spec).map((page) => {
       const on = page === this.page;
       const count = pinned(page);
-      return html`<button class=${on ? "on" : ""} aria-pressed=${on ? "true" : "false"}
-        title=${`Page ${page}: ${count} layer${count === 1 ? "" : "s"}`}
+      const label = `Page ${page}: ${count} layer${count === 1 ? "" : "s"}`;
+      const tab = html`<button class=${on ? "on" : ""} aria-pressed=${on ? "true" : "false"} title=${label}
         @click=${() => this.setPage(page)}>${page}</button>`;
+      // In the Layers row the pressed tab grows and carries the trash for its
+      // own page, so the one control that changes the document sits on the
+      // page it changes, and never beside a tab you are about to click.
+      if (!on || !opts.trash) return tab;
+      const gone = spec.count > 2
+        ? `Remove page ${page}. Its layers move to page ${page > 1 ? page - 1 : 1}, later pages move down one, and nothing is dropped.`
+        : `Remove page ${page}, which turns pages off. Every layer stays and goes back to the one face.`;
+      return html`<span class="page-tab on">${tab}<button class="page-trash" title=${gone} aria-label=${gone}
+        @click=${() => { this.mutate((c) => { removePage(c, page); }); this.showPage(Math.max(1, page - 1)); }}>${uiIcon("delete")}</button></span>`;
     });
   }
 
@@ -6089,19 +6118,13 @@ export class WristAssistantPanel extends LitElement {
     }
     const spec = pagesSpecOf(cfg);
     const full = spec.count >= PAGES_MAX_COUNT;
-    const here = this.page;
     return html`<div class="page-row" title="Which page the canvas and this list show. The list holds this page's layers and the ones on every page.">
       ${PAGES_CHIP}
-      <span class="page-tabs" role="group" aria-label="Page the list is showing">${this.renderPageTabs(cfg)}</span>
+      <span class="page-tabs" role="group" aria-label="Page the list is showing">${this.renderPageTabs(cfg, { trash: edit })}</span>
       ${edit ? html`
         <button class="page-act" ?disabled=${full}
           title=${full ? "Four pages is the most a complication can have." : "Add an empty page after the last one."}
-          @click=${() => { let page: number | undefined; this.mutate((c) => { page = addPage(c); }); if (page !== undefined) this.showPage(page); }}>+</button>
-        <button class="page-act"
-          title=${spec.count > 2
-            ? `Remove page ${here}. Its layers move to page ${here > 1 ? here - 1 : 1}, later pages move down one, and nothing is dropped.`
-            : `Remove page ${here}, which turns pages off. Every layer stays and goes back to the one face.`}
-          @click=${() => { this.mutate((c) => { removePage(c, here); }); this.showPage(Math.max(1, here - 1)); }}>−</button>` : nothing}
+          @click=${() => { let page: number | undefined; this.mutate((c) => { page = addPage(c); }); if (page !== undefined) this.showPage(page); }}>+</button>` : nothing}
       ${help}
     </div>`;
   }
@@ -6260,7 +6283,7 @@ export class WristAssistantPanel extends LitElement {
       ["Turning pages on", "Add a page under the Layers list. What you have now becomes page 1 and an empty page 2 opens. The Pages select in the Complication card does the same, but leaves your layers on every page for you to sort out."],
       ["One page at a time", "The canvas and the Layers list show one page. The Pages row under the Layers header and the strip above the canvas say which, and clicking a number switches both. [ and ] do the same from the keyboard."],
       ["Which page a layer is on", "Each layer sits on one page or on every page. Set it on the layer, in its Position card. A layer you add lands on the page you are looking at. A background, a border or a label that belongs everywhere goes on Every page."],
-      ["+ and −", "In the Pages row. + adds an empty page at the end, up to four. − removes the page you are looking at: its layers move to the page before it, later pages move down one, and nothing is dropped. Undo puts it back."],
+      ["+ and the trash", "In the Pages row. + adds an empty page at the end, up to four. The trash on the pressed page removes that page: its layers move to the page before it, later pages move down one, and nothing is dropped. Undo puts it back."],
       ["Moving between pages on the watch", "A tap has to say so. Set the complication's tap action, or a tap layer's, to Next page or Previous page. A tap with any other action does its own job and leaves the page alone, so a page can still hold buttons. The page stays where it was left."],
       ["The tour", "Set a tap action to Play the page tour and one tap plays every page once, then returns to page 1. The Complication card then shows a hold time per page; a tour lasts the sum of them. The Play tour button in the strip plays it here with the same timing. A tap during a tour on the watch stops it."],
       ["What the watch needs", "A complication with pages needs the Wrist Assistant app that understands them. An older app refuses the whole complication and asks for an update rather than drawing every page on top of each other."],
