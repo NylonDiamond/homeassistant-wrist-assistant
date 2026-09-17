@@ -284,12 +284,10 @@ import {
   PAGES_MAX_COUNT,
   PAGE_DEFAULT_DWELL,
   PAGE_DWELL_RANGE,
-  pageCountMoveNote,
   addPageTurnTap,
   pageMoverExists,
   pageNumbers,
   pagesSpecOf,
-  setPageCount,
   setPageDwell,
   tourDuration,
   usesPages,
@@ -3897,20 +3895,20 @@ function dwellSeconds(seconds: number): string {
 }
 
 /**
- * The settings under the Pages card's row, in the left column: how the pages
- * are moved through, how long a tour holds each one, and the one control that
- * turns the feature off.
+ * The settings under the Pages card's row, in the left column: how long a
+ * tour holds each page, and the two buttons that make the tap areas a page
+ * needs to be turned.
  *
  * Everything about pages lives in that card. There used to be a Pages count
  * select here in the Complication card as well, and the two disagreed: the
  * select took a page away by moving its layers onto the new last page, while
  * the trash on a page tab took the page and its layers together. Two controls
  * for one number, with different answers to "where did my layers go". The
- * select is gone, and what is left says what it does:
+ * select is gone, and the count has one story:
  *
  * - `+` adds an empty page and moves nothing.
  * - The trash on a page takes that page and the layers on it, one undo away.
- * - Turn pages off keeps every layer and puts them back on every page.
+ *   Taking the second-to-last page turns pages off, which is the one way off.
  *
  * There is no Mode switch. Whether the document is a tour follows its tap
  * actions (`pageModeFor`): a Play tour action anywhere makes it one, and the
@@ -3928,10 +3926,6 @@ export function pagesCardFields(host: EditorHost, page: number): TemplateResult 
   if (!usesPages(cfg)) return html``;
   const spec = pagesSpecOf(cfg);
   const tour = spec.mode === "tour";
-  // What turning pages off will do to the pinned layers, said before it
-  // happens rather than after: nothing is dropped, everything goes back to
-  // being on every page.
-  const unpin = pageCountMoveNote(cfg, 1);
   // One zone per press, and each lands on the page the author is looking at,
   // because page 1 usually wants Next alone and the last page wants Back
   // alone. A pair on every page would put a dead Back on page 1.
@@ -3944,10 +3938,11 @@ export function pagesCardFields(host: EditorHost, page: number): TemplateResult 
       <span class="page-add-i">${uiIcon("tap")}${back ? uiIcon("left") : uiIcon("right")}</span>
       <span>Add ${back ? "prev" : "next"} page tap action</span></button>`;
   };
+  // One line above the buttons, doing the job a separate warning used to: it
+  // says what the buttons make and that a document without one is stuck on
+  // page 1. It goes amber while that is actually true.
+  const stuck = !pageMoverExists(cfg);
   return html`
-    ${tour
-      ? html`<div class="hint">One tap plays every page, then back to page 1.</div>`
-      : html`<div class="hint">Each tap shows the next page.</div>`}
     ${tour ? html`
       <div class="grid2">
         ${pageNumbers(spec).map((n) => numberField(`Page ${n} hold`, writtenDwell(spec, n),
@@ -3957,15 +3952,10 @@ export function pagesCardFields(host: EditorHost, page: number): TemplateResult 
       </div>
       <div class="hint">Tour lasts ${dwellSeconds(tourDuration(spec))}.</div>`
       : nothing}
-    <div class="hint">A layer sits on one page or on every page. Set that under Position.</div>
-    ${pageMoverExists(cfg) ? nothing : html`<div class="hint warn">Nothing turns the page yet.</div>`}
     <div class="page-fix">
-      <span class="page-fix-l">Add to page ${page}</span>
+      <span class="page-fix-l ${stuck ? "warn" : ""}">Add a tap action to go to prev/next page.
+        Required for changing pages.</span>
       <div class="page-fix-pair">${zone("previousPage")}${zone("nextPage")}</div>
-    </div>
-    <div class="pages-off">
-      <button class="ghost" title=${`Back to one face. No layer is deleted.${unpin === undefined ? "" : ` ${unpin}`}`}
-        @click=${() => host.update((c) => { setPageCount(c, 1); }, "pages-off")}>Turn pages off</button>
     </div>`;
 }
 

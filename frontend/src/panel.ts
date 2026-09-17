@@ -2802,21 +2802,28 @@ export class WristAssistantPanel extends LitElement {
       height: 26px; min-width: 26px; padding: 0 7px; border-radius: 7px;
       border: 1px solid var(--wa-line); background: var(--wa-input); color: inherit;
     }
-    .page-row .page-act.page-start { flex: 1 1 auto; font-size: 12.5px; }
+    /* Before there are any pages the card holds one button, so it is sized to
+       its words and centred rather than stretched over a card's width. */
+    .page-row.start { justify-content: center; }
+    .page-row .page-act.page-start {
+      flex: none; display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12.5px; font-weight: 600; padding: 0 12px;
+    }
+    .page-row .page-act.page-start svg.ui-icon { width: 14px; height: 14px; color: var(--wa-accent); }
     .page-row .page-act:hover:not(:disabled) { background: var(--wa-raised); }
     .page-row .page-act:disabled { opacity: .45; cursor: default; }
     .page-row .page-act:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .panel-title button.help { flex: none; }
-    /* Turn pages off: the one control in the card that takes the feature
-       away, so it sits at the foot on its own line, not beside the tabs. */
-    .pages-off { display: flex; justify-content: flex-end; margin-top: 8px; }
     /* The ready-made page-turn taps: a label saying which page they land on,
        then the pair side by side, left one on the left. */
     .page-fix {
       display: flex; flex-direction: column; align-items: stretch; gap: 6px; margin-top: 10px;
       padding-top: 10px; border-top: 1px solid var(--wa-line);
     }
-    .page-fix .page-fix-l { font-size: 12px; color: var(--wa-muted); margin-bottom: 2px; }
+    .page-fix .page-fix-l { font-size: 12px; line-height: 1.35; color: var(--wa-muted); margin-bottom: 2px; }
+    /* Brighter, not coloured: the same way .hint.warn marks a line that is
+       actually a problem right now. */
+    .page-fix .page-fix-l.warn { color: var(--wa-ink); }
     /* Prev and next share one row and split it evenly, the way they split the
        face. The label inside wraps rather than trails off, so a narrow panel
        costs a second line, never the end of the sentence. */
@@ -6125,9 +6132,9 @@ export class WristAssistantPanel extends LitElement {
   private renderPageBody(cfg: CustomComplicationConfig, edit: boolean) {
     if (!usesPages(cfg)) {
       if (!edit) return nothing;
-      return html`<div class="page-row">
+      return html`<div class="page-row start">
         <button class="page-act page-start" title="Start a second page. What is here now becomes page 1, and a new empty page 2 opens for you to draw on."
-          @click=${() => { let page = 1; this.mutate((c) => { page = startPages(c); }); this.showPage(page); }}>Add a page</button>
+          @click=${() => { let page = 1; this.mutate((c) => { page = startPages(c); }); this.showPage(page); }}>${uiIcon("plus")}<span>Add a page</span></button>
       </div>`;
     }
     const spec = pagesSpecOf(cfg);
@@ -6277,7 +6284,7 @@ export class WristAssistantPanel extends LitElement {
     ];
     const pagesWhat: [string, string][] = [
       ["What a page is", "One slot on the watch face can hold several pages of the same complication, one showing at a time. A house battery on page 1 and the car on page 2 is the usual reason: one slot, two readings."],
-      ["Turning pages on", "Add a page in the Pages card, between Add a layer and Layers. What you have now becomes page 1 and an empty page 2 opens. Turn pages off, at the foot of the same card, puts every layer back on every page and deletes nothing."],
+      ["Turning pages on", "Add a page in the Pages card, between Add a layer and Layers. What you have now becomes page 1 and an empty page 2 opens. To turn pages off again, delete pages with the trash until one is left."],
       ["One page at a time", "The canvas and the Layers card show one page. The Pages card above the list says which, and clicking a number switches both. [ and ] do the same from the keyboard."],
       ["Which page a layer is on", "Each layer sits on one page or on every page. Set it on the layer, in its Position card. A layer you add lands on the page you are looking at. A background, a border or a label that belongs everywhere goes on Every page."],
       ["+ and the trash", "In the Pages card. + adds an empty page at the end, up to four. The trash on the pressed page deletes that page and the layers on it; later pages move down one, and layers on every page stay. Undo puts it back."],
