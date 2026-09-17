@@ -5939,6 +5939,25 @@ export class WristAssistantPanel extends LitElement {
    * also where they are turned off, so one switch owns the feature and this
    * strip only ever says which page is on screen.
    */
+  /**
+   * One button per page, the showing one pressed. Drawn twice, over the canvas
+   * and in the Layers header, because the two sit at opposite ends of the
+   * screen and both show one page at a time; both read and write the same
+   * `page`, so a press in either place moves both.
+   */
+  private renderPageTabs(cfg: CustomComplicationConfig) {
+    const spec = pagesSpecOf(cfg);
+    const pinned = (page: number) =>
+      cfg.elements.filter((el) => el.payload.page === page && !isAttachedTap(cfg, el)).length;
+    return pageNumbers(spec).map((page) => {
+      const on = page === this.page;
+      const count = pinned(page);
+      return html`<button class=${on ? "on" : ""} aria-pressed=${on ? "true" : "false"}
+        title=${`Page ${page}: ${count} layer${count === 1 ? "" : "s"}`}
+        @click=${() => this.setPage(page)}>${page}</button>`;
+    });
+  }
+
   private renderPageStrip() {
     const cfg = this.draft?.config;
     if (!cfg || !usesPages(cfg)) return nothing;
@@ -5947,8 +5966,6 @@ export class WristAssistantPanel extends LitElement {
     if (!isDrawable(this.activeFamily)) return nothing;
     const spec = pagesSpecOf(cfg);
     const playing = this.touring;
-    const pinned = (page: number) =>
-      cfg.elements.filter((el) => el.payload.page === page && !isAttachedTap(cfg, el)).length;
     const tourButton = html`<button class="page-act ${playing ? "on" : ""}" aria-pressed=${playing ? "true" : "false"}
       title=${playing
         ? "Stop the tour. The page stays where it got to, the way a tap on the watch takes over from a tour."
@@ -5959,15 +5976,7 @@ export class WristAssistantPanel extends LitElement {
       @click=${() => this.setPage(nextPageAfter(spec, this.page))}>Next</button>`;
     return html`<div class="page-strip">
       <span class="page-strip-word">Page</span>
-      <span class="page-tabs" role="group" aria-label="Page the canvas is showing">
-        ${pageNumbers(spec).map((page) => {
-          const on = page === this.page;
-          const count = pinned(page);
-          return html`<button class=${on ? "on" : ""} aria-pressed=${on ? "true" : "false"}
-            title=${`Page ${page}: ${count} layer${count === 1 ? "" : "s"}`}
-            @click=${() => this.setPage(page)}>${page}</button>`;
-        })}
-      </span>
+      <span class="page-tabs" role="group" aria-label="Page the canvas is showing">${this.renderPageTabs(cfg)}</span>
       ${spec.mode === "tour" ? tourButton : nextButton}
       ${playing
         // Keyed on the run so a second press starts the bar over: a CSS
@@ -10244,6 +10253,13 @@ export class WristAssistantPanel extends LitElement {
       <h2 class="panel-title tools" style=${`--c:${SECTION_COLOR.place}`}><span class="swatch">${uiIcon("layers")}</span>Layers
         <span class="mini">top draws last</span><span class="spacer"></span>
         <span class="tool-set">
+          ${usesPages(cfg)
+            // The same tabs as the strip over the canvas: the list is at the
+            // other end of the screen, and a layer on another page is only a
+            // dimmed row here until that page is showing.
+            ? html`<span class="seg page-seg" role="group" aria-label="Page the list is showing"
+                title="Which page the canvas and this list show. A layer on another page stays in the list, dimmed.">${this.renderPageTabs(cfg)}</span>`
+            : nothing}
           <span class="seg" role="group" aria-label="Row detail">
             ${([["compact", "Compact rows: the name and one line about the layer"],
                 ["expanded", "Expanded rows: what the layer is made of and where it sits"]] as const).map(([mode, tip]) => html`
