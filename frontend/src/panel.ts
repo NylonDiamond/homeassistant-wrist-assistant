@@ -2811,8 +2811,7 @@ export class WristAssistantPanel extends LitElement {
        away, so it sits at the foot on its own line, not beside the tabs. */
     .pages-off { display: flex; justify-content: flex-end; margin-top: 8px; }
     /* The ready-made page-turn taps: a label saying which page they land on,
-       then the pair side by side, left one on the left, and the whole-face
-       fallback full width under them. */
+       then the pair side by side, left one on the left. */
     .page-fix {
       display: flex; flex-direction: column; align-items: stretch; gap: 6px; margin-top: 10px;
       padding-top: 10px; border-top: 1px solid var(--wa-line);
@@ -2837,10 +2836,6 @@ export class WristAssistantPanel extends LitElement {
     .page-fix .page-add:hover:not(:disabled) { background: var(--wa-raised); border-color: var(--wa-line-strong); }
     .page-fix .page-add:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .page-fix .page-add:disabled { opacity: .45; cursor: default; }
-    /* The whole-face one is the blunter instrument: same shape, no fill, so it
-       sits below the two tap areas rather than beside them as an equal. */
-    .page-fix .page-add.whole { background: none; color: var(--wa-muted); font-weight: 500; }
-    .page-fix .page-add.whole .page-add-i { color: var(--wa-muted); }
     /* The tour's progress, under the Pages row: one thin bar, filled by a CSS
        animation over the tour's own length, so nothing has to tick at 60 fps
        to draw it. */
@@ -6115,7 +6110,7 @@ export class WristAssistantPanel extends LitElement {
     const count = usesPages(cfg) ? pagesSpecOf(cfg).count : 1;
     return html`<div class="card pages-card">
       <h2 class="panel-title" style=${`--c:${SECTION_COLOR.place}`}><span class="swatch">${uiIcon("pages")}</span>Pages
-        <span class="mini">${usesPages(cfg) ? `${count} pages · one at a time` : "one face, several pages"}</span>
+        <span class="mini">${usesPages(cfg) ? `${count} pages · one at a time` : "one complication, several pages"}</span>
         <span class="spacer"></span>
         <button class="help" title="How pages work" aria-label="How pages work"
           @click=${() => { this.helpTab = "pages"; this.helpOpen = true; }}>?</button>
@@ -6278,10 +6273,10 @@ export class WristAssistantPanel extends LitElement {
       ["Extra Large", "The full-page tile, iOS 27 and later. An iPhone on iOS 26 is not offered it when adding a widget, and everything else still draws."],
       ["A tinted Home Screen", "iOS 18 lets a user tint the whole Home Screen. The system then drops the tile background and draws the design in two tones, so a design that relies on colour alone reads differently there."],
       ["The shape itself", "The bottom row of the Layers list: its background, border and Shape states."],
-      ["Pages", "One complication, several faces, one showing at a time. The Pages tab of this help explains them."],
+      ["Pages", "One complication, several pages, one showing at a time. The Pages tab of this help explains them."],
     ];
     const pagesWhat: [string, string][] = [
-      ["What a page is", "One slot on the watch face can hold several faces of the same complication, one showing at a time. Each face is a page. A house battery on page 1 and the car on page 2 is the usual reason: one slot, two readings."],
+      ["What a page is", "One slot on the watch face can hold several pages of the same complication, one showing at a time. A house battery on page 1 and the car on page 2 is the usual reason: one slot, two readings."],
       ["Turning pages on", "Add a page in the Pages card, between Add a layer and Layers. What you have now becomes page 1 and an empty page 2 opens. Turn pages off, at the foot of the same card, puts every layer back on every page and deletes nothing."],
       ["One page at a time", "The canvas and the Layers card show one page. The Pages card above the list says which, and clicking a number switches both. [ and ] do the same from the keyboard."],
       ["Which page a layer is on", "Each layer sits on one page or on every page. Set it on the layer, in its Position card. A layer you add lands on the page you are looking at. A background, a border or a label that belongs everywhere goes on Every page."],

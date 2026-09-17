@@ -3924,7 +3924,7 @@ function dwellSeconds(seconds: number): string {
 export function pagesCardFields(host: EditorHost, page: number): TemplateResult {
   const cfg = host.config;
   if (!usesPages(cfg)) {
-    return html`<div class="hint">One complication, several faces, a tap between them.</div>`;
+    return html`<div class="hint">One complication, several pages, a tap between them.</div>`;
   }
   const spec = pagesSpecOf(cfg);
   const tour = spec.mode === "tour";
@@ -3944,10 +3944,6 @@ export function pagesCardFields(host: EditorHost, page: number): TemplateResult 
       <span class="page-add-i">${uiIcon("tap")}${back ? uiIcon("left") : uiIcon("right")}</span>
       <span>Add ${back ? "prev" : "next"} page tap action</span></button>`;
   };
-  // The one-click alternative to a tap area: the whole face turns the page.
-  // Pointless once it is already set, so the button goes quiet rather than
-  // offering to write what is written.
-  const mainIsNext = cfg.tapAction.type === "nextPage";
   return html`
     ${tour
       ? html`<div class="hint">One tap plays every page, then back to page 1.</div>`
@@ -3966,12 +3962,6 @@ export function pagesCardFields(host: EditorHost, page: number): TemplateResult 
     <div class="page-fix">
       <span class="page-fix-l">Add to page ${page}</span>
       <div class="page-fix-pair">${zone("previousPage")}${zone("nextPage")}</div>
-      <button class="page-add whole" ?disabled=${mainIsNext} title=${mainIsNext
-        ? "The complication's tap action is already Next page."
-        : `Changes the complication's tap action from ${describeTapAction(cfg.tapAction)} to Next page, so a tap anywhere on the face turns it. Undo puts it back.`}
-        @click=${() => host.update((c) => { c.tapAction = { type: "nextPage" }; }, "pages-fix-tap")}>
-        <span class="page-add-i">${uiIcon("tap")}</span>
-        <span>Change the complication tap action to Next page</span></button>
     </div>
     <div class="pages-off">
       <button class="ghost" title=${`Back to one face. No layer is deleted.${unpin === undefined ? "" : ` ${unpin}`}`}
