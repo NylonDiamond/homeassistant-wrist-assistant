@@ -119,7 +119,12 @@ PARTS_STORAGE_VERSION = 1
 # cannot draw a row at all and would fail the document on the unknown value
 # kind, so anything carrying one must say 8 and be skipped with "needs app
 # update" instead. A document with no list and no item value keeps its version.
-COMPLICATION_MAX_SCHEMA_VERSION = 8
+# v9 adds pages: several faces in one slot, one showing at a time, with a layer
+# saying which page it belongs to. The one key in this ladder that cannot
+# degrade to "not drawn": an app that ignored it would stack every page on top
+# of every other one, which is a broken face rather than a plainer one. So a
+# document with pages, or with any layer pinned to a page, must say 9.
+COMPLICATION_MAX_SCHEMA_VERSION = 9
 COMPLICATION_MAX_DOCUMENT_BYTES = 256 * 1024
 COMPLICATION_MAX_LAYERS = 64
 # Slot indices 0..COMPLICATION_MAX_SLOTS-1 map onto ComplicationStableSlot on

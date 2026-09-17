@@ -110,6 +110,11 @@ _HOME_FAMILY_SCHEMA_VERSION = 7
 # which is the intended behaviour ("update the app"), so the version must say
 # so rather than leaving the app to discover it.
 _LIST_SCHEMA_VERSION = 8
+# First schema that knows pages. Unlike every other key in this ladder, an app
+# that ignores this one does not draw a plainer complication: it draws every
+# page stacked on every other page. So a document with pages is refused whole by
+# an older app, and must say 9 for that to happen.
+_PAGES_SCHEMA_VERSION = 9
 # The list layer's own limits. Cells are the frame divided evenly, so the row
 # count is what decides how many items are drawn and how small each one is; a
 # template past eight layers is 96 leaves at twelve rows, which is where a
@@ -578,6 +583,33 @@ def _validate_list_elements(elements: list[Any]) -> bool:
     return found
 
 
+def _uses_pages(document: dict, elements: list) -> bool:
+    """Whether this document really uses pages.
+
+    Either half alone is enough, and for the same reason: a `pages` object with
+    more than one page, or a single layer pinned to a page, is a document an app
+    that predates pages would draw with everything on top of everything else.
+    Mirrors `CustomComplicationConfig.usesPages` in the app repo; keep the two
+    reading the same document the same way.
+
+    Only top-level layers are read, as the app reads them. A page on a row layer
+    inside a list means nothing on either side.
+    """
+    pages = document.get("pages")
+    if isinstance(pages, dict):
+        count = pages.get("count")
+        if isinstance(count, int) and count > 1:
+            return True
+    for element in elements:
+        payload = element.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        page = payload.get("page")
+        if isinstance(page, int) and not isinstance(page, bool) and page >= 1:
+            return True
+    return False
+
+
 def _mentions_list_values(document: dict[str, Any]) -> bool:
     """Whether anything in the document is an ``item`` or ``listStat`` value.
 
@@ -723,6 +755,12 @@ def validate_document(document: Any) -> dict[str, Any]:
         raise ComplicationValidationError(
             "document with a list layer, or an item or listStat value, "
             f"requires schemaVersion {_LIST_SCHEMA_VERSION} or newer"
+        )
+
+    if _uses_pages(document, elements) and schema_version < _PAGES_SCHEMA_VERSION:
+        raise ComplicationValidationError(
+            "document with pages, or with a layer pinned to a page, "
+            f"requires schemaVersion {_PAGES_SCHEMA_VERSION} or newer"
         )
 
     try:

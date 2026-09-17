@@ -36,7 +36,7 @@ MAX_PER_OWNER = 8
 MAX_SLOTS = 64
 MAX_LAYERS = 64
 MAX_BYTES = 4096
-MAX_SCHEMA = 8
+MAX_SCHEMA = 9
 
 
 class _FakeStore:
@@ -876,10 +876,10 @@ def test_an_ordinary_document_still_saves_below_schema_eight(mod):
     assert rec.document["schemaVersion"] == 7
 
 
-def test_the_shipped_schema_ceiling_is_eight():
+def test_the_shipped_schema_ceiling_is_nine():
     """The store test stubs the constant, so read the real one too. Both the
     websocket listing and the v2 delta reply hand this number to their client,
-    and a panel will not save a list document until it reads 8."""
+    and a panel will not save a paged document until it reads 9."""
     const = (
         Path(__file__).resolve().parents[1]
         / "custom_components"
@@ -894,11 +894,68 @@ def test_the_shipped_schema_ceiling_is_eight():
         for target in node.targets
         if isinstance(target, ast.Name)
     }
-    assert values["COMPLICATION_MAX_SCHEMA_VERSION"] == MAX_SCHEMA == 8
+    assert values["COMPLICATION_MAX_SCHEMA_VERSION"] == MAX_SCHEMA == 9
 
     for name in ("complication_ws.py", "wa_v2_views.py"):
         source = (const.parent / name).read_text()
         assert '"max_schema_version": COMPLICATION_MAX_SCHEMA_VERSION' in source, name
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        # The `pages` object alone.
+        dict(pages={"count": 2, "mode": "tap"}),
+        dict(pages={"count": 4, "mode": "tour", "dwell": [1, 2, 3, 4]}),
+        # A single pinned layer alone, with no `pages` object at all.
+        dict(elements=[{"kind": "text", "payload": {"id": "T1", "page": 2}}]),
+    ],
+)
+def test_a_paged_document_needs_schema_nine(mod, overrides):
+    """Pages are the one key that cannot degrade to "not drawn": an app that
+    ignored them would stack every page on top of every other one. So the
+    document has to say 9 and be refused whole by an older app."""
+    store = _new(mod)
+    doc = _doc(schemaVersion=8, **overrides)
+    with pytest.raises(mod.ComplicationValidationError) as err:
+        store.save(OWNER, doc, base_revision=None, updated_by="t")
+    assert "9" in str(err.value)
+    assert store.token == 0
+
+
+def test_a_paged_document_saves_at_schema_nine(mod):
+    store = _new(mod)
+    doc = _doc(
+        schemaVersion=9,
+        pages={"count": 2, "mode": "tour", "dwell": [1, 3]},
+        elements=[
+            {"kind": "shape", "payload": {"id": "S1"}},
+            {"kind": "text", "payload": {"id": "T1", "page": 1}},
+            {"kind": "text", "payload": {"id": "T2", "page": 2}},
+        ],
+    )
+    rec = store.save(OWNER, doc, base_revision=None, updated_by="t")
+    assert rec.document["pages"]["count"] == 2
+    assert rec.document["elements"][2]["payload"]["page"] == 2
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        # One page is a document with no pages.
+        dict(pages={"count": 1, "mode": "tap"}),
+        # A page of 0 is nobody's page; the app reads it as "every page" too.
+        dict(elements=[{"kind": "text", "payload": {"id": "T1", "page": 0}}]),
+        # `true` is not a page, however Python feels about bools.
+        dict(elements=[{"kind": "text", "payload": {"id": "T1", "page": True}}]),
+    ],
+)
+def test_a_document_that_only_looks_paged_still_saves_below_nine(mod, overrides):
+    """The walk must not find pages where there are none: every document
+    written before this change keeps saving at the version it carries."""
+    store = _new(mod)
+    rec = store.save(OWNER, _doc(schemaVersion=4, **overrides), base_revision=None, updated_by="t")
+    assert rec.document["schemaVersion"] == 4
 
 
 def test_high_slots_are_valid_with_the_schema_marker(mod):
