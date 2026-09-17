@@ -40,6 +40,12 @@ interface Fixture {
      * alongside the locale by any fixture that pins an hour: the locale alone
      * decides the words, the zone decides the number. */
     timeZone?: string;
+    /** Which page of a paged document the `expected` blocks describe, 1-based.
+     * Absent is page 1, which is every fixture that predates pages. A layer
+     * pinned to another page is dropped before it resolves, so it is simply
+     * absent from the expected elements; `expectedCompiled` is unaffected,
+     * because one refresh fills every page. */
+    page?: number;
   };
   expectedCompiled?: {
     entities: string[];
@@ -90,6 +96,7 @@ function contextFor(fx: Fixture): ResolveContext {
     ...(fx.inputs.nowMs !== undefined ? { nowMs: fx.inputs.nowMs } : {}),
     ...(fx.inputs.locale !== undefined ? { locale: fx.inputs.locale } : {}),
     ...(fx.inputs.timeZone !== undefined ? { timeZone: fx.inputs.timeZone } : {}),
+    ...(fx.inputs.page !== undefined ? { page: fx.inputs.page } : {}),
   };
 }
 

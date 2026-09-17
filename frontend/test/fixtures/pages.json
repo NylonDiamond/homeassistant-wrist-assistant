@@ -1,0 +1,122 @@
+{
+  "name": "Pages, page 2",
+  "description": "Pages on one complication: three pages in one slot, one showing at a time. The shared label names no page, so it draws on every one; the two readings and the icon each name theirs; the tap layer that moves the pages on names none either, so it is reachable wherever the reader is. `inputs.page` is 2, so what resolves is the shared label, the page 2 reading and the tap, in document order, and neither the page 1 reading nor the page 3 icon is there at all. The compiled entities are the other half of the point: every page's entity is asked for, because one refresh fills every page, which is why a document of three pages costs about what the same layers cost on one. The companion fixture `pages_page1.json` is the same document with no `inputs.page`, which pins the default.",
+  "config": {
+    "schemaVersion": 9,
+    "id": "AAAAAAAA-0000-4000-8000-000000000901",
+    "name": "Pages",
+    "slotIndex": 0,
+    "supportedFamilies": ["rectangular"],
+    "values": [],
+    "pages": {"count": 3, "mode": "tour", "dwell": [1, 3]},
+    "elements": [
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000901",
+          "value": {"kind": {"kind": "literal", "value": "Battery"}},
+          "fontSize": 11,
+          "fontWeight": "regular",
+          "colorSlot": {"baseColorHex": "#8E8E93"},
+          "rules": [],
+          "frame": {"x": 0.05, "y": 0.02, "width": 0.6, "height": 0.25, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000902",
+          "value": {"kind": {"kind": "entityState", "entityId": "sensor.house_battery", "displayName": "House battery", "domain": "sensor"}, "format": {"suffix": "%"}},
+          "fontSize": 20,
+          "fontWeight": "semibold",
+          "colorSlot": {"baseColorHex": "#32D74B"},
+          "rules": [],
+          "frame": {"x": 0.05, "y": 0.3, "width": 0.6, "height": 0.6, "rotationDegrees": 0},
+          "isHidden": false,
+          "page": 1
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000903",
+          "value": {"kind": {"kind": "entityState", "entityId": "sensor.car_battery", "displayName": "Car battery", "domain": "sensor"}, "format": {"suffix": "%"}},
+          "fontSize": 20,
+          "fontWeight": "semibold",
+          "colorSlot": {"baseColorHex": "#0A84FF"},
+          "rules": [],
+          "frame": {"x": 0.05, "y": 0.3, "width": 0.6, "height": 0.6, "rotationDegrees": 0},
+          "isHidden": false,
+          "page": 2
+        }
+      },
+      {
+        "kind": "icon",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000904",
+          "symbol": {"kind": {"kind": "literal", "value": "bolt.fill"}},
+          "size": 18,
+          "level": {
+            "value": {"kind": {"kind": "entityState", "entityId": "sensor.solar", "displayName": "Solar", "domain": "sensor"}}
+          },
+          "colorSlot": {"baseColorHex": "#FFD60A"},
+          "rules": [],
+          "frame": {"x": 0.05, "y": 0.3, "width": 0.3, "height": 0.6, "rotationDegrees": 0},
+          "isHidden": false,
+          "page": 3
+        }
+      },
+      {
+        "kind": "tap",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000905",
+          "action": {"type": "nextPage"},
+          "rules": [],
+          "frame": {"x": 0.7, "y": 0.0, "width": 0.3, "height": 1.0, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {"type": "refresh"}
+  },
+  "inputs": {
+    "page": 2,
+    "entityStates": {
+      "sensor.house_battery": {"state": "82", "domain": "sensor"},
+      "sensor.car_battery": {"state": "64", "domain": "sensor"},
+      "sensor.solar": {"state": "0.4", "domain": "sensor"}
+    },
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": ["sensor.car_battery", "sensor.house_battery", "sensor.solar"],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000901",
+          "kind": "text",
+          "text": "Battery",
+          "colorHex": "#8E8E93"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000903",
+          "kind": "text",
+          "text": "64%",
+          "colorHex": "#0A84FF"
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000905",
+          "kind": "tap",
+          "isHidden": false
+        }
+      ]
+    }
+  }
+}

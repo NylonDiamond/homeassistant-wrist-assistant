@@ -105,6 +105,12 @@ export function lockedOccupied(recordSlots: Iterable<number>, occupied: readonly
  * refuse the record whole and show "update the app" rather than draw a face
  * with holes in it.
  *
+ * 9 is the one rung that cannot degrade to "not drawn". Every other new key an
+ * older app ignores leaves a plainer complication; `pages` ignored leaves every
+ * page stacked on top of every other one, which is a broken face. So a document
+ * with pages, or with any top-level layer pinned to a page, is refused whole by
+ * an app that predates them and surfaces "update the app" instead.
+ *
  * 7 when the document names any iPhone Home Screen shape, which an app that
  * predates them cannot draw at all.
  *
@@ -115,6 +121,7 @@ export function lockedOccupied(recordSlots: Iterable<number>, occupied: readonly
  * slot 7 (an old app's slot-id parser rejects ids past 8) and 4 below, so an
  * unchanged document stays byte-stable for old apps. */
 export function schemaVersionFor(cfg: CustomComplicationConfig): number {
+  if (usesPages(cfg)) return 9;
   if (documentNeedsLists(cfg)) return 8;
   if (HOME_FAMILIES.some((f) => cfg.supportedFamilies.includes(f))) return 7;
   const missesCanvasShape = WATCH_CANVAS_FAMILIES.some((f) => !cfg.supportedFamilies.includes(f));
@@ -1049,6 +1056,11 @@ interface ElementBase {
    * `primary`, so nothing is written for the layers that never asked.
    * See `AccentGroup`. */
   accentGroup?: AccentGroup;
+  /** The page this layer draws on, 1-based, or absent for a layer on every
+   * page. Top-level layers only: a row layer belongs to its list, and the list
+   * is what carries the page, so a `page` inside a row template is read by
+   * neither side. See `PagesSpec`. */
+  page?: number;
 }
 
 /**
@@ -3087,7 +3099,11 @@ export interface RefreshAllAction {
 }
 
 export type TapAction =
-  | { type: "none" | "refresh" | "openApp" | "openPage" | "openRoomPage" | "timerStartPause" | "timerCancel" }
+  // `nextPage` moves this complication on one page and `playTour` plays every
+  // page once and comes back to page 1. Neither carries anything: the page
+  // belongs to the placed slot rather than to the document, so the watch reads
+  // it at tap time. See `PagesSpec`.
+  | { type: "none" | "refresh" | "openApp" | "openPage" | "openRoomPage" | "timerStartPause" | "timerCancel" | "nextPage" | "playTour" }
   | RefreshAllAction
   | ({ type: "toggleEntity" | "runScene" | "runScript" | "addTodo" | "runHTTPAction" } & EntityRef)
   | CallServiceAction;
@@ -3127,6 +3143,7 @@ export const TAP_ACTION_LABELS: [TapAction["type"], string][] = [
   ["timerStartPause", "Timer start / pause"], ["timerCancel", "Timer cancel"],
   ["toggleEntity", "Toggle an entity"], ["runScene", "Run a scene"], ["runScript", "Run a script"], ["addTodo", "Add a to-do"], ["runHTTPAction", "Run an HTTP action"],
   ["callService", "Call a service"],
+  ["nextPage", "Next page"], ["playTour", "Play the page tour"],
 ];
 
 /** One-line description of a tap action, for hints and for the review-mode
@@ -3305,6 +3322,212 @@ export function controlIsOn(raw: string | undefined): boolean {
   return raw !== undefined && CONTROL_ON_STATES.has(raw.trim().toLowerCase());
 }
 
+// ── pages ─────────────────────────────────────────────────────────────────
+// Pages on one complication: several faces in one slot, one showing at a time.
+// A layer says which page it belongs to (`ElementBase.page`); a layer that says
+// nothing is on every page, which is what a background, a border or a shared
+// label wants. The document says how many pages there are and how a page moves
+// on. Mirrors `CustomComplication.PagesSpec` in the app repo, rule for rule.
+//
+// Nothing here loops. A tour plays once per tap and stops, because a forever
+// loop is the one part of this that is not free: every other page boundary is
+// an entry in a timeline the watch already had. So there is no `loop` key at
+// all, rather than a key that can only ever say off.
+
+/** How a page moves on. `tap` is one page per tap, which is what a
+ * two-reading complication wants; `tour` plays every page from one tap and
+ * comes back to page 1, which costs the same one timeline. */
+export type PageMode = "tap" | "tour";
+
+/** Four is the recommendation and the ceiling. Past that nobody finds page 5
+ * and the editor's page strip stops fitting. */
+export const PAGES_MAX_COUNT = 4;
+/** Seconds a page is held when the document does not say. */
+export const PAGE_DEFAULT_DWELL = 2;
+/** Half a second is the shortest hold that reads as a page rather than a
+ * flicker; ten is the longest anyone waits with a wrist up. */
+export const PAGE_DWELL_RANGE: { readonly min: number; readonly max: number } = { min: 0.5, max: 10 };
+
+/** How many pages a document has, and how a page moves on. */
+export interface PagesSpec {
+  /** 1 to `PAGES_MAX_COUNT`. 1 is a document with no pages. */
+  count: number;
+  mode: PageMode;
+  /** Seconds each page is held in a tour, one entry per page, in page order.
+   * A short list falls back to `PAGE_DEFAULT_DWELL` for the rest, so a
+   * document can name the one page it wants held longer and stay silent about
+   * the others. */
+  dwell: number[];
+}
+
+export function clampPageCount(count: number): number {
+  if (!Number.isFinite(count)) return 1;
+  return Math.min(Math.max(Math.trunc(count), 1), PAGES_MAX_COUNT);
+}
+
+export function clampPageDwell(seconds: number): number {
+  if (!Number.isFinite(seconds)) return PAGE_DEFAULT_DWELL;
+  return Math.min(Math.max(seconds, PAGE_DWELL_RANGE.min), PAGE_DWELL_RANGE.max);
+}
+
+/** A new spec, with every field at its default. */
+export function newPagesSpec(count = 2, mode: PageMode = "tap"): PagesSpec {
+  return { count: clampPageCount(count), mode, dwell: [] };
+}
+
+/** Whether this spec really has pages. A count of 1 is a document that behaves
+ * exactly as it did before pages existed. */
+export function hasPages(spec: PagesSpec | undefined): boolean {
+  return spec !== undefined && spec.count > 1;
+}
+
+/** The 1-based pages in order. */
+export function pageNumbers(spec: PagesSpec): number[] {
+  return Array.from({ length: clampPageCount(spec.count) }, (_, i) => i + 1);
+}
+
+/** The document's `pages` object as written, or undefined for a document with
+ * no pages. A spec of one page lands here as undefined for the same reason it
+ * is never written: it is a document that behaves as it always did. Mirrors
+ * the `PagesSpec` decoder plus the config decoder's one-page fold. */
+export function parsePagesSpec(raw: unknown): PagesSpec | undefined {
+  if (!isObject(raw)) return undefined;
+  const count = clampPageCount(num(raw.count, 1));
+  if (count <= 1) return undefined;
+  // Trimmed to the count as well as clamped: a dwell for a page that no longer
+  // exists is not an error, it is an edit that shrank the document.
+  const dwell = (Array.isArray(raw.dwell) ? raw.dwell : [])
+    .slice(0, count)
+    .map((d) => clampPageDwell(num(d, PAGE_DEFAULT_DWELL)));
+  return { count, mode: raw.mode === "tour" ? "tour" : "tap", dwell };
+}
+
+/** The `pages` object as written, or undefined for a spec of one page, which
+ * never reaches the wire. `dwell` is written only when it says something. */
+export function encodePagesSpec(spec: PagesSpec | undefined): J | undefined {
+  if (!hasPages(spec)) return undefined;
+  const o: J = { count: clampPageCount(spec!.count), mode: spec!.mode };
+  // Always finite after the clamp, so there is nothing here for `encNum` to
+  // rescue and the numbers go out as numbers.
+  if (spec!.dwell.length > 0) o.dwell = spec!.dwell.map(clampPageDwell);
+  return o;
+}
+
+/** A layer's `page` as written, or undefined for a layer on every page.
+ *
+ * Anything below 1 reads as undefined rather than as page 1: a layer that
+ * claims page 0 is a layer whose author meant nothing in particular, and "on
+ * every page" is the reading that keeps it on screen. A page above the
+ * document's count is left alone here, because the count can change after the
+ * layer was written and the renderer is the one that knows which page shows. */
+export function parseLayerPage(raw: unknown): number | undefined {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return undefined;
+  const page = Math.trunc(raw);
+  return page >= 1 ? page : undefined;
+}
+
+/** Whether this document really uses pages: more than one page, or any
+ * top-level layer pinned to one. Either alone is enough, because either alone
+ * is a document an app that predates pages would draw wrongly. Mirrors
+ * `CustomComplicationConfig.usesPages`. */
+export function usesPages(cfg: CustomComplicationConfig): boolean {
+  if (hasPages(cfg.pages)) return true;
+  return cfg.elements.some((el) => el.payload.page !== undefined);
+}
+
+/** The pages this document has, whatever it declared. A document with pinned
+ * layers and no spec still has the pages those layers name, so a panel that
+ * wrote one without the other does not lose them. Mirrors
+ * `CustomComplicationConfig.pagesSpec`. */
+export function pagesSpecOf(cfg: CustomComplicationConfig): PagesSpec {
+  // Always a copy, never the document's own object: this is a reading, and a
+  // caller that edits what it reads would be editing the document by accident.
+  if (hasPages(cfg.pages)) return { ...cfg.pages!, dwell: [...cfg.pages!.dwell] };
+  const pinned = cfg.elements
+    .map((el) => el.payload.page)
+    .filter((p): p is number => p !== undefined);
+  const highest = pinned.length > 0 ? Math.max(...pinned) : 1;
+  const base = cfg.pages ?? newPagesSpec(1);
+  const copy: PagesSpec = { ...base, dwell: [...base.dwell] };
+  if (highest <= 1) return copy;
+  return { ...copy, count: clampPageCount(highest) };
+}
+
+/** Seconds page `page` is held in a tour. */
+export function dwellForPage(spec: PagesSpec, page: number): number {
+  if (page < 1 || page > spec.dwell.length) return PAGE_DEFAULT_DWELL;
+  return clampPageDwell(spec.dwell[page - 1]!);
+}
+
+/** How long a whole tour lasts, in seconds. */
+export function tourDuration(spec: PagesSpec): number {
+  return pageNumbers(spec).reduce((total, page) => total + dwellForPage(spec, page), 0);
+}
+
+/** Every page boundary of one tour as an absolute instant in epoch
+ * milliseconds, plus the return to page 1 at the end.
+ *
+ * This is the whole of tour mode. The boundaries are absolute rather than
+ * relative, so a timeline built late does not shift the tour. A document with
+ * no pages has no tour, so the list is empty. Mirrors `tourSteps(from:)`. */
+export function tourSteps(spec: PagesSpec, startMs: number): { atMs: number; page: number }[] {
+  if (!hasPages(spec)) return [];
+  const out: { atMs: number; page: number }[] = [];
+  let offset = 0;
+  for (const page of pageNumbers(spec)) {
+    out.push({ atMs: startMs + offset * 1000, page });
+    offset += dwellForPage(spec, page);
+  }
+  out.push({ atMs: startMs + offset * 1000, page: 1 });
+  return out;
+}
+
+/** The page a tour started at `startedAtMs` is showing at `nowMs`, or
+ * undefined when no tour is running at that instant. Mirrors
+ * `tourPage(at:startedAt:)`. */
+export function tourPageAt(spec: PagesSpec, nowMs: number, startedAtMs: number): number | undefined {
+  if (!hasPages(spec)) return undefined;
+  const elapsed = (nowMs - startedAtMs) / 1000;
+  if (!(elapsed >= 0) || elapsed >= tourDuration(spec)) return undefined;
+  let offset = 0;
+  for (const page of pageNumbers(spec)) {
+    offset += dwellForPage(spec, page);
+    if (elapsed < offset) return page;
+  }
+  return clampPageCount(spec.count);
+}
+
+/** The page after `page`, wrapping back to 1 past the last one. Mirrors
+ * `nextPage(after:)`: anything outside the range is pulled into it first, so
+ * page 0 goes to 2 and a page past the end goes to 1. */
+export function nextPageAfter(spec: PagesSpec, page: number): number {
+  const count = clampPageCount(spec.count);
+  const current = Math.min(Math.max(Math.trunc(page), 1), count);
+  return current >= count ? 1 : current + 1;
+}
+
+/** Whether this layer draws on `page`. A layer that names no page is on every
+ * one; a layer that names a page beyond the document's count is on none, which
+ * is the honest reading of content the author has since made unreachable.
+ * Mirrors `Element.draws(onPage:)`. */
+export function layerDrawsOnPage(el: Element, page: number): boolean {
+  const own = el.payload.page;
+  return own === undefined || own === page;
+}
+
+/** The layers of `elements` that draw on `page`, or all of them when the
+ * document has no pages. Mirrors `elements(for:page:)`: pages are a filter and
+ * nothing more, so the resolver never sees a layer on another page, never
+ * reads its entities and never resolves it. */
+export function elementsOnPage(
+  cfg: CustomComplicationConfig,
+  elements: readonly Element[],
+  page: number,
+): Element[] {
+  if (!usesPages(cfg)) return [...elements];
+  return elements.filter((el) => layerDrawsOnPage(el, page));
+}
+
 export interface CustomComplicationConfig {
   schemaVersion: number;
   id: string;
@@ -3332,6 +3555,10 @@ export interface CustomComplicationConfig {
   /** Kept out of the watch's complication picker. A face already using it
    * keeps drawing it. Only ever true: writers omit the key when shown. */
   hidden?: true;
+  /** Pages: several faces in one slot, one showing at a time, with a tap
+   * moving on. Absent, and a spec of one page, are a document with no pages,
+   * which is every document written before this key. See `PagesSpec`. */
+  pages?: PagesSpec;
   /** The document's Control Center control. Absent means the document has
    * none, which is every document written before this key. It never changes
    * what the document draws: the control is an extra, not a mode. */
@@ -3807,7 +4034,19 @@ function parseElementBase(p: J, defaultColor: string): ElementBase {
   return base;
 }
 
+/** One top-level layer of the document, `page` included. */
 export function parseElement(raw: unknown): Element {
+  const el = parseRowElement(raw);
+  const page = parseLayerPage(((raw as J).payload as J).page);
+  if (page !== undefined) el.payload.page = page;
+  return el;
+}
+
+/** One row layer of a list's template: everything a top-level layer has but
+ * the page. A row belongs to its list and the list carries the page, so a
+ * `page` on a row would mean nothing on either side; the unknown-key audit
+ * reports one rather than letting it be dropped silently. */
+function parseRowElement(raw: unknown): Element {
   const el = parseElementKind(raw);
   const p = (raw as J).payload as J;
   if (typeof p.groupId === "string" && p.groupId !== "") el.payload.groupId = p.groupId.toUpperCase();
@@ -4153,7 +4392,7 @@ function parseElementKind(raw: unknown): Element {
       // form is never saved back over the author's.
       const template = (Array.isArray(p.template) ? p.template : [])
         .filter((e) => isObject(e) && !LIST_TEMPLATE_BANNED_KINDS.includes(String(e.kind)))
-        .map(parseElement);
+        .map((e) => parseRowElement(e));
       return {
         kind: "list",
         payload: {
@@ -4278,6 +4517,8 @@ function parseTapAction(raw: unknown): TapAction {
   switch (raw.type) {
     case "none": case "refresh": case "openApp": case "openPage": case "openRoomPage":
     case "timerStartPause": case "timerCancel":
+    // The page actions carry nothing, so they read back as their type alone.
+    case "nextPage": case "playTour":
       return { type: raw.type };
     case "refreshAll": {
       // Both keys are optional, so `{"type": "refreshAll"}` written before
@@ -4355,6 +4596,10 @@ export function parseConfig(raw: unknown): CustomComplicationConfig {
   if (typeof raw.showSuccessFlash === "boolean") cfg.showSuccessFlash = raw.showSuccessFlash;
   if (typeof raw.successFlashColorHex === "string") cfg.successFlashColorHex = raw.successFlashColorHex;
   if (raw.hidden === true) cfg.hidden = true;
+  // A spec of one page is a document with no pages, so it lands as absent and
+  // is never written back. `parsePagesSpec` folds that in.
+  const pages = parsePagesSpec(raw.pages);
+  if (pages !== undefined) cfg.pages = pages;
   if (Array.isArray(raw.groups)) {
     const groups = raw.groups.filter(isObject).filter((g) => typeof g.id === "string").map((g): LayerGroup => ({
       id: str(g.id).toUpperCase(),
@@ -5289,7 +5534,17 @@ function encodeTextPart(p: TextPart): J {
   return o;
 }
 
+/** One top-level layer as written, `page` after `accentGroup` the way the app
+ * encoder writes it, and only when the layer names one. */
 function encodeElement(el: Element): J {
+  const o = encodeRowElement(el);
+  if (el.payload.page !== undefined) (o.payload as J).page = el.payload.page;
+  return o;
+}
+
+/** One row layer of a list's template as written. Never a `page`: see
+ * `parseRowElement`. */
+function encodeRowElement(el: Element): J {
   const o = encodeElementKind(el);
   if (el.payload.groupId !== undefined) (o.payload as J).groupId = el.payload.groupId;
   if (el.payload.name !== undefined) (o.payload as J).name = el.payload.name;
@@ -5683,7 +5938,7 @@ function encodeElementKind(el: Element): J {
       if (columns !== LIST_DEFAULT_COLUMNS) o.columns = columns;
       const gap = clampListGap(l.gap);
       if (gap !== LIST_DEFAULT_GAP) o.gap = encNum(gap);
-      if (l.template.length > 0) o.template = l.template.map(encodeElement);
+      if (l.template.length > 0) o.template = l.template.map(encodeRowElement);
       return { kind: "list", payload: o };
     }
   }
@@ -5871,6 +6126,10 @@ export function encodeConfig(cfg: CustomComplicationConfig): J {
     o.groups = cfg.groups.map((g) => ({ id: g.id, name: g.name, locked: g.locked }));
   }
   if (cfg.hidden === true) o.hidden = true;
+  // Only ever on the wire when there are really pages; a one-page spec carries
+  // nothing an app that never heard of pages would miss.
+  const pages = encodePagesSpec(cfg.pages);
+  if (pages !== undefined) o.pages = pages;
   if (cfg.control !== undefined) o.control = encodeControl(cfg.control);
   return o;
 }
@@ -6034,8 +6293,11 @@ export function setGroup(cfg: CustomComplicationConfig, elementId: string, group
 // non-empty and tells the user which paths it does not understand.
 
 const K = {
-  config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "inline", "dataSources", "refreshMinutes", "tapAction", "openPageId", "openPageName", "showSuccessFlash", "successFlashColorHex", "groups", "hidden", "control"],
+  config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "inline", "dataSources", "refreshMinutes", "tapAction", "openPageId", "openPageName", "showSuccessFlash", "successFlashColorHex", "groups", "hidden", "control", "pages"],
   group: ["id", "name", "locked"],
+  // The document's pages. Its own object at the top level, and the only place
+  // these three keys appear.
+  pages: ["count", "mode", "dwell"],
   inline: ["label", "value", "symbol", "countdown"],
   // The document's Control Center control. Its own object at the top level,
   // and the only place these keys appear.
@@ -6063,6 +6325,10 @@ const K = {
   arc: ["radius", "angle", "sweep", "spacing", "flip"],
   elementEnvelope: ["kind", "payload"],
   elementBase: ["id", "colorSlot", "rules", "frame", "isHidden", "opacity", "shadow", "groupId", "name", "accentGroup"],
+  // `page` is a top-level layer's alone, so it is not in `elementBase`: a page
+  // on a row layer inside a list means nothing on either side, and the decoder
+  // drops it, which is exactly what this audit exists to report.
+  elementPage: ["page"],
   // A layer's drop shadow. Absent on the layer means none; present, it says all four.
   shadow: ["colorHex", "radius", "dx", "dy"],
   text: ["value", "fontSize", "fontWeight", "countdown", "monospacedDigits", "lineLimit",
@@ -6274,13 +6540,14 @@ export function auditUnknownKeys(raw: unknown): string[] {
   /** One element, and the row layers of a list under it. A row layer is an
    * element like any other, so it is audited by the same rules: unknown keys
    * in a row would be lost on the next save exactly as unknown keys at the top
-   * level would. */
-  const element = (e: unknown, ep: string) => {
+   * level would. The one difference is `page`, which only a top-level layer
+   * may carry. */
+  const element = (e: unknown, ep: string, topLevel = true) => {
       check(e, K.elementEnvelope, ep);
       if (!isObject(e) || !isObject(e.payload)) return;
       const kind = typeof e.kind === "string" ? e.kind : "";
       const extra = (K as Record<string, string[]>)[kind] ?? [];
-      check(e.payload, [...K.elementBase, ...extra], `${ep}.payload`);
+      check(e.payload, [...K.elementBase, ...(topLevel ? K.elementPage : []), ...extra], `${ep}.payload`);
       check(e.payload.colorSlot, K.colorSlot, `${ep}.payload.colorSlot`);
       check(e.payload.frame, K.frame, `${ep}.payload.frame`);
       if ("chartAnchor" in e.payload) check(e.payload.chartAnchor, K.chartAnchor, `${ep}.payload.chartAnchor`);
@@ -6316,7 +6583,7 @@ export function auditUnknownKeys(raw: unknown): string[] {
         template.forEach((row, j) => {
           const rp = `${ep}.payload.template[${j}]`;
           if (isObject(row) && LIST_TEMPLATE_BANNED_KINDS.includes(String(row.kind))) out.push(`${rp}.kind`);
-          else element(row, rp);
+          else element(row, rp, false);
         });
       }
   };
@@ -6355,6 +6622,7 @@ export function auditUnknownKeys(raw: unknown): string[] {
     check(raw.inline, K.inline, "$.inline");
     value(raw.inline.value, "$.inline.value");
   }
+  if (isObject(raw.pages)) check(raw.pages, K.pages, "$.pages");
   if (isObject(raw.control)) {
     check(raw.control, K.control, "$.control");
     for (const vk of ["title", "valueLabel", "state", "status"]) {

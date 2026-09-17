@@ -85,6 +85,7 @@ import {
   textUsesParts,
   clockTime,
   elementsFor,
+  elementsOnPage,
   formatIsEmpty,
   hasFreeTimestamp,
   DESIGN_BOX,
@@ -187,6 +188,12 @@ export interface ResolveContext {
    * fixture pinning an hour names one as well as a locale: without it the same
    * unix second reads as a different hour on every machine. */
   timeZone?: string;
+  /** Which page of a paged document to resolve, 1-based. Undefined is page 1,
+   * which is every document with no pages. A layer pinned to another page is
+   * dropped before it is resolved, so nothing reads its entities, exactly as
+   * `elements(for:page:)` does on the watch. Inline has no pages and is fed
+   * every layer whatever this says. See `PagesSpec` in model.ts. */
+  page?: number;
 }
 
 export interface ResolvedBase {
@@ -2615,7 +2622,11 @@ export class Resolver {
     // resolver settles them: a text outside a list that prints its count, or a
     // rule that tests one, needs the list parsed before it resolves. The cells
     // are drawn here too, because this is where the shape is known.
-    const placed = elementsFor(config, family);
+    // Pages are a filter on the layer list and nothing else, so every shape
+    // draws the same page and nothing downstream has to know pages exist. A
+    // layer on another page never reaches the resolver, which is why a document
+    // of four pages costs about what the same layers cost on one.
+    const placed = elementsOnPage(config, elementsFor(config, family), this.ctx.page ?? 1);
     this.settleListItems(placed);
     this.settleListCells(config, placed, family, forced);
     const elements = [...placeChartAnchors(
