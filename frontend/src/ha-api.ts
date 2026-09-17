@@ -123,6 +123,30 @@ export async function deletePart(hass: HassLike, partId: string) {
   return hass.connection.sendMessagePromise<{ ok: boolean }>({ type: `${D}/parts_delete`, part_id: partId });
 }
 
+/**
+ * Call a Home Assistant service, straight down the websocket the frontend
+ * already holds open. The one place the panel changes the home rather than the
+ * document, and it exists for demo mode: a tap that toggles a light has to
+ * really toggle it, or the demo is a picture rather than a test.
+ *
+ * `service_data` carries the target the way the watch sends it, `entity_id`
+ * inside the data, because that is what every service in Home Assistant has
+ * always accepted and it keeps one shape for both callers.
+ */
+export async function callService(
+  hass: HassLike,
+  domain: string,
+  service: string,
+  data: Record<string, unknown> = {},
+) {
+  return hass.connection.sendMessagePromise<unknown>({
+    type: "call_service",
+    domain,
+    service,
+    service_data: data,
+  });
+}
+
 export async function fetchOwners(hass: HassLike) {
   return hass.connection.sendMessagePromise<{
     owners: OwnerSummary[];
