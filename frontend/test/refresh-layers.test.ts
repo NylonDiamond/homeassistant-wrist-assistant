@@ -1,10 +1,13 @@
-// Which layers a "Refresh parts of this complication" tap fetches.
+// Which layers a "Refresh this complication" tap fetches.
 //
 // Three halves, all pure. The wire is the interesting one: the tap is a plain
 // `refresh` carrying a layer list, not a type of its own, so an older watch app
 // that ignores the key refreshes everything instead of going dead. That means
 // an empty list and an absent list mean the same thing to the watch and
 // different things to the picker, which is the rule these tests pin down.
+//
+// The picker reaches the list through an "All layers" box under the row, the
+// same gesture "All placed complications" uses one card down.
 
 import { describe, expect, it } from "vitest";
 import { html, nothing } from "lit";
@@ -21,7 +24,6 @@ import {
   refreshLayersWith,
   tapActionLabel,
   tapActionNote,
-  tapChoiceOf,
 } from "../src/model.js";
 import { type EditorHost, type TapActionHolder, tapActionEditor, tapActionForType } from "../src/editors.js";
 import { SymbolBrowser } from "../src/symbols.js";
@@ -106,36 +108,30 @@ function picker(action: TapAction, cfg: CustomComplicationConfig): string {
   return flatten(tapActionEditor(host(cfg), holder, (m) => m(holder), "tap"));
 }
 
-describe("the three refresh rows", () => {
+describe("the two refresh rows", () => {
   it("names them by how much each one reaches", () => {
-    const rows = TAP_ACTION_LABELS.slice(0, 3);
+    const rows = TAP_ACTION_LABELS.slice(0, 2);
     expect(rows).toEqual([
       ["refresh", "Refresh this complication"],
-      ["refreshLayers", "Refresh parts of this complication"],
       ["refreshAll", "Refresh multiple complications"],
     ]);
   });
 
-  it("puts a scoped refresh on its own row without giving it its own type", () => {
-    expect(tapChoiceOf({ type: "refresh" })).toBe("refresh");
-    expect(tapChoiceOf({ type: "refresh", layerIds: [] })).toBe("refreshLayers");
-    expect(tapChoiceOf({ type: "refresh", layerIds: ["A"] })).toBe("refreshLayers");
-    // Both rows are still one wire type, which is the whole point: an older
-    // watch app ignores the key and refreshes everything.
-    expect(tapActionLabel({ type: "refresh", layerIds: [] })).toBe("Refresh parts of this complication");
+  it("gives a scoped refresh no row and no type of its own", () => {
+    // Both shapes sit on the one row and are one wire type, which is the whole
+    // point: an older watch app ignores the key and refreshes everything.
+    expect(tapActionLabel({ type: "refresh", layerIds: [] })).toBe("Refresh this complication");
     expect(tapActionLabel({ type: "refresh" })).toBe("Refresh this complication");
+    expect(TAP_ACTION_LABELS.some(([t]) => (t as string) === "refreshLayers")).toBe(false);
   });
 
   it("keeps the picks when the picker leaves the row and comes back", () => {
     const scoped: TapAction = { type: "refresh", layerIds: ["A", "B"] };
-    // Off to a plain refresh: the list goes, because the two rows differ by
-    // that key alone and a hidden list would put the picker back on the wrong
-    // row the next time the document was opened.
-    expect(tapActionForType("refresh", scoped)).toEqual({ type: "refresh" });
-    // Off to something unrelated and back: nothing to keep, and the empty list
-    // is what holds the picker on the scoped row.
-    expect(tapActionForType("refreshLayers", { type: "openApp" })).toEqual({ type: "refresh", layerIds: [] });
-    expect(tapActionForType("refreshLayers", scoped)).toEqual({ type: "refresh", layerIds: ["A", "B"] });
+    // Re-picking the row it is already on changes nothing: the "All layers" box
+    // is what clears the list, not the type picker.
+    expect(tapActionForType("refresh", scoped)).toEqual({ type: "refresh", layerIds: ["A", "B"] });
+    // Off to something unrelated and back: nothing to keep, so the box is on.
+    expect(tapActionForType("refresh", { type: "openApp" })).toEqual({ type: "refresh" });
   });
 });
 
@@ -176,11 +172,24 @@ describe("the picker under the tap", () => {
     expect(text).not.toContain("(Shape)");
   });
 
-  it("stays out of the way of a plain refresh", () => {
+  it("shows only the All layers box while the tap fetches everything", () => {
     const { cfg } = configWithLayers();
     const text = picker({ type: "refresh" }, cfg);
+    expect(text).toContain("All layers");
     expect(text).toContain("every layer and every page");
     expect(text).not.toContain("(Picture)");
+  });
+
+  it("offers no All layers box when nothing on the face fetches", () => {
+    // Nothing to narrow, so the box would be a control that does nothing.
+    const cfg = newConfig("Edited", 0);
+    cfg.elements = [newElement("text"), newElement("shape")];
+    expect(picker({ type: "refresh" }, cfg)).not.toContain("All layers");
+  });
+
+  it("keeps the All layers box on top of the list once it is off", () => {
+    const { cfg } = configWithLayers();
+    expect(picker({ type: "refresh", layerIds: [] }, cfg)).toContain("All layers");
   });
 
   it("says nothing ticked still refreshes everything", () => {
@@ -204,10 +213,11 @@ describe("the picker under the tap", () => {
   it("counts the picks in the one-line description", () => {
     expect(describeTapAction({ type: "refresh" })).toBe("Refresh this complication");
     expect(describeTapAction({ type: "refresh", layerIds: [] }))
-      .toBe("Refresh parts of this complication: none picked");
+      .toBe("Refresh this complication: none picked");
     expect(describeTapAction({ type: "refresh", layerIds: ["A", "B"] }))
-      .toBe("Refresh parts of this complication: 2 picked");
+      .toBe("Refresh this complication: 2 picked");
     expect(tapActionNote({ type: "refresh", layerIds: ["A"] })).toContain("Fetches only the 1 ticked below");
+    expect(tapActionNote({ type: "refresh" })).toContain("every layer and every page");
   });
 });
 

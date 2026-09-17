@@ -686,13 +686,13 @@ describe("call a service", () => {
 });
 
 describe("refresh complications", () => {
-  it("heads every picker as three rows, widest last", () => {
-    // This complication, parts of it, then other complications. The order is
-    // how much each one reaches, so the list reads as one sentence.
+  it("heads every picker as two rows, wider last", () => {
+    // This complication, then other complications. The order is how much each
+    // one reaches. How much of this one it fetches is a box under the row, not
+    // a row of its own, so the two refresh cards read the same way.
     const types = TAP_ACTION_LABELS.map(([t]) => t);
-    expect(types.slice(0, 3)).toEqual(["refresh", "refreshLayers", "refreshAll"]);
+    expect(types.slice(0, 2)).toEqual(["refresh", "refreshAll"]);
     expect(TAP_ACTION_LABELS.find(([t]) => t === "refresh")?.[1]).toBe("Refresh this complication");
-    expect(TAP_ACTION_LABELS.find(([t]) => t === "refreshLayers")?.[1]).toBe("Refresh parts of this complication");
     expect(TAP_ACTION_LABELS.find(([t]) => t === "refreshAll")?.[1]).toBe("Refresh multiple complications");
   });
 
