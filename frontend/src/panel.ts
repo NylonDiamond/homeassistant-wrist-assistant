@@ -101,6 +101,7 @@ import {
   pagesSpecOf,
   tourDuration,
   usesPages,
+  settleArrivedPages,
 } from "./model.js";
 import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
@@ -4506,8 +4507,13 @@ export class WristAssistantPanel extends LitElement {
     if (cfg && cfg.supportedFamilies.length === 0) return;
     const clip = this.clipboard;
     const family = this.canvasFamily;
+    const paged = cfg ? usesPages(cfg) : false;
+    const page = this.page;
     let landed: string[] = [];
-    this.mutate((c) => { landed = pasteElementsOnto(c, clip, family); });
+    this.mutate((c) => {
+      landed = pasteElementsOnto(c, clip, family);
+      settleArrivedPages(c, new Set(landed), paged, page);
+    });
     this.selectRows(landed);
   }
 
@@ -5303,10 +5309,8 @@ export class WristAssistantPanel extends LitElement {
     const page = this.page;
     this.mutate((c) => {
       change(c);
-      if (!paged) return;
-      for (const el of c.elements) {
-        if (!before.has(el.payload.id) && el.payload.page === undefined) el.payload.page = page;
-      }
+      const arrived = new Set(c.elements.map((el) => el.payload.id).filter((id) => !before.has(id)));
+      settleArrivedPages(c, arrived, paged, page);
     });
   }
 

@@ -37,6 +37,7 @@ import {
   schemaVersionFor,
   setPageCount,
   setPageDwell,
+  settleArrivedPages,
   tourDuration,
   tourPageAt,
   tourSteps,
@@ -586,5 +587,38 @@ describe("what the review overlay calls the two page taps", () => {
   it("names them in words", () => {
     expect(describeTapAction({ type: "nextPage" })).toBe("Next page");
     expect(describeTapAction({ type: "playTour" })).toBe("Play the page tour");
+  });
+});
+
+describe("the page a layer gets when it arrives", () => {
+  it("puts a newcomer without a page on the page the author is looking at", () => {
+    const cfg = pagedConfig({ count: 3, mode: "tap", dwell: [] });
+    const arrived = newElement("text");
+    cfg.elements.push(arrived);
+    settleArrivedPages(cfg, new Set([arrived.payload.id]), true, 3);
+    expect(arrived.payload.page).toBe(3);
+    // The layers that were already there are not touched.
+    expect(cfg.elements[0]!.payload.page).toBeUndefined();
+    expect(cfg.elements[2]!.payload.page).toBe(2);
+  });
+
+  it("lets a newcomer that names a page keep it in a paged document", () => {
+    const cfg = pagedConfig({ count: 3, mode: "tap", dwell: [] });
+    const arrived = newElement("text");
+    arrived.payload.page = 2;
+    cfg.elements.push(arrived);
+    settleArrivedPages(cfg, new Set([arrived.payload.id]), true, 3);
+    expect(arrived.payload.page).toBe(2);
+  });
+
+  it("strips the page off a newcomer in a document without pages", () => {
+    const cfg = newConfig("Plain", 0, ["rectangular"]);
+    const arrived = newElement("text");
+    arrived.payload.page = 2;
+    cfg.elements.push(arrived);
+    settleArrivedPages(cfg, new Set([arrived.payload.id]), false, 1);
+    expect(arrived.payload.page).toBeUndefined();
+    expect(usesPages(cfg)).toBe(false);
+    expect(schemaVersionFor(cfg)).toBeLessThan(9);
   });
 });

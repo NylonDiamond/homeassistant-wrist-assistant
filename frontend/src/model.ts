@@ -3654,6 +3654,26 @@ export function writtenDwell(spec: PagesSpec, page: number): number | undefined 
   return clampPageDwell(spec.dwell[page - 1]!);
 }
 
+/**
+ * The page of every layer that just arrived in a document, settled by where
+ * it landed rather than where it came from.
+ *
+ * `arrived` are the ids of the top-level layers the change added; `paged` is
+ * whether the document had pages before it. In a paged document a newcomer
+ * without a page goes on `page`, the one the author is looking at, and a
+ * newcomer that names a page keeps it. In a document without pages every
+ * newcomer loses its page: a layer pasted or inserted from a paged document
+ * would otherwise pin itself to page 2 of a document that has no page 2,
+ * which silently makes the whole document paged and schema 9.
+ */
+export function settleArrivedPages(cfg: CustomComplicationConfig, arrived: ReadonlySet<string>, paged: boolean, page: number): void {
+  for (const el of cfg.elements) {
+    if (!arrived.has(el.payload.id)) continue;
+    if (!paged) delete el.payload.page;
+    else if (el.payload.page === undefined) el.payload.page = page;
+  }
+}
+
 export interface CustomComplicationConfig {
   schemaVersion: number;
   id: string;
