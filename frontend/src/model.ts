@@ -3656,6 +3656,58 @@ export function setPageCount(cfg: CustomComplicationConfig, count: number): void
 }
 
 /**
+ * One more page at the end, and its number, or undefined at the ceiling.
+ * Nothing moves: the new page is empty and every layer stays where it was.
+ */
+export function addPage(cfg: CustomComplicationConfig): number | undefined {
+  const count = pagesSpecOf(cfg).count;
+  if (count >= PAGES_MAX_COUNT) return undefined;
+  setPageCount(cfg, count + 1);
+  return count + 1;
+}
+
+/**
+ * Pages on a document that had none, from the Layers card: what is there now
+ * becomes page 1 and a blank page 2 is added. Returns 2.
+ *
+ * The Complication card's Pages select leaves existing layers on every page,
+ * which is right when the author is about to sort them out by hand. "Add a
+ * page" under the list means something else: the face as it stands is page 1,
+ * and the author wants a fresh page to draw on. So every top-level layer is
+ * pinned to 1 first, and the new page starts empty.
+ */
+export function startPages(cfg: CustomComplicationConfig): number {
+  for (const el of cfg.elements) el.payload.page = 1;
+  setPageCount(cfg, 2);
+  return 2;
+}
+
+/**
+ * Take one page away, keeping its layers.
+ *
+ * The removed page's layers move to the page before it (to the new page 1
+ * when page 1 itself goes), every later page shifts down one, and the dwell
+ * list loses that page's entry. Down to one page, pages go off altogether,
+ * which unpins every layer the way `setPageCount` does. Nothing is ever
+ * dropped, so the whole thing is one undo away.
+ */
+export function removePage(cfg: CustomComplicationConfig, page: number): void {
+  const spec = pagesSpecOf(cfg);
+  if (page < 1 || page > spec.count) return;
+  const landing = page > 1 ? page - 1 : 1;
+  for (const el of cfg.elements) {
+    const own = el.payload.page;
+    if (own === undefined) continue;
+    if (own === page) el.payload.page = landing;
+    else if (own > page) el.payload.page = own - 1;
+  }
+  const dwell = [...spec.dwell];
+  if (page <= dwell.length) dwell.splice(page - 1, 1);
+  cfg.pages = { count: spec.count, mode: spec.mode, dwell };
+  setPageCount(cfg, spec.count - 1);
+}
+
+/**
  * Hold one page of a tour for `seconds`, or undefined to put it back to the
  * default.
  *
@@ -7488,6 +7540,10 @@ export function syncAttachedTaps(cfg: CustomComplicationConfig): void {
       // A hidden layer with a live tap area would be a button nobody can see,
       // so the tap follows the owner's visibility too.
       tap.payload.isHidden = owner.payload.isHidden;
+      // And its page: a tap area on a page its owner is not drawn on would be
+      // a button nobody can see, the same thing again.
+      if (owner.payload.page === undefined) delete tap.payload.page;
+      else tap.payload.page = owner.payload.page;
       // A tap sits on its owner's shape and on no other, so the placement is
       // written there and cleared everywhere else. Left in another shape it
       // would be a second owner, and the layer would be split in two.

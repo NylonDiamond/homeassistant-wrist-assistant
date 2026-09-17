@@ -103,6 +103,10 @@ import {
   tourDuration,
   usesPages,
   settleArrivedPages,
+  addPage,
+  removePage,
+  startPages,
+  PAGES_MAX_COUNT,
 } from "./model.js";
 import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
@@ -661,7 +665,7 @@ function layerRowFolds(): string {
 }
 type ThumbStep = 0 | 1 | 2;
 /** The help dialog's tabs. */
-type HelpTab = "basics" | "keys" | "sync";
+type HelpTab = "basics" | "pages" | "keys" | "sync";
 type LayerDetail = "compact" | "expanded";
 /** How the Layers list is shown: picture size and row detail. Per browser,
  * like the column widths, and never part of the document. */
@@ -2786,6 +2790,18 @@ export class WristAssistantPanel extends LitElement {
     .page-row .page-tabs button.on { background: var(--wa-accent); color: var(--wa-accent-ink); border-color: transparent; }
     .page-row .page-tabs button:hover:not(.on) { background: var(--wa-raised); }
     .page-row .page-tabs button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    /* + and − beside the tabs, and Add a page in their place before there are
+       any: fixed width, so the tabs alone take the slack. */
+    .page-row .page-act {
+      font: inherit; font-size: 14px; font-weight: 700; line-height: 1; cursor: pointer; flex: none;
+      height: 26px; min-width: 26px; padding: 0 7px; border-radius: 7px;
+      border: 1px solid var(--wa-line); background: var(--wa-input); color: inherit;
+    }
+    .page-row .page-act.page-start { flex: 1 1 auto; font-size: 12.5px; }
+    .page-row .page-act:hover:not(:disabled) { background: var(--wa-raised); }
+    .page-row .page-act:disabled { opacity: .45; cursor: default; }
+    .page-row .page-act:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .page-row button.help { flex: none; }
     .page-strip .page-tabs { display: inline-flex; gap: 2px; }
     .page-strip button {
       font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; flex: none;
@@ -6047,6 +6063,49 @@ export class WristAssistantPanel extends LitElement {
     });
   }
 
+  /**
+   * The Pages row of the Layers card, under the header: the same tabs as the
+   * strip over the canvas, on a row of their own. The list is at the other end
+   * of the screen from the canvas and both show one page at a time, and a row
+   * the width of the card is hard to miss where a few digits in the header were
+   * not. It also carries + and − for the pages themselves, and ? for the help,
+   * because this is where pages are confusing: the list just changed under you.
+   *
+   * Without pages it is one button, Add a page, which pins what is there to
+   * page 1 and opens an empty page 2 (`startPages`).
+   */
+  private renderPageRow(cfg: CustomComplicationConfig, edit: boolean) {
+    if (!isDrawable(this.activeFamily)) return nothing;
+    const help = html`<button class="help" title="How pages work" aria-label="How pages work"
+      @click=${() => { this.helpTab = "pages"; this.helpOpen = true; }}>?</button>`;
+    if (!usesPages(cfg)) {
+      if (!edit) return nothing;
+      return html`<div class="page-row">
+        ${PAGES_CHIP}
+        <button class="page-act page-start" title="Start a second page. What is here now becomes page 1, and a new empty page 2 opens for you to draw on."
+          @click=${() => { let page = 1; this.mutate((c) => { page = startPages(c); }); this.showPage(page); }}>Add a page</button>
+        ${help}
+      </div>`;
+    }
+    const spec = pagesSpecOf(cfg);
+    const full = spec.count >= PAGES_MAX_COUNT;
+    const here = this.page;
+    return html`<div class="page-row" title="Which page the canvas and this list show. The list holds this page's layers and the ones on every page.">
+      ${PAGES_CHIP}
+      <span class="page-tabs" role="group" aria-label="Page the list is showing">${this.renderPageTabs(cfg)}</span>
+      ${edit ? html`
+        <button class="page-act" ?disabled=${full}
+          title=${full ? "Four pages is the most a complication can have." : "Add an empty page after the last one."}
+          @click=${() => { let page: number | undefined; this.mutate((c) => { page = addPage(c); }); if (page !== undefined) this.showPage(page); }}>+</button>
+        <button class="page-act"
+          title=${spec.count > 2
+            ? `Remove page ${here}. Its layers move to page ${here > 1 ? here - 1 : 1}, later pages move down one, and nothing is dropped.`
+            : `Remove page ${here}, which turns pages off. Every layer stays and goes back to the one face.`}
+          @click=${() => { this.mutate((c) => { removePage(c, here); }); this.showPage(Math.max(1, here - 1)); }}>−</button>` : nothing}
+      ${help}
+    </div>`;
+  }
+
   private renderPageStrip() {
     const cfg = this.draft?.config;
     if (!cfg || !usesPages(cfg)) return nothing;
@@ -6067,6 +6126,8 @@ export class WristAssistantPanel extends LitElement {
       ${PAGES_CHIP}
       <span class="page-tabs" role="group" aria-label="Page the canvas is showing">${this.renderPageTabs(cfg)}</span>
       ${spec.mode === "tour" ? tourButton : nextButton}
+      <button class="help" title="How pages work" aria-label="How pages work"
+        @click=${() => { this.helpTab = "pages"; this.helpOpen = true; }}>?</button>
       ${playing
         // Keyed on the run so a second press starts the bar over: a CSS
         // animation on the same element would otherwise carry on from where
@@ -6192,7 +6253,17 @@ export class WristAssistantPanel extends LitElement {
       ["Extra Large", "The full-page tile, iOS 27 and later. An iPhone on iOS 26 is not offered it when adding a widget, and everything else still draws."],
       ["A tinted Home Screen", "iOS 18 lets a user tint the whole Home Screen. The system then drops the tile background and draws the design in two tones, so a design that relies on colour alone reads differently there."],
       ["The shape itself", "The bottom row of the Layers list: its background, border and Shape states."],
-      ["Pages", "One complication, several faces, one showing at a time. Turn them on with Pages in the Complication card, then each layer sits on one page or on every page, which is what a background or a shared label wants. A tap action of Next page moves on a page, and Play the page tour plays each page in turn and returns to page 1. The strip above the canvas shows one page at a time, and [ and ] move between them."],
+      ["Pages", "One complication, several faces, one showing at a time. The Pages tab of this help explains them."],
+    ];
+    const pagesWhat: [string, string][] = [
+      ["What a page is", "One slot on the watch face can hold several faces of the same complication, one showing at a time. Each face is a page. A house battery on page 1 and the car on page 2 is the usual reason: one slot, two readings."],
+      ["Turning pages on", "Add a page under the Layers list. What you have now becomes page 1 and an empty page 2 opens. The Pages select in the Complication card does the same, but leaves your layers on every page for you to sort out."],
+      ["One page at a time", "The canvas and the Layers list show one page. The Pages row under the Layers header and the strip above the canvas say which, and clicking a number switches both. [ and ] do the same from the keyboard."],
+      ["Which page a layer is on", "Each layer sits on one page or on every page. Set it on the layer, in its Position card. A layer you add lands on the page you are looking at. A background, a border or a label that belongs everywhere goes on Every page."],
+      ["+ and −", "In the Pages row. + adds an empty page at the end, up to four. − removes the page you are looking at: its layers move to the page before it, later pages move down one, and nothing is dropped. Undo puts it back."],
+      ["Moving between pages on the watch", "A tap has to say so. Set the complication's tap action, or a tap layer's, to Next page or Previous page. A tap with any other action does its own job and leaves the page alone, so a page can still hold buttons. The page stays where it was left."],
+      ["The tour", "Set a tap action to Play the page tour and one tap plays every page once, then returns to page 1. The Complication card then shows a hold time per page; a tour lasts the sum of them. The Play tour button in the strip plays it here with the same timing. A tap during a tour on the watch stops it."],
+      ["What the watch needs", "A complication with pages needs the Wrist Assistant app that understands them. An older app refuses the whole complication and asks for an update rather than drawing every page on top of each other."],
     ];
     const layers: [string, string][] = [
       ["Text", "A value: typed words, an entity, a template, a shared value and more. It can count down to a time."],
@@ -6266,6 +6337,8 @@ export class WristAssistantPanel extends LitElement {
         </section>`;
     } else if (this.helpTab === "sync") {
       body = html`<div>${section("Saving", saving)}${section("Watch status", status)}</div>${section("Share and import", sharing)}`;
+    } else if (this.helpTab === "pages") {
+      body = html`${section("Pages", pagesWhat)}`;
     } else {
       body = html`<div>${section("Shapes", shapes)}${section("Cards", cards)}</div><div>${section("Layers", layers)}${section("Colour, states and values", values)}</div>`;
     }
@@ -6277,7 +6350,7 @@ export class WristAssistantPanel extends LitElement {
         <button class="pick" title="Close (Escape)" @click=${() => { this.helpOpen = false; }}>Close</button>
       </div>
       <div class="help-tabs" role="tablist" aria-label="Help topics">
-        ${tab("basics", "Basics")}${tab("keys", "Keys and mouse")}${tab("sync", "Syncing and sharing")}
+        ${tab("basics", "Basics")}${tab("pages", "Pages")}${tab("keys", "Keys and mouse")}${tab("sync", "Syncing and sharing")}
       </div>
       <div class="help-body" role="tabpanel" aria-labelledby=${`wa-help-${this.helpTab}`}>${body}</div>
     </dialog>`;
@@ -10349,16 +10422,7 @@ export class WristAssistantPanel extends LitElement {
           </span>
         </span>
       </h2>
-      ${usesPages(cfg)
-        // The same tabs as the strip over the canvas, on a row of their own
-        // under the header: the list is at the other end of the screen from
-        // the canvas and both show one page at a time, and a row the width of
-        // the card is hard to miss where a few digits in the header were not.
-        ? html`<div class="page-row" title="Which page the canvas and this list show. The list holds this page's layers and the ones on every page.">
-            ${PAGES_CHIP}
-            <span class="page-tabs" role="group" aria-label="Page the list is showing">${this.renderPageTabs(cfg)}</span>
-          </div>`
-        : nothing}
+      ${this.renderPageRow(cfg, edit)}
       ${pickedCount >= 2 && edit
         ? html`<div class="group-cta"><span>${pickedCount} layers picked</span><span class="spacer"></span>
             <button class="small primary" title=${`Group (${KEY_MOD}G)`} @click=${() => this.groupPicked()}>Group them</button>
