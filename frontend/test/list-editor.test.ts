@@ -48,6 +48,7 @@ import { LIST_ITEM_FIELDS } from "../src/list-seeds.js";
 import { LAYER_PRESETS, applyPreset } from "../src/presets.js";
 import { familyAllowsKind } from "../src/layouts.js";
 import { collectListResults, listItemsRequests, type HassLike } from "../src/ha-api.js";
+import { listExpression } from "../src/compiler.js";
 import type { IconProvider } from "../src/renderer.js";
 import { SymbolBrowser } from "../src/symbols.js";
 
@@ -778,6 +779,89 @@ describe("the list presets", () => {
     });
     const texts = made.payload.template.filter((r) => r.kind === "text");
     expect(texts).toHaveLength(2);
+    const doc = encodeConfig(cfg);
+    expect(auditUnknownKeys(doc)).toEqual([]);
+    expect(encodeConfig(parseConfig(doc))).toEqual(doc);
+  });
+
+  // The preset's own card draws three bands, and the preset shipped with one
+  // flat colour: every battery read the same whatever it held.
+  it("colours the battery bar in three bands, by the reading on the row", () => {
+    const cfg = newConfig("Preset", 0);
+    cfg.perFamily.rectangular ??= { placements: {}, cornerBodyShape: "circle", borderWidth: 2, rules: [] };
+    const id = applyPreset(cfg, "listBatteries", CALENDAR, { family: "rectangular" });
+    const made = cfg.elements.find((e) => e.payload.id === id)!;
+    if (made.kind !== "list") throw new Error("wrong kind");
+    const bar = made.payload.template.find((r) => r.kind === "shape");
+    if (bar?.kind !== "shape") throw new Error("no bar");
+
+    expect(bar.payload.rules).toHaveLength(1);
+    const rule = bar.payload.rules[0]!;
+    // Two rows and an otherwise, checked top to bottom: under 25, then under
+    // 60, then everything left over.
+    expect(rule.cases).toHaveLength(2);
+    expect(rule.otherwise).toHaveLength(1);
+    const thresholds = rule.cases.map((c) => {
+      const comparison = c.when.tests[0]!.comparison;
+      return comparison.kind === "lessThan" ? comparison.value?.kind : undefined;
+    });
+    expect(thresholds).toEqual([
+      { kind: "literal", value: "25" },
+      { kind: "literal", value: "60" },
+    ]);
+    // Every test reads the row's own state, not an entity, or one rule could
+    // not colour four different rows.
+    for (const c of rule.cases) {
+      expect(c.when.tests[0]!.value.kind).toEqual({ kind: "item", field: "state" });
+    }
+    // Three different colours, and the base is the one the otherwise sets, so a
+    // row that matches nothing is not a fourth look.
+    const colours = [
+      ...rule.cases.map((c) => (c.then[0]!.value?.kind as { value?: string } | undefined)?.value),
+      (rule.otherwise![0]!.value?.kind as { value?: string } | undefined)?.value,
+    ];
+    expect(new Set(colours).size).toBe(3);
+    expect(bar.payload.colorSlot.baseColorHex).toBe(colours[2]);
+
+    const doc = encodeConfig(cfg);
+    expect(auditUnknownKeys(doc)).toEqual([]);
+    expect(encodeConfig(parseConfig(doc))).toEqual(doc);
+  });
+
+  // A filter with no domain compiles to `[]` on both sides, so the preset drew
+  // an empty face for everybody who added it.
+  it("gives Recent activity domains to read", () => {
+    const cfg = newConfig("Preset", 0);
+    cfg.perFamily.rectangular ??= { placements: {}, cornerBodyShape: "circle", borderWidth: 2, rules: [] };
+    const id = applyPreset(cfg, "listRecent", CALENDAR, { family: "rectangular" });
+    const made = cfg.elements.find((e) => e.payload.id === id)!;
+    if (made.kind !== "list") throw new Error("wrong kind");
+    const source = made.payload.source;
+    if (source.kind !== "entities" || source.scope.kind !== "filter") throw new Error("wrong source");
+
+    expect(source.scope.domains).toContain("binary_sensor");
+    // Sensors are out on purpose: a power meter rewrites itself every few
+    // seconds and would hold every row for ever.
+    expect(source.scope.domains).not.toContain("sensor");
+    expect(source.sort).toBe("lastChanged");
+    expect(source.descending).toBe(true);
+
+    // The compiled question has to read something. `[]` is what an empty scope
+    // used to produce, and it can never return a row.
+    const jinja = listExpression(source, made.payload.rows) ?? "";
+    expect(jinja).toContain("states.binary_sensor");
+    expect(jinja).not.toContain("{% for s in ([]) %}");
+
+    // Each document owns its own list, so narrowing one never narrows the next.
+    const other = newConfig("Preset", 0);
+    other.perFamily.rectangular ??= { placements: {}, cornerBodyShape: "circle", borderWidth: 2, rules: [] };
+    const otherId = applyPreset(other, "listRecent", CALENDAR, { family: "rectangular" });
+    const otherMade = other.elements.find((e) => e.payload.id === otherId)!;
+    if (otherMade.kind !== "list") throw new Error("wrong kind");
+    const otherSource = otherMade.payload.source;
+    if (otherSource.kind !== "entities" || otherSource.scope.kind !== "filter") throw new Error("wrong source");
+    expect(otherSource.scope.domains).not.toBe(source.scope.domains);
+
     const doc = encodeConfig(cfg);
     expect(auditUnknownKeys(doc)).toEqual([]);
     expect(encodeConfig(parseConfig(doc))).toEqual(doc);

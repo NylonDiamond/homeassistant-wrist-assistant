@@ -1370,7 +1370,19 @@ export function addLightsOnList(cfg: CustomComplicationConfig, env: PresetEnv): 
   ]);
 }
 
-/** Battery sensors, emptiest first, each with a bar that runs down as it does. */
+/**
+ * Battery sensors, emptiest first, each with a bar that runs down as it does.
+ *
+ * The bar is coloured by the reading rather than left one colour, because the
+ * length alone is four points of difference between a full battery and a dead
+ * one and the colour is what carries at a glance. Red under 25, amber under
+ * 60, green above: the same three bands the preset's own card draws, so what
+ * was promised on the button is what lands on the face.
+ *
+ * The rule reads `item.state`, which the resolver fills in per row, so one
+ * rule colours every bar. `lessThan` compares as a number, and a sensor whose
+ * state is not a number matches neither row and falls through to green.
+ */
 export function addBatteriesList(cfg: CustomComplicationConfig, env: PresetEnv): string {
   const source: ListSource = {
     kind: "entities",
@@ -1380,19 +1392,46 @@ export function addBatteriesList(cfg: CustomComplicationConfig, env: PresetEnv):
     descending: false,
     attributes: [],
   };
+  const bar = rowLevel(itemValue("state"), { x: 0, y: 0.34, width: 0.14, height: 0.32 }, GOOD_HEX);
+  bar.payload.rules = [buildStatesRule(itemValue("state"), [
+    { comparison: { kind: "lessThan", value: literal("25") }, changes: [setColorTo(BAD_HEX)] },
+    { comparison: { kind: "lessThan", value: literal("60") }, changes: [setColorTo(WARN_HEX)] },
+  ], [setColorTo(GOOD_HEX)])];
   return addList(cfg, env, source, { rows: 4 }, [
-    rowLevel(itemValue("state"), { x: 0, y: 0.34, width: 0.14, height: 0.32 }, ACCENT_HEX),
+    bar,
     rowText(itemValue("name"), { x: 0.18, y: 0, width: 0.5, height: 1 }, { align: "leading" }),
     rowText(itemValue("state", { decimals: 0, useEntityUnit: true }), { x: 0.7, y: 0, width: 0.3, height: 1 },
       { align: "trailing" }),
   ]);
 }
 
-/** Whatever changed most recently, with how long ago it was. */
+/** The domains Recent activity starts on: the ones where a change is
+ * something that happened. A fresh array every call, so the document owns its
+ * own list and narrowing one complication never narrows the preset. */
+function recentDomains(): string[] {
+  return ["binary_sensor", "light", "switch", "lock", "cover", "climate", "media_player", "fan", "person"];
+}
+
+/**
+ * Whatever changed most recently, with how long ago it was.
+ *
+ * A filter with no domain at all reads nothing: both compilers turn an empty
+ * scope into an empty list, so the preset used to draw a blank face for
+ * everybody. It names the domains where a change is an event instead. Sensors
+ * are deliberately out: a power meter rewrites itself every few seconds and
+ * would hold all four rows for ever, which is the opposite of what the list is
+ * for. The Source card narrows it further by room or label.
+ */
 export function addRecentList(cfg: CustomComplicationConfig, env: PresetEnv): string {
   const source: ListSource = {
     kind: "entities",
-    scope: { kind: "filter", domains: [], areaIds: [], labelIds: [], floorIds: [] },
+    scope: {
+      kind: "filter",
+      domains: recentDomains(),
+      areaIds: [],
+      labelIds: [],
+      floorIds: [],
+    },
     sort: "lastChanged",
     descending: true,
     attributes: [],

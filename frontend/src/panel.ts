@@ -1431,6 +1431,8 @@ export class WristAssistantPanel extends LitElement {
   private compiledDocument?: string;
   /** `chartHistorySignature` as of the last scheduled refresh. */
   private historySignature = "";
+  /** `listItemsRequests().signature` as of the last scheduled refresh. */
+  private listSignature = "";
   private icons: IconProvider = makeIconProvider(() => this.requestUpdate());
   /** Natural sizes of the preview's camera pictures, so an image layer can be
    * cropped exactly the way the watch crops it. */
@@ -5423,9 +5425,18 @@ export class WristAssistantPanel extends LitElement {
     // entity leaves the document byte-identical, and testing the document alone
     // left the new series waiting for the 30-second heartbeat.
     const historySignature = chartHistorySignature(this.draft.config);
-    if (this.compiled?.document !== this.compiledDocument || historySignature !== this.historySignature) {
+    // A calendar, to-do or forecast list is the same trap as a history chart:
+    // its items come from a service call rather than from Jinja, so adding one
+    // or pointing it at another calendar leaves the document byte-identical.
+    // Without this the new list drew its sample rows until the 30-second
+    // heartbeat came round, which read as a preset that ignored the entity.
+    const listSignature = listItemsRequests(this.draft.config).signature;
+    if (this.compiled?.document !== this.compiledDocument
+      || historySignature !== this.historySignature
+      || listSignature !== this.listSignature) {
       this.compiledDocument = this.compiled?.document;
       this.historySignature = historySignature;
+      this.listSignature = listSignature;
       this.scheduleTemplates(TEMPLATE_DEBOUNCE_MS);
     }
   }
