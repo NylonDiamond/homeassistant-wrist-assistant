@@ -10,10 +10,13 @@ import {
   type ComplicationRecord,
   type HassLike,
   type OwnerSummary,
+  deletePart,
   deleteRecord,
   fetchGalleryKey,
   fetchList,
   fetchOwners,
+  fetchParts,
+  savePart,
   moveOwner,
   nudgeWatch,
   fetchWatchStatus,
@@ -218,6 +221,14 @@ import {
   submitToGallery,
 } from "./gallery.js";
 import { renderGalleryPreviews } from "./preview-png.js";
+import {
+  type SavedPart,
+  insertPart,
+  partFromSelection,
+  partText,
+  partTextFits,
+  suggestPartName,
+} from "./parts.js";
 import { domainIcon } from "./domain-icons.js";
 
 /** The gallery calls go through the browser's own fetch. */
@@ -872,6 +883,37 @@ export class WristAssistantPanel extends LitElement {
   /** A layer's position lifted by the Position card's Copy position, for its
    * Paste position on another layer. Kept for the tab, like `clipboard`. */
   @state() private copiedPosition?: CopiedPosition;
+
+  // ── My parts ──────────────────────────────────────────────────────────
+  //
+  // The home's library of saved layer sets. One library, so it is fetched once
+  // and kept: every complication in the panel offers the same parts. `parts`
+  // being undefined means "not asked yet", which is what the dialog shows a
+  // spinner for; an empty array is a library with nothing in it.
+
+  /** The Save to My parts dialog: which layers, and what to call them. */
+  @state() private savePartOpen = false;
+  @state() private savePartName = "";
+  @state() private savePartIds: readonly string[] = [];
+  @state() private savePartError?: string;
+  @state() private savePartBusy = false;
+  /** The Add from My parts dialog. */
+  @state() private partsOpen = false;
+  @state() private parts?: SavedPart[];
+  @state() private partsError?: string;
+  @state() private partsBusy = false;
+  /** The part being brought in, read back out of its text, and the entities
+   * this home is putting under its slots. */
+  @state() private partPick?: { id: string; config: CustomComplicationConfig };
+  @state() private partMap: ReadonlyMap<string, EntityRef> = new Map();
+  /** The row being renamed in the dialog, and the one asking to be deleted.
+   * Both are ids, so a list that reloads under them closes them by itself. */
+  @state() private partRename?: { id: string; name: string };
+  @state() private partConfirmDelete?: string;
+  /** Each part's text read back into a document, so the grid parses a part
+   * once rather than on every render. Keyed by id, checked against the text,
+   * so a renamed or replaced part is re-read. */
+  private partConfigCache = new Map<string, { text: string; config: CustomComplicationConfig | undefined }>();
   /** Snap to grid, and the grid's step as a fraction of the face. A choice of
    * this browser, like the column widths, never saved into a complication:
    * the watch has no use for it. */
@@ -1718,6 +1760,29 @@ export class WristAssistantPanel extends LitElement {
     .xf-raw > summary:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 6px; }
     .xf-raw > summary svg.ui-icon { width: 13px; height: 13px; transition: transform .15s ease-out; }
     .xf-raw[open] > summary svg.ui-icon { transform: rotate(90deg); }
+
+    /* My parts: the library as a grid of pictures, each card its own picture,
+       name and two actions. The same dialog chrome as Share and Import, so
+       only the grid is new. */
+    .pt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+    .pt-card {
+      display: flex; flex-direction: column; gap: 6px; padding: 8px; min-width: 0;
+      border: 1px solid var(--wa-line); border-radius: var(--wa-r-md); background: var(--wa-raised);
+    }
+    .pt-card.asking { border-color: var(--wa-line-strong); }
+    .pt-pick {
+      font: inherit; color: inherit; text-align: left; cursor: pointer; min-width: 0;
+      display: flex; flex-direction: column; gap: 6px; padding: 0; border: 0; background: none;
+    }
+    .pt-pick:disabled { opacity: .5; cursor: not-allowed; }
+    .pt-pick:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: var(--wa-r-sm); }
+    .pt-thumb { display: grid; place-items: center; height: 74px; padding: 6px; border-radius: var(--wa-r-sm); background: #000; border: 1px solid var(--wa-line); line-height: 0; }
+    .pt-thumb svg.complication { display: block; max-width: 100%; max-height: 100%; width: auto; height: 100%; }
+    .pt-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pt-sub { font-size: 11.5px; color: var(--wa-muted); }
+    .pt-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .pt-ask { font-size: 11.5px; color: var(--wa-muted); }
+    .pt-rename { width: 100%; box-sizing: border-box; }
     .xf-raw > .xfer-text { margin-top: 8px; }
     .xf-raw > button.link { margin-top: 6px; font-size: 12.5px; font-weight: 600; }
     /* The gallery's steps. */
@@ -5674,6 +5739,7 @@ export class WristAssistantPanel extends LitElement {
       ["Backup", "The other choice in Share: an exact copy, entity ids and names included. For your records, or another watch in this home."],
       ["Copy link", "A link to this panel with the text inside it. Opening it here fills in the Import dialog. On another home, paste the link into Import."],
       ["Import", "Beside New. Paste text or a link, choose a file, or drop one on the dialog. Check the preview, choose your own entity for each slot, then Import. It opens as unsaved work and reaches the watch at the first Save."],
+      ["My parts", "A few layers kept under a name, for this home. Pick layers in the Layers list and press Save to My parts; Add from My parts, under the add buttons, drops them into the complication you have open. A part is stored the way a share is, so it asks which of your entities each slot is on the way in."],
     ];
     const rows = (list: [string, string][]) => list.map(([k, what]) => html`<tr><th scope="row"><kbd>${k}</kbd></th><td>${what}</td></tr>`);
     const section = (title: string, list: [string, string][]) => html`<section>
@@ -6343,6 +6409,8 @@ export class WristAssistantPanel extends LitElement {
       ${this.shareOpen ? this.renderShareDialog() : nothing}
       ${this.galleryOpen ? this.renderGalleryDialog() : nothing}
       ${this.importOpen ? this.renderImportDialog() : nothing}
+      ${this.savePartOpen ? this.renderSavePartDialog() : nothing}
+      ${this.partsOpen ? this.renderPartsDialog() : nothing}
       ${this.watchSupported
         ? html`<div class="layout cols-${fit.columns}"
               style="--wa-left:${fit.left}px;--wa-right:${fit.right}px">
@@ -8369,6 +8437,354 @@ export class WristAssistantPanel extends LitElement {
     this.importHistoryRun += 1;
   }
 
+  // ── My parts ──────────────────────────────────────────────────────────
+  //
+  // Two dialogs over one library. Save keeps the picked layers as share text;
+  // Add reads that text back, asks this home for an entity per slot, and drops
+  // the layers into the open document as one undoable step.
+
+  /** Names the library already uses, lower-cased, so a second part is not
+   * called the same thing as the first. */
+  private partNames(exceptId?: string): Set<string> {
+    const rows = (this.parts ?? []).filter((p) => p.id !== exceptId);
+    return new Set(rows.map((p) => p.name.trim().toLowerCase()));
+  }
+
+  /** Fetch the library. Kept for the tab once it arrives: one library serves
+   * every complication opened here. */
+  private async loadParts(): Promise<void> {
+    this.partsBusy = true;
+    try {
+      const reply = await fetchParts(this.hass);
+      this.parts = reply.parts;
+      this.partsError = undefined;
+    } catch (err) {
+      this.partsError = errText(err);
+    } finally {
+      this.partsBusy = false;
+    }
+  }
+
+  /** A part's text read back into a document, remembered per part so the grid
+   * does not re-parse every row on every render. */
+  private partConfig(part: SavedPart): CustomComplicationConfig | undefined {
+    const cached = this.partConfigCache.get(part.id);
+    if (cached && cached.text === part.text) return cached.config;
+    const parse = parseImportText(part.text, this.maxSchemaVersion);
+    const config = parse.ok ? parse.config : undefined;
+    this.partConfigCache.set(part.id, { text: part.text, config });
+    return config;
+  }
+
+  /** Save to My parts: the picked layers, under a name. A row being designed
+   * is out, the same way copying one is: a row is not a layer of the
+   * document, so a part made of one could never be put back. */
+  private async openSavePartDialog() {
+    const cfg = this.draft?.config;
+    const ids = this.selectedIds();
+    if (!cfg || !this.canEdit || ids.length === 0 || this.rowEditList()) return;
+    if (this.parts === undefined) await this.loadParts();
+    const ctx = describeContext(this.host());
+    const names = ids.map((id) => {
+      const el = cfg.elements.find((e) => e.payload.id === id);
+      return el ? layerTitle(el, ctx) : "";
+    });
+    this.savePartIds = ids;
+    this.savePartName = suggestPartName(names, this.partNames());
+    this.savePartError = undefined;
+    this.savePartOpen = true;
+    await this.updateComplete;
+    const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.save-part-dialog");
+    if (dialog && !dialog.open) dialog.showModal();
+    dialog?.querySelector<HTMLInputElement>("input.part-name")?.select();
+  }
+
+  private closeSavePartDialog() {
+    const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.save-part-dialog");
+    if (dialog?.open) dialog.close();
+    this.savePartOpen = false;
+  }
+
+  private async doSavePart() {
+    const cfg = this.draft?.config;
+    const name = this.savePartName.trim();
+    if (!cfg || this.savePartBusy || name === "" || this.savePartIds.length === 0) return;
+    const doc = partFromSelection(cfg, this.savePartIds, name, this.canvasFamily);
+    const text = partText(doc, this.knownDomains());
+    if (!partTextFits(text)) {
+      this.savePartError = "These layers are too big to keep as a part. Pick fewer of them.";
+      return;
+    }
+    this.savePartBusy = true;
+    this.savePartError = undefined;
+    try {
+      const reply = await savePart(this.hass, name, text);
+      this.parts = [reply.part, ...(this.parts ?? []).filter((p) => p.id !== reply.part.id)];
+      this.closeSavePartDialog();
+    } catch (err) {
+      this.savePartError = errText(err);
+    } finally {
+      this.savePartBusy = false;
+    }
+  }
+
+  /** The Save dialog: what is being kept, and what to call it. Short on
+   * purpose; everything else about a part is worked out from the layers. */
+  private renderSavePartDialog() {
+    const cfg = this.draft?.config;
+    if (!cfg) return nothing;
+    const ctx = describeContext(this.host());
+    const picked = this.savePartIds
+      .map((id) => cfg.elements.find((e) => e.payload.id === id))
+      .filter((el): el is CElement => el !== undefined);
+    const name = this.savePartName.trim();
+    const taken = name !== "" && this.partNames().has(name.toLowerCase());
+    const problem = name === "" ? "Give it a name first." : taken ? "A part already has that name." : undefined;
+    return html`<dialog class="save-part-dialog xf" @close=${() => { this.savePartOpen = false; }}
+      @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" && problem === undefined) { e.preventDefault(); void this.doSavePart(); } }}>
+      ${this.dialogHead("Save to My parts", "Kept for this home, ready to drop into any complication", () => this.closeSavePartDialog())}
+      <div class="xfer-body">
+        <label class="xf-f"><span class="xf-label">Name</span>
+          <input class="part-name" type="text" maxlength="60" aria-invalid=${taken ? "true" : "false"} .value=${this.savePartName}
+            @input=${(e: Event) => { this.savePartName = (e.target as HTMLInputElement).value; }} /></label>
+        ${taken ? html`<div class="hint err">A part already has that name.</div>` : nothing}
+        <div class="xf-stack">
+          <span class="xf-label">Layers<span class="r">${picked.length}</span></span>
+          <div class="xf-rows">
+            ${picked.map((el) => html`<div class="xf-row" style=${`--k:${KIND_COLOR[el.kind]}`}>
+              <span class="ent-ico xf-dom">${uiIcon(el.kind)}</span>
+              <div class="xf-main"><div class="xf-name">${layerTitle(el, ctx)}</div>
+                <div class="xf-sub">${KIND_LABEL[el.kind]}</div></div>
+            </div>`)}
+          </div>
+        </div>
+        <div class="xf-lead">${uiIcon("info")}<span>Your entity ids become numbered slots, the way Share does it. Adding the part back asks which of your entities each slot is.</span></div>
+        ${this.savePartError ? html`<div class="hint err" role="alert">${this.savePartError}</div>` : nothing}
+      </div>
+      <div class="xfer-foot">
+        <span class="spacer"></span>
+        <button class="small" @click=${() => this.closeSavePartDialog()}>Cancel</button>
+        <button class="primary" ?disabled=${problem !== undefined || this.savePartBusy}
+          title=${problem ?? "Keep these layers"} @click=${() => void this.doSavePart()}>${this.savePartBusy ? "Saving…" : "Save"}</button>
+      </div>
+    </dialog>`;
+  }
+
+  /** Add from My parts. Opens on the grid; the library is fetched the first
+   * time and re-read on every open, since another tab may have added one. */
+  private async openPartsDialog() {
+    if (!this.canEdit || !this.draft) return;
+    this.partsOpen = true;
+    this.partPick = undefined;
+    this.partMap = new Map();
+    this.partRename = undefined;
+    this.partConfirmDelete = undefined;
+    this.partsError = undefined;
+    await this.updateComplete;
+    const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.parts-dialog");
+    if (dialog && !dialog.open) dialog.showModal();
+    await this.loadParts();
+  }
+
+  private closePartsDialog() {
+    const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.parts-dialog");
+    if (dialog?.open) dialog.close();
+    this.partsOpen = false;
+  }
+
+  private choosePart(part: SavedPart) {
+    const config = this.partConfig(part);
+    if (!config) {
+      this.partsError = "That part could not be read. It may have been made by a newer panel.";
+      return;
+    }
+    this.partPick = { id: part.id, config };
+    this.partMap = new Map();
+    this.partsError = undefined;
+  }
+
+  private setPartEntity(entityId: string, ref: EntityRef) {
+    const next = new Map(this.partMap);
+    if (ref.entityId === "") next.delete(entityId);
+    else next.set(entityId, entityRefFrom(this.hass.states, ref.entityId));
+    this.partMap = next;
+  }
+
+  /** Drop the chosen part into the open document: one mutation, so one undo
+   * step takes the whole part back out again. */
+  private doAddPart() {
+    const pick = this.partPick;
+    const cfg = this.draft?.config;
+    if (!pick || !cfg || !this.canEdit) return;
+    const family = this.canvasFamily;
+    if (!isDrawable(family)) return;
+    const part = remapEntities(pick.config, this.partMap);
+    let landed: string[] = [];
+    this.mutate((c) => { landed = insertPart(c, part, family); });
+    this.closePartsDialog();
+    this.selectRows(landed);
+  }
+
+  private async renamePart(id: string, name: string) {
+    this.partRename = undefined;
+    const part = (this.parts ?? []).find((p) => p.id === id);
+    const clean = name.trim();
+    if (!part || clean === "" || clean === part.name) return;
+    try {
+      const reply = await savePart(this.hass, clean, part.text, id);
+      this.parts = (this.parts ?? []).map((p) => (p.id === id ? reply.part : p));
+      this.partsError = undefined;
+    } catch (err) {
+      this.partsError = errText(err);
+    }
+  }
+
+  private async removePart(id: string) {
+    this.partConfirmDelete = undefined;
+    try {
+      await deletePart(this.hass, id);
+      this.parts = (this.parts ?? []).filter((p) => p.id !== id);
+      this.partConfigCache.delete(id);
+      if (this.partPick?.id === id) this.partPick = undefined;
+      this.partsError = undefined;
+    } catch (err) {
+      this.partsError = errText(err);
+    }
+  }
+
+  /** One part's picture: its own shape, drawn by the panel's renderer from the
+   * part's text. Nothing is stored beside the text, so a part drawn here is
+   * always the part that is there. */
+  private partThumb(part: SavedPart) {
+    const cfg = this.partConfig(part);
+    const family = cfg ? this.dialogFamily(cfg) : undefined;
+    if (!cfg || family === undefined || !isDrawable(family)) return html`<span class="pt-thumb"></span>`;
+    const layout = this.configLayouts(cfg, [])[family];
+    return html`<span class="pt-thumb ${family}">${layout
+      ? renderLayout(layout, { icons: this.icons, imageSizes: this.imageSizes, slot: slotFor(this.referenceCase, family) })
+      : nothing}</span>`;
+  }
+
+  private renderPartsDialog() {
+    return html`<dialog class="parts-dialog xf" @close=${() => { this.partsOpen = false; }}>
+      ${this.dialogHead("My parts", "Layers you kept, ready to drop into this complication", () => this.closePartsDialog())}
+      ${this.partPick ? this.renderPartPicked(this.partPick.config) : this.renderPartsGrid()}
+    </dialog>`;
+  }
+
+  /** The library as a grid of pictures. Rename and delete live on the card, so
+   * tidying up never needs a second dialog; the delete asks once, on the card
+   * itself, and the question goes away on its own when anything else is
+   * clicked. */
+  private renderPartsGrid() {
+    const rows = this.parts ?? [];
+    return html`<div class="xfer-body">
+      ${this.partsError ? html`<div class="hint err" role="alert">${this.partsError}</div>` : nothing}
+      ${this.parts === undefined
+        ? html`<div class="xf-sub">Reading your parts…</div>`
+        : rows.length === 0
+          ? html`<div class="xf-lead">${uiIcon("info")}<span>No parts yet. Pick a layer or a few in the Layers list, then <b>Save to My parts</b>.</span></div>`
+          : html`<div class="pt-grid">${rows.map((part) => this.renderPartCard(part))}</div>`}
+    </div>
+    <div class="xfer-foot">
+      <span class="spacer"></span>
+      <button class="small" @click=${() => this.closePartsDialog()}>Close</button>
+    </div>`;
+  }
+
+  private renderPartCard(part: SavedPart) {
+    const renaming = this.partRename?.id === part.id;
+    const asking = this.partConfirmDelete === part.id;
+    const cfg = this.partConfig(part);
+    const layers = cfg ? cfg.elements.length : 0;
+    return html`<div class="pt-card ${asking ? "asking" : ""}">
+      <button class="pt-pick" title=${cfg ? "Add this part" : "This part could not be read"} ?disabled=${!cfg}
+        @click=${() => this.choosePart(part)}>
+        ${this.partThumb(part)}
+        <span class="pt-name">${part.name}</span>
+        <span class="pt-sub">${cfg ? `${layers} ${layers === 1 ? "layer" : "layers"}` : "Could not be read"}</span>
+      </button>
+      ${renaming
+        ? html`<input class="pt-rename" type="text" maxlength="60" .value=${this.partRename!.name}
+            @input=${(e: Event) => { this.partRename = { id: part.id, name: (e.target as HTMLInputElement).value }; }}
+            @keydown=${(e: KeyboardEvent) => {
+              if (e.key === "Enter") { e.preventDefault(); void this.renamePart(part.id, this.partRename?.name ?? ""); }
+              if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); this.partRename = undefined; }
+            }}
+            @blur=${() => void this.renamePart(part.id, this.partRename?.name ?? "")} />`
+        : asking
+          ? html`<div class="pt-acts"><span class="pt-ask">Delete it?</span>
+              <button class="small danger" @click=${() => void this.removePart(part.id)}>Delete</button>
+              <button class="small" @click=${() => { this.partConfirmDelete = undefined; }}>Keep</button></div>`
+          : html`<div class="pt-acts">
+              <button class="small" @click=${() => { this.partRename = { id: part.id, name: part.name }; }}>Rename</button>
+              <button class="small danger" @click=${() => { this.partConfirmDelete = part.id; }}>Delete</button></div>`}
+    </div>`;
+  }
+
+  /** A part chosen: its picture, a row per entity it needs, and the way in.
+   * The same table the Import dialog shows, asking the same question. */
+  private renderPartPicked(cfg: CustomComplicationConfig) {
+    const rows = unresolvedEntities(cfg, this.hass.states);
+    const required = rows.filter((row) => row.required);
+    const picked = required.filter((row) => this.partMap.has(row.entityId)).length;
+    const preview = remapEntities(cfg, this.partMap);
+    let entities: EntityRef[] = [];
+    try {
+      entities = [...compile(preview).entities.values()];
+    } catch {
+      entities = [];
+    }
+    const layouts = this.configLayouts(preview, entities);
+    const family = this.dialogFamily(preview);
+    const here = this.canvasFamily;
+    const problem = !isDrawable(here)
+      ? "Open a shape with a canvas first. A part is layers, and there is nowhere to put them here."
+      : undefined;
+    return html`<div class="xfer-body">
+      <div class="xf-hero">
+        ${this.dialogPreview(layouts, family, [], family ? familyTitle(family) : "", "")}
+        <div class="xf-stack">
+          <div class="xf-sub">${layerCountWords(cfg)}</div>
+          <div class="xf-lead">${uiIcon("info")}<span>These layers land on the <b>${familyTitle(here)}</b> shape, the one you are editing.</span></div>
+        </div>
+      </div>
+      ${rows.length === 0
+        ? html`<div class="xf-lead">${uiIcon("check")}<span>Every entity this part reads is already in your Home Assistant.</span></div>`
+        : html`<div class="xf-stack">
+          <div class="xf-label">Pick your entities${required.length > 0 ? html`<span class="r">${picked} of ${required.length}</span>` : nothing}</div>
+          <div class="xf-rows">${rows.map((row) => this.renderPartRow(row))}</div>
+          ${picked < required.length ? html`<div class="xf-lead">${uiIcon("info")}<span>You can add it now and pick the rest in the editor.</span></div>` : nothing}
+        </div>`}
+      ${hasInstanceFilters(cfg)
+        ? html`<div class="xf-lead warn">${uiIcon("info")}<span>This part filters by areas, labels or floors from the home it was made on. Check its aggregate layers after adding it.</span></div>`
+        : nothing}
+      ${this.partsError ? html`<div class="hint err" role="alert">${this.partsError}</div>` : nothing}
+    </div>
+    <div class="xfer-foot">
+      <button class="ghost" @click=${() => { this.partPick = undefined; this.partMap = new Map(); }}>Back to My parts</button>
+      <span class="spacer"></span>
+      <button class="primary" ?disabled=${problem !== undefined}
+        title=${problem ?? "Put these layers into the open complication"} @click=${() => this.doAddPart()}>Add to this complication</button>
+    </div>`;
+  }
+
+  private renderPartRow(row: UnresolvedEntity) {
+    const chosen = this.partMap.get(row.entityId);
+    return html`<div class="xf-row pick">
+      <span class="ent-ico xf-dom">${domainIcon(row.domain)}</span>
+      <div class="xf-main">
+        <div class="xf-name">${row.label}${chosen ? html`<span class="xf-done" title="Picked">${uiIcon("check")}</span>` : nothing}</div>
+        <div class="xf-sub">${row.where.join(", ")}</div>
+        ${row.required ? nothing : html`<div class="xf-sub">Not in your Home Assistant right now. Leave it empty to keep the id.</div>`}
+        <div class="xf-picker">${entityField({ hass: this.hass }, row.label, chosen ?? NO_ENTITY,
+          (ref) => this.setPartEntity(row.entityId, ref),
+          `part-entity-${row.entityId}`,
+          { compact: true, domain: row.domain, needed: row.required && chosen === undefined })}</div>
+      </div>
+    </div>`;
+  }
+
   private renderBanners() {
     const out: TemplateResult[] = [];
     const orphan = this.renderOrphanBanner();
@@ -8503,6 +8919,12 @@ export class WristAssistantPanel extends LitElement {
             ${plain.map((p) => html`<button class="preset" title=${p.blurb}
               ?disabled=${cfg.elements.length + p.layerCount > 64}
               @click=${() => this.openPreset(p.kind)}>${p.title}</button>`)}
+          </div>
+          <div class="presets">
+            <span class="presets-l">Saved</span>
+            <button class="preset" ?disabled=${full}
+              title="Layers you kept earlier, ready to drop onto this shape"
+              @click=${() => void this.openPartsDialog()}>Add from My parts</button>
           </div>`
         : nothing}
       ${this.renderPresetDialog()}
@@ -8751,6 +9173,11 @@ export class WristAssistantPanel extends LitElement {
     const shapeHl = this.inspect.kind === "family";
     const shapeMeta = `${layout?.backgroundColorHex ? colorWords(layout.backgroundColorHex) : "transparent"} · ${layout?.borderColorHex ? `${layout.borderWidth} pt border` : "no border"}`;
     const pickedCount = [...this.multi].filter((id) => cfg.elements.some((e) => e.payload.id === id)).length;
+    // A lone selection (one layer, or the members of a selected group) has no
+    // bar of its own, and Save to My parts is the one thing offered for it, so
+    // the bar appears for that too. A row being designed is not a layer of the
+    // document, so it offers nothing.
+    const selectedCount = this.rowEditList() ? 0 : this.selectedIds().length;
     // Each row carries a picture of its own layer, drawn alone, the way a
     // painting app's layer list does. The rows resolve the shape the same way
     // the big preview does, so a forced state shows in both.
@@ -9007,7 +9434,13 @@ export class WristAssistantPanel extends LitElement {
       ${pickedCount >= 2 && edit
         ? html`<div class="group-cta"><span>${pickedCount} layers picked</span><span class="spacer"></span>
             <button class="small primary" title=${`Group (${KEY_MOD}G)`} @click=${() => this.groupPicked()}>Group them</button>
+            <button class="small" title="Keep these layers under a name, to use in another complication"
+              @click=${() => void this.openSavePartDialog()}>Save to My parts</button>
             <button class="small" @click=${() => { this.multi = new Set(); }}>Clear</button></div>`
+        : selectedCount >= 1 && edit
+          ? html`<div class="group-cta"><span>${selectedCount === 1 ? "1 layer selected" : `${selectedCount} layers selected`}</span><span class="spacer"></span>
+              <button class="small" title="Keep this layer under a name, to use in another complication"
+                @click=${() => void this.openSavePartDialog()}>Save to My parts</button></div>`
         : cfg.elements.length >= 2 && edit && !cfg.groups?.length
           ? html`<div class="hint">${MULTI_KEY}-click layers here or on the preview, or shift-click a range of rows, then group them so a finished part moves as one. The <b>?</b> button in the header lists every key and mouse trick.</div>`
           : nothing}
