@@ -4895,7 +4895,7 @@ ${bR(d)}`}}delete s.hidden;let l=_s(a);if(l.length>0){let c=l.slice(0,3).join(",
                 <div class="pk-note">These do not show in the ${this.deviceWord}'s own list of complications. A face or widget that already has one keeps it.</div>
                 ${l.hidden.map(c=>this.renderPickerRow(c))}`:m}`:m}`}
       </div>
-      ${this.renderPickerFoot(r.length)}
+      ${this.renderPickerFoot(r.filter(c=>c.kind==="record").length)}
     </div>`}renderPickerFoot(t){if(!this.hass.user?.is_admin)return m;let i=this.freeSlot()<0;return h`<div class="pk-foot">
       <span class="pk-foot-hint">${this.ownerBusy?m:`${t} complication${t===1?"":"s"} on this ${this.deviceWord}`}</span>
       <button type="button" class="new-btn primary" ?disabled=${i||this.ownerBusy}

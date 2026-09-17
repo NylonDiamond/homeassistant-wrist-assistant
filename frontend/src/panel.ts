@@ -6815,13 +6815,17 @@ export class WristAssistantPanel extends LitElement {
                 <div class="pk-note">These do not show in the ${this.deviceWord}'s own list of complications. A face or widget that already has one keeps it.</div>
                 ${split.hidden.map((row) => this.renderPickerRow(row))}` : nothing}` : nothing}`}
       </div>
-      ${this.renderPickerFoot(all.length)}
+      ${this.renderPickerFoot(all.filter((row) => row.kind === "record").length)}
     </div>`;
   }
 
   /** The bottom line of the picker's right pane: what this device is holding,
    * and a New that lands on the device the pane is showing rather than on
-   * whichever one the header happened to be on. */
+   * whichever one the header happened to be on.
+   *
+   * The count is saved complications only, never the locked slots the list
+   * also draws, so it says the same number as the device's own badge two
+   * inches to the left. */
   private renderPickerFoot(count: number) {
     if (!this.hass.user?.is_admin) return nothing;
     const full = this.freeSlot() < 0;
