@@ -3434,6 +3434,22 @@ ${tA(d)}`}}delete s.hidden;let l=Xs(a);if(l.length>0){let c=l.slice(0,3).join(",
       border-radius: 999px; background: var(--wa-accent); color: var(--wa-accent-ink);
       font-size: 11px; font-weight: 700; letter-spacing: .04em; white-space: nowrap;
     }
+    /* The Layers card's own page row, under the header: the chip at the left
+       and the tabs sharing the rest of the width, so two pages get two wide
+       buttons and four get four narrower ones, and the row is a control in
+       its own right rather than digits squeezed between the header's tools. */
+    .page-row {
+      display: flex; align-items: center; gap: 8px; margin: 2px 0 8px;
+    }
+    .page-row .page-tabs { display: flex; flex: 1 1 auto; gap: 4px; min-width: 0; }
+    .page-row .page-tabs button {
+      font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; flex: 1 1 0; min-width: 0;
+      height: 26px; padding: 0 6px; border-radius: 7px;
+      border: 1px solid var(--wa-line); background: var(--wa-input); color: inherit;
+    }
+    .page-row .page-tabs button.on { background: var(--wa-accent); color: var(--wa-accent-ink); border-color: transparent; }
+    .page-row .page-tabs button:hover:not(.on) { background: var(--wa-raised); }
+    .page-row .page-tabs button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .page-strip .page-tabs { display: inline-flex; gap: 2px; }
     .page-strip button {
       font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; flex: none;
@@ -5575,8 +5591,6 @@ ${tA(d)}`}}delete s.hidden;let l=Xs(a);if(l.length>0){let c=l.slice(0,3).join(",
       <h2 class="panel-title tools" style=${`--c:${le.place}`}><span class="swatch">${L("layers")}</span>Layers
         <span class="mini">top draws last</span><span class="spacer"></span>
         <span class="tool-set">
-          ${Be(t)?h`${yv}<span class="seg page-seg" role="group" aria-label="Page the list is showing"
-                title="Which page the canvas and this list show. The list holds this page's layers and the ones on every page.">${this.renderPageTabs(t)}</span>`:m}
           <span class="seg" role="group" aria-label="Row detail">
             ${[["compact","Compact rows: the name and one line about the layer"],["expanded","Expanded rows: what the layer is made of and where it sits"]].map(([F,X])=>h`
               <button class=${this.layerDetail===F?"on":""} title=${X} aria-label=${X} aria-pressed=${this.layerDetail===F?"true":"false"}
@@ -5590,6 +5604,10 @@ ${tA(d)}`}}delete s.hidden;let l=Xs(a);if(l.length>0){let c=l.slice(0,3).join(",
           </span>
         </span>
       </h2>
+      ${Be(t)?h`<div class="page-row" title="Which page the canvas and this list show. The list holds this page's layers and the ones on every page.">
+            ${yv}
+            <span class="page-tabs" role="group" aria-label="Page the list is showing">${this.renderPageTabs(t)}</span>
+          </div>`:m}
       ${b>=2&&i?h`<div class="group-cta"><span>${b} layers picked</span><span class="spacer"></span>
             <button class="small primary" title=${`Group (${hi}G)`} @click=${()=>this.groupPicked()}>Group them</button>
             <button class="small" title="Keep these layers under a name, to use in another complication"
