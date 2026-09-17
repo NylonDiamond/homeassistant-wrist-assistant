@@ -3004,6 +3004,9 @@ ${GA(d)}`}}delete s.hidden;let l=sl(a);if(l.length>0){let c=l.slice(0,3).join(",
        cards, each opened by a label rather than a sentence. They are the way
        out of the presets, not a second offer. */
     .presets { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
+    /* The label over the preset grid: the same word in the same place as the
+       two rows under it, so the card reads as three named groups. */
+    .presets.presets-head { margin: 0 0 6px; }
     .presets-l {
       margin-right: 4px; font-size: 11px; font-weight: 700; letter-spacing: .08em;
       text-transform: uppercase; color: var(--wa-muted);
@@ -5630,7 +5633,7 @@ ${GA(d)}`}}delete s.hidden;let l=sl(a);if(l.length>0){let c=l.slice(0,3).join(",
         @click=${l}
         @keydown=${p=>{(p.key==="Enter"||p.key===" ")&&(p.preventDefault(),l())}}>
         <span class="swatch">${L("plus")}</span>Add a layer<span class="spacer"></span>
-        ${a?m:h`<span class="mini">${s.length} presets · ${o.length} blank kinds</span>`}
+        ${a?m:h`<span class="mini">${s.length} presets · ${o.length} elements</span>`}
         ${a?h`<span class="tool-set" @click=${p=>p.stopPropagation()}>
               <span class="seg" role="group" aria-label="Button detail">
                 ${[["compact","Names"],["expanded","Samples"]].map(([p,f])=>h`
@@ -5641,9 +5644,10 @@ ${GA(d)}`}}delete s.hidden;let l=sl(a);if(l.length>0){let c=l.slice(0,3).join(",
         <span class="chev">${L("chevron")}</span>
       </h2>
       ${a?h`
+          <div class="presets presets-head"><span class="presets-l">Some presets</span></div>
           <div class="add-scroll"><div class="add-grid ${r?"":"lean"}">${s.map(d)}</div></div>
           <div class="presets">
-            <span class="presets-l">Blank</span>
+            <span class="presets-l">Elements</span>
             ${o.map(u)}
           </div>
           <div class="presets">

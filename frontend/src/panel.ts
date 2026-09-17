@@ -2355,6 +2355,9 @@ export class WristAssistantPanel extends LitElement {
        cards, each opened by a label rather than a sentence. They are the way
        out of the presets, not a second offer. */
     .presets { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
+    /* The label over the preset grid: the same word in the same place as the
+       two rows under it, so the card reads as three named groups. */
+    .presets.presets-head { margin: 0 0 6px; }
     .presets-l {
       margin-right: 4px; font-size: 11px; font-weight: 700; letter-spacing: .08em;
       text-transform: uppercase; color: var(--wa-muted);
@@ -10037,7 +10040,7 @@ export class WristAssistantPanel extends LitElement {
         @click=${toggle}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}>
         <span class="swatch">${uiIcon("plus")}</span>Add a layer<span class="spacer"></span>
-        ${open ? nothing : html`<span class="mini">${offered.length} presets · ${kinds.length} blank kinds</span>`}
+        ${open ? nothing : html`<span class="mini">${offered.length} presets · ${kinds.length} elements</span>`}
         ${open
           ? html`<span class="tool-set" @click=${(e: Event) => e.stopPropagation()}>
               <span class="seg" role="group" aria-label="Button detail">
@@ -10052,9 +10055,10 @@ export class WristAssistantPanel extends LitElement {
       </h2>
       ${open
         ? html`
+          <div class="presets presets-head"><span class="presets-l">Some presets</span></div>
           <div class="add-scroll"><div class="add-grid ${rich ? "" : "lean"}">${offered.map(presetCard)}</div></div>
           <div class="presets">
-            <span class="presets-l">Blank</span>
+            <span class="presets-l">Elements</span>
             ${kinds.map(kindChip)}
           </div>
           <div class="presets">
