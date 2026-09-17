@@ -759,12 +759,6 @@ export function columnFit(
   return { columns: 1, left: wantLeft, right: wantRight };
 }
 
-/** The word that names the page tabs. Drawn twice, over the canvas and in the
- * Layers header, and written once here so the two surfaces can never drift
- * apart. A filled chip rather than a grey word: the tabs are bare numbers, and
- * beside a row of other controls a bare number says nothing on its own. */
-const PAGES_CHIP = html`<span class="page-chip">Pages</span>`;
-
 /** One row of the Layers list: a layer, or a group's folder with the members
  * that go under it. */
 export type LayerListRow =
@@ -2756,20 +2750,15 @@ export class WristAssistantPanel extends LitElement {
     }
     .row-strip button:hover { filter: brightness(1.06); }
     .row-strip button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    /* The word that names the page tabs in the Layers card. A
-       filled chip in the accent, the way the card titles wear a tinted swatch,
-       so the numbers beside it read as a control and not as a stray count. */
-    .page-chip {
-      flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 8px;
-      border-radius: 999px; background: var(--wa-accent); color: var(--wa-accent-ink);
-      font-size: 11px; font-weight: 700; letter-spacing: .04em; white-space: nowrap;
-    }
-    /* The Layers card's own page row, under the header: the chip at the left
-       and the tabs sharing the rest of the width, so two pages get two wide
-       buttons and four get four narrower ones, and the row is a control in
-       its own right rather than digits squeezed between the header's tools. */
+    /* The Pages card sits between Add a layer and Layers, and holds nothing
+       but its one row, so it keeps no bottom padding of its own. */
+    .pages-card { padding-bottom: 10px; }
+    .pages-card .panel-title { margin-bottom: 8px; }
+    /* The page row: the tabs share the whole width, so two pages get two wide
+       buttons and four get four narrower ones, and the row is a control in its
+       own right rather than digits squeezed between a header's tools. */
     .page-row {
-      display: flex; align-items: center; gap: 8px; margin: 2px 0 8px;
+      display: flex; align-items: center; gap: 8px; margin: 0;
     }
     .page-row .page-tabs { display: flex; flex: 1 1 auto; gap: 4px; min-width: 0; }
     .page-row .page-tabs > button, .page-row .page-tab {
@@ -2816,12 +2805,12 @@ export class WristAssistantPanel extends LitElement {
     .page-row .page-act:hover:not(:disabled) { background: var(--wa-raised); }
     .page-row .page-act:disabled { opacity: .45; cursor: default; }
     .page-row .page-act:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .page-row button.help { flex: none; }
+    .panel-title button.help { flex: none; }
     /* The tour's progress, under the Pages row: one thin bar, filled by a CSS
        animation over the tour's own length, so nothing has to tick at 60 fps
        to draw it. */
     .page-tour-bar {
-      display: block; height: 4px; margin: -4px 0 8px; border-radius: 999px;
+      display: block; height: 4px; margin: 8px 0 0; border-radius: 999px;
       background: var(--wa-line); overflow: hidden;
     }
     .page-tour-bar i {
@@ -6069,27 +6058,45 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The Pages row of the Layers card, under the header: the same tabs as the
-   * one place pages are switched, added and deleted. A row the width of the
-   * card is hard to miss where a few digits in the header were not. It carries
-   * the tabs, the trash on the pressed one, Play for a tour, + and ? for the
-   * help, because this is where pages are confusing: the list just changed
-   * under you.
+   * The Pages card, its own card between Add a layer and Layers: the one place
+   * pages are switched, added and deleted. It sits above the list it changes,
+   * so the order on screen reads the way the work does: pick a page here, and
+   * the layers of that page are in the card below.
+   *
+   * It carries the tabs, the trash on the pressed one, Play for a tour, + and
+   * ? for the help, because this is where pages are confusing: the list just
+   * changed under you.
    *
    * Without pages it is one button, Add a page, which pins what is there to
    * page 1 and opens an empty page 2 (`startPages`).
    */
-  private renderPageRow(cfg: CustomComplicationConfig, edit: boolean) {
+  private renderPages() {
+    const cfg = this.draft?.config;
+    if (!cfg) return nothing;
     if (!isDrawable(this.activeFamily)) return nothing;
-    const help = html`<button class="help" title="How pages work" aria-label="How pages work"
-      @click=${() => { this.helpTab = "pages"; this.helpOpen = true; }}>?</button>`;
+    const edit = this.canEdit;
+    const body = this.renderPageBody(cfg, edit);
+    if (body === nothing) return nothing;
+    const count = usesPages(cfg) ? pagesSpecOf(cfg).count : 1;
+    return html`<div class="card pages-card">
+      <h2 class="panel-title" style=${`--c:${SECTION_COLOR.place}`}><span class="swatch">${uiIcon("pages")}</span>Pages
+        <span class="mini">${usesPages(cfg) ? `${count} pages · one at a time` : "one face, several pages"}</span>
+        <span class="spacer"></span>
+        <button class="help" title="How pages work" aria-label="How pages work"
+          @click=${() => { this.helpTab = "pages"; this.helpOpen = true; }}>?</button>
+      </h2>
+      ${body}
+    </div>`;
+  }
+
+  /** The controls inside the Pages card: the tabs, or the one Add a page
+   * button before there are any. */
+  private renderPageBody(cfg: CustomComplicationConfig, edit: boolean) {
     if (!usesPages(cfg)) {
       if (!edit) return nothing;
       return html`<div class="page-row">
-        ${PAGES_CHIP}
         <button class="page-act page-start" title="Start a second page. What is here now becomes page 1, and a new empty page 2 opens for you to draw on."
           @click=${() => { let page = 1; this.mutate((c) => { page = startPages(c); }); this.showPage(page); }}>Add a page</button>
-        ${help}
       </div>`;
     }
     const spec = pagesSpecOf(cfg);
@@ -6103,15 +6110,13 @@ export class WristAssistantPanel extends LitElement {
         ? "Stop the tour. The page stays where it got to, the way a tap on the watch takes over from a tour."
         : `Play every page once on the canvas, ${Math.round(tourDuration(spec) * 10) / 10} s in all, then back to page 1. The watch plays the same boundaries from one tap.`}
       @click=${() => { if (playing) this.stopTour(); else this.playTour(); }}>${playing ? "Stop" : "Play"}</button>`;
-    return html`<div class="page-row" title="Which page the canvas and this list show. The list holds this page's layers and the ones on every page.">
-      ${PAGES_CHIP}
+    return html`<div class="page-row" title="Which page the canvas and the Layers card show. That card holds this page's layers and the ones on every page.">
       <span class="page-tabs" role="group" aria-label="Page the list is showing">${this.renderPageTabs(cfg, { trash: edit })}</span>
       ${tourButton}
       ${edit ? html`
         <button class="page-act" ?disabled=${full}
           title=${full ? "Four pages is the most a complication can have." : "Add an empty page after the last one."}
           @click=${() => { let page: number | undefined; this.mutate((c) => { page = addPage(c); }); if (page !== undefined) this.showPage(page); }}>+</button>` : nothing}
-      ${help}
     </div>
     ${playing
       // Keyed on the run so a second press starts the bar over: a CSS
@@ -6241,12 +6246,12 @@ export class WristAssistantPanel extends LitElement {
     ];
     const pagesWhat: [string, string][] = [
       ["What a page is", "One slot on the watch face can hold several faces of the same complication, one showing at a time. Each face is a page. A house battery on page 1 and the car on page 2 is the usual reason: one slot, two readings."],
-      ["Turning pages on", "Add a page under the Layers list. What you have now becomes page 1 and an empty page 2 opens. The Pages select in the Complication card does the same, but leaves your layers on every page for you to sort out."],
-      ["One page at a time", "The canvas and the Layers list show one page. The Pages row under the Layers header says which, and clicking a number switches both. [ and ] do the same from the keyboard."],
+      ["Turning pages on", "Add a page in the Pages card, between Add a layer and Layers. What you have now becomes page 1 and an empty page 2 opens. The Pages select in the Complication card does the same, but leaves your layers on every page for you to sort out."],
+      ["One page at a time", "The canvas and the Layers card show one page. The Pages card above the list says which, and clicking a number switches both. [ and ] do the same from the keyboard."],
       ["Which page a layer is on", "Each layer sits on one page or on every page. Set it on the layer, in its Position card. A layer you add lands on the page you are looking at. A background, a border or a label that belongs everywhere goes on Every page."],
-      ["+ and the trash", "In the Pages row. + adds an empty page at the end, up to four. The trash on the pressed page deletes that page and the layers on it; later pages move down one, and layers on every page stay. Undo puts it back."],
+      ["+ and the trash", "In the Pages card. + adds an empty page at the end, up to four. The trash on the pressed page deletes that page and the layers on it; later pages move down one, and layers on every page stay. Undo puts it back."],
       ["Moving between pages on the watch", "A tap has to say so. Set the complication's tap action, or a tap layer's, to Next page or Previous page. A tap with any other action does its own job and leaves the page alone, so a page can still hold buttons. The page stays where it was left."],
-      ["The tour", "Set a tap action to Play the page tour and one tap plays every page once, then returns to page 1. The Complication card then shows a hold time per page; a tour lasts the sum of them. The Play button in the Pages row plays it on the canvas with the same timing. A tap during a tour on the watch stops it."],
+      ["The tour", "Set a tap action to Play the page tour and one tap plays every page once, then returns to page 1. The Complication card then shows a hold time per page; a tour lasts the sum of them. The Play button in the Pages card plays it on the canvas with the same timing. A tap during a tour on the watch stops it."],
       ["What the watch needs", "A complication with pages needs the Wrist Assistant app that understands them. An older app refuses the whole complication and asks for an update rather than drawing every page on top of each other."],
     ];
     const layers: [string, string][] = [
@@ -6970,7 +6975,7 @@ export class WristAssistantPanel extends LitElement {
               style="--wa-left:${fit.left}px;--wa-right:${fit.right}px">
             <div class=${`column left ${this.inControlView ? "control" : ""}`}>${this.inControlView
               ? this.renderControlHasNoLayers()
-              : html`${this.renderAddLayer()}${this.renderLayers()}`}${this.renderSharedValues()}</div>
+              : html`${this.renderAddLayer()}${this.renderPages()}${this.renderLayers()}`}${this.renderSharedValues()}</div>
             ${this.renderGutter("left")}
             <div class="column canvas">${this.renderBanners()}${this.renderCanvas()}</div>
             ${this.renderGutter("right")}
@@ -10406,7 +10411,6 @@ export class WristAssistantPanel extends LitElement {
           </span>
         </span>
       </h2>
-      ${this.renderPageRow(cfg, edit)}
       ${pickedCount >= 2 && edit
         ? html`<div class="group-cta"><span>${pickedCount} layers picked</span><span class="spacer"></span>
             <button class="small primary" title=${`Group (${KEY_MOD}G)`} @click=${() => this.groupPicked()}>Group them</button>

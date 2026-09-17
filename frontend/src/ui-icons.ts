@@ -12,7 +12,7 @@ import { type TemplateResult, html, svg } from "lit";
 export type UiIconName =
   | "up" | "down" | "show" | "hide" | "duplicate" | "delete" | "close" | "reset"
   | "text" | "icon" | "gauge" | "chart" | "timeline" | "list" | "shape" | "image" | "tap" | "chartTimes" | "chartDots" | "chartGrid" | "imageTime"
-  | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "plus"
+  | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "pages" | "plus"
   | "lock" | "unlock" | "folder" | "ungroup" | "watch" | "phone"
   | "compact" | "expanded" | "search" | "undo" | "redo" | "expand" | "left" | "right"
   | "braces" | "link" | "info" | "globe" | "download" | "check" | "arrow" | "paste" | "guides";
@@ -65,6 +65,11 @@ function shape(name: UiIconName) {
       return svg`<path d="M12 3V6.5M12 17.5V21M3 12H6.5M17.5 12H21" /><circle cx="12" cy="12" r="4.5" />`;
     case "layers":
       return svg`<path d="M12 4L20 8.5L12 13L4 8.5Z" /><path d="M4 12.5L12 17L20 12.5" /><path d="M4 16.5L12 21L20 16.5" />`;
+    // Pages: one face in front and the next one behind it, offset, so the
+    // glyph says "several of the same thing, one showing" rather than the
+    // stacked sheets of the Layers icon.
+    case "pages":
+      return svg`<rect x="3" y="7" width="12" height="13" rx="2" /><path d="M8 4h11a2 2 0 0 1 2 2v11" />`;
     case "grip":
       return svg`<circle cx="9" cy="6" r="1.3" /><circle cx="15" cy="6" r="1.3" /><circle cx="9" cy="12" r="1.3" /><circle cx="15" cy="12" r="1.3" /><circle cx="9" cy="18" r="1.3" /><circle cx="15" cy="18" r="1.3" />`;
     case "chevron":
