@@ -3138,7 +3138,7 @@ export function serviceDataIsValid(json: string | undefined): boolean {
  * boxes with the same words in review mode, and the renderer cannot import the
  * editors (they already import it). */
 export const TAP_ACTION_LABELS: [TapAction["type"], string][] = [
-  ["refresh", "Refresh"], ["refreshAll", "Refresh multiple complications"],
+  ["refresh", "Refresh this complication"], ["refreshAll", "Refresh multiple complications"],
   ["none", "Nothing"], ["openApp", "Open the app"], ["openPage", "Open the page"], ["openRoomPage", "Open the room page"],
   ["timerStartPause", "Timer start / pause"], ["timerCancel", "Timer cancel"],
   ["toggleEntity", "Toggle an entity"], ["runScene", "Run a scene"], ["runScript", "Run a script"], ["addTodo", "Add a to-do"], ["runHTTPAction", "Run an HTTP action"],
@@ -3223,8 +3223,14 @@ export function tapActionNote(action: TapAction, pages = false): string | undefi
   }
   if (action.type === "none") {
     return "The watch cannot do nothing on a tap: a complication with no action"
-      + " still opens the app. Pick Open the app to say so, or Refresh to make"
-      + " the tap worth something.";
+      + " still opens the app. Pick Open the app to say so, or Refresh this"
+      + " complication to make the tap worth something.";
+  }
+  if (action.type === "refresh") {
+    // The tap is put on a layer, so it reads as if it refreshed that layer. It
+    // does not: the watch reruns the whole document and redraws the tile.
+    return "Refreshes every layer and every page of this complication, not just"
+      + " the layer the tap sits on.";
   }
   if (action.type !== "refreshAll") return undefined;
   const older = " On a watch running an older app this tap does nothing.";

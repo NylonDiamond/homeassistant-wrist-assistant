@@ -731,12 +731,22 @@ describe("refresh complications", () => {
     // "none" is explained too, and only a document saved before 2026-09-16 can
     // still hold it: the watch opens the app on any tap, so the picker stopped
     // offering it and the note tells a document that kept it what to pick.
-    const explained = ["refreshAll", "nextPage", "previousPage", "playTour", "none"];
+    const explained = ["refresh", "refreshAll", "nextPage", "previousPage", "playTour", "none"];
     for (const [type] of TAP_ACTION_LABELS) {
       if (explained.includes(type)) continue;
       expect(tapActionNote({ type } as TapAction), type).toBeUndefined();
       expect(tapActionNote({ type } as TapAction, true), type).toBeUndefined();
     }
+  });
+
+  it("says a plain refresh covers the whole complication, not the tapped layer", () => {
+    // The tap is authored on one layer, so the label alone reads as if it
+    // refreshed that layer. The watch reruns the whole document.
+    expect(TAP_ACTION_LABELS.find(([t]) => t === "refresh")?.[1]).toBe("Refresh this complication");
+    const note = tapActionNote({ type: "refresh" });
+    expect(note).toContain("every layer and every page");
+    // The pages flag changes nothing here: this is not a page action.
+    expect(tapActionNote({ type: "refresh" }, true)).toBe(note);
   });
 
   it("tells a document that still says Nothing that the watch cannot do nothing", () => {
