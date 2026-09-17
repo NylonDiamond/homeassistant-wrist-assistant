@@ -3192,12 +3192,27 @@ export function refreshTargetsWith(action: RefreshAllAction, id: string, on: boo
  * the labels so every picker shows the same sentence: the document's tap, a
  * tap layer's, and an attached tap's.
  *
- * Only `refreshAll` has one today, and it takes the whole action rather than
- * its type because the sentence follows what is picked. A watch reads a tap
- * type it does not know as doing nothing, so the second sentence is the whole
- * warning an older watch needs: the tap saves and syncs either way, and starts
- * working once that watch is updated. */
-export function tapActionNote(action: TapAction): string | undefined {
+ * `refreshAll` takes the whole action rather than its type because the sentence
+ * follows what is picked. A watch reads a tap type it does not know as doing
+ * nothing, so the second sentence is the whole warning an older watch needs:
+ * the tap saves and syncs either way, and starts working once that watch is
+ * updated.
+ *
+ * The two page actions need the document as well as the action, because a page
+ * tap on a document with one page is a tap that does nothing. `pages` is
+ * whether the document being edited uses pages (`usesPages`); the sentence for
+ * one that does not names the card the setting lives on rather than a
+ * direction, since the same note is drawn in the layer inspector too. */
+export function tapActionNote(action: TapAction, pages = false): string | undefined {
+  if (action.type === "nextPage" || action.type === "playTour") {
+    if (!pages) {
+      return "This complication has one page, so this does nothing yet."
+        + " Turn pages on in the Complication card.";
+    }
+    return action.type === "nextPage"
+      ? "Each tap shows the next page. The page stays where it was left."
+      : "Plays every page once from one tap, then returns to page 1.";
+  }
   if (action.type !== "refreshAll") return undefined;
   const older = " On a watch running an older app this tap does nothing.";
   if (action.allPlaced === true) {
@@ -3526,6 +3541,117 @@ export function elementsOnPage(
 ): Element[] {
   if (!usesPages(cfg)) return [...elements];
   return elements.filter((el) => layerDrawsOnPage(el, page));
+}
+
+/**
+ * Whether anything in this document can move the page.
+ *
+ * Only a `nextPage` or a `playTour` action moves one, wherever it sits: the
+ * whole-complication tap, or one tap layer. A document with pages and no mover
+ * is a face that shows page 1 for ever, which is worth a warning in the editor
+ * rather than a puzzle on the wrist.
+ *
+ * Top-level layers only, because a page is a top-level idea: a tap inside a
+ * list row belongs to the row it was drawn for.
+ */
+export function pageMoverExists(cfg: CustomComplicationConfig): boolean {
+  const moves = (type: TapAction["type"]) => type === "nextPage" || type === "playTour";
+  if (moves(cfg.tapAction.type)) return true;
+  return cfg.elements.some((el) => el.kind === "tap" && moves(el.payload.action.type));
+}
+
+/** The pages top-level layers are pinned to past `count`, lowest first. */
+function pinnedPagesPast(cfg: CustomComplicationConfig, count: number): number[] {
+  const pages = new Set<number>();
+  for (const el of cfg.elements) {
+    const page = el.payload.page;
+    if (page !== undefined && page > count) pages.add(page);
+  }
+  return [...pages].sort((a, b) => a - b);
+}
+
+/** "page 4", "pages 3 and 4", "pages 2, 3 and 4". */
+function pageWords(pages: readonly number[]): string {
+  if (pages.length === 1) return `page ${pages[0]}`;
+  const last = pages[pages.length - 1];
+  return `pages ${pages.slice(0, -1).join(", ")} and ${last}`;
+}
+
+/**
+ * What taking the document down to `count` pages does to the layers pinned past
+ * it, or undefined when it does nothing.
+ *
+ * Fewer pages never drops a layer and never quietly puts one on every page: a
+ * layer past the new last page moves onto it, so the content stays somewhere
+ * the author can find it. Turning pages off is the one case that unpins,
+ * because a document with one page has nothing to pin to.
+ */
+export function pageCountMoveNote(cfg: CustomComplicationConfig, count: number): string | undefined {
+  const next = clampPageCount(count);
+  const stranded = pinnedPagesPast(cfg, next);
+  if (stranded.length === 0) return undefined;
+  const which = `Layers on ${pageWords(stranded)}`;
+  return next <= 1 ? `${which} go back to every page.` : `${which} move to page ${next}.`;
+}
+
+/**
+ * Set how many pages a document has, moving any layer that would be left past
+ * the end onto the new last page.
+ *
+ * A count of 1 is pages off: the spec goes, and so does every layer's pin,
+ * because a `page` left behind would keep `usesPages` true and the document on
+ * schema 9 with nothing to show for it. `mode` and the dwells survive a change
+ * of count, trimmed to what is left, so turning pages down to 2 and back up to
+ * 4 does not cost the author the timings they typed.
+ */
+export function setPageCount(cfg: CustomComplicationConfig, count: number, mode?: PageMode): void {
+  const next = clampPageCount(count);
+  if (next <= 1) {
+    delete cfg.pages;
+    for (const el of cfg.elements) delete el.payload.page;
+    return;
+  }
+  for (const el of cfg.elements) {
+    if (el.payload.page !== undefined && el.payload.page > next) el.payload.page = next;
+  }
+  const base = cfg.pages;
+  cfg.pages = {
+    count: next,
+    mode: mode ?? base?.mode ?? "tap",
+    dwell: (base?.dwell ?? []).slice(0, next).map(clampPageDwell),
+  };
+}
+
+/**
+ * Hold one page of a tour for `seconds`, or undefined to put it back to the
+ * default.
+ *
+ * The wire has one entry per page in page order and no way to say "this page
+ * only", so setting page 2 writes page 1 as the default it already had. The
+ * list is trimmed back from the end afterwards, which is how a document that
+ * changed nothing keeps writing no `dwell` at all.
+ */
+export function setPageDwell(cfg: CustomComplicationConfig, page: number, seconds: number | undefined): void {
+  const spec = cfg.pages;
+  if (!hasPages(spec)) return;
+  const count = clampPageCount(spec!.count);
+  const held: (number | undefined)[] = [];
+  for (let i = 0; i < count; i++) {
+    held.push(i < spec!.dwell.length ? clampPageDwell(spec!.dwell[i]!) : undefined);
+  }
+  if (page >= 1 && page <= count) {
+    held[page - 1] = seconds === undefined ? undefined : clampPageDwell(seconds);
+  }
+  while (held.length > 0 && held[held.length - 1] === undefined) held.pop();
+  spec!.dwell = held.map((d) => d ?? PAGE_DEFAULT_DWELL);
+}
+
+/** The dwell this document actually wrote for `page`, or undefined while the
+ * page is held for the default. What the editor's field shows: an empty box is
+ * the default, and typing the default back empties it again. */
+export function writtenDwell(spec: PagesSpec, page: number): number | undefined {
+  if (page < 1 || page > spec.dwell.length) return undefined;
+  return clampPageDwell(spec.dwell[page - 1]!);
 }
 
 export interface CustomComplicationConfig {

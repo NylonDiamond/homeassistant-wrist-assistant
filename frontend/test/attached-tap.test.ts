@@ -727,10 +727,27 @@ describe("refresh complications", () => {
     for (const note of [all, some, none]) expect(note).toContain("older app");
   });
 
-  it("is the only action with a note under the picker", () => {
+  it("shares the note under the picker with the two page actions and nothing else", () => {
+    const explained = ["refreshAll", "nextPage", "playTour"];
     for (const [type] of TAP_ACTION_LABELS) {
-      if (type === "refreshAll") continue;
+      if (explained.includes(type)) continue;
       expect(tapActionNote({ type } as TapAction), type).toBeUndefined();
+      expect(tapActionNote({ type } as TapAction, true), type).toBeUndefined();
+    }
+  });
+
+  it("tells a page action what it does, and what it does on a document with one page", () => {
+    const next = tapActionNote({ type: "nextPage" }, true);
+    expect(next).toContain("shows the next page");
+    expect(next).toContain("stays where it was left");
+    expect(tapActionNote({ type: "playTour" }, true)).toContain("returns to page 1");
+    // No pages: the same pick is a tap that does nothing yet, and the note says
+    // where to turn them on rather than which way to look, because the layer
+    // inspector draws this sentence too.
+    for (const type of ["nextPage", "playTour"] as const) {
+      const note = tapActionNote({ type });
+      expect(note, type).toContain("has one page, so this does nothing yet");
+      expect(note, type).toContain("Complication card");
     }
   });
 

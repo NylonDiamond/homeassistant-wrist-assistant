@@ -281,6 +281,19 @@ import {
   GAUGE_DEFAULT_LABEL_SIZE,
   GAUGE_MIN_LABEL_SIZE,
   GAUGE_MAX_LABEL_SIZE,
+  type PageMode,
+  PAGES_MAX_COUNT,
+  PAGE_DEFAULT_DWELL,
+  PAGE_DWELL_RANGE,
+  pageCountMoveNote,
+  pageMoverExists,
+  pageNumbers,
+  pagesSpecOf,
+  setPageCount,
+  setPageDwell,
+  tourDuration,
+  usesPages,
+  writtenDwell,
 } from "./model.js";
 import {
   type StatesTable,
@@ -3679,8 +3692,8 @@ export function tapActionForType(type: TapAction["type"], current: TapAction): T
 /** The line under a tap picker for an action that needs one, or nothing. Every
  * picker renders this, so the sentence is written once, in the model, beside
  * the labels themselves. */
-function tapNote(action: TapAction): TemplateResult | typeof nothing {
-  const note = tapActionNote(action);
+function tapNote(action: TapAction, pages = false): TemplateResult | typeof nothing {
+  const note = tapActionNote(action, pages);
   return note === undefined ? nothing : html`<div class="hint">${note}</div>`;
 }
 
@@ -3866,7 +3879,7 @@ export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean } = {
       </div>
     </div>
     ${renamedNote}
-    ${tapNote(tap)}
+    ${tapNote(tap, usesPages(cfg))}
     ${tap.type === "refreshAll"
       ? refreshTargetsField(host, tap, (next) => host.update((c) => { c.tapAction = next; }))
       : nothing}
@@ -3874,7 +3887,76 @@ export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean } = {
     ${tap.type === "callService"
       ? callServiceFields(host, tap, (next, k) => host.update((c) => { c.tapAction = next; }, k), "general-tap")
       : nothing}
-    ${tap.type === "openPage" ? openPageField(host) : nothing}`;
+    ${tap.type === "openPage" ? openPageField(host) : nothing}
+    ${pagesFields(host)}`;
+}
+
+/** The choices the Pages picker offers: off, then every count up to the
+ * ceiling. Off is a count of one, which is a document that behaves exactly as
+ * it did before pages existed. */
+const PAGE_COUNT_CHOICES: [string, string][] = [
+  ["1", "Off"],
+  ...Array.from({ length: PAGES_MAX_COUNT - 1 }, (_, i) => [String(i + 2), String(i + 2)] as [string, string]),
+];
+
+const PAGE_MODES: [PageMode, string][] = [["tap", "Tap"], ["tour", "Tour"]];
+
+/** Seconds as the tour line prints them: whole where it can be, one decimal
+ * where the dwells do not add up to one. */
+function dwellSeconds(seconds: number): string {
+  return `${Math.round(seconds * 10) / 10} s`;
+}
+
+/**
+ * Pages on one complication: how many there are, how a page moves on, and, for
+ * a tour, how long each one is held.
+ *
+ * The count is the whole feature's switch. Off deletes the spec and unpins
+ * every layer, because a `page` left behind is a document that still says it
+ * has pages. Fewer pages moves the layers past the new end onto it rather than
+ * dropping them, and the line under the picker says so before it happens.
+ *
+ * Which page a layer sits on is set on the layer, in its Position card, not
+ * here: the document says how many pages there are, and each layer says which
+ * one it belongs to.
+ */
+function pagesFields(host: EditorHost): TemplateResult {
+  const cfg = host.config;
+  const on = usesPages(cfg);
+  const spec = pagesSpecOf(cfg);
+  const count = on ? spec.count : 1;
+  // Fewer pages is the only change that touches a layer, so the line is drawn
+  // for the step down the picker is one click away from.
+  const shrink = on ? pageCountMoveNote(cfg, count - 1) : undefined;
+  const tour = on && spec.mode === "tour";
+  return html`
+    ${selectField("Pages", String(count), PAGE_COUNT_CHOICES, (v) => host.update((c) => {
+      setPageCount(c, Number(v) || 1);
+    }, "pages-count"), { def: "1" })}
+    ${on ? nothing : html`<div class="hint">One complication, several faces, a tap between them. Off is one
+      face, which is what every complication was before this setting.</div>`}
+    ${shrink === undefined ? nothing : html`<div class="hint">Taking a page away never drops a layer. ${shrink}</div>`}
+    ${on ? html`
+      ${segField("Mode", spec.mode, PAGE_MODES, (v) => host.update((c) => { setPageCount(c, count, v); }, "pages-mode"),
+        { titles: {
+            tap: "Each tap shows the next page",
+            tour: "One tap plays every page once, then returns to page 1",
+          },
+          def: "tap" })}
+      ${tour ? html`
+        <div class="grid2">
+          ${pageNumbers(spec).map((page) => numberField(`Page ${page} hold`, writtenDwell(spec, page),
+            (v) => host.update((c) => { setPageDwell(c, page, v); }, `pages-dwell-${page}`),
+            { step: 0.5, min: PAGE_DWELL_RANGE.min, max: PAGE_DWELL_RANGE.max, optional: true, unit: "s",
+              placeholder: String(PAGE_DEFAULT_DWELL), def: null }))}
+        </div>
+        <div class="hint">Tour lasts ${dwellSeconds(tourDuration(spec))}. An empty box holds that page for
+          ${dwellSeconds(PAGE_DEFAULT_DWELL)}.</div>`
+        : nothing}
+      <div class="hint">A layer can sit on one page or on every page. Pick it on the layer, under Position.</div>
+      ${pageMoverExists(cfg) ? nothing : html`<div class="hint warn">Nothing moves the page yet. Set the tap
+        action to Next page, or give a tap layer that action.</div>`}`
+      : nothing}`;
 }
 
 /** What the swatch shows while no colour is stored: the watch's own fallback,
@@ -5125,6 +5207,35 @@ function frameLetterField(letter: string, name: string, value: number, set: (v: 
 }
 
 /**
+ * Which page of a paged document this layer belongs to, or every page.
+ *
+ * Nothing at all on a document with no pages, which is almost every document,
+ * and nothing for a row layer inside a list: a row belongs to its list, and the
+ * list is what carries the page. It sits in the Position card because it is the
+ * other half of where a layer is, but it is the one setting in that card that
+ * is not per shape: a layer is on the same page on Circular and on Rectangular.
+ */
+function layerPageField(host: EditorHost, el: CElement): TemplateResult | typeof nothing {
+  const cfg = host.config;
+  if (!usesPages(cfg)) return nothing;
+  const id = el.payload.id;
+  if (!cfg.elements.some((e) => e.payload.id === id)) return nothing;
+  const spec = pagesSpecOf(cfg);
+  const current = el.payload.page;
+  const options: [string, string][] = [
+    ["", "Every page"],
+    ...pageNumbers(spec).map((page) => [String(page), `Page ${page}`] as [string, string]),
+  ];
+  return html`${selectField("Page", current === undefined ? "" : String(current), options, (v) => host.update((c) => {
+      const target = c.elements.find((e) => e.payload.id === id);
+      if (!target) return;
+      if (v === "") delete target.payload.page; else target.payload.page = Number(v);
+    }, `el-${id}-page`), { def: "" })}
+    <div class="hint">Every page keeps this layer on all of them, which is what a background, a border or a
+      shared label wants. The page is the same on every shape.</div>`;
+}
+
+/**
  * Where one layer sits on one shape: the frame, the turn, and whether it is
  * drawn at all. The four numbers are there so the card shows what its header
  * reset will take back; a reset that also re-centred and resized the layer
@@ -5144,6 +5255,7 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
   if (el.kind === "chartDots" || el.kind === "chartGrid") {
     const chart = host.config.elements.find((e) => e.payload.id === el.payload.chart);
     return card(host, "placement", "Position", html`
+      ${layerPageField(host, el)}
       <div class="hint keep">${el.kind === "chartDots" ? "Dots sit" : "Grid lines sit"} on their chart, so they move,
         size and turn with it. To change where they are, change the chart.</div>
       ${chart ? html`<div class="field list-field"><span>Chart</span>
@@ -5159,6 +5271,7 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
   // shows only while an old document still carries one, so it can be cleared.
   if (anchor?.place === "through") {
     return card(host, "placement", "Position", html`
+      ${layerPageField(host, el)}
       <div class="hint keep">A line sits on its chart at the reading it follows, and runs the whole plot. To
         change where it is, change the reading below or the chart. Thickness and colour are in Look.</div>
       ${anchorFields(host, el, family)}
@@ -5172,6 +5285,7 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
   // The section id stays "placement": it is a stored key (openSections, and
   // the browser's own memory of which cards were open), not a label.
   return card(host, "placement", "Position", html`
+    ${layerPageField(host, el)}
     ${anchorFields(host, el, family)}
     ${anchor === undefined ? html`
     <div class="fgroup">
@@ -7502,7 +7616,7 @@ export function tapActionEditor(
       p.action = tapActionForType(v, p.action);
       if (v !== "openPage") { delete p.openPageId; delete p.openPageName; }
     }))}
-    ${tapNote(action)}
+    ${tapNote(action, usesPages(host.config))}
     ${action.type === "refreshAll"
       ? refreshTargetsField(host, action, (next) => upd((p) => { p.action = next; }))
       : nothing}

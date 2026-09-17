@@ -1621,7 +1621,10 @@ export class Resolver {
   constructor(private readonly ctx: ResolveContext, config?: CustomComplicationConfig) {
     this.named = new Map(ctx.namedValues.map((n) => [n.id.toUpperCase(), n.value]));
     if (config) {
-      this.settleCharts(config);
+      // Every layer, whatever page it is on: a value resolved on its own has no
+      // canvas and so no page, and Inline reads the whole document. `resolveLayout`
+      // settles both again from the page it is drawing.
+      this.settleCharts(config.elements);
       // The counts, so a value resolved on its own (the editor's Now line, an
       // Inline text) can still read a `listStat`. The cells wait for a shape.
       this.settleListItems(config.elements);
@@ -1767,11 +1770,22 @@ export class Resolver {
    * about parsing a chart's own numbers depends on another chart; then the
    * ranges, following each link and memoising as it goes. A link to a missing
    * chart, to the chart itself, or one that closes a cycle falls back to that
-   * chart's own scale. Mirrors `ResolveContext.withChartReadings(from:)`. */
-  private settleCharts(config: CustomComplicationConfig): void {
+   * chart's own scale. Mirrors `ResolveContext.withChartReadings(from:)`.
+   *
+   * Takes the layer list rather than the document because a page is a filter on
+   * that list: a chart on another page is not settled, so a text that reads it
+   * prints nothing, exactly as it would on the watch, where the filter runs
+   * before `resolve(layout:elements:)` ever sees the layers. The maps are
+   * cleared first for the same reason: this runs again per shape, and a chart
+   * settled from a wider list must not survive into a narrower one. */
+  private settleCharts(elements: readonly Element[]): void {
+    this.charts.clear();
+    this.chartElements.clear();
+    this.timelineElements.clear();
+    this.imageElements.clear();
     const charts = new Map<string, ChartElement>();
     const order: string[] = [];
-    for (const el of config.elements) {
+    for (const el of elements) {
       if (el.kind === "timeline") this.timelineElements.set(el.payload.id, el.payload);
       if (el.kind === "image") this.imageElements.set(el.payload.id, el.payload);
       if (el.kind !== "chart" || charts.has(el.payload.id)) continue;
@@ -2608,25 +2622,28 @@ export class Resolver {
 
   resolveLayout(config: CustomComplicationConfig, family: FamilyKind, forced?: ForcedBranches): ResolvedLayout {
     const layout = config.perFamily[family];
-    // Charts go first, in effect: a text layer that prints a chart's newest
-    // reading, or a rule that tests one, needs the chart settled before it
-    // resolves, whatever order the two sit in the layer list.
-    this.settleCharts(config);
     // The markers move onto their charts here, not at draw time, so the preview,
     // the drag handles, the layer thumbnails and the app repo's own resolver all
     // read one set of frames. Mirrors `CustomComplication.resolve` in the app repo.
     // Dots settle before the anchors: the dots decide the chart's inset, and the
     // inset moves every reading an anchor sits on.
     const canvas = DESIGN_BOX[family === "inline" ? "rectangular" : family];
-    // Then the lists, for the same reason and in the same order the app's
-    // resolver settles them: a text outside a list that prints its count, or a
-    // rule that tests one, needs the list parsed before it resolves. The cells
-    // are drawn here too, because this is where the shape is known.
     // Pages are a filter on the layer list and nothing else, so every shape
     // draws the same page and nothing downstream has to know pages exist. A
     // layer on another page never reaches the resolver, which is why a document
     // of four pages costs about what the same layers cost on one.
     const placed = elementsOnPage(config, elementsFor(config, family), this.ctx.page ?? 1);
+    // Charts go first, in effect: a text layer that prints a chart's newest
+    // reading, or a rule that tests one, needs the chart settled before it
+    // resolves, whatever order the two sit in the layer list. Settled from the
+    // page's own layers, so a text on page 1 that reads a chart on page 2 reads
+    // it as missing here exactly as the watch does. The preview cannot promise
+    // something the watch has no way to draw.
+    this.settleCharts(placed);
+    // Then the lists, for the same reason and in the same order the app's
+    // resolver settles them: a text outside a list that prints its count, or a
+    // rule that tests one, needs the list parsed before it resolves. The cells
+    // are drawn here too, because this is where the shape is known.
     this.settleListItems(placed);
     this.settleListCells(config, placed, family, forced);
     const elements = [...placeChartAnchors(
