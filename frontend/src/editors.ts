@@ -133,6 +133,7 @@ import {
   RULE_TARGET_PROPERTIES,
   STYLE_PROPERTY,
   TAP_ACTION_LABELS,
+  tapActionLabel,
   describeTapAction,
   refreshTargetsWith,
   serviceDataIsValid,
@@ -3647,6 +3648,24 @@ const TAP_TYPES = TAP_ACTION_LABELS;
  * deleting the layer does. */
 const LAYER_TAP_TYPES: [TapAction["type"], string][] = TAP_TYPES.filter(([t]) => t !== "none");
 
+/** The whole complication does not offer "Nothing" either, for a different
+ * reason: the watch cannot deliver it. A widget with no button and no
+ * `widgetURL` still opens the app when it is tapped, and WidgetKit gives no way
+ * out of that, so "Nothing" was "Open the app" wearing the wrong name. Measured
+ * on a Series 10, 2026-09-16. It differed from the real "Open the app" only by
+ * skipping that action's timeline reload, which is not worth a choice of its
+ * own. A document that already stores it keeps it (`generalEditor` puts it back
+ * in the list), because opening the editor must never change a setting. */
+const DOC_TAP_TYPES: [TapAction["type"], string][] = LAYER_TAP_TYPES;
+
+/** The document's tap choices, with whatever it already stores kept selectable.
+ * Same rule the Refresh row follows: a value the list no longer offers stays in
+ * it, so opening the editor never silently changes what the watch is doing. */
+function tapTypesFor(tap: TapAction): [TapAction["type"], string][] {
+  if (DOC_TAP_TYPES.some(([t]) => t === tap.type)) return DOC_TAP_TYPES;
+  return [...DOC_TAP_TYPES, [tap.type, tapActionLabel(tap)]];
+}
+
 /** The entity a tap action is aimed at, wherever it keeps it: spread flat on an
  * entity action, nested on a service call. */
 function tapTarget(action: TapAction): EntityRef | undefined {
@@ -3859,7 +3878,7 @@ export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean } = {
     <div class="gen-row">
       ${textField("Name", cfg.name, (v) => host.update((c) => { c.name = v; }, "name"))}
       ${selectField("Refresh", String(refresh), refreshOptions, (v) => host.update((c) => { c.refreshMinutes = Number(v) || 0; }, "refresh"))}
-      ${selectField("Tap action", tap.type, TAP_TYPES, (v) => host.update((c) => {
+      ${selectField("Tap action", tap.type, tapTypesFor(tap), (v) => host.update((c) => {
         c.tapAction = tapActionForType(v, c.tapAction);
         // Mirrors the iPhone preset editor: the chosen page belongs to the
         // openPage type; leaving it clears the choice.

@@ -3221,6 +3221,11 @@ export function tapActionNote(action: TapAction, pages = false): string | undefi
     if (action.type === "previousPage") return "Each tap shows the page before. The page stays where it was left.";
     return "Plays every page once from one tap, then returns to page 1.";
   }
+  if (action.type === "none") {
+    return "The watch cannot do nothing on a tap: a complication with no action"
+      + " still opens the app. Pick Open the app to say so, or Refresh to make"
+      + " the tap worth something.";
+  }
   if (action.type !== "refreshAll") return undefined;
   const older = " On a watch running an older app this tap does nothing.";
   if (action.allPlaced === true) {

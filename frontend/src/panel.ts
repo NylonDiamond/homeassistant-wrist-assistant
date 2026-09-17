@@ -10567,19 +10567,23 @@ export class WristAssistantPanel extends LitElement {
    * says "always bottom" and a row under that would call it a liar. The shape
    * is the floor of what the document draws; this row is not a layer at all.
    *
-   * It draws nothing, so it has no thumb picture, no grip and no drag. It is here because the list was silent about it: a document is born
-   * with `tapAction: refresh`, the setting lives two cards away on the
-   * Complication card, and a user who had ticked Tappable on nothing at all
-   * still had a complication that answered a tap. The row says where that
-   * comes from and clicking it opens the card that owns it.
+   * It draws nothing, so it has no thumb picture, no grip and no drag.
+   *
+   * It is here because the list was silent about it: a document is born with
+   * `tapAction: refresh`, the setting lives two cards away on the Complication
+   * card, and a user who had ticked Tappable on nothing at all still had a
+   * complication that answered a tap. The row says where that comes from, and
+   * clicking it opens the card that owns it.
    *
    * Its delete button does not remove the row, because there is always some
-   * answer to a tap. It sets the action to Nothing, which is the nearest thing
-   * to removing it. The button goes once the action is already Nothing, so the
-   * row never offers a delete that would change nothing.
+   * answer to a tap. It sets the action to Open the app, which is the nearest
+   * thing to removing it: a tap on a complication always opens the app, whatever the
+   * document says, so "Open the app" is the floor and there is nothing under it
+   * to clear to. The button goes once the action is already that, so the row
+   * never offers a delete that would change nothing.
    */
   private renderDocumentTapRow(cfg: CustomComplicationConfig, edit: boolean) {
-    const none = cfg.tapAction.type === "none";
+    const bare = cfg.tapAction.type === "openApp" || cfg.tapAction.type === "none";
     const open = () => { this.inspect = { kind: "general" }; };
     return html`<div class="layer pinned" style=${`--k:${KIND_COLOR.tap}`} tabindex="0"
       title="What a tap does anywhere no tap area covers. Click to change it."
@@ -10593,11 +10597,12 @@ export class WristAssistantPanel extends LitElement {
         <small><span class="kind">Tap</span> · ${describeTapAction(cfg.tapAction)}</small>
       </span>
       <span class="right">
-        <span class="badges">${none ? nothing : html`<span class="badge tap"
+        <span class="badges">${bare ? nothing : html`<span class="badge tap"
           title=${`Tappable · ${describeTapAction(cfg.tapAction)}`}>tap (${tapActionLabel(cfg.tapAction).toLowerCase()})</span>`}</span>
-        ${edit && !none ? html`<span class="acts">
-          <button class="icon danger" title="Do nothing on tap" aria-label="Do nothing on tap"
-            @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { c.tapAction = { type: "none" }; }); }}>${uiIcon("delete")}</button>
+        ${edit && !bare ? html`<span class="acts">
+          <button class="icon danger" title="Clear the action, so a tap only opens the app"
+            aria-label="Clear the action, so a tap only opens the app"
+            @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { c.tapAction = { type: "openApp" }; }); }}>${uiIcon("delete")}</button>
         </span>` : nothing}
       </span>
     </div>`;

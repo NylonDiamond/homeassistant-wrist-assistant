@@ -728,12 +728,27 @@ describe("refresh complications", () => {
   });
 
   it("shares the note under the picker with the three page actions and nothing else", () => {
-    const explained = ["refreshAll", "nextPage", "previousPage", "playTour"];
+    // "none" is explained too, and only a document saved before 2026-09-16 can
+    // still hold it: the watch opens the app on any tap, so the picker stopped
+    // offering it and the note tells a document that kept it what to pick.
+    const explained = ["refreshAll", "nextPage", "previousPage", "playTour", "none"];
     for (const [type] of TAP_ACTION_LABELS) {
       if (explained.includes(type)) continue;
       expect(tapActionNote({ type } as TapAction), type).toBeUndefined();
       expect(tapActionNote({ type } as TapAction, true), type).toBeUndefined();
     }
+  });
+
+  it("tells a document that still says Nothing that the watch cannot do nothing", () => {
+    // Measured on a Series 10, 2026-09-16: a complication with no button and no
+    // widgetURL still opens the app, so the old "Nothing" was "Open the app"
+    // under another name. The note names both ways out.
+    const note = tapActionNote({ type: "none" });
+    expect(note).toContain("still opens the app");
+    expect(note).toContain("Open the app");
+    expect(note).toContain("Refresh");
+    // The pages flag changes nothing here: this is not a page action.
+    expect(tapActionNote({ type: "none" }, true)).toBe(note);
   });
 
   it("tells a page action what it does, and what it does on a document with one page", () => {
