@@ -2756,17 +2756,7 @@ export class WristAssistantPanel extends LitElement {
     }
     .row-strip button:hover { filter: brightness(1.06); }
     .row-strip button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    /* The page tabs: the same raised card as the row banner, sitting under it
-       when both are up, because which page is showing is read after which row
-       is being designed. */
-    .page-strip {
-      display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
-      justify-self: center; max-width: 100%; font-size: 13px;
-      padding: 6px 8px; border-radius: 12px;
-      background: color-mix(in srgb, var(--wa-raised) 92%, transparent);
-      box-shadow: 0 0 0 1px var(--wa-line), 0 6px 18px rgba(0,0,0,.18);
-    }
-    /* The word that names the tabs, on the strip and in the Layers header. A
+    /* The word that names the page tabs in the Layers card. A
        filled chip in the accent, the way the card titles wear a tinted swatch,
        so the numbers beside it read as a control and not as a stray count. */
     .page-chip {
@@ -2808,7 +2798,11 @@ export class WristAssistantPanel extends LitElement {
       border-left: 1px solid color-mix(in srgb, var(--wa-accent-ink) 25%, transparent);
     }
     .page-row .page-tab .page-trash svg.ui-icon { width: 13px; height: 13px; }
-    .page-row .page-tab .page-trash:hover { background: color-mix(in srgb, var(--wa-accent-ink) 18%, transparent); }
+    /* Red, because it is the one control on the row that takes something
+       away; the number beside it only looks. */
+    .page-row .page-tab .page-trash { color: #FF453A; background: color-mix(in srgb, #FF453A 14%, transparent); }
+    .page-row .page-tab .page-trash:hover { background: color-mix(in srgb, #FF453A 32%, transparent); }
+    .page-row .page-act.page-play.on { background: var(--wa-accent); color: var(--wa-accent-ink); border-color: transparent; }
     .page-row .page-tab button:focus-visible { outline: none; box-shadow: inset var(--wa-ring); }
     /* + and − beside the tabs, and Add a page in their place before there are
        any: fixed width, so the tabs alone take the slack. */
@@ -2822,23 +2816,14 @@ export class WristAssistantPanel extends LitElement {
     .page-row .page-act:disabled { opacity: .45; cursor: default; }
     .page-row .page-act:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .page-row button.help { flex: none; }
-    .page-strip .page-tabs { display: inline-flex; gap: 2px; }
-    .page-strip button {
-      font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; flex: none;
-      height: 26px; min-width: 26px; padding: 0 8px; border-radius: 7px;
-      border: 1px solid var(--wa-line); background: var(--wa-input); color: inherit;
-    }
-    .page-strip button.on { background: var(--wa-accent); color: var(--wa-accent-ink); border-color: transparent; }
-    .page-strip button:hover:not(.on) { background: var(--wa-raised); }
-    .page-strip button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .page-strip button.page-act { padding: 0 12px; }
-    /* The tour's progress: one thin bar, filled by a CSS animation over the
-       tour's own length, so nothing has to tick at 60 fps to draw it. */
-    .page-strip .tour-bar {
-      flex: 1 1 60px; min-width: 40px; height: 4px; border-radius: 999px;
+    /* The tour's progress, under the Pages row: one thin bar, filled by a CSS
+       animation over the tour's own length, so nothing has to tick at 60 fps
+       to draw it. */
+    .page-tour-bar {
+      display: block; height: 4px; margin: -4px 0 8px; border-radius: 999px;
       background: var(--wa-line); overflow: hidden;
     }
-    .page-strip .tour-bar i {
+    .page-tour-bar i {
       display: block; height: 100%; width: 0; background: var(--wa-accent);
       animation-name: wa-tour; animation-timing-function: linear; animation-fill-mode: forwards;
     }
@@ -6052,23 +6037,13 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The page tabs over the face, on a paged document only.
+   * One button per page, the showing one pressed.
    *
    * The canvas shows one page at a time because the watch does. There is no
    * "All" tab: a face that drew every page at once would be the one picture the
    * wrist can never produce, and the whole reason pages are a version gate is
    * that stacking them is what a broken paged face looks like. Layers on every
    * page simply draw on every tab.
-   *
-   * No adder either. Pages are turned on in the Complication card, which is
-   * also where they are turned off, so one switch owns the feature and this
-   * strip only ever says which page is on screen.
-   */
-  /**
-   * One button per page, the showing one pressed. Drawn twice, over the canvas
-   * and in the Layers header, because the two sit at opposite ends of the
-   * screen and both show one page at a time; both read and write the same
-   * `page`, so a press in either place moves both.
    */
   private renderPageTabs(cfg: CustomComplicationConfig, opts: { trash?: boolean } = {}) {
     const spec = pagesSpecOf(cfg);
@@ -6118,47 +6093,32 @@ export class WristAssistantPanel extends LitElement {
     }
     const spec = pagesSpecOf(cfg);
     const full = spec.count >= PAGES_MAX_COUNT;
+    const playing = this.touring;
+    // The tour plays here, on the canvas, with the same boundaries the watch
+    // uses, so the author can judge the hold times. Tour mode only: in tap
+    // mode the tabs already are the taps.
+    const tourButton = spec.mode !== "tour" ? nothing : html`<button class="page-act page-play ${playing ? "on" : ""}" aria-pressed=${playing ? "true" : "false"}
+      title=${playing
+        ? "Stop the tour. The page stays where it got to, the way a tap on the watch takes over from a tour."
+        : `Play every page once on the canvas, ${Math.round(tourDuration(spec) * 10) / 10} s in all, then back to page 1. The watch plays the same boundaries from one tap.`}
+      @click=${() => { if (playing) this.stopTour(); else this.playTour(); }}>${playing ? "Stop" : "Play"}</button>`;
     return html`<div class="page-row" title="Which page the canvas and this list show. The list holds this page's layers and the ones on every page.">
       ${PAGES_CHIP}
       <span class="page-tabs" role="group" aria-label="Page the list is showing">${this.renderPageTabs(cfg, { trash: edit })}</span>
+      ${tourButton}
       ${edit ? html`
         <button class="page-act" ?disabled=${full}
           title=${full ? "Four pages is the most a complication can have." : "Add an empty page after the last one."}
           @click=${() => { let page: number | undefined; this.mutate((c) => { page = addPage(c); }); if (page !== undefined) this.showPage(page); }}>+</button>` : nothing}
       ${help}
-    </div>`;
-  }
-
-  private renderPageStrip() {
-    const cfg = this.draft?.config;
-    if (!cfg || !usesPages(cfg)) return nothing;
-    // Inline is one line of text with no canvas and no pages of its own, so
-    // tabs there would offer to change a picture that is not being drawn.
-    if (!isDrawable(this.activeFamily)) return nothing;
-    const spec = pagesSpecOf(cfg);
-    const playing = this.touring;
-    const tourButton = html`<button class="page-act ${playing ? "on" : ""}" aria-pressed=${playing ? "true" : "false"}
-      title=${playing
-        ? "Stop the tour. The page stays where it got to, the way a tap on the watch takes over from a tour."
-        : `Play every page once here, ${Math.round(tourDuration(spec) * 10) / 10} s in all, then back to page 1. The watch plays the same boundaries from one tap.`}
-      @click=${() => { if (playing) this.stopTour(); else this.playTour(); }}>${playing ? "Stop" : "Play tour"}</button>`;
-    const nextButton = html`<button class="page-act"
-      title="Show the next page, the way a Next page tap does on the watch"
-      @click=${() => this.setPage(nextPageAfter(spec, this.page))}>Next</button>`;
-    return html`<div class="page-strip">
-      ${PAGES_CHIP}
-      <span class="page-tabs" role="group" aria-label="Page the canvas is showing">${this.renderPageTabs(cfg)}</span>
-      ${spec.mode === "tour" ? tourButton : nextButton}
-      <button class="help" title="How pages work" aria-label="How pages work"
-        @click=${() => { this.helpTab = "pages"; this.helpOpen = true; }}>?</button>
-      ${playing
-        // Keyed on the run so a second press starts the bar over: a CSS
-        // animation on the same element would otherwise carry on from where
-        // the first tour left it.
-        ? keyed(this.tourRun, html`<span class="tour-bar" aria-hidden="true"><i
-            style=${`animation-duration:${Math.max(1, Math.round(tourDuration(spec) * 1000))}ms`}></i></span>`)
-        : nothing}
-    </div>`;
+    </div>
+    ${playing
+      // Keyed on the run so a second press starts the bar over: a CSS
+      // animation on the same element would otherwise carry on from where
+      // the first tour left it.
+      ? keyed(this.tourRun, html`<span class="page-tour-bar" aria-hidden="true"><i
+          style=${`animation-duration:${Math.max(1, Math.round(tourDuration(spec) * 1000))}ms`}></i></span>`)
+      : nothing}`;
   }
 
   /**
@@ -6281,11 +6241,11 @@ export class WristAssistantPanel extends LitElement {
     const pagesWhat: [string, string][] = [
       ["What a page is", "One slot on the watch face can hold several faces of the same complication, one showing at a time. Each face is a page. A house battery on page 1 and the car on page 2 is the usual reason: one slot, two readings."],
       ["Turning pages on", "Add a page under the Layers list. What you have now becomes page 1 and an empty page 2 opens. The Pages select in the Complication card does the same, but leaves your layers on every page for you to sort out."],
-      ["One page at a time", "The canvas and the Layers list show one page. The Pages row under the Layers header and the strip above the canvas say which, and clicking a number switches both. [ and ] do the same from the keyboard."],
+      ["One page at a time", "The canvas and the Layers list show one page. The Pages row under the Layers header says which, and clicking a number switches both. [ and ] do the same from the keyboard."],
       ["Which page a layer is on", "Each layer sits on one page or on every page. Set it on the layer, in its Position card. A layer you add lands on the page you are looking at. A background, a border or a label that belongs everywhere goes on Every page."],
       ["+ and the trash", "In the Pages row. + adds an empty page at the end, up to four. The trash on the pressed page removes that page: its layers move to the page before it, later pages move down one, and nothing is dropped. Undo puts it back."],
       ["Moving between pages on the watch", "A tap has to say so. Set the complication's tap action, or a tap layer's, to Next page or Previous page. A tap with any other action does its own job and leaves the page alone, so a page can still hold buttons. The page stays where it was left."],
-      ["The tour", "Set a tap action to Play the page tour and one tap plays every page once, then returns to page 1. The Complication card then shows a hold time per page; a tour lasts the sum of them. The Play tour button in the strip plays it here with the same timing. A tap during a tour on the watch stops it."],
+      ["The tour", "Set a tap action to Play the page tour and one tap plays every page once, then returns to page 1. The Complication card then shows a hold time per page; a tour lasts the sum of them. The Play button in the Pages row plays it on the canvas with the same timing. A tap during a tour on the watch stops it."],
       ["What the watch needs", "A complication with pages needs the Wrist Assistant app that understands them. An older app refuses the whole complication and asks for an update rather than drawing every page on top of each other."],
     ];
     const layers: [string, string][] = [
@@ -10681,7 +10641,6 @@ export class WristAssistantPanel extends LitElement {
         </div>
         <div class="stage">
           ${this.renderRowStrip()}
-          ${this.renderPageStrip()}
           ${isDrawable(family) ? this.renderOver() : nothing}
           ${isDrawable(family) ? this.renderBigPreview(family, layouts, deviceCase) : this.renderInlinePreview(layouts.inline, false)}
           ${this.renderUnder(cfg, family)}
