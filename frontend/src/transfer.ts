@@ -115,10 +115,15 @@ export function shareSlots(cfg: CustomComplicationConfig, knownDomains: Readonly
 /** The picked complications of a refresh tap are document ids on the author's
  * watch, so on the wire the tap keeps its type and loses its picks. The reader
  * sees "none picked" and chooses their own; "all placed" carries over as is,
- * because it names nothing. */
+ * because it names nothing.
+ *
+ * The per-complication layer narrowing goes with them. It is keyed by those
+ * same document ids and names layer ids inside documents the reader does not
+ * have, so keeping it would put a dead list on the wire. */
 function scrubRefreshTargets(action: TapAction): TapAction {
-  if (action.type !== "refreshAll" || action.targets === undefined) return action;
-  const { targets: _dropped, ...rest } = action;
+  if (action.type !== "refreshAll") return action;
+  if (action.targets === undefined && action.targetLayers === undefined) return action;
+  const { targets: _dropped, targetLayers: _narrowed, ...rest } = action;
   return rest;
 }
 

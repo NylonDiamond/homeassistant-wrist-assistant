@@ -138,6 +138,8 @@ import {
   tapActionLabel,
   describeTapAction,
   refreshTargetsWith,
+  refreshTargetAllLayersWith,
+  refreshTargetLayersWith,
   refreshLayersWith,
   serviceDataIsValid,
   tapActionNote,
@@ -397,8 +399,13 @@ export interface EditorHost {
   pages: { id: string; name: string }[];
   /** Every complication this watch has on this server, id and name, for the
    * "Refresh multiple complications" tap's picker. Ids are uppercase, the way a document
-   * stores its own. Absent in a test host, which the picker reads as empty. */
-  documents?: { id: string; name: string }[];
+   * stores its own. Absent in a test host, which the picker reads as empty.
+   *
+   * `layers` is that complication's own layers, for the per-complication layer
+   * boxes inside the picker. It is a thunk because this list is rebuilt on every
+   * host build and parsing every document each time would be waste: the layers
+   * are only read for a row that is ticked and narrowed. */
+  documents?: { id: string; name: string; layers: () => readonly CElement[] }[];
   /** The Wrist Assistant version the edited watch last reported, for the
    * "Needs Wrist Assistant X.Y" notes under newer controls. Absent or null when
    * it has not reported, which shows no note. */
@@ -3725,8 +3732,11 @@ export function tapActionForType(type: TapAction["type"], current: TapAction): T
     // type, so switching away and back inside the picker keeps it.
     if (current.type !== "refreshAll") return { type: "refreshAll" };
     const out: RefreshAllAction = { type: "refreshAll" };
-    if (current.allPlaced === true) out.allPlaced = true;
-    else if (current.targets !== undefined && current.targets.length > 0) out.targets = [...current.targets];
+    if (current.allPlaced === true) return { ...out, allPlaced: true };
+    if (current.targets !== undefined && current.targets.length > 0) out.targets = [...current.targets];
+    // The per-complication narrowing is the author's work too, so it comes back
+    // with the picks rather than being rebuilt box by box.
+    if (current.targetLayers !== undefined) out.targetLayers = { ...current.targetLayers };
     return out;
   }
   if (tapNeedsEntity(type)) return { type: type as "toggleEntity", ...ref };
@@ -3751,6 +3761,12 @@ function tapNote(action: TapAction, pages = false): TemplateResult | typeof noth
  * to say so rather than to be changed. A picked id the watch no longer has
  * stays in the list under a plain name so it can be unticked; dropping it
  * silently would edit the author's choice on their behalf.
+ *
+ * A ticked complication carries its own "All layers" box, so one tap can fetch
+ * two cameras from the kitchen face and everything from the hall one. The
+ * current complication carries the same box: it always refreshes, but how much
+ * of it is still the author's to say. A deleted id gets no box, because nothing
+ * here knows what layers it had.
  */
 function refreshTargetsField(
   host: EditorHost,
@@ -3761,7 +3777,7 @@ function refreshTargetsField(
   const picked = action.targets ?? [];
   const selfId = host.config.id.toUpperCase();
   const others = (host.documents ?? [])
-    .map((d) => ({ id: d.id.toUpperCase(), name: d.name }))
+    .map((d) => ({ id: d.id.toUpperCase(), name: d.name, layers: d.layers }))
     .filter((d) => d.id !== selfId)
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
   const missing = picked.filter((id) => !others.some((d) => d.id === id));
@@ -3776,10 +3792,21 @@ function refreshTargetsField(
         or ones that draw pictures or charts, the whole round can take a while and the last ones
         update late. Pick the few you need instead when the wait shows.</div>`;
   }
+  // The layers of a complication the tap reaches hang off its own row, one
+  // indent further in, the way the layers of this complication hang off the
+  // "All layers" box in the card above.
+  const nested = (id: string, layers: () => readonly CElement[], own: boolean) => {
+    const box = refreshTargetLayersField(host, action, id, layers, own, set);
+    return box === nothing ? nothing : html`<div class="sub-checks">${box}</div>`;
+  };
   const selfName = host.config.name.trim();
   const rows = [
-    checkField(`${selfName === "" ? "Unnamed" : selfName} (current)`, true, () => {}, undefined, { disabled: true }),
-    ...others.map((d) => checkField(d.name || "Unnamed", picked.includes(d.id), (on) => pick(d.id, on))),
+    html`
+      ${checkField(`${selfName === "" ? "Unnamed" : selfName} (current)`, true, () => {}, undefined, { disabled: true })}
+      ${nested(selfId, () => host.config.elements, true)}`,
+    ...others.map((d) => html`
+      ${checkField(d.name || "Unnamed", picked.includes(d.id), (on) => pick(d.id, on))}
+      ${picked.includes(d.id) ? nested(d.id, d.layers, false) : nothing}`),
     ...missing.map((id) => checkField("Unknown complication (deleted)", true, (on) => pick(id, on))),
   ];
   return html`
@@ -3789,6 +3816,77 @@ function refreshTargetsField(
       ? html`<div class="hint keep">No other complications on this watch yet.</div>`
       : nothing}
     <div class="hint keep">This complication always refreshes itself, so its box stays on.</div>`;
+}
+
+/**
+ * The "All layers" box for one complication inside the multi-complication
+ * picker, and that complication's fetching layers once the box is off.
+ *
+ * The rules are `refreshLayersField`'s, applied per complication: only the
+ * layers that cost a fetch of their own are worth narrowing, so only those are
+ * listed, and a complication with none of them gets no box at all rather than a
+ * box that could not change anything.
+ *
+ * `own` is the complication being edited. Only its layers are on the preview,
+ * so only its rows peek: a pointer over another complication's layer has
+ * nothing to draw and does nothing.
+ */
+function refreshTargetLayersField(
+  host: EditorHost,
+  action: RefreshAllAction,
+  docId: string,
+  layers: () => readonly CElement[],
+  own: boolean,
+  set: (next: RefreshAllAction) => void,
+): TemplateResult | typeof nothing {
+  const narrowed = action.targetLayers?.[docId];
+  const all = narrowed === undefined;
+  const picked = narrowed ?? [];
+  // The edited document is described with its own named values and the live
+  // states. Another document is described with the states alone: its named
+  // values are not carried into the picker, and every layer listed here names
+  // itself by its entity or its own value, so the only label this costs is one
+  // built on a shared value, which reads as "named" and its id instead.
+  const ctx: DescribeContext = own
+    ? describeContext(host)
+    : { hass: host.hass, elements: layers() };
+  const fetches = layers()
+    .filter(layerCostsAFetch)
+    .map((el) => ({ id: el.payload.id, label: `${layerTitle(el, ctx)} (${KIND_LABEL[el.kind]})` }));
+  const missing = picked.filter((id) => !fetches.some((f) => f.id === id));
+
+  const pick = (id: string, on: boolean) => set(refreshTargetLayersWith(action, docId, id, on));
+  const pickAll = (on: boolean) => set(refreshTargetAllLayersWith(action, docId, on));
+
+  // Nothing to narrow, so the box is not offered at all rather than offered and
+  // then explained away. Same rule the card above follows.
+  if (all && fetches.length === 0) return nothing;
+  if (all) return checkField("All layers", true, pickAll);
+  if (fetches.length === 0 && missing.length === 0) {
+    return html`
+      ${checkField("All layers", false, pickAll)}
+      <div class="hint keep">Nothing on this one fetches anything of its own, so there is
+        nothing to narrow.</div>`;
+  }
+  // The edited complication is the one on the preview, so only its rows light a
+  // layer up under the pointer. Another complication's rows are plain.
+  const layerRow = (id: string, label: string, on: boolean) => {
+    const box = checkField(label, on, (v) => pick(id, v));
+    if (!own) return html`<div>${box}</div>`;
+    return html`
+      <div class="peek-row"
+        @pointerenter=${() => host.peekLayer(id, true)}
+        @pointerleave=${() => host.peekLayer(id, false)}>
+        ${box}
+      </div>`;
+  };
+  return html`
+    ${checkField("All layers", false, pickAll)}
+    <div class="sub-checks">
+      ${fetches.map((f) => layerRow(f.id, f.label, picked.includes(f.id)))}
+      ${missing.map((id) => layerRow(id, "Deleted layer", true))}
+      <div class="hint keep">Nothing ticked still refreshes this whole complication.</div>
+    </div>`;
 }
 
 /**
@@ -3863,12 +3961,23 @@ function refreshLayersField(
         so there is nothing to narrow. Pictures, charts, timelines and calendar or to-do lists are
         the ones that cost a request each.</div>`;
   }
+  // The pointer on a row draws that layer selected on the preview, the same as
+  // a pointer on its Layers row. Several pictures on one face are told apart by
+  // where they sit, not by their names, so the picture is the label that works.
+  const layerRow = (id: string, label: string, on: boolean) => html`
+    <div class="peek-row"
+      @pointerenter=${() => host.peekLayer(id, true)}
+      @pointerleave=${() => host.peekLayer(id, false)}>
+      ${checkField(label, on, (v) => pick(id, v))}
+    </div>`;
   return html`
     ${checkField("All layers", false, pickAll)}
-    ${fetches.map((f) => checkField(f.label, picked.includes(f.id), (on) => pick(f.id, on)))}
-    ${missing.map((id) => checkField("Deleted layer", true, (on) => pick(id, on)))}
-    <div class="hint keep">Only the layers that fetch something of their own are listed. Text,
-      icons and gauges all arrive in one request, so narrowing them saves nothing.</div>`;
+    <div class="sub-checks">
+      ${fetches.map((f) => layerRow(f.id, f.label, picked.includes(f.id)))}
+      ${missing.map((id) => layerRow(id, "Deleted layer", true))}
+      <div class="hint keep">Only the layers that fetch something of their own are listed. Text,
+        icons and gauges all arrive in one request, so narrowing them saves nothing.</div>
+    </div>`;
 }
 
 /** Domain, service and data for the common calls, so the usual ones are one

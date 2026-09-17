@@ -4314,6 +4314,28 @@ export class WristAssistantPanel extends LitElement {
     .part-head .spacer { flex: 1; }
     .field.check:has(> input:disabled) { cursor: default; }
     .field.check:has(> input:disabled) > span { color: var(--wa-muted); }
+    /* Boxes that belong to the box above them: the layers a scoped refresh
+       fetches, hanging off "All layers". They sit in from the card's own rows
+       under a guide line, the same way a group's members hang off their folder
+       in the Layers list, so the nesting reads without a heading.
+
+       These nest twice in the multi-complication picker: a picked complication
+       hangs off the list, and its layers hang off its "All layers" box. The
+       inner level indents less and draws a fainter line, so two levels still
+       read as two and the rows keep their width in a narrow inspector. */
+    .sub-checks {
+      margin: 2px 0 0 8px; padding-left: 10px;
+      border-left: 1px solid color-mix(in srgb, var(--wa-line) 85%, var(--wa-ink));
+    }
+    .sub-checks .sub-checks {
+      margin-left: 4px; padding-left: 8px;
+      border-left-color: color-mix(in srgb, var(--wa-line) 60%, transparent);
+    }
+    /* A row that names a layer lights up under the pointer, and the preview
+       draws that layer selected at the same time, so a name nobody wrote (the
+       kind and the entity) still says which layer is being ticked. */
+    .sub-checks .peek-row { border-radius: 6px; margin: 0 -4px; padding: 0 4px; }
+    .sub-checks .peek-row:hover { background: color-mix(in srgb, var(--wa-ink) 8%, transparent); }
     .rich-note {
       margin-top: 8px; padding: 8px 10px; border-radius: 8px; font-size: 12.5px; color: var(--wa-ink);
       background: color-mix(in srgb, var(--c, var(--wa-accent)) 14%, var(--wa-card));
@@ -5509,14 +5531,32 @@ export class WristAssistantPanel extends LitElement {
    * carries no document at all. The list request already asks for one owner, but
    * the owner is checked again here: a picked id belongs to one watch, and a
    * watch must never be offered another device's.
+   *
+   * The layers come from the record's own raw document, so nothing is fetched
+   * for them. They are parsed behind a thunk and only once: this list is rebuilt
+   * on every host build, and the layers are read only for a row that is both
+   * ticked and narrowed. A document that no longer parses lists no layers rather
+   * than taking the picker down with it.
    */
-  private documentList(): { id: string; name: string }[] {
+  private documentList(): { id: string; name: string; layers: () => CElement[] }[] {
     return this.records
       .filter((r) => !r.deleted && r.document !== null)
       .filter((r) => r.ownerWatchId === "" || r.ownerWatchId === this.ownerId)
       .map((r) => {
         const name = typeof r.document?.name === "string" ? r.document.name.trim() : "";
-        return { id: r.id.toUpperCase(), name: name === "" ? "Unnamed" : name };
+        const raw = r.document;
+        let parsed: CElement[] | undefined;
+        const layers = (): CElement[] => {
+          if (parsed === undefined) {
+            try {
+              parsed = raw === null ? [] : parseConfig(raw).elements;
+            } catch {
+              parsed = [];
+            }
+          }
+          return parsed;
+        };
+        return { id: r.id.toUpperCase(), name: name === "" ? "Unnamed" : name, layers };
       });
   }
 

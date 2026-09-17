@@ -3086,9 +3086,21 @@ export interface CallServiceAction {
  * deduplicated the way `parseConfig` stores an id. `allPlaced` wins: when it is
  * true nothing writes `targets` at all.
  *
- * Both keys are optional, and neither is written unless it says something, so a
+ * `targetLayers` narrows one picked complication the way `layerIds` narrows the
+ * tapped one: a key is a document id, its list is the layers that tap fetches
+ * from that document. A document with no key fetches all of its layers, which
+ * is why the key is only ever written for a document the author narrowed. An
+ * empty list is kept rather than dropped, exactly as on a plain `refresh`: it
+ * is how the picker says "narrowed, nothing ticked yet", and both shapes
+ * refresh that whole complication on the watch, so the empty state is safe
+ * rather than broken. `allPlaced` wins here too: there is no list to narrow
+ * while it is on, so nothing writes `targetLayers` either.
+ *
+ * Every key is optional, and none is written unless it says something, so a
  * document saved before this existed still reads as a plain `{"type":
- * "refreshAll"}` and still parses.
+ * "refreshAll"}` and still parses. An older watch app ignores `targetLayers`
+ * and refreshes each picked complication whole, which is more work than was
+ * asked for rather than a tap that goes dead.
  */
 export interface RefreshAllAction {
   type: "refreshAll";
@@ -3096,6 +3108,9 @@ export interface RefreshAllAction {
   targets?: string[];
   /** Written only when true. */
   allPlaced?: boolean;
+  /** Per-complication layer narrowing, keyed by uppercase complication id.
+   * Absent when nothing is narrowed. */
+  targetLayers?: Record<string, string[]>;
 }
 
 /**
@@ -3199,7 +3214,12 @@ export function describeTapAction(action: TapAction): string {
     // when nothing is picked and the tap is just a plain refresh.
     if (action.allPlaced === true) return `${label}: all placed`;
     const count = action.targets?.length ?? 0;
-    return count > 0 ? `${label}: ${count} picked` : `${label}: none picked`;
+    // One short clause for the narrowing, because a tap that fetches two layers
+    // of one picked complication is a different tap from one that fetches all
+    // of it, and the line has no room to name which layers.
+    const narrowed = Object.keys(action.targetLayers ?? {}).length;
+    const picks = count > 0 ? `${label}: ${count} picked` : `${label}: none picked`;
+    return narrowed > 0 ? `${picks}, ${narrowed} narrowed` : picks;
   }
   if (action.type === "refresh" && action.layerIds !== undefined) {
     // Same reason: how much of the complication the tap fetches is the point.
@@ -3217,8 +3237,13 @@ export function describeTapAction(action: TapAction): string {
  * empty list drops the key rather than writing `[]`, so the picker can never
  * save a shape the parser would read back differently.
  *
+ * Unticking a document also drops its `targetLayers` entry: the narrowing hangs
+ * off the tick, so a document the tap no longer reaches must not leave a list
+ * of its layers behind on the wire. Ticking one adds no entry, because no entry
+ * already means every layer.
+ *
  * `allPlaced` is the other control and it wins, so while it is on this changes
- * nothing: a list beside it would never be written anyway. */
+ * nothing: neither a list nor a narrowing beside it would ever be written. */
 export function refreshTargetsWith(action: RefreshAllAction, id: string, on: boolean): RefreshAllAction {
   if (action.allPlaced === true) return { type: "refreshAll", allPlaced: true };
   const wanted = id.trim().toUpperCase();
@@ -3228,6 +3253,62 @@ export function refreshTargetsWith(action: RefreshAllAction, id: string, on: boo
     : current.filter((t) => t !== wanted);
   const next: RefreshAllAction = { type: "refreshAll" };
   if (targets.length > 0) next.targets = targets;
+  const layers = on ? action.targetLayers : withoutTargetLayers(action.targetLayers, wanted);
+  if (layers !== undefined) next.targetLayers = { ...layers };
+  return next;
+}
+
+/** The narrowing map without one document's entry, or undefined when that
+ * leaves nothing: the key is only written when it says something. */
+function withoutTargetLayers(
+  layers: Record<string, string[]> | undefined, id: string,
+): Record<string, string[]> | undefined {
+  if (layers === undefined || !(id in layers)) return layers;
+  const next = { ...layers };
+  delete next[id];
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+/** The "All layers" box for one picked complication, as the whole next action.
+ * On drops that document's entry, which is what "every layer" is written as.
+ * Off writes an empty list, the same shape `refreshLayersWith` keeps on a plain
+ * refresh and for the same reason: the entry is what holds the box off, so
+ * dropping it would tick the box again the moment the last layer was unticked.
+ *
+ * `allPlaced` wins, so while it is on this changes nothing. */
+export function refreshTargetAllLayersWith(action: RefreshAllAction, docId: string, on: boolean): RefreshAllAction {
+  if (action.allPlaced === true) return { type: "refreshAll", allPlaced: true };
+  const wanted = docId.trim().toUpperCase();
+  if (wanted === "") return action;
+  const next: RefreshAllAction = { type: "refreshAll" };
+  if (action.targets !== undefined && action.targets.length > 0) next.targets = [...action.targets];
+  const layers = on
+    ? withoutTargetLayers(action.targetLayers, wanted)
+    : { ...(action.targetLayers ?? {}), [wanted]: [] };
+  if (layers !== undefined) next.targetLayers = { ...layers };
+  return next;
+}
+
+/** One layer ticked or unticked under one picked complication, as the whole
+ * next action. The document keeps its entry either way, empty list included,
+ * for the reason above.
+ *
+ * Layer ids are trimmed the way `refreshLayersWith` trims them; `parseConfig`
+ * uppercases both halves on the way back in. */
+export function refreshTargetLayersWith(
+  action: RefreshAllAction, docId: string, layerId: string, on: boolean,
+): RefreshAllAction {
+  if (action.allPlaced === true) return { type: "refreshAll", allPlaced: true };
+  const doc = docId.trim().toUpperCase();
+  const wanted = layerId.trim();
+  if (doc === "") return action;
+  const current = action.targetLayers?.[doc] ?? [];
+  const layerIds = on
+    ? (wanted === "" || current.includes(wanted) ? [...current] : [...current, wanted])
+    : current.filter((t) => t !== wanted);
+  const next: RefreshAllAction = { type: "refreshAll" };
+  if (action.targets !== undefined && action.targets.length > 0) next.targets = [...action.targets];
+  next.targetLayers = { ...(action.targetLayers ?? {}), [doc]: layerIds };
   return next;
 }
 
@@ -3306,9 +3387,15 @@ export function tapActionNote(action: TapAction, pages = false): string | undefi
     return "Refreshes every Wrist Assistant complication placed on the watch, not just this one." + older;
   }
   const count = action.targets?.length ?? 0;
-  if (count > 0) return `Refreshes this complication and the ${count} picked below.` + older;
+  // One sentence for the narrowing, whether or not anything else is picked: the
+  // current complication can be narrowed on its own.
+  const narrowed = Object.keys(action.targetLayers ?? {}).length;
+  const scope = narrowed === 0 ? ""
+    : narrowed === 1 ? " One complication is narrowed to the layers ticked under its own box."
+      : ` ${narrowed} complications are narrowed to the layers ticked under their own boxes.`;
+  if (count > 0) return `Refreshes this complication and the ${count} picked below.` + scope + older;
   return "Nothing is picked, so this tap only refreshes this complication."
-    + " Pick all placed complications or some below." + older;
+    + " Pick all placed complications or some below." + scope + older;
 }
 
 /**
@@ -4875,6 +4962,35 @@ function parseRefreshTargets(raw: unknown): string[] {
   return out;
 }
 
+/**
+ * The per-complication narrowing a `refreshAll` carries, cleaned the one way:
+ * an object only, its keys cleaned as document ids and its values as layer id
+ * lists, both through `parseRefreshTargets`. Anything that is not an array of
+ * strings is not a narrowing anyone wrote, so that entry is dropped.
+ *
+ * An empty list is kept, the same as `layerIds` on a plain `refresh`: it is the
+ * "narrowed, nothing ticked yet" state, and losing it on a save would tick the
+ * "All layers" box again behind the author's back. An empty object is dropped,
+ * so a tap that narrows nothing reads back byte-identical to one written before
+ * the key existed.
+ *
+ * A key for a document `targets` does not name is kept rather than dropped. The
+ * watch ignores it, and dropping it would edit an author's choice on their
+ * behalf the moment a picker was open on a stale list. The editor's own writes
+ * keep the two in step.
+ */
+function parseTargetLayers(raw: unknown): Record<string, string[]> | undefined {
+  if (!isObject(raw)) return undefined;
+  const out: Record<string, string[]> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (!Array.isArray(value)) continue;
+    const id = key.trim().toUpperCase();
+    if (id === "" || id in out) continue;
+    out[id] = parseRefreshTargets(value);
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 function parseTapAction(raw: unknown): TapAction {
   if (!isObject(raw) || typeof raw.type !== "string") return { type: "none" };
   switch (raw.type) {
@@ -4892,15 +5008,19 @@ function parseTapAction(raw: unknown): TapAction {
       return { type: "refresh", layerIds: parseRefreshTargets(raw.layerIds) };
     }
     case "refreshAll": {
-      // Both keys are optional, so `{"type": "refreshAll"}` written before
-      // either existed still reads as the tap that refreshes only itself.
+      // Every key is optional, so `{"type": "refreshAll"}` written before any of
+      // them existed still reads as the tap that refreshes only itself.
       const out: RefreshAllAction = { type: "refreshAll" };
       if (raw.allPlaced === true) {
+        // Nothing to narrow while this is on, so a `targetLayers` left over from
+        // an earlier save is dropped rather than carried as a dead key.
         out.allPlaced = true;
         return out;
       }
       const targets = parseRefreshTargets(raw.targets);
       if (targets.length > 0) out.targets = targets;
+      const layers = parseTargetLayers(raw.targetLayers);
+      if (layers !== undefined) out.targetLayers = layers;
       return out;
     }
     case "toggleEntity": case "runScene": case "runScript": case "addTodo": case "runHTTPAction":
@@ -6430,14 +6550,26 @@ function encodeTapAction(t: TapAction): J {
     return o;
   }
   if (t.type === "refreshAll") {
-    // Neither key is written unless it says something, so a tap with nothing
-    // picked is byte-identical to one written before either key existed.
+    // No key is written unless it says something, so a tap with nothing picked
+    // is byte-identical to one written before any of them existed.
     const o: J = { type: t.type };
     if (t.allPlaced === true) {
+      // There is no list to narrow while this is on, so the narrowing never
+      // reaches the wire beside it.
       o.allPlaced = true;
       return o;
     }
     if (t.targets !== undefined && t.targets.length > 0) o.targets = [...t.targets];
+    // An empty list under a document is written, unlike an empty `targets`: it
+    // is how the picker says "narrowed, nothing ticked yet", and both shapes
+    // refresh that whole complication on the watch. An empty object is not: a
+    // tap that narrows nothing carries no key at all.
+    const entries = Object.entries(t.targetLayers ?? {});
+    if (entries.length > 0) {
+      const out: J = {};
+      for (const [id, ids] of entries) out[id] = [...ids];
+      o.targetLayers = out;
+    }
     return o;
   }
   if (t.type === "refresh") {
@@ -6809,11 +6941,12 @@ const K = {
   bezelGauge: ["value", "minValue", "maxValue", "colorHexes", "minLabel", "maxLabel"],
   placement: ["frame", "isHidden", "size"],
   // The three service keys belong to `callService` only; the entity four are its
-  // optional target, the same keys every entity action uses. The last two belong
-  // to `refreshAll` alone: what else that tap refreshes. `layerIds` belongs to
-  // `refresh` alone: how much of the tapped complication it fetches.
+  // optional target, the same keys every entity action uses. Three belong to
+  // `refreshAll` alone: what else that tap refreshes, and how much of each.
+  // `layerIds` belongs to `refresh` alone: how much of the tapped complication
+  // it fetches.
   tapAction: ["type", "entityId", "displayName", "domain", "iconName",
-    "serviceDomain", "serviceName", "serviceDataJSON", "targets", "allPlaced", "layerIds"],
+    "serviceDomain", "serviceName", "serviceDataJSON", "targets", "allPlaced", "layerIds", "targetLayers"],
   // No `dataSource` list: `auditUnknownKeys` deliberately does not look at
   // `dataSources` at all. See the note at the end of that function.
 };
