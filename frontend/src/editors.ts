@@ -5227,11 +5227,17 @@ function layerPageField(host: EditorHost, el: CElement): TemplateResult | typeof
     ["", "Every page"],
     ...pageNumbers(spec).map((page) => [String(page), `Page ${page}`] as [string, string]),
   ];
-  return html`${selectField("Page", current === undefined ? "" : String(current), options, (v) => host.update((c) => {
-      const target = c.elements.find((e) => e.payload.id === id);
-      if (!target) return;
-      if (v === "") delete target.payload.page; else target.payload.page = Number(v);
-    }, `el-${id}-page`), { def: "" })}
+  return html`${selectField("Page", current === undefined ? "" : String(current), options, (v) => {
+      host.update((c) => {
+        const target = c.elements.find((e) => e.payload.id === id);
+        if (!target) return;
+        if (v === "") delete target.payload.page; else target.payload.page = Number(v);
+      }, `el-${id}-page`);
+      // Follow the layer to the page it was just put on. The canvas and the
+      // Layers list both show one page, so without this the layer the author
+      // is editing leaves both the moment they pick, while its card stays open.
+      host.selectLayer(id);
+    }, { def: "" })}
     <div class="hint">Every page keeps this layer on all of them, which is what a background, a border or a
       shared label wants. The page is the same on every shape.</div>`;
 }

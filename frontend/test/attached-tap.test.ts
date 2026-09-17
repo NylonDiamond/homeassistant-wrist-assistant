@@ -727,8 +727,8 @@ describe("refresh complications", () => {
     for (const note of [all, some, none]) expect(note).toContain("older app");
   });
 
-  it("shares the note under the picker with the two page actions and nothing else", () => {
-    const explained = ["refreshAll", "nextPage", "playTour"];
+  it("shares the note under the picker with the three page actions and nothing else", () => {
+    const explained = ["refreshAll", "nextPage", "previousPage", "playTour"];
     for (const [type] of TAP_ACTION_LABELS) {
       if (explained.includes(type)) continue;
       expect(tapActionNote({ type } as TapAction), type).toBeUndefined();

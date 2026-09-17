@@ -3099,11 +3099,11 @@ export interface RefreshAllAction {
 }
 
 export type TapAction =
-  // `nextPage` moves this complication on one page and `playTour` plays every
-  // page once and comes back to page 1. Neither carries anything: the page
-  // belongs to the placed slot rather than to the document, so the watch reads
-  // it at tap time. See `PagesSpec`.
-  | { type: "none" | "refresh" | "openApp" | "openPage" | "openRoomPage" | "timerStartPause" | "timerCancel" | "nextPage" | "playTour" }
+  // `nextPage` moves this complication on one page, `previousPage` back one,
+  // and `playTour` plays every page once and comes back to page 1. None of
+  // them carries anything: the page belongs to the placed slot rather than to
+  // the document, so the watch reads it at tap time. See `PagesSpec`.
+  | { type: "none" | "refresh" | "openApp" | "openPage" | "openRoomPage" | "timerStartPause" | "timerCancel" | "nextPage" | "previousPage" | "playTour" }
   | RefreshAllAction
   | ({ type: "toggleEntity" | "runScene" | "runScript" | "addTodo" | "runHTTPAction" } & EntityRef)
   | CallServiceAction;
@@ -3143,7 +3143,7 @@ export const TAP_ACTION_LABELS: [TapAction["type"], string][] = [
   ["timerStartPause", "Timer start / pause"], ["timerCancel", "Timer cancel"],
   ["toggleEntity", "Toggle an entity"], ["runScene", "Run a scene"], ["runScript", "Run a script"], ["addTodo", "Add a to-do"], ["runHTTPAction", "Run an HTTP action"],
   ["callService", "Call a service"],
-  ["nextPage", "Next page"], ["playTour", "Play the page tour"],
+  ["nextPage", "Next page"], ["previousPage", "Previous page"], ["playTour", "Play the page tour"],
 ];
 
 /** One-line description of a tap action, for hints and for the review-mode
@@ -3198,20 +3198,20 @@ export function refreshTargetsWith(action: RefreshAllAction, id: string, on: boo
  * the tap saves and syncs either way, and starts working once that watch is
  * updated.
  *
- * The two page actions need the document as well as the action, because a page
- * tap on a document with one page is a tap that does nothing. `pages` is
+ * The three page actions need the document as well as the action, because a
+ * page tap on a document with one page is a tap that does nothing. `pages` is
  * whether the document being edited uses pages (`usesPages`); the sentence for
  * one that does not names the card the setting lives on rather than a
  * direction, since the same note is drawn in the layer inspector too. */
 export function tapActionNote(action: TapAction, pages = false): string | undefined {
-  if (action.type === "nextPage" || action.type === "playTour") {
+  if (action.type === "nextPage" || action.type === "previousPage" || action.type === "playTour") {
     if (!pages) {
       return "This complication has one page, so this does nothing yet."
         + " Turn pages on in the Complication card.";
     }
-    return action.type === "nextPage"
-      ? "Each tap shows the next page. The page stays where it was left."
-      : "Plays every page once from one tap, then returns to page 1.";
+    if (action.type === "nextPage") return "Each tap shows the next page. The page stays where it was left.";
+    if (action.type === "previousPage") return "Each tap shows the page before. The page stays where it was left.";
+    return "Plays every page once from one tap, then returns to page 1.";
   }
   if (action.type !== "refreshAll") return undefined;
   const older = " On a watch running an older app this tap does nothing.";
@@ -3526,6 +3526,16 @@ export function nextPageAfter(spec: PagesSpec, page: number): number {
   return current >= count ? 1 : current + 1;
 }
 
+/** The page before `page`, wrapping round to the last one from page 1. The
+ * mirror of `nextPageAfter`, and it pulls anything outside the range in the
+ * same way first, so page 0 goes to the last page and a page past the end goes
+ * to the one before it. Mirrors `previousPage(before:)`. */
+export function previousPageBefore(spec: PagesSpec, page: number): number {
+  const count = clampPageCount(spec.count);
+  const current = Math.min(Math.max(Math.trunc(page), 1), count);
+  return current <= 1 ? count : current - 1;
+}
+
 /** Whether this layer draws on `page`. A layer that names no page is on every
  * one; a layer that names a page beyond the document's count is on none, which
  * is the honest reading of content the author has since made unreachable.
@@ -3551,16 +3561,17 @@ export function elementsOnPage(
 /**
  * Whether anything in this document can move the page.
  *
- * Only a `nextPage` or a `playTour` action moves one, wherever it sits: the
- * whole-complication tap, or one tap layer. A document with pages and no mover
- * is a face that shows page 1 for ever, which is worth a warning in the editor
- * rather than a puzzle on the wrist.
+ * Only a `nextPage`, a `previousPage` or a `playTour` action moves one,
+ * wherever it sits: the whole-complication tap, or one tap layer. A document
+ * with pages and no mover is a face that shows page 1 for ever, which is worth
+ * a warning in the editor rather than a puzzle on the wrist.
  *
  * Top-level layers only, because a page is a top-level idea: a tap inside a
  * list row belongs to the row it was drawn for.
  */
 export function pageMoverExists(cfg: CustomComplicationConfig): boolean {
-  const moves = (type: TapAction["type"]) => type === "nextPage" || type === "playTour";
+  const moves = (type: TapAction["type"]) =>
+    type === "nextPage" || type === "previousPage" || type === "playTour";
   if (moves(cfg.tapAction.type)) return true;
   return cfg.elements.some((el) => el.kind === "tap" && moves(el.payload.action.type));
 }
@@ -4686,7 +4697,7 @@ function parseTapAction(raw: unknown): TapAction {
     case "none": case "refresh": case "openApp": case "openPage": case "openRoomPage":
     case "timerStartPause": case "timerCancel":
     // The page actions carry nothing, so they read back as their type alone.
-    case "nextPage": case "playTour":
+    case "nextPage": case "previousPage": case "playTour":
       return { type: raw.type };
     case "refreshAll": {
       // Both keys are optional, so `{"type": "refreshAll"}` written before

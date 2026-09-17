@@ -16,7 +16,10 @@ import {
   PAGES_MAX_COUNT,
   PAGE_DEFAULT_DWELL,
   PAGE_DWELL_RANGE,
+  TAP_ACTION_LABELS,
   auditUnknownKeys,
+  controlActionAllowed,
+  createGroup,
   describeTapAction,
   dwellForPage,
   elementsOnPage,
@@ -35,16 +38,19 @@ import {
   parseConfig,
   parseLayerPage,
   parsePagesSpec,
+  previousPageBefore,
   schemaVersionFor,
   setPageCount,
   setPageDwell,
   settleArrivedPages,
+  tapActionNote,
   tourDuration,
   tourPageAt,
   tourSteps,
   usesPages,
   writtenDwell,
 } from "../src/model.js";
+import { layerListRows } from "../src/panel.js";
 import { type EntityState, type ResolveContext, resolveAll } from "../src/resolver.js";
 import { exportText, parseImportText } from "../src/transfer.js";
 
@@ -297,6 +303,27 @@ describe("the tour arithmetic", () => {
     expect(nextPageAfter(spec, 3)).toBe(1);
     expect(nextPageAfter(spec, 0)).toBe(2);
     expect(nextPageAfter(spec, 9)).toBe(1);
+  });
+
+  it("wraps back from page 1 to the last page, the mirror of the step on", () => {
+    expect(previousPageBefore(spec, 3)).toBe(2);
+    expect(previousPageBefore(spec, 1)).toBe(3);
+    // Pulled into the range first, exactly as the step on does.
+    expect(previousPageBefore(spec, 0)).toBe(3);
+    expect(previousPageBefore(spec, 9)).toBe(2);
+  });
+
+  it("is a round trip with the step on, from every page", () => {
+    for (const page of [1, 2, 3]) {
+      expect(previousPageBefore(spec, nextPageAfter(spec, page))).toBe(page);
+      expect(nextPageAfter(spec, previousPageBefore(spec, page))).toBe(page);
+    }
+  });
+
+  it("stays on page 1 for a document with one page", () => {
+    const one: PagesSpec = { count: 1, mode: "tap", dwell: [] };
+    expect(previousPageBefore(one, 1)).toBe(1);
+    expect(nextPageAfter(one, 1)).toBe(1);
   });
 });
 
@@ -596,6 +623,57 @@ describe("whether anything can move the page", () => {
     }
     expect(pageMoverExists(cfg)).toBe(false);
   });
+
+  it("counts a step back, on the document and on a tap layer", () => {
+    // A face whose only mover goes backwards still reaches every page, so it
+    // must not draw the "nothing moves the page yet" warning.
+    const cfg = pagedConfig({ count: 2, mode: "tap", dwell: [] });
+    cfg.tapAction = { type: "previousPage" };
+    expect(pageMoverExists(cfg)).toBe(true);
+    cfg.tapAction = { type: "refresh" };
+    const tap = newElement("tap") as Extract<Element, { kind: "tap" }>;
+    tap.payload.action = { type: "previousPage" };
+    cfg.elements.push(tap);
+    expect(pageMoverExists(cfg)).toBe(true);
+  });
+
+  it("is still tap mode, because only a tour action makes a tour", () => {
+    const cfg = pagedConfig({ count: 2, mode: "tap", dwell: [] });
+    cfg.tapAction = { type: "previousPage" };
+    expect(pageModeFor(cfg)).toBe("tap");
+  });
+});
+
+// The step back is the step on, the other way. It is on the wire as
+// `previousPage`, spelled the same in the app, and everything the panel says
+// about it is the mirror of what it says about Next page.
+describe("the Previous page tap", () => {
+  it("is offered, named, and read back from the wire", () => {
+    expect(TAP_ACTION_LABELS.find(([t]) => t === "previousPage")?.[1]).toBe("Previous page");
+    const cfg = pagedConfig({ count: 2, mode: "tap", dwell: [] });
+    cfg.tapAction = { type: "previousPage" };
+    const encoded = encodeConfig(cfg);
+    expect((encoded as { tapAction: { type: string } }).tapAction).toEqual({ type: "previousPage" });
+    expect(parseConfig(encoded).tapAction).toEqual({ type: "previousPage" });
+    expect(auditUnknownKeys(encoded)).toEqual([]);
+  });
+
+  it("is named in words by the Show taps overlay", () => {
+    expect(describeTapAction({ type: "previousPage" })).toBe("Previous page");
+  });
+
+  it("says what it does, and what it does not do without pages", () => {
+    expect(tapActionNote({ type: "previousPage" }, true))
+      .toBe("Each tap shows the page before. The page stays where it was left.");
+    expect(tapActionNote({ type: "previousPage" }, false))
+      .toBe("This complication has one page, so this does nothing yet. Turn pages on in the Complication card.");
+  });
+
+  it("is not a Control Center action", () => {
+    // A control is one press in Control Center with no face to page through.
+    expect(controlActionAllowed("previousPage")).toBe(false);
+    expect(controlActionAllowed("nextPage")).toBe(false);
+  });
 });
 
 describe("the version gate a paged document meets", () => {
@@ -659,5 +737,75 @@ describe("the page a layer gets when it arrives", () => {
     expect(arrived.payload.page).toBeUndefined();
     expect(usesPages(cfg)).toBe(false);
     expect(schemaVersionFor(cfg)).toBeLessThan(9);
+  });
+});
+
+// What the Layers list holds on a paged document. The list shows the page the
+// canvas is showing: the layers pinned to it and the ones on every page, and
+// nothing else. A layer on another page used to sit here dimmed under a "p2"
+// badge, which made a four-page document four times the list it is and filled
+// it with rows nothing on screen draws.
+describe("the layers one page lists", () => {
+  /** Three pages and one text layer per entry, pinned to the page named or on
+   * every page when the entry is undefined. The ids come back in the order
+   * they were made, so a row can be named by its place in that list. */
+  function built(pages: (number | undefined)[]): { cfg: CustomComplicationConfig; ids: string[] } {
+    const cfg = newConfig("Pages", 0, ["rectangular"]);
+    cfg.elements = pages.map((page) => {
+      const el = newElement("text");
+      if (page !== undefined) el.payload.page = page;
+      return el;
+    });
+    cfg.pages = { count: 3, mode: "tap", dwell: [] };
+    cfg.schemaVersion = schemaVersionFor(cfg);
+    return { cfg, ids: cfg.elements.map((e) => e.payload.id) };
+  }
+
+  /** Each row in list order, top of the stack first: a layer as its place in
+   * `ids`, a group as "name[members] of total". */
+  function rows(cfg: CustomComplicationConfig, ids: string[], page: number): string[] {
+    const at = (el: Element) => String(ids.indexOf(el.payload.id));
+    return layerListRows(cfg, cfg.elements, page).map((row) => row.kind === "layer"
+      ? at(row.el)
+      : `${row.group.name}[${row.members.map(at).join(",")}] of ${row.total}`);
+  }
+
+  it("holds this page's layers and the ones on every page, and no others", () => {
+    const { cfg, ids } = built([undefined, 1, 2]);
+    expect(rows(cfg, ids, 1)).toEqual(["1", "0"]);
+    expect(rows(cfg, ids, 2)).toEqual(["2", "0"]);
+    // Page 3 has nothing of its own, so the shared layer is the whole list.
+    expect(rows(cfg, ids, 3)).toEqual(["0"]);
+  });
+
+  it("holds every layer of a document with no pages, whatever page is asked for", () => {
+    const { cfg, ids } = built([undefined, undefined, undefined]);
+    delete cfg.pages;
+    expect(usesPages(cfg)).toBe(false);
+    expect(rows(cfg, ids, 2)).toEqual(["2", "1", "0"]);
+  });
+
+  it("leaves out a group whose members are all on another page", () => {
+    const { cfg, ids } = built([undefined, 2, 2]);
+    createGroup(cfg, [ids[1]!, ids[2]!], "Block");
+    // No folder for a group with nothing on this page: a folder with no rows
+    // under it is a row that says a layer is here when none is.
+    expect(rows(cfg, ids, 1)).toEqual(["0"]);
+    expect(rows(cfg, ids, 2)).toEqual(["Block[2,1] of 2", "0"]);
+  });
+
+  it("lists the members a straddling group has here, and says how many it holds", () => {
+    const { cfg, ids } = built([undefined, 1, 2]);
+    createGroup(cfg, [ids[1]!, ids[2]!], "Block");
+    // The folder counts the whole group, so a group showing part of itself
+    // never reads as a group that lost layers.
+    expect(rows(cfg, ids, 1)).toEqual(["Block[1] of 2", "0"]);
+    expect(rows(cfg, ids, 2)).toEqual(["Block[2] of 2", "0"]);
+  });
+
+  it("gives a group one folder, wherever its members sit in the stack", () => {
+    const { cfg, ids } = built([1, 1, 1]);
+    createGroup(cfg, [ids[0]!, ids[2]!], "Block");
+    expect(rows(cfg, ids, 1).filter((r) => r.startsWith("Block"))).toHaveLength(1);
   });
 });

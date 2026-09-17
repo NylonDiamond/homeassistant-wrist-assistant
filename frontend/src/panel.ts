@@ -95,6 +95,7 @@ import {
   entityLayerIds,
   sharedValueLayerIds,
   clampPageCount,
+  elementsOnPage,
   layerDrawsOnPage,
   nextPageAfter,
   pageNumbers,
@@ -752,6 +753,60 @@ export function columnFit(
   }
 
   return { columns: 1, left: wantLeft, right: wantRight };
+}
+
+/** The word that names the page tabs. Drawn twice, over the canvas and in the
+ * Layers header, and written once here so the two surfaces can never drift
+ * apart. A filled chip rather than a grey word: the tabs are bare numbers, and
+ * beside a row of other controls a bare number says nothing on its own. */
+const PAGES_CHIP = html`<span class="page-chip">Pages</span>`;
+
+/** One row of the Layers list: a layer, or a group's folder with the members
+ * that go under it. */
+export type LayerListRow =
+  | { kind: "layer"; el: CElement }
+  | { kind: "group"; group: LayerGroup; members: CElement[]; total: number };
+
+/**
+ * What the Layers list shows for one page of one shape, top of the stack first.
+ *
+ * A paged document lists the page it is showing: the layers pinned to it and
+ * the ones on every page. Layers on another page are not rows, because nothing
+ * on screen draws them; the inspector's cross-links still reach them, and
+ * following one brings its page up, which is what puts its row back.
+ *
+ * A group's folder stands where its topmost listed member is, so a group whose
+ * members are all on other pages has no folder at all, and one that straddles
+ * two pages lists only the members this page draws. `total` is what the group
+ * holds on the shape either way, so the folder can say when it is showing part
+ * of itself rather than count its own rows and read as a group that lost
+ * layers.
+ */
+export function layerListRows(
+  cfg: CustomComplicationConfig,
+  shapeRows: readonly CElement[],
+  page: number,
+): LayerListRow[] {
+  const ordered = elementsOnPage(cfg, shapeRows, page).reverse();
+  const out: LayerListRow[] = [];
+  const seen = new Set<string>();
+  for (const el of ordered) {
+    const gid = el.payload.groupId;
+    const group = gid === undefined ? undefined : cfg.groups?.find((x) => x.id === gid);
+    if (!group) {
+      out.push({ kind: "layer", el });
+      continue;
+    }
+    if (seen.has(group.id)) continue;
+    seen.add(group.id);
+    out.push({
+      kind: "group",
+      group,
+      members: ordered.filter((e) => e.payload.groupId === group.id),
+      total: shapeRows.filter((e) => e.payload.groupId === group.id).length,
+    });
+  }
+  return out;
 }
 
 export class WristAssistantPanel extends LitElement {
@@ -2707,7 +2762,14 @@ export class WristAssistantPanel extends LitElement {
       background: color-mix(in srgb, var(--wa-raised) 92%, transparent);
       box-shadow: 0 0 0 1px var(--wa-line), 0 6px 18px rgba(0,0,0,.18);
     }
-    .page-strip .page-strip-word { color: var(--wa-muted); font-weight: 600; font-size: 12.5px; }
+    /* The word that names the tabs, on the strip and in the Layers header. A
+       filled chip in the accent, the way the card titles wear a tinted swatch,
+       so the numbers beside it read as a control and not as a stray count. */
+    .page-chip {
+      flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 8px;
+      border-radius: 999px; background: var(--wa-accent); color: var(--wa-accent-ink);
+      font-size: 11px; font-weight: 700; letter-spacing: .04em; white-space: nowrap;
+    }
     .page-strip .page-tabs { display: inline-flex; gap: 2px; }
     .page-strip button {
       font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; flex: none;
@@ -4575,15 +4637,26 @@ export class WristAssistantPanel extends LitElement {
    * group joins it.
    */
   private moveLayer(id: string, dir: -1 | 1) {
+    const page = this.page;
     this.mutate((c) => {
       const rows = c.elements.filter((e) => !isAttachedTap(c, e));
       const taps = c.elements.filter((e) => isAttachedTap(c, e));
       const i = rows.findIndex((e) => e.payload.id === id);
-      const j = i + dir;
-      if (i < 0 || j < 0 || j >= rows.length) return;
-      [rows[i], rows[j]] = [rows[j]!, rows[i]!];
-      const el = rows[j]!;
-      const neighbour = rows[i]!;
+      if (i < 0) return;
+      // The step is to the next row the list is showing, not the next row in
+      // the document. On a paged document the layers in between are on another
+      // page: swapping with one of those would reorder the layer past nothing
+      // the author can see and leave the list looking unchanged.
+      const paged = usesPages(c);
+      let j = i + dir;
+      while (j >= 0 && j < rows.length && paged && !layerDrawsOnPage(rows[j]!, page)) j += dir;
+      if (j < 0 || j >= rows.length) return;
+      const el = rows[i]!;
+      const neighbour = rows[j]!;
+      // Taken out and put back rather than swapped, so a step that passed over
+      // a layer on another page lands beside the row it really stepped to.
+      rows.splice(i, 1);
+      rows.splice(j, 0, el);
       if (el.payload.groupId !== neighbour.payload.groupId) {
         if (neighbour.payload.groupId === undefined) delete el.payload.groupId;
         else el.payload.groupId = neighbour.payload.groupId;
@@ -5975,7 +6048,7 @@ export class WristAssistantPanel extends LitElement {
       title="Show the next page, the way a Next page tap does on the watch"
       @click=${() => this.setPage(nextPageAfter(spec, this.page))}>Next</button>`;
     return html`<div class="page-strip">
-      <span class="page-strip-word">Page</span>
+      ${PAGES_CHIP}
       <span class="page-tabs" role="group" aria-label="Page the canvas is showing">${this.renderPageTabs(cfg)}</span>
       ${spec.mode === "tour" ? tourButton : nextButton}
       ${playing
@@ -9913,7 +9986,10 @@ export class WristAssistantPanel extends LitElement {
       this.togglePick(id);
       return;
     }
-    const ids = [...cfg.elements].filter((el) => !isAttachedTap(cfg, el)).reverse().map((el) => el.payload.id);
+    // The list's own rows, so a shift-click range can never pick a layer on a
+    // page the list is not showing.
+    const ids = elementsOnPage(cfg, cfg.elements.filter((el) => !isAttachedTap(cfg, el)), this.page)
+      .reverse().map((el) => el.payload.id);
     const a = ids.indexOf(anchor);
     const b = ids.indexOf(id);
     if (a < 0 || b < 0) {
@@ -9981,7 +10057,15 @@ export class WristAssistantPanel extends LitElement {
     // hidden row is dimmed and carries a "hidden" badge instead, so the list
     // stays a stable list of the shape's layers and the eye is a toggle rather
     // than a disappearing act.
-    const ordered = ownedElements(cfg, family).filter((el) => !isAttachedTap(cfg, el)).reverse();
+    //
+    // Pages are the one thing that does take a row out: the list shows the
+    // showing page, the way the canvas does. A layer on another page used to
+    // sit here dimmed with a "p2" badge, which made a four-page document four
+    // times the list it is and put rows in it that nothing on screen draws.
+    // The cross-links still reach those layers, and clicking one brings its
+    // page up (showPageOf), which is what puts its row back in the list.
+    const shapeRows = ownedElements(cfg, family).filter((el) => !isAttachedTap(cfg, el));
+    const ordered = elementsOnPage(cfg, shapeRows, this.page).reverse();
     const ctx = describeContext(this.host());
     const resolver = new Resolver(this.buildContext(), this.draft?.config);
     const layout = cfg.perFamily[this.activeFamily];
@@ -10000,23 +10084,12 @@ export class WristAssistantPanel extends LitElement {
     const scale = THUMB_STEPS[this.thumbStep];
     const thumbW = Math.round(THUMB_W * scale);
     const thumbH = Math.round(THUMB_H * scale);
-    // A layer pinned to another page is not in the showing page's resolve at
-    // all, so its row would carry an empty thumb. Each page that has a pinned
-    // layer is resolved once more, on demand: at most three extra resolves, and
-    // none at all on a document with no pages, which is nearly all of them.
-    const paged = usesPages(cfg);
-    const byPage = new Map<number, typeof resolved>();
-    const resolvedOn = (page: number | undefined) => {
-      if (!paged || page === undefined || page === this.page) return resolved;
-      if (!byPage.has(page)) byPage.set(page, resolveAll(cfg, { ...this.buildContext(), page }, this.forced)[family]);
-      return byPage.get(page);
-    };
-    const thumb = (ids: readonly string[], page?: number) => {
-      const face = resolvedOn(page);
-      return face
-        ? html`<span class="thumb">${renderLayerThumb(face, ids, { icons: this.icons, imageSizes: this.imageSizes, width: thumbW, height: thumbH })}</span>`
+    // One resolve for the whole list: every row it draws is on the showing
+    // page, so every thumb comes out of the same face the big preview does.
+    const thumb = (ids: readonly string[]) =>
+      resolved
+        ? html`<span class="thumb">${renderLayerThumb(resolved, ids, { icons: this.icons, imageSizes: this.imageSizes, width: thumbW, height: thumbH })}</span>`
         : html`<span class="thumb"></span>`;
-    };
     const rich = this.layerDetail === "expanded";
 
     // `held` marks a member of the selected group: the row lights up with
@@ -10027,17 +10100,11 @@ export class WristAssistantPanel extends LitElement {
       const hl = this.inspect.kind === "layer" && this.inspect.id === id;
       const eff = effectivePlacement(cfg, family, el);
       const hidden = eff.isHidden;
-      // A layer on another page stays in the list, dimmed and badged, for the
-      // same reason a hidden one does: the list is the shape's layers, and a
-      // row that vanishes when the page changes reads as a delete. Clicking it
-      // brings its page up (clickRow).
-      const page = paged ? el.payload.page : undefined;
-      const offPage = page !== undefined && page !== this.page;
       const tap = attachedTapsOf(cfg, id)[0];
       const states = statesSummary(el.payload.rules);
       const pointed = this.picking && this.pickHoverId === id;
       const d = this.rowDrag(id, edit);
-      return html`<div class="layer ${hl ? "hl" : ""} ${held ? "held" : ""} ${pointed ? "pick" : ""} ${this.dialogLitIds.includes(id) ? "lit" : ""} ${hidden || offPage ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""} ${rich ? "rich" : ""}"
+      return html`<div class="layer ${hl ? "hl" : ""} ${held ? "held" : ""} ${pointed ? "pick" : ""} ${this.dialogLitIds.includes(id) ? "lit" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""} ${rich ? "rich" : ""}"
         style=${`--k:${KIND_COLOR[el.kind]}`} tabindex="0" draggable=${d.draggable}
         @pointerenter=${() => { this.listHoverIds = [id]; }}
         @pointerleave=${() => this.leaveRow([id])}
@@ -10046,7 +10113,7 @@ export class WristAssistantPanel extends LitElement {
         @dragstart=${d.onStart} @dragend=${d.onEnd} @dragover=${d.onOver} @drop=${d.onDrop}>
         <span class="grip" title="Drag to reorder. Drop on a group to put it inside.">${uiIcon("grip")}</span>
         <span class="bar"></span>
-        ${thumb([id], page)}
+        ${thumb([id])}
         <span class="name">
           <b>${layerTitle(el, ctx)}</b>
           <small><span class="kind">${KIND_LABEL[el.kind]}</span> · ${layerMeta(el, resolver, this.historySeries, eff.size)}</small>
@@ -10057,7 +10124,6 @@ export class WristAssistantPanel extends LitElement {
             ${tap ? html`<span class="badge tap" title=${`Tappable · ${layerTitle(tap, ctx)}`}>tap</span>` : nothing}
             ${el.payload.rules.length === 0 ? nothing : html`<span class="badge states" title=${states}>${states.replace(/\.$/, "").toLowerCase()}</span>`}
             ${hidden ? html`<span class="badge">hidden</span>` : nothing}
-            ${offPage ? html`<span class="badge" title=${`On page ${page}`}>p${page}</span>` : nothing}
           </span>
           ${edit ? html`<span class="acts">
             <button class="icon" title=${`Bring forward (${KEY_MOD}])`} aria-label="Bring forward" @click=${(e: Event) => { e.stopPropagation(); move(id, 1); }}>${uiIcon("up")}</button>
@@ -10071,7 +10137,11 @@ export class WristAssistantPanel extends LitElement {
       </div>`;
     };
 
-    const groupRow = (g: LayerGroup, members: CElement[]) => {
+    // `members` is what the showing page lists, `total` what the group holds on
+    // this shape. They differ only on a paged document whose group straddles
+    // two pages: the folder then says so rather than counting its own rows and
+    // reading as a group that lost layers.
+    const groupRow = (g: LayerGroup, members: CElement[], total: number) => {
       const hl = this.inspect.kind === "group" && this.inspect.id === g.id;
       const open = !this.collapsed.has(g.id);
       const d = this.rowDrag(g.id, edit);
@@ -10124,7 +10194,9 @@ export class WristAssistantPanel extends LitElement {
         <span class="folder">${uiIcon("folder")}</span>
         <span class="name">
           <b>${g.name}</b>
-          <small><span class="kind">Group</span> · ${members.length} layer${members.length === 1 ? "" : "s"} · ${g.locked ? "locked" : "unlocked"}</small>
+          <small><span class="kind">Group</span> · ${members.length === total
+            ? `${total} layer${total === 1 ? "" : "s"}`
+            : `${members.length} of ${total} layers on this page`} · ${g.locked ? "locked" : "unlocked"}</small>
           ${rich ? html`<span class="facts"><span class="fact"><b>Holds</b> ${members.map((m) => layerTitle(m, ctx)).join(", ")}</span></span>` : nothing}
         </span>
         <span class="right">
@@ -10232,21 +10304,15 @@ export class WristAssistantPanel extends LitElement {
     // folder row goes in where its first member is met and the members
     // follow it, indented. A list's row layers follow the list the same way.
     const rows: TemplateResult[] = [];
-    const seen = new Set<string>();
-    for (let i = 0; i < ordered.length; i++) {
-      const el = ordered[i]!;
-      const gid = el.payload.groupId;
-      const g = gid === undefined ? undefined : cfg.groups?.find((x) => x.id === gid);
-      if (!g) {
-        rows.push(html`${layerRow(el, false, false, listChevron(el))}${listKids(el)}`);
+    for (const row of layerListRows(cfg, shapeRows, this.page)) {
+      if (row.kind === "layer") {
+        rows.push(html`${layerRow(row.el, false, false, listChevron(row.el))}${listKids(row.el)}`);
         continue;
       }
-      if (seen.has(g.id)) continue;
-      seen.add(g.id);
-      const members = ordered.filter((e) => e.payload.groupId === g.id);
-      rows.push(groupRow(g, members));
+      const g = row.group;
+      rows.push(groupRow(g, row.members, row.total));
       const groupHl = this.inspect.kind === "group" && this.inspect.id === g.id;
-      if (!this.collapsed.has(g.id)) rows.push(html`<div class="group-kids">${members.map((m) => html`${layerRow(m, true, groupHl, listChevron(m))}${listKids(m)}`)}</div>`);
+      if (!this.collapsed.has(g.id)) rows.push(html`<div class="group-kids">${row.members.map((m) => html`${layerRow(m, true, groupHl, listChevron(m))}${listKids(m)}`)}</div>`);
     }
 
     return html`<div class="card layers-card s${this.thumbStep}" style=${`--thumb-w:${thumbW}px;--thumb-h:${thumbH}px`}>
@@ -10254,11 +10320,13 @@ export class WristAssistantPanel extends LitElement {
         <span class="mini">top draws last</span><span class="spacer"></span>
         <span class="tool-set">
           ${usesPages(cfg)
-            // The same tabs as the strip over the canvas: the list is at the
-            // other end of the screen, and a layer on another page is only a
-            // dimmed row here until that page is showing.
-            ? html`<span class="seg page-seg" role="group" aria-label="Page the list is showing"
-                title="Which page the canvas and this list show. A layer on another page stays in the list, dimmed.">${this.renderPageTabs(cfg)}</span>`
+            // The same tabs as the strip over the canvas, under the same word,
+            // because the list is at the other end of the screen from the
+            // canvas and both show one page at a time. Bare numbers in a header
+            // full of other controls say nothing on their own, so the chip
+            // names them.
+            ? html`${PAGES_CHIP}<span class="seg page-seg" role="group" aria-label="Page the list is showing"
+                title="Which page the canvas and this list show. The list holds this page's layers and the ones on every page.">${this.renderPageTabs(cfg)}</span>`
             : nothing}
           <span class="seg" role="group" aria-label="Row detail">
             ${([["compact", "Compact rows: the name and one line about the layer"],
@@ -10289,6 +10357,12 @@ export class WristAssistantPanel extends LitElement {
           : nothing}
       ${cfg.elements.length === 0 ? html`<div class="empty">No layers yet. Add one above.</div>` : nothing}
       ${this.renderShapeIsBlank(cfg, family, edit)}
+      ${rows.length === 0 && shapeRows.length > 0 && usesPages(cfg)
+        // The shape has layers, they are all on other pages. The blank-shape
+        // card above is for a shape with nothing at all and would be a lie
+        // here, so this is one line and no card.
+        ? html`<div class="hint">Nothing is on page ${this.page} yet. Layers you add now go on it.</div>`
+        : nothing}
       <div class="layers">
       ${rows}
       </div>
