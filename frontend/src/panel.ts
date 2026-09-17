@@ -711,6 +711,24 @@ function pressInsideLayer(svg: SVGSVGElement, id: string, e: PointerEvent): bool
   const r = hit.getBoundingClientRect();
   return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
 }
+/**
+ * Run a button on the press rather than on the click.
+ *
+ * A click needs the press and the release on the same button. Under a search
+ * box whose result list closes on blur, the press itself removes the list,
+ * everything under it jumps up, and the release lands on empty air: the button
+ * is never clicked. Cancelling the press keeps the focus where it is, so the
+ * list is still open and nothing moves. The click handler stays beside it for
+ * the keyboard, which fires a click and no press at all.
+ */
+function pressed(run: () => void) {
+  return (e: PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    run();
+  };
+}
+
 /** Input types that hold no text, so nothing is lost by letting the panel's
  * own shortcuts through while one of them has the focus. */
 const NON_TEXT_INPUTS = /^(range|checkbox|radio|color|button|submit|reset|file|image)$/;
@@ -2278,12 +2296,26 @@ export class WristAssistantPanel extends LitElement {
     .card.fold .fold-h .chev svg { width: 16px; height: 16px; }
     .card.fold[data-open="true"] .fold-h .chev { transform: rotate(180deg); }
 
-    /* Two across, not three: the sample is the whole point of the expanded
-       buttons, and at a third of the column it was too small to tell a gauge
-       from a chart without reading the name under it. */
-    .add-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+    /* As many across as fit, at about half the width the cards started at.
+       The samples are drawn from a 120 unit viewBox, so a 140px card shows
+       them near their own size instead of blown up to fill half the column. */
+    .add-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
+    /* Twenty-five cards with pictures are taller than the column, so the grid
+       gets its own scroller and the rows under it stay put. The padding is
+       what keeps a focus ring, drawn as a box-shadow outside the button, from
+       being clipped by the overflow. */
+    .add-scroll {
+      max-height: min(48vh, 560px); overflow-y: auto; overscroll-behavior: contain;
+      padding: 3px; margin: -3px -3px 0; scrollbar-width: thin;
+    }
+    .add-scroll::-webkit-scrollbar { width: 8px; }
+    .add-scroll::-webkit-scrollbar-thumb { background: var(--wa-line-strong); border-radius: 999px; }
+    .add-scroll::-webkit-scrollbar-track { background: transparent; }
     /* Compact: the samples go and every card becomes one 34px line, a colour
        chip and a name, so two dozen presets scan in a column. */
+    /* Names mode has no sample to shrink, so its cards keep a width a name
+       fits in. */
+    .add-grid.lean { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
     .add-grid.lean button.add {
       flex-direction: row; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 8px;
       background: var(--wa-card); border-color: var(--wa-line);
@@ -2293,8 +2325,8 @@ export class WristAssistantPanel extends LitElement {
        and the inspector, at the size a button can spare. */
     button.add .k { width: 8px; height: 8px; border-radius: 2px; background: var(--k); flex: none; }
     button.add {
-      display: flex; flex-direction: column; align-items: stretch; gap: 7px; padding: 7px 7px 8px; border-radius: 10px;
-      font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; color: var(--wa-ink); white-space: nowrap;
+      display: flex; flex-direction: column; align-items: stretch; gap: 5px; padding: 5px 5px 6px; border-radius: 9px;
+      font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; color: var(--wa-ink); white-space: nowrap;
       background: color-mix(in srgb, var(--k) 10%, var(--wa-card)); border: 1px solid color-mix(in srgb, var(--k) 28%, transparent);
       transition: background-color .12s ease-out, border-color .12s ease-out, transform .12s ease-out, box-shadow .12s ease-out;
     }
@@ -2313,7 +2345,11 @@ export class WristAssistantPanel extends LitElement {
       box-sizing: border-box;
     }
     button.add svg.shot { display: block; width: 100%; height: 100%; }
-    button.add .add-name { display: flex; align-items: center; justify-content: center; gap: 6px; }
+    button.add .add-name { display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; }
+    /* A name too long for a half-width card is cut rather than pushing the
+       card wider. The whole name is in the button's own tooltip. */
+    button.add .add-name > span { overflow: hidden; text-overflow: ellipsis; }
+    .add-grid.lean button.add { font-size: 12.5px; }
     button.add svg.ui-icon { color: var(--k); width: 14px; height: 14px; flex: none; }
     /* The blank kinds and the saved parts: wrapped rows under the preset
        cards, each opened by a label rather than a sentence. They are the way
@@ -10016,7 +10052,7 @@ export class WristAssistantPanel extends LitElement {
       </h2>
       ${open
         ? html`
-          <div class="add-grid ${rich ? "" : "lean"}">${offered.map(presetCard)}</div>
+          <div class="add-scroll"><div class="add-grid ${rich ? "" : "lean"}">${offered.map(presetCard)}</div></div>
           <div class="presets">
             <span class="presets-l">Blank</span>
             ${kinds.map(kindChip)}
@@ -10730,8 +10766,10 @@ export class WristAssistantPanel extends LitElement {
             ...(spec.preferNumeric ? { preferNumeric: true } : {}),
           })}
         <div class="adders">
-          <button class="primary" ?disabled=${chosen === undefined} @click=${() => this.createFromPreset()}>Create</button>
-          <button class="small" @click=${() => this.closePresetDialog()}>Cancel</button>
+          <button class="primary" ?disabled=${chosen === undefined}
+            @pointerdown=${pressed(() => this.createFromPreset())} @click=${() => this.createFromPreset()}>Create</button>
+          <button class="small"
+            @pointerdown=${pressed(() => this.closePresetDialog())} @click=${() => this.closePresetDialog()}>Cancel</button>
         </div>
         <div class="hint">Picking an entity creates the preset. Escape creates nothing, and Undo removes a whole preset in one step.</div>`}
     </dialog>`;
