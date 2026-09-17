@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from .complication_store import ComplicationStore
     from .notification_snapshot import NotificationSnapshotStore
     from .notifications import NotificationTokenStore
+    from .parts_store import PartsStore
     from .snapshot_aspect_store import SnapshotAspectStore
     from .snapshot_crop_store import SnapshotCropStore
     from .snapshot_stream_store import SnapshotStreamStore
@@ -51,6 +52,9 @@ class WristAssistantData:
     # Canonical custom watch complications, scoped by owning watch. HA is the
     # only editor; the watch pulls accepted revisions itself.
     complication_store: ComplicationStore
+    # My parts: the home's saved pieces of a complication, as share text. Panel
+    # only; nothing on a watch or a phone ever reads it.
+    parts_store: PartsStore
     apns_client: APNsClient | None = field(default=None)
     # Sends a phone owner the background push a watch owner gets as a long-poll
     # wake. Built after the relay client is resolved, so it is None for the
@@ -91,6 +95,11 @@ COMPLICATION_STORAGE_VERSION = 1
 # anything about this Home Assistant.
 GALLERY_KEY_STORAGE_KEY = "wrist_assistant.gallery_key"
 GALLERY_KEY_STORAGE_VERSION = 1
+# My parts: named pieces of a complication, kept as the share text their layers
+# make. One library per home, never per watch. Written on the first save, so an
+# install that has never saved a part has no file here at all.
+PARTS_STORAGE_KEY = "wrist_assistant.parts"
+PARTS_STORAGE_VERSION = 1
 # Highest CustomComplicationConfig schemaVersion this integration can edit.
 # Must track `CustomComplicationConfig.currentSchemaVersion` in the app repo.
 # A newer document is displayed read-only and never re-saved.

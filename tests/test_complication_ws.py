@@ -188,6 +188,13 @@ def _loaded_modules():
         # Only `ws_render_values` reaches for this, and the real one pulls in
         # the whole bundle path; the name is what the import needs.
         _stub(f"{_PKG}.bundle_ops", template_text=str)
+        # The parts library has its own tests; the ws module only needs the
+        # two names to import.
+        _stub(
+            f"{_PKG}.parts_store",
+            PartsStore=type("PartsStore", (), {}),
+            PartsStoreError=type("PartsStoreError", (Exception,), {}),
+        )
 
         store_mod = _load("complication_store")
         secrets_mod = _load("widget_secret_store")

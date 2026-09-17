@@ -34,6 +34,7 @@ export interface HassLike {
 
 import { type CustomComplicationConfig, type ListRequestSpec, type OccupiedSlot, chartHistoryRequests, chartStatisticsRequests } from "./model.js";
 import { listRequests } from "./compiler.js";
+import type { SavedPart } from "./parts.js";
 import type { DeviceKind } from "./version.js";
 
 export interface OwnerSummary {
@@ -101,6 +102,25 @@ const D = "wrist_assistant/complications";
  * Made by the integration on the first request and kept after that. */
 export async function fetchGalleryKey(hass: HassLike) {
   return hass.connection.sendMessagePromise<{ key: string }>({ type: "wrist_assistant/gallery_key" });
+}
+
+/** My parts: the home's library of saved layer sets. One library per home, so
+ * none of the three takes an owner. `text` is the whole part; the panel draws
+ * its picture from that rather than the integration keeping one. */
+export async function fetchParts(hass: HassLike) {
+  return hass.connection.sendMessagePromise<{ parts: SavedPart[] }>({ type: `${D}/parts_list` });
+}
+
+/** Add a part, or replace the one with `partId`, which is how both renaming a
+ * part and saving over it are spelled. */
+export async function savePart(hass: HassLike, name: string, text: string, partId?: string) {
+  const message: Record<string, unknown> = { type: `${D}/parts_save`, name, text };
+  if (partId !== undefined) message.part_id = partId;
+  return hass.connection.sendMessagePromise<{ part: SavedPart }>(message);
+}
+
+export async function deletePart(hass: HassLike, partId: string) {
+  return hass.connection.sendMessagePromise<{ ok: boolean }>({ type: `${D}/parts_delete`, part_id: partId });
 }
 
 export async function fetchOwners(hass: HassLike) {
