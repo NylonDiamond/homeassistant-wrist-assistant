@@ -4339,11 +4339,12 @@ ${nF(d)}`}}delete s.hidden;let l=cl(a);if(l.length>0){let c=l.slice(0,3).join(",
     .demo-title { font-size: 13px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .demo-title b { color: var(--wa-ink); font-weight: 600; }
     .demo-stage { flex: 1 1 auto; min-height: 0; display: grid; place-items: center; padding: 24px; background: #000; }
-    /* The face is drawn about twice watch size: small enough to still read as a
-       wrist, big enough to aim a mouse at a tap area the size of a fingertip. */
+    /* Bigger than life but nowhere near the zoomed preview's full width: a
+       mouse needs room to aim at a tap area the size of a fingertip, and a
+       complication blown across the window stops reading as a wrist. */
     .demo-face {
       position: relative; line-height: 0; cursor: pointer;
-      width: min(440px, 100%, calc((100vh - 170px) * var(--wa-ratio, 1)));
+      width: min(640px, 62vw, 100%, calc((100vh - 190px) * var(--wa-ratio, 1)));
     }
     .demo-face svg { width: 100%; height: auto; max-width: none; display: block; }
     /* The success flash: the wash of colour the watch paints over the whole
