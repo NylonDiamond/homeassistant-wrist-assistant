@@ -2773,8 +2773,19 @@ export class WristAssistantPanel extends LitElement {
     .row-strip button:hover { filter: brightness(1.06); }
     .row-strip button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     /* The Pages card sits between Add a layer and Layers, and holds nothing
-       but its one row, so it keeps no bottom padding of its own. */
-    .pages-card { padding-bottom: 10px; }
+       but its one row, so it keeps no bottom padding of its own.
+
+       Pages are the one card with a colour of their own: the blue grey the
+       Place section already wears (SECTION_COLOR.place), which is what the
+       card's own title swatch is drawn in. The purple accent belongs to the
+       selection, and a pressed page tab is not a selected layer. The fill is
+       mixed darker than the swatch so white digits on it stay readable. */
+    .pages-card {
+      padding-bottom: 10px;
+      --wa-page: color-mix(in srgb, var(--wa-place) 72%, #0b1620);
+      --wa-page-ink: #fff;
+    }
+    :host([dark]) .pages-card { --wa-page: color-mix(in srgb, var(--wa-place) 82%, #0b1620); }
     .pages-card .panel-title { margin-bottom: 8px; }
     /* The page row: the tabs share the whole width, so two pages get two wide
        buttons and four get four narrower ones, and the row is a control in its
@@ -2782,22 +2793,33 @@ export class WristAssistantPanel extends LitElement {
     .page-row {
       display: flex; align-items: center; gap: 8px; margin: 0;
     }
-    .page-row .page-tabs { display: flex; flex: 1 1 auto; gap: 4px; min-width: 0; }
+    /* One sunken track holding every tab, the way a segmented control reads:
+       the pressed page is a raised pill inside it rather than one loose button
+       among others, so which page you are on is read from the shape as well as
+       the colour. */
+    .page-row .page-tabs {
+      display: flex; flex: 1 1 auto; gap: 3px; min-width: 0;
+      padding: 3px; border-radius: 10px;
+      background: var(--wa-panel); border: 1px solid var(--wa-line);
+    }
     .page-row .page-tabs > button, .page-row .page-tab {
       font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; flex: 1 1 0; min-width: 0;
       height: 26px; padding: 0 6px; border-radius: 7px;
-      border: 1px solid var(--wa-line); background: var(--wa-input); color: inherit;
+      border: 1px solid transparent; background: transparent; color: var(--wa-muted);
+      transition: background-color .12s ease-out, color .12s ease-out;
     }
-    .page-row .page-tabs > button.on { background: var(--wa-accent); color: var(--wa-accent-ink); border-color: transparent; }
-    .page-row .page-tabs > button:hover:not(.on) { background: var(--wa-raised); }
+    .page-row .page-tabs > button.on { background: var(--wa-page); color: var(--wa-page-ink); border-color: transparent; }
+    .page-row .page-tabs > button:hover:not(.on) { background: var(--wa-input); color: var(--wa-ink); }
     .page-row .page-tabs > button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    /* The pressed page: wider than the rest, filled in the accent, and split
-       into its number and the trash for that page. The number keeps the whole
-       left of the pill so a click anywhere on it stays a page click; only the
-       icon at the right end deletes. */
+    /* The pressed page: the same width as the rest, filled in the card's
+       colour, and split into its number and the trash for that page. Every tab
+       is one width because two pages should read as two halves of the row, not
+       as a big one and a small one. The number keeps the whole left of the pill
+       so a click anywhere on it stays a page click; only the icon at the right
+       end deletes. */
     .page-row .page-tab {
-      flex: 3 1 0; display: flex; align-items: stretch; padding: 0; overflow: hidden;
-      background: var(--wa-accent); color: var(--wa-accent-ink); border-color: transparent; cursor: default;
+      flex: 1 1 0; display: flex; align-items: stretch; padding: 0; overflow: hidden;
+      background: var(--wa-page); color: var(--wa-page-ink); border-color: transparent; cursor: default;
     }
     .page-row .page-tab button {
       font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; color: inherit;
@@ -2814,6 +2836,7 @@ export class WristAssistantPanel extends LitElement {
        of the page it deletes. */
     .page-row .page-tab .page-trash { color: #FF453A; background: var(--wa-input); }
     .page-row .page-tab .page-trash:hover { background: color-mix(in srgb, #FF453A 22%, var(--wa-input)); }
+    .page-row .page-tab .page-trash:focus-visible { outline: none; box-shadow: inset var(--wa-ring); }
     /* Armed: the trash becomes the question. Filled red and wide enough for the
        word, so the second press is plainly a different button from the first. */
     .page-row .page-tab .page-trash.armed {
@@ -2822,14 +2845,28 @@ export class WristAssistantPanel extends LitElement {
     }
     .page-row .page-tab .page-trash.armed:hover { background: color-mix(in srgb, #fff 12%, #FF453A); }
     .page-row .page-tab .page-trash .sure { font-size: 11px; font-weight: 700; letter-spacing: .01em; }
-    .page-row .page-act.page-play.on { background: var(--wa-accent); color: var(--wa-accent-ink); border-color: transparent; }
+    .page-row .page-act.page-play.on { background: var(--wa-page); color: var(--wa-page-ink); border-color: transparent; }
     .page-row .page-tab button:focus-visible { outline: none; box-shadow: inset var(--wa-ring); }
-    /* + and − beside the tabs, and Add a page in their place before there are
-       any: fixed width, so the tabs alone take the slack. */
+    /* + and Play beside the tabs, and Add a page in their place before there
+       are any: fixed width, so the tabs alone take the slack. */
     .page-row .page-act {
       font: inherit; font-size: 14px; font-weight: 700; line-height: 1; cursor: pointer; flex: none;
-      height: 26px; min-width: 26px; padding: 0 7px; border-radius: 7px;
+      height: 34px; min-width: 26px; padding: 0 7px; border-radius: 7px;
       border: 1px solid var(--wa-line); background: var(--wa-input); color: inherit;
+    }
+    /* Add a page is the one press on this row that makes something, and it was
+       a grey square the same size as a page tab, so it read as a third page.
+       It now wears the card's colour, and fills with it on hover. */
+    .page-row .page-act.page-more {
+      width: 34px; padding: 0; display: grid; place-items: center;
+      background: color-mix(in srgb, var(--wa-page) 16%, var(--wa-input));
+      border-color: color-mix(in srgb, var(--wa-page) 45%, var(--wa-line));
+      color: var(--wa-page);
+    }
+    :host([dark]) .page-row .page-act.page-more { color: color-mix(in srgb, var(--wa-place) 55%, #fff); }
+    .page-row .page-act.page-more svg.ui-icon { width: 15px; height: 15px; display: block; }
+    .page-row .page-act.page-more:hover:not(:disabled) {
+      background: var(--wa-page); border-color: transparent; color: var(--wa-page-ink);
     }
     /* Before there are any pages the card holds one button, so it is sized to
        its words and centred rather than stretched over a card's width. */
@@ -2858,18 +2895,24 @@ export class WristAssistantPanel extends LitElement {
        costs a second line, never the end of the sentence. */
     .page-fix .page-fix-pair { display: flex; gap: 6px; }
     .page-fix .page-fix-pair .page-add { flex: 1 1 0; min-width: 0; }
+    /* Centred, not left-aligned: the two sit side by side and split the row,
+       so ragged text inside them made one look longer than the other. */
     .page-fix .page-add {
-      font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; text-align: left;
-      display: flex; align-items: center; gap: 8px;
-      min-height: 30px; padding: 5px 10px; border-radius: 7px;
+      font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; text-align: center;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      min-height: 32px; padding: 5px 10px; border-radius: 8px;
       border: 1px solid var(--wa-line); background: var(--wa-input); color: inherit;
       transition: background-color .12s ease-out, border-color .12s ease-out;
     }
     /* The finger and the direction travel together in one block, so the eye
        reads "a tap, going this way" before it reads the words. */
-    .page-fix .page-add .page-add-i { flex: none; display: inline-flex; align-items: center; gap: 1px; color: var(--wa-accent); }
+    .page-fix .page-add .page-add-i { flex: none; display: inline-flex; align-items: center; gap: 1px; color: var(--wa-page); }
+    :host([dark]) .page-fix .page-add .page-add-i { color: color-mix(in srgb, var(--wa-place) 45%, #fff); }
     .page-fix .page-add svg.ui-icon { width: 15px; height: 15px; }
-    .page-fix .page-add:hover:not(:disabled) { background: var(--wa-raised); border-color: var(--wa-line-strong); }
+    .page-fix .page-add:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--wa-page) 12%, var(--wa-input));
+      border-color: color-mix(in srgb, var(--wa-page) 45%, var(--wa-line));
+    }
     .page-fix .page-add:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .page-fix .page-add:disabled { opacity: .45; cursor: default; }
     /* The tour's progress, under the Pages row: one thin bar, filled by a CSS
@@ -3400,11 +3443,15 @@ export class WristAssistantPanel extends LitElement {
     button.xtog.on { border: 1px solid transparent; background: var(--primary-color, #7c6cf0); color: #fff; }
     button.xtog:disabled { opacity: .35; cursor: not-allowed; }
     button.xtog:disabled:hover { color: var(--wa-muted); border-color: var(--wa-line-strong); }    dialog.preset-dialog {
-      width: min(420px, calc(100vw - 32px)); padding: 16px 18px 18px;
+      width: min(620px, calc(100vw - 32px)); padding: 16px 18px 18px;
       border: 1px solid var(--wa-line); border-radius: 12px;
       background: var(--wa-card); color: var(--wa-ink);
       box-shadow: 0 12px 40px rgba(0,0,0,.4);
     }
+    /* The result list is the dialog: it is the one thing being read, so it
+       takes as much of the window as the dialog's own frame leaves, instead of
+       the short list an inspector row can afford. */
+    dialog.preset-dialog .entity-results { max-height: min(62vh, 620px); }
     dialog.preset-dialog::backdrop { background: rgba(0,0,0,.45); }
     /* The dialog's one question keeps its title above the search box. */
     dialog.preset-dialog .field.entity-field { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin: 8px 0; }
@@ -6204,9 +6251,9 @@ export class WristAssistantPanel extends LitElement {
       <span class="page-tabs" role="group" aria-label="Page the list is showing">${this.renderPageTabs(cfg, { trash: edit })}</span>
       ${tourButton}
       ${edit ? html`
-        <button class="page-act" ?disabled=${full}
+        <button class="page-act page-more" ?disabled=${full} aria-label="Add a page"
           title=${full ? "Four pages is the most a complication can have." : "Add an empty page after the last one."}
-          @click=${() => { let page: number | undefined; this.mutate((c) => { page = addPage(c); }); if (page !== undefined) this.showPage(page); }}>+</button>` : nothing}
+          @click=${() => { let page: number | undefined; this.mutate((c) => { page = addPage(c); }); if (page !== undefined) this.showPage(page); }}>${uiIcon("plus")}</button>` : nothing}
     </div>
     ${playing
       // Keyed on the run so a second press starts the bar over: a CSS
@@ -10650,6 +10697,15 @@ export class WristAssistantPanel extends LitElement {
    * A native dialog brings the backdrop, the focus trap and Escape with it;
    * Escape reaches the entity search first, so the first press closes the
    * result list and the second closes the dialog.
+   *
+   * Answering the question builds the preset on the spot. The entity is the
+   * only thing asked for, so a Create press after it would be a second click
+   * for a question already answered. Only a real answer counts: a click or
+   * Enter on a result, or Enter on an id typed in full. Leaving the box
+   * (`blur`) commits the same text but is not an answer, because a click on
+   * Cancel blurs the box first, and that must still create nothing. Create
+   * stays for that one path, where the field holds an entity and no preset
+   * was built.
    */
   private renderPresetDialog() {
     const spec = this.presetKind ? presetSpec(this.presetKind) : undefined;
@@ -10660,7 +10716,10 @@ export class WristAssistantPanel extends LitElement {
         <h2>${spec.title}</h2>
         <div class="hint">${spec.blurb}</div>
         ${entityField(this.host(), "Entity", chosen ?? { entityId: "", displayName: "", domain: "" },
-          (ref) => { this.presetEntity = ref.entityId === "" ? undefined : ref; },
+          (ref, source) => {
+            this.presetEntity = ref.entityId === "" ? undefined : ref;
+            if (this.presetEntity && (source === "pick" || source === "typed")) this.createFromPreset();
+          },
           PRESET_ENTITY_KEY,
           {
             compact: true,
@@ -10671,7 +10730,7 @@ export class WristAssistantPanel extends LitElement {
           <button class="primary" ?disabled=${chosen === undefined} @click=${() => this.createFromPreset()}>Create</button>
           <button class="small" @click=${() => this.closePresetDialog()}>Cancel</button>
         </div>
-        <div class="hint">Escape creates nothing, and Undo removes a whole preset in one step.</div>`}
+        <div class="hint">Picking an entity creates the preset. Escape creates nothing, and Undo removes a whole preset in one step.</div>`}
     </dialog>`;
   }
 

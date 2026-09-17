@@ -1272,6 +1272,17 @@ export function entitySearchOpen(key: string): boolean {
 }
 
 /**
+ * How an entity reached the field, for the callers that care.
+ *
+ * `pick` and `typed` are the two ways a person answers the question: a click
+ * or Enter on a result, and Enter on an id typed in full. `blur` is the same
+ * commit made by leaving the box, which is not an answer: the preset dialog
+ * builds on an answer, and a blur is what a click on Cancel does first.
+ * `clear` is the x, which empties the field.
+ */
+export type EntityPickSource = "pick" | "typed" | "blur" | "clear";
+
+/**
  * A search field over every entity: type part of a friendly name or part of an
  * id, arrow keys to move, Enter to take the highlighted row. Picking writes the
  * id, the friendly name and the domain together, which is what every caller
@@ -1281,7 +1292,7 @@ export function entitySearchOpen(key: string): boolean {
  * dialog asks for entities while no complication is open and so has no draft
  * to build a whole host from.
  */
-export function entityField(host: Pick<EditorHost, "hass">, label: string, ref: EntityRef, set: (ref: EntityRef) => void, key: string, opts: EntityFieldOptions = {}): TemplateResult {
+export function entityField(host: Pick<EditorHost, "hass">, label: string, ref: EntityRef, set: (ref: EntityRef, source?: EntityPickSource) => void, key: string, opts: EntityFieldOptions = {}): TemplateResult {
   const states = host.hass.states;
   const search = entitySearches.get(key);
   const results = search
@@ -1298,12 +1309,12 @@ export function entityField(host: Pick<EditorHost, "hass">, label: string, ref: 
     entitySearches.delete(key);
     requestRerender(target);
   };
-  const commitText = (text: string) => {
+  const commitText = (text: string, source: EntityPickSource) => {
     const next = commitTypedEntity(text, ref, states);
-    if (next) set(next);
+    if (next) set(next, source);
   };
   const pick = (choice: EntityChoice, target: EventTarget | null) => {
-    set(entityRefFrom(states, choice.entityId));
+    set(entityRefFrom(states, choice.entityId), "pick");
     close(target);
   };
 
@@ -1326,7 +1337,7 @@ export function entityField(host: Pick<EditorHost, "hass">, label: string, ref: 
       e.preventDefault();
       const choice = results[liveIndex()];
       if (search && choice) pick(choice, el);
-      else { commitText(el.value); close(el); }
+      else { commitText(el.value, "typed"); close(el); }
       return;
     }
     if (e.key === "Escape") {
@@ -1368,7 +1379,7 @@ export function entityField(host: Pick<EditorHost, "hass">, label: string, ref: 
       ${clearable ? html`<button type="button" class="ent-clear" title="Remove entity" aria-label="Remove entity"
         @click=${(e: MouseEvent) => {
           const fieldEl = (e.currentTarget as HTMLElement).closest(".entity-field");
-          set({ entityId: "", displayName: "", domain: "" });
+          set({ entityId: "", displayName: "", domain: "" }, "clear");
           requestRerender(fieldEl);
         }}>${uiIcon("close")}</button>` : nothing}
     </div>`;
@@ -1381,7 +1392,7 @@ export function entityField(host: Pick<EditorHost, "hass">, label: string, ref: 
         @focus=${(e: FocusEvent) => { const el = e.target as HTMLInputElement; open(el, entitySearches.get(key)?.query ?? ""); }}
         @input=${(e: Event) => { const el = e.target as HTMLInputElement; open(el, el.value); }}
         @keydown=${onKey}
-        @blur=${(e: FocusEvent) => { const el = e.target as HTMLInputElement; if (search) commitText(el.value); close(el); }} />
+        @blur=${(e: FocusEvent) => { const el = e.target as HTMLInputElement; if (search) commitText(el.value, "blur"); close(el); }} />
     </div>`;
 
   // The anchor holds the control and its result list, so the list can float
