@@ -603,6 +603,11 @@ const THUMB_H = 22;
  * is the size the list has always used; the other two are for reading a busy
  * layer without opening the big preview. */
 const THUMB_STEPS = [1, 1.7, 2.6] as const;
+/** How long the page trash stays armed after the first press, in ms. Long
+ * enough to read the word and press again, short enough that the button is
+ * back to its harmless self before the author looks away. */
+const PAGE_TRASH_ARM_MS = 4000;
+
 const THUMB_STEP_LABEL = ["S", "M", "L"] as const;
 const THUMB_STEP_TITLE = ["Small", "Medium", "Large"] as const;
 
@@ -1269,6 +1274,13 @@ export class WristAssistantPanel extends LitElement {
   @state() private conflict?: Conflict;
   @state() private remoteRevision?: number;
   @state() private confirmDelete = false;
+  /** The page whose trash is armed. The first press asks, the second deletes.
+   * A page takes its layers with it, so one stray click should not do it, and a
+   * dialog for a control this small is heavier than the act. It clears itself
+   * after a few seconds and whenever the page changes, so a press left behind
+   * cannot delete a page minutes later. */
+  @state() private pageTrashArm?: number;
+  private pageTrashTimer?: number;
   @state() private moveTarget?: string;
   @state() private moving = false;
   @state() private moveError?: string;
@@ -2793,6 +2805,14 @@ export class WristAssistantPanel extends LitElement {
        of the page it deletes. */
     .page-row .page-tab .page-trash { color: #FF453A; background: var(--wa-input); }
     .page-row .page-tab .page-trash:hover { background: color-mix(in srgb, #FF453A 22%, var(--wa-input)); }
+    /* Armed: the trash becomes the question. Filled red and wide enough for the
+       word, so the second press is plainly a different button from the first. */
+    .page-row .page-tab .page-trash.armed {
+      width: auto; padding: 0 8px; background: #FF453A; color: #fff;
+      border-left-color: color-mix(in srgb, #fff 35%, transparent);
+    }
+    .page-row .page-tab .page-trash.armed:hover { background: color-mix(in srgb, #fff 12%, #FF453A); }
+    .page-row .page-tab .page-trash .sure { font-size: 11px; font-weight: 700; letter-spacing: .01em; }
     .page-row .page-act.page-play.on { background: var(--wa-accent); color: var(--wa-accent-ink); border-color: transparent; }
     .page-row .page-tab button:focus-visible { outline: none; box-shadow: inset var(--wa-ring); }
     /* + and − beside the tabs, and Add a page in their place before there are
@@ -5241,6 +5261,7 @@ export class WristAssistantPanel extends LitElement {
     const next = Math.min(Math.max(Math.trunc(page) || 1, 1), count);
     if (next === this.page) return;
     this.page = next;
+    this.disarmPageTrash();
     if (!keepSelection) this.dropOffPageSelection();
   }
 
@@ -5248,7 +5269,21 @@ export class WristAssistantPanel extends LitElement {
    * during a tour takes over, the same rule the watch follows. */
   private setPage(page: number) {
     this.stopTour();
+    this.disarmPageTrash();
     this.showPage(page);
+  }
+
+  /** Ask before deleting a page: the trash reads "sure?" until it is pressed
+   * again, or until this runs out. */
+  private armPageTrash(page: number) {
+    window.clearTimeout(this.pageTrashTimer);
+    this.pageTrashArm = page;
+    this.pageTrashTimer = window.setTimeout(() => { this.pageTrashArm = undefined; }, PAGE_TRASH_ARM_MS);
+  }
+
+  private disarmPageTrash() {
+    window.clearTimeout(this.pageTrashTimer);
+    this.pageTrashArm = undefined;
   }
 
   /** Drop anything selected that the showing page does not draw. Layers of the
@@ -6089,8 +6124,16 @@ export class WristAssistantPanel extends LitElement {
       const gone = spec.count > 2
         ? `Delete page ${page} and the ${count === 1 ? "layer" : `${count} layers`} on it. Later pages move down one. Layers on every page stay.`
         : `Delete page ${page} and the ${count === 1 ? "layer" : `${count} layers`} on it, which turns pages off. Layers on every page stay.`;
-      return html`<span class="page-tab on">${tab}<button class="page-trash" title=${gone} aria-label=${gone}
-        @click=${() => { this.mutate((c) => { removePage(c, page); }); this.showPage(Math.max(1, page - 1)); }}>${uiIcon("delete")}</button></span>`;
+      const armed = this.pageTrashArm === page;
+      const ask = `Press again to delete page ${page}.`;
+      return html`<span class="page-tab on">${tab}<button class="page-trash ${armed ? "armed" : ""}"
+        title=${armed ? ask : gone} aria-label=${armed ? ask : gone}
+        @click=${() => {
+          if (!armed) { this.armPageTrash(page); return; }
+          this.disarmPageTrash();
+          this.mutate((c) => { removePage(c, page); });
+          this.showPage(Math.max(1, page - 1));
+        }}>${armed ? html`<span class="sure">sure?</span>` : uiIcon("delete")}</button></span>`;
     });
   }
 
@@ -6287,7 +6330,7 @@ export class WristAssistantPanel extends LitElement {
       ["Turning pages on", "Add a page in the Pages card, between Add a layer and Layers. What you have now becomes page 1 and an empty page 2 opens. To turn pages off again, delete pages with the trash until one is left."],
       ["One page at a time", "The canvas and the Layers card show one page. The Pages card above the list says which, and clicking a number switches both. [ and ] do the same from the keyboard."],
       ["Which page a layer is on", "Each layer sits on one page or on every page. Set it on the layer, in its Position card. A layer you add lands on the page you are looking at. A background, a border or a label that belongs everywhere goes on Every page."],
-      ["+ and the trash", "In the Pages card. + adds an empty page at the end, up to four. The trash on the pressed page deletes that page and the layers on it; later pages move down one, and layers on every page stay. Undo puts it back."],
+      ["+ and the trash", "In the Pages card. + adds an empty page at the end, up to four. The trash on the pressed page deletes that page and the layers on it; it asks first, so press it once for \"sure?\" and again to delete. Later pages move down one, layers on every page stay, and undo puts it back."],
       ["Moving between pages on the watch", "A tap has to say so. Set the complication's tap action, or a tap layer's, to Next page or Previous page. A tap with any other action does its own job and leaves the page alone, so a page can still hold buttons. The page stays where it was left."],
       ["The tour", "Set a tap action to Play the page tour and one tap plays every page once, then returns to page 1. The Pages card then shows a hold time per page; a tour lasts the sum of them. The Play button in the Pages card plays it on the canvas with the same timing. A tap during a tour on the watch stops it."],
       ["What the watch needs", "A complication with pages needs the Wrist Assistant app that understands them. An older app refuses the whole complication and asks for an update rather than drawing every page on top of each other."],
