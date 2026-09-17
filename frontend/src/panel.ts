@@ -147,6 +147,7 @@ import {
   controlHeadline,
   controlStateWord,
   controlStatusShows,
+  type ControlTileHost,
   controlTile,
   controlTileShapes,
   describeContext,
@@ -574,6 +575,8 @@ function pickTick(): TemplateResult {
  * shape art beside it, which is 16px tall; a tile this small draws its symbol
  * alone, so it reads as a control without pretending to be readable. */
 const CONTROL_TAB_TILE_SIDE = 20;
+/** The tile height in a picker row, sized to the row picture that holds it. */
+const CONTROL_ROW_TILE_SIDE = 38;
 
 const COL_LEFT_DEFAULT = 300;
 const COL_RIGHT_DEFAULT = 360;
@@ -850,6 +853,20 @@ export class WristAssistantPanel extends LitElement {
    * picker stays open across the switch, so without this the pane beside the
    * device list would show the previous device's rows until the reply landed. */
   @state() private ownerBusy = false;
+  /**
+   * The device whose complications the picker is listing, when that is not the
+   * device the editor is on. Undefined the rest of the time.
+   *
+   * Clicking a device in the picker only changes what the picker lists: the
+   * editor keeps the complication it had open, because looking at what another
+   * device holds is not the same as deciding to leave the one you are editing.
+   * The editor moves when a complication is picked, and not before.
+   */
+  @state() private browseOwnerId?: string;
+  /** The browsed device's own list, fetched for the picker alone. */
+  @state() private browseList?: { records: ComplicationRecord[]; occupied: OccupiedSlot[] };
+  /** Why the browsed device's list could not be fetched. */
+  @state() private browseError?: string;
   /** Entity states typed in under the preview, standing in for the live ones
    * so the other states can be seen without waiting for the house. Never
    * saved; cleared by Back to live. */
@@ -1532,6 +1549,10 @@ export class WristAssistantPanel extends LitElement {
       border-radius: 999px; background: #000; color: #fff; overflow: hidden; white-space: nowrap;
     }
     .pk-art .inline-line svg { background: transparent; border-radius: 0; }
+    /* A control draws a Control Center tile, not a face, so the face rules on
+       the picture's svg (a black card with rounded corners) must not reach the
+       symbol inside it. */
+    .pk-art.control-tile svg { background: transparent; border-radius: 0; max-height: none; }
     /* Shape filter, only drawn once the list is long. */
     .pk-filter { display: flex; gap: 4px; flex-wrap: wrap; padding: 4px 6px 8px; border-bottom: 1px solid var(--wa-line); margin-bottom: 6px; }
     .pk-chip {
@@ -6590,10 +6611,12 @@ export class WristAssistantPanel extends LitElement {
    * but hiding them is what used to make slots look haunted. A preset whose
    * slot a record already holds has moved here and is left out. */
   private pickerRows(): PickerRow[] {
-    const records = this.records.map((r): PickerRow => ({ slot: Number(r.document?.slotIndex ?? 0), kind: "record", record: r }));
+    const source = this.browsing ? this.browseList : undefined;
+    const records = (source ? source.records : this.records)
+      .map((r): PickerRow => ({ slot: Number(r.document?.slotIndex ?? 0), kind: "record", record: r }));
     const rows: PickerRow[] = [
       ...records,
-      ...lockedOccupied(records.map((r) => r.slot), this.occupied).map((o): PickerRow => o.kind === "custom"
+      ...lockedOccupied(records.map((r) => r.slot), source ? source.occupied : this.occupied).map((o): PickerRow => o.kind === "custom"
         ? {
           slot: o.slot,
           kind: "locked",
@@ -6618,13 +6641,13 @@ export class WristAssistantPanel extends LitElement {
    * no shape at all has a control and nothing else, so the word stands where
    * the dots would: a row of dots with none lit would read as a complication
    * that draws nothing. */
-  private shapeDots(families: readonly string[], control = false) {
+  private shapeDots(families: readonly string[], control = false, against: readonly FamilyKind[] = this.ownerFamilies) {
     if (families.length === 0 && control) {
       return html`<span class="shape-none" title="A control in Control Center, and no widget">Control</span>`;
     }
     // Biggest first, so a row of dots and the shape bar under it read left to
     // right in the same order.
-    return html`<span class="shape-dots">${biggestFirst(this.ownerFamilies).map((f) => html`<span class="shape-dot ${f} ${families.includes(f) ? "on" : ""}" title=${familyTitle(f)}></span>`)}</span>`;
+    return html`<span class="shape-dots">${biggestFirst(against).map((f) => html`<span class="shape-dot ${f} ${families.includes(f) ? "on" : ""}" title=${familyTitle(f)}></span>`)}</span>`;
   }
 
   /** The shape filter appears only past this many rows. Under it the whole
@@ -6659,46 +6682,66 @@ export class WristAssistantPanel extends LitElement {
     const entry = this.recordPreview(record);
     if (!entry) return html`<span class="pk-art"></span>`;
     const cfg = entry.config;
-    // A document with no shape has no picture: the row says "Control" where
-    // the shape dots go, and a face drawn empty would only look broken.
-    if (cfg.supportedFamilies.length === 0) return html`<span class="pk-art"></span>`;
+    // A document with no shape has no face to draw, but a control-only one is
+    // not nothing: it draws the Control Center tile the device draws, from the
+    // same `controlTile` the card and the canvas tab use, so the row shows the
+    // real symbol and tint rather than a blank box beside the word Control.
+    if (cfg.supportedFamilies.length === 0) {
+      if (!cfg.control) return html`<span class="pk-art"></span>`;
+      const shape = controlTileShapes(deviceKindOf(this.pickerOwner))[0]!;
+      const tile = controlTile(this.tileHost(cfg, entry.entities), cfg.control, shape, CONTROL_ROW_TILE_SIDE);
+      return html`<span class="pk-art control-tile">${tile}</span>`;
+    }
     // With a filter on, every row draws the shape being filtered for, so the
     // pictures answer the question the filter asked.
     const filtered = this.pickerFilter !== "all" && cfg.supportedFamilies.includes(this.pickerFilter)
       ? this.pickerFilter
       : undefined;
     const family = filtered ?? firstDrawable(cfg) ?? "inline";
-    return this.renderConfigArts(cfg, entry.entities, [family], "pk-art")[0]!;
+    return this.renderConfigArts(cfg, entry.entities, [family], "pk-art", undefined, this.pickerReferenceCase)[0]!;
   }
 
   /** Shapes of a document drawn small, one picture each, from the live states
    * of the entities it reads. The picker rows and the import preview both use
    * it; a class beyond `pk-art` sizes the picture for its place. */
-  private renderConfigArts(cfg: CustomComplicationConfig, entities: readonly EntityRef[], families: readonly FamilyKind[], cls: string, historySeries?: Map<string, string>): TemplateResult[] {
+  private renderConfigArts(cfg: CustomComplicationConfig, entities: readonly EntityRef[], families: readonly FamilyKind[], cls: string, historySeries?: Map<string, string>, reference: PreviewCase = this.referenceCase): TemplateResult[] {
     const layouts = this.configLayouts(cfg, entities, historySeries);
     return families.map((family) => {
       if (family === "inline") return html`<span class="${cls} inline">${this.renderInlinePreview(layouts.inline, true)}</span>`;
       const layout = layouts[family];
       if (!layout) return html`<span class=${cls}></span>`;
-      return html`<span class="${cls} ${family}">${renderLayout(layout, { icons: this.icons, imageSizes: this.imageSizes, slot: slotFor(this.referenceCase, family) })}</span>`;
+      return html`<span class="${cls} ${family}">${renderLayout(layout, { icons: this.icons, imageSizes: this.imageSizes, slot: slotFor(reference, family) })}</span>`;
     });
   }
 
   /** A document that is not the open one, resolved from the live states of
    * the entities it reads. Templates are not rendered for it. */
   private configLayouts(cfg: CustomComplicationConfig, entities: readonly EntityRef[], historySeries?: Map<string, string>): ResolvedAll {
+    return resolveAll(cfg, this.configContext(cfg, entities, historySeries));
+  }
+
+  /** What one complication resolves against when it is drawn small and is not
+   * the one being edited: its own entities read live, and nothing fetched. */
+  private configContext(cfg: CustomComplicationConfig, entities: readonly EntityRef[], historySeries?: Map<string, string>): ResolveContext {
     const entityStates = new Map<string, EntityState>();
     for (const ref of entities) {
       const state = this.entityStateFor(ref.entityId, ref.iconName ?? "", false);
       if (state) entityStates.set(ref.entityId, state);
     }
-    return resolveAll(cfg, {
+    return {
       entityStates,
       templateResults: new Map(),
       // Only the import preview fetches any; a picker row's chart draws empty.
       ...(historySeries ? { historySeries } : {}),
       namedValues: cfg.values,
-    });
+    };
+  }
+
+  /** A host for a Control Center tile of a complication that has no draft
+   * behind it: enough for `controlTile`, and nothing it cannot answer. */
+  private tileHost(cfg: CustomComplicationConfig, entities: readonly EntityRef[]): ControlTileHost {
+    const context = this.configContext(cfg, entities);
+    return { config: cfg, icons: this.icons, resolveContext: () => context };
   }
 
   /** The shape chips above the list. Each one carries its own count, so a
@@ -6711,7 +6754,7 @@ export class WristAssistantPanel extends LitElement {
       @click=${() => { this.pickerFilter = key; }}>${label}<span class="pk-count">${count}</span></button>`;
     return html`<div class="pk-filter">
       ${chip("all", "All", rows.length)}
-      ${this.ownerFamilies.map((f) => chip(f, familyTitle(f), rows.filter((r) => familiesOfRow(r).includes(f)).length))}
+      ${this.pickerFamilies.map((f) => chip(f, familyTitle(f), rows.filter((r) => familiesOfRow(r).includes(f)).length))}
     </div>`;
   }
 
@@ -6729,6 +6772,95 @@ export class WristAssistantPanel extends LitElement {
    * answer to that pick, and a device with nothing on it says so there rather
    * than looking like a dead end.
    */
+  /** Whether the picker is listing a device other than the one being edited. */
+  private get browsing(): boolean {
+    return this.browseOwnerId !== undefined && this.browseOwnerId !== this.ownerId;
+  }
+
+  /** The device the picker's right pane is about: the browsed one, or the one
+   * the editor is on. Everything the pane says about a device reads from this,
+   * so a watch's list is never described in a phone's words. */
+  private get pickerOwner(): OwnerSummary | undefined {
+    if (this.browsing) return this.owners.find((o) => o.owner_watch_id === this.browseOwnerId);
+    return this.selectedOwner;
+  }
+
+  private get pickerFamilies(): FamilyKind[] {
+    return familiesFor(this.pickerOwner);
+  }
+
+  private get pickerDeviceWord(): string {
+    return deviceNoun(this.pickerOwner);
+  }
+
+  private get pickerReferenceCase(): PreviewCase {
+    return deviceKindOf(this.pickerOwner) === "iphone" ? REFERENCE_PHONE : REFERENCE_CASE;
+  }
+
+  /**
+   * List another device's complications in the picker, without moving the
+   * editor onto it.
+   *
+   * The reply is kept apart from `records`, which stays the edited device's,
+   * and a second pick while this one is out wins: the guard is the id rather
+   * than a flag, so a slow reply for a device nobody is looking at any more
+   * lands nowhere.
+   */
+  private async browseDevice(ownerId: string) {
+    this.pickerConfirmDelete = undefined;
+    this.pickerFilter = "all";
+    this.browseError = undefined;
+    if (ownerId === this.ownerId) {
+      this.browseOwnerId = undefined;
+      this.browseList = undefined;
+      return;
+    }
+    this.browseOwnerId = ownerId;
+    this.browseList = undefined;
+    this.ownerBusy = true;
+    try {
+      const reply = await fetchList(this.hass, ownerId);
+      if (this.browseOwnerId !== ownerId) return;
+      this.browseList = {
+        records: reply.records,
+        occupied: reply.occupied
+          ?? (reply.presets ?? []).map((p): OccupiedSlot => ({ slot: p.slot, name: p.name, kind: "preset", home: "" })),
+      };
+    } catch (err) {
+      if (this.browseOwnerId === ownerId) this.browseError = errText(err);
+    } finally {
+      if (this.browseOwnerId === ownerId) this.ownerBusy = false;
+    }
+  }
+
+  /** Open a complication from the picker. This is the click that moves the
+   * editor: a browsed device becomes the edited one here and nowhere else. */
+  private async openFromPicker(record: ComplicationRecord) {
+    const target = this.browseOwnerId;
+    this.togglePicker(false);
+    if (target === undefined || target === this.ownerId) {
+      this.selectRecord(record);
+      return;
+    }
+    await this.selectOwner(target);
+    // A dirty draft the owner switch asked about and was told to keep leaves
+    // the editor where it was, so there is nothing to open.
+    if (this.ownerId !== target) return;
+    // Prefer the copy the switch just loaded: it carries the current revision.
+    this.selectRecord(this.records.find((r) => r.id === record.id) ?? record);
+  }
+
+  /** New from inside the picker, on the device the picker is showing. */
+  private async newFromPicker() {
+    const target = this.browseOwnerId;
+    this.togglePicker(false);
+    if (target !== undefined && target !== this.ownerId) {
+      await this.selectOwner(target);
+      if (this.ownerId !== target) return;
+    }
+    this.openNewDialog();
+  }
+
   private renderPicker() {
     const d = this.draft;
     const name = d ? (d.config.name.trim() || "Untitled") : "No complication";
@@ -6774,12 +6906,12 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private renderPickerDevice(owner: OwnerSummary) {
-    const open = owner.owner_watch_id === this.ownerId;
+    const open = owner.owner_watch_id === (this.browseOwnerId ?? this.ownerId);
     const lines = ownerLines(owner);
     const count = owner.complication_count;
     return html`<button type="button" class="pk-dev ${open ? "on" : ""} ${count === 0 ? "bare" : ""}"
       role="option" aria-selected=${open ? "true" : "false"}
-      @click=${() => { if (!open) void this.selectOwner(owner.owner_watch_id); }}>
+      @click=${() => void this.browseDevice(owner.owner_watch_id)}>
       <span class="pk-dev-ico">${uiIcon(deviceKindOf(owner) === "iphone" ? "phone" : "watch")}</span>
       <span class="pk-dev-meta">
         <span class="pk-dev-name">${lines.name}</span>
@@ -6806,19 +6938,21 @@ export class WristAssistantPanel extends LitElement {
     return html`<div class="pk-comps">
       ${!this.ownerBusy && all.length >= WristAssistantPanel.FILTER_FROM_ROWS ? this.renderPickerFilter(all) : nothing}
       <div class="pk-rows">
-        ${this.ownerBusy
+        ${this.browseError !== undefined
+          ? html`<div class="empty">Could not load that device: ${this.browseError}</div>`
+          : this.ownerBusy
           ? html`<div class="empty">Loading…</div>`
-          : html`${all.length === 0 && !(d && d.baseRevision === null) ? html`<div class="empty">No complications for this ${this.deviceWord} yet.</div>` : nothing}
-            ${all.length > 0 && rows.length === 0 ? html`<div class="empty">Nothing on this ${this.deviceWord} has a ${filter === "all" ? "" : familyTitle(filter)} shape.</div>` : nothing}
+          : html`${all.length === 0 && !(d && d.baseRevision === null && !this.browsing) ? html`<div class="empty">No complications for this ${this.pickerDeviceWord} yet.</div>` : nothing}
+            ${all.length > 0 && rows.length === 0 ? html`<div class="empty">Nothing on this ${this.pickerDeviceWord} has a ${filter === "all" ? "" : familyTitle(filter)} shape.</div>` : nothing}
             ${split.shown.map((row) => this.renderPickerRow(row))}
-            ${d && d.baseRevision === null ? html`<div class="row" aria-current="true"><span class="pk-art"></span><span class="pk-name">${name}</span>${this.shapeDots(families, d.config.control !== undefined)}<span class="pk-badge">unsaved</span></div>` : nothing}
+            ${d && d.baseRevision === null && !this.browsing ? html`<div class="row" aria-current="true"><span class="pk-art"></span><span class="pk-name">${name}</span>${this.shapeDots(families, d.config.control !== undefined)}<span class="pk-badge">unsaved</span></div>` : nothing}
             ${split.hidden.length > 0 ? html`
               <button type="button" class="pk-hidden-head" aria-expanded=${this.pickerHiddenOpen ? "true" : "false"}
                 @click=${() => { this.pickerHiddenOpen = !this.pickerHiddenOpen; }}>
                 ${uiIcon("chevron")}<span>Hidden (${split.hidden.length})</span>
               </button>
               ${this.pickerHiddenOpen ? html`
-                <div class="pk-note">These do not show in the ${this.deviceWord}'s own list of complications. A face or widget that already has one keeps it.</div>
+                <div class="pk-note">These do not show in the ${this.pickerDeviceWord}'s own list of complications. A face or widget that already has one keeps it.</div>
                 ${split.hidden.map((row) => this.renderPickerRow(row))}` : nothing}` : nothing}`}
       </div>
       ${this.renderPickerFoot(all.filter((row) => row.kind === "record").length)}
@@ -6834,14 +6968,18 @@ export class WristAssistantPanel extends LitElement {
    * inches to the left. */
   private renderPickerFoot(count: number) {
     if (!this.hass.user?.is_admin) return nothing;
-    const full = this.freeSlot() < 0;
+    // A browsed device answers about its own slots: New here makes one there.
+    const browsed = this.browsing ? this.browseList : undefined;
+    const full = browsed
+      ? freeSlotFrom(browsed.records.map((r) => Number(r.document?.slotIndex ?? -1)), browsed.occupied) < 0
+      : this.freeSlot() < 0;
     return html`<div class="pk-foot">
       <span class="pk-foot-hint">${this.ownerBusy
         ? nothing
-        : `${count} complication${count === 1 ? "" : "s"} on this ${this.deviceWord}`}</span>
+        : `${count} complication${count === 1 ? "" : "s"} on this ${this.pickerDeviceWord}`}</span>
       <button type="button" class="new-btn primary" ?disabled=${full || this.ownerBusy}
-        title=${full ? `This ${this.deviceWord} has no free slot. Delete a complication first.` : `Make a new complication on this ${this.deviceWord}`}
-        @click=${() => { this.togglePicker(false); this.openNewDialog(); }}>${uiIcon("plus")}<span>New here</span></button>
+        title=${full ? `This ${this.pickerDeviceWord} has no free slot. Delete a complication first.` : `Make a new complication on this ${this.pickerDeviceWord}`}
+        @click=${() => void this.newFromPicker()}>${uiIcon("plus")}<span>New here</span></button>
     </div>`;
   }
 
@@ -6853,28 +6991,28 @@ export class WristAssistantPanel extends LitElement {
           @click=${() => { this.pickerNote = this.pickerNote === row.slot ? undefined : row.slot; }}>
           <span class="pk-art"></span>
           <span class="pk-name">${row.name}</span>
-          ${this.shapeDots(row.families)}
+          ${this.shapeDots(row.families, false, this.pickerFamilies)}
           <span class="pk-badge">${row.badge}</span>
         </button>
         ${this.pickerNote === row.slot ? html`<div class="pk-note">${row.title}</div>` : nothing}`;
     }
     const record = row.record;
-    const open = record.id === this.selectedId;
+    const open = !this.browsing && record.id === this.selectedId;
     const hidden = this.rowHidden(record);
     const recName = String(record.document?.name ?? "Untitled");
     // The open complication goes through the inspector's own Delete, so an
     // unsaved draft and a conflict behave the same from either place. Hide
     // follows the same split: the open one through its draft, others at once.
-    const mayDelete = open ? this.canEdit : !!this.hass.user?.is_admin;
+    const mayDelete = this.browsing ? false : open ? this.canEdit : !!this.hass.user?.is_admin;
     const mayHide = mayDelete;
     const confirming = this.pickerConfirmDelete === record.id;
     const stop = (e: Event) => e.stopPropagation();
     return html`<div class="row rec ${hidden ? "dim" : ""}" aria-current=${open ? "true" : "false"}>
       <button type="button" class="pick" role="option" aria-selected=${open ? "true" : "false"}
-        @click=${() => { this.togglePicker(false); this.selectRecord(record); }}>
+        @click=${() => void this.openFromPicker(record)}>
         ${this.renderRowArt(record)}
         <span class="pk-name">${recName}</span>
-        ${this.shapeDots(familiesOf(record), hasControlOf(record))}
+        ${this.shapeDots(familiesOf(record), hasControlOf(record), this.pickerFamilies)}
       </button>
       <span class="pk-acts">
         ${confirming
@@ -6973,6 +7111,9 @@ export class WristAssistantPanel extends LitElement {
 
   private togglePicker(next = !this.pickerOpen) {
     this.pickerOpen = next;
+    this.browseOwnerId = undefined;
+    this.browseList = undefined;
+    this.browseError = undefined;
     if (!next) {
       this.pickerNote = undefined;
       this.pickerConfirmDelete = undefined;

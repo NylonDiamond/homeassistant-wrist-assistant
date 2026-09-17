@@ -4076,7 +4076,15 @@ function tilePaint(shape: ControlTileShape, control: ResolvedControl): TilePaint
  * Nothing at all until there is a context to resolve in, the same as a face
  * preview before the first template answer lands.
  */
-export function controlTile(host: EditorHost, spec: ControlSpec, shape: ControlTileShape, side = CONTROL_TILE_SIDE): TemplateResult | typeof nothing {
+/**
+ * The little a tile needs from its host: the document it belongs to, symbols to
+ * draw with, and a context to resolve in. An `EditorHost` has all three, and so
+ * does the throwaway the picker builds for a complication it is only listing,
+ * which has no draft behind it and never will unless it is opened.
+ */
+export type ControlTileHost = Pick<EditorHost, "config" | "icons"> & Pick<EditorHost, "resolveContext">;
+
+export function controlTile(host: ControlTileHost, spec: ControlSpec, shape: ControlTileShape, side = CONTROL_TILE_SIDE): TemplateResult | typeof nothing {
   const context = host.resolveContext?.();
   if (context === undefined) return nothing;
   const control = resolveControl(spec, context, host.config);
