@@ -285,7 +285,7 @@ import {
   PAGE_DEFAULT_DWELL,
   PAGE_DWELL_RANGE,
   pageCountMoveNote,
-  addPageTurnTaps,
+  addPageTurnTap,
   pageMoverExists,
   pageNumbers,
   pagesSpecOf,
@@ -3921,11 +3921,10 @@ function dwellSeconds(seconds: number): string {
  * here: the document says how many pages there are, and each layer says which
  * one it belongs to.
  */
-export function pagesCardFields(host: EditorHost): TemplateResult {
+export function pagesCardFields(host: EditorHost, page: number): TemplateResult {
   const cfg = host.config;
   if (!usesPages(cfg)) {
-    return html`<div class="hint">One complication, several faces, a tap between them. Off is one
-      face, which is what every complication was before this setting.</div>`;
+    return html`<div class="hint">One complication, several faces, a tap between them.</div>`;
   }
   const spec = pagesSpecOf(cfg);
   const tour = spec.mode === "tour";
@@ -3933,32 +3932,39 @@ export function pagesCardFields(host: EditorHost): TemplateResult {
   // happens rather than after: nothing is dropped, everything goes back to
   // being on every page.
   const unpin = pageCountMoveNote(cfg, 1);
+  // One zone per press, and each lands on the page the author is looking at,
+  // because page 1 usually wants Next alone and the last page wants Back
+  // alone. A pair on every page would put a dead Back on page 1.
+  const zone = (type: "previousPage" | "nextPage") => {
+    const back = type === "previousPage";
+    return html`<button class="page-add" title=${back
+      ? `A tap on the left half of page ${page} shows the page before.`
+      : `A tap on the right half of page ${page} shows the next page.`}
+      @click=${() => host.update((c) => { addPageTurnTap(c, type, page); }, `pages-zone-${type}`)}>
+      ${back ? uiIcon("left") : nothing}<span>${back ? "Back" : "Next"}</span>${back ? nothing : uiIcon("right")}</button>`;
+  };
   return html`
     ${tour
-      ? html`<div class="hint">A tour: one tap plays every page once, then returns to page 1. That follows the
-        Play the page tour action. Change the action to Next page for one page per tap.</div>`
-      : html`<div class="hint">Each tap shows the next page. For a tour that plays every page from one tap, set
-        the tap action to Play the page tour.</div>`}
+      ? html`<div class="hint">One tap plays every page, then back to page 1.</div>`
+      : html`<div class="hint">Each tap shows the next page.</div>`}
     ${tour ? html`
       <div class="grid2">
-        ${pageNumbers(spec).map((page) => numberField(`Page ${page} hold`, writtenDwell(spec, page),
-          (v) => host.update((c) => { setPageDwell(c, page, v); }, `pages-dwell-${page}`),
+        ${pageNumbers(spec).map((n) => numberField(`Page ${n} hold`, writtenDwell(spec, n),
+          (v) => host.update((c) => { setPageDwell(c, n, v); }, `pages-dwell-${n}`),
           { step: 0.5, min: PAGE_DWELL_RANGE.min, max: PAGE_DWELL_RANGE.max, optional: true, unit: "s",
             placeholder: String(PAGE_DEFAULT_DWELL), def: null }))}
       </div>
-      <div class="hint">Tour lasts ${dwellSeconds(tourDuration(spec))}. An empty box holds that page for
-        ${dwellSeconds(PAGE_DEFAULT_DWELL)}.</div>`
+      <div class="hint">Tour lasts ${dwellSeconds(tourDuration(spec))}.</div>`
       : nothing}
-    <div class="hint">A layer can sit on one page or on every page. Pick it on the layer, under Position.</div>
-    ${pageMoverExists(cfg) ? nothing : html`<div class="hint warn">Nothing moves the page yet. Pick one of these,
-      or set a tap action to Next page by hand.
-      <div class="page-fix">
-        <button class="small" title=${`A tap anywhere on the face shows the next page. This replaces the face's tap action, which is ${describeTapAction(cfg.tapAction)} now. Undo puts it back.`}
-          @click=${() => host.update((c) => { c.tapAction = { type: "nextPage" }; }, "pages-fix-tap")}>Tap anywhere for next</button>
-        <button class="small" title="Two tap zones over the face, on every page: the left half goes back, the right half goes forward. Layers already drawn keep their own taps."
-          @click=${() => host.update((c) => { addPageTurnTaps(c); }, "pages-fix-zones")}>Add back and next zones</button>
-      </div>
-    </div>`}
+    <div class="hint">A layer sits on one page or on every page. Set that under Position.</div>
+    <div class="page-fix">
+      <span class="page-fix-l">Add to page ${page}</span>
+      ${zone("previousPage")}
+      ${zone("nextPage")}
+    </div>
+    ${pageMoverExists(cfg) ? nothing : html`<div class="hint warn">Nothing turns the page yet. Add a zone above, or
+      <button class="linky" title=${`A tap anywhere on the face shows the next page. It replaces the face's tap action, ${describeTapAction(cfg.tapAction)}. Undo puts it back.`}
+        @click=${() => host.update((c) => { c.tapAction = { type: "nextPage" }; }, "pages-fix-tap")}>tap anywhere for next</button>.</div>`}
     <div class="pages-off">
       <button class="ghost" title=${`Back to one face. No layer is deleted.${unpin === undefined ? "" : ` ${unpin}`}`}
         @click=${() => host.update((c) => { setPageCount(c, 1); }, "pages-off")}>Turn pages off</button>

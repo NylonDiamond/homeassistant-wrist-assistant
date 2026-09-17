@@ -3577,34 +3577,35 @@ export function pageMoverExists(cfg: CustomComplicationConfig): boolean {
 }
 
 /**
- * The two tap zones that turn the pages: the left half of the face goes back,
- * the right half goes forward.
+ * One ready-made tap zone that turns the page: half the face, left for back
+ * and right for forward.
  *
- * Free-standing taps, on every page, so one pair serves the whole document
- * and the author does not repeat them per page. They go at the bottom of the
- * draw order, under everything already there, because the watch gives a tap
- * to the topmost view that wants it: a button drawn over a zone still works,
- * and the zone answers for the rest of its half.
+ * Pinned to `page` when one is given, so the zone belongs to the page the
+ * author was looking at and each page gets the buttons it needs. Left off, it
+ * sits on every page.
  *
- * Named, because a tap layer draws nothing and "Tap area" twice in the Layers
- * list says nothing about which half does what. Returns the two ids, back
- * first, so the caller can select one.
+ * It goes at the bottom of the draw order, under everything already there,
+ * because the watch gives a tap to the topmost view that wants it: a button
+ * drawn over the zone still works, and the zone answers for the rest of its
+ * half.
+ *
+ * Named, because a tap layer draws nothing and two "Tap area" rows in the
+ * Layers list say nothing about which half does what.
  */
-export function addPageTurnTaps(cfg: CustomComplicationConfig): [string, string] {
-  const zone = (name: string, x: number, type: "previousPage" | "nextPage"): string => {
-    const el = newElement("tap");
-    const tap = el.payload as TapElement;
-    tap.name = name;
-    tap.frame = { x, y: 0, width: 0.5, height: 1, rotationDegrees: 0 };
-    tap.action = { type };
-    cfg.elements.unshift(el);
-    return tap.id;
-  };
-  // Forward first, then back in front of it, so the array ends up back-then-
-  // forward and the Layers list reads left zone above right zone.
-  const next = zone("Next page", 0.5, "nextPage");
-  const back = zone("Back a page", 0, "previousPage");
-  return [back, next];
+export function addPageTurnTap(
+  cfg: CustomComplicationConfig,
+  type: "previousPage" | "nextPage",
+  page?: number,
+): string {
+  const el = newElement("tap");
+  const tap = el.payload as TapElement;
+  const next = type === "nextPage";
+  tap.name = next ? "Next page" : "Back a page";
+  tap.frame = { x: next ? 0.5 : 0, y: 0, width: 0.5, height: 1, rotationDegrees: 0 };
+  tap.action = { type };
+  if (page !== undefined) tap.page = page;
+  cfg.elements.unshift(el);
+  return tap.id;
 }
 
 /**

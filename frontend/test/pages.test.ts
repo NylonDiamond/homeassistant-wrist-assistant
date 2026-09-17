@@ -29,7 +29,7 @@ import {
   hasPages,
   layerDrawsOnPage,
   literal,
-  addPageTurnTaps,
+  addPageTurnTap,
   newConfig,
   newElement,
   nextPageAfter,
@@ -903,43 +903,53 @@ describe("an attached tap follows its owner's page", () => {
   });
 });
 
-describe("the ready-made back and next zones", () => {
-  it("puts two half-face taps on every page, under everything already drawn", () => {
+describe("the ready-made page-turn zones", () => {
+  it("puts one half-face tap on the page asked for, under everything already drawn", () => {
     const cfg = pagedConfig({ count: 2, mode: "tap", dwell: [] });
     expect(pageMoverExists(cfg)).toBe(false);
     const drawn = cfg.elements.map((el) => el.payload.id);
-    const [back, next] = addPageTurnTaps(cfg);
+    const next = addPageTurnTap(cfg, "nextPage", 1);
+    const back = addPageTurnTap(cfg, "previousPage", 2);
 
-    // Both zones sit before the layers that were already there, so a button
+    // Each zone goes in before the layers that were already there, so a button
     // drawn over one still takes the tap.
     expect(cfg.elements.map((el) => el.payload.id)).toEqual([back, next, ...drawn]);
 
     const zone = (id: string) => cfg.elements.find((el) => el.payload.id === id)!;
-    expect(zone(back).kind).toBe("tap");
-    expect((zone(back).payload as { action: { type: string } }).action).toEqual({ type: "previousPage" });
+    expect(zone(next).kind).toBe("tap");
     expect((zone(next).payload as { action: { type: string } }).action).toEqual({ type: "nextPage" });
-    expect(zone(back).payload.frame).toEqual({ x: 0, y: 0, width: 0.5, height: 1, rotationDegrees: 0 });
-    expect(zone(next).payload.frame).toEqual({ x: 0.5, y: 0, width: 0.5, height: 1, rotationDegrees: 0 });
+    expect((zone(back).payload as { action: { type: string } }).action).toEqual({ type: "previousPage" });
 
-    // On every page, not on the page that happened to be showing.
-    expect(zone(back).payload.page).toBeUndefined();
-    expect(zone(next).payload.page).toBeUndefined();
+    // Right half forward, left half back.
+    expect(zone(next).payload.frame).toEqual({ x: 0.5, y: 0, width: 0.5, height: 1, rotationDegrees: 0 });
+    expect(zone(back).payload.frame).toEqual({ x: 0, y: 0, width: 0.5, height: 1, rotationDegrees: 0 });
+
+    // On the page it was added from, not on every page.
+    expect(zone(next).payload.page).toBe(1);
+    expect(zone(back).payload.page).toBe(2);
 
     // Named, because two "Tap area" rows say nothing about which half is which.
-    expect(zone(back).payload.name).toBe("Back a page");
     expect(zone(next).payload.name).toBe("Next page");
+    expect(zone(back).payload.name).toBe("Back a page");
 
     // And the warning that offered them is answered.
     expect(pageMoverExists(cfg)).toBe(true);
   });
 
+  it("sits on every page when no page is given", () => {
+    const cfg = pagedConfig({ count: 2, mode: "tap", dwell: [] });
+    const id = addPageTurnTap(cfg, "nextPage");
+    expect(cfg.elements.find((el) => el.payload.id === id)!.payload.page).toBeUndefined();
+  });
+
   it("survives a round trip through the wire", () => {
     const cfg = pagedConfig({ count: 2, mode: "tap", dwell: [] });
-    addPageTurnTaps(cfg);
+    addPageTurnTap(cfg, "previousPage", 2);
     const encoded = encodeConfig(cfg);
     expect(auditUnknownKeys(encoded)).toEqual([]);
     const back = parseConfig(encoded).elements.find((el) => el.kind === "tap" && el.payload.name === "Back a page");
     expect(back).toBeDefined();
+    expect(back!.payload.page).toBe(2);
     expect((back!.payload as { action: { type: string } }).action).toEqual({ type: "previousPage" });
   });
 });

@@ -2810,10 +2810,32 @@ export class WristAssistantPanel extends LitElement {
     /* Turn pages off: the one control in the card that takes the feature
        away, so it sits at the foot on its own line, not beside the tabs. */
     .pages-off { display: flex; justify-content: flex-end; margin-top: 8px; }
-    /* The two ready-made fixes, under the warning that asks for them: a
-       warning that says what to do and gives you no way to do it is half a
-       message. They wrap on a narrow panel rather than shrink. */
-    .page-fix { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    /* The ready-made page-turn zones: a label saying which page they land on,
+       then Back and Next wearing the arrows they draw on the face. Left and
+       right, in that order, so the row is the face in miniature. */
+    .page-fix {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 10px;
+      padding-top: 10px; border-top: 1px solid var(--wa-line);
+    }
+    .page-fix .page-fix-l { flex: 1 1 auto; font-size: 12px; color: var(--wa-muted); }
+    .page-fix .page-add {
+      font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; flex: none;
+      display: inline-flex; align-items: center; gap: 4px;
+      height: 28px; padding: 0 10px; border-radius: 7px;
+      border: 1px solid var(--wa-line); background: var(--wa-input); color: inherit;
+      transition: background-color .12s ease-out, border-color .12s ease-out;
+    }
+    .page-fix .page-add svg.ui-icon { width: 14px; height: 14px; }
+    .page-fix .page-add:hover { background: var(--wa-raised); border-color: var(--wa-line-strong); }
+    .page-fix .page-add:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    /* The one-click fallback, inside the warning's own sentence rather than a
+       button beside it: it is a suggestion, not the main way. */
+    button.linky {
+      font: inherit; font-size: inherit; font-weight: 600; cursor: pointer; padding: 0;
+      border: 0; background: none; color: var(--wa-accent); text-decoration: underline;
+    }
+    button.linky:hover { filter: brightness(1.15); }
+    button.linky:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 3px; }
     /* The tour's progress, under the Pages row: one thin bar, filled by a CSS
        animation over the tour's own length, so nothing has to tick at 60 fps
        to draw it. */
@@ -6094,7 +6116,7 @@ export class WristAssistantPanel extends LitElement {
           @click=${() => { this.helpTab = "pages"; this.helpOpen = true; }}>?</button>
       </h2>
       ${body}
-      ${edit ? pagesCardFields(this.host()) : nothing}
+      ${edit ? pagesCardFields(this.host(), this.page) : nothing}
     </div>`;
   }
 
