@@ -36,6 +36,8 @@ import {
   toggleSymbols,
 } from "../src/presets.js";
 import { presetColor, presetPreview } from "../src/preset-previews.js";
+import { addPreview } from "../src/add-previews.js";
+import { KIND_ORDER } from "../src/kinds.js";
 import { type StatesRow, type StatesTable, tableShape } from "../src/states.js";
 import { colorWords } from "../src/editors.js";
 import { CURATED_SYMBOLS } from "../src/symbols.js";
@@ -410,6 +412,12 @@ describe("the stacked presets", () => {
     for (const preset of LAYER_PRESETS) {
       expect(presetColor(preset.kind), preset.kind).toMatch(/^#[0-9a-f]{6}$/i);
       expect(() => presetPreview(preset.kind), preset.kind).not.toThrow();
+    }
+  });
+
+  it("gives every blank layer kind a sample too", () => {
+    for (const kind of KIND_ORDER) {
+      expect(() => addPreview(kind), kind).not.toThrow();
     }
   });
 

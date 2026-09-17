@@ -192,6 +192,7 @@ import {
 } from "./editors.js";
 import { sampleListItem, withListSeeds } from "./list-seeds.js";
 import { type PresetEnv, type PresetKind, type PresetSpec, LAYER_PRESETS, applyPreset, presetSpec } from "./presets.js";
+import { addPreview } from "./add-previews.js";
 import { presetColor, presetPreview } from "./preset-previews.js";
 import {
   type ImportParse,
@@ -2306,8 +2307,11 @@ export class WristAssistantPanel extends LitElement {
        being clipped by the overflow. */
     .add-scroll {
       max-height: min(48vh, 560px); overflow-y: auto; overscroll-behavior: contain;
-      padding: 3px; margin: -3px -3px 0; scrollbar-width: thin;
+      padding: 3px; margin: 3px -3px 0; scrollbar-width: thin;
     }
+    /* The elements are eight, not twenty-five: their scroller is capped at
+       about two rows so the presets under it are not pushed off the screen. */
+    .add-scroll.short { max-height: min(26vh, 300px); }
     .add-scroll::-webkit-scrollbar { width: 8px; }
     .add-scroll::-webkit-scrollbar-thumb { background: var(--wa-line-strong); border-radius: 999px; }
     .add-scroll::-webkit-scrollbar-track { background: transparent; }
@@ -2370,12 +2374,6 @@ export class WristAssistantPanel extends LitElement {
     button.preset:hover:not(:disabled) { color: var(--wa-ink); background: color-mix(in srgb, var(--wa-ink) 10%, var(--wa-panel)); }
     button.preset:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.preset:disabled { opacity: .45; cursor: default; }
-    /* A blank-layer chip carries the kind's colour square, the same one the
-       Layers rows and the inspector use, so a chip and the row it will make
-       are plainly the same kind. */
-    button.preset.kind { display: inline-flex; align-items: center; gap: 7px; }
-    button.preset .k { width: 8px; height: 8px; border-radius: 2px; background: var(--k); flex: none; }
-    button.preset.kind:hover:not(:disabled) { background: color-mix(in srgb, var(--k) 16%, var(--wa-panel)); }
 
     /* Layers: one row per layer, coloured by kind, the shape pinned last.
        The picture size is a variable on the list, set by the S/M/L control in
@@ -10027,13 +10025,14 @@ export class WristAssistantPanel extends LitElement {
         ?disabled=${cfg.elements.length + p.layerCount > 64}
         @click=${() => this.openPreset(p.kind)}
         >${rich ? html`<span class="well">${presetPreview(p.kind)}</span>` : nothing}<span class="add-name">${rich ? nothing : html`<span class="k"></span>`}<span>${p.title}</span></span></button>`;
-    // The blank kinds, as chips: one press, one empty layer, no sample. They
-    // are the way out of the presets rather than the way in, so they take a
-    // line rather than a grid.
-    const kindChip = (k: CElement["kind"]) => html`
-      <button class="preset kind" style=${`--k:${KIND_COLOR[k]}`} ?disabled=${full}
+    // The blank kinds, in the same card as the presets: one press, one empty
+    // layer, and a sample of what that kind draws so the choice is made by eye
+    // rather than by knowing the word.
+    const kindCard = (k: CElement["kind"]) => html`
+      <button class="add" style=${`--k:${KIND_COLOR[k]}`} ?disabled=${full}
         title=${`Add a blank ${KIND_LABEL[k].toLowerCase()} layer`}
-        @click=${() => addBlank(k)}><span class="k"></span>${KIND_LABEL[k]}</button>`;
+        @click=${() => addBlank(k)}
+        >${rich ? html`<span class="well">${addPreview(k)}</span>` : nothing}<span class="add-name">${rich ? nothing : html`<span class="k"></span>`}<span>${KIND_LABEL[k]}</span></span></button>`;
     return html`<div class="card fold" data-open=${open ? "true" : "false"}>
       <h2 class="panel-title tools fold-h" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
         title=${open ? "Hide the add buttons" : "Show the add buttons"}
@@ -10055,12 +10054,10 @@ export class WristAssistantPanel extends LitElement {
       </h2>
       ${open
         ? html`
-          <div class="presets presets-head"><span class="presets-l">Some presets</span></div>
+          <div class="presets presets-head"><span class="presets-l">Elements</span></div>
+          <div class="add-scroll short"><div class="add-grid ${rich ? "" : "lean"}">${kinds.map(kindCard)}</div></div>
+          <div class="presets"><span class="presets-l">Some presets</span></div>
           <div class="add-scroll"><div class="add-grid ${rich ? "" : "lean"}">${offered.map(presetCard)}</div></div>
-          <div class="presets">
-            <span class="presets-l">Elements</span>
-            ${kinds.map(kindChip)}
-          </div>
           <div class="presets">
             <span class="presets-l">Saved</span>
             <button class="preset" ?disabled=${full}
