@@ -2228,28 +2228,28 @@ ${bR(d)}`}}delete s.hidden;let l=_s(a);if(l.length>0){let c=l.slice(0,3).join(",
       border-radius: var(--wa-r-md); box-shadow: var(--wa-shadow-pop); padding: 6px;
     }
     .picker .menu .row {
-      display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; font-size: 13px;
-      background: transparent; border: 0; color: inherit; padding: 6px 10px; border-radius: 8px; cursor: pointer;
+      display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; font: inherit; font-size: 13.5px;
+      background: transparent; border: 0; color: inherit; padding: 7px 10px; border-radius: 9px; cursor: pointer;
     }
     .picker .menu .row:hover { background: var(--wa-panel); }
     .picker .menu .row[aria-current="true"] { background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
     .picker .menu .row.locked { opacity: .6; cursor: help; }
-    .picker .menu .pk-note { font-size: 12px; line-height: 1.4; color: var(--wa-muted); padding: 0 10px 8px 88px; }
-    .picker .menu .pk-badge { font-size: 11px; opacity: .7; white-space: nowrap; }
+    .picker .menu .pk-note { font-size: 12.5px; line-height: 1.4; color: var(--wa-muted); padding: 0 10px 8px 122px; }
+    .picker .menu .pk-badge { font-size: 12px; opacity: .7; white-space: nowrap; }
     /* A saved complication's row: the part that opens it, then its own hide
        and delete buttons, which neither open it nor shut the menu. */
     .picker .menu .row.rec { padding: 0; gap: 0; cursor: default; }
     .picker .menu .row.rec > .pick {
-      display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; text-align: left; font: inherit;
-      background: transparent; border: 0; color: inherit; padding: 6px 4px 6px 10px; border-radius: 8px; cursor: pointer;
+      display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; text-align: left; font: inherit;
+      background: transparent; border: 0; color: inherit; padding: 7px 4px 7px 10px; border-radius: 9px; cursor: pointer;
     }
     .picker .menu .row.rec > .pick:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .picker .menu .row.rec.dim > .pick { opacity: .5; }
     .picker .menu .pk-acts { display: flex; align-items: center; gap: 2px; flex: none; padding-right: 6px; }
-    .picker .menu .pk-acts button.icon { width: 26px; height: 26px; }
+    .picker .menu .pk-acts button.icon { width: 30px; height: 30px; }
     .picker .menu .pk-acts button.small { min-height: 24px; padding: 0 7px; }
     .picker .menu .pk-hidden-head {
-      display: flex; align-items: center; gap: 6px; width: 100%; font: inherit; font-size: 12px; font-weight: 600;
+      display: flex; align-items: center; gap: 6px; width: 100%; font: inherit; font-size: 12.5px; font-weight: 600;
       color: var(--wa-muted); background: transparent; border: 0; border-top: 1px solid var(--wa-line);
       margin-top: 6px; padding: 8px 10px 6px; cursor: pointer; text-align: left;
     }
@@ -2259,8 +2259,8 @@ ${bR(d)}`}}delete s.hidden;let l=_s(a);if(l.length>0){let c=l.slice(0,3).join(",
     .picker .menu .pk-hidden-head[aria-expanded="true"] svg { transform: rotate(90deg); }
     /* The row picture: the complication drawn as the watch draws it, in a
        fixed box so every name in the list still starts on the same column. */
-    .pk-art { width: 68px; height: 30px; flex: none; display: grid; place-items: center; pointer-events: none; }
-    .pk-art svg { display: block; max-width: 100%; max-height: 30px; width: auto; height: auto; background: #000; border-radius: 4px; }
+    .pk-art { width: 100px; height: 44px; flex: none; display: grid; place-items: center; pointer-events: none; }
+    .pk-art svg { display: block; max-width: 100%; max-height: 44px; width: auto; height: auto; background: #000; border-radius: 5px; }
     .pk-art.circular svg { border-radius: 50%; }
     .pk-art.corner svg { background: #2c2c2e; }
     /* A Home Screen tile is rounded far harder than a lock screen slot, so its
@@ -2270,32 +2270,32 @@ ${bR(d)}`}}delete s.hidden;let l=_s(a);if(l.length>0){let c=l.slice(0,3).join(",
     .pk-art.large svg { border-radius: 7.7% / 7.4%; }
     .pk-art.xlarge svg { border-radius: 7.7% / 4.8%; }
     .pk-art .inline-line {
-      font-size: 9px; padding: 2px 6px; max-width: 100%; min-width: 0; display: inline-flex; align-items: center; gap: 3px;
+      font-size: 11px; padding: 3px 8px; max-width: 100%; min-width: 0; display: inline-flex; align-items: center; gap: 4px;
       border-radius: 999px; background: #000; color: #fff; overflow: hidden; white-space: nowrap;
     }
     .pk-art .inline-line svg { background: transparent; border-radius: 0; }
     /* Shape filter, only drawn once the list is long. */
     .pk-filter { display: flex; gap: 4px; flex-wrap: wrap; padding: 4px 6px 8px; border-bottom: 1px solid var(--wa-line); margin-bottom: 6px; }
     .pk-chip {
-      display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 11.5px; font-weight: 500;
-      padding: 4px 8px; border-radius: 999px; cursor: pointer; color: var(--wa-muted);
+      display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 12.5px; font-weight: 500;
+      padding: 5px 9px; border-radius: 999px; cursor: pointer; color: var(--wa-muted);
       border: 1px solid var(--wa-line); background: transparent;
     }
     .pk-chip:hover:not(:disabled) { border-color: var(--wa-line-strong); color: var(--wa-ink); }
     .pk-chip:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .pk-chip:disabled { opacity: .35; cursor: default; }
     .pk-chip.on { border-color: var(--wa-accent); color: var(--wa-ink); background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
-    .pk-count { font-size: 10.5px; opacity: .65; font-weight: 400; }
+    .pk-count { font-size: 11.5px; opacity: .65; font-weight: 400; }
 
     /* The picker's button, carrying both answers: the device in small type over
        the complication, so the bar says where you are without the header
        spending a second control and two labels on saying it. */
-    .picker > button.pk-open { height: 40px; min-width: 264px; max-width: 360px; padding: 0 8px; gap: 8px; }
+    .picker > button.pk-open { height: 46px; min-width: 292px; max-width: 400px; padding: 0 10px; gap: 9px; font-size: 14px; }
     .picker .pk-open-ico { flex: none; display: grid; place-items: center; color: var(--wa-muted); }
-    .picker .pk-open-ico svg { width: 18px; height: 18px; opacity: 1; }
+    .picker .pk-open-ico svg { width: 21px; height: 21px; opacity: 1; }
     .pk-open-lines { display: flex; flex-direction: column; align-items: stretch; flex: 1; min-width: 0; line-height: 1.25; }
     .pk-open-dev {
-      font-size: 10.5px; font-weight: 500; color: var(--wa-muted); text-align: left;
+      font-size: 11.5px; font-weight: 500; color: var(--wa-muted); text-align: left;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .pk-open-row { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
@@ -2304,47 +2304,47 @@ ${bR(d)}`}}delete s.hidden;let l=_s(a);if(l.length>0){let c=l.slice(0,3).join(",
        on the right. Only the panes scroll, so the shape filter and the New line
        stay put while a long list moves under them. */
     .picker .menu.two {
-      width: min(760px, calc(100vw - 24px)); max-height: 64vh; padding: 0; overflow: hidden;
-      display: grid; grid-template-columns: 236px minmax(0, 1fr);
+      width: min(900px, calc(100vw - 24px)); max-height: 74vh; padding: 0; overflow: hidden;
+      display: grid; grid-template-columns: 268px minmax(0, 1fr);
     }
     /* On a phone-width panel there is no room beside the list, so the devices
        take a short scrolling strip above it instead of a column. */
     .picker .menu.two.narrow { grid-template-columns: minmax(0, 1fr); }
-    .pk-devs { overflow: auto; padding: 6px; background: var(--wa-panel); border-right: 1px solid var(--wa-line); }
-    .picker .menu.two.narrow .pk-devs { border-right: 0; border-bottom: 1px solid var(--wa-line); max-height: 152px; }
+    .pk-devs { overflow: auto; padding: 8px; background: var(--wa-panel); border-right: 1px solid var(--wa-line); }
+    .picker .menu.two.narrow .pk-devs { border-right: 0; border-bottom: 1px solid var(--wa-line); max-height: 172px; }
     .pk-dev-head {
-      font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
-      color: var(--wa-muted); padding: 8px 8px 4px;
+      font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+      color: var(--wa-muted); padding: 9px 9px 5px;
     }
     .pk-dev {
-      display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; font: inherit; font-size: 13px;
-      background: transparent; border: 0; color: inherit; padding: 6px 8px; border-radius: 8px; cursor: pointer;
+      display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; font-size: 13.5px;
+      background: transparent; border: 0; color: inherit; padding: 8px 9px; border-radius: 9px; cursor: pointer;
     }
     .pk-dev:hover { background: var(--wa-card); }
     .pk-dev:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .pk-dev.on { background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
     .pk-dev-ico { flex: none; display: grid; place-items: center; color: var(--wa-muted); }
-    .pk-dev-ico svg { width: 17px; height: 17px; }
+    .pk-dev-ico svg { width: 19px; height: 19px; }
     .pk-dev.on .pk-dev-ico { color: var(--wa-ink); }
     .pk-dev-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
     .pk-dev-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pk-dev-note { font-size: 11px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pk-dev-note { font-size: 11.5px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     /* A device holding nothing stays in the list: it is still somewhere a new
        complication can go. It reads quiet so the ones with work on them lead. */
     .pk-dev.bare:not(.on) .pk-dev-name { color: var(--wa-muted); }
     .pk-dev-count {
-      flex: none; font-size: 11px; color: var(--wa-muted); background: var(--wa-card);
-      border-radius: 999px; padding: 1px 7px; min-width: 22px; text-align: center;
+      flex: none; font-size: 11.5px; color: var(--wa-muted); background: var(--wa-card);
+      border-radius: 999px; padding: 2px 8px; min-width: 24px; text-align: center;
     }
     .pk-dev.on .pk-dev-count { color: var(--wa-ink); }
     .pk-comps { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-    .pk-comps .pk-filter { margin-bottom: 0; padding: 8px 10px; }
-    .pk-rows { flex: 1; min-height: 0; overflow: auto; padding: 6px; }
+    .pk-comps .pk-filter { margin-bottom: 0; padding: 10px 12px; }
+    .pk-rows { flex: 1; min-height: 0; overflow: auto; padding: 8px; }
     .pk-foot {
-      display: flex; align-items: center; gap: 8px; flex: none; padding: 8px 10px;
+      display: flex; align-items: center; gap: 8px; flex: none; padding: 10px 12px;
       border-top: 1px solid var(--wa-line); background: var(--wa-panel);
     }
-    .pk-foot-hint { flex: 1; min-width: 0; font-size: 11.5px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pk-foot-hint { flex: 1; min-width: 0; font-size: 12.5px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     /* New complication: its own button beside the list, because making one was
        a row buried under every complication that already existed. */
