@@ -10533,7 +10533,7 @@ export class WristAssistantPanel extends LitElement {
       <div class="layers">
       ${rows}
       </div>
-      ${this.renderDocumentTapRow(cfg, edit)}
+      ${this.renderDocumentTapRow(cfg)}
       <div class="layer pinned ${shapeHl ? "hl" : ""}" style=${`--k:${SECTION_COLOR.place}`} tabindex="0" title="The shape is always the bottom layer"
         @click=${() => { this.inspect = { kind: "family" }; }}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "family" }; }}
@@ -10575,15 +10575,13 @@ export class WristAssistantPanel extends LitElement {
    * complication that answered a tap. The row says where that comes from, and
    * clicking it opens the card that owns it.
    *
-   * Its delete button does not remove the row, because there is always some
-   * answer to a tap. It sets the action to Open the app, which is the nearest
-   * thing to removing it: a tap on a complication always opens the app, whatever the
-   * document says, so "Open the app" is the floor and there is nothing under it
-   * to clear to. The button goes once the action is already that, so the row
-   * never offers a delete that would change nothing.
+   * It carries no buttons, not even a delete. A tap on a complication always
+   * reaches something, so there is no state this row can be deleted into: a
+   * trash can here would have meant "set it to Open the app", which is a
+   * change of setting wearing a delete's clothes. Changing it is the picker's
+   * job, one click away.
    */
-  private renderDocumentTapRow(cfg: CustomComplicationConfig, edit: boolean) {
-    const bare = cfg.tapAction.type === "openApp" || cfg.tapAction.type === "none";
+  private renderDocumentTapRow(cfg: CustomComplicationConfig) {
     const open = () => { this.inspect = { kind: "general" }; };
     return html`<div class="layer pinned" style=${`--k:${KIND_COLOR.tap}`} tabindex="0"
       title="What a tap does anywhere no tap area covers. Click to change it."
@@ -10597,13 +10595,8 @@ export class WristAssistantPanel extends LitElement {
         <small><span class="kind">Tap</span> · ${describeTapAction(cfg.tapAction)}</small>
       </span>
       <span class="right">
-        <span class="badges">${bare ? nothing : html`<span class="badge tap"
-          title=${`Tappable · ${describeTapAction(cfg.tapAction)}`}>tap (${tapActionLabel(cfg.tapAction).toLowerCase()})</span>`}</span>
-        ${edit && !bare ? html`<span class="acts">
-          <button class="icon danger" title="Clear the action, so a tap only opens the app"
-            aria-label="Clear the action, so a tap only opens the app"
-            @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { c.tapAction = { type: "openApp" }; }); }}>${uiIcon("delete")}</button>
-        </span>` : nothing}
+        <span class="badges"><span class="badge tap"
+          title=${`Tappable · ${describeTapAction(cfg.tapAction)}`}>tap (${tapActionLabel(cfg.tapAction).toLowerCase()})</span></span>
       </span>
     </div>`;
   }

@@ -5686,7 +5686,7 @@ ${nR(d)}`}}delete s.hidden;let l=Zs(a);if(l.length>0){let c=l.slice(0,3).join(",
       <div class="layers">
       ${J}
       </div>
-      ${this.renderDocumentTapRow(t,i)}
+      ${this.renderDocumentTapRow(t)}
       <div class="layer pinned ${f?"hl":""}" style=${`--k:${ce.place}`} tabindex="0" title="The shape is always the bottom layer"
         @click=${()=>{this.inspect={kind:"family"}}}
         @keydown=${F=>{F.key==="Enter"&&(this.inspect={kind:"family"})}}
@@ -5701,10 +5701,10 @@ ${nR(d)}`}}delete s.hidden;let l=Zs(a);if(l.length>0){let c=l.slice(0,3).join(",
         </span>
         <span class="right"><span class="badges"><span class="badge">always bottom</span></span></span>
       </div>
-    </div>`}renderDocumentTapRow(t,i){let a=t.tapAction.type==="openApp"||t.tapAction.type==="none",r=()=>{this.inspect={kind:"general"}};return h`<div class="layer pinned" style=${`--k:${Ze.tap}`} tabindex="0"
+    </div>`}renderDocumentTapRow(t){let i=()=>{this.inspect={kind:"general"}};return h`<div class="layer pinned" style=${`--k:${Ze.tap}`} tabindex="0"
       title="What a tap does anywhere no tap area covers. Click to change it."
-      @click=${r}
-      @keydown=${o=>{o.key==="Enter"&&r()}}>
+      @click=${i}
+      @keydown=${a=>{a.key==="Enter"&&i()}}>
       <span class="grip">${L("tap")}</span>
       <span class="bar"></span>
       <span class="thumb blank"></span>
@@ -5713,13 +5713,8 @@ ${nR(d)}`}}delete s.hidden;let l=Zs(a);if(l.length>0){let c=l.slice(0,3).join(",
         <small><span class="kind">Tap</span> · ${dt(t.tapAction)}</small>
       </span>
       <span class="right">
-        <span class="badges">${a?m:h`<span class="badge tap"
-          title=${`Tappable \xB7 ${dt(t.tapAction)}`}>tap (${Fa(t.tapAction).toLowerCase()})</span>`}</span>
-        ${i&&!a?h`<span class="acts">
-          <button class="icon danger" title="Clear the action, so a tap only opens the app"
-            aria-label="Clear the action, so a tap only opens the app"
-            @click=${o=>{o.stopPropagation(),this.mutate(s=>{s.tapAction={type:"openApp"}})}}>${L("delete")}</button>
-        </span>`:m}
+        <span class="badges"><span class="badge tap"
+          title=${`Tappable \xB7 ${dt(t.tapAction)}`}>tap (${Fa(t.tapAction).toLowerCase()})</span></span>
       </span>
     </div>`}renderInlineHasNoLayers(){return h`<div class="card">
       <h2 class="panel-title"><span class="swatch">${L("layers")}</span>Layers</h2>
