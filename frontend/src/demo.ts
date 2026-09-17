@@ -237,6 +237,43 @@ export async function runTapAction(action: TapAction, hooks: DemoHooks): Promise
   }
 }
 
+/**
+ * Whether this tap makes the watch fetch from Home Assistant again.
+ *
+ * A complication redraws only when it reloads, and it reloads with fresh data
+ * for two reasons: a refresh tap, or a tap that changed the house and wants to
+ * show the result. A page move redraws from what the watch already holds, and a
+ * "would" action never happens at all. The demo re-reads on the same occasions,
+ * so a light switched somewhere else does not appear on a face that, on a
+ * wrist, would still be showing the old state.
+ *
+ * Kept beside `runTapAction` because it mirrors that switch: a case added there
+ * needs an answer here, and the exhaustive `switch` is what says so.
+ */
+export function tapRefetches(action: TapAction): boolean {
+  switch (action.type) {
+    case "refresh":
+    case "refreshAll":
+    case "toggleEntity":
+    case "runScene":
+    case "runScript":
+    case "callService":
+      return true;
+    case "none":
+    case "nextPage":
+    case "previousPage":
+    case "playTour":
+    case "openApp":
+    case "openPage":
+    case "openRoomPage":
+    case "timerStartPause":
+    case "timerCancel":
+    case "addTodo":
+    case "runHTTPAction":
+      return false;
+  }
+}
+
 /** One service call, with the failure turned into a line rather than a throw:
  * a demo that stopped dead on a bad entity would tell you less than one that
  * says what Home Assistant said. */

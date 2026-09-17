@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import type { NormalizedFrame, TapAction } from "../src/model.js";
 import { newConfig } from "../src/model.js";
 import type { ResolvedElement, ResolvedLayout, ResolvedTap } from "../src/resolver.js";
-import { actionAt, hitAt, runTapAction, tapAt, type DemoHooks } from "../src/demo.js";
+import { actionAt, hitAt, runTapAction, tapAt, tapRefetches, type DemoHooks } from "../src/demo.js";
 import type { HassLike } from "../src/ha-api.js";
 
 function frame(x: number, y: number, width: number, height: number): NormalizedFrame {
@@ -235,5 +235,36 @@ describe("running a tap", () => {
     const out = await runTapAction({ type: "none" }, hooks(hass));
     expect(out.kind).toBe("none");
     expect(sent).toEqual([]);
+  });
+});
+
+describe("which taps make the watch fetch again", () => {
+  it("fetches for a refresh and for anything that changed the house", () => {
+    const actions: TapAction[] = [
+      { type: "refresh" },
+      { type: "refreshAll" },
+      { type: "toggleEntity", entityId: "light.kitchen", displayName: "Kitchen", domain: "light" },
+      { type: "runScene", entityId: "scene.evening", displayName: "Evening", domain: "scene" },
+      { type: "runScript", entityId: "script.goodnight", displayName: "Goodnight", domain: "script" },
+      { type: "callService", serviceDomain: "light", serviceName: "turn_on" },
+    ];
+    for (const action of actions) expect(tapRefetches(action), action.type).toBe(true);
+  });
+
+  it("does not fetch for a page move, or for anything only the watch can do", () => {
+    const actions: TapAction[] = [
+      { type: "none" },
+      { type: "nextPage" },
+      { type: "previousPage" },
+      { type: "playTour" },
+      { type: "openApp" },
+      { type: "openPage" },
+      { type: "openRoomPage" },
+      { type: "timerStartPause" },
+      { type: "timerCancel" },
+      { type: "addTodo", entityId: "todo.shopping", displayName: "Shopping", domain: "todo" },
+      { type: "runHTTPAction", entityId: "http.doorbell", displayName: "Doorbell", domain: "http" },
+    ];
+    for (const action of actions) expect(tapRefetches(action), action.type).toBe(false);
   });
 });

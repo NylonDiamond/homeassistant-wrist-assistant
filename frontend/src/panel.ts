@@ -27,6 +27,7 @@ import {
   fetchHistorySeries,
   collectSeriesResults,
   type HistoryReadings,
+  type HassEntityState,
   fetchStatisticsSeries,
   seriesRequests,
   collectListResults,
@@ -130,7 +131,7 @@ import {
   resolveControl,
 } from "./resolver.js";
 import { CANVAS, CASES, FACE_TINTS, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, phoneCaseForScreenSize, renderLayerThumb, renderLayout, slotFor, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type PreviewCase } from "./renderer.js";
-import { actionAt, demoTapLabel, runTapAction, type DemoOutcome } from "./demo.js";
+import { actionAt, demoTapLabel, runTapAction, tapRefetches, type DemoOutcome } from "./demo.js";
 import { type ShapePlace, addFamily, biggestFirst, canRemoveControl, canRemoveFamily, comingSoonFamilies, controlNoteLines, familiesFor, familyAllowsKind, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, opensInControlView, placeGroups, placeOf, placeTitle, removeFamily, resizableNote, supportedFamilies } from "./layouts.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { type DeviceOwnerLike, deviceKindOf, deviceNoun, deviceSupportsControls, deviceSupportsShapes, updateDeviceMessage } from "./version.js";
@@ -617,6 +618,14 @@ const PAGE_TRASH_ARM_MS = 4000;
  * a brief wash of colour over the whole complication, so this is short enough
  * to read as an acknowledgement rather than as a state the face went into. */
 const DEMO_FLASH_MS = 700;
+
+/** How long the demo lets live state through after a tap that would make the
+ * watch fetch, in ms. Home Assistant answers the service call before it pushes
+ * the new state, so a snapshot taken the moment the call returns would still
+ * hold the old one. This is the window the push has to land in: long enough for
+ * a slow box, short enough that a light switched elsewhere a moment later is
+ * already shut out again. */
+const DEMO_REFETCH_MS = 2000;
 
 const THUMB_STEP_LABEL = ["S", "M", "L"] as const;
 const THUMB_STEP_TITLE = ["Small", "Medium", "Large"] as const;
@@ -1133,6 +1142,22 @@ export class WristAssistantPanel extends LitElement {
    * complication when the press fell through to the document's own action. */
   @state() private demoFlashFrame?: NormalizedFrame;
   private demoFlashTimer?: number;
+  /**
+   * The house as it stood when the demo opened, or when the last tap made the
+   * watch fetch. While this is set, every entity the face draws is read from
+   * here rather than from `hass`.
+   *
+   * The editor's preview is live because an editor should follow the house.
+   * The watch is not: it draws whatever it last fetched and holds that picture
+   * until it reloads. A demo that followed a light switched in another room
+   * would teach the opposite of the one thing people ask about most, which is
+   * why their complication is showing an old value.
+   */
+  private demoStates?: Record<string, HassEntityState>;
+  /** Live state is taken again until this instant, after a tap the watch would
+   * have fetched for. Zero means frozen. */
+  private demoRefetchUntil = 0;
+  private demoRefetchTimer?: number;
   /** The keys-and-mouse help is open. */
   @state() private helpOpen = false;
   /** Review mode: every tap area on show, labelled, with the drawing dimmed.
@@ -4675,6 +4700,13 @@ export class WristAssistantPanel extends LitElement {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.help-dialog");
       if (dialog && !dialog.open) dialog.showModal();
     }
+    // A push that lands inside the demo's refetch window is the fetch the tap
+    // asked for, so the frozen picture is retaken. Outside the window nothing
+    // is taken, and the comparison below still re-renders the same face.
+    if (changed.has("hass") && this.demoing && Date.now() < this.demoRefetchUntil) {
+      this.demoStates = { ...this.hass.states };
+      this.requestUpdate();
+    }
     if (changed.has("hass") && this.draft) {
       const snapshot: Record<string, unknown> = {};
       for (const id of this.compiled?.entities.keys() ?? []) snapshot[id] = this.hass.states[id]?.last_updated;
@@ -6124,7 +6156,11 @@ export class WristAssistantPanel extends LitElement {
    * not change what another one's thumbnail says.
    */
   private entityStateFor(id: string, iconName: string, useTestValues: boolean): EntityState | undefined {
-    const s = this.hass.states[id];
+    // Demo mode reads the frozen house instead, so the face holds still the way
+    // a watch does between fetches. One read point, so templates, history and
+    // lists (which already only refetch on a refresh tap) and plain entity
+    // states all go stale together.
+    const s = (this.demoStates ?? this.hass.states)[id];
     if (!s) return undefined;
     const attrs = s.attributes;
     const domain = id.split(".")[0] ?? "";
@@ -6497,16 +6533,48 @@ export class WristAssistantPanel extends LitElement {
     this.togglePicking(false);
     if (this.showTaps) this.setShowTaps(false);
     this.demoNote = undefined;
+    this.freezeDemoStates();
     this.demoing = true;
   }
 
   private closeDemo() {
     this.stopTour();
     window.clearTimeout(this.demoFlashTimer);
+    window.clearTimeout(this.demoRefetchTimer);
     this.demoing = false;
     this.demoNote = undefined;
     this.demoFlashOn = false;
     this.demoFlashFrame = undefined;
+    this.demoStates = undefined;
+    this.demoRefetchUntil = 0;
+  }
+
+  /** Take the picture of the house the demo draws from, and shut the window.
+   * A shallow copy is enough: Home Assistant replaces an entity's state object
+   * on every change rather than editing the one already there. */
+  private freezeDemoStates() {
+    window.clearTimeout(this.demoRefetchTimer);
+    this.demoStates = { ...this.hass.states };
+    this.demoRefetchUntil = 0;
+  }
+
+  /**
+   * Let live state through for a moment, because the tap just made the watch
+   * fetch.
+   *
+   * The window is needed rather than a single re-read: the service call returns
+   * before Home Assistant pushes the new state, so reading straight away would
+   * take the old value. Anything that lands inside the window is taken, and the
+   * timer closes it whether a push arrived or not.
+   */
+  private openDemoRefetch() {
+    window.clearTimeout(this.demoRefetchTimer);
+    this.demoRefetchUntil = Date.now() + DEMO_REFETCH_MS;
+    this.demoRefetchTimer = window.setTimeout(() => {
+      if (!this.demoing) return;
+      this.freezeDemoStates();
+      this.requestUpdate();
+    }, DEMO_REFETCH_MS);
   }
 
   /**
@@ -6586,6 +6654,9 @@ export class WristAssistantPanel extends LitElement {
     // A tap during a tour takes over from the page on screen, which is the
     // watch's own rule, so the tour stops before the action runs.
     this.stopTour();
+    // Opened before the call rather than after it, so a house that answers fast
+    // cannot push the new state into the gap while the demo is still frozen.
+    if (tapRefetches(action)) this.openDemoRefetch();
     this.demoNote = { kind: "did", text: `${demoTapLabel(action)}…` };
     const outcome = await runTapAction(action, {
       hass: this.hass,
