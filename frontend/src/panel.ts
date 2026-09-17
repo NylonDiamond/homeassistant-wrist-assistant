@@ -50,6 +50,7 @@ import {
   controlEffectiveKind,
   controlOnly,
   describeTapAction,
+  tapActionLabel,
   duplicateElement,
   copyElements,
   DRAWABLE_FAMILIES,
@@ -10266,9 +10267,16 @@ export class WristAssistantPanel extends LitElement {
       // A tap layer is a tap, so it wears the same badge as a layer with one
       // attached. Without it the list marked the layers that answer a press and
       // said nothing about the rows that are nothing but a press.
+      // The badge names the action as well as the fact of one: a list where
+      // four rows all said "tap" and nothing else made you click each of them
+      // to find out which was the toggle. The badge takes the action's name
+      // alone and the tooltip carries what it acts on, because an entity id in
+      // a pill stretches the row.
+      const tapEl = el.kind === "tap" ? el : tap;
+      const tapAct = tapEl?.kind === "tap" ? tapEl.payload.action : undefined;
       const tapTitle = el.kind === "tap"
         ? `Tappable · ${describeTapAction(el.payload.action)}`
-        : tap ? `Tappable · ${layerTitle(tap, ctx)}` : undefined;
+        : tap ? `Tappable · ${layerTitle(tap, ctx)} · ${tapAct ? describeTapAction(tapAct) : ""}` : undefined;
       const states = statesSummary(el.payload.rules);
       const pointed = this.picking && this.pickHoverId === id;
       const d = this.rowDrag(id, edit);
@@ -10289,7 +10297,7 @@ export class WristAssistantPanel extends LitElement {
         </span>
         <span class="right">
           <span class="badges">
-            ${tapTitle ? html`<span class="badge tap" title=${tapTitle}>tap</span>` : nothing}
+            ${tapTitle ? html`<span class="badge tap" title=${tapTitle}>${tapAct ? `tap (${tapActionLabel(tapAct).toLowerCase()})` : "tap"}</span>` : nothing}
             ${el.payload.rules.length === 0 ? nothing : html`<span class="badge states" title=${states}>${states.replace(/\.$/, "").toLowerCase()}</span>`}
             ${hidden ? html`<span class="badge">hidden</span>` : nothing}
           </span>
@@ -10585,7 +10593,8 @@ export class WristAssistantPanel extends LitElement {
         <small><span class="kind">Tap</span> · ${describeTapAction(cfg.tapAction)}</small>
       </span>
       <span class="right">
-        <span class="badges">${none ? nothing : html`<span class="badge tap">tap</span>`}</span>
+        <span class="badges">${none ? nothing : html`<span class="badge tap"
+          title=${`Tappable · ${describeTapAction(cfg.tapAction)}`}>tap (${tapActionLabel(cfg.tapAction).toLowerCase()})</span>`}</span>
         ${edit && !none ? html`<span class="acts">
           <button class="icon danger" title="Do nothing on tap" aria-label="Do nothing on tap"
             @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { c.tapAction = { type: "none" }; }); }}>${uiIcon("delete")}</button>

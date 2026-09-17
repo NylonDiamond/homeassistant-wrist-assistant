@@ -3146,10 +3146,18 @@ export const TAP_ACTION_LABELS: [TapAction["type"], string][] = [
   ["nextPage", "Next page"], ["previousPage", "Previous page"], ["playTour", "Play the page tour"],
 ];
 
+/** The action's own name, with no target on the end: "Refresh", "Toggle an
+ * entity". For the places that have room for a word and not a sentence, such as
+ * the `tap` badge on a layer row, which a long entity id would stretch out of
+ * shape. `describeTapAction` is the same name plus what it acts on. */
+export function tapActionLabel(action: TapAction): string {
+  return TAP_ACTION_LABELS.find(([t]) => t === action.type)?.[1] ?? action.type;
+}
+
 /** One-line description of a tap action, for hints and for the review-mode
  * labels in the preview. */
 export function describeTapAction(action: TapAction): string {
-  const label = TAP_ACTION_LABELS.find(([t]) => t === action.type)?.[1] ?? action.type;
+  const label = tapActionLabel(action);
   if (action.type === "callService") {
     // The service is the subject; the target entity is not, because most of these
     // calls carry their meaning in the service name alone.
