@@ -69,7 +69,7 @@ and the way to prune it stay in one file.
 gallery (see ``gallery_key_store.py``). Admin-only like the rest: the key is
 what lets someone delete this home's gallery uploads.
 
-The three ``parts_*`` commands are My parts, the home's library of saved layer
+The three ``parts_*`` commands are Parts, the home's library of saved layer
 sets (see ``parts_store.py``). A part is share text, so nothing about the house
 is in one, but they are admin-only like every other command here: writing to
 this library is editing what the panel offers everybody.
@@ -161,7 +161,7 @@ def _store(hass: HomeAssistant) -> ComplicationStore | None:
 
 
 def _parts(hass: HomeAssistant) -> PartsStore | None:
-    """The home's My parts library, or None before the integration is ready."""
+    """The home's Parts library, or None before the integration is ready."""
     domain_data = hass.data.get(DOMAIN)
     if domain_data is None:
         return None
@@ -255,7 +255,7 @@ async def ws_gallery_key(
     connection.send_result(msg["id"], {"key": key})
 
 
-# ── My parts ──────────────────────────────────────────────────────────────
+# ── Parts ──────────────────────────────────────────────────────────────
 #
 # One library per home. A part is the share text of a few layers, so the three
 # commands below move strings and nothing else: the panel draws the picture

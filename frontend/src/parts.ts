@@ -1,4 +1,4 @@
-// My parts: a few layers of a complication, kept under a name and dropped into
+// Parts: a few layers of a complication, kept under a name and dropped into
 // another complication later.
 //
 // A part is share text. Not a private format of its own: the same wire the

@@ -706,7 +706,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     await batch_snapshot_settings_store.async_load()
     complication_store = ComplicationStore(hass)
     await complication_store.async_load()
-    # My parts: the panel's library of saved layer sets. Nothing else reads it,
+    # Parts: the panel's library of saved layer sets. Nothing else reads it,
     # so it is loaded here and handed straight to the WebSocket commands.
     parts_store = PartsStore(hass)
     await parts_store.async_load()

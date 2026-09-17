@@ -104,7 +104,7 @@ export async function fetchGalleryKey(hass: HassLike) {
   return hass.connection.sendMessagePromise<{ key: string }>({ type: "wrist_assistant/gallery_key" });
 }
 
-/** My parts: the home's library of saved layer sets. One library per home, so
+/** Parts: the home's library of saved layer sets. One library per home, so
  * none of the three takes an owner. `text` is the whole part; the panel draws
  * its picture from that rather than the integration keeping one. */
 export async function fetchParts(hass: HassLike) {

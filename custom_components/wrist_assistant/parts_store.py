@@ -1,4 +1,4 @@
-"""My parts: the named pieces of a complication this home has kept.
+"""Parts: the named pieces of a complication this home has kept.
 
 The panel lets an author pick a few layers of a complication and keep them
 under a name, then drop them into another complication later. What is kept is

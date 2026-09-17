@@ -888,20 +888,20 @@ export class WristAssistantPanel extends LitElement {
    * Paste position on another layer. Kept for the tab, like `clipboard`. */
   @state() private copiedPosition?: CopiedPosition;
 
-  // ── My parts ──────────────────────────────────────────────────────────
+  // ── Parts ──────────────────────────────────────────────────────────
   //
   // The home's library of saved layer sets. One library, so it is fetched once
   // and kept: every complication in the panel offers the same parts. `parts`
   // being undefined means "not asked yet", which is what the dialog shows a
   // spinner for; an empty array is a library with nothing in it.
 
-  /** The Save to My parts dialog: which layers, and what to call them. */
+  /** The Save to parts dialog: which layers, and what to call them. */
   @state() private savePartOpen = false;
   @state() private savePartName = "";
   @state() private savePartIds: readonly string[] = [];
   @state() private savePartError?: string;
   @state() private savePartBusy = false;
-  /** The Add from My parts dialog. */
+  /** The Add from parts dialog. */
   @state() private partsOpen = false;
   @state() private parts?: SavedPart[];
   @state() private partsError?: string;
@@ -1782,7 +1782,7 @@ export class WristAssistantPanel extends LitElement {
     .xf-raw > summary svg.ui-icon { width: 13px; height: 13px; transition: transform .15s ease-out; }
     .xf-raw[open] > summary svg.ui-icon { transform: rotate(90deg); }
 
-    /* My parts: the library as a grid of pictures, each card its own picture,
+    /* Parts: the library as a grid of pictures, each card its own picture,
        name and two actions. The same dialog chrome as Share and Import, so
        only the grid is new. */
     .pt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
@@ -2242,6 +2242,9 @@ export class WristAssistantPanel extends LitElement {
       background: color-mix(in srgb, var(--wa-accent) 12%, transparent);
     }
     .group-cta .spacer { flex: 1; }
+    /* A lone selection offers only Save to parts: a quiet row, no box. */
+    .part-cta { display: flex; align-items: center; font-size: 12px; margin-bottom: 4px; }
+    .part-cta .spacer { flex: 1; }
     /* Picked for grouping: an accent ring, since the kind colour is taken. */
     .layer.multi { box-shadow: inset 0 0 0 1px var(--wa-accent); }
     /* A folder row: the chevron folds it, the lock says whether it moves as
@@ -5770,7 +5773,7 @@ export class WristAssistantPanel extends LitElement {
       ["Copy link", "A link to this panel with the text inside it. Opening it here fills in the Import dialog. On another home, paste the link into Import."],
       ["Import", "Beside New. Paste text or a link, choose a file, or drop one on the dialog. Check the preview, choose your own entity for each slot, then Import. It opens as unsaved work and reaches the watch at the first Save."],
       ["History", "In the complication's header, beside Duplicate. The last 20 saves of this complication, newest first, with a picture of the one you pick. Restore writes it back as a new revision, so the design you restored over becomes the newest entry and you can come straight back and undo it."],
-      ["My parts", "A few layers kept under a name, for this home. Pick layers in the Layers list and press Save to My parts; Add from My parts, under the add buttons, drops them into the complication you have open. A part is stored the way a share is, so it asks which of your entities each slot is on the way in."],
+      ["Parts", "A few layers kept under a name, for this home. Pick layers in the Layers list and press Save to parts; Add from parts, under the add buttons, drops them into the complication you have open. A part is stored the way a share is, so it asks which of your entities each slot is on the way in."],
     ];
     const rows = (list: [string, string][]) => list.map(([k, what]) => html`<tr><th scope="row"><kbd>${k}</kbd></th><td>${what}</td></tr>`);
     const section = (title: string, list: [string, string][]) => html`<section>
@@ -8657,7 +8660,7 @@ export class WristAssistantPanel extends LitElement {
     this.historyRun += 1;
   }
 
-  // ── My parts ──────────────────────────────────────────────────────────
+  // ── Parts ──────────────────────────────────────────────────────────
   //
   // Two dialogs over one library. Save keeps the picked layers as share text;
   // Add reads that text back, asks this home for an entity per slot, and drops
@@ -8696,7 +8699,7 @@ export class WristAssistantPanel extends LitElement {
     return config;
   }
 
-  /** Save to My parts: the picked layers, under a name. A row being designed
+  /** Save to parts: the picked layers, under a name. A row being designed
    * is out, the same way copying one is: a row is not a layer of the
    * document, so a part made of one could never be put back. */
   private async openSavePartDialog() {
@@ -8762,7 +8765,7 @@ export class WristAssistantPanel extends LitElement {
     const problem = name === "" ? "Give it a name first." : taken ? "A part already has that name." : undefined;
     return html`<dialog class="save-part-dialog xf" @close=${() => { this.savePartOpen = false; }}
       @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" && problem === undefined) { e.preventDefault(); void this.doSavePart(); } }}>
-      ${this.dialogHead("Save to My parts", "Kept for this home, ready to drop into any complication", () => this.closeSavePartDialog())}
+      ${this.dialogHead("Save to parts", "Kept for this home, ready to drop into any complication", () => this.closeSavePartDialog())}
       <div class="xfer-body">
         <label class="xf-f"><span class="xf-label">Name</span>
           <input class="part-name" type="text" maxlength="60" aria-invalid=${taken ? "true" : "false"} .value=${this.savePartName}
@@ -8790,7 +8793,7 @@ export class WristAssistantPanel extends LitElement {
     </dialog>`;
   }
 
-  /** Add from My parts. Opens on the grid; the library is fetched the first
+  /** Add from parts. Opens on the grid; the library is fetched the first
    * time and re-read on every open, since another tab may have added one. */
   private async openPartsDialog() {
     if (!this.canEdit || !this.draft) return;
@@ -8887,7 +8890,7 @@ export class WristAssistantPanel extends LitElement {
 
   private renderPartsDialog() {
     return html`<dialog class="parts-dialog xf" @close=${() => { this.partsOpen = false; }}>
-      ${this.dialogHead("My parts", "Layers you kept, ready to drop into this complication", () => this.closePartsDialog())}
+      ${this.dialogHead("Parts", "Layers you kept, ready to drop into this complication", () => this.closePartsDialog())}
       ${this.partPick ? this.renderPartPicked(this.partPick.config) : this.renderPartsGrid()}
     </dialog>`;
   }
@@ -8903,7 +8906,7 @@ export class WristAssistantPanel extends LitElement {
       ${this.parts === undefined
         ? html`<div class="xf-sub">Reading your parts…</div>`
         : rows.length === 0
-          ? html`<div class="xf-lead">${uiIcon("info")}<span>No parts yet. Pick a layer or a few in the Layers list, then <b>Save to My parts</b>.</span></div>`
+          ? html`<div class="xf-lead">${uiIcon("info")}<span>No parts yet. Pick a layer or a few in the Layers list, then <b>Save to parts</b>.</span></div>`
           : html`<div class="pt-grid">${rows.map((part) => this.renderPartCard(part))}</div>`}
     </div>
     <div class="xfer-foot">
@@ -8982,7 +8985,7 @@ export class WristAssistantPanel extends LitElement {
       ${this.partsError ? html`<div class="hint err" role="alert">${this.partsError}</div>` : nothing}
     </div>
     <div class="xfer-foot">
-      <button class="ghost" @click=${() => { this.partPick = undefined; this.partMap = new Map(); }}>Back to My parts</button>
+      <button class="ghost" @click=${() => { this.partPick = undefined; this.partMap = new Map(); }}>Back to parts</button>
       <span class="spacer"></span>
       <button class="primary" ?disabled=${problem !== undefined}
         title=${problem ?? "Put these layers into the open complication"} @click=${() => this.doAddPart()}>Add to this complication</button>
@@ -9144,7 +9147,7 @@ export class WristAssistantPanel extends LitElement {
             <span class="presets-l">Saved</span>
             <button class="preset" ?disabled=${full}
               title="Layers you kept earlier, ready to drop onto this shape"
-              @click=${() => void this.openPartsDialog()}>Add from My parts</button>
+              @click=${() => void this.openPartsDialog()}>Add from parts</button>
           </div>`
         : nothing}
       ${this.renderPresetDialog()}
@@ -9394,7 +9397,7 @@ export class WristAssistantPanel extends LitElement {
     const shapeMeta = `${layout?.backgroundColorHex ? colorWords(layout.backgroundColorHex) : "transparent"} · ${layout?.borderColorHex ? `${layout.borderWidth} pt border` : "no border"}`;
     const pickedCount = [...this.multi].filter((id) => cfg.elements.some((e) => e.payload.id === id)).length;
     // A lone selection (one layer, or the members of a selected group) has no
-    // bar of its own, and Save to My parts is the one thing offered for it, so
+    // bar of its own, and Save to parts is the one thing offered for it, so
     // the bar appears for that too. A row being designed is not a layer of the
     // document, so it offers nothing.
     const selectedCount = this.rowEditList() ? 0 : this.selectedIds().length;
@@ -9655,12 +9658,12 @@ export class WristAssistantPanel extends LitElement {
         ? html`<div class="group-cta"><span>${pickedCount} layers picked</span><span class="spacer"></span>
             <button class="small primary" title=${`Group (${KEY_MOD}G)`} @click=${() => this.groupPicked()}>Group them</button>
             <button class="small" title="Keep these layers under a name, to use in another complication"
-              @click=${() => void this.openSavePartDialog()}>Save to My parts</button>
+              @click=${() => void this.openSavePartDialog()}>Save to parts</button>
             <button class="small" @click=${() => { this.multi = new Set(); }}>Clear</button></div>`
         : selectedCount >= 1 && edit
-          ? html`<div class="group-cta"><span>${selectedCount === 1 ? "1 layer selected" : `${selectedCount} layers selected`}</span><span class="spacer"></span>
-              <button class="small" title="Keep this layer under a name, to use in another complication"
-                @click=${() => void this.openSavePartDialog()}>Save to My parts</button></div>`
+          ? html`<div class="part-cta"><span class="spacer"></span>
+              <button class="ghost" title=${selectedCount === 1 ? "Keep this layer under a name, to use in another complication" : "Keep these layers under a name, to use in another complication"}
+                @click=${() => void this.openSavePartDialog()}>Save to parts</button></div>`
         : cfg.elements.length >= 2 && edit && !cfg.groups?.length
           ? html`<div class="hint">${MULTI_KEY}-click layers here or on the preview, or shift-click a range of rows, then group them so a finished part moves as one. The <b>?</b> button in the header lists every key and mouse trick.</div>`
           : nothing}
