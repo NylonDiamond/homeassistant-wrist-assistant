@@ -4914,8 +4914,12 @@ export function chartLabelsOf(cfg: CustomComplicationConfig, chartId: string): E
 /** Put a layer into the chart's group, making the group when the chart has
  * none. The group starts unlocked: a number is added to be dragged into
  * place, and a locked group would drag the chart along with it. Selecting
- * the group row moves everything as one whenever that is wanted. */
+ * the group row moves everything as one whenever that is wanted.
+ *
+ * Every extra arrives through here, a picture's timestamp as much as a chart's
+ * line, so this is also where the extra takes its owner's page. */
 function joinChartGroup(cfg: CustomComplicationConfig, chart: Element, memberId: string): void {
+  inheritPage(cfg, chart, memberId);
   const existing = groupOf(cfg, chart.payload.id);
   if (existing) {
     setGroup(cfg, memberId, existing.id);
@@ -4924,6 +4928,25 @@ function joinChartGroup(cfg: CustomComplicationConfig, chart: Element, memberId:
   const gid = createGroup(cfg, [chart.payload.id, memberId]);
   const group = cfg.groups?.find((g) => g.id === gid);
   if (group) group.locked = false;
+}
+
+/** Give a layer the page its owner is on.
+ *
+ * A layer with no page of its own draws on every page. `newElement` writes no
+ * page, so until 2026-09-17 an extra added while page 2 was showing drew on
+ * page 1 as well, while its owner stayed on the page it was added to. A
+ * picture's timestamp was the plainest case: the picture obeyed the page and
+ * the clock followed the reader everywhere.
+ *
+ * A group may still straddle pages, which is why this runs where the extra is
+ * attached rather than over every member of a group: an author who moves an
+ * extra to another page afterwards keeps that. The tap area a layer owns takes
+ * its owner's page the same way, in `settleAttachedTaps`. */
+function inheritPage(cfg: CustomComplicationConfig, owner: Element, memberId: string): void {
+  const member = cfg.elements.find((el) => el.payload.id === memberId);
+  if (!member) return;
+  if (owner.payload.page === undefined) delete member.payload.page;
+  else member.payload.page = owner.payload.page;
 }
 
 /** Where a new number sits, as a fraction of the chart's own frame: the ends of

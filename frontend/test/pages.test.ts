@@ -17,9 +17,14 @@ import {
   PAGE_DEFAULT_DWELL,
   PAGE_DWELL_RANGE,
   TAP_ACTION_LABELS,
+  addChartGrid,
+  addChartLabel,
+  addChartLine,
+  addImageTime,
   addPage,
   auditUnknownKeys,
   controlActionAllowed,
+  convertChartTimes,
   createGroup,
   describeTapAction,
   dwellForPage,
@@ -951,5 +956,47 @@ describe("the ready-made page-turn zones", () => {
     expect(back).toBeDefined();
     expect(back!.payload.page).toBe(2);
     expect((back!.payload as { action: { type: string } }).action).toEqual({ type: "previousPage" });
+  });
+});
+
+// An extra is a layer a layer owns: a picture's timestamp, a chart's grid, its
+// clock times, one of its numbers, a line across its plot. It is added from the
+// owner's own card rather than from the Add a layer row, so it never went
+// through the panel's "settle what just arrived" step, and a new layer with no
+// page of its own draws on every page. Added while page 2 showed, the picture
+// obeyed the page and the clock it carried followed the reader everywhere.
+describe("an extra takes its owner's page", () => {
+  const ownerOnPage = (cfg: CustomComplicationConfig, kind: "image" | "chart", page?: number) => {
+    const el = newElement(kind);
+    if (page !== undefined) el.payload.page = page;
+    cfg.elements.push(el);
+    return el.payload.id;
+  };
+  const pageOf = (cfg: CustomComplicationConfig, id: string | undefined) =>
+    cfg.elements.find((el) => el.payload.id === id)!.payload.page;
+
+  it("puts a picture's timestamp on the picture's page", () => {
+    const cfg = pagedConfig({ count: 2, mode: "tap", dwell: [] });
+    const image = ownerOnPage(cfg, "image", 2);
+    expect(pageOf(cfg, addImageTime(cfg, image))).toBe(2);
+  });
+
+  it("puts a chart's grid, times, number and line on the chart's page", () => {
+    const cfg = pagedConfig({ count: 2, mode: "tap", dwell: [] });
+    const chart = ownerOnPage(cfg, "chart", 2);
+    expect(pageOf(cfg, addChartGrid(cfg, chart))).toBe(2);
+    expect(pageOf(cfg, convertChartTimes(cfg, chart))).toBe(2);
+    expect(pageOf(cfg, addChartLabel(cfg, chart, "latest"))).toBe(2);
+    expect(pageOf(cfg, addChartLine(cfg, chart, "threshold"))).toBe(2);
+  });
+
+  // The owner draws everywhere, so the extra has to as well, and an absent key
+  // is how "every page" is written.
+  it("leaves an extra on every page when its owner is", () => {
+    const cfg = pagedConfig({ count: 2, mode: "tap", dwell: [] });
+    const image = ownerOnPage(cfg, "image");
+    const id = addImageTime(cfg, image);
+    expect(pageOf(cfg, id)).toBeUndefined();
+    expect("page" in cfg.elements.find((el) => el.payload.id === id)!.payload).toBe(false);
   });
 });
