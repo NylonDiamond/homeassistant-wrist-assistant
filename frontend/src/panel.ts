@@ -180,6 +180,7 @@ import {
   lookSummary,
   namedValueEditor,
   newNamedValue,
+  pagesCardFields,
   copyShapeLayout,
   type DescribeContext,
   pickedCommon,
@@ -2806,6 +2807,9 @@ export class WristAssistantPanel extends LitElement {
     .page-row .page-act:disabled { opacity: .45; cursor: default; }
     .page-row .page-act:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .panel-title button.help { flex: none; }
+    /* Turn pages off: the one control in the card that takes the feature
+       away, so it sits at the foot on its own line, not beside the tabs. */
+    .pages-off { display: flex; justify-content: flex-end; margin-top: 8px; }
     /* The tour's progress, under the Pages row: one thin bar, filled by a CSS
        animation over the tour's own length, so nothing has to tick at 60 fps
        to draw it. */
@@ -6086,6 +6090,7 @@ export class WristAssistantPanel extends LitElement {
           @click=${() => { this.helpTab = "pages"; this.helpOpen = true; }}>?</button>
       </h2>
       ${body}
+      ${edit ? pagesCardFields(this.host()) : nothing}
     </div>`;
   }
 
@@ -6246,12 +6251,12 @@ export class WristAssistantPanel extends LitElement {
     ];
     const pagesWhat: [string, string][] = [
       ["What a page is", "One slot on the watch face can hold several faces of the same complication, one showing at a time. Each face is a page. A house battery on page 1 and the car on page 2 is the usual reason: one slot, two readings."],
-      ["Turning pages on", "Add a page in the Pages card, between Add a layer and Layers. What you have now becomes page 1 and an empty page 2 opens. The Pages select in the Complication card does the same, but leaves your layers on every page for you to sort out."],
+      ["Turning pages on", "Add a page in the Pages card, between Add a layer and Layers. What you have now becomes page 1 and an empty page 2 opens. Turn pages off, at the foot of the same card, puts every layer back on every page and deletes nothing."],
       ["One page at a time", "The canvas and the Layers card show one page. The Pages card above the list says which, and clicking a number switches both. [ and ] do the same from the keyboard."],
       ["Which page a layer is on", "Each layer sits on one page or on every page. Set it on the layer, in its Position card. A layer you add lands on the page you are looking at. A background, a border or a label that belongs everywhere goes on Every page."],
       ["+ and the trash", "In the Pages card. + adds an empty page at the end, up to four. The trash on the pressed page deletes that page and the layers on it; later pages move down one, and layers on every page stay. Undo puts it back."],
       ["Moving between pages on the watch", "A tap has to say so. Set the complication's tap action, or a tap layer's, to Next page or Previous page. A tap with any other action does its own job and leaves the page alone, so a page can still hold buttons. The page stays where it was left."],
-      ["The tour", "Set a tap action to Play the page tour and one tap plays every page once, then returns to page 1. The Complication card then shows a hold time per page; a tour lasts the sum of them. The Play button in the Pages card plays it on the canvas with the same timing. A tap during a tour on the watch stops it."],
+      ["The tour", "Set a tap action to Play the page tour and one tap plays every page once, then returns to page 1. The Pages card then shows a hold time per page; a tour lasts the sum of them. The Play button in the Pages card plays it on the canvas with the same timing. A tap during a tour on the watch stops it."],
       ["What the watch needs", "A complication with pages needs the Wrist Assistant app that understands them. An older app refuses the whole complication and asks for an update rather than drawing every page on top of each other."],
     ];
     const layers: [string, string][] = [

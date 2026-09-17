@@ -747,7 +747,7 @@ describe("refresh complications", () => {
     for (const type of ["nextPage", "playTour"] as const) {
       const note = tapActionNote({ type });
       expect(note, type).toContain("has one page, so this does nothing yet");
-      expect(note, type).toContain("Complication card");
+      expect(note, type).toContain("Pages card");
     }
   });
 

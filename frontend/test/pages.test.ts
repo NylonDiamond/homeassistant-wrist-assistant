@@ -670,7 +670,7 @@ describe("the Previous page tap", () => {
     expect(tapActionNote({ type: "previousPage" }, true))
       .toBe("Each tap shows the page before. The page stays where it was left.");
     expect(tapActionNote({ type: "previousPage" }, false))
-      .toBe("This complication has one page, so this does nothing yet. Turn pages on in the Complication card.");
+      .toBe("This complication has one page, so this does nothing yet. Add a page in the Pages card, on the left.");
   });
 
   it("is not a Control Center action", () => {

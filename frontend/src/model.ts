@@ -3207,7 +3207,7 @@ export function tapActionNote(action: TapAction, pages = false): string | undefi
   if (action.type === "nextPage" || action.type === "previousPage" || action.type === "playTour") {
     if (!pages) {
       return "This complication has one page, so this does nothing yet."
-        + " Turn pages on in the Complication card.";
+        + " Add a page in the Pages card, on the left.";
     }
     if (action.type === "nextPage") return "Each tap shows the next page. The page stays where it was left.";
     if (action.type === "previousPage") return "Each tap shows the page before. The page stays where it was left.";
@@ -3667,14 +3667,14 @@ export function addPage(cfg: CustomComplicationConfig): number | undefined {
 }
 
 /**
- * Pages on a document that had none, from the Layers card: what is there now
+ * Pages on a document that had none, from the Pages card: what is there now
  * becomes page 1 and a blank page 2 is added. Returns 2.
  *
- * The Complication card's Pages select leaves existing layers on every page,
- * which is right when the author is about to sort them out by hand. "Add a
- * page" under the list means something else: the face as it stands is page 1,
- * and the author wants a fresh page to draw on. So every top-level layer is
- * pinned to 1 first, and the new page starts empty.
+ * Pinning first is the point. "Add a page" means the face as it stands is
+ * page 1 and the author wants a fresh page to draw on, so every top-level
+ * layer is pinned to 1 and the new page starts empty. Leaving them on every
+ * page instead would put the whole face on the new page too, which is never
+ * what the button looks like it does.
  */
 export function startPages(cfg: CustomComplicationConfig): number {
   for (const el of cfg.elements) el.payload.page = 1;

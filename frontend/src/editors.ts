@@ -3886,17 +3886,8 @@ export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean } = {
     ${tap.type === "callService"
       ? callServiceFields(host, tap, (next, k) => host.update((c) => { c.tapAction = next; }, k), "general-tap")
       : nothing}
-    ${tap.type === "openPage" ? openPageField(host) : nothing}
-    ${pagesFields(host)}`;
+    ${tap.type === "openPage" ? openPageField(host) : nothing}`;
 }
-
-/** The choices the Pages picker offers: off, then every count up to the
- * ceiling. Off is a count of one, which is a document that behaves exactly as
- * it did before pages existed. */
-const PAGE_COUNT_CHOICES: [string, string][] = [
-  ["1", "Off"],
-  ...Array.from({ length: PAGES_MAX_COUNT - 1 }, (_, i) => [String(i + 2), String(i + 2)] as [string, string]),
-];
 
 /** Seconds as the tour line prints them: whole where it can be, one decimal
  * where the dwells do not add up to one. */
@@ -3905,13 +3896,20 @@ function dwellSeconds(seconds: number): string {
 }
 
 /**
- * Pages on one complication: how many there are and, for a tour, how long each
- * one is held.
+ * The settings under the Pages card's row, in the left column: how the pages
+ * are moved through, how long a tour holds each one, and the one control that
+ * turns the feature off.
  *
- * The count is the whole feature's switch. Off deletes the spec and unpins
- * every layer, because a `page` left behind is a document that still says it
- * has pages. Fewer pages moves the layers past the new end onto it rather than
- * dropping them, and the line under the picker says so before it happens.
+ * Everything about pages lives in that card. There used to be a Pages count
+ * select here in the Complication card as well, and the two disagreed: the
+ * select took a page away by moving its layers onto the new last page, while
+ * the trash on a page tab took the page and its layers together. Two controls
+ * for one number, with different answers to "where did my layers go". The
+ * select is gone, and what is left says what it does:
+ *
+ * - `+` adds an empty page and moves nothing.
+ * - The trash on a page takes that page and the layers on it, one undo away.
+ * - Turn pages off keeps every layer and puts them back on every page.
  *
  * There is no Mode switch. Whether the document is a tour follows its tap
  * actions (`pageModeFor`): a Play tour action anywhere makes it one, and the
@@ -3922,42 +3920,41 @@ function dwellSeconds(seconds: number): string {
  * here: the document says how many pages there are, and each layer says which
  * one it belongs to.
  */
-function pagesFields(host: EditorHost): TemplateResult {
+export function pagesCardFields(host: EditorHost): TemplateResult {
   const cfg = host.config;
-  const on = usesPages(cfg);
+  if (!usesPages(cfg)) {
+    return html`<div class="hint">One complication, several faces, a tap between them. Off is one
+      face, which is what every complication was before this setting.</div>`;
+  }
   const spec = pagesSpecOf(cfg);
-  const count = on ? spec.count : 1;
-  // Fewer pages is the only change that touches a layer, so the line is drawn
-  // for the step down the picker is one click away from.
-  const shrink = on ? pageCountMoveNote(cfg, count - 1) : undefined;
-  const tour = on && spec.mode === "tour";
+  const tour = spec.mode === "tour";
+  // What turning pages off will do to the pinned layers, said before it
+  // happens rather than after: nothing is dropped, everything goes back to
+  // being on every page.
+  const unpin = pageCountMoveNote(cfg, 1);
   return html`
-    ${selectField("Pages", String(count), PAGE_COUNT_CHOICES, (v) => host.update((c) => {
-      setPageCount(c, Number(v) || 1);
-    }, "pages-count"), { def: "1" })}
-    ${on ? nothing : html`<div class="hint">One complication, several faces, a tap between them. Off is one
-      face, which is what every complication was before this setting.</div>`}
-    ${shrink === undefined ? nothing : html`<div class="hint">Taking a page away never drops a layer. ${shrink}</div>`}
-    ${on ? html`
-      ${tour
-        ? html`<div class="hint">A tour: one tap plays every page once, then returns to page 1. That follows the
-          Play the page tour action. Change the action to Next page for one page per tap.</div>`
-        : html`<div class="hint">Each tap shows the next page. For a tour that plays every page from one tap, set
-          the tap action to Play the page tour.</div>`}
-      ${tour ? html`
-        <div class="grid2">
-          ${pageNumbers(spec).map((page) => numberField(`Page ${page} hold`, writtenDwell(spec, page),
-            (v) => host.update((c) => { setPageDwell(c, page, v); }, `pages-dwell-${page}`),
-            { step: 0.5, min: PAGE_DWELL_RANGE.min, max: PAGE_DWELL_RANGE.max, optional: true, unit: "s",
-              placeholder: String(PAGE_DEFAULT_DWELL), def: null }))}
-        </div>
-        <div class="hint">Tour lasts ${dwellSeconds(tourDuration(spec))}. An empty box holds that page for
-          ${dwellSeconds(PAGE_DEFAULT_DWELL)}.</div>`
-        : nothing}
-      <div class="hint">A layer can sit on one page or on every page. Pick it on the layer, under Position.</div>
-      ${pageMoverExists(cfg) ? nothing : html`<div class="hint warn">Nothing moves the page yet. Set the tap
-        action to Next page, or give a tap layer that action.</div>`}`
-      : nothing}`;
+    ${tour
+      ? html`<div class="hint">A tour: one tap plays every page once, then returns to page 1. That follows the
+        Play the page tour action. Change the action to Next page for one page per tap.</div>`
+      : html`<div class="hint">Each tap shows the next page. For a tour that plays every page from one tap, set
+        the tap action to Play the page tour.</div>`}
+    ${tour ? html`
+      <div class="grid2">
+        ${pageNumbers(spec).map((page) => numberField(`Page ${page} hold`, writtenDwell(spec, page),
+          (v) => host.update((c) => { setPageDwell(c, page, v); }, `pages-dwell-${page}`),
+          { step: 0.5, min: PAGE_DWELL_RANGE.min, max: PAGE_DWELL_RANGE.max, optional: true, unit: "s",
+            placeholder: String(PAGE_DEFAULT_DWELL), def: null }))}
+      </div>
+      <div class="hint">Tour lasts ${dwellSeconds(tourDuration(spec))}. An empty box holds that page for
+        ${dwellSeconds(PAGE_DEFAULT_DWELL)}.</div>`
+      : nothing}
+    <div class="hint">A layer can sit on one page or on every page. Pick it on the layer, under Position.</div>
+    ${pageMoverExists(cfg) ? nothing : html`<div class="hint warn">Nothing moves the page yet. Set the tap
+      action to Next page, or give a tap layer that action.</div>`}
+    <div class="pages-off">
+      <button class="ghost" title=${`Back to one face. No layer is deleted.${unpin === undefined ? "" : ` ${unpin}`}`}
+        @click=${() => host.update((c) => { setPageCount(c, 1); }, "pages-off")}>Turn pages off</button>
+    </div>`;
 }
 
 /** What the swatch shows while no colour is stored: the watch's own fallback,
