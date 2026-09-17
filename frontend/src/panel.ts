@@ -2810,6 +2810,10 @@ export class WristAssistantPanel extends LitElement {
     /* Turn pages off: the one control in the card that takes the feature
        away, so it sits at the foot on its own line, not beside the tabs. */
     .pages-off { display: flex; justify-content: flex-end; margin-top: 8px; }
+    /* The two ready-made fixes, under the warning that asks for them: a
+       warning that says what to do and gives you no way to do it is half a
+       message. They wrap on a narrow panel rather than shrink. */
+    .page-fix { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
     /* The tour's progress, under the Pages row: one thin bar, filled by a CSS
        animation over the tour's own length, so nothing has to tick at 60 fps
        to draw it. */

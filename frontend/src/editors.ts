@@ -285,6 +285,7 @@ import {
   PAGE_DEFAULT_DWELL,
   PAGE_DWELL_RANGE,
   pageCountMoveNote,
+  addPageTurnTaps,
   pageMoverExists,
   pageNumbers,
   pagesSpecOf,
@@ -3949,8 +3950,15 @@ export function pagesCardFields(host: EditorHost): TemplateResult {
         ${dwellSeconds(PAGE_DEFAULT_DWELL)}.</div>`
       : nothing}
     <div class="hint">A layer can sit on one page or on every page. Pick it on the layer, under Position.</div>
-    ${pageMoverExists(cfg) ? nothing : html`<div class="hint warn">Nothing moves the page yet. Set the tap
-      action to Next page, or give a tap layer that action.</div>`}
+    ${pageMoverExists(cfg) ? nothing : html`<div class="hint warn">Nothing moves the page yet. Pick one of these,
+      or set a tap action to Next page by hand.
+      <div class="page-fix">
+        <button class="small" title=${`A tap anywhere on the face shows the next page. This replaces the face's tap action, which is ${describeTapAction(cfg.tapAction)} now. Undo puts it back.`}
+          @click=${() => host.update((c) => { c.tapAction = { type: "nextPage" }; }, "pages-fix-tap")}>Tap anywhere for next</button>
+        <button class="small" title="Two tap zones over the face, on every page: the left half goes back, the right half goes forward. Layers already drawn keep their own taps."
+          @click=${() => host.update((c) => { addPageTurnTaps(c); }, "pages-fix-zones")}>Add back and next zones</button>
+      </div>
+    </div>`}
     <div class="pages-off">
       <button class="ghost" title=${`Back to one face. No layer is deleted.${unpin === undefined ? "" : ` ${unpin}`}`}
         @click=${() => host.update((c) => { setPageCount(c, 1); }, "pages-off")}>Turn pages off</button>
