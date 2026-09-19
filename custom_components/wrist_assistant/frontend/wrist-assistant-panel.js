@@ -3289,8 +3289,12 @@ ${dI(c)}`}}delete s.hidden,delete s.linkId;let l=Ll(a);if(l.length>0){let d=l.sl
        row follows the last layer, and stays in sight once the rows scroll. */
     .column.left { display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
     .column.left .card { flex: none; }
+    /* A basis of 0 rather than auto: with auto the rows of a long design
+       count as the card's size and squeeze the add card above it to nothing.
+       The third is a floor, not a share: a short design leaves the rest to
+       the add card, a long one scrolls its rows inside the card. */
     .column.left .card.layers-card {
-      flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: 10px 8px 8px;
+      flex: 1 1 0; min-height: 33%; display: flex; flex-direction: column; padding: 10px 8px 8px;
       --thumb-w: ${Es}px; --thumb-h: ${Rs}px;
       container: layers / inline-size;
     }
@@ -3394,7 +3398,7 @@ ${dI(c)}`}}delete s.hidden,delete s.linkId;let l=Ll(a);if(l.length>0){let d=l.sl
        two boxes are the same height in Names, Small and Large alike and
        the card does not jump when the size changes. */
     .column.left .card.add-card[data-open="true"] {
-      flex: 0 1 auto; min-height: 0; max-height: calc(66% - 150px);
+      flex: 0 0 auto; min-height: 0; max-height: calc(66% - 150px);
       display: flex; flex-direction: column;
     }
     .column.left .card.add-card[data-open="true"] > * { flex: none; }
