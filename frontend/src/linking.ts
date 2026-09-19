@@ -23,8 +23,8 @@ import {
   pruneGroups,
   schemaVersionFor,
 } from "./model.js";
-import { ALL_FAMILIES, biggestFirst, dropFamily, isHomeFamily, supportedFamilies } from "./layouts.js";
-import { type DeviceKind, MIN_IPHONE_VERSION_FOR_HOME_SCREEN, watchSupportsShapes } from "./version.js";
+import { ALL_FAMILIES, biggestFirst, comingSoonFamilies, dropFamily, familiesFor, isHomeFamily, supportedFamilies } from "./layouts.js";
+import { type DeviceKind, LIBRARY_OWNER_ID, MIN_IPHONE_VERSION_FOR_HOME_SCREEN, watchSupportsShapes } from "./version.js";
 import { mergeForLink } from "./linkMerge.js";
 
 // ── the devices a link can join ───────────────────────────────────────────
@@ -40,6 +40,9 @@ export interface LinkOwner {
   ownerId: string;
   /** The name the device list shows, "Jesse's Watch" or "Jesse's iPhone". */
   label: string;
+  /** Which device this is. Can be `"library"`, which is not a device at all
+   * but the home's shelf: it holds a design that is on nothing yet, so it
+   * carries every shape and is never narrowed by an app version. */
   kind: DeviceKind;
   /** The shapes this device's app draws, from `familiesFor`. */
   families: readonly FamilyKind[];
@@ -49,6 +52,39 @@ export interface LinkOwner {
   controls: boolean;
   /** The app version it reported, for the per-device trimming below. */
   appVersion?: string | null;
+}
+
+/**
+ * The shapes the Library holds, which is every shape a newest watch and a
+ * newest phone draw between them.
+ *
+ * Nothing narrows it, because nothing draws it. A design on the shelf has not
+ * been given to a device yet, so trimming it to what some device happens to
+ * run today would quietly throw away the shape the moment it went on. The list
+ * is `familiesFor`'s own answer for a Library owner, so the shelf and the
+ * panel's shape tabs can never disagree about which shapes exist.
+ */
+export function libraryFamilies(): FamilyKind[] {
+  return familiesFor({ device_kind: "library" });
+}
+
+/** The shapes the Library is promised but cannot be given yet, which is
+ * whatever the newest phone is promised: a shape coming to any device in the
+ * home is coming to the shelf. */
+export function libraryComingSoon(): FamilyKind[] {
+  return comingSoonFamilies({ device_kind: "library" });
+}
+
+/**
+ * Where a save goes: the ticked devices, or the Library when none is ticked.
+ *
+ * The rule of the whole feature in one line. A design with no device ticked is
+ * not a design with nowhere to go, it is a design that lives on the shelf, and
+ * every caller that turns a set of ticks into a set of owners has to say so
+ * the same way.
+ */
+export function moveTargets(ticked: readonly string[]): string[] {
+  return ticked.length > 0 ? [...ticked] : [LIBRARY_OWNER_ID];
 }
 
 /** The shapes a watch face and an iPhone Lock Screen both draw, which are the
@@ -164,8 +200,9 @@ const SECTION_FAMILIES: Record<ShapeSectionKey, readonly FamilyKind[]> = {
  * only a watch has, then the phone's own screen, then the control. */
 const SECTION_ORDER: readonly ShapeSectionKey[] = ["shared", "watch", "home", "control"];
 
-/** Watch before iPhone, the order every device list in the panel uses. */
-const KIND_ORDER: readonly DeviceKind[] = ["watch", "iphone"];
+/** Watch before iPhone, the order every device list in the panel uses, with
+ * the Library last: it is not a device, so it reads under them. */
+const KIND_ORDER: readonly DeviceKind[] = ["watch", "iphone", "library"];
 
 /**
  * A section's heading, worded for the devices this home has.
@@ -173,12 +210,18 @@ const KIND_ORDER: readonly DeviceKind[] = ["watch", "iphone"];
  * Only the shared section changes. Its three shapes are a watch face slot and
  * a Lock Screen slot at once, so a home with both devices has to name both;
  * naming a screen the home does not have is worse than saying less.
+ *
+ * The Library counts as both. It holds a design for whatever the home has, so
+ * a shelf in the picture means both screens are on the table: a home with only
+ * the Library reads "Watch face and Lock Screen" rather than picking one of
+ * them at random.
  */
 export function sectionTitle(key: ShapeSectionKey, kinds: readonly DeviceKind[]): string {
   switch (key) {
     case "shared": {
-      const phone = kinds.includes("iphone");
-      if (kinds.includes("watch")) return phone ? "Watch face and Lock Screen" : "Watch face";
+      const library = kinds.includes("library");
+      const phone = library || kinds.includes("iphone");
+      if (library || kinds.includes("watch")) return phone ? "Watch face and Lock Screen" : "Watch face";
       return phone ? "Lock Screen" : "Watch face";
     }
     case "watch": return "Watch face only";
@@ -229,9 +272,10 @@ export interface NewSummary {
   nameProblem?: string;
   /** Step 2's count: shapes ticked, the control counted as one of them. */
   shapes: number;
-  /** Step 3's count: devices ticked. None is an answer: the complication is
-   * then made on the device being edited and written only when it is saved,
-   * for an author who wants to build first and hand it out later. */
+  /** Step 3's count: devices ticked. None is an answer, and now a real place:
+   * the complication is made in the home's Library, where it waits until a
+   * device is ticked for it. An author who wants to build first and hand it
+   * out later never has to borrow a device to do it. */
   devices: number;
   /** Whether this home is offered the Control Center section, which changes
    * only how step 2 is asked for. */
@@ -252,7 +296,7 @@ export function newSummary(o: NewSummary): string {
   if (o.nameProblem !== undefined) return o.nameProblem;
   if (o.shapes === 0) return o.hasControl ? "Tick a shape or the control first." : "Now tick at least one shape.";
   const shapes = `${o.shapes} ${o.shapes === 1 ? "shape" : "shapes"}`;
-  if (o.devices === 0) return `${shapes} on no device yet. Save puts it on the one you are editing.`;
+  if (o.devices === 0) return `${shapes} in the library. Tick a device any time under Appears on.`;
   return `${shapes} on ${o.devices} ${o.devices === 1 ? "device" : "devices"}`;
 }
 
@@ -315,8 +359,12 @@ export function picksFromChoice(
  *     2.8.0 build 10 its picker gate called the unserved Home Screen kinds
  *     stale and re-invalidated on every foreground (checked 2026-09-18 in
  *     `ComplicationPickerEntries.sliceFingerprints`).
+ *   - The Library keeps everything. None of the reasons above is about it: no
+ *     app decodes the shelf, so a shape trimmed off it would be a shape lost
+ *     for good rather than one a device simply never draws.
  */
 export function familiesKeptFor(owner: Pick<LinkOwner, "kind" | "appVersion">): FamilyKind[] {
+  if (owner.kind === "library") return libraryFamilies();
   if (owner.kind === "iphone") {
     const home = watchSupportsShapes(owner.appVersion, MIN_IPHONE_VERSION_FOR_HOME_SCREEN);
     return ALL_FAMILIES.filter((f) => f !== "corner" && (home || !isHomeFamily(f)));
@@ -412,16 +460,26 @@ export function picksFromCopies(copies: readonly LinkedCopy[]): Map<string, Set<
 }
 
 /**
- * The copy the panel opens for a link: the phone's when there is one, else the
- * first.
+ * The copy the panel opens for a link: the phone's when there is one, then a
+ * watch's, then the Library's.
  *
  * The phone copy is the one that is never trimmed. A watch copy may have gone
  * without the Home Screen sizes (an older watch app cannot decode them), and
  * opening that one would show a design with its tiles missing and then save
  * them away for good.
+ *
+ * The Library copy is untrimmed too, so it would do as well as the phone's,
+ * but it comes last on purpose: a link that reaches a device is a design about
+ * that device, and the shelf's copy is the one whose slot and `hidden` mean
+ * nothing to anybody. When it is the only copy it is of course what opens,
+ * which is the whole point of being able to build with no device ticked.
  */
 export function openCopyOf(copies: readonly LinkedCopy[], kindOf: (ownerId: string) => DeviceKind): LinkedCopy | undefined {
-  return copies.find((c) => kindOf(c.ownerId) === "iphone") ?? copies[0];
+  return (
+    copies.find((c) => kindOf(c.ownerId) === "iphone")
+    ?? copies.find((c) => kindOf(c.ownerId) !== "library")
+    ?? copies[0]
+  );
 }
 
 // ── the save plan ─────────────────────────────────────────────────────────

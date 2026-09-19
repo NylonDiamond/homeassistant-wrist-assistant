@@ -11,6 +11,9 @@ import {
   type LinkPicks,
   controlOwners,
   keepPicks,
+  libraryComingSoon,
+  libraryFamilies,
+  moveTargets,
   newReady,
   newSummary,
   ownersDrawing,
@@ -20,7 +23,8 @@ import {
   setPick,
   shapeSections,
 } from "../src/linking.js";
-import { familiesFor } from "../src/layouts.js";
+import { XLARGE_OFFERED, comingSoonFamilies, familiesFor } from "../src/layouts.js";
+import { LIBRARY_OWNER_ID } from "../src/version.js";
 
 const WATCH: LinkOwner = {
   ownerId: "w1",
@@ -44,6 +48,18 @@ const PHONE: LinkOwner = {
 
 const WATCH_2: LinkOwner = { ...WATCH, ownerId: "w2", label: "Work Watch" };
 const PHONE_2: LinkOwner = { ...PHONE, ownerId: "p2", label: "Work iPhone" };
+
+/** The home's shelf, which is not a device: every shape, every promise, and
+ * the control, since nothing about it is held back by an app release. */
+const LIBRARY: LinkOwner = {
+  ownerId: LIBRARY_OWNER_ID,
+  label: "Library",
+  kind: "library",
+  families: libraryFamilies(),
+  comingSoon: libraryComingSoon(),
+  controls: true,
+  appVersion: null,
+};
 
 const picks = (rows: Record<string, FamilyKind[]>): LinkPicks =>
   new Map(Object.entries(rows).map(([ownerId, families]) => [ownerId, new Set(families)]));
@@ -192,9 +208,11 @@ describe("newSummary", () => {
     expect(newSummary({ ...base, shapes: 0, hasControl: false })).toBe("Now tick at least one shape.");
   });
 
-  it("lets no device be an answer, and says where the design goes instead", () => {
-    expect(newSummary({ ...base, devices: 0 })).toBe("1 shape on no device yet. Save puts it on the one you are editing.");
-    expect(newSummary({ ...base, shapes: 2, devices: 0 })).toBe("2 shapes on no device yet. Save puts it on the one you are editing.");
+  // No device ticked is not "nowhere" any more, it is the home's Library, so
+  // the line names the place rather than promising the device being edited.
+  it("lets no device be an answer, and names the library it goes to instead", () => {
+    expect(newSummary({ ...base, devices: 0 })).toBe("1 shape in the library. Tick a device any time under Appears on.");
+    expect(newSummary({ ...base, shapes: 2, devices: 0 })).toBe("2 shapes in the library. Tick a device any time under Appears on.");
   });
 
   it("counts what Create is about to make once nothing is missing", () => {
@@ -218,7 +236,9 @@ describe("newReady", () => {
   });
 
   // The footer and the button are one answer in two places: a summary that
-  // counts shapes means Create is live, and any other summary means it is not.
+  // opens with the shape count means Create is live, and any other summary
+  // means it is not. Read from the front rather than by hunting for a word,
+  // since the no-device line now names the library and ends on "Appears on."
   it("agrees with the summary about whether anything is missing", () => {
     for (const state of [
       base,
@@ -227,7 +247,7 @@ describe("newReady", () => {
       { ...base, shapes: 0 },
       { ...base, devices: 0 },
     ]) {
-      expect(newReady(state)).toBe(newSummary(state).includes(" on "));
+      expect(newReady(state)).toBe(newSummary(state).startsWith(`${state.shapes} shape`));
     }
   });
 });
@@ -276,5 +296,76 @@ describe("sectionTitle", () => {
     expect(sectionTitle("watch", ["watch"])).toBe("Watch face only");
     expect(sectionTitle("home", ["iphone"])).toBe("Home Screen");
     expect(sectionTitle("control", ["watch", "iphone"])).toBe("Control Center");
+  });
+
+  // The library holds a design for whatever the home has, so it counts as both
+  // screens. Picking one of them for it would be a guess.
+  it("counts the library as a watch and a phone at once", () => {
+    expect(sectionTitle("shared", ["library"])).toBe("Watch face and Lock Screen");
+    expect(sectionTitle("shared", ["watch", "library"])).toBe("Watch face and Lock Screen");
+    expect(sectionTitle("shared", ["iphone", "library"])).toBe("Watch face and Lock Screen");
+  });
+});
+
+describe("the library as a link owner", () => {
+  // The shelf is not a device, so nothing about it is narrowed: it is offered
+  // every section a home with a watch and a phone is offered, on its own.
+  it("is offered every section by itself", () => {
+    const sections = shapeSections([LIBRARY]);
+    expect(sections.map((s) => [s.key, s.title])).toEqual([
+      ["shared", "Watch face and Lock Screen"],
+      ["watch", "Watch face only"],
+      ["home", "Home Screen"],
+      ["control", "Control Center"],
+    ]);
+    expect(sections[0]!.families).toEqual(["rectangular", "circular", "inline"]);
+    expect(sections[1]!.families).toEqual(["corner"]);
+    expect(sections[2]!.families).toEqual(["large", "medium", "small"]);
+    expect(sections[3]!.families).toEqual([]);
+  });
+
+  it("is the same set of sections a watch and a phone together get", () => {
+    const withDevices = shapeSections([WATCH, PHONE]);
+    const alone = shapeSections([LIBRARY]);
+    expect(alone.map((s) => [s.key, s.title, s.families])).toEqual(
+      withDevices.map((s) => [s.key, s.title, s.families]),
+    );
+  });
+
+  // Not a device, so it reads under them rather than among them.
+  it("is named last in a section's kinds", () => {
+    const sections = shapeSections([LIBRARY, PHONE, WATCH]);
+    expect(sections[0]!.kinds).toEqual(["watch", "iphone", "library"]);
+    expect(sections.find((s) => s.key === "home")!.kinds).toEqual(["iphone", "library"]);
+  });
+
+  it("carries the promise of a shape that has not shipped yet", () => {
+    expect(shapeSections([LIBRARY]).find((s) => s.key === "home")!.comingSoon).toEqual(
+      XLARGE_OFFERED ? [] : ["xlarge"],
+    );
+  });
+
+  it("holds every shape the panel offers at all", () => {
+    expect(libraryFamilies()).toEqual(familiesFor({ device_kind: "library" }));
+    expect(libraryComingSoon()).toEqual(comingSoonFamilies({ device_kind: "library" }));
+  });
+});
+
+describe("moveTargets", () => {
+  // The rule of the feature: no device ticked is not nowhere, it is the shelf.
+  it("sends a design with no device ticked to the library", () => {
+    expect(moveTargets([])).toEqual([LIBRARY_OWNER_ID]);
+  });
+
+  it("sends a design to whatever is ticked, in the order it was given", () => {
+    expect(moveTargets(["w1"])).toEqual(["w1"]);
+    expect(moveTargets(["p1", "w1"])).toEqual(["p1", "w1"]);
+  });
+
+  it("copies rather than handing back the caller's own array", () => {
+    const ticked = ["w1"];
+    const out = moveTargets(ticked);
+    out.push("p1");
+    expect(ticked).toEqual(["w1"]);
   });
 });

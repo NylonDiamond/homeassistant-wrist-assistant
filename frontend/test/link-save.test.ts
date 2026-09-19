@@ -12,6 +12,8 @@ import {
   copyFamilies,
   copyForOwner,
   familiesKeptFor,
+  libraryComingSoon,
+  libraryFamilies,
   linkIdOf,
   linkedCopies,
   linkedSaveStatus,
@@ -21,6 +23,7 @@ import {
   planLinkedSave,
 } from "../src/linking.js";
 import { familiesFor } from "../src/layouts.js";
+import { LIBRARY_OWNER_ID } from "../src/version.js";
 
 const LINK = "8B1C2D3E-0000-4000-8000-000000000001";
 
@@ -37,6 +40,15 @@ const owner = (over: Partial<LinkOwner> = {}): LinkOwner => ({
 
 const WATCH = owner();
 const PHONE = owner({ ownerId: "p1", label: "Jesse's iPhone", kind: "iphone", appVersion: "2.8.0", families: familiesFor({ device_kind: "iphone", app_version: "2.8.0" }) });
+/** The shelf, which is not a device: every shape, no version, the control. */
+const LIBRARY = owner({
+  ownerId: LIBRARY_OWNER_ID,
+  label: "Library",
+  kind: "library",
+  appVersion: null,
+  families: libraryFamilies(),
+  comingSoon: libraryComingSoon(),
+});
 
 /** A document with every shape on it, which is what a linked pair edits. */
 function everything(): CustomComplicationConfig {
@@ -81,6 +93,15 @@ describe("familiesKeptFor", () => {
 
   it("keeps the Home Screen sizes away from a phone below the Home Screen release", () => {
     expect(familiesKeptFor({ kind: "iphone", appVersion: "2.7.0" })).toEqual(["rectangular", "circular", "inline"]);
+  });
+
+  // None of the reasons above is about the shelf: no app decodes it, so a
+  // shape trimmed off it would be lost for good rather than simply undrawn.
+  it("lets the library keep every shape, whatever version it claims", () => {
+    expect(familiesKeptFor(LIBRARY)).toEqual(libraryFamilies());
+    expect(familiesKeptFor(LIBRARY)).toContain("corner");
+    expect(familiesKeptFor(LIBRARY)).toContain("small");
+    expect(familiesKeptFor({ kind: "library", appVersion: "1.0.0" })).toEqual(libraryFamilies());
   });
 });
 
@@ -173,6 +194,54 @@ describe("planLinkedSave", () => {
     expect(plan.writes[1]).toMatchObject({ ownerId: "p1", id: "NEW", slotIndex: 2, hidden: false, baseRevision: null });
   });
 
+  // The shelf is an ordinary target of the plan: it takes a free seat from its
+  // own used slots, and it is refused when it has none, exactly like a device.
+  // One set of rules for every owner is easier to trust than a second set that
+  // applies to one of them.
+  it("gives the library a free seat from its own slots", () => {
+    const cfg = everything();
+    const plan = planLinkedSave(
+      cfg,
+      [{ owner: LIBRARY, usedSlots: [0, 1, 3] }],
+      new Map(),
+      { ownerId: LIBRARY_OWNER_ID, baseRevision: null },
+    );
+    if (!plan.ok) throw new Error(plan.message);
+    expect(plan.writes.map((w) => [w.ownerId, w.slotIndex])).toEqual([[LIBRARY_OWNER_ID, 2]]);
+  });
+
+  it("refuses a full library the same way it refuses a full device", () => {
+    const cfg = everything();
+    const full = Array.from({ length: 64 }, (_, i) => i);
+    const plan = planLinkedSave(
+      cfg,
+      [{ owner: LIBRARY, usedSlots: full }],
+      new Map(),
+      { ownerId: LIBRARY_OWNER_ID, baseRevision: null },
+    );
+    expect(plan.ok).toBe(false);
+    if (plan.ok) throw new Error("expected a refusal");
+    expect(plan.message).toContain("Library");
+    expect(plan.message).toContain("no free slot");
+  });
+
+  // Nothing draws the shelf, so no shape is trimmed off its copy: a design put
+  // on a device later still has everything it was built with.
+  it("writes the library a copy carrying every shape the document has", () => {
+    const cfg = everything();
+    const plan = planLinkedSave(
+      cfg,
+      [{ owner: LIBRARY, usedSlots: [] }, { owner: WATCH, usedSlots: [] }],
+      new Map(),
+      { ownerId: LIBRARY_OWNER_ID, baseRevision: null },
+    );
+    if (!plan.ok) throw new Error(plan.message);
+    expect(plan.writes[0]!.families).toEqual(cfg.supportedFamilies);
+    // The watch's copy is still trimmed of the Home Screen sizes, so the line
+    // above is the library's doing rather than the plan trimming nothing.
+    expect(plan.writes[1]!.families).not.toContain("small");
+  });
+
   // Finding this out halfway through leaves the watch saved and the phone not.
   it("refuses before writing anything, naming the device with no seat", () => {
     const cfg = everything();
@@ -233,6 +302,21 @@ describe("reading the link off the devices", () => {
     const kind = (ownerId: string) => (ownerId === "p1" ? "iphone" as const : "watch" as const);
     expect(openCopyOf(copies, kind)!.ownerId).toBe("p1");
     expect(openCopyOf([copies[0]!], kind)!.ownerId).toBe("w1");
+  });
+
+  // The library's copy is untrimmed too, so it would do, but a link that
+  // reaches a device is a design about that device: the phone first, then a
+  // watch, and the shelf only when there is nothing else.
+  it("opens the library copy last, and alone when it is the only one", () => {
+    const kind = (ownerId: string): "watch" | "iphone" | "library" =>
+      ownerId === "p1" ? "iphone" : ownerId === LIBRARY_OWNER_ID ? "library" : "watch";
+    const lib = record(LIBRARY_OWNER_ID, { ...everything(), id: "L" });
+    const watch = record("w1", everything());
+    const phone = record("p1", { ...everything(), id: "P" });
+
+    expect(openCopyOf(linkedCopies([lib, watch, phone], LINK), kind)!.ownerId).toBe("p1");
+    expect(openCopyOf(linkedCopies([lib, watch], LINK), kind)!.ownerId).toBe("w1");
+    expect(openCopyOf(linkedCopies([lib], LINK), kind)!.ownerId).toBe(LIBRARY_OWNER_ID);
   });
 
   it("remembers what each copy carries, so a dropped shape stays dropped", () => {
