@@ -31,25 +31,37 @@ const VIEW_BOX = "0 0 32 28";
 const FURNITURE = "0.25";
 const GRID = "0.2";
 
+/**
+ * What colour the furniture takes.
+ *
+ * A variable rather than `currentColor`, so a card can light its shape with
+ * the accent without turning the device around it blue as well: the shape
+ * stays on the button's own colour and the outline follows this. Nobody has to
+ * set it. Where it is unset the drawing is one colour at two opacities, which
+ * is what it was before the buttons grew big enough for the difference to
+ * matter.
+ */
+const FURNITURE_COLOR = "var(--wa-shape-outline, currentColor)";
+
 /** A watch: the case, with a stub of band above and below so it is not just a
  * rounded rectangle. */
-const WATCH_OUTLINE = svg`<rect x="12" y="1" width="8" height="3" fill="currentColor" opacity=${GRID} />
-  <rect x="12" y="24" width="8" height="3" fill="currentColor" opacity=${GRID} />
-  <rect x="8" y="4" width="16" height="20" rx="4" fill="none" stroke="currentColor" stroke-opacity="0.45" />`;
+const WATCH_OUTLINE = svg`<rect x="12" y="1" width="8" height="3" fill=${FURNITURE_COLOR} opacity=${GRID} />
+  <rect x="12" y="24" width="8" height="3" fill=${FURNITURE_COLOR} opacity=${GRID} />
+  <rect x="8" y="4" width="16" height="20" rx="4" fill="none" stroke=${FURNITURE_COLOR} stroke-opacity="0.45" />`;
 
 /** A phone: one tall rounded rectangle. The clock goes on with the shape,
  * because only the Lock Screen shapes sit under one. */
-const PHONE_OUTLINE = svg`<rect x="10" y="1" width="12" height="26" rx="3" fill="none" stroke="currentColor" stroke-opacity="0.45" />`;
+const PHONE_OUTLINE = svg`<rect x="10" y="1" width="12" height="26" rx="3" fill="none" stroke=${FURNITURE_COLOR} stroke-opacity="0.45" />`;
 
 /** The Lock Screen clock the three shared shapes sit around. Inline goes above
  * it, the other two below, so the clock moves rather than the shape: that is
  * where iOS puts them. */
-const clock = (y: number) => svg`<rect x="13" y=${y} width="6" height="2" fill="currentColor" opacity=${FURNITURE} />`;
+const clock = (y: number) => svg`<rect x="13" y=${y} width="6" height="2" fill=${FURNITURE_COLOR} opacity=${FURNITURE} />`;
 
 /** One app icon beside a Home Screen tile. What says the tile is a tile and
  * not a bar: Small against Large reads as how much of the page each one takes
  * only when the rest of the page is there. */
-const stub = (x: number, y: number) => svg`<rect x=${x} y=${y} width="3" height="3" rx="0.6" fill="currentColor" opacity=${GRID} />`;
+const stub = (x: number, y: number) => svg`<rect x=${x} y=${y} width="3" height="3" rx="0.6" fill=${FURNITURE_COLOR} opacity=${GRID} />`;
 
 /** The row of icons under a full-width tile. */
 const stubRow = (y: number) => svg`${stub(12, y)}${stub(17, y)}`;
@@ -98,8 +110,19 @@ function phoneShape(family: FamilyKind, opacity: string): unknown {
   }
 }
 
+/**
+ * Fill the box rather than fit inside it, cropping the empty sides.
+ *
+ * The drawings are one 32 by 28 box so a watch and a phone line up, but every
+ * one of them leaves the outer third of that box empty: the watch case spans 8
+ * to 24 and the phone 10 to 22. A card that gives the art 48 px of height would
+ * be 55 px wide per device fitting that whole box, and two of them do not fit
+ * beside each other on a 96 px card. `slice` scales to the height and trims the
+ * margins instead, which is why the box may be narrower than the viewBox. It is
+ * never narrower than 21 units of it, which is what holds every drawing.
+ */
 function art(device: DeviceKind, inner: unknown): TemplateResult {
-  return html`<svg class="shape-art" viewBox=${VIEW_BOX} aria-hidden="true">
+  return html`<svg class="shape-art" viewBox=${VIEW_BOX} preserveAspectRatio="xMidYMid slice" aria-hidden="true">
     ${device === "iphone" ? PHONE_OUTLINE : WATCH_OUTLINE}${inner}
   </svg>`;
 }
@@ -129,7 +152,7 @@ export function controlDeviceArt(device: DeviceKind, on: boolean): TemplateResul
   const side = phone ? 3.5 : 5;
   const radius = phone ? 1 : 1.5;
   const tile = (x: number, y: number, lit: boolean) =>
-    svg`<rect x=${x} y=${y} width=${side} height=${side} rx=${radius} fill="currentColor" opacity=${lit ? opacity : GRID} />`;
+    svg`<rect x=${x} y=${y} width=${side} height=${side} rx=${radius} fill=${lit ? "currentColor" : FURNITURE_COLOR} opacity=${lit ? opacity : GRID} />`;
   const [x0, x1, y0, y1] = phone ? [12, 16.5, 4, 8.5] : [10, 17, 8, 15];
   return art(device, svg`${tile(x0, y0, true)}${tile(x1, y0, false)}${tile(x0, y1, false)}${tile(x1, y1, false)}`);
 }

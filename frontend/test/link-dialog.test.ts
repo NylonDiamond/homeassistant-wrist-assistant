@@ -11,6 +11,8 @@ import {
   type LinkPicks,
   controlOwners,
   keepPicks,
+  newReady,
+  newSummary,
   ownersDrawing,
   pickedFamilies,
   picksFromChoice,
@@ -157,6 +159,72 @@ describe("shapeSections", () => {
 
   it("names the control section after the devices that draw one, not the home", () => {
     expect(section([WATCH, { ...PHONE, controls: false }], "control").kinds).toEqual(["watch"]);
+  });
+
+  // The control card draws one device outline per kind in `kinds`, so this is
+  // what decides whether a watch appears beside the phone on it. A watch draws
+  // a control as much as a phone does: the only gate is the app version
+  // (`deviceSupportsControls`), never the kind of device.
+  it("puts the watch beside the iPhone on the control section", () => {
+    expect(section([WATCH, PHONE], "control").kinds).toEqual(["watch", "iphone"]);
+    expect(section([WATCH], "control").kinds).toEqual(["watch"]);
+  });
+});
+
+// The line in the New dialog's footer, which replaced the tooltip on a Create
+// button that refused to be pressed. It has to name the first step still open,
+// in the order the steps are asked.
+describe("newSummary", () => {
+  const base = { named: true, shapes: 1, devices: 1, hasControl: true };
+
+  it("asks for the name before anything else, whatever else is ticked", () => {
+    expect(newSummary({ ...base, named: false, shapes: 0, devices: 0 })).toBe("Type a name to start.");
+    expect(newSummary({ ...base, named: false })).toBe("Type a name to start.");
+  });
+
+  it("gives the name's own complaint once there is a name to complain about", () => {
+    const nameProblem = "A complication on this watch already has that name.";
+    expect(newSummary({ ...base, nameProblem })).toBe(nameProblem);
+  });
+
+  it("asks for a shape next, and says the control counts as one where there is one", () => {
+    expect(newSummary({ ...base, shapes: 0 })).toBe("Tick a shape or the control first.");
+    expect(newSummary({ ...base, shapes: 0, hasControl: false })).toBe("Now tick at least one shape.");
+  });
+
+  it("asks for a device last", () => {
+    expect(newSummary({ ...base, devices: 0 })).toBe("Tick at least one device.");
+  });
+
+  it("counts what Create is about to make once nothing is missing", () => {
+    expect(newSummary(base)).toBe("1 shape on 1 device");
+    expect(newSummary({ ...base, shapes: 3, devices: 2 })).toBe("3 shapes on 2 devices");
+  });
+});
+
+describe("newReady", () => {
+  const base = { named: true, shapes: 1, devices: 1, hasControl: true };
+
+  it("is true only when every step has been answered", () => {
+    expect(newReady(base)).toBe(true);
+    expect(newReady({ ...base, named: false })).toBe(false);
+    expect(newReady({ ...base, nameProblem: "taken" })).toBe(false);
+    expect(newReady({ ...base, shapes: 0 })).toBe(false);
+    expect(newReady({ ...base, devices: 0 })).toBe(false);
+  });
+
+  // The footer and the button are one answer in two places: a summary that
+  // counts shapes means Create is live, and any other summary means it is not.
+  it("agrees with the summary about whether anything is missing", () => {
+    for (const state of [
+      base,
+      { ...base, named: false },
+      { ...base, nameProblem: "taken" },
+      { ...base, shapes: 0 },
+      { ...base, devices: 0 },
+    ]) {
+      expect(newReady(state)).toBe(newSummary(state).includes(" on "));
+    }
   });
 });
 
