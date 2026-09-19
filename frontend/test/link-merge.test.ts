@@ -303,12 +303,9 @@ describe("linkedCopy", () => {
     expect(copy.elements.map((el) => el.payload.name)).not.toContain("watch corner");
   });
 
-  it("gives a 2.8.0 watch the Home Screen shapes and an older one none", () => {
+  it("gives no watch the Home Screen shapes, whatever its version", () => {
     const cfg = merged();
-    const current = linkedCopy(cfg, { id: "REC-1", slotIndex: 0 }, "watch", "LINK-1", "2.8.0");
-    expect(current.supportedFamilies).toEqual(["rectangular", "circular", "corner", "small", "medium"]);
-
-    for (const version of ["2.7.9", null]) {
+    for (const version of ["2.8.0", "2.7.9", null]) {
       const old = linkedCopy(cfg, { id: "REC-1", slotIndex: 0 }, "watch", "LINK-1", version);
       expect(old.supportedFamilies).toEqual(["rectangular", "circular", "corner"]);
       expect(old.perFamily.small).toBeUndefined();
@@ -458,7 +455,8 @@ describe("mergePair", () => {
     expect(String(documents[0]!.linkId ?? "")).not.toBe("");
     expect(documents[0]!.id).toBe(watch.id);
     expect(documents[1]!.id).toBe(phone.id);
-    expect(documents[0]!.supportedFamilies).toEqual(["rectangular", "small"]);
+    // The watch copy never carries a Home Screen size; the phone copy is whole.
+    expect(documents[0]!.supportedFamilies).toEqual(["rectangular"]);
     expect(documents[1]!.supportedFamilies).toEqual(["rectangular", "small"]);
     expect(saves[0]!.base_revision).toBe(3);
     expect(saves[1]!.base_revision).toBe(5);

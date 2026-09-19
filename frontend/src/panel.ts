@@ -6390,10 +6390,13 @@ export class WristAssistantPanel extends LitElement {
     // own id is the link: nothing else is guaranteed unique and already made.
     if (owners.length > 1) config.linkId = config.id;
     if (this.newControl) setControlShown(config, true);
-    // A Home Screen size starts from the watch design rather than blank; the
-    // orchestrator calls `seedFamilyFromSibling(config, family)` here, once per
-    // ticked home size, while the other shapes are on the document and before
-    // the editor opens it.
+    // A Home Screen size starts from the watch design rather than blank: small
+    // from circular, medium from rectangular, the rest from the widest shape
+    // that already has layers. Nothing to copy from (a phone-only complication)
+    // leaves the size blank, as before.
+    for (const family of families) {
+      if (isHomeFamily(family)) seedFamilyFromSibling(config, family);
+    }
     this.linkOwnerIds = owners;
     this.linkPicks = picks;
     if (!this.startNew(config)) return;

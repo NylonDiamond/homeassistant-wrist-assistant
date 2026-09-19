@@ -24,12 +24,8 @@ import {
   schemaVersionFor,
 } from "./model.js";
 import { type ShapePlace, ALL_FAMILIES, biggestFirst, dropFamily, isHomeFamily, placeOf, placeTitle, supportedFamilies } from "./layouts.js";
-import {
-  type DeviceKind,
-  MIN_IPHONE_VERSION_FOR_HOME_SCREEN,
-  MIN_WATCH_VERSION_FOR_SHAPES,
-  watchSupportsShapes,
-} from "./version.js";
+import { type DeviceKind, MIN_IPHONE_VERSION_FOR_HOME_SCREEN, watchSupportsShapes } from "./version.js";
+import { mergeForLink } from "./linkMerge.js";
 
 // ── the devices a link can join ───────────────────────────────────────────
 
@@ -262,27 +258,29 @@ export function joinNames(names: readonly string[]): string {
 /**
  * The shapes a device's copy may carry.
  *
- * Not `familiesFor`, which answers what the panel offers this device to build:
- * a watch on the per-shape release keeps the Home Screen sizes in its copy so
- * the two copies stay one document, and simply never draws them. What must go
- * is what the device would choke on or could never draw:
+ * Not `familiesFor`, which answers what the panel offers this device to build.
+ * Each copy carries only what its device can draw; the panel reassembles the
+ * whole document from the copies when it opens the link, so nothing is lost:
  *
  *   - A phone never carries corner. It is a watch face slot, the widget drops
  *     it on import, and there is nothing on a phone for it to land on.
  *   - A phone below the Home Screen release keeps its three Lock Screen
  *     shapes and loses the tiles, which is the same gate `familiesFor` uses.
- *   - A watch below the per-shape release loses the Home Screen sizes. The
- *     Swift decoder reads `supportedFamilies` as a `Set<FamilyKind>`, so one
- *     raw value it predates fails the whole document rather than one shape.
- *   - Anything from the per-shape release on gets the full document.
+ *   - A watch never carries the Home Screen sizes, whatever its version. An
+ *     app below the per-shape release fails the whole document on a raw value
+ *     it predates (the Swift decoder reads `supportedFamilies` as a
+ *     `Set<FamilyKind>`), and an app on that release resolves and archives up
+ *     to four tiles it never draws on every timeline entry, and until app
+ *     2.8.0 build 10 its picker gate called the unserved Home Screen kinds
+ *     stale and re-invalidated on every foreground (checked 2026-09-18 in
+ *     `ComplicationPickerEntries.sliceFingerprints`).
  */
 export function familiesKeptFor(owner: Pick<LinkOwner, "kind" | "appVersion">): FamilyKind[] {
   if (owner.kind === "iphone") {
     const home = watchSupportsShapes(owner.appVersion, MIN_IPHONE_VERSION_FOR_HOME_SCREEN);
     return ALL_FAMILIES.filter((f) => f !== "corner" && (home || !isHomeFamily(f)));
   }
-  const shapes = watchSupportsShapes(owner.appVersion, MIN_WATCH_VERSION_FOR_SHAPES);
-  return ALL_FAMILIES.filter((f) => shapes || !isHomeFamily(f));
+  return ALL_FAMILIES.filter((f) => !isHomeFamily(f));
 }
 
 /** The shapes this device's copy ends up with: what the document has, narrowed
@@ -544,49 +542,5 @@ export function mergeLinkedContent(
   primary: CustomComplicationConfig,
   secondary: CustomComplicationConfig,
 ): CustomComplicationConfig {
-  const out = structuredClone(primary);
-  const have = new Set(out.supportedFamilies);
-  const ids = new Set(out.elements.map((e) => e.payload.id));
-  let took = false;
-  for (const family of supportedFamilies(secondary)) {
-    if (have.has(family)) continue;
-    if (family === "inline") {
-      if (secondary.inline === undefined) continue;
-      out.inline = structuredClone(secondary.inline);
-    } else {
-      const layout = secondary.perFamily[family];
-      if (layout === undefined) continue;
-      out.perFamily[family] = structuredClone(layout);
-      // The layers of that shape come with it. A layer whose id is already
-      // here is the same layer: the two documents began as copies of each
-      // other, and the layout's placement finds it where it stands.
-      for (const el of ownedElements(secondary, family)) {
-        if (ids.has(el.payload.id)) continue;
-        ids.add(el.payload.id);
-        out.elements.push(structuredClone(el));
-      }
-    }
-    have.add(family);
-    took = true;
-  }
-  if (!took) return out;
-  out.supportedFamilies = ALL_FAMILIES.filter((f) => have.has(f));
-  // A copied layer can read a shared value or sit in a group that only the
-  // other document had. Both are document-level, so they come over whole
-  // rather than leaving the layer pointing at nothing.
-  for (const value of secondary.values) {
-    if (!out.values.some((v) => v.id === value.id)) out.values.push(structuredClone(value));
-  }
-  const groups = secondary.groups ?? [];
-  if (groups.length > 0) {
-    const kept = out.groups ?? [];
-    for (const group of groups) if (!kept.some((g) => g.id === group.id)) kept.push(structuredClone(group));
-    out.groups = kept;
-  }
-  pruneGroups(out);
-  // A control is Control Center on either device, so the one document keeps
-  // whichever copy had one. The primary's own is never overwritten.
-  if (out.control === undefined && secondary.control !== undefined) out.control = structuredClone(secondary.control);
-  out.schemaVersion = schemaVersionFor(out);
-  return out;
+  return mergeForLink(primary, secondary);
 }

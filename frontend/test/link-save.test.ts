@@ -70,13 +70,11 @@ describe("familiesKeptFor", () => {
 
   // A watch on the per-shape release decodes all eight shapes and draws the
   // ones it has, so the copies stay one document.
-  it("gives a watch on 2.8.0 the whole document, Home Screen sizes and all", () => {
-    expect(familiesKeptFor(WATCH)).toEqual(["rectangular", "circular", "corner", "inline", "small", "medium", "large", "xlarge"]);
-  });
-
-  // The Swift decoder reads supportedFamilies as a Set<FamilyKind>, so one raw
-  // value an older app predates fails the whole document.
-  it("keeps the Home Screen sizes away from a watch below the per-shape release", () => {
+  // A watch never draws a Home Screen size, and carrying one costs it: an older
+  // app fails the whole document on a raw value it predates, a current one
+  // resolves tiles it never draws on every timeline entry.
+  it("keeps the Home Screen sizes away from every watch", () => {
+    expect(familiesKeptFor(WATCH)).toEqual(["rectangular", "circular", "corner", "inline"]);
     expect(familiesKeptFor(owner({ appVersion: "2.7.2" }))).toEqual(["rectangular", "circular", "corner", "inline"]);
     expect(familiesKeptFor(owner({ appVersion: null }))).toEqual(["rectangular", "circular", "corner", "inline"]);
   });
@@ -90,7 +88,7 @@ describe("copyFamilies", () => {
   const all: FamilyKind[] = ["rectangular", "circular", "corner", "inline", "small", "medium"];
 
   it("gives each device what it can draw when nobody has unticked anything", () => {
-    expect(copyFamilies(all, WATCH, new Map(), "w1")).toEqual(all);
+    expect(copyFamilies(all, WATCH, new Map(), "w1")).toEqual(["rectangular", "circular", "corner", "inline"]);
     expect(copyFamilies(all, PHONE, new Map(), "p1")).toEqual(["rectangular", "circular", "inline", "small", "medium"]);
   });
 
@@ -107,7 +105,7 @@ describe("copyFamilies", () => {
   // Otherwise a shape added after the picks were made would reach nobody.
   it("sends a shape nobody has an opinion about to every device that draws it", () => {
     const picks = new Map([["w1", new Set<FamilyKind>(["rectangular"])], ["p1", new Set<FamilyKind>(["rectangular"])]]);
-    expect(copyFamilies(["rectangular", "medium"], WATCH, picks, "w1")).toEqual(["rectangular", "medium"]);
+    expect(copyFamilies(["rectangular", "medium"], WATCH, picks, "w1")).toEqual(["rectangular"]);
     expect(copyFamilies(["rectangular", "medium"], PHONE, picks, "p1")).toEqual(["rectangular", "medium"]);
   });
 });

@@ -63,8 +63,9 @@ const documents = everyDocument();
 /** The parts of a document that are deliberately not shared: identity, the
  * derived sources, and the schema stamp that follows the slot. */
 function withoutIdentity(cfg: CustomComplicationConfig): Record<string, unknown> {
-  // An import always starts shown, so `hidden` never comes back either.
-  const { id: _id, slotIndex: _slot, dataSources: _sources, schemaVersion: _schema, hidden: _hidden, ...rest } = cfg;
+  // An import always starts shown and unlinked, so `hidden` and `linkId` never
+  // come back either.
+  const { id: _id, slotIndex: _slot, dataSources: _sources, schemaVersion: _schema, hidden: _hidden, linkId: _link, ...rest } = cfg;
   return rest as unknown as Record<string, unknown>;
 }
 

@@ -41,7 +41,7 @@ import {
   restoreSaveHistory,
   saveRecord,
 } from "./ha-api.js";
-import { type DeviceKind, deviceKindOf, watchSupportsShapes } from "./version.js";
+import { type DeviceKind, deviceKindOf } from "./version.js";
 import { Draft } from "./draft.js";
 
 // ── pairing ───────────────────────────────────────────────────────────────
@@ -282,9 +282,9 @@ export function linkedCopy(
   linkId: string,
   appVersion?: string | null,
 ): CustomComplicationConfig {
-  const drop: FamilyKind[] = kind === "iphone"
-    ? ["corner"]
-    : watchSupportsShapes(appVersion) ? [] : [...HOME_FAMILIES];
+  // The same cut as `familiesKeptFor` in linking.ts: a watch never carries the
+  // Home Screen sizes, whatever its version (see that comment for why).
+  const drop: FamilyKind[] = kind === "iphone" ? ["corner"] : [...HOME_FAMILIES];
   const copy = keepFamilies(merged, merged.supportedFamilies.filter((f) => !drop.includes(f)));
   copy.id = own.id;
   copy.slotIndex = own.slotIndex;
