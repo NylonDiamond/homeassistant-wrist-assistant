@@ -1,5 +1,5 @@
 // What the Rich text editor says and offers: a part's chip, a rule's Changes
-// menu, the Type row, the notes after leaving Rich, a band table's colour bar,
+// menu, the Type row, the notes after leaving Rich, a band table's color bar,
 // and which changes a rule aimed at one part may add. The form itself needs a
 // browser; these words and lists do not.
 
@@ -20,7 +20,7 @@ import {
   chipRuns,
   contentSummary,
   partChip,
-  partColourMode,
+  partColorMode,
   partDotBackground,
   richTextBlockedHint,
   richTextOffNote,
@@ -62,13 +62,13 @@ describe("a part's chip", () => {
     expect(partChip({ kind: { kind: "jinja", value: "" } })).toEqual({ kind: "template", label: "template" });
   });
 
-  it("picks its colour choice from the keys the part holds", () => {
-    expect(partColourMode(part(PART_A, literal("a")))).toBe("layer");
-    expect(partColourMode(part(PART_A, literal("a"), { colorHex: "#64D2FF" }))).toBe("pick");
-    expect(partColourMode(part(PART_A, price(), { coloring: "bands" }))).toBe("bands");
+  it("picks its color choice from the keys the part holds", () => {
+    expect(partColorMode(part(PART_A, literal("a")))).toBe("layer");
+    expect(partColorMode(part(PART_A, literal("a"), { colorHex: "#64D2FF" }))).toBe("pick");
+    expect(partColorMode(part(PART_A, price(), { coloring: "bands" }))).toBe("bands");
   });
 
-  it("draws its dot in its colour, or as a wheel of its own bands in order", () => {
+  it("draws its dot in its color, or as a wheel of its own bands in order", () => {
     expect(partDotBackground(part(PART_A, literal("a")), "#8E8E93")).toBe("#8E8E93");
     expect(partDotBackground(part(PART_A, literal("a"), { colorHex: "#64D2FF" }), "#8E8E93")).toBe("#64D2FF");
     const banded = part(PART_A, price(), {
@@ -76,7 +76,7 @@ describe("a part's chip", () => {
       bands: [{ id: BAND_2, upTo: 30, colorHex: "#FFD60A" }, { id: BAND_1, upTo: 20, colorHex: "#30D158" }],
     });
     expect(partDotBackground(banded, "#FFFFFF")).toBe("conic-gradient(#30D158 0% 33.3%, #FFD60A 33.3% 66.7%, #FF453A 66.7% 100%)");
-    // By value with no table yet colours nothing, so the dot says so.
+    // By value with no table yet colors nothing, so the dot says so.
     expect(partDotBackground(part(PART_A, price(), { coloring: "bands" }), "#FFFFFF")).toBe("#FFFFFF");
   });
 });
@@ -91,7 +91,7 @@ describe("a text layer's Type row", () => {
   });
 });
 
-describe("a band table's colour bar", () => {
+describe("a band table's color bar", () => {
   const close = (got: { lo: number; hi: number }, lo: number, hi: number) => {
     expect(got.lo).toBeCloseTo(lo);
     expect(got.hi).toBeCloseTo(hi);
@@ -198,7 +198,7 @@ describe("the notes under the Rich text switch", () => {
   it("says what moved into Look, or how the parts joined", () => {
     expect(richTextOffNote({ joined: false, moved: [] })).toBe("Rich text is off.");
     expect(richTextOffNote({ joined: false, moved: ["fontSize", "color", "bands"] }))
-      .toBe("Rich text is off. The part's font size, colour and colour bands moved into Look.");
+      .toBe("Rich text is off. The part's font size, color and color bands moved into Look.");
     expect(richTextOffNote({ joined: true, template: false })).toBe("Rich text is off. The parts joined into one line of text.");
     expect(richTextOffNote({ joined: true, template: true }))
       .toBe("Rich text is off. The parts joined into one template, so the live values still update.");

@@ -8,7 +8,7 @@
 //
 // Nothing here is live. These are hand drawn samples, not the renderer, and
 // they are deliberately cheap because two dozen of them draw on every panel
-// update. Colour comes from `--k`, which the button sets from `presetColor`,
+// update. Color comes from `--k`, which the button sets from `presetColor`,
 // so a sample always agrees with the card around it.
 
 import { type TemplateResult, html, svg } from "lit";
@@ -21,20 +21,20 @@ const DIM = "color-mix(in srgb, var(--k) 45%, #6b7280)";
 
 const FONT = `system-ui, -apple-system, "Segoe UI", sans-serif`;
 
-/** Green, amber and red, for the samples whose whole point is the colour: an
+/** Green, amber and red, for the samples whose whole point is the color: an
  * armed alarm, a person at home, a battery running out. Fixed hexes rather
- * than `--k`, because these are the colours the preset itself writes. */
+ * than `--k`, because these are the colors the preset itself writes. */
 const GREEN = "#34C759";
 const AMBER = "#FFD60A";
 const RED = "#FF453A";
 
 /**
- * Which layer kind's colour a preset wears.
+ * Which layer kind's color a preset wears.
  *
  * A preset is a finished thing rather than a kind, but it is mostly made of
- * one kind, and borrowing that kind's colour is what keeps the card and the
+ * one kind, and borrowing that kind's color is what keeps the card and the
  * Layers row underneath it looking like the same object. A preset built from
- * several layers takes the colour of its subject: a battery ring is a gauge
+ * several layers takes the color of its subject: a battery ring is a gauge
  * with a number in it, not a text with a ring round it.
  */
 const PRESET_KIND: Record<PresetKind, LayerKind> = {
@@ -65,7 +65,7 @@ const PRESET_KIND: Record<PresetKind, LayerKind> = {
   listWhoHome: "list",
 };
 
-/** The colour a preset's card is tinted with. */
+/** The color a preset's card is tinted with. */
 export function presetColor(kind: PresetKind): string {
   return KIND_COLOR[PRESET_KIND[kind]];
 }
@@ -194,7 +194,7 @@ function sample(kind: PresetKind): TemplateResult {
         <path d="M6 33l24-15 18 11 15-9 51 21H6z" fill="var(--k)" opacity=".35" />
         <circle cx="90" cy="15" r="4.5" fill="none" stroke="var(--k)" stroke-width="1.4" />
       </g>`;
-    // The ring with the number inside, in the colour a low battery takes.
+    // The ring with the number inside, in the color a low battery takes.
     case "battery":
       return svg`<g fill="none" stroke-linecap="round">
         <path d=${arc(60, 27, 16, 1)} stroke=${DIM} stroke-width="3.4" opacity=".5" />

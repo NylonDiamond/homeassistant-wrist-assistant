@@ -1,4 +1,4 @@
-// A text layer's colour by value: the chart's band table and highlight, read
+// A text layer's color by value: the chart's band table and highlight, read
 // against the numbers inside the text. The shared fixture
 // (fixtures/text_value_colors.json) pins the resolved runs on both sides; this
 // file pins the wire shape, the tokenizer's ranges, and the edges the fixture
@@ -20,7 +20,7 @@ import {
 } from "../src/model.js";
 import { chartNumbers, numberTokens, resolveAll, textValueSpans, type ResolvedText } from "../src/resolver.js";
 
-const VALUE_COLOUR_KEYS = ["coloring", "bands", "bandAboveColorHex", "highlight", "highColorHex", "lowColorHex"];
+const VALUE_COLOR_KEYS = ["coloring", "bands", "bandAboveColorHex", "highlight", "highColorHex", "lowColorHex"];
 
 function textConfig(tweak: (p: TextElement) => void) {
   const cfg = newConfig("Text", 0);
@@ -46,7 +46,7 @@ function resolvedText(tweak: (p: TextElement) => void): ResolvedText {
   return layout.elements[0] as ResolvedText;
 }
 
-describe("text colour by value on the wire", () => {
+describe("text color by value on the wire", () => {
   it("round-trips every key and writes them after alignment, in the key table's order", () => {
     const cfg = textConfig((p) => {
       p.alignment = "leading";
@@ -59,7 +59,7 @@ describe("text colour by value on the wire", () => {
     });
     const payload = encodedPayload(cfg);
     const keys = Object.keys(payload);
-    expect(keys.slice(keys.indexOf("alignment"))).toEqual(["alignment", ...VALUE_COLOUR_KEYS]);
+    expect(keys.slice(keys.indexOf("alignment"))).toEqual(["alignment", ...VALUE_COLOR_KEYS]);
     expect(auditUnknownKeys(encodeConfig(cfg))).toEqual([]);
 
     const back = parseConfig(encodeConfig(cfg)).elements[0] as Extract<Element, { kind: "text" }>;
@@ -74,7 +74,7 @@ describe("text colour by value on the wire", () => {
 
   it("writes none of the keys for a plain text layer", () => {
     const payload = encodedPayload(textConfig(() => {}));
-    for (const key of VALUE_COLOUR_KEYS) expect(payload, key).not.toHaveProperty(key);
+    for (const key of VALUE_COLOR_KEYS) expect(payload, key).not.toHaveProperty(key);
   });
 
   it("writes none of the keys when each is set to its default", () => {
@@ -86,10 +86,10 @@ describe("text colour by value on the wire", () => {
       p.highColorHex = CHART_DEFAULT_HIGH_HEX;
       p.lowColorHex = CHART_DEFAULT_LOW_HEX;
     }));
-    for (const key of VALUE_COLOUR_KEYS) expect(payload, key).not.toHaveProperty(key);
+    for (const key of VALUE_COLOR_KEYS) expect(payload, key).not.toHaveProperty(key);
   });
 
-  it("keeps a table when the layer is back on One colour, as a chart does", () => {
+  it("keeps a table when the layer is back on One color, as a chart does", () => {
     const payload = encodedPayload(textConfig((p) => {
       p.bands = [{ id: "B0000000-0000-4000-8000-000000000002", upTo: 10, colorHex: "#0A84FF" }];
     }));
@@ -110,7 +110,7 @@ describe("text colour by value on the wire", () => {
       lowColorHex: CHART_DEFAULT_LOW_HEX,
     });
     const back = (parseConfig(enc).elements[0] as Extract<Element, { kind: "text" }>).payload;
-    for (const key of VALUE_COLOUR_KEYS) expect(back, key).not.toHaveProperty(key);
+    for (const key of VALUE_COLOR_KEYS) expect(back, key).not.toHaveProperty(key);
   });
 });
 
@@ -154,7 +154,7 @@ describe("numberTokens", () => {
   });
 });
 
-describe("text colour by value resolution", () => {
+describe("text color by value resolution", () => {
   const table = (p: TextElement) => {
     p.coloring = "bands";
     p.bands = [{ id: "B0000000-0000-4000-8000-000000000003", upTo: 35, colorHex: "#32D74B" }];
@@ -187,7 +187,7 @@ describe("text colour by value resolution", () => {
     ]);
   });
 
-  it("gives a number past the last band the colour of the rest, never the layer colour", () => {
+  it("gives a number past the last band the color of the rest, never the layer color", () => {
     const r = resolvedText((p) => {
       p.value = { kind: { kind: "literal", value: "a 40 b" } };
       table(p);
@@ -199,7 +199,7 @@ describe("text colour by value resolution", () => {
     ]);
   });
 
-  it("merges a band colour that happens to be the layer colour", () => {
+  it("merges a band color that happens to be the layer color", () => {
     const r = resolvedText((p) => {
       p.value = { kind: { kind: "literal", value: "x 10 y" } };
       p.colorSlot.baseColorHex = "#32D74B";
@@ -208,17 +208,17 @@ describe("text colour by value resolution", () => {
     expect(r.spans).toEqual([{ text: "x 10 y", colorHex: "#32D74B" }]);
   });
 
-  it("gives text with no numbers one run in the layer colour, and empty text no runs", () => {
+  it("gives text with no numbers one run in the layer color, and empty text no runs", () => {
     const el = (newElement("text") as Extract<Element, { kind: "text" }>).payload;
     el.highlight = "both";
     expect(textValueSpans("Off", "#FFFFFF", el)).toEqual([{ text: "Off", colorHex: "#FFFFFF" }]);
     expect(textValueSpans("", "#FFFFFF", el)).toEqual([]);
   });
 
-  it("ends a coloured number at its last digit, leaving a trailing dot in the layer colour", () => {
+  it("ends a colored number at its last digit, leaving a trailing dot in the layer color", () => {
     const el = (newElement("text") as Extract<Element, { kind: "text" }>).payload;
     el.highlight = "highest";
-    // The token still covers the dot; only the coloured run stops short of it.
+    // The token still covers the dot; only the colored run stops short of it.
     expect(numberTokens("costs 5.")).toEqual([{ value: 5, start: 6, end: 8 }]);
     expect(textValueSpans("costs 5.", "#FFFFFF", el)).toEqual([
       { text: "costs ", colorHex: "#FFFFFF" },
@@ -232,7 +232,7 @@ describe("text colour by value resolution", () => {
     ]);
   });
 
-  it("marks the lowest only, first occurrence, with the default colour", () => {
+  it("marks the lowest only, first occurrence, with the default color", () => {
     const el = (newElement("text") as Extract<Element, { kind: "text" }>).payload;
     el.highlight = "lowest";
     expect(textValueSpans("3 1 1", "#FFFFFF", el)).toEqual([

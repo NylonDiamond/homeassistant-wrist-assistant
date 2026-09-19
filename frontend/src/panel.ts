@@ -497,7 +497,7 @@ function pickTick(): TemplateResult {
 /** The mock tile in the Control Center shape tab, CSS px. Sized to the shape
  * pictures beside it, which stand in a box 80px tall, so the control reads as
  * one more thing this design draws rather than a glyph among faces. */
-const CONTROL_TAB_TILE_SIDE = 62;
+const CONTROL_TAB_TILE_SIDE = 52;
 
 /** The well a picker card draws the complication itself in, CSS px. About a
  * card's inner width by a height every card shares, so a grid of them sits on
@@ -526,7 +526,7 @@ const THUMB_STEPS = [1, 1.7, 2.6] as const;
 const PAGE_TRASH_ARM_MS = 4000;
 
 /** How long the demo's success flash stays up, in ms. The watch's own flash is
- * a brief wash of colour over the whole complication, so this is short enough
+ * a brief wash of color over the whole complication, so this is short enough
  * to read as an acknowledgement rather than as a state the face went into. */
 const DEMO_FLASH_MS = 700;
 
@@ -627,13 +627,13 @@ export function addDetailFrom(saved: unknown): AddDetail | undefined {
 /** How the Layers list is shown: picture size and row detail. Per browser,
  * like the column widths, and never part of the document. */
 /**
- * The left column's three cards each wear one colour: in the band across their
+ * The left column's three cards each wear one color: in the band across their
  * head, in the wash behind the card, and in the controls inside it.
  *
  * Add a layer keeps the accent, because it is the one card that makes
  * something out of nothing. Layers and Pages were both drawn in the Place
  * section's blue grey, which left the column reading as one bright card over
- * two grey ones; they now have a colour each, far enough apart in hue that
+ * two grey ones; they now have a color each, far enough apart in hue that
  * the eye finds the card it wants before it reads the title.
  */
 const CARD_TINT = {
@@ -1404,7 +1404,7 @@ export class WristAssistantPanel extends LitElement {
   /** Which watch case the previews are drawn in. The reference (46 mm) is scale 1. */
   @state() private previewCase = REFERENCE_CASE.label;
   /** The tint of a tinted watch face to preview in, or undefined for full
-   * colour. Not saved: a preview left tinted by accident would read as a broken
+   * color. Not saved: a preview left tinted by accident would read as a broken
    * complication on the next visit. */
   @state() private previewTint?: string;
   @state() private loadError?: string;
@@ -1475,7 +1475,7 @@ export class WristAssistantPanel extends LitElement {
       height: 100dvh;
       font-family: var(--paper-font-body1_-_font-family, -apple-system, BlinkMacSystemFont, "Inter", Roboto, sans-serif);
       font-size: 14px;
-      /* Colours the whole editor shares: one per layer kind, one per section
+      /* Colors the whole editor shares: one per layer kind, one per section
          that is not about a kind. Set once so a badge, a bar and a card agree. */
       --wa-text: ${unsafeCSS(KIND_COLOR.text)};
       --wa-icon: ${unsafeCSS(KIND_COLOR.icon)};
@@ -1488,7 +1488,7 @@ export class WristAssistantPanel extends LitElement {
       /* The skin. Light follows the Home Assistant theme it sits in; the dark
          block below replaces these with the editor's own deep palette. The
          rest of the sheet only ever reads these names, so the two skins can
-         never drift apart in anything but colour. */
+         never drift apart in anything but color. */
       --wa-bg: var(--primary-background-color, #f3f1ec);
       --wa-card: var(--card-background-color, #ffffff);
       --wa-panel: var(--secondary-background-color, #f6f4ef);
@@ -1505,7 +1505,7 @@ export class WristAssistantPanel extends LitElement {
          where ink is the ground. */
       --wa-primary-bg: var(--wa-ink);
       --wa-primary-ink: #fff;
-      /* A selected row: a cool wash rather than the kind colour, so a list of
+      /* A selected row: a cool wash rather than the kind color, so a list of
          eight kinds still has one obvious "you are here". */
       --wa-sel-bg: #edf0fb;
       --wa-sel-ring: #c5cef2;
@@ -1519,9 +1519,9 @@ export class WristAssistantPanel extends LitElement {
       --wa-col: calc(var(--wa-lab) + 8px);
       --wa-field: color-mix(in srgb, var(--wa-ink) 5.5%, transparent);
       --wa-seg-on: var(--wa-card);
-      /* Two colours for the things that come out of Home Assistant rather
+      /* Two colors for the things that come out of Home Assistant rather
          than out of this editor: the entity a layer names, and the value it
-         is reading right now. They are the same two colours in the search
+         is reading right now. They are the same two colors in the search
          list, the inspector, the layer rows and the strip at the bottom, so
          "which words here are my house" is answered by hue alone and a dense
          card stops being a wall of grey. Nothing else in the sheet may use
@@ -1555,7 +1555,7 @@ export class WristAssistantPanel extends LitElement {
     }
     /* The 2026 skin: near-black navy ground, cards a step up, hairlines made
        of light rather than grey, and a violet accent for the one thing on
-       screen you are meant to press. Only colours change here. */
+       screen you are meant to press. Only colors change here. */
     :host([dark]) {
       --wa-bg: #0b0d14;
       --wa-card: #12141d;
@@ -1778,7 +1778,7 @@ export class WristAssistantPanel extends LitElement {
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .pk-open-row { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
-    /* What the button is for, said once in the accent colour. A chevron alone
+    /* What the button is for, said once in the accent color. A chevron alone
        promised a short menu of names; this one opens the whole household. */
     .pk-open-all { flex: none; font-size: 11.5px; font-weight: 600; color: var(--wa-accent); white-space: nowrap; }
 
@@ -1825,7 +1825,7 @@ export class WristAssistantPanel extends LitElement {
     .pk-filter-lead { font-size: 12px; color: var(--wa-muted); margin-right: 2px; }
     .pk-filter-gap { flex: 1; }
     .pk-count-of { font-size: 12px; color: var(--wa-muted); white-space: nowrap; }
-    /* The grid sits on the panel colour rather than the card colour, so a
+    /* The grid sits on the panel color rather than the card color, so a
        white card reads as a card and not as a rule drawn round some text. */
     .pk-body { flex: 1; min-height: 0; overflow: auto; padding: 14px 18px; background: var(--wa-panel); }
     .pk-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
@@ -2014,7 +2014,7 @@ export class WristAssistantPanel extends LitElement {
     .new-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; max-height: min(88vh, 960px); overflow-y: auto; }
     /* One tinted container per step, each a different token so the three read
        as an order rather than as three of the same box. Mixed into the card
-       rather than written as a colour, so dark mode follows. */
+       rather than written as a color, so dark mode follows. */
     .new-step {
       display: flex; flex-direction: column; gap: 9px; padding: 12px 14px;
       border-radius: var(--wa-r-md); border: 1px solid var(--wa-line);
@@ -2129,12 +2129,12 @@ export class WristAssistantPanel extends LitElement {
        the art crops its empty margins (preserveAspectRatio, in shapeArt.ts)
        rather than letterboxing itself to fit. */
     .shape-card .shape-art { width: 30px; height: 40px; display: block; flex: none; }
-    /* The drawing's two colours: the shape takes the button's own, the device
+    /* The drawing's two colors: the shape takes the button's own, the device
        around it stays furniture whatever the button is doing. */
     .shape-arts { height: 40px; --wa-shape-outline: var(--wa-muted); }
     /* Lit means the accent, in both dialogs: ticked in the New dialog, and
        still yours to take in Add a shape. A shape already on the design keeps
-       the muted colour it is drawn in. */
+       the muted color it is drawn in. */
     .shape-card.on .shape-arts, .add-dialog .shape-card:not(.had):not(.soon) .shape-arts { color: var(--wa-accent); }
     /* The tick on a picked card, and the empty ring that holds its place so
        nothing shifts when one is ticked. */
@@ -2157,7 +2157,7 @@ export class WristAssistantPanel extends LitElement {
        heading per person, and over the canvas as a row of pills. One set of
        rules, since the two are the same control in two shapes. Both wear the
        panel's amber over the card they sit on, so the one control that changes
-       another device is the one thing on either surface with a colour. */
+       another device is the one thing on either surface with a color. */
     .shows-field {
       display: flex; flex-direction: column; gap: 6px; margin: 8px 0 2px; padding: 10px;
       border: 1px solid color-mix(in srgb, var(--wa-val) 40%, var(--wa-line));
@@ -2611,7 +2611,7 @@ export class WristAssistantPanel extends LitElement {
       container: layers / inline-size;
     }
     /* Card titles read as titles: sentence case, a little heavier, the ink
-       colour. Their side notes stay small and muted. */
+       color. Their side notes stay small and muted. */
     .panel-title {
       display: flex; align-items: center; gap: 8px; margin: 0 0 10px; min-height: 30px;
       font-size: 13.5px; font-weight: 700; letter-spacing: 0; color: var(--wa-ink);
@@ -2629,7 +2629,7 @@ export class WristAssistantPanel extends LitElement {
     details.foot .foot-dot { font-size: 10px; }
     details.foot .foot-dot.ok { color: var(--success-color, #3dd68c); text-shadow: 0 0 8px var(--success-color, #3dd68c); }
     details.foot .foot-dot.warn { color: var(--warning-color, #ffa600); }
-    /* Same colour on the words as on the dot, so the footer agrees with the
+    /* Same color on the words as on the dot, so the footer agrees with the
        header's Save button about there being work to save. */
     details.foot .foot-dot.warn + .foot-text { color: var(--warning-color, #ffa600); }
     details.foot .foot-dot.err { color: var(--error-color, #db4437); }
@@ -2657,12 +2657,12 @@ export class WristAssistantPanel extends LitElement {
     .card.fold .fold-h .chev svg { width: 16px; height: 16px; }
     .card.fold[data-open="true"] .fold-h .chev { transform: rotate(180deg); }
     /* The left column's card titles were the quietest lines on the panel:
-       13.5px over a card the same colour, so Add a layer read as the label
+       13.5px over a card the same color, so Add a layer read as the label
        over the list below it rather than as the card that makes one. Each of
-       the three now wears its own colour as a band across the head of the
+       the three now wears its own color as a band across the head of the
        card, so the eye finds the card before it reads the title.
 
-       The colour is the card's own --c, the same one the wash and the title
+       The color is the card's own --c, the same one the wash and the title
        swatch already take, so a card is tinted in exactly one place. */
     .card.banded > .panel-title {
       margin: -10px -12px 8px; padding: 9px 12px; border-radius: var(--wa-r-md) var(--wa-r-md) 0 0;
@@ -2731,7 +2731,7 @@ export class WristAssistantPanel extends LitElement {
     .add-scroll::-webkit-scrollbar { width: 8px; }
     .add-scroll::-webkit-scrollbar-thumb { background: var(--wa-line-strong); border-radius: 999px; }
     .add-scroll::-webkit-scrollbar-track { background: transparent; }
-    /* Compact: the samples go and every card becomes one 34px line, a colour
+    /* Compact: the samples go and every card becomes one 34px line, a color
        chip and a name, so two dozen presets scan in a column. */
     /* Names mode: two across. One name per row made the list of twenty-five
        presets as tall as the samples it was meant to be shorter than; two
@@ -2751,7 +2751,7 @@ export class WristAssistantPanel extends LitElement {
     }
     .add-grid.small button.add { gap: 3px; padding: 4px 4px 5px; border-radius: 8px; font-size: 10px; font-weight: 500; }
     .add-grid.small button.add .well { border-radius: 5px; }
-    /* The colour chip goes: at four across the name has a couple of words of
+    /* The color chip goes: at four across the name has a couple of words of
        room, and the sample already says which kind this is. */
     .add-grid.small button.add .k { display: none; }
     .add-grid.lean button.add {
@@ -2759,12 +2759,12 @@ export class WristAssistantPanel extends LitElement {
       background: var(--wa-card); border-color: var(--wa-line);
     }
     .add-grid.lean button.add .add-name { justify-content: flex-start; gap: 8px; }
-    /* The colour chip: the same square that marks the kind in the Layers rows
+    /* The color chip: the same square that marks the kind in the Layers rows
        and the inspector, at the size a button can spare. */
     button.add .k { width: 8px; height: 8px; border-radius: 2px; background: var(--k); flex: none; }
     /* The cards are plain. Twenty-five of them, each washed in its own kind
-       colour, made the card a paint chart and drowned the samples, which are
-       the thing worth looking at. The colour is down to the name's square and
+       color, made the card a paint chart and drowned the samples, which are
+       the thing worth looking at. The color is down to the name's square and
        what the hover does. */
     button.add {
       display: flex; flex-direction: column; align-items: stretch; gap: 5px; padding: 5px 5px 6px; border-radius: 9px;
@@ -2861,7 +2861,7 @@ export class WristAssistantPanel extends LitElement {
     button.part-add:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.part-add:disabled { opacity: .45; cursor: default; }
 
-    /* Layers: one row per layer, coloured by kind, the shape pinned last.
+    /* Layers: one row per layer, colored by kind, the shape pinned last.
        The picture size is a variable on the list, set by the S/M/L control in
        the card's title bar, so one change resizes every row's picture and the
        column that holds it. */
@@ -2889,12 +2889,12 @@ export class WristAssistantPanel extends LitElement {
     .layer.kid { background: color-mix(in srgb, var(--wa-panel) 55%, transparent); }
     .layer:hover { background: var(--wa-panel); }
     /* The selected row: one cool wash and a ring, the same one wherever a row
-       is selected, so eight kind colours never fight the selection. */
+       is selected, so eight kind colors never fight the selection. */
     .layer.hl { background: var(--wa-sel-bg); box-shadow: inset 0 0 0 1px var(--wa-sel-ring); }
     .layer:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .layer.pick { box-shadow: inset 0 0 0 2px var(--wa-accent); }
     .layer.lit { background: var(--wa-sel-bg); box-shadow: inset 0 0 0 2px var(--wa-accent); }
-    /* A member of the selected group: lit in the folder's colour, without
+    /* A member of the selected group: lit in the folder's color, without
        the selected row's ring, so the group reads as one block. */
     .layer.held { background: color-mix(in srgb, ${unsafeCSS(SECTION_COLOR.group)} 12%, var(--wa-panel)); }
     .layer .grip { color: var(--wa-line-strong); display: grid; place-items: center; cursor: grab; }
@@ -2991,7 +2991,7 @@ export class WristAssistantPanel extends LitElement {
     /* A lone selection offers only Save to parts: a quiet row, no box. */
     .part-cta { display: flex; align-items: center; font-size: 12px; margin-bottom: 4px; }
     .part-cta .spacer { flex: 1; }
-    /* Picked for grouping: an accent ring, since the kind colour is taken. */
+    /* Picked for grouping: an accent ring, since the kind color is taken. */
     .layer.multi { box-shadow: inset 0 0 0 1px var(--wa-accent); }
     /* A folder row: the chevron folds it, the lock says whether it moves as
        one, and its members sit indented under a guide line. */
@@ -3078,7 +3078,7 @@ export class WristAssistantPanel extends LitElement {
     /* The form-sized segmented control: a setting with two to four choices
        shows them all, the way a dropdown never can. Buttons share the width
        evenly and clip a label rather than wrap it, so a row never grows a
-       second line, and the tint takes the section's colour where there is one. */
+       second line, and the tint takes the section's color where there is one. */
     .seg.wide { display: flex; width: 100%; min-width: 0; height: 24px; border-radius: 6px; background: var(--wa-field); box-shadow: none; }
     .seg.wide button {
       flex: 1 1 0; min-width: 0; padding: 0 4px; border-radius: 4px;
@@ -3211,7 +3211,7 @@ export class WristAssistantPanel extends LitElement {
       background: var(--wa-input); box-shadow: inset 0 0 0 1px var(--wa-line);
     }
     /* Every tab used to be transparent until it was pressed, and the pressed
-       one wore the card colour: on the dark skin that is the bar it sits in, so
+       one wore the card color: on the dark skin that is the bar it sits in, so
        four shapes read as one long button with no telling which was open. Each
        tab now carries its own plate at rest, and the open one is filled with
        the accent and ringed in it. */
@@ -3348,7 +3348,7 @@ export class WristAssistantPanel extends LitElement {
     /* The Pages card sits between Add a layer and Layers, and holds nothing
        but its one row, so it keeps no bottom padding of its own.
 
-       Pages have a colour of their own (CARD_TINT.pages), the one its band,
+       Pages have a color of their own (CARD_TINT.pages), the one its band,
        its wash and its title swatch are drawn in. The purple accent belongs to
        the selection, and a pressed page tab is not a selected layer. The fill
        is mixed darker than the swatch so white digits on it stay readable. */
@@ -3368,7 +3368,7 @@ export class WristAssistantPanel extends LitElement {
     /* One sunken track holding every tab, the way a segmented control reads:
        the pressed page is a raised pill inside it rather than one loose button
        among others, so which page you are on is read from the shape as well as
-       the colour. */
+       the color. */
     .page-row .page-tabs {
       display: flex; flex: 1 1 auto; gap: 3px; min-width: 0;
       padding: 3px; border-radius: 10px;
@@ -3384,7 +3384,7 @@ export class WristAssistantPanel extends LitElement {
     .page-row .page-tabs > button:hover:not(.on) { background: var(--wa-input); color: var(--wa-ink); }
     .page-row .page-tabs > button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     /* The pressed page: the same width as the rest, filled in the card's
-       colour, and split into its number and the trash for that page. Every tab
+       color, and split into its number and the trash for that page. Every tab
        is one width because two pages should read as two halves of the row, not
        as a big one and a small one. The number keeps the whole left of the pill
        so a click anywhere on it stays a page click; only the icon at the right
@@ -3428,7 +3428,7 @@ export class WristAssistantPanel extends LitElement {
     }
     /* Add a page is the one press on this row that makes something, and it was
        a grey square the same size as a page tab, so it read as a third page.
-       It now wears the card's colour, and fills with it on hover. */
+       It now wears the card's color, and fills with it on hover. */
     .page-row .page-act.page-more {
       width: 34px; padding: 0; display: grid; place-items: center;
       background: color-mix(in srgb, var(--wa-page) 16%, var(--wa-input));
@@ -3459,7 +3459,7 @@ export class WristAssistantPanel extends LitElement {
       padding-top: 10px; border-top: 1px solid var(--wa-line);
     }
     .page-fix .page-fix-l { font-size: 12px; line-height: 1.35; color: var(--wa-muted); margin-bottom: 2px; }
-    /* Brighter, not coloured: the same way .hint.warn marks a line that is
+    /* Brighter, not colored: the same way .hint.warn marks a line that is
        actually a problem right now. */
     .page-fix .page-fix-l.warn { color: var(--wa-ink); }
     /* Prev and next share one row and split it evenly, the way they split the
@@ -3545,9 +3545,9 @@ export class WristAssistantPanel extends LitElement {
       background: transparent; color: var(--wa-ink); font: inherit; font-weight: 500; cursor: pointer; white-space: nowrap;
     }
     button.case-pick svg { width: 14px; height: 14px; opacity: .7; }
-    /* The Colour menu: a round swatch per tint, and a split one for full colour.
+    /* The Color menu: a round swatch per tint, and a split one for full color.
        While a tint is on the box takes an accent edge, so a tinted preview is
-       never mistaken for the real colours. */
+       never mistaken for the real colors. */
     .tint-box.on { border-color: var(--wa-accent); box-shadow: 0 0 0 1px var(--wa-accent); }
     .tint-dot {
       display: inline-block; flex: none; width: 11px; height: 11px; border-radius: 50%; margin-right: 6px; vertical-align: -1px;
@@ -3651,9 +3651,9 @@ export class WristAssistantPanel extends LitElement {
       box-shadow: 0 0 0 1px color-mix(in srgb, ${unsafeCSS(SECTION_COLOR.states)} 35%, var(--wa-card));
     }
     .card.tint-values .panel-title, .card.tint-states .panel-title { margin-bottom: 6px; }
-    /* The left column's cards wear their own colour the way the inspector's
+    /* The left column's cards wear their own color the way the inspector's
        sections do, so the two columns read as one set of boxes rather than
-       tinted panels on one side and plain ones on the other. The colour comes
+       tinted panels on one side and plain ones on the other. The color comes
        from the card's own --c. */
     .card.tinted {
       --c: var(--wa-accent);
@@ -3675,7 +3675,7 @@ export class WristAssistantPanel extends LitElement {
       background: var(--c, var(--wa-accent)); border: 0; color: #fff;
     }
     .panel-title .swatch svg { width: 13px; height: 13px; stroke-width: 2.4; }
-    /* The complication card's Flash row: the switch, then the colour it
+    /* The complication card's Flash row: the switch, then the color it
        flashes, or the word Off. */
     .flash-row { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 26px; }
     .flash-row input.flash-color { width: 34px; height: 22px; padding: 1px 2px; border-radius: 5px; }
@@ -3771,7 +3771,7 @@ export class WristAssistantPanel extends LitElement {
     .testing-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; text-transform: none; letter-spacing: 0; color: color-mix(in srgb, var(--wa-states) 70%, var(--wa-ink)); }
     .testing-pill button { font: inherit; font-size: 12px; font-weight: 500; background: var(--wa-states); color: #1a1600; border: 0; border-radius: 999px; padding: 2px 9px; cursor: pointer; }
     .empty { opacity: .6; padding: 24px; text-align: center; }
-    /* A shape that draws nothing yet. Tinted in the placement colour rather
+    /* A shape that draws nothing yet. Tinted in the placement color rather
        than the accent: it is a statement about where you are, not a thing to
        press, and the buttons inside it carry the press. */
     .blank-shape {
@@ -3818,7 +3818,7 @@ export class WristAssistantPanel extends LitElement {
     .comp-acts { display: flex; align-items: center; gap: 0; margin-left: auto; flex: none; }
     .comp-acts button.ghost { font-size: 12px; padding: 0 6px; min-height: 24px; border-radius: 6px; }
     .insp-note { margin: 12px 0 0; font-size: 12px; line-height: 1.45; color: var(--wa-muted); }
-    /* One tinted box per subject, in the section's colour, so each card reads
+    /* One tinted box per subject, in the section's color, so each card reads
        as its own thing: a 36px header with a small mark, then a body of
        label-left rows. The header's hover runs to the box's edges while the
        rows keep the box's padding. */
@@ -3935,7 +3935,7 @@ export class WristAssistantPanel extends LitElement {
     }
     /* An open card with no help text in it has nothing for its "?" to show. */
     .sec[data-open="true"][data-help="off"]:not(:has(> .sec-b .hint:not(.warn):not(.err):not(.keep):not(.value-pop .hint))) button.sec-help { display: none; }
-    /* The picked layers, read only: the Layers list's colour coding without
+    /* The picked layers, read only: the Layers list's color coding without
        its controls, so the eye can check the pick without leaving the form. */
     .picked { display: flex; flex-direction: column; gap: 5px; margin-bottom: 4px; }
     .picked .row { display: grid; grid-template-columns: 4px minmax(0, 1fr); align-items: center; gap: 8px; font-size: 13px; }
@@ -4253,7 +4253,7 @@ export class WristAssistantPanel extends LitElement {
     :is(.sec-b, .value-pop) .field input[type=number]::-webkit-inner-spin-button,
     :is(.sec-b, .value-pop) .field input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     :is(.sec-b, .value-pop) .field .ent-box input { padding-left: 28px; padding-right: 26px; }
-    /* Inside a tinted section the focus ring takes the section's colour. */
+    /* Inside a tinted section the focus ring takes the section's color. */
     .field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible { border-color: var(--c, var(--wa-accent)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c, var(--wa-accent)) 28%, transparent); }
     .field:has(> textarea) { align-items: start; }
     .field:has(> textarea) > span { padding-top: 6px; }
@@ -4286,7 +4286,7 @@ export class WristAssistantPanel extends LitElement {
        their box at the same x as every other row in the card. */
     .row-inline .field.entity-field { grid-template-columns: var(--wa-lab) minmax(0, 1fr); gap: 4px 8px; }
     .field.value-chip-field > button.value-chip:first-child { grid-column: 1 / -1; }
-    /* A colour is one box: swatch, hex, and opacity in percent. */
+    /* A color is one box: swatch, hex, and opacity in percent. */
     .color-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
     .color-box {
       flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 0 0 5px;
@@ -4316,7 +4316,7 @@ export class WristAssistantPanel extends LitElement {
     .color-box .alpha input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     /* A gradient's bar: the gradient itself, with one chip per stop sitting on
        it where that stop is. The checkerboard behind it shows transparency, the
-       same way a colour swatch does. */
+       same way a color swatch does. */
     .fill-bar {
       position: relative; flex: 1; min-width: 0; height: 22px; border-radius: 6px;
       background: var(--g), repeating-conic-gradient(#c8c8c8 0 25%, #fff 0 50%) 0 0 / 8px 8px;
@@ -4328,9 +4328,9 @@ export class WristAssistantPanel extends LitElement {
       background: var(--sw); box-shadow: 0 0 0 1.5px #fff, 0 0 0 2.5px rgba(0,0,0,.45);
     }
     .fill-stop-n { flex: none; width: 14px; font-size: 11px; opacity: .65; text-align: center; }
-    /* A colour table: a thin bar of the bands to scale with a mark at the
+    /* A color table: a thin bar of the bands to scale with a mark at the
        current value, then one compact row per band, lowest first. It sits in
-       the control column, under the Colour row it belongs to. It is its own
+       the control column, under the Color row it belongs to. It is its own
        size container so a narrow inspector can drop the opacity box, which
        the eight-digit hex still carries. */
     .bands { display: grid; gap: 3px; margin: 2px 0 6px var(--wa-col); container-type: inline-size; }
@@ -4338,10 +4338,10 @@ export class WristAssistantPanel extends LitElement {
       .band-row .color-box .alpha { display: none; }
       .band-row .color-box { padding-right: 6px; }
     }
-    /* The bar is pieces with a hairline gap between them, so two close colours
+    /* The bar is pieces with a hairline gap between them, so two close colors
        still read as two bands; each piece is at least a tenth of the bar (see
        bandLayout). With a bar border on, a piece shows its fill inside its
-       border colour. Band ends are labelled under the bar. */
+       border color. Band ends are labelled under the bar. */
     .band-bar { position: relative; margin: 8px 0 4px; }
     .band-bar .bb { display: flex; gap: 2px; height: 14px; }
     .band-bar .bb i {
@@ -4390,8 +4390,8 @@ export class WristAssistantPanel extends LitElement {
     .band-row input.band-up:focus-visible { border-color: var(--c, var(--wa-accent)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c, var(--wa-accent)) 28%, transparent); }
     .band-row.hit input.band-up { color: var(--wa-val); }
     .band-row button.reset-dot { top: 50%; margin-top: -3px; }
-    /* A bars chart with a border: a Fill and a Border colour box side by side
-       on every row, under small column titles. A box whose colour is the
+    /* A bars chart with a border: a Fill and a Border color box side by side
+       on every row, under small column titles. A box whose color is the
        band's own carries a reset dot at its corner. */
     .bands.split .band-row { grid-template-columns: 164px minmax(0, 1fr) minmax(0, 1fr) 22px; }
     .band-row.band-head { min-height: 0; margin-bottom: -2px; }
@@ -4403,7 +4403,7 @@ export class WristAssistantPanel extends LitElement {
       .bands.split .band-row .color-box .alpha { display: none; }
       .bands.split .band-row .color-box { padding-right: 6px; }
     }
-    /* Too narrow for a hex beside the numbers: a colour box keeps its swatch. */
+    /* Too narrow for a hex beside the numbers: a color box keeps its swatch. */
     @container (max-width: 340px) {
       .band-row, .bands.split .band-row { grid-template-columns: 136px minmax(0, 1fr) 22px; }
       .bands.split .band-row { grid-template-columns: 136px minmax(28px, 1fr) minmax(28px, 1fr) 22px; }
@@ -4486,7 +4486,7 @@ export class WristAssistantPanel extends LitElement {
     .hint { font-size: 11.5px; line-height: 1.45; color: var(--wa-muted); margin: 4px 0; }
     .hint.warn { color: var(--wa-ink); }
     /* The bare .err rule sits above .hint in this sheet, so a hint that is an
-       error needs both class names to win the colour. */
+       error needs both class names to win the color. */
     .hint.err { color: var(--error-color, #db4437); }
     details.sub { margin: 6px 0; }
     details.sub summary { font-size: 12px; opacity: .8; cursor: pointer; }
@@ -4643,7 +4643,7 @@ export class WristAssistantPanel extends LitElement {
 
     /* Rich text: a Parts row holding the chips in one filled box, with the
        two add buttons under it, then the part picked in the one light box the
-       inspector still draws. A chip keeps the value chip's colours (entity
+       inspector still draws. A chip keeps the value chip's colors (entity
        teal, reading amber), so a part reads the way the same value reads
        anywhere else in the inspector. */
     .field.parts-field { align-items: start; margin: 2px 0 6px; }
@@ -4738,7 +4738,7 @@ export class WristAssistantPanel extends LitElement {
 
        The glyph is the panel's own drawing, not Home Assistant's icon set, so
        a row still has a picture whatever the frontend ships. It only takes the
-       accent colour when the entity is doing something, which is what makes
+       accent color when the entity is doing something, which is what makes
        the one light that is on findable in a list of forty. */
     .entity-field { position: relative; }
     .ent-box { position: relative; display: flex; align-items: center; }
@@ -4748,7 +4748,7 @@ export class WristAssistantPanel extends LitElement {
     .ent-box.open .ent-glass { color: var(--wa-accent); }
     /* A layer that can draw nothing until it names an entity: a chart on
        recorded history, a timeline, a picture. The empty box wears a ring in
-       the entity colour and keeps pulsing, so "why is my layer blank?" is
+       the entity color and keeps pulsing, so "why is my layer blank?" is
        marked where the answer gets typed. It runs without end on purpose: a
        finite pulse fires once on the first paint and never again, so anyone
        who looked away, opened another layer and came back found a plain box
@@ -4853,7 +4853,7 @@ export class WristAssistantPanel extends LitElement {
 
     /* The two tokens, wherever a run of ordinary prose has to name an entity
        or print what it reads. Everything that shows a live value ends up
-       here, so the colour never has to be repeated by hand. */
+       here, so the color never has to be repeated by hand. */
     .ent-tok { color: var(--wa-ent); font-weight: 600; }
     .val-tok, .entity-current .ent-state, .ent-pick .ent-state, .vchip .val, .chart-numbers b, .hint .nums, .readout-v .nums {
       color: var(--wa-val); font-weight: 600;
@@ -7192,9 +7192,9 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * Full colour or a tinted surface. Many watch faces draw complications in one
-   * tint, keeping only how see-through each part is, so colour by value and
-   * dark fills can look nothing like the full colour preview. A tinted iPhone
+   * Full color or a tinted surface. Many watch faces draw complications in one
+   * tint, keeping only how see-through each part is, so color by value and
+   * dark fills can look nothing like the full color preview. A tinted iPhone
    * Home Screen does the opposite: the tile's ground goes and every layer is
    * painted in the tint at the brightness it was drawn in. Which one the menu
    * previews follows the shape, since a Home Screen tile is never on a watch.
@@ -7208,17 +7208,17 @@ export class WristAssistantPanel extends LitElement {
     const pick = (hex: string | undefined) => { this.toggleMenu("tint", false); this.previewTint = hex; };
     return html`<span class="inbox tint-box ${on !== undefined ? "on" : ""}"
       title=${phone
-        ? "A tinted Home Screen drops the tile's background and paints every layer in one colour, keeping only how bright each part was. Layers in the accent group take the lighter of the two colours."
-        : "Many watch faces draw complications in one colour. Colours become the face's tint, text and background turn white, and only how see-through each part is survives."}>
-      <span class="pre">Colour</span>
+        ? "A tinted Home Screen drops the tile's background and paints every layer in one color, keeping only how bright each part was. Layers in the accent group take the lighter of the two colors."
+        : "Many watch faces draw complications in one color. Colors become the face's tint, text and background turn white, and only how see-through each part is survives."}>
+      <span class="pre">Color</span>
       <span class="case-tool" data-menu="tint">
         <button class="case-pick" ?disabled=${off} aria-haspopup="listbox" aria-expanded=${this.openMenu === "tint" ? "true" : "false"}
-          aria-label=${`Preview colour, ${current ? `${current.label} ${phone ? "tinted Home Screen" : "tinted face"}` : "full colour"}`} @click=${() => this.toggleMenu("tint")}>
-          ${current ? html`<i class="tint-dot" style=${`--sw:${current.hex}`}></i>${current.label} ${word}` : "Full colour"}${uiIcon("chevron")}
+          aria-label=${`Preview color, ${current ? `${current.label} ${phone ? "tinted Home Screen" : "tinted face"}` : "full color"}`} @click=${() => this.toggleMenu("tint")}>
+          ${current ? html`<i class="tint-dot" style=${`--sw:${current.hex}`}></i>${current.label} ${word}` : "Full color"}${uiIcon("chevron")}
         </button>
-        ${this.openMenu === "tint" ? html`<div class="pop-menu" role="listbox" aria-label="Preview colour">
+        ${this.openMenu === "tint" ? html`<div class="pop-menu" role="listbox" aria-label="Preview color">
           <button class="row" role="option" aria-selected=${on === undefined ? "true" : "false"} @click=${() => pick(undefined)}>
-            <i class="tint-dot full"></i>Full colour</button>
+            <i class="tint-dot full"></i>Full color</button>
           ${FACE_TINTS.map((t) => html`<button class="row" role="option" aria-selected=${t.hex === on ? "true" : "false"}
             @click=${() => pick(t.hex)}><i class="tint-dot" style=${`--sw:${t.hex}`}></i>${t.label} ${word}</button>`)}
         </div>` : nothing}
@@ -7704,7 +7704,7 @@ export class WristAssistantPanel extends LitElement {
       ["Home Screen", "On an iPhone only: Small, Medium, Large and Extra Large are the Home Screen tile sizes. Each is a canvas shape with its own layers, drawn edge to edge in the tile."],
       ["Small · Medium · Large", "A square, a wide band about twice as wide as it is tall, and a tall tile a little taller than it is wide. Add the ones you want; a size the complication does not have is not offered when you add a widget."],
       ["Extra Large", "The full-page tile, iOS 27 and later. An iPhone on iOS 26 is not offered it when adding a widget, and everything else still draws."],
-      ["A tinted Home Screen", "iOS 18 lets a user tint the whole Home Screen. The system then drops the tile background and draws the design in two tones, so a design that relies on colour alone reads differently there."],
+      ["A tinted Home Screen", "iOS 18 lets a user tint the whole Home Screen. The system then drops the tile background and draws the design in two tones, so a design that relies on color alone reads differently there."],
       ["The shape itself", "The bottom row of the Layers list: its background, border and Shape states."],
       ["Pages", "One complication, several pages, one showing at a time. The Pages tab of this help explains them."],
     ];
@@ -7723,7 +7723,7 @@ export class WristAssistantPanel extends LitElement {
       ["Icon", "An SF Symbol or Material Design icon, or the entity's own icon."],
       ["Gauge", "A number drawn between a minimum and a maximum."],
       ["Chart", "Recent history as bars, a line or an area."],
-      ["Timeline", "Which state an entity was in over time, as a coloured strip."],
+      ["Timeline", "Which state an entity was in over time, as a colored strip."],
       ["Shape", "A rectangle, rounded rectangle, capsule, circle or line."],
       ["Picture", "A camera snapshot, or an entity's picture such as a person's avatar or album art."],
       ["Tap area", "Invisible. A tap inside it runs its own action. Outside it, the complication's tap action applies."],
@@ -7733,7 +7733,7 @@ export class WristAssistantPanel extends LitElement {
     ];
     const cards: [string, string][] = [
       ["Content", "What the layer shows, starting with its entity or value."],
-      ["Look", "How it is drawn: size, colour and style. On a picture the card is called Picture."],
+      ["Look", "How it is drawn: size, color and style. On a picture the card is called Picture."],
       ["Extras", "Charts, timelines and pictures only: labels, markers, clock times, dots, grid lines or a timestamp."],
       ["States", "Changes that apply while a value matches, described below."],
       ["Position", "Where the layer sits on the shape being edited, and its size."],
@@ -7741,9 +7741,9 @@ export class WristAssistantPanel extends LitElement {
       ["?", "In a card's header: shows that card's help text."],
     ];
     const values: [string, string][] = [
-      ["By value", "Gauges, charts and text can colour by value instead of one colour. Each band colours readings up to its number, lowest band first. Readings above every band take the Above the last band colour."],
-      ["Timeline colours", "A timeline colours each state from its own table."],
-      ["States", "Rows that test a value, like is on or is greater than, each with the changes it makes: icon, text, colour, visibility and more. Rows are checked top to bottom and the first match wins. Otherwise applies when none match."],
+      ["By value", "Gauges, charts and text can color by value instead of one color. Each band colors readings up to its number, lowest band first. Readings above every band take the Above the last band color."],
+      ["Timeline colors", "A timeline colors each state from its own table."],
+      ["States", "Rows that test a value, like is on or is greater than, each with the changes it makes: icon, text, color, visibility and more. Rows are checked top to bottom and the first match wins. Otherwise applies when none match."],
       ["Shape states", "The same table, on the shape itself."],
       ["Shared values", "Like a variable: set it once under the Layers card, and every layer that reads it follows. On a layer, set Source to Shared value, or click Make shared."],
       ["Values on the watch", "Every entity and shared value the complication reads, with its live reading. Slide, pick or type another value to watch the preview and the states react. Nothing is saved, and Live or Back to live returns to the real reading."],
@@ -7793,7 +7793,7 @@ export class WristAssistantPanel extends LitElement {
     } else if (this.helpTab === "pages") {
       body = html`${section("Pages", pagesWhat)}`;
     } else {
-      body = html`<div>${section("Shapes", shapes)}${section("Cards", cards)}</div><div>${section("Layers", layers)}${section("Colour, states and values", values)}</div>`;
+      body = html`<div>${section("Shapes", shapes)}${section("Cards", cards)}</div><div>${section("Layers", layers)}${section("Color, states and values", values)}</div>`;
     }
     return html`<dialog class="help-dialog" @close=${() => { this.helpOpen = false; }}>
       <div class="help-head">
@@ -8402,7 +8402,7 @@ export class WristAssistantPanel extends LitElement {
       : columnFit(this.panelWidth, this.colLeft, this.colRight);
     // The header used to spell the revision and whether it was saved. The
     // footer already says exactly that, at length, so the bar keeps only the
-    // dot: colour for the glance, the same words in its tooltip.
+    // dot: color for the glance, the same words in its tooltip.
     const rec = this.records.find((r) => r.id === this.selectedId);
     return html`
       <header>
@@ -10362,7 +10362,7 @@ export class WristAssistantPanel extends LitElement {
     </dialog>`;
   }
 
-  /** One numbered step of the Share dialog, in its own colour. A locked step
+  /** One numbered step of the Share dialog, in its own color. A locked step
    * waits on an earlier one: it shows, faded, and takes no input. */
   private shareSection(n: number, tone: string, title: string, body: unknown, right: unknown = nothing, locked = false) {
     return html`<section class="xf-sec ${tone} ${locked ? "locked" : ""}">
@@ -13806,7 +13806,7 @@ export class WristAssistantPanel extends LitElement {
 
   /**
    * The control for one test value. A number slides, so a gauge filling or a
-   * colour changing at a threshold can be watched as it moves rather than
+   * color changing at a threshold can be watched as it moves rather than
    * retyped value by value, and its reading still opens a box for an exact
    * one. A state with a known set of words is a picker. Anything else is typed.
    */
@@ -14079,12 +14079,12 @@ export class WristAssistantPanel extends LitElement {
     const setHiddenHere = (v: boolean) => this.mutate((c) => {
       for (const el of picked) setPlacement(c, family, el.payload.id, { isHidden: v });
     });
-    const setColour = (v: string) => this.mutate((c) => {
+    const setColor = (v: string) => this.mutate((c) => {
       for (const el of picked) {
         const t = c.elements.find((e) => e.payload.id === el.payload.id);
         if (t && t.kind !== "image" && t.kind !== "tap" && t.kind !== "timeline" && t.kind !== "chartTimes" && t.kind !== "chartDots" && t.kind !== "chartGrid" && t.kind !== "imageTime" && t.kind !== "list") t.payload.colorSlot.baseColorHex = v;
       }
-    }, "multi-colour");
+    }, "multi-color");
     return html`
       ${card(host, "picked", `${n} layers picked`, html`
           <div class="field list-field"><span>Layers</span>
@@ -14106,10 +14106,10 @@ export class WristAssistantPanel extends LitElement {
         { color: "var(--wa-accent)", icon: "layers", summary: `Edits here land on all ${n}`, alwaysOpen: true })}
       ${card(host, "picked-common", `All ${n} at once`, html`
           ${this.triCheck("Hidden", common.hiddenHere, setHiddenHere)}
-          ${common.colourable
-            ? html`${colorField("Colour", common.colour, (v) => { if (v !== undefined) setColour(v); })}
-              ${common.colour === undefined ? html`<div class="hint keep">These layers are different colours. Pick one to give them all the same.</div>` : nothing}`
-            : html`<div class="hint keep">No shared colour: a picture and a tap area have none.</div>`}
+          ${common.colorable
+            ? html`${colorField("Color", common.color, (v) => { if (v !== undefined) setColor(v); })}
+              ${common.color === undefined ? html`<div class="hint keep">These layers are different colors. Pick one to give them all the same.</div>` : nothing}`
+            : html`<div class="hint keep">No shared color: a picture and a tap area have none.</div>`}
           <div class="hint">These layers are on the ${familyTitle(family)} shape and on no other, so nothing here reaches another shape.</div>
           <div class="hint">Size, content and states belong to one layer at a time. Click a layer on its own to reach them.</div>`,
         { color: SECTION_COLOR.place, icon: "place", summary: "The settings every picked layer has", alwaysOpen: true })}`;
@@ -14283,7 +14283,7 @@ function historySpanWords(minutes: number): string {
 /** The second line of a Layers row: the live reading and the one look fact
  * that tells this layer from its neighbours. */
 function layerMeta(el: CElement, resolver: Resolver, historySeries: Map<string, string>, size?: number): unknown {
-  // What the layer reads right now takes the live-value colour here too, so a
+  // What the layer reads right now takes the live-value color here too, so a
   // row in the list and the card on the right agree about which half of the
   // line is the house talking.
   const now = (v: string | undefined) => html`<span class="val-tok">${v ?? "--"}</span>`;
@@ -14301,7 +14301,7 @@ function layerMeta(el: CElement, resolver: Resolver, historySeries: Map<string, 
       return `${el.payload.style} · ${chartNumbers(raw).length} values`;
     }
     case "timeline": {
-      // Changes rather than runs: the strip merges neighbours of one colour, and
+      // Changes rather than runs: the strip merges neighbours of one color, and
       // "12 changes" is what the recorder actually holds for this entity.
       const key = timelineHistoryKey(el.payload);
       const samples = key === undefined ? [] : timelineSamples(historySeries.get(key) ?? "");

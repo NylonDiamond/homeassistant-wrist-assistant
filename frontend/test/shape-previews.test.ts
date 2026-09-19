@@ -174,11 +174,11 @@ describe("how a preview is tinted", () => {
     expect(previewTintFor("circular", true, undefined)).toEqual({ tint: "#FFFFFF", tintSurface: "watch" });
   });
 
-  it("draws a phone's Home Screen tiles in full colour", () => {
+  it("draws a phone's Home Screen tiles in full color", () => {
     expect(previewTintFor("small", true, undefined)).toEqual({});
   });
 
-  it("leaves a watch's own shapes in full colour", () => {
+  it("leaves a watch's own shapes in full color", () => {
     expect(previewTintFor("rectangular", false, undefined)).toEqual({});
   });
 

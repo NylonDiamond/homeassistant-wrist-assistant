@@ -293,20 +293,20 @@ export interface RenderOptions {
    */
   slot?: CanvasSize;
   /** Editor affordance: the snap grid's step as a fraction of the face. Draws
-   * faint lines over the layers, with the middle lines in the accent colour. */
+   * faint lines over the layers, with the middle lines in the accent color. */
   grid?: number;
   /** Editor affordance: the smart guides the layer being dragged is sitting on
    * right now, drawn across the face and gone again on release. */
   guides?: readonly GuideLine[];
   /**
-   * Preview a tinted surface in this colour (`#RRGGBB`). Absent draws full
-   * colour. `tintSurface` says which surface; see `tintGroup` for what each
+   * Preview a tinted surface in this color (`#RRGGBB`). Absent draws full
+   * color. `tintSurface` says which surface; see `tintGroup` for what each
    * kind of layer turns into.
    */
   tint?: string;
   /**
    * Which tinted surface `tint` is previewing. "watch" (the default) is a
-   * tinted watch face: colour is dropped and only how see-through each part is
+   * tinted watch face: color is dropped and only how see-through each part is
    * survives. "phone" is a tinted iPhone Home Screen, which is WidgetKit's
    * `accented` mode: the tile's own ground goes, and every layer is painted in
    * the tint at the brightness it was drawn in. Ignored without `tint`.
@@ -330,7 +330,7 @@ export interface RenderOptions {
  * The success flash, as the watch paints it: a stroke, not a wash. The app's
  * `customSuccessFlashIndicator` (app repo
  * `WristAssistant Widgets/CustomComplicationViewHelpers.swift`) rings the whole
- * complication in the flash colour, or rings just the tap area that fired when
+ * complication in the flash color, or rings just the tap area that fired when
  * it knows which one it was. Nothing about it is on the wire; the panel plays
  * it so a demo tap looks like a watch tap.
  */
@@ -408,19 +408,19 @@ function flashShapeRing(family: DrawableFamily, color: string, canvas: CanvasSiz
  * face keeps only each pixel's alpha and repaints it:
  *
  * - `accent`: views marked `.widgetAccentable()` (shapes, icons, gauges, charts,
- *   timelines and their parts) take the face's tint colour.
+ *   timelines and their parts) take the face's tint color.
  * - `plain`: everything else (text, a picture's time chip, the background and
  *   border) is the default group, drawn in white.
  * - `picture`: a camera picture uses `.accentedDesaturated`, so its brightness
- *   becomes alpha in the tint colour.
+ *   becomes alpha in the tint color.
  *
- * Colour is dropped either way, so an opaque black fill is as bright as white.
+ * Color is dropped either way, so an opaque black fill is as bright as white.
  *
  * A tinted iPhone Home Screen works the other way round and has its own two
  * groups. There the system keeps each pixel's brightness rather than its alpha,
  * so a black fill goes and a white one stays, and paints the default group
  * (`phonePrimary`) and the accentable group (`phoneAccent`) in two related
- * colours. Which group a layer lands in is the document's `accentGroup`, plus
+ * colors. Which group a layer lands in is the document's `accentGroup`, plus
  * the kinds the app already marks accentable for the watch.
  */
 export type TintGroup = "accent" | "plain" | "picture" | "phoneAccent" | "phonePrimary";
@@ -434,7 +434,7 @@ const TINT_GROUPS: Record<TintSurface, readonly TintGroup[]> = {
   phone: ["phonePrimary", "phoneAccent"],
 };
 
-/** Tints to preview with, a spread of the colours watch faces offer. */
+/** Tints to preview with, a spread of the colors watch faces offer. */
 export const FACE_TINTS: readonly { label: string; hex: string }[] = [
   { label: "Orange", hex: "#FF9F0A" },
   { label: "Red", hex: "#FF453A" },
@@ -457,13 +457,13 @@ export function tintGroup(kind: ResolvedElement["kind"], surface: TintSurface = 
 }
 
 /**
- * The accent group's colour on a tinted Home Screen, for a tint of `#RRGGBB`.
+ * The accent group's color on a tinted Home Screen, for a tint of `#RRGGBB`.
  *
- * The system derives two related colours from the one the user picked and paints
+ * The system derives two related colors from the one the user picked and paints
  * a group in each. The lighter of the two goes to the accentable group, which is
  * what a layer is put there for, so the preview lifts the tint halfway to white.
  * Nothing on the wire depends on the exact figure: it is the preview's stand-in
- * for a colour only the device can mix.
+ * for a color only the device can mix.
  */
 export function accentTint(tintHex: string): string {
   const c = parseColor(tintHex) ?? { color: "#FFFFFF", opacity: 1 };
@@ -497,7 +497,7 @@ function tintDefs(prefix: string, tintHex: string, surface: TintSurface): Templa
       surface === "phone" ? svg`<feComposite in2="SourceGraphic" operator="in" />` : nothing}</filter>`)}`;
 }
 
-/** Wraps a drawing in its tint filter, or returns it untouched in full colour. */
+/** Wraps a drawing in its tint filter, or returns it untouched in full color. */
 function tinted<T>(body: T, group: TintGroup, prefix: string | undefined): T | TemplateResult {
   return prefix === undefined ? body : svg`<g filter=${`url(#${prefix}-${group})`}>${body}</g>`;
 }
@@ -627,7 +627,7 @@ function textStyle(monospacedDigits: boolean, width: string | undefined) {
  */
 const MDI_SIZE_FACTOR = 1.15;
 
-/** `#RRGGBB` or `#RRGGBBAA` (leading # optional) to an SVG colour + opacity. */
+/** `#RRGGBB` or `#RRGGBBAA` (leading # optional) to an SVG color + opacity. */
 export function parseColor(hex: string | undefined): { color: string; opacity: number } | undefined {
   if (!hex) return undefined;
   const h = hex.startsWith("#") ? hex.slice(1) : hex;
@@ -681,13 +681,13 @@ function fillPaintDefs(fill: Fill): { defs: TemplateResult; paint: string } {
  * A gradient wrapped around a circular scale, for a ring or an arc gauge.
  *
  * SVG has no angular gradient, so the sweep is drawn as a fan of short arcs,
- * each in the colour the fill shows at its own point along the scale. Same
+ * each in the color the fill shows at its own point along the scale. Same
  * trick the corner bezel gauge already uses, and the same look `AngularGradient`
  * gives on the watch.
  */
 const GAUGE_GRADIENT_SEGMENTS = 48;
 
-/** The paint attributes for a flat colour, or a gradient over the given box. */
+/** The paint attributes for a flat color, or a gradient over the given box. */
 function fillOrColor(fill: Fill | undefined, hex: string) {
   if (fill === undefined) {
     const c = colorAttrs(hex, "fill");
@@ -778,8 +778,8 @@ interface ArcGlyph {
 }
 
 /** The layer's text as glyphs, each carrying the look it is drawn in: a part's
- * size, weight and colour where the layer draws parts, a span's colour where it
- * colours its numbers, and the layer's own look everywhere else. */
+ * size, weight and color where the layer draws parts, a span's color where it
+ * colors its numbers, and the layer's own look everywhere else. */
 function arcGlyphs(el: Extract<ResolvedElement, { kind: "text" }>): ArcGlyph[] {
   const layerLook: PartLook = {
     fontSize: el.fontSize, fontWeight: el.fontWeight, fontDesign: el.fontDesign,
@@ -787,11 +787,11 @@ function arcGlyphs(el: Extract<ResolvedElement, { kind: "text" }>): ArcGlyph[] {
   };
   const drawsParts = el.parts !== undefined && el.parts.map((p) => p.text).join("") === el.text;
   const looks = drawsParts ? partLooks(el.parts!) : undefined;
-  const colours = drawsParts ? undefined : spanColours(el.text, el.spans);
+  const colors = drawsParts ? undefined : spanColors(el.text, el.spans);
   const out: ArcGlyph[] = [];
   let at = 0;
   for (const ch of el.text) {
-    const look = looks?.[at] ?? (colours === undefined ? layerLook : { ...layerLook, colorHex: colours[at]! });
+    const look = looks?.[at] ?? (colors === undefined ? layerLook : { ...layerLook, colorHex: colors[at]! });
     out.push({ text: ch, look });
     at += ch.length;
   }
@@ -889,10 +889,10 @@ function truncateToBox(line: string, fontSize: number, boxWidth: number): string
   return `${line.slice(0, keep).replace(/\s+$/, "")}…`;
 }
 
-/** The colour of each code unit of `text`, from its spans. Undefined when the
- * layer draws in one colour, and when the spans no longer spell the text (a
- * countdown the preview has ticked), which then draws in the layer colour. */
-function spanColours(text: string, spans: readonly TextSpan[] | undefined): string[] | undefined {
+/** The color of each code unit of `text`, from its spans. Undefined when the
+ * layer draws in one color, and when the spans no longer spell the text (a
+ * countdown the preview has ticked), which then draws in the layer color. */
+function spanColors(text: string, spans: readonly TextSpan[] | undefined): string[] | undefined {
   if (!spans || spans.map((s) => s.text).join("") !== text) return undefined;
   const out: string[] = [];
   for (const s of spans) for (let i = 0; i < s.text.length; i++) out.push(s.colorHex);
@@ -913,7 +913,7 @@ function lineStarts(text: string, lines: readonly string[]): number[] {
  * is matched back in order: a character still there takes its own look, folded
  * whitespace takes the look of the whitespace it stands for, and anything the
  * text does not have (the ellipsis) takes the look of the character before it.
- * A look is a colour for colour by value and a whole part style for rich text;
+ * A look is a color for color by value and a whole part style for rich text;
  * neighbours merge when they hold the very same look. */
 function paintLine<T>(line: string, from: number, text: string, looks: readonly T[], fallback: T): { text: string; look: T }[] {
   const runs: { text: string; look: T }[] = [];
@@ -953,7 +953,7 @@ interface PartLook {
 type PartRun = { text: string; look: PartLook };
 
 /** The look of each code unit of the joined parts: the part's size and weight,
- * and its span's colour when it colours by value. One object per span, so
+ * and its span's color when it colors by value. One object per span, so
  * `paintLine` merges exactly the characters that share a run. */
 function partLooks(parts: readonly ResolvedTextPart[]): PartLook[] {
   const out: PartLook[] = [];
@@ -1114,12 +1114,12 @@ function renderText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box) {
   const fontSize = el.fontSize * scale;
   const drawn = lines.map((l) => truncateToBox(l, fontSize, box.w));
   const { anchor, x } = textAnchor(el.alignment, box);
-  // Colour by value paints runs inside each drawn line. Every width decision
-  // above is made on the plain text, so the runs change colour and nothing else.
-  const colours = spanColours(el.text, el.spans);
-  const starts = colours ? lineStarts(el.text, lines) : [];
-  const lineBody = (line: string, i: number) => colours
-    ? paintLine(line, starts[i] ?? 0, el.text, colours, el.colorHex).map((run) => {
+  // Color by value paints runs inside each drawn line. Every width decision
+  // above is made on the plain text, so the runs change color and nothing else.
+  const colors = spanColors(el.text, el.spans);
+  const starts = colors ? lineStarts(el.text, lines) : [];
+  const lineBody = (line: string, i: number) => colors
+    ? paintLine(line, starts[i] ?? 0, el.text, colors, el.colorHex).map((run) => {
       const a = colorAttrs(run.look, "fill");
       return svg`<tspan fill=${a.fill} fill-opacity=${a["fill-opacity"]}>${run.text}</tspan>`;
     })
@@ -1175,7 +1175,7 @@ function renderGauge(el: Extract<ResolvedElement, { kind: "gauge" }>, box: Box) 
     const first = (horizontal ? box.cx : box.cy) - span / 2 + d / 2;
     return svg`${Array.from({ length: count }, (_, i) => {
       const at = first + i * (d + GAUGE_DOT_GAP);
-      // A gradient over a row of dots is one colour per dot, sampled where that
+      // A gradient over a row of dots is one color per dot, sampled where that
       // dot sits along the row: a dot is one mark, and half a fade across it
       // would read as a rendering fault rather than as a scale.
       const paint = i < el.filledCount
@@ -1189,7 +1189,7 @@ function renderGauge(el: Extract<ResolvedElement, { kind: "gauge" }>, box: Box) 
     const w = box.w;
     const fillW = Math.max(lw, w * el.fraction);
     const tickW = 1;
-    // The gradient runs the whole bar, not the filled part, so the colour at a
+    // The gradient runs the whole bar, not the filled part, so the color at a
     // reading does not move as the reading does.
     const paint = fillOrColor(el.fill, el.colorHex);
     return svg`
@@ -1245,7 +1245,7 @@ function renderGauge(el: Extract<ResolvedElement, { kind: "gauge" }>, box: Box) 
 
 /** The filled part of a ring or arc, drawn as a fan of short arcs so a gradient
  * can run around it. The whole scale is sampled, not just the filled part, so
- * the colour at a reading does not move as the reading does. Drawn inside the
+ * the color at a reading does not move as the reading does. Drawn inside the
  * rotated group, so the angles here start at 0. */
 function gaugeGradientArc(fill: Fill, box: Box, r: number, lw: number, dial: { start: number; sweep: number }, fraction: number) {
   const shown = Math.max(0, Math.min(1, fraction));
@@ -1336,8 +1336,8 @@ function gaugeNeedle(el: Extract<ResolvedElement, { kind: "gauge" }>, box: Box, 
   const rad = ((dial.start + dial.sweep * Math.max(0, Math.min(1, el.fraction))) * Math.PI) / 180;
   const reach = Math.max(0, r - lw / 2 - 1);
   // A gradient down a pointer a couple of points wide says nothing, so the
-  // pointer takes the one colour the gradient shows where it points, the way a
-  // banded gauge takes its band's colour.
+  // pointer takes the one color the gradient shows where it points, the way a
+  // banded gauge takes its band's color.
   const paint = colorAttrs(el.fill === undefined ? el.colorHex : fillColorAt(el.fill, el.fraction), "fill");
   const hub = Math.max(1, lw * 0.8);
   return svg`
@@ -1487,19 +1487,19 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
   const high = colorAttrs(el.highColorHex, "fill", el.colorHex);
   const low = colorAttrs(el.lowColorHex, "fill", el.colorHex);
 
-  const dot = (c: { x: number; y: number }, colour: ReturnType<typeof colorAttrs>) =>
-    svg`<circle cx=${c.x} cy=${c.y} r="1.7" fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} />`;
+  const dot = (c: { x: number; y: number }, color: ReturnType<typeof colorAttrs>) =>
+    svg`<circle cx=${c.x} cy=${c.y} r="1.7" fill=${color.fill} fill-opacity=${color["fill-opacity"]} />`;
 
   const body: TemplateResult[] = [];
   const defs = new Map<string, TemplateResult>();
 
-  // One colour per reading when the chart is banded, otherwise the series colour.
+  // One color per reading when the chart is banded, otherwise the series color.
   const banded = el.pointColorHexes.length === g.count;
   const bandAt = (i: number) => (banded ? colorAttrs(el.pointColorHexes[i]!, "fill", el.colorHex) : base);
 
-  // An area's paint in one colour: 28 % flat, or a fade from 28 % at the top of
+  // An area's paint in one color: 28 % flat, or a fade from 28 % at the top of
   // the plot to clear at the baseline. The gradient runs in plot space, one per
-  // colour, so neighbouring band quads line up into one wash.
+  // color, so neighbouring band quads line up into one wash.
   const fillPaint = (hex: string) => {
     const c = parseColor(hex) ?? parseColor(el.colorHex) ?? { color: "#FFFFFF", opacity: 1 };
     if (el.fillStyle !== "fade") return { fill: c.color, opacity: c.opacity * 0.28 };
@@ -1534,10 +1534,10 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
       if (el.holes[i] === true) continue;
       const r = g.barRect(i);
       // The highlight is the more specific statement, so it paints over its band.
-      // The resolver has already folded that in with the fill colours; a chart
+      // The resolver has already folded that in with the fill colors; a chart
       // resolved without them draws the way it always did.
       const fillHex = el.barFillColorHexes.length === g.count ? el.barFillColorHexes[i] : undefined;
-      const colour = fillHex !== undefined
+      const color = fillHex !== undefined
         ? colorAttrs(fillHex, "fill", el.colorHex)
         : i === el.highIndex ? high : i === el.lowIndex ? low : bandAt(i);
       // A rounded top only needs the bar's width: a bar shorter than the radius
@@ -1551,7 +1551,7 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
       const bw = el.barBorderWidth;
       // A bar too thin or too short to hold its border on both sides is all border.
       const solid = borderHex !== undefined && (r.w <= 2 * bw || r.h <= 2 * bw);
-      const paint = solid ? colorAttrs(borderHex, "fill", el.colorHex) : colour;
+      const paint = solid ? colorAttrs(borderHex, "fill", el.colorHex) : color;
       if (el.barCorners === "top") {
         body.push(svg`<path d=${chartBarPath(r, radius, hangs)}
           fill=${paint.fill} fill-opacity=${paint["fill-opacity"]} />`);
@@ -1610,7 +1610,7 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
     });
     if (el.style === "area") {
       for (const { run, pts, legs, line } of drawn) {
-        // A fill colour of its own is one colour, so it overrides band fill.
+        // A fill color of its own is one color, so it overrides band fill.
         if (el.fillBands && banded && run.length > 1 && el.fillColorHex === undefined) {
           // One quad per leg, each under its own stretch of line. No clipping: the
           // quads share their edges, so they read as one wash.
@@ -1624,7 +1624,7 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
         } else {
           // A gradient under the area replaces the whole paint, `fillStyle` and
           // the flat 28 % included: its stops carry their own alpha, so fading
-          // it again would take a colour the author chose and dim it twice.
+          // it again would take a color the author chose and dim it twice.
           const paint = el.areaFill === undefined
             ? fillPaint(el.fillColorHex ?? el.colorHex)
             : areaFillPaint(el.areaFill);
@@ -1635,14 +1635,14 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
     }
     for (const { run, pts, legs, line } of drawn) {
       if (banded && run.length > 1) {
-        // A stroke cannot change colour halfway, so a banded line is drawn one
+        // A stroke cannot change color halfway, so a banded line is drawn one
         // segment at a time. Each segment takes the band of the reading it arrives
-        // at, which puts the newest reading's colour on the last segment.
+        // at, which puts the newest reading's color on the last segment.
         for (let k = 0; k < legs.length; k++) {
           const a = pts[k]!;
-          const colour = bandAt(run[k + 1]!);
+          const color = bandAt(run[k + 1]!);
           body.push(svg`<path d=${`M${a.x} ${a.y} ${chartLegCommands(legs[k]!)}`} fill="none"
-            stroke=${colour.fill} stroke-opacity=${colour["fill-opacity"]}
+            stroke=${color.fill} stroke-opacity=${color["fill-opacity"]}
             stroke-width=${el.lineWidth} stroke-linecap="round" stroke-linejoin="round" />`);
         }
       } else {
@@ -1650,21 +1650,21 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
           stroke-width=${el.lineWidth} stroke-linecap="round" stroke-linejoin="round" />`);
       }
     }
-    // A single stroke cannot change colour halfway without splitting into two
+    // A single stroke cannot change color halfway without splitting into two
     // paths, so line and area put the highlight on a dot at the reading.
     if (el.highIndex !== undefined) body.push(dot(points[el.highIndex]!, high));
     if (el.lowIndex !== undefined) body.push(dot(points[el.lowIndex]!, low));
   }
 
-  // Each end draws its own mark in its own colour. The colour is the
+  // Each end draws its own mark in its own color. The color is the
   // highlight's either way, so an end with no mark is still painted.
-  const endMark = (index: number | undefined, marker: typeof el.highMarker, colour: typeof high, end: "high" | "low") => {
+  const endMark = (index: number | undefined, marker: typeof el.highMarker, color: typeof high, end: "high" | "low") => {
     if (index === undefined || marker === "none") return;
     const c = g.markerCenter(index, el.style === "bars", end);
     body.push(marker === "triangle"
       ? svg`<path d=${`M${c.x} ${c.y - 1.8} L${c.x + 2.2} ${c.y + 1.8} L${c.x - 2.2} ${c.y + 1.8} Z`}
-          fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} />`
-      : dot(c, colour));
+          fill=${color.fill} fill-opacity=${color["fill-opacity"]} />`
+      : dot(c, color));
   };
   endMark(el.highIndex, el.highMarker, high, "high");
   endMark(el.lowIndex, el.lowMarker, low, "low");
@@ -1676,23 +1676,23 @@ function renderChartMarks(el: Extract<ResolvedElement, { kind: "chart" }>, box: 
   // A line that has moved into a layer is drawn by that layer, not here.
   if (el.drawsThreshold && el.thresholdY !== undefined) {
     const y = g.yAtFraction(el.thresholdY);
-    const colour = colorAttrs(el.thresholdColorHex, "fill", el.colorHex);
+    const color = colorAttrs(el.thresholdColorHex, "fill", el.colorHex);
     body.push(svg`<path d=${`M${g.plotLeft} ${y} L${g.plotRight} ${y}`} fill="none"
-      stroke=${colour.fill} stroke-opacity=${colour["fill-opacity"]}
+      stroke=${color.fill} stroke-opacity=${color["fill-opacity"]}
       stroke-width="1" stroke-dasharray="2 2" />`);
   }
   if (el.drawsNowLine && el.nowIndex !== undefined && el.nowIndex < g.count) {
     const x = g.markerCenter(el.nowIndex, el.style === "bars").x;
-    const colour = colorAttrs(el.nowColorHex, "fill", el.colorHex);
+    const color = colorAttrs(el.nowColorHex, "fill", el.colorHex);
     body.push(svg`<path d=${`M${x} ${g.plotTop} L${x} ${g.plotBottom}`} fill="none"
-      stroke=${colour.fill} stroke-opacity=${colour["fill-opacity"]} stroke-width="1" />`);
+      stroke=${color.fill} stroke-opacity=${color["fill-opacity"]} stroke-width="1" />`);
   }
 
   return defs.size === 0 ? svg`${body}` : svg`<defs>${[...defs.values()]}</defs>${body}`;
 }
 
-/** The id of a chart's fade gradient in one colour: the drawing's own prefix,
- * the layer's id and the colour's hex digits, so each colour is defined once
+/** The id of a chart's fade gradient in one color: the drawing's own prefix,
+ * the layer's id and the color's hex digits, so each color is defined once
  * per drawing and two drawings of one layer never share an id. */
 export function chartFadeId(prefix: string, elementId: string, hex: string): string {
   return `chartfade-${prefix}-${elementId}-${hex}`.replace(/[^0-9A-Za-z_-]/g, "");
@@ -1709,7 +1709,7 @@ function renderTimeLabelRow(
   rowHeight: number,
 ) {
   const rowY = (el.labelsAbove ? box.y : box.y + box.h - rowHeight) + rowHeight / 2;
-  const colour = colorAttrs(el.labelColorHex, "fill");
+  const color = colorAttrs(el.labelColorHex, "fill");
   return el.labels.map((label, i) => {
     // The last one is hung off the right edge before the first is hung off the
     // left, so a lone time (a count of 1, drawn at now) sits inside the frame
@@ -1720,12 +1720,12 @@ function renderTimeLabelRow(
     return svg`<text x=${x} y=${rowY} text-anchor=${anchor} dominant-baseline="central"
       font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif"
       font-size=${labelSize} font-weight="400"
-      fill=${colour.fill} fill-opacity=${colour["fill-opacity"]}>${label.text}</text>`;
+      fill=${color.fill} fill-opacity=${color["fill-opacity"]}>${label.text}</text>`;
   });
 }
 
 /**
- * A strip of coloured runs across the frame, oldest at the left.
+ * A strip of colored runs across the frame, oldest at the left.
  *
  * Every run is a rounded rectangle as wide as the time it covers. The gap is
  * taken off the right of each run except the last, so the strip still ends
@@ -1751,9 +1751,9 @@ function renderTimeline(el: Extract<ResolvedElement, { kind: "timeline" }>, box:
     const last = i === el.runs.length - 1;
     const w = Math.max(last ? full : Math.min(full, 0.5), full - (last ? 0 : gap));
     const radius = Math.max(0, Math.min(el.cornerRadius, w / 2, strip.h / 2));
-    const colour = colorAttrs(run.colorHex, "fill");
+    const color = colorAttrs(run.colorHex, "fill");
     return svg`<rect x=${x} y=${strip.y} width=${w} height=${strip.h} rx=${radius}
-      fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} />`;
+      fill=${color.fill} fill-opacity=${color["fill-opacity"]} />`;
   });
   if (!showsLabels) return svg`${body}`;
   return svg`${body}${renderTimeLabelRow(el, box, labelSize, rowHeight)}`;
@@ -1777,8 +1777,8 @@ function chartPlotFor(chart: ResolvedChart | undefined, box: Box) {
 
 /**
  * A dot on each of the layer's `indices`, in the chart's box: in the layer's
- * colour when it sets one, else the colour the series has at that reading. One
- * path per colour.
+ * color when it sets one, else the color the series has at that reading. One
+ * path per color.
  */
 export function renderChartDots(el: Extract<ResolvedElement, { kind: "chartDots" }>, box: Box, chart: ResolvedChart | undefined, selected = false, minR = 0) {
   const on = chartPlotFor(chart, box);
@@ -1786,7 +1786,7 @@ export function renderChartDots(el: Extract<ResolvedElement, { kind: "chartDots"
   const c = on.chart;
   const banded = c.pointColorHexes.length === c.values.length;
   const r = Math.max(el.diameter / 2, minR);
-  const byColour = new Map<string, string>();
+  const byColor = new Map<string, string>();
   // A selected dots layer rings every dot: the layer's box is the chart's, so
   // the usual dashed box would read as the chart being selected.
   const ringR = r + 1.2;
@@ -1795,17 +1795,17 @@ export function renderChartDots(el: Extract<ResolvedElement, { kind: "chartDots"
     if (i >= c.values.length) continue;
     const p = on.g.point(i);
     const hex = el.colorHex ?? (banded ? c.pointColorHexes[i]! : c.colorHex);
-    byColour.set(hex, `${byColour.get(hex) ?? ""}M${p.x - r} ${p.y} a${r} ${r} 0 1 0 ${2 * r} 0 a${r} ${r} 0 1 0 ${-2 * r} 0 Z`);
+    byColor.set(hex, `${byColor.get(hex) ?? ""}M${p.x - r} ${p.y} a${r} ${r} 0 1 0 ${2 * r} 0 a${r} ${r} 0 1 0 ${-2 * r} 0 Z`);
     if (selected) rings += `M${p.x - ringR} ${p.y} a${ringR} ${ringR} 0 1 0 ${2 * ringR} 0 a${ringR} ${ringR} 0 1 0 ${-2 * ringR} 0 Z`;
   }
   const ringPath = selected && rings !== ""
     ? svg`<path d=${rings} fill="none" stroke="#0A84FF" stroke-width="1" vector-effect="non-scaling-stroke" pointer-events="none" />`
     : nothing;
-  return svg`${ringPath}${[...byColour].map(([hex, d]) => {
-    const colour = colorAttrs(hex, "fill", c.colorHex);
+  return svg`${ringPath}${[...byColor].map(([hex, d]) => {
+    const color = colorAttrs(hex, "fill", c.colorHex);
     // The clear stroke widens each dot's click target past its drawn size; the
     // layer has no other hit box (see `renderElement`).
-    return svg`<path d=${d} fill=${colour.fill} fill-opacity=${colour["fill-opacity"]} stroke="transparent" stroke-width="3" />`;
+    return svg`<path d=${d} fill=${color.fill} fill-opacity=${color["fill-opacity"]} stroke="transparent" stroke-width="3" />`;
   })}`;
 }
 
@@ -1813,12 +1813,12 @@ export function renderChartDots(el: Extract<ResolvedElement, { kind: "chartDots"
 export function renderChartGrid(el: Extract<ResolvedElement, { kind: "chartGrid" }>, box: Box, chart: ResolvedChart | undefined, selected = false, minStroke = 0) {
   const on = chartPlotFor(chart, box);
   if (!el.draws || on === undefined) return nothing;
-  const colour = parseColor(el.colorHex) ?? { color: "#FFFFFF", opacity: 0.2 };
+  const color = parseColor(el.colorHex) ?? { color: "#FFFFFF", opacity: 0.2 };
   const ys = chartGridYs(on.g, el.lines);
   // Selected, each line gets a dashed blue copy over it, for the same reason the
   // dots get rings: the layer's box is the chart's.
   return svg`${ys.map((y) => svg`<path d=${`M${on.g.plotLeft} ${y} L${on.g.plotRight} ${y}`} fill="none"
-    stroke=${colour.color} stroke-opacity=${Math.max(colour.opacity, minStroke > 0 ? 0.6 : 0)} stroke-width=${Math.max(el.thickness, minStroke)} />`)}${selected
+    stroke=${color.color} stroke-opacity=${Math.max(color.opacity, minStroke > 0 ? 0.6 : 0)} stroke-width=${Math.max(el.thickness, minStroke)} />`)}${selected
     ? ys.map((y) => svg`<path d=${`M${on.g.plotLeft} ${y} L${on.g.plotRight} ${y}`} fill="none" stroke="#0A84FF"
         stroke-width="1" stroke-dasharray="2 1" vector-effect="non-scaling-stroke" pointer-events="none" />`)
     : nothing}`;
@@ -2056,7 +2056,7 @@ function shapeBody(el: Extract<ResolvedElement, { kind: "shape" }>, box: Box, bw
         stroke=${p.stroke} stroke-opacity=${p.strokeOpacity} stroke-width=${bw} />`;
     case "line": {
       // A bar down the middle of the frame's long side. The border is not drawn:
-      // a line's colour is its fill, and a stroke around a 1 pt bar would only
+      // a line's color is its fill, and a stroke around a 1 pt bar would only
       // thicken it. Thicker than the short side is clamped to it, as in Swift.
       const along = box.w >= box.h;
       const t = Math.max(0, Math.min(el.thickness, along ? box.h : box.w));
@@ -2070,7 +2070,7 @@ function shapeBody(el: Extract<ResolvedElement, { kind: "shape" }>, box: Box, bw
 
 function renderIcon(el: Extract<ResolvedElement, { kind: "icon" }>, box: Box, icons: IconProvider) {
   if (el.level === undefined) return iconGlyph(el, box, icons, el.colorHex);
-  // The whole glyph in the track colour, then the same glyph again in its own,
+  // The whole glyph in the track color, then the same glyph again in its own,
   // cut off at the level.
   const clip = levelClip(el, box, el.level);
   return svg`${clip.defs}
@@ -2078,7 +2078,7 @@ function renderIcon(el: Extract<ResolvedElement, { kind: "icon" }>, box: Box, ic
     <g clip-path=${`url(#${clip.id})`}>${iconGlyph(el, box, icons, el.colorHex)}</g>`;
 }
 
-/** The icon's glyph in one colour, centred in its frame. */
+/** The icon's glyph in one color, centred in its frame. */
 function iconGlyph(el: Extract<ResolvedElement, { kind: "icon" }>, box: Box, icons: IconProvider, colorHex: string) {
   // A Material Design icon travels as its own outline, so the preview draws
   // exactly what the document carries, the way the watch does. MDI's box is
@@ -2453,7 +2453,7 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     case "list": body = renderList(el, box, options, charts, tintPrefix); break;
   }
   // A tap box is the editor's own mark, never drawn on the watch, so it keeps
-  // its colour on a tinted preview and casts no shadow.
+  // its color on a tinted preview and casts no shadow.
   if (el.kind !== "tap") {
     // One id per drawing rather than per layer: the same layer is drawn more
     // than once on a page (every shape's preview), and two filters sharing an
@@ -2461,7 +2461,7 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     body = shadowed(body, `sh-${(shadowSeq += 1).toString(36)}`, el.shadow);
     // A list draws nothing of its own, and its row layers have each already
     // joined their own group. One filter around the whole list would repaint
-    // white row text in the accent colour, so the list adds none.
+    // white row text in the accent color, so the list adds none.
     if (el.kind !== "list") {
       body = tinted(body, tintGroup(el.kind, options.tintSurface ?? "watch", el.accentGroup === "accent"), tintPrefix);
     }
@@ -2725,7 +2725,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
   const fit = fitBox(canvas, family);
   const uid = `clip-${family}-${Math.random().toString(36).slice(2, 8)}`;
   const bg = parseColor(layout.backgroundColorHex);
-  // The background's gradient, over the whole slot, beating the flat colour.
+  // The background's gradient, over the whole slot, beating the flat color.
   const bgFill = layout.backgroundFill === undefined
     ? undefined
     : fillPaintDefs(layout.backgroundFill);
@@ -2995,7 +2995,7 @@ export function renderLayerThumb(layout: ResolvedLayout, ids: readonly string[],
   const design = CANVAS[family];
   const crop = thumbCrop(layout, ids, options.width / options.height);
   const bg = parseColor(layout.backgroundColorHex);
-  // The background's gradient, over the whole face, beating the flat colour.
+  // The background's gradient, over the whole face, beating the flat color.
   const bgFill = layout.backgroundFill === undefined
     ? undefined
     : fillPaintDefs(layout.backgroundFill);

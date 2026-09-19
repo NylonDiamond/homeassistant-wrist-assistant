@@ -1,7 +1,7 @@
 // The states table: one rule seen as rows instead of four levels of box.
 //
 // A rule whose cases each test the same value is a table. "is on" and
-// "Otherwise" are rows; "Icon" and "Colour" are columns; a cell is one style
+// "Otherwise" are rows; "Icon" and "Color" are columns; a cell is one style
 // change. Nothing new is stored: `tableShape` reads an ordinary `Rule[]` and
 // `buildStatesRule` writes one back, so a document authored here opens the
 // same in the Advanced editor and encodes byte for byte the same on the wire.
@@ -43,7 +43,7 @@ export const COMPARISON_LABELS: Record<ComparisonKind, string> = {
 export const PROPERTY_LABELS: Record<StyleProperty, string> = {
   icon: "Icon",
   text: "Text",
-  color: "Colour",
+  color: "Color",
   visibility: "Visible",
   opacity: "Opacity",
   fontSize: "Size",
@@ -56,12 +56,12 @@ export const PROPERTY_LABELS: Record<StyleProperty, string> = {
   gaugeMin: "Gauge min",
   gaugeMax: "Gauge max",
   backgroundColor: "Background",
-  borderColor: "Border colour",
+  borderColor: "Border color",
   borderWidth: "Border width",
 };
 
 /** Left to right, most useful first. The drawing in the plan is Icon then
- * Colour, and everything else follows in the order a user would reach for it. */
+ * Color, and everything else follows in the order a user would reach for it. */
 export const COLUMN_ORDER: StyleProperty[] = [
   "icon", "text", "color", "visibility", "opacity", "fontSize", "fontWeight",
   "fontDesign", "fontWidth", "italic",
@@ -338,7 +338,7 @@ function pruneEmpty(rules: Rule[]): void {
   if (rule && rule.cases.length === 0 && rule.otherwise === undefined) rules.length = 0;
 }
 
-/** The colour a new row starts with when the table has a Colour column, so a
+/** The color a new row starts with when the table has a Color column, so a
  * table does something from its first row instead of showing a grid of empty
  * cells. Number bands run red, amber, green from the top; on and off read as
  * green and grey; Otherwise is green, the "all is well" of a band table. Any
@@ -352,7 +352,7 @@ export function seedRowColor(comparison: Comparison, index: number): StyleChange
 }
 
 /** Add a state below the last one, testing the same value. With `seedColor`
- * the row starts with a colour (`seedRowColor`) rather than an empty cell. */
+ * the row starts with a color (`seedRowColor`) rather than an empty cell. */
 export function addStateRow(rules: Rule[], value: Value, numberMode: boolean, seedColor = false): void {
   const rule = tableRule(rules);
   const previous = rule.cases[rule.cases.length - 1]?.when.tests[0]?.comparison;
@@ -379,7 +379,7 @@ export function moveStateRow(rules: Rule[], from: number, to: number): void {
 }
 
 /** Turn the Otherwise row on or off. With `seedColor` a new Otherwise starts
- * green, the colour a band table shows when no band above matched. */
+ * green, the color a band table shows when no band above matched. */
 export function setOtherwise(rules: Rule[], on: boolean, seedColor = false): void {
   if (on) {
     tableRule(rules).otherwise = seedColor ? [{ kind: "setColor", value: literal("#30D158") }] : [];
@@ -485,20 +485,20 @@ export const DEFAULT_COLUMN: Record<string, StyleProperty> = {
   icon: "icon",
   gauge: "color",
   chart: "color",
-  // A timeline reads no colour rule, so the one thing a state can do to it is
+  // A timeline reads no color rule, so the one thing a state can do to it is
   // take it off the face.
   timeline: "visibility",
   shape: "color",
   image: "visibility",
   tap: "visibility",
-  // Chart times carry their own colour, like a timeline, so hiding is what a
+  // Chart times carry their own color, like a timeline, so hiding is what a
   // state can do to them.
   chartTimes: "visibility",
   chartDots: "visibility",
   chartGrid: "visibility",
   // A timestamp's look is fixed, so hiding it is what a state can do.
   imageTime: "visibility",
-  // Every colour a list draws belongs to a row layer, so hiding the whole list
+  // Every color a list draws belongs to a row layer, so hiding the whole list
   // is what a state on the list itself can do. A state on a row layer is an
   // ordinary state on an ordinary layer.
   list: "visibility",

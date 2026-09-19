@@ -1,4 +1,4 @@
-// One colour and one plain name per layer kind, and one colour per inspector
+// One color and one plain name per layer kind, and one color per inspector
 // section. The Layers list, the add buttons, the preview outline and the
 // inspector cards all read from here, so a kind looks the same wherever it
 // turns up and the eye can find "the gauge" without reading.
@@ -48,7 +48,7 @@ export const KIND_LABEL: Record<LayerKind, string> = {
 export const KIND_ORDER: readonly LayerKind[] = ["text", "icon", "gauge", "chart", "timeline", "list", "shape", "image", "tap"];
 
 /**
- * One colour per inspector card, the same on every kind of layer, so Content,
+ * One color per inspector card, the same on every kind of layer, so Content,
  * Look, Numbers, States, Position and Tap never share a tint. The hues are
  * spread round the wheel and the order on screen alternates warm and cool, so
  * two cards next to each other are never neighbours on the wheel. Numbers

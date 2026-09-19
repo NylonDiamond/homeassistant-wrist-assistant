@@ -133,7 +133,7 @@ describe("liftChartOwnMarks", () => {
     expect(chartGridsOf(cfg, id).map((g) => g.payload)).toMatchObject([{ lines: 2, colorHex: "#FF000080" }]);
     const zero = chartZeroLinesOf(cfg, id);
     expect(zero).toHaveLength(1);
-    // The chart drew its zero line in the grid colour.
+    // The chart drew its zero line in the grid color.
     expect(zero[0]!.kind === "shape" && zero[0]!.payload.colorSlot.baseColorHex).toBe("#FF000080");
     // Grid behind the chart, dots in front of it.
     const at = (layerId: string) => cfg.elements.findIndex((e) => e.payload.id === layerId);

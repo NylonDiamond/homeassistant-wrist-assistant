@@ -52,7 +52,7 @@ const temp = (): Value => ({ kind: { kind: "entityState", entityId: "sensor.temp
 function icon(name: string): StyleChange {
   return { kind: "setIcon", value: literal(name) };
 }
-function colour(hex: string): StyleChange {
+function color(hex: string): StyleChange {
   return { kind: "setColor", value: literal(hex) };
 }
 
@@ -60,8 +60,8 @@ function colour(hex: string): StyleChange {
 function lightRule(): Rule {
   return buildStatesRule(
     kitchen(),
-    [{ comparison: { kind: "isOn" }, changes: [icon("lightbulb.fill"), colour("#FFD60A")] }],
-    [icon("lightbulb"), colour("#8E8E93")],
+    [{ comparison: { kind: "isOn" }, changes: [icon("lightbulb.fill"), color("#FFD60A")] }],
+    [icon("lightbulb"), color("#8E8E93")],
   );
 }
 
@@ -79,7 +79,7 @@ describe("tableShape", () => {
   it("reads one rule with two cases as two rows sharing a value", () => {
     const rule = buildStatesRule(kitchen(), [
       { comparison: { kind: "isOn" }, changes: [icon("lightbulb.fill")] },
-      { comparison: { kind: "isUnavailable" }, changes: [colour("#FF453A")] },
+      { comparison: { kind: "isUnavailable" }, changes: [color("#FF453A")] },
     ]);
     const shape = tableShape([rule]);
     expect(shape.ok).toBe(true);
@@ -144,11 +144,11 @@ describe("tableShape", () => {
   });
 
   it("refuses a state that sets one property twice", () => {
-    const rule = buildStatesRule(kitchen(), [{ comparison: { kind: "isOn" }, changes: [colour("#FF453A"), colour("#FFD60A")] }]);
+    const rule = buildStatesRule(kitchen(), [{ comparison: { kind: "isOn" }, changes: [color("#FF453A"), color("#FFD60A")] }]);
     const shape = tableShape([rule]);
     expect(shape.ok).toBe(false);
     if (shape.ok) return;
-    expect(shape.reason).toContain("Colour twice");
+    expect(shape.reason).toContain("Color twice");
   });
 
   it("sees a numeric band rule as a table in number mode", () => {
@@ -175,9 +175,9 @@ describe("tableShape", () => {
 /** low, mid, high: exactly what the gauge preset builds. */
 function bandRule(): Rule {
   const rows: StatesRowInput[] = [
-    { comparison: { kind: "lessThan", value: literal("20") }, changes: [colour("#34C759")] },
-    { comparison: { kind: "between", value: literal("20"), upper: literal("50") }, changes: [colour("#FFD60A")] },
-    { comparison: { kind: "greaterThan", value: literal("50") }, changes: [colour("#FF453A")] },
+    { comparison: { kind: "lessThan", value: literal("20") }, changes: [color("#34C759")] },
+    { comparison: { kind: "between", value: literal("20"), upper: literal("50") }, changes: [color("#FFD60A")] },
+    { comparison: { kind: "greaterThan", value: literal("50") }, changes: [color("#FF453A")] },
   ];
   return buildStatesRule(temp(), rows);
 }
@@ -216,7 +216,7 @@ describe("compileTable", () => {
   });
 
   it("keeps an otherwise-only table as one rule with no cases", () => {
-    const rules = compileTable({ ruleId: "R", rows: [], columns: ["color"], numberMode: false, otherwise: [colour("#FFFFFF")] });
+    const rules = compileTable({ ruleId: "R", rows: [], columns: ["color"], numberMode: false, otherwise: [color("#FFFFFF")] });
     expect(rules).toHaveLength(1);
     expect(rules[0]!.cases).toEqual([]);
     expect(rules[0]!.otherwise).toHaveLength(1);
@@ -256,7 +256,7 @@ describe("whenText", () => {
 
 describe("columns", () => {
   it("orders used columns the way the header reads", () => {
-    const rows = [{ caseId: "C", testId: "T", join: "all" as const, comparison: { kind: "isOn" } as Comparison, changes: [colour("#fff"), icon("bolt")] }];
+    const rows = [{ caseId: "C", testId: "T", join: "all" as const, comparison: { kind: "isOn" } as Comparison, changes: [color("#fff"), icon("bolt")] }];
     expect(usedColumns(rows)).toEqual(["icon", "color"]);
   });
 
@@ -266,7 +266,7 @@ describe("columns", () => {
   });
 
   it("finds the change a cell shows", () => {
-    const changes = [icon("bolt"), colour("#fff")];
+    const changes = [icon("bolt"), color("#fff")];
     expect(cellChange(changes, "color")).toBe(changes[1]);
     expect(cellChange(changes, "opacity")).toBeUndefined();
   });
@@ -371,8 +371,8 @@ describe("editing", () => {
     built.elements.push(layer);
     addStateRow(layer.payload.rules, kitchen(), false);
     setOtherwise(layer.payload.rules, true);
-    layer.payload.rules[0]!.cases[0]!.then.push(icon("lightbulb.fill"), colour("#FFD60A"));
-    layer.payload.rules[0]!.otherwise!.push(icon("lightbulb"), colour("#8E8E93"));
+    layer.payload.rules[0]!.cases[0]!.then.push(icon("lightbulb.fill"), color("#FFD60A"));
+    layer.payload.rules[0]!.otherwise!.push(icon("lightbulb"), color("#8E8E93"));
 
     const hand = structuredClone(built);
     const rule = layer.payload.rules[0]!;
@@ -380,11 +380,11 @@ describe("editing", () => {
       kitchen(),
       [{
         comparison: { kind: "isOn" },
-        changes: [icon("lightbulb.fill"), colour("#FFD60A")],
+        changes: [icon("lightbulb.fill"), color("#FFD60A")],
         caseId: rule.cases[0]!.id,
         testId: rule.cases[0]!.when.tests[0]!.id,
       }],
-      [icon("lightbulb"), colour("#8E8E93")],
+      [icon("lightbulb"), color("#8E8E93")],
       rule.id,
     )];
     expect(encodeConfig(hand)).toEqual(encodeConfig(built));
@@ -418,7 +418,7 @@ describe("statesSummary", () => {
 });
 
 describe("cell wording", () => {
-  it("names the colours the rest of the editor offers", () => {
+  it("names the colors the rest of the editor offers", () => {
     expect(colorWords("#ff453a")).toBe("red");
     expect(colorWords("#34C759")).toBe("green");
     expect(colorWords("#123456")).toBe("#123456");

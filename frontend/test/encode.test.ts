@@ -264,7 +264,7 @@ describe("encodeConfig", () => {
     }
     expect(encodeConfig(parseConfig(enc))).toEqual(enc);
 
-    // Fresh layer: refresh, no page keys, no colour.
+    // Fresh layer: refresh, no page keys, no color.
     const bare = newConfig("Y", 1);
     bare.elements = [newElement("tap")];
     const bareJson = JSON.stringify(encodeConfig(bare));
@@ -479,7 +479,7 @@ describe("encodeConfig", () => {
     expect(Object.keys(p)).toEqual(["frame"]);
   });
 
-  it("leaves a plain gauge's colour table, threshold, total and range sources off the wire", () => {
+  it("leaves a plain gauge's color table, threshold, total and range sources off the wire", () => {
     const cfg = newConfig("X", 0);
     cfg.elements.push(newElement("gauge"));
     const enc = encodeConfig(cfg) as { elements: Record<string, unknown>[] };

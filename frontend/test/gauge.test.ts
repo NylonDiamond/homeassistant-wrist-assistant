@@ -1,4 +1,4 @@
-// The gauge layer: the colour table it can take, the threshold tick it puts on
+// The gauge layer: the color table it can take, the threshold tick it puts on
 // its scale, and the dots style.
 //
 // The resolution rules here are ports of the Swift in the app repo
@@ -57,14 +57,14 @@ function circles(svg: string): { cx: number; cy: number; r: number }[] {
   return out;
 }
 
-/** Turn a gauge into a colour table: `[upTo, colour]` steps plus the rest. */
+/** Turn a gauge into a color table: `[upTo, color]` steps plus the rest. */
 function gaugeBands(p: GaugeElement, table: [number, string][], above = "#FF0000") {
   p.coloring = "bands";
   p.bands = table.map(([upTo, colorHex], i) => ({ id: `B${i}`, upTo, colorHex }));
   p.bandAboveColorHex = above;
 }
 
-/** A rule that always matches and paints the layer one colour. */
+/** A rule that always matches and paints the layer one color. */
 function alwaysSetColor(p: GaugeElement, hex: string) {
   p.rules = [{
     id: "R1",
@@ -76,12 +76,12 @@ function alwaysSetColor(p: GaugeElement, hex: string) {
   }];
 }
 
-describe("colouring a gauge by value", () => {
-  it("stays one colour while the table is empty", () => {
+describe("coloring a gauge by value", () => {
+  it("stays one color while the table is empty", () => {
     expect(gaugeOf("62", (p) => { p.coloring = "bands"; }).colorHex).toBe("#FFFFFF");
   });
 
-  it("takes the colour of the row its reading falls in, lowest first", () => {
+  it("takes the color of the row its reading falls in, lowest first", () => {
     const bands = (p: GaugeElement) => gaugeBands(p, [[20, "#FF453A"], [50, "#FF9F0A"]], "#32D74B");
     expect(gaugeOf("10", bands).colorHex).toBe("#FF453A");
     // A band says where it ends, so a reading sitting on a step belongs to it.
@@ -95,7 +95,7 @@ describe("colouring a gauge by value", () => {
       .toBe("#FF9F0A");
   });
 
-  it("lets a band beat a rule that recolours the gauge, but not a uniform one", () => {
+  it("lets a band beat a rule that recolors the gauge, but not a uniform one", () => {
     expect(gaugeOf("62", (p) => { alwaysSetColor(p, "#BF5AF2"); }).colorHex).toBe("#BF5AF2");
     expect(gaugeOf("62", (p) => {
       gaugeBands(p, [[20, "#FF453A"], [50, "#FF9F0A"]], "#32D74B");

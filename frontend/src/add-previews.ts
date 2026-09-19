@@ -7,8 +7,8 @@
 //
 // Nothing here is live: these are hand drawn samples, not the renderer. They
 // are deliberately cheap, because seven of them draw on every panel update.
-// Each one is one 120x46 box so the row scales as a set, and colour comes from
-// `--k` (the kind's colour, set on the button) so a preview always agrees with
+// Each one is one 120x46 box so the row scales as a set, and color comes from
+// `--k` (the kind's color, set on the button) so a preview always agrees with
 // the button around it.
 
 import { type TemplateResult, html, svg } from "lit";
@@ -94,7 +94,7 @@ function sample(kind: LayerKind): TemplateResult {
           stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
         <circle cx="60" cy="8" r="2.6" fill="var(--k)" />
       </g>`;
-    // A strip of runs in three colours: the picture says "one entity, over
+    // A strip of runs in three colors: the picture says "one entity, over
     // time" in a way the word Timeline on its own does not.
     case "timeline":
       return svg`<g>
@@ -188,7 +188,7 @@ function sample(kind: LayerKind): TemplateResult {
  */
 export type AddVariant = "iconSvg" | "imageCamera" | "imageEntity" | "imageUpload";
 
-/** The sample for one variant. Same 120x46 box and same `--k` colour as the
+/** The sample for one variant. Same 120x46 box and same `--k` color as the
  * plain kinds, so a variant card sits in the grid as an equal. */
 function variantSample(variant: AddVariant): TemplateResult {
   switch (variant) {

@@ -785,8 +785,8 @@ describe("the list presets", () => {
   });
 
   // The preset's own card draws three bands, and the preset shipped with one
-  // flat colour: every battery read the same whatever it held.
-  it("colours the battery bar in three bands, by the reading on the row", () => {
+  // flat color: every battery read the same whatever it held.
+  it("colors the battery bar in three bands, by the reading on the row", () => {
     const cfg = newConfig("Preset", 0);
     cfg.perFamily.rectangular ??= { placements: {}, cornerBodyShape: "circle", borderWidth: 2, rules: [] };
     const id = applyPreset(cfg, "listBatteries", CALENDAR, { family: "rectangular" });
@@ -810,18 +810,18 @@ describe("the list presets", () => {
       { kind: "literal", value: "60" },
     ]);
     // Every test reads the row's own state, not an entity, or one rule could
-    // not colour four different rows.
+    // not color four different rows.
     for (const c of rule.cases) {
       expect(c.when.tests[0]!.value.kind).toEqual({ kind: "item", field: "state" });
     }
-    // Three different colours, and the base is the one the otherwise sets, so a
+    // Three different colors, and the base is the one the otherwise sets, so a
     // row that matches nothing is not a fourth look.
-    const colours = [
+    const colors = [
       ...rule.cases.map((c) => (c.then[0]!.value?.kind as { value?: string } | undefined)?.value),
       (rule.otherwise![0]!.value?.kind as { value?: string } | undefined)?.value,
     ];
-    expect(new Set(colours).size).toBe(3);
-    expect(bar.payload.colorSlot.baseColorHex).toBe(colours[2]);
+    expect(new Set(colors).size).toBe(3);
+    expect(bar.payload.colorSlot.baseColorHex).toBe(colors[2]);
 
     const doc = encodeConfig(cfg);
     expect(auditUnknownKeys(doc)).toEqual([]);

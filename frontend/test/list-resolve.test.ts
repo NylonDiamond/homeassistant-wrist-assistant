@@ -101,7 +101,7 @@ describe("an entities list", () => {
   });
 
   function documentWithRule(): CustomComplicationConfig {
-    // One row: the entity's name, coloured by its own reading.
+    // One row: the entity's name, colored by its own reading.
     const rule: Rule = {
       id: uuid(4),
       cases: [{
@@ -133,8 +133,8 @@ describe("an entities list", () => {
   it("evaluates each row's rules against its own item", () => {
     const cfg = documentWithRule();
     const cells = cellsOf(resolved(cfg, contextWith(jinjaReply(ENTITIES_SOURCE, 4, reply))));
-    const colours = cells.map((c) => (c.elements[0] as Extract<ResolvedElement, { kind: "text" }>).colorHex);
-    expect(colours).toEqual(["#FFD60A", "#8E8E93"]);
+    const colors = cells.map((c) => (c.elements[0] as Extract<ResolvedElement, { kind: "text" }>).colorHex);
+    expect(colors).toEqual(["#FFD60A", "#8E8E93"]);
   });
 
   it("prints a field the item does not have as the placeholder", () => {

@@ -1,7 +1,7 @@
 // The editor's own button icons. Not the watch face: those are SF Symbols and
 // live in icons.ts. These are drawn here rather than pulled from Home
 // Assistant's icon set so the panel keeps working whatever the frontend
-// renames, and they are stroked in `currentColor` so a button's own colour and
+// renames, and they are stroked in `currentColor` so a button's own color and
 // its disabled opacity carry into the glyph.
 //
 // Everything is one 24x24 box with the same stroke weight, so a row of them

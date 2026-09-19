@@ -4,7 +4,7 @@
 // Drawn here rather than borrowed from Home Assistant's icon set, for the same
 // reason as `ui-icons.ts`: the panel keeps working whatever the frontend
 // renames or stops shipping, and a stroked `currentColor` glyph takes the
-// colour of the row around it. Every one is the same 24x24 box at the same
+// color of the row around it. Every one is the same 24x24 box at the same
 // stroke weight, so a list of mixed domains reads as one set.
 //
 // The list is the domains an author is likely to put on a watch face. Anything

@@ -27,7 +27,7 @@ import { type ImageSizeProvider } from "./image-sizes.js";
 /** The box one tab's picture may take, in CSS pixels. Small enough that a
  * complication with five shapes is still one row on a laptop, big enough that
  * Rectangular reads as a layout rather than a smudge. */
-export const PREVIEW_ROOM = { width: 120, height: 80 };
+export const PREVIEW_ROOM = { width: 100, height: 66 };
 
 /**
  * One preview's drawn size: its own shape, as big as the room allows.
@@ -142,9 +142,9 @@ export function twinLayerId(
  * The tint a preview is drawn under, and which surface it stands for.
  *
  * An iPhone draws its Lock Screen complications the way a tinted watch face
- * does: colour dropped, every layer painted white through its own alpha. So a
+ * does: color dropped, every layer painted white through its own alpha. So a
  * phone owner's Lock Screen shapes preview in white unless the tint tool is
- * asking for another colour, and the Home Screen tiles preview in full colour,
+ * asking for another color, and the Home Screen tiles preview in full color,
  * since that is what the phone really draws there.
  */
 export function previewTintFor(family: DrawableFamily, phone: boolean, override: string | undefined): { tint?: string; tintSurface?: "watch" | "phone" } {
@@ -168,7 +168,7 @@ export interface ShapeArtState {
   highlightId?: string;
   /** The device being previewed as, for the Lock Screen's white. */
   phone: boolean;
-  /** The tint tool's colour, when it is on. */
+  /** The tint tool's color, when it is on. */
   tint?: string;
   /** The real slot each shape is drawn in, from the Preview as case. */
   slotFor?: (family: DrawableFamily) => CanvasSize;

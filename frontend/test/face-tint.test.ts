@@ -53,7 +53,7 @@ describe("a tinted Home Screen preview", () => {
     expect(tintMatrix("phoneAccent", "#0A84FF").endsWith("0.2126 0.7152 0.0722 0 0")).toBe(true);
   });
 
-  it("paints the accent group in the lighter of the two colours", () => {
+  it("paints the accent group in the lighter of the two colors", () => {
     expect(accentTint("#000000")).toBe("#808080");
     expect(accentTint("#FFFFFF")).toBe("#FFFFFF");
     expect(tintMatrix("phonePrimary", "#FF0000").startsWith("0 0 0 0 1.0000 0 0 0 0 0.0000")).toBe(true);

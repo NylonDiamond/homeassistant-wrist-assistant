@@ -380,7 +380,7 @@ import {
   CHART_DRAW_EXTRAS, CHART_READINGS, type ChartDrawExtra, type ChartSample, type ExtraKey, type ExtraOwner,
   extraInfo, extraName, extraOwner, extraPreview,
 } from "./extra-previews.js";
-import { type ChartColourRow, chartColourRows } from "./chart-colours.js";
+import { type ChartColorRow, chartColorRows } from "./chart-colors.js";
 import { KIND_LABEL, SECTION_COLOR } from "./kinds.js";
 import { domainIcon, domainLabel, isActiveState } from "./domain-icons.js";
 
@@ -867,8 +867,8 @@ export function checkField(label: string, value: boolean, set: (v: boolean) => v
 
 /** `#RRGGBB` or `#RRGGBBAA`, as one row: a swatch that opens the system picker,
  * the hex, and the opacity in percent. The hex box takes eight digits too, so
- * alpha can be typed either way. `def` adds a reset dot back to that colour
- * (or, for an optional colour, `null` clears it). */
+ * alpha can be typed either way. `def` adds a reset dot back to that color
+ * (or, for an optional color, `null` clears it). */
 export function colorField(label: string, value: string | undefined, set: (v: string | undefined) => void, optional = false, def?: string | null) {
   const { rgb, alpha } = colorParts(value);
   const back: ResetTo | undefined = def === undefined ? undefined : {
@@ -903,12 +903,12 @@ function sortedFill(fill: Fill): Fill {
 
 /**
  * The gradient row: a switch, the bar with one draggable chip per stop, the
- * kind, the angle, and each stop's own colour.
+ * kind, the angle, and each stop's own color.
  *
  * `seed` is what the gradient starts from when it is switched on, which is
- * always the flat colour the layer already draws: switching it on should change
+ * always the flat color the layer already draws: switching it on should change
  * nothing until a stop is moved. `set` is handed the whole gradient, or
- * `undefined` when it is switched off; the caller keeps the flat colour beside
+ * `undefined` when it is switched off; the caller keeps the flat color beside
  * it written as the first stop, so an older watch app draws that instead.
  */
 export function fillField(
@@ -920,14 +920,14 @@ export function fillField(
   const on = value !== undefined;
   const fill = value;
   const row = html`<div class="field color">${fieldLabel(label, {
-      atDefault: !on, title: "Back to one flat colour", reset: () => set(undefined),
+      atDefault: !on, title: "Back to one flat color", reset: () => set(undefined),
     })}
     <div class="color-row">
       <input type="checkbox" title="Enabled" aria-label=${`${label} on`} .checked=${on}
         @change=${(e: Event) => set((e.target as HTMLInputElement).checked ? sortedFill(seed()) : undefined)} />
       ${fill === undefined
-        ? html`<span class="hint">One flat colour</span>`
-        : html`<span class="fill-bar" style=${`--g:${fillPreviewCss(fill)}`} title="Drag a chip to move that colour">
+        ? html`<span class="hint">One flat color</span>`
+        : html`<span class="fill-bar" style=${`--g:${fillPreviewCss(fill)}`} title="Drag a chip to move that color">
             ${fill.stops.map((s, i) => html`<span class="fill-chip" style=${`left:${Math.round(Math.max(0, Math.min(1, s.at)) * 100)}%;--sw:${s.colorHex}`}
               @pointerdown=${fillChipDrag(fill, i, set)}></span>`)}
           </span>`}
@@ -958,12 +958,12 @@ export function fillField(
         ${colorBox(`Stop ${i + 1}`, s.colorHex, (v) => withStops(stops.map((x, j) => (j === i ? { ...x, colorHex: v ?? "#FFFFFF" } : x))))}
         ${numberInput(Math.round(s.at * 100), (v) => withStops(stops.map((x, j) => (j === i ? { ...x, at: Math.max(0, Math.min(1, (v ?? 0) / 100)) } : x))),
           { step: 1, min: 0, max: 100, unit: "%", ariaLabel: `Stop ${i + 1} position` })}
-        <button class="small" title="Remove this colour" ?disabled=${stops.length <= FILL_MIN_STOPS}
+        <button class="small" title="Remove this color" ?disabled=${stops.length <= FILL_MIN_STOPS}
           @click=${() => withStops(stops.filter((_, j) => j !== i))}>−</button>
       </div></div>`)}
     ${stops.length < FILL_MAX_STOPS
       ? html`<button class="small" @click=${() => {
-          // A new stop lands halfway along the widest gap and takes the colour
+          // A new stop lands halfway along the widest gap and takes the color
           // already showing there, so adding one changes nothing on its own.
           const sorted = [...stops].sort((a, b) => a.at - b.at);
           let at = 0.5;
@@ -973,8 +973,8 @@ export function fillField(
             if (gap > widest) { widest = gap; at = (sorted[i]!.at + sorted[i - 1]!.at) / 2; }
           }
           withStops([...stops, { at, colorHex: fillColorAt(fill, at) }]);
-        }}>Add a colour</button>`
-      : html`<div class="hint">A gradient takes at most ${FILL_MAX_STOPS} colours.</div>`}`;
+        }}>Add a color</button>`
+      : html`<div class="hint">A gradient takes at most ${FILL_MAX_STOPS} colors.</div>`}`;
 }
 
 /** Dragging one chip along the bar: the pointer's place across the bar is the
@@ -1009,7 +1009,7 @@ function fillChipDrag(fill: Fill, index: number, set: (v: Fill) => void) {
   };
 }
 
-/** A stored colour as its controls show it: the swatch, the six digits the
+/** A stored color as its controls show it: the swatch, the six digits the
  * system picker takes, and the opacity in percent. */
 function colorParts(value: string | undefined): { valid: boolean; swatch: string; rgb: string; alpha: number } {
   const h = (value ?? "").replace(/^#/, "");
@@ -1029,12 +1029,12 @@ function composeColor(rgbHex: string, alpha: number): string {
 }
 
 /** The box of a `colorField` without its title: swatch, hex and opacity. For
- * a row that names its colour some other way, such as a band table's. */
+ * a row that names its color some other way, such as a band table's. */
 function colorBox(label: string, value: string | undefined, set: (v: string | undefined) => void, off = false, placeholder = "#RRGGBB"): TemplateResult {
   const { valid, swatch, rgb, alpha } = colorParts(value);
   return html`<span class="color-box">
-      <span class="color-swatch" style=${`--sw:${off || !valid ? "transparent" : swatch}`} title="Pick a colour">
-        <input type="color" .value=${rgb} ?disabled=${off} aria-label=${`${label}: pick a colour`} @input=${onInput((v) => set(composeColor(v, alpha)))} />
+      <span class="color-swatch" style=${`--sw:${off || !valid ? "transparent" : swatch}`} title="Pick a color">
+        <input type="color" .value=${rgb} ?disabled=${off} aria-label=${`${label}: pick a color`} @input=${onInput((v) => set(composeColor(v, alpha)))} />
       </span>
       <input type="text" class="mono hex" .value=${value ?? ""} placeholder=${placeholder} spellcheck="false" aria-label=${`${label}: hex`} ?disabled=${off}
         @input=${onInput((v) => { const t = v.trim(); if (/^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(t)) set(t.startsWith("#") ? t.toUpperCase() : `#${t.toUpperCase()}`); })} />
@@ -1047,8 +1047,8 @@ function colorBox(label: string, value: string | undefined, set: (v: string | un
     </span>`;
 }
 
-/** A colour that may be left empty, where empty means another colour stands in
- * (named by `empty`, shown in the hex box). Picking a colour sets one; the
+/** A color that may be left empty, where empty means another color stands in
+ * (named by `empty`, shown in the hex box). Picking a color sets one; the
  * reset dot clears it again. */
 function fallbackColorField(label: string, value: string | undefined, empty: string, set: (v: string | undefined) => void) {
   const back: ResetTo = { atDefault: value === undefined, title: `Back to ${empty.toLowerCase()}`, reset: () => set(undefined) };
@@ -1056,10 +1056,10 @@ function fallbackColorField(label: string, value: string | undefined, empty: str
     <div class="color-row">${colorBox(label, value, set, false, empty)}</div></div>`;
 }
 
-/** One of a chart's own colour rows, as `chartColourRows` names it, with its
+/** One of a chart's own color rows, as `chartColorRows` names it, with its
  * line of what it does under it. A warning always shows; a plain note waits for
  * the card's help. */
-function chartColourField(row: ChartColourRow, value: string | undefined, set: (v: string | undefined) => void): TemplateResult {
+function chartColorField(row: ChartColorRow, value: string | undefined, set: (v: string | undefined) => void): TemplateResult {
   return html`${fallbackColorField(row.label, value, row.empty, set)}${row.note === undefined
     ? nothing
     : html`<div class=${row.warn ? "hint warn" : "hint"}>${row.note}</div>`}`;
@@ -1263,7 +1263,7 @@ export interface EntityFieldOptions {
   /** Float entities whose state reads as a number to the top of the results. */
   preferNumeric?: boolean;
   /** The layer draws nothing at all until this box holds an entity. The box
-   * takes a ring in the entity colour, and pulses once when it becomes the
+   * takes a ring in the entity color, and pulses once when it becomes the
    * thing to fill in, so the answer to "why is my layer blank?" is marked
    * where the answer gets typed rather than only in a line of prose. */
   needed?: boolean;
@@ -1518,7 +1518,7 @@ export function symbolCount(shown: number, matches: number, searching: boolean, 
 }
 
 function symbolTile(host: EditorHost, name: string, selected: boolean, pick: (n: string) => void): TemplateResult {
-  // The colour passed here is overridden by CSS `currentColor`, which wins over
+  // The color passed here is overridden by CSS `currentColor`, which wins over
   // the presentation attribute the provider writes, so tiles follow the theme.
   const glyph = host.icons.render(name, 22, "#FFFFFF");
   return html`<button type="button" class="sym ${selected ? "on" : ""}" title=${name} @click=${() => pick(name)}>
@@ -1723,7 +1723,7 @@ function customSvgFields(
         @input=${(e: Event) => paste((e.target as HTMLTextAreaElement).value, e.target)}></textarea></label>
     ${note ? html`<div class="hint ${note.warn ? "warn" : "keep"}">${note.text}</div>` : nothing}
     ${p.path === undefined || p.path === ""
-      ? html`<div class="hint keep">Paste an SVG path's <code>d</code>, or the whole <code>&lt;svg&gt;</code> markup and the paths in it are taken. The drawing takes the layer's colour, so a flat single-colour shape is what reads on a watch face.</div>`
+      ? html`<div class="hint keep">Paste an SVG path's <code>d</code>, or the whole <code>&lt;svg&gt;</code> markup and the paths in it are taken. The drawing takes the layer's color, so a flat single-color shape is what reads on a watch face.</div>`
       : html`<div class="field readout"><span>Size</span><span class="readout-v">${bytes} bytes${p.viewBox === undefined ? "" : ` · ${p.viewBox}`}</span></div>`}
     <div class="hint">Only <code>&lt;path&gt;</code> elements are drawn: a circle, a rectangle or a group transform in the markup is ignored. Convert those to paths in a vector editor first.</div>`;
 }
@@ -1921,15 +1921,15 @@ const CHART_HIGHLIGHTS: [ChartHighlight, string][] = [
   ["none", "None"], ["highest", "Highest"], ["lowest", "Lowest"], ["both", "Both"],
 ];
 const CHART_COLORINGS: [ChartColoring, string][] = [
-  ["uniform", "One colour"], ["bands", "By value"],
+  ["uniform", "One color"], ["bands", "By value"],
 ];
-/** The colour table a chart starts with when the author first switches it to
- * banded colour.
+/** The color table a chart starts with when the author first switches it to
+ * banded color.
  *
  * Seeded from the readings on screen rather than left empty, because a new
  * setting that visibly does nothing reads as broken. Thirds of the current
  * spread is the same split the gauge preset uses, and it always paints all
- * three colours on the data in front of the author. */
+ * three colors on the data in front of the author. */
 function seedBands(values: readonly number[]): ChartBand[] {
   const colors: [string, string] = [CHART_DEFAULT_BAND_LOW_HEX, "#FFD60A"];
   if (values.length < 2) {
@@ -1954,7 +1954,7 @@ function seedThreshold(values: readonly number[]): number {
 }
 
 /** A new row for the end of an existing table: one step past the last one, in
- * the layer's own colour so it is visible before the author picks one. Takes the
+ * the layer's own color so it is visible before the author picks one. Takes the
  * table rather than a layer, so the chart and the gauge share it. */
 function nextBand(bands: readonly ChartBand[], ownColorHex: string): ChartBand {
   const sorted = chartSortedBands({ bands });
@@ -1963,19 +1963,19 @@ function nextBand(bands: readonly ChartBand[], ownColorHex: string): ChartBand {
   return { id: newId(), upTo: (last?.upTo ?? 0) + (step || 10), colorHex: ownColorHex };
 }
 
-/** A layer that carries a colour table: the chart and the gauge. */
+/** A layer that carries a color table: the chart and the gauge. */
 interface BandedLayer {
   bands: ChartBand[];
   bandAboveColorHex: string;
-  /** A bars chart's colours for a bar above the last band. */
+  /** A bars chart's colors for a bar above the last band. */
   bandAboveFillColorHex?: string;
   bandAboveBorderColorHex?: string;
 }
 
 /** What a bars chart adds to its band table. While the border is on, every row
- * shows a Fill and a Border colour box side by side in place of its one colour.
- * `fillHex` and `borderHex` are the chart's own fill and border colours, which
- * come before a band's colour when the band sets none. */
+ * shows a Fill and a Border color box side by side in place of its one color.
+ * `fillHex` and `borderHex` are the chart's own fill and border colors, which
+ * come before a band's color when the band sets none. */
 interface BarBandOptions {
   fillHex?: string;
   borderHex?: string;
@@ -1983,12 +1983,12 @@ interface BarBandOptions {
 }
 
 /** One of a band row's Fill or Border boxes, with a reset dot at its corner
- * while `back` says the colour is the band's own. */
+ * while `back` says the color is the band's own. */
 function bandColorCell(label: string, value: string, set: (v: string | undefined) => void, back?: ResetTo): TemplateResult {
   return html`<span class="band-cell">${colorBox(label, value, set)}${resetButton(back)}</span>`;
 }
 
-/** Where a band table's colour bar starts and ends: the band ends and every
+/** Where a band table's color bar starts and ends: the band ends and every
  * number the layer reads, with a little room past both ends. With nothing to
  * span, a band end alone gets half its size either side. */
 export function bandScale(upTos: readonly number[], values?: number | readonly number[]): { lo: number; hi: number } {
@@ -2002,15 +2002,15 @@ export function bandScale(upTos: readonly number[], values?: number | readonly n
 }
 
 /** Least share of the bar one band gets, so a band covering a sliver of the
- * numbers is still a colour you can see and not a hairline. */
+ * numbers is still a color you can see and not a hairline. */
 const BAND_MIN_SHARE = 0.1;
 
 /**
- * How the colour bar divides: each band's share of the width, and a function
+ * How the color bar divides: each band's share of the width, and a function
  * placing a number on it in percent. Shares follow the stretch of numbers a
  * band covers, except that none falls under `minShare` (the rest give up room
  * in proportion), and a number is placed inside its own band's piece, so the
- * marks still land in the right colour after the stretch.
+ * marks still land in the right color after the stretch.
  */
 export function bandLayout(upTos: readonly number[], lo: number, hi: number, minShare = BAND_MIN_SHARE): { shares: number[]; at: (n: number) => number } {
   const sorted = [...upTos].sort((a, b) => a - b);
@@ -2045,7 +2045,7 @@ function bandTick(n: number): string {
 }
 
 /**
- * The bar over a band table: each band's colour in a piece as wide as the
+ * The bar over a band table: each band's color in a piece as wide as the
  * numbers it covers, never too thin to see; each band end labelled under it;
  * a mark where the current value falls, or a bracket over the stretch a chart
  * reads. With `bordered` pieces the bar shows each band's fill inside its
@@ -2082,10 +2082,10 @@ function bandBar(
 }
 
 /**
- * A colour table as compact rows, lowest first the way they are checked: up to
- * which number, in which colour, then the colour for anything above the last
+ * A color table as compact rows, lowest first the way they are checked: up to
+ * which number, in which color, then the color for anything above the last
  * row, then the button that adds a row. Shared by the gauge's and the chart's
- * Look cards, a text layer's colour by value and a rich text part, so a change
+ * Look cards, a text layer's color by value and a rich text part, so a change
  * to how a table is edited lands in all of them at once.
  *
  * `value` is what the layer reads right now, when there is one number to name:
@@ -2114,27 +2114,27 @@ function bandTableFields(
     reset: () => set((p) => { p.bandAboveColorHex = CHART_DEFAULT_BAND_HIGH_HEX; }),
   };
   const split = bars?.border === true;
-  // A row's colours. With the border off it is the one colour box it always
-  // was. With it on, a Fill box and a Border box. Fill writes the band colour,
+  // A row's colors. With the border off it is the one color box it always
+  // was. With it on, a Fill box and a Border box. Fill writes the band color,
   // which is what the band bar above shows and what a bar fills in, and also the
-  // band's own fill only while the chart has a fill colour that would otherwise
+  // band's own fill only while the chart has a fill color that would otherwise
   // win. Border writes the band's own border; its reset dot goes back to the
-  // chart's border colour, or white.
-  const colours = (label: string, row: { colorHex: string; fillColorHex?: string; borderColorHex?: string },
-    setColour: (v: string) => void, setFill: (v: string | undefined) => void, setBorder: (v: string | undefined) => void) => {
-    if (!split) return colorBox(label, row.colorHex, (v) => setColour(v ?? "#FFFFFF"));
+  // chart's border color, or white.
+  const colors = (label: string, row: { colorHex: string; fillColorHex?: string; borderColorHex?: string },
+    setColor: (v: string) => void, setFill: (v: string | undefined) => void, setBorder: (v: string | undefined) => void) => {
+    if (!split) return colorBox(label, row.colorHex, (v) => setColor(v ?? "#FFFFFF"));
     const chartFill = bars?.fillHex;
     const chartBorder = bars?.borderHex;
     const fillBack: ResetTo | undefined = row.fillColorHex === undefined ? undefined : {
-      atDefault: false, title: "Back to the chart fill colour", reset: () => setFill(undefined),
+      atDefault: false, title: "Back to the chart fill color", reset: () => setFill(undefined),
     };
     const borderBack: ResetTo | undefined = row.borderColorHex === undefined ? undefined : {
-      atDefault: false, title: `Back to ${chartBorder === undefined ? "white" : "the chart border colour"}`, reset: () => setBorder(undefined),
+      atDefault: false, title: `Back to ${chartBorder === undefined ? "white" : "the chart border color"}`, reset: () => setBorder(undefined),
     };
     return html`
       ${bandColorCell(`${label} fill`, row.fillColorHex ?? chartFill ?? row.colorHex, (v) => {
         if (v === undefined) return;
-        setColour(v);
+        setColor(v);
         setFill(chartFill === undefined ? undefined : v);
       }, fillBack)}
       ${bandColorCell(`${label} border`, row.borderColorHex ?? chartBorder ?? CHART_DEFAULT_BAR_BORDER_HEX, (v) => setBorder(v), borderBack)}`;
@@ -2160,7 +2160,7 @@ function bandTableFields(
   // first row and Above put their sign and one box at the front and leave the
   // rest blank, so every row's first box lines up.
   // The bar shows what a bar would draw: with the border on, each band's fill
-  // inside its border, each colour taken the same way its row's boxes take it.
+  // inside its border, each color taken the same way its row's boxes take it.
   const piece = (upTo: number | undefined, row: { colorHex: string; fillColorHex?: string; borderColorHex?: string }) => ({
     ...(upTo === undefined ? {} : { upTo }),
     fill: split ? row.fillColorHex ?? bars?.fillHex ?? row.colorHex : row.colorHex,
@@ -2184,7 +2184,7 @@ function bandTableFields(
         <span class="range">${i === 0
           ? html`<span class="le">Less than</span>${endBox(i, "Less than")}`
           : html`${endBox(i - 1, "From")}<span class="to">to</span>${endBox(i, "Up to")}`}</span>
-        ${colours(`Up to ${b.upTo}`, b,
+        ${colors(`Up to ${b.upTo}`, b,
           (v) => set(band(b.id, (x) => { x.colorHex = v; }), `bcol${b.id}`),
           (v) => set(band(b.id, (x) => { if (v === undefined) delete x.fillColorHex; else x.fillColorHex = v; }), `bfill${b.id}`),
           (v) => set(band(b.id, (x) => { if (v === undefined) delete x.borderColorHex; else x.borderColorHex = v; }), `bborder${b.id}`))}
@@ -2195,7 +2195,7 @@ function bandTableFields(
       <span class="range">${sorted.length === 0
         ? html`<span class="else">Every value</span>`
         : html`<span class="le">Greater than</span>${endBox(sorted.length - 1, "Greater than")}`}</span>
-      ${colours("Above the last band",
+      ${colors("Above the last band",
         { colorHex: above,
           ...(layer.bandAboveFillColorHex === undefined ? {} : { fillColorHex: layer.bandAboveFillColorHex }),
           ...(layer.bandAboveBorderColorHex === undefined ? {} : { borderColorHex: layer.bandAboveBorderColorHex }) },
@@ -2208,21 +2208,21 @@ function bandTableFields(
   </div>`;
 }
 
-/** A layer that colours by state rather than by value: the timeline. */
+/** A layer that colors by state rather than by value: the timeline. */
 interface StateBandedLayer {
   bands: TimelineBand[];
   otherColorHex: string;
 }
 
 /**
- * The rows of a timeline's colour table, the button that adds one, and the
- * colour a state no row named takes.
+ * The rows of a timeline's color table, the button that adds one, and the
+ * color a state no row named takes.
  *
  * A sibling of `bandTableFields` rather than the same function: a chart's row
  * says where a number stops and a timeline's says which word it is, so the two
  * share their shape and nothing else.
  */
-/** The states a timeline's colour table can offer instead of a blank box: what
+/** The states a timeline's color table can offer instead of a blank box: what
  * the recorder saw in the span (longest first), the entity's state right now,
  * then the words its domain is known to report. Case-insensitive, first
  * spelling wins, and the two no-reading states always come last. */
@@ -2254,7 +2254,7 @@ function timelineKnownStates(samples: readonly TimelineSample[], spanSeconds: nu
 /** The switch that turns one strip into a merged one.
  *
  * Turning it on seeds the list with whatever entity the layer already names,
- * plus a blank row for the second, and rewrites the colour table for the two
+ * plus a blank row for the second, and rewrites the color table for the two
  * states a merge answers in: the server sends `on` and `off` whatever the
  * entities are, so a table of `open` and `closed` would match nothing. A table
  * that already names `on` is left alone, edits and all.
@@ -2348,7 +2348,7 @@ function timelineGroupFields(
         of them: until then the strip asks the recorder nothing and draws nothing.</div>`
       : nothing}
     <div class="hint">One strip for all of them: Home Assistant merges their recorded pasts into a
-      single run of on and off. The colour table below reads those two words, whatever domain the
+      single run of on and off. The color table below reads those two words, whatever domain the
       entities are from.</div>`;
 }
 
@@ -2365,7 +2365,7 @@ function timelineBandFields(
       <div class="row-inline">
         ${textField("State", band.match,
           (v) => set((p) => { const b = p.bands[i]; if (b) b.match = v; }, `tmatch${band.id}`), { placeholder: "on", list: listId })}
-        ${colorField("Colour", band.colorHex,
+        ${colorField("Color", band.colorHex,
           (v) => set((p) => { const b = p.bands[i]; if (b) b.colorHex = v ?? TIMELINE_DEFAULT_OTHER_HEX; }, `tcol${band.id}`))}
         <button class="icon" title="Remove this state" aria-label="Remove this state"
           @click=${() => set((p) => { p.bands = p.bands.filter((_, j) => j !== i); })}>${uiIcon("close")}</button>
@@ -2436,7 +2436,7 @@ export interface ValueEditorOptions {
   /** Leave out Make shared, for a value that has to name an entity itself
    * (a chart's readings, a timeline's states). */
   noShare?: boolean;
-  /** Hide the format section (icon symbols, colours). */
+  /** Hide the format section (icon symbols, colors). */
   noFormat?: boolean;
   /** Show the live resolved value. */
   showResolved?: boolean;
@@ -2479,7 +2479,7 @@ export function valueEditor(host: EditorHost, value: Value, set: (v: Value) => v
   const label = opts.label ?? "Value";
   const resolved = opts.showResolved ? host.resolve(value) : undefined;
   const summary = describeValue(value, describeContext(host));
-  // A chip whose summary is an entity's name says so in the entity colour. A
+  // A chip whose summary is an entity's name says so in the entity color. A
   // typed-in number or a template is the author's own words and stays ink.
   const namesEntity = "entityId" in value.kind;
   return html`<div class="field value-chip-field ${opts.compact ? "compact" : ""}">
@@ -4112,7 +4112,7 @@ export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean } = {
           <input type="checkbox" .checked=${flashOn} title="Flash when a tap works"
             @change=${(e: Event) => host.update((c) => { c.showSuccessFlash = (e.target as HTMLInputElement).checked; })} />
           ${flashOn
-            ? html`<input type="color" class="flash-color" title="Flash colour. Click to change it." .value=${(cfg.successFlashColorHex ?? FLASH_DEFAULT).slice(0, 7)}
+            ? html`<input type="color" class="flash-color" title="Flash color. Click to change it." .value=${(cfg.successFlashColorHex ?? FLASH_DEFAULT).slice(0, 7)}
                 @input=${onInput((v) => host.update((c) => { c.successFlashColorHex = v.toUpperCase(); }, "flash"))} />`
             : html`<span class="muted">Off</span>`}
         </div>
@@ -4204,9 +4204,9 @@ export function pagesCardFields(host: EditorHost, page: number): TemplateResult 
     </div>`;
 }
 
-/** What the swatch shows while no colour is stored: the watch's own fallback
+/** What the swatch shows while no color is stored: the watch's own fallback
  * for a custom complication. Nothing is written until the user picks a
- * colour. */
+ * color. */
 const FLASH_DEFAULT = CUSTOM_FLASH_DEFAULT;
 
 /** Refresh choices, in minutes. 0 means the watch never refreshes on a timer.
@@ -4276,7 +4276,7 @@ export const CONTROL_TILE_SIDE = 82;
  * tall: a smear that says less than the empty space does. */
 const CONTROL_TILE_TEXT_FROM = 40;
 
-/** What the mock paints a control that names no colour: the system blue an
+/** What the mock paints a control that names no color: the system blue an
  * untinted control draws with. Never written to the document. */
 const CONTROL_MOCK_TINT = "#0A84FF";
 
@@ -4349,7 +4349,7 @@ function towardWhite(hex: string, amount: number): string {
 }
 
 /** How a tile paints, settled once per drawing: the ground, its edge, the
- * symbol's colour, and the two text colours the wide phone tile needs. */
+ * symbol's color, and the two text colors the wide phone tile needs. */
 interface TilePaint {
   background: string;
   border: string;
@@ -4529,8 +4529,8 @@ function controlSection(host: EditorHost, spec: ControlSpec): TemplateResult {
   const matched = spec.valueLabel ?? spec.state ?? spec.title;
   const numbers = spec.coloring === "bands" ? chartNumbers(host.resolve(matched) ?? "") : [];
   // The shared table editor wants a table that is always there; this holds the
-  // control's optional colour keys for the length of one edit, the way a text
-  // layer's colour by value does.
+  // control's optional color keys for the length of one edit, the way a text
+  // layer's color by value does.
   const setBands = (mutate: (p: BandedLayer) => void, k?: string) => set((c) => {
     const table: BandedLayer = { bands: c.bands, bandAboveColorHex: c.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX };
     mutate(table);
@@ -4595,15 +4595,15 @@ function controlSection(host: EditorHost, spec: ControlSpec): TemplateResult {
       // is, so the switch paints something the moment it is flipped.
       if (v === "bands" && c.bands.length === 0) c.bands = seedBands(chartNumbers(host.resolve(matched) ?? ""));
     }), { def: "uniform" })}
-    <div class="hint">One colour paints the tint you pick. By value picks a colour from the reading, band by band.</div>
+    <div class="hint">One color paints the tint you pick. By value picks a color from the reading, band by band.</div>
     ${colorField("Tint", spec.tintColorHex, (v) => set((c) => {
       if (v === undefined) delete c.tintColorHex; else c.tintColorHex = v;
     }, "tint"), true, null)}
-    <div class="hint">Off uses the system colour. A toggle paints the tint only while it reads on. A button always paints it.</div>
+    <div class="hint">Off uses the system color. A toggle paints the tint only while it reads on. A button always paints it.</div>
     ${spec.coloring === "bands" ? html`
       ${bandTableFields({ bands: spec.bands, bandAboveColorHex: spec.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX },
         spec.tintColorHex ?? CONTROL_MOCK_TINT, setBands, numbers.length === 1 ? numbers[0] : undefined)}
-      <div class="hint">The tint takes the colour of the band the reading falls in. Without a number to read, the flat colour above stands.</div>`
+      <div class="hint">The tint takes the color of the band the reading falls in. Without a number to read, the flat color above stands.</div>`
       : nothing}
     </div>
     ${controlStatusShows(host, spec) ? html`<div class="fgroup">
@@ -4819,10 +4819,10 @@ export function flagAcross(values: readonly boolean[]): PickedFlag {
   return "mixed";
 }
 
-/** A layer's own colour, or undefined for the kinds that have none: a picture
- * draws a photo, a tap area draws nothing, and every colour on a timeline
+/** A layer's own color, or undefined for the kinds that have none: a picture
+ * draws a photo, a tap area draws nothing, and every color on a timeline
  * comes out of its own table. */
-export function elementColour(el: CElement): string | undefined {
+export function elementColor(el: CElement): string | undefined {
   return el.kind === "image" || el.kind === "tap" || el.kind === "timeline" || el.kind === "chartTimes"
     || el.kind === "chartDots" || el.kind === "chartGrid" || el.kind === "imageTime" || el.kind === "list"
     ? undefined
@@ -4833,11 +4833,11 @@ export interface PickedCommon {
   /** Hidden on the shape they are on. A layer is on one shape only, so there
    * is nowhere else for it to be hidden. */
   hiddenHere: PickedFlag;
-  /** Whether every picked layer has a colour to set at all. */
-  colourable: boolean;
-  /** The colour they already share, or undefined when they differ or one of
+  /** Whether every picked layer has a color to set at all. */
+  colorable: boolean;
+  /** The color they already share, or undefined when they differ or one of
    * them has none. Blank in the field is what "they differ" looks like. */
-  colour: string | undefined;
+  color: string | undefined;
 }
 
 /**
@@ -4848,12 +4848,12 @@ export interface PickedCommon {
  */
 export function pickedCommon(cfg: CustomComplicationConfig, family: FamilyKind, els: readonly CElement[]): PickedCommon {
   const hiddenHere = flagAcross(els.map((el) => effectivePlacement(cfg, family, el).isHidden));
-  const colours = els.map(elementColour);
-  const colourable = els.length > 0 && colours.every((c) => c !== undefined);
-  const first = colours[0];
-  const shared = colourable && first !== undefined
-    && colours.every((c) => c !== undefined && c.toUpperCase() === first.toUpperCase());
-  return { hiddenHere, colourable, colour: shared ? first : undefined };
+  const colors = els.map(elementColor);
+  const colorable = els.length > 0 && colors.every((c) => c !== undefined);
+  const first = colors[0];
+  const shared = colorable && first !== undefined
+    && colors.every((c) => c !== undefined && c.toUpperCase() === first.toUpperCase());
+  return { hiddenHere, colorable, color: shared ? first : undefined };
 }
 
 const FONT_WEIGHTS: [FontWeight, string][] = [["regular", "Regular"], ["medium", "Medium"], ["semibold", "Semibold"], ["bold", "Bold"]];
@@ -4889,7 +4889,7 @@ const FONT_DESIGN_HINT = html`<div class="hint">The watch draws SF Rounded and N
 const TEXT_LINE_LIMITS: ["1" | "2" | "3" | "4", string][] = [["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"]];
 
 /** An entity's device class, which nothing in the document holds. A timeline
- * reads it to know whether a binary sensor is a door before it seeds its colour
+ * reads it to know whether a binary sensor is a door before it seeds its color
  * table, and a states table reads it for the same reason. */
 function deviceClassOf(host: EditorHost, entityId: string): string | undefined {
   const dc = host.hass.states[entityId]?.attributes?.device_class;
@@ -5019,7 +5019,7 @@ function imagePanHint(img: ImageElement): string {
 
 interface CardOptions {
   /** Tint of the header band and the edge; one of SECTION_COLOR, so a card
-   * wears the same colour on every kind of layer. */
+   * wears the same color on every kind of layer. */
   color?: string;
   icon?: UiIconName;
   /** One line under the title saying what the card holds, so a shut card
@@ -5063,7 +5063,7 @@ function anyDiffers(actual: object, base: object, keys: readonly string[]): bool
 /** Put a payload's `keys` back to what a fresh layer of its kind holds. A key
  * the default leaves out is deleted rather than set to undefined, so an
  * optional setting goes back to absent and the saved document stays clean.
- * The copy is deep, or two layers would end up sharing one colour slot. */
+ * The copy is deep, or two layers would end up sharing one color slot. */
 function restoreKeys(actual: object, base: object, keys: readonly string[]): void {
   const a = actual as Record<string, unknown>;
   const b = base as Record<string, unknown>;
@@ -5396,17 +5396,17 @@ export function lookSummary(el: CElement): string | undefined {
     case "icon": return `${el.payload.size} pt · ${colorWords(el.payload.colorSlot.baseColorHex)}`;
     case "gauge": {
       const g = el.payload;
-      const size = g.style === "dots" ? `${g.bands.length > 0 && g.coloring === "bands" ? "banded" : colorWords(g.colorSlot.baseColorHex)} dots` : `${g.lineWidth} pt line · ${g.coloring === "bands" && g.bands.length > 0 ? `${g.bands.length + 1} colour bands` : colorWords(g.colorSlot.baseColorHex)}`;
+      const size = g.style === "dots" ? `${g.bands.length > 0 && g.coloring === "bands" ? "banded" : colorWords(g.colorSlot.baseColorHex)} dots` : `${g.lineWidth} pt line · ${g.coloring === "bands" && g.bands.length > 0 ? `${g.bands.length + 1} color bands` : colorWords(g.colorSlot.baseColorHex)}`;
       return `${g.style} · ${size}${g.thresholdValue === undefined ? "" : ` · threshold ${g.thresholdValue}`}`;
     }
     // The highlight is an Extras setting now, so it is that card's summary.
     case "chart": return `${el.payload.style} · ${el.payload.scale === "auto" ? "auto scale" : `${el.payload.minValue} to ${el.payload.maxValue}`}`;
     case "timeline": {
       const t = el.payload;
-      const colours = t.bands.length === 0
-        ? `one colour (${colorWords(t.otherColorHex)})`
-        : `${t.bands.length} ${t.bands.length === 1 ? "state" : "states"} coloured`;
-      return `${colours}${t.gap > 0 ? ` · ${t.gap} pt gap` : ""} · corners ${t.cornerRadius} pt`;
+      const colors = t.bands.length === 0
+        ? `one color (${colorWords(t.otherColorHex)})`
+        : `${t.bands.length} ${t.bands.length === 1 ? "state" : "states"} colored`;
+      return `${colors}${t.gap > 0 ? ` · ${t.gap} pt gap` : ""} · corners ${t.cornerRadius} pt`;
     }
     case "shape": return el.payload.kind === "line"
       ? `${colorWords(el.payload.colorSlot.baseColorHex)} · ${el.payload.thickness} pt thick`
@@ -5418,7 +5418,7 @@ export function lookSummary(el: CElement): string | undefined {
     case "list": return `${clampListRows(el.payload.rows)} cells · gap ${clampListGap(el.payload.gap)} pt`;
     case "chartDots": {
       const d = el.payload;
-      return `${d.dots === "all" ? "all" : "auto"} · ${d.size === undefined ? "automatic size" : `${d.size} pt`} · ${d.colorHex === undefined ? "series colour" : colorWords(d.colorHex)}`;
+      return `${d.dots === "all" ? "all" : "auto"} · ${d.size === undefined ? "automatic size" : `${d.size} pt`} · ${d.colorHex === undefined ? "series color" : colorWords(d.colorHex)}`;
     }
     case "chartGrid": {
       const g = el.payload;
@@ -5519,7 +5519,7 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
     return card(host, "placement", "Position", html`
       ${layerPageField(host, el)}
       <div class="hint keep">A line sits on its chart at the reading it follows, and runs the whole plot. To
-        change where it is, change the reading below or the chart. Thickness and colour are in Look.</div>
+        change where it is, change the reading below or the chart. Thickness and color are in Look.</div>
       ${anchorFields(host, el, family)}
       ${f.rotationDegrees !== 0
         ? sliderField("Rotation", f.rotationDegrees, (v) => setFrame({ rotationDegrees: v }, "rot"),
@@ -5722,7 +5722,7 @@ function chartPointFields(host: EditorHost, anchor: ChartAnchor, key: string): T
     : "";
   if (anchor.at === "threshold") {
     // The default is where a new threshold starts, the middle of the readings
-    // (see `seedThreshold`), the way a new line's thickness and colour reset to
+    // (see `seedThreshold`), the way a new line's thickness and color reset to
     // what the line was drawn with. The chart never draws its own line once a
     // layer follows the threshold, so every edit keeps `drawsThreshold` off.
     const seed = seedThreshold(chartNumbers(host.resolve(c.value) ?? ""));
@@ -5781,7 +5781,7 @@ interface TimeLabelled {
 }
 
 /**
- * The six controls behind a row of clock times: how many, how big, what colour,
+ * The six controls behind a row of clock times: how many, how big, what color,
  * which side, which clock, and whether they carry their minutes.
  *
  * Shared by the timeline and the chart. Everything below the count only appears
@@ -5812,9 +5812,9 @@ function timeLabelFields<T extends TimeLabelled>(
         ${numberField("Time size", el.labelSize, (v) => set((p) => {
           p.labelSize = Math.min(TIMELINE_MAX_LABEL_SIZE, Math.max(TIMELINE_MIN_LABEL_SIZE, v ?? TIMELINE_DEFAULT_LABEL_SIZE));
         }, `${keyPrefix}size`), { step: 0.5, min: TIMELINE_MIN_LABEL_SIZE, max: TIMELINE_MAX_LABEL_SIZE, def: base.labelSize as number, unit: "pt" })}
-        ${colorField("Time colour", el.labelColorHex, (v) => set((p) => {
+        ${colorField("Time color", el.labelColorHex, (v) => set((p) => {
           p.labelColorHex = v ?? TIMELINE_DEFAULT_LABEL_HEX;
-        }, `${keyPrefix}colour`), false, base.labelColorHex as string)}
+        }, `${keyPrefix}color`), false, base.labelColorHex as string)}
       </div>
       ${el.labelsAbove === undefined ? nothing : segField("Row", el.labelsAbove ? "above" : "below", [["below", "Below"], ["above", "Above"]],
         (v) => set((p) => { p.labelsAbove = v === "above"; }),
@@ -5940,8 +5940,8 @@ function layerTakesLevel(el: CElement): el is Extract<CElement, { kind: "icon" |
  * way the fill grows and what the empty part is painted in.
  *
  * The layer is drawn twice on the watch and in the preview, so everything else
- * about it (its colour, its gradient, its rules) is still one setting and stays
- * on its own cards. This card only says how much of the layer is coloured in.
+ * about it (its color, its gradient, its rules) is still one setting and stays
+ * on its own cards. This card only says how much of the layer is colored in.
  */
 function levelFields(
   host: EditorHost,
@@ -5966,8 +5966,8 @@ function levelFields(
       if (v) p.level = seed(); else delete p.level;
     }, "level-on"), false)}
     ${level === undefined
-      ? html`<div class="hint">Draws the ${what} twice: all of it in a faint track colour, then as much of it as
-          the reading fills, in its own colour. A battery icon that fills to 60%, or a tank that empties.</div>`
+      ? html`<div class="hint">Draws the ${what} twice: all of it in a faint track color, then as much of it as
+          the reading fills, in its own color. A battery icon that fills to 60%, or a tank that empties.</div>`
       : html`
         ${valueEditor(host, level.value, (v) => setLevel((l) => { l.value = v; }, "level-value"),
           { showResolved: true, label: "Reading", key: `${key}-level-value` })}
@@ -5984,12 +5984,12 @@ function levelFields(
               left: "Fills from the right edge leftward",
               right: "Fills from the left edge rightward",
             }, def: LEVEL_DEFAULT_DIRECTION })}
-        ${colorField("Track colour", level.trackColorHex, (v) => setLevel((l) => {
+        ${colorField("Track color", level.trackColorHex, (v) => setLevel((l) => {
           if (v === undefined) delete l.trackColorHex; else l.trackColorHex = v;
         }, "level-track"), true, null)}
-        <div class="hint">Off, the empty part takes the layer's own colour at a quarter strength.
-          A tinted face keeps only how see-through a colour is, so a track at full strength reads
-          there as the same colour as the fill.</div>
+        <div class="hint">Off, the empty part takes the layer's own color at a quarter strength.
+          A tinted face keeps only how see-through a color is, so a track at full strength reads
+          there as the same color as the fill.</div>
         </div>`}`;
 }
 
@@ -6072,16 +6072,16 @@ export function arcReads(arc: TextArc): ArcReads {
 }
 
 /**
- * A text layer's colour by value: the chart's Colour and Highlight fields, read
+ * A text layer's color by value: the chart's Color and Highlight fields, read
  * against the numbers in the text instead of a series. Every key is optional on
  * a text layer, so each field deletes its key when it goes back to the default
  * and a layer that tried the feature and turned it off saves as it did before.
  */
-function textValueColourFields(
+function textValueColorFields(
   host: EditorHost,
   t: TextElement,
   set: (mutate: (p: TextElement) => void, k?: string) => void,
-  colourRow: unknown,
+  colorRow: unknown,
 ): TemplateResult {
   const coloring = t.coloring ?? "uniform";
   const highlight = t.highlight ?? "none";
@@ -6097,23 +6097,23 @@ function textValueColourFields(
   const setHex = (key: "highColorHex" | "lowColorHex", def: string, v: string | undefined) => set((p) => {
     if (v === undefined || v === def) delete p[key]; else p[key] = v;
   }, key);
-  const highlightHint = highlight === "highest" ? "The highest number takes its own colour"
-    : highlight === "lowest" ? "The lowest number takes its own colour"
-    : "The highest and lowest numbers take their own colours";
+  const highlightHint = highlight === "highest" ? "The highest number takes its own color"
+    : highlight === "lowest" ? "The lowest number takes its own color"
+    : "The highest and lowest numbers take their own colors";
   // The table marks the number the text reads, when it reads exactly one.
   const numbers = coloring === "bands" ? chartNumbers(host.resolve(t.value) ?? "") : [];
   return html`
     <div class="fgroup">
-    ${segField("Colour", coloring, CHART_COLORINGS, (v) => set((p) => {
+    ${segField("Color", coloring, CHART_COLORINGS, (v) => set((p) => {
       if (v === "uniform") { delete p.coloring; return; }
       p.coloring = v;
       // Seeded from the numbers the text shows right now, as a chart seeds from
       // its readings, so the switch paints something the moment it is flipped.
       if ((p.bands?.length ?? 0) === 0) p.bands = seedBands(chartNumbers(host.resolve(p.value) ?? ""));
     }), { def: "uniform" })}
-    ${colourRow}
+    ${colorRow}
     ${coloring === "bands" ? html`
-      <div class="hint">Each number in the text takes the colour of the band it falls in, and other text keeps the layer colour.</div>
+      <div class="hint">Each number in the text takes the color of the band it falls in, and other text keeps the layer color.</div>
       ${bandTableFields({ bands: t.bands ?? [], bandAboveColorHex: t.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX }, t.colorSlot.baseColorHex, setBands,
         numbers.length === 1 ? numbers[0] : undefined)}`
       : nothing}
@@ -6125,16 +6125,16 @@ function textValueColourFields(
     ${highlight === "none" ? nothing : html`
       <div class="grid2">
         ${highlight === "lowest" ? nothing
-          : colorField("Highest colour", t.highColorHex ?? CHART_DEFAULT_HIGH_HEX, (v) => setHex("highColorHex", CHART_DEFAULT_HIGH_HEX, v), false, CHART_DEFAULT_HIGH_HEX)}
+          : colorField("Highest color", t.highColorHex ?? CHART_DEFAULT_HIGH_HEX, (v) => setHex("highColorHex", CHART_DEFAULT_HIGH_HEX, v), false, CHART_DEFAULT_HIGH_HEX)}
         ${highlight === "highest" ? nothing
-          : colorField("Lowest colour", t.lowColorHex ?? CHART_DEFAULT_LOW_HEX, (v) => setHex("lowColorHex", CHART_DEFAULT_LOW_HEX, v), false, CHART_DEFAULT_LOW_HEX)}
+          : colorField("Lowest color", t.lowColorHex ?? CHART_DEFAULT_LOW_HEX, (v) => setHex("lowColorHex", CHART_DEFAULT_LOW_HEX, v), false, CHART_DEFAULT_LOW_HEX)}
       </div>
-      ${coloring === "bands" ? nothing : html`<div class="hint">${highlightHint}, and other text keeps the layer colour.</div>`}`}
+      ${coloring === "bands" ? nothing : html`<div class="hint">${highlightHint}, and other text keeps the layer color.</div>`}`}
     </div>`;
 }
 
 // ── Rich text ─────────────────────────────────────────────────────────────
-// A text layer drawn as a row of parts, each in its own colour, weight and
+// A text layer drawn as a row of parts, each in its own color, weight and
 // size. Most text layers are a few typed words, so all of it waits behind one
 // switch and the Content card reads as it always did until that is on. The
 // edits themselves are in rich-text.ts; this is the form around them.
@@ -6160,10 +6160,10 @@ const pendingPartTargets = new Map<string, string>();
 const PART_SIZE_MIN = 4;
 const PART_SIZE_MAX = 40;
 
-/** Which of a part's three Colour choices it is on. */
-export type PartColourMode = "layer" | "pick" | "bands";
+/** Which of a part's three Color choices it is on. */
+export type PartColorMode = "layer" | "pick" | "bands";
 
-const PART_COLOURS: [PartColourMode, string][] = [["layer", "Layer"], ["pick", "Pick"], ["bands", "By value"]];
+const PART_COLORS: [PartColorMode, string][] = [["layer", "Layer"], ["pick", "Pick"], ["bands", "By value"]];
 
 /** What a text layer draws, as its Type row names it. */
 export type TextType = "plain" | "rich" | "countdown";
@@ -6173,7 +6173,7 @@ export type TextType = "plain" | "rich" | "countdown";
 const TEXT_TYPES: [TextType, string][] = [["plain", "Plain"], ["rich", "Rich"]];
 const TEXT_TYPE_TITLES: Partial<Record<TextType, string>> = {
   plain: "One line: typed words, a live value or a template",
-  rich: "Parts, each with its own colour, weight and size",
+  rich: "Parts, each with its own color, weight and size",
 };
 
 /** The Count down switch and its notes, for any value a countdown can sit
@@ -6231,19 +6231,19 @@ export function rulePartOptions(parts: readonly TextPart[], partId: string | und
   return options;
 }
 
-export function partColourMode(part: TextPart): PartColourMode {
+export function partColorMode(part: TextPart): PartColorMode {
   if (part.coloring === "bands") return "bands";
   return part.colorHex === undefined ? "layer" : "pick";
 }
 
-/** The dot at the front of a part's chip: the colour it draws in, or a wheel
- * of its own band colours when it colours by value. */
+/** The dot at the front of a part's chip: the color it draws in, or a wheel
+ * of its own band colors when it colors by value. */
 export function partDotBackground(part: TextPart, layerHex: string): string {
-  if (partColourMode(part) === "bands" && (part.bands?.length ?? 0) > 0) {
-    const colours = [...chartSortedBands({ bands: part.bands! }).map((b) => b.colorHex), part.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX];
-    const step = 100 / colours.length;
+  if (partColorMode(part) === "bands" && (part.bands?.length ?? 0) > 0) {
+    const colors = [...chartSortedBands({ bands: part.bands! }).map((b) => b.colorHex), part.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX];
+    const step = 100 / colors.length;
     const at = (n: number) => `${Math.round(n * 10) / 10}%`;
-    return `conic-gradient(${colours.map((c, i) => `${c} ${at(i * step)} ${at((i + 1) * step)}`).join(", ")})`;
+    return `conic-gradient(${colors.map((c, i) => `${c} ${at(i * step)} ${at((i + 1) * step)}`).join(", ")})`;
   }
   return part.colorHex ?? layerHex;
 }
@@ -6261,7 +6261,7 @@ export function richTextBlockedHint(blocked: readonly RichTextBlocked[]): string
   return `Rich text stays on, because the parts cannot join into one line. ${said.join(" ")} Change or remove ${blocked.length === 1 ? "that part" : "those parts"} first.`;
 }
 
-const MOVED_WORDS: Record<RichTextMoved, string> = { fontSize: "font size", fontWeight: "weight", color: "colour", bands: "colour bands" };
+const MOVED_WORDS: Record<RichTextMoved, string> = { fontSize: "font size", fontWeight: "weight", color: "color", bands: "color bands" };
 
 /** The note once rich text is off: what the one part handed to Look, or how
  * the parts joined. */
@@ -6370,7 +6370,7 @@ function textContentFields(
   const confirmTitle = confirmTo === "countdown" ? "Switch to Countdown?" : "Switch to Plain?";
   return html`
     ${segField("Type", type === "rich" ? "rich" : "plain", TEXT_TYPES, setType, { titles: TEXT_TYPE_TITLES })}
-    <div class="hint">Plain shows one line: typed words, a live value or a template. Rich splits the text into parts, and each part has its own colour, weight and size.</div>
+    <div class="hint">Plain shows one line: typed words, a live value or a template. Rich splits the text into parts, and each part has its own color, weight and size.</div>
     ${confirmTo === undefined ? nothing : html`<div class="rich-confirm" role="alertdialog" aria-label=${confirmTitle}>
         <b>${confirmTitle}</b>
         <div>The parts join into one line, so every word and value stays. The part styles go away. Undo brings them back.${t.rules.some((r) => r.partId !== undefined) ? " States that change one part will change the whole text." : ""}</div>
@@ -6396,7 +6396,7 @@ function textContentFields(
 
 /**
  * The parts of a rich text layer as a row of chips with the two add buttons at
- * its end, then the editor for the part picked: what it shows, its colour,
+ * its end, then the editor for the part picked: what it shows, its color,
  * weight and size. A weight or size the part does not set shows the layer's,
  * outlined or faint, so what the part inherits is on screen without a sentence.
  */
@@ -6449,13 +6449,13 @@ function richPartsEditor(
   const chips = parts.map((p, i) => {
     const chip = partChip(p.value, ctx);
     const on = p.id === part.id;
-    const mode = partColourMode(p);
+    const mode = partColorMode(p);
     const now = chip.kind === "value" ? host.resolve(p.value) : undefined;
     const weight = p.fontWeight === undefined ? undefined : FONT_WEIGHTS.find(([w]) => w === p.fontWeight)?.[1];
     return html`<button type="button" role="option" aria-selected=${on ? "true" : "false"} class="part-chip ${chip.kind} ${on ? "on" : ""}"
       aria-label=${rulePartLabel(p, i, ctx)} @click=${(e: Event) => select(p.id, e.currentTarget)}>
       <span class="part-dot" style=${`background:${partDotBackground(p, layerHex)}`}
-        title=${mode === "bands" ? "By value, with its own bands" : mode === "pick" ? "Its own colour" : "The layer colour"}></span>
+        title=${mode === "bands" ? "By value, with its own bands" : mode === "pick" ? "Its own color" : "The layer color"}></span>
       ${chip.kind === "text"
         ? html`<span class="part-txt">${chip.label === ""
           ? html`<span class="part-empty">empty</span>`
@@ -6469,7 +6469,7 @@ function richPartsEditor(
 
   const targeted = t.rules.some((r) => r.partId === part.id);
   const literalPart = part.value.kind.kind === "literal";
-  const mode = partColourMode(part);
+  const mode = partColorMode(part);
   const ownSize = part.fontSize !== undefined;
   const layerWeight = FONT_WEIGHTS.find(([w]) => w === t.fontWeight)?.[1] ?? t.fontWeight;
   const layerDesign = FONT_DESIGNS.find(([d]) => d === (t.fontDesign ?? "default"))?.[1] ?? "System";
@@ -6481,8 +6481,8 @@ function richPartsEditor(
   };
   // The band table marks the number the part reads, when it reads exactly one.
   const numbers = mode === "bands" ? chartNumbers(host.resolve(part.value) ?? "") : [];
-  const colourTitles: Partial<Record<PartColourMode, string>> = {
-    layer: "Use the layer colour",
+  const colorTitles: Partial<Record<PartColorMode, string>> = {
+    layer: "Use the layer color",
     ...(literalPart && mode !== "bands" ? { bands: "By value needs a live value" } : {}),
   };
   // The shared table editor wants a table that is always there; this one holds
@@ -6518,7 +6518,7 @@ function richPartsEditor(
       ${targeted && count > 1 ? html`<div class="hint keep">A state changes this part. Change or delete that state first.</div>` : nothing}
       ${valueEditor(host, part.value, (v) => updPart((x) => { x.value = v; }, "value"), { showResolved: true, label: literalPart ? "Text" : "Shows", key: `${key}-part-${part.id}` })}
       ${literalPart ? html`<div class="hint">Spaces count, and show as dots in the parts list. Type one at the start or end when this part needs a gap.</div>` : nothing}
-      ${segField("Colour", mode, PART_COLOURS, (v) => updPart((x) => {
+      ${segField("Color", mode, PART_COLORS, (v) => updPart((x) => {
         if (v === "layer") { delete x.colorHex; delete x.coloring; return; }
         if (v === "pick") { delete x.coloring; x.colorHex = sameColor(layerHex, "#FFFFFF") ? "#64D2FF" : layerHex; return; }
         delete x.colorHex;
@@ -6526,8 +6526,8 @@ function richPartsEditor(
         // Seeded from the numbers the part shows right now, as the layer's own
         // table is, so By value paints something the moment it is picked.
         if ((x.bands?.length ?? 0) === 0) x.bands = seedBands(chartNumbers(host.resolve(x.value) ?? ""));
-      }), { def: "layer", titles: colourTitles, ...(literalPart && mode !== "bands" ? { disabled: { bands: true } } : {}) })}
-      ${mode === "pick" ? colorField("Part colour", part.colorHex, (v) => updPart((x) => { x.colorHex = v ?? layerHex; }, "color")) : nothing}
+      }), { def: "layer", titles: colorTitles, ...(literalPart && mode !== "bands" ? { disabled: { bands: true } } : {}) })}
+      ${mode === "pick" ? colorField("Part color", part.colorHex, (v) => updPart((x) => { x.colorHex = v ?? layerHex; }, "color")) : nothing}
       ${mode === "bands" ? html`
         ${bandTableFields({ bands: part.bands ?? [], bandAboveColorHex: part.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX }, part.colorHex ?? layerHex, setBands,
           numbers.length === 1 ? numbers[0] : undefined)}
@@ -6590,15 +6590,15 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
   const base = newElement(el.kind).payload as unknown as Record<string, unknown>;
   const baseColor = (base.colorSlot as { baseColorHex: string } | undefined)?.baseColorHex ?? "#FFFFFF";
   const baseSize = (key: "fontSize" | "size" | "lineWidth") => base[key] as number;
-  // The layer's own colour. Where a Colour choice picks between one colour and
-  // colour by value, the colour sits right under that choice; anywhere else it
+  // The layer's own color. Where a Color choice picks between one color and
+  // color by value, the color sits right under that choice; anywhere else it
   // closes the Look card.
-  let colourPlaced = false;
-  // Only the kinds with a colorSlot have a colour of their own (`elementColour`).
-  const colourRow = (label: string) => elementColour(el) === undefined
+  let colorPlaced = false;
+  // Only the kinds with a colorSlot have a color of their own (`elementColor`).
+  const colorRow = (label: string) => elementColor(el) === undefined
     ? nothing
-    : colorField(label, elementColour(el), (v) => upd((e) => {
-        if (elementColour(e) !== undefined) (e.payload as { colorSlot: { baseColorHex: string } }).colorSlot.baseColorHex = v ?? "#FFFFFF";
+    : colorField(label, elementColor(el), (v) => upd((e) => {
+        if (elementColor(e) !== undefined) (e.payload as { colorSlot: { baseColorHex: string } }).colorSlot.baseColorHex = v ?? "#FFFFFF";
       }, "color"), false, baseColor);
   // A chart's marks on the plot (highlight, threshold, now, clock times). Built in
   // the chart case, where its setters live, and shown in the Extras card.
@@ -6617,7 +6617,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
     case "text": {
       const setText = (mutate: (p: TextElement) => void, k?: string) => upd((e) => mutate((e as typeof el).payload), k);
       content = textContentFields(host, el, family, setText, key);
-      colourPlaced = !el.payload.countdown && !textUsesParts(el.payload);
+      colorPlaced = !el.payload.countdown && !textUsesParts(el.payload);
       look = html`
         <div class="fgroup">
         ${shapeSizeField(host, el, family, "Font size", { step: 1, min: 4, def: baseSize("fontSize") })}
@@ -6660,7 +6660,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           100% never shrinks.</div>
         </div>
         ${textArcFields(el.payload, family, setText)}
-        ${colourPlaced ? textValueColourFields(host, el.payload, setText, colourRow("Main colour")) : nothing}`;
+        ${colorPlaced ? textValueColorFields(host, el.payload, setText, colorRow("Main color")) : nothing}`;
       break;
     }
     case "icon": {
@@ -6701,7 +6701,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               entities without the filter, so "3 of 8 lights on" is one reading and one
               total over one scope. At most ${GAUGE_MAX_DOTS} dots are drawn.</div>`
           : html`<div class="fgroup">${gaugeRangeFields(host, g, { min: base.minValue as number, max: base.maxValue as number }, key, setGauge)}</div>`}`;
-      colourPlaced = true;
+      colorPlaced = true;
       look = html`
         <div class="grid2">
           ${segField("Style", g.style, GAUGE_STYLES, (v) => setGauge((p) => {
@@ -6720,23 +6720,23 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           ${dots ? nothing : shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5, def: baseSize("lineWidth") })}
         </div>
         <div class="fgroup">
-        ${colorField(dots ? "Empty dot colour" : "Track colour", g.trackColorHex, (v) => setGauge((p) => { p.trackColorHex = v ?? "#FFFFFF40"; }, "track"), false, base.trackColorHex as string)}
-        ${segField("Colour", g.coloring, CHART_COLORINGS, (v) => setGauge((p) => {
+        ${colorField(dots ? "Empty dot color" : "Track color", g.trackColorHex, (v) => setGauge((p) => { p.trackColorHex = v ?? "#FFFFFF40"; }, "track"), false, base.trackColorHex as string)}
+        ${segField("Color", g.coloring, CHART_COLORINGS, (v) => setGauge((p) => {
           p.coloring = v;
           if (v === "bands" && p.bands.length === 0) p.bands = seedBands([p.minValue, p.maxValue]);
         }), { def: base.coloring as typeof g.coloring })}
-        ${colourRow("Main colour")}
+        ${colorRow("Main color")}
         ${g.coloring === "bands" ? nothing : fillField("Gradient", g.fill, (v) => setGauge((p) => {
           if (v === undefined) { delete p.fill; return; }
           p.fill = v;
-          // The flat colour keeps the gradient's first stop, so a watch app that
+          // The flat color keeps the gradient's first stop, so a watch app that
           // predates fills draws where the gradient starts rather than nothing.
           p.colorSlot.baseColorHex = fillColorAt(v, 0);
         }, "fill"), () => ({ kind: "linear", stops: [{ at: 0, colorHex: g.colorSlot.baseColorHex }, { at: 1, colorHex: g.colorSlot.baseColorHex }] }))}
         ${g.coloring === "bands" ? html`
           <div class="hint">Checked lowest first, so each row only says where it ends. The
-            gauge takes the colour of the row its reading falls in, and a reading past the
-            last row takes the colour underneath.</div>
+            gauge takes the color of the row its reading falls in, and a reading past the
+            last row takes the color underneath.</div>
           ${bandTableFields(g, g.colorSlot.baseColorHex, setGauge, chartNumbers(host.resolve(g.value) ?? "")[0])}`
           : nothing}
         </div>
@@ -6748,7 +6748,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               if (v === undefined) delete p.thresholdValue; else p.thresholdValue = v;
             }, "thr"), { optional: true, def: null })}
             ${g.thresholdValue === undefined ? nothing
-              : colorField("Threshold colour", g.thresholdColorHex, (v) => setGauge((p) => { p.thresholdColorHex = v ?? GAUGE_DEFAULT_THRESHOLD_HEX; }, "thrcol"), false, GAUGE_DEFAULT_THRESHOLD_HEX)}
+              : colorField("Threshold color", g.thresholdColorHex, (v) => setGauge((p) => { p.thresholdColorHex = v ?? GAUGE_DEFAULT_THRESHOLD_HEX; }, "thrcol"), false, GAUGE_DEFAULT_THRESHOLD_HEX)}
           </div>
           <div class="hint">A short tick on the scale at that value, so the fill reads
             against a target instead of on its own. A value outside Min to Max draws
@@ -6977,7 +6977,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           jumpy sensor draws a calm line. The strength scales with the number of readings: over 120
           readings, Light, Medium and Strong average 7, 13 or 25 of them. The chart's own numbers
           read the smoothed series too: its stats, highlights and bands. A text layer pointed at the entity itself still shows the raw value.</div>`;
-      colourPlaced = true;
+      colorPlaced = true;
       // Whether zero falls strictly inside the plot, which is the only place the
       // line at zero draws. Worked out from the readings on screen the way the
       // resolver sets the range; a chart on another's scale is not second-guessed.
@@ -6990,9 +6990,9 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         const hi = Math.max(...real, c.thresholdValue ?? -Infinity);
         return lo < 0 && hi > 0;
       })();
-      // Only the colours that paint something on this chart get a row, named
-      // for what they paint (see chart-colours.ts).
-      const colourRows = chartColourRows(c);
+      // Only the colors that paint something on this chart get a row, named
+      // for what they paint (see chart-colors.ts).
+      const colorRows = chartColorRows(c);
       chartShown = shown;
       look = html`
         <div class="grid2">
@@ -7019,7 +7019,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             below zero rounds its bottom.</div>
           </div>
           <div class="fgroup">
-          ${colourRows.fill === undefined ? nothing : chartColourField(colourRows.fill, c.fillColorHex,
+          ${colorRows.fill === undefined ? nothing : chartColorField(colorRows.fill, c.fillColorHex,
             (v) => setChart((p) => { if (v === undefined) delete p.fillColorHex; else p.fillColorHex = v; }, "fillcol"))}
           ${c.style === "bars" ? nothing : fillField("Area gradient", c.areaFill, (v) => setChart((p) => {
             if (v === undefined) { delete p.areaFill; return; }
@@ -7034,13 +7034,13 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             ${numberField("Border width", c.barBorderWidth,
               (v) => setChart((p) => { p.barBorderWidth = Math.min(Math.max(v ?? 1, 0), CHART_MAX_BAR_BORDER_WIDTH); }, "barborderw"),
               { step: 0.5, min: 0, max: CHART_MAX_BAR_BORDER_WIDTH, def: 1, unit: "pt" })}
-            ${colourRows.border === undefined ? nothing : chartColourField(colourRows.border, c.barBorderColorHex,
+            ${colorRows.border === undefined ? nothing : chartColorField(colorRows.border, c.barBorderColorHex,
               (v) => setChart((p) => { if (v === undefined) delete p.barBorderColorHex; else p.barBorderColorHex = v; }, "barbordercol"))}
             ${checkField("Open at base", c.barBorderOpenBase === true,
               (v) => setChart((p) => { if (v) p.barBorderOpenBase = true; else delete p.barBorderOpenBase; }), false)}`}
           ${watchNote(host)}
           <div class="hint">The border is drawn inside each bar, so bars keep their size. A highlighted
-            bar fills and borders in its highlight colour.${c.barBorderOpenBase === true
+            bar fills and borders in its highlight color.${c.barBorderOpenBase === true
               ? " Open at base leaves the border off the edge on the baseline, so a bar hanging below zero leaves its top open." : " Open at base leaves the border off the edge on the baseline."}${c.coloring === "bands"
               ? " Each band can set its own fill and border below." : ""}</div>
           </div>` : html`
@@ -7064,7 +7064,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
                   fade: "Strongest at the top of the plot, fading to clear at the baseline",
                 },
                 def: chartFillStyle(base.fillStyle) })}
-            ${colourRows.fill === undefined ? nothing : chartColourField(colourRows.fill, c.fillColorHex,
+            ${colorRows.fill === undefined ? nothing : chartColorField(colorRows.fill, c.fillColorHex,
               (v) => setChart((p) => { if (v === undefined) delete p.fillColorHex; else p.fillColorHex = v; }, "fillcol"))}
             ${watchNote(host)}
             </div>`
@@ -7080,7 +7080,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           (v) => setChart((p) => { if (v) p.scaleFrom = v; else delete p.scaleFrom; }), { def: "" })}
         ${borrowed
           ? html`<div class="hint keep">This chart is drawn against that one's range, so the two read as one
-              plot. Give them the same frame and each keeps its own readings, colour, style and
+              plot. Give them the same frame and each keeps its own readings, color, style and
               numbers. Scale, Min and Max above are ignored while a chart is picked here.</div>`
           : nothing}
         ${!borrowed && c.scale === "fixed"
@@ -7104,17 +7104,17 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           </div>
         </div>
         <div class="fgroup">
-        ${segField("Colour", c.coloring, CHART_COLORINGS, (v) => setChart((p) => {
+        ${segField("Color", c.coloring, CHART_COLORINGS, (v) => setChart((p) => {
           p.coloring = v;
           if (v === "bands" && p.bands.length === 0) p.bands = seedBands(shown);
         }), { def: base.coloring as typeof c.coloring })}
-        ${colourRows.main === undefined ? nothing : colourRow(colourRows.main)}
+        ${colorRows.main === undefined ? nothing : colorRow(colorRows.main)}
         ${c.coloring === "bands" ? html`
           <div class="hint">Checked lowest first, so each row only says where it ends. A reading past
-            the last row takes the colour underneath.
+            the last row takes the color underneath.
             ${c.style === "bars"
-              ? "Each bar is coloured on its own value."
-              : "A stroke cannot change colour halfway, so each leg of the line takes the band of the reading it arrives at."}</div>
+              ? "Each bar is colored on its own value."
+              : "A stroke cannot change color halfway, so each leg of the line takes the band of the reading it arrives at."}</div>
           ${bandTableFields(c, c.colorSlot.baseColorHex, setChart, shown, c.style === "bars"
             ? { ...(c.fillColorHex === undefined ? {} : { fillHex: c.fillColorHex }),
                 ...(c.barBorderColorHex === undefined ? {} : { borderHex: c.barBorderColorHex }),
@@ -7123,7 +7123,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           ${c.style === "area"
             ? html`${checkField("Band fill",c.fillBands,
                 (v) => setChart((p) => { p.fillBands = v; }), base.fillBands as boolean)}
-              <div class="hint">Off, the wash under the line stays one colour. On, each stretch of
+              <div class="hint">Off, the wash under the line stays one color. On, each stretch of
                 fill takes its own band, which reads well on a chart that spends real time in more
                 than one band and as noise on one that flickers between them.</div>`
             : nothing}`
@@ -7258,14 +7258,14 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           : nothing}
         ${timelineIsNumeric(samples)
           ? html`<div class="hint warn">This entity reports numbers, so every reading is its own
-            state and the strip is one colour with a hairline wherever it dropped out. A timeline is
+            state and the strip is one color with a hairline wherever it dropped out. A timeline is
             for states that are words, like on and off, open and closed, home and away. For a
             number's past, use a Chart layer instead.</div>`
           : nothing}`;
       look = html`
-        <div class="hint">Each row is a state and the colour its runs draw in, checked top to bottom.
+        <div class="hint">Each row is a state and the color its runs draw in, checked top to bottom.
           Case and surrounding space are ignored, so <code>Home</code> matches <code>home</code>. A
-          state no row names takes the colour underneath.</div>
+          state no row names takes the color underneath.</div>
         ${timelineBandFields(t, setTimeline, knownStates, `wa-tl-states-${key.replace(/[^a-z0-9]/gi, "")}`)}
         ${knownStates.length > 2
           ? html`<div class="hint keep">Seen in this span: <span class="nums">${knownStates.filter((s) => s !== "unavailable" && s !== "unknown").join(", ")}</span>. Click into a State box to pick one.</div>`
@@ -7291,7 +7291,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           ${el.payload.kind === "roundedRectangle" ? numberField("Corner radius", el.payload.cornerRadius, (v) => upd((e) => { (e as typeof el).payload.cornerRadius = v ?? 6; }, "radius"), { step: 0.5, min: 0, def: base.cornerRadius as number, unit: "pt" }) : nothing}
         </div>
         ${el.payload.kind === "line" ? lineOrientationField(family, f, setFrame) : nothing}`;
-      // A line has no border and no corners: its colour is the whole drawing, so
+      // A line has no border and no corners: its color is the whole drawing, so
       // the Look card offers its thickness instead.
       look = el.payload.kind === "line"
         ? numberField("Thickness", el.payload.thickness, (v) => upd((e) => { (e as typeof el).payload.thickness = v ?? 1; }, "thick"), { step: 0.5, min: 0.5, def: base.thickness as number, unit: "pt" })
@@ -7303,7 +7303,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           p.fill = v;
           p.colorSlot.baseColorHex = fillColorAt(v, 0);
         }, "fill"), () => ({ kind: "linear", stops: [{ at: 0, colorHex: el.payload.colorSlot.baseColorHex }, { at: 1, colorHex: el.payload.colorSlot.baseColorHex }] }))}
-        ${colorField("Border colour", el.payload.borderColorHex, (v) => upd((e) => { if (v === undefined) delete (e as typeof el).payload.borderColorHex; else (e as typeof el).payload.borderColorHex = v; }, "border"), true, null)}
+        ${colorField("Border color", el.payload.borderColorHex, (v) => upd((e) => { if (v === undefined) delete (e as typeof el).payload.borderColorHex; else (e as typeof el).payload.borderColorHex = v; }, "border"), true, null)}
         ${el.payload.borderColorHex !== undefined ? numberField("Border width", el.payload.borderWidth, (v) => upd((e) => { (e as typeof el).payload.borderWidth = v ?? 1; }, "bw"), { step: 0.5, min: 0, def: base.borderWidth as number, unit: "pt" }) : nothing}
         </div>`;
       break;
@@ -7449,11 +7449,11 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               else p.size = size;
             }, "dotsize"),
             { step: 0.5, min: 1, max: 12, ...(autoSize === undefined ? {} : { def: autoSize }), unit: "pt" })}
-          ${fallbackColorField("Dot colour", d.colorHex, "Series colour",
+          ${fallbackColorField("Dot color", d.colorHex, "Series color",
             (v) => setDots((p) => { if (v === undefined) delete p.colorHex; else p.colorHex = v; }, "dotcol"))}
         </div>
         <div class="hint">Auto leaves the dots off once the readings sit too close to tell apart. Left alone, a dot
-          is a little wider than the chart's line and takes the colour the series has at its reading.</div>`;
+          is a little wider than the chart's line and takes the color the series has at its reading.</div>`;
       break;
     }
     case "chartGrid": {
@@ -7476,7 +7476,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           ${numberField("Thickness", g.thickness, (v) => setGrid((p) => { p.thickness = chartGridThickness(v ?? CHART_GRID_LINE_WIDTH); }, "thick"),
             { step: 0.25, min: CHART_MIN_GRID_THICKNESS, max: CHART_MAX_GRID_THICKNESS, def: CHART_GRID_LINE_WIDTH, unit: "pt" })}
         </div>
-        ${colorField("Colour", g.colorHex, (v) => setGrid((p) => { p.colorHex = v ?? CHART_DEFAULT_GRID_HEX; }, "gridcol"), false, CHART_DEFAULT_GRID_HEX)}
+        ${colorField("Color", g.colorHex, (v) => setGrid((p) => { p.colorHex = v ?? CHART_DEFAULT_GRID_HEX; }, "gridcol"), false, CHART_DEFAULT_GRID_HEX)}
         <div class="hint">Equal rows across the plot, never on its top or bottom edge.</div>`;
       break;
     }
@@ -7499,11 +7499,11 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
     }
   }
 
-  const colour = colourPlaced || elementColour(el) === undefined
+  const color = colorPlaced || elementColor(el) === undefined
     ? undefined
-    : colourRow(el.kind === "shape" ? "Fill colour" : el.kind === "text" && textUsesParts(el.payload) ? "Layer colour" : "Colour");
+    : colorRow(el.kind === "shape" ? "Fill color" : el.kind === "text" && textUsesParts(el.payload) ? "Layer color" : "Color");
 
-  // Which of the two colours a tinted Home Screen paints this layer in. Only on
+  // Which of the two colors a tinted Home Screen paints this layer in. Only on
   // a document that has a Home Screen shape, and never on a tap area, which
   // draws nothing to paint.
   const accent = el.kind !== "tap" && host.config.supportedFamilies.some(isHomeFamily)
@@ -7561,9 +7561,9 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           // Parts going with the reset leave no part for a state to aim at.
           if (e.kind === "text") dropPartIds(e.payload.rules);
         }, "reset-content") } : {}) })}
-    ${look === undefined && colour === undefined && accent === undefined && el.kind === "tap" ? nothing
+    ${look === undefined && color === undefined && accent === undefined && el.kind === "tap" ? nothing
       : card(host, "look", el.kind === "image" ? "Picture" : "Look",
-        html`${look ?? nothing}${colour ?? nothing}${accent ?? nothing}${el.kind === "tap" ? nothing : layerLookFields(el, upd)}`,
+        html`${look ?? nothing}${color ?? nothing}${accent ?? nothing}${el.kind === "tap" ? nothing : layerLookFields(el, upd)}`,
         { color: SECTION_COLOR.look, icon: el.kind === "image" ? "image" : "look", ...(lookSummary(el) ? { summary: lookSummary(el)! } : {}),
           ...(lookChanged ? { reset: () => host.update((c) => {
             const target = elementIn(c, id);
@@ -7643,7 +7643,7 @@ function ownedExtrasCard(host: EditorHost, el: Extract<CElement, { kind: "timeli
       </div>
     </div>
     <div class="hint">${timeline
-      ? "Adds the clock times of this timeline's span as their own layer in its group, so you can drag them anywhere and give them any size or colour."
+      ? "Adds the clock times of this timeline's span as their own layer in its group, so you can drag them anywhere and give them any size or color."
       : "Adds the time the picture was fetched as its own layer in its group, so you can drag it anywhere, inside the picture or beside it."}</div>
     ${on ? html`
       ${layerRowList(host, rows, {
@@ -7713,7 +7713,7 @@ function layerLookFields(
       if (v) e.payload.shadow = { ...SHADOW_DEFAULT }; else delete e.payload.shadow;
     }, "shadow-on"), false)}
     ${shadow === undefined ? nothing : html`
-      ${colorField("Shadow colour", shadow.colorHex, (v) => setShadow((s) => { s.colorHex = v ?? SHADOW_DEFAULT_HEX; }, "shcol"),
+      ${colorField("Shadow color", shadow.colorHex, (v) => setShadow((s) => { s.colorHex = v ?? SHADOW_DEFAULT_HEX; }, "shcol"),
         false, SHADOW_DEFAULT_HEX)}
       ${sliderField("Blur", shadow.radius, (v) => setShadow((s) => { s.radius = clampShadowRadius(v); }, "shrad"),
         { min: 0, max: SHADOW_MAX_RADIUS, step: 0.5, def: SHADOW_DEFAULT.radius, unit: "pt" })}
@@ -7723,7 +7723,7 @@ function layerLookFields(
         ${numberField("Offset Y", shadow.dy, (v) => setShadow((s) => { s.dy = clampShadowOffset(v ?? 0); }, "shdy"),
           { step: 0.5, min: -SHADOW_MAX_OFFSET, max: SHADOW_MAX_OFFSET, def: SHADOW_DEFAULT.dy, unit: "pt" })}
       </div>
-      <div class="hint">Both offsets at zero makes a glow. On a tinted face the shadow takes the tint, like every other colour.</div>
+      <div class="hint">Both offsets at zero makes a glow. On a tinted face the shadow takes the tint, like every other color.</div>
       ${smallGlow ? html`<div class="hint warn">A glow under text this small reads as a smudge on the watch.</div>` : nothing}`}
     </div>`;
 }
@@ -7731,15 +7731,15 @@ function layerLookFields(
 /**
  * The Look card's accent-group row, for a document that has a Home Screen shape.
  *
- * A tinted Home Screen paints the whole tile in one colour and gives an
+ * A tinted Home Screen paints the whole tile in one color and gives an
  * accentable layer the lighter of the two, which is the only way to keep a layer
- * apart from the rest there. It changes nothing in full colour, and on the watch
+ * apart from the rest there. It changes nothing in full color, and on the watch
  * it only ever adds a layer to a group most kinds are in already, so the row
  * says what it is for rather than pretending to be a general setting.
  */
 function accentGroupRow(value: AccentGroup, set: (v: AccentGroup) => void): TemplateResult {
   return html`${segField("Tinted group", value, [["primary", "Default"], ["accent", "Accent"]], (v) => set(v), { def: "primary" })}
-    <div class="hint">On a tinted Home Screen the accent group takes the lighter of the two colours. Full colour is unchanged.</div>`;
+    <div class="hint">On a tinted Home Screen the accent group takes the lighter of the two colors. Full color is unchanged.</div>`;
 }
 
 /** The payload fields the Look card owns, per kind. A chart's marks on the plot
@@ -7795,7 +7795,7 @@ function gaugeDialFields(g: GaugeElement, setGauge: (m: (p: GaugeElement) => voi
         : nothing}
     </div>
     ${ticks.count > 0 ? html`
-      ${colorField("Mark colour", ticks.colorHex, (v) => setTicks((t) => { t.colorHex = v ?? GAUGE_DEFAULT_TICK_HEX; }, "tickcol"), false, GAUGE_DEFAULT_TICK_HEX)}
+      ${colorField("Mark color", ticks.colorHex, (v) => setTicks((t) => { t.colorHex = v ?? GAUGE_DEFAULT_TICK_HEX; }, "tickcol"), false, GAUGE_DEFAULT_TICK_HEX)}
       ${numberField("Long every", ticks.majorEvery, (v) => setTicks((t) => { t.majorEvery = Math.max(0, Math.round(v ?? 0)); }, "tickmaj"),
         { step: 1, min: 0, def: 0 })}
       <div class="hint">Marks are spread across the scale. Long every 5 draws every fifth one
@@ -7808,7 +7808,7 @@ function gaugeDialFields(g: GaugeElement, setGauge: (m: (p: GaugeElement) => voi
       <div class="grid2">
         ${numberField("Text size", labels.size, (v) => setLabels((l) => { l.size = Math.max(GAUGE_MIN_LABEL_SIZE, Math.min(GAUGE_MAX_LABEL_SIZE, v ?? GAUGE_DEFAULT_LABEL_SIZE)); }, "lblsize"),
           { step: 0.5, min: GAUGE_MIN_LABEL_SIZE, max: GAUGE_MAX_LABEL_SIZE, def: GAUGE_DEFAULT_LABEL_SIZE, unit: "pt" })}
-        ${colorField("Text colour", labels.colorHex, (v) => setLabels((l) => { l.colorHex = v ?? GAUGE_DEFAULT_LABEL_HEX; }, "lblcol"), false, GAUGE_DEFAULT_LABEL_HEX)}
+        ${colorField("Text color", labels.colorHex, (v) => setLabels((l) => { l.colorHex = v ?? GAUGE_DEFAULT_LABEL_HEX; }, "lblcol"), false, GAUGE_DEFAULT_LABEL_HEX)}
       </div>
       <div class="hint">Min and max at the two ends of the scale${g.style === "needle" ? ", and the reading itself under the pointer" : ""}.</div>`
       : nothing}
@@ -7947,7 +7947,7 @@ function chartNumbersSummary(host: EditorHost, el: Extract<CElement, { kind: "ch
  * What a chart carries besides the plot: the text layers that print one of its
  * readings, the layers pinned over one of them, and the buttons that add either.
  *
- * Both are ordinary layers in the chart's group, dragged, sized, coloured and
+ * Both are ordinary layers in the chart's group, dragged, sized, colored and
  * given states like any other; this card only lists them and hands the selection
  * over. That is the whole design: a number is a text layer with a `chartStat`
  * value, a marker is any layer with a `chartAnchor`, and neither is a setting on
@@ -8054,7 +8054,7 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
         label: (what) => `Delete this ${what}`,
         run: (layerId) => host.update((c) => removeElement(c, layerId)),
       })}
-      <div class="hint">Click a row to set its value, colour and size here. More settings selects that layer.
+      <div class="hint">Click a row to set its value, color and size here. More settings selects that layer.
         On the preview, click right on a dot to pick the dots.</div>`}`;
 }
 
@@ -8164,7 +8164,7 @@ function layerRowList(
 
 /**
  * The few settings of a layer that people change most, shown when its row in
- * another layer's inspector is opened: what it shows, how big, what colour. The
+ * another layer's inspector is opened: what it shows, how big, what color. The
  * layer's own editor keeps everything else, one click away.
  */
 function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
@@ -8176,11 +8176,11 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
     if (target) m(target);
   }, `${key}-${k}`);
   const base = newElement(el.kind).payload as unknown as Record<string, unknown>;
-  const ownColour = elementColour(el);
-  const colour = ownColour === undefined ? nothing
-    : colorField("Colour", ownColour, (v) => upd((e) => {
-        if (elementColour(e) !== undefined) (e.payload as { colorSlot: { baseColorHex: string } }).colorSlot.baseColorHex = v ?? "#FFFFFF";
-      }, "colour"), false, (base.colorSlot as { baseColorHex: string } | undefined)?.baseColorHex ?? "#FFFFFF");
+  const ownColor = elementColor(el);
+  const color = ownColor === undefined ? nothing
+    : colorField("Color", ownColor, (v) => upd((e) => {
+        if (elementColor(e) !== undefined) (e.payload as { colorSlot: { baseColorHex: string } }).colorSlot.baseColorHex = v ?? "#FFFFFF";
+      }, "color"), false, (base.colorSlot as { baseColorHex: string } | undefined)?.baseColorHex ?? "#FFFFFF");
   const anchor = el.payload.chartAnchor;
 
   switch (el.kind) {
@@ -8200,7 +8200,7 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
         ${anchor && anchor.place !== "through" ? markerReadingFields(host, id, anchor, upd) : nothing}
         <div class="grid2">
           ${shapeSizeField(host, el, family, "Font size", { step: 1, min: 4, def: base.fontSize as number })}
-          ${el.payload.countdown || textUsesParts(el.payload) ? nothing : colour}
+          ${el.payload.countdown || textUsesParts(el.payload) ? nothing : color}
         </div>`;
     }
     case "icon":
@@ -8222,7 +8222,7 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
           })}
         <div class="grid2">
           ${shapeSizeField(host, el, family, "Icon size", { step: 1, min: 4, def: base.size as number })}
-          ${colour}
+          ${color}
         </div>`;
     case "shape":
       if (el.payload.kind !== "line") {
@@ -8233,7 +8233,7 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
                   if (e.kind === "shape") e.payload.cornerRadius = v ?? 6;
                 }, "radius"), { step: 0.5, min: 0, def: base.cornerRadius as number, unit: "pt" })
               : nothing}
-            ${colour}
+            ${color}
           </div>`;
       }
       return html`
@@ -8242,7 +8242,7 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
           ${numberField("Thickness", el.payload.thickness, (v) => upd((e) => {
             if (e.kind === "shape") e.payload.thickness = v ?? 1;
           }, "thick"), { step: 0.5, min: 0.5, def: base.thickness as number, unit: "pt" })}
-          ${colour}
+          ${color}
         </div>`;
     case "gauge": {
       const g = el.payload;
@@ -8251,7 +8251,7 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
           { showResolved: true, label: "Reading", key: `${key}-value` })}
         <div class="grid2">
           ${g.style === "dots" ? nothing : shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5, def: base.lineWidth as number })}
-          ${colour}
+          ${color}
         </div>`;
     }
     case "chart": {
@@ -8263,7 +8263,7 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
           { def: base.style as typeof c.style })}
         <div class="grid2">
           ${c.style === "bars" ? nothing : shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5, def: base.lineWidth as number })}
-          ${colour}
+          ${color}
         </div>`;
     }
     case "timeline":
@@ -8291,9 +8291,9 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
           ${numberField("Time size", t.labelSize, (v) => upd((e) => {
             if (e.kind === "chartTimes") e.payload.labelSize = Math.min(TIMELINE_MAX_LABEL_SIZE, Math.max(TIMELINE_MIN_LABEL_SIZE, v ?? TIMELINE_DEFAULT_LABEL_SIZE));
           }, "size"), { step: 0.5, min: TIMELINE_MIN_LABEL_SIZE, max: TIMELINE_MAX_LABEL_SIZE, def: base.labelSize as number, unit: "pt" })}
-          ${colorField("Time colour", t.labelColorHex, (v) => upd((e) => {
+          ${colorField("Time color", t.labelColorHex, (v) => upd((e) => {
             if (e.kind === "chartTimes") e.payload.labelColorHex = v ?? TIMELINE_DEFAULT_LABEL_HEX;
-          }, "colour"), false, base.labelColorHex as string)}
+          }, "color"), false, base.labelColorHex as string)}
         </div>`;
     }
     case "imageTime":
@@ -8312,10 +8312,10 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
             if (size === undefined || size === autoSize) delete e.payload.size;
             else e.payload.size = size;
           }, "size"), { step: 0.5, min: 1, max: 12, ...(autoSize === undefined ? {} : { def: autoSize }), unit: "pt" })}
-          ${fallbackColorField("Dot colour", d.colorHex, "Series colour", (v) => upd((e) => {
+          ${fallbackColorField("Dot color", d.colorHex, "Series color", (v) => upd((e) => {
             if (e.kind !== "chartDots") return;
             if (v === undefined) delete e.payload.colorHex; else e.payload.colorHex = v;
-          }, "colour"))}
+          }, "color"))}
         </div>`;
     }
     case "chartGrid": {
@@ -8329,12 +8329,12 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
             if (e.kind === "chartGrid") e.payload.thickness = chartGridThickness(v ?? CHART_GRID_LINE_WIDTH);
           }, "thick"), { step: 0.25, min: CHART_MIN_GRID_THICKNESS, max: CHART_MAX_GRID_THICKNESS, def: CHART_GRID_LINE_WIDTH, unit: "pt" })}
         </div>
-        ${colorField("Colour", g.colorHex, (v) => upd((e) => {
+        ${colorField("Color", g.colorHex, (v) => upd((e) => {
           if (e.kind === "chartGrid") e.payload.colorHex = v ?? CHART_DEFAULT_GRID_HEX;
-        }, "colour"), false, CHART_DEFAULT_GRID_HEX)}`;
+        }, "color"), false, CHART_DEFAULT_GRID_HEX)}`;
     }
     default:
-      return html`${colour}`;
+      return html`${color}`;
   }
 }
 
@@ -8528,7 +8528,7 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
     ${card(host, "look", `${familyTitle(family)} shape`, html`
       ${home ? nothing : html`${background}${backgroundGradient}`}
       <div class="fgroup">
-      ${colorField("Border colour", layout.borderColorHex, (v) => upd((l) => { if (v === undefined) delete l.borderColorHex; else l.borderColorHex = v; }, "border"), true, null)}
+      ${colorField("Border color", layout.borderColorHex, (v) => upd((l) => { if (v === undefined) delete l.borderColorHex; else l.borderColorHex = v; }, "border"), true, null)}
       ${numberField("Border width", layout.borderWidth, (v) => upd((l) => { l.borderWidth = v ?? 2; }, "bw"), { step: 0.5, min: 0, def: 2, unit: "pt" })}
       </div>`,
       { color: SECTION_COLOR.look, icon: "shape", summary: `${bg} · ${border}`,
@@ -8537,8 +8537,8 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
     ${home ? card(host, "home", "Home Screen", html`
       ${background}
       ${backgroundGradient}
-      <div class="hint">The tile is drawn edge to edge: this colour fills every point of it, and the design is laid out inside the ${familyTitle(family)} box.</div>
-      <div class="hint keep">iOS 18 lets a user tint the whole Home Screen. The system then drops the background and draws the design in two tones, so check that it still reads without its colours.</div>
+      <div class="hint">The tile is drawn edge to edge: this color fills every point of it, and the design is laid out inside the ${familyTitle(family)} box.</div>
+      <div class="hint keep">iOS 18 lets a user tint the whole Home Screen. The system then drops the background and draws the design in two tones, so check that it still reads without its colors.</div>
       ${familyNote(family) ? html`<div class="hint keep">${familyTitle(family)} needs ${familyNote(family)}. An iPhone on an older version is not offered this size when adding a widget, and every other size still draws.</div>` : nothing}`,
       { color: SECTION_COLOR.look, icon: "shape", summary: bg,
         ...(layout.backgroundColorHex !== undefined || layout.backgroundFill !== undefined
@@ -8599,7 +8599,7 @@ function cornerEditor(
     }))}
     ${mode === "curved" && layout.curvedText ? html`
       ${valueEditor(host, layout.curvedText, (val) => upd((l) => { l.curvedText = val; }, "curved"), { showResolved: true, label: "Curved text", key: "fam-corner-curved" })}
-      ${colorField("Curved text colour", layout.curvedColorHex ?? "#FFFFFF", (v) => upd((l) => { if (v === undefined) delete l.curvedColorHex; else l.curvedColorHex = v; }, "curvedcolor"))}
+      ${colorField("Curved text color", layout.curvedColorHex ?? "#FFFFFF", (v) => upd((l) => { if (v === undefined) delete l.curvedColorHex; else l.curvedColorHex = v; }, "curvedcolor"))}
       <div class="hint">Curved text replaces the layer canvas in the corner. The watch draws it big along the corner curve, like the stock Calendar and Weather corners.</div>
     ` : nothing}
     </div>
@@ -8639,9 +8639,9 @@ function bezelGaugeEditor(
       ${numberField("Gauge min", g.minValue, (v) => upd((l) => { l.bezelGauge!.minValue = v ?? 0; }, "gmin"), { step: 1 })}
       ${numberField("Gauge max", g.maxValue, (v) => upd((l) => { l.bezelGauge!.maxValue = v ?? 100; }, "gmax"), { step: 1 })}
     </div>
-    ${colorField("Arc colour (min end)", stops[0], setStop(0))}
-    ${colorField("Arc colour (middle)", stops[1], setStop(1))}
-    ${colorField("Arc colour (max end)", stops[2], setStop(2))}
+    ${colorField("Arc color (min end)", stops[0], setStop(0))}
+    ${colorField("Arc color (middle)", stops[1], setStop(1))}
+    ${colorField("Arc color (max end)", stops[2], setStop(2))}
     ${checkField("End labels",!!(g.minLabel || g.maxLabel), (v) => upd((l) => {
       const gauge = l.bezelGauge!;
       if (v) { gauge.minLabel = literal(String(gauge.minValue)); gauge.maxLabel = literal(String(gauge.maxValue)); }
@@ -8660,11 +8660,11 @@ export type { Comparison };
 // comparison into "below 20", so the two wordings cannot drift apart.
 
 const CHANGE_LABELS: Record<StyleChangeKind, string> = {
-  setColor: "Set colour", setOpacity: "Set opacity", setText: "Set text", setIcon: "Set icon",
+  setColor: "Set color", setOpacity: "Set opacity", setText: "Set text", setIcon: "Set icon",
   setFontSize: "Set size", setFontWeight: "Set weight",
   setFontDesign: "Set typeface", setFontWidth: "Set width", setItalic: "Set italic", setRotation: "Set rotation",
   hide: "Hide", show: "Show", setGaugeValue: "Set gauge value", setGaugeMin: "Set gauge min", setGaugeMax: "Set gauge max",
-  setBorderColor: "Set border colour", setBorderWidth: "Set border width", setBackgroundColor: "Set background colour",
+  setBorderColor: "Set border color", setBorderWidth: "Set border width", setBackgroundColor: "Set background color",
 };
 
 const CHANGE_KINDS = Object.keys(CHANGE_LABELS) as StyleChangeKind[];
@@ -8996,12 +8996,12 @@ function changeEditor(host: EditorHost, ch: StyleChange, i: number, target: Rule
       <span class="spacer"></span>
       <button class="icon danger" title="Delete change" @click=${remove}>${uiIcon("delete")}</button>
     </div>
-    ${partIgnores ? html`<div class="hint keep">A part only takes colour, text, size, weight, hide and show. Pick Whole text to use this change.</div>` : nothing}
+    ${partIgnores ? html`<div class="hint keep">A part only takes color, text, size, weight, hide and show. Pick Whole text to use this change.</div>` : nothing}
     ${changeBody(host, ch, upd, key)}
   </div>`;
 }
 
-/** The controls behind one style change: a colour, a symbol, a value, a number
+/** The controls behind one style change: a color, a symbol, a value, a number
  * or a weight. Shared by the Advanced editor's change box and by a states
  * table cell, so the two can never offer different things. */
 function changeBody(host: EditorHost, ch: StyleChange, upd: (m: (c: StyleChange) => void, k?: string) => void, key: string): TemplateResult | typeof nothing {
@@ -9012,10 +9012,10 @@ function changeBody(host: EditorHost, ch: StyleChange, upd: (m: (c: StyleChange)
     if (COLOR_KINDS.includes(ch.kind)) {
       const fixed = v.kind.kind === "literal";
       body = html`${fixed
-        ? colorField("Colour", v.kind.kind === "literal" ? v.kind.value : "", (hex) => upd((c) => { c.value = literal(hex ?? "#FFFFFF"); }, "color"))
-        : valueEditor(host, v, (nv) => upd((c) => { c.value = nv; }, "value"), { noFormat: true, showResolved: true, label: "Colour from", key: `${key}-value` })}
-        <button class="link" @click=${() => upd((c) => { c.value = fixed ? { kind: { kind: "entityAttribute", entityId: "", displayName: "", domain: "", attribute: "rgb_color" } } : literal("#FFFFFF"); })}>${fixed ? "Read the colour from a value instead" : "Use a fixed colour instead"}</button>
-        ${fixed ? nothing : html`<div class="hint">The value must resolve to a hex colour such as <code>#FF9F0A</code>. Empty or invalid results leave the colour unchanged.</div>`}`;
+        ? colorField("Color", v.kind.kind === "literal" ? v.kind.value : "", (hex) => upd((c) => { c.value = literal(hex ?? "#FFFFFF"); }, "color"))
+        : valueEditor(host, v, (nv) => upd((c) => { c.value = nv; }, "value"), { noFormat: true, showResolved: true, label: "Color from", key: `${key}-value` })}
+        <button class="link" @click=${() => upd((c) => { c.value = fixed ? { kind: { kind: "entityAttribute", entityId: "", displayName: "", domain: "", attribute: "rgb_color" } } : literal("#FFFFFF"); })}>${fixed ? "Read the color from a value instead" : "Use a fixed color instead"}</button>
+        ${fixed ? nothing : html`<div class="hint">The value must resolve to a hex color such as <code>#FF9F0A</code>. Empty or invalid results leave the color unchanged.</div>`}`;
     } else {
       body = valueEditor(host, v, (nv) => upd((c) => { c.value = nv; }, "value"), { noFormat: ch.kind === "setIcon", symbol: ch.kind === "setIcon", showResolved: true, label: ch.kind === "setIcon" ? "Symbol" : "To", key: `${key}-value` });
     }
@@ -9077,9 +9077,9 @@ const pendingTestValues = new Map<string, Value>();
  * `parts` is a rich text layer's parts: with them, each rule says whether it
  * changes the whole text or one part.
  */
-/** Whether a layer's colour already follows its value through a band table
+/** Whether a layer's color already follows its value through a band table
  * (a chart's, a gauge's or a text's "By value"). The resolver lets that band
- * win over a Colour rule, so a States table on such a layer has no Colour
+ * win over a Color rule, so a States table on such a layer has no Color
  * column to offer: setting one would draw nothing. */
 export function colorsByValue(el: CElement): boolean {
   const p = el.payload as { coloring?: string; bands?: unknown[] };
@@ -9087,7 +9087,7 @@ export function colorsByValue(el: CElement): boolean {
 }
 
 export interface StatesEditorOptions {
-  /** The layer's colour follows its own band table, so Colour is not offered
+  /** The layer's color follows its own band table, so Color is not offered
    * as a column and one already in the table is flagged as drawing nothing. */
   colorByValue?: boolean;
 }
@@ -9140,7 +9140,7 @@ function statesTable(
   const numberMode = table.numberMode
     || (fresh && tested !== undefined && !looksBinary(tested) && isNumberish(host.resolve(tested)));
 
-  // A layer whose colour follows its own bands reads no Colour rule, so the
+  // A layer whose color follows its own bands reads no Color rule, so the
   // column is not offered, and a fresh table starts on the next useful one.
   const colorByValue = options.colorByValue === true;
   const allowed = RULE_TARGET_PROPERTIES[target];
@@ -9159,7 +9159,7 @@ function statesTable(
   const offered = (forPart ? allowed.filter((p) => PART_RULE_PROPERTIES.includes(p)) : allowed)
     .filter((p) => !(colorByValue && p === "color"));
   const partIgnores = forPart ? columns.filter((p) => !PART_RULE_PROPERTIES.includes(p)) : [];
-  // A new row or Otherwise starts with a colour when the table shows Colour,
+  // A new row or Otherwise starts with a color when the table shows Color,
   // so the first thing on screen is a working rule rather than empty cells.
   const seedColor = columns.includes("color") && !colorIgnored;
   const setPart = (id: string, node: EventTarget | null) => {
@@ -9238,8 +9238,8 @@ function statesTable(
   const spare = COLUMN_PICKER_ORDER.filter((p) => offered.includes(p) && !columns.includes(p));
 
   // Fill from the entity: one row per state the domain is known to report, with
-  // an icon and a colour (`states-seeds.ts`). Only the cells this kind of layer
-  // reads are written, so a shape gets colours and no icons.
+  // an icon and a color (`states-seeds.ts`). Only the cells this kind of layer
+  // reads are written, so a shape gets colors and no icons.
   const seedEntity = seedEntityOf(tested);
   const seedCells = { icon: offered.includes("icon"), color: offered.includes("color") };
   const seeds = seedEntity && (seedCells.icon || seedCells.color)
@@ -9283,7 +9283,7 @@ function statesTable(
         </tbody>
       </table></div>
       ${partIgnores.length === 0 ? nothing : html`<div class="hint warn">A part ignores ${joinWords(partIgnores.map((p) => PROPERTY_LABELS[p]))}. Pick Whole text to use ${partIgnores.length === 1 ? "it" : "them"}.</div>`}
-      ${!colorIgnored ? nothing : html`<div class="hint warn">Colour is set by value above, so the Colour column here draws nothing. Switch Colour to One colour to use it, or remove the column.</div>`}
+      ${!colorIgnored ? nothing : html`<div class="hint warn">Color is set by value above, so the Color column here draws nothing. Switch Color to One color to use it, or remove the column.</div>`}
       ${pendingRemoval === undefined ? nothing : html`<div class="hint warn confirm-row">
         Remove the ${PROPERTY_LABELS[pendingRemoval]} column? Its ${countColumnUses(table, pendingRemoval)} value${countColumnUses(table, pendingRemoval) === 1 ? "" : "s"} are deleted from every state.
         <button class="danger small" @click=${(e: Event) => {
@@ -9301,7 +9301,7 @@ function statesTable(
       </div>`}
       <div class="states-add">
         <button class="small" title="Add a row: when the value matches, this ${target === "layout" ? "shape" : "layer"} changes how it looks" @click=${addRow}>${uiIcon("plus")}<span>Add a state</span></button>
-        ${seeds.length === 0 ? nothing : html`<button class="small" title=${`Write one row per state a ${seedEntity!.domain.replace(/_/g, " ")} reports, each with an icon and a colour, ready to edit`}
+        ${seeds.length === 0 ? nothing : html`<button class="small" title=${`Write one row per state a ${seedEntity!.domain.replace(/_/g, " ")} reports, each with an icon and a color, ready to edit`}
           @click=${(e: Event) => {
             if (hasRows) { pendingStatesFill.add(key); requestRerender(e.target); return; }
             fill();
@@ -9454,7 +9454,7 @@ function statesCell(
     </div>`;
 }
 
-/** What an empty cell shows: the outline of what it would set. A colour cell
+/** What an empty cell shows: the outline of what it would set. A color cell
  * is an empty swatch, an icon cell a faint star, and everything else a short
  * dashed box, so a column of empty cells reads as "nothing here" at a glance. */
 function emptyCellGhost(property: StyleProperty): TemplateResult {
@@ -9464,7 +9464,7 @@ function emptyCellGhost(property: StyleProperty): TemplateResult {
   return html`<span class="ghost-box"></span>`;
 }
 
-/** What a filled cell shows: a colour swatch, a symbol and its name, or the
+/** What a filled cell shows: a color swatch, a symbol and its name, or the
  * value in words. Short enough that a row still reads as one line. */
 function cellSummary(host: EditorHost, ch: StyleChange): TemplateResult {
   if (ch.kind === "hide") return html`<span class="cell-word">Hidden</span>`;
@@ -9488,8 +9488,8 @@ function cellSummary(host: EditorHost, ch: StyleChange): TemplateResult {
   return html`<span class="cell-word">${describeValue(v, describeContext(host))}</span>`;
 }
 
-/** A hex colour as something a person can read back. Names are the closest of
- * the Apple system colours the rest of the editor already offers; anything
+/** A hex color as something a person can read back. Names are the closest of
+ * the Apple system colors the rest of the editor already offers; anything
  * else keeps its hex. */
 export function colorWords(hex: string): string {
   const named: Record<string, string> = {

@@ -1,5 +1,5 @@
 // The state timeline layer: the series string it reads, the runs it cuts that
-// into, how a run finds its colour, and the bytes it writes back.
+// into, how a run finds its color, and the bytes it writes back.
 //
 // The parsing and merging here are ports of the Swift in the app repo
 // (`timelineSamples` and `timelineRuns` in `CustomComplicationRendering.swift`),
@@ -138,7 +138,7 @@ describe("the series string", () => {
   });
 
   it("caps a resolved layer at 120 runs' worth of samples too", () => {
-    // Every sample is its own colour here, so nothing merges and the cap is the
+    // Every sample is its own color here, so nothing merges and the cap is the
     // only thing that can hold the run count down.
     const pairs = Array.from({ length: 200 }, (_, i) => `${i * 10}:s${i}`).join(" ");
     const runs = runsOf(pairs, (p) => {
@@ -149,17 +149,17 @@ describe("the series string", () => {
         colorHex: i % 2 === 0 ? "#111111" : "#222222",
       }));
     });
-    // 120 samples alternating between two colours is 120 runs, none of them
+    // 120 samples alternating between two colors is 120 runs, none of them
     // mergeable with its neighbour.
     expect(runs).toHaveLength(TIMELINE_HISTORY_POINTS);
   });
 });
 
 describe("cutting samples into runs", () => {
-  const colours = (state: string) => (state === "on" ? "#FF0000" : state === "off" ? "#00FF00" : "#0000FF");
+  const colors = (state: string) => (state === "on" ? "#FF0000" : state === "off" ? "#00FF00" : "#0000FF");
 
   it("runs each sample up to the next one and the last one to the edge", () => {
-    const runs = timelineRuns(timelineSamples("0:off 30:on 60:off"), 120, colours);
+    const runs = timelineRuns(timelineSamples("0:off 30:on 60:off"), 120, colors);
     expect(runs).toEqual([
       { start: 0, end: 0.25, colorHex: "#00FF00" },
       { start: 0.25, end: 0.5, colorHex: "#FF0000" },
@@ -167,10 +167,10 @@ describe("cutting samples into runs", () => {
     ]);
   });
 
-  it("merges neighbours that draw the same colour", () => {
-    // "unavailable" and "unknown" are different states and the same colour, so
+  it("merges neighbours that draw the same color", () => {
+    // "unavailable" and "unknown" are different states and the same color, so
     // the strip shows one grey stretch rather than two touching ones.
-    const runs = timelineRuns(timelineSamples("0:on 25:unavailable 50:unknown 75:on"), 100, colours);
+    const runs = timelineRuns(timelineSamples("0:on 25:unavailable 50:unknown 75:on"), 100, colors);
     expect(runs).toEqual([
       { start: 0, end: 0.25, colorHex: "#FF0000" },
       { start: 0.25, end: 0.75, colorHex: "#0000FF" },
@@ -179,24 +179,24 @@ describe("cutting samples into runs", () => {
   });
 
   it("starts part way across when nothing was in force at the span's start", () => {
-    const runs = timelineRuns(timelineSamples("50:on"), 100, colours);
+    const runs = timelineRuns(timelineSamples("50:on"), 100, colors);
     expect(runs).toEqual([{ start: 0.5, end: 1, colorHex: "#FF0000" }]);
   });
 
   it("always ends at the right edge, whatever the last offset says", () => {
-    const runs = timelineRuns(timelineSamples("0:on 90:off"), 100, colours);
+    const runs = timelineRuns(timelineSamples("0:on 90:off"), 100, colors);
     expect(runs[runs.length - 1]!.end).toBe(1);
   });
 
   it("pulls an offset past the span back onto the strip", () => {
-    const runs = timelineRuns(timelineSamples("0:on 500:off"), 100, colours);
+    const runs = timelineRuns(timelineSamples("0:on 500:off"), 100, colors);
     expect(runs).toEqual([{ start: 0, end: 1, colorHex: "#FF0000" }]);
   });
 
   it("drops a pair that repeats the offset before it", () => {
     // The `off` at 40 lasts no time at all, so it draws nothing and the two
     // stretches of `on` around it become one run.
-    const runs = timelineRuns(timelineSamples("0:on 40:off 40:on 80:off"), 100, colours);
+    const runs = timelineRuns(timelineSamples("0:on 40:off 40:on 80:off"), 100, colors);
     expect(runs).toEqual([
       { start: 0, end: 0.8, colorHex: "#FF0000" },
       { start: 0.8, end: 1, colorHex: "#00FF00" },
@@ -204,12 +204,12 @@ describe("cutting samples into runs", () => {
   });
 
   it("draws nothing from an empty series or a span of no time", () => {
-    expect(timelineRuns([], 100, colours)).toEqual([]);
-    expect(timelineRuns(timelineSamples("0:on"), 0, colours)).toEqual([]);
+    expect(timelineRuns([], 100, colors)).toEqual([]);
+    expect(timelineRuns(timelineSamples("0:on"), 0, colors)).toEqual([]);
   });
 });
 
-describe("matching a state to a colour", () => {
+describe("matching a state to a color", () => {
   const bands = [
     { id: "B1", match: "ON", colorHex: "#FF453A" },
     { id: "B2", match: " off ", colorHex: "#32D74B" },
@@ -225,11 +225,11 @@ describe("matching a state to a colour", () => {
     expect(timelineBandColor("On", bands, "#111111")).toBe("#FF453A");
   });
 
-  it("falls through to the otherwise colour", () => {
+  it("falls through to the otherwise color", () => {
     expect(timelineBandColor("unavailable", bands, "#111111")).toBe("#111111");
   });
 
-  it("colours every run one way when the table is empty", () => {
+  it("colors every run one way when the table is empty", () => {
     const runs = runsOf("0:on 1800:off", (p) => { p.bands = []; p.otherColorHex = TIMELINE_DEFAULT_OTHER_HEX; });
     expect(runs).toEqual([{ start: 0, end: 1, colorHex: TIMELINE_DEFAULT_OTHER_HEX }]);
   });
@@ -284,7 +284,7 @@ describe("the wire format", () => {
   it("writes nothing it does not have to", () => {
     const cfg = newConfig("Timeline", 0);
     // A fresh layer starts away from three wire defaults on purpose (black for
-    // the unnamed colour, 2 pt corners, four clock times), so those three are
+    // the unnamed color, 2 pt corners, four clock times), so those three are
     // written; set them back to the wire defaults and nothing but the value
     // should remain.
     cfg.elements.push(timelineElement((p) => {
@@ -526,7 +526,7 @@ describe("the wire format", () => {
   });
 });
 
-describe("seeded colour tables", () => {
+describe("seeded color tables", () => {
   it("names the two states a switch actually reports", () => {
     expect(seedTimelineBands("switch").map((b) => b.match)).toEqual(["on", "off", "unavailable", "unknown"]);
   });
@@ -719,7 +719,7 @@ describe("drawing the strip", () => {
     flatten(renderLayout(timelineLayout(series, tweak), { icons: noIcons }));
 
   /** The run rectangles, in draw order. The layer's own invisible hit box has
-   * no radius and no colour, which is what tells the two apart. */
+   * no radius and no color, which is what tells the two apart. */
   const runRects = (svg: string) =>
     [...svg.matchAll(/<rect x=([-\d.]+) y=[-\d.]+ width=([\d.]+) height=[\d.]+ rx=[\d.]+\s+fill=(#[0-9A-Fa-f]{6})/g)]
       .map((m) => ({ x: Number(m[1]), width: Number(m[2]), colorHex: m[3]! }));

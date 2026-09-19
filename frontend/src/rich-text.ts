@@ -20,9 +20,9 @@ import {
 } from "./model.js";
 import { expression } from "./compiler.js";
 
-/** The layer's own colour by value. Rich text ignores it, so it is cleared
+/** The layer's own color by value. Rich text ignores it, so it is cleared
  * whenever parts come or go rather than left to come back to life unseen. */
-function clearLayerValueColours(el: TextElement): void {
+function clearLayerValueColors(el: TextElement): void {
   delete el.coloring;
   delete el.bands;
   delete el.bandAboveColorHex;
@@ -41,8 +41,8 @@ export function dropPartIds(rules: Rule[]): void {
  * Turn rich text on: the layer's value becomes its only part, and returns that
  * part's id so the editor can select it.
  *
- * A band table in use moves onto the part, because the layer's own colour by
- * value stops applying and the numbers should keep their colours. A highlight
+ * A band table in use moves onto the part, because the layer's own color by
+ * value stops applying and the numbers should keep their colors. A highlight
  * has no part equivalent and goes. A layer that already has parts is left as
  * it is, and the first part's id comes back.
  */
@@ -56,7 +56,7 @@ export function turnOnRichText(el: TextElement, id: string = newId()): string {
       part.bandAboveColorHex = el.bandAboveColorHex;
     }
   }
-  clearLayerValueColours(el);
+  clearLayerValueColors(el);
   el.parts = [part];
   el.value = richTextFallback(el.parts);
   return id;
@@ -87,7 +87,7 @@ export type RichTextOff =
 /**
  * Turn rich text off.
  *
- * One part: its value becomes the layer's, and its own size, weight, colour and
+ * One part: its value becomes the layer's, and its own size, weight, color and
  * band table move onto the layer, so the text looks the same. Two or more: the
  * parts join into one value (`joinTextParts`) and their styles go; when a part
  * blocks the join nothing changes and the blocking parts come back. Either way
@@ -117,7 +117,7 @@ export function turnOffRichText(el: TextElement, namedValues: readonly NamedValu
       el.colorSlot.baseColorHex = part.colorHex;
       moved.push("color");
     }
-    clearLayerValueColours(el);
+    clearLayerValueColors(el);
     if (part.coloring !== undefined && part.coloring !== "uniform") el.coloring = part.coloring;
     if (part.bands !== undefined && part.bands.length > 0) el.bands = part.bands;
     if (part.bandAboveColorHex !== undefined) el.bandAboveColorHex = part.bandAboveColorHex;
@@ -129,7 +129,7 @@ export function turnOffRichText(el: TextElement, namedValues: readonly NamedValu
   const joined = joinTextParts(parts, namedValues);
   if (!joined.ok) return joined;
   el.value = joined.value;
-  clearLayerValueColours(el);
+  clearLayerValueColors(el);
   delete el.parts;
   dropPartIds(el.rules);
   return { ok: true, joined: true };

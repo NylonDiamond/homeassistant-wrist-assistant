@@ -58,9 +58,9 @@ describe("the device outline", () => {
     expect(art).toContain(`aria-hidden="true"`);
   });
 
-  // Two colours in one drawing: the shape follows the button (accent on a card
+  // Two colors in one drawing: the shape follows the button (accent on a card
   // that is ticked, or still addable), the device around it does not.
-  it("paints the device in the furniture colour, not the button's own", () => {
+  it("paints the device in the furniture color, not the button's own", () => {
     for (const device of DEVICES) {
       const art = draw("rectangular", device);
       expect(art).toContain(`stroke=${OUTLINE} stroke-opacity="0.45"`);
@@ -185,8 +185,8 @@ describe("a shape the device does not draw", () => {
 });
 
 describe("controlDeviceArt", () => {
-  // The tile that is yours is drawn in the button's own colour; its three
-  // neighbours are furniture, so they take the outline's colour instead and a
+  // The tile that is yours is drawn in the button's own color; its three
+  // neighbours are furniture, so they take the outline's color instead and a
   // lit card turns one square accent rather than all four.
   it("draws four tiles with the top left one yours", () => {
     const phone = flatten(controlDeviceArt("iphone", true));

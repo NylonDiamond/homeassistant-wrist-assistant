@@ -218,7 +218,7 @@ describe("galleryPublicFields", () => {
     expect(ours).toMatch(/states\('sensor\.shared_\d+'\)/);
   });
 
-  it("catches a literal typed into a layer, and no ids or colours", () => {
+  it("catches a literal typed into a layer, and no ids or colors", () => {
     const { cfg, slots } = withText();
     const other = group(galleryPublicFields(cfg, slots), "Other text");
     expect(other).toContain("Hello Jane");

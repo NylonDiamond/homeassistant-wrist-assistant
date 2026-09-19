@@ -1,4 +1,4 @@
-// Rich text parts: a text layer drawn as a row of parts, each in its own colour,
+// Rich text parts: a text layer drawn as a row of parts, each in its own color,
 // weight, size and band table. The shared fixture (fixtures/text_parts.json)
 // pins the resolved parts on both sides; this file pins the wire shape, the
 // audit, the fallback value, the walks that must reach a part, the preview, and
@@ -161,7 +161,7 @@ describe("text parts on the wire", () => {
     }
   });
 
-  it("reads an unknown weight or colouring, an empty table and the default colour past it as absent", () => {
+  it("reads an unknown weight or coloring, an empty table and the default color past it as absent", () => {
     const enc = encodeConfig(textConfig(() => {})) as Record<string, unknown>;
     payloadOf(enc).parts = [{
       id: PART_A.toLowerCase(),
@@ -302,7 +302,7 @@ describe("text parts resolution", () => {
     expect(layout.borderWidth).toBe(5);
   });
 
-  it("honours only colour, text, size, weight and visibility in a part rule", () => {
+  it("honours only color, text, size, weight and visibility in a part rule", () => {
     const cfg = textConfig((p) => {
       p.parts = [{ id: PART_A, value: literal("A") }, { id: PART_B, value: literal("B") }];
       p.rules = [always([
@@ -317,7 +317,7 @@ describe("text parts resolution", () => {
     expect(r.parts).toHaveLength(2);
   });
 
-  it("ignores the layer's own colour by value while it draws parts", () => {
+  it("ignores the layer's own color by value while it draws parts", () => {
     const r = resolvedText(textConfig((p) => {
       p.parts = [{ id: PART_A, value: literal("12 34") }];
       p.coloring = "bands";

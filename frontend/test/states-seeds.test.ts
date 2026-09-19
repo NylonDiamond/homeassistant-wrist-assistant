@@ -42,7 +42,7 @@ describe("the states seed table", () => {
     }
   });
 
-  it("writes every colour as a plain hex", () => {
+  it("writes every color as a plain hex", () => {
     for (const domain of DOMAINS) {
       for (const seed of seedStates(domain)) {
         expect(seed.colorHex, `${domain} ${seed.state}`).toMatch(/^#[0-9A-F]{6}$/);
@@ -58,7 +58,7 @@ describe("the states seed table", () => {
     }
   });
 
-  it("keeps the timeline's colours wherever it names the same state", () => {
+  it("keeps the timeline's colors wherever it names the same state", () => {
     const cover = seedStates("cover");
     expect(cover.map((s) => s.state)).toEqual(["open", "closed", "opening", "closing", "unavailable"]);
     expect(cover[0]!.colorHex).toBe(timelineStateColor("open"));
@@ -80,7 +80,7 @@ describe("the states seed table", () => {
       .toEqual(["circle.fill", "circle", "questionmark.circle.fill"]);
   });
 
-  it("flips the colours where on is the good news", () => {
+  it("flips the colors where on is the good news", () => {
     const wifi = seedStates("binary_sensor", "connectivity");
     expect(wifi[0]!.colorHex).toBe(timelineStateColor("closed"));
     expect(wifi[1]!.colorHex).toBe(timelineStateColor("open"));
@@ -126,7 +126,7 @@ describe("the rows a fill writes", () => {
     expect(rows[rows.length - 1]!.comparison).toEqual({ kind: "isUnavailable" });
   });
 
-  it("writes an icon and a colour cell per row", () => {
+  it("writes an icon and a color cell per row", () => {
     const rows = seedStatesRows(seedStates("lock"), both);
     expect(rows[0]!.changes).toEqual([
       { kind: "setIcon", value: literal("lock.fill") },

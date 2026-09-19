@@ -13,7 +13,7 @@
 // checkboxes, so everything but the outline and the shape is left out.
 //
 // The outline is `currentColor` at low opacity and the shape is `currentColor`
-// too, so a button inherits one colour and the drawing follows its state.
+// too, so a button inherits one color and the drawing follows its state.
 
 import { type TemplateResult, html, nothing, svg } from "lit";
 
@@ -32,12 +32,12 @@ const FURNITURE = "0.25";
 const GRID = "0.2";
 
 /**
- * What colour the furniture takes.
+ * What color the furniture takes.
  *
  * A variable rather than `currentColor`, so a card can light its shape with
  * the accent without turning the device around it blue as well: the shape
- * stays on the button's own colour and the outline follows this. Nobody has to
- * set it. Where it is unset the drawing is one colour at two opacities, which
+ * stays on the button's own color and the outline follows this. Nobody has to
+ * set it. Where it is unset the drawing is one color at two opacities, which
  * is what it was before the buttons grew big enough for the difference to
  * matter.
  */
@@ -179,7 +179,7 @@ export function shapeArtKinds(family: FamilyKind): DeviceKind[] {
 // dark screen under them and a clock and an app grid for furniture. At 32x28
 // a watch face with four slots lit is a smudge.
 //
-// The colours are the panel's own tokens, so the lit shapes follow the accent
+// The colors are the panel's own tokens, so the lit shapes follow the accent
 // and both skins work. The screen stays dark in either one, the way every
 // other picture of a face in this panel does: a watch face is black.
 

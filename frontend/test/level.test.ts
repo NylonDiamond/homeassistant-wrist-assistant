@@ -1,4 +1,4 @@
-// Fill by value: an icon or a shape drawn twice, all of it in a track colour and
+// Fill by value: an icon or a shape drawn twice, all of it in a track color and
 // as much of it as the reading fills in its own.
 //
 // The resolution rules here are ports of the Swift in the app repo
@@ -106,15 +106,15 @@ describe("a level's fraction", () => {
   });
 });
 
-describe("a level's track colour", () => {
-  it("is the layer's own colour faded, unless the level names one", () => {
+describe("a level's track color", () => {
+  it("is the layer's own color faded, unless the level names one", () => {
     expect(levelOf(iconWith(defaultLevel(literal("50"))))?.trackColorHex).toBe("#FFFFFF40");
     expect(levelOf(iconWith(defaultLevel(literal("50")), "#32D74B80"))?.trackColorHex).toBe("#32D74B20");
     const named: Level = { ...defaultLevel(literal("50")), trackColorHex: "#0A84FF" };
     expect(levelOf(iconWith(named))?.trackColorHex).toBe("#0A84FF");
   });
 
-  it("follows a rule that recolours the layer, so both halves are one colour", () => {
+  it("follows a rule that recolors the layer, so both halves are one color", () => {
     const el = iconWith(defaultLevel(literal("50")));
     el.payload.rules = [{
       id: "R1",
@@ -175,7 +175,7 @@ describe("drawing a level", () => {
     ));
     // The level's own clip, not the face's.
     expect(svg).toContain("url(#lv-");
-    // Two bodies in one colour at two strengths: the track at a quarter, the
+    // Two bodies in one color at two strengths: the track at a quarter, the
     // filled part whole.
     const strengths = [...svg.matchAll(/fill=#0A84FF fill-opacity=([\d.]+)/g)].map((m) => Number(m[1]));
     expect(strengths.length).toBe(2);

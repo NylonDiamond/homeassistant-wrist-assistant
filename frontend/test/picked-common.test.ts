@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 
 import { type Element as CElement, newConfig, newElement } from "../src/model.js";
-import { elementColour, flagAcross, pickedCommon, setPlacement } from "../src/editors.js";
+import { elementColor, flagAcross, pickedCommon, setPlacement } from "../src/editors.js";
 
 function config(kinds: readonly CElement["kind"][]) {
   const cfg = newConfig("Test", 0);
@@ -30,36 +30,36 @@ describe("flagAcross", () => {
   });
 });
 
-describe("elementColour", () => {
-  it("has none for the kinds that draw no colour of their own", () => {
-    expect(elementColour(newElement("text"))).toBe("#FFFFFF");
-    expect(elementColour(newElement("shape"))).toBe("#FFFFFF33");
-    expect(elementColour(newElement("image"))).toBeUndefined();
-    expect(elementColour(newElement("tap"))).toBeUndefined();
+describe("elementColor", () => {
+  it("has none for the kinds that draw no color of their own", () => {
+    expect(elementColor(newElement("text"))).toBe("#FFFFFF");
+    expect(elementColor(newElement("shape"))).toBe("#FFFFFF33");
+    expect(elementColor(newElement("image"))).toBeUndefined();
+    expect(elementColor(newElement("tap"))).toBeUndefined();
   });
 });
 
 describe("pickedCommon", () => {
-  it("shares the one colour every picked layer already has", () => {
+  it("shares the one color every picked layer already has", () => {
     const { cfg, els } = config(["text", "icon"]);
     const c = pickedCommon(cfg, "rectangular", els);
-    expect(c.colourable).toBe(true);
-    expect(c.colour).toBe("#FFFFFF");
+    expect(c.colorable).toBe(true);
+    expect(c.color).toBe("#FFFFFF");
     expect(c.hiddenHere).toBe("none");
   });
 
-  it("leaves the colour blank when they differ", () => {
+  it("leaves the color blank when they differ", () => {
     const { cfg, els } = config(["text", "shape"]);
     const c = pickedCommon(cfg, "rectangular", els);
-    expect(c.colourable).toBe(true);
-    expect(c.colour).toBeUndefined();
+    expect(c.colorable).toBe(true);
+    expect(c.color).toBeUndefined();
   });
 
-  it("offers no colour at all when one of them has none", () => {
+  it("offers no color at all when one of them has none", () => {
     const { cfg, els } = config(["text", "image"]);
     const c = pickedCommon(cfg, "rectangular", els);
-    expect(c.colourable).toBe(false);
-    expect(c.colour).toBeUndefined();
+    expect(c.colorable).toBe(false);
+    expect(c.color).toBeUndefined();
   });
 
   // Hidden is written on the placement, which is the shape's own record of the

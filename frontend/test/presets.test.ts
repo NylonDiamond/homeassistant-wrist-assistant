@@ -174,7 +174,7 @@ describe("the toggle button preset", () => {
     expect(rule.otherwise?.[0]!.value).toEqual({ kind: { kind: "literal", value: "lightbulb" } });
   });
 
-  it("leaves the icon alone when the domain has only one picture, so the colour carries the state", () => {
+  it("leaves the icon alone when the domain has only one picture, so the color carries the state", () => {
     const cfg = config();
     const el = layer(cfg, addToggleButton(cfg, { entityId: "switch.kettle", displayName: "Kettle", domain: "switch" }, { family: "rectangular" }));
     const rule = el.payload.rules[0]!;
@@ -300,7 +300,7 @@ describe("gaugeBandRule", () => {
     expect(bandColors(undefined)).toEqual(NEUTRAL_RAMP);
   });
 
-  it("names only colours a cell can put a word to", () => {
+  it("names only colors a cell can put a word to", () => {
     for (const ramp of [ALARM_LOW_RAMP, NEUTRAL_RAMP]) {
       for (const hex of ramp) expect(colorWords(hex), hex).not.toBe(hex);
     }
@@ -408,7 +408,7 @@ describe("the stacked presets", () => {
     return kind.kind === "literal" ? kind.value : "";
   }
 
-  it("gives every preset a card colour and a sample", () => {
+  it("gives every preset a card color and a sample", () => {
     for (const preset of LAYER_PRESETS) {
       expect(presetColor(preset.kind), preset.kind).toMatch(/^#[0-9a-f]{6}$/i);
       expect(() => presetPreview(preset.kind), preset.kind).not.toThrow();
@@ -531,7 +531,7 @@ describe("the stacked presets", () => {
     expect(presetSpec("openCount").needsEntity).toBe(false);
   });
 
-  it("colours the Who is home rows off the item, so one rule covers everybody", () => {
+  it("colors the Who is home rows off the item, so one rule covers everybody", () => {
     const cfg = config();
     const id = applyPreset(cfg, "listWhoHome", { entityId: "", displayName: "", domain: "" }, { family: "rectangular" });
     const list = layer(cfg, id);

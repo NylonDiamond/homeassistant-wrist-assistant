@@ -238,7 +238,7 @@ describe("the curved preview", () => {
     for (const ch of ["A", "B", "C"]) expect(svg).toContain(`>${ch}</text>`);
   });
 
-  it("carries each number's own colour onto the arc", () => {
+  it("carries each number's own color onto the arc", () => {
     const svg = flatten(renderLayout(layouts("32 70", (p) => {
       p.arc = { radius: 0.5 };
       p.coloring = "bands";

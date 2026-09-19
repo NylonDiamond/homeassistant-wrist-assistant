@@ -200,7 +200,7 @@ export interface GalleryPublicGroup {
 }
 
 /** Keys in the share text whose strings are structure, not writing: ids,
- * enum values, colours, symbol names, and the placeholders the scrub put in.
+ * enum values, colors, symbol names, and the placeholders the scrub put in.
  * A key missing here shows its strings under "Other text", which is the safe
  * way to be wrong. */
 const STRUCTURAL_KEYS = new Set([

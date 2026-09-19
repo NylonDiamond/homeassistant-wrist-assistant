@@ -144,7 +144,7 @@ export function agoWords(seconds: number): string {
 /** Status text and its explanation; `resend` offers the watch's re-wake link,
  * `refresh` the phone's re-push one (never both), and `note` is the quieter
  * half of the chip, drawn in muted ink beside the label rather than in the
- * label's own colour. */
+ * label's own color. */
 export function describeSend(
   s: SendState,
 ): { label: string; note?: string; title: string; resend: boolean; refresh: boolean } {

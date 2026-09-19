@@ -114,8 +114,8 @@ describe("the control on the wire", () => {
     expect("control" in doc).toBe(false);
   });
 
-  it("leaves out every absent optional, and the flat colouring with them", () => {
-    // `coloring` and `bands` follow the same rule every layer's colour table
+  it("leaves out every absent optional, and the flat coloring with them", () => {
+    // `coloring` and `bands` follow the same rule every layer's color table
     // follows, and the rule the app's encoder follows: a flat tint writes
     // neither key, whichever side saved the document last.
     expect(roundTrip({
@@ -282,7 +282,7 @@ describe("resolveControl", () => {
     expect(fromTitle.tintColorHex).toBe("#FF453A");
   });
 
-  it("keeps the flat colour when the table is empty, off, or has no number to read", () => {
+  it("keeps the flat color when the table is empty, off, or has no number to read", () => {
     expect(resolveControl(spec({ tintColorHex: "#FFCC00" }), context()).tintColorHex).toBe("#FFCC00");
     expect(resolveControl(spec({
       tintColorHex: "#FFCC00", coloring: "bands", bands: [],
@@ -293,7 +293,7 @@ describe("resolveControl", () => {
     }), context()).tintColorHex).toBe("#FFCC00");
   });
 
-  it("leaves the tint absent for a control that names no colour, so the system one stands", () => {
+  it("leaves the tint absent for a control that names no color, so the system one stands", () => {
     expect(resolveControl(spec(), context()).tintColorHex).toBeUndefined();
   });
 
@@ -436,7 +436,7 @@ describe("seedControlFromEntity", () => {
     expect(seeded.symbol).toBe("lightbulb.fill");
     expect(seeded.symbolOff).toBe("lightbulb");
     // The Toggle button preset's accent, so a control and a layer pointed at
-    // one light are the same colour.
+    // one light are the same color.
     expect(seeded.tintColorHex).toBe(ACCENT_HEX);
   });
 
@@ -751,11 +751,11 @@ describe("the Control Center card", () => {
     // own title line goes with the chip outside a browser, so each is found
     // by the switch or the hint that introduces it.
     // Each row is found by a string only it has: "State" is also a piece of
-    // the Target row's `entityState` chip, and "Color" a piece of a colour
+    // the Target row's `entityState` chip, and "Color" a piece of a color
     // attribute, so those two are looked for by their hints.
     const order = ["Kind", "On press", "Target",
       "The name on the tile", "Value line", "What the toggle reads", "Symbol",
-      "Symbol when off", "One colour paints the tint", "Tint", "Status text"];
+      "Symbol when off", "One color paints the tint", "Tint", "Status text"];
     const at = order.map((label) => markup.indexOf(label));
     expect(at.filter((i) => i < 0), order.filter((_, i) => at[i]! < 0).join(", ")).toEqual([]);
     expect(at, order.join(" < ")).toEqual([...at].sort((a, b) => a - b));

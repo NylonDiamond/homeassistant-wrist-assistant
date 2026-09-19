@@ -92,7 +92,7 @@ export const LAYER_PRESETS: readonly PresetSpec[] = [
   {
     kind: "gauge",
     title: "Sensor gauge",
-    blurb: "An arc that fills with the entity's reading and changes colour across three bands.",
+    blurb: "An arc that fills with the entity's reading and changes color across three bands.",
     preferNumeric: true,
     layerCount: 1,
   },
@@ -283,11 +283,11 @@ export interface PresetEnv {
 }
 
 /** Amber reads as "live" on a black face; the grey is the system's secondary
- * label colour, which is what an off thing should look like. */
+ * label color, which is what an off thing should look like. */
 export const ACCENT_HEX = "#FF9F0A";
 const MUTED_HEX = "#8E8E93";
 
-/** The three band colours of a gauge, lowest reading first. Every hex here is
+/** The three band colors of a gauge, lowest reading first. Every hex here is
  * one `colorWords` can name, so a band cell reads "red" rather than "#FF453A". */
 export type BandColors = readonly [string, string, string];
 
@@ -297,12 +297,12 @@ export const ALARM_LOW_RAMP: BandColors = ["#FF453A", "#FFD60A", "#34C759"];
 export const NEUTRAL_RAMP: BandColors = ["#0A84FF", "#34C759", "#FF9F0A"];
 
 /**
- * Which way a gauge's colours run.
+ * Which way a gauge's colors run.
  *
  * Only a charge level has an end that is plainly bad, so only that gets the
  * red-to-green ramp. A temperature has no bad end, and neither does anything
  * whose class the entity never states, so both get the neutral one rather than
- * a colour that implies a judgement the panel cannot make.
+ * a color that implies a judgement the panel cannot make.
  */
 export function bandColors(state: HassEntityState | undefined): BandColors {
   const deviceClass = state?.attributes?.device_class;
@@ -315,7 +315,7 @@ export interface SymbolPair {
   /** Drawn while the entity is not on. Also the layer's own symbol. */
   off: string;
   /** Drawn while it is on. Equal to `off` when the catalogue has no filled
-   * sibling, in which case the colour carries the state on its own. */
+   * sibling, in which case the color carries the state on its own. */
   on: string;
 }
 
@@ -561,7 +561,7 @@ function chartGeometry(family: DrawableFamily): PresetGeometry {
 
 /** A strip along the bottom of the face, with room for one line above it. A
  * timeline is read across, and it needs less height than a chart because there
- * is nothing to plot: the whole reading is which colour is where. */
+ * is nothing to plot: the whole reading is which color is where. */
 function timelineGeometry(family: DrawableFamily): PresetGeometry {
   const canvas = CANVAS[family];
   const height = clamp(Math.round(canvas.height * 0.2), 6, 14);
@@ -570,7 +570,7 @@ function timelineGeometry(family: DrawableFamily): PresetGeometry {
   };
 }
 
-/** The name above the strip: a strip of colour says nothing about what it is
+/** The name above the strip: a strip of color says nothing about what it is
  * of, and the entity is the one fact a reader needs to make sense of it. */
 function timelineNameGeometry(family: DrawableFamily): PresetGeometry {
   const canvas = CANVAS[family];
@@ -757,7 +757,7 @@ export function bandThreshold(n: number): string {
 }
 
 /**
- * The three colour bands behind a sensor gauge: below the first third, between
+ * The three color bands behind a sensor gauge: below the first third, between
  * the thirds, above the second.
  *
  * Built through `buildStatesRule` so the result is exactly the shape the states
@@ -866,7 +866,7 @@ export function addHistoryChart(cfg: CustomComplicationConfig, ref: EntityRef, e
  *
  * The counterpart to the history chart for everything that holds a word rather
  * than a number: a chart of a door draws nothing, because "open" is not a
- * reading. The colour table is seeded from the entity's own domain and device
+ * reading. The color table is seeded from the entity's own domain and device
  * class, so a door starts red while it is open and a plain switch starts amber
  * while it is on, and both are one edit away from anything else.
  */
@@ -1068,7 +1068,7 @@ export function addCountdownTimer(cfg: CustomComplicationConfig, ref: EntityRef,
 }
 
 /**
- * One word for the alarm, in a colour that says what it means.
+ * One word for the alarm, in a color that says what it means.
  *
  * Every arming mode starts `armed_`, so one `startsWith` covers home, away,
  * night and vacation without four rows. The rows are checked top to bottom and
@@ -1373,14 +1373,14 @@ export function addLightsOnList(cfg: CustomComplicationConfig, env: PresetEnv): 
 /**
  * Battery sensors, emptiest first, each with a bar that runs down as it does.
  *
- * The bar is coloured by the reading rather than left one colour, because the
+ * The bar is colored by the reading rather than left one color, because the
  * length alone is four points of difference between a full battery and a dead
- * one and the colour is what carries at a glance. Red under 25, amber under
+ * one and the color is what carries at a glance. Red under 25, amber under
  * 60, green above: the same three bands the preset's own card draws, so what
  * was promised on the button is what lands on the face.
  *
  * The rule reads `item.state`, which the resolver fills in per row, so one
- * rule colours every bar. `lessThan` compares as a number, and a sensor whose
+ * rule colors every bar. `lessThan` compares as a number, and a sensor whose
  * state is not a number matches neither row and falls through to green.
  */
 export function addBatteriesList(cfg: CustomComplicationConfig, env: PresetEnv): string {
@@ -1463,7 +1463,7 @@ export function addScenesList(cfg: CustomComplicationConfig, env: PresetEnv): st
  * Everyone in the home, across the face, dimmed while they are out.
  *
  * The rules read `item.state`, which the resolver fills in per row: the same
- * layer is resolved once for each person, so one rule colours all of them. The
+ * layer is resolved once for each person, so one rule colors all of them. The
  * symbol is fixed rather than the person's own icon, because a row of
  * identical figures reads as a row of people and a row of different glyphs
  * does not.

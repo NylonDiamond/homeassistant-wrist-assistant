@@ -1,6 +1,6 @@
 // The success flash, drawn the way the watch draws it.
 //
-// The watch does not wash the face in colour. It strokes a line round the
+// The watch does not wash the face in color. It strokes a line round the
 // complication's own shape, or round the one tap area that fired, and that is
 // the whole point of the demo showing it: a flash that looked different here
 // would teach the wrong thing. The shapes and weights are copied from the app

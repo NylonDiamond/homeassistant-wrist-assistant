@@ -337,7 +337,7 @@ describe("zero anchor", () => {
 describe("drawing chart dots and grid", () => {
   const count = (s: string, needle: string) => s.split(needle).length - 1;
 
-  it("draws every dot of one colour in one path, leaving the highlighted reading to its own dot", () => {
+  it("draws every dot of one color in one path, leaving the highlighted reading to its own dot", () => {
     const state = "1,2,5,6";
     const { cfg, id } = chartConfig(state, (p) => { p.highlight = "highest"; p.marker = "none"; });
     layerOf<Dots>(cfg, addChartDots(cfg, id)).payload.dots = "all";
@@ -345,7 +345,7 @@ describe("drawing chart dots and grid", () => {
     expect(count(svg, " a1.8 1.8 0 1 0 3.6 0")).toBe(3);
   });
 
-  it("draws dots at a set size, in a set colour that beats the bands", () => {
+  it("draws dots at a set size, in a set color that beats the bands", () => {
     const state = "1,2,5,6";
     const { cfg, id } = chartConfig(state, (p) => {
       p.coloring = "bands";
@@ -359,7 +359,7 @@ describe("drawing chart dots and grid", () => {
     const svg = flatten(renderLayout(rectangular(cfg, state), { icons: noIcons }));
     expect(count(svg, " a3 3 0 1 0 6 0")).toBe(4);
     expect(count(svg, "fill=#FF9F0A")).toBe(1);
-    // Without a colour of its own each dot takes its band.
+    // Without a color of its own each dot takes its band.
     delete layer.payload.colorHex;
     const banded = flatten(renderLayout(rectangular(cfg, state), { icons: noIcons }));
     expect(count(banded, "M") > 0 && banded.includes("fill=#00FF00") && banded.includes("fill=#FF0000")).toBe(true);

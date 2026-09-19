@@ -1,5 +1,5 @@
-// A bars chart's border and fill colours: the wire keys, the precedence the
-// resolver picks each bar's colours by, and how the preview draws the border.
+// A bars chart's border and fill colors: the wire keys, the precedence the
+// resolver picks each bar's colors by, and how the preview draws the border.
 // The shared contract is `fixtures/chart_bar_border.json`; these cases cover
 // what one fixture cannot: omission at the defaults, clamping, and drawing.
 
@@ -119,7 +119,7 @@ describe("resolving bar border and fill", () => {
     expect(negative.barBorderColorHexes).toEqual([]);
   });
 
-  it("resolves a line or an area as no border and no bar colours", () => {
+  it("resolves a line or an area as no border and no bar colors", () => {
     for (const style of ["line", "area"] as const) {
       const c = chartOf(chartConfig("1,2,3", (p) => { p.style = style; p.barBorderWidth = 2; p.fillColorHex = "#000000"; }).cfg, "1,2,3");
       expect(c.barBorderWidth).toBe(0);
@@ -128,14 +128,14 @@ describe("resolving bar border and fill", () => {
     }
   });
 
-  it("fills a one-colour bar in the series colour and borders it in white when nothing is set", () => {
+  it("fills a one-color bar in the series color and borders it in white when nothing is set", () => {
     const { cfg, state } = chartConfig("1,2", (p) => { p.style = "bars"; p.colorSlot.baseColorHex = "#0A84FF"; p.barBorderWidth = 1; });
     const c = chartOf(cfg, state);
     expect(c.barFillColorHexes).toEqual(["#0A84FF", "#0A84FF"]);
     expect(c.barBorderColorHexes).toEqual(["#FFFFFF", "#FFFFFF"]);
   });
 
-  it("puts a band's own colour over the chart's, the chart's over the band colour, and a highlight over all", () => {
+  it("puts a band's own color over the chart's, the chart's over the band color, and a highlight over all", () => {
     const { cfg, state } = chartConfig("2,5,9,1", (p) => {
       p.style = "bars";
       p.coloring = "bands";
@@ -159,14 +159,14 @@ describe("resolving bar border and fill", () => {
 
 describe("drawing a bar border", () => {
   it("draws exactly as before while the border is off", () => {
-    // A colour with no width draws nothing new. SVG ids differ per render, so
+    // A color with no width draws nothing new. SVG ids differ per render, so
     // they are blanked before comparing.
     const ids = (s: string) => s.replace(/(id=|url\(#)[^\s>)"]+/g, "$1_");
     const plain = chartConfig("1,2,3", (p) => { p.style = "bars"; });
-    const coloured = chartConfig("1,2,3", (p) => { p.style = "bars"; p.barBorderColorHex = "#FF0000"; });
+    const colored = chartConfig("1,2,3", (p) => { p.style = "bars"; p.barBorderColorHex = "#FF0000"; });
     const svg = ids(draw(plain.cfg, plain.state));
     expect(svg).not.toContain('fill="none" stroke=');
-    expect(ids(draw(coloured.cfg, coloured.state))).toBe(svg);
+    expect(ids(draw(colored.cfg, colored.state))).toBe(svg);
   });
 
   it("strokes the border inside the bar, never outside it", () => {
@@ -184,7 +184,7 @@ describe("drawing a bar border", () => {
     expect(sh).toBeCloseTo(bh - 2, 9);
   });
 
-  it("paints a bar too small for its border solid in the border colour", () => {
+  it("paints a bar too small for its border solid in the border color", () => {
     const { cfg, state } = chartConfig("1,2,3", (p) => {
       p.style = "bars"; p.barBorderWidth = 6; p.barBorderColorHex = "#FF0000"; p.baseline = "lowest";
       p.frame = { x: 0, y: 0, width: 0.05, height: 1, rotationDegrees: 0 };

@@ -208,7 +208,7 @@ export type ChartPointDots = "none" | "all" | "auto";
 export const CHART_POINT_DOTS: readonly ChartPointDots[] = ["none", "all", "auto"];
 /** The most horizontal grid lines a chart draws. */
 export const CHART_MAX_GRID_LINES = 4;
-/** Grid line colour when the layer stores none: white at 20 %. */
+/** Grid line color when the layer stores none: white at 20 %. */
 export const CHART_DEFAULT_GRID_HEX = "#FFFFFF33";
 
 /** A decoded `fillStyle`, with any spelling this build does not know read as flat. */
@@ -227,12 +227,12 @@ export function chartGridLines(raw: unknown): number {
   return Math.max(0, Math.min(CHART_MAX_GRID_LINES, Math.round(raw)));
 }
 
-/** Two stored colours that spell the same hex, whatever the case of the digits. */
+/** Two stored colors that spell the same hex, whatever the case of the digits. */
 export function sameHex(a: string, b: string): boolean {
   return a.replace(/^#/, "").toUpperCase() === b.replace(/^#/, "").toUpperCase();
 }
 
-/** A decoded `gridColorHex`: the stored colour, or the default when none is. */
+/** A decoded `gridColorHex`: the stored color, or the default when none is. */
 export function chartGridColorHex(raw: unknown): string {
   return typeof raw === "string" && raw !== "" ? raw : CHART_DEFAULT_GRID_HEX;
 }
@@ -555,8 +555,8 @@ export const CHART_ANCHOR_PLACES: readonly [ChartAnchorPlace, string][] = [
  *
  * This is what a chart's high and low markers are made of. A marker used to be a
  * setting on the chart, which meant one shape from a list of three, at one size, in
- * one colour. As a layer it is an ordinary text, icon, shape or image: any glyph or
- * emoji, any size, any colour, its own rules, dragged and deleted like everything
+ * one color. As a layer it is an ordinary text, icon, shape or image: any glyph or
+ * emoji, any size, any color, its own rules, dragged and deleted like everything
  * else. The chart only has to say where the reading is.
  *
  * The layer's `frame` still gives its size. Its `x` and `y` are worked out at render
@@ -628,20 +628,20 @@ export const FILL_KINDS: readonly [FillKind, string][] = [
   ["radial", "Radial"],
 ];
 
-/** One colour on a gradient, at a 0...1 position along it. */
+/** One color on a gradient, at a 0...1 position along it. */
 export interface FillStop {
   at: number;
   colorHex: string;
 }
 
 /**
- * A gradient, used wherever a flat colour fills an area: a shape's body, a
+ * A gradient, used wherever a flat color fills an area: a shape's body, a
  * shape's background, a gauge along its track, and the area under a line or
  * area chart.
  *
- * A fill beats the flat colour key beside it. The panel keeps writing that flat
- * key as the first stop's colour, so a watch app that predates fills draws the
- * gradient's starting colour rather than nothing at all.
+ * A fill beats the flat color key beside it. The panel keeps writing that flat
+ * key as the first stop's color, so a watch app that predates fills draws the
+ * gradient's starting color rather than nothing at all.
  *
  * Mirrors `CustomComplication.Fill` in the app repo.
  */
@@ -658,7 +658,7 @@ export const FILL_MAX_STOPS = 4;
 
 /** A fill written by a newer panel falls back rather than throwing, matching the
  * Swift decoder: fewer than two usable stops is not a gradient, so the layer
- * draws its flat colour instead. */
+ * draws its flat color instead. */
 function parseFill(o: unknown): Fill | undefined {
   if (!isObject(o) || !Array.isArray(o.stops)) return undefined;
   const stops: FillStop[] = [];
@@ -684,8 +684,8 @@ function encodeFill(f: Fill): J {
   return o;
 }
 
-/** The colour a fill shows at `t` along itself, by walking its stops. Used for a
- * dot gauge, whose dots each take one colour, and for the flat key the panel
+/** The color a fill shows at `t` along itself, by walking its stops. Used for a
+ * dot gauge, whose dots each take one color, and for the flat key the panel
  * keeps writing beside a fill. Mirrors `Fill.color(at:)` in the app repo. */
 export function fillColorAt(f: Fill, t: number): string {
   const stops = [...f.stops].sort((a, b) => a.at - b.at);
@@ -720,8 +720,8 @@ function mixHex(from: string, to: string, t: number): string {
 /**
  * `#RRGGBB` / `#RRGGBBAA` with its alpha multiplied, the rest untouched.
  *
- * What a level's track is painted with when it names no colour of its own: the
- * layer's own colour, faded. Alpha rather than a blend toward the background,
+ * What a level's track is painted with when it names no color of its own: the
+ * layer's own color, faded. Alpha rather than a blend toward the background,
  * because a complication has no background it can count on, and because a tinted
  * watch face keeps alpha and throws the hue away, so the faded copy still reads
  * as the dimmer of the two there. Mirrors `CustomComplication.fadedHex` in the
@@ -753,16 +753,16 @@ export const LEVEL_DEFAULT_DIRECTION: LevelDirection = "up";
 export const LEVEL_DEFAULT_MIN = 0;
 export const LEVEL_DEFAULT_MAX = 100;
 
-/** How much of the layer's colour a track keeps when the level names no track
- * colour: a quarter, which is where the gauge's own `#FFFFFF40` track landed. */
+/** How much of the layer's color a track keeps when the level names no track
+ * color: a quarter, which is where the gauge's own `#FFFFFF40` track landed. */
 export const LEVEL_TRACK_FADE = 0.25;
 
 /**
  * Fills an icon or a shape from one edge according to a reading, the way a
  * battery icon fills or a tank empties.
  *
- * The layer is drawn twice: the whole of it in the track colour, then the same
- * layer again in its own colour, cut off at the level. Everything else about the
+ * The layer is drawn twice: the whole of it in the track color, then the same
+ * layer again in its own color, cut off at the level. Everything else about the
  * layer (its gradient, its opacity, its shadow, its rules) applies to both
  * halves, because both halves are the layer.
  *
@@ -784,7 +784,7 @@ export interface Level {
   maxSource?: Value;
   /** Which way the fill grows. Default `up`, left off the wire at that. */
   direction: LevelDirection;
-  /** The unfilled part's colour. Absent paints it in the layer's own colour at
+  /** The unfilled part's color. Absent paints it in the layer's own color at
    * `LEVEL_TRACK_FADE`. */
   trackColorHex?: string;
 }
@@ -1052,7 +1052,7 @@ interface ElementBase {
    * or a tap area pinned to a reading is not something anyone wants, and the
    * app repo gives those four kinds alone a field to decode. See `ChartAnchor`. */
   chartAnchor?: ChartAnchor;
-  /** Which colour group this layer takes on a tinted surface. Absent is
+  /** Which color group this layer takes on a tinted surface. Absent is
    * `primary`, so nothing is written for the layers that never asked.
    * See `AccentGroup`. */
   accentGroup?: AccentGroup;
@@ -1067,7 +1067,7 @@ interface ElementBase {
  * A drop shadow behind one layer. Mirrors `CustomComplication.LayerShadow` in
  * the app repo, key for key.
  *
- * A glow is this with `dx` and `dy` at zero and a bright colour: the same blur
+ * A glow is this with `dx` and `dy` at zero and a bright color: the same blur
  * under the layer instead of beside it, so there is no second key for it.
  * Radius and offsets are design points, the same units as a text layer's
  * `fontSize`. On a tinted face the shadow flattens with everything else, which
@@ -1099,11 +1099,11 @@ export function clampLayerOpacity(v: number): number {
 }
 
 /**
- * The group a layer joins when the system draws the widget in one colour.
+ * The group a layer joins when the system draws the widget in one color.
  *
  * A tinted iPhone Home Screen renders the widget in WidgetKit's `accented`
  * mode: the container's own background is dropped, every layer keeps only how
- * bright it was, and the system paints two groups in two related colours. The
+ * bright it was, and the system paints two groups in two related colors. The
  * app puts a layer marked `accent` in the second group with SwiftUI's
  * `widgetAccentable()`, so one layer can stand apart from the rest.
  *
@@ -1151,19 +1151,19 @@ export interface TextElement extends ElementBase {
   minimumScale?: number;
   /** Which edge of the layer box the text sits against. Absent means center. */
   alignment?: TextAlignment;
-  /** Whether the numbers inside the text take the colour of the band they fall
-   * in. Absent means one colour. Same table, same defaults and same lookup as a
+  /** Whether the numbers inside the text take the color of the band they fall
+   * in. Absent means one color. Same table, same defaults and same lookup as a
    * chart's, so a price line under a banded chart can match it number for number. */
   coloring?: ChartColoring;
-  /** The colour table, checked lowest first. Absent means empty. */
+  /** The color table, checked lowest first. Absent means empty. */
   bands?: ChartBand[];
-  /** Colour of a number past the last band. Absent means the chart's default. */
+  /** Color of a number past the last band. Absent means the chart's default. */
   bandAboveColorHex?: string;
-  /** Which end of the numbers in the text takes its own colour. Absent means none. */
+  /** Which end of the numbers in the text takes its own color. Absent means none. */
   highlight?: ChartHighlight;
-  /** Absent means the chart's default highest colour. */
+  /** Absent means the chart's default highest color. */
   highColorHex?: string;
-  /** Absent means the chart's default lowest colour. */
+  /** Absent means the chart's default lowest color. */
   lowColorHex?: string;
   /** Rich text: the text drawn as a row of parts, each in its own look. Absent
    * or empty means one run of `value`, as a text layer always was. With parts,
@@ -1178,7 +1178,7 @@ export interface TextElement extends ElementBase {
 }
 
 /**
- * One part of a rich text layer: a value of its own, and optionally a colour,
+ * One part of a rich text layer: a value of its own, and optionally a color,
  * weight, size and band table of its own.
  *
  * Every style key is absent until the author gives the part its own, and absent
@@ -1192,7 +1192,7 @@ export interface TextPart {
   /** What rules aim at with `Rule.partId`. Uppercase, like every id here. */
   id: string;
   value: Value;
-  /** Absent means the layer's resolved colour. */
+  /** Absent means the layer's resolved color. */
   colorHex?: string;
   /** Absent means the layer's resolved weight. */
   fontWeight?: FontWeight;
@@ -1204,17 +1204,17 @@ export interface TextPart {
   fontWidth?: FontWidth;
   /** Absent means the layer's resolved slant. */
   italic?: boolean;
-  /** Absent means one colour. */
+  /** Absent means one color. */
   coloring?: ChartColoring;
   /** Absent means empty. */
   bands?: ChartBand[];
-  /** Absent means the chart's default colour past the last band. */
+  /** Absent means the chart's default color past the last band. */
   bandAboveColorHex?: string;
 }
 
-/** True when a text layer colours its numbers one by one: a non-empty band
+/** True when a text layer colors its numbers one by one: a non-empty band
  * table or a highlight, and not a countdown, whose text ticks on the watch and
- * has no numbers to colour until it is drawn. */
+ * has no numbers to color until it is drawn. */
 export function textColorsByValue(el: TextElement): boolean {
   if (el.countdown === true) return false;
   const banded = el.coloring === "bands" && (el.bands?.length ?? 0) > 0;
@@ -1419,14 +1419,14 @@ export interface GaugeElement extends ElementBase {
   style: GaugeStyle;
   lineWidth: number;
   trackColorHex: string;
-  /** Whether the gauge draws in one colour or takes the colour of the band its
+  /** Whether the gauge draws in one color or takes the color of the band its
    * reading falls in. Shares the chart's table type, because a gauge asks the
    * same question of one reading that a chart asks of each of a hundred. */
   coloring: ChartColoring;
-  /** The colour table, lowest step first. Empty means there is nothing to say
-   * and the gauge stays one colour. */
+  /** The color table, lowest step first. Empty means there is nothing to say
+   * and the gauge stays one color. */
   bands: ChartBand[];
-  /** Colour of a reading past the last band. */
+  /** Color of a reading past the last band. */
   bandAboveColorHex: string;
   /** A value to mark on the scale, or absent for no mark. */
   thresholdValue?: number;
@@ -1444,8 +1444,8 @@ export interface GaugeElement extends ElementBase {
    * `setGaugeMax` and `maxValue` on either side of it. */
   maxSource?: Value;
   /** A gradient along the track, beating `colorSlot`. The panel keeps writing
-   * `colorSlot` as the first stop's colour, so an older watch app draws the
-   * gradient's starting colour. A banded gauge, or a rule that recolours it,
+   * `colorSlot` as the first stop's color, so an older watch app draws the
+   * gradient's starting color. A banded gauge, or a rule that recolors it,
    * still wins: both are statements about this reading, and a gradient is not. */
   fill?: Fill;
   /** The marks around the scale. Absent means none. */
@@ -1664,14 +1664,14 @@ export interface ChartElement extends ElementBase {
   highMarker?: ChartEndMarker;
   /** The mark over the lowest reading, on the same rule as `highMarker`. */
   lowMarker?: ChartEndMarker;
-  /** Whether every reading shares one colour or takes the colour of the band it
+  /** Whether every reading shares one color or takes the color of the band it
    * falls in. */
   coloring: ChartColoring;
-  /** The colour table, lowest step first. A reading takes the colour of the
+  /** The color table, lowest step first. A reading takes the color of the
    * first band it is at or below, so each row only has to say where it ends.
-   * Empty means there is nothing to say and the chart stays one colour. */
+   * Empty means there is nothing to say and the chart stays one color. */
   bands: ChartBand[];
-  /** Colour of a reading past the last band. Every table needs an "and the
+  /** Color of a reading past the last band. Every table needs an "and the
    * rest", and on a chart that is usually the interesting end. */
   bandAboveColorHex: string;
   /** Whether an area chart's fill follows the bands too. */
@@ -1681,21 +1681,21 @@ export interface ChartElement extends ElementBase {
   curve?: ChartCurve;
   /** How an area fills under its line. Absent reads as `flat`. Area only. */
   fillStyle?: ChartFillStyle;
-  /** The fill's own colour. On an area, absent fills in the series colour, or
-   * each band's colour when `fillBands` is on. On bars, the colour a bar is
-   * filled in: absent is the bar's own colour (its band's, or the series
-   * colour), and a band's own `fillColorHex` wins over it. A highlighted bar
-   * always fills in its highlight colour. */
+  /** The fill's own color. On an area, absent fills in the series color, or
+   * each band's color when `fillBands` is on. On bars, the color a bar is
+   * filled in: absent is the bar's own color (its band's, or the series
+   * color), and a band's own `fillColorHex` wins over it. A highlighted bar
+   * always fills in its highlight color. */
   fillColorHex?: string;
   /** A gradient for the area under a line or area chart, beating `fillColorHex`.
-   * The panel keeps writing `fillColorHex` as the first stop's colour, so an
-   * older watch app fills in the gradient's starting colour. Bars ignore it. */
+   * The panel keeps writing `fillColorHex` as the first stop's color, so an
+   * older watch app fills in the gradient's starting color. Bars ignore it. */
   areaFill?: Fill;
   /** Width of the border drawn inside each bar's outline, in design-box points.
    * Absent or 0 draws none. Clamped 0…6 when resolved. Bars only: a line or
    * area resolves it as 0. */
   barBorderWidth?: number;
-  /** The bars' border colour. Absent borders each bar in white
+  /** The bars' border color. Absent borders each bar in white
    * (`CHART_DEFAULT_BAR_BORDER_HEX`), and a band's own `borderColorHex` wins
    * over it. Bars only. */
   barBorderColorHex?: string;
@@ -1703,10 +1703,10 @@ export interface ChartElement extends ElementBase {
    * both sides only (the bottom and both sides of a bar hanging below zero).
    * Absent reads as false, which is never written. Bars only. */
   barBorderOpenBase?: boolean;
-  /** Fill colour of a bar above the last band. Absent reads as the chart's
+  /** Fill color of a bar above the last band. Absent reads as the chart's
    * `fillColorHex`, then `bandAboveColorHex`. Bars only. */
   bandAboveFillColorHex?: string;
-  /** Border colour of a bar above the last band. Absent reads as the chart's
+  /** Border color of a bar above the last band. Absent reads as the chart's
    * `barBorderColorHex`, then white. Bars only. */
   bandAboveBorderColorHex?: string;
   /** A bar's corner radius in design-box points. Absent reads as
@@ -1722,11 +1722,11 @@ export interface ChartElement extends ElementBase {
   pointDots?: ChartPointDots;
   /** Legacy, read only: the reading dot's diameter, 1…12. */
   pointDotSize?: number;
-  /** Legacy, read only: every reading dot's colour. */
+  /** Legacy, read only: every reading dot's color. */
   pointDotColorHex?: string;
   /** Legacy, read only: grid lines, 0…4. */
   gridLines?: number;
-  /** Legacy, read only: the grid and zero line colour. */
+  /** Legacy, read only: the grid and zero line color. */
   gridColorHex?: string;
   /** Legacy, read only: a line where zero falls. */
   zeroLine?: boolean;
@@ -1767,7 +1767,7 @@ export interface ChartElement extends ElementBase {
    * own `scale`. Absent is the ordinary case and every chart before this.
    *
    * This is how two series share one plot: a second chart layer with the same
-   * frame, its own value, colour, style and bands, borrowing the first one's
+   * frame, its own value, color, style and bands, borrowing the first one's
    * scale. A link to a chart that is not in the document, to this chart itself,
    * or one that closes a cycle falls back to this chart's own scale. */
   scaleFrom?: string;
@@ -1779,7 +1779,7 @@ export interface ChartElement extends ElementBase {
   timeLabelCount: number;
   /** Font size of the times, in design-box points. Clamped 1…20 when drawn. */
   labelSize: number;
-  /** Colour of the times. */
+  /** Color of the times. */
   labelColorHex: string;
   /** false puts the row under the plot, true over it. */
   labelsAbove: boolean;
@@ -1793,7 +1793,7 @@ export interface ChartElement extends ElementBase {
    * frame, and the author makes room for a number by resizing the chart. */
 }
 
-/** One step of a chart's colour table.
+/** One step of a chart's color table.
  *
  * A band says where it *ends*, not where it starts, so a table reads the way
  * people describe one: "up to 10 red, up to 20 orange, and the rest green".
@@ -1816,7 +1816,7 @@ export interface ChartBand {
 /** Largest bar border a chart draws, in design-box points. */
 export const CHART_MAX_BAR_BORDER_WIDTH = 6;
 /** What a bar border is drawn in when neither its band nor the chart names a
- * colour. Mirrors `ChartElement.defaultBarBorderColorHex` in the app. */
+ * color. Mirrors `ChartElement.defaultBarBorderColorHex` in the app. */
 export const CHART_DEFAULT_BAR_BORDER_HEX = "#FFFFFF";
 
 /** A stored bar border width as it is drawn: 0 when absent, not a number, or
@@ -1828,10 +1828,10 @@ export function chartBarBorderWidth(el: Pick<ChartElement, "style" | "barBorderW
   return Math.min(Math.max(w, 0), CHART_MAX_BAR_BORDER_WIDTH);
 }
 
-/** One bar's fill and border colour, by the precedence the app's resolver
+/** One bar's fill and border color, by the precedence the app's resolver
  * uses. A highlight wins over everything; a banded bar reads its band's own
- * colour, then the chart's, then the band colour; a one-colour bar reads the
- * chart's colour, then the series colour. A border that nothing names is white.
+ * color, then the chart's, then the band color; a one-color bar reads the
+ * chart's color, then the series color. A border that nothing names is white.
  * `sorted` is `chartSortedBands`, and is
  * only read when the chart uses its bands. */
 export function chartBarColors(
@@ -1859,26 +1859,26 @@ export const CHART_DEFAULT_HIGH_HEX = "#FF6B35";
 export const CHART_DEFAULT_LOW_HEX = "#32D74B";
 export const CHART_DEFAULT_BAND_LOW_HEX = "#32D74B";
 export const CHART_DEFAULT_BAND_HIGH_HEX = "#FF453A";
-/** Red, the colour a line worth crossing is drawn in everywhere else here. */
+/** Red, the color a line worth crossing is drawn in everywhere else here. */
 export const CHART_DEFAULT_THRESHOLD_HEX = "#FF453A";
 /** White at 60% opacity: present enough to place "now" on the plot, faint
  * enough that the readings stay the thing being read. */
 export const CHART_DEFAULT_NOW_HEX = "#FFFFFF99";
 
-/** The colour table in reading order, whatever order the author typed it in.
+/** The color table in reading order, whatever order the author typed it in.
  * Mirrors `sortedBands` in Swift. */
 export function chartSortedBands(el: { bands: readonly ChartBand[] }): ChartBand[] {
   return [...el.bands].sort((a, b) => a.upTo - b.upTo);
 }
 
 /** True when the chart has an actual table to paint from. An empty table says
- * nothing, so it draws as one colour rather than as one flat "and the rest".
+ * nothing, so it draws as one color rather than as one flat "and the rest".
  * Mirrors `usesBands` in Swift. */
 export function chartUsesBands(el: ChartElement): boolean {
   return el.coloring === "bands" && el.bands.length > 0;
 }
 
-/** Which band a reading falls in, as a colour. Sort once, then call this per
+/** Which band a reading falls in, as a color. Sort once, then call this per
  * reading; the table is walked lowest first and the first match wins. Mirrors
  * `bandColorHex` in Swift. */
 export function chartBandColor(value: number, sorted: readonly ChartBand[], above: string): string {
@@ -2160,12 +2160,12 @@ export function chartStatisticsRequests(config: CustomComplicationConfig): Stati
 /** A strip of an entity's recorded states, oldest at the left.
  *
  * The chart's question is "what number was it"; this one's is "which state was
- * it in, and for how long". Every run of one state is a coloured rectangle as
+ * it in, and for how long". Every run of one state is a colored rectangle as
  * wide as the time it lasted, so "was the door open in the last hour" is one
  * glance rather than a reading to interpret.
  *
- * No colorSlot: every colour a timeline draws comes from its table or from
- * `otherColorHex`, so a layer colour would be a control that changes nothing.
+ * No colorSlot: every color a timeline draws comes from its table or from
+ * `otherColorHex`, so a layer color would be a control that changes nothing.
  * Mirrors `CustomComplication.TimelineElement` in the app repo. */
 export interface TimelineElement extends Omit<ElementBase, "colorSlot"> {
   /** The entity whose past is drawn. Only a directly named entity yields a
@@ -2177,11 +2177,11 @@ export interface TimelineElement extends Omit<ElementBase, "colorSlot"> {
   aggregate?: TimelineAggregate;
   /** How far back to read, in minutes. Same choices as a chart's span. */
   historyMinutes: number;
-  /** The colour table, checked in order. A run takes the colour of the first
+  /** The color table, checked in order. A run takes the color of the first
    * row whose `match` equals its state; anything unmatched takes
-   * `otherColorHex`. Empty means every run is that one colour. */
+   * `otherColorHex`. Empty means every run is that one color. */
   bands: TimelineBand[];
-  /** The colour of a run no row named. */
+  /** The color of a run no row named. */
   otherColorHex: string;
   /** Space between runs, in design-box points. 0 draws the strip as one
    * continuous bar, which is what a door or a light usually wants. */
@@ -2194,7 +2194,7 @@ export interface TimelineElement extends Omit<ElementBase, "colorSlot"> {
   timeLabelCount: number;
   /** Font size of the times, in design-box points. Clamped 1...20 when drawn. */
   labelSize: number;
-  /** Colour of the times. */
+  /** Color of the times. */
   labelColorHex: string;
   /** false puts the row under the strip, true over it. */
   labelsAbove: boolean;
@@ -2242,7 +2242,7 @@ export const TIMELINE_MAX_AGGREGATE_ENTITIES = 20;
 export const TIMELINE_DEFAULT_COMBINE: TimelineCombine = "any";
 /** Whatever a merged strip's entities are, the server sends back `on`, `off`
  * and `unavailable`, which is the vocabulary of a binary sensor. That is the
- * domain its colour table is seeded from. */
+ * domain its color table is seeded from. */
 export const TIMELINE_AGGREGATE_SEED_DOMAIN = "binary_sensor";
 
 export const TIMELINE_COMBINES: [TimelineCombine, string][] = [
@@ -2321,7 +2321,7 @@ export function timeLabelPositions(count: number): number[] {
   return Array.from({ length: count }, (_, i) => i / (count - 1));
 }
 
-/** One row of a timeline's colour table.
+/** One row of a timeline's color table.
  *
  * A row names a state rather than a bound, because states are words: "open",
  * "not_home", "heat". The comparison is case-insensitive and ignores
@@ -2335,7 +2335,7 @@ export interface TimelineBand {
   colorHex: string;
 }
 
-/** Grey: the system's secondary label colour, and what a state nobody named
+/** Grey: the system's secondary label color, and what a state nobody named
  * should look like. */
 export const TIMELINE_DEFAULT_OTHER_HEX = "#8E8E93";
 export const TIMELINE_DEFAULT_CORNER_RADIUS = 1;
@@ -2374,7 +2374,7 @@ export const TIMELINE_MAX_GAP = 4;
  * than the screen resolves. Matches `CHART_HISTORY_MAX_POINTS`. */
 export const TIMELINE_HISTORY_POINTS = 120;
 
-/** The colour a run takes, first matching row wins. Case-insensitive after
+/** The color a run takes, first matching row wins. Case-insensitive after
  * trimming, so the table matches what a person typed rather than what an
  * integration capitalised. Mirrors `TimelineElement.colorHex(for:)` in Swift. */
 export function timelineBandColor(state: string, bands: readonly TimelineBand[], other: string): string {
@@ -2447,8 +2447,8 @@ export function timelineHistoryKey(el: TimelineElement): string | undefined {
   return `${base}|${el.aggregate?.combine ?? TIMELINE_DEFAULT_COMBINE}:${group.join(",")}`;
 }
 
-/** The colour a timeline reaches for on its own when a state has a well known
- * name. Every real state gets a real colour: amber for on, blue for off,
+/** The color a timeline reaches for on its own when a state has a well known
+ * name. Every real state gets a real color: amber for on, blue for off,
  * green for home, closed, locked or docked, red for a door standing open, a
  * lock left open or an alarm going off, yellow for a state on its way
  * somewhere. Only the two no-reading states are grey, so "the recorder had
@@ -2468,7 +2468,7 @@ export const TIMELINE_STATE_COLORS: Record<string, string> = {
 };
 
 /** The states each domain is known to write to the recorder, in the order a
- * colour table should list them. These are the recorder's words, not the
+ * color table should list them. These are the recorder's words, not the
  * frontend's: a binary sensor is `on` and `off` whatever its device class. */
 export const TIMELINE_DOMAIN_STATES: Record<string, string[]> = {
   binary_sensor: ["on", "off"], switch: ["on", "off"], light: ["on", "off"], input_boolean: ["on", "off"],
@@ -2482,7 +2482,7 @@ export const TIMELINE_DOMAIN_STATES: Record<string, string[]> = {
   alarm_control_panel: ["disarmed", "armed_home", "armed_away", "armed_night", "arming", "pending", "triggered"],
 };
 
-/** The colour for a state word, from the table above, else the grey a state
+/** The color for a state word, from the table above, else the grey a state
  * nobody named draws in. Case and surrounding space are ignored. */
 export function timelineStateColor(state: string): string {
   return TIMELINE_STATE_COLORS[state.trim().toLowerCase()] ?? TIMELINE_DEFAULT_OTHER_HEX;
@@ -2494,7 +2494,7 @@ const OPENING_DEVICE_CLASSES = ["door", "garage_door", "window", "opening"];
 /**
  * The table a timeline starts with once its entity is known.
  *
- * A colour table with nothing in it is a strip in one colour, which answers
+ * A color table with nothing in it is a strip in one color, which answers
  * none of the questions a timeline is added to answer. The domain already says
  * what the two interesting states are called in almost every case, so the rows
  * are written for the author and left there to edit.
@@ -2503,7 +2503,7 @@ const OPENING_DEVICE_CLASSES = ["door", "garage_door", "window", "opening"];
  * words the frontend prints: a `cover` really is `open` and `closed`, but a
  * binary sensor with a door device class is `on` and `off` and only reads as a
  * door in the UI. A table seeded with `open` on one of those would match
- * nothing, so a door-shaped binary sensor gets `on` and `off` in the colours a
+ * nothing, so a door-shaped binary sensor gets `on` and `off` in the colors a
  * door wants instead.
  *
  * `unavailable` is on every table: a run of it means the entity stopped
@@ -2513,14 +2513,14 @@ const OPENING_DEVICE_CLASSES = ["door", "garage_door", "window", "opening"];
 export function seedTimelineBands(domain: string, deviceClass?: string): TimelineBand[] {
   const dc = (deviceClass ?? "").trim().toLowerCase();
   // A door-shaped binary sensor is "on" while it stands open, so its on row
-  // takes the colour a cover's open row has.
+  // takes the color a cover's open row has.
   const openish = domain === "binary_sensor" && OPENING_DEVICE_CLASSES.includes(dc);
-  const colour = (state: string) => (openish && state === "on" ? timelineStateColor("open") : timelineStateColor(state));
+  const color = (state: string) => (openish && state === "on" ? timelineStateColor("open") : timelineStateColor(state));
   const words = TIMELINE_DOMAIN_STATES[domain] ?? [];
   // Both of the states Home Assistant uses for "no reading" come last: a
   // sensor that drops out reports unavailable, one that has not reported yet
   // says unknown.
-  return [...words, "unavailable", "unknown"].map((state) => ({ id: newId(), match: state, colorHex: colour(state) }));
+  return [...words, "unavailable", "unknown"].map((state) => ({ id: newId(), match: state, colorHex: color(state) }));
 }
 
 export interface ShapeElement extends ElementBase {
@@ -2532,8 +2532,8 @@ export interface ShapeElement extends ElementBase {
   borderColorHex?: string;
   borderWidth: number;
   /** A gradient over the shape's body, beating `colorSlot`. The panel keeps
-   * writing `colorSlot` as the first stop's colour, so an older watch app draws
-   * the gradient's starting colour rather than nothing. */
+   * writing `colorSlot` as the first stop's color, so an older watch app draws
+   * the gradient's starting color rather than nothing. */
   fill?: Fill;
   /** Fills the body from one edge by a reading, like a tank. Absent draws the
    * whole shape. Not offered on a `line`, which has no body to fill. */
@@ -2691,7 +2691,7 @@ export function isZeroOutset(o: TapOutset | undefined): boolean {
  * to a layer that is neither, or to nothing, draws nothing. The kind keeps the
  * chart's name because the chart had it first.
  *
- * No colorSlot, for the timeline's reason: the times' colour is
+ * No colorSlot, for the timeline's reason: the times' color is
  * `labelColorHex`. No `labelsAbove`: the layer's frame says where the row is.
  * Mirrors `CustomComplication.ChartTimesElement` in the app repo. */
 export interface ChartTimesElement extends Omit<ElementBase, "colorSlot"> {
@@ -2709,8 +2709,8 @@ export interface ChartTimesElement extends Omit<ElementBase, "colorSlot"> {
  * draws, skipping holes and the readings the chart already marks with its own
  * highlight dot. Nothing on a bars chart or without a chart.
  *
- * No colorSlot: `colorHex` is the one colour, and absent paints each dot in the
- * colour the series has at that reading. Mirrors
+ * No colorSlot: `colorHex` is the one color, and absent paints each dot in the
+ * color the series has at that reading. Mirrors
  * `CustomComplication.ChartDotsElement` in the app repo. */
 export interface ChartDotsElement extends Omit<ElementBase, "colorSlot"> {
   /** The chart layer whose readings get the dots. */
@@ -2891,7 +2891,7 @@ export const LIST_FAMILIES: readonly FamilyKind[] = ["rectangular", "small", "me
 /**
  * A row template drawn once per item.
  *
- * No `colorSlot`: the colours live on the row layers. Rules on the list itself
+ * No `colorSlot`: the colors live on the row layers. Rules on the list itself
  * apply `opacity`, `rotation` and `visibility` only, as on a timeline. Mirrors
  * `CustomComplication.ListElement` in the app repo.
  */
@@ -3053,8 +3053,8 @@ export interface FamilyLayout {
   bezelGauge?: BezelGauge;
   backgroundColorHex?: string;
   /** A gradient behind the whole shape, beating `backgroundColorHex`. The panel
-   * keeps writing `backgroundColorHex` as the first stop's colour, so an older
-   * watch app paints the gradient's starting colour. */
+   * keeps writing `backgroundColorHex` as the first stop's color, so an older
+   * watch app paints the gradient's starting color. */
   backgroundFill?: Fill;
   cornerBodyShape: CornerBodyShape;
   borderColorHex?: string;
@@ -3471,7 +3471,7 @@ export const CONTROL_DEFAULT_SYMBOL = "switch.2";
 /** One Control Center control, carried by the document it belongs to.
  *
  * Every text part is a `Value`, so a control can print the same live reading a
- * layer does. The colour keys are the layers' own: a flat `tintColorHex`, or
+ * layer does. The color keys are the layers' own: a flat `tintColorHex`, or
  * the band table under `coloring: "bands"`. */
 export interface ControlSpec {
   kind: ControlKind;
@@ -3486,7 +3486,7 @@ export interface ControlSpec {
   tintColorHex?: string;
   coloring: ChartColoring;
   bands: ChartBand[];
-  /** Colour past the last band. Absent means the chart's default. */
+  /** Color past the last band. Absent means the chart's default. */
   bandAboveColorHex?: string;
   /** What Control Center flashes on a press. Absent means nothing. */
   status?: Value;
@@ -3968,7 +3968,7 @@ export function settleArrivedPages(cfg: CustomComplicationConfig, arrived: Reado
 }
 
 /**
- * The success-flash colour a custom complication uses when the document names
+ * The success-flash color a custom complication uses when the document names
  * none. The watch's own fallback for customs is SwiftUI's system green (app
  * repo `customSuccessFlashColor`), drawn in the dark appearance a watch face
  * always uses. Presets fall back to grey instead; this is the custom one.
@@ -3997,7 +3997,7 @@ export interface CustomComplicationConfig {
   openPageName?: string;
   /** Ring the complication when a tap's action works. Absent means on. */
   showSuccessFlash?: boolean;
-  /** The colour of that ring. Absent means `CUSTOM_FLASH_DEFAULT`. */
+  /** The color of that ring. Absent means `CUSTOM_FLASH_DEFAULT`. */
   successFlashColorHex?: string;
   /** Layer groups (editor-only). Encoded only when there is at least one. */
   groups?: LayerGroup[];
@@ -4294,13 +4294,13 @@ function parseColorSlot(o: unknown, fallback: string): ColorSlot {
   return { baseColorHex: isObject(o) ? str(o.baseColorHex, fallback) : fallback };
 }
 
-/** A chart's colour table, reading the two-bound shape forward when that is all
+/** A chart's color table, reading the two-bound shape forward when that is all
  * the payload has.
  *
- * The first cut of banded colour (2026-09-05) had exactly two bounds and painted
- * the middle with the layer's own colour. "Under lower" and "between the bounds"
+ * The first cut of banded color (2026-09-05) had exactly two bounds and painted
+ * the middle with the layer's own color. "Under lower" and "between the bounds"
  * become two rows; "over upper" is what the table falls through to. A reading
- * sitting exactly on the lower bound moves from the middle colour to the low
+ * sitting exactly on the lower bound moves from the middle color to the low
  * one, which is the single value the two spellings disagree on. */
 function parseColorBands(raw: unknown): ChartBand[] {
   if (!Array.isArray(raw)) return [];
@@ -4310,7 +4310,7 @@ function parseColorBands(raw: unknown): ChartBand[] {
       upTo: num(b.upTo, 0),
       colorHex: str(b.colorHex, "#FFFFFF"),
     };
-    // The bar fill and border colours. Kept on every kind's table so a gauge
+    // The bar fill and border colors. Kept on every kind's table so a gauge
     // or text band carrying them round-trips, though only bars draw them.
     if (typeof b.fillColorHex === "string") band.fillColorHex = b.fillColorHex;
     if (typeof b.borderColorHex === "string") band.borderColorHex = b.borderColorHex;
@@ -4318,7 +4318,7 @@ function parseColorBands(raw: unknown): ChartBand[] {
   });
 }
 
-/** One colour table row as written: its two bar colours only when set. */
+/** One color table row as written: its two bar colors only when set. */
 function encodeBand(b: ChartBand): J {
   const o: J = { id: b.id, upTo: encNum(b.upTo), colorHex: b.colorHex };
   if (b.fillColorHex !== undefined) o.fillColorHex = b.fillColorHex;
@@ -4327,7 +4327,7 @@ function encodeBand(b: ChartBand): J {
 }
 
 /** A rich text layer's parts. Each style key is kept only when the document
- * says something other than its default, and a weight or colouring this build
+ * says something other than its default, and a weight or coloring this build
  * does not know reads as absent, the way the app's decoder reads them. */
 function parseTextParts(raw: unknown): TextPart[] {
   if (!Array.isArray(raw)) return [];
@@ -4366,7 +4366,7 @@ function parseChartBands(p: J): ChartBand[] {
   ];
 }
 
-/** A timeline's colour table. A row with a blank `match` is kept rather than
+/** A timeline's color table. A row with a blank `match` is kept rather than
  * dropped: it matches no state a recorder returns, so it draws nothing, and an
  * author part-way through typing one would be surprised to lose it. */
 function parseTimelineBands(raw: unknown): TimelineBand[] {
@@ -4544,7 +4544,7 @@ function parseElementKind(raw: unknown): Element {
       // An unknown spelling falls back to center, matching the Swift decoder.
       const align = optStr(p.alignment);
       if (align === "leading" || align === "trailing") payload.alignment = align;
-      // Colour by value. Each key is kept only when it says something other
+      // Color by value. Each key is kept only when it says something other
       // than its default, so a layer that never used it round-trips unchanged.
       if (optStr(p.coloring) === "bands") payload.coloring = "bands";
       const bands = parseColorBands(p.bands);
@@ -4621,7 +4621,7 @@ function parseElementKind(raw: unknown): Element {
           source: pickEnum(optStr(p.source), CHART_SOURCES, CHART_DEFAULT_SOURCE),
           statPeriod: pickEnum(optStr(p.statPeriod), STAT_PERIODS, CHART_DEFAULT_STAT_PERIOD),
           statType: pickEnum(optStr(p.statType), STAT_TYPES, CHART_DEFAULT_STAT_TYPE),
-          // A style, scale, baseline, highlight or colouring this build does not
+          // A style, scale, baseline, highlight or coloring this build does not
           // know reads as the default, the same rule the app's decoder applies.
           style: pickWord<ChartStyle>(p.style, ["bars", "line", "area"], "bars"),
           limit: Math.max(0, Math.round(num(p.limit, 0))),
@@ -5268,11 +5268,11 @@ const CHART_MARKER_GLYPH_SYMBOLS: Record<string, string> = {
   "◆": "diamond.fill",
 };
 
-/** The colour a new marker starts in: the chart's own highest and lowest
- * colours where the author set them, so a marker matches the bar it sits over,
+/** The color a new marker starts in: the chart's own highest and lowest
+ * colors where the author set them, so a marker matches the bar it sits over,
  * and yellow over the highest and red over the lowest otherwise. */
 function chartMarkerColor(chart: Extract<Element, { kind: "chart" }>, at: ChartAnchorPoint): string {
-  // A new chart carries the default colours written out, so only a colour that
+  // A new chart carries the default colors written out, so only a color that
   // differs from the default counts as one the author chose.
   const chosen = (hex: string | undefined, def: string) => (hex !== undefined && hex !== def ? hex : undefined);
   if (at === "highest") return chosen(chart.payload.highColorHex, CHART_DEFAULT_HIGH_HEX) ?? "#FFD60A";
@@ -5298,7 +5298,7 @@ export function chartMarkersOf(cfg: CustomComplicationConfig, chartId: string): 
 
 /** Add a marker over one of the chart's readings, in the chart's group, and
  * return its id. An icon layer, so the author picks any symbol for it and gets
- * size, colour and states with it. Undefined when `chartId` is not a chart. */
+ * size, color and states with it. Undefined when `chartId` is not a chart. */
 export function addChartMarker(
   cfg: CustomComplicationConfig,
   chartId: string,
@@ -5445,7 +5445,7 @@ export const CHART_LINES: readonly [ChartLine, string][] = [
  *
  * A line shape anchored `through`: the anchor settles where it sits and how long it
  * runs, and the author's frame keeps only the thickness of the box. It starts in
- * the colour the chart drew the line in, one point thick, so the face looks the
+ * the color the chart drew the line in, one point thick, so the face looks the
  * same the moment the button is pressed.
  *
  * The chart's own number stays (`nowIndex`, `thresholdValue`): the scale and the
@@ -5647,7 +5647,7 @@ export function addChartGrid(cfg: CustomComplicationConfig, chartId: string): st
   return el.payload.id;
 }
 
-/** The colour a new line at zero starts in: white at 40 %. */
+/** The color a new line at zero starts in: white at 40 %. */
 export const CHART_ZERO_LINE_HEX = "#FFFFFF66";
 
 /** Add a line where zero falls on a chart, and return its id. A line shape
@@ -5715,11 +5715,11 @@ export function setChartNow(cfg: CustomComplicationConfig, chartId: string, on: 
  * Decided 2026-09-12: those are always layers. The panel has no controls for a
  * chart drawing its own any more, so a document that still does is converted when
  * it is opened, before the draft takes its baseline, and the change rides along
- * with the next save. Each conversion copies what the chart drew (colour, shape,
+ * with the next save. Each conversion copies what the chart drew (color, shape,
  * count, clock), so the face reads the same.
  *
  * A highlight that only tinted its reading, with no marker, becomes the marker a
- * new one starts as, in the highlight's colour. That is the one visible change.
+ * new one starts as, in the highlight's color. That is the one visible change.
  *
  * Also decided 2026-09-12, for the same reasons: a timeline's clock times and a
  * picture's timestamp are layers too, converted here the same way.
@@ -5799,7 +5799,7 @@ function liftOneChart(cfg: CustomComplicationConfig, c: ChartElement): void {
     if (c.zeroLine === true) {
       const id = addChartZeroLine(cfg, c.id);
       const el = cfg.elements.find((e) => e.payload.id === id);
-      // The chart drew its zero line in the grid colour, so the layer does too.
+      // The chart drew its zero line in the grid color, so the layer does too.
       if (el?.kind === "shape") el.payload.colorSlot = { baseColorHex: chartGridColorHex(c.gridColorHex) };
     }
     delete c.pointDots;
@@ -5832,7 +5832,7 @@ function chartTimesFrame(chart: NormalizedFrame, labelSize: number, above: boole
  * text layers.
  *
  * That cut printed the top and bottom of the scale beside the plot and the
- * newest reading at its right edge, each with a size, a colour and an
+ * newest reading at its right edge, each with a size, a color and an
  * optional plate, from keys on the chart itself. A document saved that day
  * opens with the same numbers as text layers in the chart's group: the plate
  * becomes a capsule shape under the text. The chart's keys are dropped on the
@@ -6110,7 +6110,7 @@ function encodeElementKind(el: Element): J {
       }
       if (el.payload.alignment !== undefined && el.payload.alignment !== "center") o.alignment = el.payload.alignment;
       // After `alignment`, in the key table's order, and only when away from the
-      // default, so a text layer without colour by value writes what it always did.
+      // default, so a text layer without color by value writes what it always did.
       const t = el.payload;
       if (t.coloring !== undefined && t.coloring !== "uniform") o.coloring = t.coloring;
       if (t.bands !== undefined && t.bands.length > 0) o.bands = t.bands.map(encodeBand);
@@ -6157,7 +6157,7 @@ function encodeElementKind(el: Element): J {
         trackColorHex: g.trackColorHex,
       };
       // Same order and same "only when it differs" rule as the app's encoder, so
-      // a gauge authored before the colour table writes the bytes it always did.
+      // a gauge authored before the color table writes the bytes it always did.
       if (g.coloring !== "uniform") o.coloring = g.coloring;
       if (g.bands.length > 0) o.bands = g.bands.map(encodeBand);
       if (g.bandAboveColorHex !== CHART_DEFAULT_BAND_HIGH_HEX) o.bandAboveColorHex = g.bandAboveColorHex;
@@ -6630,7 +6630,7 @@ function encodeControl(c: ControlSpec): J {
   o.symbol = c.symbol;
   if (c.symbolOff !== undefined) o.symbolOff = c.symbolOff;
   if (c.tintColorHex !== undefined) o.tintColorHex = c.tintColorHex;
-  // Same "only when it differs" rule the layers' colour tables follow, and the
+  // Same "only when it differs" rule the layers' color tables follow, and the
   // one the app's `ControlSpec.encode` follows: a flat tint writes neither key,
   // so the bytes match whichever side last saved the document.
   if (c.coloring !== "uniform") o.coloring = c.coloring;
@@ -7332,7 +7332,7 @@ export function newElement(kind: Element["kind"]): Element {
     case "chart": return { kind, payload: { ...base("#FFFFFF"), value: literal("13,14,16,17,19,22,24,28,30"), historyMinutes: CHART_HISTORY_DEFAULT_MINUTES, historyPoints: 24, source: CHART_DEFAULT_SOURCE, statPeriod: CHART_DEFAULT_STAT_PERIOD, statType: CHART_DEFAULT_STAT_TYPE, style: "bars", curve: "smooth", fillStyle: "fade", limit: 0, takeFromEnd: false, scale: "auto", minValue: 0, maxValue: 100, baseline: "lowest", barGap: 1.5, lineWidth: 2, highlight: "none", highColorHex: CHART_DEFAULT_HIGH_HEX, lowColorHex: CHART_DEFAULT_LOW_HEX, marker: "none", coloring: "uniform", bands: [], bandAboveColorHex: CHART_DEFAULT_BAND_HIGH_HEX, fillBands: false, thresholdColorHex: CHART_DEFAULT_THRESHOLD_HEX, nowColorHex: CHART_DEFAULT_NOW_HEX, timeLabelCount: TIMELINE_DEFAULT_LABEL_COUNT, labelSize: TIMELINE_DEFAULT_LABEL_SIZE, labelColorHex: TIMELINE_DEFAULT_LABEL_HEX, labelsAbove: false, hourCycle: TIMELINE_DEFAULT_HOUR_CYCLE, minutes: TIMELINE_DEFAULT_MINUTE_STYLE } };
     // No sample states: a timeline of a made-up string would draw a strip that
     // looks like data. Empty until an entity is picked, which is also when the
-    // colour table can be seeded from its domain.
+    // color table can be seeded from its domain.
     case "timeline": {
       const { colorSlot: _unused, ...b } = base("#FFFFFF");
       return {
@@ -8065,7 +8065,7 @@ export function nextNumberedName(title: string, taken: readonly string[]): strin
  * Not `duplicateElement`. A duplicate nudges the copy so it is visible and
  * keeps its own scale, which is right for every other layer and wrong here:
  * two series only read as one plot when they sit on the same rectangle and
- * share one range. The copy keeps its own colour, style, bands and stats, and
+ * share one range. The copy keeps its own color, style, bands and stats, and
  * its numbers are not copied, because a second set of numbers on the same spot
  * is noise the author has to move before reading either.
  *
@@ -8678,7 +8678,7 @@ function rebindValue(value: Value | undefined, ref: EntityRef, kind: Element["ki
  * `rebindValue`), and the target of the tap attached to it. Rule tests are
  * deliberately left alone; the states table owns those.
  *
- * `deviceClass` is only read by a timeline, whose seeded colour table needs to
+ * `deviceClass` is only read by a timeline, whose seeded color table needs to
  * know whether a binary sensor is a door before it can name its two states.
  * The caller has it because it has `hass`; nothing in the document does.
  */
@@ -8698,7 +8698,7 @@ export function setLayerEntity(
     const before = el.payload.value.kind.kind === "entityState" ? el.payload.value.kind.entityId : undefined;
     const next = rebindValue(el.payload.value, full, el.kind);
     if (next) el.payload.value = next;
-    // A different entity reports different states, so the colour table is
+    // A different entity reports different states, so the color table is
     // written fresh for it. Picking the same entity again keeps any edits.
     // A merged strip is the exception: whatever its entities are, the server
     // sends back on and off, so the table is seeded for those instead.
@@ -9143,7 +9143,7 @@ function readsShared(v: Value, id: string): boolean {
 
 /**
  * How many places read one shared value. A layer counts once however many of
- * its values do (its text, a state test, a colour); anything else that reads
+ * its values do (its text, a state test, a color); anything else that reads
  * it, such as a bezel, the inline line or another shared value, counts alone.
  */
 export function sharedValueUses(cfg: CustomComplicationConfig, id: string): number {
@@ -9462,21 +9462,21 @@ export const RULE_TARGET_PROPERTIES: Record<RuleTarget, StyleProperty[]> = {
   // No text or size effects: a chart's content is a whole series, and swapping that
   // from a rule would need a second series source.
   chart: ["color", "opacity", "rotation", "visibility"],
-  // No colour either: every colour a timeline draws is in its own table, so a
-  // rule that recoloured the layer would have nothing to recolour.
+  // No color either: every color a timeline draws is in its own table, so a
+  // rule that recolored the layer would have nothing to recolor.
   timeline: ["opacity", "rotation", "visibility"],
   shape: ["color", "opacity", "borderColor", "borderWidth", "rotation", "visibility"],
   image: ["opacity", "rotation", "visibility"],
   tap: ["visibility"],
-  // No colour, for the timeline's reason: the times carry their own.
+  // No color, for the timeline's reason: the times carry their own.
   chartTimes: ["opacity", "rotation", "visibility"],
-  // No colour and no rotation: the colour is the layer's own, and the layer
+  // No color and no rotation: the color is the layer's own, and the layer
   // draws in its chart's box, turned the way the chart is.
   chartDots: ["opacity", "visibility"],
   chartGrid: ["opacity", "visibility"],
-  // No colour: the chip's look is fixed, as it was inside the picture.
+  // No color: the chip's look is fixed, as it was inside the picture.
   imageTime: ["opacity", "rotation", "visibility"],
-  // The timeline's three, for the timeline's reason: every colour a list draws
+  // The timeline's three, for the timeline's reason: every color a list draws
   // belongs to a row layer, and each row layer takes rules of its own.
   list: ["opacity", "rotation", "visibility"],
   layout:["backgroundColor", "borderColor", "borderWidth", "text"],

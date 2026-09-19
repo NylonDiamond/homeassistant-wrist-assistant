@@ -83,7 +83,7 @@ describe("turnOnRichText", () => {
     for (const key of ["coloring", "bands", "bandAboveColorHex", "highlight", "highColorHex", "lowColorHex"]) {
       expect(p, key).not.toHaveProperty(key);
     }
-    // The numbers keep their colours: the part's runs are the layer's old runs.
+    // The numbers keep their colors: the part's runs are the layer's old runs.
     const after = resolved(cfg, { "sensor.power": "42.5" });
     expect(after.parts![0]!.spans).toEqual(before.spans);
     expect(after.text).toBe(before.text);

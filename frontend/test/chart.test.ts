@@ -509,7 +509,7 @@ describe("drawing a chart", () => {
     for (let i = 1; i < bars.length; i++) expect(bars[i]!.x).toBeGreaterThanOrEqual(bars[i - 1]!.x + bars[i - 1]!.w - 0.001);
   });
 
-  it("paints the marked ends in their own colours", () => {
+  it("paints the marked ends in their own colors", () => {
     const svg = draw(prices, (p) => { p.highlight = "both"; });
     expect(svg).toContain(HIGH);
     expect(svg).toContain(LOW);
@@ -530,7 +530,7 @@ describe("drawing a chart", () => {
     const svg = draw(prices, (p) => { p.highlight = "both"; setChartEndMarkers(p, { high: "none", low: "dot" }); });
     expect(triangles(svg)).toBe(0);
     expect(circleCount(svg)).toBe(1);
-    // The colour is the highlight's, marker or not.
+    // The color is the highlight's, marker or not.
     expect(svg).toContain(HIGH);
     expect(svg).toContain(LOW);
   });
@@ -579,20 +579,20 @@ describe("drawing a chart", () => {
   });
 });
 
-/** Turn a chart into a colour table: `[upTo, colour]` steps plus the rest. */
+/** Turn a chart into a color table: `[upTo, color]` steps plus the rest. */
 function band(p: ChartElement, table: [number, string][], above = "#FF0000") {
   p.coloring = "bands";
   p.bands = table.map(([upTo, colorHex], i) => ({ id: `B${i}`, upTo, colorHex }));
   p.bandAboveColorHex = above;
 }
 
-describe("colouring a chart by value", () => {
-  it("carries no per-reading colours while the chart is one colour", () => {
+describe("coloring a chart by value", () => {
+  it("carries no per-reading colors while the chart is one color", () => {
     const { cfg, state } = chartConfig("1,5,9");
     expect(chartOf(rectangular(cfg, state)).pointColorHexes).toEqual([]);
   });
 
-  it("gives each reading the colour of the band it falls in", () => {
+  it("gives each reading the color of the band it falls in", () => {
     const { cfg, state } = chartConfig("5, 10, 15, 20, 25",
       (p) => band(p, [[10, "#00FF00"], [20, "#9A6BFF"]]));
     // A band says where it ends, so a reading sitting exactly on a step belongs to
@@ -615,12 +615,12 @@ describe("colouring a chart by value", () => {
       .toEqual(["#FF0000", "#FF9500", "#32D74B"]);
   });
 
-  it("leaves a chart with an empty table one colour", () => {
+  it("leaves a chart with an empty table one color", () => {
     const { cfg, state } = chartConfig("5, 15, 25", (p) => { p.coloring = "bands"; });
     expect(chartOf(rectangular(cfg, state)).pointColorHexes).toEqual([]);
   });
 
-  it("has no colours to hand out when the series is empty", () => {
+  it("has no colors to hand out when the series is empty", () => {
     const { cfg, state } = chartConfig("unavailable",
       (p) => band(p, [[10, "#00FF00"]]));
     expect(chartOf(rectangular(cfg, state)).pointColorHexes).toEqual([]);
@@ -635,7 +635,7 @@ describe("colouring a chart by value", () => {
     const svg = flatten(renderLayout(rectangular(cfg, "5, 15, 25"), { icons: noIcons }));
     expect(svg).toContain("#00FF00");
     // The tallest reading is past the last band, but the highlight is the more
-    // specific statement, so its colour is what lands.
+    // specific statement, so its color is what lands.
     expect(svg).not.toContain("#FF0000");
     expect(svg).toContain("#FF6B35");
   });
@@ -647,12 +647,12 @@ describe("colouring a chart by value", () => {
     });
     const svg = flatten(renderLayout(rectangular(cfg, "5, 15, 25"), { icons: noIcons }));
     // Two readings make one leg, three make two. Each takes the band of the reading
-    // it arrives at, so the last leg carries the newest reading's colour.
+    // it arrives at, so the last leg carries the newest reading's color.
     expect(svg.match(/stroke-linejoin/g) ?? []).toHaveLength(2);
     expect(svg).toContain("#FF0000");
   });
 
-  it("leaves an area's fill one colour until asked otherwise", () => {
+  it("leaves an area's fill one color until asked otherwise", () => {
     const { cfg } = chartConfig("5, 15, 25", (p) => {
       p.style = "area";
       p.fillStyle = "flat";
@@ -660,7 +660,7 @@ describe("colouring a chart by value", () => {
       p.colorSlot.baseColorHex = "#123456";
     });
     const svg = flatten(renderLayout(rectangular(cfg, "5, 15, 25"), { icons: noIcons }));
-    // One wash, in the layer's own colour, under a banded stroke.
+    // One wash, in the layer's own color, under a banded stroke.
     expect(svg.match(/fill-opacity=0\.28/g) ?? []).toHaveLength(1);
     expect(svg).toContain("#123456");
   });
@@ -678,7 +678,7 @@ describe("colouring a chart by value", () => {
   });
 
   it("reads the two-bound band shape forward into a table", () => {
-    // What the first cut of banded colour wrote, on the morning of 2026-09-05.
+    // What the first cut of banded color wrote, on the morning of 2026-09-05.
     const doc = {
       schemaVersion: 6,
       id: "AAAAAAAA-0000-4000-8000-0000000000FF",
@@ -973,7 +973,7 @@ describe("reading the built-in numbers forward", () => {
     expect(groupMembers(cfg, group.id)).toHaveLength(4);
   });
 
-  it("falls back to the first cut's single colour when a label has no style", () => {
+  it("falls back to the first cut's single color when a label has no style", () => {
     const cfg = parseConfig(doc({ scaleLabels: "top", scaleLabelColorHex: "#ABCDEF" }));
     const [top] = chartLabelsOf(cfg, "EEEEEEEE-0000-4000-8000-0000000000FE");
     expect(top!.payload.colorSlot.baseColorHex).toBe("#ABCDEF");
@@ -1720,8 +1720,8 @@ describe("where an anchored marker lands", () => {
 
   it("starts the highest marker yellow and the lowest red", () => {
     const { cfg, ids } = placed("1,2,9", [{ at: "highest" }, { at: "lowest" }]);
-    const colour = (id: string) => (cfg.elements.find((e) => e.payload.id === id)!.payload as IconElement).colorSlot.baseColorHex;
-    expect(ids.map(colour)).toEqual(["#FFD60A", "#FF453A"]);
+    const color = (id: string) => (cfg.elements.find((e) => e.payload.id === id)!.payload as IconElement).colorSlot.baseColorHex;
+    expect(ids.map(color)).toEqual(["#FFD60A", "#FF453A"]);
   });
 
   it("moves the marker around the bar top with the place", () => {
@@ -2140,7 +2140,7 @@ describe("drawing chart fill", () => {
   }
   const count = (s: string, needle: string) => s.split(needle).length - 1;
 
-  it("defines one fade gradient per colour, and banded quads share them", () => {
+  it("defines one fade gradient per color, and banded quads share them", () => {
     const svg = draw("1,2,5,6", (p) => {
       p.style = "area";
       p.fillStyle = "fade";
@@ -2154,7 +2154,7 @@ describe("drawing chart fill", () => {
     expect(svg).toContain("gradientUnits=\"userSpaceOnUse\"");
   });
 
-  it("keeps a flat fill at 28 % with no gradient, and a fill colour of its own", () => {
+  it("keeps a flat fill at 28 % with no gradient, and a fill color of its own", () => {
     const flat = draw("1,2,5,6", (p) => { p.style = "area"; p.fillStyle = "flat"; p.fillColorHex = "#0A84FF"; });
     expect(flat).not.toContain("<linearGradient");
     expect(flat).toContain("fill=#0A84FF fill-opacity=0.28");

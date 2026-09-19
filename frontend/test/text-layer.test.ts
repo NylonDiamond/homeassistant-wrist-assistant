@@ -100,8 +100,8 @@ describe("text layer monospaced digits", () => {
   });
 });
 
-describe("text layer colour by value", () => {
-  /** Each coloured run as [text, fill]. */
+describe("text layer color by value", () => {
+  /** Each colored run as [text, fill]. */
   const runs = (svg: string) =>
     [...svg.matchAll(/<tspan fill=(.+?) fill-opacity=[\d.]+>([^<]*)<\/tspan>/g)].map((m) => [m[2]!, m[1]!] as const);
   const priced = (p: TextElement) => {
@@ -118,7 +118,7 @@ describe("text layer colour by value", () => {
     expect(runs(draw("32 36 43 70"))).toEqual([]);
   });
 
-  it("draws each run in its own colour and still spells the text", () => {
+  it("draws each run in its own color and still spells the text", () => {
     const got = runs(draw("32 36 43 70", priced));
     expect(got.map(([t]) => t)).toEqual(["32", " ", "36", " ", "43", " ", "70"]);
     const fill = (text: string) => got.find(([t]) => t === text)![1];
@@ -128,18 +128,18 @@ describe("text layer colour by value", () => {
     expect(fill(" ")).not.toBe(fill("36"));
   });
 
-  it("lays the text out exactly as it would in one colour", () => {
+  it("lays the text out exactly as it would in one color", () => {
     const size = (svg: string) => Number(/font-size=([\d.]+)/.exec(svg)?.[1]);
     const text = "Prices for today 32 36 43 70";
     for (const tweak of [(p: TextElement) => { p.fontSize = 16; }, (p: TextElement) => { p.fontSize = 16; p.lineLimit = 2; p.alignment = "trailing"; }]) {
       const plain = draw(text, tweak);
-      const coloured = draw(text, (p) => { tweak(p); priced(p); });
-      expect(size(coloured)).toBeCloseTo(size(plain), 5);
-      expect(anchorOf(coloured)).toEqual(anchorOf(plain));
+      const colored = draw(text, (p) => { tweak(p); priced(p); });
+      expect(size(colored)).toBeCloseTo(size(plain), 5);
+      expect(anchorOf(colored)).toEqual(anchorOf(plain));
     }
   });
 
-  it("keeps each number's colour when the text wraps onto a second line", () => {
+  it("keeps each number's color when the text wraps onto a second line", () => {
     const svg = draw("Prices for today 32 36 43 70", (p) => { p.fontSize = 16; p.lineLimit = 2; priced(p); });
     const lines = svg.split(/<tspan x=[-\d.]+ y=[-\d.]+>/).slice(1).map((chunk) => runs(chunk));
     expect(lines).toHaveLength(2);
@@ -152,7 +152,7 @@ describe("text layer colour by value", () => {
     expect(first.at(-1)![1]).not.toBe(second[0]![1]);
   });
 
-  it("paints the ellipsis in the colour of what it cut short", () => {
+  it("paints the ellipsis in the color of what it cut short", () => {
     const got = runs(draw("9".repeat(60), (p) => { p.fontSize = 16; priced(p); }));
     expect(got).toHaveLength(1);
     expect(got[0]![0].endsWith("…")).toBe(true);

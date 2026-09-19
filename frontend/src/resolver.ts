@@ -209,7 +209,7 @@ export interface ResolvedBase {
    * only ever decides where it lands, and the width and height stay theirs. */
   chartAnchor?: ChartAnchor;
   /** Set only on a layer the document put in the accent group, so the tinted
-   * preview can paint it in the accent colour. Absent is the default group. */
+   * preview can paint it in the accent color. Absent is the default group. */
   accentGroup?: "accent";
 }
 export interface ResolvedText extends ResolvedBase {
@@ -235,14 +235,14 @@ export interface ResolvedText extends ResolvedBase {
   minimumScale: number;
   /** Which edge of the layer box the text sits against. Straight off the element. */
   alignment: TextAlignment;
-  /** The text cut into runs of one colour, when the layer colours its numbers by
+  /** The text cut into runs of one color, when the layer colors its numbers by
    * value (`textColorsByValue`). Joined, the runs spell `text` exactly. Absent
    * when the whole text is `colorHex`, which is every layer that does not ask. */
   spans?: TextSpan[];
   /** Rich text: every visible part, in order, each in its own look. Absent when
    * the layer is not drawn as parts (it has none, it is a countdown, or a layer
    * rule set the text); empty when every part is hidden. With parts, `text` is
-   * their texts joined, the layer's size, weight and colour are what a part set
+   * their texts joined, the layer's size, weight and color are what a part set
    * to the layer's look takes, and `spans` is absent. */
   parts?: ResolvedTextPart[];
   /** Curved text, already settled against the shape: `radius` is in design-box
@@ -281,10 +281,10 @@ export interface ResolvedTextPart {
   italic: boolean;
   colorHex: string;
   /** The part's text cut into runs by its own band table, with no highlight.
-   * Absent when the part is one colour. */
+   * Absent when the part is one color. */
   spans?: TextSpan[];
 }
-/** One run of a text layer drawn in one colour. Mirrors `ResolvedText.Span` in
+/** One run of a text layer drawn in one color. Mirrors `ResolvedText.Span` in
  * the app repo. */
 export interface TextSpan {
   text: string;
@@ -294,7 +294,7 @@ export interface TextSpan {
  * A level after its reading settled: how much of the layer is filled, from
  * which edge, and what the rest is painted in.
  *
- * The track colour is settled here rather than at draw time, so both renderers
+ * The track color is settled here rather than at draw time, so both renderers
  * start from one hex and a fixture can pin it. Mirrors
  * `CustomComplication.ResolvedLevel` in the app repo.
  */
@@ -303,8 +303,8 @@ export interface ResolvedLevel {
    * track alone. */
   fraction: number;
   direction: LevelDirection;
-  /** The unfilled part's colour, never absent: the level's own track colour, or
-   * the layer's colour faded. */
+  /** The unfilled part's color, never absent: the level's own track color, or
+   * the layer's color faded. */
   trackColorHex: string;
 }
 
@@ -341,8 +341,8 @@ export interface ResolvedGauge extends ResolvedBase {
    * here so the renderer never parses a value. */
   dotCount: number;
   filledCount: number;
-  /** The gradient along the track, absent when the gauge draws one flat colour.
-   * A band's colour or a rule's colour drops it: both are statements about this
+  /** The gradient along the track, absent when the gauge draws one flat color.
+   * A band's color or a rule's color drops it: both are statements about this
    * reading, and a gradient is not. */
   fill?: Fill;
   /** The marks around the scale. `tickCount` 0 draws none. */
@@ -391,8 +391,8 @@ export interface ResolvedChart extends ResolvedBase {
    * highlight. */
   highMarker: ChartEndMarker;
   lowMarker: ChartEndMarker;
-  /** One colour per reading, parallel to `values`. Empty when the whole series
-   * is one colour, which keeps the common case free of a second array. */
+  /** One color per reading, parallel to `values`. Empty when the whole series
+   * is one color, which keeps the common case free of a second array. */
   pointColorHexes: string[];
   /** Whether an area's fill follows `pointColorHexes` too. */
   fillBands: boolean;
@@ -403,7 +403,7 @@ export interface ResolvedChart extends ResolvedBase {
   smoothing: ChartSmoothing | "off";
   /** How an area fills under its line. Carried for every style. */
   fillStyle: ChartFillStyle;
-  /** The fill's own colour; absent fills in the series or band colour. */
+  /** The fill's own color; absent fills in the series or band color. */
   fillColorHex?: string;
   /** The gradient under a line or area, beating `fillColorHex`. Bars ignore it. */
   areaFill?: Fill;
@@ -414,9 +414,9 @@ export interface ResolvedChart extends ResolvedBase {
   /** The border drawn inside each bar's outline, clamped 0…6. 0 when off, and
    * always 0 for line and area. */
   barBorderWidth: number;
-  /** Each bar's fill colour, parallel to `values`. Empty for line and area. */
+  /** Each bar's fill color, parallel to `values`. Empty for line and area. */
   barFillColorHexes: string[];
-  /** Each bar's border colour, parallel to `values`. Empty unless the chart is
+  /** Each bar's border color, parallel to `values`. Empty unless the chart is
    * bars with a border. */
   barBorderColorHexes: string[];
   /** Whether the border leaves out each bar's baseline end. Only true while a
@@ -500,7 +500,7 @@ export function chartStatValue(r: ChartReadings, stat: ChartStat): number | unde
     }
   }
 }
-/** One stretch of a timeline in one colour. `start` and `end` are fractions of
+/** One stretch of a timeline in one color. `start` and `end` are fractions of
  * the frame's width, oldest at 0 and newest at 1. Mirrors
  * `CustomComplication.ResolvedTimeline.Run` in the app repo. */
 export interface TimelineRun {
@@ -565,7 +565,7 @@ export interface ResolvedChartDots extends ResolvedBase {
   /** The effective diameter: `size`, or the chart's line width times
    * `CHART_DOT_SCALE`. 0 when the chart is missing. */
   diameter: number;
-  /** Every dot's colour; absent paints each in the series colour at its reading. */
+  /** Every dot's color; absent paints each in the series color at its reading. */
   colorHex?: string;
   /** The readings that get a dot, oldest first: holes and the readings the chart
    * marks with its own highlight dot left out. Empty when the layer draws
@@ -707,8 +707,8 @@ export interface ResolvedShape extends ResolvedBase {
   /** Only read for the `line` kind. */
   thickness: number;
   fillColorHex: string;
-  /** The gradient over the body, absent when the shape draws one flat colour. A
-   * rule that recoloured the shape drops it: the rule is a statement about this
+  /** The gradient over the body, absent when the shape draws one flat color. A
+   * rule that recolored the shape drops it: the rule is a statement about this
    * moment and the gradient is not. */
   fill?: Fill;
   borderColorHex?: string;
@@ -800,7 +800,7 @@ export interface ResolvedLayout {
   bezelGauge?: ResolvedBezelGauge;
   backgroundColorHex?: string;
   /** The gradient behind the whole shape, beating `backgroundColorHex`. A shape
-   * rule that set the background colour drops it. */
+   * rule that set the background color drops it. */
   backgroundFill?: Fill;
   cornerBodyShape: CornerBodyShape;
   borderColorHex?: string;
@@ -1104,7 +1104,7 @@ export interface NumberToken {
 }
 
 /** Every number in a string with its place in the string. The one tokenizer
- * behind both `chartNumbers` and a text layer's colour by value, so a chart and
+ * behind both `chartNumbers` and a text layer's color by value, so a chart and
  * the text printed under it can never disagree about what counts as a number. */
 export function numberTokens(raw: string, limit = 240): NumberToken[] {
   const out: NumberToken[] = [];
@@ -1153,21 +1153,21 @@ export function numberTokens(raw: string, limit = 240): NumberToken[] {
   return out;
 }
 
-/** The keys a run of text is coloured by value from: a whole text layer's, or
+/** The keys a run of text is colored by value from: a whole text layer's, or
  * one part's, which carries the table and never a highlight. */
 export type TextValueColoring = Pick<TextElement, "coloring" | "bands" | "bandAboveColorHex" | "highlight" | "highColorHex" | "lowColorHex">;
 
 /**
- * A text layer's colour by value: the text cut into runs of one colour.
+ * A text layer's color by value: the text cut into runs of one color.
  *
  * Numbers are read with `numberTokens`, exactly as a chart reads its series.
  * The highlight picks one number per end the way a chart picks its highIndex
  * and lowIndex: the first occurrence of the largest and of the smallest, and
  * when that is the same number the highest wins. A number then takes the
- * highest colour, else the lowest colour, else its band when the table is in
- * use, else the layer colour. Everything that is not a number keeps the layer
- * colour, a trailing dot included. Neighbouring runs of the same colour are one
- * run, and no run is empty: text with no numbers is one run in the layer colour,
+ * highest color, else the lowest color, else its band when the table is in
+ * use, else the layer color. Everything that is not a number keeps the layer
+ * color, a trailing dot included. Neighbouring runs of the same color are one
+ * run, and no run is empty: text with no numbers is one run in the layer color,
  * and empty text is no runs at all.
  *
  * A part of a rich text layer is read the same way with its own table and no
@@ -1233,7 +1233,7 @@ export function textValueSpans(text: string, colorHex: string, el: TextValueColo
       : bands.length > 0 ? chartBandColor(t.value, bands, above)
       : colorHex;
     // "costs 5." reads 5 with the full stop in its token, but the full stop is
-    // punctuation, so the coloured run ends at the last digit. A dot inside a
+    // punctuation, so the colored run ends at the last digit. A dot inside a
     // number ("5.5") is not trailing and stays in it.
     const end = text[t.end - 1] === "." ? t.end - 1 : t.end;
     push(text.slice(t.start, end), hex);
@@ -1336,11 +1336,11 @@ function decodeState(raw: string): string {
 }
 
 /**
- * The samples cut into coloured runs across the frame.
+ * The samples cut into colored runs across the frame.
  *
  * Each sample runs until the next one starts, and the last runs to the right
- * edge, which is now. Neighbours of one colour are merged into a single run:
- * two states that draw the same colour are one thing to look at, and the watch
+ * edge, which is now. Neighbours of one color are merged into a single run:
+ * two states that draw the same color are one thing to look at, and the watch
  * has a view budget that a hundred separate rectangles would spend on nothing.
  *
  * Offsets past the end of the span are pulled back to it rather than dropped,
@@ -1492,7 +1492,7 @@ function addComputedFields(fields: Map<string, string>, source: ListSource, inde
       return;
     }
     case "todo": {
-      // Not clamped: an overdue item is the one worth colouring red, and a
+      // Not clamped: an overdue item is the one worth coloring red, and a
       // negative number is how a rule finds it.
       const due = itemSeconds(fields, "due");
       if (due !== undefined) fields.set("dueIn", String(Math.round(due - nowSeconds)));
@@ -2119,7 +2119,7 @@ export class Resolver {
   // ── elements and layouts ──────────────────────────────────────────────
 
   /**
-   * A level's reading against its scale, and the colour the unfilled part takes.
+   * A level's reading against its scale, and the color the unfilled part takes.
    *
    * Each end of the scale settles the way a gauge's does: the entity that end
    * follows when it holds a number, then the typed-in number. A reading that is
@@ -2144,11 +2144,11 @@ export class Resolver {
    * Every visible part of a rich text layer, in order, against the layer's
    * already resolved look.
    *
-   * A part's rules can change only what a part has: its colour, text, size,
+   * A part's rules can change only what a part has: its color, text, size,
    * weight and whether it shows. Anything else one sets is ignored rather than
    * leaking onto the layer. Each look falls back rule first, then the part's
-   * own setting, then the layer, so a layer rule that recolours the text
-   * reaches every part that has no colour of its own.
+   * own setting, then the layer, so a layer rule that recolors the text
+   * reaches every part that has no color of its own.
    */
   private resolveTextParts(parts: readonly TextPart[], rules: readonly Rule[], layer: ResolvedText, forced?: ForcedBranches): ResolvedTextPart[] {
     const out: ResolvedTextPart[] = [];
@@ -2217,14 +2217,14 @@ export class Resolver {
         const arc = resolvedTextArc(el.payload, family);
         if (arc !== undefined) out.arc = arc;
         if (rich) {
-          // The layer's own colour by value is ignored: each part carries its
-          // own table, and the layer's would colour numbers across parts.
+          // The layer's own color by value is ignored: each part carries its
+          // own table, and the layer's would color numbers across parts.
           out.parts = this.resolveTextParts(el.payload.parts!, p.rules, out, forced);
           out.text = out.parts.map((part) => part.text).join("");
           return out;
         }
-        // Read off the final text and colour, so a rule that rewrites the text
-        // or recolours the layer is what the numbers are read from and what the
+        // Read off the final text and color, so a rule that rewrites the text
+        // or recolors the layer is what the numbers are read from and what the
         // rest of the text keeps.
         if (textColorsByValue(el.payload)) out.spans = textValueSpans(out.text, out.colorHex, el.payload);
         return out;
@@ -2256,8 +2256,8 @@ export class Resolver {
         // The box goes with the path: a layer drawing an SF Symbol has no path
         // for it to mean anything about.
         if (path !== undefined && el.payload.viewBox !== undefined) out.viewBox = el.payload.viewBox;
-        // The track follows the colour the layer ended up in, so a rule that
-        // recolours the icon recolours both halves of it.
+        // The track follows the color the layer ended up in, so a rule that
+        // recolors the icon recolors both halves of it.
         const level = this.resolveLevel(el.payload.level, out.colorHex);
         if (level !== undefined) out.level = level;
         return out;
@@ -2274,7 +2274,7 @@ export class Resolver {
         const max = bound(this.styleNumber(style, "gaugeMax"), g.maxSource, g.maxValue);
         const reading = raw === undefined ? undefined : leadingNumber(raw);
 
-        // A band names its own colour, so it wins over a rule that recolours the
+        // A band names its own color, so it wins over a rule that recolors the
         // gauge: the rule says the layer is in an unusual state, the table says
         // where this reading sits, and the table is the more specific statement.
         const ruledColor = this.styleColor(style, "color");
@@ -2284,7 +2284,7 @@ export class Resolver {
           colorHex = chartBandColor(reading!, chartSortedBands(g), g.bandAboveColorHex);
         }
         // A gradient says how the track looks, not what the reading is, so a
-        // band's colour or a rule's colour is the more specific statement and
+        // band's color or a rule's color is the more specific statement and
         // drops it. Mirrors `resolveGauge` in the app repo.
         const fill = banded || ruledColor !== undefined ? undefined : g.fill;
 
@@ -2364,7 +2364,7 @@ export class Resolver {
           smoothing: chartSmoothing(c.smoothing) ?? "off",
           fillStyle: chartFillStyle(c.fillStyle),
           ...(c.fillColorHex !== undefined ? { fillColorHex: c.fillColorHex } : {}),
-          // Carried as authored: a chart's own colour rules recolour the line,
+          // Carried as authored: a chart's own color rules recolor the line,
           // not the area under it, so nothing here drops the gradient.
           ...(c.areaFill !== undefined && c.style !== "bars" ? { areaFill: c.areaFill } : {}),
           barRadius: chartBarRadius(c.barRadius),
@@ -2399,7 +2399,7 @@ export class Resolver {
           if (low >= 0 && low !== high) out.lowIndex = low;
         }
         // Each bar's fill and border, once the highlight has picked its ends,
-        // since a highlighted bar is filled and bordered in its highlight colour.
+        // since a highlighted bar is filled and bordered in its highlight color.
         if (c.style === "bars") {
           const colors = values.map((v, i) => chartBarColors(c, v, sortedBands, baseColorHex,
             i === out.highIndex ? c.highColorHex : i === out.lowIndex ? c.lowColorHex : undefined));
@@ -2448,7 +2448,7 @@ export class Resolver {
           fillColorHex: ruledColor ?? el.payload.colorSlot.baseColorHex,
           borderWidth: this.styleNumber(style, "borderWidth") ?? el.payload.borderWidth,
         };
-        // A rule that recoloured the shape drops the gradient; otherwise the
+        // A rule that recolored the shape drops the gradient; otherwise the
         // rule would look like it did nothing. Mirrors `resolveShape` in Swift.
         if (ruledColor === undefined && el.payload.fill !== undefined) out.fill = el.payload.fill;
         const border = this.styleColor(style, "borderColor") ?? el.payload.borderColorHex;
@@ -2936,7 +2936,7 @@ export function chartGridYs(g: { plotTop: number; plotBottom: number }, lines: n
 
 /** Where every mark of a chart lands inside its frame.
  *
- * Pure geometry, no colours: mirrors `CustomComplicationChartGeometry` in the app
+ * Pure geometry, no colors: mirrors `CustomComplicationChartGeometry` in the app
  * repo, at scale 1 because the panel already draws in watch points. */
 export function chartGeometry(el: Extract<ResolvedElement, { kind: "chart" }>, box: Box) {
   const values = el.values;

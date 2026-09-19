@@ -1,4 +1,4 @@
-// The words under a states table: its empty state, and the colours a new row
+// The words under a states table: its empty state, and the colors a new row
 // starts with so a table works from its first row.
 
 import { describe, expect, it } from "vitest";
@@ -20,7 +20,7 @@ describe("states table wording", () => {
   });
 });
 
-describe("seeded colours", () => {
+describe("seeded colors", () => {
   const colorOf = (rules: Rule[], i: number) => {
     const ch = rules[0]!.cases[i]!.then[0];
     return ch?.kind === "setColor" && ch.value?.kind.kind === "literal" ? ch.value.kind.value : undefined;

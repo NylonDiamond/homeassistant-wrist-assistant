@@ -1,7 +1,7 @@
-// The states a domain is known to report, with an icon and a colour for each.
+// The states a domain is known to report, with an icon and a color for each.
 //
-// A timeline already seeds its colour bands from the domain and device class
-// (`seedTimelineBands`), because a strip in one colour answers none of the
+// A timeline already seeds its color bands from the domain and device class
+// (`seedTimelineBands`), because a strip in one color answers none of the
 // questions a timeline is added to answer. A states table has the same problem
 // and the same answer: the domain already knows that a cover is open, closed,
 // opening or closing, so the rows can be written for the author and left there
@@ -15,7 +15,7 @@
 //
 //  1. The words are the recorder's, not the frontend's. A binary sensor is `on`
 //     and `off` whatever its device class, so a door-shaped one gets `on` and
-//     `off` with the icons and colours a door wants rather than rows spelling
+//     `off` with the icons and colors a door wants rather than rows spelling
 //     `open` that would match nothing.
 //  2. Every symbol is in `CURATED_SYMBOLS`, which is the list checked against
 //     both the real SF Symbols set and the icon pack the panel draws with. An
@@ -41,7 +41,7 @@ export interface StateSeed {
   /** An SF Symbol name, always one of `CURATED_SYMBOLS`. */
   symbol: string;
   /** `#RRGGBB`. Shared with the timeline's table wherever that names the same
-   * state, so the two seeders cannot drift into different colours for `open`. */
+   * state, so the two seeders cannot drift into different colors for `open`. */
   colorHex: string;
 }
 
@@ -66,7 +66,7 @@ const ON_OFF_DOMAINS = ["light", "switch", "fan", "input_boolean"];
  *
  * The device class is the only thing that says what `on` means: a door sensor
  * that is on stands open, a smoke sensor that is on is an emergency, and a
- * connectivity sensor that is on is the good news. So the colours flip with the
+ * connectivity sensor that is on is the good news. So the colors flip with the
  * class rather than following `on` and `off`.
  */
 const BINARY_CLASSES: Record<string, OnOff> = {
@@ -100,7 +100,7 @@ const BINARY_DEFAULT: OnOff = {
   off: { symbol: "circle", colorHex: OFF_HEX },
 };
 
-/** Weather has no timeline colours of its own, so its table names both. The
+/** Weather has no timeline colors of its own, so its table names both. The
  * states are Home Assistant's condition words, hyphens and all. */
 const WEATHER_SEEDS: StateSeed[] = [
   { state: "sunny", symbol: "sun.max.fill", colorHex: "#FFD60A" },
@@ -120,7 +120,7 @@ const WEATHER_SEEDS: StateSeed[] = [
   { state: "exceptional", symbol: "exclamationmark.triangle.fill", colorHex: "#FF453A" },
 ];
 
-/** Everything whose states are a fixed list of words the domain owns. Colours
+/** Everything whose states are a fixed list of words the domain owns. Colors
  * come from the timeline's table wherever it names the state. */
 const DOMAIN_SEEDS: Record<string, { state: string; symbol: string; colorHex?: string }[]> = {
   cover: [
@@ -232,7 +232,7 @@ export function canSeedStates(domain: string, deviceClass?: string): boolean {
  * catches `unknown` too, which no `equals` row can.
  *
  * `columns` is what this kind of layer reads (`RULE_TARGET_PROPERTIES`), so a
- * shape gets colours and no icons, and a text layer that shows neither gets
+ * shape gets colors and no icons, and a text layer that shows neither gets
  * rows with nothing in them rather than cells the watch ignores.
  */
 export function seedStatesRows(seeds: readonly StateSeed[], columns: { icon: boolean; color: boolean }): StatesRowInput[] {
