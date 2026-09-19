@@ -2678,12 +2678,10 @@ export class WristAssistantPanel extends LitElement {
     }
     /* The vh caps above and below are the fallback for the stacked layout,
        where the column has no height of its own. In three columns the open
-       add card is sized instead: it may take at most two thirds of the column
-       less the room the Pages and Shared values cards need, so the Layers
-       card always keeps a third of the column whatever the card size. Inside
-       it the Elements and Presets scrollers split the room equally, so the
-       two boxes are the same height in Names, Small and Large alike and
-       the card does not jump when the size changes. */
+       add card is sized instead: it may take at most half the column less
+       the room the Pages and Shared values cards need, so the Layers card,
+       the one the design is edited in, keeps at least half of the column
+       whatever the card size (a third is its hard floor, below). */
     /* The boxes start at their content and shrink, never grow: a box with
        three rows in it is three rows tall and the room it does not need goes
        to the Layers card. A basis of zero with grow, or a max-content cap,
@@ -2692,7 +2690,7 @@ export class WristAssistantPanel extends LitElement {
        so the presets box, the one people browse, keeps most of the room
        when the card is full. */
     .column.left .card.add-card[data-open="true"] {
-      flex: 0 1 auto; min-height: 0; max-height: calc(66% - 150px);
+      flex: 0 1 auto; min-height: 0; max-height: calc(50% - 150px);
       display: flex; flex-direction: column;
     }
     .column.left .card.add-card[data-open="true"] > * { flex: none; }
@@ -2701,7 +2699,7 @@ export class WristAssistantPanel extends LitElement {
     }
     .column.left .card.add-card[data-open="true"] > .add-group:has(.add-scroll) > .presets-head { flex: none; }
     .column.left .card.add-card[data-open="true"] .add-scroll { flex: 0 1 auto; min-height: 0; max-height: none; }
-    .column.left .card.add-card[data-open="true"] .add-scroll.short { max-height: 18vh; }
+    .column.left .card.add-card[data-open="true"] .add-scroll.short { max-height: 13vh; }
     /* The capped elements box keeps its cap rather than shrinking with the
        presets box, otherwise the cap shrinks with the rest. */
     .column.left .card.add-card[data-open="true"] > .add-group:has(.add-scroll.short) { flex-shrink: 0; }
