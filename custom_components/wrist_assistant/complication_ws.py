@@ -355,6 +355,10 @@ def ws_owners(
     ``paired_iphone_name`` tells apart the two that are still called the
     same thing. One lookup serves both kinds: ``build_device_info`` registers
     an iPhone under the same ``watch_<id>`` identifier a watch gets.
+
+    ``paired_iphone_id`` is the same pairing by owner id rather than by name,
+    which is what lets the panel group a household's devices by person without
+    guessing from two names that may well match each other.
     """
     domain_data = hass.data.get(DOMAIN)
     if domain_data is None:
@@ -390,6 +394,7 @@ def ws_owners(
                 "device_kind": entry.device_kind,
                 "device_name": registry_name(device_id) or entry.device_name,
                 "paired_iphone_name": paired_name,
+                "paired_iphone_id": paired_id or None,
                 "app_version": entry.app_version,
                 "screen_size": entry.screen_size,
                 "complication_count": len(store.list(device_id)),
@@ -417,6 +422,7 @@ def ws_owners(
                 "device_kind": None,
                 "device_name": None,
                 "paired_iphone_name": None,
+                "paired_iphone_id": None,
                 "app_version": None,
                 "screen_size": None,
                 "complication_count": len(store.list(owner)),

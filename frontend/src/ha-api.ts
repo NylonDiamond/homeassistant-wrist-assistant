@@ -50,6 +50,13 @@ export interface OwnerSummary {
   /** Name of the iPhone this watch is paired to. Both real watches report
       themselves as "Apple Watch", so this is what tells them apart. */
   paired_iphone_name: string | null;
+  /** Owner id of the iPhone this watch is paired to, which is the same pairing
+      as `paired_iphone_name` without the guesswork: two watches in one home
+      report the same name and so can the phones they belong to. Optional
+      because an integration older than the field sends neither key, and the
+      panel falls back to matching on the name there. Null on a phone, which is
+      nobody's paired phone, and on an orphan, which has no entry left to ask. */
+  paired_iphone_id?: string | null;
   app_version: string | null;
   /** Screen size in points ("208x248"), reported by the watch app. Matches a
       renderer `WatchCase` so the preview dropdown defaults to this watch. */

@@ -394,6 +394,10 @@ def test_a_watch_row_gains_the_device_kind_field_and_nothing_else(env) -> None:
         "device_kind": "watch",
         "device_name": "Apple Watch",
         "paired_iphone_name": "Jesse's iPhone",
+        # The same pairing by id, which is what the panel groups a household's
+        # devices by: two watches can report the same name, and so can the two
+        # phones they are paired to.
+        "paired_iphone_id": "phone-1",
         "app_version": "2.7.0",
         "screen_size": "208x248",
         "complication_count": 1,
@@ -422,6 +426,7 @@ def test_a_phone_is_an_owner_in_its_own_right(env) -> None:
             # A phone is nobody's paired phone, and it reports no screen size:
             # the lock screen slot sizes are not the panel's design box.
             "paired_iphone_name": None,
+            "paired_iphone_id": None,
             "screen_size": None,
             "app_version": "2.8.0",
             "complication_count": 2,
@@ -430,6 +435,28 @@ def test_a_phone_is_an_owner_in_its_own_right(env) -> None:
             "is_orphan": False,
         }
     ]
+
+
+def test_every_row_carries_the_paired_phone_id_or_none(env) -> None:
+    """The pairing by id, which is the one the panel can trust.
+
+    Both real watches report themselves as "Apple Watch" and a household can
+    easily hold two phones called "iPhone", so grouping devices by person off
+    `paired_iphone_name` guesses. A watch that names no phone, and an orphan
+    that has no entry left to ask, both report None rather than being left out
+    of the field.
+    """
+    env.add_watch("watch-A", device_name="Apple Watch", owner_iphone_id="phone-1")
+    env.add_watch("watch-B", device_name="Apple Watch")
+    env.add_phone("phone-1", device_name="Jesse's iPhone")
+    env.save_document("gone-watch")
+
+    assert {r["owner_watch_id"]: r["paired_iphone_id"] for r in env.owners()} == {
+        "watch-A": "phone-1",
+        "watch-B": None,
+        "phone-1": None,
+        "gone-watch": None,
+    }
 
 
 def test_owners_lists_every_watch_before_every_phone_by_name(env) -> None:
