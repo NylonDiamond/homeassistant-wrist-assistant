@@ -22,6 +22,7 @@ import {
   parseConfig,
 } from "../src/model.js";
 import { deriveDataSources } from "../src/compiler.js";
+import { addFamily } from "../src/layouts.js";
 import {
   type ShareSlot,
   exportFileName,
@@ -971,5 +972,48 @@ describe("a merged timeline's entity list", () => {
     const el = scrubbed.elements[0]!;
     if (el.kind !== "timeline") throw new Error("not a timeline");
     expect(el.payload.aggregate?.combine).toBe("all");
+  });
+});
+
+// The link between the copies of one complication is identity, not design: it
+// names records on this home's devices. So it never travels, and nothing
+// arrives linked.
+describe("the link key on the way out and back", () => {
+  const LINK = "8B1C2D3E-0000-4000-8000-000000000001";
+
+  /** A linked complication with every shape both devices draw. */
+  function linked(): CustomComplicationConfig {
+    const cfg = newConfig("Kitchen", 2, ["rectangular", "circular", "corner", "inline"]);
+    addFamily(cfg, "small");
+    addFamily(cfg, "medium");
+    cfg.linkId = LINK;
+    return cfg;
+  }
+
+  it("leaves the link out of a share and out of a backup", () => {
+    const cfg = linked();
+    for (const mode of ["share", "backup"] as const) {
+      const text = exportText(cfg, mode, mode === "share" ? shareSlots(cfg, KNOWN_DOMAINS) : []);
+      expect(text).not.toContain("linkId");
+      expect(JSON.parse(text).linkId).toBeUndefined();
+    }
+  });
+
+  it("carries every shape of every device, once", () => {
+    const text = exportText(linked(), "backup");
+    expect(JSON.parse(text).supportedFamilies)
+      .toEqual(["rectangular", "circular", "corner", "inline", "small", "medium"]);
+  });
+
+  it("never starts an import linked, whatever the text says", () => {
+    const cfg = linked();
+    const raw = JSON.parse(exportText(cfg, "backup")) as Record<string, unknown>;
+    // Even a hand-edited paste that puts the key back.
+    raw.linkId = LINK;
+    const parse = parseImportText(JSON.stringify(raw), 9);
+    if (!parse.ok) throw new Error(parse.error);
+    expect(parse.config.linkId).toBeUndefined();
+    expect(parse.config.supportedFamilies)
+      .toEqual(["rectangular", "circular", "corner", "inline", "small", "medium"]);
   });
 });
