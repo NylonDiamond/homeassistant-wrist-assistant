@@ -304,6 +304,21 @@ export function addFamily(cfg: CustomComplicationConfig, family: FamilyKind): vo
  * means it never empties the set. */
 export function removeFamily(cfg: CustomComplicationConfig, family: FamilyKind): void {
   if (!canRemoveFamily(cfg, family)) return;
+  dropFamily(cfg, family);
+}
+
+/**
+ * The same removal with none of the guards: the shape, its layout and its
+ * layers go whatever is left behind.
+ *
+ * Only for a copy nobody is editing. Trimming a linked copy for the device it
+ * is going to (`linking.copyForOwner`) is the one caller: a phone copy loses
+ * corner even when corner is the only shape the watch copy has, because there
+ * is nothing on a phone for it to land on. Everything the author can press
+ * goes through `removeFamily`, which still refuses to empty a document that
+ * has no control to stand on.
+ */
+export function dropFamily(cfg: CustomComplicationConfig, family: FamilyKind): void {
   cfg.supportedFamilies = cfg.supportedFamilies.filter((f) => f !== family);
   if (isDrawable(family)) {
     for (const el of ownedElements(cfg, family)) removeElement(cfg, el.payload.id);

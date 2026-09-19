@@ -13,8 +13,17 @@
 // and the save plan can all be read in a test without a browser. Plan: app repo
 // docs/complication_one_design_everywhere.md.
 
-import { type FamilyKind, HOME_FAMILIES } from "./model.js";
-import { type ShapePlace, ALL_FAMILIES, biggestFirst, isHomeFamily, placeOf, placeTitle } from "./layouts.js";
+import {
+  type CustomComplicationConfig,
+  type FamilyKind,
+  HOME_FAMILIES,
+  freeSlotFrom,
+  newId,
+  ownedElements,
+  pruneGroups,
+  schemaVersionFor,
+} from "./model.js";
+import { type ShapePlace, ALL_FAMILIES, biggestFirst, dropFamily, isHomeFamily, placeOf, placeTitle, supportedFamilies } from "./layouts.js";
 import {
   type DeviceKind,
   MIN_IPHONE_VERSION_FOR_HOME_SCREEN,
@@ -298,4 +307,286 @@ export function copyFamilies(
     if (!everyone.has(f)) return true;
     return mine === undefined || mine.has(f);
   });
+}
+
+// ── reading the link off the devices ──────────────────────────────────────
+
+/** One stored record, as this module needs to read it. Structural so the pure
+ * side never imports the websocket types. */
+export interface LinkRecordLike {
+  ownerId: string;
+  id: string;
+  revision: number;
+  deleted: boolean;
+  document: Record<string, unknown> | null;
+}
+
+/** One device's copy of a linked complication. */
+export interface LinkedCopy {
+  ownerId: string;
+  id: string;
+  revision: number;
+  slotIndex: number;
+  hidden: boolean;
+  /** The shapes this copy carries, which is not always the document's whole
+   * set: a phone copy has no corner, and a device can be sent without a shape
+   * the author dropped from it. */
+  families: FamilyKind[];
+  name: string;
+}
+
+export function linkIdOf(document: Record<string, unknown> | null | undefined): string | undefined {
+  const raw = document?.linkId;
+  return typeof raw === "string" && raw !== "" ? raw.toUpperCase() : undefined;
+}
+
+function copyOf(record: LinkRecordLike): LinkedCopy {
+  const doc = record.document ?? {};
+  const families = Array.isArray(doc.supportedFamilies) ? doc.supportedFamilies : [];
+  return {
+    ownerId: record.ownerId,
+    id: record.id,
+    revision: record.revision,
+    slotIndex: typeof doc.slotIndex === "number" ? doc.slotIndex : 0,
+    hidden: doc.hidden === true,
+    families: ALL_FAMILIES.filter((f) => families.includes(f)),
+    name: typeof doc.name === "string" ? doc.name : "",
+  };
+}
+
+/**
+ * The copies of one link, in the order the records were given.
+ *
+ * Grouped by `linkId` and never by record id: the ids stay different so placed
+ * faces and widgets keep pointing at the right record, and a merge of two
+ * complications that already existed keeps both of them.
+ */
+export function linkedCopies(records: readonly LinkRecordLike[], linkId: string): LinkedCopy[] {
+  const want = linkId.toUpperCase();
+  return records.filter((r) => !r.deleted && linkIdOf(r.document) === want).map(copyOf);
+}
+
+/** What each copy's own set of shapes says the picks were, so a re-save keeps
+ * a shape the author dropped from one device dropped. */
+export function picksFromCopies(copies: readonly LinkedCopy[]): Map<string, Set<FamilyKind>> {
+  return new Map(copies.map((c) => [c.ownerId, new Set(c.families)]));
+}
+
+/**
+ * The copy the panel opens for a link: the phone's when there is one, else the
+ * first.
+ *
+ * The phone copy is the one that is never trimmed. A watch copy may have gone
+ * without the Home Screen sizes (an older watch app cannot decode them), and
+ * opening that one would show a design with its tiles missing and then save
+ * them away for good.
+ */
+export function openCopyOf(copies: readonly LinkedCopy[], kindOf: (ownerId: string) => DeviceKind): LinkedCopy | undefined {
+  return copies.find((c) => kindOf(c.ownerId) === "iphone") ?? copies[0];
+}
+
+// ── the save plan ─────────────────────────────────────────────────────────
+
+/** One device a save is about to write to. */
+export interface LinkTarget {
+  owner: LinkOwner;
+  /** The copy already on this device; absent on a device joining the link. */
+  copy?: LinkedCopy;
+  /** Every slot something on that device already holds, its own copy's
+   * included: the copy keeps the slot it has, so it is never in its own way. */
+  usedSlots: readonly number[];
+}
+
+/** What one device's write is: the identity of its copy and the shapes it
+ * carries. The document itself comes from `copyForOwner`. */
+export interface LinkWrite {
+  ownerId: string;
+  label: string;
+  id: string;
+  slotIndex: number;
+  hidden: boolean;
+  baseRevision: number | null;
+  families: FamilyKind[];
+}
+
+export type LinkSavePlan =
+  | { ok: true; writes: LinkWrite[] }
+  | { ok: false; message: string };
+
+/**
+ * Every copy a save is about to write, worked out before a single one goes.
+ *
+ * A device with no free slot is the reason this is a plan rather than a loop:
+ * finding out halfway through leaves the watch saved and the phone not, with
+ * no way back. The refusal names the device, because "the watch is full" is no
+ * help when the full one is the phone.
+ *
+ * Each copy keeps its own id (placed faces and widgets point at it), its own
+ * slot (the devices fill their seats separately) and its own `hidden` (a
+ * decision about one device's own list). Everything else is the document.
+ */
+export function planLinkedSave(
+  cfg: Pick<CustomComplicationConfig, "id" | "supportedFamilies" | "control" | "hidden">,
+  targets: readonly LinkTarget[],
+  picks: LinkPicks,
+  primary: { ownerId: string; baseRevision: number | null },
+  makeId: () => string = newId,
+): LinkSavePlan {
+  const writes: LinkWrite[] = [];
+  for (const target of targets) {
+    const { owner } = target;
+    const families = copyFamilies(cfg.supportedFamilies, owner, picks, owner.ownerId);
+    if (families.length === 0 && cfg.control === undefined) {
+      return { ok: false, message: `${owner.label} cannot draw any of these shapes. Untick it, or add a shape it can draw.` };
+    }
+    const slot = target.copy ? target.copy.slotIndex : freeSlotFrom(target.usedSlots, []);
+    if (slot < 0) {
+      return { ok: false, message: `${owner.label} has no free slot (iPhone presets count too). Delete a complication on it first.` };
+    }
+    const isPrimary = owner.ownerId === primary.ownerId;
+    writes.push({
+      ownerId: owner.ownerId,
+      label: owner.label,
+      id: target.copy?.id ?? (isPrimary ? cfg.id : makeId()),
+      slotIndex: slot,
+      hidden: target.copy ? target.copy.hidden : isPrimary && cfg.hidden === true,
+      baseRevision: isPrimary ? primary.baseRevision : target.copy?.revision ?? null,
+      families,
+    });
+  }
+  return { ok: true, writes };
+}
+
+/**
+ * The document one device gets: the whole complication, minus the shapes this
+ * copy does not carry, wearing this copy's identity.
+ *
+ * The shapes go the way the editor's own remove goes, layers and all, so a
+ * trimmed copy is a complete document rather than a set that names a layout
+ * nothing draws.
+ */
+export function copyForOwner(
+  cfg: CustomComplicationConfig,
+  write: Pick<LinkWrite, "id" | "slotIndex" | "hidden" | "families">,
+  linkId: string | undefined,
+): CustomComplicationConfig {
+  const next = structuredClone(cfg);
+  for (const family of supportedFamilies(next)) {
+    if (!write.families.includes(family)) dropFamily(next, family);
+  }
+  next.id = write.id;
+  next.slotIndex = write.slotIndex;
+  if (write.hidden) next.hidden = true;
+  else delete next.hidden;
+  if (linkId === undefined) delete next.linkId;
+  else next.linkId = linkId;
+  next.schemaVersion = schemaVersionFor(next);
+  return next;
+}
+
+// ── what the save says afterwards ─────────────────────────────────────────
+
+/** How one device's copy ended up. "waiting" is not an error: the store has
+ * it, and the device picks it up on its next sync. */
+export type LinkSaveState = "saved" | "waiting" | "failed";
+
+export interface LinkSaveRow {
+  label: string;
+  state: LinkSaveState;
+  /** Why the store refused this one, for a failed row. */
+  message?: string;
+}
+
+/**
+ * One line about where the save landed, or nothing to say.
+ *
+ * A device that has the copy but has not synced yet is named as waiting rather
+ * than as a problem, because nothing is wrong: the watch takes it on its next
+ * long poll and the phone on the push. A device the store refused is named
+ * with its own reason, and only that device: the others saved.
+ */
+export function linkedSaveStatus(rows: readonly LinkSaveRow[]): string | undefined {
+  if (rows.length < 2) return undefined;
+  const named = (state: LinkSaveState) => rows.filter((r) => r.state === state).map((r) => r.label);
+  const saved = [...named("saved"), ...named("waiting")];
+  const waiting = named("waiting");
+  const failed = rows.filter((r) => r.state === "failed");
+  const parts: string[] = [];
+  if (saved.length > 0) {
+    parts.push(waiting.length > 0 && waiting.length < saved.length
+      ? `Saved on ${joinNames(named("saved"))}, waiting for ${joinNames(waiting)}`
+      : waiting.length === saved.length
+        ? `Saved, waiting for ${joinNames(waiting)}`
+        : `Saved on ${joinNames(saved)}`);
+  }
+  for (const row of failed) parts.push(`${row.label}: ${row.message ?? "the save failed"}`);
+  return parts.length === 0 ? undefined : `${parts.join(". ")}.`;
+}
+
+// ── merging two complications into one link ───────────────────────────────
+
+/**
+ * One document out of two, for "Link with..." and for the automatic merge of
+ * pairs that already share a name.
+ *
+ * `primary` wins: its name, its layers, its rules, and its design wherever the
+ * two draw the same shape. The watch copy is the primary, because the watch is
+ * where these designs were built and because a shared shape drawn for a watch
+ * face is the one that also reads on a Lock Screen. What comes over from
+ * `secondary` is the shapes the primary does not have at all: the Home Screen
+ * sizes, and any Lock Screen shape the watch went without.
+ *
+ * Identity is untouched: the merged document keeps the primary's id, slot and
+ * `hidden`, and the caller stamps the new `linkId` on both copies. Neither
+ * argument is changed.
+ */
+export function mergeLinkedContent(
+  primary: CustomComplicationConfig,
+  secondary: CustomComplicationConfig,
+): CustomComplicationConfig {
+  const out = structuredClone(primary);
+  const have = new Set(out.supportedFamilies);
+  const ids = new Set(out.elements.map((e) => e.payload.id));
+  let took = false;
+  for (const family of supportedFamilies(secondary)) {
+    if (have.has(family)) continue;
+    if (family === "inline") {
+      if (secondary.inline === undefined) continue;
+      out.inline = structuredClone(secondary.inline);
+    } else {
+      const layout = secondary.perFamily[family];
+      if (layout === undefined) continue;
+      out.perFamily[family] = structuredClone(layout);
+      // The layers of that shape come with it. A layer whose id is already
+      // here is the same layer: the two documents began as copies of each
+      // other, and the layout's placement finds it where it stands.
+      for (const el of ownedElements(secondary, family)) {
+        if (ids.has(el.payload.id)) continue;
+        ids.add(el.payload.id);
+        out.elements.push(structuredClone(el));
+      }
+    }
+    have.add(family);
+    took = true;
+  }
+  if (!took) return out;
+  out.supportedFamilies = ALL_FAMILIES.filter((f) => have.has(f));
+  // A copied layer can read a shared value or sit in a group that only the
+  // other document had. Both are document-level, so they come over whole
+  // rather than leaving the layer pointing at nothing.
+  for (const value of secondary.values) {
+    if (!out.values.some((v) => v.id === value.id)) out.values.push(structuredClone(value));
+  }
+  const groups = secondary.groups ?? [];
+  if (groups.length > 0) {
+    const kept = out.groups ?? [];
+    for (const group of groups) if (!kept.some((g) => g.id === group.id)) kept.push(structuredClone(group));
+    out.groups = kept;
+  }
+  pruneGroups(out);
+  // A control is Control Center on either device, so the one document keeps
+  // whichever copy had one. The primary's own is never overwritten.
+  if (out.control === undefined && secondary.control !== undefined) out.control = structuredClone(secondary.control);
+  out.schemaVersion = schemaVersionFor(out);
+  return out;
 }

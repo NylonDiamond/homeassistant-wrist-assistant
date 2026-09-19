@@ -10,6 +10,7 @@ import {
   type ComplicationRecord,
   type HassLike,
   type OwnerSummary,
+  type SaveResult,
   deletePart,
   deleteRecord,
   fetchGalleryKey,
@@ -139,13 +140,25 @@ import {
   type LinkOwner,
   type LinkPicks,
   type LinkPlaceCard,
+  type LinkRecordLike,
+  type LinkSaveRow,
   type LinkShapeRow,
+  type LinkedCopy,
   SHARED_SIDE_NOTE,
   controlOwners,
+  copyForOwner,
+  joinNames,
   keepPicks,
+  linkIdOf,
   linkPlaceCards,
+  linkedCopies,
+  linkedSaveStatus,
+  mergeLinkedContent,
+  openCopyOf,
+  picksFromCopies,
   pickedFamilies,
   pickedWords,
+  planLinkedSave,
   setPick,
   startFromCopyLine,
 } from "./linking.js";
@@ -1312,6 +1325,22 @@ export class WristAssistantPanel extends LitElement {
    * document gained since is in nobody's set and goes to every device that can
    * draw it. */
   @state() private linkPicks: LinkPicks = new Map();
+  /** Every other device's records and taken slots, so the panel can see the
+   * links that cross them: which devices a complication lives on, and whether
+   * each of them has a seat free for it. Refreshed when the device list
+   * changes and after every save, not on every change event: only the edited
+   * device's changes are subscribed to. */
+  @state() private otherLists: ReadonlyMap<string, { records: ComplicationRecord[]; occupied: OccupiedSlot[]; appliedToken?: number | null; token: number }> = new Map();
+  /** Where the last save of a linked complication landed, per device. Not an
+   * error: a device that has not synced yet is named as waiting. */
+  @state() private linkStatus?: string;
+  /** The Devices dialog is open: which devices this complication is on, and
+   * the two ways to put it on another one. */
+  @state() private devicesOpen = false;
+  /** Devices whose existing record is about to join this link, by owner: the
+   * "Link with..." pick, which keeps its own id and slot rather than being
+   * written again as a new complication. Cleared by the save that adopts it. */
+  @state() private linkAdopt: ReadonlyMap<string, LinkedCopy> = new Map();
   /** The Share dialog is open, which mode it is in, and the labels the author
    * has renamed. Labels are keyed by placeholder id and only hold the edited
    * ones, so the defaults follow the document as it is edited underneath. */
@@ -2077,6 +2106,19 @@ export class WristAssistantPanel extends LitElement {
     .dev-card-ico svg { width: 16px; height: 16px; }
     .dev-card-name { font-weight: 600; color: var(--wa-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .dev-card .pick-tick { top: 50%; margin-top: -8px; }
+    .dev-card[disabled] { opacity: .5; cursor: default; }
+    /* The Devices dialog: the same rows in a column, since each one is a
+       sentence rather than a tile. */
+    .devices-dialog { width: min(420px, 92vw); padding: 0; border: none; border-radius: 16px; background: var(--wa-panel); color: var(--wa-ink); }
+    .devices-dialog::backdrop { background: rgba(0,0,0,.4); }
+    .devices-dialog .field { margin-top: 12px; }
+    .dev-list { display: flex; flex-direction: column; gap: 6px; }
+    .dev-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 11px; border: 1px solid var(--wa-line); background: var(--wa-raised); font-size: 12.5px; }
+    .dev-row-note { margin-left: auto; font-size: 11px; color: var(--wa-muted); }
+    .dev-row .dev-card-ico svg, .dev-list .dev-card-ico svg { width: 16px; height: 16px; }
+    /* One icon per device a picker row's complication lives on. */
+    .pk-link { display: inline-flex; gap: 2px; align-items: center; flex: none; opacity: .65; }
+    .pk-link svg { width: 13px; height: 13px; display: block; }
     .shape-dots { display: inline-flex; gap: 3px; align-items: center; flex: none; }
     .shape-dot { width: 14px; height: 10px; border-radius: 2px; background: currentColor; opacity: .3; display: inline-block; }
     .shape-dot.circular { width: 10px; border-radius: 50%; }
@@ -2911,6 +2953,9 @@ export class WristAssistantPanel extends LitElement {
     .banner { padding: 10px 14px; border-radius: 8px; font-size: 13px; background: var(--wa-panel); flex: none; }
     .banner.warn { border-left: 4px solid var(--warning-color, #ffa600); }
     .banner.err { border-left: 4px solid var(--error-color, #db4437); }
+    /* Where a linked save landed. Not a warning: every copy it names is in the
+       store, and a device that has not synced yet is on its way. */
+    .banner.note { border-left: 4px solid var(--wa-accent); }
     .banner .acts { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 
     /* The watch gate: the one screen a too-old watch gets instead of the
@@ -5319,6 +5364,10 @@ export class WristAssistantPanel extends LitElement {
     try {
       await this.unsubscribe?.();
       this.unsubscribe = await subscribeChanges(this.hass, ownerId, () => void this.loadRecords());
+      // The other devices first: `loadRecords` opens a complication, and a
+      // linked one needs its copies known before it can say what it is linked
+      // to. A device that answers slowly only delays that reading.
+      await this.loadOtherLists();
       await this.loadRecords();
     } finally {
       this.ownerBusy = false;
@@ -5392,6 +5441,9 @@ export class WristAssistantPanel extends LitElement {
     this.conflict = undefined;
     this.saveError = undefined;
     this.confirmDelete = false;
+    // Where the last save landed was about the complication that is going.
+    this.linkStatus = undefined;
+    this.linkAdopt = new Map();
   }
 
   private confirmDiscard(): boolean {
@@ -5412,7 +5464,7 @@ export class WristAssistantPanel extends LitElement {
     this.forced = new Map();
     this.inspect = { kind: "general" };
     try {
-      this.draft = Draft.fromDocument(record.document, record.revision);
+      this.draft = new Draft(this.mergedLinkView(parseConfig(record.document)), record.revision);
       this.savedName = String(record.document?.name ?? "");
       const schema = Number(record.document?.schemaVersion ?? 0);
       const unknown = auditUnknownKeys(record.document);
@@ -5421,6 +5473,7 @@ export class WristAssistantPanel extends LitElement {
       } else if (unknown.length > 0) {
         this.readOnlyReason = `This document has fields the panel does not understand, so saving would drop them: ${unknown.slice(0, 5).join(", ")}${unknown.length > 5 ? ` and ${unknown.length - 5} more` : ""}. Update the integration to edit it.`;
       }
+      this.readLink(this.draft.config);
       this.recompile();
       this.ensureActiveFamily();
       this.startView(this.draft.config);
@@ -5435,6 +5488,10 @@ export class WristAssistantPanel extends LitElement {
    * of answers (Import) can leave it standing rather than throwing it away. */
   private startNew(config: CustomComplicationConfig): boolean {
     if (this.draft?.dirty && !this.confirmDiscard()) return false;
+    // A document that is not linked lands on this device alone, whatever the
+    // last one open was. A linked one keeps the devices its maker ticked:
+    // there are no stored copies to read them off yet.
+    if (config.linkId === undefined) this.readLink(config);
     this.selectedId = config.id;
     this.clearDraft();
     this.forced = new Map();
@@ -5455,6 +5512,128 @@ export class WristAssistantPanel extends LitElement {
       this.records.map((r) => Number(r.document?.slotIndex ?? -1)),
       this.occupied,
     );
+  }
+
+  // ── linked copies ─────────────────────────────────────────────────────
+
+  /**
+   * Read every other device's list, for the links that cross them.
+   *
+   * One request per device, and there are two or three of them in a household.
+   * It is not on the change subscription: that is per device, so nothing here
+   * fires when another one moves, and refetching all of them on every edit of
+   * the open one would be a request per keystroke's save.
+   */
+  private async loadOtherLists() {
+    const ids = this.owners
+      .filter((o) => o.owner_watch_id !== this.ownerId && !o.is_orphan)
+      .map((o) => o.owner_watch_id);
+    const next = new Map<string, { records: ComplicationRecord[]; occupied: OccupiedSlot[]; appliedToken?: number | null; token: number }>();
+    for (const id of ids) {
+      try {
+        const reply = await fetchList(this.hass, id);
+        next.set(id, {
+          records: reply.records,
+          occupied: reply.occupied
+            ?? (reply.presets ?? []).map((p): OccupiedSlot => ({ slot: p.slot, name: p.name, kind: "preset", home: "" })),
+          appliedToken: reply.applied_token,
+          token: reply.token,
+        });
+      } catch {
+        // A device that will not answer simply is not offered a copy; the save
+        // plan below refuses rather than writing half a link.
+      }
+    }
+    this.otherLists = next;
+  }
+
+  /** Every record this home holds, on any device, as the link reader wants
+   * them. The edited device's come from `records`, which is the live list. */
+  private allLinkRecords(): LinkRecordLike[] {
+    const rows: LinkRecordLike[] = [];
+    const add = (ownerId: string, records: readonly ComplicationRecord[]) => {
+      for (const r of records) rows.push({ ownerId, id: r.id, revision: r.revision, deleted: r.deleted, document: r.document });
+    };
+    if (this.ownerId) add(this.ownerId, this.records);
+    for (const [ownerId, list] of this.otherLists) add(ownerId, list.records);
+    return rows;
+  }
+
+  /** The copies of the open complication, the one being edited included, or an
+   * empty list when it is not linked. */
+  private linkedCopiesNow(): LinkedCopy[] {
+    const linkId = this.draft?.config.linkId;
+    if (linkId === undefined) return [];
+    return linkedCopies(this.allLinkRecords(), linkId);
+  }
+
+  /** Take the open complication's link off the stored copies: which devices it
+   * lives on, and which shapes each of their copies carries. Called whenever a
+   * record is opened, so a copy the author dropped a shape from keeps it
+   * dropped through the next save. */
+  private readLink(cfg: CustomComplicationConfig) {
+    if (cfg.linkId === undefined) {
+      this.linkOwnerIds = this.ownerId ? [this.ownerId] : [];
+      this.linkPicks = new Map();
+      return;
+    }
+    const copies = linkedCopies(this.allLinkRecords(), cfg.linkId);
+    const order = ownersByKind(this.owners).map((o) => o.owner_watch_id);
+    const ids = copies.map((c) => c.ownerId).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    this.linkOwnerIds = ids.length > 0 ? ids : this.ownerId ? [this.ownerId] : [];
+    this.linkPicks = picksFromCopies(copies);
+  }
+
+  /** The devices a save writes to: the ones the link names, in picker order,
+   * each as the dialog reads a device. A device that has gone missing from the
+   * home is left out rather than written to. */
+  private linkTargetOwners(): LinkOwner[] {
+    const ids = this.linkOwnerIds.length > 0 ? this.linkOwnerIds : this.ownerId ? [this.ownerId] : [];
+    return ownersByKind(this.owners)
+      .filter((o) => ids.includes(o.owner_watch_id))
+      .map((o) => this.linkOwnerOf(o));
+  }
+
+  /**
+   * The whole of a linked complication, for the editor to hold.
+   *
+   * Each stored copy is trimmed for the device it is on: the phone's has no
+   * corner, and an old watch's has no Home Screen sizes. Opening one of them
+   * as it stands would show a design with those shapes missing and then save
+   * them away for good, so the copies are put back together first. The opened
+   * copy wins wherever two of them draw the same shape (they were written from
+   * one document, so they agree), and it keeps its own id, seat and `hidden`.
+   *
+   * The draft takes this as its baseline, so a complication that was only
+   * reassembled reads as saved rather than as unsaved work.
+   */
+  private mergedLinkView(cfg: CustomComplicationConfig): CustomComplicationConfig {
+    if (cfg.linkId === undefined) return cfg;
+    let out = cfg;
+    for (const copy of linkedCopies(this.allLinkRecords(), cfg.linkId)) {
+      if (copy.id === cfg.id) continue;
+      const record = this.allLinkRecords().find((r) => r.ownerId === copy.ownerId && r.id === copy.id);
+      if (!record?.document) continue;
+      try {
+        out = mergeLinkedContent(out, parseConfig(record.document));
+      } catch {
+        // A copy this panel cannot read is left out of the view rather than
+        // taking the whole complication down with it.
+      }
+    }
+    return out;
+  }
+
+  /** Slots something already holds on one device, its own copies included. */
+  private usedSlotsOn(ownerId: string): number[] {
+    const list = ownerId === this.ownerId
+      ? { records: this.records, occupied: this.occupied }
+      : this.otherLists.get(ownerId);
+    if (!list) return [];
+    return [
+      ...list.records.filter((r) => !r.deleted).map((r) => Number(r.document?.slotIndex ?? -1)),
+      ...list.occupied.map((o) => o.slot),
+    ];
   }
 
   // ── send to watch ─────────────────────────────────────────────────────
@@ -6190,10 +6369,15 @@ export class WristAssistantPanel extends LitElement {
         const cfg = structuredClone(draft.config);
         cfg.id = newId();
         cfg.slotIndex = slot;
+        // A copy is a new complication, not another copy of this one: it lands
+        // on this device alone until somebody links it themselves.
+        delete cfg.linkId;
         draft = new Draft(cfg, null);
       }
-      const doc = draft.encoded();
-      const result = await saveRecord(this.hass, this.ownerId, doc, draft.baseRevision);
+      const result = draft.config.linkId !== undefined && this.linkTargetOwners().length > 1
+        ? await this.saveLinked(draft, asNew)
+        : await saveRecord(this.hass, this.ownerId, draft.encoded(), draft.baseRevision);
+      if (result === undefined) return;
       if (!result.ok || !result.record) {
         if (result.error === "conflict") {
           this.conflict = { current: result.current ?? null, message: result.message ?? "Someone else saved this complication first." };
@@ -6225,6 +6409,89 @@ export class WristAssistantPanel extends LitElement {
     }
   }
 
+  /**
+   * Write a linked complication to every device it lives on.
+   *
+   * The plan is made first and the whole save refuses if any device has no
+   * seat for its copy: finding that out halfway through leaves the watch saved
+   * and the phone not, with nothing to undo it with. The device being edited
+   * is written first, so a conflict there stops the others rather than saving
+   * a document the author is about to reload over.
+   *
+   * Nothing else is needed to reach the devices. The store bumps that owner's
+   * token on every save, wakes its long poll and sends its push, so a copy
+   * written to a second device travels exactly the way a single save has
+   * always travelled to the first.
+   *
+   * Returns the edited device's result, or undefined when the plan refused.
+   */
+  private async saveLinked(draft: Draft, asNew: boolean): Promise<SaveResult | undefined> {
+    const cfg = draft.config;
+    const linkId = cfg.linkId;
+    if (!this.ownerId || linkId === undefined) return undefined;
+    // Fresh lists: a seat taken on another device since the panel last looked
+    // is the whole reason for planning before writing.
+    await this.loadOtherLists();
+    const byOwner = new Map(linkedCopies(this.allLinkRecords(), linkId).map((c) => [c.ownerId, c]));
+    // A complication joined by "Link with..." does not carry the link yet, so
+    // its record is named here instead. Without it the save would write a
+    // second complication on that device and leave the first behind.
+    for (const [ownerId, copy] of this.linkAdopt) if (!byOwner.has(ownerId)) byOwner.set(ownerId, copy);
+    const owners = this.linkTargetOwners();
+    // A device that did not answer just now has no list, so nothing here knows
+    // which seats it has taken. Writing anyway would put this copy in a seat
+    // something else already holds, so the save waits instead.
+    const silent = owners.filter((o) => o.ownerId !== this.ownerId && !this.otherLists.has(o.ownerId));
+    if (silent.length > 0) {
+      this.saveError = `${joinNames(silent.map((o) => o.label))} could not be read just now, so nothing was saved. Try again in a moment.`;
+      return undefined;
+    }
+    const plan = planLinkedSave(
+      cfg,
+      owners.map((owner) => ({ owner, copy: byOwner.get(owner.ownerId), usedSlots: this.usedSlotsOn(owner.ownerId) })),
+      this.linkPicks,
+      { ownerId: this.ownerId, baseRevision: asNew ? null : draft.baseRevision },
+    );
+    if (!plan.ok) {
+      this.saveError = plan.message;
+      return undefined;
+    }
+    const mine = plan.writes.find((w) => w.ownerId === this.ownerId);
+    const others = plan.writes.filter((w) => w.ownerId !== this.ownerId);
+    if (!mine) return undefined;
+    const send = (write: typeof mine) =>
+      saveRecord(this.hass, write.ownerId, new Draft(copyForOwner(cfg, write, linkId), null).encoded(), write.baseRevision);
+    const result = await send(mine);
+    if (!result.ok || !result.record) return result;
+    const rows: LinkSaveRow[] = [];
+    for (const write of others) {
+      try {
+        const other = await send(write);
+        rows.push(other.ok
+          ? { label: write.label, state: "waiting" }
+          : { label: write.label, state: "failed", message: other.message ?? other.error ?? "the save failed" });
+      } catch (err) {
+        rows.push({ label: write.label, state: "failed", message: errText(err) });
+      }
+    }
+    // Read the devices back, so a copy a device has already taken reads as
+    // saved rather than as still on its way.
+    await this.loadOtherLists();
+    const settled = rows.map((row) => {
+      if (row.state !== "waiting") return row;
+      const write = others.find((w) => w.label === row.label);
+      const list = write ? this.otherLists.get(write.ownerId) : undefined;
+      return list && list.appliedToken === list.token ? { ...row, state: "saved" as const } : row;
+    });
+    this.linkStatus = linkedSaveStatus([
+      { label: mine.label, state: this.appliedToken === result.record.token ? "saved" : "waiting" },
+      ...settled,
+    ]);
+    this.linkAdopt = new Map();
+    this.readLink(cfg);
+    return result;
+  }
+
   private async deleteCurrent() {
     if (!this.draft || !this.ownerId || !this.selectedId || !this.canEdit) return;
     if (this.draft.baseRevision === null) {
@@ -6252,6 +6519,7 @@ export class WristAssistantPanel extends LitElement {
         else this.saveError = result.message ?? result.error ?? "Delete failed";
         return;
       }
+      await this.deleteLinkedCopies(id);
       if (open) {
         this.clearDraft();
         this.selectedId = undefined;
@@ -6264,6 +6532,46 @@ export class WristAssistantPanel extends LitElement {
       this.confirmDelete = false;
       this.pickerConfirmDelete = undefined;
     }
+  }
+
+  /**
+   * The other devices' copies of a complication just deleted here.
+   *
+   * A link is one complication wherever it is drawn, so deleting it deletes
+   * all of it: leaving the phone copy behind would leave a complication nobody
+   * can edit from the device it was deleted on. The record just deleted is
+   * gone from this device's list already, so the copies are read from the id
+   * that was deleted rather than from the open draft, which is the same id
+   * whether the delete came from the inspector or from a picker row.
+   *
+   * A device that refuses is named and the rest still go: the alternative is
+   * refusing to delete anything because one device is unreachable.
+   */
+  private async deleteLinkedCopies(id: string) {
+    const record = this.records.find((r) => r.id === id);
+    const linkId = linkIdOf(record?.document) ?? (id === this.selectedId ? this.draft?.config.linkId : undefined);
+    if (linkId === undefined) return;
+    const copies = linkedCopies(this.allLinkRecords(), linkId).filter((c) => c.ownerId !== this.ownerId);
+    if (copies.length === 0) return;
+    const failed: string[] = [];
+    for (const copy of copies) {
+      try {
+        const result = await deleteRecord(this.hass, copy.ownerId, copy.id, copy.revision);
+        if (!result.ok) failed.push(this.ownerName(copy.ownerId));
+      } catch {
+        failed.push(this.ownerName(copy.ownerId));
+      }
+    }
+    if (failed.length > 0) {
+      this.saveError = `Deleted here, but not on ${joinNames(failed)}. Try again from that device's list.`;
+    }
+    await this.loadOtherLists();
+  }
+
+  /** What to call one device in a line the author reads. */
+  private ownerName(ownerId: string): string {
+    const owner = this.owners.find((o) => o.owner_watch_id === ownerId);
+    return owner ? ownerLabel(owner) : "another device";
   }
 
   private duplicate() {
@@ -7794,6 +8102,7 @@ export class WristAssistantPanel extends LitElement {
         <button class="link" @click=${() => { this.linkNote = undefined; }}>Dismiss</button></div>` : nothing}
       ${this.helpOpen ? this.renderHelpDialog() : nothing}
       ${this.newOpen ? this.renderNewDialog() : nothing}
+      ${this.devicesOpen ? this.renderDevicesDialog() : nothing}
       ${this.shareOpen ? this.renderShareDialog() : nothing}
       ${this.galleryOpen ? this.renderGalleryDialog() : nothing}
       ${this.importOpen ? this.renderImportDialog() : nothing}
@@ -8100,13 +8409,23 @@ export class WristAssistantPanel extends LitElement {
     }
   }
 
-  /** Open a complication from the picker. This is the click that moves the
-   * editor: a browsed device becomes the edited one here and nowhere else. */
+  /**
+   * Open a complication from the picker. This is the click that moves the
+   * editor: a browsed device becomes the edited one here and nowhere else.
+   *
+   * A row of a linked complication opens the copy that was never trimmed,
+   * whichever device the row was clicked on. That is the phone's: a watch copy
+   * can be without the Home Screen sizes (an older watch app cannot decode
+   * them), and opening it would show the design with its tiles missing and
+   * then save them away.
+   */
   private async openFromPicker(record: ComplicationRecord) {
-    const target = this.browseOwnerId;
+    const full = this.fullCopyOf(record);
+    const target = full?.ownerId ?? this.browseOwnerId;
+    const wanted = full?.id ?? record.id;
     this.togglePicker(false);
     if (target === undefined || target === this.ownerId) {
-      this.selectRecord(record);
+      this.selectRecord(this.records.find((r) => r.id === wanted) ?? record);
       return;
     }
     await this.selectOwner(target);
@@ -8114,7 +8433,25 @@ export class WristAssistantPanel extends LitElement {
     // the editor where it was, so there is nothing to open.
     if (this.ownerId !== target) return;
     // Prefer the copy the switch just loaded: it carries the current revision.
-    this.selectRecord(this.records.find((r) => r.id === record.id) ?? record);
+    this.selectRecord(this.records.find((r) => r.id === wanted) ?? record);
+  }
+
+  /** Every device one row's complication lives on, in picker order. Empty for
+   * a complication that lives on one device, which is most of them. */
+  private copiesOfRow(record: ComplicationRecord): LinkedCopy[] {
+    const linkId = linkIdOf(record.document);
+    if (linkId === undefined) return [];
+    const order = ownersByKind(this.owners).map((o) => o.owner_watch_id);
+    return linkedCopies(this.allLinkRecords(), linkId)
+      .sort((a, b) => order.indexOf(a.ownerId) - order.indexOf(b.ownerId));
+  }
+
+  /** The copy of a linked row that carries every shape: the phone's when there
+   * is one. Undefined for a row that is not linked. */
+  private fullCopyOf(record: ComplicationRecord): LinkedCopy | undefined {
+    const copies = this.copiesOfRow(record);
+    if (copies.length < 2) return undefined;
+    return openCopyOf(copies, (ownerId) => deviceKindOf(this.owners.find((o) => o.owner_watch_id === ownerId)));
   }
 
   /** New from inside the picker, on the device the picker is showing. */
@@ -8279,6 +8616,7 @@ export class WristAssistantPanel extends LitElement {
         @click=${() => void this.openFromPicker(record)}>
         ${this.renderRowArt(record)}
         <span class="pk-name">${recName}</span>
+        ${this.renderLinkDevices(record)}
         ${this.shapeDots(familiesOf(record), hasControlOf(record), this.pickerFamilies)}
       </button>
       <span class="pk-acts">
@@ -8296,6 +8634,22 @@ export class WristAssistantPanel extends LitElement {
               ?disabled=${this.saving} @click=${(e: Event) => { stop(e); this.pickerConfirmDelete = record.id; }}>${uiIcon("delete")}</button>` : nothing}`}
       </span>
     </div>`;
+  }
+
+  /**
+   * The devices a row's complication lives on, one small icon each.
+   *
+   * Drawn only for a linked row, so an ordinary complication's row is exactly
+   * the row it always was. It is the one thing in the list that says this row
+   * is not only about the device whose list it is in: clicking it opens the
+   * design that both devices draw.
+   */
+  private renderLinkDevices(record: ComplicationRecord) {
+    const copies = this.copiesOfRow(record);
+    if (copies.length < 2) return nothing;
+    const names = copies.map((c) => this.ownerName(c.ownerId));
+    return html`<span class="pk-link" title=${`On ${joinNames(names)}. One design, edited in one place.`}>${copies.map((c) =>
+      html`<span class="pk-link-ico">${uiIcon(deviceKindOf(this.owners.find((o) => o.owner_watch_id === c.ownerId)) === "iphone" ? "phone" : "watch")}</span>`)}</span>`;
   }
 
   /** Whether a picker row is hidden from the watch's complication list. The
@@ -8765,6 +9119,173 @@ export class WristAssistantPanel extends LitElement {
     const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.new-dialog");
     if (dialog?.open) dialog.close();
     else this.newOpen = false;
+  }
+
+  // ── the Devices dialog ────────────────────────────────────────────────
+  //
+  // Where an existing complication is shown, and the two ways to put it
+  // somewhere else: a fresh copy on a device that has none ("Also show on"),
+  // or a complication that is already there, joined to this one ("Link
+  // with..."). Both end in an ordinary save, so the copies, the slots and the
+  // refusals are the same ones every other save goes through.
+
+  private openDevicesDialog() {
+    if (!this.draft || this.draft.baseRevision === null) return;
+    this.devicesOpen = true;
+    void this.loadOtherLists();
+    void this.updateComplete.then(() => {
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.devices-dialog");
+      if (dialog && !dialog.open) dialog.showModal();
+    });
+  }
+
+  private closeDevicesDialog() {
+    const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.devices-dialog");
+    if (dialog?.open) dialog.close();
+    else this.devicesOpen = false;
+  }
+
+  /** The devices this complication could still go on: every one the panel
+   * authors for, minus the ones it is already on. */
+  private spareOwners(): LinkOwner[] {
+    const on = new Set(this.linkOwnerIds);
+    return this.linkOwners().filter((o) => !on.has(o.ownerId));
+  }
+
+  /** Complications on another device that could be joined to this one: saved,
+   * not deleted, and not already part of a link. */
+  private linkCandidates(): { owner: LinkOwner; record: ComplicationRecord }[] {
+    const on = new Set(this.linkOwnerIds);
+    const out: { owner: LinkOwner; record: ComplicationRecord }[] = [];
+    for (const owner of this.linkOwners()) {
+      if (on.has(owner.ownerId)) continue;
+      for (const record of this.otherLists.get(owner.ownerId)?.records ?? []) {
+        if (record.deleted || !record.document) continue;
+        if (linkIdOf(record.document) !== undefined) continue;
+        out.push({ owner, record });
+      }
+    }
+    return out;
+  }
+
+  private renderDevicesDialog() {
+    const cfg = this.draft?.config;
+    if (!cfg) return nothing;
+    const here = this.linkTargetOwners();
+    const spare = this.spareOwners();
+    const candidates = this.linkCandidates();
+    return html`<dialog class="devices-dialog" @close=${() => { this.devicesOpen = false; }}>
+      <div class="new-head">
+        <h2>Devices</h2>
+        <span class="spacer"></span>
+        <button class="icon" title="Close" aria-label="Close" @click=${() => this.closeDevicesDialog()}>${uiIcon("close")}</button>
+      </div>
+      <div class="new-body">
+        <div class="field">
+          <span>On</span>
+          <div class="dev-list">${here.map((o) => html`<div class="dev-row">
+            <span class="dev-card-ico">${uiIcon(o.kind === "iphone" ? "phone" : "watch")}</span>
+            <span class="dev-card-name">${o.label}</span>
+          </div>`)}</div>
+        </div>
+        <div class="hint">${here.length > 1
+          ? "One design on all of them. A change here saves to every copy; hiding one, and which seat it takes, stay that device's own."
+          : "This complication is on one device."}</div>
+        ${spare.length === 0 ? nothing : html`<div class="field">
+          <span>Also show on</span>
+          <div class="dev-list">${spare.map((o) => html`<button type="button" class="dev-card"
+            ?disabled=${this.saving} title=${`Put a copy of this complication on ${o.label}`}
+            @click=${() => void this.alsoShowOn(o)}>
+            <span class="dev-card-ico">${uiIcon(o.kind === "iphone" ? "phone" : "watch")}</span>
+            <span class="dev-card-name">Also show on ${o.label}</span>
+          </button>`)}</div>
+        </div>`}
+        ${candidates.length === 0 ? nothing : html`<div class="field">
+          <span>Link with…</span>
+          <div class="dev-list">${candidates.map(({ owner, record }) => html`<button type="button" class="dev-card"
+            ?disabled=${this.saving} title=${`Join "${String(record.document?.name ?? "")}" on ${owner.label} to this one`}
+            @click=${() => void this.linkWith(owner, record)}>
+            <span class="dev-card-ico">${uiIcon(owner.kind === "iphone" ? "phone" : "watch")}</span>
+            <span class="dev-card-name">${String(record.document?.name ?? "Untitled")}</span>
+            <span class="dev-row-note">${owner.label}</span>
+          </button>`)}</div>
+          <div class="hint">The two become one design. The watch copy is the one that is kept; shapes it does not have come over from the other, and both keep their own place on their own device.</div>
+        </div>`}
+      </div>
+      <div class="new-foot">
+        <button class="small" @click=${() => this.closeDevicesDialog()}>Close</button>
+      </div>
+    </dialog>`;
+  }
+
+  /**
+   * Put a copy of the open complication on another device.
+   *
+   * It is a save like any other: the document gains a `linkId` if it has none,
+   * the device joins the list of owners, and the save writes a copy to each of
+   * them. The new device's copy gets its own id and the lowest free seat there,
+   * and a refusal (no seat) names that device before anything is written.
+   */
+  private async alsoShowOn(owner: LinkOwner) {
+    const cfg = this.draft?.config;
+    if (!cfg || !this.canEdit || this.saving) return;
+    this.closeDevicesDialog();
+    const linkId = cfg.linkId ?? cfg.id;
+    this.mutate((c) => { c.linkId = linkId; });
+    this.linkOwnerIds = [...this.linkOwnerIds, owner.ownerId];
+    await this.save();
+  }
+
+  /**
+   * Join an existing complication on another device to this one.
+   *
+   * Both records stay, with their ids and their seats, because placed faces
+   * and widgets point at them. What changes is the content: one document from
+   * the two, starting from the watch copy, with the shapes it lacks brought
+   * over from the other. Both copies then carry one new `linkId`.
+   */
+  private async linkWith(owner: LinkOwner, record: ComplicationRecord) {
+    const open = this.draft?.config;
+    if (!open || !this.canEdit || this.saving) return;
+    let other: CustomComplicationConfig;
+    try {
+      other = parseConfig(record.document);
+    } catch (err) {
+      this.saveError = `That complication could not be read: ${errText(err)}`;
+      return;
+    }
+    this.closeDevicesDialog();
+    // The watch copy is the primary: these designs are built on the watch, and
+    // a shared shape drawn for a watch face is the one that also reads on a
+    // Lock Screen.
+    const openIsWatch = deviceKindOf(this.selectedOwner) !== "iphone";
+    const merged = mergeLinkedContent(openIsWatch ? open : other, openIsWatch ? other : open);
+    const linkId = newId();
+    this.mutate((c) => {
+      // The open copy keeps its own identity; everything else is the merge.
+      const next = structuredClone(merged);
+      next.id = c.id;
+      next.slotIndex = c.slotIndex;
+      if (c.hidden) next.hidden = true;
+      else delete next.hidden;
+      next.linkId = linkId;
+      for (const key of Object.keys(c)) delete (c as unknown as Record<string, unknown>)[key];
+      Object.assign(c, next);
+    });
+    this.linkAdopt = new Map([[owner.ownerId, {
+      ownerId: owner.ownerId,
+      id: record.id,
+      revision: record.revision,
+      slotIndex: Number(record.document?.slotIndex ?? 0),
+      hidden: record.document?.hidden === true,
+      families: [],
+      name: String(record.document?.name ?? ""),
+    }]]);
+    this.linkOwnerIds = [...this.linkOwnerIds, owner.ownerId];
+    // The picks are the copies' own sets, and the merged document is new to
+    // both, so nothing is dropped from either one.
+    this.linkPicks = new Map();
+    await this.save();
   }
 
   /** Enter creates, once both questions have been answered. A control on its
@@ -10708,6 +11229,13 @@ export class WristAssistantPanel extends LitElement {
         </div></div>`);
     }
     if (this.saveError) out.push(html`<div class="banner err"><b>Could not save.</b> ${this.saveError}</div>`);
+    // Where the last save landed, device by device. A device that has not
+    // synced yet is news rather than a fault, so the banner is a quiet one and
+    // the author can put it away.
+    if (this.linkStatus) {
+      out.push(html`<div class="banner note link-note"><span>${this.linkStatus}</span>
+        <button class="link" @click=${() => { this.linkStatus = undefined; }}>Dismiss</button></div>`);
+    }
     return out;
   }
 
@@ -12351,6 +12879,8 @@ export class WristAssistantPanel extends LitElement {
         <button class="ghost" @click=${() => this.openRaw()}>Raw JSON</button>
         ${this.canEdit ? html`
           ${this.draft?.baseRevision === null ? nothing : html`
+            <button class="ghost" aria-haspopup="dialog" aria-expanded=${this.devicesOpen ? "true" : "false"}
+              title="Which devices this complication is on" @click=${() => this.openDevicesDialog()}>Devices</button>
             <button class="ghost" aria-haspopup="dialog" aria-expanded=${this.historyOpen ? "true" : "false"}
               title="Earlier saves of this complication" @click=${() => void this.openHistoryDialog()}>History</button>`}
           <button class="ghost" @click=${() => this.duplicate()}>Duplicate</button>
