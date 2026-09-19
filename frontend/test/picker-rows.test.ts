@@ -9,11 +9,13 @@ import {
   ALL_DEVICES,
   type PickerCopy,
   type PickerDevice,
+  type PickerPerson,
   isPersonFilter,
   personFilter,
-  pickerFootText,
+  pickerCountText,
   pickerListRows,
   pickerView,
+  rowWhoText,
   rowsOfPeople,
   rowsOnDevice,
   sortPickerRows,
@@ -221,10 +223,46 @@ describe("pickerView", () => {
   });
 });
 
-describe("pickerFootText", () => {
-  it("counts the home, each linked complication once", () => {
-    expect(pickerFootText(12)).toBe("12 complications");
-    expect(pickerFootText(1)).toBe("1 complication");
-    expect(pickerFootText(0)).toBe("0 complications");
+describe("pickerCountText", () => {
+  it("says how many cards are showing out of the whole home", () => {
+    expect(pickerCountText(6, 9)).toBe("6 of 9");
+    expect(pickerCountText(9, 9)).toBe("9 of 9");
+    expect(pickerCountText(0, 0)).toBe("0 of 0");
+  });
+});
+
+describe("rowWhoText", () => {
+  const jesse: PickerPerson = {
+    label: "Jesse",
+    devices: [{ ownerId: "w2", kind: "watch" }, { ownerId: "p1", kind: "iphone" }],
+  };
+  const chen: PickerPerson = {
+    label: "Chen",
+    devices: [{ ownerId: "w1", kind: "watch" }, { ownerId: "p2", kind: "iphone" }],
+  };
+  const people = [jesse, chen];
+
+  it("names each person once, with the devices of theirs that have a copy", () => {
+    expect(rowWhoText(["w2", "p1", "w1"], people)).toBe("Jesse (watch, iPhone) · Chen (watch)");
+  });
+
+  it("leaves out a person who has none of the copies", () => {
+    expect(rowWhoText(["w1"], people)).toBe("Chen (watch)");
+  });
+
+  // The devices come out in the household list's order, not in the order the
+  // copies happened to be read off the devices.
+  it("keeps the person's own device order whatever order the ids arrive in", () => {
+    expect(rowWhoText(["p1", "w2"], people)).toBe("Jesse (watch, iPhone)");
+  });
+
+  it("says so in words when nothing has it, rather than drawing an empty line", () => {
+    expect(rowWhoText([], people)).toBe("On no device yet");
+    expect(rowWhoText(["nobody"], people)).toBe("On no device yet");
+  });
+
+  // A watch this home no longer lists belongs to nobody, so it names nobody.
+  it("ignores an id that is not any of these people's", () => {
+    expect(rowWhoText(["w1", "gone"], people)).toBe("Chen (watch)");
   });
 });

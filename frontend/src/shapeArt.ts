@@ -146,3 +146,102 @@ export function shapeArtKinds(family: FamilyKind): DeviceKind[] {
   if (isHomeFamily(family)) return ["iphone"];
   return isSharedFamily(family) ? ["watch", "iphone"] : ["watch"];
 }
+
+// ── the picker card's pair of devices ─────────────────────────────────────
+//
+// The drawings above answer "where does this one shape sit". A picker card
+// asks the other question: here is a whole design, show me every slot it
+// fills, on both devices at once. So this is its own pair of pictures rather
+// than a row of the buttons above, drawn eight times the size, with a real
+// dark screen under them and a clock and an app grid for furniture. At 32x28
+// a watch face with four slots lit is a smudge.
+//
+// The colours are the panel's own tokens, so the lit shapes follow the accent
+// and both skins work. The screen stays dark in either one, the way every
+// other picture of a face in this panel does: a watch face is black.
+
+/** The case, the screen and the furniture on it: the panel's own `--wa-art-*`
+ * tokens, the same ones the New dialog's bigger drawings use, so a device is
+ * the same object wherever this panel draws one and both skins already have
+ * values for it. `--wa-art-off` is a slot the design does not fill: drawn
+ * rather than left out, so the lit ones read as a choice among places rather
+ * than as shapes floating on a black rectangle. */
+const CASE = "var(--wa-art-case)";
+const SCREEN = "var(--wa-art-screen)";
+const DIM = "var(--wa-art-dim)";
+const CLOCK = "var(--wa-art-clock)";
+const OFF = "var(--wa-art-off)";
+const ON = "var(--wa-accent)";
+
+const lit = (on: boolean) => (on ? ON : OFF);
+
+/** The clock each screen keeps, which is what makes the picture a face rather
+ * than a diagram. Quiet enough not to compete with a lit slot. */
+const faceClock = (x: number, y: number, size: number, text: string) =>
+  svg`<text x=${x} y=${y} text-anchor="middle" font-size=${size} font-weight="700"
+    fill=${CLOCK} font-family="system-ui, sans-serif">${text}</text>`;
+
+/**
+ * The watch: case, bands, crown, and the four face slots where a face puts
+ * them. Inline across the top, corner arcing into the top left, rectangular
+ * below the middle and circular beside it.
+ */
+function watchCard(families: readonly FamilyKind[]): TemplateResult {
+  const has = (f: FamilyKind) => families.includes(f);
+  return html`<svg class="pk-card-watch" width="86" height="96" viewBox="0 0 86 96" aria-hidden="true">
+    <rect x="27" y="0" width="32" height="10" rx="3" fill=${CASE} />
+    <rect x="27" y="86" width="32" height="10" rx="3" fill=${CASE} />
+    <rect x="6" y="8" width="74" height="80" rx="18" fill=${CASE} />
+    <rect x="82" y="30" width="4" height="12" rx="2" fill=${CASE} />
+    <rect x="11" y="13" width="64" height="70" rx="14" fill=${SCREEN} />
+    ${faceClock(43, 40, 16, "10:09")}
+    <rect x="20" y="20" width="24" height="3" rx="1.5" fill=${lit(has("inline"))} />
+    <path d="M16 30 A 26 26 0 0 1 28 19" stroke=${lit(has("corner"))} stroke-width="4" fill="none" stroke-linecap="round" />
+    <rect x="30" y="52" width="40" height="22" rx="5" fill=${lit(has("rectangular"))} />
+    <circle cx="21" cy="63" r="8" fill=${lit(has("circular"))} />
+  </svg>`;
+}
+
+/**
+ * The phone: the Lock Screen slot above the line, the Home Screen tiles below
+ * it, and the control as a dot in the corner.
+ *
+ * One Lock Screen slot for all three shared shapes rather than three of them.
+ * iOS gives the Lock Screen one widget area, and a card that drew rectangular,
+ * circular and inline separately down a 50 px phone would be three smudges
+ * saying what the watch beside it already said in full.
+ *
+ * Extra Large lights the tallest tile with Large. The Home Screen has four
+ * sizes and this drawing has room for three, and the tile a card is asking
+ * about is "does this reach the Home Screen", which either of them answers.
+ */
+function phoneCard(families: readonly FamilyKind[], control: boolean): TemplateResult {
+  const has = (f: FamilyKind) => families.includes(f);
+  const lockOn = families.some((f) => isSharedFamily(f));
+  const small = lit(has("small"));
+  return html`<svg class="pk-card-phone" width="50" height="96" viewBox="0 0 50 96" aria-hidden="true">
+    <rect x="0" y="0" width="50" height="96" rx="9" fill=${CASE} />
+    <rect x="3" y="3" width="44" height="90" rx="7" fill=${SCREEN} />
+    <rect x="17" y="6" width="16" height="3" rx="1.5" fill=${DIM} />
+    ${faceClock(25, 20, 9, "9:41")}
+    <rect x="9" y="24" width="32" height="8" rx="2" fill=${lit(lockOn)} />
+    <line x1="6" y1="38" x2="44" y2="38" stroke=${DIM} stroke-dasharray="2 2" />
+    <rect x="7" y="42" width="16" height="16" rx="3" fill=${small} />
+    <rect x="27" y="42" width="16" height="16" rx="3" fill=${small} />
+    <rect x="7" y="62" width="36" height="14" rx="3" fill=${lit(has("medium"))} />
+    <rect x="7" y="80" width="36" height="9" rx="3" fill=${lit(has("large") || has("xlarge"))} />
+    ${control ? svg`<circle cx="40" cy="12" r="4" fill=${ON} />` : nothing}
+  </svg>`;
+}
+
+/**
+ * One design on both devices, side by side, for a picker card.
+ *
+ * Always both, whatever this home owns. The card is about the design and not
+ * about a device, and a watch drawn beside a phone with nothing lit on it is
+ * the clearest way there is to say "this one is not on your phone yet", which
+ * is the question the Add to button next to it answers.
+ */
+export function designDeviceArt(families: readonly FamilyKind[], control: boolean): TemplateResult {
+  return html`${watchCard(families)}${phoneCard(families, control)}`;
+}

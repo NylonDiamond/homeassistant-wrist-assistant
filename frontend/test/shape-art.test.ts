@@ -10,7 +10,7 @@ import { nothing } from "lit";
 
 import { ALL_FAMILIES } from "../src/layouts.js";
 import type { FamilyKind } from "../src/model.js";
-import { controlDeviceArt, deviceShapeArt, shapeArtKinds } from "../src/shapeArt.js";
+import { controlDeviceArt, designDeviceArt, deviceShapeArt, shapeArtKinds } from "../src/shapeArt.js";
 import type { DeviceKind } from "../src/version.js";
 
 function flatten(node: unknown): string {
@@ -152,6 +152,66 @@ describe("controlDeviceArt", () => {
 
   it("dims the tile that is yours when it is not picked", () => {
     expect(flatten(controlDeviceArt("iphone", false))).toContain("x=12 y=4 width=3.5 height=3.5 rx=1 fill=\"currentColor\" opacity=0.45");
+  });
+});
+
+describe("designDeviceArt", () => {
+  const card = (families: FamilyKind[], control = false) => flatten(designDeviceArt(families, control));
+  /** Whether a slot is lit: the accent, rather than the unlit token. */
+  const litCount = (art: string) => art.split("var(--wa-accent)").length - 1;
+
+  it("draws both devices whatever the design has, at the card's own size", () => {
+    const art = card(["corner"]);
+    expect(art).toContain("0 0 86 96");
+    expect(art).toContain("0 0 50 96");
+    // Both screens, so a phone with nothing on it says "not on your phone".
+    expect(art.split("var(--wa-art-screen)").length - 1).toBe(2);
+  });
+
+  it("lights only the slots the design fills", () => {
+    const art = card(["rectangular", "circular"]);
+    // The two watch slots, and the phone's one Lock Screen slot.
+    expect(litCount(art)).toBe(3);
+    expect(card([])).not.toContain("var(--wa-accent)");
+  });
+
+  it("lights the phone's Lock Screen slot for any shape a Lock Screen draws", () => {
+    for (const family of ["rectangular", "circular", "inline"] as FamilyKind[]) {
+      expect(card([family])).toContain(`x="9" y="24" width="32" height="8" rx="2" fill=var(--wa-accent)`);
+    }
+    // Corner is a watch face slot and reaches no Lock Screen.
+    expect(card(["corner"])).toContain(`x="9" y="24" width="32" height="8" rx="2" fill=var(--wa-art-off)`);
+  });
+
+  it("lights the Home Screen tile each size lands on", () => {
+    expect(card(["small"])).toContain(`x="7" y="42" width="16" height="16" rx="3" fill=var(--wa-accent)`);
+    expect(card(["medium"])).toContain(`x="7" y="62" width="36" height="14" rx="3" fill=var(--wa-accent)`);
+    expect(card(["large"])).toContain(`x="7" y="80" width="36" height="9" rx="3" fill=var(--wa-accent)`);
+  });
+
+  // The drawing has three tiles and the Home Screen has four sizes, so the
+  // tallest one answers for both. What a card is asked is whether the design
+  // reaches the Home Screen at all.
+  it("lets Extra Large light the tallest tile with Large", () => {
+    expect(card(["xlarge"])).toContain(`x="7" y="80" width="36" height="9" rx="3" fill=var(--wa-accent)`);
+  });
+
+  it("adds the control's dot only when there is a control", () => {
+    expect(card(["circular"], true)).toContain(`cx="40" cy="12" r="4"`);
+    expect(card(["circular"], false)).not.toContain(`cy="12" r="4"`);
+  });
+
+  it("hides both drawings from a screen reader, the card's text saying it instead", () => {
+    expect(card(["rectangular"]).split(`aria-hidden="true"`).length - 1).toBe(2);
+  });
+
+  it("never throws, whatever the design holds", () => {
+    for (const family of ALL_FAMILIES) {
+      for (const control of [true, false]) {
+        expect(() => designDeviceArt([family], control)).not.toThrow();
+      }
+    }
+    expect(() => designDeviceArt(ALL_FAMILIES, true)).not.toThrow();
   });
 });
 
