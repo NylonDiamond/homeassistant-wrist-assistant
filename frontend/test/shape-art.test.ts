@@ -248,9 +248,31 @@ describe("designDeviceArt", () => {
     expect(card(["xlarge"])).toContain(`x="7" y="80" width="36" height="9" rx="3" fill=var(--wa-accent)`);
   });
 
-  it("adds the control's dot only when there is a control", () => {
-    expect(card(["circular"], true)).toContain(`cx="40" cy="12" r="4"`);
-    expect(card(["circular"], false)).not.toContain(`cy="12" r="4"`);
+  it("draws the control's tile on both devices only when there is a control", () => {
+    expect(card(["circular"], true)).toContain(`cx="38" cy="11" r="6"`);
+    expect(card(["circular"], true)).toContain(`x="47" y="65" width="24" height="14" rx="7"`);
+    expect(card(["circular"], false)).not.toContain(`cy="11" r="6"`);
+    expect(card(["circular"], false)).not.toContain(`width="24" height="14" rx="7"`);
+  });
+
+  it("draws only the devices the design is on, and both when it is on neither", () => {
+    const watchOnly = flatten(designDeviceArt(["rectangular"], false, undefined, { watch: true, phone: false }));
+    expect(watchOnly).toContain("0 0 86 96");
+    expect(watchOnly).not.toContain("0 0 50 96");
+    const phoneOnly = flatten(designDeviceArt(["rectangular"], false, undefined, { watch: false, phone: true }));
+    expect(phoneOnly).not.toContain("0 0 86 96");
+    expect(phoneOnly).toContain("0 0 50 96");
+    const nowhere = flatten(designDeviceArt(["rectangular"], false, undefined, { watch: false, phone: false }));
+    expect(nowhere).toContain("0 0 86 96");
+    expect(nowhere).toContain("0 0 50 96");
+  });
+
+  it("sets an HTML picture in through a foreignObject, with a ring round it", () => {
+    const tile = { art: svg`<div>tile</div>`, width: 64, height: 40, html: true };
+    const art = flatten(designDeviceArt([], true, { watch: { control: tile }, phone: {} }));
+    expect(art).toContain("<foreignObject");
+    expect(art).toContain("stroke=rgba(255,255,255,.18)");
+    expect(art).not.toContain(`x="47" y="65" width="24" height="14" rx="7"`);
   });
 
   it("hides both drawings from a screen reader, the card's text saying it instead", () => {

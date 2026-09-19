@@ -210,11 +210,21 @@ export interface LiveShape {
   art: TemplateResult | typeof nothing;
   width: number;
   height: number;
+  /** The picture is HTML rather than svg (the Control Center tile), so it
+   * goes into the drawing through a foreignObject. */
+  html?: boolean;
 }
 
-/** The shapes drawn for one device's picture, by family. A family that is
- * missing keeps the plain lit fill. */
-export type LiveShapes = Partial<Record<FamilyKind, LiveShape>>;
+/** The shapes drawn for one device's picture, by family, plus the Control
+ * Center tile. A slot that is missing keeps the plain lit fill. */
+export type LiveShapes = Partial<Record<FamilyKind | "control", LiveShape>>;
+
+/** Which devices a card draws: the ones the design is on. A design on one
+ * device draws that device alone, and bigger. */
+export interface DevicesOn {
+  watch: boolean;
+  phone: boolean;
+}
 
 /** The real complication on both devices, when a card has one to show. */
 export interface LiveDesign {
@@ -233,12 +243,17 @@ export interface LiveDesign {
  * for the Large tile, whose slot on a 96 px phone is a sliver: the top of a
  * tall widget peeking out reads as that widget, and the whole of it squeezed
  * to nine pixels reads as nothing.
+ *
+ * A hairline ring goes round the picture. Its own well is black on a screen
+ * that is all but black, so without the ring a design with a small layer in
+ * the middle of a wide shape looked like a small shape.
  */
 function placed(
   live: LiveShape | undefined,
   slot: { x: number; y: number; width: number; height: number },
   mode: "fit" | "cover",
   clipId: string,
+  ring: { rx: number } | "circle" = { rx: 2 },
 ): unknown {
   if (live === undefined || live.art === nothing || live.width <= 0 || live.height <= 0) return undefined;
   const scale = mode === "fit"
@@ -248,11 +263,21 @@ function placed(
   const height = live.height * scale;
   const x = slot.x + (slot.width - width) / 2;
   const y = mode === "fit" ? slot.y + (slot.height - height) / 2 : slot.y;
-  const inner = svg`<g class="pk-live" transform=${`translate(${x} ${y}) scale(${scale})`}>${live.art}</g>`;
-  if (mode === "fit") return inner;
+  const picture = live.html
+    ? svg`<foreignObject x="0" y="0" width=${live.width} height=${live.height}><div xmlns="http://www.w3.org/1999/xhtml" class="pk-live-html" style=${`width:${live.width}px;height:${live.height}px`}>${live.art}</div></foreignObject>`
+    : live.art;
+  const inner = svg`<g class="pk-live" transform=${`translate(${x} ${y}) scale(${scale})`}>${picture}</g>`;
+  const ringed = ring === "circle"
+    ? svg`<circle cx=${x + width / 2} cy=${y + height / 2} r=${Math.min(width, height) / 2} fill="none" stroke=${RING} stroke-width="0.75" />`
+    : svg`<rect x=${x} y=${y} width=${width} height=${mode === "fit" ? height : slot.height} rx=${ring.rx} fill="none" stroke=${RING} stroke-width="0.75" />`;
+  if (mode === "fit") return svg`${inner}${ringed}`;
   return svg`<clipPath id=${clipId}><rect x=${slot.x} y=${slot.y} width=${slot.width} height=${slot.height} rx="3" /></clipPath>
-    <g clip-path=${`url(#${clipId})`}>${inner}</g>`;
+    <g clip-path=${`url(#${clipId})`}>${inner}</g>${ringed}`;
 }
+
+/** The hairline round a drawn-in picture: the same faint white the card's
+ * own preview well wears, so the two read as one kind of thing. */
+const RING = "rgba(255,255,255,.18)";
 
 /** A clip id of this drawing's own, since a grid holds many of them. */
 const clipKey = () => `pk-clip-${Math.random().toString(36).slice(2, 8)}`;
@@ -268,15 +293,17 @@ const faceClock = (x: number, y: number, size: number, text: string) =>
  * Modular face lays them out. Corner arcing into the top left, the clock top
  * right, rectangular the full width of the screen under them, and circular
  * bottom left. Inline, which that face does not carry, sits as a line over
- * the clock.
+ * the clock. The Control Center tile, which is not on the face at all, takes
+ * the free bottom right corner, as the pill the watch draws it as.
  */
-function watchCard(families: readonly FamilyKind[], live: LiveShapes = {}): TemplateResult {
+function watchCard(families: readonly FamilyKind[], control: boolean, live: LiveShapes = {}): TemplateResult {
   const has = (f: FamilyKind) => families.includes(f);
   // The real shape in its slot where there is one, the lit fill otherwise.
   // Inline is a line of text rather than a canvas and has no picture to set.
-  const rect = placed(live.rectangular, { x: 14, y: 38, width: 58, height: 21 }, "fit", "");
-  const circ = placed(live.circular, { x: 13, y: 63, width: 16, height: 16 }, "fit", "");
-  const corner = placed(live.corner, { x: 14, y: 17, width: 13, height: 13 }, "fit", "");
+  const rect = placed(live.rectangular, { x: 14, y: 38, width: 58, height: 21 }, "fit", "", { rx: 3 });
+  const circ = placed(live.circular, { x: 13, y: 63, width: 16, height: 16 }, "fit", "", "circle");
+  const corner = placed(live.corner, { x: 14, y: 17, width: 13, height: 13 }, "fit", "", "circle");
+  const pill = placed(live.control, { x: 46, y: 64, width: 26, height: 16 }, "fit", "", { rx: 7 });
   return html`<svg class="pk-card-watch" width="86" height="96" viewBox="0 0 86 96" aria-hidden="true">
     <rect x="27" y="0" width="32" height="10" rx="3" fill=${CASE} />
     <rect x="27" y="86" width="32" height="10" rx="3" fill=${CASE} />
@@ -288,6 +315,7 @@ function watchCard(families: readonly FamilyKind[], live: LiveShapes = {}): Temp
     ${corner ?? svg`<path d="M16 30 A 26 26 0 0 1 28 19" stroke=${lit(has("corner"))} stroke-width="4" fill="none" stroke-linecap="round" />`}
     ${rect ?? svg`<rect x="14" y="38" width="58" height="21" rx="5" fill=${lit(has("rectangular"))} />`}
     ${circ ?? svg`<circle cx="21" cy="71" r="8" fill=${lit(has("circular"))} />`}
+    ${pill ?? (control ? svg`<rect x="47" y="65" width="24" height="14" rx="7" fill=${ON} />` : nothing)}
   </svg>`;
 }
 
@@ -312,14 +340,17 @@ function phoneCard(families: readonly FamilyKind[], control: boolean, live: Live
   // is one slot for all three. A live small tile takes the left tile and the
   // right one goes quiet, so the picture reads as the widget beside a
   // neighbour rather than as the same widget twice.
-  const lock = placed(live.rectangular ?? live.circular, { x: 9, y: 22, width: 32, height: 13 }, "fit", "");
-  const tile = placed(live.small, { x: 7, y: 42, width: 16, height: 16 }, "fit", "");
-  const medium = placed(live.medium, { x: 7, y: 62, width: 36, height: 14 }, "fit", "");
-  const large = placed(live.large ?? live.xlarge, { x: 7, y: 80, width: 36, height: 9 }, "cover", clipKey());
+  const lock = placed(live.rectangular ?? live.circular, { x: 9, y: 22, width: 32, height: 13 }, "fit", "", live.rectangular ? { rx: 2 } : "circle");
+  const tile = placed(live.small, { x: 7, y: 42, width: 16, height: 16 }, "fit", "", { rx: 3 });
+  const medium = placed(live.medium, { x: 7, y: 62, width: 36, height: 14 }, "fit", "", { rx: 3 });
+  const large = placed(live.large ?? live.xlarge, { x: 7, y: 80, width: 36, height: 9 }, "cover", clipKey(), { rx: 3 });
+  // The Control Center tile in the top right corner, where the dot was: the
+  // round tile the phone draws, small, rather than a dot that only said yes.
+  const ctl = placed(live.control, { x: 32, y: 5, width: 12, height: 12 }, "fit", "", "circle");
   return html`<svg class="pk-card-phone" width="50" height="96" viewBox="0 0 50 96" aria-hidden="true">
     <rect x="0" y="0" width="50" height="96" rx="9" fill=${CASE} />
     <rect x="3" y="3" width="44" height="90" rx="7" fill=${SCREEN} />
-    <rect x="17" y="6" width="16" height="3" rx="1.5" fill=${DIM} />
+    <rect x="15" y="6" width="14" height="3" rx="1.5" fill=${DIM} />
     ${faceClock(25, 20, 9, "9:41")}
     ${lock ?? svg`<rect x="9" y="24" width="32" height="8" rx="2" fill=${lit(lockOn)} />`}
     <line x1="6" y1="38" x2="44" y2="38" stroke=${DIM} stroke-dasharray="2 2" />
@@ -327,23 +358,31 @@ function phoneCard(families: readonly FamilyKind[], control: boolean, live: Live
     <rect x="27" y="42" width="16" height="16" rx="3" fill=${tile ? OFF : small} />
     ${medium ?? svg`<rect x="7" y="62" width="36" height="14" rx="3" fill=${lit(has("medium"))} />`}
     ${large ?? svg`<rect x="7" y="80" width="36" height="9" rx="3" fill=${lit(has("large") || has("xlarge"))} />`}
-    ${control ? svg`<circle cx="40" cy="12" r="4" fill=${ON} />` : nothing}
+    ${ctl ?? (control ? svg`<circle cx="38" cy="11" r="6" fill=${ON} />` : nothing)}
   </svg>`;
 }
 
 /**
- * One design on both devices, side by side, for a picker card.
+ * One design on the devices it is on, side by side, for a picker card.
  *
- * Always both, whatever this home owns. The card is about the design and not
- * about a device, and a watch drawn beside a phone with nothing lit on it is
- * the clearest way there is to say "this one is not on your phone yet", which
- * is the question the Add to button next to it answers.
+ * Only the devices that hold a copy. Both used to be drawn always, a blank
+ * phone saying "not on your phone yet", and a design on one device then spent
+ * half its card on a blank drawing while the one that mattered was too small
+ * to read. A card with one device draws it larger (`.pk-card-art.one`), and
+ * the who line and Add to still say what the blank drawing said.
  *
  * With `live`, each slot the design fills shows the complication itself, drawn
  * small, instead of a lit fill: the card then says what it is and where it
  * sits in one picture. Without it the slots are lit, which is what a card
  * whose document this panel cannot draw still gets.
  */
-export function designDeviceArt(families: readonly FamilyKind[], control: boolean, live?: LiveDesign): TemplateResult {
-  return html`${watchCard(families, live?.watch)}${phoneCard(families, control, live?.phone)}`;
+export function designDeviceArt(
+  families: readonly FamilyKind[],
+  control: boolean,
+  live?: LiveDesign,
+  on: DevicesOn = { watch: true, phone: true },
+): TemplateResult {
+  // Nowhere at all draws both, so a card never shows an empty mat.
+  const both = on.watch === on.phone;
+  return html`${both || on.watch ? watchCard(families, control, live?.watch) : nothing}${both || on.phone ? phoneCard(families, control, live?.phone) : nothing}`;
 }

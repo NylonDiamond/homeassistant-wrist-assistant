@@ -160,7 +160,7 @@ import {
   shapeSections,
 } from "./linking.js";
 import { type Person, deviceShortName, peopleNames, peopleOf, personOf } from "./people.js";
-import { type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, designDeviceArt, deviceShapeArt, shapeArtKinds } from "./shapeArt.js";
+import { type DevicesOn, type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, designDeviceArt, deviceShapeArt, shapeArtKinds } from "./shapeArt.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { type DeviceOwnerLike, deviceKindOf, deviceNoun, deviceSupportsControls, deviceSupportsShapes, updateDeviceMessage } from "./version.js";
 import { type LinkMergeNotice, autoLinkMerge } from "./linkMerge.js";
@@ -506,6 +506,10 @@ const CARD_PREVIEW_ROOM = { width: 240, height: 64 };
 /** The Control Center tile on a card whose design is only a control, sized to
  * the well that holds it. */
 const CARD_TILE_SIDE = 48;
+/** The side of the Control Center tile drawn into a picker card's device
+ * drawing, before the drawing scales it down. Big enough for the glyph to be
+ * drawn as a glyph; the scale does the rest. */
+const CARD_ART_TILE_SIDE = 40;
 
 const COL_LEFT_DEFAULT = 300;
 const COL_RIGHT_DEFAULT = 360;
@@ -1896,7 +1900,13 @@ export class WristAssistantPanel extends LitElement {
       display: flex; align-items: flex-end; justify-content: center; gap: 10px; margin-top: 8px;
       padding: 10px 8px 8px; border: 0; border-radius: 10px; background: var(--wa-panel);
     }
-    .pk-card-art svg { display: block; flex: none; }
+    .pk-card-art > svg { display: block; flex: none; }
+    /* A design on one device draws that device alone, and larger, so the
+       complication set into it is readable. */
+    .pk-card-art.one > svg { height: 118px; width: auto; }
+    /* The Control Center tile is HTML inside a foreignObject; the box around
+       it is the tile's own size and the transform outside scales it. */
+    .pk-card-art .pk-live-html { display: block; overflow: hidden; }
     /* The right end is kept clear for the hide and delete buttons, which sit
        in that corner: reserved always, so nothing reflows on hover. */
     .pk-card-shapes { font-size: 11px; color: var(--wa-muted); margin-top: 8px; padding-right: 62px; overflow-wrap: anywhere; }
@@ -8699,18 +8709,42 @@ export class WristAssistantPanel extends LitElement {
       }, family);
       return art === nothing ? undefined : { art, width: slot.width, height: slot.height };
     };
+    // The Control Center tile as each device draws it: the watch's pill and
+    // the phone's circle, off the same host the card's own preview uses.
+    const tile = (phone: boolean): LiveShape | undefined => {
+      if (!cfg.control) return undefined;
+      const shape = controlTileShapes(phone ? "iphone" : "watch")[0]!;
+      const art = controlTile(this.tileHost(cfg, entities), cfg.control, shape, CARD_ART_TILE_SIDE);
+      if (art === nothing) return undefined;
+      const width = shape === "watchPill" ? Math.round(CARD_ART_TILE_SIDE * 1.6) : CARD_ART_TILE_SIDE;
+      return { art, width, height: CARD_ART_TILE_SIDE, html: true };
+    };
     const pick = (families: readonly DrawableFamily[], phone: boolean): LiveShapes => {
       const out: LiveShapes = {};
       for (const family of families) {
         const shape = draw(family, phone);
         if (shape) out[family] = shape;
       }
+      const control = tile(phone);
+      if (control) out.control = control;
       return out;
     };
     return {
       watch: pick(["rectangular", "circular", "corner"], false),
       phone: pick(["rectangular", "circular", "small", "medium", "large", "xlarge"], true),
     };
+  }
+
+  /** Which of the two devices a card's design is on, by the copies it holds.
+   * The drawing shows those and no other. */
+  private devicesOn(ownerIds: readonly string[]): DevicesOn {
+    const kinds = new Set(ownerIds.map((id) => deviceKindOf(this.ownerOf(id))));
+    return { watch: kinds.has("watch"), phone: kinds.has("iphone") };
+  }
+
+  /** The class that sizes a card's device mat: one device is drawn larger. */
+  private artClass(on: DevicesOn): string {
+    return on.watch !== on.phone ? "pk-card-art one" : "pk-card-art";
   }
 
   /** A host for a Control Center tile of a complication that has no draft
@@ -8982,6 +9016,9 @@ export class WristAssistantPanel extends LitElement {
   private renderUnsavedCard(d: Draft) {
     const cfg = d.config;
     const families = ALL_FAMILIES.filter((f) => cfg.supportedFamilies.includes(f));
+    // Where it will land: the devices the New dialog ticked, or the one being
+    // edited when it ticked none.
+    const unsavedOn = this.devicesOn(this.linkOwnerIds.length > 0 ? this.linkOwnerIds : this.ownerId ? [this.ownerId] : []);
     return html`<div class="pk-card" aria-current="true">
       <div class="pk-card-head">
         <span class="pk-card-text">
@@ -8991,7 +9028,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="pk-badge">unsaved</span>
       </div>
       ${this.renderCardPreview(cfg, this.historyEntities(cfg), deviceKindOf(this.selectedOwner) === "iphone")}
-      <div class="pk-card-art">${designDeviceArt(families, cfg.control !== undefined, this.cardLive(cfg, this.historyEntities(cfg)))}</div>
+      <div class=${this.artClass(unsavedOn)}>${designDeviceArt(families, cfg.control !== undefined, this.cardLive(cfg, this.historyEntities(cfg)), unsavedOn)}</div>
       <div class="pk-card-shapes">${shapeListText(families, cfg.control !== undefined)}</div>
     </div>`;
   }
@@ -9052,7 +9089,7 @@ export class WristAssistantPanel extends LitElement {
           <span class="pk-badge">${item.badge}</span>
         </div>
         <span class="pk-card-live none">No preview</span>
-        <div class="pk-card-art">${designDeviceArt(families, false)}</div>
+        <div class=${this.artClass(this.devicesOn([copy.ownerId]))}>${designDeviceArt(families, false, undefined, this.devicesOn([copy.ownerId]))}</div>
         <div class="pk-card-shapes">${shapeListText(families, false)}</div>
         ${this.pickerNote === row.key ? html`<div class="pk-note">${item.title}</div>` : nothing}
       </div>`;
@@ -9086,6 +9123,7 @@ export class WristAssistantPanel extends LitElement {
     // Parsed once per record and resolved once per card: this method is only
     // called for the cards the chips and the search left in.
     const preview = this.recordPreview(drawn);
+    const on = this.devicesOn(row.copies.map((c) => c.ownerId));
     return html`<div class="pk-card ${hidden ? "dim" : ""} ${adding ? "over" : ""}" aria-current=${open ? "true" : "false"}>
       <div class="pk-card-head">
         <button type="button" class="pk-card-text" title="Open this complication"
@@ -9101,7 +9139,7 @@ export class WristAssistantPanel extends LitElement {
         ${preview
           ? this.renderCardPreview(preview.config, preview.entities, deviceKindOf(this.ownerOf(copy.ownerId)) === "iphone")
           : html`<span class="pk-card-live none">No preview</span>`}
-        <span class="pk-card-art">${designDeviceArt(families, control, preview ? this.cardLive(preview.config, preview.entities) : undefined)}</span>
+        <span class=${this.artClass(on)}>${designDeviceArt(families, control, preview ? this.cardLive(preview.config, preview.entities) : undefined, on)}</span>
       </button>
       <div class="pk-card-shapes">${shapeListText(families, control)}</div>
       <span class="pk-card-acts ${confirming ? "asking" : ""}">
