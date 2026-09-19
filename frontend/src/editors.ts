@@ -376,7 +376,7 @@ import {
   controlEffectiveKind,
 } from "./model.js";
 import { chartSmoothed, chartSeriesWithHoles, resolveControl, type ResolveContext, type ResolvedControl } from "./resolver.js";
-import { familyNote, isHomeFamily, resizableNote } from "./layouts.js";
+import { familyNote, isHomeFamily } from "./layouts.js";
 import { type DeviceKind, deviceSupportsControls, watchVersionNote } from "./version.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import {
@@ -8548,8 +8548,7 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
       ${backgroundGradient}
       <div class="hint">The tile is drawn edge to edge: this colour fills every point of it, and the design is laid out inside the ${familyTitle(family)} box.</div>
       <div class="hint keep">iOS 18 lets a user tint the whole Home Screen. The system then drops the background and draws the design in two tones, so check that it still reads without its colours.</div>
-      ${familyNote(family) ? html`<div class="hint keep">${familyTitle(family)} needs ${familyNote(family)}. An iPhone on an older version is not offered this size when adding a widget, and every other size still draws.</div>` : nothing}
-      ${resizableNote(host.config.supportedFamilies) ? html`<div class="hint keep">${resizableNote(host.config.supportedFamilies)}</div>` : nothing}`,
+      ${familyNote(family) ? html`<div class="hint keep">${familyTitle(family)} needs ${familyNote(family)}. An iPhone on an older version is not offered this size when adding a widget, and every other size still draws.</div>` : nothing}`,
       { color: SECTION_COLOR.look, icon: "shape", summary: bg,
         ...(layout.backgroundColorHex !== undefined || layout.backgroundFill !== undefined
           ? { reset: () => upd((l) => { delete l.backgroundColorHex; delete l.backgroundFill; }, "reset-home") } : {}) }) : nothing}

@@ -17,11 +17,9 @@ import {
   placeTitle,
   firstDrawable,
   isHomeFamily,
-  isResizableSet,
   keepFamilies,
   missingFamilies,
   removeFamily,
-  resizableNote,
   blankInline,
   supportedFamilies,
 } from "../src/layouts.js";
@@ -79,26 +77,6 @@ describe("familiesFor", () => {
 
   it("knows which shapes are Home Screen tiles", () => {
     expect(ALL_FAMILIES.filter(isHomeFamily)).toEqual(["small", "medium", "large", "xlarge"]);
-  });
-});
-
-describe("resizableNote", () => {
-  it("says nothing for one size, and Extra Large never counts", () => {
-    expect(resizableNote([])).toBeUndefined();
-    expect(resizableNote(["small"])).toBeUndefined();
-    expect(resizableNote(["small", "xlarge"])).toBeUndefined();
-    expect(resizableNote(["large", "rectangular", "circular"])).toBeUndefined();
-    expect(isResizableSet(["medium", "large"])).toBe(true);
-  });
-
-  it("says the sizes travel together for any two or three of them", () => {
-    expect(resizableNote(["small", "medium"])).toContain("Long press");
-    expect(resizableNote(["medium", "large"])).toContain("Long press");
-    expect(resizableNote(["small", "medium", "large", "xlarge"])).toContain("Long press");
-  });
-
-  it("reads a Set the same as an array, which is what the New dialog holds", () => {
-    expect(resizableNote(new Set<FamilyKind>(["small", "large"]))).toContain("Long press");
   });
 });
 

@@ -116,32 +116,6 @@ export function familyNote(family: FamilyKind): string | undefined {
   return family === "xlarge" ? "iOS 27 and later" : undefined;
 }
 
-/** The sizes the phone's resizable Home Screen widgets switch between. Extra
- * Large is left out: it is a full page and iOS 27 only, so it stays a widget
- * of its own. The app has one widget per set of these (Small + Medium,
- * Medium + Large, Small + Large, all three), see `ComplicationWidgetKinds`. */
-export const RESIZABLE_FAMILIES: readonly HomeFamily[] = ["small", "medium", "large"];
-
-/** Whether the phone also offers this set of shapes as one resizable widget:
- * two or more of `RESIZABLE_FAMILIES`. One size alone has nowhere to resize
- * to, and is already its own widget. Same rule as the app's pickers. */
-export function isResizableSet(families: Iterable<FamilyKind>): boolean {
-  let n = 0;
-  for (const f of families) if ((RESIZABLE_FAMILIES as readonly FamilyKind[]).includes(f)) n++;
-  return n >= 2;
-}
-
-/**
- * The line under the Home Screen size cards once two or more resizable sizes
- * are picked, or undefined before that. There is no switch for it: any design
- * with two of the three sizes is offered in the phone's widget for exactly
- * those sizes, so the note is how the owner learns it happened.
- */
-export function resizableNote(families: Iterable<FamilyKind>): string | undefined {
-  if (!isResizableSet(families)) return undefined;
-  return "The phone also offers these sizes together as one widget. Long press it on the Home Screen to switch between them.";
-}
-
 /**
  * Where a shape lives on the device.
  *
