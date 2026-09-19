@@ -9,9 +9,9 @@
 // name, the layers, the rules, a shared shape) changes on both and a per-device
 // field (the slot, `hidden`, a shape the device cannot draw) changes on one.
 //
-// Everything here is pure, so the New dialog's cards, the per-device trimming
-// and the save plan can all be read in a test without a browser. Plan: app repo
-// docs/complication_one_design_everywhere.md.
+// Everything here is pure, so the New dialog's shape sections, the per-device
+// trimming and the save plan can all be read in a test without a browser. Plan:
+// app repo docs/complication_one_design_everywhere.md.
 
 import {
   type CustomComplicationConfig,
@@ -23,7 +23,7 @@ import {
   pruneGroups,
   schemaVersionFor,
 } from "./model.js";
-import { type ShapePlace, ALL_FAMILIES, biggestFirst, dropFamily, isHomeFamily, placeOf, placeTitle, supportedFamilies } from "./layouts.js";
+import { ALL_FAMILIES, biggestFirst, dropFamily, isHomeFamily, supportedFamilies } from "./layouts.js";
 import { type DeviceKind, MIN_IPHONE_VERSION_FOR_HOME_SCREEN, watchSupportsShapes } from "./version.js";
 import { mergeForLink } from "./linkMerge.js";
 
@@ -61,62 +61,19 @@ export function isSharedFamily(family: FamilyKind): boolean {
   return SHARED_FAMILIES.includes(family);
 }
 
-/** What one side of a shared shape is called on its own device, which is the
- * label on the small toggle that drops the shape from that copy alone. */
-export function sideTitle(place: ShapePlace): string {
-  return place === "watch" ? "Watch" : placeTitle(place);
-}
-
-// ── the New dialog's cards ────────────────────────────────────────────────
-
-/** One device's half of a shape row: the copy the tick belongs to. */
-export interface LinkShapeSide {
-  ownerId: string;
-  place: ShapePlace;
-  /** The device's name, for the tooltip on a side toggle. */
-  owner: string;
-  /** "Watch", "Lock Screen", "Home Screen". */
-  label: string;
-}
-
-/** One shape in a card, with the copies it can land on. A shared shape ticked
- * while a watch and a phone are both ticked has two sides; every other shape
- * has one per device that draws it. */
-export interface LinkShapeRow {
-  family: FamilyKind;
-  sides: LinkShapeSide[];
-}
-
-/** One card in the dialog's "Where does it live?" grid. */
-export interface LinkPlaceCard {
-  /** Stable across re-renders, so the open card survives a tick. */
-  key: string;
-  label: string;
-  /** The devices a copy lands on when this card is ticked. */
-  ownerIds: string[];
-  /** Their names, for the line under the card's title: the card is "Lock
-   * Screen" and the line under it is whose lock screen. */
-  devices: string[];
-  /** The places this card holds, in the order they were gathered. */
-  places: ShapePlace[];
-  rows: LinkShapeRow[];
-  comingSoon: LinkShapeRow[];
-  /** True when the card holds a watch's shapes and a phone's at once, which is
-   * the only case where a row has two sides to untick. */
-  shared: boolean;
-}
+// ── the picks ─────────────────────────────────────────────────────────────
 
 /** The picks, by device: a family is ticked for the devices whose set holds
- * it, so the watch half and the phone half of a shared shape are two entries
- * of one family rather than one entry nobody can half-untick. */
+ * it, so a shape a device's copy goes without is one entry missing rather
+ * than a shape the whole complication lost. */
 export type LinkPicks = ReadonlyMap<string, ReadonlySet<FamilyKind>>;
 
 export function picksFor(picks: LinkPicks, ownerId: string): ReadonlySet<FamilyKind> {
   return picks.get(ownerId) ?? new Set();
 }
 
-/** Every family ticked on any device, which is what the footer counts: three
- * shared shapes on two devices are three designs, not six. */
+/** Every family ticked on any device, counted once however many devices draw
+ * it: three shared shapes on two devices are three designs, not six. */
 export function pickedFamilies(picks: LinkPicks): Set<FamilyKind> {
   const out = new Set<FamilyKind>();
   for (const set of picks.values()) for (const f of set) out.add(f);
@@ -139,9 +96,9 @@ export function setPick(picks: LinkPicks, family: FamilyKind, ownerIds: readonly
 /**
  * The picks as they stand for exactly this set of devices.
  *
- * A device that is not in the set is dropped, so unticking a place and ticking
- * it again starts that copy clean. A device in the set with no picks at all
- * gets an empty set rather than no entry, which is not the same thing at all:
+ * A device that is not in the set is dropped, so unticking a device and
+ * ticking it again starts that copy clean. A device in the set with no picks
+ * at all gets an empty set rather than no entry, which is not the same thing:
  * `copyFamilies` reads a missing entry as "this device has no opinion" and
  * hands it every shape, and a device that is only on the link for the Control
  * Center control would arrive carrying every shape the others picked.
@@ -152,232 +109,11 @@ export function keepPicks(picks: LinkPicks, ownerIds: ReadonlySet<string>): Map<
   return next;
 }
 
-function sideOf(owner: LinkOwner, family: FamilyKind): LinkShapeSide {
-  const place = placeOf(family, { device_kind: owner.kind });
-  return { ownerId: owner.ownerId, place, owner: owner.label, label: sideTitle(place) };
-}
-
-function rowsFor(owners: readonly LinkOwner[], places: readonly ShapePlace[], pick: (o: LinkOwner) => readonly FamilyKind[]): LinkShapeRow[] {
-  const rows = new Map<FamilyKind, LinkShapeSide[]>();
-  for (const owner of owners) {
-    for (const family of pick(owner)) {
-      const side = sideOf(owner, family);
-      if (!places.includes(side.place)) continue;
-      const sides = rows.get(family) ?? [];
-      sides.push(side);
-      rows.set(family, sides);
-    }
-  }
-  return biggestFirst([...rows.keys()]).map((family) => ({ family, sides: rows.get(family)! }));
-}
-
-/** Whether a shape is ticked on any of the devices that draw it. */
-export function rowPicked(row: LinkShapeRow, picks: LinkPicks): boolean {
-  return row.sides.some((s) => picks.get(s.ownerId)?.has(row.family) === true);
-}
-
-/** How many of a card's shapes are ticked, which is the small line under it.
- * Counted once per shape however many devices draw it: a card saying 6 over
- * three shared shapes would be counting copies, not designs. */
-export function cardPicked(card: LinkPlaceCard, picks: LinkPicks): number {
-  return card.rows.filter((row) => rowPicked(row, picks)).length;
-}
-
-/** The order the grid reads in: the watch first, then the phone's two screens,
- * because the watch card is the one that folds in the Lock Screen. */
-const PLACE_ORDER: readonly ShapePlace[] = ["watch", "lock", "home"];
-
-function placesIn(owner: LinkOwner, families: readonly FamilyKind[]): ShapePlace[] {
-  const seen = new Set<ShapePlace>();
-  for (const family of families) seen.add(placeOf(family, { device_kind: owner.kind }));
-  return PLACE_ORDER.filter((p) => seen.has(p));
-}
-
-/**
- * The grid both pickers draw: one card per place per device, with the watch
- * face and the Lock Screen folded into one where they belong together.
- *
- * There is no separate device step. A card is a place on a named device ("Lock
- * Screen", and under it whose), so picking one says where this goes and which
- * device it lands on in the same click, and two watches are two cards rather
- * than one card and a puzzle.
- *
- * `offer` is the whole of the difference between the two callers: the New
- * dialog offers every shape a device draws, and Add a shape offers the ones
- * that device's copy does not draw yet. A place left with nothing to offer is
- * not drawn at all, which is what keeps a phone too old for the Home Screen
- * from being shown a screen it has no slot for.
- *
- * `folds` says which watch and Lock Screen cards belong together: the ones
- * ticked in the New dialog, the ones the complication already lives on in Add
- * a shape. Rectangular, circular and inline are one design on both devices, so
- * drawing them twice would ask the same question twice. The folded card reads
- * "Watch face and Lock Screen", and each row carries a side per device so
- * either copy can drop the shape on its own.
- */
-function cardsOfPlaces(
-  owners: readonly LinkOwner[],
-  offer: (owner: LinkOwner) => readonly FamilyKind[],
-  soon: (owner: LinkOwner) => readonly FamilyKind[],
-  folds: (card: LinkPlaceCard) => boolean,
-): LinkPlaceCard[] {
-  const single: LinkPlaceCard[] = [];
-  for (const place of PLACE_ORDER) {
-    for (const owner of owners) {
-      if (!placesIn(owner, [...offer(owner), ...soon(owner)]).includes(place)) continue;
-      single.push({
-        key: `${place}:${owner.ownerId}`,
-        label: placeTitle(place),
-        ownerIds: [owner.ownerId],
-        devices: [owner.label],
-        places: [place],
-        rows: rowsFor([owner], [place], offer),
-        comingSoon: rowsFor([owner], [place], soon),
-        shared: false,
-      });
-    }
-  }
-  const folded = single.filter((c) => c.places[0] !== "home" && folds(c));
-  if (!folded.some((c) => c.places[0] === "watch") || !folded.some((c) => c.places[0] === "lock")) return single;
-  const ids = new Set(folded.flatMap((c) => c.ownerIds));
-  const kept = owners.filter((o) => ids.has(o.ownerId));
-  const merged: LinkPlaceCard = {
-    key: "shared",
-    label: "Watch face and Lock Screen",
-    ownerIds: kept.map((o) => o.ownerId),
-    devices: kept.map((o) => o.label),
-    places: ["watch", "lock"],
-    rows: rowsFor(kept, ["watch", "lock"], offer),
-    comingSoon: [],
-    shared: true,
-  };
-  const keys = new Set(folded.map((c) => c.key));
-  const out: LinkPlaceCard[] = [];
-  for (const card of single) {
-    if (!keys.has(card.key)) out.push(card);
-    else if (!out.includes(merged)) out.push(merged);
-  }
-  return out;
-}
-
-/**
- * The New dialog's cards: every place of every device, all of its shapes.
- *
- * Only a place the device's app can take is offered: the shapes come from
- * `familiesFor`, so a phone below the Home Screen release has no Home Screen
- * card at all. The watch face and the Lock Screen fold together the moment
- * both are ticked, and unticking the folded card unticks every side of it.
- */
-export function linkPlaceCards(owners: readonly LinkOwner[], picks: LinkPicks): LinkPlaceCard[] {
-  return cardsOfPlaces(owners, (o) => o.families, (o) => o.comingSoon, (card) => cardPicked(card, picks) > 0);
-}
-
-/**
- * The Add a shape cards: the same grid, over what is left to add.
- *
- * The panel used to list the places of the one device the editor was sitting
- * on, so putting a watch complication on the phone meant finding the Devices
- * dialog first and coming back afterwards. Every device in the home is here
- * instead, and picking a shape on one the complication is not on yet is what
- * puts it there.
- *
- * What each device offers is what its own copy does not draw yet:
- *
- *   - A device the complication is already on offers the shapes the document
- *     does not have. Its copy carries the rest already.
- *   - A device it is not on offers everything that device draws, the shapes
- *     the document already has included, because that copy draws none of them
- *     yet. Picking any one of them is what joins the device to the link, and
- *     the copy then arrives with every shape it can draw, not only the one
- *     that was picked.
- *
- * A place with nothing left to offer is left out rather than drawn ticked and
- * dead: this is a menu of what can still be done, and an entry that does
- * nothing is not one of them.
- */
-export function addShapeCards(
-  owners: readonly LinkOwner[],
-  on: ReadonlySet<string>,
-  have: readonly FamilyKind[],
-): LinkPlaceCard[] {
-  const offer = (owner: LinkOwner) => on.has(owner.ownerId) ? owner.families.filter((f) => !have.includes(f)) : owner.families;
-  return cardsOfPlaces(owners, offer, (o) => o.comingSoon, (card) => on.has(card.ownerIds[0]!));
-}
-
-/** The devices a card would join the complication to: the ones it does not
- * live on yet. Empty for a card of a device it is already on, which is every
- * card the New dialog draws. */
-export function joiningOwners(card: LinkPlaceCard, on: ReadonlySet<string>): string[] {
-  return card.ownerIds.filter((id) => !on.has(id));
-}
-
-/**
- * Untick a whole card: every shape of it, off every device it holds.
- *
- * There is no ticking a card as a whole. A card is ticked when one of its
- * shapes is, and the shapes are picked one by one in the panel under it. It
- * used to tick its biggest shape as it opened, so that a ticked card never
- * held nothing, but that put Rectangular on every watch complication whose
- * author only wanted to look at the watch face card; now an open card with
- * nothing ticked is simply unticked, and Create waits for a shape.
- */
-export function untickCard(picks: LinkPicks, card: LinkPlaceCard): LinkPicks {
-  let next = picks;
-  for (const row of card.rows) next = setPick(next, row.family, row.sides.map((s) => s.ownerId), false);
-  return next;
-}
-
 /** The devices that can draw a Control Center control, which is who the
- * dialog's control card is about. One control, every device that has one: the
- * card names them under its title and ticking it puts a copy on each. */
+ * Control Center section is about. One control, every device that has one:
+ * ticking it puts a copy on each of them. */
 export function controlOwners(owners: readonly LinkOwner[]): LinkOwner[] {
   return owners.filter((o) => o.controls);
-}
-
-/**
- * The devices this complication is about to land on.
- *
- * Derived rather than ticked: the dialog asks where it lives, and a device is
- * where it lives if one of its places is ticked. The control counts, because a
- * complication that is only a Control Center control still has to be saved
- * somewhere.
- */
-export function tickedOwners(owners: readonly LinkOwner[], picks: LinkPicks, control: boolean): Set<string> {
-  const out = new Set<string>();
-  for (const owner of owners) {
-    if ((picks.get(owner.ownerId)?.size ?? 0) > 0 || (control && owner.controls)) out.add(owner.ownerId);
-  }
-  return out;
-}
-
-/** The note under a card whose rows have two sides. Said once, on the card,
- * rather than on every row: the rule is the same for all of them. */
-export const SHARED_SIDE_NOTE =
-  "These are one design on both devices. Unticking the Lock Screen side drops the shape from the iPhone copy only; the watch copy keeps it.";
-
-/**
- * The line under the shapes, or nothing.
- *
- * It used to say "Nothing copies across on its own", which stopped being true
- * the moment a Home Screen size started from the watch design. So the line is
- * the promise now, and there is no line at all when nothing is promised: a
- * sentence about copying is worth reading only when something copies.
- */
-export function startFromCopyLine(picks: LinkPicks): string | undefined {
-  const families = pickedFamilies(picks);
-  return HOME_FAMILIES.some((f) => families.has(f)) ? "Home Screen sizes start from your watch design." : undefined;
-}
-
-/** The footer's running count, which is what stops Create being a surprise.
- * Shapes are counted once however many devices draw them, and the devices are
- * counted only when there is more than one: "2 shapes on 1 device" is a number
- * nobody needed. */
-export function pickedWords(picks: LinkPicks, control: boolean, ticked: ReadonlySet<string>): string {
-  const count = pickedFamilies(picks).size + (control ? 1 : 0);
-  if (count === 0) return "";
-  const shapes = `${count} ${count === 1 ? "shape" : "shapes"}`;
-  if (ticked.size < 2) return shapes;
-  return `${shapes} on ${ticked.size} devices`;
 }
 
 export function joinNames(names: readonly string[]): string {
@@ -390,11 +126,11 @@ export function joinNames(names: readonly string[]): string {
 /**
  * The four headings shapes are offered under, once for the whole home.
  *
- * The cards above ask "where does it live" device by device, which asks the
- * same question once per device: a home with two watches and two phones draws
- * six cards to offer eight shapes. A design does not belong to a device, so
- * the sections are fixed and the devices are a separate tick: pick Rectangular
- * once, then say who shows it.
+ * The dialog used to ask "where does it live" device by device, with a card
+ * per place per device, which asks the same question once per device: a home
+ * with two watches and two phones drew seven cards to offer eight shapes. A
+ * design does not belong to a device, so the sections are fixed and the
+ * devices are a separate tick: pick Rectangular once, then say who shows it.
  *
  * `shared` is the three shapes a watch face and a Lock Screen both draw, which
  * is why its title changes with the home rather than being a constant.

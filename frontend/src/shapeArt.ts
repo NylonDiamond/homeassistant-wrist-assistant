@@ -7,9 +7,9 @@
 // where it lands, and a shared shape carries one outline per device, which is
 // the whole of what makes one design on two screens readable at a glance.
 //
-// Deliberately smaller and plainer than `familyArt` in panel.ts, which draws
-// the device's furniture (a page of icons, a real clock, a dock) at four times
-// the size for the New dialog's place cards. These sit inside a row of
+// Deliberately smaller and plainer than the drawings the New dialog's place
+// cards used to carry, which drew the device's furniture (a page of icons, a
+// real clock, a dock) at four times the size. These sit inside a row of
 // checkboxes, so everything but the outline and the shape is left out.
 //
 // The outline is `currentColor` at low opacity and the shape is `currentColor`
