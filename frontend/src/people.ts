@@ -16,7 +16,7 @@
 // browser. Plan: app repo docs/complication_one_design_everywhere.md.
 
 import type { OwnerSummary } from "./ha-api.js";
-import { deviceKindOf } from "./version.js";
+import { deviceKindOf, isLibraryOwner } from "./version.js";
 
 /** One member of the household, with the devices that are theirs. The phone
  * comes first in `owners`, then the watches paired to it. */
@@ -79,13 +79,19 @@ function groupKey(owner: OwnerSummary, phones: readonly OwnerSummary[]): string 
  * nothing can be saved to one, so an orphan in an "Appears on" list is a box that
  * cannot be ticked.
  *
+ * The Library is left out for the opposite reason. It belongs to nobody
+ * because it belongs to the whole home: it is the one place a design can sit
+ * that is not somebody's device, so filing it under a person would say the
+ * wrong thing about every other person in the house. The panel draws it as its
+ * own row beside the people, which is what `libraryOwner` is for.
+ *
  * A group takes the position of its first member, which with watches sorted
  * first means a person is listed where their watch is. Inside the group the
  * phone comes first anyway, because that is the order a person reads their own
  * devices in.
  */
 export function peopleOf(owners: readonly OwnerSummary[]): Person[] {
-  const real = byKind(owners).filter((o) => !o.is_orphan);
+  const real = byKind(owners).filter((o) => !o.is_orphan && !isLibraryOwner(o));
   const phones = real.filter((o) => deviceKindOf(o) === "iphone");
   const groups = new Map<string, OwnerSummary[]>();
   for (const owner of real) {
@@ -102,10 +108,20 @@ export function peopleOf(owners: readonly OwnerSummary[]): Person[] {
   });
 }
 
-/** Whose device this is, or nobody's: an id that is not in the home, or an
- * orphan's, which `peopleOf` left out. */
+/** Whose device this is, or nobody's: an id that is not in the home, an
+ * orphan's, or the Library's, all of which `peopleOf` left out. */
 export function personOf(people: readonly Person[], ownerId: string): Person | undefined {
   return people.find((p) => p.owners.some((o) => o.owner_watch_id === ownerId));
+}
+
+/** The home's Library row, when the integration sends one.
+ *
+ * Undefined against an integration older than the Library, which is the
+ * panel's cue to draw no shelf at all rather than to invent one: the owner
+ * only exists if the server knows the reserved id.
+ */
+export function libraryOwner(owners: readonly OwnerSummary[]): OwnerSummary | undefined {
+  return owners.find((o) => isLibraryOwner(o));
 }
 
 /**

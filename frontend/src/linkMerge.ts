@@ -90,6 +90,13 @@ export interface PairingResult {
  * A name one device holds twice cannot be paired without guessing which copy
  * the other device's copy belongs to, so it is skipped and listed. Two watches
  * holding it counts the same way: there is still no single watch copy to pair.
+ *
+ * The Library is skipped whole, records and all. This merge is about the one
+ * design somebody built twice because they had to, once per device, and the
+ * shelf is where a design goes precisely so it does not have to be built
+ * twice. Counting its copy as a third side would either pair it with a device
+ * by name (joining two things the author kept apart on purpose) or push an
+ * otherwise clean pair into `ambiguous` and leave it unmerged.
  */
 export function findLinkPairs(loaded: readonly OwnerRecords[]): PairingResult {
   interface Group {
@@ -103,6 +110,7 @@ export function findLinkPairs(loaded: readonly OwnerRecords[]): PairingResult {
   const groups = new Map<string, Group>();
   for (const { owner, records } of loaded) {
     const kind = deviceKindOf(owner);
+    if (kind === "library") continue;
     for (const record of records) {
       if (record.deleted || !record.document) continue;
       let config: CustomComplicationConfig;
@@ -505,6 +513,9 @@ export async function autoLinkMerge(
 
   const loaded: OwnerRecords[] = [];
   for (const owner of owners) {
+    // `findLinkPairs` throws the shelf's records away anyway, so fetching them
+    // would only be a round trip that can fail and abandon the whole run.
+    if (deviceKindOf(owner) === "library") continue;
     try {
       const reply = await fetchList(hass, owner.owner_watch_id);
       loaded.push({ owner, records: reply.records });

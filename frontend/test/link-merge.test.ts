@@ -79,6 +79,13 @@ function loadedFrom(...sides: [OwnerSummary, CustomComplicationConfig[]][]): Own
 
 const WATCH = owner("watch-1", "watch");
 const PHONE = owner("phone-1", "iphone");
+/** The home's shelf, which this merge must never treat as a third side. */
+const LIBRARY: OwnerSummary = {
+  ...owner("library", "watch"),
+  device_name: "Library",
+  device_kind: "library",
+  app_version: null,
+};
 
 // ── pairing ───────────────────────────────────────────────────────────────
 
@@ -122,6 +129,38 @@ describe("findLinkPairs", () => {
     );
     expect(pairs).toEqual([]);
     expect(ambiguous).toEqual(["Kitchen"]);
+  });
+
+  // This merge is about the one design somebody built twice because they had
+  // to, and the shelf exists so nobody has to. Counting its copy as a third
+  // side would either join two things kept apart on purpose or push an
+  // otherwise clean pair into `ambiguous` and leave it unmerged.
+  it("ignores the library entirely, records and all", () => {
+    const watch = doc("Kitchen", ["rectangular"]);
+    const phone = doc("Kitchen", ["circular"], "phone");
+    const shelf = doc("Kitchen", ["circular", "small"], "library");
+    const { pairs, ambiguous } = findLinkPairs(
+      loadedFrom([WATCH, [watch]], [PHONE, [phone]], [LIBRARY, [shelf]]),
+    );
+    expect(ambiguous).toEqual([]);
+    expect(pairs).toHaveLength(1);
+    expect(pairs[0]!.watch.owner.owner_watch_id).toBe("watch-1");
+    expect(pairs[0]!.phone.owner.owner_watch_id).toBe("phone-1");
+  });
+
+  it("pairs nothing with a library copy when only one device holds the name", () => {
+    const { pairs, ambiguous } = findLinkPairs(
+      loadedFrom([WATCH, [doc("Kitchen", ["rectangular"])]], [LIBRARY, [doc("Kitchen", ["circular"], "library")]]),
+    );
+    expect(pairs).toEqual([]);
+    expect(ambiguous).toEqual([]);
+  });
+
+  it("leaves a library copy alone even when it is the only record in the home", () => {
+    expect(findLinkPairs(loadedFrom([LIBRARY, [doc("Kitchen", ["rectangular"], "library")]]))).toEqual({
+      pairs: [],
+      ambiguous: [],
+    });
   });
 
   it("says nothing about a name only one kind of device holds", () => {
@@ -558,6 +597,38 @@ describe("autoLinkMerge", () => {
     const fake = fakeHass({ records: { "watch-1": [record(doc("Kitchen", ["rectangular"]), "watch-1")] } });
     expect(await noticesFrom(fake, [WATCH])).toEqual([]);
     expect(fake.sent).toEqual([]);
+  });
+
+  // The library is not a watch and not a phone, so it cannot stand in for the
+  // missing half of a home, and its records are never even fetched: the
+  // pairing throws them away anyway, and a list that will not load abandons
+  // the whole run.
+  it("never lets the library stand in for a missing device", async () => {
+    const fake = fakeHass({
+      records: {
+        "watch-1": [record(doc("Kitchen", ["rectangular"]), "watch-1")],
+        library: [record(doc("Kitchen", ["circular"], "library"), "library")],
+      },
+    });
+    expect(await noticesFrom(fake, [WATCH, LIBRARY])).toEqual([]);
+    expect(fake.sent).toEqual([]);
+  });
+
+  it("reads no list off the library in a home that does run the merge", async () => {
+    const fake = fakeHass({
+      records: {
+        "watch-1": [record(doc("Kitchen", ["rectangular"]), "watch-1")],
+        "phone-1": [record(doc("Kitchen", ["small"], "phone"), "phone-1")],
+        library: [record(doc("Kitchen", ["circular"], "library"), "library")],
+      },
+    });
+    const notices = await noticesFrom(fake, [WATCH, PHONE, LIBRARY]);
+    expect(notices).toHaveLength(1);
+    expect(notices[0]!.lines).toEqual([joinedLine(["Kitchen"])]);
+    const listed = fake.sent.filter((m) => m.type === `${D}/list`).map((m) => m.owner_watch_id);
+    expect(listed).toEqual(["watch-1", "phone-1"]);
+    // Two copies of one pair, and nothing written to the shelf.
+    expect(fake.sent.filter((m) => m.type === `${D}/save`)).toHaveLength(2);
   });
 
   it("says nothing to a non-admin", async () => {

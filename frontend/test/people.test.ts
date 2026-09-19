@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { OwnerSummary } from "../src/ha-api.js";
-import { deviceShortName, peopleNames, peopleOf, personOf } from "../src/people.js";
+import { deviceShortName, libraryOwner, peopleNames, peopleOf, personOf } from "../src/people.js";
 
 function owner(o: Partial<OwnerSummary> & { owner_watch_id: string }): OwnerSummary {
   return {
@@ -25,6 +25,10 @@ const watch = (id: string, name: string | null, extra: Partial<OwnerSummary> = {
 
 const phone = (id: string, name: string | null, extra: Partial<OwnerSummary> = {}) =>
   owner({ owner_watch_id: id, device_name: name, device_kind: "iphone", ...extra });
+
+/** The home's shelf, which the server lists after every device. */
+const library = (extra: Partial<OwnerSummary> = {}) =>
+  owner({ owner_watch_id: "library", device_name: "Library", device_kind: "library", app_version: null, ...extra });
 
 /** Two people, each with a phone and a watch, and both watches reporting the
  * same model name: the home the id pairing exists for. */
@@ -106,6 +110,42 @@ describe("peopleOf", () => {
     const people = peopleOf([owner({ owner_watch_id: "w1" }), phone("p1", null)]);
     expect(people.map((p) => p.label)).toEqual(["w1", "p1"]);
   });
+
+  // The library belongs to nobody because it belongs to the whole home, so
+  // filing it under a person would say the wrong thing about everyone else.
+  it("leaves the library out of every person group", () => {
+    const people = peopleOf([
+      watch("w1", "Jesse's Watch", { paired_iphone_id: "p1" }),
+      phone("p1", "Jesse's iPhone"),
+      library(),
+    ]);
+    expect(people).toHaveLength(1);
+    expect(people[0]!.owners.map((o) => o.owner_watch_id)).toEqual(["p1", "w1"]);
+  });
+
+  it("leaves a home with nothing but the library with no people at all", () => {
+    expect(peopleOf([library()])).toEqual([]);
+  });
+
+  // An older integration would name the id without the kind, and the id alone
+  // is the reserved word.
+  it("leaves the library out on its id alone", () => {
+    const people = peopleOf([library({ device_kind: null }), phone("p1", "Jesse's iPhone")]);
+    expect(people.map((p) => p.key)).toEqual(["p1"]);
+  });
+});
+
+describe("libraryOwner", () => {
+  it("finds the home's shelf among the devices", () => {
+    expect(libraryOwner([watch("w1", "Jesse's Watch"), library()])!.owner_watch_id).toBe("library");
+  });
+
+  // Undefined is the panel's cue to draw no shelf, rather than to invent one
+  // an older integration knows nothing about.
+  it("is undefined when the integration sends no library row", () => {
+    expect(libraryOwner([watch("w1", "Jesse's Watch"), phone("p1", "Jesse's iPhone")])).toBeUndefined();
+    expect(libraryOwner([])).toBeUndefined();
+  });
 });
 
 describe("personOf", () => {
@@ -115,6 +155,13 @@ describe("personOf", () => {
     expect(personOf(people, "p1")!.key).toBe("p1");
     expect(personOf(people, "w2")!.key).toBe("p2");
     expect(personOf(people, "nobody")).toBeUndefined();
+  });
+
+  // The shelf is nobody's, so it answers the same way an id that left the home
+  // does. The panel draws it as its own row rather than inside a person.
+  it("gives the library no person", () => {
+    const people = peopleOf([...household(), library()]);
+    expect(personOf(people, "library")).toBeUndefined();
   });
 });
 
