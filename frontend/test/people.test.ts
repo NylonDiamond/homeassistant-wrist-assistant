@@ -1,0 +1,155 @@
+// The household as people: which devices belong to whom, what each group is
+// called, and what a device is called inside it.
+
+import { describe, expect, it } from "vitest";
+
+import type { OwnerSummary } from "../src/ha-api.js";
+import { deviceShortName, peopleNames, peopleOf, personOf } from "../src/people.js";
+
+function owner(o: Partial<OwnerSummary> & { owner_watch_id: string }): OwnerSummary {
+  return {
+    device_name: null,
+    device_kind: "watch",
+    paired_iphone_name: null,
+    app_version: "2.8.0",
+    screen_size: null,
+    complication_count: 0,
+    token: 1,
+    is_orphan: false,
+    ...o,
+  };
+}
+
+const watch = (id: string, name: string | null, extra: Partial<OwnerSummary> = {}) =>
+  owner({ owner_watch_id: id, device_name: name, device_kind: "watch", ...extra });
+
+const phone = (id: string, name: string | null, extra: Partial<OwnerSummary> = {}) =>
+  owner({ owner_watch_id: id, device_name: name, device_kind: "iphone", ...extra });
+
+/** Two people, each with a phone and a watch, and both watches reporting the
+ * same model name: the home the id pairing exists for. */
+function household() {
+  return [
+    watch("w1", "Apple Watch", { paired_iphone_id: "p1", paired_iphone_name: "Jesse's iPhone" }),
+    watch("w2", "Apple Watch", { paired_iphone_id: "p2", paired_iphone_name: "Chen's iPhone" }),
+    phone("p1", "Jesse's iPhone"),
+    phone("p2", "Chen's iPhone"),
+  ];
+}
+
+describe("peopleOf", () => {
+  it("puts each watch with the phone its id names, phone first", () => {
+    const people = peopleOf(household());
+    expect(people.map((p) => [p.key, p.label])).toEqual([
+      ["p1", "Jesse's iPhone"],
+      ["p2", "Chen's iPhone"],
+    ]);
+    expect(people.map((p) => p.owners.map((o) => o.owner_watch_id))).toEqual([["p1", "w1"], ["p2", "w2"]]);
+  });
+
+  // The watches sort first, so a person is listed where their watch is rather
+  // than where their phone is: the first group is the first watch's.
+  it("puts a group where its first member stands", () => {
+    const people = peopleOf([
+      watch("w2", "Apple Watch", { paired_iphone_id: "p2" }),
+      watch("w1", "Apple Watch", { paired_iphone_id: "p1" }),
+      phone("p1", "Jesse's iPhone"),
+      phone("p2", "Chen's iPhone"),
+    ]);
+    expect(people.map((p) => p.key)).toEqual(["p2", "p1"]);
+  });
+
+  // An integration older than `paired_iphone_id` sends the name and nothing
+  // else, and the pairing still has to work.
+  it("falls back to the paired phone's name when no id was sent", () => {
+    const people = peopleOf([
+      watch("w1", "Apple Watch", { paired_iphone_name: "Jesse's iPhone" }),
+      phone("p1", "Jesse's iPhone"),
+    ]);
+    expect(people).toHaveLength(1);
+    expect(people[0]!.owners.map((o) => o.owner_watch_id)).toEqual(["p1", "w1"]);
+  });
+
+  // The id is the one that can be trusted, so a name beside it is not
+  // consulted: a watch whose phone has left the home is its own person rather
+  // than attached to whichever phone happens to share the old one's name.
+  it("leaves a watch on its own when its id names a phone that is gone", () => {
+    const people = peopleOf([
+      watch("w1", "Apple Watch", { paired_iphone_id: "gone", paired_iphone_name: "Jesse's iPhone" }),
+      phone("p1", "Jesse's iPhone"),
+    ]);
+    expect(people.map((p) => [p.key, p.label])).toEqual([
+      ["w1", "Apple Watch"],
+      ["p1", "Jesse's iPhone"],
+    ]);
+  });
+
+  it("makes a watch with no phone at all its own person", () => {
+    const people = peopleOf([watch("w1", "Jesse's Watch"), phone("p1", "Chen's iPhone")]);
+    expect(people.map((p) => [p.key, p.label])).toEqual([
+      ["w1", "Jesse's Watch"],
+      ["p1", "Chen's iPhone"],
+    ]);
+  });
+
+  // Nothing can be saved to an orphan, so a "Shows on" list holding one would
+  // be offering a box that cannot be ticked.
+  it("leaves an orphan out entirely", () => {
+    const people = peopleOf([
+      owner({ owner_watch_id: "gone", device_kind: null, is_orphan: true }),
+      phone("p1", "Jesse's iPhone"),
+    ]);
+    expect(people.map((p) => p.key)).toEqual(["p1"]);
+  });
+
+  it("falls back to the owner id when a device reported no name", () => {
+    const people = peopleOf([owner({ owner_watch_id: "w1" }), phone("p1", null)]);
+    expect(people.map((p) => p.label)).toEqual(["w1", "p1"]);
+  });
+});
+
+describe("personOf", () => {
+  it("finds the person either of their devices belongs to", () => {
+    const people = peopleOf(household());
+    expect(personOf(people, "w1")!.key).toBe("p1");
+    expect(personOf(people, "p1")!.key).toBe("p1");
+    expect(personOf(people, "w2")!.key).toBe("p2");
+    expect(personOf(people, "nobody")).toBeUndefined();
+  });
+});
+
+describe("peopleNames", () => {
+  it("names a person once however many of their devices are named", () => {
+    const people = peopleOf(household());
+    expect(peopleNames(people, ["p1", "w1"])).toEqual(["Jesse's iPhone"]);
+  });
+
+  it("reads in the order the list draws, not the order it was asked", () => {
+    const people = peopleOf(household());
+    expect(peopleNames(people, ["w2", "w1"])).toEqual(["Jesse's iPhone", "Chen's iPhone"]);
+  });
+
+  it("ignores an id nobody owns and says nothing for none", () => {
+    const people = peopleOf(household());
+    expect(peopleNames(people, ["gone"])).toEqual([]);
+    expect(peopleNames(people, [])).toEqual([]);
+  });
+});
+
+describe("deviceShortName", () => {
+  it("drops the phone's name when the group is already headed with it", () => {
+    const people = peopleOf(household());
+    const jesse = people[0]!;
+    expect(jesse.owners.map((o) => deviceShortName(o, jesse))).toEqual(["iPhone", "Apple Watch"]);
+  });
+
+  it("keeps a lone phone's real name, since nothing else is listed with it", () => {
+    const people = peopleOf([phone("p1", "Jesse's iPhone")]);
+    expect(deviceShortName(people[0]!.owners[0]!, people[0]!)).toBe("Jesse's iPhone");
+  });
+
+  it("keeps a watch's own name always", () => {
+    const people = peopleOf([watch("w1", "Jesse's Watch")]);
+    expect(deviceShortName(people[0]!.owners[0]!, people[0]!)).toBe("Jesse's Watch");
+  });
+});
