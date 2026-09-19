@@ -210,6 +210,7 @@ import {
   controlHeadline,
   controlStateWord,
   controlStatusShows,
+  type ControlTileHost,
   controlTile,
   controlTileShapes,
   describeContext,
@@ -497,6 +498,14 @@ function pickTick(): TemplateResult {
  * pictures beside it, which stand in a box 80px tall, so the control reads as
  * one more thing this design draws rather than a glyph among faces. */
 const CONTROL_TAB_TILE_SIDE = 62;
+
+/** The well a picker card draws the complication itself in, CSS px. About a
+ * card's inner width by a height every card shares, so a grid of them sits on
+ * one baseline whatever mix of shapes the home holds. */
+const CARD_PREVIEW_ROOM = { width: 240, height: 64 };
+/** The Control Center tile on a card whose design is only a control, sized to
+ * the well that holds it. */
+const CARD_TILE_SIDE = 48;
 
 const COL_LEFT_DEFAULT = 300;
 const COL_RIGHT_DEFAULT = 360;
@@ -1378,6 +1387,11 @@ export class WristAssistantPanel extends LitElement {
   /** What the automatic merge of same-named watch and iPhone complications
    * did on this first open, with its own Undo. See `linkMerge.ts`. */
   @state() private linkMergeNotice?: LinkMergeNotice;
+  /** Parsed config per saved record, keyed by id and invalidated by revision.
+   * Every picker card draws the real complication, and parsing and compiling
+   * every document in the home on every render of the grid is the one part of
+   * that worth keeping. */
+  private readonly recordPreviews = new Map<string, { revision: number; config: CustomComplicationConfig; entities: EntityRef[] }>();
   /** Which watch case the previews are drawn in. The reference (46 mm) is scale 1. */
   @state() private previewCase = REFERENCE_CASE.label;
   /** The tint of a tinted watch face to preview in, or undefined for full
@@ -1823,13 +1837,48 @@ export class WristAssistantPanel extends LitElement {
       flex: none; font-size: 10px; color: var(--wa-muted); cursor: help;
       border: 1px solid var(--wa-line); border-radius: 6px; padding: 1px 6px;
     }
+    /* Both pictures open the complication, so they are one button: the design
+       itself on top, the two devices it sits on under it. */
+    .pk-card-open {
+      display: flex; flex-direction: column; align-items: stretch; gap: 0;
+      font: inherit; color: inherit; background: transparent; border: 0; padding: 0; cursor: pointer;
+    }
+    .pk-card-open:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 10px; }
+    /* The complication drawn the way its device draws it, in a well every card
+       shares so a grid of them sits on one baseline. Black, because a watch
+       face is black and a white plate reads as a piece of paper; the hairline
+       ring is what keeps it from disappearing into the dark skin. */
+    .pk-card-live {
+      display: flex; align-items: center; justify-content: center; flex: none;
+      height: ${CARD_PREVIEW_ROOM.height}px; margin-top: 10px; padding: 4px 8px; overflow: hidden;
+      border-radius: 10px; background: #000; box-shadow: inset 0 0 0 1px rgba(255,255,255,.1);
+    }
+    .pk-card-live svg {
+      display: block; width: var(--pw, auto); max-width: 100%;
+      height: auto; max-height: ${CARD_PREVIEW_ROOM.height - 8}px; border-radius: 4px;
+    }
+    .pk-card-live.circular svg, .pk-card-live.corner svg { border-radius: 50%; }
+    /* A Home Screen tile is rounded far harder than a Lock Screen slot, at the
+       share of its own box iOS uses. */
+    .pk-card-live.small svg { border-radius: 16.3%; }
+    .pk-card-live.medium svg { border-radius: 7.7% / 16.3%; }
+    .pk-card-live.large svg { border-radius: 7.7% / 7.4%; }
+    .pk-card-live.xlarge svg { border-radius: 7.7% / 4.8%; }
+    /* An inline line and a Control Center tile are not faces, so the plate
+       rules above must not reach inside either of them. */
+    .pk-card-live .inline-line {
+      font-size: 11px; padding: 3px 8px; max-width: 100%; min-width: 0; display: inline-flex; align-items: center; gap: 4px;
+      border-radius: 999px; background: #000; color: #fff; overflow: hidden; white-space: nowrap;
+    }
+    .pk-card-live .inline-line svg { background: transparent; border-radius: 0; width: auto; }
+    .pk-card-live.control-tile svg { background: transparent; border-radius: 0; width: auto; max-height: none; }
+    .pk-card-live.none { font-size: 11.5px; color: var(--wa-muted); }
     /* The two device drawings, on their own quiet mat so the dark screens read
        as screens rather than as holes in the card. */
     .pk-card-art {
-      display: flex; align-items: flex-end; justify-content: center; gap: 10px; margin-top: 10px;
-      padding: 10px 8px 8px; border: 0; border-radius: 10px; background: var(--wa-panel); cursor: pointer;
+      display: flex; align-items: flex-end; justify-content: center; gap: 10px; margin-top: 8px;
+      padding: 10px 8px 8px; border: 0; border-radius: 10px; background: var(--wa-panel);
     }
-    .pk-card-art:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .pk-card-art svg { display: block; flex: none; }
     /* The right end is kept clear for the hide and delete buttons, which sit
        in that corner: reserved always, so nothing reflows on hover. */
@@ -8513,14 +8562,90 @@ export class WristAssistantPanel extends LitElement {
     return html`<span class="shape-dots">${biggestFirst(against).map((f) => html`<span class="shape-dot ${f} ${families.includes(f) ? "on" : ""}" title=${familyTitle(f)}></span>`)}</span>`;
   }
 
-  /* A picker row used to carry a live rendering of the complication itself:
-     a config parsed and cached per record, resolved against the live states
-     and drawn into a 100 px box (`recordPreview`, `renderRowArt`,
-     `renderConfigArts`, and the `.pk-art` rules). A card draws the two devices
-     with the design's slots lit instead, so all of that went on 2026-09-19. On
-     a wall of cards the question worth answering is where a design sits, not
-     what one small picture of its first shape looks like. `configLayouts`
-     stays; the import preview and the shape tabs still resolve through it. */
+  /**
+   * A saved record's config, parsed and compiled once and kept until its
+   * revision moves.
+   *
+   * Every card draws the real complication, so without this the dialog would
+   * parse and compile every document in the home on every keystroke in the
+   * search field. Undefined for a document this panel cannot parse, whose card
+   * draws an empty well rather than taking the grid down with it.
+   */
+  private recordPreview(record: ComplicationRecord) {
+    const hit = this.recordPreviews.get(record.id);
+    if (hit && hit.revision === record.revision) return hit;
+    try {
+      const config = parseConfig(record.document);
+      const entry = { revision: record.revision, config, entities: [...compile(config).entities.values()] };
+      this.recordPreviews.set(record.id, entry);
+      return entry;
+    } catch {
+      this.recordPreviews.delete(record.id);
+      return undefined;
+    }
+  }
+
+  /**
+   * The complication itself, drawn small at the top of its card.
+   *
+   * The device art below says where a design sits; this says what it is. Both
+   * are worth a card's height: "Kitchen at a glance" on a watch face and a
+   * Lock Screen tells you nothing about which of three kitchen complications
+   * this one is, and the drawing does it at a glance.
+   *
+   * The biggest shape the design draws, in `biggestFirst` order, because that
+   * is the one with the most of the design in it. Read off this document's own
+   * shapes rather than the card's union of every copy, so the layout being
+   * asked for is one this config certainly resolved. A design that is only an
+   * inline line draws that line, and one that is only a control draws the
+   * Control Center tile, from the same `controlTile` the canvas tab uses.
+   *
+   * Only the open complication has its templates rendered and its history
+   * fetched, so a Jinja layer or a chart on another card draws what the watch
+   * draws before its first sync: the fallback, or nothing. That is the price
+   * of a recognisable grid, and it is worth it.
+   */
+  private renderCardPreview(cfg: CustomComplicationConfig, entities: readonly EntityRef[], phone: boolean) {
+    // `biggestFirst` widens its answer back to `FamilyKind`, so the guard runs
+    // again on the way out to say what the filter going in already made true.
+    const family = biggestFirst(cfg.supportedFamilies.filter(isDrawable)).find(isDrawable);
+    if (family === undefined) {
+      if (cfg.supportedFamilies.includes("inline")) {
+        const layouts = this.configLayouts(cfg, entities);
+        return html`<span class="pk-card-live inline">${this.renderInlinePreview(layouts.inline, true)}</span>`;
+      }
+      if (cfg.control) {
+        const shape = controlTileShapes(phone ? "iphone" : "watch")[0]!;
+        return html`<span class="pk-card-live control-tile">${controlTile(this.tileHost(cfg, entities), cfg.control, shape, CARD_TILE_SIDE)}</span>`;
+      }
+      return html`<span class="pk-card-live none">No shapes yet</span>`;
+    }
+    // The shape is drawn in its own device's slot, not in whichever case the
+    // header happens to be showing: a phone's copy still belongs in a phone.
+    const reference = phone ? REFERENCE_PHONE : REFERENCE_CASE;
+    const art = renderShapeArt({
+      config: cfg,
+      // Nothing is being edited from here, so the shape stands in for itself
+      // and no layer is highlighted.
+      editing: family,
+      layouts: this.configLayouts(cfg, entities),
+      icons: this.icons,
+      imageSizes: this.imageSizes,
+      phone,
+      slotFor: (f) => slotFor(reference, f),
+    }, family);
+    // Its own shape's width inside a fixed-height well, so a row of cards
+    // holding a circle, a tile and a rectangle sits on one baseline.
+    const width = Math.round(previewBox(family, CARD_PREVIEW_ROOM).width);
+    return html`<span class="pk-card-live ${family}" style=${`--pw:${width}px`}>${art}</span>`;
+  }
+
+  /** A host for a Control Center tile of a complication that has no draft
+   * behind it: enough for `controlTile`, and nothing it cannot answer. */
+  private tileHost(cfg: CustomComplicationConfig, entities: readonly EntityRef[]): ControlTileHost {
+    const context = this.configContext(cfg, entities);
+    return { config: cfg, icons: this.icons, resolveContext: () => context };
+  }
 
   /** A document that is not the open one, resolved from the live states of
    * the entities it reads. Templates are not rendered for it. */
@@ -8785,6 +8910,7 @@ export class WristAssistantPanel extends LitElement {
         </span>
         <span class="pk-badge">unsaved</span>
       </div>
+      ${this.renderCardPreview(cfg, this.historyEntities(cfg), deviceKindOf(this.selectedOwner) === "iphone")}
       <div class="pk-card-art">${designDeviceArt(families, cfg.control !== undefined)}</div>
       <div class="pk-card-shapes">${shapeListText(families, cfg.control !== undefined)}</div>
     </div>`;
@@ -8821,14 +8947,14 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * One card: the name, who has it, both devices with its shapes lit, and the
-   * shapes named underneath.
+   * One card: the name, who has it, the complication itself, the two devices
+   * with its shapes lit, and the shapes named underneath.
    *
-   * The drawings are the point. A row used to carry one small rendering of the
-   * complication itself, which answered "what does it look like" and left
-   * "where does it live" to a line of grey text. On a wall of cards the useful
-   * question is the second one, and two device outlines with four slots lit
-   * between them answer it without a word.
+   * Two pictures, answering the two questions a wall of cards raises. The
+   * drawing on top is what this design looks like, which is the only way to
+   * tell three kitchen complications apart; the devices under it are where it
+   * sits, which a list of rows could never say at all. The row this replaced
+   * had space for one of them and text for the other.
    */
   private renderPickerCard(row: PickerRow, people: readonly Person[]) {
     const copy = row.open;
@@ -8845,6 +8971,7 @@ export class WristAssistantPanel extends LitElement {
           </button>
           <span class="pk-badge">${item.badge}</span>
         </div>
+        <span class="pk-card-live none">No preview</span>
         <div class="pk-card-art">${designDeviceArt(families, false)}</div>
         <div class="pk-card-shapes">${shapeListText(families, false)}</div>
         ${this.pickerNote === row.key ? html`<div class="pk-note">${item.title}</div>` : nothing}
@@ -8876,6 +9003,9 @@ export class WristAssistantPanel extends LitElement {
     const confirming = this.pickerConfirmDelete === record.id;
     const adding = this.pickerAddFor === row.key;
     const stop = (e: Event) => e.stopPropagation();
+    // Parsed once per record and resolved once per card: this method is only
+    // called for the cards the chips and the search left in.
+    const preview = this.recordPreview(drawn);
     return html`<div class="pk-card ${hidden ? "dim" : ""} ${adding ? "over" : ""}" aria-current=${open ? "true" : "false"}>
       <div class="pk-card-head">
         <button type="button" class="pk-card-text" title="Open this complication"
@@ -8886,8 +9016,13 @@ export class WristAssistantPanel extends LitElement {
         ${hidden ? html`<span class="pk-tag" title="These do not show in their device's own list of complications. A face or widget that already has one keeps it.">hidden</span>` : nothing}
         ${this.renderPickerAdd(row, adding)}
       </div>
-      <button type="button" class="pk-card-art" title="Open this complication"
-        @click=${() => void this.openFromPicker(row)}>${designDeviceArt(families, control)}</button>
+      <button type="button" class="pk-card-open" title="Open this complication"
+        @click=${() => void this.openFromPicker(row)}>
+        ${preview
+          ? this.renderCardPreview(preview.config, preview.entities, deviceKindOf(this.ownerOf(copy.ownerId)) === "iphone")
+          : html`<span class="pk-card-live none">No preview</span>`}
+        <span class="pk-card-art">${designDeviceArt(families, control)}</span>
+      </button>
       <div class="pk-card-shapes">${shapeListText(families, control)}</div>
       <span class="pk-card-acts ${confirming ? "asking" : ""}">
         ${confirming
