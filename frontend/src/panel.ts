@@ -6892,6 +6892,13 @@ export class WristAssistantPanel extends LitElement {
     if (!this.ownerId) return;
     const owners = this.linkTargetOwners();
     if (owners.length === 0) return;
+    // Nowhere to move to. `linkTargetOwners` falls back to the device being
+    // edited against an integration older than the library, and writing this
+    // design back over itself under a fresh id is not what anybody asked for.
+    if (owners.every((o) => o.ownerId === this.ownerId)) {
+      this.saveError = "This home has no library yet, so a design has to be on a device. Update the Wrist Assistant integration, or tick a device.";
+      return;
+    }
     // A design that was never linked becomes one here when it is landing in
     // more than one place, its own id standing as the link exactly as
     // `joinLink` makes it: the copies this writes have to be findable as
@@ -10262,6 +10269,12 @@ export class WristAssistantPanel extends LitElement {
   // in another, saved the moment it was clicked, and had no way at all to take
   // a device back off. A checkbox list says both things at once, and says them
   // where the design is being edited.
+  //
+  // Every box can be cleared, the one for the device being edited included,
+  // and so can all of them: a design on no device is in the home's library.
+  // Clearing the open device's box is the one untick the save cannot settle by
+  // deleting a copy, since that copy is the record being edited, so `saveMoved`
+  // writes the design where it is going and takes the editor with it.
 
   /** The people this home has, with the devices of theirs a copy could go on:
    * `linkOwners`, so an orphan and an app too old to draw these documents are
