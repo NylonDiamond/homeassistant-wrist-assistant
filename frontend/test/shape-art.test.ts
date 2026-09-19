@@ -6,7 +6,7 @@
 // assertions are about what the SVG says rather than about a rendered box.
 
 import { describe, expect, it } from "vitest";
-import { nothing } from "lit";
+import { nothing, svg } from "lit";
 
 import { ALL_FAMILIES } from "../src/layouts.js";
 import type { FamilyKind } from "../src/model.js";
@@ -264,6 +264,49 @@ describe("designDeviceArt", () => {
       }
     }
     expect(() => designDeviceArt(ALL_FAMILIES, true)).not.toThrow();
+  });
+
+  // The real complication in its slot. The renderer's own svg stands in for
+  // itself here: what matters is where it lands and how big it is drawn.
+  describe("with the complication drawn in", () => {
+    const picture = (tag: string) => ({ art: svg`<svg class="complication" data-tag=${tag}></svg>`, width: 181, height: 65.5 });
+
+    it("sets the picture into the slot in place of the lit fill", () => {
+      const art = flatten(designDeviceArt(["rectangular"], false, { watch: { rectangular: picture("w") }, phone: {} }));
+      expect(art).toContain("data-tag=w");
+      // The watch's rectangular fill is gone; the phone's Lock Screen slot is
+      // still the lit fill, since no phone picture was given.
+      expect(art).not.toContain(`x="30" y="52" width="40" height="22"`);
+      expect(art).toContain(`x="9" y="24" width="32" height="8" rx="2" fill=var(--wa-accent)`);
+    });
+
+    it("scales the picture to fit the slot and centres it", () => {
+      const art = flatten(designDeviceArt(["rectangular"], false, { watch: { rectangular: picture("w") }, phone: {} }));
+      // 40 wide into a 181 wide picture, so 40/181; 65.5 tall becomes 14.47,
+      // sat in the middle of the 22 tall slot.
+      const scale = 40 / 181;
+      const y = 52 + (22 - 65.5 * scale) / 2;
+      expect(art).toContain(`translate(30 ${y}) scale(${scale})`);
+    });
+
+    it("draws the Large tile from the top and clips it, rather than squeezing it flat", () => {
+      const tall = { art: svg`<svg class="complication" data-tag=L></svg>`, width: 344.67, height: 360 };
+      const art = flatten(designDeviceArt(["large"], false, { watch: {}, phone: { large: tall } }));
+      expect(art).toContain("data-tag=L");
+      expect(art).toContain(`scale(${36 / 344.67})`);
+      expect(art).toContain("clip-path=url(#pk-clip-");
+    });
+
+    it("quiets the second Small tile once the first holds the picture", () => {
+      const small = { art: svg`<svg class="complication"></svg>`, width: 162.67, height: 162.67 };
+      const art = flatten(designDeviceArt(["small"], false, { watch: {}, phone: { small } }));
+      expect(art).toContain(`x="27" y="42" width="16" height="16" rx="3" fill=var(--wa-art-off)`);
+    });
+
+    it("keeps the lit fill for a slot with no picture", () => {
+      const art = flatten(designDeviceArt(["rectangular", "circular"], false, { watch: { rectangular: picture("w") }, phone: {} }));
+      expect(art).toContain(`cx="21" cy="63" r="8" fill=var(--wa-accent)`);
+    });
   });
 });
 

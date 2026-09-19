@@ -160,7 +160,7 @@ import {
   shapeSections,
 } from "./linking.js";
 import { type Person, deviceShortName, peopleNames, peopleOf, personOf } from "./people.js";
-import { controlDeviceArt, designDeviceArt, deviceShapeArt, shapeArtKinds } from "./shapeArt.js";
+import { type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, designDeviceArt, deviceShapeArt, shapeArtKinds } from "./shapeArt.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { type DeviceOwnerLike, deviceKindOf, deviceNoun, deviceSupportsControls, deviceSupportsShapes, updateDeviceMessage } from "./version.js";
 import { type LinkMergeNotice, autoLinkMerge } from "./linkMerge.js";
@@ -638,6 +638,10 @@ const CARD_TINT = {
 } as const;
 
 const LIST_STORE_KEY = "wrist-assistant-panel.layers.v1";
+
+/** What a picker card draws: the complication alone, or the complication over
+ * the watch and the iPhone it sits on. */
+type PickerLook = "preview" | "devices";
 const GRID_STORE_KEY = "wrist-assistant-panel.grid.v1";/** How tall the slot a dragged row opens is, CSS px. */
 const DROP_GAP = 34;
 const COL_MIN = 200;
@@ -969,9 +973,10 @@ export class WristAssistantPanel extends LitElement {
   /** The card whose "Add to" menu is open, by row key. One at a time: two
    * open menus over a grid of cards is a grid nobody can read. */
   @state() private pickerAddFor?: string;
-  /** The tick asking "Remove from Jesse's iPhone?", as `rowKey\0ownerId`. An
-   * untick writes at once, so a stray click must not be able to delete. */
-  @state() private pickerRemoveAsk?: string;
+  /** How much each picker card draws: the complication alone, or the
+   * complication over the two devices it sits on. Kept in this browser with
+   * the Layers list's other view choices. */
+  @state() private pickerLook: PickerLook = "devices";
   /** The picker card asking "Really delete", by record id. */
   @state() private pickerConfirmDelete?: string;
   /** A device has been picked and its complications are still on the way. The
@@ -1789,6 +1794,18 @@ export class WristAssistantPanel extends LitElement {
     .pk-head { display: flex; align-items: center; gap: 12px; flex: none; padding: 12px 12px 12px 18px; border-bottom: 1px solid var(--wa-line); }
     .pk-head h2 { margin: 0; flex: 1; min-width: 0; font-size: 17px; font-weight: 700; }
     .pk-head > button.icon { width: 32px; height: 32px; flex: none; }
+    /* Preview or Devices: how much each card draws. Word buttons rather than
+       glyphs, since there is no picture that says "with the devices". */
+    .pk-head .seg.pk-look { height: 28px; }
+    .pk-head .seg.pk-look button { padding: 0 10px; }
+    /* The complication alone: the devices under it go, and the text of where
+       it sits stays, so the card is still an answer to "where". */
+    dialog.pk-dialog[data-look="preview"] .pk-card-art { display: none; }
+    dialog.pk-dialog[data-look="preview"] .pk-card-shapes { margin-top: 10px; }
+    /* The real complication set into a slot on the drawing: its own picture,
+       nested, sized by the transform around it rather than by any rule that
+       sizes the card's other svgs. */
+    .pk-card-art svg svg.complication { width: auto; height: auto; max-width: none; max-height: none; border-radius: 0; overflow: visible; }
     .pk-search {
       display: flex; align-items: center; gap: 8px; flex: none; width: 260px; max-width: 45vw;
       padding: 6px 10px; border-radius: var(--wa-r-md); border: 1px solid var(--wa-line); background: var(--wa-panel);
@@ -1931,13 +1948,6 @@ export class WristAssistantPanel extends LitElement {
     .pk-add-tick .pick-tick svg { width: 10px; height: 10px; }
     .pk-add-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .pk-add-note-full { flex: none; font-size: 10px; color: var(--wa-muted); }
-    /* An untick writes too, so it asks first, in the row the tick was in. */
-    .pk-add-ask {
-      display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 11.5px;
-      padding: 5px 7px; border: 1px solid var(--wa-accent); border-radius: 7px; background: var(--wa-sel-bg);
-    }
-    .pk-add-ask > span { flex: 1 1 100%; }
-    .pk-add-ask button.small { min-height: 22px; padding: 0 7px; }
     .pk-add-note { font-size: 10px; line-height: 1.4; color: var(--wa-muted); border-top: 1px solid var(--wa-line); padding-top: 6px; }
     .pk-foot {
       display: flex; align-items: center; gap: 10px; flex: none; padding: 12px 18px;
@@ -1988,7 +1998,7 @@ export class WristAssistantPanel extends LitElement {
     /* The three steps, stacked, with the body scrolling rather than the window:
        a home with four devices has four sections of shapes and two boxes of
        people under them. */
-    .new-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; max-height: min(74vh, 720px); overflow-y: auto; }
+    .new-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; max-height: min(88vh, 960px); overflow-y: auto; }
     /* One tinted container per step, each a different token so the three read
        as an order rather than as three of the same box. Mixed into the card
        rather than written as a colour, so dark mode follows. */
@@ -2024,10 +2034,12 @@ export class WristAssistantPanel extends LitElement {
     .new-step-title { font-size: 13px; font-weight: 700; color: var(--wa-ink); }
     .new-step-hint { font-size: 11.5px; line-height: 1.35; color: var(--wa-muted); }
     .new-name { font-size: 14px; }
-    /* Two sections side by side while the dialog is wide enough for them: at
-       720 px the four of them are two rows rather than four, and the whole of
-       step 2 is readable without scrolling it. */
-    .new-step .shape-rows { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 10px; }
+    /* The sections flow, each as wide as its own cards and no taller: a grid
+       of equal cells gave a one-card section the height of the four-card one
+       beside it, and the whole dialog scrolled for the empty space. Wrapped
+       and top-aligned, all three steps fit a laptop screen at once. */
+    .new-step .shape-rows { display: flex; flex-flow: row wrap; align-items: flex-start; gap: 10px; }
+    .new-step .shape-row { flex: 0 1 auto; }
     /* A white card per section on the step's tint, so the sections are the
        shapes and the tint is the step. */
     .new-step .shape-row, .add-dialog .shape-row {
@@ -2086,9 +2098,9 @@ export class WristAssistantPanel extends LitElement {
        recommendation, and the shape is the one thing about a complication
        that cannot be changed later without moving every layer. */
     .shape-card {
-      position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; cursor: pointer;
-      width: 96px; box-sizing: border-box;
-      font: inherit; font-size: 11.5px; padding: 8px 6px; color: var(--wa-muted);
+      position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer;
+      width: 80px; box-sizing: border-box;
+      font: inherit; font-size: 11px; padding: 7px 4px 6px; color: var(--wa-muted);
       border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-raised);
       transition: border-color .12s ease-out, background-color .12s ease-out, color .12s ease-out;
     }
@@ -2103,10 +2115,10 @@ export class WristAssistantPanel extends LitElement {
        a card this wide. The box is narrower than the 32 by 28 viewBox because
        the art crops its empty margins (preserveAspectRatio, in shapeArt.ts)
        rather than letterboxing itself to fit. */
-    .shape-card .shape-art { width: 36px; height: 48px; display: block; flex: none; }
+    .shape-card .shape-art { width: 30px; height: 40px; display: block; flex: none; }
     /* The drawing's two colours: the shape takes the button's own, the device
        around it stays furniture whatever the button is doing. */
-    .shape-arts { height: 48px; --wa-shape-outline: var(--wa-muted); }
+    .shape-arts { height: 40px; --wa-shape-outline: var(--wa-muted); }
     /* Lit means the accent, in both dialogs: ticked in the New dialog, and
        still yours to take in Add a shape. A shape already on the design keeps
        the muted colour it is drawn in. */
@@ -2114,7 +2126,7 @@ export class WristAssistantPanel extends LitElement {
     /* The tick on a picked card, and the empty ring that holds its place so
        nothing shifts when one is ticked. */
     .pick-tick {
-      position: absolute; top: 6px; right: 6px; width: 16px; height: 16px; box-sizing: border-box;
+      position: absolute; top: 4px; right: 4px; width: 15px; height: 15px; box-sizing: border-box;
       display: flex; align-items: center; justify-content: center; border-radius: 50%;
       background: var(--wa-accent); color: var(--wa-accent-ink);
     }
@@ -4986,12 +4998,13 @@ export class WristAssistantPanel extends LitElement {
     try {
       const raw = window.localStorage.getItem(LIST_STORE_KEY);
       if (!raw) return;
-      const saved = JSON.parse(raw) as { thumbStep?: unknown; detail?: unknown; addOpen?: unknown; addDetail?: unknown };
+      const saved = JSON.parse(raw) as { thumbStep?: unknown; detail?: unknown; addOpen?: unknown; addDetail?: unknown; pickerLook?: unknown };
       if (saved.thumbStep === 0 || saved.thumbStep === 1 || saved.thumbStep === 2) this.thumbStep = saved.thumbStep;
       if (saved.detail === "compact" || saved.detail === "expanded") this.layerDetail = saved.detail;
       if (typeof saved.addOpen === "boolean") this.addOpen = saved.addOpen;
       const addDetail = addDetailFrom(saved.addDetail);
       if (addDetail) this.addDetail = addDetail;
+      if (saved.pickerLook === "preview" || saved.pickerLook === "devices") this.pickerLook = saved.pickerLook;
     } catch {
       /* A browser with storage off keeps the defaults. */
     }
@@ -5001,7 +5014,7 @@ export class WristAssistantPanel extends LitElement {
     try {
       window.localStorage.setItem(LIST_STORE_KEY, JSON.stringify({
         thumbStep: this.thumbStep, detail: this.layerDetail,
-        addOpen: this.addOpen, addDetail: this.addDetail,
+        addOpen: this.addOpen, addDetail: this.addDetail, pickerLook: this.pickerLook,
       }));
     } catch {
       /* Storage off: the choice still holds for this visit. */
@@ -6540,7 +6553,11 @@ export class WristAssistantPanel extends LitElement {
     const name = this.newName.trim();
     if (name === "" || this.newNameProblem() !== undefined) return;
     const all = this.linkOwners();
-    const ticked = all.filter((o) => this.newOwners.has(o.ownerId));
+    // Nothing ticked is an answer: the draft is made on the device being
+    // edited and nothing is written until Save, so a design can be built
+    // first and handed out from Appears on later.
+    const chosen = all.filter((o) => this.newOwners.has(o.ownerId));
+    const ticked = chosen.length > 0 ? chosen : all.filter((o) => o.ownerId === this.ownerId);
     if (ticked.length === 0) return;
     // Biggest first, so the shape the author lands on is the one worth drawing
     // first: the rest are trimmed down from it, never grown out of it. A shape
@@ -6548,8 +6565,8 @@ export class WristAssistantPanel extends LitElement {
     // every shape the home has, and the devices are a separate tick.
     const families = biggestFirst([...this.newFamilies].filter((f) => ownersDrawing(ticked, f).length > 0));
     if (families.length === 0 && !this.newControl) return;
-    const picks = picksFromChoice(all, new Set(families), this.newOwners);
     const owners = ticked.map((o) => o.ownerId);
+    const picks = picksFromChoice(all, new Set(families), new Set(owners));
     this.closeNewDialog();
     if (owners[0] !== this.ownerId) {
       await this.selectOwner(owners[0]!);
@@ -8661,6 +8678,41 @@ export class WristAssistantPanel extends LitElement {
     return html`<span class="pk-card-live ${family}" style=${`--pw:${width}px`}>${art}</span>`;
   }
 
+  /**
+   * The complication drawn into every slot it fills on the card's two devices.
+   *
+   * The lit fills said where a design sits; these say what sits there. Each
+   * shape is drawn in the real slot of its device, the watch's on the watch and
+   * the phone's on the phone, so a Lock Screen shape is white the way the
+   * phone draws it. Read off this document's own shapes: a slot another copy
+   * of the link fills stays lit, since this document has nothing to draw
+   * there. The devices are only drawn in the Devices view, and this is only
+   * called from there, so the Preview view pays nothing for it.
+   */
+  private cardLive(cfg: CustomComplicationConfig, entities: readonly EntityRef[]): LiveDesign {
+    const layouts = this.configLayouts(cfg, entities);
+    const draw = (family: DrawableFamily, phone: boolean): LiveShape | undefined => {
+      if (!cfg.supportedFamilies.includes(family)) return undefined;
+      const slot = slotFor(phone ? REFERENCE_PHONE : REFERENCE_CASE, family);
+      const art = renderShapeArt({
+        config: cfg, editing: family, layouts, icons: this.icons, imageSizes: this.imageSizes, phone, slotFor: () => slot,
+      }, family);
+      return art === nothing ? undefined : { art, width: slot.width, height: slot.height };
+    };
+    const pick = (families: readonly DrawableFamily[], phone: boolean): LiveShapes => {
+      const out: LiveShapes = {};
+      for (const family of families) {
+        const shape = draw(family, phone);
+        if (shape) out[family] = shape;
+      }
+      return out;
+    };
+    return {
+      watch: pick(["rectangular", "circular", "corner"], false),
+      phone: pick(["rectangular", "circular", "small", "medium", "large", "xlarge"], true),
+    };
+  }
+
   /** A host for a Control Center tile of a complication that has no draft
    * behind it: enough for `controlTile`, and nothing it cannot answer. */
   private tileHost(cfg: CustomComplicationConfig, entities: readonly EntityRef[]): ControlTileHost {
@@ -8887,11 +8939,18 @@ export class WristAssistantPanel extends LitElement {
           : filter === "control"
             ? "Nothing here has a control."
             : `Nothing here has a ${familyTitle(filter)} shape.`;
-    return html`<dialog class="pk-dialog" aria-label="Your complications"
+    return html`<dialog class="pk-dialog" aria-label="Your complications" data-look=${this.pickerLook}
       @cancel=${this.pickerCancel} @close=${() => this.pickerClosed()}
       @click=${this.pickerBackdrop}>
       <div class="pk-head">
         <h2>Your complications</h2>
+        <span class="seg pk-look" role="group" aria-label="Card view">
+          ${([["preview", "Preview", "The complication alone"],
+              ["devices", "Devices", "The complication over the watch and iPhone it sits on"]] as const).map(([look, label, tip]) => html`
+            <button type="button" class=${this.pickerLook === look ? "on" : ""} title=${tip}
+              aria-pressed=${this.pickerLook === look ? "true" : "false"}
+              @click=${() => { this.pickerLook = look; this.saveListView(); }}>${label}</button>`)}
+        </span>
         <label class="pk-search">
           ${uiIcon("search")}
           <input type="search" class="pk-search-input" .value=${this.pickerQuery}
@@ -8932,7 +8991,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="pk-badge">unsaved</span>
       </div>
       ${this.renderCardPreview(cfg, this.historyEntities(cfg), deviceKindOf(this.selectedOwner) === "iphone")}
-      <div class="pk-card-art">${designDeviceArt(families, cfg.control !== undefined)}</div>
+      <div class="pk-card-art">${designDeviceArt(families, cfg.control !== undefined, this.cardLive(cfg, this.historyEntities(cfg)))}</div>
       <div class="pk-card-shapes">${shapeListText(families, cfg.control !== undefined)}</div>
     </div>`;
   }
@@ -9042,7 +9101,7 @@ export class WristAssistantPanel extends LitElement {
         ${preview
           ? this.renderCardPreview(preview.config, preview.entities, deviceKindOf(this.ownerOf(copy.ownerId)) === "iphone")
           : html`<span class="pk-card-live none">No preview</span>`}
-        <span class="pk-card-art">${designDeviceArt(families, control)}</span>
+        <span class="pk-card-art">${designDeviceArt(families, control, preview ? this.cardLive(preview.config, preview.entities) : undefined)}</span>
       </button>
       <div class="pk-card-shapes">${shapeListText(families, control)}</div>
       <span class="pk-card-acts ${confirming ? "asking" : ""}">
@@ -9088,7 +9147,7 @@ export class WristAssistantPanel extends LitElement {
           <span class="pk-add-head">${person.key === mineKey ? `${person.label} (you)` : person.label}</span>
           ${owners.map((owner) => this.renderPickerAddTick(row, owner, person, on.has(owner.ownerId)))}
         </div>`)}
-        <div class="pk-add-note">A tick writes that copy now. The watch and the iPhone are separate, so a watch list stays short.</div>
+        <div class="pk-add-note">A tick or an untick writes now. The watch and the iPhone are separate, so a watch list stays short.</div>
       </div>` : nothing}
     </span>`;
   }
@@ -9096,23 +9155,13 @@ export class WristAssistantPanel extends LitElement {
   /**
    * One device's tick inside "Add to".
    *
-   * Ticking writes at once, so unticking asks first: there is no Save to undo
-   * a stray click against, and the thing a stray click would take away is a
-   * complication somebody's watch face is already pointing at. The copy the
-   * editor has open is not offered at all, because taking the record out from
-   * under the open draft is what Delete is for.
+   * A tick writes the copy and an untick removes it, both at once and neither
+   * asking: a face or widget already using the copy keeps it, so an untick
+   * takes nothing off anybody's wrist, and a tick puts it straight back. The
+   * copy the editor has open is not offered at all, because taking the record
+   * out from under the open draft is what Delete is for.
    */
   private renderPickerAddTick(row: PickerRow, owner: LinkOwner, person: Person, ticked: boolean) {
-    const askKey = `${row.key}\u0000${owner.ownerId}`;
-    if (this.pickerRemoveAsk === askKey) {
-      return html`<div class="pk-add-ask">
-        <span>Remove from ${owner.label}?</span>
-        <button type="button" class="ghost danger small" ?disabled=${this.saving}
-          @click=${() => void this.removeRowCopy(row, owner.ownerId)}>Yes</button>
-        <button type="button" class="ghost small"
-          @click=${() => { this.pickerRemoveAsk = undefined; }}>Cancel</button>
-      </div>`;
-    }
     const editing = ticked && this.selectedCopyOf(row)?.ownerId === owner.ownerId;
     const seats = this.seatsOn(owner.ownerId);
     const noSeat = !ticked && seats.full;
@@ -9126,7 +9175,7 @@ export class WristAssistantPanel extends LitElement {
           : `Show this on ${owner.label}. Its copy is written now.`;
     return html`<button type="button" class="pk-add-tick ${ticked ? "on" : ""}" role="checkbox"
       aria-checked=${ticked ? "true" : "false"} ?disabled=${this.saving || editing || noSeat} title=${title}
-      @click=${() => { if (ticked) this.pickerRemoveAsk = askKey; else void this.addRowCopy(row, owner); }}>
+      @click=${() => { if (ticked) void this.removeRowCopy(row, owner.ownerId); else void this.addRowCopy(row, owner); }}>
       ${ticked ? pickTick() : html`<span class="pick-tick off" aria-hidden="true"></span>`}
       <span class="pk-add-name">${label}</span>
       ${noSeat ? html`<span class="pk-add-note-full">full, ${seats.taken} of ${MAX_SLOTS}</span>` : nothing}
@@ -9269,7 +9318,6 @@ export class WristAssistantPanel extends LitElement {
       this.saveError = errText(err);
     } finally {
       this.saving = false;
-      this.pickerRemoveAsk = undefined;
     }
   }
 
@@ -9301,7 +9349,6 @@ export class WristAssistantPanel extends LitElement {
       this.saveError = errText(err);
     } finally {
       this.saving = false;
-      this.pickerRemoveAsk = undefined;
     }
   }
 
@@ -9405,7 +9452,6 @@ export class WristAssistantPanel extends LitElement {
 
   private openPickerAdd(key: string) {
     this.pickerAddFor = key;
-    this.pickerRemoveAsk = undefined;
     // Which devices already hold a copy, and how full each one is, both come
     // off lists this menu is about to draw ticks from.
     void this.loadOtherLists();
@@ -9414,7 +9460,6 @@ export class WristAssistantPanel extends LitElement {
 
   private closePickerAdd() {
     this.pickerAddFor = undefined;
-    this.pickerRemoveAsk = undefined;
     window.removeEventListener("pointerdown", this.pickerAddOutside, { capture: true });
   }
 
@@ -9554,26 +9599,6 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * Which devices are ticked when the dialog opens: the author's own.
-   *
-   * The person who owns the device being edited, which is an iPhone and the
-   * watches it provisioned (`peopleOf`), because "my watch and my phone" is
-   * what a new complication nearly always is. Somebody else's watch is a
-   * deliberate tick. A device with no seat left starts unticked rather than
-   * ticked and refused by the save.
-   */
-  private defaultNewOwners(): Set<string> {
-    const free = this.linkOwners().filter((o) => freeSlotFrom(this.usedSlotsOn(o.ownerId), []) >= 0);
-    const mine = this.ownerId === undefined ? undefined : personOf(peopleOf(this.owners), this.ownerId);
-    const ids = new Set(mine ? mine.owners.map((o) => o.owner_watch_id) : this.ownerId ? [this.ownerId] : []);
-    const out = new Set(free.filter((o) => ids.has(o.ownerId)).map((o) => o.ownerId));
-    // An orphan belongs to nobody by definition, and is still the device this
-    // complication is being made on.
-    if (out.size === 0 && this.ownerId !== undefined) out.add(this.ownerId);
-    return out;
-  }
-
-  /**
    * The New complication dialog: a name, the shapes, and who shows them.
    *
    * It used to ask "where does it live?" as one card per place per device, so a
@@ -9646,7 +9671,7 @@ export class WristAssistantPanel extends LitElement {
         ${people.length === 0 ? nothing : html`<section class="new-step step-people ${waiting}"
           aria-disabled=${named ? "false" : "true"}>
           ${this.renderStepHead(3, "Choose whose devices get it",
-            "Your own devices start ticked. Every ticked device draws every shape it can.")}
+            `Optional. Nothing ticked means it is made on ${this.selectedOwner ? ownerLabel(this.selectedOwner) : "this device"} and written when you save. Every ticked device draws every shape it can.`)}
           <div class="people-grid" role="group" aria-label="Appears on">${people.map((row) => this.renderPersonBox(row))}</div>
         </section>`}
       </div>
@@ -9811,7 +9836,10 @@ export class WristAssistantPanel extends LitElement {
     this.newName = "";
     this.newFamilies = new Set();
     this.newControl = false;
-    this.newOwners = this.defaultNewOwners();
+    // Nothing ticked, not even the author's own devices: a tinted default
+    // reads as a recommendation, and some designs are built before anybody
+    // gets them.
+    this.newOwners = new Set();
     // The other devices' names, for the duplicate check, and their seats, for
     // the rows that say a device is full. Both are read while the dialog is
     // drawn, so a list that lands late simply redraws it.
@@ -10143,7 +10171,7 @@ export class WristAssistantPanel extends LitElement {
    * is an answer to the shapes. Escape is the dialog's own. */
   private newKeys = (e: KeyboardEvent) => {
     if (e.key !== "Enter") return;
-    if (this.newName.trim() === "" || this.newOwners.size === 0) return;
+    if (this.newName.trim() === "") return;
     if (this.newFamilies.size === 0 && !this.newControl) return;
     if (this.newNameProblem() !== undefined) return;
     e.preventDefault();

@@ -229,7 +229,9 @@ export interface NewSummary {
   nameProblem?: string;
   /** Step 2's count: shapes ticked, the control counted as one of them. */
   shapes: number;
-  /** Step 3's count: devices ticked. */
+  /** Step 3's count: devices ticked. None is an answer: the complication is
+   * then made on the device being edited and written only when it is saved,
+   * for an author who wants to build first and hand it out later. */
   devices: number;
   /** Whether this home is offered the Control Center section, which changes
    * only how step 2 is asked for. */
@@ -249,14 +251,16 @@ export function newSummary(o: NewSummary): string {
   if (!o.named) return "Type a name to start.";
   if (o.nameProblem !== undefined) return o.nameProblem;
   if (o.shapes === 0) return o.hasControl ? "Tick a shape or the control first." : "Now tick at least one shape.";
-  if (o.devices === 0) return "Tick at least one device.";
-  return `${o.shapes} ${o.shapes === 1 ? "shape" : "shapes"} on ${o.devices} ${o.devices === 1 ? "device" : "devices"}`;
+  const shapes = `${o.shapes} ${o.shapes === 1 ? "shape" : "shapes"}`;
+  if (o.devices === 0) return `${shapes} on no device yet. Save puts it on the one you are editing.`;
+  return `${shapes} on ${o.devices} ${o.devices === 1 ? "device" : "devices"}`;
 }
 
-/** Whether every step has been answered, which is the only thing that enables
- * Create. Beside `newSummary` because the two must never disagree. */
+/** Whether every step that needs an answer has one, which is the only thing
+ * that enables Create. Beside `newSummary` because the two must never
+ * disagree. Step 3 is not one of them. */
 export function newReady(o: NewSummary): boolean {
-  return o.named && o.nameProblem === undefined && o.shapes > 0 && o.devices > 0;
+  return o.named && o.nameProblem === undefined && o.shapes > 0;
 }
 
 /** The devices that can show this shape, which is what a section's shape row

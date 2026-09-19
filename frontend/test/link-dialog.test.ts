@@ -192,8 +192,9 @@ describe("newSummary", () => {
     expect(newSummary({ ...base, shapes: 0, hasControl: false })).toBe("Now tick at least one shape.");
   });
 
-  it("asks for a device last", () => {
-    expect(newSummary({ ...base, devices: 0 })).toBe("Tick at least one device.");
+  it("lets no device be an answer, and says where the design goes instead", () => {
+    expect(newSummary({ ...base, devices: 0 })).toBe("1 shape on no device yet. Save puts it on the one you are editing.");
+    expect(newSummary({ ...base, shapes: 2, devices: 0 })).toBe("2 shapes on no device yet. Save puts it on the one you are editing.");
   });
 
   it("counts what Create is about to make once nothing is missing", () => {
@@ -210,7 +211,10 @@ describe("newReady", () => {
     expect(newReady({ ...base, named: false })).toBe(false);
     expect(newReady({ ...base, nameProblem: "taken" })).toBe(false);
     expect(newReady({ ...base, shapes: 0 })).toBe(false);
-    expect(newReady({ ...base, devices: 0 })).toBe(false);
+  });
+
+  it("does not wait for a device: the design can be built first and handed out later", () => {
+    expect(newReady({ ...base, devices: 0 })).toBe(true);
   });
 
   // The footer and the button are one answer in two places: a summary that
