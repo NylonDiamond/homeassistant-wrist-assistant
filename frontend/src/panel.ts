@@ -134,9 +134,23 @@ import {
 } from "./resolver.js";
 import { CANVAS, CASES, FACE_TINTS, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, phoneCaseForScreenSize, renderLayerThumb, renderLayout, slotFor, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type PreviewCase } from "./renderer.js";
 import { actionAt, demoTapLabel, runTapAction, tapRefetches, type DemoOutcome } from "./demo.js";
-import { type ShapePlace, addFamily, biggestFirst, canRemoveControl, canRemoveFamily, comingSoonFamilies, controlNoteLines, familiesFor, familyAllowsKind, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, opensInControlView, placeGroups, placeOf, placeTitle, removeFamily, supportedFamilies } from "./layouts.js";
+import { type ShapePlace, addFamily, biggestFirst, canRemoveControl, canRemoveFamily, comingSoonFamilies, controlNoteLines, familiesFor, familyAllowsKind, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, opensInControlView, placeGroups, removeFamily, supportedFamilies } from "./layouts.js";
+import {
+  type LinkOwner,
+  type LinkPicks,
+  type LinkPlaceCard,
+  type LinkShapeRow,
+  SHARED_SIDE_NOTE,
+  controlOwners,
+  keepPicks,
+  linkPlaceCards,
+  pickedFamilies,
+  pickedWords,
+  setPick,
+  startFromCopyLine,
+} from "./linking.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
-import { type DeviceOwnerLike, deviceKindOf, deviceNoun, deviceSupportsControls, deviceSupportsShapes, updateDeviceMessage } from "./version.js";
+import { deviceKindOf, deviceNoun, deviceSupportsControls, deviceSupportsShapes, updateDeviceMessage } from "./version.js";
 import { makeIconProvider } from "./icons.js";
 import { makeImageSizeProvider } from "./image-sizes.js";
 import { SymbolBrowser } from "./symbols.js";
@@ -1269,19 +1283,35 @@ export class WristAssistantPanel extends LitElement {
    * name nothing else on this watch uses sits beside a shape someone picked. */
   @state() private newOpen = false;
   @state() private newName = "";
-  /** The shapes ticked in the dialog, in no particular order: `biggestFirst`
-   * decides what the document is built with. A set rather than one shape
-   * because a complication that is going to be Large and Medium is worth
-   * saying in one go, and because nothing about the second shape is a
-   * different question from the first. */
-  @state() private newFamilies: ReadonlySet<FamilyKind> = new Set();
-  /** Which place card is open. The picks of a place you leave are kept and
-   * counted on its card, so switching tabs never loses an answer. */
-  @state() private newPlace?: ShapePlace | "control";
+  /** The shapes ticked in the dialog, by device, in no particular order:
+   * `biggestFirst` decides what the document is built with. A set rather than
+   * one shape because a complication that is going to be Large and Medium is
+   * worth saying in one go, and because nothing about the second shape is a
+   * different question from the first. Keyed by device because a shape shared
+   * by a watch and an iPhone can be dropped from one copy alone. */
+  @state() private newPicks: LinkPicks = new Map();
+  /** The devices the new complication goes on: the one being edited by
+   * default, and every other one the author ticks. More than one makes the
+   * copies linked. */
+  @state() private newOwners: ReadonlySet<string> = new Set();
+  /** Which place card is open, by its key ("home", "shared", "watch", "lock",
+   * "control"). The picks of a place you leave are kept and counted on its
+   * card, so switching tabs never loses an answer. */
+  @state() private newPlace?: string;
   /** The dialog's Control Center tile. On its own it makes a document of no
    * shape with the control switched on; beside a shape it adds the control to
    * that shape's document. */
   @state() private newControl = false;
+  /** The devices the open complication is linked across, in picker order. One
+   * entry (the owner being edited) for an ordinary complication; the whole set
+   * for a linked one, which is what save, rename and delete act on. */
+  @state() private linkOwnerIds: readonly string[] = [];
+  /** Which shapes each of those devices' copies carries. Set by the New dialog
+   * and refreshed from the stored copies whenever the link is read, so a shape
+   * the author dropped from one device stays dropped there. A shape the
+   * document gained since is in nobody's set and goes to every device that can
+   * draw it. */
+  @state() private linkPicks: LinkPicks = new Map();
   /** The Share dialog is open, which mode it is in, and the labels the author
    * has renamed. Labels are keyed by placeholder id and only hold the edited
    * ones, so the defaults follow the document as it is edited underneath. */
@@ -2015,6 +2045,38 @@ export class WristAssistantPanel extends LitElement {
        hover lift, so it reads as a place in the row rather than a choice. */
     .shape-card.soon { opacity: .45; cursor: default; }
     .shape-card.soon:hover { border-color: var(--wa-line); color: var(--wa-muted); }
+    /* A shape and, under it, the devices it lands on. The column keeps the
+       side chips tied to their own card when the grid wraps. */
+    .shape-pick { display: flex; flex-direction: column; gap: 4px; }
+    .shape-pick .shape-card { flex: 1; }
+    .shape-sides { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; }
+    /* One chip per copy of a shared shape. Off is not "unavailable": it is the
+       author saying this device's copy goes without this shape. */
+    .side-chip {
+      cursor: pointer; font: inherit; font-size: 10.5px; font-weight: 600; line-height: 1;
+      padding: 4px 7px; border-radius: 999px; color: var(--wa-muted);
+      border: 1px solid var(--wa-line); background: var(--wa-raised);
+    }
+    .side-chip:hover { border-color: var(--wa-line-strong); color: var(--wa-ink); }
+    .side-chip:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .side-chip.on { border-color: var(--wa-accent); background: var(--wa-accent); color: var(--wa-accent-ink); }
+    /* The device row above the places, drawn only when there is more than one
+       device to put this on. */
+    .new-body .field.new-devices { margin-top: 14px; }
+    .dev-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+    .dev-card {
+      position: relative; display: flex; align-items: center; gap: 8px; cursor: pointer;
+      font: inherit; font-size: 12.5px; padding: 9px 30px 9px 10px; color: var(--wa-muted); text-align: left;
+      border: 1px solid var(--wa-line); border-radius: 11px; background: var(--wa-raised);
+      transition: border-color .12s ease-out, background-color .12s ease-out, color .12s ease-out;
+    }
+    .dev-card:hover { border-color: var(--wa-line-strong); color: var(--wa-ink); }
+    .dev-card:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .dev-card.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-ink); }
+    .dev-card-ico { display: flex; flex: none; }
+    .dev-card-ico svg { width: 16px; height: 16px; }
+    .dev-card-name { font-weight: 600; color: var(--wa-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dev-card .pick-tick { top: 50%; margin-top: -8px; }
     .shape-dots { display: inline-flex; gap: 3px; align-items: center; flex: none; }
     .shape-dot { width: 14px; height: 10px; border-radius: 2px; background: currentColor; opacity: .3; display: inline-block; }
     .shape-dot.circular { width: 10px; border-radius: 50%; }
@@ -6066,14 +6128,28 @@ export class WristAssistantPanel extends LitElement {
    * with documents that all read "New complication" on the wrist. */
   private createNew() {
     // Biggest first, so the shape the author lands on is the one worth drawing
-    // first: the rest are trimmed down from it, never grown out of it.
-    const families = biggestFirst([...this.newFamilies].filter((f) => this.ownerFamilies.includes(f)));
+    // first: the rest are trimmed down from it, never grown out of it. Every
+    // ticked device's shapes go in: the document the editor holds is the merged
+    // one, and each device's copy is trimmed out of it on save.
+    const families = biggestFirst([...pickedFamilies(this.newPicks)]);
     const name = this.newName.trim();
     if ((families.length === 0 && !this.newControl) || name === "" || this.newNameProblem() !== undefined) return;
+    const owners = [...this.newOwners];
+    if (owners.length === 0) return;
+    const picks = keepPicks(this.newPicks, this.newOwners);
     this.closeNewDialog();
     const slot = this.freeSlot();
     const config = newConfig(name, slot, families);
+    // A complication on more than one device is linked from the start, and its
+    // own id is the link: nothing else is guaranteed unique and already made.
+    if (owners.length > 1) config.linkId = config.id;
     if (this.newControl) setControlShown(config, true);
+    // A Home Screen size starts from the watch design rather than blank; the
+    // orchestrator calls `seedFamilyFromSibling(config, family)` here, once per
+    // ticked home size, while the other shapes are on the document and before
+    // the editor opens it.
+    this.linkOwnerIds = owners;
+    this.linkPicks = picks;
     if (!this.startNew(config)) return;
     // The author asked for a control, so its tab is the one up on arrival and
     // its card is the one open.
@@ -8360,27 +8436,69 @@ export class WristAssistantPanel extends LitElement {
     return undefined;
   }
 
-  /** The places this device has, plus the Control Center when the app on it is
-   * new enough to draw one. The dialog and the editor's Add a shape panel list
-   * the same things in the same order, from here. */
-  private newPlaces() {
-    return placeGroups(this.selectedOwner, this.ownerFamilies, comingSoonFamilies(this.selectedOwner));
+  /**
+   * One device as the New dialog reads it.
+   *
+   * The shapes are `familiesFor`'s, so the dialog can never offer a device a
+   * shape its app does not draw, and the name is the picker's, so the same
+   * device is called the same thing in both lists.
+   */
+  private linkOwnerOf(owner: OwnerSummary): LinkOwner {
+    return {
+      ownerId: owner.owner_watch_id,
+      label: ownerLabel(owner),
+      kind: deviceKindOf(owner),
+      families: familiesFor(owner),
+      comingSoon: comingSoonFamilies(owner),
+      controls: deviceSupportsControls(owner.app_version),
+      appVersion: owner.app_version,
+    };
   }
 
-  /** How many shapes of a place are ticked, for the count on its card. */
-  private pickedIn(place: ShapePlace): number {
+  /**
+   * The devices the New dialog offers, in the picker's order.
+   *
+   * Only a device whose app can take these documents at all: an app below its
+   * own gate has no widget to draw them, so offering it a copy would write a
+   * record nothing ever reads. An orphan is out for the same reason from the
+   * other end, there being no device left under the id. The device being
+   * edited is always in the list, orphan or not, because it is the one the
+   * complication is being made on.
+   */
+  private linkOwners(): LinkOwner[] {
+    return ownersByKind(this.owners)
+      .filter((o) => o.owner_watch_id === this.ownerId || (!o.is_orphan && deviceSupportsShapes(o)))
+      .map((o) => this.linkOwnerOf(o));
+  }
+
+  /** The cards the dialog draws for the ticked devices: the Home Screen, the
+   * watch face and Lock Screen (one card when both are ticked), and whatever a
+   * single-device household has always seen. */
+  private newCards(): LinkPlaceCard[] {
+    return linkPlaceCards(this.linkOwners(), this.newOwners);
+  }
+
+  /** How many shapes of a card are ticked, for the count on it. Counted once
+   * per shape however many devices draw it: a card saying 6 over three shared
+   * shapes would be counting copies, not designs. */
+  private pickedIn(card: LinkPlaceCard): number {
     let n = 0;
-    for (const f of this.newFamilies) if (placeOf(f, this.selectedOwner) === place) n += 1;
+    for (const row of card.rows) if (this.rowPicked(row)) n += 1;
     return n;
   }
 
-  /** The place whose shapes the dialog opens on: the only one a watch has, and
-   * the Home Screen on a phone, which is the bigger canvas and the one a phone
-   * owner most often opens the dialog for. */
-  private firstPlace(): ShapePlace | "control" | undefined {
-    const groups = this.newPlaces();
-    if (groups.length > 0) return groups[0]!.place;
-    return deviceSupportsControls(this.selectedOwner?.app_version) ? "control" : undefined;
+  /** Whether a shape is ticked anywhere: on any of the devices that draw it. */
+  private rowPicked(row: LinkShapeRow): boolean {
+    return row.sides.some((s) => this.newPicks.get(s.ownerId)?.has(row.family) === true);
+  }
+
+  /** The card the dialog opens on: the first one, which is the Home Screen on
+   * a phone (the bigger canvas, and the one a phone owner most often opens the
+   * dialog for) and the only card a watch has. */
+  private firstPlace(): string | undefined {
+    const cards = this.newCards();
+    if (cards.length > 0) return cards[0]!.key;
+    return controlOwners(this.linkOwners(), this.newOwners).length > 0 ? "control" : undefined;
   }
 
   /**
@@ -8402,11 +8520,12 @@ export class WristAssistantPanel extends LitElement {
   private renderNewDialog() {
     const nameProblem = this.newNameProblem();
     const named = this.newName.trim() !== "";
-    const controls = deviceSupportsControls(this.selectedOwner?.app_version);
-    const groups = this.newPlaces();
+    const owners = this.linkOwners();
+    const controls = controlOwners(owners, this.newOwners).length > 0;
+    const cards = this.newCards();
     const open = this.newPlace ?? this.firstPlace();
-    const count = this.newFamilies.size + (this.newControl ? 1 : 0);
-    const ready = named && nameProblem === undefined && count > 0;
+    const count = pickedFamilies(this.newPicks).size + (this.newControl ? 1 : 0);
+    const ready = named && nameProblem === undefined && count > 0 && this.newOwners.size > 0;
     return html`<dialog class="new-dialog" @keydown=${this.newKeys} @close=${() => { this.newOpen = false; }}>
       <div class="new-head">
         <h2>New complication</h2>
@@ -8425,19 +8544,20 @@ export class WristAssistantPanel extends LitElement {
           : html`<div class="hint">${deviceKindOf(this.selectedOwner) === "iphone"
             ? "This is the name the Lock Screen customise screen and the Home Screen widget picker show, so make it one you will recognise there."
             : "This is what the name shows on the watch face picker, so make it one you will recognise there."}</div>`}
+        ${this.renderNewDevices(owners)}
         <div class="field new-shapes">
           <span>Where does it live?</span>
           <div class="place-cards" role="tablist" aria-label="Where does it live?">
-            ${groups.map((group) => this.renderPlaceCard({
-              label: group.label,
-              art: placeArt(group.place),
-              open: open === group.place,
-              picked: this.pickedIn(group.place),
-              click: () => { this.newPlace = group.place; },
+            ${cards.map((card) => this.renderPlaceCard({
+              label: card.label,
+              art: placeArt(card.places[0]!),
+              open: open === card.key,
+              picked: this.pickedIn(card),
+              click: () => { this.newPlace = card.key; },
             }))}
             ${controls ? this.renderPlaceCard({
               label: "Control Center",
-              art: controlPlaceArt(deviceKindOf(this.selectedOwner) === "iphone"),
+              art: controlPlaceArt(controlOwners(owners, this.newOwners).every((o) => o.kind === "iphone")),
               open: open === "control",
               ticked: this.newControl,
               // Control Center holds one thing, so the card is the choice: the
@@ -8453,10 +8573,10 @@ export class WristAssistantPanel extends LitElement {
         </div>
         ${open === undefined ? nothing : open === "control"
           ? this.renderControlPanel()
-          : this.renderShapePanel(groups.find((g) => g.place === open))}
+          : this.renderShapePanel(cards.find((c) => c.key === open))}
       </div>
       <div class="new-foot">
-        <span class="new-count">${WristAssistantPanel.pickedWords(count, this.newFamilies, this.selectedOwner)}</span>
+        <span class="new-count">${pickedWords(this.newPicks, this.newControl, owners, this.newOwners)}</span>
         <button class="small" @click=${() => this.closeNewDialog()}>Cancel</button>
         <button class="primary" ?disabled=${!ready}
           title=${ready ? "Make it" : !named ? "Give it a name first" : nameProblem ? nameProblem : controls ? "Tick a shape or the control first" : "Tick a shape first"}
@@ -8488,36 +8608,87 @@ export class WristAssistantPanel extends LitElement {
     </button>`;
   }
 
-  /** The open place's shapes, ticked rather than chosen. */
-  private renderShapePanel(group: ReturnType<WristAssistantPanel["newPlaces"]>[number] | undefined) {
-    if (!group) return nothing;
-    const big = group.place === "home" ? "Biggest first" : "Widest first";
-    const word = group.place === "home" ? "size" : "shape";
-    return html`<div class="pick-panel" id="pick-panel" role="tabpanel">
-      <div class="pick-head">
-        <span class="pick-title">${group.label} ${group.place === "home" ? "sizes" : "shapes"}</span>
-        <span class="pick-order">${big}</span>
-      </div>
-      <div class="shape-cards" role="group" aria-label=${`${group.label} shapes`}>
-        ${group.families.map((f) => {
-          const on = this.newFamilies.has(f);
-          return html`<button type="button" role="checkbox" class="shape-card ${on ? "on" : ""}"
-            aria-checked=${on ? "true" : "false"}
-            @click=${() => this.toggleNewFamily(f)}>
-            ${familyArt(f, deviceKindOf(this.selectedOwner) === "iphone")}
-            <span class="shape-card-name">${familyTitle(f)}</span>
+  /**
+   * The devices this complication goes on.
+   *
+   * Drawn only when there is more than one to choose between: a household with
+   * a watch and nothing else is being asked a question with one answer, and the
+   * dialog it has always seen is the right one. The device being edited is
+   * ticked when the dialog opens, so pressing Create without reading this row
+   * does what it used to do.
+   */
+  private renderNewDevices(owners: readonly LinkOwner[]) {
+    if (owners.length < 2) return nothing;
+    return html`<div class="field new-devices">
+      <span>Which devices?</span>
+      <div class="dev-cards" role="group" aria-label="Which devices?">
+        ${owners.map((o) => {
+          const on = this.newOwners.has(o.ownerId);
+          return html`<button type="button" role="checkbox" class="dev-card ${on ? "on" : ""}"
+            aria-checked=${on ? "true" : "false"} title=${`Put a copy on ${o.label}`}
+            @click=${() => this.toggleNewOwner(o)}>
+            <span class="dev-card-ico">${uiIcon(o.kind === "iphone" ? "phone" : "watch")}</span>
+            <span class="dev-card-name">${o.label}</span>
             ${on ? pickTick() : html`<span class="pick-tick off" aria-hidden="true"></span>`}
           </button>`;
         })}
-        ${group.comingSoon.map((f) => html`<button type="button" role="checkbox" class="shape-card soon" disabled
-          aria-checked="false" aria-disabled="true" title="Coming soon">
-          ${familyArt(f, deviceKindOf(this.selectedOwner) === "iphone")}
-          <span class="shape-card-name">${familyTitle(f)}</span>
-          <span class="shape-card-note">Coming soon${familyNote(f) ? html`<br />${familyNote(f)}` : nothing}</span>
-        </button>`)}
       </div>
-      <div class="hint">Every ${word} is its own design. Nothing copies across on its own, so build the ${group.place === "home" ? "biggest" : "widest"} one first and trim it down for the smaller ones.</div>
+      <div class="hint">${this.newOwners.size > 1
+        ? "One design, one copy on each device. Editing it later changes every copy."
+        : "Tick another device to build the design once and show it on both."}</div>
     </div>`;
+  }
+
+  /** The open card's shapes, ticked rather than chosen. A shared shape carries
+   * a side per device under its tick, so either copy can drop it. */
+  private renderShapePanel(card: LinkPlaceCard | undefined) {
+    if (!card) return nothing;
+    const home = card.places.includes("home");
+    const big = home ? "Biggest first" : "Widest first";
+    const phoneArt = card.places.every((p) => p !== "watch");
+    const note = startFromCopyLine(this.newPicks);
+    return html`<div class="pick-panel" id="pick-panel" role="tabpanel">
+      <div class="pick-head">
+        <span class="pick-title">${card.label} ${home ? "sizes" : "shapes"}</span>
+        <span class="pick-order">${big}</span>
+      </div>
+      <div class="shape-cards" role="group" aria-label=${`${card.label} shapes`}>
+        ${card.rows.map((row) => {
+          const on = this.rowPicked(row);
+          return html`<div class="shape-pick">
+            <button type="button" role="checkbox" class="shape-card ${on ? "on" : ""}"
+              aria-checked=${on ? "true" : "false"}
+              @click=${() => this.toggleNewFamily(row, !on)}>
+              ${familyArt(row.family, phoneArt)}
+              <span class="shape-card-name">${familyTitle(row.family)}</span>
+              ${on ? pickTick() : html`<span class="pick-tick off" aria-hidden="true"></span>`}
+            </button>
+            ${this.renderShapeSides(row)}
+          </div>`;
+        })}
+        ${card.comingSoon.map((row) => html`<div class="shape-pick"><button type="button" role="checkbox" class="shape-card soon" disabled
+          aria-checked="false" aria-disabled="true" title="Coming soon">
+          ${familyArt(row.family, phoneArt)}
+          <span class="shape-card-name">${familyTitle(row.family)}</span>
+          <span class="shape-card-note">Coming soon${familyNote(row.family) ? html`<br />${familyNote(row.family)}` : nothing}</span>
+        </button></div>`)}
+      </div>
+      ${card.shared ? html`<div class="hint">${SHARED_SIDE_NOTE}</div>` : nothing}
+      ${note ? html`<div class="hint">${note}</div>` : nothing}
+    </div>`;
+  }
+
+  /** The per-device toggles under a shape, drawn only when the shape lands on
+   * more than one copy. Each one drops the shape from its own device and
+   * leaves the others alone. */
+  private renderShapeSides(row: LinkShapeRow) {
+    if (row.sides.length < 2) return nothing;
+    return html`<span class="shape-sides">${row.sides.map((side) => {
+      const on = this.newPicks.get(side.ownerId)?.has(row.family) === true;
+      return html`<button type="button" role="checkbox" class="side-chip ${on ? "on" : ""}"
+        aria-checked=${on ? "true" : "false"} title=${`${familyTitle(row.family)} on ${side.owner}`}
+        @click=${() => { this.newPicks = setPick(this.newPicks, row.family, [side.ownerId], !on); }}>${side.label}</button>`;
+    })}</span>`;
   }
 
   /**
@@ -8530,39 +8701,56 @@ export class WristAssistantPanel extends LitElement {
    * the answer, and this is the explanation under it.
    */
   private renderControlPanel() {
-    const phone = deviceKindOf(this.selectedOwner) === "iphone";
+    const on = controlOwners(this.linkOwners(), this.newOwners);
+    const phone = on.length > 0 && on.every((o) => o.kind === "iphone");
     return html`<div class="pick-panel words" id="pick-panel" role="tabpanel">
       <div class="pick-head"><span class="pick-title">Control Center</span></div>
       <div class="hint">A toggle or a button, on ${phone ? "the Control Center page and the Lock Screen's bottom corners" : "the Control Center that swipes up from the watch face"}. ${this.newControl
-        ? (this.newFamilies.size === 0
+        ? (pickedFamilies(this.newPicks).size === 0
           ? "With no shape ticked beside it, this complication appears there and nowhere else."
           : "It sits beside the shapes rather than instead of them.")
-        : "Click the card above to add one."}</div>
+        : "Click the card above to add one."}${this.newControl && on.length > 1
+        ? ` Every ticked device that can draw one gets it.`
+        : ""}</div>
     </div>`;
   }
 
-  /** Tick or untick a shape in the New dialog. */
-  private toggleNewFamily(family: FamilyKind) {
-    const next = new Set(this.newFamilies);
-    if (!next.delete(family)) next.add(family);
-    this.newFamilies = next;
+  /** Tick or untick a shape in the New dialog, on every device that draws it.
+   * A shared shape's two sides move together here; the side chips under it are
+   * how one copy drops it. */
+  private toggleNewFamily(row: LinkShapeRow, on: boolean) {
+    this.newPicks = setPick(this.newPicks, row.family, row.sides.map((s) => s.ownerId), on);
   }
 
-  /** The footer's running count, which is what stops Create being a surprise.
-   * Silent at nothing picked: an empty footer is quieter than a zero. */
-  private static pickedWords(count: number, families: ReadonlySet<FamilyKind>, owner: DeviceOwnerLike | null | undefined): string {
-    if (count === 0) return "";
-    const places = new Set<ShapePlace>();
-    for (const f of families) places.add(placeOf(f, owner));
-    if (places.size > 1) return `${count} picked, across ${places.size} places.`;
-    return count === 1 ? "1 picked." : `${count} picked.`;
+  /** Tick or untick a device. Unticking one drops its picks, so ticking it
+   * again starts that copy from nothing rather than from a half-remembered
+   * answer; ticking one gives it the shapes already picked elsewhere that it
+   * can draw, which is what makes a shared shape shared. */
+  private toggleNewOwner(owner: LinkOwner) {
+    const next = new Set(this.newOwners);
+    let picks = this.newPicks;
+    if (next.delete(owner.ownerId)) {
+      picks = keepPicks(picks, next);
+    } else {
+      next.add(owner.ownerId);
+      const wanted = [...pickedFamilies(picks)].filter((f) => owner.families.includes(f));
+      for (const family of wanted) picks = setPick(picks, family, [owner.ownerId], true);
+    }
+    this.newOwners = next;
+    this.newPicks = picks;
+    // A card can appear or vanish with a device, so an open card that is gone
+    // would leave the panel under it blank.
+    if (this.newPlace !== undefined && this.newPlace !== "control" && !this.newCards().some((c) => c.key === this.newPlace)) {
+      this.newPlace = undefined;
+    }
   }
 
   private openNewDialog() {
     if (this.freeSlot() < 0) return;
     this.newOpen = true;
     this.newName = "";
-    this.newFamilies = new Set();
+    this.newPicks = new Map();
+    this.newOwners = new Set(this.ownerId ? [this.ownerId] : []);
     this.newPlace = undefined;
     this.newControl = false;
     void this.updateComplete.then(() => {
@@ -8583,7 +8771,7 @@ export class WristAssistantPanel extends LitElement {
    * own is an answer to the second one. */
   private newKeys = (e: KeyboardEvent) => {
     if (e.key !== "Enter") return;
-    if (this.newName.trim() === "" || (this.newFamilies.size === 0 && !this.newControl) || this.newNameProblem() !== undefined) return;
+    if (this.newName.trim() === "" || (pickedFamilies(this.newPicks).size === 0 && !this.newControl) || this.newNameProblem() !== undefined) return;
     e.preventDefault();
     this.createNew();
   };
