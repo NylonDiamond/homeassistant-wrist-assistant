@@ -2690,9 +2690,12 @@ export class WristAssistantPanel extends LitElement {
     .add-scroll::-webkit-scrollbar-track { background: transparent; }
     /* Compact: the samples go and every card becomes one 34px line, a colour
        chip and a name, so two dozen presets scan in a column. */
-    /* Names mode has no sample to shrink, so its cards keep a width a name
-       fits in. */
-    .add-grid.lean { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+    /* Names mode: two across. One name per row made the list of twenty-five
+       presets as tall as the samples it was meant to be shorter than; two
+       across halves it, and a long name ellipsises rather than wrapping. */
+    .add-grid.lean { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .add-grid.lean button.add .add-name { min-width: 0; }
+    .add-grid.lean button.add .add-name > :last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     /* Small: a fixed four across rather than as many as fit, so the sample is
        always the same size and the card reads as a sheet of them. Auto-fill
        would have given one column a different well size from the next. Under
