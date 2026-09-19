@@ -264,16 +264,18 @@ const faceClock = (x: number, y: number, size: number, text: string) =>
     fill=${CLOCK} font-family="system-ui, sans-serif">${text}</text>`;
 
 /**
- * The watch: case, bands, crown, and the four face slots where a face puts
- * them. Inline across the top, corner arcing into the top left, rectangular
- * below the middle and circular beside it.
+ * The watch: case, bands, crown, and the four face slots laid out the way the
+ * Modular face lays them out. Corner arcing into the top left, the clock top
+ * right, rectangular the full width of the screen under them, and circular
+ * bottom left. Inline, which that face does not carry, sits as a line over
+ * the clock.
  */
 function watchCard(families: readonly FamilyKind[], live: LiveShapes = {}): TemplateResult {
   const has = (f: FamilyKind) => families.includes(f);
   // The real shape in its slot where there is one, the lit fill otherwise.
   // Inline is a line of text rather than a canvas and has no picture to set.
-  const rect = placed(live.rectangular, { x: 30, y: 52, width: 40, height: 22 }, "fit", "");
-  const circ = placed(live.circular, { x: 13, y: 55, width: 16, height: 16 }, "fit", "");
+  const rect = placed(live.rectangular, { x: 14, y: 38, width: 58, height: 21 }, "fit", "");
+  const circ = placed(live.circular, { x: 13, y: 63, width: 16, height: 16 }, "fit", "");
   const corner = placed(live.corner, { x: 14, y: 17, width: 13, height: 13 }, "fit", "");
   return html`<svg class="pk-card-watch" width="86" height="96" viewBox="0 0 86 96" aria-hidden="true">
     <rect x="27" y="0" width="32" height="10" rx="3" fill=${CASE} />
@@ -281,11 +283,11 @@ function watchCard(families: readonly FamilyKind[], live: LiveShapes = {}): Temp
     <rect x="6" y="8" width="74" height="80" rx="18" fill=${CASE} />
     <rect x="82" y="30" width="4" height="12" rx="2" fill=${CASE} />
     <rect x="11" y="13" width="64" height="70" rx="14" fill=${SCREEN} />
-    ${faceClock(43, 40, 16, "10:09")}
-    <rect x="20" y="20" width="24" height="3" rx="1.5" fill=${lit(has("inline"))} />
+    ${faceClock(56, 33, 13, "10:09")}
+    <rect x="36" y="15" width="30" height="3" rx="1.5" fill=${lit(has("inline"))} />
     ${corner ?? svg`<path d="M16 30 A 26 26 0 0 1 28 19" stroke=${lit(has("corner"))} stroke-width="4" fill="none" stroke-linecap="round" />`}
-    ${rect ?? svg`<rect x="30" y="52" width="40" height="22" rx="5" fill=${lit(has("rectangular"))} />`}
-    ${circ ?? svg`<circle cx="21" cy="63" r="8" fill=${lit(has("circular"))} />`}
+    ${rect ?? svg`<rect x="14" y="38" width="58" height="21" rx="5" fill=${lit(has("rectangular"))} />`}
+    ${circ ?? svg`<circle cx="21" cy="71" r="8" fill=${lit(has("circular"))} />`}
   </svg>`;
 }
 

@@ -276,17 +276,17 @@ describe("designDeviceArt", () => {
       expect(art).toContain("data-tag=w");
       // The watch's rectangular fill is gone; the phone's Lock Screen slot is
       // still the lit fill, since no phone picture was given.
-      expect(art).not.toContain(`x="30" y="52" width="40" height="22"`);
+      expect(art).not.toContain(`x="14" y="38" width="58" height="21"`);
       expect(art).toContain(`x="9" y="24" width="32" height="8" rx="2" fill=var(--wa-accent)`);
     });
 
     it("scales the picture to fit the slot and centres it", () => {
       const art = flatten(designDeviceArt(["rectangular"], false, { watch: { rectangular: picture("w") }, phone: {} }));
-      // 40 wide into a 181 wide picture, so 40/181; 65.5 tall becomes 14.47,
-      // sat in the middle of the 22 tall slot.
-      const scale = 40 / 181;
-      const y = 52 + (22 - 65.5 * scale) / 2;
-      expect(art).toContain(`translate(30 ${y}) scale(${scale})`);
+      // The full 58 wide slot for a 181 wide picture, so 58/181; 65.5 tall
+      // becomes 20.99, sat in the middle of the 21 tall slot.
+      const scale = 58 / 181;
+      const y = 38 + (21 - 65.5 * scale) / 2;
+      expect(art).toContain(`translate(14 ${y}) scale(${scale})`);
     });
 
     it("draws the Large tile from the top and clips it, rather than squeezing it flat", () => {
@@ -305,7 +305,7 @@ describe("designDeviceArt", () => {
 
     it("keeps the lit fill for a slot with no picture", () => {
       const art = flatten(designDeviceArt(["rectangular", "circular"], false, { watch: { rectangular: picture("w") }, phone: {} }));
-      expect(art).toContain(`cx="21" cy="63" r="8" fill=var(--wa-accent)`);
+      expect(art).toContain(`cx="21" cy="71" r="8" fill=var(--wa-accent)`);
     });
   });
 });
