@@ -2672,19 +2672,30 @@ export class WristAssistantPanel extends LitElement {
       max-height: 30vh; overflow-y: auto; overscroll-behavior: contain;
       padding: 3px; margin: 3px -3px 0; scrollbar-width: thin;
     }
-    /* The caps are a share of the window rather than a pixel count: on a
-       short window a 560px scroller plus the elements above it pushed the
-       Layers card clean off the screen, and the left column has to show the
-       layers of the design before it shows more presets to add. */
+    /* The vh caps above and below are the fallback for the stacked layout,
+       where the column has no height of its own. In three columns the open
+       add card is sized instead: it may take at most two thirds of the column
+       less the room the Pages and Shared values cards need, so the Layers
+       card always keeps a third of the column whatever the card size. Inside
+       it the Elements and Presets scrollers split the room equally, so the
+       two boxes are the same height in Names, Small and Large alike and
+       the card does not jump when the size changes. */
+    .column.left .card.add-card[data-open="true"] {
+      flex: 0 1 auto; min-height: 0; max-height: calc(66% - 150px);
+      display: flex; flex-direction: column;
+    }
+    .column.left .card.add-card[data-open="true"] > * { flex: none; }
+    .column.left .card.add-card[data-open="true"] > .add-group:has(.add-scroll) {
+      flex: 1 1 0; min-height: 0; display: flex; flex-direction: column;
+    }
+    .column.left .card.add-card[data-open="true"] > .add-group:has(.add-scroll) > .presets-head { flex: none; }
+    .column.left .card.add-card[data-open="true"] .add-scroll { flex: 1 1 0; min-height: 0; max-height: none; }
+    .layout.cols-1 .column.left .card.add-card[data-open="true"] { max-height: none; display: block; }
+    .layout.cols-1 .column.left .card.add-card[data-open="true"] .add-scroll { max-height: 30vh; }
     /* The elements are twelve, not twenty-five: their scroller is capped at
        about two rows so the presets under it are not pushed off the screen. */
     .add-scroll.short { max-height: 18vh; }
-    /* Small shows three rows of presets and scrolls the rest. A row is a
-       card a quarter of the group wide (three gaps taken out), its well at
-       120:46, the name and paddings under it, and the gap to the next row;
-       the group is the size container, so the cap follows the column width. */
-    .add-scroll.small { max-height: calc(3 * ((100cqw - 15px) / 4 * 0.384 + 28px) + 6px); }
-    .add-scroll.short.small { max-height: min(22vh, 260px); }
+    .layout.cols-1 .column.left .card.add-card[data-open="true"] .add-scroll.short { max-height: 18vh; }
     .add-scroll::-webkit-scrollbar { width: 8px; }
     .add-scroll::-webkit-scrollbar-thumb { background: var(--wa-line-strong); border-radius: 999px; }
     .add-scroll::-webkit-scrollbar-track { background: transparent; }
@@ -12200,7 +12211,7 @@ export class WristAssistantPanel extends LitElement {
     // Names keeps its own grid (a name needs a width a name fits in), Small and
     // Large share the sample cards and differ only in how many go across.
     const gridClass = detail === "names" ? "lean" : detail === "small" ? "small" : "";
-    return html`<div class="card fold tinted banded" data-open=${open ? "true" : "false"}>
+    return html`<div class="card fold tinted banded add-card" data-open=${open ? "true" : "false"}>
       <h2 class="panel-title tools fold-h" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
         title=${open ? "Hide the add buttons" : "Show the add buttons"}
         @click=${toggle}
