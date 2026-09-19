@@ -98,7 +98,7 @@ from .complication_store import (
     ComplicationStore,
     ComplicationStoreError,
 )
-from .const import COMPLICATION_MAX_SCHEMA_VERSION, DOMAIN
+from .const import COMPLICATION_MAX_SCHEMA_VERSION, DOMAIN, LIBRARY_OWNER_ID
 from .history_series import (
     COMBINE_ALL,
     COMBINE_ANY,
@@ -124,7 +124,7 @@ from .statistics_series import (
 )
 from .gallery_key_store import gallery_key_store
 from .parts_store import PartsStore, PartsStoreError
-from .widget_secret_store import DEVICE_KIND_IPHONE
+from .widget_secret_store import DEVICE_KIND_IPHONE, DEVICE_KIND_LIBRARY
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -359,6 +359,14 @@ def ws_owners(
     ``paired_iphone_id`` is the same pairing by owner id rather than by name,
     which is what lets the panel group a household's devices by person without
     guessing from two names that may well match each other.
+
+    One row is not a device: the Library (``LIBRARY_OWNER_ID``), always
+    present and always last. It is the home's shelf for designs that are on no
+    device yet, or have been taken off every device without being thrown away.
+    Nothing provisions under it and nothing fetches it, so its row is written
+    here rather than read from any store: only the complication count and the
+    token are real. It is listed even when this home has no devices at all,
+    because somewhere to build is the one thing a home in that state needs.
     """
     domain_data = hass.data.get(DOMAIN)
     if domain_data is None:
@@ -378,7 +386,10 @@ def ws_owners(
         return device.name_by_user or device.name
 
     owners: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    # The Library is listed at the end from its own literal row, so the orphan
+    # loop below must not reach it: it owns records and has no secret store
+    # entry, which is exactly what that loop calls an orphan.
+    seen: set[str] = {LIBRARY_OWNER_ID}
     for device_id, entry in secret_store.all_entries.items():
         seen.add(device_id)
         paired_id = entry.owner_iphone_id
@@ -441,6 +452,28 @@ def ws_owners(
             o["owner_watch_id"],
         )
     )
+    # The Library, always, after every device. Appended rather than sorted in
+    # because its place in the list is fixed: it is not a device, so it belongs
+    # under them rather than among them, and a home with no devices at all
+    # still gets it. Nothing polls it and nothing is pushed to it, so the
+    # fields that describe a device's link to this server are all null and
+    # `applied_token` is None rather than the token: there is no device to
+    # apply anything.
+    owners.append(
+        {
+            "owner_watch_id": LIBRARY_OWNER_ID,
+            "device_kind": DEVICE_KIND_LIBRARY,
+            "device_name": "Library",
+            "paired_iphone_name": None,
+            "paired_iphone_id": None,
+            "app_version": None,
+            "screen_size": None,
+            "complication_count": len(store.list(LIBRARY_OWNER_ID)),
+            "token": store.owner_token(LIBRARY_OWNER_ID),
+            "applied_token": None,
+            "is_orphan": False,
+        }
+    )
     connection.send_result(
         msg["id"],
         {
@@ -478,6 +511,11 @@ def ws_forget_device(
     re-provision, which the app does on its next foreground identity check,
     and everything the complication store held for it is erased rather than
     tombstoned (see ``ComplicationStore.forget_owner``).
+
+    The Library is refused by the same check every other id goes through: it
+    has no entry in the secret store, so it answers ``not_found``, which is
+    the true thing to say about an owner that was never a device. ``force``
+    does not get past it either, since the entry is looked up first.
     """
     domain_data = hass.data.get(DOMAIN)
     if domain_data is None:

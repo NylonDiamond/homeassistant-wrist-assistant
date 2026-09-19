@@ -44,6 +44,7 @@ from .complication_store import ComplicationStore
 from .complication_ws import async_register_websocket_commands
 from .const import (
     DOMAIN,
+    LIBRARY_OWNER_ID,
     NOTIFICATION_TOKEN_STORAGE_KEY,
     NOTIFICATION_TOKEN_STORAGE_VERSION,
     PLATFORMS,
@@ -1037,6 +1038,13 @@ async def async_remove_config_entry_device(
         if not ident.startswith("watch_"):
             continue
         watch_id = ident[len("watch_"):]
+        # The Library is not a device and has no registry entry of its own, so
+        # this can only be reached by a device someone registered under the
+        # reserved id. Refuse it anyway: deleting a device must never erase the
+        # home's shelf of designs, which belongs to no device and cannot be
+        # re-provisioned back into existence.
+        if watch_id == LIBRARY_OWNER_ID:
+            continue
         domain_data.widget_secret_store.remove(watch_id)
         domain_data.notification_store.remove(watch_id)
         # Same teardown the panel's Forget action performs. Without it a

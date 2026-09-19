@@ -35,6 +35,11 @@ LABEL_WATCH_SELF_PROVISION = "watch-self-provision"
 
 DEVICE_KIND_IPHONE = "iphone"
 DEVICE_KIND_WATCH = "watch"
+# The reserved owner that is not a device at all: the home's design Library
+# (see LIBRARY_OWNER_ID in const.py). Nothing ever provisions under it, so no
+# entry in this store ever carries this kind; it exists so the owners reply can
+# label the one row it synthesizes, and so the panel has a name for it.
+DEVICE_KIND_LIBRARY = "library"
 
 
 @dataclass

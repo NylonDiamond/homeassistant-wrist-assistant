@@ -1294,6 +1294,13 @@ class ComplicationStore:
                 record=record,
             )
         )
+        # Both hooks are asked about every owner, the Library included, and
+        # both already answer nothing for an owner no device stands behind:
+        # the coordinator finds no parked waiter to release, and the push side
+        # finds no iPhone entry in the secret store and returns before it
+        # schedules anything. So a Library commit runs through here unchanged,
+        # with no push, no wake and nothing logged. Keep that true on either
+        # side rather than special-casing the owner here.
         self._wake_owner(record.owner_watch_id)
         self._push_owner(record.owner_watch_id, self._token)
         return record

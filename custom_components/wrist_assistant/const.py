@@ -133,8 +133,23 @@ COMPLICATION_MAX_LAYERS = 64
 # enforce.
 COMPLICATION_MAX_SLOTS = 64
 # One complication per slot at most, so the slot ceiling is also the per-watch
-# record ceiling.
+# record ceiling. The Library (below) counts under the same ceiling and its
+# records carry a slotIndex like any other: no device ever reads it, but a
+# design moved onto a watch keeps the slot it was made with, and one shared
+# rule is easier to trust than a second set of storage rules that applies to
+# one owner. The panel picks a free slot among the Library's own records.
 COMPLICATION_MAX_PER_OWNER = COMPLICATION_MAX_SLOTS
+
+# The one owner that is not a device: the home's design Library.
+#
+# Every other owner id belongs to a watch or an iPhone that self-provisioned,
+# so a design could not exist without a device to keep it on. The Library is
+# where a design lives before it is put on anything, and where it stays when it
+# is taken off everything. Nothing polls it and nothing is ever pushed to it:
+# the apps fetch their own owner id and know nothing about this one. The store
+# treats it as an ordinary owner string, so saving, listing, deleting and the
+# revision history all work on it unchanged.
+LIBRARY_OWNER_ID = "library"
 
 # Wire-format version of the Wrist Assistant HMAC protocol. The watch app sends
 # `X-WA-Version: <int>` on every signed request; the server rejects versions

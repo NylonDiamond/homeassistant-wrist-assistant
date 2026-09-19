@@ -37,6 +37,27 @@ _SRC = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assist
 _PKG = "wa_ws_test_pkg"
 DOMAIN = "wrist_assistant"
 MAX_SCHEMA = 6
+# The reserved owner that is not a device. Spelled here rather than imported
+# because the const module is stubbed above, and the literal is the wire
+# contract two other codebases build against.
+LIBRARY = "library"
+
+
+def _library_row(count: int = 0, token: int = 0) -> dict:
+    """The Library row exactly as the owners reply writes it."""
+    return {
+        "owner_watch_id": LIBRARY,
+        "device_kind": "library",
+        "device_name": "Library",
+        "paired_iphone_name": None,
+        "paired_iphone_id": None,
+        "app_version": None,
+        "screen_size": None,
+        "complication_count": count,
+        "token": token,
+        "applied_token": None,
+        "is_orphan": False,
+    }
 
 
 class _FakeStore:
@@ -151,6 +172,7 @@ def _loaded_modules():
             COMPLICATION_MAX_LAYERS=64,
             COMPLICATION_MAX_PER_OWNER=8,
             COMPLICATION_MAX_SLOTS=64,
+            LIBRARY_OWNER_ID=LIBRARY,
             WIDGET_SECRET_STORAGE_KEY="wrist_assistant.widget_secrets",
             WIDGET_SECRET_STORAGE_VERSION=1,
         )
@@ -273,6 +295,17 @@ class _Push:
             return False
         self.pushed.append((owner, reason))
         return True
+
+    def on_commit(self, owner: str, token: int) -> None:
+        """What the store's push hook runs on every commit.
+
+        Gated on `push_available` the way the real one is: an owner no phone
+        token stands behind is dropped before a timer is ever scheduled, which
+        is why the Library costs a save nothing.
+        """
+        if not self.push_available(owner):
+            return
+        self.pushed.append((owner, "save"))
 
 
 class _Connection:
@@ -433,7 +466,8 @@ def test_a_phone_is_an_owner_in_its_own_right(env) -> None:
             "token": 2,
             "applied_token": 2,
             "is_orphan": False,
-        }
+        },
+        _library_row(),
     ]
 
 
@@ -456,6 +490,7 @@ def test_every_row_carries_the_paired_phone_id_or_none(env) -> None:
         "watch-B": None,
         "phone-1": None,
         "gone-watch": None,
+        LIBRARY: None,
     }
 
 
@@ -470,6 +505,8 @@ def test_owners_lists_every_watch_before_every_phone_by_name(env) -> None:
         "Zoe's Watch",
         "Alice's iPhone",
         "Zoe's iPhone",
+        # Not a device, so it sorts under all of them rather than among them.
+        "Library",
     ]
 
 
@@ -495,8 +532,109 @@ def test_an_orphan_row_reports_no_device_kind_and_sorts_with_the_watches(env) ->
     assert [(r["owner_watch_id"], r["device_kind"]) for r in rows] == [
         ("gone-watch", None),
         ("phone-1", "iphone"),
+        (LIBRARY, "library"),
     ]
     assert rows[0]["is_orphan"] is True
+
+
+# ── the Library ──────────────────────────────────────────────────────────
+#
+# One owner that is not a device: where a design lives before it is put on
+# anything, and where it stays when it is taken off everything. Nothing polls
+# it and nothing is pushed to it, so the only thing the row has to get right is
+# that it is always there, always last, and counts what is on the shelf.
+
+
+def test_the_library_is_listed_even_in_a_home_with_no_devices(env) -> None:
+    """The one row a brand new home has, which is the point of the feature.
+
+    Somewhere to build is exactly what a home with nothing provisioned needs,
+    so the shelf cannot wait for a watch to show up first.
+    """
+    assert env.owners() == [_library_row()]
+
+
+def test_the_library_sorts_after_every_device(env) -> None:
+    env.add_watch("watch-A", device_name="Apple Watch")
+    env.add_phone("phone-1", device_name="Jesse's iPhone")
+    env.save_document("gone-watch")
+
+    assert [r["owner_watch_id"] for r in env.owners()][-1] == LIBRARY
+
+
+def test_the_library_is_never_listed_twice_as_an_orphan(env) -> None:
+    """It owns records and has no secret store entry, which is the orphan test.
+
+    Without the id in `seen` the owners loop would list the shelf a second
+    time, as a device that went missing and can be moved elsewhere.
+    """
+    env.save_document(LIBRARY)
+
+    rows = [r for r in env.owners() if r["owner_watch_id"] == LIBRARY]
+    assert len(rows) == 1
+    assert rows[0]["is_orphan"] is False
+
+
+def test_the_library_counts_what_was_saved_to_it(env) -> None:
+    env.save_document(LIBRARY)
+    env.save_document(LIBRARY)
+
+    row = env.owners()[-1]
+    assert row["complication_count"] == 2
+    assert row["token"] == 2
+    # No device applies anything here, so the applied token stays null however
+    # much is saved: a green "on the wrist" about a shelf would be a lie.
+    assert row["applied_token"] is None
+
+
+def test_records_saved_to_the_library_are_read_back_from_it(env) -> None:
+    """The store keys by owner string, so the shelf needs no storage of its own."""
+    document = env.save_document(LIBRARY)
+
+    records = env.store.list(LIBRARY)
+    assert [r.document["id"] for r in records] == [document["id"]]
+    assert env.store.list("watch-A") == []
+
+
+def test_a_save_to_the_library_disturbs_no_device(env) -> None:
+    """A commit runs the same two hooks every owner's does, and neither bites.
+
+    The store knows only that an owner's token moved, so both hooks are asked
+    about the Library exactly as they are asked about a watch. The wake finds
+    no parked poll under an id nothing polls, and the push drops the owner
+    before a timer is scheduled because no iPhone entry stands behind it. So
+    the shelf needs no special case on the store side.
+    """
+    env.add_phone("phone-1", device_name="Jesse's iPhone")
+    env.push.available.add("phone-1")
+    env.store.async_set_wake_callback(env.coordinator.wake_watch)
+    env.store.async_set_push_callback(env.push.on_commit)
+
+    env.save_document(LIBRARY)
+
+    assert env.coordinator.woken == [(LIBRARY, False)]
+    assert env.coordinator.is_polling(LIBRARY) is False
+    assert env.push.pushed == []
+
+    # The same two hooks on a real owner, so the push above stayed empty
+    # because of the owner rather than because nobody installed the hook.
+    env.save_document("phone-1")
+    assert env.push.pushed == [("phone-1", "save")]
+
+
+def test_forgetting_the_library_is_refused_rather_than_obeyed(env) -> None:
+    """Nothing registered it, so there is nothing to unregister.
+
+    `force` does not get past it either: the entry is looked up first.
+    """
+    env.save_document(LIBRARY)
+
+    connection = _Connection()
+    env.ws.ws_forget_device(
+        env.hass, connection, {"id": 1, "watch_id": LIBRARY, "force": True}
+    )
+    assert [code for _id, code, _msg in connection.errors] == ["not_found"]
+    assert len(env.store.list(LIBRARY)) == 1
 
 
 # ── watch_status ─────────────────────────────────────────────────────────
