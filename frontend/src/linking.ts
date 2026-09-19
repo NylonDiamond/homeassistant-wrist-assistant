@@ -385,6 +385,134 @@ export function joinNames(names: readonly string[]): string {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]!}`;
 }
 
+// ── the shape sections ────────────────────────────────────────────────────
+
+/**
+ * The four headings shapes are offered under, once for the whole home.
+ *
+ * The cards above ask "where does it live" device by device, which asks the
+ * same question once per device: a home with two watches and two phones draws
+ * six cards to offer eight shapes. A design does not belong to a device, so
+ * the sections are fixed and the devices are a separate tick: pick Rectangular
+ * once, then say who shows it.
+ *
+ * `shared` is the three shapes a watch face and a Lock Screen both draw, which
+ * is why its title changes with the home rather than being a constant.
+ */
+export type ShapeSectionKey = "shared" | "watch" | "home" | "control";
+
+export interface ShapeSection {
+  key: ShapeSectionKey;
+  /** The heading, already worded for this home (see `sectionTitle`). */
+  title: string;
+  /** The device kinds this home draws the section on, watch before iPhone. The
+   * line under the heading reads from it, and so does the title. */
+  kinds: DeviceKind[];
+  /** The shapes offered here, biggest canvas first. Empty for the control
+   * section, which is one tile rather than a set of shapes. */
+  families: FamilyKind[];
+  /** Shapes named but not pickable yet, after the offered ones. */
+  comingSoon: FamilyKind[];
+}
+
+/** Which shapes each section holds. Control holds none: the document has one
+ * control, and it is a tick rather than a shape to design. */
+const SECTION_FAMILIES: Record<ShapeSectionKey, readonly FamilyKind[]> = {
+  shared: SHARED_FAMILIES,
+  watch: ["corner"],
+  home: HOME_FAMILIES,
+  control: [],
+};
+
+/** The order the sections read in: the shapes both devices draw, then the one
+ * only a watch has, then the phone's own screen, then the control. */
+const SECTION_ORDER: readonly ShapeSectionKey[] = ["shared", "watch", "home", "control"];
+
+/** Watch before iPhone, the order every device list in the panel uses. */
+const KIND_ORDER: readonly DeviceKind[] = ["watch", "iphone"];
+
+/**
+ * A section's heading, worded for the devices this home has.
+ *
+ * Only the shared section changes. Its three shapes are a watch face slot and
+ * a Lock Screen slot at once, so a home with both devices has to name both;
+ * naming a screen the home does not have is worse than saying less.
+ */
+export function sectionTitle(key: ShapeSectionKey, kinds: readonly DeviceKind[]): string {
+  switch (key) {
+    case "shared": {
+      const phone = kinds.includes("iphone");
+      if (kinds.includes("watch")) return phone ? "Watch face and Lock Screen" : "Watch face";
+      return phone ? "Lock Screen" : "Watch face";
+    }
+    case "watch": return "Watch face only";
+    case "home": return "Home Screen";
+    case "control": return "Control Center";
+  }
+}
+
+/**
+ * The sections this home is offered, in order.
+ *
+ * A shape is offered when any device in the home draws it, because the tick is
+ * about the design and not about a device: a home with an old phone still
+ * offers Rectangular, and the phone simply is not one of the devices that can
+ * show it (`ownersDrawing`). A section nothing offers and nothing promises is
+ * left out rather than drawn empty, which is what keeps a watch-only home from
+ * being shown a Home Screen heading.
+ */
+export function shapeSections(owners: readonly LinkOwner[]): ShapeSection[] {
+  const sections: ShapeSection[] = [];
+  for (const key of SECTION_ORDER) {
+    const members = SECTION_FAMILIES[key];
+    const holds = (list: readonly FamilyKind[]) => members.some((f) => list.includes(f));
+    // Who the section is about: the devices that draw something in it, or that
+    // have been promised something in it.
+    const drawing = key === "control"
+      ? owners.filter((o) => o.controls)
+      : owners.filter((o) => holds(o.families) || holds(o.comingSoon));
+    if (drawing.length === 0) continue;
+    const families = biggestFirst(members.filter((f) => owners.some((o) => o.families.includes(f))));
+    const comingSoon = biggestFirst(
+      members.filter((f) => !families.includes(f) && owners.some((o) => o.comingSoon.includes(f))),
+    );
+    const kinds = KIND_ORDER.filter((k) => drawing.some((o) => o.kind === k));
+    sections.push({ key, title: sectionTitle(key, kinds), kinds, families, comingSoon });
+  }
+  return sections;
+}
+
+/** The devices that can show this shape, which is what a section's shape row
+ * names under itself and what greys a device's box out. */
+export function ownersDrawing(owners: readonly LinkOwner[], family: FamilyKind): LinkOwner[] {
+  return owners.filter((o) => o.families.includes(family));
+}
+
+/**
+ * The per-device picks behind one set of shapes and one set of devices.
+ *
+ * The dialog now holds two flat sets, the shapes and the ticked devices, and
+ * the save plan still takes picks per device, so this is the join: each ticked
+ * device gets the shapes it can actually draw. A phone ticked for a design that
+ * is corner and nothing else is not an error, it simply draws none of it.
+ *
+ * A device with nothing left gets an empty set rather than no entry, which is
+ * not the same thing: `copyFamilies` reads a missing entry as "no opinion" and
+ * hands that device every shape the others picked.
+ */
+export function picksFromChoice(
+  owners: readonly LinkOwner[],
+  families: ReadonlySet<FamilyKind>,
+  ownerIds: ReadonlySet<string>,
+): Map<string, Set<FamilyKind>> {
+  const picks = new Map<string, Set<FamilyKind>>();
+  for (const owner of owners) {
+    if (!ownerIds.has(owner.ownerId)) continue;
+    picks.set(owner.ownerId, new Set(owner.families.filter((f) => families.has(f))));
+  }
+  return picks;
+}
+
 // ── per-device trimming ───────────────────────────────────────────────────
 
 /**

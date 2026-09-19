@@ -13,10 +13,14 @@ import {
   controlOwners,
   keepPicks,
   linkPlaceCards,
+  ownersDrawing,
   pickedFamilies,
   pickedWords,
+  picksFromChoice,
   rowPicked,
+  sectionTitle,
   setPick,
+  shapeSections,
   sideTitle,
   startFromCopyLine,
   untickCard,
@@ -263,5 +267,112 @@ describe("controlOwners", () => {
     const old: LinkOwner = { ...PHONE, controls: false };
     expect(controlOwners([WATCH, old]).map((o) => o.ownerId)).toEqual(["w1"]);
     expect(controlOwners([WATCH, PHONE]).map((o) => o.ownerId)).toEqual(["w1", "p1"]);
+  });
+});
+
+// The sections replace the per-device cards: four fixed headings for the whole
+// home, with the devices a separate tick. A home with two watches and two
+// phones drew six cards to offer eight shapes.
+describe("shapeSections", () => {
+  const keys = (owners: readonly LinkOwner[]) => shapeSections(owners).map((s) => s.key);
+  const section = (owners: readonly LinkOwner[], key: string) => shapeSections(owners).find((s) => s.key === key)!;
+
+  it("gives a watch and a phone all four sections, shared first", () => {
+    const sections = shapeSections([WATCH, PHONE]);
+    expect(sections.map((s) => [s.key, s.title])).toEqual([
+      ["shared", "Watch face and Lock Screen"],
+      ["watch", "Watch face only"],
+      ["home", "Home Screen"],
+      ["control", "Control Center"],
+    ]);
+    expect(sections[0]!.families).toEqual(["rectangular", "circular", "inline"]);
+    expect(sections[1]!.families).toEqual(["corner"]);
+    expect(sections[2]!.families).toEqual(["large", "medium", "small"]);
+    // The control is a tick, not a set of shapes to design.
+    expect(sections[3]!.families).toEqual([]);
+  });
+
+  it("says which devices draw each section, watch before iPhone", () => {
+    const sections = shapeSections([WATCH, PHONE]);
+    expect(sections.map((s) => s.kinds)).toEqual([["watch", "iphone"], ["watch"], ["iphone"], ["watch", "iphone"]]);
+  });
+
+  // A home with one kind of device is not shown a screen it does not have, and
+  // the shared heading stops naming one.
+  it("calls the shared shapes the Lock Screen in a home with only phones", () => {
+    expect(keys([PHONE])).toEqual(["shared", "home", "control"]);
+    expect(section([PHONE], "shared").title).toBe("Lock Screen");
+    expect(section([PHONE], "shared").kinds).toEqual(["iphone"]);
+  });
+
+  it("calls them the Watch face in a home with only watches, and drops the Home Screen", () => {
+    expect(keys([WATCH])).toEqual(["shared", "watch", "control"]);
+    expect(section([WATCH], "shared").title).toBe("Watch face");
+  });
+
+  it("carries the coming soon shapes under the section that will hold them", () => {
+    expect(section([WATCH, PHONE], "home").comingSoon).toEqual(["xlarge"]);
+    expect(section([WATCH, PHONE], "shared").comingSoon).toEqual([]);
+  });
+
+  it("drops the Home Screen for a phone too old to have one", () => {
+    const old: LinkOwner = { ...PHONE, appVersion: "2.7.0", families: familiesFor({ device_kind: "iphone", app_version: "2.7.0" }), comingSoon: [] };
+    expect(keys([old])).toEqual(["shared", "control"]);
+  });
+
+  it("leaves the control section out when no app in the home draws one", () => {
+    const owners = [{ ...WATCH, controls: false }, { ...PHONE, controls: false }];
+    expect(keys(owners)).toEqual(["shared", "watch", "home"]);
+  });
+
+  it("names the control section after the devices that draw one, not the home", () => {
+    expect(section([WATCH, { ...PHONE, controls: false }], "control").kinds).toEqual(["watch"]);
+  });
+});
+
+describe("ownersDrawing", () => {
+  it("names the devices that can show a shape and nobody else", () => {
+    expect(ownersDrawing([WATCH, PHONE], "rectangular").map((o) => o.ownerId)).toEqual(["w1", "p1"]);
+    expect(ownersDrawing([WATCH, PHONE], "corner").map((o) => o.ownerId)).toEqual(["w1"]);
+    expect(ownersDrawing([WATCH, PHONE], "small").map((o) => o.ownerId)).toEqual(["p1"]);
+  });
+});
+
+describe("picksFromChoice", () => {
+  const chosen = (families: FamilyKind[], ids: string[]) =>
+    picksFromChoice([WATCH, PHONE], new Set(families), new Set(ids));
+
+  it("gives each ticked device the shapes it can actually draw", () => {
+    const p = chosen(["rectangular", "corner", "small"], ["w1", "p1"]);
+    expect([...p.get("w1")!]).toEqual(["rectangular", "corner"]);
+    expect([...p.get("p1")!]).toEqual(["rectangular", "small"]);
+  });
+
+  it("leaves an unticked device out altogether", () => {
+    expect([...chosen(["rectangular"], ["w1"]).keys()]).toEqual(["w1"]);
+  });
+
+  // A control-only complication lands on a device with no shape, and that
+  // device has to say so out loud: a missing entry reads as "no opinion" and
+  // the trimming hands it every shape the others picked.
+  it("gives a device that draws none of them an empty set rather than no entry", () => {
+    const p = chosen(["corner"], ["w1", "p1"]);
+    expect([...p.keys()]).toEqual(["w1", "p1"]);
+    expect([...p.get("p1")!]).toEqual([]);
+    expect([...chosen([], ["p1"]).get("p1")!]).toEqual([]);
+  });
+});
+
+describe("sectionTitle", () => {
+  it("names both screens only when the home has both devices", () => {
+    expect(sectionTitle("shared", ["watch", "iphone"])).toBe("Watch face and Lock Screen");
+    expect(sectionTitle("shared", ["watch"])).toBe("Watch face");
+    expect(sectionTitle("shared", ["iphone"])).toBe("Lock Screen");
+  });
+
+  it("leaves the other three headings alone", () => {
+    expect(sectionTitle("watch", ["watch"])).toBe("Watch face only");
+    expect(sectionTitle("home", ["iphone"])).toBe("Home Screen");
+    expect(sectionTitle("control", ["watch", "iphone"])).toBe("Control Center");
   });
 });
