@@ -2575,7 +2575,11 @@ function glyphWidth(ch: string, fontSize: number): number {
   return (ch === " " ? 0.35 : /[ILJ1.,:;'!|]/.test(ch) ? 0.34 : /[MW]/.test(ch) ? 0.92 : 0.66) * fontSize;
 }
 
-function estimateTextWidth(text: string, fontSize: number): number {
+/** How wide a string is drawn, near enough: the same per-glyph heuristic the
+ * bezel label is typeset with. The shape previews read it to tell whether a
+ * word can fit its layer at all, which is the one kind of clipping the panel
+ * can see without laying the text out. */
+export function estimateTextWidth(text: string, fontSize: number): number {
   let total = 0;
   for (const ch of text) total += glyphWidth(ch, fontSize);
   return total;

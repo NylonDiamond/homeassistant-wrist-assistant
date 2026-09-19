@@ -199,6 +199,7 @@ import {
   syncListAttributes,
   shownCount,
 } from "./editors.js";
+import { loadPreviewHidden, renderShapePreviews, savePreviewHidden, shapePreviewCss, togglePreviewHidden } from "./shapePreviews.js";
 import { sampleListItem, withListSeeds } from "./list-seeds.js";
 import { type PresetEnv, type PresetKind, type PresetSpec, LAYER_PRESETS, applyPreset, presetSpec } from "./presets.js";
 import { type AddVariant, addPreview } from "./add-previews.js";
@@ -1170,6 +1171,13 @@ export class WristAssistantPanel extends LitElement {
    * or when the line is dismissed, so nobody reads it twice.
    */
   @state() private seedHint?: { family: FamilyKind; text: string };
+  /** Shapes whose preview under the canvas is switched off, for the open
+   * complication. Read back out of the browser, never out of the document: see
+   * `loadPreviewHidden`. */
+  @state() private previewHidden: ReadonlySet<FamilyKind> = new Set();
+  /** The complication `previewHidden` was read for, so opening another one
+   * reads its own choice rather than carrying this one over. */
+  private previewHiddenId?: string;
   /**
    * The Control Center tab is the one being edited, in place of a shape.
    *
@@ -3027,6 +3035,14 @@ export class WristAssistantPanel extends LitElement {
     .tab-wrap:hover .tab-x, .tab-wrap .tab-x:focus-visible { opacity: .7; pointer-events: auto; }
     .tab-wrap .tab-x:hover:not(:disabled) { opacity: 1; }
     .tab-wrap .tab-x:disabled { opacity: .2; }
+    /* The preview eye rides beside its tab the same way, and stays put while
+       the preview is off: which shapes are not under the canvas is worth
+       reading off the bar without hunting for it. */
+    .tab-wrap .tab-eye { opacity: 0; pointer-events: none; margin-left: -4px; }
+    .tab-wrap:hover .tab-eye, .tab-wrap .tab-eye:focus-visible,
+    .tab-wrap .tab-eye[aria-pressed="false"]:not(:disabled) { opacity: .7; pointer-events: auto; }
+    .tab-wrap .tab-eye:hover:not(:disabled) { opacity: 1; }
+    .tab-wrap .tab-eye:disabled { opacity: 0; pointer-events: none; }
     /* A control drawn as a box with a muted word inside it, so "Preview as" is
        part of the field rather than a label floating beside it. */
     .inbox {
@@ -3366,6 +3382,7 @@ export class WristAssistantPanel extends LitElement {
       font-size: 12.5px; font-weight: 500; color: var(--wa-ink);
     }
     .seed-hint button.link { font-weight: 600; }
+    ${unsafeCSS(shapePreviewCss())}
     /* The two lists under the face: what the complication defines for itself,
        and what the house is telling it right now. Stacked, so each title and
        each value line gets the whole width instead of wrapping into a column
@@ -4876,6 +4893,13 @@ export class WristAssistantPanel extends LitElement {
     if (changed.has("hass")) {
       const dark = this.hass?.themes?.darkMode ?? window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
       this.toggleAttribute("dark", dark);
+    }
+    // Which previews are switched off is remembered per complication, so the
+    // set is re-read whenever another one is opened.
+    const openId = this.draft?.config.id;
+    if (openId !== this.previewHiddenId) {
+      this.previewHiddenId = openId;
+      this.previewHidden = openId === undefined ? new Set() : loadPreviewHidden(openId);
     }
     // The "copied from" line belongs to the shape that was just added. Moving
     // to another shape is the reader saying they are done with it, so it goes
@@ -11525,6 +11549,7 @@ export class WristAssistantPanel extends LitElement {
           ${isDrawable(family) ? this.renderBigPreview(family, layouts, deviceCase) : this.renderInlinePreview(layouts.inline, false)}
           ${this.renderUnder(cfg, family)}
           ${this.seedHint?.family === family ? seedHintNote(this.seedHint.text, () => { this.seedHint = undefined; }) : nothing}
+          ${this.renderShapeRow(cfg, layouts, deviceCase)}
         </div>
         ${this.zoomed && isDrawable(family) ? this.renderZoomDialog(family, layouts, deviceCase) : nothing}
         ${this.demoing && isDrawable(family) ? this.renderDemoDialog(family, layouts, deviceCase) : nothing}
@@ -11532,6 +11557,36 @@ export class WristAssistantPanel extends LitElement {
       <div class="under-grid">
         ${this.renderValuesRow()}
       </div>`;
+  }
+
+  /**
+   * The other shapes, small and live, under the canvas.
+   *
+   * Everything they need is worked out once here and handed over: the same
+   * resolved layouts the big preview drew from, the same device case, and the
+   * selected layer, so a shape in the row is the same picture at another size
+   * rather than a second resolve that might disagree with the first.
+   */
+  private renderShapeRow(cfg: CustomComplicationConfig, layouts: ResolvedAll, deviceCase: PreviewCase) {
+    return renderShapePreviews({
+      config: cfg,
+      editing: this.activeFamily,
+      order: biggestFirst(this.ownerFamilies),
+      layouts,
+      hidden: this.previewHidden,
+      icons: this.icons,
+      imageSizes: this.imageSizes,
+      phone: deviceKindOf(this.selectedOwner) === "iphone",
+      slotFor: (f) => slotFor(deviceCase, f),
+      inline: () => this.renderInlinePreview(layouts.inline, true),
+      ...(this.inspect.kind === "layer" ? { highlightId: this.inspect.id } : {}),
+      ...(this.previewTint !== undefined ? { tint: this.previewTint } : {}),
+      onEdit: (f) => {
+        this.activeFamily = f;
+        this.controlView = false;
+        if (this.inspect.kind === "layer") this.inspect = { kind: "family" };
+      },
+    });
   }
 
   private renderBigPreview(family: DrawableFamily, layouts: ResolvedAll, deviceCase: PreviewCase) {
@@ -11912,6 +11967,15 @@ export class WristAssistantPanel extends LitElement {
     this.renderRoot.querySelector<HTMLElement>("#add-shapes")?.hidePopover();
   }
 
+  /** A shape tab's eye, pressed: its preview under the canvas goes or comes
+   * back, and the choice is kept in the browser for this complication. */
+  private togglePreview(family: FamilyKind) {
+    const next = togglePreviewHidden(this.previewHidden, family);
+    this.previewHidden = next;
+    const id = this.draft?.config.id;
+    if (id !== undefined) savePreviewHidden(id, next);
+  }
+
   private renderHaveTabs(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
     const have = cfg.supportedFamilies;
     // Biggest canvas first, the way the New dialog lists shapes and the way
@@ -11930,6 +11994,10 @@ export class WristAssistantPanel extends LitElement {
       }
       const empty = f !== "inline" && shownCount(cfg, f) === 0 && cfg.elements.length > 0;
       const removable = this.canEdit && canRemoveFamily(cfg, f);
+      // The shape being edited is the big one on the stage, so its preview
+      // cannot be switched off and its own toggle says so instead of pretending
+      // to be a choice.
+      const previewed = !active && !this.previewHidden.has(f);
       // The remove button sits beside the tab, not inside it: a button inside
       // a button is not valid markup.
       return html`<span class="tab-wrap">
@@ -11938,6 +12006,14 @@ export class WristAssistantPanel extends LitElement {
           <span class="art">${art}</span>
           <span class="lbl">${familyTitle(f)}</span>${empty ? html`<small>nothing shown</small>` : nothing}
         </button>
+        <button class="icon tab-eye" ?disabled=${active} aria-pressed=${previewed ? "true" : "false"}
+          title=${active
+            ? `The ${familyTitle(f)} shape is the one being edited, so it is always shown`
+            : previewed
+              ? `Hide the ${familyTitle(f)} preview under the canvas`
+              : `Show the ${familyTitle(f)} preview under the canvas`}
+          aria-label=${`Show the ${familyTitle(f)} preview`}
+          @click=${(e: Event) => { e.stopPropagation(); this.togglePreview(f); }}>${uiIcon(previewed ? "show" : "hide")}</button>
         ${this.canEdit ? html`<button class="icon danger tab-x" ?disabled=${!removable}
           title=${!removable
             ? "The only shape. Add another before removing it."
