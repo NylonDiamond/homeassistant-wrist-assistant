@@ -83,6 +83,9 @@ _OPTIONAL_DOCUMENT_KEYS: dict[str, type | tuple[type, ...]] = {
     # Kept out of the watch's complication picker; a face already using it
     # keeps drawing it. Writers omit the key when shown.
     "hidden": bool,
+    # Joins the linked copies of one complication across owners (watch and
+    # iPhone). Same uuid on every copy; record ids stay different. Editor-only.
+    "linkId": str,
     # The Inline shape's text; present exactly when supportedFamilies has "inline".
     "inline": dict,
     # The document's Control Center control. The only key that lets
