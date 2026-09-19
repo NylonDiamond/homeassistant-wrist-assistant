@@ -6683,7 +6683,7 @@ export class WristAssistantPanel extends LitElement {
 
   private async save(asNew = false) {
     if (!this.draft || !this.ownerId || !this.canEdit || this.saving) return;
-    if (!asNew && !this.draft.dirty && !this.linkPending) return;
+    if (!asNew && !this.draft.dirty && !this.linkPending && this.draft.baseRevision !== null) return;
     if (!asNew && !this.slotChosen) {
       // Slots are auto-assigned and there is no picker; this only trips when
       // the draft was created with every slot taken.
