@@ -8698,7 +8698,7 @@ export class WristAssistantPanel extends LitElement {
    * year. A dropdown that narrow holds a list and nothing else, so the
    * question a household actually asks here, "which of my devices has this",
    * was answered in one line of small grey text and could not be changed from
-   * the list at all: the author had to open the complication, find "Shows on"
+   * the list at all: the author had to open the complication, find "Appears on"
    * in the inspector, tick a box and save. A card has room for both devices
    * drawn full size and for an Add to button that writes the copy from here.
    *
@@ -9031,7 +9031,7 @@ export class WristAssistantPanel extends LitElement {
   /**
    * Put one complication on another device, written now.
    *
-   * The same path "Shows on" takes, run from a card instead of from the open
+   * The same path "Appears on" takes, run from a card instead of from the open
    * document: the design gains a `linkId` if it has none, and the new device
    * gets a copy of the whole design trimmed to the shapes it can draw. There
    * is no Save button on this surface to hold the write for, which is the
