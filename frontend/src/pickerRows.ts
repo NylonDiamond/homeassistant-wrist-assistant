@@ -55,18 +55,7 @@ export interface PickerListRow<T> {
   open: PickerCopy<T>;
 }
 
-/** One chip above the list. `kind` is absent on the All chip, which stands for
- * no device in particular. */
-export interface PickerChip {
-  key: string;
-  label: string;
-  kind?: DeviceKind;
-}
-
-/** Where this browser remembers which chip was last on. */
-export const PICKER_FILTER_KEY = "wa.picker.filter";
-
-/** The chip key that means every device. */
+/** The filter key that means every device, which is the only view now. */
 export const ALL_DEVICES = "all";
 
 function deviceIndex(devices: readonly PickerDevice[], ownerId: string): number {
@@ -177,38 +166,14 @@ export function pickerView<T>(
 }
 
 /**
- * The chips above the list.
- *
- * A home with one device gets none at all: there is nothing to narrow to, and a
- * row of chips saying "All" and the only device's name is two controls that do
- * the same nothing. A device holding nothing keeps its chip, because it is
- * still somewhere a complication can go and an empty list says that plainly.
- */
-export function pickerDeviceChips(devices: readonly PickerDevice[]): PickerChip[] {
-  if (devices.length < 2) return [];
-  return [
-    { key: ALL_DEVICES, label: "All" },
-    ...devices.map((d) => ({ key: d.ownerId, label: d.label, kind: d.kind })),
-  ];
-}
-
-/**
  * The line under the list.
  *
  * "12 complications" counts the whole home, each linked complication once,
- * because that is how many there are to keep in step. A device chip names the
- * device instead of saying "on this iPhone": with every device in one list, the
- * word "this" has stopped pointing at anything.
+ * because that is how many there are to keep in step. No device is named: with
+ * every device in one list there is no "this iPhone" to point at. (Device chips
+ * that narrowed the list existed for one evening, 2026-09-19, and went; the row
+ * icons say where each complication lives.)
  */
-export function pickerFootText(count: number, deviceLabel?: string): string {
-  if (deviceLabel === undefined) return `${count} complication${count === 1 ? "" : "s"}`;
-  return `${count} on ${deviceLabel}`;
-}
-
-/** The chip to start on: the one this browser remembers, unless that device
- * has gone from the home or there are no chips to show. */
-export function pickerFilterFor(saved: string | null | undefined, devices: readonly PickerDevice[]): string {
-  if (saved === null || saved === undefined || saved === ALL_DEVICES) return ALL_DEVICES;
-  if (devices.length < 2) return ALL_DEVICES;
-  return devices.some((d) => d.ownerId === saved) ? saved : ALL_DEVICES;
+export function pickerFootText(count: number): string {
+  return `${count} complication${count === 1 ? "" : "s"}`;
 }

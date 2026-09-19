@@ -185,9 +185,6 @@ import {
   type PickerDevice,
   type PickerListRow,
   ALL_DEVICES,
-  PICKER_FILTER_KEY,
-  pickerDeviceChips,
-  pickerFilterFor,
   pickerFootText,
   pickerListRows,
   pickerView,
@@ -1093,15 +1090,6 @@ export class WristAssistantPanel extends LitElement {
    * only state a short list ever has: the filter header only appears once the
    * list is long enough to be worth narrowing. Per session, never saved. */
   @state() private pickerFilter: FamilyKind | "all" = "all";
-  /**
-   * The device chip the list is narrowed to, or `all`.
-   *
-   * Remembered in this browser, because a household with a watch and a phone
-   * usually works on one of them for a while. It is checked against the devices
-   * this home still has on every render, so a chip left on a device that has
-   * gone falls back to All rather than showing an empty list with no reason.
-   */
-  @state() private pickerDevice: string = ALL_DEVICES;
   /** The key of the locked picker row whose explanation is unfolded. A tap
    * shows it inline because a hover title never appears on a touch screen. */
   @state() private pickerNote?: string;
@@ -1956,13 +1944,6 @@ export class WristAssistantPanel extends LitElement {
       width: min(560px, calc(100vw - 24px)); max-height: 74vh; padding: 0; overflow: hidden;
       display: grid; grid-template-columns: minmax(0, 1fr);
     }
-    /* A device chip: the glyph for what it is, then its name. It carries no
-       count, because a per-device count is what made one linked complication
-       read as two. */
-    .pk-devchips .pk-chip { gap: 6px; }
-    .pk-chip-ico { display: grid; place-items: center; flex: none; }
-    .pk-chip-ico svg { width: 14px; height: 14px; display: block; }
-    .pk-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 168px; }
     .pk-comps { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
     .pk-comps .pk-filter { margin-bottom: 0; padding: 10px 12px; }
     .pk-rows { flex: 1; min-height: 0; overflow: auto; padding: 8px; }
@@ -4768,7 +4749,6 @@ export class WristAssistantPanel extends LitElement {
   override connectedCallback() {
     super.connectedCallback();
     this.clearLegacyPickerHidden();
-    this.loadPickerDevice();
     this.loadColumnWidths();
     this.loadListView();
     this.loadGrid();
@@ -8542,40 +8522,6 @@ export class WristAssistantPanel extends LitElement {
    * No count on a chip: a per-device count is what said a linked complication
    * was two complications, which is the reading this list exists to end.
    */
-  private renderPickerDeviceChips(filter: string) {
-    const chips = pickerDeviceChips(this.pickerDevices());
-    if (chips.length === 0) return nothing;
-    return html`<div class="pk-filter pk-devchips">
-      ${chips.map((c) => html`<button
-        class="pk-chip ${filter === c.key ? "on" : ""}"
-        aria-pressed=${filter === c.key ? "true" : "false"}
-        @click=${() => this.pickDeviceChip(c.key)}>
-        ${c.kind ? html`<span class="pk-chip-ico">${uiIcon(c.kind === "iphone" ? "phone" : "watch")}</span>` : nothing}
-        <span class="pk-chip-name">${c.label}</span>
-      </button>`)}
-    </div>`;
-  }
-
-  /** Narrow the list to one device, and remember it for the next time this
-   * browser opens the picker. */
-  private pickDeviceChip(key: string) {
-    this.pickerDevice = key;
-    this.pickerConfirmDelete = undefined;
-    try {
-      if (key === ALL_DEVICES) window.localStorage.removeItem(PICKER_FILTER_KEY);
-      else window.localStorage.setItem(PICKER_FILTER_KEY, key);
-    } catch {
-      // A private window, or site data blocked. The chip still works for this
-      // session; it just is not remembered.
-    }
-  }
-
-  /** The chip the list is on: the remembered one, unless that device has gone
-   * from the home or there is only one device to show. */
-  private get pickerDeviceFilter(): string {
-    return pickerFilterFor(this.pickerDevice, this.pickerDevices());
-  }
-
   /** The shapes the chips offer: every shape any device in this home draws, so
    * one list holding a watch and a phone can still be narrowed to either
    * one's. */
@@ -8630,15 +8576,22 @@ export class WristAssistantPanel extends LitElement {
     const d = this.draft;
     const name = d ? (d.config.name.trim() || "Untitled") : "No complication";
     const families = d ? d.config.supportedFamilies : [];
-    const owner = this.selectedOwner;
+    // The devices the open complication is on: every linked owner, else the
+    // edited device. A linked complication has no single device, so the header
+    // names them all and shows one glyph per kind.
+    const onIds = this.linkOwnerIds.length > 0 ? this.linkOwnerIds : (this.ownerId ? [this.ownerId] : []);
+    const onOwners = onIds.map((id) => this.ownerOf(id)).filter((o): o is OwnerSummary => o !== undefined);
+    const kinds = [...new Set(onOwners.map((o) => deviceKindOf(o) === "iphone" ? "phone" : "watch"))];
+    if (kinds.length === 0) kinds.push(deviceKindOf(this.selectedOwner) === "iphone" ? "phone" : "watch");
+    const where = onOwners.length > 0 ? joinNames(onOwners.map((o) => ownerLabel(o))) : "No device";
     // The revision is not shown here: it meant nothing to anyone reading the
     // list. The inspector's summary still carries it.
     return html`<div class="picker">
       <button id="wa-picker" class="pk-open" aria-haspopup="dialog" aria-expanded=${this.pickerOpen ? "true" : "false"}
         title="Choose a complication" @click=${() => this.togglePicker()}>
-        <span class="pk-open-ico">${uiIcon(deviceKindOf(owner) === "iphone" ? "phone" : "watch")}</span>
+        <span class="pk-open-ico">${kinds.map((k) => uiIcon(k))}</span>
         <span class="pk-open-lines">
-          <span class="pk-open-dev">${owner ? ownerLabel(owner) : "No device"}</span>
+          <span class="pk-open-dev">${where}</span>
           <span class="pk-open-row">
             <span class="pk-name">${name}</span>
             ${d && d.baseRevision === null ? html`<span class="pk-rev">unsaved</span>` : nothing}
@@ -8668,8 +8621,10 @@ export class WristAssistantPanel extends LitElement {
     const name = d ? (d.config.name.trim() || "Untitled") : "No complication";
     const families = d ? d.config.supportedFamilies : [];
     const devices = this.pickerDevices();
-    const device = this.pickerDeviceFilter;
-    const all = pickerView(this.pickerRows(), devices, device);
+    // Every device in one list, always. The row icons say where each one lives,
+    // and the shape chips and the text filter narrow it; a device chip row was
+    // the old sidebar in a new coat (dropped 2026-09-19).
+    const all = pickerView(this.pickerRows(), devices, ALL_DEVICES);
     const filter = this.pickerFilter;
     const rows = filter === "all"
       ? all
@@ -8681,15 +8636,13 @@ export class WristAssistantPanel extends LitElement {
       (row) => row.open.item.kind === "record" ? { id: row.open.id, hidden: this.rowHidden(row.open.item.record) } : undefined,
       this.selectedId,
     );
-    const deviceLabel = device === ALL_DEVICES ? undefined : devices.find((dev) => dev.ownerId === device)?.label;
     return html`<div class="pk-comps">
-      ${this.renderPickerDeviceChips(device)}
       ${!this.ownerBusy && all.length >= WristAssistantPanel.FILTER_FROM_ROWS ? this.renderPickerFilter(all) : nothing}
       <div class="pk-rows">
         ${this.ownerBusy
           ? html`<div class="empty">Loading…</div>`
           : html`${all.length === 0 && !(d && d.baseRevision === null)
-            ? html`<div class="empty">${deviceLabel === undefined ? "No complications yet." : `Nothing on ${deviceLabel} yet.`}</div>`
+            ? html`<div class="empty">No complications yet.</div>`
             : nothing}
             ${all.length > 0 && rows.length === 0 ? html`<div class="empty">Nothing here has a ${filter === "all" ? "" : familyTitle(filter)} shape.</div>` : nothing}
             ${split.shown.map((row) => this.renderPickerRow(row))}
@@ -8703,7 +8656,7 @@ export class WristAssistantPanel extends LitElement {
                 <div class="pk-note">These do not show in their device's own list of complications. A face or widget that already has one keeps it.</div>
                 ${split.hidden.map((row) => this.renderPickerRow(row))}` : nothing}` : nothing}`}
       </div>
-      ${this.renderPickerFoot(all.filter((row) => row.open.item.kind === "record").length, deviceLabel)}
+      ${this.renderPickerFoot(all.filter((row) => row.open.item.kind === "record").length)}
     </div>`;
   }
 
@@ -8713,14 +8666,14 @@ export class WristAssistantPanel extends LitElement {
    * The count is saved complications only, never the locked seats the list also
    * draws, and a linked complication counts once: it is one complication, which
    * is the whole of why this list has no device folders in it. */
-  private renderPickerFoot(count: number, deviceLabel?: string) {
+  private renderPickerFoot(count: number) {
     if (!this.hass.user?.is_admin) return nothing;
     // The seats being counted are the edited device's: that is where New puts
     // a complication, and the dialog is where another device is chosen.
     const full = this.freeSlot() < 0;
     const where = this.selectedOwner ? ownerLabel(this.selectedOwner) : "This device";
     return html`<div class="pk-foot">
-      <span class="pk-foot-hint">${this.ownerBusy ? nothing : pickerFootText(count, deviceLabel)}</span>
+      <span class="pk-foot-hint">${this.ownerBusy ? nothing : pickerFootText(count)}</span>
       <button type="button" class="new-btn primary" ?disabled=${full || this.ownerBusy}
         title=${full ? `${where} has no free slot. Delete a complication first.` : "Make a new complication"}
         @click=${() => this.newFromPicker()}>${uiIcon("plus")}<span>New</span></button>
@@ -8860,16 +8813,6 @@ export class WristAssistantPanel extends LitElement {
       this.saveError = errText(err);
     } finally {
       this.saving = false;
-    }
-  }
-
-  /** The device chip this browser was last left on. Checked against the home's
-   * devices at render, so nothing here has to care whether it still exists. */
-  private loadPickerDevice() {
-    try {
-      this.pickerDevice = window.localStorage.getItem(PICKER_FILTER_KEY) ?? ALL_DEVICES;
-    } catch {
-      // A private window, or site data blocked: the list opens on All.
     }
   }
 

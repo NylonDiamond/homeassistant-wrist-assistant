@@ -1,7 +1,7 @@
 // The picker lists every complication this home holds in one list, with the
 // copies of a linked complication collapsed to one row. These are the pure
-// parts of that: what the rows are, what order they come in, which ones a
-// device chip keeps, and what the line under them says.
+// parts of that: what the rows are, what order they come in, and what the line
+// under them says.
 
 import { describe, expect, it } from "vitest";
 
@@ -9,9 +9,6 @@ import {
   ALL_DEVICES,
   type PickerCopy,
   type PickerDevice,
-  PICKER_FILTER_KEY,
-  pickerDeviceChips,
-  pickerFilterFor,
   pickerFootText,
   pickerListRows,
   pickerView,
@@ -185,59 +182,10 @@ describe("pickerView", () => {
   });
 });
 
-describe("pickerDeviceChips", () => {
-  it("leads with All and names every device after it", () => {
-    expect(pickerDeviceChips(devices)).toEqual([
-      { key: "all", label: "All" },
-      { key: "w1", label: "Chen", kind: "watch" },
-      { key: "w2", label: "Jesse Apple Watch", kind: "watch" },
-      { key: "p1", label: "iPhone 15 Pro", kind: "iphone" },
-    ]);
-  });
-
-  // One device is nothing to filter, so the row of chips is not drawn at all.
-  it("has no chips for a home with one device or none", () => {
-    expect(pickerDeviceChips([watch])).toEqual([]);
-    expect(pickerDeviceChips([])).toEqual([]);
-  });
-});
-
 describe("pickerFootText", () => {
-  it("counts the home under All", () => {
+  it("counts the home, each linked complication once", () => {
     expect(pickerFootText(12)).toBe("12 complications");
     expect(pickerFootText(1)).toBe("1 complication");
     expect(pickerFootText(0)).toBe("0 complications");
-  });
-
-  // "on this iPhone" stopped pointing at anything once every device shared one
-  // list, so the device is named.
-  it("names the device under a chip", () => {
-    expect(pickerFootText(5, "iPhone 15 Pro")).toBe("5 on iPhone 15 Pro");
-    expect(pickerFootText(1, "Chen")).toBe("1 on Chen");
-  });
-});
-
-describe("pickerFilterFor", () => {
-  it("remembers a device this home still has", () => {
-    expect(pickerFilterFor("p1", devices)).toBe("p1");
-  });
-
-  it("falls back to All for a device that has gone", () => {
-    expect(pickerFilterFor("gone", devices)).toBe(ALL_DEVICES);
-  });
-
-  it("falls back to All when there is nothing stored", () => {
-    expect(pickerFilterFor(null, devices)).toBe(ALL_DEVICES);
-    expect(pickerFilterFor(undefined, devices)).toBe(ALL_DEVICES);
-  });
-
-  // A home that is down to one device draws no chips, so a remembered one
-  // would narrow the list with nothing on screen saying why.
-  it("falls back to All for a home with one device", () => {
-    expect(pickerFilterFor("w1", [watch])).toBe(ALL_DEVICES);
-  });
-
-  it("names the key this browser remembers the chip under", () => {
-    expect(PICKER_FILTER_KEY).toBe("wa.picker.filter");
   });
 });
