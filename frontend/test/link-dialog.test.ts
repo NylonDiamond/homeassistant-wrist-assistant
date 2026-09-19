@@ -13,10 +13,14 @@ import {
   keepPicks,
   libraryComingSoon,
   libraryFamilies,
+  movedStatus,
   moveTargets,
   newReady,
   newSummary,
   ownersDrawing,
+  saveMoves,
+  showsOnCount,
+  showsOnNote,
   pickedFamilies,
   picksFromChoice,
   sectionTitle,
@@ -367,5 +371,59 @@ describe("moveTargets", () => {
     const out = moveTargets(ticked);
     out.push("p1");
     expect(ticked).toEqual(["w1"]);
+  });
+});
+
+describe("saveMoves", () => {
+  // The panel reads this twice: to enable Save on an untick that changed no
+  // layer, and to pick the save path once Save is pressed. Both have to agree.
+  it("leaves a design where it is while its own device is ticked", () => {
+    expect(saveMoves("w1", ["w1"])).toBe(false);
+    expect(saveMoves("w1", ["w1", "p1"])).toBe(false);
+  });
+
+  it("moves a design whose own device has been unticked", () => {
+    expect(saveMoves("w1", ["p1"])).toBe(true);
+    expect(saveMoves("w1", [])).toBe(true);
+  });
+
+  // The other direction: a design open on the shelf that has been given a
+  // device is leaving the shelf.
+  it("moves a design out of the library as soon as a device is ticked", () => {
+    expect(saveMoves(LIBRARY_OWNER_ID, [])).toBe(false);
+    expect(saveMoves(LIBRARY_OWNER_ID, ["w1"])).toBe(true);
+  });
+});
+
+describe("showsOnCount and showsOnNote", () => {
+  it("counts the ticks over the devices that could be ticked", () => {
+    expect(showsOnCount(1, 2)).toBe("1 of 2 devices");
+    expect(showsOnCount(2, 2)).toBe("2 of 2 devices");
+  });
+
+  // A home with one device is shown the list now, because clearing its single
+  // box means something, so the line has to read in the singular.
+  it("says device rather than devices when the home offers one", () => {
+    expect(showsOnCount(0, 1)).toBe("0 of 1 device");
+    expect(showsOnCount(1, 1)).toBe("1 of 1 device");
+  });
+
+  it("says where a design with nothing ticked is, and nothing otherwise", () => {
+    expect(showsOnNote(0)).toBe("In the library. No device shows it until you tick one.");
+    expect(showsOnNote(1)).toBeUndefined();
+  });
+});
+
+describe("movedStatus", () => {
+  it("names the library rather than counting devices", () => {
+    expect(movedStatus(["Library"], true))
+      .toBe("Moved to the library. No device shows it until you tick one under Appears on.");
+  });
+
+  it("names the devices a design landed on, and says the copy is on its way", () => {
+    expect(movedStatus(["Jesse Apple Watch"], false))
+      .toBe("Now on Jesse Apple Watch. It arrives there on the next sync.");
+    expect(movedStatus(["Jesse Apple Watch", "Jesse's iPhone"], false))
+      .toBe("Now on Jesse Apple Watch and Jesse's iPhone. They arrive there on the next sync.");
   });
 });

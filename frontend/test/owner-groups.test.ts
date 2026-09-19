@@ -70,6 +70,22 @@ describe("ownerGroups", () => {
     expect(ownerGroups([])).toEqual([]);
   });
 
+  // The library is not a device. Counted among the watches it would both be
+  // misnamed and sort ahead of every phone in every list that reads this
+  // order, the picker's and the link save's included.
+  it("puts the library last and on its own", () => {
+    const groups = ownerGroups([
+      owner({ owner_watch_id: "library", device_kind: "library", device_name: "Library" }),
+      owner({ owner_watch_id: "p1", device_kind: "iphone" }),
+      owner({ owner_watch_id: "w1" }),
+    ]);
+    expect(groups.map((g) => g.label)).toEqual(["Watch", "iPhone", "Library"]);
+    expect(ownersByKind([
+      owner({ owner_watch_id: "library", device_kind: "library", device_name: "Library" }),
+      owner({ owner_watch_id: "w1" }),
+    ]).map((o) => o.owner_watch_id)).toEqual(["w1", "library"]);
+  });
+
   // The header's own order comes from these groups now, so the two can never
   // disagree about where a phone sits.
   it("agrees with the flat order the rest of the panel uses", () => {
