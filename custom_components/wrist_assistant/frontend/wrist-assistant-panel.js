@@ -3401,9 +3401,9 @@ ${dI(c)}`}}delete s.hidden,delete s.linkId;let l=Ll(a);if(l.length>0){let d=l.sl
        three rows in it is three rows tall and the room it does not need goes
        to the Layers card. A basis of zero with grow, or a max-content cap,
        both measured the card at its labels alone and folded it (measured
-       2026-09-19). When the cap bites, the presets box gives way three
-       times faster than the elements box, so the two end up near the same
-       height instead of the bigger one keeping most of the room. */
+       2026-09-19). The elements box is capped at about two rows of Large
+       so the presets box, the one people browse, keeps most of the room
+       when the card is full. */
     .column.left .card.add-card[data-open="true"] {
       flex: 0 1 auto; min-height: 0; max-height: calc(66% - 150px);
       display: flex; flex-direction: column;
@@ -3412,9 +3412,9 @@ ${dI(c)}`}}delete s.hidden,delete s.linkId;let l=Ll(a);if(l.length>0){let d=l.sl
     .column.left .card.add-card[data-open="true"] > .add-group:has(.add-scroll) {
       flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column;
     }
-    .column.left .card.add-card[data-open="true"] > .add-group:has(.add-scroll:not(.short)) { flex-shrink: 3; }
     .column.left .card.add-card[data-open="true"] > .add-group:has(.add-scroll) > .presets-head { flex: none; }
     .column.left .card.add-card[data-open="true"] .add-scroll { flex: 0 1 auto; min-height: 0; max-height: none; }
+    .column.left .card.add-card[data-open="true"] .add-scroll.short { max-height: 18vh; }
     .layout.cols-1 .column.left .card.add-card[data-open="true"] { max-height: none; display: block; }
     .layout.cols-1 .column.left .card.add-card[data-open="true"] .add-scroll { max-height: 30vh; }
     /* The elements are twelve, not twenty-five: their scroller is capped at
