@@ -11,6 +11,7 @@ import {
   type PickerDevice,
   type PickerPerson,
   isPersonFilter,
+  isShelvedRow,
   personFilter,
   pickerCountText,
   pickerListRows,
@@ -20,6 +21,7 @@ import {
   rowsOnDevice,
   sortPickerRows,
 } from "../src/pickerRows.js";
+import { LIBRARY_OWNER_ID } from "../src/version.js";
 
 const watch: PickerDevice = { ownerId: "w1", label: "Chen", kind: "watch" };
 const watch2: PickerDevice = { ownerId: "w2", label: "Jesse Apple Watch", kind: "watch" };
@@ -264,5 +266,42 @@ describe("rowWhoText", () => {
   // A watch this home no longer lists belongs to nobody, so it names nobody.
   it("ignores an id that is not any of these people's", () => {
     expect(rowWhoText(["w1", "gone"], people)).toBe("Chen (watch)");
+  });
+
+  // On nothing and in the library are both "on no device", and they are not
+  // the same news: one is a design waiting on the shelf.
+  it("names the library when that is the only place a design is", () => {
+    expect(rowWhoText([LIBRARY_OWNER_ID], people)).toBe("In the library, on no device");
+  });
+
+  // The library is not somebody's, so it is never printed beside a person. A
+  // design that somehow has both reads as being on the device.
+  it("says nothing about the library beside a person who has a copy", () => {
+    expect(rowWhoText([LIBRARY_OWNER_ID, "w1"], people)).toBe("Chen (watch)");
+  });
+});
+
+describe("the library in the picker's rows", () => {
+  const shelf = (over: Partial<PickerCopy<string>> = {}) =>
+    copy({ ownerId: LIBRARY_OWNER_ID, id: "lib", ...over });
+
+  it("calls a row shelved only when every copy of it is on the shelf", () => {
+    const [only] = pickerListRows([shelf({ linkId: "L1" })], devices);
+    expect(isShelvedRow(only!)).toBe(true);
+    const [both] = pickerListRows([shelf({ linkId: "L1" }), copy({ ownerId: "w1", id: "a", linkId: "L1" })], devices);
+    expect(isShelvedRow(both!)).toBe(false);
+    const [device] = pickerListRows([copy({ ownerId: "w1", id: "a" })], devices);
+    expect(isShelvedRow(device!)).toBe(false);
+  });
+
+  // A design nobody has yet belongs to nobody, so hiding it behind a person's
+  // chip would mean the only way to see the shelf is to clear the filter.
+  it("shows a shelved row under whichever person's chip is on", () => {
+    const rows = pickerListRows([
+      shelf({ name: "Draft" }),
+      copy({ ownerId: "w1", id: "a", name: "Porch" }),
+    ], devices);
+    expect(rowsOfPeople(rows, ["w1"]).map((r) => r.name)).toEqual(["Draft", "Porch"]);
+    expect(rowsOfPeople(rows, ["p1"]).map((r) => r.name)).toEqual(["Draft"]);
   });
 });

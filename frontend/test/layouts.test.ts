@@ -69,9 +69,33 @@ describe("familiesFor", () => {
     expect(familiesFor(NEW_PHONE).includes("xlarge")).toBe(XLARGE_OFFERED);
   });
 
+  // The library is not a device and draws nothing, so nothing narrows it: it
+  // holds whatever a newest watch and a newest phone draw between them, which
+  // is every shape the panel offers at all.
+  it("gives the library every shape a watch and a phone draw between them", () => {
+    const expected = [...WATCH_SHAPES, "small", "medium", "large"];
+    expect(familiesFor({ device_kind: "library" })).toEqual(
+      XLARGE_OFFERED ? [...expected, "xlarge"] : expected,
+    );
+  });
+
+  it("narrows the library by neither the version nor the absence of one", () => {
+    const every = familiesFor({ device_kind: "library" });
+    expect(familiesFor({ device_kind: "library", app_version: "1.0.0" })).toEqual(every);
+    expect(familiesFor({ device_kind: "library", app_version: null })).toEqual(every);
+    // The id alone is enough, which is what an older reply would carry.
+    expect(familiesFor({ owner_watch_id: "library" })).toEqual(every);
+  });
+
+  it("gives the library the union of what the two newest devices draw", () => {
+    const both = new Set([...familiesFor({ device_kind: "watch" }), ...familiesFor(NEW_PHONE)]);
+    expect(familiesFor({ device_kind: "library" })).toEqual(ALL_FAMILIES.filter((f) => both.has(f)));
+  });
+
   it("does not change the shared list it filters", () => {
     familiesFor({ device_kind: "iphone" });
     familiesFor({ device_kind: "watch" });
+    familiesFor({ device_kind: "library" });
     expect(ALL_FAMILIES).toEqual([...WATCH_SHAPES, "small", "medium", "large", "xlarge"]);
   });
 
@@ -362,6 +386,15 @@ describe("comingSoonFamilies", () => {
 
   it("promises nothing to a phone too old for the Home Screen", () => {
     expect(comingSoonFamilies({ device_kind: "iphone", app_version: "2.7.0" })).toEqual([]);
+  });
+
+  // A shape coming to any device in the home is coming to the shelf, since the
+  // shelf holds a design for all of them.
+  it("promises the library whatever the newest phone is promised", () => {
+    expect(comingSoonFamilies({ device_kind: "library" })).toEqual(comingSoonFamilies(NEW_PHONE));
+    expect(comingSoonFamilies({ device_kind: "library", app_version: null })).toEqual(
+      XLARGE_OFFERED ? [] : ["xlarge"],
+    );
   });
 });
 

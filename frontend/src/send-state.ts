@@ -15,6 +15,12 @@
 // sent machine, on a longer clock, and Refresh now sends the push again by
 // hand. The exception is a phone the server holds no push token for: that one
 // still only syncs when someone opens the app.
+//
+// The Library is outside all of it. It is the home's shelf rather than a
+// device, so nothing polls it, nothing is pushed to it and nothing ever acks:
+// a save to it is finished the moment the store has it. It gets a state of its
+// own rather than a borrowed "sent", because every word of the sent chip is
+// about a device confirming, and there is no device.
 
 import type { DeviceKind } from "./version.js";
 
@@ -64,6 +70,8 @@ export type SendState =
    * the store. Nothing here can wake it, so the only true thing to say is what
    * makes it arrive. */
   | { kind: "openApp" }
+  /** The home's Library, which is not waiting for anything. */
+  | { kind: "library" }
   | { kind: "offline" };
 
 /** How long a save or a tap waits for the watch's ack before giving up. */
@@ -74,12 +82,16 @@ export const SEND_WAIT_MS = 10_000;
  * the app has to wake in the background before it can pull. */
 export const PHONE_SEND_WAIT_MS = 20_000;
 
-/** How long to wait for this owner's ack. */
+/** How long to wait for this owner's ack. Zero for the Library: there is
+ * nothing to wait for, so a wait of any length would only be a spinner that
+ * resolves to the same thing it started at. */
 export function sendWaitMs(deviceKind?: DeviceKind | null): number {
+  if (deviceKind === "library") return 0;
   return deviceKind === "iphone" ? PHONE_SEND_WAIT_MS : SEND_WAIT_MS;
 }
 
 export function sendState(i: SendInputs): SendState {
+  if (i.deviceKind === "library") return { kind: "library" };
   if (i.deviceKind === "iphone") return iphoneSendState(i);
   if (i.appliedToken === undefined) return { kind: "unsupported" };
   if (i.token === i.appliedToken) {
@@ -194,6 +206,14 @@ export function describeSend(
       return {
         label: "Open Wrist Assistant on your iPhone to sync",
         title: "This iPhone has no push token yet. Open Wrist Assistant on it once.",
+        resend: false,
+        refresh: false,
+      };
+    case "library":
+      return {
+        label: "Saved to the library.",
+        title:
+          "The library is where a design waits until it is put on something. Nothing is sent anywhere until you tick a device under Appears on.",
         resend: false,
         refresh: false,
       };

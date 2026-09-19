@@ -4633,6 +4633,11 @@ function controlSection(host: EditorHost, spec: ControlSpec): TemplateResult {
  * empty.
  */
 export function controlCard(host: EditorHost, opts: { alwaysOpen?: boolean } = {}): TemplateResult | typeof nothing {
+  // The host carries a version, not an owner, which is enough for the one
+  // owner that has no version at all: the home's Library reports null, and a
+  // version that has not been reported reads as new enough. So a design on the
+  // shelf keeps its control card and takes the control with it onto whichever
+  // device it is later ticked for.
   if (!deviceSupportsControls(host.watchAppVersion)) return nothing;
   const spec = host.config.control;
   if (spec === undefined) return nothing;

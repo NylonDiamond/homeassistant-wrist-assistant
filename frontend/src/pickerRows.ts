@@ -14,7 +14,7 @@
 // read off the devices and says which rows they make, in what order, and what
 // the line under them says.
 
-import type { DeviceKind } from "./version.js";
+import { LIBRARY_OWNER_ID, type DeviceKind } from "./version.js";
 
 /** One device, as the list knows it: the id its copies carry, the name the
  * chips and tooltips call it, and which glyph stands for it. */
@@ -117,16 +117,31 @@ export function rowsOnDevice<T>(rows: readonly PickerListRow<T>[], ownerId: stri
 }
 
 /**
+ * Whether every copy of this row sits in the home's library.
+ *
+ * That is a design on no device at all: the library is the home's shelf, not
+ * somebody's watch. It reads differently in two places, the line under a card's
+ * name and the person chips, so the question is asked once here.
+ */
+export function isShelvedRow<T>(row: PickerListRow<T>): boolean {
+  return row.copies.length > 0 && row.copies.every((c) => c.ownerId === LIBRARY_OWNER_ID);
+}
+
+/**
  * The rows one person has, over the devices that are theirs.
  *
  * What the person chips above the list narrow to. A complication on somebody's
  * watch and somebody's phone is one row and answers to that one person once,
  * which is the reading a per-device chip could never give: a linked row would
  * have answered to two chips and looked like two complications again.
+ *
+ * A design in the library answers to every chip, because it belongs to nobody:
+ * filing it under one person would be a guess, and filing it under none would
+ * mean the shelf can only be seen with the chips cleared.
  */
 export function rowsOfPeople<T>(rows: readonly PickerListRow<T>[], ownerIds: readonly string[]): PickerListRow<T>[] {
   const want = new Set(ownerIds);
-  return rows.filter((row) => row.copies.some((c) => want.has(c.ownerId)));
+  return rows.filter((row) => isShelvedRow(row) || row.copies.some((c) => want.has(c.ownerId)));
 }
 
 /** What a person chip's filter key looks like, so the shape chips and the
@@ -234,6 +249,11 @@ function deviceWord(kind: DeviceKind): string {
  * A person with none of the copies is left out rather than printed empty, and
  * a complication on nothing at all says so in words: an empty line would read
  * as a card that failed to load.
+ *
+ * A design in the library is on nothing too, and says which nothing it is: it
+ * is waiting on the home's shelf rather than half made. The library is never
+ * named beside a person, so a design that somehow has both a device copy and a
+ * shelf copy reads as being on the device.
  */
 export function rowWhoText(ownerIds: readonly string[], people: readonly PickerPerson[]): string {
   const on = new Set(ownerIds);
@@ -243,5 +263,6 @@ export function rowWhoText(ownerIds: readonly string[], people: readonly PickerP
     if (mine.length === 0) continue;
     parts.push(`${person.label} (${mine.map((d) => deviceWord(d.kind)).join(", ")})`);
   }
-  return parts.length === 0 ? "On no device yet" : parts.join(" · ");
+  if (parts.length > 0) return parts.join(" · ");
+  return on.has(LIBRARY_OWNER_ID) ? "In the library, on no device" : "On no device yet";
 }

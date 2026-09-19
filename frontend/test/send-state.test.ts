@@ -212,6 +212,38 @@ describe("the Refresh now flag", () => {
   });
 });
 
+describe("the library", () => {
+  // Not a device: nothing polls it, nothing is pushed to it and nothing ever
+  // acks, so a save to it is finished the moment the store has it.
+  it("is saved and done, whatever the tokens say", () => {
+    for (const over of [{}, { token: 6, appliedToken: 5 }, { appliedToken: undefined }, { pending: true }, { polling: false }]) {
+      expect(sendState(inputs({ deviceKind: "library", ...over }))).toEqual({ kind: "library" });
+    }
+  });
+
+  it("says where it went and offers neither Resend nor Refresh", () => {
+    const d = describeSend({ kind: "library" });
+    expect(d.label).toBe("Saved to the library.");
+    expect(d.note).toBeUndefined();
+    expect(d.resend).toBe(false);
+    expect(d.refresh).toBe(false);
+  });
+
+  // A wait of any length would be a spinner resolving to what it started at.
+  it("waits for nothing", () => {
+    expect(sendWaitMs("library")).toBe(0);
+  });
+
+  // Every word of the sending, waiting and sent chips is about a device
+  // confirming, so none of them may be borrowed here.
+  it("never reads as sending, waiting or on a device", () => {
+    const d = describeSend({ kind: "library" });
+    for (const word of ["watch", "iPhone", "phone", "Sending", "sync"]) {
+      expect(d.label).not.toContain(word);
+    }
+  });
+});
+
 describe("agoWords", () => {
   it("rounds down to one unit, and calls anything under a minute just now", () => {
     expect(agoWords(0)).toBe("just now");
