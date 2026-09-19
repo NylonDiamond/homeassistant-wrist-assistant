@@ -2676,37 +2676,31 @@ export class WristAssistantPanel extends LitElement {
       max-height: 30vh; overflow-y: auto; overscroll-behavior: contain;
       padding: 3px; margin: 3px -3px 0; scrollbar-width: thin;
     }
-    /* The vh caps above and below are the fallback for the stacked layout,
-       where the column has no height of its own. In three columns the open
-       add card is sized instead: it may take at most half the column less
-       the room the Pages and Shared values cards need, so the Layers card,
-       the one the design is edited in, keeps at least half of the column
-       whatever the card size (a third is its hard floor, below). */
-    /* The boxes start at their content and shrink, never grow: a box with
-       three rows in it is three rows tall and the room it does not need goes
-       to the Layers card. A basis of zero with grow, or a max-content cap,
-       both measured the card at its labels alone and folded it (measured
-       2026-09-19). The elements box is capped at about two rows of Large
-       so the presets box, the one people browse, keeps most of the room
-       when the card is full. */
+    /* In three columns the Layers card is the star: the add card is a fixed
+       small helping and Layers takes everything else. Both boxes get one
+       cap, a share of the window so they scale with it, and a box whose
+       content is shorter than the cap is only as tall as its content. The
+       same cap for both keeps the two boxes level in Names, Small and Large.
+       A basis of zero with grow, a max-content cap, and a card-level
+       max-height with per-box shrinking were all tried on 2026-09-19 and
+       either folded the card to its labels or starved one box; a plain cap
+       per box is the one that measured right. The card and its groups can
+       still shrink as a last resort when the Layers floor and the cards
+       below leave no room. */
     .column.left .card.add-card[data-open="true"] {
-      flex: 0 1 auto; min-height: 0; max-height: calc(50% - 150px);
-      display: flex; flex-direction: column;
+      flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column;
     }
     .column.left .card.add-card[data-open="true"] > * { flex: none; }
     .column.left .card.add-card[data-open="true"] > .add-group:has(.add-scroll) {
       flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column;
     }
     .column.left .card.add-card[data-open="true"] > .add-group:has(.add-scroll) > .presets-head { flex: none; }
-    .column.left .card.add-card[data-open="true"] .add-scroll { flex: 0 1 auto; min-height: 0; max-height: none; }
-    .column.left .card.add-card[data-open="true"] .add-scroll.short { max-height: 13vh; }
-    /* The capped elements box keeps its cap rather than shrinking with the
-       presets box, otherwise the cap shrinks with the rest. */
-    .column.left .card.add-card[data-open="true"] > .add-group:has(.add-scroll.short) { flex-shrink: 0; }
-    .layout.cols-1 .column.left .card.add-card[data-open="true"] { max-height: none; display: block; }
+    .column.left .card.add-card[data-open="true"] .add-scroll { flex: 0 1 auto; min-height: 0; max-height: 12vh; }
+    .layout.cols-1 .column.left .card.add-card[data-open="true"] { display: block; }
     .layout.cols-1 .column.left .card.add-card[data-open="true"] .add-scroll { max-height: 30vh; }
-    /* The elements are twelve, not twenty-five: their scroller is capped at
-       about two rows so the presets under it are not pushed off the screen. */
+    /* Stacked, the elements are twelve, not twenty-five: their scroller is
+       capped at about two rows so the presets under it are not pushed off
+       the screen. */
     .add-scroll.short { max-height: 18vh; }
     .layout.cols-1 .column.left .card.add-card[data-open="true"] .add-scroll.short { max-height: 18vh; }
     .add-scroll::-webkit-scrollbar { width: 8px; }
