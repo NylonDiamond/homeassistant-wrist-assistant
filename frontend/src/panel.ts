@@ -142,6 +142,7 @@ import {
   type LinkPicks,
   type LinkRecordLike,
   type LinkSaveRow,
+  type LinkWrite,
   type LinkedCopy,
   type ShapeSection,
   copyForOwner,
@@ -151,18 +152,23 @@ import {
   linkedCopies,
   linkedSaveStatus,
   mergeLinkedContent,
+  movedStatus,
+  moveTargets,
   newReady,
   newSummary,
   ownersDrawing,
   picksFromChoice,
   picksFromCopies,
   planLinkedSave,
+  saveMoves,
   shapeSections,
+  showsOnCount,
+  showsOnNote,
 } from "./linking.js";
 import { type Person, deviceShortName, peopleNames, peopleOf, personOf } from "./people.js";
 import { type DevicesOn, type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, designDeviceArt, deviceShapeArt, shapeArtKinds } from "./shapeArt.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
-import { type DeviceOwnerLike, deviceKindOf, deviceNoun, deviceSupportsControls, deviceSupportsShapes, updateDeviceMessage } from "./version.js";
+import { type DeviceKind, type DeviceOwnerLike, LIBRARY_OWNER_ID, deviceKindOf, deviceNoun, deviceSupportsShapes, isLibraryOwner, ownerSupportsControls, updateDeviceMessage } from "./version.js";
 import { type LinkMergeNotice, autoLinkMerge } from "./linkMerge.js";
 import { makeIconProvider } from "./icons.js";
 import { makeImageSizeProvider } from "./image-sizes.js";
@@ -186,6 +192,7 @@ import {
   pickerView,
   rowWhoText,
   rowsOfPeople,
+  isShelvedRow,
 } from "./pickerRows.js";
 
 /** Where an older panel kept hidden picker rows, per watch, in this browser.
@@ -2188,6 +2195,10 @@ export class WristAssistantPanel extends LitElement {
     .shows-box .pick-tick { position: static; flex: none; }
     .shows-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .shows-note { font-size: 11px; color: var(--wa-muted); }
+    /* Where a design with nothing ticked actually is. Drawn under the boxes in
+       both places, in the quiet ink the counts use: it is a fact about the
+       answer, not a warning about it. */
+    .shows-shelf { font-size: 11.5px; color: var(--wa-muted); }
     .merge-with { display: inline-flex; margin-top: 2px; }
     /* Across the top of the canvas card: the same boxes as pills, grouped by
        person on the card's own white, wrapping on a narrow window so a
@@ -4189,6 +4200,9 @@ export class WristAssistantPanel extends LitElement {
     /* A phone that has not pulled yet reads the same as a watch that is not
        listening: something to do, not something wrong. */
     .send.openApp { color: var(--warning-color, #ffa600); }
+    /* Nothing is on its way anywhere, and nothing is wrong: a plain fact in
+       the quiet ink, neither the green of an ack nor the amber of a warning. */
+    .send.library { color: var(--wa-muted); }
     /* "last seen 2 h ago" beside a green tick. Muted, because the tick is
        still true: the change is on the watch, and this only says the watch
        stopped listening afterwards. */
@@ -5777,15 +5791,29 @@ export class WristAssistantPanel extends LitElement {
     // has not been saved yet is not one of them.
     this.linkLeave = new Set();
     if (cfg.linkId === undefined) {
-      this.linkOwnerIds = this.ownerId ? [this.ownerId] : [];
+      this.linkOwnerIds = this.openDeviceIds();
       this.linkPicks = new Map();
       return;
     }
     const copies = linkedCopies(this.allLinkRecords(), cfg.linkId);
     const order = ownersByKind(this.owners).map((o) => o.owner_watch_id);
-    const ids = copies.map((c) => c.ownerId).sort((a, b) => order.indexOf(a) - order.indexOf(b));
-    this.linkOwnerIds = ids.length > 0 ? ids : this.ownerId ? [this.ownerId] : [];
+    // Devices only. "Appears on" is a list of devices, and the Library is the
+    // answer to none of them being ticked rather than one more box: a design
+    // opened off the shelf starts with nothing ticked, which is exactly what
+    // it is.
+    const ids = copies
+      .map((c) => c.ownerId)
+      .filter((id) => id !== LIBRARY_OWNER_ID)
+      .sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    this.linkOwnerIds = ids.length > 0 ? ids : this.openDeviceIds();
     this.linkPicks = picksFromCopies(copies);
+  }
+
+  /** The device being edited, as the one-device tick list a complication with
+   * no copies elsewhere starts from. Empty while the Library is what is open,
+   * since the shelf is never a tick. */
+  private openDeviceIds(): string[] {
+    return this.ownerId && this.ownerId !== LIBRARY_OWNER_ID ? [this.ownerId] : [];
   }
 
   /**
@@ -5798,23 +5826,36 @@ export class WristAssistantPanel extends LitElement {
    * Unticking one is work too, the copy being deleted on the next save.
    * Without this the Save button would read "Saved" with a copy still to write
    * or still to remove.
+   *
+   * A save that has to move the record counts too, and counts first: unticking
+   * the device being edited changes nothing about the document, but it does
+   * mean the next Save writes the design somewhere else and deletes it here.
    */
   private get linkPending(): boolean {
     if (this.linkLeave.size > 0) return true;
     const cfg = this.draft?.config;
-    if (!cfg || cfg.linkId === undefined || this.linkOwnerIds.length < 2) return false;
+    if (!cfg || !this.ownerId) return false;
+    if (saveMoves(this.ownerId, this.linkOwnerIds)) return true;
+    if (cfg.linkId === undefined || this.linkOwnerIds.length < 2) return false;
     const have = new Set(linkedCopies(this.allLinkRecords(), cfg.linkId).map((c) => c.ownerId));
     return this.linkOwnerIds.some((id) => !have.has(id));
   }
 
-  /** The devices a save writes to: the ones the link names, in picker order,
-   * each as the dialog reads a device. A device that has gone missing from the
-   * home is left out rather than written to. */
+  /**
+   * The places a save writes to: the ticked devices, or the home's Library
+   * when none of them is ticked, each as the dialog reads an owner.
+   *
+   * `moveTargets` is the rule, and this is where the panel obeys it. A device
+   * that has gone missing from the home is left out rather than written to;
+   * an integration older than the Library sends no shelf row at all, so a
+   * design with nothing ticked falls back to the device being edited, which
+   * is what the panel did before the shelf existed.
+   */
   private linkTargetOwners(): LinkOwner[] {
-    const ids = this.linkOwnerIds.length > 0 ? this.linkOwnerIds : this.ownerId ? [this.ownerId] : [];
-    return ownersByKind(this.owners)
-      .filter((o) => ids.includes(o.owner_watch_id))
-      .map((o) => this.linkOwnerOf(o));
+    const ids = moveTargets(this.linkOwnerIds);
+    const rows = ownersByKind(this.owners).filter((o) => ids.includes(o.owner_watch_id));
+    const chosen = rows.length > 0 ? rows : this.owners.filter((o) => o.owner_watch_id === this.ownerId);
+    return chosen.map((o) => this.linkOwnerOf(o));
   }
 
   /**
@@ -5896,6 +5937,15 @@ export class WristAssistantPanel extends LitElement {
    * longer: its push is debounced, delivered by APNs, and only then pulled. */
   private beginSendWait() {
     if (this.sendTimer !== undefined) window.clearTimeout(this.sendTimer);
+    const wait = sendWaitMs(this.selectedOwner?.device_kind);
+    // The library is not waiting for anything. Nothing polls it, nothing is
+    // pushed to it and nothing ever acks, so a wait of any length would be a
+    // spinner that resolves to exactly where it started.
+    if (wait === 0) {
+      this.sendTimer = undefined;
+      this.sendPending = false;
+      return;
+    }
     this.sendPending = true;
     this.sendTimer = window.setTimeout(() => {
       this.sendTimer = undefined;
@@ -5903,7 +5953,7 @@ export class WristAssistantPanel extends LitElement {
       // The watch may have stopped polling meanwhile; refresh so the button
       // says "not connected" rather than offering a wake that goes nowhere.
       void this.loadRecords();
-    }, sendWaitMs(this.selectedOwner?.device_kind));
+    }, wait);
   }
 
   private endSendWait() {
@@ -6395,7 +6445,7 @@ export class WristAssistantPanel extends LitElement {
   private get inControlView(): boolean {
     const cfg = this.draft?.config;
     if (cfg?.control === undefined) return false;
-    if (!deviceSupportsControls(this.selectedOwner?.app_version)) return false;
+    if (!ownerSupportsControls(this.selectedOwner)) return false;
     if (controlOnly(cfg)) return true;
     return this.controlView && this.inspect.kind === "general";
   }
@@ -6529,7 +6579,7 @@ export class WristAssistantPanel extends LitElement {
   private addControl() {
     const cfg = this.draft?.config;
     if (!cfg || cfg.control !== undefined) return;
-    if (!deviceSupportsControls(this.selectedOwner?.app_version)) return;
+    if (!ownerSupportsControls(this.selectedOwner)) return;
     this.mutate((c) => { setControlShown(c, true); });
     this.openControlView();
   }
@@ -6561,25 +6611,30 @@ export class WristAssistantPanel extends LitElement {
    * complication ticked for someone else's watch alone is not built on this one
    * and then saved elsewhere. Moving the editor there can be refused (a dirty
    * draft the author chose to keep), and then nothing is created at all.
+   *
+   * Nothing ticked is an answer of its own: the design is made in the home's
+   * Library, which is a real place rather than a device borrowed for the
+   * afternoon. It is written there on the first Save and waits until a device
+   * is ticked for it under "Appears on".
    */
   private async createNew() {
     const name = this.newName.trim();
     if (name === "" || this.newNameProblem() !== undefined) return;
     const all = this.linkOwners();
-    // Nothing ticked is an answer: the draft is made on the device being
-    // edited and nothing is written until Save, so a design can be built
-    // first and handed out from Appears on later.
     const chosen = all.filter((o) => this.newOwners.has(o.ownerId));
-    const ticked = chosen.length > 0 ? chosen : all.filter((o) => o.ownerId === this.ownerId);
+    // Where it is being made, which is the same rule every save follows.
+    const ticked = this.linkOwnersFor(moveTargets(chosen.map((o) => o.ownerId)));
     if (ticked.length === 0) return;
     // Biggest first, so the shape the author lands on is the one worth drawing
     // first: the rest are trimmed down from it, never grown out of it. A shape
     // no ticked device draws is dropped rather than carried: the sections offer
-    // every shape the home has, and the devices are a separate tick.
+    // every shape the home has, and the devices are a separate tick. The
+    // library draws every shape there is, so a design made there keeps them
+    // all until a device is ticked and the copy is trimmed for it.
     const families = biggestFirst([...this.newFamilies].filter((f) => ownersDrawing(ticked, f).length > 0));
     if (families.length === 0 && !this.newControl) return;
     const owners = ticked.map((o) => o.ownerId);
-    const picks = picksFromChoice(all, new Set(families), new Set(owners));
+    const picks = picksFromChoice(ticked, new Set(families), new Set(owners));
     this.closeNewDialog();
     if (owners[0] !== this.ownerId) {
       await this.selectOwner(owners[0]!);
@@ -6598,7 +6653,10 @@ export class WristAssistantPanel extends LitElement {
     for (const family of families) {
       if (isHomeFamily(family)) seedFamilyFromSibling(config, family);
     }
-    this.linkOwnerIds = owners;
+    // "Appears on" is a list of devices, so the library never appears in it: a
+    // design made on the shelf starts with every box clear, which is what it
+    // is. Ticking one from there moves it off the shelf at the next save.
+    this.linkOwnerIds = chosen.map((o) => o.ownerId);
     this.linkPicks = picks;
     if (!this.startNew(config)) return;
     // The author asked for a control, so its tab is the one up on arrival and
@@ -6649,6 +6707,14 @@ export class WristAssistantPanel extends LitElement {
         // on this device alone until somebody links it themselves.
         delete cfg.linkId;
         draft = new Draft(cfg, null);
+      }
+      // Save a copy always lands here, on this device, whatever is ticked: it
+      // is a new complication rather than another copy of this one.
+      if (!asNew && saveMoves(this.ownerId, this.linkOwnerIds)) {
+        // The device being edited is not one of the places this design goes
+        // any more, so the record has to move rather than be written over.
+        await this.saveMoved(draft, leaving);
+        return;
       }
       const result = draft.config.linkId !== undefined && this.linkTargetOwners().length > 1
         ? await this.saveLinked(draft, asNew)
@@ -6707,44 +6773,21 @@ export class WristAssistantPanel extends LitElement {
     const cfg = draft.config;
     const linkId = cfg.linkId;
     if (!this.ownerId || linkId === undefined) return undefined;
-    // Fresh lists: a seat taken on another device since the panel last looked
-    // is the whole reason for planning before writing.
-    await this.loadOtherLists();
-    const byOwner = new Map(linkedCopies(this.allLinkRecords(), linkId).map((c) => [c.ownerId, c]));
-    // A complication joined by "Merge with..." does not carry the link yet, so
-    // its record is named here instead. Without it the save would write a
-    // second complication on that device and leave the first behind.
-    for (const [ownerId, copy] of this.linkAdopt) if (!byOwner.has(ownerId)) byOwner.set(ownerId, copy);
     const owners = this.linkTargetOwners();
-    // A device that did not answer just now has no list, so nothing here knows
-    // which seats it has taken. Writing anyway would put this copy in a seat
-    // something else already holds, so the save waits instead.
-    const silent = owners.filter((o) => o.ownerId !== this.ownerId && !this.otherLists.has(o.ownerId));
-    if (silent.length > 0) {
-      this.saveError = `${joinNames(silent.map((o) => o.label))} could not be read just now, so nothing was saved. Try again in a moment.`;
-      return undefined;
-    }
-    const plan = planLinkedSave(
-      cfg,
-      owners.map((owner) => ({ owner, copy: byOwner.get(owner.ownerId), usedSlots: this.usedSlotsOn(owner.ownerId) })),
-      this.linkPicks,
-      { ownerId: this.ownerId, baseRevision: asNew ? null : draft.baseRevision },
-    );
-    if (!plan.ok) {
-      this.saveError = plan.message;
-      return undefined;
-    }
-    const mine = plan.writes.find((w) => w.ownerId === this.ownerId);
-    const others = plan.writes.filter((w) => w.ownerId !== this.ownerId);
+    const writes = await this.planCopies(cfg, owners, linkId, {
+      ownerId: this.ownerId,
+      baseRevision: asNew ? null : draft.baseRevision,
+    });
+    if (writes === undefined) return undefined;
+    const mine = writes.find((w) => w.ownerId === this.ownerId);
+    const others = writes.filter((w) => w.ownerId !== this.ownerId);
     if (!mine) return undefined;
-    const send = (write: typeof mine) =>
-      saveRecord(this.hass, write.ownerId, new Draft(copyForOwner(cfg, write, linkId), null).encoded(), write.baseRevision);
-    const result = await send(mine);
+    const result = await this.sendCopy(cfg, mine, linkId);
     if (!result.ok || !result.record) return result;
     const rows: LinkSaveRow[] = [];
     for (const write of others) {
       try {
-        const other = await send(write);
+        const other = await this.sendCopy(cfg, write, linkId);
         rows.push(other.ok
           ? { label: write.label, state: "waiting" }
           : { label: write.label, state: "failed", message: other.message ?? other.error ?? "the save failed" });
@@ -6768,6 +6811,145 @@ export class WristAssistantPanel extends LitElement {
     this.linkAdopt = new Map();
     this.readLink(cfg);
     return result;
+  }
+
+  /**
+   * Work out every copy a save is about to write, over lists read just now.
+   *
+   * The half the two multi-copy paths share: the ordinary linked save, which
+   * keeps the open record where it is, and the move, which writes the design
+   * somewhere else and then takes the open record away. Both refuse for the
+   * same two reasons, so both refuse in the same words, and both plan before
+   * they write anything: finding out halfway through that a device has no seat
+   * leaves the watch saved and the phone not, with nothing to undo it with.
+   *
+   * Undefined means refused, with `saveError` already saying why.
+   */
+  private async planCopies(
+    cfg: CustomComplicationConfig,
+    owners: readonly LinkOwner[],
+    linkId: string | undefined,
+    primary: { ownerId: string; baseRevision: number | null },
+  ): Promise<LinkWrite[] | undefined> {
+    // Fresh lists: a seat taken on another device since the panel last looked
+    // is the whole reason for planning before writing.
+    await this.loadOtherLists();
+    // A design with no link has no copies to find, so every target is a place
+    // it has not been before.
+    const stored = linkId === undefined ? [] : linkedCopies(this.allLinkRecords(), linkId);
+    const byOwner = new Map(stored.map((c) => [c.ownerId, c]));
+    // A complication joined by "Merge with..." does not carry the link yet, so
+    // its record is named here instead. Without it the save would write a
+    // second complication on that device and leave the first behind.
+    for (const [ownerId, copy] of this.linkAdopt) if (!byOwner.has(ownerId)) byOwner.set(ownerId, copy);
+    // A device that did not answer just now has no list, so nothing here knows
+    // which seats it has taken. Writing anyway would put this copy in a seat
+    // something else already holds, so the save waits instead.
+    const silent = owners.filter((o) => o.ownerId !== this.ownerId && !this.otherLists.has(o.ownerId));
+    if (silent.length > 0) {
+      this.saveError = `${joinNames(silent.map((o) => o.label))} could not be read just now, so nothing was saved. Try again in a moment.`;
+      return undefined;
+    }
+    const plan = planLinkedSave(
+      cfg,
+      owners.map((owner) => ({ owner, copy: byOwner.get(owner.ownerId), usedSlots: this.usedSlotsOn(owner.ownerId) })),
+      this.linkPicks,
+      primary,
+    );
+    if (!plan.ok) {
+      this.saveError = plan.message;
+      return undefined;
+    }
+    return plan.writes;
+  }
+
+  /** Write one copy of the design, as the owner it is going to wants it:
+   * trimmed to the shapes that owner carries, wearing that copy's identity. */
+  private sendCopy(cfg: CustomComplicationConfig, write: LinkWrite, linkId: string | undefined) {
+    return saveRecord(this.hass, write.ownerId, new Draft(copyForOwner(cfg, write, linkId), null).encoded(), write.baseRevision);
+  }
+
+  /**
+   * Save a design that is leaving the owner it was opened on.
+   *
+   * The device being edited was unticked in "Appears on", or a design that was
+   * sitting in the Library was given a device. Either way a record cannot be
+   * handed from one owner to another (the store keys every record by its
+   * owner), so this writes the design where it is going and deletes it where
+   * it was, in that order and never the other: until the new copies exist, the
+   * open record is the only copy there is.
+   *
+   * Nothing is deleted at all if any write is refused. The design is then on
+   * both sides for a moment, which is untidy and safe; pressing Save again
+   * finds the copies it wrote by their link and updates them rather than
+   * writing a second set.
+   *
+   * The editor follows the design to its new home, so what was on screen a
+   * moment ago is still on screen and still being edited.
+   */
+  private async saveMoved(draft: Draft, leaving: readonly LinkedCopy[]) {
+    const cfg = draft.config;
+    if (!this.ownerId) return;
+    const owners = this.linkTargetOwners();
+    if (owners.length === 0) return;
+    // A design that was never linked becomes one here when it is landing in
+    // more than one place, its own id standing as the link exactly as
+    // `joinLink` makes it: the copies this writes have to be findable as
+    // copies of each other afterwards. A design moving to a single place needs
+    // no link and is not given one, so it can still be merged with something
+    // later.
+    const linkId = cfg.linkId ?? (owners.length > 1 ? cfg.id : undefined);
+    // Nothing is the primary. Every target either keeps the copy it already
+    // has or gets a fresh id, and the open record's revision means nothing to
+    // any of them.
+    const writes = await this.planCopies(cfg, owners, linkId, { ownerId: "", baseRevision: null });
+    if (writes === undefined) return;
+    const failed: string[] = [];
+    for (const write of writes) {
+      try {
+        const out = await this.sendCopy(cfg, write, linkId);
+        if (!out.ok) failed.push(`${write.label}: ${out.message ?? out.error ?? "the save failed"}`);
+      } catch (err) {
+        failed.push(`${write.label}: ${errText(err)}`);
+      }
+    }
+    if (failed.length > 0) {
+      this.saveError = `${failed.join(". ")}. Nothing was removed from ${this.ownerName(this.ownerId)}, so try again.`;
+      return;
+    }
+    // The design is written where it is going, so the copies it is leaving can
+    // go: the devices that were unticked, and then the open record itself. A
+    // draft that was never saved has no record to delete. The banner is
+    // cleared first, so whatever it says afterwards is about this save.
+    this.linkStatus = undefined;
+    await this.dropLeftCopies(leaving);
+    if (draft.baseRevision !== null) {
+      try {
+        const gone = await deleteRecord(this.hass, this.ownerId, cfg.id, draft.baseRevision);
+        if (!gone.ok) {
+          this.saveError = `The design was written to ${joinNames(writes.map((w) => w.label))}, but the copy on ${this.ownerName(this.ownerId)} could not be removed: ${gone.message ?? gone.error ?? "the delete failed"}. Delete it from its own row in the picker.`;
+        }
+      } catch (err) {
+        this.saveError = `The design was written to ${joinNames(writes.map((w) => w.label))}, but the copy on ${this.ownerName(this.ownerId)} could not be removed: ${errText(err)}. Delete it from its own row in the picker.`;
+      }
+    }
+    // Follow the design. Both banners are read off first and put back after,
+    // because opening a record clears them and what they say happened is still
+    // true; the draft goes first too, so the owner switch has no unsaved work
+    // to ask about: it was just saved, somewhere else.
+    const landing = writes[0]!;
+    const said = this.saveError;
+    const kept = this.linkStatus;
+    const moved = movedStatus(writes.map((w) => w.label), landing.ownerId === LIBRARY_OWNER_ID);
+    this.linkAdopt = new Map();
+    this.linkLeave = new Set();
+    this.clearDraft();
+    this.selectedId = undefined;
+    await this.selectOwner(landing.ownerId);
+    const arrived = this.records.find((r) => r.id === landing.id);
+    if (arrived) this.openRecord(arrived);
+    this.saveError = said;
+    this.linkStatus = kept === undefined ? moved : `${moved} ${kept}`;
   }
 
   private async deleteCurrent() {
@@ -7750,6 +7932,7 @@ export class WristAssistantPanel extends LitElement {
     ];
     const saving: [string, string][] = [
       ["Save", `Writes the complication to Home Assistant (${m}S). A new one says Save new until then. Only an administrator can save.`],
+      ["Library", "A design with no device ticked is kept in the library. Nothing shows it until you tick a device under Appears on, and unticking every device puts it back."],
       ["The dot", "Beside Save: unsaved changes, saved, or not saved yet. The footer says the same in words."],
       ["Reaching the watch", "The watch pulls saved changes by itself while Wrist Assistant is open on this home. There is no separate send step."],
       ["Hide", "The eye beside a complication in the list. It stops the watch offering that complication when you edit a face, and faces already using it keep it. Hidden ones fold into Hidden at the bottom of the list. For the open complication it saves with Save; for any other it saves at once."],
@@ -8869,13 +9052,15 @@ export class WristAssistantPanel extends LitElement {
    */
   /** The shapes the chips offer: every shape any device in this home draws, so
    * one list holding a watch and a phone can still be narrowed to either
-   * one's. */
+   * one's. The Library is left out, because it holds every shape there is: a
+   * watch-only home would be offered Home Screen chips that can only ever
+   * come up empty. */
   private get pickerFamilies(): FamilyKind[] {
     const out: FamilyKind[] = [];
     const add = (families: readonly FamilyKind[]) => {
       for (const f of families) if (!out.includes(f)) out.push(f);
     };
-    for (const owner of ownersByKind(this.owners)) add(familiesFor(owner));
+    for (const owner of ownersByKind(this.owners)) if (!isLibraryOwner(owner)) add(familiesFor(owner));
     if (out.length === 0) add(familiesFor(this.selectedOwner));
     return out;
   }
@@ -8931,6 +9116,9 @@ export class WristAssistantPanel extends LitElement {
     const people = peopleOf(this.owners);
     const onIds = this.linkOwnerIds.length > 0 ? this.linkOwnerIds : (this.ownerId ? [this.ownerId] : []);
     const who = people.length > 1 ? joinNames(peopleNames(people, onIds)) : "";
+    // A design on the shelf belongs to nobody, so it is named by its place
+    // instead, in every home however many people are in it.
+    const shelved = this.linkOwnerIds.length === 0 && isLibraryOwner(this.selectedOwner);
     // The revision is not shown here: it meant nothing to anyone reading the
     // list. The inspector's summary still carries it.
     return html`<div class="picker">
@@ -8941,7 +9129,9 @@ export class WristAssistantPanel extends LitElement {
             <span class="pk-name">${name}</span>
             ${d && d.baseRevision === null ? html`<span class="pk-rev">unsaved</span>` : nothing}
           </span>
-          ${who === "" ? nothing : html`<span class="pk-open-who">on ${who}</span>`}
+          ${shelved
+            ? html`<span class="pk-open-who">in the library</span>`
+            : who === "" ? nothing : html`<span class="pk-open-who">on ${who}</span>`}
         </span>
         ${this.shapeDots(families, d?.config.control !== undefined)}
         <span class="pk-open-all">Browse all</span>
@@ -9229,7 +9419,7 @@ export class WristAssistantPanel extends LitElement {
     const noSeat = !ticked && seats.full;
     const label = this.showsOnName(owner.ownerId, person);
     const title = editing
-      ? "This is the copy you are editing. Delete removes the complication from every device."
+      ? "This is the copy you are editing. Untick it under Appears on to move the design, or Delete to remove it from every device."
       : noSeat
         ? `${owner.label} has no free seat (iPhone presets count too). Delete a complication on it first.`
         : ticked
@@ -9312,6 +9502,11 @@ export class WristAssistantPanel extends LitElement {
    * The open complication goes through the editor's own tick and its own Save
    * instead. It has a draft in front of it, and writing the stored document
    * behind that draft's back would move the revision under unsaved work.
+   *
+   * A design that was sitting in the library is given a device rather than
+   * gaining a second home, so its shelf copy goes once the device's copy has
+   * landed. Nothing links the two: the design moves, and a link with one copy
+   * in it would only be a word for a thing that no longer happened.
    */
   private async addRowCopy(row: PickerRow, owner: LinkOwner) {
     if (!this.hass.user?.is_admin || this.saving) return;
@@ -9324,6 +9519,9 @@ export class WristAssistantPanel extends LitElement {
     const source = row.open;
     if (source.item.kind !== "record" || !source.item.record.document) return;
     const record = source.item.record;
+    // The shelf copies this write replaces, which is every copy of a design
+    // that is on nothing else.
+    const shelved = isShelvedRow(row) ? row.copies.filter((c) => c.item.kind === "record") : [];
     this.saving = true;
     this.saveError = undefined;
     try {
@@ -9335,19 +9533,23 @@ export class WristAssistantPanel extends LitElement {
       if (linkId === undefined) {
         // A complication on one device carries no link. Stamping one on the
         // copy that already exists is what makes the pair one design rather
-        // than two complications that happen to share a name.
+        // than two complications that happen to share a name. A shelf copy on
+        // its way out is not stamped: it would be a round trip that can only
+        // fail, on a record that is about to be deleted.
         linkId = newId();
-        const stamped = await saveRecord(
-          this.hass,
-          source.ownerId,
-          { ...(record.document as Record<string, unknown>), linkId },
-          record.revision,
-        );
-        if (!stamped.ok) {
-          this.saveError = stamped.error === "conflict"
-            ? `${row.name} changed on the server. Open the picker again and retry.`
-            : stamped.message ?? stamped.error ?? "Save failed";
-          return;
+        if (shelved.length === 0) {
+          const stamped = await saveRecord(
+            this.hass,
+            source.ownerId,
+            { ...(record.document as Record<string, unknown>), linkId },
+            record.revision,
+          );
+          if (!stamped.ok) {
+            this.saveError = stamped.error === "conflict"
+              ? `${row.name} changed on the server. Open the picker again and retry.`
+              : stamped.message ?? stamped.error ?? "Save failed";
+            return;
+          }
         }
       }
       // The plan reads the design's shapes, its control and its id; the link
@@ -9374,8 +9576,16 @@ export class WristAssistantPanel extends LitElement {
         this.saveError = result.message ?? result.error ?? "Save failed";
         return;
       }
-      this.linkStatus = `${row.name} is on ${owner.label} now. It arrives there on the next sync.`;
-      await this.reloadAfterRowWrite(write.ownerId, source.ownerId);
+      // The device has it, so the shelf can let it go. This order and never
+      // the other: until the device's copy exists, the shelf's is the only
+      // copy there is.
+      const failed = await this.dropRowCopies(shelved);
+      this.linkStatus = shelved.length === 0
+        ? `${row.name} is on ${owner.label} now. It arrives there on the next sync.`
+        : failed.length > 0
+          ? `${row.name} is on ${owner.label} now, but its copy in the library could not be removed. Delete it from its own row.`
+          : `${row.name} is on ${owner.label} now, and out of the library. It arrives there on the next sync.`;
+      await this.reloadAfterRowWrite(write.ownerId, source.ownerId, LIBRARY_OWNER_ID);
     } catch (err) {
       this.saveError = errText(err);
     } finally {
@@ -9389,7 +9599,14 @@ export class WristAssistantPanel extends LitElement {
    * One copy only, never the link: that is what Delete on the card is for, and
    * Delete says plainly that it removes the complication from every device.
    * The copy the editor has open is refused here as well as being unclickable,
-   * since a slow list could offer it after the selection moved.
+   * since a slow list could offer it after the selection moved. Unticking the
+   * open copy is "Appears on"'s job, where the save moves the design and takes
+   * the editor with it; doing the same from a card would have to move the
+   * editor out from under an open dialog.
+   *
+   * The last device's copy is a move rather than a removal. A design taken off
+   * everything is not a design deleted, it is one back in the library, so the
+   * shelf copy is written first and the device's copy goes after it.
    */
   private async removeRowCopy(row: PickerRow, ownerId: string) {
     if (!this.hass.user?.is_admin || this.saving) return;
@@ -9397,21 +9614,86 @@ export class WristAssistantPanel extends LitElement {
     const copy = row.copies.find((c) => c.ownerId === ownerId && c.item.kind === "record");
     if (!copy || copy.item.kind !== "record") return;
     const record = copy.item.record;
+    // Whether this is the design's last home. A copy already in the library
+    // counts as one, so a design that somehow has both is simply tidied.
+    const left = row.copies.filter((c) => c.item.kind === "record" && c.ownerId !== ownerId);
+    const shelf = left.length === 0 ? this.libraryOwner() : undefined;
     this.saving = true;
     this.saveError = undefined;
     try {
+      if (shelf) {
+        const kept = await this.shelveRowCopy(row, record, ownerId, shelf);
+        if (!kept) return;
+      }
       const result = await deleteRecord(this.hass, ownerId, record.id, record.revision);
       if (!result.ok) {
         this.saveError = result.message ?? result.error ?? "Delete failed";
         return;
       }
-      this.linkStatus = `${row.name} is off ${this.ownerName(ownerId)}. A face or widget already using it keeps it.`;
-      await this.reloadAfterRowWrite(ownerId);
+      this.linkStatus = shelf
+        ? `${row.name} is off ${this.ownerName(ownerId)} and back in the library. A face or widget already using it keeps it.`
+        : `${row.name} is off ${this.ownerName(ownerId)}. A face or widget already using it keeps it.`;
+      await this.reloadAfterRowWrite(ownerId, LIBRARY_OWNER_ID);
     } catch (err) {
       this.saveError = errText(err);
     } finally {
       this.saving = false;
     }
+  }
+
+  /**
+   * Write a copy of one picker row's design into the library, before the last
+   * device's copy of it goes.
+   *
+   * The same plan every other write goes through, so the shelf gets a free
+   * seat of its own and a refusal names it. False means nothing was written
+   * and `saveError` says why, which stops the delete that was going to follow.
+   */
+  private async shelveRowCopy(row: PickerRow, record: ComplicationRecord, ownerId: string, shelf: LinkOwner): Promise<boolean> {
+    try {
+      await this.loadOtherLists();
+      const cfg = this.mergedLinkView(parseConfig(record.document));
+      const plan = planLinkedSave(
+        cfg,
+        [{ owner: shelf, usedSlots: this.usedSlotsOn(shelf.ownerId) }],
+        // The shelf carries every shape, so nothing here narrows it: this copy
+        // is the whole design, waiting for a device to be trimmed for.
+        new Map(),
+        { ownerId: "", baseRevision: null },
+      );
+      if (!plan.ok) {
+        this.saveError = plan.message;
+        return false;
+      }
+      const write = plan.writes[0];
+      if (!write) return false;
+      const doc = new Draft(copyForOwner(cfg, write, cfg.linkId), null).encoded();
+      const out = await saveRecord(this.hass, write.ownerId, doc, null);
+      if (!out.ok) {
+        this.saveError = `${row.name} could not be put in the library, so it is still on ${this.ownerName(ownerId)}: ${out.message ?? out.error ?? "the save failed"}`;
+        return false;
+      }
+      return true;
+    } catch (err) {
+      this.saveError = errText(err);
+      return false;
+    }
+  }
+
+  /** Delete a set of picker copies, and say which would not go. Used where a
+   * design has moved and the copies it left behind have to follow. */
+  private async dropRowCopies(copies: readonly PickerCopy<PickerItem>[]): Promise<string[]> {
+    const failed: string[] = [];
+    for (const copy of copies) {
+      if (copy.item.kind !== "record") continue;
+      try {
+        const out = await deleteRecord(this.hass, copy.ownerId, copy.item.record.id, copy.item.record.revision);
+        if (!out.ok) failed.push(this.ownerName(copy.ownerId));
+      } catch {
+        failed.push(this.ownerName(copy.ownerId));
+      }
+    }
+    return failed;
   }
 
   /** Read back whichever lists a card's write touched. The edited device's own
@@ -9587,15 +9869,22 @@ export class WristAssistantPanel extends LitElement {
     const name = this.newName.trim();
     if (name === "") return undefined; // Not an error yet, just unanswered.
     const lower = name.toLowerCase();
-    if (this.ownerId !== undefined && this.newOwners.has(this.ownerId) && this.takenNames().has(lower)) {
-      return `A complication on this ${this.deviceWord} already has that name.`;
+    // Every place this complication is about to land, which with nothing
+    // ticked is the library: a name the shelf already uses clashes exactly as
+    // one a watch uses does.
+    const targets = moveTargets([...this.newOwners]);
+    const clash = (ownerId: string) => ownerId === LIBRARY_OWNER_ID
+      ? "A complication in the library already has that name."
+      : undefined;
+    if (this.ownerId !== undefined && targets.includes(this.ownerId) && this.takenNames().has(lower)) {
+      return clash(this.ownerId) ?? `A complication on this ${this.deviceWord} already has that name.`;
     }
-    for (const owner of this.linkOwners()) {
-      if (owner.ownerId === this.ownerId || !this.newOwners.has(owner.ownerId)) continue;
+    for (const owner of this.linkOwnersFor(targets)) {
+      if (owner.ownerId === this.ownerId) continue;
       const taken = (this.otherLists.get(owner.ownerId)?.records ?? [])
         .filter((r) => !r.deleted)
         .map((r) => String(r.document?.name ?? "").trim().toLowerCase());
-      if (taken.includes(lower)) return `A complication on ${owner.label} already has that name.`;
+      if (taken.includes(lower)) return clash(owner.ownerId) ?? `A complication on ${owner.label} already has that name.`;
     }
     return undefined;
   }
@@ -9606,6 +9895,12 @@ export class WristAssistantPanel extends LitElement {
    * The shapes are `familiesFor`'s, so the dialog can never offer a device a
    * shape its app does not draw, and the name is the picker's, so the same
    * device is called the same thing in both lists.
+   *
+   * The home's Library comes through here too, and answers every question the
+   * same way a device does: every shape (`familiesFor`), every promise, and
+   * the control, since nothing about a design on the shelf is waiting on an
+   * App Store release. It is never offered as a tick; it is where a design
+   * goes when no device is ticked, which `linkTargetOwners` is about.
    */
   private linkOwnerOf(owner: OwnerSummary): LinkOwner {
     return {
@@ -9614,7 +9909,7 @@ export class WristAssistantPanel extends LitElement {
       kind: deviceKindOf(owner),
       families: familiesFor(owner),
       comingSoon: comingSoonFamilies(owner),
-      controls: deviceSupportsControls(owner.app_version),
+      controls: ownerSupportsControls(owner),
       appVersion: owner.app_version,
     };
   }
@@ -9628,10 +9923,33 @@ export class WristAssistantPanel extends LitElement {
    * other end, there being no device left under the id. The device being
    * edited is always in the list, orphan or not, because it is the one the
    * complication is being made on.
+   *
+   * The Library is never one of them, not even while it is the thing being
+   * edited. Every list built from this is a list of boxes to tick, and the
+   * library is not a tick: it is where a design sits when none of these boxes
+   * is ticked. `libraryOwner` is how the save reaches it instead.
    */
   private linkOwners(): LinkOwner[] {
     return ownersByKind(this.owners)
+      .filter((o) => !isLibraryOwner(o))
       .filter((o) => o.owner_watch_id === this.ownerId || (!o.is_orphan && deviceSupportsShapes(o)))
+      .map((o) => this.linkOwnerOf(o));
+  }
+
+  /** The home's Library as a save target, or undefined against an integration
+   * older than the shelf. Never a tick, so it is built here rather than in
+   * `linkOwners`. */
+  private libraryOwner(): LinkOwner | undefined {
+    const row = this.owners.find((o) => isLibraryOwner(o));
+    return row ? this.linkOwnerOf(row) : undefined;
+  }
+
+  /** These owner ids as owners, in the picker's order, the Library included.
+   * For the places that have already worked out where a design is going and
+   * need the shapes and the label of each place. */
+  private linkOwnersFor(ownerIds: readonly string[]): LinkOwner[] {
+    return ownersByKind(this.owners)
+      .filter((o) => ownerIds.includes(o.owner_watch_id))
       .map((o) => this.linkOwnerOf(o));
   }
 
@@ -9641,12 +9959,15 @@ export class WristAssistantPanel extends LitElement {
    *
    * People rather than a flat list of devices, because a list reading "Apple
    * Watch, Apple Watch, iPhone, iPhone" is no help at all when the question is
-   * which boxes to tick. Empty when the home has one device to offer, which is
-   * when the whole section is left out and that device is ticked silently:
-   * there is nothing to choose.
+   * which boxes to tick.
+   *
+   * A home with one device to offer is drawn too. The step used to be left out
+   * there and the device ticked silently, on the grounds that there was
+   * nothing to choose; there is now, because leaving the one box clear keeps
+   * the design in the library, and a choice that is never shown is a choice
+   * made for somebody.
    */
   private newPeople(owners: readonly LinkOwner[]): { person: Person; devices: OwnerSummary[] }[] {
-    if (owners.length < 2) return [];
     const offered = new Set(owners.map((o) => o.ownerId));
     return peopleOf(this.owners)
       .map((person) => ({ person, devices: person.owners.filter((o) => offered.has(o.owner_watch_id)) }))
@@ -9688,7 +10009,10 @@ export class WristAssistantPanel extends LitElement {
     const nameProblem = this.newNameProblem();
     const named = this.newName.trim() !== "";
     const owners = this.linkOwners();
-    const sections = shapeSections(owners);
+    // A home with no device the panel can write to still has its library, so
+    // the shapes on offer are the shelf's rather than none at all: the design
+    // is made there and waits for a device worth ticking.
+    const sections = shapeSections(owners.length > 0 ? owners : this.linkOwnersFor([LIBRARY_OWNER_ID]));
     const people = this.newPeople(owners);
     const ticked = owners.filter((o) => this.newOwners.has(o.ownerId)).length;
     const count = this.newFamilies.size + (this.newControl ? 1 : 0);
@@ -9733,7 +10057,7 @@ export class WristAssistantPanel extends LitElement {
         ${people.length === 0 ? nothing : html`<section class="new-step step-people ${waiting}"
           aria-disabled=${named ? "false" : "true"}>
           ${this.renderStepHead(3, "Choose whose devices get it",
-            `Optional. Nothing ticked means it is made on ${this.selectedOwner ? ownerLabel(this.selectedOwner) : "this device"} and written when you save. Every ticked device draws every shape it can.`)}
+            "Optional. Nothing ticked keeps it in the library, and no device shows it until you tick one under Appears on. Every ticked device draws every shape it can.")}
           <div class="people-grid" role="group" aria-label="Appears on">${people.map((row) => this.renderPersonBox(row))}</div>
         </section>`}
       </div>
@@ -9786,11 +10110,15 @@ export class WristAssistantPanel extends LitElement {
   }) {
     const { section } = o;
     const adding = o.have !== undefined;
-    const where = joinNames(section.kinds.map((k) => k === "iphone" ? "the iPhone" : "the watch"));
+    // The library has no outline of its own: it is not a device, it holds a
+    // design for whatever the home has, so it is drawn as both screens. Every
+    // other kind stands for itself, and the set keeps the section's order.
+    const shown = [...new Set(section.kinds.flatMap((k): DeviceKind[] => k === "library" ? ["watch", "iphone"] : [k]))];
+    const where = joinNames(shown.map((k) => k === "iphone" ? "the iPhone" : "the watch"));
     // Only the outlines this home has: a shared shape in a watch-only home is
     // one drawing, not a watch beside a phone nobody owns.
     const arts = (family: FamilyKind, on: boolean) =>
-      shapeArtKinds(family).filter((k) => section.kinds.includes(k)).map((k) => deviceShapeArt(family, k, on));
+      shapeArtKinds(family).filter((k) => shown.includes(k)).map((k) => deviceShapeArt(family, k, on));
     // An available card keeps whatever its own sub line says and falls back to
     // the invitation, so Extra Large still reads "Coming soon" and the control
     // still says what it is.
@@ -9809,7 +10137,7 @@ export class WristAssistantPanel extends LitElement {
       </button>`;
     return html`<div class="shape-row">
       <div class="shape-row-head">
-        <span class="shape-row-kinds" aria-hidden="true">${section.kinds.map((k) => uiIcon(k === "iphone" ? "phone" : "watch"))}</span>
+        <span class="shape-row-kinds" aria-hidden="true">${shown.map((k) => uiIcon(k === "iphone" ? "phone" : "watch"))}</span>
         <span class="shape-row-title">${section.title}</span>
       </div>
       <div class="shape-cards">
@@ -9835,7 +10163,7 @@ export class WristAssistantPanel extends LitElement {
             : `A toggle or a button in Control Center, on ${where}`,
           label: "Control",
           sub: sub(o.haveControl ?? false, "a toggle or a button"),
-          art: section.kinds.map((k) => controlDeviceArt(k, adding ? !o.haveControl : o.controlOn)),
+          art: shown.map((k) => controlDeviceArt(k, adding ? !o.haveControl : o.controlOn)),
           click: () => o.onControl(),
         })}
         ${section.comingSoon.map((family) => html`<button type="button" class="shape-card soon" disabled
@@ -9977,22 +10305,25 @@ export class WristAssistantPanel extends LitElement {
    * next save.
    *
    * The copy is not deleted here. An untick is an edit like any other, so it
-   * waits for Save with the rest of them and walking away undoes it. The
-   * device whose copy is open cannot be unticked at all: taking the editor's
-   * own record out from under it is what Delete is for, and Delete says plainly
-   * that it removes the complication everywhere.
+   * waits for Save with the rest of them and walking away undoes it.
+   *
+   * Any device can go, the one being edited included, and the last one can go
+   * too: a design that is on nothing is in the home's Library, which is a real
+   * place rather than a hole. Unticking the open device is the one untick that
+   * moves the record instead of deleting it, so it is left out of `linkLeave`
+   * and `saveMoved` deals with it: the copy on the device being edited is the
+   * only copy there is until the save has written the design somewhere else.
    */
   private leaveLink(ownerId: string) {
     if (!this.draft || !this.canEdit) return;
-    if (ownerId === this.ownerId) return;
-    if (!this.linkOwnerIds.includes(ownerId) || this.linkOwnerIds.length < 2) return;
+    if (!this.linkOwnerIds.includes(ownerId)) return;
     this.linkOwnerIds = this.linkOwnerIds.filter((id) => id !== ownerId);
     const picks = new Map<string, ReadonlySet<FamilyKind>>(this.linkPicks);
     picks.delete(ownerId);
     this.linkPicks = picks;
     // Only a device with something stored has anything to delete. One that was
     // ticked and unticked before a save simply never gets a copy.
-    if (this.linkedCopiesNow().some((c) => c.ownerId === ownerId)) {
+    if (ownerId !== this.ownerId && this.linkedCopiesNow().some((c) => c.ownerId === ownerId)) {
       const next = new Set(this.linkLeave);
       next.add(ownerId);
       this.linkLeave = next;
@@ -10012,35 +10343,36 @@ export class WristAssistantPanel extends LitElement {
     const cfg = this.draft?.config;
     if (!cfg) return nothing;
     const groups = this.showsOnGroups();
-    // A home with one device to offer is shown nothing: the list would be a
-    // single box that is always ticked and can never be cleared, which is a
-    // control that has never had anything to say.
+    // A home with one device to offer is shown the list too. Its single box
+    // used to be an answer nobody could change, always ticked and never
+    // clearable; now unticking it puts the design in the library, so the box
+    // says something that can be acted on.
     const offered = groups.reduce((n, g) => n + g.owners.length, 0);
-    if (offered < 2) return nothing;
+    if (offered === 0) return nothing;
     const named = groups.length > 1;
     const on = new Set(this.linkOwnerIds);
     // Ticked over offerable, not over the whole home: the devices that are not
     // in this list are ones nothing could be saved to anyway.
-    const count = `${groups.reduce((n, g) => n + g.owners.filter((o) => on.has(o.ownerId)).length, 0)} of ${offered} devices`;
+    const ticks = groups.reduce((n, g) => n + g.owners.filter((o) => on.has(o.ownerId)).length, 0);
+    const count = showsOnCount(ticks, offered);
+    // What no tick at all means, which is the one reading that needs words.
+    const note = showsOnNote(ticks);
     const stored = new Set(this.linkedCopiesNow().map((c) => c.ownerId));
     const box = (owner: LinkOwner, person: Person) => {
       const ticked = on.has(owner.ownerId);
-      const open = owner.ownerId === this.ownerId;
       const seats = this.seatsOn(owner.ownerId);
       // A full device can still hold a copy it already has: that copy keeps
       // the seat it is sitting in.
       const noSeat = !ticked && seats.full && !stored.has(owner.ownerId);
-      const disabled = !this.canEdit || (ticked && open) || noSeat;
+      const disabled = !this.canEdit || noSeat;
       // The band groups the pills under the person's name, so the pill itself
       // says only which of their devices it is.
       const label = this.showsOnName(owner.ownerId, person);
-      const title = open
-        ? "This is the copy you are editing. Delete removes the complication from every device."
-        : noSeat
-          ? `${owner.label} has no free seat (iPhone presets count too). Delete a complication on it first.`
-          : ticked
-            ? `Stop showing this on ${owner.label}. Its copy goes on the next save.`
-            : `Show this on ${owner.label}. Its copy is written on the next save.`;
+      const title = noSeat
+        ? `${owner.label} has no free seat (iPhone presets count too). Delete a complication on it first.`
+        : ticked
+          ? `Stop showing this on ${owner.label}. Its copy goes on the next save.`
+          : `Show this on ${owner.label}. Its copy is written on the next save.`;
       return html`<button type="button" class="shows-box ${ticked ? "on" : ""}" role="checkbox"
         aria-checked=${ticked ? "true" : "false"} ?disabled=${disabled} title=${title}
         @click=${() => { if (ticked) this.leaveLink(owner.ownerId); else this.joinLink(owner); }}>
@@ -10059,6 +10391,7 @@ export class WristAssistantPanel extends LitElement {
           ${named ? html`<span class="shows-who">${person.label}</span>` : nothing}
           ${owners.map((o) => box(o, person))}
         </span>`)}
+        ${note === undefined ? nothing : html`<span class="shows-shelf">${note}</span>`}
         <span class="shows-when">Lands on Save.</span>
       </div>`;
     }
@@ -10073,6 +10406,7 @@ export class WristAssistantPanel extends LitElement {
           ${named ? html`<span class="shows-head">${person.label}</span>` : nothing}
           ${owners.map((o) => box(o, person))}`)}
       </div>
+      ${note === undefined ? nothing : html`<div class="shows-shelf">${note}</div>`}
       ${this.renderMergeWith()}
     </div>`;
   }
@@ -12186,7 +12520,9 @@ export class WristAssistantPanel extends LitElement {
   private renderOrphanBanner(): TemplateResult | undefined {
     const owner = this.selectedOwner;
     if (!owner?.is_orphan) return undefined;
-    const targets = this.owners.filter((o) => !o.is_orphan);
+    // Registered devices only. Move is about putting these records back where
+    // a watch can reach them, and the Library reaches nothing.
+    const targets = this.owners.filter((o) => !o.is_orphan && !isLibraryOwner(o));
     return html`<div class="banner warn">
       <b>This watch is no longer registered.</b> Reinstalling the watch app gives the watch a new id, and these
       ${owner.complication_count} complication${owner.complication_count === 1 ? "" : "s"} stayed behind under the old one.
@@ -13722,7 +14058,7 @@ export class WristAssistantPanel extends LitElement {
    */
   private renderControlTab(cfg: CustomComplicationConfig) {
     const spec = cfg.control;
-    if (spec === undefined || !deviceSupportsControls(this.selectedOwner?.app_version)) return nothing;
+    if (spec === undefined || !ownerSupportsControls(this.selectedOwner)) return nothing;
     const active = this.inControlView;
     const removable = this.canEdit && canRemoveControl(cfg);
     return html`<span class="tab-wrap">
@@ -13879,14 +14215,21 @@ export class WristAssistantPanel extends LitElement {
   /** The devices "Preview as" offers: the watch cases for a watch owner, the
    * iPhone cases for a phone. A phone draws its lock screen shapes in slots of
    * its own and the Home Screen tiles at their measured sizes, so previewing a
-   * phone document in a watch case would be the wrong picture twice over. */
+   * phone document in a watch case would be the wrong picture twice over.
+   *
+   * The Library is offered both lists. A design on the shelf has not been
+   * given a device yet, so there is no one answer to preview it as, and it can
+   * carry every shape either kind of device draws. It starts on the reference
+   * watch, which is what `referenceCase` says below. */
   private get previewCases(): PreviewCase[] {
+    if (isLibraryOwner(this.selectedOwner)) return [...CASES, ...PHONE_CASES];
     return deviceKindOf(this.selectedOwner) === "iphone" ? PHONE_CASES : CASES;
   }
 
   /** The measured device of the owner's kind: the 46 mm watch, or the iPhone
    * 15 Pro. Every small picture in the panel is drawn in it, so a row in the
-   * list and the big preview agree about proportions. */
+   * list and the big preview agree about proportions. The Library takes the
+   * watch, the device these designs are mostly built for. */
   private get referenceCase(): PreviewCase {
     return deviceKindOf(this.selectedOwner) === "iphone" ? REFERENCE_PHONE : REFERENCE_CASE;
   }
@@ -14234,13 +14577,20 @@ export function ownerLines(o: OwnerSummary): { name: string; note?: string } {
  * with. The order is `ownersByKind`'s: watches first, then phones, each group
  * left as the server gave it. A home with only one kind of device gets one
  * group, so a list can draw no heading at all rather than one over everything.
+ *
+ * The Library comes last and on its own. It is not a device, so counting it
+ * among the watches would both misname it and put it before every phone in
+ * every list that reads this order.
  */
 export function ownerGroups(owners: readonly OwnerSummary[]): { label: string; owners: OwnerSummary[] }[] {
-  const watches = owners.filter((o) => deviceKindOf(o) !== "iphone");
-  const phones = owners.filter((o) => deviceKindOf(o) === "iphone");
+  const devices = owners.filter((o) => !isLibraryOwner(o));
+  const watches = devices.filter((o) => deviceKindOf(o) !== "iphone");
+  const phones = devices.filter((o) => deviceKindOf(o) === "iphone");
+  const library = owners.filter((o) => isLibraryOwner(o));
   const groups: { label: string; owners: OwnerSummary[] }[] = [];
   if (watches.length > 0) groups.push({ label: watches.length === 1 ? "Watch" : "Watches", owners: watches });
   if (phones.length > 0) groups.push({ label: phones.length === 1 ? "iPhone" : "iPhones", owners: phones });
+  if (library.length > 0) groups.push({ label: "Library", owners: library });
   return groups;
 }
 
