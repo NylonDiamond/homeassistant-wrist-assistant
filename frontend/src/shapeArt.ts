@@ -210,13 +210,16 @@ export interface LiveShape {
   art: TemplateResult | typeof nothing;
   width: number;
   height: number;
-  /** The picture is HTML rather than svg (the Control Center tile), so it
-   * goes into the drawing through a foreignObject. */
-  html?: boolean;
+  /** The part of the picture that is the shape, when the picture is bigger
+   * than the shape: the corner's render is a whole screen quadrant with the
+   * content disc somewhere in it, and this is that disc. The drawing shows
+   * this part alone, masked to a circle. */
+  focus?: { cx: number; cy: number; diameter: number };
 }
 
 /** The shapes drawn for one device's picture, by family, plus the Control
- * Center tile. A slot that is missing keeps the plain lit fill. */
+ * Center tile, which is drawn beside the devices rather than on one. A slot
+ * that is missing keeps the plain lit fill. */
 export type LiveShapes = Partial<Record<FamilyKind | "control", LiveShape>>;
 
 /** Which devices a card draws: the ones the design is on. A design on one
@@ -256,6 +259,7 @@ function placed(
   ring: { rx: number } | "circle" = { rx: 2 },
 ): unknown {
   if (live === undefined || live.art === nothing || live.width <= 0 || live.height <= 0) return undefined;
+  if (live.focus) return disc(live, live.focus, slot, clipId);
   const scale = mode === "fit"
     ? Math.min(slot.width / live.width, slot.height / live.height)
     : slot.width / live.width;
@@ -263,16 +267,39 @@ function placed(
   const height = live.height * scale;
   const x = slot.x + (slot.width - width) / 2;
   const y = mode === "fit" ? slot.y + (slot.height - height) / 2 : slot.y;
-  const picture = live.html
-    ? svg`<foreignObject x="0" y="0" width=${live.width} height=${live.height}><div xmlns="http://www.w3.org/1999/xhtml" class="pk-live-html" style=${`width:${live.width}px;height:${live.height}px`}>${live.art}</div></foreignObject>`
-    : live.art;
-  const inner = svg`<g class="pk-live" transform=${`translate(${x} ${y}) scale(${scale})`}>${picture}</g>`;
+  const inner = svg`<g class="pk-live" transform=${`translate(${x} ${y}) scale(${scale})`}>${live.art}</g>`;
   const ringed = ring === "circle"
     ? svg`<circle cx=${x + width / 2} cy=${y + height / 2} r=${Math.min(width, height) / 2} fill="none" stroke=${RING} stroke-width="0.75" />`
     : svg`<rect x=${x} y=${y} width=${width} height=${mode === "fit" ? height : slot.height} rx=${ring.rx} fill="none" stroke=${RING} stroke-width="0.75" />`;
   if (mode === "fit") return svg`${inner}${ringed}`;
   return svg`<clipPath id=${clipId}><rect x=${slot.x} y=${slot.y} width=${slot.width} height=${slot.height} rx="3" /></clipPath>
     <g clip-path=${`url(#${clipId})`}>${inner}</g>${ringed}`;
+}
+
+/**
+ * One disc of a bigger picture, set into a round slot.
+ *
+ * The corner's render is the top right quarter of the screen with the content
+ * disc near its corner and the bezel text curving past it. The drawing's
+ * corner slot is top left and 13 px across, so the whole quadrant fitted in
+ * was a smudge with the disc off to one side. This scales the disc alone to
+ * the slot, moves its centre onto the slot's, and masks the rest away.
+ */
+function disc(
+  live: LiveShape,
+  focus: { cx: number; cy: number; diameter: number },
+  slot: { x: number; y: number; width: number; height: number },
+  clipId: string,
+): unknown {
+  const side = Math.min(slot.width, slot.height);
+  const scale = side / focus.diameter;
+  const cx = slot.x + slot.width / 2;
+  const cy = slot.y + slot.height / 2;
+  const x = cx - focus.cx * scale;
+  const y = cy - focus.cy * scale;
+  return svg`<clipPath id=${clipId}><circle cx=${cx} cy=${cy} r=${side / 2} /></clipPath>
+    <g clip-path=${`url(#${clipId})`}><g class="pk-live" transform=${`translate(${x} ${y}) scale(${scale})`}>${live.art}</g></g>
+    <circle cx=${cx} cy=${cy} r=${side / 2} fill="none" stroke=${RING} stroke-width="0.75" />`;
 }
 
 /** The hairline round a drawn-in picture: the same faint white the card's
@@ -293,17 +320,15 @@ const faceClock = (x: number, y: number, size: number, text: string) =>
  * Modular face lays them out. Corner arcing into the top left, the clock top
  * right, rectangular the full width of the screen under them, and circular
  * bottom left. Inline, which that face does not carry, sits as a line over
- * the clock. The Control Center tile, which is not on the face at all, takes
- * the free bottom right corner, as the pill the watch draws it as.
+ * the clock.
  */
-function watchCard(families: readonly FamilyKind[], control: boolean, live: LiveShapes = {}): TemplateResult {
+function watchCard(families: readonly FamilyKind[], live: LiveShapes = {}): TemplateResult {
   const has = (f: FamilyKind) => families.includes(f);
   // The real shape in its slot where there is one, the lit fill otherwise.
   // Inline is a line of text rather than a canvas and has no picture to set.
   const rect = placed(live.rectangular, { x: 14, y: 38, width: 58, height: 21 }, "fit", "", { rx: 3 });
   const circ = placed(live.circular, { x: 13, y: 63, width: 16, height: 16 }, "fit", "", "circle");
-  const corner = placed(live.corner, { x: 14, y: 17, width: 13, height: 13 }, "fit", "", "circle");
-  const pill = placed(live.control, { x: 46, y: 64, width: 26, height: 16 }, "fit", "", { rx: 7 });
+  const corner = placed(live.corner, { x: 14, y: 17, width: 13, height: 13 }, "fit", clipKey(), "circle");
   return html`<svg class="pk-card-watch" width="86" height="96" viewBox="0 0 86 96" aria-hidden="true">
     <rect x="27" y="0" width="32" height="10" rx="3" fill=${CASE} />
     <rect x="27" y="86" width="32" height="10" rx="3" fill=${CASE} />
@@ -315,13 +340,12 @@ function watchCard(families: readonly FamilyKind[], control: boolean, live: Live
     ${corner ?? svg`<path d="M16 30 A 26 26 0 0 1 28 19" stroke=${lit(has("corner"))} stroke-width="4" fill="none" stroke-linecap="round" />`}
     ${rect ?? svg`<rect x="14" y="38" width="58" height="21" rx="5" fill=${lit(has("rectangular"))} />`}
     ${circ ?? svg`<circle cx="21" cy="71" r="8" fill=${lit(has("circular"))} />`}
-    ${pill ?? (control ? svg`<rect x="47" y="65" width="24" height="14" rx="7" fill=${ON} />` : nothing)}
   </svg>`;
 }
 
 /**
- * The phone: the Lock Screen slot above the line, the Home Screen tiles below
- * it, and the control as a dot in the corner.
+ * The phone: the Lock Screen slot above the line and the Home Screen tiles
+ * below it.
  *
  * One Lock Screen slot for all three shared shapes rather than three of them.
  * iOS gives the Lock Screen one widget area, and a card that drew rectangular,
@@ -332,7 +356,7 @@ function watchCard(families: readonly FamilyKind[], control: boolean, live: Live
  * sizes and this drawing has room for three, and the tile a card is asking
  * about is "does this reach the Home Screen", which either of them answers.
  */
-function phoneCard(families: readonly FamilyKind[], control: boolean, live: LiveShapes = {}): TemplateResult {
+function phoneCard(families: readonly FamilyKind[], live: LiveShapes = {}): TemplateResult {
   const has = (f: FamilyKind) => families.includes(f);
   const lockOn = families.some((f) => isSharedFamily(f));
   const small = lit(has("small"));
@@ -344,13 +368,10 @@ function phoneCard(families: readonly FamilyKind[], control: boolean, live: Live
   const tile = placed(live.small, { x: 7, y: 42, width: 16, height: 16 }, "fit", "", { rx: 3 });
   const medium = placed(live.medium, { x: 7, y: 62, width: 36, height: 14 }, "fit", "", { rx: 3 });
   const large = placed(live.large ?? live.xlarge, { x: 7, y: 80, width: 36, height: 9 }, "cover", clipKey(), { rx: 3 });
-  // The Control Center tile in the top right corner, where the dot was: the
-  // round tile the phone draws, small, rather than a dot that only said yes.
-  const ctl = placed(live.control, { x: 32, y: 5, width: 12, height: 12 }, "fit", "", "circle");
   return html`<svg class="pk-card-phone" width="50" height="96" viewBox="0 0 50 96" aria-hidden="true">
     <rect x="0" y="0" width="50" height="96" rx="9" fill=${CASE} />
     <rect x="3" y="3" width="44" height="90" rx="7" fill=${SCREEN} />
-    <rect x="15" y="6" width="14" height="3" rx="1.5" fill=${DIM} />
+    <rect x="17" y="6" width="16" height="3" rx="1.5" fill=${DIM} />
     ${faceClock(25, 20, 9, "9:41")}
     ${lock ?? svg`<rect x="9" y="24" width="32" height="8" rx="2" fill=${lit(lockOn)} />`}
     <line x1="6" y1="38" x2="44" y2="38" stroke=${DIM} stroke-dasharray="2 2" />
@@ -358,8 +379,25 @@ function phoneCard(families: readonly FamilyKind[], control: boolean, live: Live
     <rect x="27" y="42" width="16" height="16" rx="3" fill=${tile ? OFF : small} />
     ${medium ?? svg`<rect x="7" y="62" width="36" height="14" rx="3" fill=${lit(has("medium"))} />`}
     ${large ?? svg`<rect x="7" y="80" width="36" height="9" rx="3" fill=${lit(has("large") || has("xlarge"))} />`}
-    ${ctl ?? (control ? svg`<circle cx="38" cy="11" r="6" fill=${ON} />` : nothing)}
   </svg>`;
+}
+
+/**
+ * The Control Center tile, beside the devices rather than on one.
+ *
+ * Control Center is not a face or a Home Screen, so a tile drawn onto either
+ * device said it sat somewhere it does not. It stands on its own at the right
+ * end of the row: the real tile where the card has one, drawn as the first
+ * device shown draws it (the watch's pill, the phone's circle), and a lit
+ * pill standing in for it otherwise.
+ */
+function controlBeside(live: LiveShape | undefined): TemplateResult {
+  if (live && live.art !== nothing) {
+    return html`<span class="pk-card-ctl" title="Control Center">${live.art}</span>`;
+  }
+  return html`<span class="pk-card-ctl" title="Control Center"><svg width="40" height="24" viewBox="0 0 40 24" aria-hidden="true">
+    <rect x="0" y="0" width="40" height="24" rx="12" fill=${ON} />
+  </svg></span>`;
 }
 
 /**
@@ -384,5 +422,7 @@ export function designDeviceArt(
 ): TemplateResult {
   // Nowhere at all draws both, so a card never shows an empty mat.
   const both = on.watch === on.phone;
-  return html`${both || on.watch ? watchCard(families, control, live?.watch) : nothing}${both || on.phone ? phoneCard(families, control, live?.phone) : nothing}`;
+  const watch = both || on.watch;
+  const phone = both || on.phone;
+  return html`${watch ? watchCard(families, live?.watch) : nothing}${phone ? phoneCard(families, live?.phone) : nothing}${control ? controlBeside(watch ? live?.watch.control : live?.phone.control) : nothing}`;
 }

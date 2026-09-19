@@ -134,7 +134,7 @@ import {
   resolveAll,
   resolveControl,
 } from "./resolver.js";
-import { CANVAS, CASES, FACE_TINTS, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, phoneCaseForScreenSize, renderLayerThumb, renderLayout, slotFor, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type PreviewCase } from "./renderer.js";
+import { CANVAS, CASES, FACE_TINTS, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, caseForScreenSize, cornerContext, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, phoneCaseForScreenSize, renderLayerThumb, renderLayout, slotFor, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type PreviewCase } from "./renderer.js";
 import { actionAt, demoTapLabel, runTapAction, tapRefetches, type DemoOutcome } from "./demo.js";
 import { ALL_FAMILIES, addFamily, biggestFirst, canRemoveControl, canRemoveFamily, comingSoonFamilies, controlNoteLines, familiesFor, familyAllowsKind, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, opensInControlView, removeFamily, supportedFamilies } from "./layouts.js";
 import {
@@ -506,10 +506,10 @@ const CARD_PREVIEW_ROOM = { width: 240, height: 64 };
 /** The Control Center tile on a card whose design is only a control, sized to
  * the well that holds it. */
 const CARD_TILE_SIDE = 48;
-/** The side of the Control Center tile drawn into a picker card's device
- * drawing, before the drawing scales it down. Big enough for the glyph to be
- * drawn as a glyph; the scale does the rest. */
-const CARD_ART_TILE_SIDE = 40;
+/** The side of the Control Center tile drawn beside a picker card's device
+ * drawings: small enough to sit at the end of the row, big enough for its
+ * glyph to be one. */
+const CARD_ART_TILE_SIDE = 30;
 
 const COL_LEFT_DEFAULT = 300;
 const COL_RIGHT_DEFAULT = 360;
@@ -1904,9 +1904,9 @@ export class WristAssistantPanel extends LitElement {
     /* A design on one device draws that device alone, and larger, so the
        complication set into it is readable. */
     .pk-card-art.one > svg { height: 118px; width: auto; }
-    /* The Control Center tile is HTML inside a foreignObject; the box around
-       it is the tile's own size and the transform outside scales it. */
-    .pk-card-art .pk-live-html { display: block; overflow: hidden; }
+    /* The Control Center tile stands at the end of the row, off both devices:
+       it is neither a face nor a Home Screen. */
+    .pk-card-art .pk-card-ctl { display: inline-flex; align-items: center; align-self: center; flex: none; margin-left: 4px; }
     /* The right end is kept clear for the hide and delete buttons, which sit
        in that corner: reserved always, so nothing reflows on hover. */
     .pk-card-shapes { font-size: 11px; color: var(--wa-muted); margin-top: 8px; padding-right: 62px; overflow-wrap: anywhere; }
@@ -8707,17 +8707,32 @@ export class WristAssistantPanel extends LitElement {
       const art = renderShapeArt({
         config: cfg, editing: family, layouts, icons: this.icons, imageSizes: this.imageSizes, phone, slotFor: () => slot,
       }, family);
-      return art === nothing ? undefined : { art, width: slot.width, height: slot.height };
+      if (art === nothing) return undefined;
+      // The corner is rendered as its whole screen quadrant, with the content
+      // disc where the face puts it. The drawing wants the disc alone, so it
+      // is told where the disc is, in the quadrant's own units: the reference
+      // case's slot is the design box, so its scale is one.
+      if (family === "corner") {
+        const layout = layouts.corner;
+        const bezel = !!layout?.bezelText || !!layout?.bezelGauge;
+        const ctx = cornerContext(1, bezel);
+        return {
+          art, width: ctx.quad.width, height: ctx.quad.height,
+          focus: { cx: ctx.tile.cx, cy: ctx.tile.cy, diameter: cornerTileSide(1, bezel) },
+        };
+      }
+      return { art, width: slot.width, height: slot.height };
     };
-    // The Control Center tile as each device draws it: the watch's pill and
-    // the phone's circle, off the same host the card's own preview uses.
+    // The Control Center tile as the device draws it: the watch's pill and
+    // the phone's circle, off the same host the card's own preview uses. It
+    // is drawn beside the devices, so its size is its own.
     const tile = (phone: boolean): LiveShape | undefined => {
       if (!cfg.control) return undefined;
       const shape = controlTileShapes(phone ? "iphone" : "watch")[0]!;
       const art = controlTile(this.tileHost(cfg, entities), cfg.control, shape, CARD_ART_TILE_SIDE);
       if (art === nothing) return undefined;
       const width = shape === "watchPill" ? Math.round(CARD_ART_TILE_SIDE * 1.6) : CARD_ART_TILE_SIDE;
-      return { art, width, height: CARD_ART_TILE_SIDE, html: true };
+      return { art, width, height: CARD_ART_TILE_SIDE };
     };
     const pick = (families: readonly DrawableFamily[], phone: boolean): LiveShapes => {
       const out: LiveShapes = {};
@@ -8757,6 +8772,12 @@ export class WristAssistantPanel extends LitElement {
   /** A document that is not the open one, resolved from the live states of
    * the entities it reads. Templates are not rendered for it. */
   private configLayouts(cfg: CustomComplicationConfig, entities: readonly EntityRef[], historySeries?: Map<string, string>): ResolvedAll {
+    // The open complication has the stage's own context: rendered templates,
+    // fetched history, list items. Its card draws off that, or a list of
+    // forecasts, which is nothing until fetched, is a black card for the one
+    // complication the author is looking at.
+    const d = this.draft;
+    if (historySeries === undefined && d && d.config.id === cfg.id) return resolveAll(d.config, this.buildContext(), this.forced);
     return resolveAll(cfg, this.configContext(cfg, entities, historySeries));
   }
 

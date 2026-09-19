@@ -248,11 +248,12 @@ describe("designDeviceArt", () => {
     expect(card(["xlarge"])).toContain(`x="7" y="80" width="36" height="9" rx="3" fill=var(--wa-accent)`);
   });
 
-  it("draws the control's tile on both devices only when there is a control", () => {
-    expect(card(["circular"], true)).toContain(`cx="38" cy="11" r="6"`);
-    expect(card(["circular"], true)).toContain(`x="47" y="65" width="24" height="14" rx="7"`);
-    expect(card(["circular"], false)).not.toContain(`cy="11" r="6"`);
-    expect(card(["circular"], false)).not.toContain(`width="24" height="14" rx="7"`);
+  it("draws the control beside the devices, not on one, and only when there is a control", () => {
+    const art = card(["circular"], true);
+    expect(art).toContain(`class="pk-card-ctl"`);
+    // The stand-in pill sits after both device drawings.
+    expect(art.indexOf("pk-card-ctl")).toBeGreaterThan(art.indexOf("0 0 50 96"));
+    expect(card(["circular"], false)).not.toContain("pk-card-ctl");
   });
 
   it("draws only the devices the design is on, and both when it is on neither", () => {
@@ -267,12 +268,23 @@ describe("designDeviceArt", () => {
     expect(nowhere).toContain("0 0 50 96");
   });
 
-  it("sets an HTML picture in through a foreignObject, with a ring round it", () => {
-    const tile = { art: svg`<div>tile</div>`, width: 64, height: 40, html: true };
+  it("puts the real control tile beside the devices in place of the stand-in", () => {
+    const tile = { art: svg`<div data-tag="tile"></div>`, width: 48, height: 30 };
     const art = flatten(designDeviceArt([], true, { watch: { control: tile }, phone: {} }));
-    expect(art).toContain("<foreignObject");
-    expect(art).toContain("stroke=rgba(255,255,255,.18)");
-    expect(art).not.toContain(`x="47" y="65" width="24" height="14" rx="7"`);
+    expect(art).toContain(`data-tag="tile"`);
+    expect(art).not.toContain(`width="40" height="24" rx="12"`);
+  });
+
+  it("shows the corner's content disc alone, centred in the slot and masked round", () => {
+    // A 104 by 124 quadrant whose disc of 34 sits at (70, 29.5): the slot is
+    // 13 across at (14, 17), so the disc scales by 13/34 and its centre
+    // lands on the slot's centre.
+    const corner = { art: svg`<svg class="complication corner" data-tag="c"></svg>`, width: 104, height: 124, focus: { cx: 70, cy: 29.5, diameter: 34 } };
+    const art = flatten(designDeviceArt(["corner"], false, { watch: { corner }, phone: {} }));
+    const scale = 13 / 34;
+    expect(art).toContain(`translate(${20.5 - 70 * scale} ${23.5 - 29.5 * scale}) scale(${scale})`);
+    expect(art).toContain(`<circle cx=20.5 cy=23.5 r=6.5 />`);
+    expect(art).not.toContain("M16 30 A 26 26 0 0 1 28 19");
   });
 
   it("hides both drawings from a screen reader, the card's text saying it instead", () => {
