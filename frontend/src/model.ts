@@ -8469,6 +8469,118 @@ export function normalizeOwnership(cfg: CustomComplicationConfig, home?: FamilyK
   }
 }
 
+/**
+ * Give one shape its own copy of another shape's layers.
+ *
+ * A real copy, not a link: the new shape gets new layers with new ids, so
+ * editing one of them afterwards changes nothing on the shape it came from.
+ * Each one lands where its original sits, scaled for the canvas it arrives on.
+ * What "copy the Rectangular layout" does to a shape that is still blank, and
+ * what a shape added to a complication that already draws something starts
+ * from.
+ *
+ * It lives here rather than in the editor because every layer belongs to one
+ * shape (see the ownership rules above): a placement copied on its own would
+ * be taken off the new shape again the next time the document settles, so the
+ * only way to fill a shape is to give it layers of its own.
+ */
+export function copyShapeLayers(cfg: CustomComplicationConfig, from: FamilyKind, to: FamilyKind): void {
+  const layout = cfg.perFamily[to] ?? (cfg.perFamily[to] = defaultLayout());
+  const source = ownedElements(cfg, from).filter((el) => !isAttachedTap(cfg, el));
+  if (source.length === 0) return;
+  const clip = copyElements(cfg, source.map((el) => el.payload.id), from);
+  const landed = pasteElements(cfg, clip, { nudge: false });
+  // Each copy arrives carrying the source shape's own placement. Refit it for
+  // this canvas, hand it to this shape, and take it off the source shape,
+  // which is what makes the copy a layer of its own rather than a second
+  // pointer at the original.
+  const sourceLayout = cfg.perFamily[from];
+  for (const id of landed) {
+    const el = cfg.elements.find((e) => e.payload.id === id);
+    if (!el) continue;
+    const src = sourceLayout?.placements[id];
+    // The size travels even when the source shape never set one, so the refit
+    // has something to scale down for the smaller canvas.
+    const size = src?.size ?? elementSize(el);
+    const base: Placement = {
+      frame: { ...(src?.frame ?? el.payload.frame) },
+      // A layer hidden on the source shape arrives hidden, so the copy is the
+      // arrangement as it stands rather than an arrangement plus whatever was
+      // switched off in it.
+      isHidden: src?.isHidden ?? false,
+      ...(size !== undefined ? { size } : {}),
+    };
+    // Left on the source shape the copy would have two owners, and settling
+    // the document would split it in two, so it comes off there.
+    for (const f of DRAWABLE_FAMILIES) if (f !== to) delete cfg.perFamily[f]?.placements[id];
+    layout.placements[id] = refitPlacement(base, from, to, el.kind);
+  }
+  normalizeOwnership(cfg, to);
+}
+
+/**
+ * The shape a newly added one is worth starting from, before the fallback.
+ *
+ * Small and Circular are the same square box, so a Small tile copied off
+ * Circular is the design at its own size. Medium is Rectangular's box made
+ * taller, so the bands land where they were written. Every other shape has no
+ * twin, and takes the widest thing in the document instead.
+ */
+const SEED_SOURCE: Partial<Record<DrawableFamily, DrawableFamily>> = {
+  small: "circular",
+  medium: "rectangular",
+};
+
+/**
+ * Which shape `seedFamilyFromSibling` would copy, or undefined when there is
+ * nothing to copy from.
+ *
+ * Corner is never a source: it is a 34 pt disc behind the system's curved
+ * label, so everything on it was laid out for a canvas nothing else shares.
+ * Inline is neither a source nor a target, having no canvas at all. A shape
+ * that is in the document but draws nothing is no source either, so a blank
+ * Circular never wins over a Rectangular with the design on it.
+ *
+ * Ties on width (the three Home Screen sizes share one) go to the shape the
+ * schema lists first, which is the shortest of them and so the one a copy
+ * scales down from least.
+ */
+export function seedSourceFor(cfg: CustomComplicationConfig, family: FamilyKind): DrawableFamily | undefined {
+  const drawn = DRAWABLE_FAMILIES.filter((f) =>
+    f !== family && f !== "corner" && cfg.supportedFamilies.includes(f)
+    && ownedElements(cfg, f).some((el) => !isAttachedTap(cfg, el)));
+  const preferred = hasCanvas(family) ? SEED_SOURCE[family] : undefined;
+  if (preferred !== undefined && drawn.includes(preferred)) return preferred;
+  let widest: DrawableFamily | undefined;
+  for (const f of drawn) if (widest === undefined || DESIGN_BOX[f].width > DESIGN_BOX[widest].width) widest = f;
+  return widest;
+}
+
+/**
+ * Fill a shape that has just been added from one the complication already has.
+ *
+ * A shape used to start blank, and on a complication that was already finished
+ * that meant building the whole thing a second time. It starts from a copy
+ * instead: Small from Circular, Medium from Rectangular, anything else from
+ * the widest shape there is. The copy is plain, not linked, so the first nudge
+ * on the new shape leaves the old one alone.
+ *
+ * Returns the shape it copied, for the line the editor prints under the new
+ * one, or undefined when nothing was copied: the shape has layers already, or
+ * there is nothing worth copying from. A shape the document does not support
+ * is left alone too, since a layer placed on one would be taken off again the
+ * next time the document settles.
+ */
+export function seedFamilyFromSibling(cfg: CustomComplicationConfig, family: FamilyKind): FamilyKind | undefined {
+  if (!hasCanvas(family) || !cfg.supportedFamilies.includes(family)) return undefined;
+  const layout = cfg.perFamily[family];
+  if (layout && Object.keys(layout.placements).length > 0) return undefined;
+  const source = seedSourceFor(cfg, family);
+  if (source === undefined) return undefined;
+  copyShapeLayers(cfg, source, family);
+  return source;
+}
+
 // ── layer entity ──────────────────────────────────────────────────────────
 // What a layer is *about* is nowhere in the schema. It is read back from the
 // places the layer already names an entity: its own value or symbol, the tap
