@@ -2113,7 +2113,9 @@ export class WristAssistantPanel extends LitElement {
     .shape-card {
       position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer;
       width: 80px; box-sizing: border-box;
-      font: inherit; font-size: 11px; padding: 7px 4px 6px; color: var(--wa-muted);
+      /* Room above the art for the tick, which otherwise sits on the drawing
+         when a card draws two devices side by side. */
+      font: inherit; font-size: 11px; padding: 22px 4px 6px; color: var(--wa-muted);
       border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-raised);
       transition: border-color .12s ease-out, background-color .12s ease-out, color .12s ease-out;
     }
