@@ -6005,6 +6005,9 @@ export class WristAssistantPanel extends LitElement {
     // Before the first reply nothing is known about this device, and the chip
     // would otherwise report the never-acked state as if it were an answer.
     if ((s.kind === "unsupported" || s.kind === "openApp") && !this.sendStatusKnown) return nothing;
+    // A design that has not been saved yet is not in the library, whatever
+    // the library's own list says, so the chip waits for the first save.
+    if (s.kind === "library" && this.draft?.baseRevision === null) return nothing;
     const d = describeSend(s);
     const resend = d.resend && this.hass.user?.is_admin
       ? html`<button class="ghost" title="Wake the watch again" @click=${() => void this.sendToWatch()}>Resend</button>`
@@ -8586,7 +8589,9 @@ export class WristAssistantPanel extends LitElement {
   override render() {    const d = this.draft;
     // A device joined to the link but not written to yet is unsaved work as
     // much as an edited layer is, so the dot and the Save button say so.
-    const dirty = !!d?.dirty || this.linkPending;
+    // A complication that was never saved is work to save as it stands: its
+    // baseline is the config it was made from, so nothing else says so.
+    const dirty = !!d?.dirty || this.linkPending || d?.baseRevision === null;
     // `narrow` is Home Assistant telling us it is a phone; otherwise the fit
     // is decided from the panel's own measured width.
     const fit = this.narrow
