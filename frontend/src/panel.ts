@@ -166,7 +166,7 @@ import {
   rowPicked,
   setPick,
   startFromCopyLine,
-  tickCard,
+  untickCard,
   tickedOwners,
 } from "./linking.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
@@ -2131,8 +2131,13 @@ export class WristAssistantPanel extends LitElement {
     .dev-row-note { margin-left: auto; font-size: 11px; color: var(--wa-muted); }
     .dev-row .dev-card-ico svg, .dev-list .dev-card-ico svg { width: 16px; height: 16px; }
     /* One icon per device a picker row's complication lives on. */
-    .pk-link { display: inline-flex; gap: 2px; align-items: center; flex: none; opacity: .65; }
-    .pk-link svg { width: 13px; height: 13px; display: block; }
+    /* A row's name with the devices it lives on under it. */
+    .pk-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .pk-text .pk-name { flex: none; }
+    .pk-dev { display: flex; gap: 10px; align-items: center; min-width: 0; font-size: 11.5px; font-weight: 500; color: var(--wa-muted); }
+    .pk-dev-one { display: inline-flex; gap: 4px; align-items: center; min-width: 0; }
+    .pk-dev-one > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pk-dev svg { width: 12px; height: 12px; flex: none; display: block; opacity: .8; }
     .shape-dots { display: inline-flex; gap: 3px; align-items: center; flex: none; }
     .shape-dot { width: 14px; height: 10px; border-radius: 2px; background: currentColor; opacity: .3; display: inline-block; }
     .shape-dot.circular { width: 10px; border-radius: 50%; }
@@ -8690,8 +8695,7 @@ export class WristAssistantPanel extends LitElement {
       return html`<button type="button" class="row locked" role="option" aria-disabled="true" title=${item.title}
           @click=${() => { this.pickerNote = this.pickerNote === row.key ? undefined : row.key; }}>
           <span class="pk-art"></span>
-          <span class="pk-name">${row.name}</span>
-          ${this.renderRowDevices(row)}
+          <span class="pk-text"><span class="pk-name">${row.name}</span>${this.renderRowDevices(row)}</span>
           ${this.shapeDots(item.families, false, familiesFor(owner))}
           <span class="pk-badge">${item.badge}</span>
         </button>
@@ -8721,8 +8725,7 @@ export class WristAssistantPanel extends LitElement {
       <button type="button" class="pick" role="option" aria-selected=${open ? "true" : "false"}
         @click=${() => void this.openFromPicker(row)}>
         ${this.renderRowArt(drawn, owner)}
-        <span class="pk-name">${recName}</span>
-        ${this.renderRowDevices(row)}
+        <span class="pk-text"><span class="pk-name">${recName}</span>${this.renderRowDevices(row)}</span>
         ${this.shapeDots(familiesOf(drawn), hasControlOf(drawn), familiesFor(owner))}
       </button>
       <span class="pk-acts">
@@ -8743,12 +8746,14 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The devices a row's complication lives on, one small icon each.
+   * The devices a row's complication lives on, under its name: a glyph and the
+   * device's name for each, and two of them on a linked complication, whose one
+   * row opens the design both devices draw.
    *
-   * This is what a row says instead of being filed under a device: a watch
-   * glyph per watch, a phone glyph per phone, and two of them on a linked
-   * complication, whose one row opens the design both devices draw. A home with
-   * one device gets none, since every row would carry the same icon.
+   * This is what a row says instead of being filed under a device. The names
+   * are there because a glyph alone is not enough in a home with two watches:
+   * "Chen" and "Jesse Apple Watch" draw the same icon. A home with one device
+   * gets none, since every row would say the same thing.
    */
   private renderRowDevices(row: PickerRow) {
     if (this.owners.length < 2) return nothing;
@@ -8756,8 +8761,8 @@ export class WristAssistantPanel extends LitElement {
     const title = row.copies.length > 1
       ? `On ${joinNames(names)}. One design, edited in one place.`
       : `On ${names[0] ?? "this device"}.`;
-    return html`<span class="pk-link" title=${title}>${row.copies.map((c) =>
-      html`<span class="pk-link-ico">${uiIcon(deviceKindOf(this.ownerOf(c.ownerId)) === "iphone" ? "phone" : "watch")}</span>`)}</span>`;
+    return html`<span class="pk-dev" title=${title}>${row.copies.map((c, i) =>
+      html`<span class="pk-dev-one">${uiIcon(deviceKindOf(this.ownerOf(c.ownerId)) === "iphone" ? "phone" : "watch")}<span>${names[i]}</span></span>`)}</span>`;
   }
 
   /** Whether a picker row is hidden from its device's complication list. The
@@ -8988,11 +8993,12 @@ export class WristAssistantPanel extends LitElement {
    * screen, answers both at once. The devices a complication lands on are the
    * ones whose cards are ticked, and nothing else.
    *
-   * Nothing is preselected among the shapes of an unticked card. The old
-   * popover tinted Rectangular as though it were the answer, which is a choice
-   * made for the author by a button that looked like a recommendation. A card
-   * the author ticks does get its biggest shape, because a place with nothing
-   * in it is a copy with nothing to draw.
+   * Nothing is preselected among the shapes of a card, opened or not. The old
+   * popover tinted Rectangular as though it were the answer, and for a day the
+   * card ticked its biggest shape as it opened, which was the same choice made
+   * for the author one step later. A card is ticked when one of its shapes is,
+   * so an open card with nothing ticked is just a place being looked at, and
+   * Create waits until a shape is picked.
    */
   private renderNewDialog() {
     const nameProblem = this.newNameProblem();
@@ -9036,14 +9042,13 @@ export class WristAssistantPanel extends LitElement {
                 ticked: picked > 0,
                 shapes: picked,
                 title: `Shapes on the ${card.label}`,
-                // An unticked card ticks as it opens, so its shapes can be
-                // chosen in the panel below without a click nobody was told
-                // about. A ticked one only opens: the tick is how it goes off.
-                click: () => {
-                  if (picked === 0) this.newPicks = tickCard(this.newPicks, card, true);
-                  this.newPlace = card.key;
-                },
-                tick: () => { this.newPicks = tickCard(this.newPicks, card, false); },
+                // A click only opens the card: its shapes are chosen in the
+                // panel below, and nothing is ticked on the author's behalf.
+                // The card used to tick its biggest shape as it opened, which
+                // read as the dialog picking Rectangular for you. The tick is
+                // how a card goes off.
+                click: () => { this.newPlace = card.key; },
+                tick: () => { this.newPicks = untickCard(this.newPicks, card); },
               });
             })}
             ${controls ? this.renderPlaceCard({
@@ -9073,7 +9078,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="new-count">${pickedWords(this.newPicks, this.newControl, ticked)}</span>
         <button class="small" @click=${() => this.closeNewDialog()}>Cancel</button>
         <button class="primary" ?disabled=${!ready}
-          title=${ready ? "Make it" : !named ? "Give it a name first" : nameProblem ? nameProblem : controls ? "Tick a place or the control first" : "Tick a place first"}
+          title=${ready ? "Make it" : !named ? "Give it a name first" : nameProblem ? nameProblem : controls ? "Tick a shape or the control first" : "Tick a shape first"}
           @click=${() => this.createNew()}>Create</button>
       </div>
     </dialog>`;

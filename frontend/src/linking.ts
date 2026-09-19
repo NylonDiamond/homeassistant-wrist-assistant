@@ -312,25 +312,18 @@ export function joiningOwners(card: LinkPlaceCard, on: ReadonlySet<string>): str
 }
 
 /**
- * Tick or untick a whole card.
+ * Untick a whole card: every shape of it, off every device it holds.
  *
- * A ticked card with no shape in it would be a device the complication lands
- * on with nothing to draw, so ticking one ticks shapes too: the ones already
- * ticked elsewhere that this card can draw, which is what makes a shared shape
- * shared, and failing that its biggest, which is the shape worth building
- * first. Unticking takes every shape of the card off every device it holds.
+ * There is no ticking a card as a whole. A card is ticked when one of its
+ * shapes is, and the shapes are picked one by one in the panel under it. It
+ * used to tick its biggest shape as it opened, so that a ticked card never
+ * held nothing, but that put Rectangular on every watch complication whose
+ * author only wanted to look at the watch face card; now an open card with
+ * nothing ticked is simply unticked, and Create waits for a shape.
  */
-export function tickCard(picks: LinkPicks, card: LinkPlaceCard, on: boolean): LinkPicks {
+export function untickCard(picks: LinkPicks, card: LinkPlaceCard): LinkPicks {
   let next = picks;
-  if (!on) {
-    for (const row of card.rows) next = setPick(next, row.family, row.sides.map((s) => s.ownerId), false);
-    return next;
-  }
-  const already = pickedFamilies(picks);
-  const wanted = card.rows.filter((row) => already.has(row.family));
-  for (const row of wanted.length > 0 ? wanted : card.rows.slice(0, 1)) {
-    next = setPick(next, row.family, row.sides.map((s) => s.ownerId), true);
-  }
+  for (const row of card.rows) next = setPick(next, row.family, row.sides.map((s) => s.ownerId), false);
   return next;
 }
 

@@ -19,7 +19,7 @@ import {
   setPick,
   sideTitle,
   startFromCopyLine,
-  tickCard,
+  untickCard,
   tickedOwners,
 } from "../src/linking.js";
 import { familiesFor } from "../src/layouts.js";
@@ -138,25 +138,10 @@ describe("linkPlaceCards", () => {
   });
 });
 
-describe("ticking a card", () => {
-  // A ticked place with nothing in it would be a copy with nothing to draw.
-  it("ticks the biggest shape when nothing is picked yet", () => {
-    const watch = card([WATCH], new Map(), "watch:w1");
-    const p = tickCard(new Map(), watch, true);
-    expect([...pickedFamilies(p)]).toEqual(["rectangular"]);
-    const home = card([PHONE], new Map(), "home:p1");
-    expect([...pickedFamilies(tickCard(new Map(), home, true))]).toEqual(["large"]);
-  });
-
-  // Which is what makes a shared shape shared: the second device joins the
-  // design that is already there rather than starting its own.
-  it("takes the shapes already picked elsewhere that the card can draw", () => {
-    const start = picks({ w1: ["rectangular", "circular", "corner"] });
-    const lock = card([WATCH, PHONE], start, "lock:p1");
-    const p = tickCard(start, lock, true);
-    expect([...p.get("p1")!].sort()).toEqual(["circular", "rectangular"]);
-  });
-
+describe("unticking a card", () => {
+  // A card is ticked through its shapes, never as a whole: opening one picks
+  // nothing for the author. (It ticked its biggest shape for a day, which
+  // put Rectangular on anyone who only clicked the watch face card to look.)
   it("counts a card's ticked shapes once however many devices draw them", () => {
     const p = picks({ w1: ["rectangular", "circular"], p1: ["rectangular", "circular"] });
     const shared = card([WATCH, PHONE], p, "shared");
@@ -168,14 +153,14 @@ describe("ticking a card", () => {
   it("unticks the folded card on both devices at once", () => {
     const p = picks({ w1: ["rectangular", "corner"], p1: ["rectangular"] });
     const shared = card([WATCH, PHONE], p, "shared");
-    const off = tickCard(p, shared, false);
+    const off = untickCard(p, shared);
     expect([...pickedFamilies(off)]).toEqual([]);
   });
 
   it("leaves the other cards alone when one goes off", () => {
     const p = picks({ w1: ["rectangular"], p1: ["small"] });
     const home = card([WATCH, PHONE], p, "home:p1");
-    const off = tickCard(p, home, false);
+    const off = untickCard(p, home);
     expect([...pickedFamilies(off)]).toEqual(["rectangular"]);
   });
 });
