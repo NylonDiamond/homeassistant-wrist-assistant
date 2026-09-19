@@ -123,7 +123,6 @@ import {
   CHART_DEFAULT_LOW_HEX,
   COMPARISON_KINDS,
   DRAWABLE_FAMILIES,
-  defaultLayout,
   elementSize,
   refitPlacement,
   IMAGE_DEFAULT_CORNER_RADIUS,
@@ -183,13 +182,11 @@ import {
   setLayerEntity,
   styleChangePayload,
   switchComparison,
-  copyElements,
+  copyShapeLayers,
   isAttachedTap,
   listOwningRowLayer,
-  normalizeOwnership,
   ownedElements,
   ownedShownCount,
-  pasteElements,
   shareValue,
   sharedValueUses,
   unsharedCopy,
@@ -4764,45 +4761,39 @@ export function shapeSizeField(
 export { elementSize };
 
 /**
- * Give one shape its own copy of another shape's layers.
+ * "Copy the Rectangular layout", clicked: one shape given its own copy of
+ * another shape's layers.
  *
- * A real copy, not a link: the new shape gets new layers with new ids, so
- * editing one of them afterwards changes nothing on the shape it came from.
- * Each one lands where its original sits, scaled for the canvas it arrives on.
- * What "copy the Rectangular layout" does to a shape that is still blank.
+ * The copy itself lives in `model.ts` as `copyShapeLayers`, because adding a
+ * shape starts from the same copy now and the rule about which layer belongs
+ * to which shape is written there. This is the editor's name for it.
  */
 export function copyShapeLayout(cfg: CustomComplicationConfig, from: FamilyKind, to: FamilyKind): void {
-  const layout = cfg.perFamily[to] ?? (cfg.perFamily[to] = defaultLayout());
-  const source = ownedElements(cfg, from).filter((el) => !isAttachedTap(cfg, el));
-  if (source.length === 0) return;
-  const clip = copyElements(cfg, source.map((el) => el.payload.id), from);
-  const landed = pasteElements(cfg, clip, { nudge: false });
-  // Each copy arrives carrying the source shape's own placement. Refit it for
-  // this canvas, hand it to this shape, and take it off the source shape,
-  // which is what makes the copy a layer of its own rather than a second
-  // pointer at the original.
-  const sourceLayout = cfg.perFamily[from];
-  for (const id of landed) {
-    const el = cfg.elements.find((e) => e.payload.id === id);
-    if (!el) continue;
-    const src = sourceLayout?.placements[id];
-    // The size travels even when the source shape never set one, so the refit
-    // has something to scale down for the smaller canvas.
-    const size = src?.size ?? elementSize(el);
-    const base: Placement = {
-      frame: { ...(src?.frame ?? el.payload.frame) },
-      // A layer hidden on the source shape arrives hidden, so the copy is the
-      // arrangement as it stands rather than an arrangement plus whatever was
-      // switched off in it.
-      isHidden: src?.isHidden ?? false,
-      ...(size !== undefined ? { size } : {}),
-    };
-    // Left on the source shape the copy would have two owners, and settling
-    // the document would split it in two, so it comes off there.
-    for (const f of DRAWABLE_FAMILIES) if (f !== to) delete cfg.perFamily[f]?.placements[id];
-    layout.placements[id] = refitPlacement(base, from, to, el.kind);
-  }
-  normalizeOwnership(cfg, to);
+  copyShapeLayers(cfg, from, to);
+}
+
+/**
+ * The line under a shape that arrived as a copy of another one.
+ *
+ * Circular layers sit inside a round mask, so a Small tile copied from it has
+ * empty corners and the line says so. Every other pair is the same shape of
+ * box at another size, where there is nothing to warn about and the only
+ * question is where it came from.
+ */
+export function seedHintText(source: FamilyKind, target: FamilyKind): string {
+  return target === "small" && source === "circular"
+    ? "Copied from your circular design. The corners are free."
+    : `Copied from your ${familyTitle(source)} design.`;
+}
+
+/** That line, drawn under the canvas: one sentence and a way to be rid of it.
+ * It sits where the shape's own caption sits, since it is a note about the
+ * shape being looked at rather than about the document. */
+export function seedHintNote(text: string, dismiss: () => void): TemplateResult {
+  return html`<div class="seed-hint" role="status">
+    <span>${text}</span>
+    <button class="link" @click=${dismiss}>Got it</button>
+  </div>`;
 }
 
 /** How many layers a shape actually draws: what the Layers card counts to

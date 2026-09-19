@@ -87,6 +87,7 @@ import {
   newId,
   parseConfig,
   schemaVersionFor,
+  seedFamilyFromSibling,
   setControlShown,
   ownedElements,
   listOwningRowLayer,
@@ -192,6 +193,8 @@ import {
   pickedCommon,
   rowKindIcon,
   rowStageConfig,
+  seedHintNote,
+  seedHintText,
   setPlacement,
   syncListAttributes,
   shownCount,
@@ -1158,6 +1161,15 @@ export class WristAssistantPanel extends LitElement {
   /** Groups folded shut in the Layers list. List state only, never saved. */
   @state() private collapsed: ReadonlySet<string> = new Set();
   @state() private activeFamily: FamilyKind = "rectangular";
+  /**
+   * The shape just added arrived as a copy of another one, and this is the
+   * line under it saying so.
+   *
+   * Editor state, never saved. It is set once, by the press that added the
+   * shape, and it goes when that shape is left, when another shape is added,
+   * or when the line is dismissed, so nobody reads it twice.
+   */
+  @state() private seedHint?: { family: FamilyKind; text: string };
   /**
    * The Control Center tab is the one being edited, in place of a shape.
    *
@@ -3346,6 +3358,14 @@ export class WristAssistantPanel extends LitElement {
     .under .size { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
     .under .dot { color: var(--wa-line-strong); }
     .under .tail b { font-weight: 700; }
+    /* The one line a shape added as a copy of another one carries, under its
+       own caption: said once, dismissed with the button beside it. */
+    .seed-hint {
+      display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px 10px;
+      margin-top: -12px; max-width: 520px; text-align: center;
+      font-size: 12.5px; font-weight: 500; color: var(--wa-ink);
+    }
+    .seed-hint button.link { font-weight: 600; }
     /* The two lists under the face: what the complication defines for itself,
        and what the house is telling it right now. Stacked, so each title and
        each value line gets the whole width instead of wrapping into a column
@@ -4857,6 +4877,12 @@ export class WristAssistantPanel extends LitElement {
       const dark = this.hass?.themes?.darkMode ?? window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
       this.toggleAttribute("dark", dark);
     }
+    // The "copied from" line belongs to the shape that was just added. Moving
+    // to another shape is the reader saying they are done with it, so it goes
+    // rather than waiting on the tab to come back round.
+    if (changed.has("activeFamily") && this.seedHint !== undefined && this.seedHint.family !== this.activeFamily) {
+      this.seedHint = undefined;
+    }
     // A different selection starts with every card open, whatever the last
     // one had folded; One at a time is a choice made per selection.
     if (changed.has("inspect")) {
@@ -6002,7 +6028,12 @@ export class WristAssistantPanel extends LitElement {
     // The tabs and the New dialog already list only what this device draws;
     // this is the one gate every other way in goes through.
     if (!this.ownerFamilies.includes(family)) return;
-    this.mutate((c) => addFamily(c, family));
+    // The shape starts from a copy of one the complication already draws, so a
+    // finished design is not built a second time by hand. `seedFamilyFromSibling`
+    // says which shape it took, and that is the line printed under the new one.
+    let from: FamilyKind | undefined;
+    this.mutate((c) => { addFamily(c, family); from = seedFamilyFromSibling(c, family); });
+    this.seedHint = from === undefined ? undefined : { family, text: seedHintText(from, family) };
     this.activeFamily = family;
     this.controlView = false;
     this.inspect = { kind: "family" };
@@ -11493,6 +11524,7 @@ export class WristAssistantPanel extends LitElement {
           ${isDrawable(family) ? this.renderOver() : nothing}
           ${isDrawable(family) ? this.renderBigPreview(family, layouts, deviceCase) : this.renderInlinePreview(layouts.inline, false)}
           ${this.renderUnder(cfg, family)}
+          ${this.seedHint?.family === family ? seedHintNote(this.seedHint.text, () => { this.seedHint = undefined; }) : nothing}
         </div>
         ${this.zoomed && isDrawable(family) ? this.renderZoomDialog(family, layouts, deviceCase) : nothing}
         ${this.demoing && isDrawable(family) ? this.renderDemoDialog(family, layouts, deviceCase) : nothing}
