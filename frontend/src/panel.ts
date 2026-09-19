@@ -151,6 +151,8 @@ import {
   linkedCopies,
   linkedSaveStatus,
   mergeLinkedContent,
+  newReady,
+  newSummary,
   ownersDrawing,
   picksFromChoice,
   picksFromCopies,
@@ -1170,6 +1172,9 @@ export class WristAssistantPanel extends LitElement {
    * shape with the control switched on; beside a shape it adds the control to
    * that shape's document. */
   @state() private newControl = false;
+  /** Whether Add a shape is open. A dialog rather than a popover since
+   * 2026-09-19, so it stays open while shape after shape is added. */
+  @state() private addShapesOpen = false;
   /** The devices the open complication is linked across, in picker order. One
    * entry (the owner being edited) for an ordinary complication; the whole set
    * for a linked one, which is what save, rename and delete act on. */
@@ -1802,11 +1807,11 @@ export class WristAssistantPanel extends LitElement {
     .new-btn svg { width: 16px; height: 16px; }
     .newc-full { font-size: 11px; color: var(--wa-muted); white-space: nowrap; }
 
-    /* The New complication dialog: name, shape, Create. In the middle of the
-       window rather than hanging off the button, because it asks two questions
-       and refuses until both are answered. */
+    /* The New complication dialog: three numbered steps and Create. In the
+       middle of the window rather than hanging off the button, because it asks
+       three questions and refuses until all three are answered. */
     dialog.new-dialog {
-      width: min(520px, calc(100vw - 32px)); padding: 0;
+      width: min(720px, calc(100vw - 32px)); padding: 0;
       border: 1px solid var(--wa-line); border-radius: 12px;
       background: var(--wa-card); color: var(--wa-ink);
       box-shadow: 0 12px 40px rgba(0,0,0,.4);
@@ -1815,21 +1820,67 @@ export class WristAssistantPanel extends LitElement {
     .new-head { display: flex; align-items: center; gap: 8px; padding: 12px 12px 12px 18px; border-bottom: 1px solid var(--wa-line); }
     .new-head h2 { margin: 0; font-size: 15px; font-weight: 500; }
     .new-head .spacer { flex: 1; }
-    /* Label over control here, not beside it: the inspector's two-column field
-       gives a third of the row to a one-word label, and four shape cards need
-       every pixel of a 430 px dialog. */
-    .new-body .field { display: flex; flex-direction: column; align-items: stretch; gap: 5px; }
-    .new-body .field > span { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
-    .new-body { padding: 14px 18px 4px; }
-    .new-body .field.new-shapes { margin-top: 14px; }
-    /* The running count sits opposite the buttons, so what Create is about to
-       make is readable without moving the eye to the button itself. */
-    .new-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 18px 16px; }
-    .new-count { flex: 1; font-size: 12px; color: var(--wa-muted); }
-    /* Auto-fit rather than four fixed columns: a watch owner has four shape
-       cards and a phone owner up to seven, so the grid takes as many as the
-       dialog's width allows and wraps the rest onto another row. */
-    .shape-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 8px; }
+    /* What the dialog is about to ask, beside its title: three steps named
+       before the first one is answered. */
+    .new-head-note { font-size: 11.5px; color: var(--wa-muted); }
+    /* The three steps, stacked, with the body scrolling rather than the window:
+       a home with four devices has four sections of shapes and two boxes of
+       people under them. */
+    .new-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; max-height: min(74vh, 720px); overflow-y: auto; }
+    /* One tinted container per step, each a different token so the three read
+       as an order rather than as three of the same box. Mixed into the card
+       rather than written as a colour, so dark mode follows. */
+    .new-step {
+      display: flex; flex-direction: column; gap: 9px; padding: 12px 14px;
+      border-radius: var(--wa-r-md); border: 1px solid var(--wa-line);
+      transition: opacity .14s ease-out;
+    }
+    .new-step.step-name {
+      background: color-mix(in srgb, var(--wa-accent) 12%, var(--wa-card));
+      border-color: color-mix(in srgb, var(--wa-accent) 32%, var(--wa-line));
+    }
+    .new-step.step-shapes {
+      background: color-mix(in srgb, var(--success-color, #3dd68c) 12%, var(--wa-card));
+      border-color: color-mix(in srgb, var(--success-color, #3dd68c) 32%, var(--wa-line));
+    }
+    .new-step.step-people {
+      background: color-mix(in srgb, var(--warning-color, #e0a100) 12%, var(--wa-card));
+      border-color: color-mix(in srgb, var(--warning-color, #e0a100) 32%, var(--wa-line));
+    }
+    /* A step whose answer would be thrown away: the name is what every other
+       question is about, so until it is typed the rest waits rather than
+       collecting picks Create will refuse. */
+    .new-step.waiting { opacity: .45; pointer-events: none; }
+    .new-step-head { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+    .new-step-num {
+      flex: none; width: 21px; height: 21px; align-self: center; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 11.5px; font-weight: 700; color: var(--wa-accent-ink); background: var(--wa-accent);
+    }
+    .step-shapes .new-step-num { background: var(--success-color, #3dd68c); }
+    .step-people .new-step-num { background: var(--warning-color, #e0a100); }
+    .new-step-title { font-size: 13px; font-weight: 700; color: var(--wa-ink); }
+    .new-step-hint { font-size: 11.5px; line-height: 1.35; color: var(--wa-muted); }
+    .new-name { font-size: 14px; }
+    /* Two sections side by side while the dialog is wide enough for them: at
+       720 px the four of them are two rows rather than four, and the whole of
+       step 2 is readable without scrolling it. */
+    .new-step .shape-rows { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 10px; }
+    /* A white card per section on the step's tint, so the sections are the
+       shapes and the tint is the step. */
+    .new-step .shape-row, .add-dialog .shape-row {
+      padding: 10px; border-radius: 10px; border: 1px solid var(--wa-line); background: var(--wa-card);
+    }
+    /* The running line sits opposite the buttons, so what is still missing, or
+       what Create is about to make, is readable without hovering the button
+       that refuses to be pressed. */
+    .new-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 18px 14px; border-top: 1px solid var(--wa-line); }
+    .new-count { flex: 1; font-size: 12.5px; color: var(--wa-muted); }
+    /* Wrapping rather than a grid of equal columns: every card is the same
+       fixed width now that each one carries a 48 px drawing, so a section with
+       one shape in it draws one card rather than one card stretched across the
+       row. */
+    .shape-cards { display: flex; flex-wrap: wrap; gap: 8px; }
     /* The four shape sections, stacked. One heading per section for the whole
        home, where the dialog used to draw a card per place per device: a home
        with two watches and two phones drew seven of those to offer eight
@@ -1873,17 +1924,31 @@ export class WristAssistantPanel extends LitElement {
        recommendation, and the shape is the one thing about a complication
        that cannot be changed later without moving every layer. */
     .shape-card {
-      position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer;
-      font: inherit; font-size: 11.5px; padding: 10px 4px 8px; color: var(--wa-muted);
+      position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; cursor: pointer;
+      width: 96px; box-sizing: border-box;
+      font: inherit; font-size: 11.5px; padding: 8px 6px; color: var(--wa-muted);
       border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-raised);
       transition: border-color .12s ease-out, background-color .12s ease-out, color .12s ease-out;
     }
-    .shape-card:hover { border-color: var(--wa-line-strong); color: var(--wa-ink); }
+    .shape-card:hover:not([disabled]) { border-color: var(--wa-line-strong); color: var(--wa-ink); }
     .shape-card:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .shape-card.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-ink); }
-    /* The outline's own proportions, so a watch and a phone drawn side by side
-       are the same scale and neither is letterboxed inside its box. */
-    .shape-card .shape-art { width: 32px; height: 28px; display: block; flex: none; }
+    .shape-card.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); box-shadow: 0 0 0 2px var(--wa-sel-ring); color: var(--wa-ink); }
+    /* A shape the design already carries, in Add a shape: still in its row,
+       still drawn, and dashed so it reads as a place that is taken rather than
+       as a choice that failed. */
+    .shape-card.had { border-style: dashed; border-color: var(--wa-line-strong); background: var(--wa-panel); opacity: .7; cursor: default; }
+    /* A drawing big enough to be read at a glance, two of them side by side on
+       a card this wide. The box is narrower than the 32 by 28 viewBox because
+       the art crops its empty margins (preserveAspectRatio, in shapeArt.ts)
+       rather than letterboxing itself to fit. */
+    .shape-card .shape-art { width: 36px; height: 48px; display: block; flex: none; }
+    /* The drawing's two colours: the shape takes the button's own, the device
+       around it stays furniture whatever the button is doing. */
+    .shape-arts { height: 48px; --wa-shape-outline: var(--wa-muted); }
+    /* Lit means the accent, in both dialogs: ticked in the New dialog, and
+       still yours to take in Add a shape. A shape already on the design keeps
+       the muted colour it is drawn in. */
+    .shape-card.on .shape-arts, .add-dialog .shape-card:not(.had):not(.soon) .shape-arts { color: var(--wa-accent); }
     /* The tick on a picked card, and the empty ring that holds its place so
        nothing shifts when one is ticked. */
     .pick-tick {
@@ -2898,20 +2963,35 @@ export class WristAssistantPanel extends LitElement {
       color: var(--wa-accent); background: color-mix(in srgb, var(--wa-accent) 13%, transparent);
     }
     .shape-spare { font-size: 11.5px; color: var(--wa-muted); }
-    /* Every shape this complication could still have, under the same place
-       headings the New dialog uses. A panel rather than a row because the
-       headings are the point, and a row of nine cards with three headings in
-       it is wider than the bar it hangs off. */
-    .add-menu {
-      position: fixed; inset: auto; margin: 0; width: min(370px, calc(100vw - 24px)); padding: 12px;
-      border: 1px solid var(--wa-line-strong); border-radius: var(--wa-r-md);
-      background: var(--wa-panel); color: var(--wa-ink); box-shadow: var(--wa-shadow-pop);
+    /* Every shape this complication could carry, under the same four place
+       headings the New dialog uses, with the ones it already has among them.
+       Centred rather than hung off the button: the panel used to drop a card
+       the moment its shape was added, so the row rearranged itself under the
+       pointer, and it closed on every click, so three shapes meant opening it
+       three times. */
+    dialog.add-dialog {
+      width: min(500px, calc(100vw - 32px)); padding: 0;
+      border: 1px solid var(--wa-line); border-radius: 12px;
+      background: var(--wa-card); color: var(--wa-ink);
+      box-shadow: 0 12px 40px rgba(0,0,0,.4);
     }
-    .add-menu:popover-open { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; overscroll-behavior: contain; }
-    .add-note { font-size: 11.5px; line-height: 1.35; color: var(--wa-muted); }
-    /* Three to a row here, not the dialog's auto-fit: the panel is narrower
-       than the dialog and a fourth column would squeeze the names. */
-    .add-menu .shape-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    dialog.add-dialog::backdrop { background: rgba(0,0,0,.45); }
+    /* The title and its line stack, where the New dialog's sit side by side:
+       the title carries the complication's name, which is as long as the
+       author made it. */
+    .add-head-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .add-body {
+      display: flex; flex-direction: column; gap: 10px; padding: 12px 16px;
+      max-height: min(66vh, 620px); overflow-y: auto; overscroll-behavior: contain;
+      background: var(--wa-panel);
+    }
+    .add-body .shape-rows { gap: 10px; }
+    .add-foot {
+      display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+      border-top: 1px solid var(--wa-line); font-size: 11.5px;
+    }
+    .add-note { flex: 1; line-height: 1.35; color: var(--wa-muted); }
+    .add-left { font-weight: 700; color: var(--wa-ink); white-space: nowrap; }
     .canvas-bar .hint { margin: 0; }
     /* Shape tabs: one per family, drawn with a real picture of what that shape
        holds. A family the complication does not have is a dashed invitation. */
@@ -8944,6 +9024,14 @@ export class WristAssistantPanel extends LitElement {
    * about a complication that cannot be changed later without moving every
    * layer. The devices are the exception, because "mine" is an answer worth
    * filling in.
+   *
+   * Three numbered steps since 2026-09-19, each one a tinted container with a
+   * badge. The dialog asked all three questions as plain fields under
+   * uppercase labels, which reads as a form rather than as an order, and the
+   * only place the missing answer was written down was the tooltip on the
+   * disabled Create button. Now the footer says it in words, and steps 2 and 3
+   * wait visibly while the name is empty instead of accepting picks that
+   * Create will refuse anyway.
    */
   private renderNewDialog() {
     const nameProblem = this.newNameProblem();
@@ -8953,26 +9041,33 @@ export class WristAssistantPanel extends LitElement {
     const people = this.newPeople(owners);
     const ticked = owners.filter((o) => this.newOwners.has(o.ownerId)).length;
     const count = this.newFamilies.size + (this.newControl ? 1 : 0);
-    const ready = named && nameProblem === undefined && count > 0 && ticked > 0;
     const hasControl = sections.some((s) => s.key === "control");
+    const state = { named, nameProblem, shapes: count, devices: ticked, hasControl };
+    const summary = newSummary(state);
+    const ready = newReady(state);
+    // Steps 2 and 3 are answers to a complication that does not have a name
+    // yet, so they wait rather than refuse: dimmed, unclickable, and saying so
+    // to a screen reader.
+    const waiting = named ? "" : "waiting";
     return html`<dialog class="new-dialog" @keydown=${this.newKeys} @close=${() => { this.newOpen = false; }}>
       <div class="new-head">
         <h2>New complication</h2>
+        <span class="new-head-note">Three steps. Name it, pick shapes, pick devices.</span>
         <span class="spacer"></span>
         <button class="icon" title="Cancel" aria-label="Cancel" @click=${() => this.closeNewDialog()}>${uiIcon("close")}</button>
       </div>
       <div class="new-body">
-        <div class="field">
-          <span>Name</span>
-          <input type="text" .value=${this.newName} placeholder="Kitchen at a glance" maxlength="60"
-            aria-label="Complication name" aria-invalid=${nameProblem ? "true" : "false"}
+        <section class="new-step step-name">
+          ${this.renderStepHead(1, "Name it", "This is the name the watch picker and the iPhone widget lists show.")}
+          <input type="text" class="new-name" .value=${this.newName} placeholder="Kitchen at a glance" maxlength="60"
+            autofocus aria-label="Complication name" aria-invalid=${nameProblem ? "true" : "false"}
             @input=${(e: Event) => { this.newName = (e.target as HTMLInputElement).value; }} />
-        </div>
-        ${nameProblem
-          ? html`<div class="hint err">${nameProblem}</div>`
-          : html`<div class="hint">This is the name the watch's picker and the iPhone's widget lists show, so make it one you will recognise there.</div>`}
-        <div class="field new-shapes">
-          <span>Shapes</span>
+          ${nameProblem ? html`<div class="hint err">${nameProblem}</div>` : nothing}
+        </section>
+        <section class="new-step step-shapes ${waiting}" aria-disabled=${named ? "false" : "true"}>
+          ${this.renderStepHead(2, "Pick the shapes", named
+            ? "Blue shows where each shape sits. Tick as many as you like."
+            : "Waits for a name.")}
           <div class="shape-rows" role="group" aria-label="Shapes">
             ${sections.map((section) => this.renderShapeSection({
               section,
@@ -8983,63 +9078,82 @@ export class WristAssistantPanel extends LitElement {
               onControl: () => { this.newControl = !this.newControl; },
             }))}
           </div>
-          <div class="hint">A shape is drawn on every ticked device that can show it. The little pictures show where it sits.</div>
-        </div>
-        ${people.length === 0 ? nothing : html`<div class="field new-shapes">
-          <span>Shows on</span>
+        </section>
+        ${people.length === 0 ? nothing : html`<section class="new-step step-people ${waiting}"
+          aria-disabled=${named ? "false" : "true"}>
+          ${this.renderStepHead(3, "Choose whose devices get it",
+            "Your own devices start ticked. Every ticked device draws every shape it can.")}
           <div class="people-grid" role="group" aria-label="Shows on">${people.map((row) => this.renderPersonBox(row))}</div>
-          <div class="hint">Your own devices start ticked. A watch and its iPhone sit under one name.</div>
-        </div>`}
+        </section>`}
       </div>
       <div class="new-foot">
-        <span class="new-count">${count === 0
-          ? "Pick a shape to start"
-          : `${count} ${count === 1 ? "shape" : "shapes"} on ${ticked} ${ticked === 1 ? "device" : "devices"}`}</span>
+        <span class="new-count">${summary}</span>
         <button class="small" @click=${() => this.closeNewDialog()}>Cancel</button>
-        <button class="primary" ?disabled=${!ready}
-          title=${ready
-            ? "Make it"
-            : !named
-              ? "Give it a name first"
-              : nameProblem
-                ? nameProblem
-                : count === 0
-                  ? (hasControl ? "Tick a shape or the control first" : "Tick a shape first")
-                  : "Tick a device first"}
+        <button class="primary" ?disabled=${!ready} title=${ready ? "Make it" : summary}
           @click=${() => void this.createNew()}>Create</button>
       </div>
     </dialog>`;
   }
 
+  /** One step's badge, name and hint, the same three parts in all three
+   * steps. */
+  private renderStepHead(step: number, title: string, hint: string) {
+    return html`<div class="new-step-head">
+      <span class="new-step-num" aria-hidden="true">${step}</span>
+      <span class="new-step-title">${title}</span>
+      <span class="new-step-hint">${hint}</span>
+    </div>`;
+  }
+
   /**
    * One shape section, drawn the same way wherever shapes are offered.
    *
-   * The New dialog and the Add a shape popover are one method rather than two
+   * The New dialog and the Add a shape dialog are one method rather than two
    * because they are the same offer twice: these are the shapes, here is where
    * each one sits, pick the ones you want. `ticks` is the whole difference. The
-   * dialog's buttons are checkboxes that hold an answer until Create; the
-   * popover's do the thing on the click, so they carry no tick.
+   * New dialog's buttons are checkboxes that hold an answer until Create; Add a
+   * shape's do the thing on the click, so they carry no tick.
+   *
+   * `have` is what makes it Add a shape: the shapes the open complication
+   * already carries. They stay in the row, drawn grey and dashed and refusing
+   * the click, because a row that quietly loses a card every time one is added
+   * is a row whose shape is never twice the same. The lit drawing follows from
+   * it too: in the New dialog blue means ticked, and in Add a shape it means
+   * this one is still yours to take.
    */
   private renderShapeSection(o: {
     section: ShapeSection;
     picked: ReadonlySet<FamilyKind>;
     controlOn: boolean;
     ticks: boolean;
+    /** Add a shape only: the shapes this design already has. */
+    have?: ReadonlySet<FamilyKind>;
+    /** Add a shape only: whether it already has the Control Center control. */
+    haveControl?: boolean;
     onShape: (family: FamilyKind) => void;
     onControl: () => void;
   }) {
     const { section } = o;
+    const adding = o.have !== undefined;
     const where = joinNames(section.kinds.map((k) => k === "iphone" ? "the iPhone" : "the watch"));
     // Only the outlines this home has: a shared shape in a watch-only home is
     // one drawing, not a watch beside a phone nobody owns.
     const arts = (family: FamilyKind, on: boolean) =>
       shapeArtKinds(family).filter((k) => section.kinds.includes(k)).map((k) => deviceShapeArt(family, k, on));
-    const button = (b: { on: boolean; title: string; label: string; art: unknown; click: () => void }) =>
-      html`<button type="button" class="shape-card ${b.on ? "on" : ""}"
+    // An available card keeps whatever its own sub line says and falls back to
+    // the invitation, so Extra Large still reads "Coming soon" and the control
+    // still says what it is.
+    const sub = (had: boolean, own: unknown) => adding ? (had ? "already added" : own ?? "click to add") : own;
+    const button = (b: {
+      on: boolean; had: boolean; title: string; label: string; sub: unknown; art: unknown; click: () => void;
+    }) =>
+      html`<button type="button" class="shape-card ${b.on ? "on" : ""} ${b.had ? "had" : ""}"
         role=${o.ticks ? "checkbox" : "button"} aria-checked=${o.ticks ? (b.on ? "true" : "false") : nothing}
+        ?disabled=${b.had} aria-disabled=${b.had ? "true" : nothing}
         title=${b.title} @click=${b.click}>
         <span class="shape-arts">${b.art}</span>
         <span class="shape-card-name">${b.label}</span>
+        ${b.sub === undefined ? nothing : html`<span class="shape-card-note">${b.sub}</span>`}
         ${o.ticks ? (b.on ? pickTick() : html`<span class="pick-tick off" aria-hidden="true"></span>`) : nothing}
       </button>`;
     return html`<div class="shape-row">
@@ -9048,18 +9162,29 @@ export class WristAssistantPanel extends LitElement {
         <span class="shape-row-title">${section.title}</span>
       </div>
       <div class="shape-cards">
-        ${section.families.map((family) => button({
-          on: o.picked.has(family),
-          title: `${familyTitle(family)} on ${where}`,
-          label: familyTitle(family),
-          art: arts(family, o.picked.has(family)),
-          click: () => o.onShape(family),
-        }))}
+        ${section.families.map((family) => {
+          const had = o.have?.has(family) ?? false;
+          return button({
+            on: o.picked.has(family),
+            had,
+            title: adding
+              ? (had ? `${familyTitle(family)} is already on this design` : `Add ${familyTitle(family)}`)
+              : `${familyTitle(family)} on ${where}`,
+            label: familyTitle(family),
+            sub: sub(had, undefined),
+            art: arts(family, adding ? !had : o.picked.has(family)),
+            click: () => o.onShape(family),
+          });
+        })}
         ${section.key !== "control" ? nothing : button({
           on: o.controlOn,
-          title: `A toggle or a button in Control Center, on ${where}`,
+          had: o.haveControl ?? false,
+          title: adding
+            ? (o.haveControl ? "Control is already on this design" : "Add Control")
+            : `A toggle or a button in Control Center, on ${where}`,
           label: "Control",
-          art: section.kinds.map((k) => controlDeviceArt(k, o.controlOn)),
+          sub: sub(o.haveControl ?? false, "a toggle or a button"),
+          art: section.kinds.map((k) => controlDeviceArt(k, adding ? !o.haveControl : o.controlOn)),
           click: () => o.onControl(),
         })}
         ${section.comingSoon.map((family) => html`<button type="button" class="shape-card soon" disabled
@@ -12706,13 +12831,12 @@ export class WristAssistantPanel extends LitElement {
     const spare = sections.reduce((n, s) => n + s.families.length + (s.key === "control" ? 1 : 0), 0);
     return html`<div class="shape-seg" role="group" aria-label="Shapes">${this.renderHaveTabs(cfg, layouts)}${this.renderControlTab(cfg)}</div>
       ${spare > 0 ? html`<span class="shape-adds">
-        <button class="tab off add-shape" ?disabled=${!this.canEdit} popovertarget="add-shapes"
-          title="Add another shape, or the Control Center control">${uiIcon("plus")}Add a shape</button>
+        <button class="tab off add-shape" ?disabled=${!this.canEdit}
+          title="Add another shape, or the Control Center control"
+          @click=${() => this.openAddShapes()}>${uiIcon("plus")}Add a shape</button>
         <span class="shape-spare">${spare === 1 ? "1 more available" : `${spare} more available`}</span>
-        <div id="add-shapes" popover="auto" class="add-menu" @beforetoggle=${this.placeAddMenu}>
-          ${this.renderAddGroups(sections)}
-        </div>
-      </span>` : nothing}`;
+      </span>` : nothing}
+      ${this.addShapesOpen ? this.renderAddShapesDialog(cfg, spare) : nothing}`;
   }
 
   /**
@@ -12742,55 +12866,77 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The Add a shape popover's contents: the dialog's sections, as a menu.
+   * Add a shape: every shape this design could carry, in the New dialog's four
+   * sections, with the ones it already has drawn grey beside them.
    *
-   * The same rows as the New dialog, drawn by the same method, so a shape is
-   * the same button wherever it is offered. The difference is what a click
-   * does: there it holds an answer, here it adds the shape and closes the
-   * menu.
+   * A centred dialog since 2026-09-19, where it used to be a popover measured
+   * under the button that opened it. Two things were wrong with the panel. It
+   * dropped a card the moment the shape was added, so the row the author was
+   * looking at rearranged itself under the pointer and the next shape was
+   * somewhere else; and it closed on every click, so adding three shapes meant
+   * opening it three times. Showing what is already there and staying open
+   * fixes both, and neither wants to be squeezed into a panel hanging off a
+   * bar.
+   *
+   * The sections are the whole home's, not what is left of them: a section with
+   * nothing to offer is still where its shapes are, and this is now a picture
+   * of the design rather than a menu of moves.
    */
-  private renderAddGroups(sections: readonly ShapeSection[]) {
+  private renderAddShapesDialog(cfg: CustomComplicationConfig, spare: number) {
+    const sections = shapeSections(this.linkTargetOwners());
+    const have: ReadonlySet<FamilyKind> = new Set(cfg.supportedFamilies);
     const none: ReadonlySet<FamilyKind> = new Set();
-    return html`${sections.map((section) => this.renderShapeSection({
-      section,
-      picked: none,
-      controlOn: false,
-      ticks: false,
-      onShape: (family) => { this.closeAddMenu(); this.addShape(family); },
-      onControl: () => { this.closeAddMenu(); this.addControl(); },
-    }))}
-      ${this.linkTargetOwners().length > 1
-        ? html`<span class="add-note">Added to every device that can draw it.</span>`
-        : nothing}`;
+    const name = cfg.name.trim();
+    return html`<dialog class="add-dialog" @close=${() => { this.addShapesOpen = false; }}
+      @click=${(e: Event) => { if (e.target === e.currentTarget) this.closeAddShapes(); }}>
+      <div class="new-head">
+        <div class="add-head-text">
+          <h2>${name === "" ? "Add a shape" : `Add a shape to ${name}`}</h2>
+          <span class="new-head-note">Click one and it is added. Blue shows where it sits. Grey ones are already on this design.</span>
+        </div>
+        <span class="spacer"></span>
+        <button class="icon" title="Close" aria-label="Close" @click=${() => this.closeAddShapes()}>${uiIcon("close")}</button>
+      </div>
+      <div class="add-body">
+        <div class="shape-rows" role="group" aria-label="Shapes">
+          ${sections.map((section) => this.renderShapeSection({
+            section,
+            picked: none,
+            controlOn: false,
+            ticks: false,
+            have,
+            haveControl: cfg.control !== undefined,
+            onShape: (family) => this.addShape(family),
+            // The one click that closes this: adding the control moves the
+            // editor to the control's own view, which is a different card
+            // altogether, and a dialog left over it would be floating above
+            // something nobody asked to see.
+            onControl: () => { this.closeAddShapes(); this.addControl(); },
+          }))}
+        </div>
+      </div>
+      <div class="add-foot">
+        <span class="add-note">A new shape is added to every device this design appears on that can draw it.</span>
+        <span class="add-left">${spare === 1 ? "1 more available" : `${spare} more available`}</span>
+      </div>
+    </dialog>`;
   }
 
-  /**
-   * Put the Add a shape panel under the button that opened it.
-   *
-   * A popover is drawn in the top layer, so it is laid out against the viewport
-   * rather than the bar it belongs to, and CSS anchor positioning is not in
-   * every browser Home Assistant runs in yet. Measuring the button on the way
-   * open is the version that works everywhere. It is clamped to the viewport so
-   * a bar scrolled to the right edge does not push the panel off screen.
-   */
-  private placeAddMenu = (e: Event) => {
-    if ((e as unknown as { newState?: string }).newState !== "open") return;
-    const panel = e.currentTarget as HTMLElement;
-    const button = this.renderRoot.querySelector<HTMLElement>("button.add-shape");
-    if (!button) return;
-    const box = button.getBoundingClientRect();
-    const width = Math.min(370, window.innerWidth - 24);
-    panel.style.left = `${Math.max(12, Math.min(box.left, window.innerWidth - width - 12))}px`;
-    panel.style.top = `${box.bottom + 6}px`;
-    // A home with two devices has four places in here, so the panel scrolls
-    // rather than running off the bottom of the window.
-    panel.style.maxHeight = `${Math.max(200, window.innerHeight - box.bottom - 18)}px`;
-  };
+  private openAddShapes() {
+    if (!this.canEdit) return;
+    this.addShapesOpen = true;
+    void this.updateComplete.then(() => {
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.add-dialog");
+      if (dialog && !dialog.open) dialog.showModal();
+    });
+  }
 
-  /** Close the panel before the shape lands, so the bar the author is watching
-   * redraws with nothing floating over it. */
-  private closeAddMenu() {
-    this.renderRoot.querySelector<HTMLElement>("#add-shapes")?.hidePopover();
+  /** Close it through the element when it is open, so the browser runs its own
+   * closing and the `close` handler is the one place the flag is cleared. */
+  private closeAddShapes() {
+    const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.add-dialog");
+    if (dialog?.open) dialog.close();
+    else this.addShapesOpen = false;
   }
 
   /** A shape tab's eye, pressed: its preview under the canvas goes or comes

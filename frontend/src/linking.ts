@@ -218,6 +218,47 @@ export function shapeSections(owners: readonly LinkOwner[]): ShapeSection[] {
   return sections;
 }
 
+// ── the New dialog's footer line ──────────────────────────────────────────
+
+/** What the New dialog knows about its own three steps, which is all the
+ * footer line is about. */
+export interface NewSummary {
+  /** Whether step 1 has been answered at all. */
+  named: boolean;
+  /** Step 1's complaint, if it has one: a name another complication has. */
+  nameProblem?: string;
+  /** Step 2's count: shapes ticked, the control counted as one of them. */
+  shapes: number;
+  /** Step 3's count: devices ticked. */
+  devices: number;
+  /** Whether this home is offered the Control Center section, which changes
+   * only how step 2 is asked for. */
+  hasControl: boolean;
+}
+
+/**
+ * The one line in the New dialog's footer: what is missing, or what Create is
+ * about to make.
+ *
+ * It replaced the tooltip on a disabled Create button, which is the one place
+ * the answer could not be read without hovering the thing that refuses to be
+ * pressed. The order is the order of the steps, so the line always names the
+ * first question still open rather than the last.
+ */
+export function newSummary(o: NewSummary): string {
+  if (!o.named) return "Type a name to start.";
+  if (o.nameProblem !== undefined) return o.nameProblem;
+  if (o.shapes === 0) return o.hasControl ? "Tick a shape or the control first." : "Now tick at least one shape.";
+  if (o.devices === 0) return "Tick at least one device.";
+  return `${o.shapes} ${o.shapes === 1 ? "shape" : "shapes"} on ${o.devices} ${o.devices === 1 ? "device" : "devices"}`;
+}
+
+/** Whether every step has been answered, which is the only thing that enables
+ * Create. Beside `newSummary` because the two must never disagree. */
+export function newReady(o: NewSummary): boolean {
+  return o.named && o.nameProblem === undefined && o.shapes > 0 && o.devices > 0;
+}
+
 /** The devices that can show this shape, which is what a section's shape row
  * names under itself and what greys a device's box out. */
 export function ownersDrawing(owners: readonly LinkOwner[], family: FamilyKind): LinkOwner[] {

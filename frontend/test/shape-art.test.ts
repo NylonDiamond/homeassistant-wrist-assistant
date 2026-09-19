@@ -31,6 +31,10 @@ const rects = (art: string) => art.split("<rect").length - 1;
 
 const DEVICES: DeviceKind[] = ["watch", "iphone"];
 
+/** What the furniture is painted with: a variable the card sets, so lighting a
+ * shape with the accent leaves the device around it alone. */
+const OUTLINE = "var(--wa-shape-outline, currentColor)";
+
 describe("the device outline", () => {
   it("draws the watch case and its two band stubs around every watch shape", () => {
     for (const family of ["rectangular", "circular", "corner", "inline"] as FamilyKind[]) {
@@ -52,6 +56,51 @@ describe("the device outline", () => {
     const art = draw("rectangular", "watch");
     expect(art).toContain("0 0 32 28");
     expect(art).toContain(`aria-hidden="true"`);
+  });
+
+  // Two colours in one drawing: the shape follows the button (accent on a card
+  // that is ticked, or still addable), the device around it does not.
+  it("paints the device in the furniture colour, not the button's own", () => {
+    for (const device of DEVICES) {
+      const art = draw("rectangular", device);
+      expect(art).toContain(`stroke=${OUTLINE} stroke-opacity="0.45"`);
+      // The shape itself is untouched: it is what the button lights.
+      expect(art).toContain(`fill="currentColor" opacity=1`);
+    }
+    // The Lock Screen clock and the Home Screen's neighbouring icons are
+    // furniture too.
+    expect(draw("rectangular", "iphone")).toContain(`fill=${OUTLINE} opacity=0.25`);
+    expect(draw("large", "iphone")).toContain(`fill=${OUTLINE} opacity=0.2`);
+  });
+
+  // The cards give the art 48 px of height and less than 36 px of width, which
+  // the whole 32 by 28 box does not fit into. Slicing scales to the height and
+  // trims the empty margins instead, so two devices fit beside each other on a
+  // 96 px card; fitting would shrink the drawing back to a third of the space.
+  it("fills its box and crops the margins rather than shrinking to fit", () => {
+    for (const device of DEVICES) {
+      expect(draw("rectangular", device)).toContain(`preserveAspectRatio="xMidYMid slice"`);
+    }
+    expect(flatten(controlDeviceArt("watch", true))).toContain(`preserveAspectRatio="xMidYMid slice"`);
+  });
+
+  // What the crop is allowed to take: at 36 by 48 the box shows 21 of the
+  // viewBox's 32 units, centred, so nothing may sit outside 5.5 to 26.5. The
+  // watch case is the widest thing drawn, at 8 to 24.
+  it("keeps every drawing inside the 21 units a sliced box shows", () => {
+    let checked = 0;
+    for (const family of ALL_FAMILIES) {
+      for (const device of DEVICES) {
+        // Both spellings: an attribute written into the template is quoted, one
+        // interpolated into it is not.
+        for (const [, x, width] of draw(family, device).matchAll(/\bx="?([\d.]+)"?[^>]*?\bwidth="?([\d.]+)"?/g)) {
+          expect(Number(x)).toBeGreaterThanOrEqual(5.5);
+          expect(Number(x) + Number(width)).toBeLessThanOrEqual(26.5);
+          checked += 1;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(20);
   });
 });
 
@@ -136,22 +185,25 @@ describe("a shape the device does not draw", () => {
 });
 
 describe("controlDeviceArt", () => {
+  // The tile that is yours is drawn in the button's own colour; its three
+  // neighbours are furniture, so they take the outline's colour instead and a
+  // lit card turns one square accent rather than all four.
   it("draws four tiles with the top left one yours", () => {
     const phone = flatten(controlDeviceArt("iphone", true));
     expect(rects(phone)).toBe(5);
-    expect(phone).toContain("x=12 y=4 width=3.5 height=3.5 rx=1 fill=\"currentColor\" opacity=1");
-    expect(phone).toContain("x=16.5 y=4 width=3.5 height=3.5 rx=1 fill=\"currentColor\" opacity=0.2");
+    expect(phone).toContain("x=12 y=4 width=3.5 height=3.5 rx=1 fill=currentColor opacity=1");
+    expect(phone).toContain(`x=16.5 y=4 width=3.5 height=3.5 rx=1 fill=${OUTLINE} opacity=0.2`);
   });
 
   it("draws the watch's own bigger grid", () => {
     const watch = flatten(controlDeviceArt("watch", true));
     expect(rects(watch)).toBe(7);
-    expect(watch).toContain("x=10 y=8 width=5 height=5 rx=1.5 fill=\"currentColor\" opacity=1");
-    expect(watch).toContain("x=17 y=15 width=5 height=5 rx=1.5 fill=\"currentColor\" opacity=0.2");
+    expect(watch).toContain("x=10 y=8 width=5 height=5 rx=1.5 fill=currentColor opacity=1");
+    expect(watch).toContain(`x=17 y=15 width=5 height=5 rx=1.5 fill=${OUTLINE} opacity=0.2`);
   });
 
   it("dims the tile that is yours when it is not picked", () => {
-    expect(flatten(controlDeviceArt("iphone", false))).toContain("x=12 y=4 width=3.5 height=3.5 rx=1 fill=\"currentColor\" opacity=0.45");
+    expect(flatten(controlDeviceArt("iphone", false))).toContain("x=12 y=4 width=3.5 height=3.5 rx=1 fill=currentColor opacity=0.45");
   });
 });
 
