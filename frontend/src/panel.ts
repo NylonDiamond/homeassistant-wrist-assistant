@@ -146,6 +146,7 @@ import {
   type LinkShapeRow,
   type LinkedCopy,
   SHARED_SIDE_NOTE,
+  cardPicked,
   controlOwners,
   copyForOwner,
   joinNames,
@@ -160,8 +161,11 @@ import {
   pickedFamilies,
   pickedWords,
   planLinkedSave,
+  rowPicked,
   setPick,
   startFromCopyLine,
+  tickCard,
+  tickedOwners,
 } from "./linking.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { type DeviceOwnerLike, deviceKindOf, deviceNoun, deviceSupportsControls, deviceSupportsShapes, updateDeviceMessage } from "./version.js";
@@ -1324,12 +1328,8 @@ export class WristAssistantPanel extends LitElement {
    * different question from the first. Keyed by device because a shape shared
    * by a watch and an iPhone can be dropped from one copy alone. */
   @state() private newPicks: LinkPicks = new Map();
-  /** The devices the new complication goes on: the one being edited by
-   * default, and every other one the author ticks. More than one makes the
-   * copies linked. */
-  @state() private newOwners: ReadonlySet<string> = new Set();
-  /** Which place card is open, by its key ("home", "shared", "watch", "lock",
-   * "control"). The picks of a place you leave are kept and counted on its
+  /** Which place card is open, by its key ("shared", "control", or a place and
+   * a device id). The picks of a place you leave are kept and counted on its
    * card, so switching tabs never loses an answer. */
   @state() private newPlace?: string;
   /** The dialog's Control Center tile. On its own it makes a document of no
@@ -2025,9 +2025,15 @@ export class WristAssistantPanel extends LitElement {
        cards and a phone owner up to seven, so the grid takes as many as the
        dialog's width allows and wraps the rest onto another row. */
     .shape-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 8px; }
-    /* The three place cards: where on the device this ends up. They behave as
-       tabs, so leaving one keeps its picks, and its count says so. */
-    .place-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 9px; }
+    /* One card per place per device: the whole question, in one grid. They
+       behave as tabs, so leaving one keeps its picks, and the line under its
+       name says how many shapes it holds. Wider than the old three cards,
+       because each one now carries a device name as well. */
+    .place-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 9px; }
+    /* The card and its tick, which cannot live inside it: a button inside a
+       button is not markup a browser will keep. */
+    .place-pick { position: relative; display: flex; }
+    .place-pick > .place-card { flex: 1; min-width: 0; }
     .place-card {
       position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px;
       cursor: pointer; font: inherit; font-size: 13px; padding: 12px 6px 10px; color: var(--wa-muted);
@@ -2044,12 +2050,21 @@ export class WristAssistantPanel extends LitElement {
     /* A watch is wider than it is tall. Left in the phone's tall slot the
        drawing shrinks to fit the width and lands half the size of the card. */
     .place-card .place-art.watch { width: 76px; height: 81px; }
-    .place-card-name { font-weight: 600; color: var(--wa-ink); }
-    .place-count {
-      position: absolute; top: 7px; right: 7px; min-width: 18px; height: 18px; box-sizing: border-box;
-      padding: 0 5px; display: flex; align-items: center; justify-content: center; border-radius: 9px;
-      background: var(--wa-accent); color: var(--wa-accent-ink); font-size: 11px; font-weight: 700;
+    .place-card-name { font-weight: 600; color: var(--wa-ink); text-align: center; line-height: 1.25; }
+    /* Whose lock screen. Quiet and under the name, because the place is the
+       answer and the device is which one of them. */
+    .place-card-sub { font-size: 10.5px; line-height: 1.3; color: var(--wa-muted); text-align: center; }
+    .place-card-shapes { font-size: 10.5px; font-weight: 600; line-height: 1.3; color: var(--wa-accent); }
+    /* A tick and nothing else: an empty ring on every card would read as five
+       questions rather than one. It is also the only way off a card, so the
+       card itself can open its shapes without emptying them. */
+    .place-tick {
+      position: absolute; top: 2px; right: 2px; width: 28px; height: 28px; padding: 0;
+      display: flex; align-items: center; justify-content: center;
+      border: none; background: none; color: inherit; cursor: pointer;
     }
+    .place-tick .pick-tick { position: static; }
+    .place-tick:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 50%; }
     /* The open place's shapes, in a box tied to the card above by its accent
        edge, so the panel reads as that card's contents rather than a new
        question. */
@@ -2113,10 +2128,9 @@ export class WristAssistantPanel extends LitElement {
     .side-chip:hover { border-color: var(--wa-line-strong); color: var(--wa-ink); }
     .side-chip:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .side-chip.on { border-color: var(--wa-accent); background: var(--wa-accent); color: var(--wa-accent-ink); }
-    /* The device row above the places, drawn only when there is more than one
-       device to put this on. */
-    .new-body .field.new-devices { margin-top: 14px; }
-    .dev-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+    /* One device, as a row: the Devices dialog's list. The New dialog has no
+       device step of its own, the place cards being named after their
+       devices. */
     .dev-card {
       position: relative; display: flex; align-items: center; gap: 8px; cursor: pointer;
       font: inherit; font-size: 12.5px; padding: 9px 30px 9px 10px; color: var(--wa-muted); text-align: left;
@@ -6380,9 +6394,10 @@ export class WristAssistantPanel extends LitElement {
     const families = biggestFirst([...pickedFamilies(this.newPicks)]);
     const name = this.newName.trim();
     if ((families.length === 0 && !this.newControl) || name === "" || this.newNameProblem() !== undefined) return;
-    const owners = [...this.newOwners];
+    const ticked = this.newOwnerIds();
+    const owners = [...ticked];
     if (owners.length === 0) return;
-    const picks = keepPicks(this.newPicks, this.newOwners);
+    const picks = keepPicks(this.newPicks, ticked);
     this.closeNewDialog();
     const slot = this.freeSlot();
     const config = newConfig(name, slot, families);
@@ -8901,61 +8916,66 @@ export class WristAssistantPanel extends LitElement {
       .map((o) => this.linkOwnerOf(o));
   }
 
-  /** The cards the dialog draws for the ticked devices: the Home Screen, the
-   * watch face and Lock Screen (one card when both are ticked), and whatever a
-   * single-device household has always seen. */
+  /** The cards the dialog draws: one per place per device, with the watch face
+   * and the Lock Screen folded into one once both are ticked. */
   private newCards(): LinkPlaceCard[] {
-    return linkPlaceCards(this.linkOwners(), this.newOwners);
+    return linkPlaceCards(this.linkOwners(), this.newPicks);
   }
 
-  /** How many shapes of a card are ticked, for the count on it. Counted once
-   * per shape however many devices draw it: a card saying 6 over three shared
-   * shapes would be counting copies, not designs. */
-  private pickedIn(card: LinkPlaceCard): number {
-    let n = 0;
-    for (const row of card.rows) if (this.rowPicked(row)) n += 1;
-    return n;
+  /** The devices the new complication is about to land on, which is nothing
+   * the author ticks separately any more: a device is where this lives when
+   * one of its places is ticked. */
+  private newOwnerIds(): Set<string> {
+    return tickedOwners(this.linkOwners(), this.newPicks, this.newControl);
   }
 
-  /** Whether a shape is ticked anywhere: on any of the devices that draw it. */
-  private rowPicked(row: LinkShapeRow): boolean {
-    return row.sides.some((s) => this.newPicks.get(s.ownerId)?.has(row.family) === true);
-  }
-
-  /** The card the dialog opens on: the first one, which is the Home Screen on
-   * a phone (the bigger canvas, and the one a phone owner most often opens the
-   * dialog for) and the only card a watch has. */
-  private firstPlace(): string | undefined {
-    const cards = this.newCards();
+  /**
+   * The card whose shapes the panel underneath is showing.
+   *
+   * The first card of the device being edited when nothing has been opened, so
+   * the real question is never hidden behind a click and the screen it opens on
+   * is one the author was just looking at. A key that is gone falls back the
+   * same way, which is what happens the moment a watch card and a Lock Screen
+   * card fold together: the folded card takes their place in the grid.
+   */
+  private openPlace(cards: readonly LinkPlaceCard[], controls: boolean): string | undefined {
+    if (this.newPlace !== undefined) {
+      if (this.newPlace === "control") { if (controls) return "control"; }
+      else if (cards.some((c) => c.key === this.newPlace)) return this.newPlace;
+    }
+    const mine = this.ownerId === undefined ? undefined : cards.find((c) => c.ownerIds.includes(this.ownerId!));
+    if (mine) return mine.key;
     if (cards.length > 0) return cards[0]!.key;
-    return controlOwners(this.linkOwners(), this.newOwners).length > 0 ? "control" : undefined;
+    return controls ? "control" : undefined;
   }
 
   /**
    * The New complication dialog: a name, where it lives, and which shapes of
    * that place to start with.
    *
-   * Nothing is preselected among the shapes. The old popover tinted
-   * Rectangular as though it were the answer, which is a choice made for the
-   * author by a button that looked like a recommendation. The place, on the
-   * other hand, is opened for them: a card that opens nothing until it is
-   * clicked hides the real question behind a second click, and a watch has only
-   * one place to open anyway.
+   * There is one question, not two. The dialog used to ask which devices and
+   * then where on them, which is the same question asked twice: a place belongs
+   * to a device, so a card that says "Lock Screen" and, under it, whose lock
+   * screen, answers both at once. The devices a complication lands on are the
+   * ones whose cards are ticked, and nothing else.
    *
-   * Shapes are ticked rather than chosen, because a complication meant for
-   * Large and Medium is one answer, not two visits. They are listed biggest
-   * first, and the line under them says the quiet part out loud: each shape is
-   * its own design and nothing copies across on its own.
+   * Nothing is preselected among the shapes of an unticked card. The old
+   * popover tinted Rectangular as though it were the answer, which is a choice
+   * made for the author by a button that looked like a recommendation. A card
+   * the author ticks does get its biggest shape, because a place with nothing
+   * in it is a copy with nothing to draw.
    */
   private renderNewDialog() {
     const nameProblem = this.newNameProblem();
     const named = this.newName.trim() !== "";
     const owners = this.linkOwners();
-    const controls = controlOwners(owners, this.newOwners).length > 0;
+    const control = controlOwners(owners);
+    const controls = control.length > 0;
     const cards = this.newCards();
-    const open = this.newPlace ?? this.firstPlace();
+    const open = this.openPlace(cards, controls);
+    const ticked = this.newOwnerIds();
     const count = pickedFamilies(this.newPicks).size + (this.newControl ? 1 : 0);
-    const ready = named && nameProblem === undefined && count > 0 && this.newOwners.size > 0;
+    const ready = named && nameProblem === undefined && count > 0 && ticked.size > 0;
     return html`<dialog class="new-dialog" @keydown=${this.newKeys} @close=${() => { this.newOpen = false; }}>
       <div class="new-head">
         <h2>New complication</h2>
@@ -8974,98 +8994,97 @@ export class WristAssistantPanel extends LitElement {
           : html`<div class="hint">${deviceKindOf(this.selectedOwner) === "iphone"
             ? "This is the name the Lock Screen customise screen and the Home Screen widget picker show, so make it one you will recognise there."
             : "This is what the name shows on the watch face picker, so make it one you will recognise there."}</div>`}
-        ${this.renderNewDevices(owners)}
         <div class="field new-shapes">
           <span>Where does it live?</span>
           <div class="place-cards" role="tablist" aria-label="Where does it live?">
-            ${cards.map((card) => this.renderPlaceCard({
-              label: card.label,
-              art: placeArt(card.places[0]!),
-              open: open === card.key,
-              picked: this.pickedIn(card),
-              click: () => { this.newPlace = card.key; },
-            }))}
+            ${cards.map((card) => {
+              const picked = cardPicked(card, this.newPicks);
+              return this.renderPlaceCard({
+                label: card.label,
+                devices: joinNames(card.devices),
+                art: placeArt(card.places[0]!),
+                open: open === card.key,
+                ticked: picked > 0,
+                shapes: picked,
+                title: `Shapes on the ${card.label}`,
+                // An unticked card ticks as it opens, so its shapes can be
+                // chosen in the panel below without a click nobody was told
+                // about. A ticked one only opens: the tick is how it goes off.
+                click: () => {
+                  if (picked === 0) this.newPicks = tickCard(this.newPicks, card, true);
+                  this.newPlace = card.key;
+                },
+                tick: () => { this.newPicks = tickCard(this.newPicks, card, false); },
+              });
+            })}
             ${controls ? this.renderPlaceCard({
               label: "Control Center",
-              art: controlPlaceArt(controlOwners(owners, this.newOwners).every((o) => o.kind === "iphone")),
+              devices: joinNames(control.map((o) => o.label)),
+              art: controlPlaceArt(control.every((o) => o.kind === "iphone")),
               open: open === "control",
               ticked: this.newControl,
-              // Control Center holds one thing, so the card is the choice: the
-              // first click opens it and turns it on, and a second click on the
-              // open card turns it off again. A card that only opened a panel
-              // holding a single card underneath asked the same question twice.
-              click: () => {
-                if (open === "control") this.newControl = !this.newControl;
-                else { this.newPlace = "control"; this.newControl = true; }
-              },
+              title: "A toggle or a button in Control Center",
+              // Control Center holds one thing, so the card is the choice: a
+              // click opens it and turns it on, and the tick turns it off
+              // again. A card that only opened a panel holding a single card
+              // underneath asked the same question twice.
+              click: () => { this.newControl = true; this.newPlace = "control"; },
+              tick: () => { this.newControl = false; },
             }) : nothing}
           </div>
+          ${owners.length > 1 && ticked.size === 1
+            ? html`<div class="hint">Tick another device to build the design once and show it on both.</div>`
+            : nothing}
         </div>
         ${open === undefined ? nothing : open === "control"
           ? this.renderControlPanel()
           : this.renderShapePanel(cards.find((c) => c.key === open))}
       </div>
       <div class="new-foot">
-        <span class="new-count">${pickedWords(this.newPicks, this.newControl, owners, this.newOwners)}</span>
+        <span class="new-count">${pickedWords(this.newPicks, this.newControl, ticked)}</span>
         <button class="small" @click=${() => this.closeNewDialog()}>Cancel</button>
         <button class="primary" ?disabled=${!ready}
-          title=${ready ? "Make it" : !named ? "Give it a name first" : nameProblem ? nameProblem : controls ? "Tick a shape or the control first" : "Tick a shape first"}
-          @click=${() => this.createNew()}>${count > 1 ? `Create ${count} shapes` : "Create"}</button>
+          title=${ready ? "Make it" : !named ? "Give it a name first" : nameProblem ? nameProblem : controls ? "Tick a place or the control first" : "Tick a place first"}
+          @click=${() => this.createNew()}>Create</button>
       </div>
     </dialog>`;
   }
 
   /**
-   * One place card: the device with that place lit, its name, and what is
-   * ticked inside it.
+   * One place card: the screen it lives on, drawn with that device's furniture
+   * around it, and under the name the device it belongs to.
    *
-   * A place holding shapes carries a count, which is the whole reason a place
-   * you leave does not feel lost. Control Center holds one thing, so it
-   * carries a tick instead and the card is the answer.
+   * A tick when it is picked and nothing when it is not, which is the one thing
+   * a card has to say at a glance. The tick is also the way off it: clicking
+   * the card itself opens the shapes rather than unticking, so a place is never
+   * emptied by someone who only wanted to look inside it.
    */
-  private renderPlaceCard(o: { label: string; art: TemplateResult; open: boolean; picked?: number; ticked?: boolean; click: () => void }) {
-    const picked = o.picked ?? 0;
-    const on = o.ticked === true || picked > 0;
-    return html`<button type="button" role="tab" class="place-card ${o.open ? "open" : ""} ${on ? "has" : ""}"
-      aria-selected=${o.open ? "true" : "false"} aria-controls="pick-panel"
-      title=${o.ticked === undefined ? `Shapes on the ${o.label}` : "A toggle or a button in Control Center"}
-      @click=${o.click}>
-      ${o.art}
-      <span class="place-card-name">${o.label}</span>
-      ${o.ticked !== undefined
-        ? (o.ticked ? pickTick() : nothing)
-        : picked > 0 ? html`<span class="place-count" aria-label=${`${picked} picked`}>${picked}</span>` : nothing}
-    </button>`;
-  }
-
-  /**
-   * The devices this complication goes on.
-   *
-   * Drawn only when there is more than one to choose between: a household with
-   * a watch and nothing else is being asked a question with one answer, and the
-   * dialog it has always seen is the right one. The device being edited is
-   * ticked when the dialog opens, so pressing Create without reading this row
-   * does what it used to do.
-   */
-  private renderNewDevices(owners: readonly LinkOwner[]) {
-    if (owners.length < 2) return nothing;
-    return html`<div class="field new-devices">
-      <span>Which devices?</span>
-      <div class="dev-cards" role="group" aria-label="Which devices?">
-        ${owners.map((o) => {
-          const on = this.newOwners.has(o.ownerId);
-          return html`<button type="button" role="checkbox" class="dev-card ${on ? "on" : ""}"
-            aria-checked=${on ? "true" : "false"} title=${`Put a copy on ${o.label}`}
-            @click=${() => this.toggleNewOwner(o)}>
-            <span class="dev-card-ico">${uiIcon(o.kind === "iphone" ? "phone" : "watch")}</span>
-            <span class="dev-card-name">${o.label}</span>
-            ${on ? pickTick() : html`<span class="pick-tick off" aria-hidden="true"></span>`}
-          </button>`;
-        })}
-      </div>
-      <div class="hint">${this.newOwners.size > 1
-        ? "One design, one copy on each device. Editing it later changes every copy."
-        : "Tick another device to build the design once and show it on both."}</div>
+  private renderPlaceCard(o: {
+    label: string;
+    devices: string;
+    art: TemplateResult;
+    open: boolean;
+    ticked: boolean;
+    shapes?: number;
+    title: string;
+    click: () => void;
+    tick: () => void;
+  }) {
+    const shapes = o.shapes ?? 0;
+    // Presentation, so the tab inside it still counts as a child of the
+    // tablist: the wrapper exists to hang the tick off, not to be read.
+    return html`<div class="place-pick" role="presentation">
+      <button type="button" role="tab" class="place-card ${o.open ? "open" : ""} ${o.ticked ? "has" : ""}"
+        aria-selected=${o.open ? "true" : "false"} aria-controls="pick-panel"
+        title=${o.title} @click=${o.click}>
+        ${o.art}
+        <span class="place-card-name">${o.label}</span>
+        ${o.devices === "" ? nothing : html`<span class="place-card-sub">${o.devices}</span>`}
+        ${shapes > 0 ? html`<span class="place-card-shapes">${shapes === 1 ? "1 shape" : `${shapes} shapes`}</span>` : nothing}
+      </button>
+      ${o.ticked ? html`<button type="button" class="place-tick" role="checkbox" aria-checked="true"
+        title=${`Take this off ${o.label}`} aria-label=${`Take this off ${o.label}`}
+        @click=${o.tick}>${pickTick()}</button>` : nothing}
     </div>`;
   }
 
@@ -9084,7 +9103,7 @@ export class WristAssistantPanel extends LitElement {
       </div>
       <div class="shape-cards" role="group" aria-label=${`${card.label} shapes`}>
         ${card.rows.map((row) => {
-          const on = this.rowPicked(row);
+          const on = rowPicked(row, this.newPicks);
           return html`<div class="shape-pick">
             <button type="button" role="checkbox" class="shape-card ${on ? "on" : ""}"
               aria-checked=${on ? "true" : "false"}
@@ -9131,7 +9150,7 @@ export class WristAssistantPanel extends LitElement {
    * the answer, and this is the explanation under it.
    */
   private renderControlPanel() {
-    const on = controlOwners(this.linkOwners(), this.newOwners);
+    const on = controlOwners(this.linkOwners());
     const phone = on.length > 0 && on.every((o) => o.kind === "iphone");
     return html`<div class="pick-panel words" id="pick-panel" role="tabpanel">
       <div class="pick-head"><span class="pick-title">Control Center</span></div>
@@ -9140,7 +9159,7 @@ export class WristAssistantPanel extends LitElement {
           ? "With no shape ticked beside it, this complication appears there and nowhere else."
           : "It sits beside the shapes rather than instead of them.")
         : "Click the card above to add one."}${this.newControl && on.length > 1
-        ? ` Every ticked device that can draw one gets it.`
+        ? ` One control, drawn on ${joinNames(on.map((o) => o.label))}.`
         : ""}</div>
     </div>`;
   }
@@ -9152,35 +9171,11 @@ export class WristAssistantPanel extends LitElement {
     this.newPicks = setPick(this.newPicks, row.family, row.sides.map((s) => s.ownerId), on);
   }
 
-  /** Tick or untick a device. Unticking one drops its picks, so ticking it
-   * again starts that copy from nothing rather than from a half-remembered
-   * answer; ticking one gives it the shapes already picked elsewhere that it
-   * can draw, which is what makes a shared shape shared. */
-  private toggleNewOwner(owner: LinkOwner) {
-    const next = new Set(this.newOwners);
-    let picks = this.newPicks;
-    if (next.delete(owner.ownerId)) {
-      picks = keepPicks(picks, next);
-    } else {
-      next.add(owner.ownerId);
-      const wanted = [...pickedFamilies(picks)].filter((f) => owner.families.includes(f));
-      for (const family of wanted) picks = setPick(picks, family, [owner.ownerId], true);
-    }
-    this.newOwners = next;
-    this.newPicks = picks;
-    // A card can appear or vanish with a device, so an open card that is gone
-    // would leave the panel under it blank.
-    if (this.newPlace !== undefined && this.newPlace !== "control" && !this.newCards().some((c) => c.key === this.newPlace)) {
-      this.newPlace = undefined;
-    }
-  }
-
   private openNewDialog() {
     if (this.freeSlot() < 0) return;
     this.newOpen = true;
     this.newName = "";
     this.newPicks = new Map();
-    this.newOwners = new Set(this.ownerId ? [this.ownerId] : []);
     this.newPlace = undefined;
     this.newControl = false;
     void this.updateComplete.then(() => {
