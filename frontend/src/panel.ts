@@ -136,7 +136,7 @@ import {
 } from "./resolver.js";
 import { CANVAS, CASES, FACE_TINTS, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, phoneCaseForScreenSize, renderLayerThumb, renderLayout, slotFor, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type PreviewCase } from "./renderer.js";
 import { actionAt, demoTapLabel, runTapAction, tapRefetches, type DemoOutcome } from "./demo.js";
-import { addFamily, biggestFirst, canRemoveControl, canRemoveFamily, comingSoonFamilies, controlNoteLines, familiesFor, familyAllowsKind, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, opensInControlView, removeFamily, supportedFamilies } from "./layouts.js";
+import { ALL_FAMILIES, addFamily, biggestFirst, canRemoveControl, canRemoveFamily, comingSoonFamilies, controlNoteLines, familiesFor, familyAllowsKind, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, opensInControlView, removeFamily, supportedFamilies } from "./layouts.js";
 import {
   type LinkOwner,
   type LinkPicks,
@@ -160,7 +160,7 @@ import {
   shapeSections,
 } from "./linking.js";
 import { type Person, deviceShortName, peopleNames, peopleOf, personOf } from "./people.js";
-import { controlDeviceArt, deviceShapeArt, shapeArtKinds } from "./shapeArt.js";
+import { controlDeviceArt, designDeviceArt, deviceShapeArt, shapeArtKinds } from "./shapeArt.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { type DeviceOwnerLike, deviceKindOf, deviceNoun, deviceSupportsControls, deviceSupportsShapes, updateDeviceMessage } from "./version.js";
 import { type LinkMergeNotice, autoLinkMerge } from "./linkMerge.js";
@@ -171,18 +171,20 @@ import { Draft, draftStatus } from "./draft.js";
 import { ScrollFades } from "./scroll-fade.js";
 import { statesSummary } from "./states.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
-import { isHiddenDocument, splitHidden, withHidden } from "./model.js";
+import { isHiddenDocument, withHidden } from "./model.js";
 import {
   type PickerCopy,
   type PickerDevice,
   type PickerListRow,
+  type PickerPerson,
   type PersonFilter,
   ALL_DEVICES,
   isPersonFilter,
   personFilter,
-  pickerFootText,
+  pickerCountText,
   pickerListRows,
   pickerView,
+  rowWhoText,
   rowsOfPeople,
 } from "./pickerRows.js";
 
@@ -208,7 +210,6 @@ import {
   controlHeadline,
   controlStateWord,
   controlStatusShows,
-  type ControlTileHost,
   controlTile,
   controlTileShapes,
   describeContext,
@@ -450,6 +451,21 @@ function hasControlOf(record: ComplicationRecord): boolean {
   return raw !== null && typeof raw === "object";
 }
 
+/**
+ * The shapes a picker card lists under its drawings, in words.
+ *
+ * `ALL_FAMILIES` order rather than biggest canvas first, because this line is
+ * read against the two pictures above it and those go watch face, then Lock
+ * Screen, then Home Screen: "Rectangular · Circular · Inline · Small · Medium"
+ * walks down the same page the drawings do. The control comes last, being the
+ * one entry that is not a shape at all.
+ */
+function shapeListText(families: readonly FamilyKind[], control: boolean): string {
+  const names = ALL_FAMILIES.filter((f) => families.includes(f)).map(familyTitle);
+  if (control) names.push("Control");
+  return names.length === 0 ? "No shapes yet" : names.join(" · ");
+}
+
 /** The step from one header question to the next. Drawn rather than typed so
  * it can carry a stroke thick enough to read as a route, which a text chevron
  * at 12 px never did. */
@@ -480,8 +496,6 @@ function pickTick(): TemplateResult {
  * pictures beside it, which stand in a box 80px tall, so the control reads as
  * one more thing this design draws rather than a glyph among faces. */
 const CONTROL_TAB_TILE_SIDE = 62;
-/** The tile height in a picker row, sized to the row picture that holds it. */
-const CONTROL_ROW_TILE_SIDE = 38;
 
 const COL_LEFT_DEFAULT = 300;
 const COL_RIGHT_DEFAULT = 360;
@@ -909,19 +923,25 @@ export class WristAssistantPanel extends LitElement {
   /** A drag on a number's title is one undo step, however many edits it makes. */
   private readonly scrubStart = () => this.draft?.beginGesture();
   private readonly scrubEnd = () => this.draft?.endGesture();
-  /** The header's complication menu is open. */
+  /** The header's complication dialog is open. */
   @state() private pickerOpen = false;
-  /** What the picker menu is narrowed to: a shape, a person (`person:` and
-   * their key), or "all". "all" is the default and the only state a short list
-   * ever has: the chips only appear once the list is long enough to be worth
-   * narrowing. Per session, never saved. */
-  @state() private pickerFilter: FamilyKind | "all" | PersonFilter = "all";
-  /** The key of the locked picker row whose explanation is unfolded. A tap
+  /** What the picker is narrowed to: a shape, a person (`person:` and their
+   * key), the control, or "all". The chips are always drawn now, so this is
+   * the one piece of state a short list still has. Per session, never saved. */
+  @state() private pickerFilter: FamilyKind | "all" | "control" | PersonFilter = "all";
+  /** What has been typed into the picker's search field. It narrows on the
+   * name and on the people who have it, and combines with the chip. */
+  @state() private pickerQuery = "";
+  /** The key of the locked picker card whose explanation is unfolded. A tap
    * shows it inline because a hover title never appears on a touch screen. */
   @state() private pickerNote?: string;
-  /** Whether the picker's Hidden section is unfolded. */
-  @state() private pickerHiddenOpen = false;
-  /** The picker row asking "Really delete", by record id. */
+  /** The card whose "Add to" menu is open, by row key. One at a time: two
+   * open menus over a grid of cards is a grid nobody can read. */
+  @state() private pickerAddFor?: string;
+  /** The tick asking "Remove from Jesse's iPhone?", as `rowKey\0ownerId`. An
+   * untick writes at once, so a stray click must not be able to delete. */
+  @state() private pickerRemoveAsk?: string;
+  /** The picker card asking "Really delete", by record id. */
   @state() private pickerConfirmDelete?: string;
   /** A device has been picked and its complications are still on the way. The
    * picker stays open across the switch, so without this the list would show
@@ -1330,11 +1350,6 @@ export class WristAssistantPanel extends LitElement {
   /** What the automatic merge of same-named watch and iPhone complications
    * did on this first open, with its own Undo. See `linkMerge.ts`. */
   @state() private linkMergeNotice?: LinkMergeNotice;
-  /** Parsed config per saved record, keyed by id and invalidated by revision.
-   * The picker draws a real preview of every complication, and parsing and
-   * compiling every document on every render of an open menu is the one part
-   * of that worth keeping. */
-  private readonly recordPreviews = new Map<string, { revision: number; config: CustomComplicationConfig; entities: EntityRef[] }>();
   /** Which watch case the previews are drawn in. The reference (46 mm) is scale 1. */
   @state() private previewCase = REFERENCE_CASE.label;
   /** The tint of a tinted watch face to preview in, or undefined for full
@@ -1475,6 +1490,10 @@ export class WristAssistantPanel extends LitElement {
       --wa-art-clock: #5d584f;
       --wa-art-dock: #322f2a;
       --wa-art-blur: #2f2c27;
+      /* A slot a design does not fill, on a picker card's drawings. Lighter
+         than the screen and darker than the furniture, so an unlit slot is a
+         place that is empty rather than a shape nobody can see. */
+      --wa-art-off: #3a372f;
       --wa-r-sm: 8px;
       --wa-r-md: 12px;
       --wa-r-lg: 16px;
@@ -1513,6 +1532,7 @@ export class WristAssistantPanel extends LitElement {
       --wa-art-clock: #3a3f52;
       --wa-art-dock: #14161f;
       --wa-art-blur: #0f1119;
+      --wa-art-off: #1b1f2b;
       --wa-shadow-pop: 0 16px 48px rgba(0,0,0,.6);
       color-scheme: dark;
       scrollbar-color: rgba(255,255,255,.14) transparent;
@@ -1662,10 +1682,12 @@ export class WristAssistantPanel extends LitElement {
     input[type=range] { accent-color: var(--c, var(--wa-accent)); }
     input[type=color] { border: 1px solid var(--wa-line); border-radius: 8px; background: var(--wa-input); padding: 2px; cursor: pointer; }
 
-    /* The complication picker: one dropdown in the header instead of a list
-       down the side, because the list was read once per session and the space
-       it held is worth more to the layers. */
-    .picker { position: relative; --wa-pk-art-h: 44px; }
+    /* The complication picker: one button in the header instead of a list down
+       the side, because the list was read once per session and the space it
+       held is worth more to the layers. The button opens a centred dialog; the
+       400 px dropdown that used to hang off it, its rows and its folded Hidden
+       section all went with the cards (2026-09-19). */
+    .picker { position: relative; }
     .picker > button {
       display: inline-flex; align-items: center; gap: 10px; font: inherit; font-size: 13px; font-weight: 700;
       height: 34px; padding: 0 10px 0 8px; border-radius: 9px; cursor: pointer; color: var(--wa-ink);
@@ -1677,70 +1699,12 @@ export class WristAssistantPanel extends LitElement {
     .picker .pk-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
     .picker .pk-rev { color: var(--wa-muted); font-weight: 500; font-size: 12px; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     .picker > button svg { width: 16px; height: 16px; opacity: .7; }
-    .picker .menu {
-      position: absolute; top: calc(100% + 8px); left: 0; z-index: 50; width: 400px; max-height: 60vh; overflow: auto;
-      background: var(--wa-card); color: var(--wa-ink); border: 1px solid var(--wa-line-strong);
-      border-radius: var(--wa-r-md); box-shadow: var(--wa-shadow-pop); padding: 6px;
+    /* The chip row over the grid: everything, the people, the shapes, the
+       control, and how many cards are showing. Always drawn. */
+    .pk-filter {
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: none;
+      padding: 10px 18px; border-bottom: 1px solid var(--wa-line);
     }
-    .picker .menu .row {
-      display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; font: inherit; font-size: 13.5px;
-      background: transparent; border: 0; color: inherit; padding: 7px 10px; border-radius: 9px; cursor: pointer;
-      min-height: calc(var(--wa-pk-art-h) + 14px);
-    }
-    .picker .menu .row:hover { background: var(--wa-panel); }
-    .picker .menu .row[aria-current="true"] { background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
-    .picker .menu .row.locked { opacity: .6; cursor: help; }
-    .picker .menu .pk-note { font-size: 12.5px; line-height: 1.4; color: var(--wa-muted); padding: 0 10px 8px 122px; }
-    .picker .menu .pk-badge { font-size: 12px; opacity: .7; white-space: nowrap; }
-    /* A saved complication's row: the part that opens it, then its own hide
-       and delete buttons, which neither open it nor shut the menu. */
-    .picker .menu .row.rec { padding: 0; gap: 0; cursor: default; }
-    .picker .menu .row.rec > .pick {
-      display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; text-align: left; font: inherit;
-      background: transparent; border: 0; color: inherit; padding: 7px 4px 7px 10px; border-radius: 9px; cursor: pointer;
-      min-height: calc(var(--wa-pk-art-h) + 14px);
-    }
-    .picker .menu .row.rec > .pick:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .picker .menu .row.rec.dim > .pick { opacity: .5; }
-    .picker .menu .pk-acts { display: flex; align-items: center; gap: 2px; flex: none; padding-right: 6px; }
-    .picker .menu .pk-acts button.icon { width: 30px; height: 30px; }
-    .picker .menu .pk-acts button.small { min-height: 24px; padding: 0 7px; }
-    .picker .menu .pk-hidden-head {
-      display: flex; align-items: center; gap: 6px; width: 100%; font: inherit; font-size: 12.5px; font-weight: 600;
-      color: var(--wa-muted); background: transparent; border: 0; border-top: 1px solid var(--wa-line);
-      margin-top: 6px; padding: 8px 10px 6px; cursor: pointer; text-align: left;
-    }
-    .picker .menu .pk-hidden-head:hover { color: var(--wa-ink); }
-    .picker .menu .pk-hidden-head:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 6px; }
-    .picker .menu .pk-hidden-head svg { width: 14px; height: 14px; transition: transform .12s ease-out; }
-    .picker .menu .pk-hidden-head[aria-expanded="true"] svg { transform: rotate(90deg); }
-    /* The row picture: the complication drawn as the watch draws it, in a
-       fixed box so every name in the list still starts on the same column.
-       Its height is the variable on .picker rather than a number here, because
-       the rows holding it are buttons, and a button does not grow for a child
-       taller than its own text: they have to take the same height as a
-       min-height of their own, and the two must never drift apart. */
-    .pk-art { width: 100px; height: var(--wa-pk-art-h); flex: none; display: grid; place-items: center; pointer-events: none; }
-    .pk-art svg { display: block; max-width: 100%; max-height: var(--wa-pk-art-h); width: auto; height: auto; background: #000; border-radius: 5px; }
-    .pk-art.circular svg { border-radius: 50%; }
-    .pk-art.corner svg { background: #2c2c2e; }
-    /* A Home Screen tile is rounded far harder than a lock screen slot, so its
-       row picture takes the corner too, at the share of the box iOS uses. */
-    .pk-art.small svg { border-radius: 16.3%; }
-    .pk-art.medium svg { border-radius: 7.7% / 16.3%; }
-    .pk-art.large svg { border-radius: 7.7% / 7.4%; }
-    .pk-art.xlarge svg { border-radius: 7.7% / 4.8%; }
-    .pk-art .inline-line {
-      font-size: 11px; padding: 3px 8px; max-width: 100%; min-width: 0; display: inline-flex; align-items: center; gap: 4px;
-      border-radius: 999px; background: #000; color: #fff; overflow: hidden; white-space: nowrap;
-    }
-    .pk-art .inline-line svg { background: transparent; border-radius: 0; }
-    /* A control draws a Control Center tile, not a face, so the face rules on
-       the picture's svg (a black card with rounded corners) must not reach the
-       symbol inside it. */
-    .pk-art.control-tile svg { background: transparent; border-radius: 0; max-height: none; }
-    /* Shape filter, only drawn once the list is long. */
-    .pk-filter { display: flex; gap: 4px; flex-wrap: wrap; padding: 4px 6px 8px; border-bottom: 1px solid var(--wa-line); margin-bottom: 6px; }
     .pk-chip {
       display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 12.5px; font-weight: 500;
       padding: 5px 9px; border-radius: 999px; cursor: pointer; color: var(--wa-muted);
@@ -1763,22 +1727,150 @@ export class WristAssistantPanel extends LitElement {
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .pk-open-row { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+    /* What the button is for, said once in the accent colour. A chevron alone
+       promised a short menu of names; this one opens the whole household. */
+    .pk-open-all { flex: none; font-size: 11.5px; font-weight: 600; color: var(--wa-accent); white-space: nowrap; }
 
-    /* One surface, one list: every complication this home holds, under the
-       chips that narrow it. Only the list scrolls, so the chips and the New
-       line stay put while a long list moves under them. */
-    .picker .menu.one {
-      width: min(560px, calc(100vw - 24px)); max-height: 74vh; padding: 0; overflow: hidden;
-      display: grid; grid-template-columns: minmax(0, 1fr);
+    /* One surface, one grid: every complication this home holds, under a
+       search field and the chips that narrow it. A centred dialog rather than
+       a dropdown off the button, because a card carrying two device drawings
+       and an Add to menu needs the width, and because this is the one place
+       the whole household is read at once. Only the grid scrolls, so the
+       chips and the foot stay put while a long list moves under them. */
+    dialog.pk-dialog {
+      width: min(880px, 100vw - 32px); max-height: 85vh; padding: 0;
+      border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg);
+      background: var(--wa-card); color: var(--wa-ink); box-shadow: var(--wa-shadow-pop);
+      display: flex; flex-direction: column; overflow: hidden;
     }
-    .pk-comps { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-    .pk-comps .pk-filter { margin-bottom: 0; padding: 10px 12px; }
-    .pk-rows { flex: 1; min-height: 0; overflow: auto; padding: 8px; }
+    dialog.pk-dialog::backdrop { background: rgba(0,0,0,.45); }
+    .pk-head { display: flex; align-items: center; gap: 12px; flex: none; padding: 12px 12px 12px 18px; border-bottom: 1px solid var(--wa-line); }
+    .pk-head h2 { margin: 0; flex: 1; min-width: 0; font-size: 17px; font-weight: 700; }
+    .pk-head > button.icon { width: 32px; height: 32px; flex: none; }
+    .pk-search {
+      display: flex; align-items: center; gap: 8px; flex: none; width: 260px; max-width: 45vw;
+      padding: 6px 10px; border-radius: var(--wa-r-md); border: 1px solid var(--wa-line); background: var(--wa-panel);
+    }
+    .pk-search:focus-within { border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
+    .pk-search svg { width: 14px; height: 14px; flex: none; color: var(--wa-muted); }
+    /* No border of its own: the label around it is the field, so the icon and
+       the text sit in one box rather than in a box beside a box. */
+    .pk-search-input {
+      flex: 1; min-width: 0; font: inherit; font-size: 13px; color: var(--wa-ink);
+      border: 0; background: transparent; outline: 0; padding: 0;
+    }
+    .pk-filter-lead { font-size: 12px; color: var(--wa-muted); margin-right: 2px; }
+    .pk-filter-gap { flex: 1; }
+    .pk-count-of { font-size: 12px; color: var(--wa-muted); white-space: nowrap; }
+    /* The grid sits on the panel colour rather than the card colour, so a
+       white card reads as a card and not as a rule drawn round some text. */
+    .pk-body { flex: 1; min-height: 0; overflow: auto; padding: 14px 18px; background: var(--wa-panel); }
+    .pk-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
+    /* Two columns on a narrow window: three cards each holding a watch and a
+       phone side by side stop being readable well before the dialog runs out
+       of width. */
+    @media (max-width: 700px) { .pk-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    .pk-card {
+      position: relative; z-index: 1; display: flex; flex-direction: column; min-width: 0;
+      padding: 12px; border-radius: 12px; border: 1px solid var(--wa-line); background: var(--wa-card);
+    }
+    /* The card with the "Add to" menu open climbs over its neighbours, since
+       the menu is absolute inside it and the grid would otherwise clip it
+       under the next card along. */
+    .pk-card.over { z-index: 3; }
+    .pk-card[aria-current="true"] { border-color: var(--wa-accent); box-shadow: 0 0 0 3px var(--wa-sel-ring); }
+    /* Hidden designs stay in the grid, quieter. They used to fold away under a
+       "Hidden (3)" heading, which is a second list to remember in a surface
+       whose whole point is that there is one. */
+    .pk-card.dim { opacity: .72; }
+    .pk-card-head { display: flex; align-items: flex-start; gap: 6px; }
+    .pk-card-text {
+      flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; text-align: left;
+      font: inherit; color: inherit; background: transparent; border: 0; padding: 0; cursor: pointer;
+    }
+    .pk-card-text:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 6px; }
+    .pk-card-name { font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pk-card-who { font-size: 12px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pk-tag {
+      flex: none; font-size: 10px; color: var(--wa-muted); cursor: help;
+      border: 1px solid var(--wa-line); border-radius: 6px; padding: 1px 6px;
+    }
+    /* The two device drawings, on their own quiet mat so the dark screens read
+       as screens rather than as holes in the card. */
+    .pk-card-art {
+      display: flex; align-items: flex-end; justify-content: center; gap: 10px; margin-top: 10px;
+      padding: 10px 8px 8px; border: 0; border-radius: 10px; background: var(--wa-panel); cursor: pointer;
+    }
+    .pk-card-art:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .pk-card-art svg { display: block; flex: none; }
+    /* The right end is kept clear for the hide and delete buttons, which sit
+       in that corner: reserved always, so nothing reflows on hover. */
+    .pk-card-shapes { font-size: 11px; color: var(--wa-muted); margin-top: 8px; padding-right: 62px; overflow-wrap: anywhere; }
+    /* Hide and delete, in the card's own corner. Only on hover, or while the
+       keyboard is in the card, or while one of them is asking: a wall of cards
+       with six icon buttons on every one of them is a wall of icon buttons. */
+    .pk-card-acts {
+      position: absolute; right: 8px; bottom: 6px; display: flex; align-items: center; gap: 2px;
+      opacity: 0; transition: opacity .12s ease-out;
+    }
+    .pk-card:hover .pk-card-acts, .pk-card:focus-within .pk-card-acts, .pk-card-acts.asking { opacity: 1; }
+    .pk-card-acts button.icon { width: 26px; height: 26px; background: var(--wa-card); }
+    .pk-card-acts button.small { min-height: 24px; padding: 0 7px; background: var(--wa-card); }
+    .pk-card .pk-note { font-size: 11.5px; line-height: 1.4; color: var(--wa-muted); margin-top: 8px; }
+    .pk-card .pk-badge { flex: none; font-size: 11px; color: var(--wa-muted); white-space: nowrap; }
+    /* Add to: the one control on this surface that writes anything. */
+    .pk-add { position: relative; flex: none; }
+    .pk-add-open {
+      display: inline-flex; align-items: center; gap: 4px; font: inherit; font-size: 11px; font-weight: 600;
+      padding: 3px 7px; border-radius: 7px; cursor: pointer; color: var(--wa-ink);
+      border: 1px solid var(--wa-line); background: var(--wa-card);
+    }
+    .pk-add-open:hover:not(:disabled) { border-color: var(--wa-line-strong); }
+    .pk-add-open:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .pk-add-open:disabled { opacity: .45; cursor: not-allowed; }
+    .pk-add-open.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-accent); }
+    .pk-add-open svg { width: 10px; height: 10px; }
+    .pk-add-menu {
+      position: absolute; top: calc(100% + 6px); right: 0; z-index: 5; width: 218px;
+      display: flex; flex-direction: column; gap: 6px; padding: 8px;
+      border: 1px solid var(--wa-line-strong); border-radius: 10px;
+      background: var(--wa-card); box-shadow: var(--wa-shadow-pop);
+    }
+    .pk-add-group { display: flex; flex-direction: column; gap: 3px; }
+    .pk-add-head {
+      font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+      color: var(--wa-muted); margin: 2px 0 2px;
+    }
+    .pk-add-tick {
+      display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; cursor: pointer;
+      font: inherit; font-size: 12px; color: var(--wa-ink);
+      padding: 5px 7px; border: 1px solid var(--wa-line); border-radius: 7px; background: var(--wa-card);
+    }
+    .pk-add-tick:hover:not([disabled]) { border-color: var(--wa-line-strong); }
+    .pk-add-tick:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .pk-add-tick.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); }
+    .pk-add-tick[disabled] { opacity: .5; cursor: default; }
+    .pk-add-tick .pick-tick { position: static; flex: none; width: 15px; height: 15px; border-radius: 4px; }
+    .pk-add-tick .pick-tick svg { width: 10px; height: 10px; }
+    .pk-add-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pk-add-note-full { flex: none; font-size: 10px; color: var(--wa-muted); }
+    /* An untick writes too, so it asks first, in the row the tick was in. */
+    .pk-add-ask {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 11.5px;
+      padding: 5px 7px; border: 1px solid var(--wa-accent); border-radius: 7px; background: var(--wa-sel-bg);
+    }
+    .pk-add-ask > span { flex: 1 1 100%; }
+    .pk-add-ask button.small { min-height: 22px; padding: 0 7px; }
+    .pk-add-note { font-size: 10px; line-height: 1.4; color: var(--wa-muted); border-top: 1px solid var(--wa-line); padding-top: 6px; }
     .pk-foot {
-      display: flex; align-items: center; gap: 8px; flex: none; padding: 10px 12px;
-      border-top: 1px solid var(--wa-line); background: var(--wa-panel);
+      display: flex; align-items: center; gap: 10px; flex: none; padding: 12px 18px;
+      border-top: 1px solid var(--wa-line); background: var(--wa-card);
     }
-    .pk-foot-hint { flex: 1; min-width: 0; font-size: 12.5px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pk-foot-hint { flex: 1; min-width: 0; font-size: 12px; color: var(--wa-muted); }
+    /* What the last write said, in the hint's place: the panel's own banner
+       is behind the backdrop while this dialog is up. */
+    .pk-foot-said { flex: 1; min-width: 0; font-size: 12px; font-weight: 500; color: var(--wa-ink); }
+    .pk-foot-said.err { color: var(--error-color, #db4437); }
 
     /* New complication: its own button beside the list, because making one was
        a row buried under every complication that already existed. */
@@ -2029,15 +2121,6 @@ export class WristAssistantPanel extends LitElement {
     .merge-menu .row { display: flex; align-items: baseline; gap: 7px; width: 100%; }
     .merge-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .merge-where { font-size: 11.5px; color: var(--wa-muted); }
-    /* A row's name with the people who have it under it. One line, cut with an
-       ellipsis rather than wrapped: the whole list is in the tooltip, and a row
-       that grows a line taller in a household of four is a list that jumps. */
-    .pk-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-    .pk-text .pk-name { flex: none; }
-    .pk-who {
-      min-width: 0; font-size: 11.5px; font-weight: 500; color: var(--wa-muted);
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
     .shape-dots { display: inline-flex; gap: 3px; align-items: center; flex: none; }
     .shape-dot { width: 14px; height: 10px; border-radius: 2px; background: currentColor; opacity: .3; display: inline-block; }
     .shape-dot.circular { width: 10px; border-radius: 50%; }
@@ -8353,75 +8436,14 @@ export class WristAssistantPanel extends LitElement {
     return html`<span class="shape-dots">${biggestFirst(against).map((f) => html`<span class="shape-dot ${f} ${families.includes(f) ? "on" : ""}" title=${familyTitle(f)}></span>`)}</span>`;
   }
 
-  /** The shape filter appears only past this many rows. Under it the whole
-   * list fits on screen and a filter is one more control for no gain. */
-  private static readonly FILTER_FROM_ROWS = 8;
-
-  /** A saved record's config, parsed once and kept until its revision moves.
-   * Undefined for a document this panel cannot parse, which draws as a blank
-   * picture rather than breaking the row. */
-  private recordPreview(record: ComplicationRecord) {
-    const hit = this.recordPreviews.get(record.id);
-    if (hit && hit.revision === record.revision) return hit;
-    try {
-      const config = parseConfig(record.document);
-      const entry = { revision: record.revision, config, entities: [...compile(config).entities.values()] };
-      this.recordPreviews.set(record.id, entry);
-      return entry;
-    } catch {
-      this.recordPreviews.delete(record.id);
-      return undefined;
-    }
-  }
-
-  /**
-   * One saved complication drawn the way the watch draws it, small enough for
-   * a menu row. Only the open complication has its templates rendered and its
-   * history fetched, so a Jinja layer or a chart in another row draws what the
-   * watch draws before its first sync: the fallback, or nothing. That is worth
-   * it to make the list recognisable at a glance.
-   */
-  private renderRowArt(record: ComplicationRecord, owner: OwnerSummary | undefined): TemplateResult {
-    const entry = this.recordPreview(record);
-    if (!entry) return html`<span class="pk-art"></span>`;
-    const cfg = entry.config;
-    // A document with no shape has no face to draw, but a control-only one is
-    // not nothing: it draws the Control Center tile the device draws, from the
-    // same `controlTile` the card and the canvas tab use, so the row shows the
-    // real symbol and tint rather than a blank box beside the word Control.
-    if (cfg.supportedFamilies.length === 0) {
-      if (!cfg.control) return html`<span class="pk-art"></span>`;
-      const shape = controlTileShapes(deviceKindOf(owner))[0]!;
-      const tile = controlTile(this.tileHost(cfg, entry.entities), cfg.control, shape, CONTROL_ROW_TILE_SIDE);
-      return html`<span class="pk-art control-tile">${tile}</span>`;
-    }
-    // With a shape chip on, every row draws the shape being filtered for, so
-    // the pictures answer the question the chip asked. A person chip asks a
-    // question about people, so the rows keep their own first shape.
-    const chip = this.pickerFilter;
-    const filtered = chip !== "all" && !isPersonFilter(chip) && cfg.supportedFamilies.includes(chip)
-      ? chip
-      : undefined;
-    const family = filtered ?? firstDrawable(cfg) ?? "inline";
-    // The row is drawn on its own device's screen, not on whichever one the
-    // header happens to be showing: a phone row in a watch household's list
-    // still belongs in a phone.
-    const reference = deviceKindOf(owner) === "iphone" ? REFERENCE_PHONE : REFERENCE_CASE;
-    return this.renderConfigArts(cfg, entry.entities, [family], "pk-art", undefined, reference)[0]!;
-  }
-
-  /** Shapes of a document drawn small, one picture each, from the live states
-   * of the entities it reads. The picker rows and the import preview both use
-   * it; a class beyond `pk-art` sizes the picture for its place. */
-  private renderConfigArts(cfg: CustomComplicationConfig, entities: readonly EntityRef[], families: readonly FamilyKind[], cls: string, historySeries?: Map<string, string>, reference: PreviewCase = this.referenceCase): TemplateResult[] {
-    const layouts = this.configLayouts(cfg, entities, historySeries);
-    return families.map((family) => {
-      if (family === "inline") return html`<span class="${cls} inline">${this.renderInlinePreview(layouts.inline, true)}</span>`;
-      const layout = layouts[family];
-      if (!layout) return html`<span class=${cls}></span>`;
-      return html`<span class="${cls} ${family}">${renderLayout(layout, { icons: this.icons, imageSizes: this.imageSizes, slot: slotFor(reference, family) })}</span>`;
-    });
-  }
+  /* A picker row used to carry a live rendering of the complication itself:
+     a config parsed and cached per record, resolved against the live states
+     and drawn into a 100 px box (`recordPreview`, `renderRowArt`,
+     `renderConfigArts`, and the `.pk-art` rules). A card draws the two devices
+     with the design's slots lit instead, so all of that went on 2026-09-19. On
+     a wall of cards the question worth answering is where a design sits, not
+     what one small picture of its first shape looks like. `configLayouts`
+     stays; the import preview and the shape tabs still resolve through it. */
 
   /** A document that is not the open one, resolved from the live states of
    * the entities it reads. Templates are not rendered for it. */
@@ -8448,33 +8470,56 @@ export class WristAssistantPanel extends LitElement {
     };
   }
 
-  /** A host for a Control Center tile of a complication that has no draft
-   * behind it: enough for `controlTile`, and nothing it cannot answer. */
-  private tileHost(cfg: CustomComplicationConfig, entities: readonly EntityRef[]): ControlTileHost {
-    const context = this.configContext(cfg, entities);
-    return { config: cfg, icons: this.icons, resolveContext: () => context };
-  }
-
   /**
-   * The chips above the list: everything, then the people, then the shapes.
+   * The chips over the grid: everything, then the people, then the shapes, then
+   * the control, with how many cards are showing at the end.
    *
    * People before shapes because whose it is is the coarser question, and it is
    * the one a household asks first. A home with one person is shown no person
-   * chips: every row would be in every one of them. Each chip carries its own
+   * chips: every card would be in every one of them. Each chip carries its own
    * count, so a chip with nothing behind it says so instead of opening an empty
-   * list.
+   * grid.
+   *
+   * Always drawn, however short the list. They used to appear only past eight
+   * rows, which meant the one control that says what this surface can do was
+   * missing from exactly the homes still learning it; in a dialog this size
+   * there is no space being saved by hiding them.
    */
-  private renderPickerFilter(rows: readonly PickerRow[], people: readonly Person[]) {
-    const chip = (key: FamilyKind | "all" | PersonFilter, label: string, count: number) => html`<button
+  private renderPickerFilter(rows: readonly PickerRow[], people: readonly Person[], shown: number) {
+    const chip = (key: FamilyKind | "all" | "control" | PersonFilter, label: string, count: number) => html`<button
       class="pk-chip ${this.pickerFilter === key ? "on" : ""}" ?disabled=${count === 0}
       aria-pressed=${this.pickerFilter === key ? "true" : "false"}
       @click=${() => { this.pickerFilter = key; }}>${label}<span class="pk-count">${count}</span></button>`;
+    const controls = rows.filter((r) => r.open.item.kind === "record" && hasControlOf(r.open.item.record)).length;
     return html`<div class="pk-filter">
+      <span class="pk-filter-lead">Show</span>
       ${chip("all", "All", rows.length)}
       ${people.length < 2 ? nothing : people.map((p) =>
         chip(personFilter(p.key), p.label, rowsOfPeople(rows, p.owners.map((o) => o.owner_watch_id)).length))}
       ${this.pickerFamilies.map((f) => chip(f, familyTitle(f), rows.filter((r) => familiesOfItem(r.open.item).includes(f)).length))}
+      ${controls === 0 ? nothing : chip("control", "Control", controls)}
+      <span class="pk-filter-gap"></span>
+      <span class="pk-count-of">${pickerCountText(shown, rows.length)}</span>
     </div>`;
+  }
+
+  /** Whether one card answers what has been typed into the search field. The
+   * name and the people who have it, because "chen" is as reasonable a thing
+   * to type as "porch" and neither is the other's field. */
+  private pickerMatches(row: PickerRow, query: string, people: readonly Person[]): boolean {
+    if (query === "") return true;
+    if (row.name.toLocaleLowerCase().includes(query)) return true;
+    return rowWhoText(row.copies.map((c) => c.ownerId), this.pickerPeople(people))
+      .toLocaleLowerCase().includes(query);
+  }
+
+  /** The household as the who-line reads it: a name and the kinds of that
+   * person's devices, which is all `rowWhoText` needs to stay pure. */
+  private pickerPeople(people: readonly Person[]): PickerPerson[] {
+    return people.map((p) => ({
+      label: p.label,
+      devices: p.owners.map((o) => ({ ownerId: o.owner_watch_id, kind: deviceKindOf(o) })),
+    }));
   }
 
   /**
@@ -8566,125 +8611,173 @@ export class WristAssistantPanel extends LitElement {
           ${who === "" ? nothing : html`<span class="pk-open-who">on ${who}</span>`}
         </span>
         ${this.shapeDots(families, d?.config.control !== undefined)}
+        <span class="pk-open-all">Browse all</span>
         ${uiIcon("chevron")}
       </button>
-      ${this.pickerOpen ? html`<div class="menu one" role="dialog"
-        aria-label="Choose a complication">
-        ${this.renderPickerList()}
-      </div>` : nothing}
+      ${this.pickerOpen ? this.renderPickerDialog() : nothing}
     </div>`;
   }
 
   /**
-   * The picker's surface: every complication in the home under the chips that
-   * narrow it, over the line that makes a new one.
+   * The picker's surface: every complication in the home as a card, under a
+   * search field and the chips that narrow it.
    *
-   * One list, whatever the household holds. A complication linked across a
-   * watch and a phone is one row here with both devices on it, because it is
-   * one design edited in one place; who has it is something the row says, not
-   * a folder it was filed in.
+   * A centred dialog, not the 400 px dropdown this hung off the button for a
+   * year. A dropdown that narrow holds a list and nothing else, so the
+   * question a household actually asks here, "which of my devices has this",
+   * was answered in one line of small grey text and could not be changed from
+   * the list at all: the author had to open the complication, find "Shows on"
+   * in the inspector, tick a box and save. A card has room for both devices
+   * drawn full size and for an Add to button that writes the copy from here.
+   *
+   * One card per complication, whatever the household holds. A complication
+   * linked across a watch and a phone is one card with both devices lit,
+   * because it is one design edited in one place.
    */
-  private renderPickerList() {
+  private renderPickerDialog() {
     const d = this.draft;
-    const name = d ? (d.config.name.trim() || "Untitled") : "No complication";
-    const families = d ? d.config.supportedFamilies : [];
     const devices = this.pickerDevices();
     const people = peopleOf(this.owners);
-    // Every device in one list, always. The row says whose complication it is,
-    // and the person chips and the shape chips narrow it; a device chip row was
+    // Every device in one grid, always. The card says whose complication it
+    // is, and the search field and the chips narrow it; a device chip row was
     // the old sidebar in a new coat (dropped 2026-09-19).
     const all = pickerView(this.pickerRows(), devices, ALL_DEVICES);
+    const query = this.pickerQuery.trim().toLocaleLowerCase();
     const filter = this.pickerFilter;
     const person = people.find((p) => personFilter(p.key) === filter);
-    const rows = filter === "all"
+    const chipped = filter === "all"
       ? all
       : isPersonFilter(filter)
         ? rowsOfPeople(all, (person?.owners ?? []).map((o) => o.owner_watch_id))
-        : all.filter((row) => familiesOfItem(row.open.item).includes(filter));
-    // Hidden rows go to a folded section at the bottom. The open complication
-    // never does, so it can always be picked again.
-    const split = splitHidden(
-      rows,
-      (row) => row.open.item.kind === "record" ? { id: row.open.id, hidden: this.rowHidden(row.open.item.record) } : undefined,
-      this.selectedId,
-    );
-    const several = people.length > 1;
-    // What an empty list is empty of: a person's name when a person chip is
-    // on, a shape's when a shape chip is.
-    const emptyOf = filter === "all"
-      ? ""
-      : isPersonFilter(filter)
-        ? `Nothing here is ${person?.label ?? "theirs"}.`
-        : `Nothing here has a ${familyTitle(filter)} shape.`;
-    return html`<div class="pk-comps">
-      ${!this.ownerBusy && all.length >= WristAssistantPanel.FILTER_FROM_ROWS ? this.renderPickerFilter(all, people) : nothing}
-      <div class="pk-rows">
+        : filter === "control"
+          ? all.filter((row) => row.open.item.kind === "record" && hasControlOf(row.open.item.record))
+          : all.filter((row) => familiesOfItem(row.open.item).includes(filter));
+    const rows = chipped.filter((row) => this.pickerMatches(row, query, people));
+    // What an empty grid is empty of. The search wins when something has been
+    // typed, because that is the last thing the author did.
+    const emptyOf = query !== ""
+      ? `Nothing here matches "${this.pickerQuery.trim()}".`
+      : filter === "all"
+        ? ""
+        : isPersonFilter(filter)
+          ? `Nothing here is ${person?.label ?? "theirs"}.`
+          : filter === "control"
+            ? "Nothing here has a control."
+            : `Nothing here has a ${familyTitle(filter)} shape.`;
+    return html`<dialog class="pk-dialog" aria-label="Your complications"
+      @cancel=${this.pickerCancel} @close=${() => this.pickerClosed()}
+      @click=${this.pickerBackdrop}>
+      <div class="pk-head">
+        <h2>Your complications</h2>
+        <label class="pk-search">
+          ${uiIcon("search")}
+          <input type="search" class="pk-search-input" .value=${this.pickerQuery}
+            placeholder="Search by name or person" aria-label="Search complications"
+            @input=${(e: Event) => { this.pickerQuery = (e.target as HTMLInputElement).value; }} />
+        </label>
+        <button class="icon" title="Close" aria-label="Close" @click=${() => this.closePicker()}>${uiIcon("close")}</button>
+      </div>
+      ${this.ownerBusy ? nothing : this.renderPickerFilter(all, people, rows.length)}
+      <div class="pk-body">
         ${this.ownerBusy
           ? html`<div class="empty">Loading…</div>`
           : html`${all.length === 0 && !(d && d.baseRevision === null)
             ? html`<div class="empty">No complications yet.</div>`
             : nothing}
             ${all.length > 0 && rows.length === 0 ? html`<div class="empty">${emptyOf}</div>` : nothing}
-            ${split.shown.map((row) => this.renderPickerRow(row, several))}
-            ${d && d.baseRevision === null ? html`<div class="row" aria-current="true"><span class="pk-art"></span><span class="pk-name">${name}</span>${this.shapeDots(families, d.config.control !== undefined)}<span class="pk-badge">unsaved</span></div>` : nothing}
-            ${split.hidden.length > 0 ? html`
-              <button type="button" class="pk-hidden-head" aria-expanded=${this.pickerHiddenOpen ? "true" : "false"}
-                @click=${() => { this.pickerHiddenOpen = !this.pickerHiddenOpen; }}>
-                ${uiIcon("chevron")}<span>Hidden (${split.hidden.length})</span>
-              </button>
-              ${this.pickerHiddenOpen ? html`
-                <div class="pk-note">These do not show in their device's own list of complications. A face or widget that already has one keeps it.</div>
-                ${split.hidden.map((row) => this.renderPickerRow(row, several))}` : nothing}` : nothing}`}
+            <div class="pk-grid">
+              ${rows.map((row) => this.renderPickerCard(row, people))}
+              ${d && d.baseRevision === null ? this.renderUnsavedCard(d) : nothing}
+            </div>`}
       </div>
-      ${this.renderPickerFoot(all.filter((row) => row.open.item.kind === "record").length)}
+      ${this.renderPickerFoot()}
+    </dialog>`;
+  }
+
+  /** The complication being made, which has no record behind it yet. A card
+   * of its own rather than a row at the bottom, so it sits where it will sit
+   * once it is saved. */
+  private renderUnsavedCard(d: Draft) {
+    const cfg = d.config;
+    const families = ALL_FAMILIES.filter((f) => cfg.supportedFamilies.includes(f));
+    return html`<div class="pk-card" aria-current="true">
+      <div class="pk-card-head">
+        <span class="pk-card-text">
+          <span class="pk-card-name">${cfg.name.trim() || "Untitled"}</span>
+          <span class="pk-card-who">Not saved yet</span>
+        </span>
+        <span class="pk-badge">unsaved</span>
+      </div>
+      <div class="pk-card-art">${designDeviceArt(families, cfg.control !== undefined)}</div>
+      <div class="pk-card-shapes">${shapeListText(families, cfg.control !== undefined)}</div>
     </div>`;
   }
 
-  /** The bottom line of the picker: how many complications the list is showing,
-   * and the one New button.
+  /**
+   * The line under the grid: what the blue on the drawings means, then the two
+   * buttons that bring a complication in from outside.
    *
-   * The count is saved complications only, never the locked seats the list also
-   * draws, and a linked complication counts once: it is one complication, which
-   * is the whole of why this list has no device folders in it. */
-  private renderPickerFoot(count: number) {
+   * It carries what a write said, too. The panel's own banner for that sits in
+   * the editor behind a modal backdrop, so a tick in "Add to" would have saved
+   * a copy and said so where nobody could read it until the dialog was shut.
+   */
+  private renderPickerFoot() {
     if (!this.hass.user?.is_admin) return nothing;
     // The seats being counted are the edited device's: that is where New puts
-    // a complication, and the dialog is where another device is chosen.
+    // a complication, and its dialog is where another device is chosen.
     const full = this.freeSlot() < 0;
     const where = this.selectedOwner ? ownerLabel(this.selectedOwner) : "This device";
+    const said = this.saveError ?? this.linkStatus;
     return html`<div class="pk-foot">
-      <span class="pk-foot-hint">${this.ownerBusy ? nothing : pickerFootText(count)}</span>
+      ${said === undefined
+        ? html`<span class="pk-foot-hint">Blue marks where each design sits. Click a card to open it. Add to puts it on a person's watch or iPhone from here.</span>`
+        : html`<span class="pk-foot-said ${this.saveError ? "err" : ""}">${said}</span>
+          <button type="button" class="ghost small"
+            @click=${() => { this.saveError = undefined; this.linkStatus = undefined; }}>Dismiss</button>`}
+      <button type="button" class="new-btn" ?disabled=${full || this.ownerBusy}
+        title=${full ? `${where} has no free slot. Delete a complication first.` : "Paste a complication somebody shared"}
+        @click=${() => this.importFromPicker()}><span>Import</span></button>
       <button type="button" class="new-btn primary" ?disabled=${full || this.ownerBusy}
         title=${full ? `${where} has no free slot. Delete a complication first.` : "Make a new complication"}
         @click=${() => this.newFromPicker()}>${uiIcon("plus")}<span>New</span></button>
     </div>`;
   }
 
-  /** One picker row. A saved complication opens from the row and carries its
-   * own hide and delete buttons; a locked seat unfolds its explanation.
+  /**
+   * One card: the name, who has it, both devices with its shapes lit, and the
+   * shapes named underneath.
    *
-   * `several` is whether this home has more than one person, worked out once
-   * for the whole list: it decides whether the row says whose complication
-   * this is, and in a one-person home every row would say the same name. */
-  private renderPickerRow(row: PickerRow, several: boolean) {
+   * The drawings are the point. A row used to carry one small rendering of the
+   * complication itself, which answered "what does it look like" and left
+   * "where does it live" to a line of grey text. On a wall of cards the useful
+   * question is the second one, and two device outlines with four slots lit
+   * between them answer it without a word.
+   */
+  private renderPickerCard(row: PickerRow, people: readonly Person[]) {
     const copy = row.open;
-    const owner = this.ownerOf(copy.ownerId);
+    const who = rowWhoText(row.copies.map((c) => c.ownerId), this.pickerPeople(people));
     if (copy.item.kind !== "record") {
       const item = copy.item;
-      return html`<button type="button" class="row locked" role="option" aria-disabled="true" title=${item.title}
-          @click=${() => { this.pickerNote = this.pickerNote === row.key ? undefined : row.key; }}>
-          <span class="pk-art"></span>
-          <span class="pk-text"><span class="pk-name">${row.name}</span>${this.renderRowPeople(row, several)}</span>
-          ${this.shapeDots(item.families, false, familiesFor(owner))}
+      const families = ALL_FAMILIES.filter((f) => item.families.includes(f));
+      return html`<div class="pk-card locked">
+        <div class="pk-card-head">
+          <button type="button" class="pk-card-text" title=${item.title}
+            @click=${() => { this.pickerNote = this.pickerNote === row.key ? undefined : row.key; }}>
+            <span class="pk-card-name">${row.name}</span>
+            <span class="pk-card-who">${who}</span>
+          </button>
           <span class="pk-badge">${item.badge}</span>
-        </button>
-        ${this.pickerNote === row.key ? html`<div class="pk-note">${item.title}</div>` : nothing}`;
+        </div>
+        <div class="pk-card-art">${designDeviceArt(families, false)}</div>
+        <div class="pk-card-shapes">${shapeListText(families, false)}</div>
+        ${this.pickerNote === row.key ? html`<div class="pk-note">${item.title}</div>` : nothing}
+      </div>`;
     }
     const drawn = copy.item.record;
-    // Which copy the buttons act on. Normally the one the row draws, but when
+    // Which copy the buttons act on. Normally the one the card draws, but when
     // this panel already has one of a link's other copies open it is that one:
-    // the hide then goes through its draft, and the row has to light up as the
-    // open complication even though the picture beside it is the phone's.
+    // the hide then goes through its draft, and the card has to light up as the
+    // open complication even though the drawing beside it is the phone's.
     const mine = this.selectedCopyOf(row);
     const actOn = mine ?? copy;
     const actOwnerId = actOn.ownerId;
@@ -8692,61 +8785,119 @@ export class WristAssistantPanel extends LitElement {
     const open = mine !== undefined;
     const hidden = this.rowHidden(record);
     const recName = row.name;
-    const deviceWord = deviceNoun(this.ownerOf(actOwnerId));
+    // Every shape any copy carries, not only the one the card opens: a phone
+    // copy has no corner, and a card that left corner dark would be saying the
+    // design does not reach the watch face slot it is sitting in.
+    const families = ALL_FAMILIES.filter((f) => row.copies.some((c) =>
+      c.item.kind === "record" && familiesOf(c.item.record).includes(f)));
+    const control = row.copies.some((c) => c.item.kind === "record" && hasControlOf(c.item.record));
+    const word = deviceNoun(this.ownerOf(actOwnerId));
     // The open complication goes through the inspector's own Delete, so an
     // unsaved draft and a conflict behave the same from either place. Hide
     // follows the same split: the open one through its draft, others at once.
     const mayDelete = open ? this.canEdit : !!this.hass.user?.is_admin;
-    const mayHide = mayDelete;
     const confirming = this.pickerConfirmDelete === record.id;
+    const adding = this.pickerAddFor === row.key;
     const stop = (e: Event) => e.stopPropagation();
-    return html`<div class="row rec ${hidden ? "dim" : ""}" aria-current=${open ? "true" : "false"}>
-      <button type="button" class="pick" role="option" aria-selected=${open ? "true" : "false"}
-        @click=${() => void this.openFromPicker(row)}>
-        ${this.renderRowArt(drawn, owner)}
-        <span class="pk-text"><span class="pk-name">${recName}</span>${this.renderRowPeople(row, several)}</span>
-        ${this.shapeDots(familiesOf(drawn), hasControlOf(drawn), familiesFor(owner))}
-      </button>
-      <span class="pk-acts">
+    return html`<div class="pk-card ${hidden ? "dim" : ""} ${adding ? "over" : ""}" aria-current=${open ? "true" : "false"}>
+      <div class="pk-card-head">
+        <button type="button" class="pk-card-text" title="Open this complication"
+          @click=${() => void this.openFromPicker(row)}>
+          <span class="pk-card-name">${recName}</span>
+          <span class="pk-card-who">${who}</span>
+        </button>
+        ${hidden ? html`<span class="pk-tag" title="These do not show in their device's own list of complications. A face or widget that already has one keeps it.">hidden</span>` : nothing}
+        ${this.renderPickerAdd(row, adding)}
+      </div>
+      <button type="button" class="pk-card-art" title="Open this complication"
+        @click=${() => void this.openFromPicker(row)}>${designDeviceArt(families, control)}</button>
+      <div class="pk-card-shapes">${shapeListText(families, control)}</div>
+      <span class="pk-card-acts ${confirming ? "asking" : ""}">
         ${confirming
           ? html`<button type="button" class="ghost danger small" ?disabled=${this.saving}
               @click=${(e: Event) => { stop(e); void (open ? this.deleteCurrent() : this.deleteSaved(record.id, record.revision, actOwnerId)); }}>Really delete</button>
             <button type="button" class="ghost small" @click=${(e: Event) => { stop(e); this.pickerConfirmDelete = undefined; }}>Cancel</button>`
-          : html`${mayHide ? html`<button type="button" class="icon" ?disabled=${!open && this.saving}
+          : html`${mayDelete ? html`<button type="button" class="icon" ?disabled=${!open && this.saving}
               title=${hidden
-                ? `Hidden from the ${deviceWord}'s complication list. Show it there again.`
-                : `Hide from the ${deviceWord}'s complication list. Faces already using it keep it.`}
-              aria-label=${hidden ? `Show ${recName} in the ${deviceWord}'s complication list` : `Hide ${recName} from the ${deviceWord}'s complication list`}
-              @click=${(e: Event) => { stop(e); void this.setPickerHidden(record, !hidden, actOwnerId); }}>${uiIcon(hidden ? "hide" : "show")}</button>` : nothing}
-            ${mayDelete ? html`<button type="button" class="icon danger" title="Delete this complication" aria-label=${`Delete ${recName}`}
+                ? `Hidden from the ${word}'s complication list. Show it there again.`
+                : `Hide from the ${word}'s complication list. Faces already using it keep it.`}
+              aria-label=${hidden ? `Show ${recName} in the ${word}'s complication list` : `Hide ${recName} from the ${word}'s complication list`}
+              @click=${(e: Event) => { stop(e); void this.setPickerHidden(record, !hidden, actOwnerId); }}>${uiIcon(hidden ? "hide" : "show")}</button>
+            <button type="button" class="icon danger" title="Delete this complication" aria-label=${`Delete ${recName}`}
               ?disabled=${this.saving} @click=${(e: Event) => { stop(e); this.pickerConfirmDelete = record.id; }}>${uiIcon("delete")}</button>` : nothing}`}
       </span>
     </div>`;
   }
 
   /**
-   * Who has a row's complication, under its name.
+   * "Add to": the devices this design could sit on, as a tick each.
    *
-   * People rather than devices. A row used to carry a glyph and a device name
-   * for each copy, which in a two-person home read as "Jesse Apple Watch
-   * (iPhone 15 Pro), Jesse's iPhone" for one design on one person's two
-   * devices: three device names to say Jesse. Which of somebody's devices draw
-   * it is a question the Appears on list answers, in the one place it can be
-   * changed; the list only has to say whose it is.
+   * The one control on this surface that writes anything. Everything else here
+   * opens a complication or takes one away; this puts the design on somebody's
+   * watch or iPhone without the author having to open it first, find "Appears
+   * on" in the inspector and save.
    *
-   * A home with one person gets no line at all, since every row would say the
-   * same name. A long list is cut with an ellipsis and says the whole of it in
-   * the tooltip.
+   * One menu at a time, held absolutely inside its own card, so a grid three
+   * cards wide never has two of them overlapping each other.
    */
-  private renderRowPeople(row: PickerRow, several: boolean) {
-    if (!several) return nothing;
-    const names = peopleNames(peopleOf(this.owners), row.copies.map((c) => c.ownerId));
-    if (names.length === 0) return nothing;
-    const who = joinNames(names);
-    const title = row.copies.length > 1
-      ? `${who} have this. One design, edited in one place.`
-      : `${who} has this.`;
-    return html`<span class="pk-who" title=${title}>${who}</span>`;
+  private renderPickerAdd(row: PickerRow, adding: boolean) {
+    if (!this.hass.user?.is_admin) return nothing;
+    const groups = this.showsOnGroups();
+    if (groups.reduce((n, g) => n + g.owners.length, 0) === 0) return nothing;
+    const mineKey = this.ownerId === undefined ? undefined : personOf(peopleOf(this.owners), this.ownerId)?.key;
+    const on = new Set(row.copies.filter((c) => c.item.kind === "record").map((c) => c.ownerId));
+    return html`<span class="pk-add" data-add=${row.key}>
+      <button type="button" class="pk-add-open ${adding ? "on" : ""}" aria-expanded=${adding ? "true" : "false"}
+        title="Add to or remove from a device" ?disabled=${this.saving}
+        @click=${() => { if (adding) this.closePickerAdd(); else this.openPickerAdd(row.key); }}>Add to${uiIcon("chevron")}</button>
+      ${adding ? html`<div class="pk-add-menu" role="group" aria-label=${`Add ${row.name} to a device`}>
+        ${groups.map(({ person, owners }) => html`<div class="pk-add-group">
+          <span class="pk-add-head">${person.key === mineKey ? `${person.label} (you)` : person.label}</span>
+          ${owners.map((owner) => this.renderPickerAddTick(row, owner, person, on.has(owner.ownerId)))}
+        </div>`)}
+        <div class="pk-add-note">A tick writes that copy now. The watch and the iPhone are separate, so a watch list stays short.</div>
+      </div>` : nothing}
+    </span>`;
+  }
+
+  /**
+   * One device's tick inside "Add to".
+   *
+   * Ticking writes at once, so unticking asks first: there is no Save to undo
+   * a stray click against, and the thing a stray click would take away is a
+   * complication somebody's watch face is already pointing at. The copy the
+   * editor has open is not offered at all, because taking the record out from
+   * under the open draft is what Delete is for.
+   */
+  private renderPickerAddTick(row: PickerRow, owner: LinkOwner, person: Person, ticked: boolean) {
+    const askKey = `${row.key}\u0000${owner.ownerId}`;
+    if (this.pickerRemoveAsk === askKey) {
+      return html`<div class="pk-add-ask">
+        <span>Remove from ${owner.label}?</span>
+        <button type="button" class="ghost danger small" ?disabled=${this.saving}
+          @click=${() => void this.removeRowCopy(row, owner.ownerId)}>Yes</button>
+        <button type="button" class="ghost small"
+          @click=${() => { this.pickerRemoveAsk = undefined; }}>Cancel</button>
+      </div>`;
+    }
+    const editing = ticked && this.selectedCopyOf(row)?.ownerId === owner.ownerId;
+    const seats = this.seatsOn(owner.ownerId);
+    const noSeat = !ticked && seats.full;
+    const label = this.showsOnName(owner.ownerId, person);
+    const title = editing
+      ? "This is the copy you are editing. Delete removes the complication from every device."
+      : noSeat
+        ? `${owner.label} has no free seat (iPhone presets count too). Delete a complication on it first.`
+        : ticked
+          ? `Stop showing this on ${owner.label}. Its copy goes now.`
+          : `Show this on ${owner.label}. Its copy is written now.`;
+    return html`<button type="button" class="pk-add-tick ${ticked ? "on" : ""}" role="checkbox"
+      aria-checked=${ticked ? "true" : "false"} ?disabled=${this.saving || editing || noSeat} title=${title}
+      @click=${() => { if (ticked) this.pickerRemoveAsk = askKey; else void this.addRowCopy(row, owner); }}>
+      ${ticked ? pickTick() : html`<span class="pick-tick off" aria-hidden="true"></span>`}
+      <span class="pk-add-name">${label}</span>
+      ${noSeat ? html`<span class="pk-add-note-full">full, ${seats.taken} of ${MAX_SLOTS}</span>` : nothing}
+    </button>`;
   }
 
   /** Whether a picker row is hidden from its device's complication list. The
@@ -8805,6 +8956,133 @@ export class WristAssistantPanel extends LitElement {
     }
   }
 
+  /**
+   * Put one complication on another device, written now.
+   *
+   * The same path "Shows on" takes, run from a card instead of from the open
+   * document: the design gains a `linkId` if it has none, and the new device
+   * gets a copy of the whole design trimmed to the shapes it can draw. There
+   * is no Save button on this surface to hold the write for, which is the
+   * whole of why the picker could never do this before.
+   *
+   * The open complication goes through the editor's own tick and its own Save
+   * instead. It has a draft in front of it, and writing the stored document
+   * behind that draft's back would move the revision under unsaved work.
+   */
+  private async addRowCopy(row: PickerRow, owner: LinkOwner) {
+    if (!this.hass.user?.is_admin || this.saving) return;
+    if (this.selectedCopyOf(row)) {
+      this.closePickerAdd();
+      this.joinLink(owner);
+      await this.save();
+      return;
+    }
+    const source = row.open;
+    if (source.item.kind !== "record" || !source.item.record.document) return;
+    const record = source.item.record;
+    this.saving = true;
+    this.saveError = undefined;
+    try {
+      // Fresh lists: a seat taken on the target since the dialog opened is the
+      // whole reason to look before writing.
+      await this.loadOtherLists();
+      const cfg = this.mergedLinkView(parseConfig(record.document));
+      let linkId = cfg.linkId;
+      if (linkId === undefined) {
+        // A complication on one device carries no link. Stamping one on the
+        // copy that already exists is what makes the pair one design rather
+        // than two complications that happen to share a name.
+        linkId = newId();
+        const stamped = await saveRecord(
+          this.hass,
+          source.ownerId,
+          { ...(record.document as Record<string, unknown>), linkId },
+          record.revision,
+        );
+        if (!stamped.ok) {
+          this.saveError = stamped.error === "conflict"
+            ? `${row.name} changed on the server. Open the picker again and retry.`
+            : stamped.message ?? stamped.error ?? "Save failed";
+          return;
+        }
+      }
+      // The plan reads the design's shapes, its control and its id; the link
+      // it belongs to is `copyForOwner`'s business, one line down.
+      const plan = planLinkedSave(
+        cfg,
+        [{ owner, usedSlots: this.usedSlotsOn(owner.ownerId) }],
+        // What the copies that exist already carry, so a shape the author
+        // dropped from one device is not handed back to a new one.
+        picksFromCopies(linkedCopies(this.allLinkRecords(), linkId)),
+        // Nothing here is the primary: this write is one new copy, and the
+        // document it comes from keeps the revision it already has.
+        { ownerId: "", baseRevision: null },
+      );
+      if (!plan.ok) {
+        this.saveError = plan.message;
+        return;
+      }
+      const write = plan.writes[0];
+      if (!write) return;
+      const doc = new Draft(copyForOwner(cfg, write, linkId), null).encoded();
+      const result = await saveRecord(this.hass, write.ownerId, doc, null);
+      if (!result.ok) {
+        this.saveError = result.message ?? result.error ?? "Save failed";
+        return;
+      }
+      this.linkStatus = `${row.name} is on ${owner.label} now. It arrives there on the next sync.`;
+      await this.reloadAfterRowWrite(write.ownerId, source.ownerId);
+    } catch (err) {
+      this.saveError = errText(err);
+    } finally {
+      this.saving = false;
+      this.pickerRemoveAsk = undefined;
+    }
+  }
+
+  /**
+   * Take one device's copy of a complication away, now.
+   *
+   * One copy only, never the link: that is what Delete on the card is for, and
+   * Delete says plainly that it removes the complication from every device.
+   * The copy the editor has open is refused here as well as being unclickable,
+   * since a slow list could offer it after the selection moved.
+   */
+  private async removeRowCopy(row: PickerRow, ownerId: string) {
+    if (!this.hass.user?.is_admin || this.saving) return;
+    if (this.selectedCopyOf(row)?.ownerId === ownerId) return;
+    const copy = row.copies.find((c) => c.ownerId === ownerId && c.item.kind === "record");
+    if (!copy || copy.item.kind !== "record") return;
+    const record = copy.item.record;
+    this.saving = true;
+    this.saveError = undefined;
+    try {
+      const result = await deleteRecord(this.hass, ownerId, record.id, record.revision);
+      if (!result.ok) {
+        this.saveError = result.message ?? result.error ?? "Delete failed";
+        return;
+      }
+      this.linkStatus = `${row.name} is off ${this.ownerName(ownerId)}. A face or widget already using it keeps it.`;
+      await this.reloadAfterRowWrite(ownerId);
+    } catch (err) {
+      this.saveError = errText(err);
+    } finally {
+      this.saving = false;
+      this.pickerRemoveAsk = undefined;
+    }
+  }
+
+  /** Read back whichever lists a card's write touched. The edited device's own
+   * list is the one the panel watches, so it also waits on the sync; another
+   * device's is simply re-read. */
+  private async reloadAfterRowWrite(...ownerIds: readonly string[]) {
+    if (ownerIds.includes(this.ownerId ?? "")) {
+      this.beginSendWait();
+      await this.loadRecords();
+    }
+    await this.loadOtherLists();
+  }
+
   /** Clear the hidden lists an older panel kept in this browser. Storage that
    * throws (a private window, blocked site data) is left alone. */
   private clearLegacyPickerHidden() {
@@ -8838,24 +9116,88 @@ export class WristAssistantPanel extends LitElement {
   };
 
   private togglePicker(next = !this.pickerOpen) {
-    this.pickerOpen = next;
-    if (next) {
-      // The other devices' lists are read for the links and are not on this
-      // one's change subscription, so a complication added on the phone since
-      // the panel loaded would be missing from the list this menu is about.
-      void this.loadOtherLists();
-    } else {
-      this.pickerNote = undefined;
-      this.pickerConfirmDelete = undefined;
-    }
-    if (next) window.addEventListener("pointerdown", this.pickerOutside, { capture: true });
-    else window.removeEventListener("pointerdown", this.pickerOutside, { capture: true });
+    if (next) this.openPicker();
+    else this.closePicker();
   }
 
-  private pickerOutside = (e: PointerEvent) => {
-    const inside = e.composedPath().some((n) => n instanceof HTMLElement && n.classList.contains("picker"));
-    if (!inside) this.togglePicker(false);
+  /** Open the picker as a modal dialog, the way the New dialog opens: a real
+   * `showModal`, so the backdrop, the focus trap and Escape are the browser's
+   * rather than three listeners of our own. */
+  private openPicker() {
+    this.pickerOpen = true;
+    this.pickerQuery = "";
+    // The other devices' lists are read for the links and are not on this
+    // one's change subscription, so a complication added on the phone since
+    // the panel loaded would be missing from the grid this dialog is about.
+    void this.loadOtherLists();
+    void this.updateComplete.then(() => {
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.pk-dialog");
+      if (!dialog) return;
+      if (!dialog.open) dialog.showModal();
+      dialog.querySelector<HTMLInputElement>("input.pk-search-input")?.focus();
+    });
+  }
+
+  private closePicker() {
+    const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.pk-dialog");
+    if (dialog?.open) dialog.close();
+    else this.pickerClosed();
+  }
+
+  /** Everything the picker forgets on the way out, however it was shut: the
+   * close button, Escape, the backdrop, or opening something from it. */
+  private pickerClosed() {
+    this.pickerOpen = false;
+    this.pickerNote = undefined;
+    this.pickerConfirmDelete = undefined;
+    this.closePickerAdd();
+  }
+
+  /** A press on the backdrop shuts the dialog. A modal dialog's backdrop is
+   * the dialog element itself as far as the event is concerned, so a click
+   * that lands on nothing inside it is a click on the way out. */
+  private pickerBackdrop = (e: MouseEvent) => {
+    if (e.target === e.currentTarget) this.closePicker();
   };
+
+  /** Escape shuts the open "Add to" menu before it shuts the dialog, so the
+   * key undoes the last thing that was opened rather than the first. A
+   * dialog's close request is cancelable, which is the only hook that stops
+   * the browser shutting the whole thing on the first press. */
+  private pickerCancel = (e: Event) => {
+    if (this.pickerAddFor === undefined) return;
+    e.preventDefault();
+    this.closePickerAdd();
+  };
+
+  private openPickerAdd(key: string) {
+    this.pickerAddFor = key;
+    this.pickerRemoveAsk = undefined;
+    // Which devices already hold a copy, and how full each one is, both come
+    // off lists this menu is about to draw ticks from.
+    void this.loadOtherLists();
+    window.addEventListener("pointerdown", this.pickerAddOutside, { capture: true });
+  }
+
+  private closePickerAdd() {
+    this.pickerAddFor = undefined;
+    this.pickerRemoveAsk = undefined;
+    window.removeEventListener("pointerdown", this.pickerAddOutside, { capture: true });
+  }
+
+  private pickerAddOutside = (e: PointerEvent) => {
+    const open = this.pickerAddFor;
+    if (open === undefined) return;
+    const inside = e.composedPath().some((n) => n instanceof HTMLElement && n.dataset.add === open);
+    if (!inside) this.closePickerAdd();
+  };
+
+  /** Import, from the picker's own foot. The picker shuts first: two modal
+   * dialogs stacked is two backdrops and one of them unreachable. */
+  private importFromPicker() {
+    this.closePicker();
+    this.openImportDialog();
+  }
 
   /**
    * Import, beside the picker. It answers the same question New does from the

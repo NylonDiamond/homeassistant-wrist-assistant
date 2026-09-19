@@ -195,14 +195,53 @@ export function pickerView<T>(
 }
 
 /**
- * The line under the list.
+ * The count at the end of the chip row.
  *
- * "12 complications" counts the whole home, each linked complication once,
- * because that is how many there are to keep in step. No device is named: with
- * every device in one list there is no "this iPhone" to point at. (Device chips
- * that narrowed the list existed for one evening, 2026-09-19, and went; the row
- * icons say where each complication lives.)
+ * "6 of 9" rather than "6 complications": with a search field and a row of
+ * chips over the grid, how many were left out is the part worth saying. The
+ * whole number counts each linked complication once, because that is how many
+ * there are to keep in step.
  */
-export function pickerFootText(count: number): string {
-  return `${count} complication${count === 1 ? "" : "s"}`;
+export function pickerCountText(shown: number, total: number): string {
+  return `${shown} of ${total}`;
+}
+
+/** One person as a card's who-line reads them: the name to print, and the
+ * devices of theirs a copy could sit on. Structural rather than `Person`, so
+ * this module goes on knowing nothing about the websocket types. */
+export interface PickerPerson {
+  label: string;
+  devices: readonly { ownerId: string; kind: DeviceKind }[];
+}
+
+/** What one device is called inside the brackets after a person's name. The
+ * short word, not the device's own name: "Jesse (watch, iPhone)" says whose
+ * and which in five words, where "Jesse Apple Watch, Jesse's iPhone" says the
+ * name twice and the useful part once. */
+function deviceWord(kind: DeviceKind): string {
+  return kind === "iphone" ? "iPhone" : "watch";
+}
+
+/**
+ * Where one complication sits, as the line under its name on a card.
+ *
+ * "Jesse (watch, iPhone) · Chen (watch)": people first, their devices in
+ * brackets, in the order the household list draws them. The old picker row
+ * said only whose it was, because a row had one line to spare; a card has
+ * room for the answer in full, and which of somebody's devices draw it is the
+ * question "Add to" is about.
+ *
+ * A person with none of the copies is left out rather than printed empty, and
+ * a complication on nothing at all says so in words: an empty line would read
+ * as a card that failed to load.
+ */
+export function rowWhoText(ownerIds: readonly string[], people: readonly PickerPerson[]): string {
+  const on = new Set(ownerIds);
+  const parts: string[] = [];
+  for (const person of people) {
+    const mine = person.devices.filter((d) => on.has(d.ownerId));
+    if (mine.length === 0) continue;
+    parts.push(`${person.label} (${mine.map((d) => deviceWord(d.kind)).join(", ")})`);
+  }
+  return parts.length === 0 ? "On no device yet" : parts.join(" · ");
 }
