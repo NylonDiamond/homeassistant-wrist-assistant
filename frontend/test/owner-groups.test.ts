@@ -1,7 +1,7 @@
-// The picker's device pane. It draws one row per device, cut into groups with
-// headings, so both questions the header used to ask separately live on one
-// surface. The two helpers here decide what each row says and what order the
-// rows come in.
+// How the panel names its devices and what order it puts them in. The order is
+// the one the picker's list sorts by and the link save writes in; the grouping
+// is what a device list heads its sections with, and `ownerLines` is the
+// two-line form of a device's name for a list that has room for both.
 
 import { describe, expect, it } from "vitest";
 

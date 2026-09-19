@@ -155,7 +155,6 @@ import {
   linkedCopies,
   linkedSaveStatus,
   mergeLinkedContent,
-  openCopyOf,
   picksFromCopies,
   pickedFamilies,
   pickedWords,
@@ -174,6 +173,18 @@ import { ScrollFades } from "./scroll-fade.js";
 import { statesSummary } from "./states.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import { isHiddenDocument, splitHidden, withHidden } from "./model.js";
+import {
+  type PickerCopy,
+  type PickerDevice,
+  type PickerListRow,
+  ALL_DEVICES,
+  PICKER_FILTER_KEY,
+  pickerDeviceChips,
+  pickerFilterFor,
+  pickerFootText,
+  pickerListRows,
+  pickerView,
+} from "./pickerRows.js";
 
 /** Where an older panel kept hidden picker rows, per watch, in this browser.
  * The flag lives on the document now; the old keys are cleared once on load. */
@@ -411,11 +422,20 @@ function defaultSection(i: Inspect): string {
 
 type Conflict = { current: ComplicationRecord | null; message: string };
 
-/** One row of the header picker: an editable record, or a slot something
- * else holds (an iPhone preset, or a custom on another home). */
-type PickerRow =
-  | { slot: number; kind: "record"; record: ComplicationRecord }
-  | { slot: number; kind: "locked"; name: string; badge: string; title: string; families: readonly string[] };
+/** What one row of the header picker is about: an editable record, or a slot
+ * something else holds (an iPhone preset, or a custom on another home). The
+ * device it is on, its seat there and its name live on the copy carrying it. */
+type PickerItem =
+  | { kind: "record"; record: ComplicationRecord }
+  | { kind: "locked"; badge: string; title: string; families: readonly string[] };
+
+/** One row of the header picker: one complication, on however many devices. */
+type PickerRow = PickerListRow<PickerItem>;
+
+/** The shapes one row draws, read off whichever copy the row opens. */
+function familiesOfItem(item: PickerItem): readonly string[] {
+  return item.kind === "record" ? familiesOf(item.record) : item.families;
+}
 
 /** The shapes a stored document lists, read without parsing the whole thing. */
 function familiesOf(record: ComplicationRecord): string[] {
@@ -1066,31 +1086,26 @@ export class WristAssistantPanel extends LitElement {
    * only state a short list ever has: the filter header only appears once the
    * list is long enough to be worth narrowing. Per session, never saved. */
   @state() private pickerFilter: FamilyKind | "all" = "all";
-  /** The slot of the locked picker row whose explanation is unfolded. A tap
+  /**
+   * The device chip the list is narrowed to, or `all`.
+   *
+   * Remembered in this browser, because a household with a watch and a phone
+   * usually works on one of them for a while. It is checked against the devices
+   * this home still has on every render, so a chip left on a device that has
+   * gone falls back to All rather than showing an empty list with no reason.
+   */
+  @state() private pickerDevice: string = ALL_DEVICES;
+  /** The key of the locked picker row whose explanation is unfolded. A tap
    * shows it inline because a hover title never appears on a touch screen. */
-  @state() private pickerNote?: number;
+  @state() private pickerNote?: string;
   /** Whether the picker's Hidden section is unfolded. */
   @state() private pickerHiddenOpen = false;
   /** The picker row asking "Really delete", by record id. */
   @state() private pickerConfirmDelete?: string;
   /** A device has been picked and its complications are still on the way. The
-   * picker stays open across the switch, so without this the pane beside the
-   * device list would show the previous device's rows until the reply landed. */
+   * picker stays open across the switch, so without this the list would show
+   * the previous device's rows until the reply landed. */
   @state() private ownerBusy = false;
-  /**
-   * The device whose complications the picker is listing, when that is not the
-   * device the editor is on. Undefined the rest of the time.
-   *
-   * Clicking a device in the picker only changes what the picker lists: the
-   * editor keeps the complication it had open, because looking at what another
-   * device holds is not the same as deciding to leave the one you are editing.
-   * The editor moves when a complication is picked, and not before.
-   */
-  @state() private browseOwnerId?: string;
-  /** The browsed device's own list, fetched for the picker alone. */
-  @state() private browseList?: { records: ComplicationRecord[]; occupied: OccupiedSlot[] };
-  /** Why the browsed device's list could not be fetched. */
-  @state() private browseError?: string;
   /** Entity states typed in under the preview, standing in for the live ones
    * so the other states can be seen without waiting for the house. Never
    * saved; cleared by Back to live. */
@@ -1931,43 +1946,20 @@ export class WristAssistantPanel extends LitElement {
     }
     .pk-open-row { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
 
-    /* Two panes, one surface: devices on the left, that device's complications
-       on the right. Only the panes scroll, so the shape filter and the New line
-       stay put while a long list moves under them. */
-    .picker .menu.two {
-      width: min(900px, calc(100vw - 24px)); max-height: 74vh; padding: 0; overflow: hidden;
-      display: grid; grid-template-columns: 268px minmax(0, 1fr);
+    /* One surface, one list: every complication this home holds, under the
+       chips that narrow it. Only the list scrolls, so the chips and the New
+       line stay put while a long list moves under them. */
+    .picker .menu.one {
+      width: min(560px, calc(100vw - 24px)); max-height: 74vh; padding: 0; overflow: hidden;
+      display: grid; grid-template-columns: minmax(0, 1fr);
     }
-    /* On a phone-width panel there is no room beside the list, so the devices
-       take a short scrolling strip above it instead of a column. */
-    .picker .menu.two.narrow { grid-template-columns: minmax(0, 1fr); }
-    .pk-devs { overflow: auto; padding: 8px; background: var(--wa-panel); border-right: 1px solid var(--wa-line); }
-    .picker .menu.two.narrow .pk-devs { border-right: 0; border-bottom: 1px solid var(--wa-line); max-height: 172px; }
-    .pk-dev-head {
-      font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
-      color: var(--wa-muted); padding: 9px 9px 5px;
-    }
-    .pk-dev {
-      display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; font-size: 13.5px;
-      background: transparent; border: 0; color: inherit; padding: 8px 9px; border-radius: 9px; cursor: pointer;
-    }
-    .pk-dev:hover { background: var(--wa-card); }
-    .pk-dev:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .pk-dev.on { background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
-    .pk-dev-ico { flex: none; display: grid; place-items: center; color: var(--wa-muted); }
-    .pk-dev-ico svg { width: 19px; height: 19px; }
-    .pk-dev.on .pk-dev-ico { color: var(--wa-ink); }
-    .pk-dev-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
-    .pk-dev-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pk-dev-note { font-size: 11.5px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    /* A device holding nothing stays in the list: it is still somewhere a new
-       complication can go. It reads quiet so the ones with work on them lead. */
-    .pk-dev.bare:not(.on) .pk-dev-name { color: var(--wa-muted); }
-    .pk-dev-count {
-      flex: none; font-size: 11.5px; color: var(--wa-muted); background: var(--wa-card);
-      border-radius: 999px; padding: 2px 8px; min-width: 24px; text-align: center;
-    }
-    .pk-dev.on .pk-dev-count { color: var(--wa-ink); }
+    /* A device chip: the glyph for what it is, then its name. It carries no
+       count, because a per-device count is what made one linked complication
+       read as two. */
+    .pk-devchips .pk-chip { gap: 6px; }
+    .pk-chip-ico { display: grid; place-items: center; flex: none; }
+    .pk-chip-ico svg { width: 14px; height: 14px; display: block; }
+    .pk-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 168px; }
     .pk-comps { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
     .pk-comps .pk-filter { margin-bottom: 0; padding: 10px 12px; }
     .pk-rows { flex: 1; min-height: 0; overflow: auto; padding: 8px; }
@@ -4755,6 +4747,7 @@ export class WristAssistantPanel extends LitElement {
   override connectedCallback() {
     super.connectedCallback();
     this.clearLegacyPickerHidden();
+    this.loadPickerDevice();
     this.loadColumnWidths();
     this.loadListView();
     this.loadGrid();
@@ -6575,26 +6568,30 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** Delete one saved complication on the server: the open one from the
-   * inspector's Delete, or any row from the picker's. A conflict on the open
-   * one opens the conflict banner, as a save's would; on another row it is a
-   * plain error, since there is no draft of it to reconcile. */
-  private async deleteSaved(id: string, revision: number) {
-    if (!this.ownerId) return;
-    const open = id === this.selectedId;
+   * inspector's Delete, or any row from the picker's, on whichever device that
+   * row's copy sits. A conflict on the open one opens the conflict banner, as a
+   * save's would; on another row it is a plain error, since there is no draft
+   * of it to reconcile. */
+  private async deleteSaved(id: string, revision: number, ownerId = this.ownerId) {
+    if (!ownerId) return;
+    const open = ownerId === this.ownerId && id === this.selectedId;
     this.saving = true;
     try {
-      const result = await deleteRecord(this.hass, this.ownerId, id, revision);
+      const result = await deleteRecord(this.hass, ownerId, id, revision);
       if (!result.ok) {
         if (result.error === "conflict" && open) this.conflict = { current: result.current ?? null, message: result.message ?? "This complication changed on the server." };
         else this.saveError = result.message ?? result.error ?? "Delete failed";
         return;
       }
-      await this.deleteLinkedCopies(id);
+      await this.deleteLinkedCopies(id, ownerId);
       if (open) {
         this.clearDraft();
         this.selectedId = undefined;
       }
       await this.loadRecords();
+      // A row on another device is gone from that device's list, not this
+      // one's, so the list the picker draws it from is the one to re-read.
+      if (ownerId !== this.ownerId) await this.loadOtherLists();
     } catch (err) {
       this.saveError = errText(err);
     } finally {
@@ -6605,23 +6602,25 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The other devices' copies of a complication just deleted here.
+   * The other devices' copies of a complication just deleted, `ownerId` being
+   * the device it was deleted from.
    *
    * A link is one complication wherever it is drawn, so deleting it deletes
    * all of it: leaving the phone copy behind would leave a complication nobody
    * can edit from the device it was deleted on. The record just deleted is
-   * gone from this device's list already, so the copies are read from the id
+   * gone from that device's list already, so the copies are read from the id
    * that was deleted rather than from the open draft, which is the same id
    * whether the delete came from the inspector or from a picker row.
    *
    * A device that refuses is named and the rest still go: the alternative is
    * refusing to delete anything because one device is unreachable.
    */
-  private async deleteLinkedCopies(id: string) {
-    const record = this.records.find((r) => r.id === id);
-    const linkId = linkIdOf(record?.document) ?? (id === this.selectedId ? this.draft?.config.linkId : undefined);
+  private async deleteLinkedCopies(id: string, ownerId: string) {
+    const record = this.allLinkRecords().find((r) => r.ownerId === ownerId && r.id === id);
+    const linkId = linkIdOf(record?.document)
+      ?? (ownerId === this.ownerId && id === this.selectedId ? this.draft?.config.linkId : undefined);
     if (linkId === undefined) return;
-    const copies = linkedCopies(this.allLinkRecords(), linkId).filter((c) => c.ownerId !== this.ownerId);
+    const copies = linkedCopies(this.allLinkRecords(), linkId).filter((c) => c.ownerId !== ownerId);
     if (copies.length === 0) return;
     const failed: string[] = [];
     for (const copy of copies) {
@@ -8256,35 +8255,91 @@ export class WristAssistantPanel extends LitElement {
 
   // ── header picker ─────────────────────────────────────────────────────
 
-  /** The rows the picker shows, in watch face order (by slot). iPhone presets
-   * and customs on another home are locked rows: this panel cannot edit them,
-   * but hiding them is what used to make slots look haunted. A preset whose
-   * slot a record already holds has moved here and is left out. */
+  /** Every device this home has, in the order the picker names them. */
+  private pickerDevices(): PickerDevice[] {
+    return ownersByKind(this.owners).map((o) => ({
+      ownerId: o.owner_watch_id,
+      label: ownerLabel(o),
+      kind: deviceKindOf(o),
+    }));
+  }
+
+  /**
+   * Every complication this home holds, one copy per device it is on.
+   *
+   * The edited device's come from `records`, which is the live list; the other
+   * devices' from the lists read for the links, refreshed when the picker
+   * opens. iPhone presets and customs on another home come along as locked
+   * copies: this panel cannot edit them, but leaving them out is what used to
+   * make seats look haunted. A preset whose seat a record already holds has
+   * moved into Home Assistant and is left out.
+   */
+  private pickerCopies(): PickerCopy<PickerItem>[] {
+    const out: PickerCopy<PickerItem>[] = [];
+    const add = (ownerId: string, records: readonly ComplicationRecord[], occupied: readonly OccupiedSlot[]) => {
+      const seats: number[] = [];
+      for (const record of records) {
+        if (record.deleted) continue;
+        const slot = Number(record.document?.slotIndex ?? 0);
+        seats.push(slot);
+        out.push({
+          ownerId,
+          id: record.id,
+          slot,
+          name: String(record.document?.name ?? "Untitled"),
+          linkId: linkIdOf(record.document),
+          item: { kind: "record", record },
+        });
+      }
+      for (const o of lockedOccupied(seats, occupied)) {
+        out.push({
+          ownerId,
+          id: `locked:${o.kind}:${o.slot}`,
+          slot: o.slot,
+          name: o.name || (o.kind === "custom" ? "Unnamed complication" : "Unnamed preset"),
+          item: o.kind === "custom"
+            ? {
+              kind: "locked",
+              badge: o.home || "Other home",
+              title: `A complication on ${o.home ? `the ${o.home} home` : "another home"}${o.families?.length ? ` (${o.families.map(familyTitle).join(", ")})` : ""}. Edit it in that home's Wrist Assistant panel.`,
+              families: o.families ?? [],
+            }
+            : {
+              kind: "locked",
+              badge: "iPhone",
+              title: "Still on the iPhone. Open the Wrist Assistant app on the iPhone to move it here.",
+              families: [],
+            },
+        });
+      }
+    };
+    if (this.ownerId) add(this.ownerId, this.records, this.occupied);
+    for (const [ownerId, list] of this.otherLists) {
+      if (ownerId === this.ownerId) continue;
+      add(ownerId, list.records, list.occupied);
+    }
+    return out;
+  }
+
+  /** The rows the picker shows: every complication in the home, the copies of
+   * a linked one collapsed into a single row. */
   private pickerRows(): PickerRow[] {
-    const source = this.browsing ? this.browseList : undefined;
-    const records = (source ? source.records : this.records)
-      .map((r): PickerRow => ({ slot: Number(r.document?.slotIndex ?? 0), kind: "record", record: r }));
-    const rows: PickerRow[] = [
-      ...records,
-      ...lockedOccupied(records.map((r) => r.slot), source ? source.occupied : this.occupied).map((o): PickerRow => o.kind === "custom"
-        ? {
-          slot: o.slot,
-          kind: "locked",
-          name: o.name || "Unnamed complication",
-          badge: o.home || "Other home",
-          title: `A complication on ${o.home ? `the ${o.home} home` : "another home"}${o.families?.length ? ` (${o.families.map(familyTitle).join(", ")})` : ""}. Edit it in that home's Wrist Assistant panel.`,
-          families: o.families ?? [],
-        }
-        : {
-          slot: o.slot,
-          kind: "locked",
-          name: o.name || "Unnamed preset",
-          badge: "iPhone",
-          title: "Still on the iPhone. Open the Wrist Assistant app on the iPhone to move it here.",
-          families: [],
-        }),
-    ];
-    return rows.sort((a, b) => a.slot - b.slot);
+    return pickerListRows(this.pickerCopies(), this.pickerDevices());
+  }
+
+  /** The owner one row's copy sits on, for the words and the shapes that
+   * belong to that device rather than to whichever one the header is on. */
+  private ownerOf(ownerId: string): OwnerSummary | undefined {
+    return this.owners.find((o) => o.owner_watch_id === ownerId);
+  }
+
+  /** The copy of a row this panel already has open, if any. For a linked row
+   * that is not always the copy the row draws: the editor can be sitting on
+   * the watch's while the row shows the phone's. */
+  private selectedCopyOf(row: PickerRow): PickerCopy<PickerItem> | undefined {
+    if (this.selectedId === undefined) return undefined;
+    return row.copies.find((c) =>
+      c.ownerId === this.ownerId && c.item.kind === "record" && c.item.record.id === this.selectedId);
   }
 
   /** The shapes a row's complication draws, as one dot each. A document with
@@ -8328,7 +8383,7 @@ export class WristAssistantPanel extends LitElement {
    * watch draws before its first sync: the fallback, or nothing. That is worth
    * it to make the list recognisable at a glance.
    */
-  private renderRowArt(record: ComplicationRecord): TemplateResult {
+  private renderRowArt(record: ComplicationRecord, owner: OwnerSummary | undefined): TemplateResult {
     const entry = this.recordPreview(record);
     if (!entry) return html`<span class="pk-art"></span>`;
     const cfg = entry.config;
@@ -8338,7 +8393,7 @@ export class WristAssistantPanel extends LitElement {
     // real symbol and tint rather than a blank box beside the word Control.
     if (cfg.supportedFamilies.length === 0) {
       if (!cfg.control) return html`<span class="pk-art"></span>`;
-      const shape = controlTileShapes(deviceKindOf(this.pickerOwner))[0]!;
+      const shape = controlTileShapes(deviceKindOf(owner))[0]!;
       const tile = controlTile(this.tileHost(cfg, entry.entities), cfg.control, shape, CONTROL_ROW_TILE_SIDE);
       return html`<span class="pk-art control-tile">${tile}</span>`;
     }
@@ -8348,7 +8403,11 @@ export class WristAssistantPanel extends LitElement {
       ? this.pickerFilter
       : undefined;
     const family = filtered ?? firstDrawable(cfg) ?? "inline";
-    return this.renderConfigArts(cfg, entry.entities, [family], "pk-art", undefined, this.pickerReferenceCase)[0]!;
+    // The row is drawn on its own device's screen, not on whichever one the
+    // header happens to be showing: a phone row in a watch household's list
+    // still belongs in a phone.
+    const reference = deviceKindOf(owner) === "iphone" ? REFERENCE_PHONE : REFERENCE_CASE;
+    return this.renderConfigArts(cfg, entry.entities, [family], "pk-art", undefined, reference)[0]!;
   }
 
   /** Shapes of a document drawn small, one picture each, from the live states
@@ -8399,109 +8458,95 @@ export class WristAssistantPanel extends LitElement {
   /** The shape chips above the list. Each one carries its own count, so a
    * shape with nothing in it says so instead of opening an empty list. */
   private renderPickerFilter(rows: readonly PickerRow[]) {
-    const familiesOfRow = (row: PickerRow) => row.kind === "record" ? familiesOf(row.record) : row.families;
     const chip = (key: FamilyKind | "all", label: string, count: number) => html`<button
       class="pk-chip ${this.pickerFilter === key ? "on" : ""}" ?disabled=${count === 0}
       aria-pressed=${this.pickerFilter === key ? "true" : "false"}
       @click=${() => { this.pickerFilter = key; }}>${label}<span class="pk-count">${count}</span></button>`;
     return html`<div class="pk-filter">
       ${chip("all", "All", rows.length)}
-      ${this.pickerFamilies.map((f) => chip(f, familyTitle(f), rows.filter((r) => familiesOfRow(r).includes(f)).length))}
+      ${this.pickerFamilies.map((f) => chip(f, familyTitle(f), rows.filter((r) => familiesOfItem(r.open.item).includes(f)).length))}
     </div>`;
   }
 
   /**
-   * The header's one picker: which device, and which of that device's
-   * complications. It used to be two controls, a plain `select` for the device
-   * and this menu for the complication, and the select was the one nobody
-   * found: a small grey box at the far left, holding the question that decides
-   * everything the rest of the header offers.
+   * The device chips above the list.
    *
-   * So both questions share one button and one surface. The button says where
-   * you are, device above complication. The surface answers them side by side:
-   * devices down the left, the picked device's complications down the right.
-   * Picking a device leaves the surface open, because the list beside it is the
-   * answer to that pick, and a device with nothing on it says so there rather
-   * than looking like a dead end.
-   */
-  /** Whether the picker is listing a device other than the one being edited. */
-  private get browsing(): boolean {
-    return this.browseOwnerId !== undefined && this.browseOwnerId !== this.ownerId;
-  }
-
-  /** The device the picker's right pane is about: the browsed one, or the one
-   * the editor is on. Everything the pane says about a device reads from this,
-   * so a watch's list is never described in a phone's words. */
-  private get pickerOwner(): OwnerSummary | undefined {
-    if (this.browsing) return this.owners.find((o) => o.owner_watch_id === this.browseOwnerId);
-    return this.selectedOwner;
-  }
-
-  private get pickerFamilies(): FamilyKind[] {
-    return familiesFor(this.pickerOwner);
-  }
-
-  private get pickerDeviceWord(): string {
-    return deviceNoun(this.pickerOwner);
-  }
-
-  private get pickerReferenceCase(): PreviewCase {
-    return deviceKindOf(this.pickerOwner) === "iphone" ? REFERENCE_PHONE : REFERENCE_CASE;
-  }
-
-  /**
-   * List another device's complications in the picker, without moving the
-   * editor onto it.
+   * The devices used to be a pane down the left and the list showed one of them
+   * at a time, which made a linked complication two rows with two counts and a
+   * household two lists to keep in step. A complication lives on devices; it is
+   * not filed under one. So the list holds everything and these narrow it, and
+   * a home with one device is shown no chips at all.
    *
-   * The reply is kept apart from `records`, which stays the edited device's,
-   * and a second pick while this one is out wins: the guard is the id rather
-   * than a flag, so a slow reply for a device nobody is looking at any more
-   * lands nowhere.
+   * No count on a chip: a per-device count is what said a linked complication
+   * was two complications, which is the reading this list exists to end.
    */
-  private async browseDevice(ownerId: string) {
+  private renderPickerDeviceChips(filter: string) {
+    const chips = pickerDeviceChips(this.pickerDevices());
+    if (chips.length === 0) return nothing;
+    return html`<div class="pk-filter pk-devchips">
+      ${chips.map((c) => html`<button
+        class="pk-chip ${filter === c.key ? "on" : ""}"
+        aria-pressed=${filter === c.key ? "true" : "false"}
+        @click=${() => this.pickDeviceChip(c.key)}>
+        ${c.kind ? html`<span class="pk-chip-ico">${uiIcon(c.kind === "iphone" ? "phone" : "watch")}</span>` : nothing}
+        <span class="pk-chip-name">${c.label}</span>
+      </button>`)}
+    </div>`;
+  }
+
+  /** Narrow the list to one device, and remember it for the next time this
+   * browser opens the picker. */
+  private pickDeviceChip(key: string) {
+    this.pickerDevice = key;
     this.pickerConfirmDelete = undefined;
-    this.pickerFilter = "all";
-    this.browseError = undefined;
-    if (ownerId === this.ownerId) {
-      this.browseOwnerId = undefined;
-      this.browseList = undefined;
-      return;
-    }
-    this.browseOwnerId = ownerId;
-    this.browseList = undefined;
-    this.ownerBusy = true;
     try {
-      const reply = await fetchList(this.hass, ownerId);
-      if (this.browseOwnerId !== ownerId) return;
-      this.browseList = {
-        records: reply.records,
-        occupied: reply.occupied
-          ?? (reply.presets ?? []).map((p): OccupiedSlot => ({ slot: p.slot, name: p.name, kind: "preset", home: "" })),
-      };
-    } catch (err) {
-      if (this.browseOwnerId === ownerId) this.browseError = errText(err);
-    } finally {
-      if (this.browseOwnerId === ownerId) this.ownerBusy = false;
+      if (key === ALL_DEVICES) window.localStorage.removeItem(PICKER_FILTER_KEY);
+      else window.localStorage.setItem(PICKER_FILTER_KEY, key);
+    } catch {
+      // A private window, or site data blocked. The chip still works for this
+      // session; it just is not remembered.
     }
+  }
+
+  /** The chip the list is on: the remembered one, unless that device has gone
+   * from the home or there is only one device to show. */
+  private get pickerDeviceFilter(): string {
+    return pickerFilterFor(this.pickerDevice, this.pickerDevices());
+  }
+
+  /** The shapes the chips offer: every shape any device in this home draws, so
+   * one list holding a watch and a phone can still be narrowed to either
+   * one's. */
+  private get pickerFamilies(): FamilyKind[] {
+    const out: FamilyKind[] = [];
+    const add = (families: readonly FamilyKind[]) => {
+      for (const f of families) if (!out.includes(f)) out.push(f);
+    };
+    for (const owner of ownersByKind(this.owners)) add(familiesFor(owner));
+    if (out.length === 0) add(familiesFor(this.selectedOwner));
+    return out;
   }
 
   /**
    * Open a complication from the picker. This is the click that moves the
-   * editor: a browsed device becomes the edited one here and nowhere else.
+   * editor onto another device, and the only one.
    *
-   * A row of a linked complication opens the copy that was never trimmed,
-   * whichever device the row was clicked on. That is the phone's: a watch copy
-   * can be without the Home Screen sizes (an older watch app cannot decode
-   * them), and opening it would show the design with its tiles missing and
-   * then save them away.
+   * A row of a linked complication opens the copy that was never trimmed, which
+   * is the one the row already draws: the phone's, because a watch copy can be
+   * without the Home Screen sizes (an older watch app cannot decode them), and
+   * opening that one would show the design with its tiles missing and then save
+   * them away.
    */
-  private async openFromPicker(record: ComplicationRecord) {
-    const full = this.fullCopyOf(record);
-    const target = full?.ownerId ?? this.browseOwnerId;
-    const wanted = full?.id ?? record.id;
+  private async openFromPicker(row: PickerRow) {
+    // A row this panel already has open stays where it is: clicking the open
+    // complication must not walk the editor over to another of its copies.
+    const copy = this.selectedCopyOf(row) ?? row.open;
+    if (copy.item.kind !== "record") return;
+    const record = copy.item.record;
+    const target = copy.ownerId;
     this.togglePicker(false);
-    if (target === undefined || target === this.ownerId) {
-      this.selectRecord(this.records.find((r) => r.id === wanted) ?? record);
+    if (target === this.ownerId) {
+      this.selectRecord(this.records.find((r) => r.id === record.id) ?? record);
       return;
     }
     await this.selectOwner(target);
@@ -8509,35 +8554,13 @@ export class WristAssistantPanel extends LitElement {
     // the editor where it was, so there is nothing to open.
     if (this.ownerId !== target) return;
     // Prefer the copy the switch just loaded: it carries the current revision.
-    this.selectRecord(this.records.find((r) => r.id === wanted) ?? record);
+    this.selectRecord(this.records.find((r) => r.id === record.id) ?? record);
   }
 
-  /** Every device one row's complication lives on, in picker order. Empty for
-   * a complication that lives on one device, which is most of them. */
-  private copiesOfRow(record: ComplicationRecord): LinkedCopy[] {
-    const linkId = linkIdOf(record.document);
-    if (linkId === undefined) return [];
-    const order = ownersByKind(this.owners).map((o) => o.owner_watch_id);
-    return linkedCopies(this.allLinkRecords(), linkId)
-      .sort((a, b) => order.indexOf(a.ownerId) - order.indexOf(b.ownerId));
-  }
-
-  /** The copy of a linked row that carries every shape: the phone's when there
-   * is one. Undefined for a row that is not linked. */
-  private fullCopyOf(record: ComplicationRecord): LinkedCopy | undefined {
-    const copies = this.copiesOfRow(record);
-    if (copies.length < 2) return undefined;
-    return openCopyOf(copies, (ownerId) => deviceKindOf(this.owners.find((o) => o.owner_watch_id === ownerId)));
-  }
-
-  /** New from inside the picker, on the device the picker is showing. */
-  private async newFromPicker() {
-    const target = this.browseOwnerId;
+  /** New from inside the picker. One button, whatever the chips are on: the
+   * dialog is where the devices are picked. */
+  private newFromPicker() {
     this.togglePicker(false);
-    if (target !== undefined && target !== this.ownerId) {
-      await this.selectOwner(target);
-      if (this.ownerId !== target) return;
-    }
     this.openNewDialog();
   }
 
@@ -8550,7 +8573,7 @@ export class WristAssistantPanel extends LitElement {
     // list. The inspector's summary still carries it.
     return html`<div class="picker">
       <button id="wa-picker" class="pk-open" aria-haspopup="dialog" aria-expanded=${this.pickerOpen ? "true" : "false"}
-        title="Choose a device and a complication" @click=${() => this.togglePicker()}>
+        title="Choose a complication" @click=${() => this.togglePicker()}>
         <span class="pk-open-ico">${uiIcon(deviceKindOf(owner) === "iphone" ? "phone" : "watch")}</span>
         <span class="pk-open-lines">
           <span class="pk-open-dev">${owner ? ownerLabel(owner) : "No device"}</span>
@@ -8562,150 +8585,142 @@ export class WristAssistantPanel extends LitElement {
         ${this.shapeDots(families, d?.config.control !== undefined)}
         ${uiIcon("chevron")}
       </button>
-      ${this.pickerOpen ? html`<div class="menu two ${this.narrow ? "narrow" : ""}" role="dialog"
-        aria-label="Choose a device and a complication">
-        ${this.renderPickerDevices()}
+      ${this.pickerOpen ? html`<div class="menu one" role="dialog"
+        aria-label="Choose a complication">
         ${this.renderPickerList()}
       </div>` : nothing}
     </div>`;
   }
 
-  /** The picker's left pane: every device this home knows, watches first, each
-   * with what it is holding. A device with no complications stays in the list
-   * and reads quiet rather than being hidden, because it is still somewhere a
-   * new complication can go. */
-  private renderPickerDevices() {
-    const groups = ownerGroups(this.owners);
-    // One kind of device needs no headings; the pane is then just a list.
-    const heads = groups.length > 1;
-    return html`<div class="pk-devs" role="listbox" aria-label="Device">
-      ${this.owners.length === 0 ? html`<div class="empty">No devices yet.</div>` : nothing}
-      ${groups.map((g) => html`${heads ? html`<div class="pk-dev-head">${g.label}</div>` : nothing}
-        ${g.owners.map((o) => this.renderPickerDevice(o))}`)}
-    </div>`;
-  }
-
-  private renderPickerDevice(owner: OwnerSummary) {
-    const open = owner.owner_watch_id === (this.browseOwnerId ?? this.ownerId);
-    const lines = ownerLines(owner);
-    const count = owner.complication_count;
-    return html`<button type="button" class="pk-dev ${open ? "on" : ""} ${count === 0 ? "bare" : ""}"
-      role="option" aria-selected=${open ? "true" : "false"}
-      @click=${() => void this.browseDevice(owner.owner_watch_id)}>
-      <span class="pk-dev-ico">${uiIcon(deviceKindOf(owner) === "iphone" ? "phone" : "watch")}</span>
-      <span class="pk-dev-meta">
-        <span class="pk-dev-name">${lines.name}</span>
-        ${lines.note ? html`<span class="pk-dev-note">${lines.note}</span>` : nothing}
-      </span>
-      <span class="pk-dev-count" title=${`${count} complication${count === 1 ? "" : "s"}`}>${count}</span>
-    </button>`;
-  }
-
-  /** The picker's right pane: the picked device's complications, under the
-   * shape filter and over the line that makes a new one where you are. */
+  /**
+   * The picker's surface: every complication in the home under the chips that
+   * narrow it, over the line that makes a new one.
+   *
+   * One list, whatever the household holds. A complication linked across a
+   * watch and a phone is one row here with both devices on it, because it is
+   * one design edited in one place; the device it also lives on is something
+   * the row says, not a folder it was filed in.
+   */
   private renderPickerList() {
     const d = this.draft;
     const name = d ? (d.config.name.trim() || "Untitled") : "No complication";
     const families = d ? d.config.supportedFamilies : [];
-    const all = this.pickerRows();
+    const devices = this.pickerDevices();
+    const device = this.pickerDeviceFilter;
+    const all = pickerView(this.pickerRows(), devices, device);
     const filter = this.pickerFilter;
     const rows = filter === "all"
       ? all
-      : all.filter((row) => (row.kind === "record" ? familiesOf(row.record) : row.families).includes(filter));
+      : all.filter((row) => familiesOfItem(row.open.item).includes(filter));
     // Hidden rows go to a folded section at the bottom. The open complication
     // never does, so it can always be picked again.
-    const split = splitHidden(rows, (row) => (row.kind === "record" ? { id: row.record.id, hidden: this.rowHidden(row.record) } : undefined), this.selectedId);
+    const split = splitHidden(
+      rows,
+      (row) => row.open.item.kind === "record" ? { id: row.open.id, hidden: this.rowHidden(row.open.item.record) } : undefined,
+      this.selectedId,
+    );
+    const deviceLabel = device === ALL_DEVICES ? undefined : devices.find((dev) => dev.ownerId === device)?.label;
     return html`<div class="pk-comps">
+      ${this.renderPickerDeviceChips(device)}
       ${!this.ownerBusy && all.length >= WristAssistantPanel.FILTER_FROM_ROWS ? this.renderPickerFilter(all) : nothing}
       <div class="pk-rows">
-        ${this.browseError !== undefined
-          ? html`<div class="empty">Could not load that device: ${this.browseError}</div>`
-          : this.ownerBusy
+        ${this.ownerBusy
           ? html`<div class="empty">Loading…</div>`
-          : html`${all.length === 0 && !(d && d.baseRevision === null && !this.browsing) ? html`<div class="empty">No complications for this ${this.pickerDeviceWord} yet.</div>` : nothing}
-            ${all.length > 0 && rows.length === 0 ? html`<div class="empty">Nothing on this ${this.pickerDeviceWord} has a ${filter === "all" ? "" : familyTitle(filter)} shape.</div>` : nothing}
+          : html`${all.length === 0 && !(d && d.baseRevision === null)
+            ? html`<div class="empty">${deviceLabel === undefined ? "No complications yet." : `Nothing on ${deviceLabel} yet.`}</div>`
+            : nothing}
+            ${all.length > 0 && rows.length === 0 ? html`<div class="empty">Nothing here has a ${filter === "all" ? "" : familyTitle(filter)} shape.</div>` : nothing}
             ${split.shown.map((row) => this.renderPickerRow(row))}
-            ${d && d.baseRevision === null && !this.browsing ? html`<div class="row" aria-current="true"><span class="pk-art"></span><span class="pk-name">${name}</span>${this.shapeDots(families, d.config.control !== undefined)}<span class="pk-badge">unsaved</span></div>` : nothing}
+            ${d && d.baseRevision === null ? html`<div class="row" aria-current="true"><span class="pk-art"></span><span class="pk-name">${name}</span>${this.shapeDots(families, d.config.control !== undefined)}<span class="pk-badge">unsaved</span></div>` : nothing}
             ${split.hidden.length > 0 ? html`
               <button type="button" class="pk-hidden-head" aria-expanded=${this.pickerHiddenOpen ? "true" : "false"}
                 @click=${() => { this.pickerHiddenOpen = !this.pickerHiddenOpen; }}>
                 ${uiIcon("chevron")}<span>Hidden (${split.hidden.length})</span>
               </button>
               ${this.pickerHiddenOpen ? html`
-                <div class="pk-note">These do not show in the ${this.pickerDeviceWord}'s own list of complications. A face or widget that already has one keeps it.</div>
+                <div class="pk-note">These do not show in their device's own list of complications. A face or widget that already has one keeps it.</div>
                 ${split.hidden.map((row) => this.renderPickerRow(row))}` : nothing}` : nothing}`}
       </div>
-      ${this.renderPickerFoot(all.filter((row) => row.kind === "record").length)}
+      ${this.renderPickerFoot(all.filter((row) => row.open.item.kind === "record").length, deviceLabel)}
     </div>`;
   }
 
-  /** The bottom line of the picker's right pane: what this device is holding,
-   * and a New that lands on the device the pane is showing rather than on
-   * whichever one the header happened to be on.
+  /** The bottom line of the picker: how many complications the list is showing,
+   * and the one New button.
    *
-   * The count is saved complications only, never the locked slots the list
-   * also draws, so it says the same number as the device's own badge two
-   * inches to the left. */
-  private renderPickerFoot(count: number) {
+   * The count is saved complications only, never the locked seats the list also
+   * draws, and a linked complication counts once: it is one complication, which
+   * is the whole of why this list has no device folders in it. */
+  private renderPickerFoot(count: number, deviceLabel?: string) {
     if (!this.hass.user?.is_admin) return nothing;
-    // A browsed device answers about its own slots: New makes one there.
-    const browsed = this.browsing ? this.browseList : undefined;
-    const full = browsed
-      ? freeSlotFrom(browsed.records.map((r) => Number(r.document?.slotIndex ?? -1)), browsed.occupied) < 0
-      : this.freeSlot() < 0;
+    // The seats being counted are the edited device's: that is where New puts
+    // a complication, and the dialog is where another device is chosen.
+    const full = this.freeSlot() < 0;
+    const where = this.selectedOwner ? ownerLabel(this.selectedOwner) : "This device";
     return html`<div class="pk-foot">
-      <span class="pk-foot-hint">${this.ownerBusy
-        ? nothing
-        : `${count} complication${count === 1 ? "" : "s"} on this ${this.pickerDeviceWord}`}</span>
+      <span class="pk-foot-hint">${this.ownerBusy ? nothing : pickerFootText(count, deviceLabel)}</span>
       <button type="button" class="new-btn primary" ?disabled=${full || this.ownerBusy}
-        title=${full ? `This ${this.pickerDeviceWord} has no free slot. Delete a complication first.` : `Make a new complication on this ${this.pickerDeviceWord}`}
-        @click=${() => void this.newFromPicker()}>${uiIcon("plus")}<span>New</span></button>
+        title=${full ? `${where} has no free slot. Delete a complication first.` : "Make a new complication"}
+        @click=${() => this.newFromPicker()}>${uiIcon("plus")}<span>New</span></button>
     </div>`;
   }
 
   /** One picker row. A saved complication opens from the row and carries its
-   * own hide and delete buttons; a locked slot unfolds its explanation. */
+   * own hide and delete buttons; a locked seat unfolds its explanation. */
   private renderPickerRow(row: PickerRow) {
-    if (row.kind !== "record") {
-      return html`<button type="button" class="row locked" role="option" aria-disabled="true" title=${row.title}
-          @click=${() => { this.pickerNote = this.pickerNote === row.slot ? undefined : row.slot; }}>
+    const copy = row.open;
+    const owner = this.ownerOf(copy.ownerId);
+    if (copy.item.kind !== "record") {
+      const item = copy.item;
+      return html`<button type="button" class="row locked" role="option" aria-disabled="true" title=${item.title}
+          @click=${() => { this.pickerNote = this.pickerNote === row.key ? undefined : row.key; }}>
           <span class="pk-art"></span>
           <span class="pk-name">${row.name}</span>
-          ${this.shapeDots(row.families, false, this.pickerFamilies)}
-          <span class="pk-badge">${row.badge}</span>
+          ${this.renderRowDevices(row)}
+          ${this.shapeDots(item.families, false, familiesFor(owner))}
+          <span class="pk-badge">${item.badge}</span>
         </button>
-        ${this.pickerNote === row.slot ? html`<div class="pk-note">${row.title}</div>` : nothing}`;
+        ${this.pickerNote === row.key ? html`<div class="pk-note">${item.title}</div>` : nothing}`;
     }
-    const record = row.record;
-    const open = !this.browsing && record.id === this.selectedId;
+    const drawn = copy.item.record;
+    // Which copy the buttons act on. Normally the one the row draws, but when
+    // this panel already has one of a link's other copies open it is that one:
+    // the hide then goes through its draft, and the row has to light up as the
+    // open complication even though the picture beside it is the phone's.
+    const mine = this.selectedCopyOf(row);
+    const actOn = mine ?? copy;
+    const actOwnerId = actOn.ownerId;
+    const record = actOn.item.kind === "record" ? actOn.item.record : drawn;
+    const open = mine !== undefined;
     const hidden = this.rowHidden(record);
-    const recName = String(record.document?.name ?? "Untitled");
+    const recName = row.name;
+    const deviceWord = deviceNoun(this.ownerOf(actOwnerId));
     // The open complication goes through the inspector's own Delete, so an
     // unsaved draft and a conflict behave the same from either place. Hide
     // follows the same split: the open one through its draft, others at once.
-    const mayDelete = this.browsing ? false : open ? this.canEdit : !!this.hass.user?.is_admin;
+    const mayDelete = open ? this.canEdit : !!this.hass.user?.is_admin;
     const mayHide = mayDelete;
     const confirming = this.pickerConfirmDelete === record.id;
     const stop = (e: Event) => e.stopPropagation();
     return html`<div class="row rec ${hidden ? "dim" : ""}" aria-current=${open ? "true" : "false"}>
       <button type="button" class="pick" role="option" aria-selected=${open ? "true" : "false"}
-        @click=${() => void this.openFromPicker(record)}>
-        ${this.renderRowArt(record)}
+        @click=${() => void this.openFromPicker(row)}>
+        ${this.renderRowArt(drawn, owner)}
         <span class="pk-name">${recName}</span>
-        ${this.renderLinkDevices(record)}
-        ${this.shapeDots(familiesOf(record), hasControlOf(record), this.pickerFamilies)}
+        ${this.renderRowDevices(row)}
+        ${this.shapeDots(familiesOf(drawn), hasControlOf(drawn), familiesFor(owner))}
       </button>
       <span class="pk-acts">
         ${confirming
           ? html`<button type="button" class="ghost danger small" ?disabled=${this.saving}
-              @click=${(e: Event) => { stop(e); void (open ? this.deleteCurrent() : this.deleteSaved(record.id, record.revision)); }}>Really delete</button>
+              @click=${(e: Event) => { stop(e); void (open ? this.deleteCurrent() : this.deleteSaved(record.id, record.revision, actOwnerId)); }}>Really delete</button>
             <button type="button" class="ghost small" @click=${(e: Event) => { stop(e); this.pickerConfirmDelete = undefined; }}>Cancel</button>`
           : html`${mayHide ? html`<button type="button" class="icon" ?disabled=${!open && this.saving}
               title=${hidden
-                ? "Hidden from the watch's complication list. Show it there again."
-                : "Hide from the watch's complication list. Faces already using it keep it."}
-              aria-label=${hidden ? `Show ${recName} in the watch's complication list` : `Hide ${recName} from the watch's complication list`}
-              @click=${(e: Event) => { stop(e); void this.setPickerHidden(record, !hidden); }}>${uiIcon(hidden ? "hide" : "show")}</button>` : nothing}
+                ? `Hidden from the ${deviceWord}'s complication list. Show it there again.`
+                : `Hide from the ${deviceWord}'s complication list. Faces already using it keep it.`}
+              aria-label=${hidden ? `Show ${recName} in the ${deviceWord}'s complication list` : `Hide ${recName} from the ${deviceWord}'s complication list`}
+              @click=${(e: Event) => { stop(e); void this.setPickerHidden(record, !hidden, actOwnerId); }}>${uiIcon(hidden ? "hide" : "show")}</button>` : nothing}
             ${mayDelete ? html`<button type="button" class="icon danger" title="Delete this complication" aria-label=${`Delete ${recName}`}
               ?disabled=${this.saving} @click=${(e: Event) => { stop(e); this.pickerConfirmDelete = record.id; }}>${uiIcon("delete")}</button>` : nothing}`}
       </span>
@@ -8715,20 +8730,22 @@ export class WristAssistantPanel extends LitElement {
   /**
    * The devices a row's complication lives on, one small icon each.
    *
-   * Drawn only for a linked row, so an ordinary complication's row is exactly
-   * the row it always was. It is the one thing in the list that says this row
-   * is not only about the device whose list it is in: clicking it opens the
-   * design that both devices draw.
+   * This is what a row says instead of being filed under a device: a watch
+   * glyph per watch, a phone glyph per phone, and two of them on a linked
+   * complication, whose one row opens the design both devices draw. A home with
+   * one device gets none, since every row would carry the same icon.
    */
-  private renderLinkDevices(record: ComplicationRecord) {
-    const copies = this.copiesOfRow(record);
-    if (copies.length < 2) return nothing;
-    const names = copies.map((c) => this.ownerName(c.ownerId));
-    return html`<span class="pk-link" title=${`On ${joinNames(names)}. One design, edited in one place.`}>${copies.map((c) =>
-      html`<span class="pk-link-ico">${uiIcon(deviceKindOf(this.owners.find((o) => o.owner_watch_id === c.ownerId)) === "iphone" ? "phone" : "watch")}</span>`)}</span>`;
+  private renderRowDevices(row: PickerRow) {
+    if (this.owners.length < 2) return nothing;
+    const names = row.copies.map((c) => this.ownerName(c.ownerId));
+    const title = row.copies.length > 1
+      ? `On ${joinNames(names)}. One design, edited in one place.`
+      : `On ${names[0] ?? "this device"}.`;
+    return html`<span class="pk-link" title=${title}>${row.copies.map((c) =>
+      html`<span class="pk-link-ico">${uiIcon(deviceKindOf(this.ownerOf(c.ownerId)) === "iphone" ? "phone" : "watch")}</span>`)}</span>`;
   }
 
-  /** Whether a picker row is hidden from the watch's complication list. The
+  /** Whether a picker row is hidden from its device's complication list. The
    * open one answers from its draft, so an unsaved hide shows at once. */
   private rowHidden(record: ComplicationRecord): boolean {
     if (record.id === this.selectedId && this.draft) return this.draft.config.hidden === true;
@@ -8736,7 +8753,12 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * Hide one complication from the watch's complication list, or show it again.
+   * Hide one complication from its device's complication list, or show it
+   * again.
+   *
+   * Hiding is a decision about one device's own list, so it acts on the copy
+   * the row draws and on no other: a linked complication can be on the watch
+   * face list and off the iPhone's.
    *
    * The open one changes through its draft, so the flag saves with Save and
    * undoes like any other edit: saving it behind the draft's back would move
@@ -8744,9 +8766,8 @@ export class WristAssistantPanel extends LitElement {
    * once with the revision the list holds, the way the picker's Delete does. A
    * conflict there is a plain error, since there is nothing to reconcile.
    */
-  private async setPickerHidden(record: ComplicationRecord, hide: boolean) {
-    if (!this.ownerId) return;
-    if (record.id === this.selectedId) {
+  private async setPickerHidden(record: ComplicationRecord, hide: boolean, ownerId: string) {
+    if (ownerId === this.ownerId && record.id === this.selectedId) {
       this.mutate((c) => {
         if (hide) c.hidden = true;
         else delete c.hidden;
@@ -8758,19 +8779,35 @@ export class WristAssistantPanel extends LitElement {
     this.saveError = undefined;
     try {
       const doc = withHidden(record.document as Record<string, unknown>, hide);
-      const result = await saveRecord(this.hass, this.ownerId, doc, record.revision);
+      const result = await saveRecord(this.hass, ownerId, doc, record.revision);
       if (!result.ok) {
         this.saveError = result.error === "conflict"
           ? `${String(record.document.name ?? "That complication")} changed on the server. Try again.`
           : result.message ?? result.error ?? "Save failed";
         return;
       }
-      this.beginSendWait();
-      await this.loadRecords();
+      // The sync wait is about the device being edited; another device's list
+      // is read back instead, so the row settles when that device answers.
+      if (ownerId === this.ownerId) {
+        this.beginSendWait();
+        await this.loadRecords();
+      } else {
+        await this.loadOtherLists();
+      }
     } catch (err) {
       this.saveError = errText(err);
     } finally {
       this.saving = false;
+    }
+  }
+
+  /** The device chip this browser was last left on. Checked against the home's
+   * devices at render, so nothing here has to care whether it still exists. */
+  private loadPickerDevice() {
+    try {
+      this.pickerDevice = window.localStorage.getItem(PICKER_FILTER_KEY) ?? ALL_DEVICES;
+    } catch {
+      // A private window, or site data blocked: the list opens on All.
     }
   }
 
@@ -8808,10 +8845,12 @@ export class WristAssistantPanel extends LitElement {
 
   private togglePicker(next = !this.pickerOpen) {
     this.pickerOpen = next;
-    this.browseOwnerId = undefined;
-    this.browseList = undefined;
-    this.browseError = undefined;
-    if (!next) {
+    if (next) {
+      // The other devices' lists are read for the links and are not on this
+      // one's change subscription, so a complication added on the phone since
+      // the panel loaded would be missing from the list this menu is about.
+      void this.loadOtherLists();
+    } else {
       this.pickerNote = undefined;
       this.pickerConfirmDelete = undefined;
     }
@@ -13260,11 +13299,13 @@ export function ownersByKind(owners: readonly OwnerSummary[]): OwnerSummary[] {
 }
 
 /**
- * One device as the picker's list draws it: the name on its own line, and what
- * tells it apart from the device under it on a second, quieter one.
+ * One device for a list with two lines to spare: the name on its own line, and
+ * what tells it apart from the device under it on a second, quieter one.
  *
  * `ownerLabel` says the same things on one line, for the places that have only
- * one line to say them on, and it stays the wording of the header's button. A
+ * one line to say them on, and it stays the wording of the header's button and
+ * of the picker's device chips. Nothing draws the two-line form since the
+ * picker's device pane went; it is kept for the next list that needs one. A
  * watch's second line is the phone it is paired with, which is the only thing
  * separating two watches both called "Apple Watch"; a phone's is the word
  * iPhone, unless its own name already reads as one.
@@ -13279,10 +13320,10 @@ export function ownerLines(o: OwnerSummary): { name: string; note?: string } {
 }
 
 /**
- * The picker's device list, cut into the groups it draws headings for. The
- * order is `ownersByKind`'s: watches first, then phones, each group left as the
- * server gave it. A home with only one kind of device gets one group, and the
- * picker then draws no heading at all rather than a heading over everything.
+ * This home's devices, cut into the groups a device list heads its sections
+ * with. The order is `ownersByKind`'s: watches first, then phones, each group
+ * left as the server gave it. A home with only one kind of device gets one
+ * group, so a list can draw no heading at all rather than one over everything.
  */
 export function ownerGroups(owners: readonly OwnerSummary[]): { label: string; owners: OwnerSummary[] }[] {
   const watches = owners.filter((o) => deviceKindOf(o) !== "iphone");
