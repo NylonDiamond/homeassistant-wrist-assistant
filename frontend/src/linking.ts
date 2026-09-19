@@ -87,6 +87,51 @@ export function moveTargets(ticked: readonly string[]): string[] {
   return ticked.length > 0 ? [...ticked] : [LIBRARY_OWNER_ID];
 }
 
+/**
+ * Whether saving has to move the open record rather than write over it.
+ *
+ * True when the device the editor is sitting on is not one of the places this
+ * design is going: the open device was unticked, or a design that was sitting
+ * in the library was given a device. A record belongs to its owner and cannot
+ * be handed to another one, so the save writes the design where it is going
+ * and deletes it where it was, in that order.
+ */
+export function saveMoves(openOwnerId: string, ticked: readonly string[]): boolean {
+  return !moveTargets(ticked).includes(openOwnerId);
+}
+
+/**
+ * The count beside the "Appears on" heading.
+ *
+ * Its own function because the zero is the interesting reading now: a design
+ * with no device ticked is not a design nobody finished, it is one that sits
+ * in the library, and "0 of 2 devices" is what says so before any words do.
+ */
+export function showsOnCount(ticked: number, offered: number): string {
+  return `${ticked} of ${offered} ${offered === 1 ? "device" : "devices"}`;
+}
+
+/** The line under the "Appears on" boxes while none of them is ticked, and
+ * nothing at all once one is: a design on a device needs no explaining. */
+export function showsOnNote(ticked: number): string | undefined {
+  return ticked === 0 ? "In the library. No device shows it until you tick one." : undefined;
+}
+
+/**
+ * Where the design went, once a save has moved it.
+ *
+ * `linkedSaveStatus` is the line for a save that wrote to several devices and
+ * left the open one where it was; this is the other half, for the save that
+ * took the record off the device it was open on. It names the place rather
+ * than counting devices, because the thing worth saying is that the editor is
+ * now somewhere else.
+ */
+export function movedStatus(labels: readonly string[], toLibrary: boolean): string {
+  if (toLibrary) return "Moved to the library. No device shows it until you tick one under Appears on.";
+  if (labels.length === 0) return "Moved.";
+  return `Now on ${joinNames(labels)}. ${labels.length === 1 ? "It arrives" : "They arrive"} there on the next sync.`;
+}
+
 /** The shapes a watch face and an iPhone Lock Screen both draw, which are the
  * ones a link shows once rather than twice. Control Center is shared too, but
  * it is not a shape: the document has one control, and every ticked device
