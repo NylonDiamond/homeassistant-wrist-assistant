@@ -1,0 +1,69 @@
+{
+  "name": "Linked complication",
+  "description": "One design the panel saved to two owners, a watch and an iPhone. The top-level `linkId` is the whole contract: every copy carries the same uuid so the panel knows which records to rewrite on the next save, while each copy keeps its own id, slot and `hidden`. Nothing on a device reads the key, and it changes nothing about how the document draws, so every shape below resolves exactly as an unlinked copy would. The watch draws corner, the iPhone draws small, and each device ignores the shapes it has no widget for. Readers must keep the key through a re-encode, which is what a backup or a `complications_restore` upload does.",
+  "config": {
+    "schemaVersion": 7,
+    "id": "AAAAAAAA-0000-4000-8000-000000000092",
+    "name": "Kitchen at a glance",
+    "linkId": "BBBBBBBB-0000-4000-8000-000000000092",
+    "values": [],
+    "slotIndex": 2,
+    "elements": [
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000092",
+          "value": {"kind": {"kind": "entityState", "entityId": "sensor.kitchen_temperature", "displayName": "Kitchen", "domain": "sensor"}},
+          "fontSize": 14,
+          "fontWeight": "regular",
+          "colorSlot": {"baseColorHex": "#FFFFFF"},
+          "rules": [],
+          "frame": {"x": 0.1, "y": 0.1, "width": 0.8, "height": 0.8, "rotationDegrees": 0},
+          "isHidden": false
+        }
+      }
+    ],
+    "supportedFamilies": ["rectangular", "circular", "corner", "small"],
+    "perFamily": [
+      "rectangular", {"cornerBodyShape": "circle", "borderWidth": 2},
+      "circular", {"cornerBodyShape": "circle", "borderWidth": 2},
+      "corner", {"cornerBodyShape": "circle", "borderWidth": 2},
+      "small", {"cornerBodyShape": "circle", "borderWidth": 0}
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {"type": "refresh"}
+  },
+  "inputs": {
+    "entityStates": {
+      "sensor.kitchen_temperature": {"state": "21.5", "domain": "sensor"}
+    },
+    "templateResults": {}
+  },
+  "expectedCompiled": {
+    "entities": ["sensor.kitchen_temperature"],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {"id": "EEEEEEEE-0000-4000-8000-000000000092", "kind": "text", "text": "21.5", "isHidden": false}
+      ]
+    },
+    "circular": {
+      "elements": [
+        {"id": "EEEEEEEE-0000-4000-8000-000000000092", "kind": "text", "text": "21.5", "isHidden": false}
+      ]
+    },
+    "corner": {
+      "elements": [
+        {"id": "EEEEEEEE-0000-4000-8000-000000000092", "kind": "text", "text": "21.5", "isHidden": false}
+      ]
+    },
+    "small": {
+      "elements": [
+        {"id": "EEEEEEEE-0000-4000-8000-000000000092", "kind": "text", "text": "21.5", "isHidden": false}
+      ]
+    }
+  }
+}
