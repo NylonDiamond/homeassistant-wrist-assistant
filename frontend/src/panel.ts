@@ -138,6 +138,7 @@ import { actionAt, demoTapLabel, runTapAction, tapRefetches, type DemoOutcome } 
 import { type ShapePlace, addFamily, biggestFirst, canRemoveControl, canRemoveFamily, comingSoonFamilies, controlNoteLines, familiesFor, familyAllowsKind, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, opensInControlView, placeGroups, placeOf, placeTitle, removeFamily, supportedFamilies } from "./layouts.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { type DeviceOwnerLike, deviceKindOf, deviceNoun, deviceSupportsControls, deviceSupportsShapes, updateDeviceMessage } from "./version.js";
+import { type LinkMergeNotice, autoLinkMerge } from "./linkMerge.js";
 import { makeIconProvider } from "./icons.js";
 import { makeImageSizeProvider } from "./image-sizes.js";
 import { SymbolBrowser } from "./symbols.js";
@@ -1433,6 +1434,9 @@ export class WristAssistantPanel extends LitElement {
   private linkReady = false;
   /** Why a share link could not open the Import dialog. */
   @state() private linkNote?: string;
+  /** What the automatic merge of same-named watch and iPhone complications
+   * did on this first open, with its own Undo. See `linkMerge.ts`. */
+  @state() private linkMergeNotice?: LinkMergeNotice;
   /** Parsed config per saved record, keyed by id and invalidated by revision.
    * The picker draws a real preview of every complication, and parsing and
    * compiling every document on every render of an open menu is the one part
@@ -5265,6 +5269,14 @@ export class WristAssistantPanel extends LitElement {
     }
     this.linkReady = true;
     void this.openPendingLink();
+    // Join the complications built twice, once on the watch and once on the
+    // iPhone, on this first open. It reads every owner's records itself, does
+    // nothing at all unless there is a pair to join, and never writes without
+    // proving first that both records can be put back.
+    void autoLinkMerge(this.hass, this.owners, (notice) => {
+      this.linkMergeNotice = notice;
+      void this.loadRecords();
+    });
   }
 
   private async selectOwner(ownerId: string) {
@@ -7771,6 +7783,12 @@ export class WristAssistantPanel extends LitElement {
       ${this.loadError ? html`<div class="card error">${this.loadError}</div>` : nothing}
       ${this.linkNote ? html`<div class="banner warn link-note"><span>${this.linkNote}</span>
         <button class="link" @click=${() => { this.linkNote = undefined; }}>Dismiss</button></div>` : nothing}
+      ${this.linkMergeNotice ? html`<div class="banner warn link-note"><span>${this.linkMergeNotice.lines.map(
+          (line, i) => html`${i > 0 ? html`<br>` : nothing}${line}`)}</span>
+        ${this.linkMergeNotice.undo
+          ? html`<button class="link" ?disabled=${this.linkMergeNotice.busy} @click=${this.linkMergeNotice.undo}>Undo</button>`
+          : nothing}
+        <button class="link" @click=${() => { this.linkMergeNotice = undefined; }}>Dismiss</button></div>` : nothing}
       ${this.helpOpen ? this.renderHelpDialog() : nothing}
       ${this.newOpen ? this.renderNewDialog() : nothing}
       ${this.shareOpen ? this.renderShareDialog() : nothing}
