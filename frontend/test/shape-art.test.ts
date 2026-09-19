@@ -272,7 +272,7 @@ describe("designDeviceArt", () => {
     const tile = { art: svg`<div data-tag="tile"></div>`, width: 48, height: 30 };
     const art = flatten(designDeviceArt([], true, { watch: { control: tile }, phone: {} }));
     expect(art).toContain(`data-tag="tile"`);
-    expect(art).not.toContain(`width="40" height="24" rx="12"`);
+    expect(art).not.toContain(`width="30" height="18" rx="9"`);
   });
 
   it("shows the corner's content disc alone, centred in the slot and masked round", () => {

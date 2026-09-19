@@ -509,7 +509,7 @@ const CARD_TILE_SIDE = 48;
 /** The side of the Control Center tile drawn beside a picker card's device
  * drawings: small enough to sit at the end of the row, big enough for its
  * glyph to be one. */
-const CARD_ART_TILE_SIDE = 30;
+const CARD_ART_TILE_SIDE = 22;
 
 const COL_LEFT_DEFAULT = 300;
 const COL_RIGHT_DEFAULT = 360;
@@ -1828,7 +1828,7 @@ export class WristAssistantPanel extends LitElement {
     /* The grid sits on the panel colour rather than the card colour, so a
        white card reads as a card and not as a rule drawn round some text. */
     .pk-body { flex: 1; min-height: 0; overflow: auto; padding: 14px 18px; background: var(--wa-panel); }
-    .pk-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
+    .pk-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
     /* Two columns on a narrow window: three cards each holding a watch and a
        phone side by side stop being readable well before the dialog runs out
        of width. */
@@ -1897,19 +1897,22 @@ export class WristAssistantPanel extends LitElement {
     /* The two device drawings, on their own quiet mat so the dark screens read
        as screens rather than as holes in the card. */
     .pk-card-art {
-      display: flex; align-items: flex-end; justify-content: center; gap: 10px; margin-top: 8px;
-      padding: 10px 8px 8px; border: 0; border-radius: 10px; background: var(--wa-panel);
+      display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 8px;
+      height: 140px; box-sizing: border-box; padding: 10px 8px; border: 0; border-radius: 10px; background: var(--wa-panel);
     }
-    .pk-card-art > svg { display: block; flex: none; }
-    /* A design on one device draws that device alone, and larger, so the
-       complication set into it is readable. */
-    .pk-card-art.one > svg { height: 118px; width: auto; }
+    /* Every device at one size, whether it stands alone or beside the other,
+       and the mat one height whatever it holds: a grid of cards is only a
+       grid while its rows line up. */
+    .pk-card-art > svg { display: block; flex: none; height: 118px; width: auto; }
     /* The Control Center tile stands at the end of the row, off both devices:
        it is neither a face nor a Home Screen. */
     .pk-card-art .pk-card-ctl { display: inline-flex; align-items: center; align-self: center; flex: none; margin-left: 4px; }
     /* The right end is kept clear for the hide and delete buttons, which sit
        in that corner: reserved always, so nothing reflows on hover. */
-    .pk-card-shapes { font-size: 11px; color: var(--wa-muted); margin-top: 8px; padding-right: 62px; overflow-wrap: anywhere; }
+    .pk-card-shapes {
+      font-size: 11px; color: var(--wa-muted); margin-top: 8px; padding-right: 62px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
     /* Hide and delete, in the card's own corner. Only on hover, or while the
        keyboard is in the card, or while one of them is asking: a wall of cards
        with six icon buttons on every one of them is a wall of icon buttons. */

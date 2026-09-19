@@ -395,8 +395,8 @@ function controlBeside(live: LiveShape | undefined): TemplateResult {
   if (live && live.art !== nothing) {
     return html`<span class="pk-card-ctl" title="Control Center">${live.art}</span>`;
   }
-  return html`<span class="pk-card-ctl" title="Control Center"><svg width="40" height="24" viewBox="0 0 40 24" aria-hidden="true">
-    <rect x="0" y="0" width="40" height="24" rx="12" fill=${ON} />
+  return html`<span class="pk-card-ctl" title="Control Center"><svg width="30" height="18" viewBox="0 0 30 18" aria-hidden="true">
+    <rect x="0" y="0" width="30" height="18" rx="9" fill=${ON} />
   </svg></span>`;
 }
 
