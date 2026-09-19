@@ -3415,6 +3415,9 @@ ${dI(c)}`}}delete s.hidden,delete s.linkId;let l=Ll(a);if(l.length>0){let d=l.sl
     .column.left .card.add-card[data-open="true"] > .add-group:has(.add-scroll) > .presets-head { flex: none; }
     .column.left .card.add-card[data-open="true"] .add-scroll { flex: 0 1 auto; min-height: 0; max-height: none; }
     .column.left .card.add-card[data-open="true"] .add-scroll.short { max-height: 18vh; }
+    /* The capped elements box keeps its cap rather than shrinking with the
+       presets box, otherwise the cap shrinks with the rest. */
+    .column.left .card.add-card[data-open="true"] > .add-group:has(.add-scroll.short) { flex-shrink: 0; }
     .layout.cols-1 .column.left .card.add-card[data-open="true"] { max-height: none; display: block; }
     .layout.cols-1 .column.left .card.add-card[data-open="true"] .add-scroll { max-height: 30vh; }
     /* The elements are twelve, not twenty-five: their scroller is capped at
