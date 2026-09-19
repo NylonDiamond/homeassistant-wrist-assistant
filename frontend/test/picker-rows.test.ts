@@ -9,9 +9,12 @@ import {
   ALL_DEVICES,
   type PickerCopy,
   type PickerDevice,
+  isPersonFilter,
+  personFilter,
   pickerFootText,
   pickerListRows,
   pickerView,
+  rowsOfPeople,
   rowsOnDevice,
   sortPickerRows,
 } from "../src/pickerRows.js";
@@ -156,6 +159,42 @@ describe("rowsOnDevice", () => {
     expect(rowsOnDevice(rows, "w1").map((r) => r.name)).toEqual(["Porch"]);
     expect(rowsOnDevice(rows, "p1").map((r) => r.name).sort()).toEqual(["Kitchen", "Porch"]);
     expect(rowsOnDevice(rows, "w2")).toEqual([]);
+  });
+});
+
+describe("rowsOfPeople", () => {
+  const rows = pickerListRows([
+    copy({ ownerId: "w1", id: "a", name: "Porch" }),
+    copy({ ownerId: "w2", id: "b", linkId: "L1", name: "Kitchen" }),
+    copy({ ownerId: "p1", id: "c", linkId: "L1", name: "Kitchen" }),
+  ], devices);
+
+  it("keeps the rows on any of that person's devices", () => {
+    expect(rowsOfPeople(rows, ["w2", "p1"]).map((r) => r.name)).toEqual(["Kitchen"]);
+    expect(rowsOfPeople(rows, ["w1"]).map((r) => r.name)).toEqual(["Porch"]);
+  });
+
+  // The whole point of one row per complication: a link across a person's
+  // watch and phone answers once, not once per device.
+  it("counts a linked row once however many of the devices are theirs", () => {
+    expect(rowsOfPeople(rows, ["w2", "p1"])).toHaveLength(1);
+  });
+
+  it("gives nothing for a person holding nothing", () => {
+    expect(rowsOfPeople(rows, [])).toEqual([]);
+    expect(rowsOfPeople(rows, ["nobody"])).toEqual([]);
+  });
+});
+
+describe("person filter keys", () => {
+  it("tells a person's key apart from a shape's", () => {
+    expect(isPersonFilter(personFilter("p1"))).toBe(true);
+    expect(isPersonFilter("all")).toBe(false);
+    expect(isPersonFilter("rectangular")).toBe(false);
+  });
+
+  it("keys a chip by the person's own key, so two people never collide", () => {
+    expect(personFilter("p1")).not.toBe(personFilter("p2"));
   });
 });
 

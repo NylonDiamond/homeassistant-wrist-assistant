@@ -116,6 +116,35 @@ export function rowsOnDevice<T>(rows: readonly PickerListRow<T>[], ownerId: stri
   return rows.filter((row) => row.copies.some((c) => c.ownerId === ownerId));
 }
 
+/**
+ * The rows one person has, over the devices that are theirs.
+ *
+ * What the person chips above the list narrow to. A complication on somebody's
+ * watch and somebody's phone is one row and answers to that one person once,
+ * which is the reading a per-device chip could never give: a linked row would
+ * have answered to two chips and looked like two complications again.
+ */
+export function rowsOfPeople<T>(rows: readonly PickerListRow<T>[], ownerIds: readonly string[]): PickerListRow<T>[] {
+  const want = new Set(ownerIds);
+  return rows.filter((row) => row.copies.some((c) => want.has(c.ownerId)));
+}
+
+/** What a person chip's filter key looks like, so the shape chips and the
+ * people chips can share one piece of state without either reading as the
+ * other. */
+export type PersonFilter = `person:${string}`;
+
+export function personFilter(key: string): PersonFilter {
+  return `person:${key}`;
+}
+
+/** Whether a filter key names a person rather than a shape. A guard rather
+ * than a bare `startsWith`, so the shape branch is a `FamilyKind` to the
+ * compiler and never needs a cast. */
+export function isPersonFilter(filter: string): filter is PersonFilter {
+  return filter.startsWith("person:");
+}
+
 /** The one device every row in a list sits on, when there is one. That is a
  * home with a single device, and a device chip's own list. */
 function soleOwnerOf<T>(rows: readonly PickerListRow<T>[]): string | undefined {

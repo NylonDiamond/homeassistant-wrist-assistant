@@ -70,7 +70,8 @@ export interface OwnerRecords {
 export interface PairingResult {
   pairs: LinkPair[];
   /** Names left alone because one side holds more than one of them. The panel
-   * offers these to "Link with..." in the complication menu instead. */
+   * offers these to "Merge with..." under the inspector's Shows on list
+   * instead. */
   ambiguous: string[];
 }
 
@@ -325,7 +326,7 @@ export function joinedLine(names: readonly string[]): string {
 }
 
 export function ambiguousLine(names: readonly string[]): string {
-  return `Not joined, two share a name on one device: ${names.join(", ")}. Use Link with... in the complication menu.`;
+  return `Not joined, two share a name on one device: ${names.join(", ")}. Use Merge with... under Shows on.`;
 }
 
 export function refusedLine(name: string, reason: string): string {

@@ -784,7 +784,7 @@ export function linkedSaveStatus(rows: readonly LinkSaveRow[]): string | undefin
 // ── merging two complications into one link ───────────────────────────────
 
 /**
- * One document out of two, for "Link with..." and for the automatic merge of
+ * One document out of two, for "Merge with..." and for the automatic merge of
  * pairs that already share a name.
  *
  * `primary` wins: its name, its layers, its rules, and its design wherever the

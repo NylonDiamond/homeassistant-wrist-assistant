@@ -335,7 +335,7 @@ describe("the notice", () => {
 
   it("points an ambiguous name at the manual menu item", () => {
     expect(ambiguousLine(["Zoo", "Attic"])).toBe(
-      "Not joined, two share a name on one device: Zoo, Attic. Use Link with... in the complication menu.",
+      "Not joined, two share a name on one device: Zoo, Attic. Use Merge with... under Shows on.",
     );
   });
 });
