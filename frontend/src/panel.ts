@@ -136,7 +136,7 @@ import {
 } from "./resolver.js";
 import { CANVAS, CASES, FACE_TINTS, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, caseForScreenSize, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, phoneCaseForScreenSize, renderLayerThumb, renderLayout, slotFor, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type PreviewCase } from "./renderer.js";
 import { actionAt, demoTapLabel, runTapAction, tapRefetches, type DemoOutcome } from "./demo.js";
-import { type ShapePlace, addFamily, biggestFirst, canRemoveControl, canRemoveFamily, comingSoonFamilies, controlNoteLines, familiesFor, familyAllowsKind, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, opensInControlView, placeGroups, removeFamily, supportedFamilies } from "./layouts.js";
+import { type ShapePlace, addFamily, biggestFirst, canRemoveControl, canRemoveFamily, comingSoonFamilies, controlNoteLines, familiesFor, familyAllowsKind, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, opensInControlView, removeFamily, supportedFamilies } from "./layouts.js";
 import {
   type LinkOwner,
   type LinkPicks,
@@ -146,10 +146,13 @@ import {
   type LinkShapeRow,
   type LinkedCopy,
   SHARED_SIDE_NOTE,
+  addShapeCards,
   cardPicked,
   controlOwners,
   copyForOwner,
+  familiesKeptFor,
   joinNames,
+  joiningOwners,
   keepPicks,
   linkIdOf,
   linkPlaceCards,
@@ -3101,9 +3104,13 @@ export class WristAssistantPanel extends LitElement {
       border: 1px solid var(--wa-line-strong); border-radius: var(--wa-r-md);
       background: var(--wa-panel); color: var(--wa-ink); box-shadow: var(--wa-shadow-pop);
     }
-    .add-menu:popover-open { display: flex; flex-direction: column; gap: 12px; }
+    .add-menu:popover-open { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; overscroll-behavior: contain; }
     .add-group { display: flex; flex-direction: column; gap: 7px; }
     .add-group-label { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--wa-muted); }
+    /* Whose Lock Screen. The place is the heading and the device is the line
+       under it, the same two lines the New dialog's place card carries. */
+    .add-group-sub { font-size: 11.5px; color: var(--wa-muted); margin-top: -5px; }
+    .add-group-note { font-size: 11.5px; line-height: 1.35; color: var(--wa-muted); }
     /* Three to a row here, not the dialog's auto-fit: the panel is narrower
        than the dialog and a fourth column would squeeze the names. */
     .add-menu .shape-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -5653,6 +5660,22 @@ export class WristAssistantPanel extends LitElement {
     this.linkPicks = picksFromCopies(copies);
   }
 
+  /**
+   * A device the link has gained that has no copy on it yet.
+   *
+   * Picking a shape on a device the complication is not on is work to save even
+   * when the document itself did not change: a complication that already draws
+   * every Lock Screen shape and is put on the phone moves nothing but the list
+   * of owners. Without this the Save button would read "Saved" with a copy
+   * still to write.
+   */
+  private get linkPending(): boolean {
+    const cfg = this.draft?.config;
+    if (!cfg || cfg.linkId === undefined || this.linkOwnerIds.length < 2) return false;
+    const have = new Set(linkedCopies(this.allLinkRecords(), cfg.linkId).map((c) => c.ownerId));
+    return this.linkOwnerIds.some((id) => !have.has(id));
+  }
+
   /** The devices a save writes to: the ones the link names, in picker order,
    * each as the dialog reads a device. A device that has gone missing from the
    * home is left out rather than written to. */
@@ -6167,6 +6190,25 @@ export class WristAssistantPanel extends LitElement {
     return familiesFor(this.selectedOwner);
   }
 
+  /**
+   * The shapes the open complication can carry: every shape drawn by any device
+   * it lives on, the one being edited included.
+   *
+   * Not `ownerFamilies`, which is the single device the editor is sitting on. A
+   * linked complication is one document across a watch and a phone, so its Home
+   * Screen sizes have to be editable from the watch and its corner from the
+   * phone. Each copy is trimmed to what its own device draws on save
+   * (`copyFamilies`), so a shape no device here draws is never written.
+   */
+  private get linkedFamilies(): FamilyKind[] {
+    const out: FamilyKind[] = [];
+    for (const owner of this.linkTargetOwners()) {
+      for (const family of owner.families) if (!out.includes(family)) out.push(family);
+    }
+    for (const family of this.ownerFamilies) if (!out.includes(family)) out.push(family);
+    return out;
+  }
+
   /** What to call the selected owner in copy: "watch" or "iPhone". Only for
    * lines both kinds of owner read; a line about the long poll or the watch
    * face keeps its own words, because only a watch ever sees it. */
@@ -6200,7 +6242,7 @@ export class WristAssistantPanel extends LitElement {
       if (this.inspect.kind !== "general") this.inspect = { kind: "general" };
       return;
     }
-    const offered = this.ownerFamilies;
+    const offered = this.linkedFamilies;
     if (cfg.supportedFamilies.includes(this.activeFamily) && offered.includes(this.activeFamily)) return;
     this.activeFamily = supportedFamilies(cfg).find((f) => offered.includes(f)) ?? offered[0] ?? "rectangular";
   }
@@ -6309,9 +6351,12 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private addShape(family: FamilyKind) {
-    // The tabs and the New dialog already list only what this device draws;
-    // this is the one gate every other way in goes through.
-    if (!this.ownerFamilies.includes(family)) return;
+    // The tabs and the New dialog already list only what the devices this
+    // complication lives on draw; this is the one gate every other way in goes
+    // through. It is the whole link's shapes rather than the edited device's,
+    // because a Home Screen size added from the watch belongs to the phone copy
+    // and is trimmed out of the watch's on save.
+    if (!this.linkedFamilies.includes(family)) return;
     // The shape starts from a copy of one the complication already draws, so a
     // finished design is not built a second time by hand. `seedFamilyFromSibling`
     // says which shape it took, and that is the line printed under the new one.
@@ -6427,7 +6472,7 @@ export class WristAssistantPanel extends LitElement {
 
   private async save(asNew = false) {
     if (!this.draft || !this.ownerId || !this.canEdit || this.saving) return;
-    if (!asNew && !this.draft.dirty) return;
+    if (!asNew && !this.draft.dirty && !this.linkPending) return;
     if (!asNew && !this.slotChosen) {
       // Slots are auto-assigned and there is no picker; this only trips when
       // the draft was created with every slot taken.
@@ -8150,7 +8195,9 @@ export class WristAssistantPanel extends LitElement {
   // ── render ────────────────────────────────────────────────────────────
 
   override render() {    const d = this.draft;
-    const dirty = !!d?.dirty;
+    // A device joined to the link but not written to yet is unsaved work as
+    // much as an edited layer is, so the dot and the Save button say so.
+    const dirty = !!d?.dirty || this.linkPending;
     // `narrow` is Home Assistant telling us it is a phone; otherwise the fit
     // is decided from the panel's own measured width.
     const fit = this.narrow
@@ -9284,6 +9331,12 @@ export class WristAssistantPanel extends LitElement {
     const here = this.linkTargetOwners();
     const spare = this.spareOwners();
     const candidates = this.linkCandidates();
+    // A device picked in the Add a shape panel is on the list before it has a
+    // copy, because nothing is written until the author saves. Say which ones
+    // those are rather than claim a copy that is not there yet.
+    const written = new Set(cfg.linkId === undefined
+      ? []
+      : linkedCopies(this.allLinkRecords(), cfg.linkId).map((c) => c.ownerId));
     return html`<dialog class="devices-dialog" @close=${() => { this.devicesOpen = false; }}>
       <div class="new-head">
         <h2>Devices</h2>
@@ -9296,6 +9349,9 @@ export class WristAssistantPanel extends LitElement {
           <div class="dev-list">${here.map((o) => html`<div class="dev-row">
             <span class="dev-card-ico">${uiIcon(o.kind === "iphone" ? "phone" : "watch")}</span>
             <span class="dev-card-name">${o.label}</span>
+            ${cfg.linkId === undefined || written.has(o.ownerId)
+              ? nothing
+              : html`<span class="dev-row-note">On the next save</span>`}
           </div>`)}</div>
         </div>
         <div class="hint">${here.length > 1
@@ -9329,20 +9385,38 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * Put a copy of the open complication on another device.
+   * Put the open complication on another device, without writing anything.
    *
-   * It is a save like any other: the document gains a `linkId` if it has none,
-   * the device joins the list of owners, and the save writes a copy to each of
-   * them. The new device's copy gets its own id and the lowest free seat there,
-   * and a refusal (no seat) names that device before anything is written.
+   * The one path both ways in go through: "Also show on" here, and picking a
+   * shape on a device the complication is not on in the Add a shape panel. The
+   * document gains a `linkId` if it has none, the device joins the list of
+   * owners, and the next save writes a copy to each of them. The new device's
+   * copy gets its own id and the lowest free seat there, and a refusal (no
+   * seat) names that device before anything is written.
+   *
+   * The device's picks are every shape its copy can carry, because the picks
+   * are what drops a shape from one copy and this one has dropped none: the
+   * copy arrives with everything that device draws, not only the shape that was
+   * clicked to get here.
    */
-  private async alsoShowOn(owner: LinkOwner) {
+  private joinLink(owner: LinkOwner) {
     const cfg = this.draft?.config;
-    if (!cfg || !this.canEdit || this.saving) return;
-    this.closeDevicesDialog();
+    if (!cfg || !this.canEdit) return;
+    if (this.linkOwnerIds.includes(owner.ownerId)) return;
     const linkId = cfg.linkId ?? cfg.id;
-    this.mutate((c) => { c.linkId = linkId; });
+    if (cfg.linkId !== linkId) this.mutate((c) => { c.linkId = linkId; });
     this.linkOwnerIds = [...this.linkOwnerIds, owner.ownerId];
+    const picks = new Map<string, ReadonlySet<FamilyKind>>(this.linkPicks);
+    picks.set(owner.ownerId, new Set(familiesKeptFor(owner)));
+    this.linkPicks = picks;
+  }
+
+  /** "Also show on <device>", clicked: join the device and save straight away,
+   * which is the one thing this does that picking a shape does not. */
+  private async alsoShowOn(owner: LinkOwner) {
+    if (!this.draft?.config || !this.canEdit || this.saving) return;
+    this.closeDevicesDialog();
+    this.joinLink(owner);
     await this.save();
   }
 
@@ -12342,7 +12416,7 @@ export class WristAssistantPanel extends LitElement {
     return renderShapePreviews({
       config: cfg,
       editing: this.activeFamily,
-      order: biggestFirst(this.ownerFamilies),
+      order: biggestFirst(this.linkedFamilies),
       layouts,
       hidden: this.previewHidden,
       icons: this.icons,
@@ -12658,48 +12732,77 @@ export class WristAssistantPanel extends LitElement {
    * removed exactly like a shape (decided 2026-09-16).
    */
   private renderShapeTabs(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
-    const have = cfg.supportedFamilies;
-    const missing = this.ownerFamilies.filter((f) => !have.includes(f));
+    const cards = this.addPlaceCards(cfg);
     const addsControl = cfg.control === undefined && deviceSupportsControls(this.selectedOwner?.app_version);
-    const spare = missing.length + (addsControl ? 1 : 0);
+    // Shapes, not copies: a shape a watch and a phone both draw is one thing to
+    // add, the same way the New dialog's footer counts designs.
+    const spare = cards.reduce((n, card) => n + card.rows.length, 0) + (addsControl ? 1 : 0);
     return html`<div class="shape-seg" role="group" aria-label="Shapes">${this.renderHaveTabs(cfg, layouts)}${this.renderControlTab(cfg)}</div>
       ${spare > 0 ? html`<span class="shape-adds">
         <button class="tab off add-shape" ?disabled=${!this.canEdit} popovertarget="add-shapes"
-          title="Add another shape, or the Control Center control">${uiIcon("plus")}Add a shape</button>
+          title="Add another shape, on this device or another one, or the Control Center control">${uiIcon("plus")}Add a shape</button>
         <span class="shape-spare">${spare === 1 ? "1 more available" : `${spare} more available`}</span>
         <div id="add-shapes" popover="auto" class="add-menu" @beforetoggle=${this.placeAddMenu}>
-          ${this.renderAddGroups(missing, addsControl)}
+          ${this.renderAddGroups(cards, addsControl)}
         </div>
       </span>` : nothing}`;
   }
 
+  /** The places Add a shape offers: every place of every device in the home,
+   * holding what that device's copy does not draw yet. */
+  private addPlaceCards(cfg: CustomComplicationConfig): LinkPlaceCard[] {
+    return addShapeCards(this.linkOwners(), new Set(this.linkOwnerIds), cfg.supportedFamilies);
+  }
+
   /**
-   * What the Add a shape panel offers, under the same place headings the New
-   * dialog uses.
+   * What the Add a shape panel offers: the New dialog's grid of places, one
+   * group per place per device, with the device's own name under the place.
    *
-   * The row this replaced laid every missing shape out in one line, so a phone
-   * owner read "+ Rectangular + Circular + Inline + Small + Large" and had no
-   * way to tell that the first three are the Lock Screen and the last two the
-   * Home Screen. Grouping is the whole point; the panel is only where the
-   * grouping fits.
+   * The panel used to list the places of the device the editor happened to be
+   * sitting on, so a watch complication reached the phone only through the
+   * Devices dialog and a second trip back here. Every device is in this list
+   * now, and a group belonging to a device the complication is not on says so
+   * and joins it on the next save.
+   *
+   * Groups rather than the dialog's tabs and panel: this is a menu, and a menu
+   * where a click opens a second choice instead of doing the thing is a menu
+   * that has stopped being one.
    */
-  private renderAddGroups(missing: readonly FamilyKind[], addsControl: boolean) {
+  private renderAddGroups(cards: readonly LinkPlaceCard[], addsControl: boolean) {
     const phone = deviceKindOf(this.selectedOwner) === "iphone";
-    return html`${placeGroups(this.selectedOwner, missing, comingSoonFamilies(this.selectedOwner)).map((group) => html`<div class="add-group">
-        <span class="add-group-label">${group.label}</span>
+    const on = new Set(this.linkOwnerIds);
+    const have = this.draft?.config.supportedFamilies ?? [];
+    return html`${cards.map((card) => {
+      // The furniture the shapes are drawn in belongs to the place, not to the
+      // device the editor is on: a Lock Screen card draws phone art even while
+      // a watch is being edited.
+      const phoneArt = card.places.every((p) => p !== "watch");
+      const joining = joiningOwners(card, on).map((id) => card.devices[card.ownerIds.indexOf(id)] ?? id);
+      return html`<div class="add-group">
+        <span class="add-group-label">${card.label}</span>
+        <span class="add-group-sub">${joinNames(card.devices)}</span>
         <div class="shape-cards">
-          ${group.families.map((f) => html`<button type="button" class="shape-card" title=${`Add the ${familyTitle(f)} shape`}
-            @click=${() => { this.closeAddMenu(); this.addShape(f); }}>
-            ${familyArt(f, phone)}
-            <span class="shape-card-name">${familyTitle(f)}</span>
+          ${card.rows.map((row) => html`<button type="button" class="shape-card"
+            title=${have.includes(row.family)
+              ? `Put the ${familyTitle(row.family)} shape on ${joinNames(card.devices)}`
+              : `Add the ${familyTitle(row.family)} shape`}
+            @click=${() => { this.closeAddMenu(); this.addShapeOn(row); }}>
+            ${familyArt(row.family, phoneArt)}
+            <span class="shape-card-name">${familyTitle(row.family)}</span>
           </button>`)}
-          ${group.comingSoon.map((f) => html`<button type="button" class="shape-card soon" disabled aria-disabled="true" title="Coming soon">
-            ${familyArt(f, phone)}
-            <span class="shape-card-name">${familyTitle(f)}</span>
+          ${card.comingSoon.map((row) => html`<button type="button" class="shape-card soon" disabled aria-disabled="true" title="Coming soon">
+            ${familyArt(row.family, phoneArt)}
+            <span class="shape-card-name">${familyTitle(row.family)}</span>
             <span class="shape-card-note">Coming soon</span>
           </button>`)}
         </div>
-      </div>`)}
+        ${joining.length > 0
+          ? html`<span class="add-group-note">Not on ${joinNames(joining)} yet. Picking one of these puts it there, with everything else it can draw, on the next save.</span>`
+          : card.shared
+            ? html`<span class="add-group-note">One design on both. Adding it here adds it to each copy.</span>`
+            : nothing}
+      </div>`;
+    })}
       ${addsControl ? html`<div class="add-group">
         <span class="add-group-label">Control Center</span>
         <div class="shape-cards">
@@ -12710,6 +12813,38 @@ export class WristAssistantPanel extends LitElement {
           </button>
         </div>
       </div>` : nothing}`;
+  }
+
+  /**
+   * A shape in the Add a shape panel, clicked.
+   *
+   * The card it sits in says which devices it lands on, so a shape picked on a
+   * device the complication is not on yet joins that device to the link first
+   * and then goes through `addShape` like any other, seeding and hint and all.
+   * A shape the document already draws is not added twice: that click was about
+   * the device, and the copy it joins carries the shape already.
+   *
+   * Nothing is written here. The new device's copy is made by the next save,
+   * exactly as "Also show on" makes one.
+   */
+  private addShapeOn(row: LinkShapeRow) {
+    const cfg = this.draft?.config;
+    if (!cfg || !this.canEdit) return;
+    const had = cfg.supportedFamilies.includes(row.family);
+    const owners = this.linkOwners();
+    for (const side of row.sides) {
+      const owner = owners.find((o) => o.ownerId === side.ownerId);
+      if (owner) this.joinLink(owner);
+    }
+    if (!had) {
+      this.addShape(row.family);
+      return;
+    }
+    // Already drawn, so there is nothing to add; move to the shape that was
+    // pointed at all the same.
+    this.activeFamily = row.family;
+    this.controlView = false;
+    this.inspect = { kind: "family" };
   }
 
   /**
@@ -12730,6 +12865,9 @@ export class WristAssistantPanel extends LitElement {
     const width = Math.min(370, window.innerWidth - 24);
     panel.style.left = `${Math.max(12, Math.min(box.left, window.innerWidth - width - 12))}px`;
     panel.style.top = `${box.bottom + 6}px`;
+    // A home with two devices has four places in here, so the panel scrolls
+    // rather than running off the bottom of the window.
+    panel.style.maxHeight = `${Math.max(200, window.innerHeight - box.bottom - 18)}px`;
   };
 
   /** Close the panel before the shape lands, so the bar the author is watching
@@ -12753,7 +12891,7 @@ export class WristAssistantPanel extends LitElement {
     // they are worth drawing: the big one is the design, the small ones are
     // what is left of it. The bar reading Small, Medium, Large put the work in
     // the reverse of the order it happens in.
-    return biggestFirst(this.ownerFamilies.filter((f) => have.includes(f))).map((f) => {
+    return biggestFirst(this.linkedFamilies.filter((f) => have.includes(f))).map((f) => {
       // While the Control Center tab is up no shape is being edited, so no
       // shape tab is pressed either.
       const active = f === this.activeFamily && !this.inControlView;
@@ -13213,7 +13351,7 @@ export class WristAssistantPanel extends LitElement {
     const rec = this.records.find((r) => r.id === this.selectedId);
     const status = draftStatus({
       revision: rec?.revision ?? null,
-      dirty: d.dirty,
+      dirty: d.dirty || this.linkPending,
       ...(this.saveError !== undefined ? { error: this.saveError } : {}),
       ...(this.templateError !== undefined ? { templateError: this.templateError } : {}),
     });
