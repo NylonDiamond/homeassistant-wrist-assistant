@@ -76,7 +76,7 @@ function groupKey(owner: OwnerSummary, phones: readonly OwnerSummary[]): string 
  *
  * Orphans are left out entirely. They belong to nobody by definition (the
  * entry that would have said which phone is the one that went missing) and
- * nothing can be saved to one, so an orphan in a "Shows on" list is a box that
+ * nothing can be saved to one, so an orphan in an "Appears on" list is a box that
  * cannot be ticked.
  *
  * A group takes the position of its first member, which with watches sorted

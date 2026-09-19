@@ -115,7 +115,7 @@ describe("shapeSections", () => {
   });
 
   // The whole point of the sections: a second watch and a second phone are two
-  // more boxes to tick in "Shows on", not two more headings of shapes.
+  // more boxes to tick in "Appears on", not two more headings of shapes.
   it("gives a home with four devices the same four sections", () => {
     const sections = shapeSections([WATCH, WATCH_2, PHONE, PHONE_2]);
     expect(sections.map((s) => s.title)).toEqual([

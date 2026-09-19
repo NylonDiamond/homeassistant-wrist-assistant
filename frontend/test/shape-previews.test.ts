@@ -1,7 +1,7 @@
-// The row of small previews under the canvas. These cover the parts that are
-// arithmetic rather than drawing: which shapes the row lists, how big each one
-// is drawn, what the warning badge is for, which layer stands for the selected
-// one on another shape, and the choice the browser remembers.
+// The live picture on a shape tab. These cover the parts that are arithmetic
+// rather than drawing: how big each shape is drawn in the tab's box, what the
+// warning glyph is for, which layer stands for the selected one on another
+// shape, and how a preview is tinted.
 
 import { describe, expect, it } from "vitest";
 
@@ -17,81 +17,12 @@ import {
 } from "../src/model.js";
 import type { ResolvedElement, ResolvedLayout } from "../src/resolver.js";
 import {
-  PREVIEW_STORE_PREFIX,
-  loadPreviewHidden,
+  PREVIEW_ROOM,
   previewBox,
-  previewFamilies,
-  previewStoreKey,
   previewTintFor,
   previewWarnings,
-  savePreviewHidden,
-  togglePreviewHidden,
   twinLayerId,
 } from "../src/shapePreviews.js";
-
-/** The shape bar's order for a phone that draws the lot. */
-const PHONE_ORDER: FamilyKind[] = ["large", "medium", "small", "rectangular", "circular", "inline"];
-
-describe("which shapes the row lists", () => {
-  it("lists every other shape the complication has, in the bar's order", () => {
-    expect(previewFamilies({
-      order: PHONE_ORDER,
-      supported: ["rectangular", "circular", "small", "medium"],
-      editing: "rectangular",
-      hidden: new Set(),
-    })).toEqual(["medium", "small", "circular"]);
-  });
-
-  it("leaves out the shape being edited", () => {
-    const out = previewFamilies({
-      order: PHONE_ORDER,
-      supported: ["rectangular", "circular"],
-      editing: "circular",
-      hidden: new Set(),
-    });
-    expect(out).toEqual(["rectangular"]);
-  });
-
-  it("leaves out a shape the device does not draw", () => {
-    // A watch owner's bar never lists the Home Screen sizes, so a document
-    // carrying them does not preview them here either.
-    expect(previewFamilies({
-      order: ["rectangular", "circular", "corner"],
-      supported: ["rectangular", "circular", "small"],
-      editing: "rectangular",
-      hidden: new Set(),
-    })).toEqual(["circular"]);
-  });
-
-  it("leaves out a shape switched off", () => {
-    expect(previewFamilies({
-      order: PHONE_ORDER,
-      supported: ["rectangular", "circular", "small"],
-      editing: "rectangular",
-      hidden: new Set<FamilyKind>(["small"]),
-    })).toEqual(["circular"]);
-  });
-
-  it("lists Inline only when there is something to draw it with", () => {
-    const args = {
-      order: PHONE_ORDER,
-      supported: ["rectangular", "inline"] as FamilyKind[],
-      editing: "rectangular" as FamilyKind,
-      hidden: new Set<FamilyKind>(),
-    };
-    expect(previewFamilies(args)).toEqual([]);
-    expect(previewFamilies({ ...args, inline: true })).toEqual(["inline"]);
-  });
-
-  it("lists nothing on a complication with one shape", () => {
-    expect(previewFamilies({
-      order: PHONE_ORDER,
-      supported: ["rectangular"],
-      editing: "rectangular",
-      hidden: new Set(),
-    })).toEqual([]);
-  });
-});
 
 describe("how big a preview is drawn", () => {
   const room = { width: 200, height: 160 };
@@ -122,59 +53,15 @@ describe("how big a preview is drawn", () => {
       expect(box.height).toBeLessThanOrEqual(room.height + 0.001);
     }
   });
-});
 
-describe("the choice the browser remembers", () => {
-  /** A Storage with nothing behind it but a Map. */
-  function fakeStorage(): Storage {
-    const map = new Map<string, string>();
-    return {
-      get length() { return map.size; },
-      clear: () => map.clear(),
-      getItem: (k: string) => map.get(k) ?? null,
-      key: (i: number) => [...map.keys()][i] ?? null,
-      removeItem: (k: string) => { map.delete(k); },
-      setItem: (k: string, v: string) => { map.set(k, v); },
-    } as Storage;
-  }
-
-  it("keys on the complication, under one prefix", () => {
-    expect(previewStoreKey("ABC")).toBe(`${PREVIEW_STORE_PREFIX}ABC`);
-  });
-
-  it("starts with every preview shown", () => {
-    expect([...loadPreviewHidden("ABC", fakeStorage())]).toEqual([]);
-  });
-
-  it("reads back what was switched off, per complication", () => {
-    const store = fakeStorage();
-    savePreviewHidden("ABC", new Set<FamilyKind>(["small", "circular"]), store);
-    expect([...loadPreviewHidden("ABC", store)].sort()).toEqual(["circular", "small"]);
-    // Another complication keeps its own, which is all of them shown.
-    expect([...loadPreviewHidden("XYZ", store)]).toEqual([]);
-  });
-
-  it("forgets the key when nothing is switched off", () => {
-    const store = fakeStorage();
-    savePreviewHidden("ABC", new Set<FamilyKind>(["small"]), store);
-    savePreviewHidden("ABC", new Set(), store);
-    expect(store.getItem(previewStoreKey("ABC"))).toBeNull();
-  });
-
-  it("reads a key it cannot make sense of as nothing hidden", () => {
-    const store = fakeStorage();
-    store.setItem(previewStoreKey("ABC"), "not json");
-    expect([...loadPreviewHidden("ABC", store)]).toEqual([]);
-    store.setItem(previewStoreKey("ABC"), JSON.stringify({ hidden: "small" }));
-    expect([...loadPreviewHidden("ABC", store)]).toEqual([]);
-  });
-
-  it("flips one shape without touching the rest", () => {
-    const on = new Set<FamilyKind>(["small"]);
-    expect([...togglePreviewHidden(on, "circular")].sort()).toEqual(["circular", "small"]);
-    expect([...togglePreviewHidden(on, "small")]).toEqual([]);
-    // The set handed in is never edited in place.
-    expect([...on]).toEqual(["small"]);
+  it("keeps a tab's own room short enough for one row of tabs", () => {
+    // The tabs sit in the bar over the canvas, so the box every shape is
+    // fitted into has to stay a bar's worth of height.
+    expect(PREVIEW_ROOM.height).toBeLessThanOrEqual(96);
+    for (const f of ["rectangular", "circular", "small", "xlarge"] as const) {
+      expect(previewBox(f).height).toBeLessThanOrEqual(PREVIEW_ROOM.height + 0.001);
+      expect(previewBox(f).width).toBeLessThanOrEqual(PREVIEW_ROOM.width + 0.001);
+    }
   });
 });
 

@@ -92,7 +92,7 @@ describe("peopleOf", () => {
     ]);
   });
 
-  // Nothing can be saved to an orphan, so a "Shows on" list holding one would
+  // Nothing can be saved to an orphan, so an "Appears on" list holding one would
   // be offering a box that cannot be ticked.
   it("leaves an orphan out entirely", () => {
     const people = peopleOf([

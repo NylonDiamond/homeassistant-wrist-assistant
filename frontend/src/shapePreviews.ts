@@ -1,14 +1,13 @@
-// The row of small live previews under the canvas: every other shape of the
-// complication, drawn by the same renderer the big one uses, off the same
-// resolved values.
+// The live picture on a shape tab: every shape of the complication, drawn by
+// the same renderer the big one uses, off the same resolved values.
 //
-// The middle column used to be one shape and a lot of empty space, so a
-// complication with five shapes was five trips round the tabs to see what a
-// change did. The previews are view-only on purpose: a click picks the shape
-// up into the canvas rather than editing it where it stands, which keeps one
-// set of drag handles on screen and one shape being edited at a time.
+// The tabs used to carry a glyph and a row of larger previews sat under the
+// canvas saying the same thing twice. One row of live tabs is the whole answer
+// to "what does this design look like everywhere", and a click on one takes
+// that shape into the canvas rather than editing it where it stands, which
+// keeps one set of drag handles on screen and one shape being edited at a time.
 
-import { type TemplateResult, html, nothing } from "lit";
+import { type TemplateResult, nothing } from "lit";
 
 import {
   DESIGN_BOX,
@@ -20,105 +19,15 @@ import {
   ownedElements,
 } from "./model.js";
 import { type ResolvedAll, type ResolvedLayout, type CanvasSize } from "./resolver.js";
-import { type IconProvider, estimateTextWidth, familyTitle, renderLayout } from "./renderer.js";
+import { type IconProvider, estimateTextWidth, renderLayout } from "./renderer.js";
 import { type ImageSizeProvider } from "./image-sizes.js";
-import { uiIcon } from "./ui-icons.js";
-
-// ── which shapes are listed ───────────────────────────────────────────────
-
-/** What the row draws, and in which order.
- *
- * `order` is the shape bar's own order (biggest canvas first), so the row and
- * the tabs above it never disagree about where a shape sits. The shape being
- * edited is left out because it is the big one at the top, and a shape the
- * device cannot draw is left out because the bar never offered it either.
- *
- * Inline has no canvas, so it is listed only when the caller has a way to draw
- * it: the panel passes its own inline strip in.
- */
-export function previewFamilies(opts: {
-  order: readonly FamilyKind[];
-  supported: readonly FamilyKind[];
-  editing: FamilyKind;
-  hidden: ReadonlySet<FamilyKind>;
-  inline?: boolean;
-}): FamilyKind[] {
-  return opts.order.filter((f) =>
-    f !== opts.editing
-    && opts.supported.includes(f)
-    && !opts.hidden.has(f)
-    && (hasCanvas(f) || opts.inline === true));
-}
-
-/** Flip one shape's preview on or off, as a new set: the panel holds the old
- * one as state, so it is never edited in place. */
-export function togglePreviewHidden(hidden: ReadonlySet<FamilyKind>, family: FamilyKind): Set<FamilyKind> {
-  const next = new Set(hidden);
-  if (next.has(family)) next.delete(family);
-  else next.add(family);
-  return next;
-}
-
-// ── the choice, remembered per complication ───────────────────────────────
-
-/** Every key this module writes starts with it, so one complication's choice
- * is found and cleared without touching the panel's other stored settings. */
-export const PREVIEW_STORE_PREFIX = "wa.previews.";
-
-export function previewStoreKey(configId: string): string {
-  return `${PREVIEW_STORE_PREFIX}${configId}`;
-}
-
-/** Which shapes the reader switched off for this complication.
- *
- * In the browser, never in the document: it is which previews one person wants
- * to look at while they work, not something the watch or another editor should
- * ever see. What is stored is the shapes that are off, so a shape added later
- * starts shown rather than hidden by a list written before it existed.
- *
- * A browser with storage off, or a key another version wrote, reads as "none
- * hidden", which is the state the row starts in anyway.
- */
-export function loadPreviewHidden(configId: string, storage?: Storage): Set<FamilyKind> {
-  const store = storage ?? safeStorage();
-  if (!store) return new Set();
-  try {
-    const raw = store.getItem(previewStoreKey(configId));
-    if (!raw) return new Set();
-    const saved = JSON.parse(raw) as { hidden?: unknown };
-    if (!Array.isArray(saved.hidden)) return new Set();
-    return new Set(saved.hidden.filter((f): f is FamilyKind => typeof f === "string") as FamilyKind[]);
-  } catch {
-    return new Set();
-  }
-}
-
-export function savePreviewHidden(configId: string, hidden: ReadonlySet<FamilyKind>, storage?: Storage): void {
-  const store = storage ?? safeStorage();
-  if (!store) return;
-  try {
-    const key = previewStoreKey(configId);
-    if (hidden.size === 0) store.removeItem(key);
-    else store.setItem(key, JSON.stringify({ hidden: [...hidden] }));
-  } catch {
-    /* Storage off: the choice still holds for this visit. */
-  }
-}
-
-function safeStorage(): Storage | undefined {
-  try {
-    return typeof window === "undefined" ? undefined : window.localStorage;
-  } catch {
-    return undefined;
-  }
-}
 
 // ── how big each preview is drawn ─────────────────────────────────────────
 
-/** The box one preview may take, in CSS pixels. Wide enough that Rectangular
- * stays readable, short enough that three rows of previews fit under the
- * canvas without the column scrolling on a laptop. */
-export const PREVIEW_ROOM = { width: 208, height: 168 };
+/** The box one tab's picture may take, in CSS pixels. Small enough that a
+ * complication with five shapes is still one row on a laptop, big enough that
+ * Rectangular reads as a layout rather than a smudge. */
+export const PREVIEW_ROOM = { width: 120, height: 80 };
 
 /**
  * One preview's drawn size: its own shape, as big as the room allows.
@@ -126,8 +35,8 @@ export const PREVIEW_ROOM = { width: 208, height: 168 };
  * Each shape is fitted to the same box rather than the whole set being drawn
  * to one scale. To one scale, a set holding Extra Large (557 pt tall against
  * Rectangular's 65) shrinks every other shape to a smear; fitted, a tall shape
- * is narrow and a wide one is short, and each is legible. The tabs above the
- * canvas are where the shapes are compared against the device.
+ * is narrow and a wide one is short, and each is legible. How the shapes
+ * compare against the device is the stage's job, not the tabs'.
  */
 export function previewBox(family: DrawableFamily, room: { width: number; height: number } = PREVIEW_ROOM): { width: number; height: number; scale: number } {
   const box = DESIGN_BOX[family];
@@ -245,18 +154,14 @@ export function previewTintFor(family: DrawableFamily, phone: boolean, override:
   return tint === undefined ? {} : { tint, tintSurface: "watch" };
 }
 
-// ── the row itself ────────────────────────────────────────────────────────
+// ── one tab's picture ─────────────────────────────────────────────────────
 
-export interface ShapePreviewsState {
+export interface ShapeArtState {
   config: CustomComplicationConfig;
-  /** The shape in the big canvas. It is never in the row. */
+  /** The shape in the big canvas, so its selected layer can find its twin. */
   editing: FamilyKind;
-  /** The shape bar's order, which is this device's shapes, biggest first. */
-  order: readonly FamilyKind[];
   /** The same layouts the canvas draws: one resolve per render, shared. */
   layouts: ResolvedAll;
-  /** Shapes switched off for this complication. */
-  hidden: ReadonlySet<FamilyKind>;
   icons: IconProvider;
   imageSizes?: ImageSizeProvider;
   /** The selected layer on the shape being edited, so its twin outlines here. */
@@ -267,53 +172,16 @@ export interface ShapePreviewsState {
   tint?: string;
   /** The real slot each shape is drawn in, from the Preview as case. */
   slotFor?: (family: DrawableFamily) => CanvasSize;
-  /** The Inline strip, drawn by the panel, when Inline is one of the shapes. */
-  inline?: () => unknown;
-  /** Take this shape into the canvas. The one it replaces joins the row. */
-  onEdit: (family: FamilyKind) => void;
 }
 
 /**
- * Every other shape of the complication, under the canvas.
+ * One shape, drawn small for its tab: the same layout the stage would draw,
+ * under the same tint, with the selected layer's twin outlined.
  *
- * Nothing at all when there is one shape, or when every other one is switched
- * off: an empty strip with a heading on it is worse than the space it fills.
+ * Inline has no canvas of its own, so the panel draws that one: this is the
+ * shapes that resolve to a layout.
  */
-export function renderShapePreviews(state: ShapePreviewsState): TemplateResult | typeof nothing {
-  const families = previewFamilies({
-    order: state.order,
-    supported: state.config.supportedFamilies,
-    editing: state.editing,
-    hidden: state.hidden,
-    inline: state.inline !== undefined,
-  });
-  if (families.length === 0) return nothing;
-  return html`<div class="shape-previews" aria-label="The other shapes">
-    ${families.map((f) => renderOne(state, f))}
-  </div>`;
-}
-
-function renderOne(state: ShapePreviewsState, family: FamilyKind): TemplateResult {
-  const title = familyTitle(family);
-  const art = hasCanvas(family) ? renderCanvasPreview(state, family) : state.inline?.() ?? nothing;
-  const layout = hasCanvas(family) ? state.layouts[family] : undefined;
-  const warnings = layout === undefined ? [] : previewWarnings(layout);
-  const size = hasCanvas(family) ? previewBox(family) : { width: PREVIEW_ROOM.width, height: 0 };
-  return html`<button type="button" class=${`shape-preview ${family}`}
-    style=${`--pw:${Math.round(size.width)}px`}
-    title=${`Edit the ${title} shape`}
-    @click=${() => state.onEdit(family)}>
-    <span class="art">${art}</span>
-    <span class="cap">
-      <span class="name">${title}</span>
-      ${warnings.length === 0 ? nothing : html`<span class="warn" role="img"
-        aria-label=${`Worth a look: ${warnings.join(" ")}`}
-        title=${warnings.join("\n")}>${uiIcon("info")}</span>`}
-    </span>
-  </button>`;
-}
-
-function renderCanvasPreview(state: ShapePreviewsState, family: FamilyKind) {
+export function renderShapeArt(state: ShapeArtState, family: FamilyKind): TemplateResult | typeof nothing {
   if (!hasCanvas(family)) return nothing;
   const layout = state.layouts[family];
   if (layout === undefined) return nothing;
@@ -329,50 +197,63 @@ function renderCanvasPreview(state: ShapePreviewsState, family: FamilyKind) {
 }
 
 /**
- * The row's own styles, injected into the panel's sheet the way the Layers
- * rows' container queries are. Each preview is as wide as its shape wants
- * (`--pw`, from `previewBox`), and the row wraps and scrolls rather than
- * squeezing a tall tile into a line of thumbnails.
+ * The tabs' own styles, injected into the panel's sheet the way the Layers
+ * rows' container queries are, so the box a shape is fitted into is written
+ * beside the arithmetic that fits it.
+ *
+ * Each picture is as wide as its own shape wants (`--pw`, from `previewBox`)
+ * inside a box the height of the tallest one, so a row of shapes sits on one
+ * baseline whatever mix of shapes the complication has.
  */
-export function shapePreviewCss(): string {
+export function shapeTabCss(): string {
   return `
-    .shape-previews {
-      display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-end; gap: 14px 16px;
-      width: 100%; max-height: ${PREVIEW_ROOM.height * 2 + 90}px; overflow: auto; padding: 2px;
+    .shape-seg button.tab.art-tab {
+      flex-direction: column; align-items: center; gap: 5px; height: auto; padding: 7px 9px 6px;
     }
-    .shape-preview {
-      font: inherit; background: none; border: 0; padding: 0; cursor: pointer;
-      display: flex; flex-direction: column; align-items: center; gap: 6px;
-      width: var(--pw, ${PREVIEW_ROOM.width}px); max-width: 100%; color: var(--wa-muted);
+    .shape-seg .tab.art-tab .art {
+      display: flex; align-items: flex-end; justify-content: center; flex: none;
+      height: ${PREVIEW_ROOM.height}px; width: var(--pw, ${PREVIEW_ROOM.width}px); max-width: 100%;
     }
-    .shape-preview:hover { color: var(--wa-ink); }
-    .shape-preview:focus-visible { outline: none; }
-    .shape-preview .art { display: block; width: 100%; border-radius: 10px; }
-    .shape-preview .art svg {
-      display: block; width: 100%; height: auto; background: #000;
-      box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 8px 20px rgba(0,0,0,.4);
+    /* On the dark skin a black plate is all but invisible against the bar
+       behind it, so every plate carries a hairline ring. The ring is a
+       box-shadow rather than a border because a shadow follows the radius each
+       shape sets below, and a circular tab needs a circular ring. */
+    .shape-seg .tab.art-tab .art svg {
+      display: block; width: 100%; max-width: none; height: auto; max-height: ${PREVIEW_ROOM.height}px;
+      background: #000; border-radius: 6px; box-shadow: 0 0 0 1px rgba(255,255,255,.1), 0 4px 10px rgba(0,0,0,.35);
     }
-    .shape-preview.circular .art svg, .shape-preview.corner .art svg { border-radius: 50%; }
-    .shape-preview.rectangular .art svg { border-radius: 10px; }
-    .shape-preview.small .art svg { border-radius: 16.3%; }
-    .shape-preview.medium .art svg { border-radius: 7.7% / 16.3%; }
-    .shape-preview.large .art svg { border-radius: 7.7% / 7.4%; }
-    .shape-preview.xlarge .art svg { border-radius: 7.7% / 4.8%; }
-    .shape-preview:hover .art svg, .shape-preview:focus-visible .art svg {
-      box-shadow: 0 0 0 2px var(--wa-accent), 0 8px 20px rgba(0,0,0,.4);
+    .shape-seg .tab.circular .art svg, .shape-seg .tab.corner .art svg { border-radius: 50%; }
+    .shape-seg .tab.corner .art svg { background: #2c2c2e; }
+    .shape-seg .tab.small .art svg { border-radius: 16.3%; }
+    .shape-seg .tab.medium .art svg { border-radius: 7.7% / 16.3%; }
+    .shape-seg .tab.large .art svg { border-radius: 7.7% / 7.4%; }
+    .shape-seg .tab.xlarge .art svg { border-radius: 7.7% / 4.8%; }
+    /* Inline is a strip rather than a canvas, drawn here the way the stage
+       draws it, a size down. */
+    .shape-seg .tab.art-tab .art .inline-line {
+      display: inline-flex; align-items: center; justify-content: center; align-self: center;
+      min-width: 0; max-width: 100%; gap: 4px; padding: 4px 9px; border-radius: 999px;
+      background: #000; color: #fff; font-size: 9px; box-shadow: 0 0 0 1px rgba(255,255,255,.1);
+      overflow: hidden;
     }
-    /* Inline has no canvas: the panel hands its own strip over, and it is
-       drawn here the way it is drawn on the stage, a size down. */
-    .shape-preview .art .inline-line {
-      display: inline-flex; align-items: center; justify-content: center; gap: 5px;
-      padding: 6px 14px; border-radius: 999px; background: #000; color: #fff; font-size: 12px;
+    /* A long inline line is cut rather than pushing the tab wider than the
+       shape pictures beside it. */
+    .shape-seg .tab.art-tab .art .inline-line span {
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    .shape-preview .art .inline-line svg {
-      display: inline-block; width: auto; height: auto; background: transparent; border-radius: 0; box-shadow: none;
+    .shape-seg .tab.art-tab .art .inline-line svg {
+      width: auto; height: auto; max-height: none; background: transparent; border-radius: 0; box-shadow: none;
     }
-    .shape-preview .art .inline-line.missing { color: #999; font-style: italic; }
-    .shape-preview .cap { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; }
-    .shape-preview .warn { display: inline-flex; color: var(--wa-val); }
-    .shape-preview .warn svg { width: 14px; height: 14px; }
+    .shape-seg .tab.art-tab .art .inline-line.missing { color: #999; font-style: italic; }
+    /* The Control Center tab draws a mock tile, which carries its own tint and
+       corner, so none of the black-ground rules above may reach it. */
+    .shape-seg .tab.control .art { height: ${PREVIEW_ROOM.height}px; }
+    .shape-seg .tab.control .art svg {
+      background: transparent; border-radius: 0; box-shadow: none; width: auto; max-height: none;
+    }
+    .shape-seg .tab.art-tab .cap { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; }
+    .shape-seg .tab.art-tab .warn { display: inline-flex; color: var(--wa-val); }
+    .shape-seg .tab.art-tab .warn svg { width: 13px; height: 13px; }
+    .shape-seg .tab.art-tab small { display: block; font-size: 10px; line-height: 1.2; }
   `;
 }

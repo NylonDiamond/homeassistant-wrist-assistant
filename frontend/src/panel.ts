@@ -236,7 +236,7 @@ import {
   syncListAttributes,
   shownCount,
 } from "./editors.js";
-import { loadPreviewHidden, renderShapePreviews, savePreviewHidden, shapePreviewCss, togglePreviewHidden } from "./shapePreviews.js";
+import { PREVIEW_ROOM, previewBox, previewWarnings, renderShapeArt, shapeTabCss } from "./shapePreviews.js";
 import { sampleListItem, withListSeeds } from "./list-seeds.js";
 import { type PresetEnv, type PresetKind, type PresetSpec, LAYER_PRESETS, applyPreset, presetSpec } from "./presets.js";
 import { type AddVariant, addPreview } from "./add-previews.js";
@@ -474,10 +474,10 @@ function pickTick(): TemplateResult {
   return html`<span class="pick-tick" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg></span>`;
 }
 
-/** The mock tile in the Control Center shape tab, CSS px. Sized to the row of
- * shape art beside it, which is 16px tall; a tile this small draws its symbol
- * alone, so it reads as a control without pretending to be readable. */
-const CONTROL_TAB_TILE_SIDE = 20;
+/** The mock tile in the Control Center shape tab, CSS px. Sized to the shape
+ * pictures beside it, which stand in a box 80px tall, so the control reads as
+ * one more thing this design draws rather than a glyph among faces. */
+const CONTROL_TAB_TILE_SIDE = 62;
 /** The tile height in a picker row, sized to the row picture that holds it. */
 const CONTROL_ROW_TILE_SIDE = 38;
 
@@ -1033,13 +1033,6 @@ export class WristAssistantPanel extends LitElement {
    * or when the line is dismissed, so nobody reads it twice.
    */
   @state() private seedHint?: { family: FamilyKind; text: string };
-  /** Shapes whose preview under the canvas is switched off, for the open
-   * complication. Read back out of the browser, never out of the document: see
-   * `loadPreviewHidden`. */
-  @state() private previewHidden: ReadonlySet<FamilyKind> = new Set();
-  /** The complication `previewHidden` was read for, so opening another one
-   * reads its own choice rather than carrying this one over. */
-  private previewHiddenId?: string;
   /**
    * The Control Center tab is the one being edited, in place of a shape.
    *
@@ -1162,7 +1155,7 @@ export class WristAssistantPanel extends LitElement {
    * lives twice: once as a shape and once as a side chip under it. A shape is
    * the design now, and the devices are `newOwners`. */
   @state() private newFamilies: ReadonlySet<FamilyKind> = new Set();
-  /** The devices ticked in the dialog's "Shows on" list. Every ticked device
+  /** The devices ticked in the dialog's "Appears on" list. Every ticked device
    * draws every ticked shape it can; the ones it cannot draw it simply goes
    * without (`picksFromChoice`). */
   @state() private newOwners: ReadonlySet<string> = new Set();
@@ -1189,7 +1182,7 @@ export class WristAssistantPanel extends LitElement {
   /** Where the last save of a linked complication landed, per device. Not an
    * error: a device that has not synced yet is named as waiting. */
   @state() private linkStatus?: string;
-  /** Devices unticked in "Shows on" since the last save, each of which still
+  /** Devices unticked in "Appears on" since the last save, each of which still
    * has a stored copy. The copy is not deleted as the box is cleared: the tick
    * is a piece of unsaved work like any other, so Save is what removes it and
    * leaving without saving leaves it alone. */
@@ -1901,9 +1894,20 @@ export class WristAssistantPanel extends LitElement {
        hover lift, so it reads as a place in the row rather than a choice. */
     .shape-card.soon { opacity: .45; cursor: default; }
     .shape-card.soon:hover { border-color: var(--wa-line); color: var(--wa-muted); }
-    /* Shows on: one checkbox per device, in the inspector as a column under a
-       heading per person, and over the canvas as a row of chips. One set of
-       rules, since the two are the same control in two shapes. */
+    /* Appears on: one checkbox per device, in the inspector as a column under a
+       heading per person, and over the canvas as a row of pills. One set of
+       rules, since the two are the same control in two shapes. Both wear the
+       panel's amber over the card they sit on, so the one control that changes
+       another device is the one thing on either surface with a colour. */
+    .shows-field {
+      display: flex; flex-direction: column; gap: 6px; margin: 8px 0 2px; padding: 10px;
+      border: 1px solid color-mix(in srgb, var(--wa-val) 40%, var(--wa-line));
+      border-radius: var(--wa-r-md);
+      background: color-mix(in srgb, var(--wa-val) 9%, var(--wa-card));
+    }
+    .shows-title { display: flex; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 700; color: var(--wa-ink); }
+    .shows-count { font-size: 11px; font-weight: 500; color: var(--wa-muted); }
+    .shows-field .hint { margin: 0; }
     .shows-list { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
     .shows-head {
       font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
@@ -1925,17 +1929,31 @@ export class WristAssistantPanel extends LitElement {
     .shows-box .pick-tick { position: static; flex: none; }
     .shows-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .shows-note { font-size: 11px; color: var(--wa-muted); }
-    .merge-with { display: inline-flex; margin-top: 6px; }
-    /* Over the canvas: the same boxes as chips, wrapping on a narrow window so
-       a household of four never pushes the bar wider than the stage. */
+    .merge-with { display: inline-flex; margin-top: 2px; }
+    /* Across the top of the canvas card: the same boxes as pills, grouped by
+       person on the card's own white, wrapping on a narrow window so a
+       household of four never pushes the bar wider than the stage. */
     .shows-on-strip {
-      display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
-      padding: 7px 10px; border-top: 1px solid var(--wa-line);
+      display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px;
+      padding: 8px 12px; border-bottom: 1px solid color-mix(in srgb, var(--wa-val) 35%, var(--wa-line));
+      background: color-mix(in srgb, var(--wa-val) 9%, var(--wa-card));
     }
-    .shows-lead { font-size: 11.5px; font-weight: 600; color: var(--wa-muted); margin-right: 2px; }
-    .shows-on-strip .shows-box { padding: 4px 8px; border-radius: 999px; font-size: 11.5px; }
-    .shows-on-strip .pick-tick { width: 13px; height: 13px; }
-    .shows-on-strip .pick-tick svg { width: 8px; height: 8px; }
+    .shows-lead {
+      display: flex; flex-direction: column; width: 92px; flex: none; line-height: 1.3;
+      font-size: 11px; color: var(--wa-muted);
+    }
+    .shows-lead b { font-size: 12px; color: var(--wa-ink); }
+    .shows-group {
+      display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px;
+      padding: 4px 6px; border-radius: var(--wa-r-sm);
+      border: 1px solid color-mix(in srgb, var(--wa-val) 35%, var(--wa-line));
+      background: var(--wa-card);
+    }
+    .shows-who { font-size: 11px; font-weight: 700; color: var(--wa-muted); padding-left: 2px; }
+    .shows-when { font-size: 11px; color: var(--wa-muted); }
+    .shows-on-strip .shows-box { padding: 3px 8px 3px 5px; border-radius: 999px; font-size: 11.5px; gap: 5px; }
+    .shows-on-strip .pick-tick { width: 14px; height: 14px; border-radius: 4px; }
+    .shows-on-strip .pick-tick svg { width: 9px; height: 9px; }
     /* The complications on another device that could be merged with this one. */
     .merge-menu {
       position: fixed; inset: auto; margin: 0; width: min(320px, calc(100vw - 24px)); padding: 10px;
@@ -2849,23 +2867,28 @@ export class WristAssistantPanel extends LitElement {
       .gate-card { padding: 26px 22px 24px; }
       .gate-title { font-size: 21px; }
     }
-    /* Two rows with a hairline between them: which shape is being edited on
-       top, how the face is looked at underneath. The tool row sits a shade
-       darker so the stage below reads as a third, separate surface. */
+    /* Two rows: where this design goes on top, in the amber band, then the
+       shapes it draws and how they are looked at. */
     .canvas-bar {
       display: flex; flex-direction: column; font-size: 13px; flex: none;
       border-bottom: 1px solid var(--wa-line); background: var(--wa-raised);
     }
-    .bar-row { display: flex; align-items: center; gap: 6px; padding: 6px 10px; flex-wrap: wrap; }
-    .bar-row.tools {
-      border-top: 1px solid var(--wa-line);
-      background: color-mix(in srgb, var(--wa-raised) 55%, var(--wa-input));
+    .bar-row { display: flex; align-items: center; gap: 6px; padding: 8px 12px; flex-wrap: wrap; }
+    .bar-row.shapes { align-items: flex-end; }
+    /* The words at the left of a bar row, in the same block the band leads
+       with, so the two rows start on one line. */
+    .bar-lead {
+      display: flex; flex-direction: column; width: 92px; flex: none; line-height: 1.3;
+      align-self: center; font-size: 11px; color: var(--wa-muted);
     }
+    .bar-lead b { font-size: 12px; color: var(--wa-ink); }
+    .bar-row.shapes .inbox { align-self: center; }
     .bar-sep { width: 1px; height: 18px; background: var(--wa-line-strong); margin: 0 2px; flex: none; }
     .canvas-bar .spacer { flex: 1; min-width: 0; }
-    /* The shapes the complication has, as one segmented control. */
+    /* The shapes the complication has, as one segmented control, each tab
+       carrying a live picture of what that shape draws. */
     .shape-seg {
-      display: inline-flex; flex-wrap: wrap; gap: 5px; padding: 4px; border-radius: 11px;
+      display: inline-flex; flex-wrap: wrap; align-items: flex-end; gap: 5px; padding: 4px; border-radius: 11px;
       background: var(--wa-input); box-shadow: inset 0 0 0 1px var(--wa-line);
     }
     /* Every tab used to be transparent until it was pressed, and the pressed
@@ -2884,7 +2907,7 @@ export class WristAssistantPanel extends LitElement {
       border-color: transparent; color: var(--wa-ink); font-weight: 700;
       box-shadow: 0 0 0 2px var(--wa-accent), 0 1px 4px rgba(0,0,0,.22);
     }
-    .shape-adds { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-left: 4px; }
+    .shape-adds { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-left: 4px; align-self: center; }
     .shape-adds button.tab { height: 28px; padding: 0 9px; gap: 5px; font-weight: 500; }
     .shape-adds button.tab svg { width: 12px; height: 12px; }
     /* Add a shape is an offer, not a tab: it keeps the dashed edge so it never
@@ -2928,43 +2951,16 @@ export class WristAssistantPanel extends LitElement {
     button.tab.off { border: 1px dashed var(--wa-line-strong); color: color-mix(in srgb, var(--wa-muted) 80%, var(--wa-card)); }
     button.tab small { font-weight: 500; opacity: .75; }
     /* A shape's own render, drawn on the black a watch face and a Lock Screen
-       are. On the dark skin that plate is all but invisible against the bar
-       behind it, so every plate carries a hairline ring. The ring is a
-       box-shadow rather than a border because a shadow follows the radius each
-       shape sets below, and a circular tab needs a circular ring. */
-    .tab .art { display: grid; place-items: center; flex: none; height: 18px; }
-    .tab .art svg {
-      display: block; max-height: 18px; max-width: 38px; width: auto; height: auto;
-      background: #000; border-radius: 3px; box-shadow: 0 0 0 1px var(--wa-line-strong);
-    }
-    .tab.circular .art svg { border-radius: 50%; }
-    .tab.corner .art svg { background: #2c2c2e; }
-    /* The tab pictures are small, so the Home Screen tiles take a share of
-       their own box as the corner rather than a flat radius. */
-    .tab.small .art svg { border-radius: 16.3%; }
-    .tab.medium .art svg { border-radius: 7.7% / 16.3%; }
-    .tab.large .art svg { border-radius: 7.7% / 7.4%; }
-    .tab.xlarge .art svg { border-radius: 7.7% / 4.8%; }
-    .tab .art .inline-line { font-size: 8px; padding: 2px 5px; min-width: 0; display: inline-flex; align-items: center; gap: 3px; border-radius: 999px; background: #000; color: #fff; box-shadow: 0 0 0 1px var(--wa-line-strong); }
-    .tab .art .inline-line svg { background: transparent; border-radius: 0; box-shadow: none; }
-    /* The Control Center tab draws a mock tile rather than a face, so the art
-       rules above (a black ground, a rounded corner, a 16px cap) must not
-       reach its glyph: the tile carries its own tint and corner. */
-    .tab.control .art { height: 20px; }
-    .tab.control .art svg { background: transparent; border-radius: 0; box-shadow: none; max-height: none; max-width: none; }
-    /* The remove button rides beside its tab and only while the pointer is on it. */
-    .tab-wrap .tab-x { opacity: 0; pointer-events: none; margin-left: -4px; }
-    .tab-wrap:hover .tab-x, .tab-wrap .tab-x:focus-visible { opacity: .7; pointer-events: auto; }
+       are, is sized and rounded by shapeTabCss further down the sheet, beside
+       the box that fits it. */
+    /* The remove button rides beside the open tab, and only while the pointer
+       is on it: it is drawn for that tab alone, so it never asks to remove a
+       shape nobody is looking at. */
+    .tab-wrap { align-items: flex-end; }
+    .tab-wrap .tab-x { opacity: .35; margin-left: -4px; align-self: center; }
+    .tab-wrap:hover .tab-x, .tab-wrap .tab-x:focus-visible { opacity: .7; }
     .tab-wrap .tab-x:hover:not(:disabled) { opacity: 1; }
     .tab-wrap .tab-x:disabled { opacity: .2; }
-    /* The preview eye rides beside its tab the same way, and stays put while
-       the preview is off: which shapes are not under the canvas is worth
-       reading off the bar without hunting for it. */
-    .tab-wrap .tab-eye { opacity: 0; pointer-events: none; margin-left: -4px; }
-    .tab-wrap:hover .tab-eye, .tab-wrap .tab-eye:focus-visible,
-    .tab-wrap .tab-eye[aria-pressed="false"]:not(:disabled) { opacity: .7; pointer-events: auto; }
-    .tab-wrap .tab-eye:hover:not(:disabled) { opacity: 1; }
-    .tab-wrap .tab-eye:disabled { opacity: 0; pointer-events: none; }
     /* A control drawn as a box with a muted word inside it, so "Preview as" is
        part of the field rather than a label floating beside it. */
     .inbox {
@@ -3304,7 +3300,7 @@ export class WristAssistantPanel extends LitElement {
       font-size: 12.5px; font-weight: 500; color: var(--wa-ink);
     }
     .seed-hint button.link { font-weight: 600; }
-    ${unsafeCSS(shapePreviewCss())}
+    ${unsafeCSS(shapeTabCss())}
     /* The two lists under the face: what the complication defines for itself,
        and what the house is telling it right now. Stacked, so each title and
        each value line gets the whole width instead of wrapping into a column
@@ -4816,13 +4812,6 @@ export class WristAssistantPanel extends LitElement {
       const dark = this.hass?.themes?.darkMode ?? window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
       this.toggleAttribute("dark", dark);
     }
-    // Which previews are switched off is remembered per complication, so the
-    // set is re-read whenever another one is opened.
-    const openId = this.draft?.config.id;
-    if (openId !== this.previewHiddenId) {
-      this.previewHiddenId = openId;
-      this.previewHidden = openId === undefined ? new Set() : loadPreviewHidden(openId);
-    }
     // The "copied from" line belongs to the shape that was just added. Moving
     // to another shape is the reader saying they are done with it, so it goes
     // rather than waiting on the tab to come back round.
@@ -5448,7 +5437,7 @@ export class WristAssistantPanel extends LitElement {
    * record is opened, so a copy the author dropped a shape from keeps it
    * dropped through the next save. */
   private readLink(cfg: CustomComplicationConfig) {
-    // The stored copies are the answer to "shows on" now, so an untick that
+    // The stored copies are the answer to "appears on" now, so an untick that
     // has not been saved yet is not one of them.
     this.linkLeave = new Set();
     if (cfg.linkId === undefined) {
@@ -5467,7 +5456,7 @@ export class WristAssistantPanel extends LitElement {
    * A device the link has gained that has no copy on it yet, or one it has
    * lost that still has one.
    *
-   * Ticking a device in "Shows on" is work to save even when the document
+   * Ticking a device in "Appears on" is work to save even when the document
    * itself did not change: a complication that already draws every Lock Screen
    * shape and is ticked onto the phone moves nothing but the list of owners.
    * Unticking one is work too, the copy being deleted on the next save.
@@ -6532,7 +6521,7 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * Remove the copies of devices unticked in "Shows on", after the save that
+   * Remove the copies of devices unticked in "Appears on", after the save that
    * settled the rest.
    *
    * Never before it. An untick is unsaved work like any other edit, so the
@@ -6557,7 +6546,7 @@ export class WristAssistantPanel extends LitElement {
     }
     this.linkLeave = new Set();
     await this.loadOtherLists();
-    // The stored copies are what "Shows on" reads, so the list settles on what
+    // The stored copies are what "Appears on" reads, so the list settles on what
     // actually went rather than on what was ticked.
     if (this.draft) this.readLink(this.draft.config);
     if (failed.length === 0) return;
@@ -8478,7 +8467,7 @@ export class WristAssistantPanel extends LitElement {
     // else the one whose device is being edited. The header used to carry a
     // glyph per device kind and a line of device names, which in a two-device
     // home said "Jesse Apple Watch (iPhone 15 Pro), Jesse's iPhone" about one
-    // design. The devices are a tick in "Shows on" now, so the button is the
+    // design. The devices are a tick in "Appears on" now, so the button is the
     // name with the people under it, and nothing at all in a home where the
     // answer is always the same person.
     const people = peopleOf(this.owners);
@@ -8662,7 +8651,7 @@ export class WristAssistantPanel extends LitElement {
    * for each copy, which in a two-person home read as "Jesse Apple Watch
    * (iPhone 15 Pro), Jesse's iPhone" for one design on one person's two
    * devices: three device names to say Jesse. Which of somebody's devices draw
-   * it is a question the Shows on list answers, in the one place it can be
+   * it is a question the Appears on list answers, in the one place it can be
    * changed; the list only has to say whose it is.
    *
    * A home with one person gets no line at all, since every row would say the
@@ -8885,7 +8874,7 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The "Shows on" list: the home's people, each with the devices this dialog
+   * The "Appears on" list: the home's people, each with the devices this dialog
    * can offer them.
    *
    * People rather than a flat list of devices, because a list reading "Apple
@@ -8986,8 +8975,8 @@ export class WristAssistantPanel extends LitElement {
           <div class="hint">A shape is drawn on every ticked device that can show it. The little pictures show where it sits.</div>
         </div>
         ${people.length === 0 ? nothing : html`<div class="field new-shapes">
-          <span>Shows on</span>
-          <div class="people-grid" role="group" aria-label="Shows on">${people.map((row) => this.renderPersonBox(row))}</div>
+          <span>Appears on</span>
+          <div class="people-grid" role="group" aria-label="Appears on">${people.map((row) => this.renderPersonBox(row))}</div>
           <div class="hint">Your own devices start ticked. A watch and its iPhone sit under one name.</div>
         </div>`}
       </div>
@@ -9073,7 +9062,7 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * One person's box in "Shows on": their name, then a checkbox per device.
+   * One person's box in "Appears on": their name, then a checkbox per device.
    *
    * A device with no seat left is drawn with the seats it has taken rather than
    * simply greyed, because "why can I not tick my watch" is a question worth
@@ -9109,7 +9098,7 @@ export class WristAssistantPanel extends LitElement {
     this.newFamilies = next;
   }
 
-  /** Tick or untick one device in "Shows on". */
+  /** Tick or untick one device in "Appears on". */
   private toggleNewOwner(ownerId: string) {
     const next = new Set(this.newOwners);
     if (!next.delete(ownerId)) next.add(ownerId);
@@ -9141,10 +9130,10 @@ export class WristAssistantPanel extends LitElement {
     else this.newOpen = false;
   }
 
-  // ── shows on ──────────────────────────────────────────────────────────
+  // ── appears on ────────────────────────────────────────────────────────
   //
-  // One checkbox list, in two places that share one state: a row in the
-  // inspector's Complication card and a strip over the canvas. Ticking a
+  // One checkbox list, in two places that share one state: a box in the
+  // inspector's Complication card and a band over the canvas. Ticking a
   // device puts a copy of this design on it at the next save; unticking one
   // deletes that copy at the next save. Nothing is written as a box is
   // clicked, so the whole of it is unsaved work that Save settles and Undo
@@ -9159,7 +9148,7 @@ export class WristAssistantPanel extends LitElement {
   /** The people this home has, with the devices of theirs a copy could go on:
    * `linkOwners`, so an orphan and an app too old to draw these documents are
    * out, grouped the way a person reads their own devices. A person left with
-   * nothing to offer is not drawn. */
+   * nothing to offer is not drawn. Named for the "Appears on" list it fills. */
   private showsOnGroups(): { person: Person; owners: LinkOwner[] }[] {
     const offered = this.linkOwners();
     const groups: { person: Person; owners: LinkOwner[] }[] = [];
@@ -9221,12 +9210,12 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The "Shows on" list, in the two places it is drawn from the one state.
+   * The "Appears on" list, in the two places it is drawn from the one state.
    *
    * The inspector's is a column with a heading per person, because a checkbox
    * list is read down and the headings are what stop "Apple Watch, Apple Watch"
-   * in a household of two. The strip over the canvas is the same boxes as
-   * chips, near the shape tabs, so the answer is in front of whoever is
+   * in a household of two. The band over the canvas is the same boxes as
+   * pills, above the shape tabs, so the answer is in front of whoever is
    * drawing rather than a scroll away in the column beside them.
    */
   private renderShowsOn(kind: "row" | "strip") {
@@ -9236,9 +9225,13 @@ export class WristAssistantPanel extends LitElement {
     // A home with one device to offer is shown nothing: the list would be a
     // single box that is always ticked and can never be cleared, which is a
     // control that has never had anything to say.
-    if (groups.reduce((n, g) => n + g.owners.length, 0) < 2) return nothing;
+    const offered = groups.reduce((n, g) => n + g.owners.length, 0);
+    if (offered < 2) return nothing;
     const named = groups.length > 1;
     const on = new Set(this.linkOwnerIds);
+    // Ticked over offerable, not over the whole home: the devices that are not
+    // in this list are ones nothing could be saved to anyway.
+    const count = `${groups.reduce((n, g) => n + g.owners.filter((o) => on.has(o.ownerId)).length, 0)} of ${offered} devices`;
     const stored = new Set(this.linkedCopiesNow().map((c) => c.ownerId));
     const box = (owner: LinkOwner, person: Person) => {
       const ticked = on.has(owner.ownerId);
@@ -9248,8 +9241,9 @@ export class WristAssistantPanel extends LitElement {
       // the seat it is sitting in.
       const noSeat = !ticked && seats.full && !stored.has(owner.ownerId);
       const disabled = !this.canEdit || (ticked && open) || noSeat;
-      const short = this.showsOnName(owner.ownerId, person);
-      const label = kind === "strip" && named ? `${person.label} · ${short}` : short;
+      // The band groups the pills under the person's name, so the pill itself
+      // says only which of their devices it is.
+      const label = this.showsOnName(owner.ownerId, person);
       const title = open
         ? "This is the copy you are editing. Delete removes the complication from every device."
         : noSeat
@@ -9265,21 +9259,30 @@ export class WristAssistantPanel extends LitElement {
         ${noSeat ? html`<span class="shows-note">full, ${seats.taken} of ${MAX_SLOTS}</span>` : nothing}
       </button>`;
     };
+    // The band across the top of the canvas card: the lead block, then one
+    // white group per person so two households never read as one long row of
+    // device names, then the line that says when a tick takes effect.
     if (kind === "strip") {
-      return html`<div class="shows-on-strip" role="group" aria-label="Shows on">
-        <span class="shows-lead">Shows on</span>
-        ${groups.flatMap(({ person, owners }) => owners.map((o) => box(o, person)))}
+      return html`<div class="shows-on-strip" role="group" aria-label="Appears on">
+        <span class="shows-lead"><b>Appears on</b><span class="shows-count">${count}</span></span>
+        ${groups.map(({ person, owners }) => html`<span class="shows-group">
+          ${named ? html`<span class="shows-who">${person.label}</span>` : nothing}
+          ${owners.map((o) => box(o, person))}
+        </span>`)}
+        <span class="shows-when">Lands on Save.</span>
       </div>`;
     }
-    // `list-field` is the label-left, stack-right shape: the boxes, the line
-    // under them and the Merge button all sit in the second column.
-    return html`<div class="field list-field"><span>Shows on</span>
-      <div class="shows-list" role="group" aria-label="Shows on">
+    // In the inspector it is a box of its own inside the Complication card:
+    // where this design goes is the one question on that card that changes
+    // other devices, so it is not another unmarked row of fields.
+    return html`<div class="shows-field">
+      <div class="shows-title">Appears on<span class="shows-count">${count}</span></div>
+      <div class="hint">Tick a device and this design lands there on Save. Untick and its copy goes.</div>
+      <div class="shows-list" role="group" aria-label="Appears on">
         ${groups.map(({ person, owners }) => html`
           ${named ? html`<span class="shows-head">${person.label}</span>` : nothing}
           ${owners.map((o) => box(o, person))}`)}
       </div>
-      <div class="hint">Tick a device and the design lands there on Save. Untick and it goes; a face or widget already using it keeps it.</div>
       ${this.renderMergeWith()}
     </div>`;
   }
@@ -9353,7 +9356,7 @@ export class WristAssistantPanel extends LitElement {
   /**
    * Put the open complication on another device, without writing anything.
    *
-   * The one path both ways in go through: ticking a device in "Shows on", and
+   * The one path both ways in go through: ticking a device in "Appears on", and
    * picking a shape on a device the complication is not on in the Add a shape
    * panel. The document gains a `linkId` if it has none, the device joins the
    * list of owners, and the next save writes a copy to each of them. The new
@@ -12306,9 +12309,15 @@ export class WristAssistantPanel extends LitElement {
   // ── canvas column ─────────────────────────────────────────────────────
 
   /**
-   * The middle column is the whole complication: the shape being edited,
-   * big, then the values the complication defines and the live values it
-   * reads. Its own settings are in the inspector while no layer is selected.
+   * The middle column is the whole complication, read top to bottom: where the
+   * design goes, then the shapes it draws, then the one being edited, big,
+   * then the values the complication defines and the live values it reads.
+   * Its own settings are in the inspector while no layer is selected.
+   *
+   * Where it goes leads because it is the fact that changes other devices, and
+   * the shapes follow because each tab is a picture of this design on one of
+   * them. The stage used to carry a second, larger row of those pictures under
+   * the face; the tabs say it once now, where the switching happens.
    */
   private renderCanvas() {
     if (this.parseError) return html`<div class="card error">This document cannot be read: ${this.parseError}</div>`;
@@ -12325,8 +12334,8 @@ export class WristAssistantPanel extends LitElement {
       return html`
         <div class="card canvas-card">
           <div class="canvas-bar">
-            <div class="bar-row shapes">${this.renderShapeTabs(cfg, layouts)}</div>
             ${this.renderShowsOn("strip")}
+            <div class="bar-row shapes">${this.renderShapesLead()}${this.renderShapeTabs(cfg, layouts)}</div>
           </div>
           <div class="stage">${this.renderControlStage(cfg)}</div>
         </div>
@@ -12337,23 +12346,25 @@ export class WristAssistantPanel extends LitElement {
     return html`
       <div class="card canvas-card">
         <div class="canvas-bar">
-          <div class="bar-row shapes">${this.renderShapeTabs(cfg, layouts)}</div>
           ${this.renderShowsOn("strip")}
-          <div class="bar-row tools">
-          <span class="inbox" title=${`Layouts are made in the ${this.referenceCase.label} box. Every other size draws a scaled copy of it.`}>
-            <span class="pre">Preview as</span>
-            <span class="case-tool" data-menu="case">
-              <button class="case-pick" aria-haspopup="listbox" aria-expanded=${this.openMenu === "case" ? "true" : "false"}
-                aria-label=${`Preview as ${deviceCase.label}`} @click=${() => this.toggleMenu("case")}>
-                ${deviceCase.label}${deviceCase.measured ? "" : " (estimated)"}${uiIcon("chevron")}
-              </button>
-              ${this.openMenu === "case" ? html`<div class="pop-menu" role="listbox" aria-label="Preview as">
-                ${this.previewCases.map((c) => html`<button class="row" role="option" aria-selected=${c.label === deviceCase.label ? "true" : "false"}
-                  @click=${() => { this.toggleMenu("case", false); this.previewCase = c.label; }}>${c.label}${c.measured ? "" : " (estimated)"}</button>`)}
-              </div>` : nothing}
+          <div class="bar-row shapes">
+            ${this.renderShapesLead()}
+            ${this.renderShapeTabs(cfg, layouts)}
+            <span class="spacer"></span>
+            <span class="inbox" title=${`Layouts are made in the ${this.referenceCase.label} box. Every other size draws a scaled copy of it.`}>
+              <span class="pre">Preview as</span>
+              <span class="case-tool" data-menu="case">
+                <button class="case-pick" aria-haspopup="listbox" aria-expanded=${this.openMenu === "case" ? "true" : "false"}
+                  aria-label=${`Preview as ${deviceCase.label}`} @click=${() => this.toggleMenu("case")}>
+                  ${deviceCase.label}${deviceCase.measured ? "" : " (estimated)"}${uiIcon("chevron")}
+                </button>
+                ${this.openMenu === "case" ? html`<div class="pop-menu" role="listbox" aria-label="Preview as">
+                  ${this.previewCases.map((c) => html`<button class="row" role="option" aria-selected=${c.label === deviceCase.label ? "true" : "false"}
+                    @click=${() => { this.toggleMenu("case", false); this.previewCase = c.label; }}>${c.label}${c.measured ? "" : " (estimated)"}</button>`)}
+                </div>` : nothing}
+              </span>
             </span>
-          </span>
-          ${isDrawable(family) ? this.renderTintTool() : nothing}
+            ${isDrawable(family) ? this.renderTintTool() : nothing}
           </div>
         </div>
         <div class="stage">
@@ -12362,7 +12373,6 @@ export class WristAssistantPanel extends LitElement {
           ${isDrawable(family) ? this.renderBigPreview(family, layouts, deviceCase) : this.renderInlinePreview(layouts.inline, false)}
           ${this.renderUnder(cfg, family)}
           ${this.seedHint?.family === family ? seedHintNote(this.seedHint.text, () => { this.seedHint = undefined; }) : nothing}
-          ${this.renderShapeRow(cfg, layouts, deviceCase)}
         </div>
         ${this.zoomed && isDrawable(family) ? this.renderZoomDialog(family, layouts, deviceCase) : nothing}
         ${this.demoing && isDrawable(family) ? this.renderDemoDialog(family, layouts, deviceCase) : nothing}
@@ -12372,34 +12382,32 @@ export class WristAssistantPanel extends LitElement {
       </div>`;
   }
 
+  /** The words at the left of the shapes row, in the same 92px block the
+   * Appears on band leads with, so the two rows line up. */
+  private renderShapesLead() {
+    return html`<span class="bar-lead"><b>Shapes</b><span>Click one to edit it.</span></span>`;
+  }
+
   /**
-   * The other shapes, small and live, under the canvas.
+   * One shape's live picture for its tab.
    *
-   * Everything they need is worked out once here and handed over: the same
-   * resolved layouts the big preview drew from, the same device case, and the
-   * selected layer, so a shape in the row is the same picture at another size
+   * Everything a picture needs is worked out once per render and handed over:
+   * the same resolved layouts the big preview drew from, the same device case,
+   * and the selected layer, so a tab is the same picture at another size
    * rather than a second resolve that might disagree with the first.
    */
-  private renderShapeRow(cfg: CustomComplicationConfig, layouts: ResolvedAll, deviceCase: PreviewCase) {
-    return renderShapePreviews({
+  private shapeTabArt(cfg: CustomComplicationConfig, layouts: ResolvedAll, family: FamilyKind) {
+    return renderShapeArt({
       config: cfg,
       editing: this.activeFamily,
-      order: biggestFirst(this.linkedFamilies),
       layouts,
-      hidden: this.previewHidden,
       icons: this.icons,
       imageSizes: this.imageSizes,
       phone: deviceKindOf(this.selectedOwner) === "iphone",
-      slotFor: (f) => slotFor(deviceCase, f),
-      inline: () => this.renderInlinePreview(layouts.inline, true),
+      slotFor: (f) => slotFor(this.currentCase(), f),
       ...(this.inspect.kind === "layer" ? { highlightId: this.inspect.id } : {}),
       ...(this.previewTint !== undefined ? { tint: this.previewTint } : {}),
-      onEdit: (f) => {
-        this.activeFamily = f;
-        this.controlView = false;
-        if (this.inspect.kind === "layer") this.inspect = { kind: "family" };
-      },
-    });
+    }, family);
   }
 
   private renderBigPreview(family: DrawableFamily, layouts: ResolvedAll, deviceCase: PreviewCase) {
@@ -12722,7 +12730,7 @@ export class WristAssistantPanel extends LitElement {
    * Over the devices the complication is on rather than the whole home, because
    * a shape is added to the design and the design is already somewhere: adding
    * Rectangular here puts it on every device the complication lives on that can
-   * draw it. Putting it on another device is the "Shows on" row, not this menu.
+   * draw it. Putting it on another device is the "Appears on" row, not this menu.
    *
    * A section with nothing left to offer is dropped rather than drawn empty:
    * this is a menu of what can still be done, and an entry that does nothing is
@@ -12793,15 +12801,6 @@ export class WristAssistantPanel extends LitElement {
     this.renderRoot.querySelector<HTMLElement>("#add-shapes")?.hidePopover();
   }
 
-  /** A shape tab's eye, pressed: its preview under the canvas goes or comes
-   * back, and the choice is kept in the browser for this complication. */
-  private togglePreview(family: FamilyKind) {
-    const next = togglePreviewHidden(this.previewHidden, family);
-    this.previewHidden = next;
-    const id = this.draft?.config.id;
-    if (id !== undefined) savePreviewHidden(id, next);
-  }
-
   private renderHaveTabs(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
     const have = cfg.supportedFamilies;
     // Biggest canvas first, the way the New dialog lists shapes and the way
@@ -12812,35 +12811,32 @@ export class WristAssistantPanel extends LitElement {
       // While the Control Center tab is up no shape is being edited, so no
       // shape tab is pressed either.
       const active = f === this.activeFamily && !this.inControlView;
-      let art: TemplateResult | typeof nothing;
-      if (f === "inline") art = this.renderInlinePreview(layouts.inline, true);
-      else {
-        const layout = layouts[f];
-        art = layout ? renderLayout(layout, { icons: this.icons, imageSizes: this.imageSizes, slot: slotFor(this.referenceCase, f) }) : nothing;
-      }
+      // Every tab draws the real thing, at the size the tab has room for: the
+      // row of larger previews that used to sit under the stage said the same
+      // thing a second time, a scroll away from the tabs that switch between
+      // them.
+      const art: TemplateResult | typeof nothing = f === "inline"
+        ? this.renderInlinePreview(layouts.inline, true)
+        : this.shapeTabArt(cfg, layouts, f);
+      const width = isDrawable(f) ? Math.round(previewBox(f, PREVIEW_ROOM).width) : PREVIEW_ROOM.width;
+      const layout = f === "inline" ? undefined : layouts[f];
+      const warnings = layout === undefined ? [] : previewWarnings(layout);
       const empty = f !== "inline" && shownCount(cfg, f) === 0 && cfg.elements.length > 0;
       const removable = this.canEdit && canRemoveFamily(cfg, f);
-      // The shape being edited is the big one on the stage, so its preview
-      // cannot be switched off and its own toggle says so instead of pretending
-      // to be a choice.
-      const previewed = !active && !this.previewHidden.has(f);
       // The remove button sits beside the tab, not inside it: a button inside
-      // a button is not valid markup.
+      // a button is not valid markup. It is offered on the open tab alone,
+      // since removing a shape you are not looking at is a click away from an
+      // undo rather than a decision.
       return html`<span class="tab-wrap">
-        <button class="tab ${f}" aria-pressed=${active ? "true" : "false"} title=${`Edit the ${familyTitle(f)} shape`}
+        <button class="tab art-tab ${f}" aria-pressed=${active ? "true" : "false"} style=${`--pw:${width}px`}
+          title=${`Edit the ${familyTitle(f)} shape`}
           @click=${() => { this.activeFamily = f; this.controlView = false; if (f === "inline" && this.inspect.kind === "layer") this.inspect = { kind: "family" }; }}>
           <span class="art">${art}</span>
-          <span class="lbl">${familyTitle(f)}</span>${empty ? html`<small>nothing shown</small>` : nothing}
+          <span class="cap"><span class="lbl">${familyTitle(f)}</span>${warnings.length === 0 ? nothing : html`<span class="warn" role="img"
+            aria-label=${`Worth a look: ${warnings.join(" ")}`}
+            title=${warnings.join("\n")}>${uiIcon("info")}</span>`}</span>${empty ? html`<small>nothing shown</small>` : nothing}
         </button>
-        <button class="icon tab-eye" ?disabled=${active} aria-pressed=${previewed ? "true" : "false"}
-          title=${active
-            ? `The ${familyTitle(f)} shape is the one being edited, so it is always shown`
-            : previewed
-              ? `Hide the ${familyTitle(f)} preview under the canvas`
-              : `Show the ${familyTitle(f)} preview under the canvas`}
-          aria-label=${`Show the ${familyTitle(f)} preview`}
-          @click=${(e: Event) => { e.stopPropagation(); this.togglePreview(f); }}>${uiIcon(previewed ? "show" : "hide")}</button>
-        ${this.canEdit ? html`<button class="icon danger tab-x" ?disabled=${!removable}
+        ${this.canEdit && active ? html`<button class="icon danger tab-x" ?disabled=${!removable}
           title=${!removable
             ? "The only shape. Add another before removing it."
             : have.length === 1
@@ -12867,12 +12863,12 @@ export class WristAssistantPanel extends LitElement {
     const active = this.inControlView;
     const removable = this.canEdit && canRemoveControl(cfg);
     return html`<span class="tab-wrap">
-      <button class="tab control" aria-pressed=${active ? "true" : "false"} title="Edit the Control Center control"
+      <button class="tab art-tab control" aria-pressed=${active ? "true" : "false"} title="Edit the Control Center control"
         @click=${() => this.openControlView()}>
         <span class="art">${controlTile(this.host(), spec, controlTileShapes(deviceKindOf(this.selectedOwner))[0]!, CONTROL_TAB_TILE_SIDE)}</span>
-        <span class="lbl">Control Center</span>
+        <span class="cap"><span class="lbl">Control Center</span></span>
       </button>
-      ${this.canEdit ? html`<button class="icon danger tab-x" ?disabled=${!removable}
+      ${this.canEdit && active ? html`<button class="icon danger tab-x" ?disabled=${!removable}
         title=${removable ? "Remove the Control Center control" : "The only one. Add a shape before removing it."}
         aria-label="Remove the Control Center control"
         @click=${(e: Event) => { e.stopPropagation(); this.removeControl(); }}>${uiIcon("delete")}</button>` : nothing}
@@ -13142,7 +13138,7 @@ export class WristAssistantPanel extends LitElement {
     const control = this.inControlView;
     if (ins.kind === "general" || control) {
       // Refresh, the tap action and the flash belong to the shapes, so on the
-      // control's tab the card is the name alone. Shows on is under the name on
+      // control's tab the card is the name alone. Appears on is under the name on
       // both tabs: which devices draw this is a fact about the complication,
       // and the control is drawn on the ticked ones too.
       const complication = card(host, "complication", "Complication",
