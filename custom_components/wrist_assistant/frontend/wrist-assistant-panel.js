@@ -3397,8 +3397,12 @@ ${dI(c)}`}}delete s.hidden,delete s.linkId;let l=Ll(a);if(l.length>0){let d=l.sl
        it the Elements and Presets scrollers split the room equally, so the
        two boxes are the same height in Names, Small and Large alike and
        the card does not jump when the size changes. */
+    /* A height, not a max-height: the two boxes inside grow from a basis of
+       zero, so a card sized by its content would count them as nothing and
+       fold to its labels. The card can still give way (shrink) when the
+       Layers floor and the cards below need the room. */
     .column.left .card.add-card[data-open="true"] {
-      flex: 0 0 auto; min-height: 0; max-height: calc(66% - 150px);
+      flex: 0 1 auto; min-height: 0; height: calc(66% - 150px);
       display: flex; flex-direction: column;
     }
     .column.left .card.add-card[data-open="true"] > * { flex: none; }
@@ -3407,7 +3411,7 @@ ${dI(c)}`}}delete s.hidden,delete s.linkId;let l=Ll(a);if(l.length>0){let d=l.sl
     }
     .column.left .card.add-card[data-open="true"] > .add-group:has(.add-scroll) > .presets-head { flex: none; }
     .column.left .card.add-card[data-open="true"] .add-scroll { flex: 1 1 0; min-height: 0; max-height: none; }
-    .layout.cols-1 .column.left .card.add-card[data-open="true"] { max-height: none; display: block; }
+    .layout.cols-1 .column.left .card.add-card[data-open="true"] { height: auto; display: block; }
     .layout.cols-1 .column.left .card.add-card[data-open="true"] .add-scroll { max-height: 30vh; }
     /* The elements are twelve, not twenty-five: their scroller is capped at
        about two rows so the presets under it are not pushed off the screen. */
