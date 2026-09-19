@@ -2684,24 +2684,25 @@ export class WristAssistantPanel extends LitElement {
        it the Elements and Presets scrollers split the room equally, so the
        two boxes are the same height in Names, Small and Large alike and
        the card does not jump when the size changes. */
-    /* A height, not a max-height: the two boxes inside grow from a basis of
-       zero, so a card sized by its content would count them as nothing and
-       fold to its labels. The card can still give way (shrink) when the
-       Layers floor and the cards below need the room. */
+    /* The boxes start at their content and shrink, never grow: a box with
+       three rows in it is three rows tall and the room it does not need goes
+       to the Layers card. A basis of zero with grow, or a max-content cap,
+       both measured the card at its labels alone and folded it (measured
+       2026-09-19). When the cap bites, the presets box gives way three
+       times faster than the elements box, so the two end up near the same
+       height instead of the bigger one keeping most of the room. */
     .column.left .card.add-card[data-open="true"] {
-      flex: 0 1 auto; min-height: 0; height: calc(66% - 150px); max-height: max-content;
+      flex: 0 1 auto; min-height: 0; max-height: calc(66% - 150px);
       display: flex; flex-direction: column;
     }
     .column.left .card.add-card[data-open="true"] > * { flex: none; }
-    /* Each box grows to an equal share but never past its own content: a
-       box with three rows in it hands the rest of its share to the other
-       box, and what neither needs is left over for the card to give up. */
     .column.left .card.add-card[data-open="true"] > .add-group:has(.add-scroll) {
-      flex: 1 1 0; min-height: 0; max-height: max-content; display: flex; flex-direction: column;
+      flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column;
     }
+    .column.left .card.add-card[data-open="true"] > .add-group:has(.add-scroll:not(.short)) { flex-shrink: 3; }
     .column.left .card.add-card[data-open="true"] > .add-group:has(.add-scroll) > .presets-head { flex: none; }
-    .column.left .card.add-card[data-open="true"] .add-scroll { flex: 1 1 0; min-height: 0; max-height: none; }
-    .layout.cols-1 .column.left .card.add-card[data-open="true"] { height: auto; display: block; }
+    .column.left .card.add-card[data-open="true"] .add-scroll { flex: 0 1 auto; min-height: 0; max-height: none; }
+    .layout.cols-1 .column.left .card.add-card[data-open="true"] { max-height: none; display: block; }
     .layout.cols-1 .column.left .card.add-card[data-open="true"] .add-scroll { max-height: 30vh; }
     /* The elements are twelve, not twenty-five: their scroller is capped at
        about two rows so the presets under it are not pushed off the screen. */
