@@ -14,7 +14,7 @@ export type UiIconName =
   | "text" | "icon" | "gauge" | "chart" | "timeline" | "list" | "shape" | "image" | "tap" | "chartTimes" | "chartDots" | "chartGrid" | "imageTime"
   | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "pages" | "plus"
   | "lock" | "unlock" | "folder" | "ungroup" | "watch" | "phone"
-  | "compact" | "expanded" | "search" | "undo" | "redo" | "expand" | "left" | "right"
+  | "compact" | "expanded" | "grid" | "search" | "undo" | "redo" | "expand" | "left" | "right"
   | "braces" | "link" | "info" | "globe" | "download" | "check" | "arrow" | "paste" | "guides";
 
 function shape(name: UiIconName) {
@@ -116,6 +116,10 @@ function shape(name: UiIconName) {
       return svg`<path d="M4 6.5H20M4 12H20M4 17.5H20" />`;
     case "expanded":
       return svg`<rect x="3.5" y="4" width="17" height="7" rx="1.8" /><rect x="3.5" y="13" width="17" height="7" rx="1.8" /><path d="M6.5 8H13M6.5 17H13" />`;
+    // The size between the two: small cards, several across. Four boxes at the
+    // weight the other two are drawn at, so the three read as one switch.
+    case "grid":
+      return svg`<rect x="3.5" y="4" width="7.5" height="7" rx="1.6" /><rect x="13" y="4" width="7.5" height="7" rx="1.6" /><rect x="3.5" y="13" width="7.5" height="7" rx="1.6" /><rect x="13" y="13" width="7.5" height="7" rx="1.6" />`;
     case "lock":
       return svg`<rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7.5a4 4 0 0 1 8 0V11" />`;
     case "unlock":

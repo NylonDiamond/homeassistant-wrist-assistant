@@ -243,6 +243,7 @@ import { PREVIEW_ROOM, previewBox, previewWarnings, renderShapeArt, shapeTabCss 
 import { sampleListItem, withListSeeds } from "./list-seeds.js";
 import { type PresetEnv, type PresetKind, type PresetSpec, LAYER_PRESETS, applyPreset, presetSpec } from "./presets.js";
 import { type AddVariant, addPreview } from "./add-previews.js";
+import { filterAddOffers } from "./add-filter.js";
 import { presetColor, presetPreview } from "./preset-previews.js";
 import {
   type ImportParse,
@@ -589,6 +590,27 @@ type ThumbStep = 0 | 1 | 2;
 /** The help dialog's tabs. */
 type HelpTab = "basics" | "pages" | "keys" | "sync";
 type LayerDetail = "compact" | "expanded";
+/**
+ * How big the Add a layer cards are drawn: names alone, a small sample, or a
+ * large one. It started as the Layers list's two densities, which is why the
+ * stored value can still read "compact" or "expanded"; `addDetailFrom` maps
+ * those onto the three.
+ */
+type AddDetail = "names" | "small" | "large";
+
+/** The stored card size, including the two words the setting used to hold.
+ * Anything else, including nothing stored at all, leaves the default. */
+export function addDetailFrom(saved: unknown): AddDetail | undefined {
+  switch (saved) {
+    case "names": case "small": case "large":
+      return saved;
+    // The two densities this setting had before Small existed. Samples were
+    // the big cards, names were the list.
+    case "expanded": return "large";
+    case "compact": return "names";
+    default: return undefined;
+  }
+}
 /** How the Layers list is shown: picture size and row detail. Per browser,
  * like the column widths, and never part of the document. */
 /**
@@ -974,9 +996,15 @@ export class WristAssistantPanel extends LitElement {
    * the Layers list rises to the top of the column, which is where anyone
    * past their first face wants it. */
   @state() private addOpen = true;
-  /** How the preset cards are drawn. Expanded carries a sample of what each
-   * preset builds; compact drops the samples for a list of tinted names. */
-  @state() private addDetail: LayerDetail = "expanded";
+  /** How the preset cards are drawn. Small and Large both carry a sample of
+   * what each preset builds, four across or two; Names drops the samples for a
+   * list of tinted names. Small is the default: the whole offer fits without
+   * scrolling, and the sample is still big enough to tell a gauge from a
+   * chart. */
+  @state() private addDetail: AddDetail = "small";
+  /** What is typed into the Add a layer card's search box. Not remembered
+   * between visits: a search is a way through this card now, not a setting. */
+  @state() private addQuery = "";
   /** Layers picked with Cmd/Ctrl-click, in the list or on the preview, waiting to be grouped. */
   @state() private multi: ReadonlySet<string> = new Set();
   /** The row a shift-click measures its range from: the last row clicked. */
@@ -2598,6 +2626,11 @@ export class WristAssistantPanel extends LitElement {
     /* The elements are eight, not twenty-five: their scroller is capped at
        about two rows so the presets under it are not pushed off the screen. */
     .add-scroll.short { max-height: min(26vh, 300px); }
+    /* Small puts four cards on a row where Large puts two, so the same twenty
+       five presets need about half the height. Capping it lower keeps the
+       Saved group, and the Layers card under it, on the screen. */
+    .add-scroll.small { max-height: min(36vh, 420px); }
+    .add-scroll.short.small { max-height: min(22vh, 260px); }
     .add-scroll::-webkit-scrollbar { width: 8px; }
     .add-scroll::-webkit-scrollbar-thumb { background: var(--wa-line-strong); border-radius: 999px; }
     .add-scroll::-webkit-scrollbar-track { background: transparent; }
@@ -2606,6 +2639,21 @@ export class WristAssistantPanel extends LitElement {
     /* Names mode has no sample to shrink, so its cards keep a width a name
        fits in. */
     .add-grid.lean { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+    /* Small: a fixed four across rather than as many as fit, so the sample is
+       always the same size and the card reads as a sheet of them. Auto-fill
+       would have given one column a different well size from the next. Under
+       about 280px four wells are postage stamps, so it drops to three. The
+       240 is that card width measured where the query can see it: the group's
+       own box, which is the card less its 12px sides and the group's 8px. */
+    .add-grid.small { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+    @container add-cards (max-width: 240px) {
+      .add-grid.small { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    .add-grid.small button.add { gap: 3px; padding: 4px 4px 5px; border-radius: 8px; font-size: 10px; font-weight: 500; }
+    .add-grid.small button.add .well { border-radius: 5px; }
+    /* The colour chip goes: at four across the name has a couple of words of
+       room, and the sample already says which kind this is. */
+    .add-grid.small button.add .k { display: none; }
     .add-grid.lean button.add {
       flex-direction: row; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 8px;
       background: var(--wa-card); border-color: var(--wa-line);
@@ -2654,8 +2702,31 @@ export class WristAssistantPanel extends LitElement {
     .add-group {
       margin-top: 8px; padding: 8px; border-radius: 10px;
       background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line);
+      /* What "four across, or three when it is tight" is measured against.
+         The column is dragged to any width, so the grid answers the group it
+         is in rather than the window. */
+      container: add-cards / inline-size;
     }
     .add-group:first-of-type { margin-top: 4px; }
+    /* The search box: a dozen elements and two dozen presets are quicker to
+       type than to read. It sits under the title, above the groups, and it is
+       only there while the card is open. Saved is one button, so it is not
+       filtered. */
+    .add-search {
+      display: flex; align-items: center; gap: 7px; margin: 6px 0 0; padding: 4px 9px;
+      border-radius: 8px; background: var(--wa-field); box-shadow: inset 0 0 0 1px var(--wa-line);
+    }
+    .add-search:focus-within { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-accent) 55%, var(--wa-line)); }
+    .add-search svg.ui-icon { width: 13px; height: 13px; color: var(--wa-muted); flex: none; }
+    .add-search input {
+      flex: 1 1 auto; min-width: 0; border: 0; padding: 0; background: transparent; outline: none;
+      font: inherit; font-size: 12px; color: var(--wa-ink);
+    }
+    .add-search input::placeholder { color: var(--wa-muted); }
+    .add-search input::-webkit-search-cancel-button { cursor: pointer; }
+    /* Both filtered groups gone: say so, rather than leaving the card looking
+       like it has lost its buttons. */
+    .add-none { margin: 10px 2px 2px; font-size: 12px; color: var(--wa-muted); }
     .presets.presets-head { margin: 0 0 6px; }
     /* A row of pills inside a group sits right under the group's label, the
        same way a grid of cards does. */
@@ -4844,7 +4915,8 @@ export class WristAssistantPanel extends LitElement {
       if (saved.thumbStep === 0 || saved.thumbStep === 1 || saved.thumbStep === 2) this.thumbStep = saved.thumbStep;
       if (saved.detail === "compact" || saved.detail === "expanded") this.layerDetail = saved.detail;
       if (typeof saved.addOpen === "boolean") this.addOpen = saved.addOpen;
-      if (saved.addDetail === "compact" || saved.addDetail === "expanded") this.addDetail = saved.addDetail;
+      const addDetail = addDetailFrom(saved.addDetail);
+      if (addDetail) this.addDetail = addDetail;
     } catch {
       /* A browser with storage off keeps the defaults. */
     }
@@ -11900,10 +11972,19 @@ export class WristAssistantPanel extends LitElement {
    * List button's menu. A menu was where they went when they had no picture
    * to show; now they have one, and the List chip below makes a blank one.
    *
-   * The card folds, and the cards have the same two densities the Layers list
-   * has. Both choices are remembered per browser, because the person who has
-   * built five faces already knows what a gauge looks like and wants the
-   * room, and the person on their first one does not. */
+   * The card folds, and the cards come in three sizes: Names, a list of tinted
+   * names; Small, four across with the sample at half size; Large, the sample
+   * at the size it was drawn for. Small is the default, because it is the only
+   * one that puts the whole offer in front of the author at once, and a
+   * 60px wide sample is still enough to tell a gauge from a chart. Both the
+   * size and whether the card is open are remembered per browser, because the
+   * person who has built five faces already knows what a gauge looks like and
+   * wants the room, and the person on their first one does not.
+   *
+   * A search box narrows the elements and the presets by name. Thirty-seven
+   * offers is past the point where reading them all beats typing four letters,
+   * and it is the answer to a card that would otherwise keep growing a group.
+   * Saved is not filtered: it is one button, not a list of names. */
   private renderAddLayer() {
     const cfg = this.draft?.config;
     if (!cfg || !this.canEdit) return nothing;
@@ -11912,7 +11993,8 @@ export class WristAssistantPanel extends LitElement {
     if (!isDrawable(this.activeFamily)) return nothing;
     const full = cfg.elements.length >= 64;
     const open = this.addOpen;
-    const rich = this.addDetail === "expanded";
+    const detail = this.addDetail;
+    const rich = detail !== "names";
     // A list is offered on the wide face and the four Home Screen tiles only:
     // a cell on a round face is not a row. The same rule picks which presets
     // are shown, so the button and the preset can never disagree.
@@ -11929,7 +12011,18 @@ export class WristAssistantPanel extends LitElement {
     const cards: readonly AddCard[] = kinds.flatMap((k) =>
       ADD_VARIANTS[k] ?? [{ kind: k, title: KIND_LABEL[k], blurb: `Add a blank ${KIND_LABEL[k].toLowerCase()} layer` }]);
     const offered = LAYER_PRESETS.filter((p) => p.families === undefined || p.families.includes(this.activeFamily));
-    const toggle = () => { this.addOpen = !this.addOpen; this.saveListView(); };
+    // What the search box leaves. The counts in the shut title bar stay on the
+    // whole offer: they say what the card holds, not what a search that is not
+    // even on screen while it is shut has narrowed it to.
+    const shownCards = filterAddOffers(cards, this.addQuery);
+    const shownPresets = filterAddOffers(offered, this.addQuery);
+    // Shut with a search still in it, the card would open filtered with no way
+    // to see why, so closing it drops the query.
+    const toggle = () => {
+      this.addOpen = !this.addOpen;
+      if (!this.addOpen) this.addQuery = "";
+      this.saveListView();
+    };
     const addBlank = (card: AddCard) => {
       const el = newElement(card.kind);
       card.setup?.(el);
@@ -11940,14 +12033,19 @@ export class WristAssistantPanel extends LitElement {
       });
       this.inspect = { kind: "layer", id: el.payload.id };
     };
+    // Four across, a name is a few characters before it is cut, so in Small the
+    // name carries its own tooltip. In the other two it does not: the card's
+    // own tooltip is the blurb, which says more, and a title on the name would
+    // cover most of the card with the shorter of the two.
+    const nameTitle = (title: string) => (detail === "small" ? title : nothing);
     // One card per preset: the sample, then the name. The same markup the kind
-    // buttons used to carry, so the two densities and every hover, focus and
+    // buttons used to carry, so the three sizes and every hover, focus and
     // disabled rule are shared rather than written twice.
     const presetCard = (p: PresetSpec) => html`
       <button class="add" style=${`--k:${presetColor(p.kind)}`} title=${p.blurb}
         ?disabled=${cfg.elements.length + p.layerCount > 64}
         @click=${() => this.openPreset(p.kind)}
-        >${rich ? html`<span class="well">${presetPreview(p.kind)}</span>` : nothing}<span class="add-name"><span class="k"></span><span>${p.title}</span></span></button>`;
+        >${rich ? html`<span class="well">${presetPreview(p.kind)}</span>` : nothing}<span class="add-name"><span class="k"></span><span title=${nameTitle(p.title)}>${p.title}</span></span></button>`;
     // The blank kinds, in the same card as the presets: one press, one empty
     // layer, and a sample of what that kind draws so the choice is made by eye
     // rather than by knowing the word.
@@ -11955,7 +12053,10 @@ export class WristAssistantPanel extends LitElement {
       <button class="add" style=${`--k:${KIND_COLOR[card.kind]}`} ?disabled=${full}
         title=${card.blurb}
         @click=${() => addBlank(card)}
-        >${rich ? html`<span class="well">${addPreview(card.kind, card.variant)}</span>` : nothing}<span class="add-name"><span class="k"></span><span>${card.title}</span></span></button>`;
+        >${rich ? html`<span class="well">${addPreview(card.kind, card.variant)}</span>` : nothing}<span class="add-name"><span class="k"></span><span title=${nameTitle(card.title)}>${card.title}</span></span></button>`;
+    // Names keeps its own grid (a name needs a width a name fits in), Small and
+    // Large share the sample cards and differ only in how many go across.
+    const gridClass = detail === "names" ? "lean" : detail === "small" ? "small" : "";
     return html`<div class="card fold tinted banded" data-open=${open ? "true" : "false"}>
       <h2 class="panel-title tools fold-h" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
         title=${open ? "Hide the add buttons" : "Show the add buttons"}
@@ -11965,11 +12066,12 @@ export class WristAssistantPanel extends LitElement {
         ${open ? nothing : html`<span class="mini">${offered.length} presets · ${cards.length} elements</span>`}
         ${open
           ? html`<span class="tool-set" @click=${(e: Event) => e.stopPropagation()}>
-              <span class="seg" role="group" aria-label="Button detail">
-                ${([["compact", "Names"],
-                    ["expanded", "Samples"]] as const).map(([mode, tip]) => html`
-                  <button class=${this.addDetail === mode ? "on" : ""} title=${tip} aria-label=${tip} aria-pressed=${this.addDetail === mode ? "true" : "false"}
-                    @click=${() => { this.addDetail = mode; this.saveListView(); }}>${uiIcon(mode)}</button>`)}
+              <span class="seg" role="group" aria-label="Card size">
+                ${([["names", "Names", "compact"],
+                    ["small", "Small", "grid"],
+                    ["large", "Large", "expanded"]] as const).map(([mode, tip, icon]) => html`
+                  <button class=${detail === mode ? "on" : ""} title=${tip} aria-label=${tip} aria-pressed=${detail === mode ? "true" : "false"}
+                    @click=${() => { this.addDetail = mode; this.saveListView(); }}>${uiIcon(icon)}</button>`)}
               </span>
             </span>`
           : nothing}
@@ -11977,16 +12079,38 @@ export class WristAssistantPanel extends LitElement {
       </h2>
       ${open
         ? html`
-          <div class="add-group">
-            <div class="presets presets-head"><span class="presets-l">Elements</span>
-              <span class="presets-n">one empty layer</span></div>
-            <div class="add-scroll short"><div class="add-grid ${rich ? "" : "lean"}">${cards.map(kindCard)}</div></div>
-          </div>
-          <div class="add-group">
-            <div class="presets presets-head"><span class="presets-l">Some random presets</span>
-              <span class="presets-n">a layer or three, already set up</span></div>
-            <div class="add-scroll"><div class="add-grid ${rich ? "" : "lean"}">${offered.map(presetCard)}</div></div>
-          </div>
+          <label class="add-search">
+            ${uiIcon("search")}
+            <input type="search" .value=${this.addQuery} placeholder="Search presets and elements"
+              aria-label="Search presets and elements" spellcheck="false" autocomplete="off"
+              @input=${(e: Event) => { this.addQuery = (e.target as HTMLInputElement).value; }}
+              @keydown=${(e: KeyboardEvent) => {
+                // Escape empties the box rather than leaving the card filtered
+                // behind a word the author has stopped looking at.
+                if (e.key !== "Escape") return;
+                e.preventDefault();
+                e.stopPropagation();
+                if (this.addQuery === "") (e.target as HTMLInputElement).blur();
+                else this.addQuery = "";
+              }}>
+          </label>
+          ${shownCards.length > 0
+            ? html`<div class="add-group">
+                <div class="presets presets-head"><span class="presets-l">Elements</span>
+                  <span class="presets-n">one empty layer</span></div>
+                <div class="add-scroll short ${detail}"><div class="add-grid ${gridClass}">${shownCards.map(kindCard)}</div></div>
+              </div>`
+            : nothing}
+          ${shownPresets.length > 0
+            ? html`<div class="add-group">
+                <div class="presets presets-head"><span class="presets-l">Presets</span>
+                  <span class="presets-n">a layer or three, already set up</span></div>
+                <div class="add-scroll ${detail}"><div class="add-grid ${gridClass}">${shownPresets.map(presetCard)}</div></div>
+              </div>`
+            : nothing}
+          ${shownCards.length === 0 && shownPresets.length === 0
+            ? html`<div class="add-none">Nothing here matches that. Saved layers are below.</div>`
+            : nothing}
           <div class="add-group">
             <div class="presets presets-head"><span class="presets-l">Saved</span>
               <span class="presets-n">layers you kept earlier</span></div>
