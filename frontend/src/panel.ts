@@ -2689,12 +2689,15 @@ export class WristAssistantPanel extends LitElement {
        fold to its labels. The card can still give way (shrink) when the
        Layers floor and the cards below need the room. */
     .column.left .card.add-card[data-open="true"] {
-      flex: 0 1 auto; min-height: 0; height: calc(66% - 150px);
+      flex: 0 1 auto; min-height: 0; height: calc(66% - 150px); max-height: max-content;
       display: flex; flex-direction: column;
     }
     .column.left .card.add-card[data-open="true"] > * { flex: none; }
+    /* Each box grows to an equal share but never past its own content: a
+       box with three rows in it hands the rest of its share to the other
+       box, and what neither needs is left over for the card to give up. */
     .column.left .card.add-card[data-open="true"] > .add-group:has(.add-scroll) {
-      flex: 1 1 0; min-height: 0; display: flex; flex-direction: column;
+      flex: 1 1 0; min-height: 0; max-height: max-content; display: flex; flex-direction: column;
     }
     .column.left .card.add-card[data-open="true"] > .add-group:has(.add-scroll) > .presets-head { flex: none; }
     .column.left .card.add-card[data-open="true"] .add-scroll { flex: 1 1 0; min-height: 0; max-height: none; }
