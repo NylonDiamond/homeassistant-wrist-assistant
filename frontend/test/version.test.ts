@@ -2,13 +2,18 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  LIBRARY_OWNER_ID,
   MIN_IPHONE_VERSION_FOR_LOCK_SCREEN,
+  MIN_VERSION_FOR_CONTROL_CENTER,
   MIN_WATCH_VERSION_FOR_CHART_LOOKS,
   MIN_WATCH_VERSION_FOR_SHAPES,
   compareVersions,
   deviceKindOf,
   deviceNoun,
+  deviceSupportsControls,
   deviceSupportsShapes,
+  isLibraryOwner,
+  ownerSupportsControls,
   parseVersion,
   updateDeviceMessage,
   updateIPhoneMessage,
@@ -109,6 +114,56 @@ describe("deviceKindOf", () => {
     expect(deviceNoun({ device_kind: "iphone" })).toBe("iPhone");
     expect(deviceNoun({})).toBe("watch");
   });
+
+  // The one owner that is not a device: the home's shelf.
+  it("reads the library from either the kind or the reserved id", () => {
+    expect(deviceKindOf({ device_kind: "library" })).toBe("library");
+    expect(deviceKindOf({ owner_watch_id: LIBRARY_OWNER_ID })).toBe("library");
+    // An older integration names the id without knowing the kind, and the id
+    // is the reserved word itself, so it wins over the fallback to "watch".
+    expect(deviceKindOf({ owner_watch_id: LIBRARY_OWNER_ID, device_kind: null })).toBe("library");
+    expect(deviceNoun({ device_kind: "library" })).toBe("library");
+  });
+});
+
+describe("isLibraryOwner", () => {
+  it("is true for either half and false for every device", () => {
+    expect(isLibraryOwner({ device_kind: "library" })).toBe(true);
+    expect(isLibraryOwner({ owner_watch_id: LIBRARY_OWNER_ID })).toBe(true);
+    expect(isLibraryOwner({ owner_watch_id: "watch-A", device_kind: "watch" })).toBe(false);
+    expect(isLibraryOwner({ device_kind: "iphone" })).toBe(false);
+    // An orphan reports no kind at all, and is still a device that went away.
+    expect(isLibraryOwner({ owner_watch_id: "gone", device_kind: null })).toBe(false);
+    expect(isLibraryOwner(null)).toBe(false);
+    expect(isLibraryOwner(undefined)).toBe(false);
+  });
+
+  it("matches the reserved word the integration decides", () => {
+    expect(LIBRARY_OWNER_ID).toBe("library");
+  });
+});
+
+describe("ownerSupportsControls", () => {
+  // The shelf draws nothing, so nothing about it can be too old. Holding the
+  // control back there would lose it the moment the design went on a device
+  // that draws one.
+  it("always says yes for the library, whatever version it reports", () => {
+    expect(ownerSupportsControls({ device_kind: "library" })).toBe(true);
+    expect(ownerSupportsControls({ device_kind: "library", app_version: "1.0.0" })).toBe(true);
+    expect(ownerSupportsControls({ owner_watch_id: LIBRARY_OWNER_ID, app_version: null })).toBe(true);
+    // Even with the card switched off everywhere, which is what a null
+    // minimum means for a real device.
+    expect(ownerSupportsControls({ device_kind: "library" }, null)).toBe(true);
+  });
+
+  it("asks the version for a real device, exactly as the string form does", () => {
+    for (const version of [MIN_VERSION_FOR_CONTROL_CENTER, "2.7.0", "3.0.0", null]) {
+      expect(ownerSupportsControls({ device_kind: "watch", app_version: version })).toBe(
+        deviceSupportsControls(version),
+      );
+    }
+    expect(ownerSupportsControls({ device_kind: "iphone", app_version: "2.7.0" }, null)).toBe(false);
+  });
 });
 
 describe("deviceSupportsShapes", () => {
@@ -127,6 +182,15 @@ describe("deviceSupportsShapes", () => {
     expect(deviceSupportsShapes({ app_version: null, device_kind: "iphone" })).toBe(false);
     expect(deviceSupportsShapes({ app_version: null })).toBe(false);
     expect(deviceSupportsShapes(undefined)).toBe(false);
+  });
+
+  // The gate is about what a device draws, and the library draws nothing. A
+  // home whose only watch is too old can still build there and place it later.
+  it("opens for the library with no version at all", () => {
+    expect(deviceSupportsShapes({ device_kind: "library" })).toBe(true);
+    expect(deviceSupportsShapes({ device_kind: "library", app_version: null })).toBe(true);
+    expect(deviceSupportsShapes({ owner_watch_id: LIBRARY_OWNER_ID })).toBe(true);
+    expect(deviceSupportsShapes({ device_kind: "library", app_version: "1.0.0" })).toBe(true);
   });
 });
 
@@ -147,5 +211,12 @@ describe("updateIPhoneMessage", () => {
   it("is what the gate uses for a phone owner, and never for a watch", () => {
     expect(updateDeviceMessage({ app_version: "2.7.2", device_kind: "iphone" })).toBe(updateIPhoneMessage("2.7.2"));
     expect(updateDeviceMessage({ app_version: "2.7.2" })).toBe(updateWatchMessage("2.7.2"));
+  });
+
+  // There is no app behind the library, so there is nothing to ask anyone to
+  // update and no sentence to draw.
+  it("has nothing to say about the library", () => {
+    expect(updateDeviceMessage({ device_kind: "library" })).toBe("");
+    expect(updateDeviceMessage({ owner_watch_id: LIBRARY_OWNER_ID, app_version: "1.0.0" })).toBe("");
   });
 });

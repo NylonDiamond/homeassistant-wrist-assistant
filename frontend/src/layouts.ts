@@ -62,7 +62,14 @@ export const XLARGE_OFFERED = false;
  * so the picker, the filter, the tabs and the New dialog can never disagree
  * about which shapes exist. */
 export function familiesFor(owner: DeviceOwnerLike | null | undefined): FamilyKind[] {
-  if (deviceKindOf(owner) !== "iphone") return ALL_FAMILIES.filter((f) => !isHomeFamily(f));
+  const kind = deviceKindOf(owner);
+  // The Library is not a device and draws nothing, so nothing narrows it: it
+  // holds every shape a newest watch and a newest phone draw between them,
+  // which is every shape the panel offers at all. A design kept there can then
+  // go onto whichever device it is later ticked for without having lost a
+  // shape to a gate that was never about it.
+  if (kind === "library") return ALL_FAMILIES.filter((f) => f !== "xlarge" || XLARGE_OFFERED);
+  if (kind !== "iphone") return ALL_FAMILIES.filter((f) => !isHomeFamily(f));
   const home = watchSupportsShapes(owner?.app_version, MIN_IPHONE_VERSION_FOR_HOME_SCREEN);
   return ALL_FAMILIES.filter((f) => {
     if (f === "corner") return false;
@@ -79,7 +86,12 @@ export function familiesFor(owner: DeviceOwnerLike | null | undefined): FamilyKi
  * a screen the device does not have would just confuse. */
 export function comingSoonFamilies(owner: DeviceOwnerLike | null | undefined): FamilyKind[] {
   if (XLARGE_OFFERED) return [];
-  if (deviceKindOf(owner) !== "iphone") return [];
+  const kind = deviceKindOf(owner);
+  // The Library is promised whatever the newest phone is promised: it holds a
+  // design for every device in the home, so a shape coming to one of them is
+  // coming to the shelf too.
+  if (kind === "library") return ["xlarge"];
+  if (kind !== "iphone") return [];
   return watchSupportsShapes(owner?.app_version, MIN_IPHONE_VERSION_FOR_HOME_SCREEN) ? ["xlarge"] : [];
 }
 
