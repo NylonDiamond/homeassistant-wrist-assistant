@@ -3347,16 +3347,21 @@ ${lI(d)}`}}delete s.hidden,delete s.linkId;let l=El(a);if(l.length>0){let c=l.sl
        what keeps a focus ring, drawn as a box-shadow outside the button, from
        being clipped by the overflow. */
     .add-scroll {
-      max-height: min(48vh, 560px); overflow-y: auto; overscroll-behavior: contain;
+      max-height: 30vh; overflow-y: auto; overscroll-behavior: contain;
       padding: 3px; margin: 3px -3px 0; scrollbar-width: thin;
     }
-    /* The elements are eight, not twenty-five: their scroller is capped at
+    /* The caps are a share of the window rather than a pixel count: on a
+       short window a 560px scroller plus the elements above it pushed the
+       Layers card clean off the screen, and the left column has to show the
+       layers of the design before it shows more presets to add. */
+    /* The elements are twelve, not twenty-five: their scroller is capped at
        about two rows so the presets under it are not pushed off the screen. */
-    .add-scroll.short { max-height: min(26vh, 300px); }
-    /* Small puts four cards on a row where Large puts two, so the same twenty
-       five presets need about half the height. Capping it lower keeps the
-       Saved group, and the Layers card under it, on the screen. */
-    .add-scroll.small { max-height: min(36vh, 420px); }
+    .add-scroll.short { max-height: 18vh; }
+    /* Small shows three rows of presets and scrolls the rest. A row is a
+       card a quarter of the group wide (three gaps taken out), its well at
+       120:46, the name and paddings under it, and the gap to the next row;
+       the group is the size container, so the cap follows the column width. */
+    .add-scroll.small { max-height: calc(3 * ((100cqw - 15px) / 4 * 0.384 + 28px) + 6px); }
     .add-scroll.short.small { max-height: min(22vh, 260px); }
     .add-scroll::-webkit-scrollbar { width: 8px; }
     .add-scroll::-webkit-scrollbar-thumb { background: var(--wa-line-strong); border-radius: 999px; }
