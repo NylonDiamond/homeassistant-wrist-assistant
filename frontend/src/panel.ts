@@ -302,6 +302,7 @@ import {
   submitToGallery,
 } from "./gallery.js";
 import { renderGalleryPreviews } from "./preview-png.js";
+import { PictureCache } from "./picture-cache.js";
 import {
   type SavedPart,
   insertPart,
@@ -1404,6 +1405,16 @@ export class WristAssistantPanel extends LitElement {
    * every document in the home on every render of the grid is the one part of
    * that worth keeping. */
   private readonly recordPreviews = new Map<string, { revision: number; config: CustomComplicationConfig; entities: EntityRef[] }>();
+  /** The pixels behind the picture layers a card draws, fetched once each and
+   * kept for the life of the page. The complication being edited is not read
+   * through this: see `picture-cache.ts` for why the two differ. */
+  private readonly pictures = new PictureCache({
+    fetch: (url) => fetch(url),
+    objectUrl: (blob) => URL.createObjectURL(blob),
+    revoke: (url) => URL.revokeObjectURL(url),
+    changed: () => this.requestUpdate(),
+    now: () => Date.now(),
+  });
   /** Which watch case the previews are drawn in. The reference (46 mm) is scale 1. */
   @state() private previewCase = REFERENCE_CASE.label;
   /** The tint of a tinted watch face to preview in, or undefined for full
@@ -5136,6 +5147,9 @@ export class WristAssistantPanel extends LitElement {
     if (this.watchStatusTimer !== undefined) window.clearInterval(this.watchStatusTimer);
     this.tour.stop();
     this.cancelGesture?.();
+    // An object URL the document never revokes holds its bytes until the tab
+    // closes, and the panel is torn down and rebuilt on every sidebar visit.
+    this.pictures.clear();
   }
 
   private beforeUnload = (e: BeforeUnloadEvent) => {
@@ -6060,6 +6074,13 @@ export class WristAssistantPanel extends LitElement {
     this.ensureActiveFamily();
   }
 
+  /** Let the open complication's picture entities go, so the next card that
+   * draws one fetches a new frame. Called after a save: everything else in the
+   * grid keeps the copy it already has. */
+  private dropCachedPictures() {
+    for (const id of this.compiled?.entities.keys() ?? []) this.pictures.drop(id);
+  }
+
   private recompile() {
     if (!this.draft) return;
     try {
@@ -6754,6 +6775,10 @@ export class WristAssistantPanel extends LitElement {
       // one-time re-pick on the wrist, not a per-save nag.
       this.savedName = String(result.record.document?.name ?? "");
       this.recompile();
+      // The card for what was just saved goes back to the grid, and it should
+      // not be drawing a frame from before the edit. Only this document's own
+      // entities are let go, so every other card in the grid stays instant.
+      this.dropCachedPictures();
       // The writes landed, so the devices that were unticked can lose theirs.
       await this.dropLeftCopies(leaving);
       // The commit woke the watch's poll; wait for its ack before offering
@@ -7301,7 +7326,7 @@ export class WristAssistantPanel extends LitElement {
    * off for the picker: a value typed in to test the open complication must
    * not change what another one's thumbnail says.
    */
-  private entityStateFor(id: string, iconName: string, useTestValues: boolean): EntityState | undefined {
+  private entityStateFor(id: string, iconName: string, useTestValues: boolean, cachedPicture = false): EntityState | undefined {
     // Demo mode reads the frozen house instead, so the face holds still the way
     // a watch does between fetches. One read point, so templates, history and
     // lists (which already only refetch on a refresh tap) and plain entity
@@ -7331,7 +7356,17 @@ export class WristAssistantPanel extends LitElement {
       // Image elements: the preview draws the entity's own picture URL, which is
       // a camera's tokenized proxy for a camera and the avatar or cover art for
       // everything else. Any domain can carry one, so nothing is filtered here.
-      entry.entityPicture = attrs.entity_picture;
+      //
+      // A card in the picker reads the cached copy instead. A camera proxy
+      // answers no-store and takes a new frame per request, so a grid of cards
+      // refetched every camera in the house on every open; one held copy per
+      // entity is what makes the dialog open at once. The complication being
+      // edited keeps the live address, since a crop is adjusted against a
+      // current frame. Undefined means the bytes have not landed yet, and the
+      // layer draws the same placeholder the watch does before its own first
+      // fetch.
+      const cached = cachedPicture ? this.pictures.urlFor(id, attrs.entity_picture) : attrs.entity_picture;
+      if (cached !== undefined) entry.entityPicture = cached;
     }
     return entry;
   }
@@ -8994,11 +9029,15 @@ export class WristAssistantPanel extends LitElement {
   /** What one complication resolves against when it is drawn small and is not
    * the one being edited: its own entities read live, and nothing fetched.
    * No `page`, so a paged document draws its page 1 in every picker row and in
-   * the import preview: page 1 is what the complication shows first. */
+   * the import preview: page 1 is what the complication shows first.
+   *
+   * Picture layers are the one thing read from a cache rather than live. This
+   * is the path every card in the grid takes, and a camera proxy is a fresh
+   * frame off the camera every time it is asked. */
   private configContext(cfg: CustomComplicationConfig, entities: readonly EntityRef[], historySeries?: Map<string, string>): ResolveContext {
     const entityStates = new Map<string, EntityState>();
     for (const ref of entities) {
-      const state = this.entityStateFor(ref.entityId, ref.iconName ?? "", false);
+      const state = this.entityStateFor(ref.entityId, ref.iconName ?? "", false, true);
       if (state) entityStates.set(ref.entityId, state);
     }
     return {
