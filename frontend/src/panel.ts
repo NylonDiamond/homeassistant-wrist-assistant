@@ -251,7 +251,6 @@ import { PREVIEW_ROOM, previewBox, previewWarnings, renderShapeArt, shapeTabCss 
 import { sampleListItem, withListSeeds } from "./list-seeds.js";
 import { type PresetEnv, type PresetKind, type PresetSpec, LAYER_PRESETS, applyPreset, presetSpec } from "./presets.js";
 import { type AddVariant, addPreview } from "./add-previews.js";
-import { filterAddOffers } from "./add-filter.js";
 import { presetColor, presetPreview } from "./preset-previews.js";
 import {
   type ImportParse,
@@ -1027,9 +1026,6 @@ export class WristAssistantPanel extends LitElement {
    * scrolling, and the sample is still big enough to tell a gauge from a
    * chart. */
   @state() private addDetail: AddDetail = "small";
-  /** What is typed into the Add a layer card's search box. Not remembered
-   * between visits: a search is a way through this card now, not a setting. */
-  @state() private addQuery = "";
   /** Layers picked with Cmd/Ctrl-click, in the list or on the preview, waiting to be grouped. */
   @state() private multi: ReadonlySet<string> = new Set();
   /** The row a shift-click measures its range from: the last row clicked. */
@@ -1952,8 +1948,7 @@ export class WristAssistantPanel extends LitElement {
     }
     .pk-add-group { display: flex; flex-direction: column; gap: 3px; }
     .pk-add-head {
-      font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
-      color: var(--wa-muted); margin: 2px 0 2px;
+      font-size: 11.5px; font-weight: 700; color: var(--wa-muted); margin: 2px 0 2px;
     }
     .pk-add-tick {
       display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; cursor: pointer;
@@ -2178,8 +2173,7 @@ export class WristAssistantPanel extends LitElement {
     .shows-field .hint { margin: 0; }
     .shows-list { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
     .shows-head {
-      font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
-      color: var(--wa-muted); margin-top: 6px;
+      font-size: 12.5px; font-weight: 600; color: var(--wa-muted); margin-top: 6px;
     }
     .shows-head:first-child { margin-top: 0; }
     .shows-box {
@@ -2279,8 +2273,8 @@ export class WristAssistantPanel extends LitElement {
     }
     .xfer-body > * { flex: none; }
     .xf-stack { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-    .xf-label { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--wa-muted); font-weight: 600; display: flex; align-items: center; gap: 8px; }
-    .xf-label .r { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; }
+    .xf-label { font-size: 12.5px; color: var(--wa-muted); font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .xf-label .r { margin-left: auto; font-weight: 500; }
     .xf-count { font-size: 11px; font-weight: 600; letter-spacing: 0; text-transform: none; line-height: 16px; padding: 0 6px; border-radius: 999px; background: var(--wa-field); color: var(--wa-muted); }
     .xf-f { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
     .xf-f > :is(input, textarea) { width: 100%; box-sizing: border-box; }
@@ -2832,25 +2826,6 @@ export class WristAssistantPanel extends LitElement {
     .add-group .presets-head .presets-l { color: color-mix(in srgb, var(--g, var(--wa-accent)) 62%, var(--wa-muted)); }
     :host([dark]) .add-group .presets-head .presets-l { color: color-mix(in srgb, var(--g, var(--wa-accent)) 70%, var(--wa-muted)); }
     .add-group:first-of-type { margin-top: 4px; }
-    /* The search box: a dozen elements and two dozen presets are quicker to
-       type than to read. It sits under the title, above the groups, and it is
-       only there while the card is open. Parts is one button, so it is not
-       filtered. */
-    .add-search {
-      display: flex; align-items: center; gap: 7px; margin: 6px 0 0; padding: 4px 9px;
-      border-radius: 8px; background: var(--wa-field); box-shadow: inset 0 0 0 1px var(--wa-line);
-    }
-    .add-search:focus-within { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-accent) 55%, var(--wa-line)); }
-    .add-search svg.ui-icon { width: 13px; height: 13px; color: var(--wa-muted); flex: none; }
-    .add-search input {
-      flex: 1 1 auto; min-width: 0; border: 0; padding: 0; background: transparent; outline: none;
-      font: inherit; font-size: 12px; color: var(--wa-ink);
-    }
-    .add-search input::placeholder { color: var(--wa-muted); }
-    .add-search input::-webkit-search-cancel-button { cursor: pointer; }
-    /* Both filtered groups gone: say so, rather than leaving the card looking
-       like it has lost its buttons. */
-    .add-none { margin: 10px 2px 2px; font-size: 12px; color: var(--wa-muted); }
     .presets.presets-head { margin: 0 0 6px; }
     /* A row of pills inside a group sits right under the group's label, the
        same way a grid of cards does. */
@@ -2859,8 +2834,7 @@ export class WristAssistantPanel extends LitElement {
        four words, so the two groups tell themselves apart. */
     .presets-n { margin-left: auto; font-size: 11.5px; color: var(--wa-muted); }
     .presets-l {
-      margin-right: 4px; font-size: 11px; font-weight: 700; letter-spacing: .08em;
-      text-transform: uppercase; color: var(--wa-muted);
+      margin-right: 4px; font-size: 12.5px; font-weight: 700; color: var(--wa-muted);
     }
     button.preset {
       font: inherit; font-size: 12px; font-weight: 600; height: 26px; padding: 0 10px; border-radius: 999px; cursor: pointer;
@@ -2901,26 +2875,31 @@ export class WristAssistantPanel extends LitElement {
     /* Only as tall as its rows, so the shape row sits right under the last
        layer; it shrinks and scrolls once the card runs out of room. */
     .layers {
-      display: flex; flex-direction: column; gap: 2px; flex: 0 1 auto; min-height: 0;
+      display: flex; flex-direction: column; gap: 4px; flex: 0 1 auto; min-height: 0;
       overflow-y: auto; overflow-x: hidden; scrollbar-width: thin;
     }
-    /* A row is a line of a list, not a card: no outline at rest, and the eye
-       finds the selection by its wash rather than by counting borders. */
+    /* Every row is its own box: a ground and a hairline edge. Rows with no
+       outline ran together, and a list of twenty with pictures in them read as
+       one field of text where the eye had to find each row's start for itself.
+       The selection still speaks louder, because its wash and its ring both
+       land on top of these. */
     .layer {
       display: grid; grid-template-columns: 16px 3px var(--thumb-w) minmax(0, 1fr) auto; align-items: center; gap: 8px;
       min-height: 46px; padding: 0 6px 0 4px; border-radius: var(--wa-r-sm);
       /* The list is a scrolling flex column: without this, expanded rows
          shrink to their minimum and their lines pile on top of each other. */
       flex: none;
-      border: 0 solid transparent; background: transparent; background-clip: padding-box;
+      border: 0 solid transparent; background-clip: padding-box;
+      background: color-mix(in srgb, var(--wa-panel) 60%, var(--wa-card));
+      box-shadow: inset 0 0 0 1px var(--wa-line);
       cursor: pointer; user-select: none; position: relative; font-size: 13px;
       transition: background-color .12s ease-out, box-shadow .12s ease-out,
         border-top-width .1s ease-out, border-bottom-width .1s ease-out;
     }
-    /* A group's members keep a faint ground of their own, so they read as
-       nested rather than as another run of top-level rows. */
-    .layer.kid { background: color-mix(in srgb, var(--wa-panel) 55%, transparent); }
-    .layer:hover { background: var(--wa-panel); }
+    /* A group's members sit a shade quieter than the rows above them, so they
+       read as nested rather than as another run of top-level rows. */
+    .layer.kid { background: color-mix(in srgb, var(--wa-panel) 30%, var(--wa-card)); }
+    .layer:hover { background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line-strong); }
     /* The selected row: one cool wash and a ring, the same one wherever a row
        is selected, so eight kind colors never fight the selection. */
     .layer.hl { background: var(--wa-sel-bg); box-shadow: inset 0 0 0 1px var(--wa-sel-ring); }
@@ -3009,7 +2988,13 @@ export class WristAssistantPanel extends LitElement {
       border-radius: 0 0 var(--wa-r-md) var(--wa-r-md);
       background: color-mix(in srgb, var(--wa-ink) 5%, transparent);
     }
+    /* The tray's rows keep the tray's own ground and its hairlines. An outline
+       each would box in two rows that are not part of the stack above. */
     .pinned-set .layer.pinned { margin: 0; border-top: 0; }
+    .pinned-set .layer.pinned:not(.hl):not(.lit):not(.pick) { background: transparent; box-shadow: none; }
+    .pinned-set .layer.pinned:not(.hl):not(.lit):not(.pick):hover {
+      background: color-mix(in srgb, var(--wa-ink) 5%, transparent); box-shadow: none;
+    }
     .pinned-set .layer.pinned + .layer.pinned {
       border-top: 1px solid color-mix(in srgb, var(--wa-line) 70%, transparent);
     }
@@ -3053,7 +3038,7 @@ export class WristAssistantPanel extends LitElement {
     .layer .lockbtn.on { opacity: 1; color: ${unsafeCSS(SECTION_COLOR.locked)}; }
     .layer:hover .lockbtn, .layer.hl .lockbtn { opacity: 1; }
     .group-kids {
-      margin: 0 0 0 12px; padding-left: 10px; display: flex; flex-direction: column; gap: 2px;
+      margin: 0 0 0 12px; padding-left: 10px; display: flex; flex-direction: column; gap: 4px;
       border-left: 2px solid color-mix(in srgb, var(--wa-line) 60%, transparent);
     }
     /* Drop targets last, so the slot beats whatever the row already had on its
@@ -3191,8 +3176,7 @@ export class WristAssistantPanel extends LitElement {
     }
     .gate-glyph svg { width: 28px; height: 28px; }
     .gate-eyebrow {
-      position: relative; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
-      color: var(--wa-accent); margin-bottom: 10px;
+      position: relative; font-size: 12.5px; font-weight: 700; color: var(--wa-accent); margin-bottom: 10px;
     }
     .gate-title {
       position: relative; margin: 0 0 10px; font-size: 24px; line-height: 1.2; font-weight: 700;
@@ -4048,7 +4032,7 @@ export class WristAssistantPanel extends LitElement {
     .xr-row:not(.xr-head):hover > span:first-child { border-radius: 6px 0 0 6px; }
     .xr-row:not(.xr-head):hover > span:last-child { border-radius: 0 6px 6px 0; }
     .xr-head > span {
-      min-height: 20px; border-top: 0; font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--wa-muted);
+      min-height: 20px; border-top: 0; font-size: 11.5px; font-weight: 600; color: var(--wa-muted);
     }
     .xr-name { display: block; min-width: 0; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .xr-head .xr-name { font-size: 10.5px; }
@@ -4110,7 +4094,7 @@ export class WristAssistantPanel extends LitElement {
     .help-head h2 { margin: 0; font-size: 15px; font-weight: 500; }
     .help-head .spacer { flex: 1; }
     .help-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 8px 24px; padding: 14px 18px 18px; }
-    .help-body h3 { margin: 0 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--wa-muted); }
+    .help-body h3 { margin: 0 0 6px; font-size: 12.5px; font-weight: 600; color: var(--wa-muted); }
     .help-body table { border-collapse: collapse; width: 100%; font-size: 13px; }
     .help-body th { text-align: left; font-weight: 500; white-space: nowrap; padding: 5px 12px 5px 0; vertical-align: top; width: 1%; }
     .help-body td { padding: 5px 0; color: var(--wa-muted); vertical-align: top; border-top: 1px solid var(--wa-line); }
@@ -4584,7 +4568,7 @@ export class WristAssistantPanel extends LitElement {
     .states-scroll { overflow-x: auto; margin: 8px 0 4px; }
     .states-table { width: 100%; border-collapse: collapse; margin: 0; font-size: 13px; }
     .states-table th {
-      text-align: left; font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+      text-align: left; font-weight: 500; font-size: 12px;
       opacity: .6; padding: 2px 6px; border-bottom: 1px solid var(--wa-line); white-space: nowrap;
     }
     .states-table th button.icon { opacity: 0; width: 18px; height: 18px; }
@@ -12644,16 +12628,11 @@ export class WristAssistantPanel extends LitElement {
     const cards: readonly AddCard[] = kinds.flatMap((k) =>
       ADD_VARIANTS[k] ?? [{ kind: k, title: KIND_LABEL[k], blurb: `Add a blank ${KIND_LABEL[k].toLowerCase()} layer` }]);
     const offered = LAYER_PRESETS.filter((p) => p.families === undefined || p.families.includes(this.activeFamily));
-    // What the search box leaves. The counts in the shut title bar stay on the
-    // whole offer: they say what the card holds, not what a search that is not
-    // even on screen while it is shut has narrowed it to.
-    const shownCards = filterAddOffers(cards, this.addQuery);
-    const shownPresets = filterAddOffers(offered, this.addQuery);
-    // Shut with a search still in it, the card would open filtered with no way
-    // to see why, so closing it drops the query.
+    // No search box over these two grids. A dozen elements and two dozen
+    // presets are read faster than they are typed, and the box cost a whole
+    // row at the head of the card to save nobody a scroll.
     const toggle = () => {
       this.addOpen = !this.addOpen;
-      if (!this.addOpen) this.addQuery = "";
       this.saveListView();
     };
     const addBlank = (card: AddCard) => {
@@ -12712,37 +12691,19 @@ export class WristAssistantPanel extends LitElement {
       </h2>
       ${open
         ? html`
-          <label class="add-search">
-            ${uiIcon("search")}
-            <input type="search" .value=${this.addQuery} placeholder="Search presets and elements"
-              aria-label="Search presets and elements" spellcheck="false" autocomplete="off"
-              @input=${(e: Event) => { this.addQuery = (e.target as HTMLInputElement).value; }}
-              @keydown=${(e: KeyboardEvent) => {
-                // Escape empties the box rather than leaving the card filtered
-                // behind a word the author has stopped looking at.
-                if (e.key !== "Escape") return;
-                e.preventDefault();
-                e.stopPropagation();
-                if (this.addQuery === "") (e.target as HTMLInputElement).blur();
-                else this.addQuery = "";
-              }}>
-          </label>
-          ${shownCards.length > 0
+          ${cards.length > 0
             ? html`<div class="add-group g-elements">
                 <div class="presets presets-head"><span class="presets-l">Elements</span>
                   <span class="presets-n">one empty layer</span></div>
-                <div class="add-scroll short ${detail}"><div class="add-grid ${gridClass}">${shownCards.map(kindCard)}</div></div>
+                <div class="add-scroll short ${detail}"><div class="add-grid ${gridClass}">${cards.map(kindCard)}</div></div>
               </div>`
             : nothing}
-          ${shownPresets.length > 0
+          ${offered.length > 0
             ? html`<div class="add-group g-presets">
                 <div class="presets presets-head"><span class="presets-l">Presets</span>
                   <span class="presets-n">a layer or three, already set up</span></div>
-                <div class="add-scroll ${detail}"><div class="add-grid ${gridClass}">${shownPresets.map(presetCard)}</div></div>
+                <div class="add-scroll ${detail}"><div class="add-grid ${gridClass}">${offered.map(presetCard)}</div></div>
               </div>`
-            : nothing}
-          ${shownCards.length === 0 && shownPresets.length === 0
-            ? html`<div class="add-none">Nothing here matches that. Parts you kept are below.</div>`
             : nothing}
           <div class="add-group saved-group g-parts">
             <div class="presets presets-head"><span class="presets-l">Parts</span>
