@@ -2860,13 +2860,16 @@ export class WristAssistantPanel extends LitElement {
     button.preset:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.preset:disabled { opacity: .45; cursor: default; }
     /* Add from parts is the one press in this card that opens a library rather
-       than dropping a layer, so it is not a preset pill. It borrows Add a page's
-       button: same height, same edge, centred in its group. No plus sign, since
-       nothing is made until the dialog is answered. */
-    .presets.presets-row.parts-row { display: flex; justify-content: center; padding: 2px 0; }
+       than dropping a layer, so it is not a preset pill. It sits on the group's
+       own label line, to the right of it: one button under a heading of its own
+       spent two rows saying what one row says. No plus sign, since nothing is
+       made until the dialog is answered. */
+    .add-group.saved-group { display: flex; align-items: center; padding: 5px 8px; }
+    .add-group.saved-group .presets.presets-head { flex: 1 1 auto; margin: 0; }
+    .add-group.saved-group .presets-n { margin-right: 8px; }
     button.part-add {
-      font: inherit; font-size: 12.5px; font-weight: 600; line-height: 1; cursor: pointer;
-      height: 34px; padding: 0 14px; border-radius: 7px;
+      font: inherit; font-size: 12px; font-weight: 600; line-height: 1; cursor: pointer;
+      height: 26px; padding: 0 10px; border-radius: 7px;
       border: 1px solid var(--wa-line); background: var(--wa-input); color: inherit;
       transition: background-color .12s ease-out, border-color .12s ease-out;
     }
@@ -3453,14 +3456,19 @@ export class WristAssistantPanel extends LitElement {
     .page-row .page-act.page-more:hover:not(:disabled) {
       background: var(--wa-page); border-color: transparent; color: var(--wa-page-ink);
     }
-    /* Before there are any pages the card holds one button, so it is sized to
-       its words and centred rather than stretched over a card's width. */
-    .page-row.start { justify-content: center; }
-    .page-row .page-act.page-start {
-      flex: none; display: inline-flex; align-items: center; gap: 6px;
-      font-size: 12.5px; font-weight: 600; padding: 0 12px;
+    /* Before there are any pages the card holds one button, and it rides in
+       the title band beside the help mark. A whole row under the band for one
+       press was the tallest empty card on the column. */
+    .pages-card.bare > .panel-title { margin-bottom: -12px; border-radius: var(--wa-r-md); }
+    .pages-card > .panel-title .page-act.page-start {
+      font: inherit; font-size: 12px; font-weight: 600; line-height: 1; cursor: pointer; flex: none;
+      display: inline-flex; align-items: center; gap: 5px;
+      height: 26px; padding: 0 10px; border-radius: 7px;
+      border: 1px solid var(--wa-line); background: var(--wa-input); color: inherit;
     }
-    .page-row .page-act.page-start svg.ui-icon { width: 14px; height: 14px; color: var(--wa-accent); }
+    .pages-card > .panel-title .page-act.page-start svg.ui-icon { width: 13px; height: 13px; color: var(--wa-accent); }
+    .pages-card > .panel-title .page-act.page-start:hover { background: var(--wa-raised); }
+    .pages-card > .panel-title .page-act.page-start:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .page-row .page-act:hover:not(:disabled) { background: var(--wa-raised); }
     .page-row .page-act:disabled { opacity: .45; cursor: default; }
     .page-row .page-act:focus-visible { outline: none; box-shadow: var(--wa-ring); }
@@ -7538,38 +7546,39 @@ export class WristAssistantPanel extends LitElement {
    * changed under you.
    *
    * Without pages it is one button, Add a page, which pins what is there to
-   * page 1 and opens an empty page 2 (`startPages`).
+   * page 1 and opens an empty page 2 (`startPages`). That button sits in the
+   * title band rather than under it, so a card offering one press is one row
+   * tall. The moment there is a page to switch, the tabs take their own row
+   * under the title and the card reads the way it always did.
    */
   private renderPages() {
     const cfg = this.draft?.config;
     if (!cfg) return nothing;
     if (!isDrawable(this.activeFamily)) return nothing;
     const edit = this.canEdit;
-    const body = this.renderPageBody(cfg, edit);
-    if (body === nothing) return nothing;
-    const count = usesPages(cfg) ? pagesSpecOf(cfg).count : 1;
-    return html`<div class="card pages-card tinted banded" style=${`--c:${CARD_TINT.pages}`}>
+    const on = usesPages(cfg);
+    // No pages and no edit rights: nothing to switch and nothing to press.
+    if (!on && !edit) return nothing;
+    const count = on ? pagesSpecOf(cfg).count : 1;
+    return html`<div class="card pages-card tinted banded ${on ? "" : "bare"}" style=${`--c:${CARD_TINT.pages}`}>
       <h2 class="panel-title"><span class="swatch">${uiIcon("pages")}</span>Pages
-        <span class="mini">${usesPages(cfg) ? `${count} pages · one at a time` : "one complication, several pages"}</span>
+        <span class="mini">${on ? `${count} pages · one at a time` : "one complication, several pages"}</span>
         <span class="spacer"></span>
+        ${on ? nothing : html`
+          <button class="page-act page-start" title="Start a second page. What is here now becomes page 1, and a new empty page 2 opens for you to draw on."
+            @click=${() => { let page = 1; this.mutate((c) => { page = startPages(c); }); this.showPage(page); }}>${uiIcon("plus")}<span>Add a page</span></button>`}
         <button class="help" title="How pages work" aria-label="How pages work"
           @click=${() => { this.helpTab = "pages"; this.helpOpen = true; }}>?</button>
       </h2>
-      ${body}
+      ${on ? this.renderPageBody(cfg, edit) : nothing}
       ${edit ? pagesCardFields(this.host(), this.page) : nothing}
     </div>`;
   }
 
-  /** The controls inside the Pages card: the tabs, or the one Add a page
-   * button before there are any. */
+  /** The controls inside the Pages card: the row of tabs. Only called once
+   * there are pages; before that the card is its title band alone, with Add a
+   * page in it. */
   private renderPageBody(cfg: CustomComplicationConfig, edit: boolean) {
-    if (!usesPages(cfg)) {
-      if (!edit) return nothing;
-      return html`<div class="page-row start">
-        <button class="page-act page-start" title="Start a second page. What is here now becomes page 1, and a new empty page 2 opens for you to draw on."
-          @click=${() => { let page = 1; this.mutate((c) => { page = startPages(c); }); this.showPage(page); }}>${uiIcon("plus")}<span>Add a page</span></button>
-      </div>`;
-    }
     const spec = pagesSpecOf(cfg);
     const full = spec.count >= PAGES_MAX_COUNT;
     const playing = this.touring;
@@ -12718,10 +12727,9 @@ export class WristAssistantPanel extends LitElement {
           ${shownCards.length === 0 && shownPresets.length === 0
             ? html`<div class="add-none">Nothing here matches that. Saved layers are below.</div>`
             : nothing}
-          <div class="add-group">
+          <div class="add-group saved-group">
             <div class="presets presets-head"><span class="presets-l">Saved</span>
-              <span class="presets-n">layers you kept earlier</span></div>
-            <div class="presets presets-row parts-row">
+              <span class="presets-n">layers you kept earlier</span>
               <button class="part-add" ?disabled=${full}
                 title="Layers you kept earlier, ready to drop onto this shape"
                 @click=${() => void this.openPartsDialog()}>Add from parts</button>
