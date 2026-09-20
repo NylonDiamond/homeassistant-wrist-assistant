@@ -2814,16 +2814,27 @@ export class WristAssistantPanel extends LitElement {
        and not one grid of forty. */
     .add-group {
       margin-top: 8px; padding: 8px; border-radius: 10px;
-      background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line);
+      background: color-mix(in srgb, var(--g, var(--wa-accent)) 9%, var(--wa-panel));
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--g, var(--wa-accent)) 26%, var(--wa-line));
       /* What "four across, or three when it is tight" is measured against.
          The column is dragged to any width, so the grid answers the group it
          is in rather than the window. */
       container: add-cards / inline-size;
     }
+    /* Three boxes of small dark cards read as one long grid when they share a
+       color. Each group wears its own instead: blue for the empty elements,
+       green for the ready-made presets, violet for the parts you kept. The
+       wash is faint, the edge and the label carry most of it, so the cards
+       inside still sit on a quiet ground. */
+    .add-group.g-elements { --g: #5aa9f0; }
+    .add-group.g-presets { --g: #45c08a; }
+    .add-group.g-parts { --g: #a98cf5; }
+    .add-group .presets-head .presets-l { color: color-mix(in srgb, var(--g, var(--wa-accent)) 62%, var(--wa-muted)); }
+    :host([dark]) .add-group .presets-head .presets-l { color: color-mix(in srgb, var(--g, var(--wa-accent)) 70%, var(--wa-muted)); }
     .add-group:first-of-type { margin-top: 4px; }
     /* The search box: a dozen elements and two dozen presets are quicker to
        type than to read. It sits under the title, above the groups, and it is
-       only there while the card is open. Saved is one button, so it is not
+       only there while the card is open. Parts is one button, so it is not
        filtered. */
     .add-search {
       display: flex; align-items: center; gap: 7px; margin: 6px 0 0; padding: 4px 9px;
@@ -2864,15 +2875,21 @@ export class WristAssistantPanel extends LitElement {
        own label line, to the right of it: one button under a heading of its own
        spent two rows saying what one row says. No plus sign, since nothing is
        made until the dialog is answered. */
-    .add-group.saved-group { display: flex; align-items: center; padding: 5px 8px; }
-    .add-group.saved-group .presets.presets-head { flex: 1 1 auto; margin: 0; }
-    .add-group.saved-group .presets-n { margin-right: 8px; }
+    .add-group.saved-group { padding: 5px 8px; }
+    /* Three columns, not a flex row: the button is centred on the group rather
+       than on whatever space the label and the note leave over, so it lines up
+       with the buttons above it however long the words get. */
+    .add-group.saved-group .presets.presets-head {
+      display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; margin: 0;
+    }
+    .add-group.saved-group .presets-n { margin-left: 0; text-align: right; }
     button.part-add {
       font: inherit; font-size: 12px; font-weight: 600; line-height: 1; cursor: pointer;
       height: 26px; padding: 0 10px; border-radius: 7px;
       border: 1px solid var(--wa-line); background: var(--wa-input); color: inherit;
       transition: background-color .12s ease-out, border-color .12s ease-out;
     }
+    .add-group.g-parts button.part-add { border-color: color-mix(in srgb, var(--g) 38%, var(--wa-line)); }
     button.part-add:hover:not(:disabled) { background: var(--wa-raised); border-color: var(--wa-line-strong); }
     button.part-add:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.part-add:disabled { opacity: .45; cursor: default; }
@@ -12711,28 +12728,28 @@ export class WristAssistantPanel extends LitElement {
               }}>
           </label>
           ${shownCards.length > 0
-            ? html`<div class="add-group">
+            ? html`<div class="add-group g-elements">
                 <div class="presets presets-head"><span class="presets-l">Elements</span>
                   <span class="presets-n">one empty layer</span></div>
                 <div class="add-scroll short ${detail}"><div class="add-grid ${gridClass}">${shownCards.map(kindCard)}</div></div>
               </div>`
             : nothing}
           ${shownPresets.length > 0
-            ? html`<div class="add-group">
+            ? html`<div class="add-group g-presets">
                 <div class="presets presets-head"><span class="presets-l">Presets</span>
                   <span class="presets-n">a layer or three, already set up</span></div>
                 <div class="add-scroll ${detail}"><div class="add-grid ${gridClass}">${shownPresets.map(presetCard)}</div></div>
               </div>`
             : nothing}
           ${shownCards.length === 0 && shownPresets.length === 0
-            ? html`<div class="add-none">Nothing here matches that. Saved layers are below.</div>`
+            ? html`<div class="add-none">Nothing here matches that. Parts you kept are below.</div>`
             : nothing}
-          <div class="add-group saved-group">
-            <div class="presets presets-head"><span class="presets-l">Saved</span>
-              <span class="presets-n">layers you kept earlier</span>
+          <div class="add-group saved-group g-parts">
+            <div class="presets presets-head"><span class="presets-l">Parts</span>
               <button class="part-add" ?disabled=${full}
                 title="Layers you kept earlier, ready to drop onto this shape"
                 @click=${() => void this.openPartsDialog()}>Add from parts</button>
+              <span class="presets-n">layers you kept earlier</span>
             </div>
           </div>`
         : nothing}
