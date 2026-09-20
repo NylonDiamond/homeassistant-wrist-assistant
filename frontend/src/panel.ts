@@ -1415,6 +1415,9 @@ export class WristAssistantPanel extends LitElement {
     changed: () => this.requestUpdate(),
     now: () => Date.now(),
   });
+  /** Whether a warm-up of `pictures` is already waiting for an idle moment.
+   * Every list reply asks for one, and they would otherwise stack up. */
+  private pictureWarmQueued = false;
   /** Which watch case the previews are drawn in. The reference (46 mm) is scale 1. */
   @state() private previewCase = REFERENCE_CASE.label;
   /** The tint of a tinted watch face to preview in, or undefined for full
@@ -5653,6 +5656,50 @@ export class WristAssistantPanel extends LitElement {
     } catch (err) {
       this.loadError = `Could not load complications: ${errText(err)}`;
     }
+    this.warmPictures();
+  }
+
+  /**
+   * Fetch the pictures the picker's cards will want, before anybody opens it.
+   *
+   * Holding a picture only pays off from the second open onwards, and the open
+   * that hurts is the first one: a camera proxy takes four seconds to answer
+   * here, and a grid that asks seven of them at once is a grid that fades in
+   * for four seconds every time the page is fresh. The panel is sat in front of
+   * for a while before that dialog is ever opened, so the waiting is done then
+   * instead, out of the way and off the critical path.
+   *
+   * On idle, because this parses and compiles every document in the home to
+   * find out which entities are pictures at all. That fills the parse cache
+   * too, so the first open skips both halves of the work it used to do.
+   */
+  private warmPictures() {
+    if (this.pictureWarmQueued) return;
+    this.pictureWarmQueued = true;
+    const run = () => {
+      this.pictureWarmQueued = false;
+      const lists = [this.records, ...[...this.otherLists.values()].map((l) => l.records)];
+      // One card per link, but a link's copies are separate records and the
+      // cache is keyed by entity, so asking twice for the same camera costs
+      // one fetch. No need to dedupe the records themselves.
+      for (const records of lists) {
+        for (const record of records) {
+          if (record.deleted) continue;
+          for (const id of this.recordPreview(record)?.entities.map((e) => e.entityId) ?? []) {
+            const url = this.hass.states[id]?.attributes?.entity_picture;
+            if (typeof url === "string") this.pictures.urlFor(id, url);
+          }
+        }
+      }
+    };
+    // Read off the object rather than tested with `in`: the DOM types promise
+    // this exists, so `in` narrows the other branch to `never`, and Safari only
+    // grew it in 17.4. A timer is the same thing a beat later.
+    const idle = (window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+    }).requestIdleCallback;
+    if (typeof idle === "function") idle.call(window, run, { timeout: 4_000 });
+    else window.setTimeout(run, 2_000);
   }
 
   private selectFirst() {
