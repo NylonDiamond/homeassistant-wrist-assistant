@@ -7,10 +7,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type CustomComplicationConfig,
+  defaultControlSpec,
   documentEntityUses,
   newElement,
   newId,
   parseConfig,
+  schemaVersionFor,
+  setPageCount,
 } from "../src/model.js";
 import { keyFor, listExpressionKey, listKey } from "../src/compiler.js";
 import { exportText, parseImportText, scrubForShare, shareSlots } from "../src/transfer.js";
@@ -23,6 +26,7 @@ import {
   GalleryError,
   buildGallerySubmission,
   deleteMyUpload,
+  GALLERY_MAX_SCHEMA,
   galleryBlockers,
   galleryBlockersByStep,
   galleryErrorMessage,
@@ -323,6 +327,32 @@ describe("galleryBlockers", () => {
     expect(out.join("\n")).toMatch(/description is longer than 500/);
     expect(out.join("\n")).toMatch(/nickname is longer than 40/);
     expect(out.join("\n")).toMatch(/at most 5 tags/);
+  });
+
+  it("says why a Control Center control has nowhere to go", () => {
+    const cfg = livingRoom();
+    cfg.control = defaultControlSpec(cfg);
+    cfg.supportedFamilies = [];
+    const out = galleryBlockers(cfg, [], META);
+    expect(out.some((s) => s.startsWith("It is a Control Center control"))).toBe(true);
+    // And never the older, vaguer sentence beside it.
+    expect(out).not.toContain("It has no shape the gallery can show.");
+  });
+
+  it("still says the plain sentence for a shapeless document that is not a control", () => {
+    const cfg = livingRoom();
+    cfg.supportedFamilies = [];
+    expect(galleryBlockers(cfg, [], META)).toContain("It has no shape the gallery can show.");
+  });
+
+  it("lets a document with pages through, which is the schema the gallery just took on", () => {
+    const cfg = livingRoom();
+    setPageCount(cfg, 3);
+    expect(schemaVersionFor(cfg)).toBe(9);
+    expect(GALLERY_MAX_SCHEMA).toBeGreaterThanOrEqual(9);
+    const domains = domainsOf(cfg);
+    const out = galleryBlockers(cfg, shareSlots(cfg, domains), META, domains);
+    expect(out.some((s) => s.includes("the gallery takes up to"))).toBe(false);
   });
 
   it("refuses area, label and floor filters", () => {

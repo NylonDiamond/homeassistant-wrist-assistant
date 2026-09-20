@@ -15,8 +15,10 @@ import {
   type FamilyKind,
   type Rule,
   type Value,
+  controlOnly,
   inlineImageBytes,
   mapFreeText,
+  schemaVersionFor,
 } from "./model.js";
 import { type ShareSlot, exportText, hasInstanceFilters, isPlaceholderId, scrubForShare } from "./transfer.js";
 import { supportedFamilies } from "./layouts.js";
@@ -70,6 +72,16 @@ export const GALLERY_LIMITS = {
   pngBytes: 150 * 1024,
   bodyBytes: 1024 * 1024,
 } as const;
+
+/**
+ * The newest schema the gallery Worker files, its own `MAX_SCHEMA_VERSION`.
+ *
+ * Checked here so a document the gallery cannot hold is refused in words the
+ * author can act on, instead of as a bare 400 from the server. It trails the
+ * integration's own cap whenever a new rung ships before the Worker is
+ * deployed, which is the case this check exists for.
+ */
+export const GALLERY_MAX_SCHEMA = 9;
 
 /** The slot id shape the gallery accepts. Digits are allowed in the domain,
  * as in the panel's own placeholder rule. */
@@ -433,7 +445,22 @@ function steppedBlockers(
   }
   if (meta.tags.length > GALLERY_LIMITS.tags) detail(`Pick at most ${GALLERY_LIMITS.tags} tags.`);
   if (meta.tags.some((t) => !isGalleryTag(t))) detail("One of the tags is not a gallery tag.");
-  if (body.families.length === 0) out.push("It has no shape the gallery can show.");
+  // A control-only document is the one shape-less document somebody builds on
+  // purpose, so it gets its own sentence rather than the puzzling general one.
+  // The gallery files every upload under a shape, and a Control Center control
+  // is not one, so there is nowhere to put it yet.
+  if (body.families.length === 0) {
+    out.push(controlOnly(cfg)
+      ? "It is a Control Center control, and the gallery files designs by shape. Add a watch or iPhone shape to share it, or send this one as text instead."
+      : "It has no shape the gallery can show.");
+  }
+
+  // The rung this document stamps, against what the gallery holds. Only ever
+  // true while the panel is ahead of the deployed Worker.
+  const schema = schemaVersionFor(cfg);
+  if (schema > GALLERY_MAX_SCHEMA) {
+    out.push(`It is schema v${schema}, and the gallery takes up to v${GALLERY_MAX_SCHEMA}. Share it as text until the gallery catches up.`);
+  }
 
   if (body.slots.length > GALLERY_LIMITS.slots) {
     out.push(`It reads ${body.slots.length} entities. The gallery takes at most ${GALLERY_LIMITS.slots}.`);
