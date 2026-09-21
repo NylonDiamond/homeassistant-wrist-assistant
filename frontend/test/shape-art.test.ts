@@ -353,6 +353,17 @@ describe("deviceCropArt", () => {
     expect(below).toBeLessThan(slot.height / 2);
   });
 
+  // The editor's stage draws the rectangle with a 3 pt corner, and the card
+  // has to agree with it: a flat 2 units was a quarter of the drawn height,
+  // which read as a pill rather than a Lock Screen widget.
+  it("draws the Lock Screen rectangle with the editor's corner", () => {
+    const slot = phoneSlot("rectangular");
+    if (slot === undefined) throw new Error("rectangular has no phone slot");
+    const rx = Number(/rx=([\d.]+) fill=var\(--wa-accent\)/.exec(crop("rectangular", "iphone"))?.[1]);
+    expect(rx).toBeGreaterThan(0);
+    expect(rx / slot.height).toBeLessThan(0.08);
+  });
+
   // A shape the device has no slot for has no window worth inventing, so the
   // whole device is drawn rather than a piece of it chosen at random.
   it("falls back to the whole device for a shape it does not draw", () => {

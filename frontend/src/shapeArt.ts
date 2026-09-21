@@ -497,6 +497,12 @@ const LOCK_ROW_WIDTH = 2 * LOCK_ROW.rect + 1.2;
 const LOCK_ROW_X = PHONE_FRAME.width / 2 - LOCK_ROW_WIDTH / 2;
 const LOCK_GAP = (LOCK_ROW_WIDTH - 4 * LOCK_ROW.height) / 3;
 const LOCK_INLINE = { x: 11.5, y: 10.6, width: pt(240), height: 3.4 };
+
+/** The corner the Lock Screen rectangle is drawn with, as the editor's stage
+ * draws the same shape: an 18 px radius on a stage 900 px wide for a shape
+ * 147.67 pt wide, which is 3 pt. A flat 2 units was a quarter of the drawn
+ * height, so the card showed a pill where the editor showed a rectangle. */
+const LOCK_RECT_RX = pt(3);
 const LOCK_INLINE_FONT = 3.4;
 
 type Slot = { x: number; y: number; width: number; height: number };
@@ -588,8 +594,8 @@ function lockScreen(family: FamilyKind | undefined, live: LiveShapes, shelved: b
   let row: unknown;
   let line: unknown;
   if (family === "rectangular" && slot) {
-    const rect = placed(live.rectangular, slot, "fit", clipKey(), { rx: 2 });
-    row = svg`${rect ?? svg`<rect x=${slot.x} y=${slot.y} width=${slot.width} height=${slot.height} rx="2" fill=${ON} />`}${round(2, false)}${round(3, false)}`;
+    const rect = placed(live.rectangular, slot, "fit", clipKey(), { rx: LOCK_RECT_RX });
+    row = svg`${rect ?? svg`<rect x=${slot.x} y=${slot.y} width=${slot.width} height=${slot.height} rx=${LOCK_RECT_RX} fill=${ON} />`}${round(2, false)}${round(3, false)}`;
   } else if (family === "circular" && slot) {
     const circ = placed(live.circular, slot, "fit", clipKey(), "circle");
     row = svg`${circ ?? round(0, true)}${round(1, false)}${round(2, false)}${round(3, false)}`;
