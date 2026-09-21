@@ -18,6 +18,8 @@ import {
 import { familiesFor, supportedFamilies } from "../src/layouts.js";
 import {
   type DeviceOwner,
+  type PlaceRecord,
+  devicePlaces,
   duplicateAs,
   duplicateTargets,
   freeSlotForFamily,
@@ -297,5 +299,67 @@ describe("duplicateTargets", () => {
   it("narrows nothing for a design in the library", () => {
     expect(duplicateTargets(all, "rectangular", LIBRARY_OWNER_ID, "library").map((o) => o.ownerId))
       .toEqual(["w1", "w2", "p1", "p2"]);
+  });
+});
+
+// The card's "Devices" menu: a box per device, ticked where the design is.
+describe("devicePlaces", () => {
+  const all = [WATCH, WATCH2, PHONE, OLD_PHONE, LIBRARY];
+  const rec = (id: string, name: string, families: FamilyKind[] = ["rectangular"], control = false): PlaceRecord =>
+    ({ id, name, families, control });
+  const lists: Record<string, PlaceRecord[]> = {
+    w1: [rec("a", "Kitchen"), rec("b", "Porch")],
+    w2: [rec("c", "kitchen "), rec("d", "Kitchen", ["circular"])],
+    p1: [rec("e", "Kitchen")],
+    [LIBRARY_OWNER_ID]: [],
+  };
+  const on = (id: string) => lists[id] ?? [];
+  const from = { ownerId: "w1", id: "a", name: "Kitchen" };
+
+  it("lists the card's own device first, ticked, then the same kind and the library", () => {
+    const places = devicePlaces(all, "rectangular", from, on, "watch");
+    expect(places.map((p) => [p.owner.ownerId, p.self, p.on])).toEqual([
+      ["w1", true, true],
+      ["w2", false, true],
+      [LIBRARY_OWNER_ID, false, false],
+    ]);
+  });
+
+  it("ticks a device by name and shape, case and outer spaces aside", () => {
+    const places = devicePlaces(all, "rectangular", from, on, "watch");
+    // "kitchen " on w2 is this design; "Kitchen" as a circular is not.
+    expect(places[1]!.copies.map((r) => r.id)).toEqual(["c"]);
+  });
+
+  it("never counts the card's own record as a copy of itself", () => {
+    const places = devicePlaces(all, "rectangular", from, on, "watch");
+    expect(places[0]!.copies).toEqual([]);
+  });
+
+  it("reads a device it has no list for as unticked", () => {
+    const places = devicePlaces(all, "rectangular", from, () => [], "watch");
+    expect(places.map((p) => p.on)).toEqual([true, false, false]);
+  });
+
+  it("offers every kind to a design on the shelf, and ticks the phone that has it", () => {
+    const shelved = { ownerId: LIBRARY_OWNER_ID, id: "z", name: "Kitchen" };
+    const places = devicePlaces(all, "rectangular", shelved, on, "library");
+    expect(places.map((p) => [p.owner.ownerId, p.on])).toEqual([
+      ["w1", true],
+      ["w2", true],
+      ["p1", true],
+      ["p2", false],
+      [LIBRARY_OWNER_ID, true],
+    ]);
+    expect(places.at(-1)!.self).toBe(true);
+  });
+
+  it("matches a control-only design only against control-only records", () => {
+    const ctl = { ownerId: "w1", id: "k", name: "Lights" };
+    const withControls = (id: string) => id === "w2"
+      ? [rec("m", "Lights", [], true), rec("n", "Lights", ["circular"], true)]
+      : [];
+    const places = devicePlaces(all, undefined, ctl, withControls, "watch");
+    expect(places[1]!.copies.map((r) => r.id)).toEqual(["m"]);
   });
 });

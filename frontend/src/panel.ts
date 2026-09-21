@@ -137,11 +137,14 @@ import { actionAt, demoTapLabel, runTapAction, tapRefetches, type DemoOutcome } 
 import { ALL_FAMILIES, biggestFirst, blankInline, canRemoveControl, comingSoonFamilies, controlNoteLines, familiesFor, familyAllowsKind, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, opensInControlView, supportedFamilies } from "./layouts.js";
 import {
   type DeviceOwner,
+  type DevicePlace,
+  type PlaceRecord,
   type SlotHolder,
   copyForOwner,
+  devicePlaces,
   duplicateAs,
-  duplicateTargets,
   freeSlotForFamily,
+  sameDesign,
   joinNames,
   newTargets,
   slotForDuplicate,
@@ -1025,7 +1028,7 @@ export class WristAssistantPanel extends LitElement {
   @state() private pickerNote?: string;
   /** The picker card asking "Really delete", by record id. */
   @state() private pickerConfirmDelete?: string;
-  /** Which card has its "Duplicate to" menu open, by row key. One at a time:
+  /** Which card has its "Devices" menu open, by row key. One at a time:
    * the menu is absolute inside its own card. */
   @state() private pickerDupFor?: string;
   /** A device has been picked and its complications are still on the way. The
@@ -1935,7 +1938,7 @@ export class WristAssistantPanel extends LitElement {
       position: relative; z-index: 1; display: flex; flex-direction: column; min-width: 0;
       padding: 12px; border-radius: 12px; border: 1px solid var(--wa-line); background: var(--wa-card);
     }
-    /* The card with the "Duplicate to" menu open climbs over its neighbours,
+    /* The card with the "Devices" menu open climbs over its neighbours,
        since the menu is absolute inside it and the grid would otherwise clip
        it under the next card along. */
     .pk-card.over { z-index: 3; }
@@ -1999,7 +2002,7 @@ export class WristAssistantPanel extends LitElement {
     }
     .pk-card-name:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 6px; }
     .pk-card-shape { flex: none; font-size: 11px; color: var(--wa-muted); white-space: nowrap; }
-    /* Duplicate to: the one control on this surface that writes anything. */
+    /* Devices: the one control on this surface that writes anything. */
     .pk-dup { position: relative; flex: none; }
     .pk-dup-open {
       display: inline-flex; align-items: center; gap: 4px; font: inherit; font-size: 11px; font-weight: 600;
@@ -2026,11 +2029,14 @@ export class WristAssistantPanel extends LitElement {
     .pk-dup-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .pk-dup-row[disabled] { opacity: .5; cursor: default; }
     .pk-dup-row svg { flex: none; width: 14px; height: 14px; }
-    /* The two rows that are not a copy of this shape sit under the ones that
-       are: one opens the dialog where a shape is picked, the other takes the
-       design off the device it is on. */
+    /* A device row is a box to tick: the whole row is its label, so the name
+       and the glyph are as clickable as the box. */
+    .pk-dup-row.check input { flex: none; width: 14px; height: 14px; margin: 0; accent-color: var(--wa-accent); cursor: inherit; }
+    .pk-dup-row.check.off { opacity: .5; cursor: default; }
+    .pk-dup-row.check:hover:not(.off) { border-color: var(--wa-line-strong); }
+    /* The row that is not a device sits under the ones that are: it opens the
+       dialog where a shape is picked. */
     .pk-dup-row.other { margin-top: 4px; }
-    .pk-dup-row.move { border-color: var(--wa-line-strong); }
     .pk-dup-head { font-size: 11.5px; font-weight: 700; color: var(--wa-muted); margin: 2px 0; }
     .pk-dup-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .pk-dup-full { flex: none; font-size: 10px; color: var(--wa-muted); }
@@ -5576,7 +5582,7 @@ export class WristAssistantPanel extends LitElement {
     try {
       await this.unsubscribe?.();
       this.unsubscribe = await subscribeChanges(this.hass, ownerId, () => void this.loadRecords());
-      // The other devices first: the picker's grid and every Duplicate to
+      // The other devices first: the picker's grid and every Devices
       // menu are read off those lists, and a seat count taken from a list
       // that has not landed would offer a seat something already holds.
       await this.loadOtherLists();
@@ -8791,7 +8797,7 @@ export class WristAssistantPanel extends LitElement {
    * question a household actually asks here, "which of my devices has this",
    * was answered in one line of small grey text and nothing could be done
    * about it from the list at all. A card has room for the complication drawn
-   * where it sits and for a Duplicate to button that writes a copy from here.
+   * where it sits and for a Devices menu that writes a copy from here.
    *
    * All is one grid per device, each under its device's own heading, so the
    * whole home is one scroll and nothing has to be opened to be seen. A
@@ -9102,13 +9108,19 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * "Duplicate to": the places this design can be made again, as a row each,
-   * and the way back to the library under them.
+   * "Devices": where this design is, as a box per device, and "Duplicate as"
+   * under them.
    *
    * The one control on this surface that writes anything. Everything else here
    * opens a complication or takes one away; this puts the design on somebody
-   * else's watch without the author having to open it first, and shelves it
-   * without having to delete it.
+   * else's watch without the author having to open it first, takes it off one
+   * without having to find that device's card, and shelves it without having
+   * to delete it.
+   *
+   * A box is ticked for the device the card is on and for any device holding
+   * a record with this name and shape, since nothing else says two records
+   * are one design. Ticking writes a copy there. Unticking removes that
+   * device's copy, or, on the card's own device, unassigns the card's record.
    *
    * One menu at a time, held absolutely inside its own card, so a grid four
    * cards wide never has two of them overlapping each other.
@@ -9117,53 +9129,73 @@ export class WristAssistantPanel extends LitElement {
     if (!this.hass.user?.is_admin) return nothing;
     const from = row.open;
     if (from.item.kind !== "record") return nothing;
-    const targets = this.rowDupTargets(from.ownerId, family);
-    const shelf = this.libraryOwner();
-    const shape = family === undefined ? "Control Center" : familyTitle(family).toLowerCase();
-    // Moving the record the editor has open out from under its draft is what
-    // Delete is for, so the move is offered on every other card.
-    const mayShelve = shelf !== undefined && from.ownerId !== shelf.ownerId && this.selectedCopyOf(row) === undefined;
+    const places = this.rowPlaces(row, family);
+    const shape = family === undefined ? "Control Center control" : familyTitle(family).toLowerCase();
     return html`<span class="pk-dup" data-dup=${row.key}>
       <button type="button" class="pk-dup-open ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}
-        title="Make this design again on another device, or take it off the one it is on" ?disabled=${this.saving}
-        @click=${() => { if (open) this.closePickerDup(); else this.openPickerDup(row.key); }}>Duplicate to${uiIcon("chevron")}</button>
-      ${open ? html`<div class="pk-dup-menu" role="group" aria-label=${`Duplicate ${row.name}`}>
-        <div class="pk-dup-head">A ${shape} copy on</div>
-        ${targets.length === 0
-          ? html`<div class="pk-dup-note">Nothing else in this home draws this shape.</div>`
-          : targets.map((target) => this.renderPickerDupTarget(row, target, family))}
+        title="Pick the devices this design is on" ?disabled=${this.saving}
+        @click=${() => { if (open) this.closePickerDup(); else this.openPickerDup(row.key); }}>Devices${uiIcon("chevron")}</button>
+      ${open ? html`<div class="pk-dup-menu" role="group" aria-label=${`Devices for ${row.name}`}>
+        <div class="pk-dup-head">This ${shape} is on</div>
+        ${places.map((place) => this.renderPickerPlace(row, place, family))}
         <button type="button" class="pk-dup-row other" ?disabled=${this.saving}
           title="Make this design again as another shape, or on the other kind of device"
           @click=${() => this.duplicateAsFromCard(row)}>${uiIcon("shape")}
           <span class="pk-dup-name">Duplicate as another shape…</span></button>
-        ${mayShelve ? html`<button type="button" class="pk-dup-row move" ?disabled=${this.saving}
-          title="Take it off this device and keep it as unassigned. A face or widget already using it keeps it."
-          @click=${() => void this.shelveRow(row)}>${uiIcon("layers")}
-          <span class="pk-dup-name">Unassign from device</span></button>` : nothing}
-        <div class="pk-dup-note">A copy is written now and is a complication of its own from then on. Unassigning moves this one instead.</div>
+        <div class="pk-dup-note">Ticking writes a copy there, a complication of its own from then on. Unticking removes that device's copy with this name and shape. A face or widget already using it keeps it.</div>
       </div>` : nothing}
     </span>`;
   }
 
-  /** One place inside "Duplicate to". A place with no seat left for this shape
-   * says so rather than being quietly greyed. */
-  private renderPickerDupTarget(row: PickerRow, target: DeviceOwner, family: FamilyKind | undefined) {
-    const full = this.freeSlotOn(target.ownerId, family) < 0;
+  /** One device inside "Devices": a box, ticked when the design is there. A
+   * device with no seat left for this shape says so rather than being quietly
+   * greyed, and the card's own device says why it cannot be unticked. */
+  private renderPickerPlace(row: PickerRow, place: DevicePlace, family: FamilyKind | undefined) {
+    const target = place.owner;
     const label = target.kind === "library" ? UNASSIGNED_LABEL : target.label;
-    return html`<button type="button" class="pk-dup-row" ?disabled=${this.saving || full}
-      title=${full
-        ? `${label} has no free seat for this shape (iPhone presets count too). Delete a complication on it first.`
-        : target.kind === "library" ? "Write a copy and leave it unassigned" : `Write a copy on ${label}`}
-      @click=${() => void this.duplicateRowTo(row, target)}>
+    const full = !place.on && this.freeSlotOn(target.ownerId, family) < 0;
+    const shelf = this.libraryOwner();
+    // Unticking the card's own device moves its record to Unassigned. That
+    // has nowhere to go from Unassigned itself, and moving the record the
+    // editor has open out from under its draft is what Delete is for.
+    const stuck = place.self
+      ? target.kind === "library"
+        ? "It is unassigned already. Delete removes it."
+        : shelf === undefined
+          ? "This integration has no Unassigned list to move it to. Delete removes it."
+          : this.selectedCopyOf(row) !== undefined
+            ? "It is open in the editor. Use Delete there."
+            : undefined
+      : undefined;
+    const extra = place.copies.length > 1 ? `${place.copies.length} copies` : undefined;
+    const title = full
+      ? `${label} has no free seat for this shape (iPhone presets count too). Delete a complication on it first.`
+      : stuck ?? (place.on
+        ? place.self
+          ? "Take it off this device and keep it as unassigned"
+          : `Remove ${extra ?? "the copy"} of this design from ${label}`
+        : target.kind === "library" ? "Write a copy and leave it unassigned" : `Write a copy on ${label}`);
+    const disabled = this.saving || full || stuck !== undefined;
+    return html`<label class="pk-dup-row check ${disabled ? "off" : ""}" title=${title}>
+      <input type="checkbox" .checked=${place.on} ?disabled=${disabled}
+        aria-label=${`${row.name} on ${label}`}
+        @change=${(e: Event) => {
+          const box = e.currentTarget as HTMLInputElement;
+          // The box follows the lists, not the click: it is drawn again from
+          // them once the write has landed, or stays as it was if it fails.
+          box.checked = place.on;
+          void (place.on ? this.removeRowFrom(row, place) : this.duplicateRowTo(row, target));
+        }}>
       ${uiIcon(target.kind === "iphone" ? "phone" : target.kind === "library" ? "layers" : "watch")}
       <span class="pk-dup-name">${label}</span>
-      ${full ? html`<span class="pk-dup-full">full, ${this.slotsTakenOn(target.ownerId)} of ${MAX_SLOTS}</span>` : nothing}
-    </button>`;
+      ${full ? html`<span class="pk-dup-full">full, ${this.slotsTakenOn(target.ownerId)} of ${MAX_SLOTS}</span>`
+        : extra ? html`<span class="pk-dup-full">${extra}</span>` : nothing}
+    </label>`;
   }
 
   /**
-   * The places one card offers: the devices of its own kind that draw its
-   * shape, and the library.
+   * The places one card lists: the devices of its own kind that draw its
+   * shape, the one it is on, and the library.
    *
    * The same kind, because a watch design and a phone design are different
    * places to stand even when they draw the same shape, and the editor's
@@ -9171,10 +9203,77 @@ export class WristAssistantPanel extends LitElement {
    * the shelf is the exception: it is on no device at all, so every device
    * that draws its shape is offered.
    */
-  private rowDupTargets(fromOwnerId: string, family: FamilyKind | undefined): DeviceOwner[] {
+  private rowPlaces(row: PickerRow, family: FamilyKind | undefined): DevicePlace[] {
+    const from = row.open;
+    if (from.item.kind !== "record") return [];
     const shelf = this.libraryOwner();
     const candidates = shelf ? [...this.deviceOwners(), shelf] : this.deviceOwners();
-    return duplicateTargets(candidates, family, fromOwnerId, deviceKindOf(this.ownerOf(fromOwnerId)));
+    return devicePlaces(
+      candidates,
+      family,
+      { ownerId: from.ownerId, id: from.item.record.id, name: row.name },
+      (ownerId) => this.placeRecordsOn(ownerId),
+      deviceKindOf(this.ownerOf(from.ownerId)),
+    );
+  }
+
+  /** One device's live records as the place list reads them. The open
+   * device's come from the list this panel watches; every other device's from
+   * the lists the menu read as it opened. */
+  private placeRecordsOn(ownerId: string): PlaceRecord[] {
+    const list = ownerId === this.ownerId ? { records: this.records } : this.otherLists.get(ownerId);
+    if (!list) return [];
+    return list.records.filter((r) => !r.deleted).map((r) => ({
+      id: r.id,
+      name: typeof r.document?.name === "string" ? r.document.name : "",
+      families: shapesOf(r),
+      control: hasControlOf(r),
+    }));
+  }
+
+  /**
+   * Untick one device: take this design off it.
+   *
+   * On the card's own device that is the unassign move, so the record is kept
+   * on the shelf rather than deleted. On any other device it is that device's
+   * copies with this name and shape that go, each its own record with its own
+   * revision, so a copy that changed under the menu is reported rather than
+   * silently kept or clobbered.
+   */
+  private async removeRowFrom(row: PickerRow, place: DevicePlace) {
+    if (!this.hass.user?.is_admin || this.saving) return;
+    if (place.self) {
+      await this.shelveRow(row);
+      return;
+    }
+    const ownerId = place.owner.ownerId;
+    const label = place.owner.kind === "library" ? UNASSIGNED_LABEL : place.owner.label;
+    this.closePickerDup();
+    this.saving = true;
+    this.saveError = undefined;
+    try {
+      // Fresh lists: the copies to remove are read again, since one may have
+      // been edited or removed since the menu drew them.
+      await this.loadOtherLists();
+      const family = row.open.item.kind === "record" ? shapesOf(row.open.item.record)[0] : undefined;
+      const fresh = this.placeRecordsOn(ownerId).filter((r) => sameDesign(r, row.name, family));
+      const list = ownerId === this.ownerId ? { records: this.records } : this.otherLists.get(ownerId);
+      const targets = (list?.records ?? []).filter((r) => fresh.some((f) => f.id === r.id));
+      let failed = 0;
+      for (const record of targets) {
+        const gone = await deleteRecord(this.hass, ownerId, record.id, record.revision);
+        if (!gone.ok) failed += 1;
+      }
+      const n = targets.length - failed;
+      this.copyStatus = failed === 0
+        ? `${row.name} is off ${label}. A face or widget already using it keeps it.`
+        : `${n === 0 ? "Nothing" : `${n} of ${targets.length}`} came off ${label}: a copy changed on the server. Open the menu again.`;
+      await this.reloadAfterRowWrite(ownerId);
+    } catch (err) {
+      this.saveError = errText(err);
+    } finally {
+      this.saving = false;
+    }
   }
 
   /**

@@ -220,6 +220,74 @@ export function duplicateTargets(
   });
 }
 
+// ── where one design is, device by device ─────────────────────────────────
+
+/** One stored record as the place list reads it: enough to tell whether it
+ * is the same design as the card's, and nothing about what it draws. */
+export interface PlaceRecord {
+  id: string;
+  name: string;
+  /** The shapes its document lists; one, or none for a control-only document. */
+  families: readonly FamilyKind[];
+  control: boolean;
+}
+
+/** One device in a card's place list, with a box to tick. */
+export interface DevicePlace {
+  owner: DeviceOwner;
+  /** Whether this is the device the card's own record sits on. */
+  self: boolean;
+  /** The other records on this device that are this design: same name, same
+   * shape. The card's own record is never in here. */
+  copies: PlaceRecord[];
+  /** Whether the box is ticked: the card's own device, or one with a copy. */
+  on: boolean;
+}
+
+/** Whether two records are one design in two places: the same name, letter
+ * case and outer spaces aside, drawing the same shape. Nothing links a copy to
+ * what it was copied from, so the name and the shape are what there is. */
+export function sameDesign(a: PlaceRecord, name: string, family: FamilyKind | undefined): boolean {
+  if (a.name.trim().toLocaleLowerCase() !== name.trim().toLocaleLowerCase()) return false;
+  return family === undefined ? a.control && a.families.length === 0 : a.families.includes(family);
+}
+
+/**
+ * The card's place list: every device this design could be on, each saying
+ * whether it is.
+ *
+ * The same devices `duplicateTargets` offers, plus the one the card is on, so
+ * the list reads as a set of boxes rather than a set of destinations. A box
+ * is ticked for the card's own device, and for any device holding a record
+ * with this name and shape. Ticking writes a copy there; unticking removes
+ * that device's copy, or unassigns the card's own record when it is the
+ * card's device. The library is always in the list, since it is where an
+ * unassigned design goes.
+ *
+ * `recordsOn` answers each device's live records. A device whose list the
+ * panel has not read answers none, so it reads as unticked until it has.
+ */
+export function devicePlaces(
+  owners: readonly DeviceOwner[],
+  family: FamilyKind | undefined,
+  from: { ownerId: string; id: string; name: string },
+  recordsOn: (ownerId: string) => readonly PlaceRecord[],
+  sameKind?: DeviceKind,
+): DevicePlace[] {
+  const self = owners.find((o) => o.ownerId === from.ownerId);
+  const others = duplicateTargets(owners, family, from.ownerId, sameKind);
+  const listed = self ? [self, ...others] : others;
+  return owners
+    .filter((o) => listed.includes(o))
+    .map((owner) => {
+      const copies = recordsOn(owner.ownerId)
+        .filter((r) => r.id !== from.id || owner.ownerId !== from.ownerId)
+        .filter((r) => sameDesign(r, from.name, family));
+      const isSelf = owner.ownerId === from.ownerId;
+      return { owner, self: isSelf, copies, on: isSelf || copies.length > 0 };
+    });
+}
+
 // ── the document one device gets ──────────────────────────────────────────
 
 /** What one write is: the identity of the record and the shapes it carries.
