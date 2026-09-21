@@ -470,7 +470,7 @@ describe("deviceCropArt", () => {
     // cell the tile leaves free and none the tile covers: a two by two block
     // beside Small, two rows over Medium, none over Large.
     it("keeps the page's icons beside a tile and never under it", () => {
-      const icons = (art: string) => (art.match(/rx="1\.6" fill=var\(--wa-art-off\)/g) ?? []).length - 4; // less the dock's four
+      const icons = (art: string) => (art.match(/rx="1\.6" fill=var\(--wa-art-off\)/g) ?? []).length;
       expect(icons(crop("small", "iphone"))).toBe(12);
       expect(icons(crop("medium", "iphone"))).toBe(8);
       expect(icons(crop("large", "iphone"))).toBe(0);

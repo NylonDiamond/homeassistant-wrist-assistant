@@ -463,18 +463,21 @@ export const PHONE_FRAME = { width: 50, height: 102 };
 const PHONE_SCREEN = { x: 3, y: 3, width: 44, height: 96 };
 
 /** How much of the phone a card's window shows: the top of it for a Lock
- * Screen shape, the bottom for a Home Screen one. Tall enough for a Large
- * tile with the dock under it and the case's bottom edge under that. */
-export const PHONE_WINDOW = 65;
+ * Screen shape, the bottom for a Home Screen one. Just tall enough for a
+ * Large tile with the case's bottom edge under it: the tighter the window,
+ * the bigger the phone draws in the well, and the edge of the case is what
+ * says the picture is a phone. There is no dock: the tiles sit on the bottom
+ * of the screen, which costs the page its dock and buys the tiles a third
+ * more room. */
+export const PHONE_WINDOW = 49;
 
 /** The Home Screen grid: four columns of icons across the widget band, the
- * lowest row ending above the page dots and the dock. Rows are a little
- * tighter than the phone's, so a tile spans the rows it spans on the phone. */
+ * lowest row ending at the bottom of the screen. Rows are a little tighter
+ * than the phone's, so a tile spans the rows it spans on the phone. */
 const ICON = pt(60);
-const HOME = { x: PHONE_SCREEN.x + pt(24.17), width: pt(344.67), bottom: 80 };
+const HOME = { x: PHONE_SCREEN.x + pt(24.17), width: pt(344.67), bottom: PHONE_SCREEN.y + PHONE_SCREEN.height - 3 };
 const COL = (HOME.width - ICON) / 3;
 const ROW = 9.6;
-const DOCK = { x: 4.7, y: 84, width: 40.6, height: 10.8 };
 
 /** The Lock Screen: the island, the date line, the clock, then the row of
  * widget slots under it, four circular ones or two rectangular ones wide. */
@@ -537,10 +540,10 @@ const touches = (a: Slot, b: Slot) =>
   a.x < b.x + b.width + 0.5 && a.x + a.width + 0.5 > b.x && a.y < b.y + b.height + 0.5 && a.y + a.height + 0.5 > b.y;
 
 /**
- * The Home Screen with one tile on it, at the bottom of the page over the
- * dock, and the page's icons in every cell the tile leaves free. The icons
- * are what say how big the tile is: Small sits beside a two by two block of
- * them, Medium under two full rows, Large under none.
+ * The Home Screen with one tile on it, at the bottom of the page, and the
+ * page's icons in every cell the tile leaves free. The icons are what say
+ * how big the tile is: Small sits beside a two by two block of them, Medium
+ * under two full rows, Large under none.
  */
 function homeScreen(family: FamilyKind, live: LiveShapes, shelved: boolean): unknown {
   const slot = phoneSlot(family);
@@ -553,9 +556,7 @@ function homeScreen(family: FamilyKind, live: LiveShapes, shelved: boolean): unk
       icons.push(svg`<rect x=${icon.x} y=${icon.y} width=${ICON} height=${ICON} rx="1.6" fill=${OFF} />`);
     }
   }
-  const dock = svg`<rect x=${DOCK.x} y=${DOCK.y} width=${DOCK.width} height=${DOCK.height} rx="4.5" fill=${DIM} />
-    ${[0, 1, 2, 3].map((col) => svg`<rect x=${HOME.x + col * COL} y=${DOCK.y + (DOCK.height - ICON) / 2} width=${ICON} height=${ICON} rx="1.6" fill=${OFF} />`)}`;
-  return svg`${phoneShell(shelved)}${icons}${dock}
+  return svg`${phoneShell(shelved)}${icons}
     ${tile ?? (slot === undefined ? nothing : svg`<rect x=${slot.x} y=${slot.y} width=${slot.width} height=${slot.height} rx="3" fill=${ON} />`)}`;
 }
 
@@ -683,8 +684,8 @@ function watchCrop(family: FamilyKind): Crop {
  *
  * Two windows of one height: the top of the phone for the Lock Screen shapes,
  * with the clock and the slot row under it, and the bottom of it for the
- * Home Screen sizes, with the tile over the dock and the case's bottom edge
- * under that. One height, so the phone is the same width on every card and
+ * Home Screen sizes, with the tile at the bottom of the screen and the case's
+ * edge under it. One height, so the phone is the same width on every card and
  * a Large tile is visibly twice a Medium one. The window is taller than the
  * card's well is, so it is fitted in whole with the well's black either side,
  * rather than trimmed. A shape no phone draws falls back to the whole case.
