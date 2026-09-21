@@ -2015,7 +2015,7 @@ export class WristAssistantPanel extends LitElement {
     .pk-dup-open.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-accent); }
     .pk-dup-open svg { width: 10px; height: 10px; }
     .pk-dup-menu {
-      position: absolute; top: calc(100% + 6px); right: 0; z-index: 5; width: 224px;
+      position: absolute; top: calc(100% + 6px); right: 0; z-index: 5; width: 248px;
       display: flex; flex-direction: column; gap: 4px; padding: 8px;
       border: 1px solid var(--wa-line-strong); border-radius: 10px;
       background: var(--wa-card); box-shadow: var(--wa-shadow-pop);
@@ -2031,7 +2031,8 @@ export class WristAssistantPanel extends LitElement {
     .pk-dup-row svg { flex: none; width: 14px; height: 14px; }
     /* A device row is a box to tick: the whole row is its label, so the name
        and the glyph are as clickable as the box. */
-    .pk-dup-row.check input { flex: none; width: 14px; height: 14px; margin: 0; accent-color: var(--wa-accent); cursor: inherit; }
+    /* The box is the panel's switch, at the size the switch already is. */
+    .pk-dup-row.check input { margin: 0; cursor: inherit; }
     .pk-dup-row.check.off { opacity: .5; cursor: default; }
     .pk-dup-row.check:hover:not(.off) { border-color: var(--wa-line-strong); }
     /* The row that is not a device sits under the ones that are: it opens the
@@ -9153,8 +9154,14 @@ export class WristAssistantPanel extends LitElement {
   private renderPickerPlace(row: PickerRow, place: DevicePlace, family: FamilyKind | undefined) {
     const target = place.owner;
     const label = target.kind === "library" ? UNASSIGNED_LABEL : target.label;
-    const full = !place.on && this.freeSlotOn(target.ownerId, family) < 0;
+    const full = place.draws && !place.on && this.freeSlotOn(target.ownerId, family) < 0;
     const shelf = this.libraryOwner();
+    // A device whose app is too old for this shape, or that has not said
+    // which version it runs. Named in the gate's own words.
+    const owner = this.ownerOf(target.ownerId);
+    const tooOld = !place.self && !place.draws
+      ? (deviceSupportsShapes(owner) ? "This device's app does not draw this shape." : updateDeviceMessage(owner))
+      : undefined;
     // Unticking the card's own device moves its record to Unassigned. That
     // has nowhere to go from Unassigned itself, and moving the record the
     // editor has open out from under its draft is what Delete is for.
@@ -9168,14 +9175,14 @@ export class WristAssistantPanel extends LitElement {
             : undefined
       : undefined;
     const extra = place.copies.length > 1 ? `${place.copies.length} copies` : undefined;
-    const title = full
+    const title = tooOld ?? (full
       ? `${label} has no free seat for this shape (iPhone presets count too). Delete a complication on it first.`
       : stuck ?? (place.on
         ? place.self
           ? "Take it off this device and keep it as unassigned"
           : `Remove ${extra ?? "the copy"} of this design from ${label}`
-        : target.kind === "library" ? "Write a copy and leave it unassigned" : `Write a copy on ${label}`);
-    const disabled = this.saving || full || stuck !== undefined;
+        : target.kind === "library" ? "Write a copy and leave it unassigned" : `Write a copy on ${label}`));
+    const disabled = this.saving || full || stuck !== undefined || tooOld !== undefined;
     return html`<label class="pk-dup-row check ${disabled ? "off" : ""}" title=${title}>
       <input type="checkbox" .checked=${place.on} ?disabled=${disabled}
         aria-label=${`${row.name} on ${label}`}
@@ -9206,8 +9213,14 @@ export class WristAssistantPanel extends LitElement {
   private rowPlaces(row: PickerRow, family: FamilyKind | undefined): DevicePlace[] {
     const from = row.open;
     if (from.item.kind !== "record") return [];
+    // Every device in the home, not only the ones whose app draws shapes: a
+    // watch that is too old is listed greyed with the reason, so nobody
+    // wonders where it went.
     const shelf = this.libraryOwner();
-    const candidates = shelf ? [...this.deviceOwners(), shelf] : this.deviceOwners();
+    const devices = ownersByKind(this.owners)
+      .filter((o) => !isLibraryOwner(o) && !o.is_orphan)
+      .map((o) => this.deviceOwnerOf(o));
+    const candidates = shelf ? [...devices, shelf] : devices;
     return devicePlaces(
       candidates,
       family,

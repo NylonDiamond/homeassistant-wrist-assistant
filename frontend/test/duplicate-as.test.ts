@@ -316,12 +316,24 @@ describe("devicePlaces", () => {
   const on = (id: string) => lists[id] ?? [];
   const from = { ownerId: "w1", id: "a", name: "Kitchen" };
 
-  it("lists the card's own device first, ticked, then the same kind and the library", () => {
+  it("lists the card's own device ticked, the same kind, and the library, in picker order", () => {
     const places = devicePlaces(all, "rectangular", from, on, "watch");
     expect(places.map((p) => [p.owner.ownerId, p.self, p.on])).toEqual([
       ["w1", true, true],
       ["w2", false, true],
       [LIBRARY_OWNER_ID, false, false],
+    ]);
+  });
+
+  // A watch whose app is too old still shows, greyed: the household sees
+  // every device it has rather than wondering where one went.
+  it("lists a device of the kind that cannot draw the shape, marked as not drawing it", () => {
+    const old = owner({ ownerId: "w3", label: "Chen's Watch", families: [], controls: false });
+    const places = devicePlaces([WATCH, old, LIBRARY], "rectangular", from, on, "watch");
+    expect(places.map((p) => [p.owner.ownerId, p.draws])).toEqual([
+      ["w1", true],
+      ["w3", false],
+      [LIBRARY_OWNER_ID, true],
     ]);
   });
 

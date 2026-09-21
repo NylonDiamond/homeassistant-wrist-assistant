@@ -242,6 +242,10 @@ export interface DevicePlace {
   copies: PlaceRecord[];
   /** Whether the box is ticked: the card's own device, or one with a copy. */
   on: boolean;
+  /** Whether this device's app draws the shape, so a copy could be written
+   * there. A device of the right kind that cannot is still listed, greyed,
+   * so the household sees every device rather than wondering where one went. */
+  draws: boolean;
 }
 
 /** Whether two records are one design in two places: the same name, letter
@@ -274,18 +278,19 @@ export function devicePlaces(
   recordsOn: (ownerId: string) => readonly PlaceRecord[],
   sameKind?: DeviceKind,
 ): DevicePlace[] {
-  const self = owners.find((o) => o.ownerId === from.ownerId);
-  const others = duplicateTargets(owners, family, from.ownerId, sameKind);
-  const listed = self ? [self, ...others] : others;
-  return owners
-    .filter((o) => listed.includes(o))
-    .map((owner) => {
-      const copies = recordsOn(owner.ownerId)
-        .filter((r) => r.id !== from.id || owner.ownerId !== from.ownerId)
-        .filter((r) => sameDesign(r, from.name, family));
-      const isSelf = owner.ownerId === from.ownerId;
-      return { owner, self: isSelf, copies, on: isSelf || copies.length > 0 };
-    });
+  const writable = duplicateTargets(owners, family, from.ownerId, sameKind);
+  // Every device of the kind, drawing this shape or not, and the library.
+  const listed = owners.filter((o) =>
+    o.ownerId === from.ownerId
+    || o.kind === "library"
+    || sameKind === undefined || sameKind === "library" || o.kind === sameKind);
+  return listed.map((owner) => {
+    const copies = recordsOn(owner.ownerId)
+      .filter((r) => r.id !== from.id || owner.ownerId !== from.ownerId)
+      .filter((r) => sameDesign(r, from.name, family));
+    const isSelf = owner.ownerId === from.ownerId;
+    return { owner, self: isSelf, copies, on: isSelf || copies.length > 0, draws: isSelf || writable.includes(owner) };
+  });
 }
 
 // ── the document one device gets ──────────────────────────────────────────
