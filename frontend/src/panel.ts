@@ -3320,19 +3320,6 @@ export class WristAssistantPanel extends LitElement {
       border-color: transparent; color: var(--wa-ink); font-weight: 700;
       box-shadow: 0 0 0 2px var(--wa-accent), 0 1px 4px rgba(0,0,0,.22);
     }
-    .shape-adds { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-left: 4px; align-self: center; }
-    .shape-adds button.tab { height: 28px; padding: 0 9px; gap: 5px; font-weight: 500; }
-    .shape-adds button.tab svg { width: 12px; height: 12px; }
-    /* Add a shape is an offer, not a tab: it keeps the dashed edge so it never
-       reads as a shape you own, but wears the accent so it is not the faintest
-       thing on the bar now that the tab carries a plate. */
-    .shape-adds button.tab.add-shape {
-      height: 30px; padding: 0 11px; font-weight: 600;
-      color: var(--wa-accent); border-color: color-mix(in srgb, var(--wa-accent) 50%, var(--wa-line-strong));
-    }
-    .shape-adds button.tab.add-shape:hover:not(:disabled) {
-      color: var(--wa-accent); background: color-mix(in srgb, var(--wa-accent) 13%, transparent);
-    }
     .canvas-bar .hint { margin: 0; }
     /* Shape tabs: one per family, drawn with a real picture of what that shape
        holds. A family the complication does not have is a dashed invitation. */
@@ -6505,23 +6492,6 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * "+ Control Center" in the shape bar, clicked.
-   *
-   * One undoable change, then the view moves to the thing that was just made.
-   * The card's help needs no help
-   * from here: `helpSections` starts the session with the control card's help
-   * on, so the card the author lands on already explains its rows, and a "?"
-   * they pressed to hide them earlier is a choice worth keeping.
-   */
-  private addControl() {
-    const cfg = this.draft?.config;
-    if (!cfg || cfg.control !== undefined) return;
-    if (!ownerSupportsControls(this.selectedOwner)) return;
-    this.mutate((c) => { setControlShown(c, true); });
-    this.openControlView();
-  }
-
-  /**
    * The x on the Control Center tab, clicked.
    *
    * Always asks, unlike a shape, whose confirmation is skipped when the shape
@@ -6529,12 +6499,18 @@ export class WristAssistantPanel extends LitElement {
    * something to lose. The tab is up while the x is reachable, so the view has
    * to move afterwards, and a document that has a removable control has a
    * shape to move to.
+   *
+   * Only a document written before the add button went can reach this: a
+   * control is its own document now, and a control-only document cannot lose
+   * the one thing it is (`canRemoveControl`). So the confirmation no longer
+   * offers to add it back here. The New dialog's Control Center tile is where
+   * a control comes from.
    */
   private removeControl() {
     const cfg = this.draft?.config;
     if (!cfg || !canRemoveControl(cfg)) return;
     const named = describeValue(cfg.control!.title, describeContext(this.host())).trim();
-    if (!window.confirm(`Remove the Control Center control${named === "" ? "" : ` "${named}"`}? This deletes the control alone, so every shape keeps its layers, and a control can be added again at any time.`)) return;
+    if (!window.confirm(`Remove the Control Center control${named === "" ? "" : ` "${named}"`}? This deletes the control alone, so every shape keeps its layers. To get it back, make a new Control Center complication.`)) return;
     this.mutate((c) => { setControlShown(c, false); });
     this.controlView = false;
     this.ensureActiveFamily();
@@ -13819,23 +13795,24 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The bar along the top of the canvas card: this complication's one shape,
-   * and its Control Center control beside it.
+   * The bar along the top of the canvas card: the one thing this document is.
    *
    * It used to be one tab per shape with an "Add a shape" dialog after them,
-   * because a document carried up to eight shapes at once. A complication is
-   * one shape now, so the bar has one shape tab and the only thing that can be
-   * added is the control, which is not a shape: it is the other thing this
-   * document shows, and it needs somewhere to be edited.
+   * because a document carried up to eight shapes at once. Then it was one
+   * shape tab with an "Add a Control Center control" button beside it.
+   *
+   * Nothing can be added here any more, and the bar draws one tab. A document
+   * is one shape or one control, never both: `documentParts` in splitShapes.ts
+   * counts a control as a part of its own, so a document carrying a shape and a
+   * control is exactly what `autoSplitShapes` cuts in two on the next open.
+   * The add button built the thing the splitter takes apart, so it is gone and
+   * the New dialog's Control Center tile is the only way to make a control.
+   *
+   * The control tab still renders, because a document written before the button
+   * went can still hold both until the splitter reaches it.
    */
   private renderShapeTabs(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
-    const canAddControl = cfg.control === undefined && ownerSupportsControls(this.selectedOwner);
-    return html`<div class="shape-seg" role="group" aria-label="Shapes">${this.renderShapeTab(cfg, layouts)}${this.renderControlTab(cfg)}</div>
-      ${canAddControl ? html`<span class="shape-adds">
-        <button class="tab off add-shape" ?disabled=${!this.canEdit}
-          title="Add a toggle or a button in Control Center to this complication"
-          @click=${() => this.addControl()}>${uiIcon("plus")}Add a Control Center control</button>
-      </span>` : nothing}`;
+    return html`<div class="shape-seg" role="group" aria-label="Shapes">${this.renderShapeTab(cfg, layouts)}${this.renderControlTab(cfg)}</div>`;
   }
 
   /** The one shape tab: a real picture of the shape this complication is,
@@ -13886,7 +13863,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="cap"><span class="lbl">Control Center</span></span>
       </button>
       ${this.canEdit && active ? html`<button class="icon danger tab-x" ?disabled=${!removable}
-        title=${removable ? "Remove the Control Center control" : "The only one. Add a shape before removing it."}
+        title=${removable ? "Remove the Control Center control" : "This complication is only its control. Delete the whole complication instead."}
         aria-label="Remove the Control Center control"
         @click=${(e: Event) => { e.stopPropagation(); this.removeControl(); }}>${uiIcon("delete")}</button>` : nothing}
     </span>`;

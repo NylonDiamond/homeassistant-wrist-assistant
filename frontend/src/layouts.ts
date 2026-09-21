@@ -423,7 +423,7 @@ export function controlNoteLines(shapeName: string | undefined, phone: boolean):
   return [
     "A control has no layers. Control Center draws it from the title, symbol, tint, value line and status on the right.",
     shapeName === undefined
-      ? `This complication has no widget. Add a shape above if you want one on the ${surface}.`
+      ? `This complication is a control and nothing else. For something on the ${surface}, make a second complication with a shape.`
       : `The ${shapeName} tab is what the ${surface} shows; a complication always keeps at least one shape.`,
   ];
 }

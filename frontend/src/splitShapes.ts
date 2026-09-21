@@ -50,12 +50,12 @@ import { Draft } from "./draft.js";
  * Mirrored from `COMPLICATION_MAX_PER_OWNER` in
  * custom_components/wrist_assistant/const.py, which is where the number is
  * decided. The store refuses the save that would pass it ("owner already has
- * 256 complications"), and a split is the one thing in the panel that can walk
+ * 512 complications"), and a split is the one thing in the panel that can walk
  * a device into the limit several records at a time, so it counts first rather
  * than discovering it half way through. A Python test asserts the two numbers
  * are still the same.
  */
-export const COMPLICATION_MAX_PER_OWNER = 256;
+export const COMPLICATION_MAX_PER_OWNER = 512;
 
 // ── the gate ──────────────────────────────────────────────────────────────
 

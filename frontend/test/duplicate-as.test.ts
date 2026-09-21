@@ -157,12 +157,14 @@ describe("duplicateAs", () => {
     expect(copy.elements.some((el) => el.payload.page === 2)).toBe(true);
   });
 
-  it("carries the Control Center control onto the new shape", () => {
+  // A control is its own document, so a copy asked for as a shape leaves the
+  // control behind rather than writing a document of two parts, which is what
+  // autoSplitShapes would cut apart on the next open.
+  it("drops the Control Center control when a shape is asked for", () => {
     const cfg = kitchen();
-    const control = newControlConfig("Kitchen", 5, "rectangular").control!;
-    cfg.control = control;
+    cfg.control = newControlConfig("Kitchen", 5, "rectangular").control!;
     const copy = duplicateAs(cfg, "small", WRITE);
-    expect(copy.control).toEqual(control);
+    expect(copy.control).toBeUndefined();
     expect(copy.supportedFamilies).toEqual(["small"]);
   });
 
@@ -208,12 +210,15 @@ describe("duplicateAs", () => {
     expect(supportedFamilies(copy)).toEqual([]);
   });
 
-  it("gives a control-only document a shape to draw when one is asked for", () => {
+  // The source keeps its control. The copy is a plain shape, because one
+  // document draws one thing.
+  it("turns a control-only document into a plain shape when one is asked for", () => {
     const control = newControlConfig("Doorbell", 3);
     const copy = duplicateAs(control, "circular", WRITE);
     expect(copy.supportedFamilies).toEqual(["circular"]);
-    expect(copy.control).toBeDefined();
+    expect(copy.control).toBeUndefined();
     expect(copy.perFamily.circular).toBeDefined();
+    expect(control.control).toBeDefined();
   });
 
   it("stamps the schema the document it ends up as needs", () => {

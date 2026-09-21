@@ -336,11 +336,13 @@ describe("the note where the layer tools were", () => {
     expect(shape).toBe("The Rectangular tab is what the watch face shows; a complication always keeps at least one shape.");
   });
 
-  it("offers a shape instead of explaining one on a document that has none", () => {
+  // A shape cannot be added here: a document is one shape or one control, so
+  // the line points at a second complication rather than at a button.
+  it("points at a second complication on a document that has no shape", () => {
     const [note, shape] = controlNoteLines(undefined, true);
     expect(note).toBe("A control has no layers. Control Center draws it from the title, symbol, tint, value line and status on the right.");
-    expect(shape).toBe("This complication has no widget. Add a shape above if you want one on the Lock Screen.");
+    expect(shape).toBe("This complication is a control and nothing else. For something on the Lock Screen, make a second complication with a shape.");
     expect(controlNoteLines(undefined, false)[1])
-      .toBe("This complication has no widget. Add a shape above if you want one on the watch face.");
+      .toBe("This complication is a control and nothing else. For something on the watch face, make a second complication with a shape.");
   });
 });

@@ -435,6 +435,12 @@ export interface DuplicateWrite {
  * and a design that had no control gets the default one rather than a document
  * that shows nowhere.
  *
+ * The mirror of that: asking for a shape drops the source's control. A control
+ * is its own document, and a copy that kept both would be two parts in one
+ * document, which is exactly what `autoSplitShapes` cuts apart on the next
+ * open. Duplicating a control as a shape therefore gives a plain shape, and
+ * the control stays where it was.
+ *
  * Nothing links the copy to the original. They are two complications from here
  * on, and editing one never touches the other. The document passed in is never
  * touched. Plan: app repo docs/complication_one_shape_per_document.md.
@@ -450,9 +456,12 @@ export function duplicateAs(
   delete next.linkId;
   if (toFamily === undefined) {
     setControlShown(next, true);
-  } else if (!next.supportedFamilies.includes(toFamily)) {
-    addFamily(next, toFamily);
-    seedFamilyFromSibling(next, toFamily);
+  } else {
+    delete next.control;
+    if (!next.supportedFamilies.includes(toFamily)) {
+      addFamily(next, toFamily);
+      seedFamilyFromSibling(next, toFamily);
+    }
   }
   // Every other shape goes the way the editor's own remove goes, layers and
   // all, which is what makes this a document of one shape rather than the

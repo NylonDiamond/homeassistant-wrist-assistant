@@ -141,18 +141,23 @@ COMPLICATION_MAX_SLOTS = 64
 # records in one slot, and the old 64 refused the seventeenth moved preset
 # while 48 slots stood empty.
 #
-# 256 is the watch's real ceiling: 64 slots times its four shapes. A phone has
-# more shapes than that and so cannot fill every slot, which is fine. Nobody
-# builds 256 designs; the number is a storage guard, not a budget, and at
-# COMPLICATION_MAX_DOCUMENT_BYTES apiece the worst case an owner can reach is
-# 64 MiB.
+# 256 was the watch's real ceiling: 64 slots times its four shapes. A phone has
+# more shapes than that and so cannot fill every slot, which is fine.
+#
+# Raised to 512 on 2026-09-21, when the Control Center control became a document
+# of its own rather than something added to a shape. Every control an author
+# wants is now one more record, so the old ceiling stopped being "one per shape
+# per slot" and started being a real count of designs. Doubling it keeps the
+# guard well clear of anyone's real use. Nobody builds 512 designs; the number
+# is a storage guard, not a budget, and at COMPLICATION_MAX_DOCUMENT_BYTES
+# apiece the worst case an owner can reach is 128 MiB.
 #
 # The Library (below) counts under the same ceiling and its records carry a
 # slotIndex like any other: no device ever reads it, but a design moved onto a
 # watch keeps the slot it was made with, and one shared rule is easier to
 # trust than a second set of storage rules that applies to one owner. The
 # panel picks a free slot among the Library's own records.
-COMPLICATION_MAX_PER_OWNER = 256
+COMPLICATION_MAX_PER_OWNER = 512
 
 # The one owner that is not a device: the home's design Library.
 #
