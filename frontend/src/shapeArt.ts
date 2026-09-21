@@ -400,10 +400,9 @@ export function inlineShown(text: string): string {
   return trimmed.length <= INLINE_MAX_CHARS ? trimmed : `${trimmed.slice(0, INLINE_MAX_CHARS - 1).trimEnd()}…`;
 }
 
-/** The band's text size, in the drawing's units, and about how wide one
- * character of it is: enough to centre the line without measuring it. */
+/** The watch band's text size, in the drawing's units. A character is taken
+ * as 0.56 of it across: enough to centre the line without measuring it. */
 const INLINE_FONT = 4.2;
-const INLINE_CHAR = INLINE_FONT * 0.56;
 
 /**
  * The inline line set into its band on the watch.
@@ -415,66 +414,192 @@ const INLINE_CHAR = INLINE_FONT * 0.56;
  * lays out at its own size whatever the drawing round it is scaled to. The
  * text is cut where the watch cuts it.
  */
-function placedInline(live: LiveShape | undefined, slot: { x: number; y: number; width: number; height: number }): unknown {
+function placedInline(
+  live: LiveShape | undefined,
+  slot: { x: number; y: number; width: number; height: number },
+  font: number = INLINE_FONT,
+): unknown {
   if (live === undefined || live.text === undefined) return undefined;
   const text = inlineShown(live.text);
   if (text === "") return undefined;
   const symbol = live.art !== nothing && live.width > 0 && live.height > 0;
-  const side = INLINE_FONT;
-  const gap = 1;
-  const textWidth = Math.min(text.length * INLINE_CHAR, slot.width);
+  const side = font;
+  const gap = font / INLINE_FONT;
+  const textWidth = Math.min(text.length * font * 0.56, slot.width);
   const total = textWidth + (symbol ? side + gap : 0);
   const start = slot.x + (slot.width - total) / 2;
   const middle = slot.y + slot.height / 2;
-  const baseline = middle + INLINE_FONT * 0.36;
+  const baseline = middle + font * 0.36;
   // The text is anchored at its middle, so a guess at its width only moves
   // the symbol beside it and never pushes the words off centre.
   const textMiddle = start + (symbol ? side + gap : 0) + textWidth / 2;
   return svg`<g class="pk-live">
     ${symbol ? svg`<g transform=${`translate(${start} ${middle - side / 2}) scale(${side / live.width})`}>${live.art}</g>` : nothing}
-    <text x=${textMiddle} y=${baseline} text-anchor="middle" font-size=${INLINE_FONT} font-weight="600"
+    <text x=${textMiddle} y=${baseline} text-anchor="middle" font-size=${font} font-weight="600"
       fill="#fff" font-family="system-ui, sans-serif">${text}</text></g>`;
 }
 
+// ── the phone, to the iPhone 15 Pro's proportions ─────────────────────────
+//
+// The phone is 50 units wide with a 44 unit screen, so a unit is 393/44 of
+// that phone's points, and every slot below is the phone's real slot at that
+// scale: the sizes the renderer measured. The picture is then honest about
+// size, which the older drawing was not: Large is a tile as tall as it is
+// wide, Medium is half of it, Small a quarter, and Extra Large runs off the
+// top of the window.
+//
+// One screen per picture rather than both stacked on one phone. A Home
+// Screen shape is drawn on the Home Screen, at the bottom of the page over
+// the dock, and a Lock Screen shape under the clock at the top. The window
+// onto each is the same height, so every card shows a phone of the same
+// width and the tiles can be compared across cards.
+
+/** One unit for one of the iPhone 15 Pro's points. */
+const PT = 44 / 393;
+const pt = (points: number) => points * PT;
+
+/** The case, and the screen inside it. */
+export const PHONE_FRAME = { width: 50, height: 102 };
+const PHONE_SCREEN = { x: 3, y: 3, width: 44, height: 96 };
+
+/** How much of the phone a card's window shows: the top of it for a Lock
+ * Screen shape, the bottom for a Home Screen one. Tall enough for a Large
+ * tile with the dock under it and the case's bottom edge under that. */
+export const PHONE_WINDOW = 65;
+
+/** The Home Screen grid: four columns of icons across the widget band, the
+ * lowest row ending above the page dots and the dock. Rows are a little
+ * tighter than the phone's, so a tile spans the rows it spans on the phone. */
+const ICON = pt(60);
+const HOME = { x: PHONE_SCREEN.x + pt(24.17), width: pt(344.67), bottom: 80 };
+const COL = (HOME.width - ICON) / 3;
+const ROW = 9.6;
+const DOCK = { x: 4.7, y: 84, width: 40.6, height: 10.8 };
+
+/** The Lock Screen: the island, the date line, the clock, then the row of
+ * widget slots under it, four circular ones or two rectangular ones wide. */
+const LOCK_ROW = { y: 26, height: pt(72), rect: pt(160), circle: pt(58) };
+const LOCK_ROW_WIDTH = 2 * LOCK_ROW.rect + 1.2;
+const LOCK_ROW_X = PHONE_FRAME.width / 2 - LOCK_ROW_WIDTH / 2;
+const LOCK_GAP = (LOCK_ROW_WIDTH - 4 * LOCK_ROW.height) / 3;
+const LOCK_INLINE = { x: 11.5, y: 10.6, width: pt(240), height: 3.4 };
+const LOCK_INLINE_FONT = 3.4;
+
+type Slot = { x: number; y: number; width: number; height: number };
+
+/** The x of the Lock Screen row's n-th slot, of four. */
+const lockSlotX = (n: number) => LOCK_ROW_X + n * (LOCK_ROW.height + LOCK_GAP);
+
 /**
- * The phone: the Lock Screen slot above the line and the Home Screen tiles
- * below it.
- *
- * One Lock Screen slot for all three shared shapes rather than three of them.
- * iOS gives the Lock Screen one widget area, and a card that drew rectangular,
- * circular and inline separately down a 50 px phone would be three smudges
- * saying what the crop above them already said in full.
- *
- * Extra Large lights the tallest tile with Large. The Home Screen has four
- * sizes and this drawing has room for three, and what a card is asking about
- * is where on the page the tile lands, which either of them answers.
+ * Where a shape's slot sits on the phone, in the phone's units, as the
+ * card draws it. The Home Screen tiles sit on the bottom row of the page, the
+ * Lock Screen shapes in the first slot of the row under the clock, and
+ * inline on the line above the clock. Corner has no slot on a phone.
  */
-function phoneBody(families: readonly FamilyKind[], live: LiveShapes, shelved: boolean): unknown {
-  const has = (f: FamilyKind) => families.includes(f);
-  const lockOn = families.some((f) => isSharedFamily(f));
-  const small = lit(has("small"));
-  // The Lock Screen slot shows the biggest shape a Lock Screen draws, since it
-  // is one slot for all three. A live small tile takes the left tile and the
-  // right one goes quiet, so the picture reads as the widget beside a
-  // neighbour rather than as the same widget twice.
-  const lock = placed(live.rectangular ?? live.circular, { x: 9, y: 22, width: 32, height: 13 }, "fit", clipKey(), live.rectangular ? { rx: 2 } : "circle");
-  const tile = placed(live.small, { x: 7, y: 42, width: 16, height: 16 }, "fit", "", { rx: 3 });
-  const medium = placed(live.medium, { x: 7, y: 62, width: 36, height: 14 }, "fit", "", { rx: 3 });
-  const large = placed(live.large ?? live.xlarge, { x: 7, y: 80, width: 36, height: 9 }, "cover", clipKey(), { rx: 3 });
-  const shell = shelved
-    ? svg`<rect x="3" y="3" width="44" height="90" rx="7" fill=${SCREEN} />
-      <rect x="1" y="1" width="48" height="94" rx="9" fill="none" stroke=${CASE} stroke-width="2" stroke-dasharray=${DASH} />`
-    : svg`<rect x="0" y="0" width="50" height="96" rx="9" fill=${CASE} />
-      <rect x="3" y="3" width="44" height="90" rx="7" fill=${SCREEN} />
+export function phoneSlot(family: FamilyKind): Slot | undefined {
+  switch (family) {
+    case "small":
+      return { x: HOME.x, y: HOME.bottom - pt(162.67), width: pt(162.67), height: pt(162.67) };
+    case "medium":
+      return { x: HOME.x, y: HOME.bottom - pt(162.67), width: HOME.width, height: pt(162.67) };
+    case "large":
+      return { x: HOME.x, y: HOME.bottom - pt(360), width: HOME.width, height: pt(360) };
+    case "xlarge":
+      return { x: HOME.x, y: HOME.bottom - pt(557.33), width: HOME.width, height: pt(557.33) };
+    case "rectangular":
+      return { x: lockSlotX(0), y: LOCK_ROW.y, width: LOCK_ROW.rect, height: LOCK_ROW.height };
+    case "circular": {
+      const inset = (LOCK_ROW.height - LOCK_ROW.circle) / 2;
+      return { x: lockSlotX(0) + inset, y: LOCK_ROW.y + inset, width: LOCK_ROW.circle, height: LOCK_ROW.circle };
+    }
+    case "inline":
+      return LOCK_INLINE;
+    default:
+      return undefined;
+  }
+}
+
+/** The case round the screen: solid with the island for a real phone, a
+ * dashed outline for a shelved design that is on none. */
+function phoneShell(shelved: boolean): unknown {
+  const s = PHONE_SCREEN;
+  return shelved
+    ? svg`<rect x=${s.x} y=${s.y} width=${s.width} height=${s.height} rx="7" fill=${SCREEN} />
+      <rect x="1" y="1" width=${PHONE_FRAME.width - 2} height=${PHONE_FRAME.height - 2} rx="9" fill="none" stroke=${CASE} stroke-width="2" stroke-dasharray=${DASH} />`
+    : svg`<rect x="0" y="0" width=${PHONE_FRAME.width} height=${PHONE_FRAME.height} rx="9" fill=${CASE} />
+      <rect x=${s.x} y=${s.y} width=${s.width} height=${s.height} rx="7" fill=${SCREEN} />
       <rect x="17" y="6" width="16" height="3" rx="1.5" fill=${DIM} />`;
-  return svg`${shell}
-    ${faceClock(25, 20, 9, "9:41")}
-    ${lock ?? svg`<rect x="9" y="24" width="32" height="8" rx="2" fill=${lit(lockOn)} />`}
-    <line x1="6" y1="38" x2="44" y2="38" stroke=${DIM} stroke-dasharray="2 2" />
-    ${tile ?? svg`<rect x="7" y="42" width="16" height="16" rx="3" fill=${small} />`}
-    <rect x="27" y="42" width="16" height="16" rx="3" fill=${tile ? OFF : small} />
-    ${medium ?? svg`<rect x="7" y="62" width="36" height="14" rx="3" fill=${lit(has("medium"))} />`}
-    ${large ?? svg`<rect x="7" y="80" width="36" height="9" rx="3" fill=${lit(has("large") || has("xlarge"))} />`}`;
+}
+
+/** Whether two boxes overlap, with a little air between them counted as
+ * overlap, so no icon is drawn touching a tile. */
+const touches = (a: Slot, b: Slot) =>
+  a.x < b.x + b.width + 0.5 && a.x + a.width + 0.5 > b.x && a.y < b.y + b.height + 0.5 && a.y + a.height + 0.5 > b.y;
+
+/**
+ * The Home Screen with one tile on it, at the bottom of the page over the
+ * dock, and the page's icons in every cell the tile leaves free. The icons
+ * are what say how big the tile is: Small sits beside a two by two block of
+ * them, Medium under two full rows, Large under none.
+ */
+function homeScreen(family: FamilyKind, live: LiveShapes, shelved: boolean): unknown {
+  const slot = phoneSlot(family);
+  const tile = slot === undefined ? undefined : placed(live[family], slot, "fit", "", { rx: 3 });
+  const icons: unknown[] = [];
+  for (let row = 0; row < 4; row += 1) {
+    for (let col = 0; col < 4; col += 1) {
+      const icon = { x: HOME.x + col * COL, y: HOME.bottom - ICON - row * ROW, width: ICON, height: ICON };
+      if (slot !== undefined && touches(icon, slot)) continue;
+      icons.push(svg`<rect x=${icon.x} y=${icon.y} width=${ICON} height=${ICON} rx="1.6" fill=${OFF} />`);
+    }
+  }
+  const dock = svg`<rect x=${DOCK.x} y=${DOCK.y} width=${DOCK.width} height=${DOCK.height} rx="4.5" fill=${DIM} />
+    ${[0, 1, 2, 3].map((col) => svg`<rect x=${HOME.x + col * COL} y=${DOCK.y + (DOCK.height - ICON) / 2} width=${ICON} height=${ICON} rx="1.6" fill=${OFF} />`)}`;
+  return svg`${phoneShell(shelved)}${icons}${dock}
+    ${tile ?? (slot === undefined ? nothing : svg`<rect x=${slot.x} y=${slot.y} width=${slot.width} height=${slot.height} rx="3" fill=${ON} />`)}`;
+}
+
+/**
+ * The Lock Screen with one shape on it: the island, the date line, the
+ * clock, and the row of slots under it with the shape in the first. A
+ * rectangular shape takes two slots and leaves two round ones off beside it;
+ * a circular one takes the first and leaves three. Inline takes the line
+ * above the clock, where the date was.
+ */
+function lockScreen(family: FamilyKind | undefined, live: LiveShapes, shelved: boolean): unknown {
+  const slot = family === undefined ? undefined : phoneSlot(family);
+  const round = (n: number, on: boolean) => {
+    const cx = lockSlotX(n) + LOCK_ROW.height / 2;
+    const cy = LOCK_ROW.y + LOCK_ROW.height / 2;
+    return svg`<circle cx=${cx} cy=${cy} r=${LOCK_ROW.circle / 2} fill=${lit(on)} />`;
+  };
+  let row: unknown;
+  let line: unknown;
+  if (family === "rectangular" && slot) {
+    const rect = placed(live.rectangular, slot, "fit", clipKey(), { rx: 2 });
+    row = svg`${rect ?? svg`<rect x=${slot.x} y=${slot.y} width=${slot.width} height=${slot.height} rx="2" fill=${ON} />`}${round(2, false)}${round(3, false)}`;
+  } else if (family === "circular" && slot) {
+    const circ = placed(live.circular, slot, "fit", clipKey(), "circle");
+    row = svg`${circ ?? round(0, true)}${round(1, false)}${round(2, false)}${round(3, false)}`;
+  } else {
+    row = svg`${round(0, false)}${round(1, false)}${round(2, false)}${round(3, false)}`;
+  }
+  if (family === "inline" && slot) {
+    line = placedInline(live.inline, slot, LOCK_INLINE_FONT)
+      ?? svg`<rect x=${slot.x} y=${slot.y + 0.6} width=${slot.width} height=${slot.height - 1.2} rx="1.1" fill=${ON} />`;
+  } else {
+    line = svg`<rect x="18" y="11.6" width="14" height="1.6" rx="0.8" fill=${CLOCK} />`;
+  }
+  return svg`${phoneShell(shelved)}
+    ${line}
+    ${faceClock(25, 24, 12, "9:41")}
+    ${row}`;
+}
+
+/** The phone with one shape on it: the Home Screen for a Home Screen shape,
+ * the Lock Screen for anything else. */
+function phoneBody(family: FamilyKind | undefined, live: LiveShapes, shelved: boolean): unknown {
+  return family !== undefined && isHomeFamily(family) ? homeScreen(family, live, shelved) : lockScreen(family, live, shelved);
 }
 
 /** How much room is left round the drawn control tile, as a share of its
@@ -556,29 +681,18 @@ function watchCrop(family: FamilyKind): Crop {
 /**
  * Where on the phone each shape's window sits.
  *
- * The three Lock Screen shapes share the band under the clock, which is the
- * one widget area iOS gives that screen. Each Home Screen size takes the row
- * of the page its tile lands on, its neighbouring icons included: which row a
- * tile sits on is most of what its size means. The window runs the full width
- * of the case, so the dashes of a shelved design are in it wherever the slot
- * is.
+ * Two windows of one height: the top of the phone for the Lock Screen shapes,
+ * with the clock and the slot row under it, and the bottom of it for the
+ * Home Screen sizes, with the tile over the dock and the case's bottom edge
+ * under that. One height, so the phone is the same width on every card and
+ * a Large tile is visibly twice a Medium one. The window is taller than the
+ * card's well is, so it is fitted in whole with the well's black either side,
+ * rather than trimmed. A shape no phone draws falls back to the whole case.
  */
 function phoneCrop(family: FamilyKind): Crop {
-  switch (family) {
-    case "rectangular":
-    case "circular":
-    case "inline":
-      return { x: 0, y: 10, width: 50, height: 25 };
-    case "small":
-      return { x: 0, y: 36, width: 50, height: 25 };
-    case "medium":
-      return { x: 0, y: 56, width: 50, height: 25 };
-    case "large":
-    case "xlarge":
-      return { x: 0, y: 71, width: 50, height: 25 };
-    default:
-      return { x: 0, y: 0, width: 50, height: 96 };
-  }
+  if (isHomeFamily(family)) return { x: 0, y: PHONE_FRAME.height - PHONE_WINDOW, width: PHONE_FRAME.width, height: PHONE_WINDOW };
+  if (isSharedFamily(family)) return { x: 0, y: 0, width: PHONE_FRAME.width, height: PHONE_WINDOW };
+  return { x: 0, y: 0, width: PHONE_FRAME.width, height: PHONE_FRAME.height };
 }
 
 /**
@@ -606,7 +720,9 @@ export function deviceCropArt(
   const shelved = opts.shelved === true;
   const phone = device === "iphone";
   const box = phone ? phoneCrop(family) : watchCrop(family);
-  const body = phone ? phoneBody([family], live, shelved) : watchBody([family], live, shelved);
+  const body = phone ? phoneBody(family, live, shelved) : watchBody([family], live, shelved);
+  // The watch's window is the well's own shape and fills it; the phone's is
+  // taller than the well and is fitted in whole, black either side.
   return html`<svg class="pk-crop" viewBox=${`${box.x} ${box.y} ${box.width} ${box.height}`}
-    preserveAspectRatio="xMidYMid slice" aria-hidden="true">${body}</svg>`;
+    preserveAspectRatio=${phone ? "xMidYMid meet" : "xMidYMid slice"} aria-hidden="true">${body}</svg>`;
 }

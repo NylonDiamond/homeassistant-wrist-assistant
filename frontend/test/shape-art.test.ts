@@ -10,7 +10,7 @@ import { nothing, svg } from "lit";
 
 import { ALL_FAMILIES } from "../src/layouts.js";
 import type { FamilyKind } from "../src/model.js";
-import { controlDeviceArt, deviceCropArt, deviceShapeArt, inlineShown, shapeArtKinds } from "../src/shapeArt.js";
+import { PHONE_FRAME, PHONE_WINDOW, controlDeviceArt, deviceCropArt, deviceShapeArt, inlineShown, phoneSlot, shapeArtKinds } from "../src/shapeArt.js";
 import type { DeviceKind } from "../src/version.js";
 
 function flatten(node: unknown): string {
@@ -218,7 +218,8 @@ describe("deviceCropArt", () => {
     return { x, y, width, height };
   };
   /** The devices at the size they are laid out in. */
-  const FRAME = { watch: { width: 86, height: 96 }, iphone: { width: 50, height: 96 } };
+  const FRAME = { watch: { width: 86, height: 96 }, iphone: PHONE_FRAME };
+  const phone = (family: FamilyKind) => phoneSlot(family)!;
   /** Where each shape's slot sits on its device, so a window can be asked
    * whether the thing it is a window onto is in it. */
   const SLOTS: [FamilyKind, "watch" | "iphone", { x: number; y: number; width: number; height: number }][] = [
@@ -226,19 +227,18 @@ describe("deviceCropArt", () => {
     ["circular", "watch", { x: 14, y: 65, width: 14, height: 14 }],
     ["corner", "watch", { x: 14, y: 17, width: 13, height: 13 }],
     ["inline", "watch", { x: 28, y: 15, width: 30, height: 3 }],
-    ["rectangular", "iphone", { x: 9, y: 22, width: 32, height: 13 }],
-    ["circular", "iphone", { x: 9, y: 22, width: 32, height: 13 }],
-    ["inline", "iphone", { x: 9, y: 22, width: 32, height: 13 }],
-    ["small", "iphone", { x: 7, y: 42, width: 16, height: 16 }],
-    ["medium", "iphone", { x: 7, y: 62, width: 36, height: 14 }],
-    ["large", "iphone", { x: 7, y: 80, width: 36, height: 9 }],
-    ["xlarge", "iphone", { x: 7, y: 80, width: 36, height: 9 }],
+    ["rectangular", "iphone", phone("rectangular")],
+    ["circular", "iphone", phone("circular")],
+    ["inline", "iphone", phone("inline")],
+    ["small", "iphone", phone("small")],
+    ["medium", "iphone", phone("medium")],
+    ["large", "iphone", phone("large")],
   ];
 
   // The window is a window: a crop that reached outside the drawing would
   // show empty space where the card expects a device.
   it("keeps every shape's window inside its device's frame", () => {
-    for (const [family, device] of SLOTS) {
+    for (const [family, device] of [...SLOTS, ["xlarge", "iphone"] as const]) {
       const box = viewBox(crop(family, device));
       const frame = FRAME[device];
       expect(box.x).toBeGreaterThanOrEqual(0);
@@ -258,16 +258,57 @@ describe("deviceCropArt", () => {
     }
   });
 
-  // Each window is close to the well's own proportions (86 by 48, the half
-  // of a watch): a window of another shape would have its edges trimmed to
-  // fit, and what was trimmed is the part that matters.
-  it("cuts every window to the card's own proportions", () => {
+  // Extra Large is taller than the window on purpose: its bottom sits on the
+  // page like the other tiles and its top runs off the window's top edge,
+  // which is what says it is bigger than Large.
+  it("lets the Extra Large tile run off the top of the window", () => {
+    const box = viewBox(crop("xlarge", "iphone"));
+    const slot = phone("xlarge");
+    expect(slot.y).toBeLessThan(box.y);
+    expect(slot.y + slot.height).toBeLessThan(box.y + box.height);
+    expect(slot.y + slot.height).toBe(phone("large").y + phone("large").height);
+  });
+
+  // The watch's window is the well's own proportions (86 by 48, the half of
+  // a watch) and fills it: a window of another shape would have its edges
+  // trimmed to fit, and what was trimmed is the part that matters.
+  it("cuts every watch window to the card's own proportions", () => {
     for (const [family, device] of SLOTS) {
+      if (device !== "watch") continue;
       const box = viewBox(crop(family, device));
       expect(box.width / box.height, `${family} on ${device}`).toBeGreaterThan(1.7);
       expect(box.width / box.height, `${family} on ${device}`).toBeLessThan(2.1);
     }
-    expect(crop("rectangular", "watch")).toContain(`preserveAspectRatio="xMidYMid slice"`);
+    expect(crop("rectangular", "watch")).toMatch(/preserveAspectRatio="?xMidYMid slice"?/);
+  });
+
+  // The phone's window is taller than the well, so a Large tile can be shown
+  // whole at its real proportions; it is fitted in rather than trimmed.
+  it("fits the phone's taller window into the well whole", () => {
+    for (const [family, device] of SLOTS) {
+      if (device !== "iphone") continue;
+      const box = viewBox(crop(family, device));
+      expect(box.width, family).toBe(PHONE_FRAME.width);
+      expect(box.height, family).toBe(PHONE_WINDOW);
+      expect(crop(family, device)).toMatch(/preserveAspectRatio="?xMidYMid meet"?/);
+    }
+  });
+
+  // The tiles are the phone's real sizes at the drawing's scale: Medium is
+  // twice Small across, Large is twice Medium down, and all of them sit on
+  // the same bottom line over the dock.
+  it("draws the Home Screen tiles at the phone's real proportions", () => {
+    const small = phone("small");
+    const medium = phone("medium");
+    const large = phone("large");
+    expect(small.width).toBeCloseTo(small.height, 6);
+    expect(medium.width / small.width).toBeGreaterThan(2);
+    expect(medium.height).toBe(small.height);
+    expect(large.width).toBe(medium.width);
+    expect(large.height / medium.height).toBeGreaterThan(2);
+    expect(large.height / large.width).toBeCloseTo(360 / 344.67, 3);
+    expect(small.y + small.height).toBe(large.y + large.height);
+    expect(medium.y + medium.height).toBe(large.y + large.height);
   });
 
   // The watch has two windows, its two halves: the lower one for rectangular
@@ -283,17 +324,32 @@ describe("deviceCropArt", () => {
     // The band stubs sit at the top and bottom edges of the drawing.
     expect(crop("rectangular", "watch")).toContain(`x="27" y="86" width="32" height="10"`);
     expect(crop("corner", "watch")).toContain(`x="27" y="0" width="32" height="10"`);
-    expect(new Set([
-      JSON.stringify(viewBox(crop("small", "iphone"))),
-      JSON.stringify(viewBox(crop("medium", "iphone"))),
-      JSON.stringify(viewBox(crop("large", "iphone"))),
-    ]).size).toBe(3);
+  });
+
+  // The phone has two windows too: the bottom of the page for every Home
+  // Screen size, so the tiles can be compared card to card, and the top of
+  // the Lock Screen for the three shapes that sit under its clock.
+  it("shows the bottom of the phone for the Home Screen sizes and the top for the Lock Screen shapes", () => {
+    const bottom = { x: 0, y: PHONE_FRAME.height - PHONE_WINDOW, width: PHONE_FRAME.width, height: PHONE_WINDOW };
+    const top = { x: 0, y: 0, width: PHONE_FRAME.width, height: PHONE_WINDOW };
+    for (const family of ["small", "medium", "large", "xlarge"] as FamilyKind[]) {
+      expect(viewBox(crop(family, "iphone")), family).toEqual(bottom);
+    }
+    for (const family of ["rectangular", "circular", "inline"] as FamilyKind[]) {
+      expect(viewBox(crop(family, "iphone")), family).toEqual(top);
+    }
+    // The case's bottom edge is in the Home Screen window, the island in the
+    // Lock Screen one, and the clock only on the Lock Screen.
+    expect(crop("large", "iphone")).toContain(`height=${PHONE_FRAME.height} rx="9"`);
+    expect(crop("rectangular", "iphone")).toContain(`x="17" y="6" width="16" height="3"`);
+    expect(crop("rectangular", "iphone")).toContain(">9:41</text>");
+    expect(crop("large", "iphone")).not.toContain(">9:41</text>");
   });
 
   // A shape the device has no slot for has no window worth inventing, so the
   // whole device is drawn rather than a piece of it chosen at random.
   it("falls back to the whole device for a shape it does not draw", () => {
-    expect(viewBox(crop("corner", "iphone"))).toEqual({ x: 0, y: 0, width: 50, height: 96 });
+    expect(viewBox(crop("corner", "iphone"))).toEqual({ x: 0, y: 0, width: 50, height: 102 });
     expect(viewBox(crop("small", "watch"))).toEqual({ x: 0, y: 0, width: 86, height: 96 });
   });
 
@@ -398,17 +454,29 @@ describe("deviceCropArt", () => {
       expect(art).toContain(">Front Yard test…</text>");
     });
 
-    it("draws the Large tile from the top and clips it, rather than squeezing it flat", () => {
+    // A Large picture is the slot's own proportions, so it fills the slot
+    // whole at the slot's width: nothing is squeezed or cut.
+    it("draws the Large tile whole in its slot", () => {
       const tall = { art: svg`<svg class="complication" data-tag=L></svg>`, width: 344.67, height: 360 };
       const art = crop("large", "iphone", { large: tall });
+      const slot = phone("large");
       expect(art).toContain("data-tag=L");
-      expect(art).toContain(`scale(${36 / 344.67})`);
+      expect(art).toContain(`translate(${slot.x} ${slot.y}) scale(${slot.width / 344.67})`);
       expect(art).toContain("clip-path=url(#pk-clip-");
+      expect(art).not.toContain(`x=${slot.x} y=${slot.y} width=${slot.width} height=${slot.height} rx="3" fill=var(--wa-accent)`);
     });
 
-    it("quiets the second Small tile once the first holds the picture", () => {
+    // The page's icons are what say how big a tile is, so they fill every
+    // cell the tile leaves free and none the tile covers: a two by two block
+    // beside Small, two rows over Medium, none over Large.
+    it("keeps the page's icons beside a tile and never under it", () => {
+      const icons = (art: string) => (art.match(/rx="1\.6" fill=var\(--wa-art-off\)/g) ?? []).length - 4; // less the dock's four
+      expect(icons(crop("small", "iphone"))).toBe(12);
+      expect(icons(crop("medium", "iphone"))).toBe(8);
+      expect(icons(crop("large", "iphone"))).toBe(0);
+      expect(icons(crop("xlarge", "iphone"))).toBe(0);
       const small = { art: svg`<svg class="complication"></svg>`, width: 162.67, height: 162.67 };
-      expect(crop("small", "iphone", { small })).toContain(`x="27" y="42" width="16" height="16" rx="3" fill=var(--wa-art-off)`);
+      expect(icons(crop("small", "iphone", { small }))).toBe(12);
     });
 
     it("shows the corner's content disc alone, centred in the slot and masked round", () => {
