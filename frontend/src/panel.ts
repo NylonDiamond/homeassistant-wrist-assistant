@@ -1747,7 +1747,7 @@ export class WristAssistantPanel extends LitElement {
     /* One surface, one grid: every complication this home holds, under a
        search field and the chips that narrow it. A centred dialog rather than
        a dropdown off the button, because a card carrying two device drawings
-       and an Add to menu needs the width, and because this is the one place
+       and the card's own buttons need the width, and because this is the one place
        the whole household is read at once. Only the grid scrolls, so the
        chips and the foot stay put while a long list moves under them. */
     dialog.pk-dialog {
@@ -7366,7 +7366,7 @@ export class WristAssistantPanel extends LitElement {
     ];
     const saving: [string, string][] = [
       ["Save", `Writes the complication to Home Assistant (${m}S). A new one says Save new until then. Only an administrator can save.`],
-      ["Library", "A design with no device ticked is kept in the library. Nothing shows it until you tick a device under Appears on, and unticking every device puts it back."],
+      ["Library", "A design made with no device ticked is kept in the library. Nothing shows it until a copy of it goes on a device."],
       ["The dot", "Beside Save: unsaved changes, saved, or not saved yet. The footer says the same in words."],
       ["Reaching the watch", "The watch pulls saved changes by itself while Wrist Assistant is open on this home. There is no separate send step."],
       ["Hide", "The eye beside a complication in the list. It stops the watch offering that complication when you edit a face, and faces already using it keep it. Hidden ones fold into Hidden at the bottom of the list. For the open complication it saves with Save; for any other it saves at once."],

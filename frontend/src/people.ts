@@ -13,7 +13,7 @@
 // called the same thing.
 //
 // Everything here is pure, so the checkbox row can be read in a test without a
-// browser. Plan: app repo docs/complication_one_design_everywhere.md.
+// browser. Plan: app repo docs/complication_one_shape_per_document.md.
 
 import type { OwnerSummary } from "./ha-api.js";
 import { deviceKindOf, isLibraryOwner } from "./version.js";
@@ -76,8 +76,8 @@ function groupKey(owner: OwnerSummary, phones: readonly OwnerSummary[]): string 
  *
  * Orphans are left out entirely. They belong to nobody by definition (the
  * entry that would have said which phone is the one that went missing) and
- * nothing can be saved to one, so an orphan in an "Appears on" list is a box that
- * cannot be ticked.
+ * nothing can be saved to one, so an orphan in a list of devices to tick is a
+ * box that cannot be ticked.
  *
  * The Library is left out for the opposite reason. It belongs to nobody
  * because it belongs to the whole home: it is the one place a design can sit

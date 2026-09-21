@@ -140,9 +140,7 @@ export function familyNote(family: FamilyKind): string | undefined {
  * Where a shape lives on the device.
  *
  * The New dialog asks this before it asks for a shape, because "Home Screen"
- * is somewhere the owner has stood and "Small" is not. The same grouping is
- * what the editor's Add a shape panel lists under, so a shape is found the
- * same way whether it is picked at the start or added afterwards.
+ * is somewhere the owner has stood and "Small" is not.
  */
 export type ShapePlace = "home" | "lock" | "watch";
 
@@ -331,7 +329,7 @@ export function removeFamily(cfg: CustomComplicationConfig, family: FamilyKind):
  * The same removal with none of the guards: the shape, its layout and its
  * layers go whatever is left behind.
  *
- * Only for a copy nobody is editing. Trimming a linked copy for the device it
+ * Only for a copy nobody is editing. Trimming a copy for the device it
  * is going to (`linking.copyForOwner`) is the one caller: a phone copy loses
  * corner even when corner is the only shape the watch copy has, because there
  * is nothing on a phone for it to land on. Everything the author can press

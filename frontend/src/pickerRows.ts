@@ -1,14 +1,13 @@
 // The picker's one list: every complication this home holds, on whichever
-// device draws it, with the copies of a linked complication collapsed into one
-// row.
+// device draws it, one card each. A complication is one record on one device,
+// so a row is a record.
 //
 // The device used to be a folder. The picker opened on a pane of devices down
-// the left and one device's complications down the right, so a complication
-// linked across a watch and a phone appeared twice, was counted twice, and read
-// as two things to keep in step. It is one thing. So the device is a property
-// of a row here (the icons it carries, and the chip that narrows the list to
-// it) rather than the question that has to be answered before anything can be
-// seen at all.
+// the left and one device's complications down the right, so seeing what the
+// home had at all meant walking the devices one by one. So the device is a
+// property of a row here (the icons it carries, and the chip that narrows the
+// list to it) rather than the question that has to be answered before anything
+// can be seen.
 //
 // Everything in this module is pure: it takes the copies the panel has already
 // read off the devices and says which rows they make, in what order, and what
@@ -191,8 +190,7 @@ export function pickerView<T>(
  *
  * "6 of 9" rather than "6 complications": with a search field and a row of
  * chips over the grid, how many were left out is the part worth saying. The
- * whole number counts each linked complication once, because that is how many
- * there are to keep in step.
+ * whole number is every complication this home holds, on every device.
  */
 export function pickerCountText(shown: number, total: number): string {
   return `${shown} of ${total}`;
@@ -220,8 +218,7 @@ function deviceWord(kind: DeviceKind): string {
  * "Jesse (watch, iPhone) · Chen (watch)": people first, their devices in
  * brackets, in the order the household list draws them. The old picker row
  * said only whose it was, because a row had one line to spare; a card has
- * room for the answer in full, and which of somebody's devices draw it is the
- * question "Add to" is about.
+ * room for the answer in full.
  *
  * A person with none of the copies is left out rather than printed empty, and
  * a complication on nothing at all says so in words: an empty line would read
